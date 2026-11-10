@@ -80,7 +80,7 @@ test("a tab switch reads nothing again, since the layout made every read", async
   });
   rerender(<EpicHistoryTab />);
   await settled();
-  expect(screen.getByText("Billing 3")).toBeTruthy();
+  expect(screen.getByText("Edited title")).toBeTruthy();
   rerender(<EpicOverviewTab />);
   await settled();
   expect(screen.getByText("whole")).toBeTruthy();
@@ -293,22 +293,142 @@ test("the Tickets tab of an epic holding none says so", async () => {
   expect(screen.getByText("This epic holds no tickets")).toBeTruthy();
 });
 
+function historyRows(): string[] {
+  return screen
+    .getAllByRole("list", { name: "Revisions" })
+    .flatMap((list) =>
+      [...list.querySelectorAll<HTMLElement>(":scope > li")].map(
+        (item) => item.textContent ?? "",
+      ),
+    );
+}
+
 test("the History tab draws the revisions newest first, and an older page on asking", async () => {
   epicServing.history = epicHistoryPaged.first;
   epicServing.older = epicHistoryPaged.older;
   const { sent } = await epicPageDrawn(abilitiesNone, {
     tab: <EpicHistoryTab />,
   });
-  const revisions = () =>
-    screen
-      .getAllByRole("list", { name: "Revisions" })
-      .flatMap((list) => within(list).getAllByRole("listitem"))
-      .map((item) => item.textContent ?? "");
-  expect(revisions()).toHaveLength(2);
-  expect(revisions()[0]).toContain("Billing 3");
-  expect(revisions()[1]).toContain("Billing 2");
+  expect(historyRows()).toHaveLength(2);
+  expect(historyRows()[0]).toMatch(/^Revision 3Edited title/u);
+  expect(historyRows()[1]).toMatch(/^Revision 2Edited title/u);
   fireEvent.click(screen.getByRole("button", { name: "Show older" }));
   await settled();
   expect(sent.some((request) => request.url.includes("after=2"))).toBe(true);
-  expect(revisions().at(-1)).toContain("Billing 1");
+  expect(historyRows().at(-1)).toMatch(/^Revision 1Created/u);
+});
+
+const historyIssuer = "https://issuer.example/";
+
+function historyPrincipal(subject: string): string {
+  return `${String(historyIssuer.length)}:${historyIssuer}${subject}`;
+}
+
+function historyRevision(
+  revision: number,
+  changes: {
+    readonly fields?: readonly string[];
+    readonly added?: readonly number[];
+  },
+  subject = "dana",
+): unknown {
+  return {
+    revision,
+    changedAt: new Date(
+      Date.parse("2026-10-01T02:41:00Z") + revision * 60_000,
+    ).toISOString(),
+    actor: { kind: "user", subject: historyPrincipal(subject) },
+    title: "Billing",
+    visibility: "Active",
+    changes: {
+      kind: "Revised",
+      fields: changes.fields ?? [],
+      added: changes.added ?? [],
+      removed: [],
+    },
+  };
+}
+
+test("a revision's actor, in a row and in the header, is drawn by the email the project's people name, and otherwise by the subject shortened", async () => {
+  epicServing.people = [
+    {
+      subject: "dana",
+      mine: false,
+      tenantAdmin: false,
+      roles: ["Developer"],
+      account: true,
+      email: "dana@example.com",
+    },
+  ];
+  epicServing.history = {
+    revisions: [
+      historyRevision(3, { fields: ["title"] }),
+      historyRevision(2, { added: [9] }, "x".repeat(40)),
+    ],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicHistoryTab /> });
+  expect(historyRows()[0]).toContain("dana@example.com");
+  expect(historyRows()[1]).toContain(`${"x".repeat(12)}…${"x".repeat(6)}`);
+  expect(header().querySelector(".epic-header-saved")?.textContent).toMatch(
+    /^Revision 3 · saved by dana@example\.com/u,
+  );
+});
+
+test("a burst of one actor's ticket edits folds into one row, and Show each lists every revision in it", async () => {
+  epicServing.history = {
+    revisions: [
+      historyRevision(4, { added: [434] }),
+      historyRevision(3, { added: [433] }),
+      historyRevision(2, { added: [432] }),
+    ],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicHistoryTab /> });
+  expect(historyRows()).toHaveLength(1);
+  expect(historyRows()[0]).toMatch(
+    /^Revisions 2–4Added #432–#434.* · 3 revisionsShow each/u,
+  );
+  expect(screen.queryByText("Revision 3 · Added #433")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Show each" }));
+  expect(
+    screen
+      .getAllByText(/^Revision \d · Added #43\d$/u)
+      .map((line) => line.textContent),
+  ).toStrictEqual([
+    "Revision 4 · Added #434",
+    "Revision 3 · Added #433",
+    "Revision 2 · Added #432",
+  ]);
+});
+
+test("a title edit inside a run breaks it into three rows", async () => {
+  epicServing.history = {
+    revisions: [
+      historyRevision(4, { added: [434] }),
+      historyRevision(3, { fields: ["title"], added: [433] }),
+      historyRevision(2, { added: [432] }),
+    ],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicHistoryTab /> });
+  expect(historyRows()).toHaveLength(3);
+  expect(
+    [...document.querySelectorAll(".epic-history-said")].map(
+      (said) => said.textContent,
+    ),
+  ).toStrictEqual(["Added #434", "Added #433 · Edited title", "Added #432"]);
+  expect(screen.queryByRole("button", { name: "Show each" })).toBeNull();
+});
+
+test("two actors' runs do not fold together", async () => {
+  epicServing.history = {
+    revisions: [
+      historyRevision(5, { added: [5] }, "eve"),
+      historyRevision(4, { added: [4] }, "eve"),
+      historyRevision(3, { added: [3] }),
+      historyRevision(2, { added: [2] }),
+    ],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicHistoryTab /> });
+  expect(historyRows()).toHaveLength(2);
+  expect(historyRows()[0]).toMatch(/^Revisions 4–5Added #4–#5eve · 2/u);
+  expect(historyRows()[1]).toMatch(/^Revisions 2–3Added #2–#3dana · 2/u);
 });

@@ -20,9 +20,11 @@ figures-since = { $happened } { $elapsed } ago
 figures-happened-started = Started
 figures-happened-prepared = Prepared
 
-## An instant within the year: its month, its day and its clock.
+## An instant within the year: its month, its day and its clock; and a span
+## of two instants on different days.
 
 figures-instant-in-year = { $month } { $day } { $clock }
+figures-instant-span = { $from }–{ $to }
 figures-month-january = Jan
 figures-month-february = Feb
 figures-month-march = Mar

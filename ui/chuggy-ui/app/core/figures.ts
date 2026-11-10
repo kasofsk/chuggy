@@ -351,7 +351,11 @@ function clockOf(at: Date): string {
 /** The whole local date and clock, the form a year-old instant is written in —
  * always, so a reading that only ever shows this form still says which day. */
 function instantFullText(at: Date): string {
-  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())} ${clockOf(at)}`;
+  return `${instantDateText(at)} ${clockOf(at)}`;
+}
+
+function instantDateText(at: Date): string {
+  return `${String(at.getFullYear())}-${padded(at.getMonth() + 1)}-${padded(at.getDate())}`;
 }
 
 /**
@@ -360,7 +364,12 @@ function instantFullText(at: Date): string {
  * are comparing rows against.
  */
 export function instantText(at: Date, now: Date): CopyOrData {
-  const clock = clockOf(at);
+  return instantTextClocked(at, now, clockOf(at));
+}
+
+/** `instantText` with the clock it says given, so a span of one day says its
+ * day once. */
+function instantTextClocked(at: Date, now: Date, clock: string): CopyOrData {
   if (
     at.getFullYear() === now.getFullYear() &&
     at.getMonth() === now.getMonth() &&
@@ -375,7 +384,7 @@ export function instantText(at: Date, now: Date): CopyOrData {
       id: "figures-instant-in-year",
       args: { month, day: String(at.getDate()), clock },
     };
-  return instantFullText(at);
+  return `${instantDateText(at)} ${clock}`;
 }
 
 /** An instant counted in milliseconds, absent where no date holds that many. */
@@ -387,6 +396,37 @@ export function instantFigureAtMs(atMs: number, nowMs: number): Figure {
     kind: "Instant",
     text: instantText(at, new Date(nowMs)),
     iso: at.toISOString(),
+  };
+}
+
+/**
+ * Two instants as one reading, the earlier first: on one day the day is said
+ * once and its clocks joined, and across two each is said whole. The hover
+ * carries both instants as an interval.
+ */
+export function instantSpanFigure(
+  fromStated: string,
+  toStated: string,
+  nowMs: number,
+): Figure {
+  const from = new Date(Date.parse(fromStated));
+  const to = new Date(Date.parse(toStated));
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()))
+    return { kind: "Absent", why: { id: "figures-absent-instant" } };
+  const now = new Date(nowMs);
+  const sameDay =
+    from.getFullYear() === to.getFullYear() &&
+    from.getMonth() === to.getMonth() &&
+    from.getDate() === to.getDate();
+  return {
+    kind: "Instant",
+    text: sameDay
+      ? instantTextClocked(from, now, `${clockOf(from)}–${clockOf(to)}`)
+      : {
+          id: "figures-instant-span",
+          args: { from: instantText(from, now), to: instantText(to, now) },
+        },
+    iso: `${from.toISOString()}/${to.toISOString()}`,
   };
 }
 

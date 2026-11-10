@@ -1,0 +1,79 @@
+/* The epic page's History tab: a row a revision or a folded run, its label
+   muted at the left, what changed and who over each other, and when at the
+   right. Where the reader is narrow, the label sits above the row. */
+
+@layer page {
+  .epic-history-tab {
+    display: grid;
+    gap: var(--space-3);
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .epic-history {
+    width: 100%;
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .epic-history-row {
+    display: grid;
+    grid-template-columns:
+      var(--width-epic-history-revision) minmax(0, 1fr)
+      auto;
+    gap: var(--space-1) var(--space-4);
+    align-items: baseline;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--edge);
+  }
+
+  .epic-history-revision,
+  .epic-history-who {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .epic-history-body {
+    display: grid;
+    gap: var(--space-1);
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .epic-history-count {
+    white-space: nowrap;
+  }
+
+  .epic-history-said {
+    color: var(--ink-1);
+    overflow-wrap: anywhere;
+  }
+
+  .epic-history-when {
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    text-align: right;
+  }
+
+  .epic-history-each {
+    display: grid;
+    gap: var(--space-1);
+    margin: var(--space-1) 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  @media (max-width: 40em) {
+    .epic-history-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .epic-history-revision {
+      grid-column: 1 / -1;
+    }
+  }
+}
