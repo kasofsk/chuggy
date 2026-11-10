@@ -480,6 +480,57 @@ test("draft initialization bounds missing, unavailable, and incomplete configura
   }
 });
 
+test("draft initialization refuses a selection naming an approval as the work, saying so", async () => {
+  const revision = asConfigurationRevisionId("revision");
+  const canonical = canonicalConfigurationOf({
+    version: 2,
+    image: "worker:v2",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Build it." },
+        worker: {
+          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+          setup: [],
+          files: [],
+        },
+      },
+      approval: { runner: "Approval" },
+    },
+    plans: { gated: [{ name: "sign-off", evaluators: ["approval"] }] },
+    defaults: { work: "build", evaluation: "gated" },
+  });
+  const initialization = () =>
+    Promise.resolve({
+      configuration: { partition, revision, canonical, digest: "a".repeat(64) },
+      projectSequence: 0,
+      dependencyCandidates: [],
+      dependencyCandidatesTruncated: false,
+      domain: refinementInstance,
+    });
+  for (const [selection, expected] of [
+    [undefined, "Initialized"],
+    [{ work: "approval", evaluation: "gated" }, "ApprovalAsWork"],
+  ] as const) {
+    const { web } = boundary(
+      true,
+      openExecutionBacklogGuard,
+      undefined,
+      initialization(),
+    );
+    const result = await web.initializeDraft(
+      principal,
+      partition,
+      revision,
+      selection,
+    );
+    assert.equal(
+      result.result === "Authorized" ? result.value.initialized : "NotFound",
+      expected,
+    );
+  }
+});
+
 /** The point read of every binding, live unless it is given the instant it retired at. */
 function repositoryImportLanding(
   calls: string[],

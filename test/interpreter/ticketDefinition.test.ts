@@ -38,10 +38,23 @@ import {
   ticketTaskMaterialAt,
   ticketTaskRequirement,
   ticketTaskResources,
+  type TicketDefinitionMaterial,
+  type TicketPlacedTaskMaterial,
+  type TicketTaskKey,
 } from "../../src/interpreter/ticketDefinition.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+
+/** The material a runner takes at one key, failing the case where it is an approval's. */
+function placedTaskAt(
+  material: TicketDefinitionMaterial,
+  key: TicketTaskKey,
+): TicketPlacedTaskMaterial {
+  const task = ticketTaskMaterialAt(material, key);
+  assert.ok("workload" in task, `${key} resolved an approval`);
+  return task;
+}
 
 /** The document of a configuration briefing its two evaluation stages from blocks that differ. */
 const document = {
@@ -636,8 +649,8 @@ test("a configuration that names no size releases each workload as its image alo
     authoring,
     ticket: { version: 1, configuration },
   });
-  for (const task of material.tasks)
-    assert.deepEqual(task.workload, {
+  for (const { key } of material.tasks)
+    assert.deepEqual(placedTaskAt(material, key).workload, {
       image: "worker:v1",
       digest: materialDigest("worker:v1"),
     });
@@ -659,8 +672,8 @@ test("a release pins each task's size in its workload, a task kind's over the co
       }),
     },
   });
-  const work = ticketTaskMaterialAt(material, "Work").workload;
-  const review = ticketTaskMaterialAt(material, "Evaluation:1").workload;
+  const work = placedTaskAt(material, "Work").workload;
+  const review = placedTaskAt(material, "Evaluation:1").workload;
   assert.deepEqual(work.resources, { cpuMillis: 8_000, memoryMib: 16_384 });
   assert.deepEqual(review.resources, { cpuMillis: 2_000, memoryMib: 4_096 });
   assert.equal(

@@ -102,6 +102,9 @@ export interface SentencesCopy {
   readonly "sentences-refusal-capacity-reached": Record<never, never>;
   readonly "sentences-refusal-landing-request-closed": Record<never, never>;
   readonly "sentences-refusal-overrides-move-definition": Record<never, never>;
+  readonly "sentences-refusal-approval-as-work": Record<never, never>;
+  readonly "sentences-refusal-overrides-change-approval": Record<never, never>;
+  readonly "sentences-refusal-approval-not-runnable": Record<never, never>;
   readonly "sentences-following-held": {
     readonly refusal: unknown;
   };

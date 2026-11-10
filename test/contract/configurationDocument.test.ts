@@ -125,6 +125,7 @@ const heldFaults = [
   "ConfigurationInvalid:ReleaseShapeInvalid",
   "ConfigurationInvalid:CatalogNameUnknown",
   "ConfigurationInvalid:StageNameTooLong",
+  "ConfigurationInvalid:ApprovalAsWork",
 ];
 
 /** Asserts the schema takes a file the import takes, and refuses one the import refuses but for a held fault. */
@@ -179,6 +180,30 @@ const configuration = {
   review: { instructions: [] },
   worker: { mode: claude, setup: [], files: [] },
 };
+
+/** A catalog whose plan stages list an approval evaluator alone and beside a commanded one. */
+function approvalCatalog(approval: object): object {
+  return {
+    version: 2,
+    image: "worker:v1",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Build." },
+        worker: { mode: claude, setup: [], files: [] },
+      },
+      tests: { runner: "Commands", commands: ["npm test"] },
+      approval: { runner: "Approval", ...approval },
+    },
+    plans: {
+      standard: [
+        { name: "checks", evaluators: ["tests", "approval"] },
+        { name: "sign-off", evaluators: ["approval"] },
+      ],
+    },
+    defaults: { work: "build", evaluation: "standard" },
+  };
+}
 
 /** One file declaring a configuration under a name. */
 function declared(declaredConfiguration: unknown, name = "declared"): unknown {
@@ -300,6 +325,13 @@ const shapes: readonly unknown[] = [
     ...configuration,
     worker: { mode: { ...codex, effort: "xhigh" }, setup: [], files: [] },
   },
+  approvalCatalog({}),
+  approvalCatalog({ approvers: "Developer" }),
+  approvalCatalog({
+    approvers: "Admin",
+    instructions: "Check the migration.\nThen the release notes.",
+  }),
+  approvalCatalog({ approvers: ["5:issuersubject", "5:issuerother"] }),
 ];
 
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -601,6 +633,33 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
     declared({ ...configuration, review: undefined }),
     "ConfigurationInvalid:ReviewInvalid",
   ],
+  ...[
+    { approvers: [] },
+    { approvers: "Owner" },
+    {
+      approvers: Array.from(
+        { length: 65 },
+        (_, index) => `principal-${String(index)}`,
+      ),
+    },
+    { approvers: [""] },
+    { instructions: "" },
+    { instructions: "i".repeat(4_097) },
+    { instructions: "a\u0001" },
+    { image: "worker:v1" },
+    { worker: { setup: [], files: [] } },
+    { authority: {} },
+    { prompt: { text: "Approve it." } },
+    { commands: ["true"] },
+    { resources: { cpus: 1 } },
+    { executionRequirement: containerRequirement },
+  ].map(
+    (approval) =>
+      [
+        declared(approvalCatalog(approval)),
+        "ConfigurationInvalid:ReleaseShapeInvalid",
+      ] as const,
+  ),
 ];
 
 test("a file whose shape the import refuses the schema refuses", () => {
@@ -632,6 +691,13 @@ const heldRules: readonly (readonly [unknown, string])[] = [
   [
     declared({ ...configuration, review: { instructions: [], token: "t" } }),
     "ConfigurationInvalid",
+  ],
+  [
+    declared({
+      ...approvalCatalog({}),
+      defaults: { work: "approval", evaluation: "standard" },
+    }),
+    "ConfigurationInvalid:ApprovalAsWork",
   ],
   [
     declared({

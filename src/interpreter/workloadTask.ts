@@ -12,6 +12,10 @@
  * evaluator the selected plan runs as commands, as they join the first
  * commanded stage of a version 1 configuration, so a ticket widens what its
  * change is held to and never changes what any workload is.
+ *
+ * ONLY A PLACED WORKLOAD IS PINNED FOR A SCHEDULER. An approval evaluator is
+ * answered by a person and runs on no runner, and nothing yet opens one, so a
+ * scheduler reading one is told `ApprovalNotRunnable`.
  */
 
 import {
@@ -25,6 +29,7 @@ import {
   selectedEvaluatorWorkload,
   selectedFirstCommandsEvaluator,
   workloadConfigurationReadiness,
+  type PlacedWorkload,
   type Workload,
 } from "./workloadConfiguration.ts";
 
@@ -34,10 +39,23 @@ export interface WorkloadTask {
   readonly ticketChecks: boolean;
 }
 
-/** One task of a catalog, as the revision it was read from was pinned. */
-export interface PinnedWorkloadTask extends ConfigurationPin, WorkloadTask {
+/** One task of a catalog a runner carries out, as the revision it was read from was pinned. */
+export interface PinnedWorkloadTask extends ConfigurationPin {
   readonly version: 2;
+  readonly workload: PlacedWorkload;
+  readonly ticketChecks: boolean;
 }
+
+/** One task of a catalog read for a scheduler, or why there is none to place. */
+export type PinnedWorkloadTaskRead =
+  | {
+      readonly read: "Configuration";
+      readonly configuration: PinnedWorkloadTask;
+    }
+  | {
+      readonly read: "Incompatible";
+      readonly fault: "WorkloadUnselected" | "ApprovalNotRunnable";
+    };
 
 /** Which task of a ticket is read: the work, or one evaluator of a stage by its index and its key. */
 export type WorkloadTaskPosition =
@@ -104,16 +122,24 @@ export function catalogNamedWorkloadTask(
   };
 }
 
-/** The workload one task of a catalog runs, under the pin it was read at. */
+/** The placed workload one task of a catalog runs, under the pin it was read at. */
 export function pinnedWorkloadTask(
   value: unknown,
   pin: ConfigurationPin,
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
   position: WorkloadTaskPosition,
-): PinnedWorkloadTask | undefined {
+): PinnedWorkloadTaskRead {
   const task = catalogWorkloadTask(value, overrides, selection, position);
-  return task === undefined ? undefined : { ...pin, version: 2, ...task };
+  if (task === undefined)
+    return { read: "Incompatible", fault: "WorkloadUnselected" };
+  const { workload, ticketChecks } = task;
+  if (workload.runner === "Approval")
+    return { read: "Incompatible", fault: "ApprovalNotRunnable" };
+  return {
+    read: "Configuration",
+    configuration: { ...pin, version: 2, workload, ticketChecks },
+  };
 }
 
 /** Where a stored task row puts a task of a catalog, or nowhere where an evaluation row is half named. */

@@ -73,5 +73,8 @@ export function operationRefusalSamples(
     TicketCapacityReached: { type: "TicketCapacityReached" },
     FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
     OverridesMoveDefinition: { type: "OverridesMoveDefinition" },
+    ApprovalAsWork: { type: "ApprovalAsWork" },
+    OverridesChangeApprovalRunner: { type: "OverridesChangeApprovalRunner" },
+    ApprovalNotRunnable: { type: "ApprovalNotRunnable" },
   };
 }

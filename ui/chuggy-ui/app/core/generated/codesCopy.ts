@@ -212,6 +212,9 @@ export interface CodesCopy {
   readonly "codes-refusal-capacity-reached": Record<never, never>;
   readonly "codes-refusal-landing-request-closed": Record<never, never>;
   readonly "codes-refusal-overrides-move-definition": Record<never, never>;
+  readonly "codes-refusal-approval-as-work": Record<never, never>;
+  readonly "codes-refusal-overrides-change-approval": Record<never, never>;
+  readonly "codes-refusal-approval-not-runnable": Record<never, never>;
   readonly "codes-mutation-key-used": Record<never, never>;
   readonly "codes-mutation-invalid": Record<never, never>;
   readonly "codes-mutation-not-admitted": Record<never, never>;

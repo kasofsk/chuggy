@@ -40,7 +40,20 @@ import {
   ticketTaskMaterialAt,
   ticketTaskRequirement,
   ticketTaskResources,
+  type TicketDefinitionMaterial,
+  type TicketPlacedTaskMaterial,
+  type TicketTaskKey,
 } from "../../src/interpreter/ticketDefinition.ts";
+
+/** The material a runner takes at one key, failing the case where it is an approval's. */
+function placedTaskAt(
+  material: TicketDefinitionMaterial,
+  key: TicketTaskKey,
+): TicketPlacedTaskMaterial {
+  const task = ticketTaskMaterialAt(material, key);
+  assert.ok("workload" in task, `${key} resolved an approval`);
+  return task;
+}
 
 const claude = { type: "SingleAgent", agent: "Claude", arguments: [] };
 
@@ -478,11 +491,11 @@ test("a catalog release resolves one task per evaluator, each from its own workl
     material.tasks.map((task) => task.key),
     ["Work", "Evaluation:1/1", "Evaluation:1/2", "Evaluation:2/1"],
   );
-  const work = ticketTaskMaterialAt(material, "Work");
+  const work = placedTaskAt(material, "Work");
   assert.equal(work.workload.image, "worker:spike");
   assert.equal(work.inputs.digest, materialDigest(catalog.workloads.spike));
-  const tests = ticketTaskMaterialAt(material, "Evaluation:1/1");
-  const review = ticketTaskMaterialAt(material, "Evaluation:1/2");
+  const tests = placedTaskAt(material, "Evaluation:1/1");
+  const review = placedTaskAt(material, "Evaluation:1/2");
   assert.equal(tests.workload.image, "worker:v2");
   assert.equal(review.workload.resources?.cpuMillis, 2_000);
   assert.notEqual(tests.inputs.digest, review.inputs.digest);

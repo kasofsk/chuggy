@@ -37,6 +37,7 @@ import {
 } from "../../src/adapters/http/outcomes.ts";
 import { actionReportLinkCharsMax } from "../../src/contract/actionReport.ts";
 import {
+  nativeHttpError,
   projectArtifactUploadBytesMax,
   proposalMergeStateCharsMax,
   runTranscriptBatchBytesMax,
@@ -657,6 +658,8 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
   for (const [initialized, status] of [
     ["ConfigurationNotFound", 404],
     ["ConfigurationIncomplete", 409],
+    ["SelectionUnknown", 409],
+    ["ApprovalAsWork", 409],
     ["PolicyUnavailable", 503],
   ] as const)
     assert.equal(
@@ -666,6 +669,16 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
       }).status,
       status,
     );
+  assert.deepEqual(
+    draftInitializationResponse({
+      result: "Authorized",
+      value: { initialized: "ApprovalAsWork" },
+    }).body,
+    nativeHttpError(
+      "ApprovalAsWork",
+      "The selection names an approval as the work.",
+    ),
+  );
   const response = draftInitializationResponse({
     result: "Authorized",
     value: {

@@ -51,6 +51,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 import { z } from "zod";
 
+import { workloadRunners } from "../../contract/rosters.ts";
 import { ticketEventTags } from "../../domain/generated/modelTypes.ts";
 import { taskPurposeForKind } from "../../interpreter/executionScheduler.ts";
 import {
@@ -161,7 +162,7 @@ const metricsPlaneTaskLabelsSchema = {
   owner: z.string(),
   phase: z.enum(["Work", "Evaluation"]),
   stage: z.string(),
-  runner: z.enum(["Agent", "Commands", ""]),
+  runner: z.enum([...workloadRunners, ""]),
   workload: z.string(),
   placement: z.enum(["Cluster", "Pool", "Personal"]),
 };
@@ -473,7 +474,7 @@ function metricsPlaneCatalogTask(
         );
   if (task === undefined) return undefined;
   return {
-    runner: task.workload.runner === "Commands" ? "Commands" : "Agent",
+    runner: task.workload.runner,
     stage: task.stage ?? "",
     workload: task.name,
   };

@@ -263,13 +263,15 @@ export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
 
 /**
  * A definitive fault while reading authored content, including unreadable
- * canonical bytes and a catalog that holds no workload for the task read.
+ * canonical bytes, a catalog that holds no workload for the task read, and one
+ * whose workload there is an approval, which no runner takes.
  */
 export type TaskConfigurationReadFault =
   | TaskConfigurationFault
   | "ConfigurationUnreadable"
   | "DigestMismatch"
-  | "WorkloadUnselected";
+  | "WorkloadUnselected"
+  | "ApprovalNotRunnable";
 
 /** Every read fault, which is every authored one and the ones a read of its own adds. */
 export const allTaskConfigurationReadFaults: readonly TaskConfigurationReadFault[] =
@@ -278,6 +280,7 @@ export const allTaskConfigurationReadFaults: readonly TaskConfigurationReadFault
     "ConfigurationUnreadable",
     "DigestMismatch",
     "WorkloadUnselected",
+    "ApprovalNotRunnable",
   ];
 
 /** A parsed authored briefing, or the bounded reason it cannot be one. */

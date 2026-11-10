@@ -266,7 +266,7 @@ function executionRowAgentCapability(row: ExecutionRow) {
   return capability === undefined ? {} : { agentCapability: capability };
 }
 
-/** The agent the workload a catalog's task runs names, under the selection its ticket holds. */
+/** The agent the workload a catalog's task runs names, under the selection its ticket holds; an approval names none. */
 function executionRowWorkloadCapability(
   row: ExecutionRow,
   configuration: unknown,
@@ -285,7 +285,7 @@ function executionRowWorkloadCapability(
           storedSelectionOf(row.configuration_selection),
           position,
         );
-  return task === undefined
+  return task === undefined || task.workload.runner === "Approval"
     ? undefined
     : executionAgentCapability({ worker: task.workload.worker });
 }

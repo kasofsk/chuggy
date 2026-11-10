@@ -91,14 +91,12 @@ function viewOf(
   position: WorkloadTaskPosition,
   selection?: ConfigurationSelection,
 ): BriefingView {
-  const configuration = pinnedWorkloadTask(
-    catalog,
-    pin,
-    undefined,
-    selection,
-    position,
+  const read = pinnedWorkloadTask(catalog, pin, undefined, selection, position);
+  assert.ok(
+    read.read === "Configuration",
+    "the catalog names no such workload",
   );
-  assert.ok(configuration !== undefined, "the catalog names no such workload");
+  const { configuration } = read;
   return {
     purpose,
     ...(position.taskKind === "Work" ? {} : { stage: position.stage }),
@@ -172,15 +170,15 @@ test("a workload narrows by its own authority and by none another workload names
 });
 
 test("a position or a selection the catalog does not hold names no workload", () => {
-  assert.equal(
+  assert.deepEqual(
     pinnedWorkloadTask(catalog, pin, undefined, undefined, {
       taskKind: "Evaluation",
       stage: 2,
       evaluator: 1,
     }),
-    undefined,
+    { read: "Incompatible", fault: "WorkloadUnselected" },
   );
-  assert.equal(
+  assert.deepEqual(
     pinnedWorkloadTask(
       catalog,
       pin,
@@ -190,7 +188,7 @@ test("a position or a selection the catalog does not hold names no workload", ()
         taskKind: "Work",
       },
     ),
-    undefined,
+    { read: "Incompatible", fault: "WorkloadUnselected" },
   );
 });
 
@@ -204,7 +202,8 @@ test("a task of a catalog runs its workload as the ticket's overrides leave it",
     undefined,
     { taskKind: "Evaluation", stage: 1, evaluator: 1 },
   );
-  assert.deepEqual(task?.workload, {
+  assert.ok(task.read === "Configuration");
+  assert.deepEqual(task.configuration.workload, {
     runner: "Commands",
     commands: ["npm run lint"],
   });
