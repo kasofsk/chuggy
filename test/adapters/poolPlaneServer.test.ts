@@ -189,6 +189,7 @@ function calls(pinning: readonly string[] = []): {
       waiting: () => Promise.resolve(false),
       waitingPersonal: () => Promise.resolve(false),
       allowlisted: () => Promise.resolve([]),
+      credentialOutcomes: () => Promise.resolve([]),
       polled: () => Promise.resolve(),
       renew: (_identity, assignment) =>
         Promise.resolve(
