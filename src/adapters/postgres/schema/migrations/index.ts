@@ -138,6 +138,7 @@ import { migration137 } from "./137-stacked-policy.ts";
 import { migration138 } from "./138-evaluation-stack.ts";
 import { migration139 } from "./139-ticket-service-stacks.ts";
 import { migration140 } from "./140-stack-invalidation.ts";
+import { migration141 } from "./141-active-work-started-runs.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -281,4 +282,5 @@ export const migrations: readonly Migration[] = [
   migration138,
   migration139,
   migration140,
+  migration141,
 ];
