@@ -155,3 +155,82 @@ test("a stacked ticket evaluated over no stack lands as a serialized one does, s
     "a re-check forced by the target having moved is counted",
   );
 });
+
+/**
+ * Stands for the work cycle that re-reports after a send-back: the request
+ * that was sent back is invalidated and a later one of the same ticket opens.
+ */
+async function requestSuperseded(
+  project: FinalizerProject,
+  pass: number,
+): Promise<void> {
+  const key = [project.partition.tenant, project.partition.project];
+  await rig.harness.query(
+    `UPDATE finalization_request SET state='Invalidated'
+      WHERE tenant=$1 AND project=$2 AND state IN ('Open','Registered')`,
+    key,
+  );
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, request_generation, kind, work_cycle,
+        finalization_generation)
+     SELECT tenant, project, request || ':' || $4::text, authorizing_seq,
+            effect_position + $3::int, ticket, ticket_version,
+            request_generation, kind, work_cycle,
+            finalization_generation + $3::int
+       FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND request=$5`,
+    [...key, pass, String(pass), project.request],
+  );
+}
+
+/** Passes the project's request `times` over, moving the reference before each so the commit evaluated is behind it. */
+async function passesBehindTheTarget(
+  project: FinalizerProject,
+  remote: FinalizerRemote,
+  times: number,
+  label: string,
+): Promise<readonly number[]> {
+  const holds: number[] = [];
+  for (let pass = 0; pass < times; pass++) {
+    if (pass > 0) await requestSuperseded(project, pass);
+    finalizerRemoteCommit(remote, `move-${String(pass)}.txt`, "m\n", "move");
+    const report = await finalizerPassOnce(
+      rig,
+      project,
+      finalizerRemotePort(rig),
+      `${label}-${String(pass)}`,
+    );
+    holds.push(report.holds);
+  }
+  return holds;
+}
+
+test("a ticket sent back three times by a stack that stopped standing is not held, where one sent back by the target moving is held on the third", async () => {
+  const stacked = await stackedAfterBeneath("recheck-stacked");
+  await stackRecorded(
+    stacked.project,
+    mergedTree(stacked.remote, stacked.worked),
+  );
+  const heldStacked = await passesBehindTheTarget(
+    stacked.project,
+    stacked.remote,
+    3,
+    "recheck-stacked",
+  );
+  assert.deepEqual(heldStacked, [0, 0, 0]);
+  const attempts = await attemptsOf(stacked.project);
+  assert.equal(attempts.length, 3);
+  assert.ok(attempts.every((a) => a["failure_kind"] === "RecheckRequired"));
+
+  const plain = await stackedAfterBeneath("recheck-plain");
+  const heldPlain = await passesBehindTheTarget(
+    plain.project,
+    plain.remote,
+    3,
+    "recheck-plain",
+  );
+  assert.deepEqual(heldPlain, [0, 0, 1]);
+  assert.equal((await attemptsOf(plain.project)).length, 2);
+});
