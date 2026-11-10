@@ -110,8 +110,16 @@ export interface EvaluationStackStore {
     partition: Partition,
     prepared: StackPrepared,
   ): Promise<"Written" | "Present" | "Evaluated">;
-  /** The accepted work of Stacked tickets nothing has yet prepared, at most `limit` of them. */
-  unprepared(limit: number): Promise<readonly UnpreparedStack[]>;
+  /**
+   * The accepted work of Stacked tickets nothing has yet prepared, at most
+   * `limit` of them. The bounded reads take their rows in an order keyed on
+   * `rotation`, which the store takes from its own clock where none is given,
+   * so rows that never clear cannot hold the rest out of the limit.
+   */
+  unprepared(
+    limit: number,
+    rotation?: number,
+  ): Promise<readonly UnpreparedStack[]>;
   /** What the cycle was prepared as. */
   decision(
     partition: Partition,
@@ -138,7 +146,10 @@ export interface EvaluationStackStore {
    * The stacks not yet taken down whose ticket is Done or Revoked or has begun
    * a later work cycle, at most `limit` of them.
    */
-  removable(limit: number): Promise<readonly RemovableStack[]>;
+  removable(
+    limit: number,
+    rotation?: number,
+  ): Promise<readonly RemovableStack[]>;
   /** Notes that a cycle's stack commit was taken down, and says whether this was the first note. */
   remove(
     partition: Partition,
@@ -157,7 +168,10 @@ export interface EvaluationStackStore {
    * The Stacked tickets being evaluated over a stack that no invalidation has
    * been offered for, at most `limit` of them.
    */
-  evaluating(limit: number): Promise<readonly EvaluatingStack[]>;
+  evaluating(
+    limit: number,
+    rotation?: number,
+  ): Promise<readonly EvaluatingStack[]>;
   /**
    * Offers the invalidation of a ticket's evaluation of the cycle to the one
    * door that submits it, which marks the stack dead in the same transaction.

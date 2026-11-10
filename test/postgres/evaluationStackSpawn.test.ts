@@ -321,3 +321,69 @@ test("a stack of a Done or Revoked ticket is due to be taken down", async () => 
     assert.equal((await due()).length, 1, phase);
   }
 });
+
+/** Every project that the bounded read named at some rotation, one row at a time. */
+async function seenAcrossRotations(
+  read: (
+    rotation: number,
+  ) => Promise<readonly { partition: { project: string } }[]>,
+): Promise<ReadonlySet<string>> {
+  const seen = new Set<string>();
+  for (let rotation = 0; rotation < 200; rotation += 1) {
+    for (const row of await read(rotation)) seen.add(row.partition.project);
+  }
+  return seen;
+}
+
+test("rows that never clear cannot hold the rest out of a bounded read", async () => {
+  const removable: string[] = [];
+  const unprepared: string[] = [];
+  for (let at = 0; at < 3; at += 1) {
+    const done = await stackedSubject(rig, `rotate-removable-${String(at)}`);
+    await recordStack(rig.pool, done.project.partition, stackOf(done.project));
+    await rig.harness.query(
+      `UPDATE ticket_projection SET phase='Done'
+        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      [
+        done.project.partition.tenant,
+        done.project.partition.project,
+        done.project.ticket,
+      ],
+    );
+    removable.push(done.project.partition.project);
+
+    const fresh = await stackedSubject(rig, `rotate-unprepared-${String(at)}`);
+    await finalizerSpawnTasks(rig, fresh.project, [2]);
+    const work = await finalizerPassedWork(
+      rig,
+      fresh.project,
+      `rotate-unprepared-${String(at)}-2`,
+      [],
+    );
+    await finalizerDeclareSource(
+      rig,
+      fresh.project,
+      work,
+      "refs/heads/work",
+      finalizerCommit(),
+    );
+    await rig.harness.query(
+      `UPDATE ticket_projection SET phase='Work'
+        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      [
+        fresh.project.partition.tenant,
+        fresh.project.partition.project,
+        fresh.project.ticket,
+      ],
+    );
+    unprepared.push(fresh.project.partition.project);
+  }
+  const removed = await seenAcrossRotations((rotation) =>
+    finalizer.removable(1, rotation),
+  );
+  const prepared = await seenAcrossRotations((rotation) =>
+    finalizer.unprepared(1, rotation),
+  );
+  for (const project of removable) assert.ok(removed.has(project), project);
+  for (const project of unprepared) assert.ok(prepared.has(project), project);
+});

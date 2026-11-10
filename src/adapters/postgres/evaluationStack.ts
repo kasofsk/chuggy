@@ -73,6 +73,9 @@ import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import { releasedBriefOf } from "./ticketBrief.ts";
 
+/** How long, in seconds, the order the bounded reads take their rows in holds before it is shuffled. */
+const stackRotationSecs = 15;
+
 /** The most ranked tickets one reference's queue is read at. */
 const stackQueueEntriesMax = 256;
 
@@ -344,6 +347,7 @@ async function stackPrepare(
 async function stackUnprepared(
   pool: pg.Pool,
   limit: number,
+  rotation: number | undefined,
 ): Promise<readonly UnpreparedStack[]> {
   const found = await pool.query<UnpreparedRow>(
     sql`SELECT d.tenant, d.project, d.ticket::text AS ticket,
@@ -389,7 +393,7 @@ async function stackUnprepared(
                   WHERE q.tenant = d.tenant AND q.project = d.project
                     AND q.ticket = d.ticket AND t.kind = 'Evaluation'
                     AND t.cycle = w.cycle)
-         ORDER BY d.tenant, d.project, d.ticket
+         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
          LIMIT ${limit}`,
   );
   return found.rows.map((row) => ({
@@ -615,6 +619,7 @@ async function stackCurrentRead(
 async function stackEvaluating(
   pool: pg.Pool,
   limit: number,
+  rotation: number | undefined,
 ): Promise<readonly EvaluatingStack[]> {
   const found = await pool.query<EvaluatingRow>(
     sql`SELECT d.tenant, d.project, d.ticket::text AS ticket, d.brief::text AS brief,
@@ -653,39 +658,40 @@ async function stackEvaluating(
                  SELECT 1 FROM evaluation_stack_dead k
                   WHERE k.tenant = s.tenant AND k.project = s.project
                     AND k.ticket = s.ticket AND k.work_cycle = s.work_cycle)
-         ORDER BY d.tenant, d.project, d.ticket
+         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
          LIMIT ${limit}`,
   );
   const evaluating: EvaluatingStack[] = [];
   for (const row of found.rows) {
-    const partition = {
-      tenant: asTenantId(row.tenant),
-      project: asProjectId(row.project),
-    };
-    const ticket = projectRowCounter(row.ticket, "evaluating ticket");
-    const cycle = projectRowCounter(row.cycle ?? "", "evaluating cycle");
-    try {
-      const [record] = await stackRecordsRead(
-        pool,
-        partition,
-        [ticket],
-        [cycle],
-      );
-      const brief = releasedBriefOf(row.brief);
-      if (record === undefined || brief === undefined) continue;
-      evaluating.push({
-        partition,
-        ticket: asTicketId(ticket),
-        cycle,
-        repository: record.repository,
-        target: briefLandsOn(brief),
-        standing: await stackStandingOf(pool, partition, record),
-      });
-    } catch {
-      continue;
-    }
+    const one = await stackEvaluatingOf(pool, row).catch(
+      (): undefined => undefined,
+    );
+    if (one !== undefined) evaluating.push(one);
   }
   return evaluating;
+}
+
+async function stackEvaluatingOf(
+  pool: pg.Pool,
+  row: EvaluatingRow,
+): Promise<EvaluatingStack | undefined> {
+  const partition = {
+    tenant: asTenantId(row.tenant),
+    project: asProjectId(row.project),
+  };
+  const ticket = projectRowCounter(row.ticket, "evaluating ticket");
+  const cycle = projectRowCounter(row.cycle ?? "", "evaluating cycle");
+  const [record] = await stackRecordsRead(pool, partition, [ticket], [cycle]);
+  const brief = releasedBriefOf(row.brief);
+  if (record === undefined || brief === undefined) return undefined;
+  return {
+    partition,
+    ticket: asTicketId(ticket),
+    cycle,
+    repository: record.repository,
+    target: briefLandsOn(brief),
+    standing: await stackStandingOf(pool, partition, record),
+  };
 }
 
 async function stackInvalidate(
@@ -729,6 +735,7 @@ async function stackDead(
 async function stackRemovable(
   pool: pg.Pool,
   limit: number,
+  rotation: number | undefined,
 ): Promise<readonly RemovableStack[]> {
   const found = await pool.query<RemovableRow>(
     sql`SELECT s.tenant, s.project, s.ticket::text AS ticket,
@@ -751,7 +758,7 @@ async function stackRemovable(
                        WHERE q.tenant = s.tenant AND q.project = s.project
                          AND q.ticket = s.ticket AND t.kind = 'Work'
                          AND t.cycle > s.work_cycle))
-             ORDER BY s.recorded_at, s.ticket, s.work_cycle
+             ORDER BY md5(s.tenant || s.project || s.ticket::text || s.work_cycle::text || coalesce(${rotation}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
              LIMIT ${limit}`,
   );
   return found.rows.map((row) => ({
@@ -769,10 +776,10 @@ async function stackRemovable(
 export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
   return {
     prepare: (partition, prepared) => stackPrepare(pool, partition, prepared),
-    unprepared: (limit) => stackUnprepared(pool, limit),
+    unprepared: (limit, rotation) => stackUnprepared(pool, limit, rotation),
     decision: (partition, ticket, cycle) =>
       stackDecision(pool, partition, ticket, cycle),
-    evaluating: (limit) => stackEvaluating(pool, limit),
+    evaluating: (limit, rotation) => stackEvaluating(pool, limit, rotation),
     invalidate: (partition, ticket, cycle, epoch) =>
       stackInvalidate(pool, partition, ticket, cycle, epoch),
     dead: (partition, ticket) => stackDead(pool, partition, ticket),
@@ -781,7 +788,7 @@ export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
     current: (partition, ticket) => stackCurrentRead(pool, partition, ticket),
     evaluated: (partition, ticket, cycle) =>
       stackEvaluated(pool, partition, ticket, cycle),
-    removable: (limit) => stackRemovable(pool, limit),
+    removable: (limit, rotation) => stackRemovable(pool, limit, rotation),
     remove: async (partition, ticket, cycle) => {
       const removed = await pool.query(
         sql`INSERT INTO evaluation_stack_removal (tenant, project, ticket, work_cycle)

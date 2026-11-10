@@ -245,6 +245,19 @@ test("a cycle that is not the ticket's current one writes no marker and consumes
   );
 });
 
+test("evaluations that never clear cannot hold the rest out of a bounded read", async () => {
+  const projects = [];
+  for (let at = 0; at < 3; at += 1)
+    projects.push(await evaluatingOverGone(`rotate-${String(at)}`));
+  const seen = new Set<string>();
+  for (let rotation = 0; rotation < 200; rotation += 1) {
+    for (const each of await finalizerStore().evaluating(1, rotation))
+      seen.add(each.partition.project);
+  }
+  for (const project of projects)
+    assert.ok(seen.has(project.partition.project));
+});
+
 test("only the finalizer opens the door, and the ticket service reads the marker and nothing more", async () => {
   const project = await evaluatingOverGone("invalidate-privileges");
   const partition = project.partition;
