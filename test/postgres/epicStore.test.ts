@@ -284,6 +284,118 @@ test("history keeps every revision, newest first, and pages", async () => {
   assert.equal(await store.history(at.partition, 9, { limit: 2 }), undefined);
 });
 
+/** Each revision of epic 1 as the history answers it, oldest first, one page at a time. */
+async function changesOf(at: Project, limit = 50): Promise<readonly unknown[]> {
+  const store = postgresEpics(apiPool);
+  const revisions = [];
+  let after: number | undefined;
+  for (let pages = 0; pages < 50; pages += 1) {
+    const page = await store.history(at.partition, 1, {
+      limit,
+      ...(after === undefined ? {} : { after }),
+    });
+    assert.ok(page !== undefined);
+    revisions.push(...page.revisions);
+    after = page.nextAfter;
+    if (after === undefined) break;
+  }
+  return revisions
+    .map((each) => ({ visibility: each.visibility, changes: each.changes }))
+    .reverse();
+}
+
+const unchanged = { kind: "Revised", fields: [], added: [], removed: [] };
+
+test("history answers revision 1 as created and a title edit as the title alone", async () => {
+  const at = await opened("epic-history-title", []);
+  const store = postgresEpics(apiPool);
+  await store.save(at.partition, create({ title: "One" }), actor);
+  await store.save(at.partition, revise(1, 1, { title: "Two" }), actor);
+  await store.save(at.partition, revise(1, 2, { title: "Two" }), actor);
+  assert.deepEqual(await changesOf(at), [
+    { visibility: "Active", changes: { kind: "Created" } },
+    { visibility: "Active", changes: { ...unchanged, fields: ["title"] } },
+    { visibility: "Active", changes: unchanged },
+  ]);
+});
+
+test("history answers a summary set where there was none, and cleared again", async () => {
+  const at = await opened("epic-history-summary", []);
+  const store = postgresEpics(apiPool);
+  await store.save(at.partition, create(), actor);
+  await store.save(at.partition, revise(1, 1, { summary: "Now" }), actor);
+  await store.save(at.partition, revise(1, 2), actor);
+  assert.deepEqual((await changesOf(at)).slice(1), [
+    { visibility: "Active", changes: { ...unchanged, fields: ["summary"] } },
+    { visibility: "Active", changes: { ...unchanged, fields: ["summary"] } },
+  ]);
+});
+
+test("history answers an archive and a reactivation each as the visibility, with the revision's own", async () => {
+  const at = await opened("epic-history-archive", []);
+  const store = postgresEpics(apiPool);
+  await store.save(at.partition, create(), actor);
+  await store.save(
+    at.partition,
+    revise(1, 1, { visibility: "Archived" }),
+    actor,
+  );
+  await store.save(at.partition, revise(1, 2, { visibility: "Active" }), actor);
+  const visibility = { ...unchanged, fields: ["visibility"] };
+  assert.deepEqual((await changesOf(at)).slice(1), [
+    { visibility: "Archived", changes: visibility },
+    { visibility: "Active", changes: visibility },
+  ]);
+});
+
+test("history answers the members a revision gained and lost, ascending", async () => {
+  const at = await opened("epic-history-members", [[], [], [], []]);
+  const [a, b, c, d] = at.tickets;
+  assert.ok(a !== undefined && b !== undefined);
+  assert.ok(c !== undefined && d !== undefined);
+  const store = postgresEpics(apiPool);
+  await store.save(at.partition, create({ tickets: [a, b] }), actor);
+  await store.save(at.partition, revise(1, 1, { tickets: [d, c, b] }), actor);
+  assert.deepEqual((await changesOf(at)).slice(1), [
+    {
+      visibility: "Active",
+      changes: { ...unchanged, added: [c, d], removed: [a] },
+    },
+  ]);
+});
+
+test("history compares a page's oldest revision with the one before it on the next page", async () => {
+  const at = await opened("epic-history-pages", []);
+  const store = postgresEpics(apiPool);
+  await store.save(at.partition, create({ title: "One" }), actor);
+  await store.save(at.partition, revise(1, 1, { title: "Two" }), actor);
+  await store.save(
+    at.partition,
+    revise(1, 2, { title: "Two", description: "Three" }),
+    actor,
+  );
+  await store.save(
+    at.partition,
+    revise(1, 3, { title: "Four", description: "Three" }),
+    actor,
+  );
+  await store.save(
+    at.partition,
+    revise(1, 4, { title: "Four", description: "Five" }),
+    actor,
+  );
+  const second = await store.history(at.partition, 1, { limit: 2, after: 4 });
+  assert.deepEqual(
+    second?.revisions.map((each) => [each.revision, each.changes]),
+    [
+      [3, { ...unchanged, fields: ["description"] }],
+      [2, { ...unchanged, fields: ["title"] }],
+    ],
+  );
+  assert.equal(second?.nextAfter, 2);
+  assert.deepEqual(await changesOf(at, 2), await changesOf(at));
+});
+
 test("a revise replaces the members and the list filters by them", async () => {
   const at = await opened("epic-members", [[], [], []]);
   const [a, b, c] = at.tickets;

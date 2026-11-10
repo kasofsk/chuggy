@@ -121,6 +121,15 @@ export const epicListQuerySchema = epicQuery({
 });
 export type EpicListQuery = z.infer<typeof epicListQuerySchema>;
 
+/** The content fields a revision can change beside its members, in the order a history names them. */
+export const epicRevisionFields = [
+  "title",
+  "summary",
+  "description",
+  "visibility",
+] as const;
+export type EpicRevisionField = (typeof epicRevisionFields)[number];
+
 export const epicHistoryQuerySchema = epicQuery(epicPageShape);
 export type EpicHistoryQuery = z.infer<typeof epicHistoryQuerySchema>;
 

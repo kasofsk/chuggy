@@ -11,7 +11,12 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { briefTitleCharsMax } from "../../contract/brief.ts";
-import type { EpicHistoryQuery, EpicListQuery } from "../../contract/epics.ts";
+import {
+  epicRevisionFields,
+  type EpicHistoryQuery,
+  type EpicListQuery,
+  type EpicRevisionField,
+} from "../../contract/epics.ts";
 import { nativeHttpPageItemsMax } from "../../contract/http.ts";
 import {
   epicProgress,
@@ -29,6 +34,7 @@ import type {
   EpicHistoryPage,
   EpicListPage,
   EpicReference,
+  EpicRevisionChanges,
   EpicStore,
   EpicSummary,
   EpicView,
@@ -364,6 +370,40 @@ interface RevisionRow {
   readonly actor_kind: string;
   readonly actor_subject: string;
   readonly title: string;
+  readonly visibility: string;
+  readonly created: boolean;
+  readonly fields: string[] | null;
+  readonly added: string[];
+  readonly removed: string[];
+}
+
+function epicRevisionField(value: string): EpicRevisionField {
+  const found = epicRevisionFields.find((candidate) => candidate === value);
+  if (found === undefined)
+    throw new Error(`postgres epics: ${value} is not a revision field`);
+  return found;
+}
+
+/** A change row is revision 1 exactly where no revision precedes it. */
+function epicRevisionChanges(row: RevisionRow): EpicRevisionChanges {
+  const revision = projectRowCounter(row.revision, "epic revision");
+  if (row.created !== (revision === 1))
+    throw new Error(
+      `postgres epics: revision ${row.revision} does not follow the one before it`,
+    );
+  if (row.created) return { kind: "Created" };
+  if (row.fields === null)
+    throw new Error("postgres epics: a revision's fields are absent");
+  return {
+    kind: "Revised",
+    fields: row.fields.map(epicRevisionField),
+    added: row.added.map((ticket) =>
+      projectRowCounter(ticket, "epic ticket added"),
+    ),
+    removed: row.removed.map((ticket) =>
+      projectRowCounter(ticket, "epic ticket removed"),
+    ),
+  };
 }
 
 async function epicHistory(
@@ -382,8 +422,24 @@ async function epicHistory(
     const found = await client.query<RevisionRow>(
       sql`SELECT c.revision::text AS revision,
                  to_char(c.changed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
-                 c.actor_kind,c.actor_subject,c.title
+                 c.actor_kind,c.actor_subject,c.title,c.visibility,
+                 (p.revision IS NULL) AS created,
+                 array_remove(ARRAY[
+                   CASE WHEN c.title IS DISTINCT FROM p.title THEN 'title' END,
+                   CASE WHEN c.summary IS DISTINCT FROM p.summary THEN 'summary' END,
+                   CASE WHEN c.description IS DISTINCT FROM p.description THEN 'description' END,
+                   CASE WHEN c.visibility IS DISTINCT FROM p.visibility THEN 'visibility' END
+                 ],NULL)::text[] AS fields,
+                 ARRAY(SELECT t::text FROM (SELECT unnest(c.tickets) EXCEPT
+                                            SELECT unnest(p.tickets)) a(t)
+                        ORDER BY a.t)::text[] AS added,
+                 ARRAY(SELECT t::text FROM (SELECT unnest(p.tickets) EXCEPT
+                                            SELECT unnest(c.tickets)) r(t)
+                        ORDER BY r.t)::text[] AS removed
             FROM epic_change c
+            LEFT JOIN epic_change p
+              ON p.tenant=c.tenant AND p.project=c.project
+             AND p.epic=c.epic AND p.revision=c.revision-1
            WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
              AND c.epic=${epic}::bigint
              AND (${query.after ?? null}::bigint IS NULL
@@ -395,6 +451,8 @@ async function epicHistory(
       changedAt: epicText(row.changed_at, "epic change time"),
       actor: { kind: row.actor_kind, subject: row.actor_subject },
       title: row.title,
+      visibility: epicVisibility(row.visibility),
+      changes: epicRevisionChanges(row),
     }));
     const last = revisions.at(-1);
     return {
