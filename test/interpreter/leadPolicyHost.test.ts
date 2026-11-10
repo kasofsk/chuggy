@@ -1769,7 +1769,7 @@ test("a lead the door will not close offers no turn where it stands on a slot it
           authority.access,
           offeredRoutes(() => offering),
         ).execute(decided, new AbortController().signal),
-        /another slot or model/u,
+        /the lead that stands runs on another slot/u,
         `${closed} ${offering}`,
       );
       assert.deepEqual(double.closings, ["lead-session"], closed);
@@ -1795,7 +1795,7 @@ test("a subsidized lead the door will not close offers no turn where it is off t
       hostedAuthority("Refused").access,
       offeredRoutes(() => "Subsidized"),
     ).execute(subsidizedRequest, new AbortController().signal),
-    /another slot or model/u,
+    /the lead that stands runs on another slot/u,
   );
   assert.deepEqual(double.offers, []);
 });
