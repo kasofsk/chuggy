@@ -39,6 +39,9 @@
 # the console's own toolchain will ask a moment later. The walk up the
 # ancestors is the resolver's own, and is bounded.
 #
+# EACH SCRIPT THAT RUNS SAYS HOW LONG IT TOOK, in whole seconds, passed or
+# failed, so the time the gate costs can be laid at the script that spent it.
+#
 # Usage:
 #   .chug/tasks/check-console.sh
 #
@@ -203,7 +206,14 @@ for manifest in "$@"; do
 			esac
 			continue
 		fi
+		started="$(date +%s)"
 		if (cd "$dir" && npm run --silent "$script") >"$work/out" 2>&1; then
+			outcome=ok
+		else
+			outcome=failed
+		fi
+		echo "check-console: $dir $script took $(($(date +%s) - started))s, $outcome"
+		if [ "$outcome" = ok ]; then
 			clean=$((clean + 1))
 		else
 			echo "ERROR $dir: \`npm run $script\` failed"
