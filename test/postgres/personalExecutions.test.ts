@@ -12,14 +12,20 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
+import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectOwnerFallback } from "../../src/adapters/postgres/projectOwnerFallback.ts";
+import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import {
   apiRole,
   poolPlaneRole,
   schedulerRole,
+  workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { postgresWorkerRunEnded } from "../../src/adapters/postgres/workerPlane.ts";
+import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
@@ -36,8 +42,17 @@ import {
   asProjectId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import type { WorkTaskInvocation } from "../../src/interpreter/executionScheduler.ts";
-import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
+import {
+  asAttemptCapabilitySecret,
+  type WorkTaskInvocation,
+} from "../../src/interpreter/executionScheduler.ts";
+import type { RunLimit } from "../../src/interpreter/runEvidence.ts";
+import {
+  workerPoolReconcile,
+  type PersonalRunnerIdentity,
+  type WorkerPoolPollSettings,
+  type WorkerPoolPorts,
+} from "../../src/interpreter/workerPool.ts";
 import {
   agentAccountHarnessCommitted,
   agentAccountHarnessPressed,
@@ -58,9 +73,15 @@ const rig = await schedulerRigOpen();
 const planePool = postgresHarnessRolePool(poolPlaneRole);
 const apiPool = postgresHarnessRolePool(apiRole);
 const schedulerPool = postgresHarnessRolePool(schedulerRole);
+const workerPool = postgresHarnessRolePool(workerPlaneRole);
 
 after(async () => {
-  await Promise.all([planePool.end(), apiPool.end(), schedulerPool.end()]);
+  await Promise.all([
+    planePool.end(),
+    apiPool.end(),
+    schedulerPool.end(),
+    workerPool.end(),
+  ]);
   await rig.close();
 });
 
@@ -925,4 +946,262 @@ test("a project taken off a runner's allowlist stops what it holds there alone, 
   assert.equal(await assignments.renew(runner, inKept, leaseSecs), true);
   assert.equal(await assignments.held(runner, inKept), true);
   assert.equal(await assignments.refuse(runner, inKept, "no node"), true);
+});
+
+/** An invocation whose worker spends Claude, which is what an account's limit pauses. */
+const spendingClaude: WorkTaskInvocation = {
+  ...schedulerInvocation,
+  worker: {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  },
+};
+
+/** The pool plane's settings for a runner holding up to two jobs, one claimed per poll. */
+const benchSettings: WorkerPoolPollSettings = {
+  leaseSecs,
+  cpuMillis: 500,
+  memoryMib: memoryMibDefault,
+  assignmentsPerPollMax: 1,
+  heldMax: 2,
+  sessionsPerPollMax: 1,
+  sessionsHeldMax: 1,
+  deadlineSecs: 600,
+  callbackUrl: "https://plane.invalid/v1/ticket-execution",
+  pollIntervalMs: 1,
+  pollsMax: 1,
+  imageHosts: new Map(),
+};
+
+/** The pool plane's ports over this suite's roles, every project readable by its owner and each name drawn fresh, the bearers among them kept by the assignment drawn before each. */
+function benchPorts(): {
+  readonly ports: WorkerPoolPorts;
+  readonly bearers: Map<string, string>;
+} {
+  const bearers = new Map<string, string>();
+  let drawn: string | undefined;
+  return {
+    bearers,
+    ports: {
+      assignments,
+      runners: postgresWorkerPoolRunners(planePool),
+      access: {
+        authorize: (member) => Promise.resolve(memberAuthority(member)),
+        authorizeTenant: () => Promise.resolve(undefined),
+        authorizeSite: () => Promise.resolve(undefined),
+      },
+      sessions: {
+        store: postgresWorkerPoolSessions(planePool),
+        bindings: postgresProjectRepositoryBinding(planePool),
+        bearers: sessionAttemptMint(),
+      },
+      mint: () => {
+        const minted = `minted-${randomUUID()}`;
+        if (drawn === undefined) drawn = minted;
+        else {
+          bearers.set(drawn, minted);
+          drawn = undefined;
+        }
+        return minted;
+      },
+    },
+  };
+}
+
+/** One reconciliation of `runner` holding `held` and wanting one job, as a poll naming `contract` makes it. */
+function benchPolled(
+  bench: ReturnType<typeof benchPorts>,
+  runner: Runner,
+  held: readonly string[],
+  contract: string,
+) {
+  return workerPoolReconcile(
+    bench.ports,
+    runner,
+    { jobs: held, sessions: [] },
+    { wanted: 1, wantedSessions: 0, contract },
+    benchSettings,
+  );
+}
+
+/** Ends the run of `assignment` under `evidence`, as its harness does on the job plane. */
+async function benchEnded(
+  bench: ReturnType<typeof benchPorts>,
+  assignment: string,
+  evidence: "RunRateLimited" | "RunCreditsExhausted" | "RunFailed",
+  limit?: RunLimit,
+): Promise<void> {
+  const bearer = bench.bearers.get(assignment);
+  assert.ok(bearer !== undefined, "the assignment was claimed with a bearer");
+  assert.equal(
+    await postgresWorkerRunEnded(workerPool).end({
+      secret: asAttemptCapabilitySecret(bearer),
+      generation: 1,
+      evidence,
+      ...(limit === undefined ? {} : { limit }),
+    }),
+    true,
+  );
+}
+
+/** Whether `member`'s Claude account is paused now, and whether it keeps a limit at all. */
+async function benchAccount(member: Principal) {
+  return rig.harness.query(
+    `SELECT (SELECT paused_until IS NOT NULL FROM agent_account_pause($1,'Claude')) AS paused,
+            EXISTS(SELECT 1 FROM agent_account_limit
+                    WHERE principal=$1 AND agent='Claude') AS limited`,
+    [member],
+  );
+}
+
+/** A member's project of two Claude jobs both waiting, and one of their runners. */
+async function benchProject(label: string) {
+  const member = principal("member");
+  const project = await ownedProject(label, member, "Strict", 2);
+  await opened(project, spendingClaude);
+  await opened(project, spendingClaude);
+  return { member, runner: await runnerOf(project.partition, member) };
+}
+
+test("a runner whose release reads outcomes is told its job's usage limit beside its stop in every answer stopping it, and its owner's other work is claimed on", async () => {
+  const { member, runner } = await benchProject("bench-limited");
+  const bench = benchPorts();
+  const first = (await benchPolled(bench, runner, [], workerContractRelease))
+    .assignments[0]?.assignment;
+  assert.ok(first !== undefined);
+  const resetsAt = Math.floor(Date.now() / 1_000) + 7_200;
+  await benchEnded(bench, first, "RunRateLimited", {
+    window: "five_hour",
+    resetsAt,
+  });
+  assert.deepEqual(await benchAccount(member), [
+    { paused: false, limited: false },
+  ]);
+  const stopped = await benchPolled(
+    bench,
+    runner,
+    [first],
+    workerContractRelease,
+  );
+  assert.deepEqual(stopped.stop, [first]);
+  assert.deepEqual(stopped.credentialOutcomes, [
+    { assignment: first, outcome: "UsageLimited", resetsAt },
+  ]);
+  const second = stopped.assignments[0]?.assignment;
+  assert.ok(second !== undefined, "the owner's other job is claimed on");
+  const again = await benchPolled(
+    bench,
+    runner,
+    [first, second],
+    workerContractRelease,
+  );
+  assert.deepEqual(again.stop, [first]);
+  assert.deepEqual(again.credentialOutcomes, stopped.credentialOutcomes);
+  const released = await benchPolled(
+    bench,
+    runner,
+    [second],
+    workerContractRelease,
+  );
+  assert.deepEqual(released.stop, []);
+  assert.equal(Object.hasOwn(released, "credentialOutcomes"), false);
+});
+
+test("a runner of an earlier release is named no outcome, and its job's usage limit pauses its owner's other work as it always did", async () => {
+  const { member, runner } = await benchProject("bench-earlier");
+  const bench = benchPorts();
+  const first = (await benchPolled(bench, runner, [], "1.48.0")).assignments[0]
+    ?.assignment;
+  assert.ok(first !== undefined);
+  await benchEnded(bench, first, "RunRateLimited", {
+    resetsAt: Math.floor(Date.now() / 1_000) + 7_200,
+  });
+  assert.deepEqual(await benchAccount(member), [
+    { paused: true, limited: true },
+  ]);
+  const stopped = await benchPolled(bench, runner, [first], "1.48.0");
+  assert.deepEqual(stopped.stop, [first]);
+  assert.equal(Object.hasOwn(stopped, "credentialOutcomes"), false);
+  assert.deepEqual(stopped.assignments, [], "the paused account claims none");
+  const upgraded = await benchPolled(
+    bench,
+    runner,
+    [first],
+    workerContractRelease,
+  );
+  assert.deepEqual(upgraded.stop, [first]);
+  assert.equal(
+    Object.hasOwn(upgraded, "credentialOutcomes"),
+    false,
+    "a job claimed by an earlier release paused the account, and benches nothing",
+  );
+});
+
+test("each outcome a benching runner's job ended under is named for it alone: a limit with its reset, a limit naming none, and credits run out", async () => {
+  const member = principal("member");
+  const project = await ownedProject("bench-outcomes", member, "Strict", 4);
+  for (let opening = 0; opening < 4; opening += 1)
+    await opened(project, spendingClaude);
+  const runner = await runnerOf(project.partition, member);
+  const bench = benchPorts();
+  const taken: string[] = [];
+  for (let claiming = 0; claiming < 4; claiming += 1) {
+    const answered = await workerPoolReconcile(
+      bench.ports,
+      runner,
+      { jobs: taken, sessions: [] },
+      { wanted: 1, wantedSessions: 0, contract: workerContractRelease },
+      { ...benchSettings, heldMax: 4 },
+    );
+    const assignment = answered.assignments[0]?.assignment;
+    assert.ok(assignment !== undefined);
+    taken.push(assignment);
+  }
+  const [limited, unnamed, empty, failed] = taken as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  const resetsAt = Math.floor(Date.now() / 1_000) + 3_600;
+  await benchEnded(bench, limited, "RunRateLimited", { resetsAt });
+  await benchEnded(bench, unnamed, "RunRateLimited");
+  await benchEnded(bench, empty, "RunCreditsExhausted");
+  await benchEnded(bench, failed, "RunFailed");
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT a.assignment,l.usage_window,
+              extract(epoch FROM l.resets_at)::bigint::text AS resets_at
+         FROM execution_attempt_limit l
+         JOIN execution_attempt a
+           ON (a.tenant,a.project,a.execution,a.attempt)=(l.tenant,l.project,l.execution,l.attempt)
+        WHERE l.tenant=$1 AND l.project=$2`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ assignment: limited, usage_window: null, resets_at: String(resetsAt) }],
+  );
+  const named = await assignments.credentialOutcomes(runner, [
+    ...taken,
+    "never-claimed",
+  ]);
+  assert.deepEqual(
+    [...named].sort((left, right) =>
+      left.assignment.localeCompare(right.assignment),
+    ),
+    [
+      { assignment: limited, outcome: "UsageLimited", resetsAt },
+      { assignment: unnamed, outcome: "UsageLimited" },
+      { assignment: empty, outcome: "CreditsExhausted" },
+    ].sort((left, right) => left.assignment.localeCompare(right.assignment)),
+  );
+  const sibling = await runnerOf(project.partition, member);
+  assert.deepEqual(
+    await assignments.credentialOutcomes(sibling, taken),
+    [],
+    "another of the owner's runners is named none of this one's outcomes",
+  );
+  assert.deepEqual(await benchAccount(member), [
+    { paused: false, limited: false },
+  ]);
 });

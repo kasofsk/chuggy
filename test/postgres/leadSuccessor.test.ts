@@ -348,7 +348,7 @@ test("the successor door is the selector service's own and no other role's", asy
   assert.match(
     (await rig.sessions.harness.attemptAs(
       apiRole,
-      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL,NULL)`,
+      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL,NULL,NULL,NULL)`,
     )) ?? "the API executed the door",
     postgresHarnessDenial(leadOpenFunction),
     "and the refusal is the server's, not a privilege the case only asked about",
@@ -570,6 +570,7 @@ test("a lead opened before it held a window still serves its facts, and the sele
       standing,
       "the windowless objectives",
       successorOpening.autoCompactWindow,
+      {},
     ),
     true,
     "a lead holding no window is replaced at the next decision",

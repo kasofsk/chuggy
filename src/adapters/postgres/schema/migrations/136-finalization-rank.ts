@@ -25,8 +25,8 @@ import {
 
 const signature = `public.${ticketFinalizationRankFunction}(in_tenant text, in_project text, in_ticket bigint)`;
 
-export const migration133: Migration = {
-  version: 133,
+export const migration136: Migration = {
+  version: 136,
   name: "the finalizer asks a ticket's rank on its reference",
   statements: [
     `DROP FUNCTION public.${ticketEvaluationReworkedSinceFunction}(text, text, bigint, bigint)`,

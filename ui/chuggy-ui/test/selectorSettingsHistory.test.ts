@@ -170,3 +170,33 @@ test("a text that grew differs at the line the shorter one does not have", () =>
     after: "two",
   });
 });
+
+test("a model or effort that moved is named by its row, a model as its name and an effort as its word", () => {
+  const diffs = selectorSettingsHistoryDiffs([
+    revisionAt(13, {
+      leadModel: "sonnet",
+      leadEffort: "medium",
+      threadModel: "claude-opus-5-5",
+      threadEffort: "xhigh",
+    }),
+    revisionAt(12, {}),
+  ]);
+  expect(labelsOf(diffs, 0)).toStrictEqual([
+    "Lead model",
+    "Lead effort",
+    "Chat model",
+    "Chat effort",
+  ]);
+  expect(
+    (diffs[0]?.changes ?? []).map((change) => [
+      copyOrDataText(copyTextEn, change.before),
+      copyOrDataText(copyTextEn, change.after),
+      change.mono,
+    ]),
+  ).toStrictEqual([
+    ["Default", "sonnet", false],
+    ["Default", "Medium", false],
+    ["Default", "claude-opus-5-5", false],
+    ["Default", "Extra high", false],
+  ]);
+});

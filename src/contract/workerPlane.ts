@@ -22,6 +22,7 @@ import {
   runContextPageReadingsMax,
   runModelCharsMax,
   runTurnSeriesMax,
+  runUsageInstantSchema,
 } from "./http.ts";
 import {
   workerPlaneAnswersRefusingVersions,
@@ -103,6 +104,7 @@ export {
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
+  runUsageInstantSecsMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
 export {
@@ -145,16 +147,6 @@ export const workerRunContextSchema = z.strictObject({
  * the ceiling sits well above it.
  */
 export const runUsageUtilizationMax = 100;
-
-/** The last Unix second a reading or a limit may name, which is the last a date can. */
-export const runUsageInstantSecsMax = 8_640_000_000_000;
-
-/** An instant the agent runtime names, in whole Unix seconds. */
-const runUsageInstantSchema = z
-  .number()
-  .int()
-  .positive()
-  .max(runUsageInstantSecsMax);
 
 /** How much of one window the account had used, when the window reopens, and when the runtime read it. */
 const runUsageReadingSchema = z.strictObject({

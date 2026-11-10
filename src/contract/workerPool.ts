@@ -5,25 +5,27 @@
  * A POOL IS A PLACEMENT BACKEND AND NOTHING ELSE. It is handed what it needs to
  * size and start a workload and to kill one that stopped answering; everything
  * else — the execution, the ticket, the task, the briefing, the input bundle,
- * every credential and every content reference — the harness fetches from
- * `callbackUrl` under `bearer`, or never leaves the orchestrator at all. That
- * is why this is thin, and why it is here: a third party implements the wire,
- * so it is written where the wire is.
+ * every credential the orchestrator holds and every content reference — the
+ * harness fetches from `callbackUrl` under `bearer`, or never leaves the
+ * orchestrator at all. That is why this is thin, and why it is here: a third
+ * party implements the wire, so it is written where the wire is.
  *
  * NOTHING HERE IDENTIFIES THE WORK, BUT TO ITS OWNER'S MACHINE. `assignment` is
  * opaque because a pool that could read an execution identity would learn the
  * tenant's ticket structure, and capability tokens are opaque because a pool
  * may translate one into a node selector, a scheduler constraint, or nothing.
- * A member's personal runner is told one thing more, each job's project, in
- * the tenant its registration names: it is its owner's machine, where that
- * job's own shells are told the project already, by the core's
- * `workerJobVariables`. A project's pool is told none, since its registration
- * names its project.
+ * A member's personal runner is told two things more: each job's project, in
+ * the tenant its registration names, and how the agent credential of its
+ * owner's own that it handed a job stopped that job. It is its owner's
+ * machine, where that job's own shells are told the project already, by the
+ * core's `workerJobVariables`, and where that credential is kept. A project's
+ * pool is told neither, since its registration names its project and it hands
+ * a job no credential.
  */
 
 import { z } from "zod";
 
-import { nativeHttpRoutes } from "./http.ts";
+import { nativeHttpRoutes, runUsageInstantSchema } from "./http.ts";
 import { sessionContainerEnds } from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
@@ -363,41 +365,92 @@ export const workerRunnerReleasesPinnedSchema = z.strictObject({
 });
 
 /**
+ * How the agent credential a member's personal runner handed a job stopped it,
+ * as the job's harness ended its run on the job plane: `UsageLimited`, ended
+ * `RunRateLimited`, the provider refused it until its usage limit resets, at
+ * `resetsAt` in whole Unix seconds where the runtime named that instant;
+ * `CreditsExhausted`, ended `RunCreditsExhausted`, its account has no credit
+ * left, which names no instant. Neither names the credential, which the runner
+ * already knows.
+ */
+export const workerPoolCredentialOutcomeSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z.strictObject({
+      assignment: workerPoolAssignmentIdentitySchema,
+      outcome: z.literal("UsageLimited"),
+      resetsAt: runUsageInstantSchema.exactOptional(),
+    }),
+    z.strictObject({
+      assignment: workerPoolAssignmentIdentitySchema,
+      outcome: z.literal("CreditsExhausted"),
+    }),
+  ],
+);
+
+/** Whether each credential outcome names an assignment the same answer stops, and no assignment twice. */
+function workerPoolReconciliationOutcomesStopped(answer: {
+  readonly stop: readonly string[];
+  readonly credentialOutcomes?:
+    readonly WorkerPoolCredentialOutcome[] | undefined;
+}): boolean {
+  const named = (answer.credentialOutcomes ?? []).map(
+    (outcome) => outcome.assignment,
+  );
+  const stopped = new Set(answer.stop);
+  return (
+    new Set(named).size === named.length &&
+    named.every((assignment) => stopped.has(assignment))
+  );
+}
+
+/**
  * What a poll is answered with: the executions and the sessions the pool may
  * now place, and the assignments of either kind it must stop. Each list is as
  * long as the plane's own bounds allow and no longer, so a reader bounds the
  * body it takes in.
  */
-export const workerPoolReconciliationSchema = z.strictObject({
-  assignments: z.array(workerPoolAssignmentSchema),
-  sessions: z.array(workerPoolSessionAssignmentSchema),
-  stop: z.array(workerPoolAssignmentIdentitySchema),
-  /**
-   * The release chuggy pins for the package the poll's runner named, whatever
-   * version that runner runs, and the runner decides whether to install it.
-   * It is absent where the poll named no runner or none is pinned for its package.
-   */
-  release: workerRunnerReleaseSchema.optional(),
-  /**
-   * Whether a job the poll's runner would be given, within the room and the
-   * ceiling it named, is still waiting once this answer's claims are made. It
-   * is named only to a poll naming its room whose release reads it, and such a
-   * poll that wants no job and finds one waiting is answered at once, so a
-   * runner with no slot free names a room of 0 or none.
-   */
-  jobsWaiting: z.boolean().optional(),
-  /**
-   * The image a chat host runs its sessions in, by the host it pulls it from,
-   * which is the session image the site publishes as this answer is made: the
-   * host starts one long-lived container from it, whose chat supervisor runs
-   * those sessions, before it names room for any, may pull it while it holds
-   * nothing, and where an answer names another than it runs, drains what it
-   * holds and restarts on the new one. It is named only to a chat host, and
-   * absent where the plane serves no session or its scheduler has published
-   * no launch yet, where the host starts nothing and polls again.
-   */
-  chatImage: workerPoolImageSchema.optional(),
-});
+export const workerPoolReconciliationSchema = z
+  .strictObject({
+    assignments: z.array(workerPoolAssignmentSchema),
+    sessions: z.array(workerPoolSessionAssignmentSchema),
+    stop: z.array(workerPoolAssignmentIdentitySchema),
+    /**
+     * The release chuggy pins for the package the poll's runner named, whatever
+     * version that runner runs, and the runner decides whether to install it.
+     * It is absent where the poll named no runner or none is pinned for its package.
+     */
+    release: workerRunnerReleaseSchema.optional(),
+    /**
+     * Whether a job the poll's runner would be given, within the room and the
+     * ceiling it named, is still waiting once this answer's claims are made. It
+     * is named only to a poll naming its room whose release reads it, and such a
+     * poll that wants no job and finds one waiting is answered at once, so a
+     * runner with no slot free names a room of 0 or none.
+     */
+    jobsWaiting: z.boolean().optional(),
+    /**
+     * The image a chat host runs its sessions in, by the host it pulls it from,
+     * which is the session image the site publishes as this answer is made: the
+     * host starts one long-lived container from it, whose chat supervisor runs
+     * those sessions, before it names room for any, may pull it while it holds
+     * nothing, and where an answer names another than it runs, drains what it
+     * holds and restarts on the new one. It is named only to a chat host, and
+     * absent where the plane serves no session or its scheduler has published
+     * no launch yet, where the host starts nothing and polls again.
+     */
+    chatImage: workerPoolImageSchema.optional(),
+    /**
+     * How the credential stopped each job this answer stops whose run ended
+     * under an outcome, one for each such assignment of `stop` and none for any
+     * other, named in every answer that stops it and so in none once the
+     * runner, which names a job held until an answer stops it, stops naming
+     * it. It is named only to a member's personal runner whose poll's release
+     * reads it, and absent is the default: no job named an outcome.
+     */
+    credentialOutcomes: z.array(workerPoolCredentialOutcomeSchema).optional(),
+  })
+  .refine(workerPoolReconciliationOutcomesStopped);
 
 /**
  * Where a runner reports how its machine and its work are doing: a POST whose
@@ -558,6 +611,9 @@ export type WorkerPoolSessionAssignment = z.infer<
 export type AssignmentOutcome = z.infer<typeof assignmentOutcomeSchema>;
 export type WorkerPoolReconciliation = z.infer<
   typeof workerPoolReconciliationSchema
+>;
+export type WorkerPoolCredentialOutcome = z.infer<
+  typeof workerPoolCredentialOutcomeSchema
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;

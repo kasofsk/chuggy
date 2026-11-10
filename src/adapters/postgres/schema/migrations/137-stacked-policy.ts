@@ -5,8 +5,8 @@
 
 import type { Migration } from "../shared.ts";
 
-export const migration134: Migration = {
-  version: 134,
+export const migration137: Migration = {
+  version: 137,
   name: "a finalization policy may be Stacked",
   statements: [
     `ALTER TABLE public.draft_brief

@@ -36,8 +36,14 @@ module registered_runner {
   /// The most memory a runner takes one execution of, in MiB, which its owner
   /// configures and it advertises; a runner naming none bounds no size.
   type MemoryCeiling = Unbounded | CeilingMib(int)
+  /// The agent an attempt runs, named by its `Agent:<name>` token, or none
+  /// for an attempt that runs commands.
+  type ExecutionAgent = AgentUnnamed | AgentNamed(ExecutionCapability)
+  /// `agentsAdvertised` is whether the runner names among its capabilities
+  /// exactly the agents it takes now, so one it leaves out is an agent it
+  /// does not take.
   type CapabilityInventory = {
-    platforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], memoryCeiling: MemoryCeiling, revision: int
+    platforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], memoryCeiling: MemoryCeiling, agentsAdvertised: bool, revision: int
   }
   /// All authority here is administrator-owned, never advertised inventory.
   /// A Personal runner's `dedicatedOwner` is the member it serves and its
@@ -46,8 +52,9 @@ module registered_runner {
   type Runner = { id: int, account: int, class: RunnerClass, enabled: bool, draining: bool, revoked: bool, trust: int, secretsAllowed: bool, sourceAllowed: bool, dedicatedOwner: int, allowlist: Set[int], sessionGeneration: int, retainedInventory: CapabilityInventory }
   type RunnerSession = { runner: int, generation: int, leaseOpen: bool, slotsOffered: int, slotsUsed: int, inventory: CapabilityInventory }
   type PlacementPhase = Waiting | Assigned | ResultPending | PlacementCancelled
-  /// `memoryMib` is the size the execution runs at, pinned with it.
-  type ExecutionPlacement = { execution: int, attemptGeneration: int, requirement: ExecutionRequirement, profile: ExecutionProfile, requirementIdentity: int, requirementDigest: int, memoryMib: int, phase: PlacementPhase }
+  /// `memoryMib` is the size the execution runs at, pinned with it, and
+  /// `agent` the agent its attempt runs.
+  type ExecutionPlacement = { execution: int, attemptGeneration: int, requirement: ExecutionRequirement, profile: ExecutionProfile, requirementIdentity: int, requirementDigest: int, memoryMib: int, agent: ExecutionAgent, phase: PlacementPhase }
   type AssignmentStatus = Offered | Reported | Verified | AssignmentCancelled
   type Assignment = { id: int, execution: int, attemptGeneration: int, runner: int, sessionGeneration: int, status: AssignmentStatus, manifest: int }
   type PlacementOutcome = NotApplicable | Placeable | Unavailable | DefinitiveIncompatibility
@@ -69,6 +76,14 @@ module registered_runner {
   pure def sizeFits(p: ExecutionPlacement, i: CapabilityInventory): bool = match i.memoryCeiling {
     | Unbounded => true
     | CeilingMib(m) => p.memoryMib <= m
+  }
+  /// Whether a runner takes the placement's agent now: an attempt naming none,
+  /// or one whose agent a runner advertising its agents names. Not taking an
+  /// agent is posture rather than incompatibility, as drain is, so nothing
+  /// configures a runner by it.
+  pure def agentOffered(p: ExecutionPlacement, i: CapabilityInventory): bool = match p.agent {
+    | AgentUnnamed => true
+    | AgentNamed(a) => not(i.agentsAdvertised) or i.executionCapabilities.contains(a)
   }
   pure def policyAllows(r: Runner, e: Execution, p: ExecutionProfile): bool = and {
     p.route == RegisteredRunner, r.class == Personal or r.account == e.account, r.enabled, not(r.draining), not(r.revoked),
@@ -99,10 +114,12 @@ module registered_runner {
   pure def runnerIsLive(s: RunnerState, rid: int): bool = if (s.sessions.keys().contains(rid)) and { not(s.runners.get(rid).draining), sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)) } else false
   /// `placementOutcome` configures a runner without it: the fallback refuses
   /// one only for an owner's runner that is itself configured, so an
-  /// execution it holds back is never definitively incompatible.
+  /// execution it holds back is never definitively incompatible. Under
+  /// Preferred it waits only for a live owner's runner that takes the
+  /// placement's agent; under Strict, for any of them.
   pure def ownerFallbackAllows(s: RunnerState, r: Runner, e: Execution, p: ExecutionPlacement): bool = and {
     r.class == Personal or p.profile.ownerFallback == Preferred or ownerRunners(s, e, p).size() == 0,
-    r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)))
+    r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)) or not(agentOffered(p, s.runners.get(o).retainedInventory)))
   }
   pure def placementOutcome(s: RunnerState, id: int): PlacementOutcome =
     val e = executionById(s, id)
@@ -119,7 +136,8 @@ module registered_runner {
       sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)),
       sessionHasSlot(s.sessions.get(rid)),
       inventoryMatches(p.requirement, s.sessions.get(rid).inventory),
-      sizeFits(p, s.sessions.get(rid).inventory)
+      sizeFits(p, s.sessions.get(rid).inventory),
+      agentOffered(p, s.sessions.get(rid).inventory)
     } else false)) Placeable
     else if (configured.size() > 0) Unavailable
     else DefinitiveIncompatibility
@@ -129,7 +147,7 @@ module registered_runner {
     val p = s.placements.get(id)
     val r = s.runners.get(rid)
     val session = s.sessions.get(rid)
-    and { e.status == Launching, p.phase == Waiting, not(s.assignments.keys().contains(aid)), policyAllows(r, e, p.profile), ownerFallbackAllows(s, r, e, p), sessionIsCurrent(r, session), sessionHasSlot(session), inventoryMatches(p.requirement, session.inventory), sizeFits(p, session.inventory) }
+    and { e.status == Launching, p.phase == Waiting, not(s.assignments.keys().contains(aid)), policyAllows(r, e, p.profile), ownerFallbackAllows(s, r, e, p), sessionIsCurrent(r, session), sessionHasSlot(session), inventoryMatches(p.requirement, session.inventory), sizeFits(p, session.inventory), agentOffered(p, session.inventory) }
     else false
   pure def bindAssignment(s: RunnerState, aid: int, id: int, rid: int): RunnerState =
     val p = s.placements.get(id)

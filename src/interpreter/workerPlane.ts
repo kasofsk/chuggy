@@ -1,9 +1,11 @@
 import {
+  workerContractCredentialOutcome,
   workerContractEvaluatedTree,
   workerContractMemoryRoom,
   workerContractRelease,
   workerContractRunContext,
   workerContractRunUsage,
+  workerContractRunnerAgentsAdvertised,
   workerContractSessionContext,
   workerContractTargetRef,
   workerContractUnnamed,
@@ -82,6 +84,18 @@ export const workerContractRunnerProjects: WorkerContractRange = {
 /** The versions in which a poll's answer may say whether a job its runner fits is waiting, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerJobsWaiting: WorkerContractRange = {
   min: workerContractMemoryRoom,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a personal runner's poll may be answered with how a credential stopped each job the answer stops, a field a pool of an earlier one refuses its whole answer over. */
+export const workerContractRunnerCredentialOutcomes: WorkerContractRange = {
+  min: workerContractCredentialOutcome,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a personal runner's poll advertises exactly the agents it takes now, so its claim takes a job only of an agent it names or of none. */
+export const workerContractRunnerAgents: WorkerContractRange = {
+  min: workerContractRunnerAgentsAdvertised,
   max: workerContractAccepted.max,
 };
 

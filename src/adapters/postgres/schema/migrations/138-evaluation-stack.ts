@@ -39,7 +39,7 @@ const signature = `public.${ticketStackedFailuresFunction}(in_tenant text, in_pr
 const gitObject = "'^([0-9a-f]{40}|[0-9a-f]{64})$'";
 
 /** The most tickets beneath a stack. */
-export const evaluationStackDepthMaxAt135 = 3;
+export const evaluationStackDepthMaxAt138 = 3;
 
 /** The work cycle a ticket's rework event evaluated, null for any other entry. */
 const evaluatedCycle = `CASE WHEN j.entry IS JSON OBJECT
@@ -50,8 +50,8 @@ const evaluatedCycle = `CASE WHEN j.entry IS JSON OBJECT
                     j.entry::jsonb#>>'{event,value,report,value,failure,task,value,workCycle}')::bigint
                   END`;
 
-export const migration135: Migration = {
-  version: 135,
+export const migration138: Migration = {
+  version: 138,
   name: "an evaluation over a stack keeps the stack it ran over",
   statements: [
     `CREATE TABLE public.evaluation_stack (
@@ -82,7 +82,7 @@ export const migration135: Migration = {
        work_cycle bigint NOT NULL,
        depth integer NOT NULL
          CONSTRAINT evaluation_stack_beneath_depth_is_bounded
-         CHECK (depth BETWEEN 1 AND ${String(evaluationStackDepthMaxAt135)}),
+         CHECK (depth BETWEEN 1 AND ${String(evaluationStackDepthMaxAt138)}),
        beneath_ticket bigint NOT NULL
          CONSTRAINT evaluation_stack_beneath_ticket_is_positive CHECK (beneath_ticket >= 1),
        beneath_commit text NOT NULL

@@ -491,6 +491,19 @@ test("work a usage limit stopped says so rather than that its attempt ended", as
   );
 });
 
+test("work whose account ran out of credits says so, and is never resumed", async () => {
+  const { routed, execution } = await routedTicket("loss-credits");
+  const pool = await poolOf(routed);
+  const { bearer } = await claimed(routed, execution, pool);
+  await lostOnRunner(routed, bearer, undefined, "RunCreditsExhausted");
+  assert.deepEqual(await standing(routed), workLost);
+  assert.equal(await resumedByScheduler(routed), 0);
+  assert.equal(
+    await settledReport(routed, execution),
+    "The account ran out of credits.",
+  );
+});
+
 test("work its worker reported failed is never resumed, and its read names no runner", async () => {
   const { routed, execution } = await routedTicket("loss-reported-fail");
   const pool = await poolOf(routed);

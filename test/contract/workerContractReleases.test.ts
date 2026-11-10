@@ -24,6 +24,7 @@ import { workerContractHistory } from "../../scripts/worker-contract-wire.ts";
 import {
   workerContractHeader,
   workerContractRelease,
+  workerContractCredentialOutcome,
   workerContractRunDiskLow,
 } from "../../src/contract/workerContract.ts";
 import {
@@ -179,6 +180,28 @@ test("a run ends `RunDiskLow` from the version a runner holds a plane's release 
           z.array(z.string()).optional(),
         )
       )?.includes("RunDiskLow") ?? false,
+      contractVersionAccepted(from, release),
+      release,
+    );
+});
+
+test("a run ends `RunCreditsExhausted` from the version a harness holds a plane's release to, and no release below it names that label", async () => {
+  const from = {
+    min: workerContractCredentialOutcome,
+    max: workerContractAccepted.max,
+  };
+  assert.ok(runEndedEvidences.includes("RunCreditsExhausted"));
+  assert.ok(contractVersionAccepted(from, workerContractRelease));
+  for (const release of workerContractReplayed("job"))
+    assert.equal(
+      (
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "runEndedEvidences",
+          z.array(z.string()).optional(),
+        )
+      )?.includes("RunCreditsExhausted") ?? false,
       contractVersionAccepted(from, release),
       release,
     );

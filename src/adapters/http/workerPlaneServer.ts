@@ -1424,6 +1424,8 @@ function sessionFactsRoute(register: SessionRegistrar): void {
       ...(identity.autoCompactWindow === undefined
         ? {}
         : { autoCompactWindow: identity.autoCompactWindow }),
+      ...(identity.model === undefined ? {} : { model: identity.model }),
+      ...(identity.effort === undefined ? {} : { effort: identity.effort }),
       ...(identity.forkFrom === undefined
         ? {}
         : { forkFrom: identity.forkFrom }),

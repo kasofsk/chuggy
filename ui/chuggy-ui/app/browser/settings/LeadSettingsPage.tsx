@@ -58,6 +58,8 @@ import type {
 } from "../selectorSettingsWriting.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { SelectorLimitsSection } from "./lead/SelectorLimitsSection.tsx";
+import { SelectorModelsSection } from "./lead/SelectorModelsSection.tsx";
+import type { SelectorRowsChrome } from "./lead/SelectorRowsSection.tsx";
 import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
 import { SelectorTextSection } from "./lead/SelectorTextSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
@@ -77,6 +79,33 @@ interface SelectorSettingsSectionChrome {
   readonly onOpen: (name: SelectorSettingsSectionName | undefined) => void;
   readonly onSave: (name: SelectorSettingsSectionName) => void;
   readonly onCancel: (name: SelectorSettingsSectionName) => void;
+}
+
+/** A section of rows' chrome, as the page holds it for the section named. */
+function selectorRowsChrome(
+  chrome: SelectorSettingsSectionChrome,
+  name: "limits" | "models",
+  savable: boolean,
+): SelectorRowsChrome {
+  return {
+    draft: chrome.draft,
+    faults: selectorSettingsWrite(chrome.draft).faults,
+    editing: chrome.editing === name,
+    editable: chrome.editing === undefined,
+    savable,
+    saved: selectorSettingsShown(chrome.writing, name),
+    onChange: chrome.onChange,
+    onEdit: () => {
+      chrome.onOpen(name);
+    },
+    onCancel: () => {
+      chrome.onCancel(name);
+    },
+    onSave: () => {
+      chrome.onSave(name);
+    },
+    onReload: chrome.writing.reload,
+  };
 }
 
 function SelectorSettingsSections(props: {
@@ -120,24 +149,11 @@ function SelectorSettingsSections(props: {
         />
       ))}
       <SelectorLimitsSection
-        draft={chrome.draft}
+        {...selectorRowsChrome(chrome, "limits", savable)}
         settings={chrome.settings}
-        faults={selectorSettingsWrite(chrome.draft).faults}
-        editing={editing === "limits"}
-        editable={editing === undefined}
-        savable={savable}
-        saved={selectorSettingsShown(chrome.writing, "limits")}
-        onChange={chrome.onChange}
-        onEdit={() => {
-          chrome.onOpen("limits");
-        }}
-        onCancel={() => {
-          chrome.onCancel("limits");
-        }}
-        onSave={() => {
-          chrome.onSave("limits");
-        }}
-        onReload={chrome.writing.reload}
+      />
+      <SelectorModelsSection
+        {...selectorRowsChrome(chrome, "models", savable)}
       />
     </>
   );

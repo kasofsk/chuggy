@@ -482,7 +482,8 @@ it.
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
 registered, last polled and last polled as one that could take an execution,
-and the runner package and version its newest poll named. Written by the API
+the runner package and version its newest poll named, and whether that poll's
+release names among its capabilities exactly the agents it takes. Written by the API
 role, which registers and removes it whole, and by the pool plane, which
 stamps its polls and what they name; the pool plane, the scheduler and the
 boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,

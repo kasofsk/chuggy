@@ -35,7 +35,10 @@
  * owner's runners able to run it at its size, while their allowlist names the
  * project, holds the claim back under `Strict`, and under
  * `Preferred` while it polled for an execution within
- * `sessionRunnerPolledSecsMax`, unless the poll named its owner revoked.
+ * `sessionRunnerPolledSecsMax` and takes the attempt's agent as
+ * `worker_pool_agent_offered` reads it, unless the poll named its owner
+ * revoked. So a `Preferred` job whose owner's runners leave its agent out is
+ * the pool's, and a `Strict` one waits for them.
  * The rest hold before a claim is made: the bearer's authentication refuses a
  * token that lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a
  * claim is made only by a poll, and drain, trust, secrets, source and a
@@ -128,6 +131,7 @@ import {
 } from "../../interpreter/workerPoolRegistrationToken.ts";
 import {
   personalExecutionClaimed,
+  personalExecutionCredentialOutcomes,
   personalExecutionWaiting,
   personalExecutionsAllowlisted,
   personalExecutionsPolled,
@@ -344,14 +348,20 @@ function workerPoolCeilingRead(kept: string | null): number | undefined {
 
 /**
  * The runner, capabilities and memory ceiling each caller's newest poll named,
- * on its own row and under its current registration, written as one statement
- * and only where it differs from what is kept, so a poll that names what it
- * named before writes nothing; capabilities or a ceiling named as none keep
- * what is recorded.
+ * and whether a personal runner's advertises its agents, on its own row and
+ * under its current registration, written as one statement and only where it
+ * differs from what is kept, so a poll that names what it named before writes
+ * nothing; capabilities or a ceiling named as none keep what is recorded.
  */
 export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
   return {
-    named: async (identity, runner, capabilities, memoryCeilingMib) => {
+    named: async (
+      identity,
+      runner,
+      capabilities,
+      memoryCeilingMib,
+      agentsAdvertised = false,
+    ) => {
       const named = runner?.package ?? null;
       const version = runner?.version ?? null;
       const advertised = capabilities === undefined ? null : [...capabilities];
@@ -374,13 +384,16 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
           await pool.query(sql`UPDATE personal_runner r
             SET runner_package=${named},runner_version=${version},
                 capabilities=COALESCE(${advertised}::text[],r.capabilities),
-                memory_ceiling_mib=COALESCE(${ceiling}::bigint,r.memory_ceiling_mib)
+                memory_ceiling_mib=COALESCE(${ceiling}::bigint,r.memory_ceiling_mib),
+                agents_advertised=${agentsAdvertised}::boolean
             WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
               AND r.principal=${identity.principal}
-              AND (r.runner_package,r.runner_version,r.capabilities,r.memory_ceiling_mib)
+              AND (r.runner_package,r.runner_version,r.capabilities,r.memory_ceiling_mib,
+                   r.agents_advertised)
                 IS DISTINCT FROM (${named}::text,${version}::text,
                   COALESCE(${advertised}::text[],r.capabilities),
-                  COALESCE(${ceiling}::bigint,r.memory_ceiling_mib))`);
+                  COALESCE(${ceiling}::bigint,r.memory_ceiling_mib),
+                  ${agentsAdvertised}::boolean)`);
           return;
         case "ChatHost":
           await pool.query(sql`UPDATE chat_host h
@@ -483,7 +496,6 @@ async function workerPoolClaimed(
   bearer: string,
   ownersRevoked: readonly Principal[],
 ): Promise<WorkerPoolClaimed | undefined> {
-  const { partition } = identity;
   const room = terms.memoryRoomMib ?? null;
   await workerPoolClaimLocked(client, identity);
   const found = await client.query<{
@@ -498,7 +510,7 @@ async function workerPoolClaimed(
         JOIN execution x ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
         JOIN worker_pool w ON w.tenant=q.tenant AND w.project=q.project
         CROSS JOIN LATERAL agent_account_pause(w.registered_by,q.agent) held
-        WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
+        WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
           AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
@@ -522,7 +534,8 @@ async function workerPoolClaimed(
               AND (r.memory_ceiling_mib IS NULL
                    OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
               AND (x.owner_fallback='Strict'
-                   OR r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)))
+                   OR (r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)
+                       AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised))))
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
           AND (held.paused_until IS NULL OR held.admitted_by_press)
@@ -593,7 +606,8 @@ async function workerPoolWaiting(
               AND (r.memory_ceiling_mib IS NULL
                    OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
               AND (x.owner_fallback='Strict'
-                   OR r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)))
+                   OR (r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)
+                       AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised))))
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
           AND (held.paused_until IS NULL OR held.admitted_by_press)
@@ -876,6 +890,8 @@ export function postgresWorkerPoolAssignments(
       return personalExecutionWaiting(pool, identity, terms, projects);
     },
     allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
+    credentialOutcomes: (identity, assignments) =>
+      personalExecutionCredentialOutcomes(pool, identity, assignments),
     polled: (identity, executions) =>
       identity.kind === "Personal"
         ? personalExecutionsPolled(pool, identity, executions)

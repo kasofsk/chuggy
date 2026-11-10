@@ -314,6 +314,37 @@ export const leadAutoCompactWindowTokensDefault = 200_000;
 export const leadAutoCompactWindowTokensMin = 100_000;
 export const leadAutoCompactWindowTokensMax = 1_000_000;
 
+/**
+ * The efforts a session may be told to run at: the agent SDK's `EffortLevel`,
+ * in its own order. Codex's are `codexReasoningEfforts`, a different list.
+ */
+export const sessionEfforts = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export type SessionEffort = (typeof sessionEfforts)[number];
+
+/** What a model name opens with: anything but `-`, which Claude Code would read as a flag. */
+export const sessionModelUnflagged = /^[^-]/u;
+
+/** What a model name holds: no whitespace and no control character. */
+export const sessionModelUnspaced = /^[^\s\p{Cc}\p{Cs}]*$/u;
+
+/**
+ * A model a session may be told to run on: a name Claude Code's `--model`
+ * takes, an alias or a full identity, bounded as a run's reported model is.
+ * Whether the runtime knows the name is the runtime's to judge.
+ */
+export const sessionModelSchema = z
+  .string()
+  .min(1)
+  .max(runModelCharsMax)
+  .regex(sessionModelUnflagged)
+  .regex(sessionModelUnspaced);
+
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
 
@@ -942,6 +973,16 @@ export const changeResourceSchema = z
   .max(projectChangeResourceCharsMax);
 
 export const countSchema = z.number().int().safe().nonnegative();
+
+/** The last Unix second a reading or a limit may name, which is the last a date can. */
+export const runUsageInstantSecsMax = 8_640_000_000_000;
+
+/** An instant the agent runtime names, in whole Unix seconds. */
+export const runUsageInstantSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(runUsageInstantSecsMax);
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
 /**

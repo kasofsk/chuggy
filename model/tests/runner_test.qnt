@@ -22,6 +22,7 @@ module registered_runner_test {
     executionCapabilities: Set(
       "Agent:Claude", "Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
     memoryCeiling: Unbounded,
+    agentsAdvertised: false,
     revision: 1
   }
   pure val runner: Runner = {
@@ -41,7 +42,7 @@ module registered_runner_test {
   pure def placement(id: int, requirement: ExecutionRequirement): ExecutionPlacement = {
     execution: id, attemptGeneration: 1, requirement: requirement,
     profile: personalProfile, requirementIdentity: id, requirementDigest: 101,
-    memoryMib: 4096, phase: Waiting
+    memoryMib: 4096, agent: AgentNamed("Agent:Claude"), phase: Waiting
   }
   pure val initial: RunnerState = {
     runners: Map(1 -> runner), sessions: Map(1 -> session),
@@ -401,5 +402,63 @@ module registered_runner_test {
       canAssign(unlisted, 1, 2, 10), placementOutcome(unlisted, 1) == Placeable,
       canAssign(disallowed, 1, 2, 10), placementOutcome(disallowed, 1) == Placeable,
       canAssign(ownerless, 1, 2, 10), placementOutcome(ownerless, 1) == Placeable
+    })
+
+  /// The owner's runner 1 advertising, as the agents it takes, `agents`
+  /// beside every other capability of `inventory`.
+  pure def advertising(state: RunnerState, agents: Set[ExecutionCapability]): RunnerState =
+    val advertised = { ...inventory, agentsAdvertised: true,
+      executionCapabilities: agents.union(Set("Tool:Xcode", "Simulator:iOS")) }
+    { ...state,
+      runners: state.runners.set(1, { ...runner, retainedInventory: advertised }),
+      sessions: state.sessions.set(1, { ...session, inventory: advertised }) }
+
+  /// `state` with its execution's attempt running `agent`.
+  pure def running(state: RunnerState, agent: ExecutionAgent): RunnerState =
+    { ...state, placements: state.placements.set(1, { ...state.placements.get(1), agent: agent }) }
+
+  run advertisingRunnerTakesOnlyTheAgentsItNamesTest =
+    val codexOnly = advertising(initial, Set("Agent:Codex"))
+    val neither = advertising(initial, Set())
+    val both = advertising(initial, Set("Agent:Claude", "Agent:Codex"))
+    assert(and {
+      not(agentOffered(codexOnly.placements.get(1), codexOnly.sessions.get(1).inventory)),
+      not(canAssign(codexOnly, 1, 1, 10)),
+      placementOutcome(codexOnly, 1) == Unavailable,
+      canAssign(running(codexOnly, AgentNamed("Agent:Codex")), 1, 1, 10),
+      not(canAssign(running(neither, AgentNamed("Agent:Codex")), 1, 1, 10)),
+      canAssign(running(neither, AgentUnnamed), 1, 1, 10),
+      canAssign(both, 1, 1, 10),
+      canAssign(running(both, AgentNamed("Agent:Codex")), 1, 1, 10)
+    })
+
+  run runnerNotAdvertisingAgentsTakesAnyAgentTest =
+    val unadvertised = { ...inventory, executionCapabilities: Set("Agent:Codex", "Tool:Xcode") }
+    val state = { ...initial,
+      runners: Map(1 -> { ...runner, retainedInventory: unadvertised }),
+      sessions: Map(1 -> { ...session, inventory: unadvertised }) }
+    assert(and {
+      agentOffered(state.placements.get(1), unadvertised),
+      canAssign(state, 1, 1, 10),
+      placementOutcome(state, 1) == Placeable
+    })
+
+  run preferredFallbackTakesDedicatedWhileOwnerRunnerLeavesOutItsAgentTest =
+    val benched = advertising(fallback(Preferred), Set("Agent:Codex"))
+    val restored = advertising(fallback(Preferred), Set("Agent:Claude", "Agent:Codex"))
+    assert(and {
+      not(canAssign(benched, 1, 1, 10)),
+      canAssign(benched, 1, 2, 10),
+      placementOutcome(benched, 1) == Placeable,
+      canAssign(restored, 1, 1, 10),
+      not(canAssign(restored, 1, 2, 10))
+    })
+
+  run strictFallbackWaitsWhileOwnerRunnerLeavesOutItsAgentTest =
+    val benched = advertising(fallback(Strict), Set("Agent:Codex"))
+    assert(and {
+      not(canAssign(benched, 1, 1, 10)),
+      not(canAssign(benched, 1, 2, 10)),
+      placementOutcome(benched, 1) == Unavailable
     })
 }

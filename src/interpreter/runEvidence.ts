@@ -257,6 +257,7 @@ export type RunStepEvidence = (typeof runStepEvidences)[number];
 export const runEndedEvidences = [
   "RunFailed",
   "RunRateLimited",
+  "RunCreditsExhausted",
   "RunTurnsExhausted",
   "RunUploadRefused",
   ...runStepEvidences,
@@ -275,6 +276,7 @@ export function runEndedLoss(evidence: RunEndedEvidence): AttemptLoss {
     case "RunRateLimited":
       return "Withdrawn";
     case "RunFailed":
+    case "RunCreditsExhausted":
     case "RunTurnsExhausted":
     case "RunUploadRefused":
     case "RunCloneFailed":

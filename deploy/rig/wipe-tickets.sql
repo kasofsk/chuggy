@@ -80,6 +80,7 @@ TRUNCATE TABLE
   public.evaluation_stack_removal,
   public.execution,
   public.execution_attempt,
+  public.execution_attempt_limit,
   public.execution_request,
   public.execution_request_task,
   public.execution_result,

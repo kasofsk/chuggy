@@ -30,6 +30,7 @@ import type {
   SessionTurnInputKind,
   SessionTurnMeasured,
 } from "./agentSession.ts";
+import type { SessionEffort } from "../contract/http.ts";
 import type { SessionContextOffered } from "../contract/responses.ts";
 import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { SessionLiveEvent } from "../contract/sessionLive.ts";
@@ -56,6 +57,10 @@ export interface SessionPlaneIdentity {
   readonly systemPrompt?: string;
   /** The context, in tokens, a lead's runtime compacts at, absent for every other session. */
   readonly autoCompactWindow?: number;
+  /** The model the session runs on, absent where it takes the site's session model; an inquiry's is its lead's. */
+  readonly model?: string;
+  /** The effort the session runs at, absent where the runtime chooses; an inquiry's is its lead's. */
+  readonly effort?: SessionEffort;
   /**
    * The transcript this attempt forks from, which is the parent's runtime
    * reference and is present only for an inquiry. It is the parent's and never

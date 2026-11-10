@@ -45,6 +45,14 @@
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *
+ * A PERSONAL RUNNER WHOSE RELEASE READS A CREDENTIAL'S OUTCOME BENCHES THE
+ * CREDENTIAL, NOT ITS OWNER'S ACCOUNT. The plane holds no agent credential for
+ * a member's runner, so every job it runs is on one its owner keeps there. A
+ * job such a poll claims is recorded so on its attempt, its usage limit pauses
+ * no account, and each answer that stops it names how its run ended, where
+ * that was a usage limit or credits run out. A job claimed by an earlier
+ * release, a pool's, and the cluster's pause the account as they always did.
+ *
  * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
  * row and its owner's permit. It claims sessions and never an execution, and
  * may name how long a session it claims may sit idle, which the plane caps at
@@ -81,6 +89,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type {
   AssignmentOutcome,
   WorkerPoolAssignment,
+  WorkerPoolCredentialOutcome,
   WorkerPoolReconciliation,
   WorkerPoolSessionAssignment,
   WorkerRunner,
@@ -103,6 +112,8 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerAgents,
+  workerContractRunnerCredentialOutcomes,
   workerContractRunnerJobsWaiting,
   workerContractRunnerProjects,
   type WorkerContractRange,
@@ -351,6 +362,11 @@ export interface WorkerPoolClaimed {
   readonly runtime?: string;
 }
 
+/** What a personal runner's claim is held to beyond a pool's: whether its runner benches the credential it hands the job, which a claim absent it does not. */
+export interface WorkerPoolPersonalClaimTerms extends WorkerPoolClaimTerms {
+  readonly runnerBenchesCredential?: boolean;
+}
+
 /** What a personal runner's claim produced: a claim's, and the project of the attempt it took. */
 export interface WorkerPoolPersonalClaimed extends WorkerPoolClaimed {
   readonly project: ProjectId;
@@ -415,11 +431,16 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   /** One claim by a personal runner, in one of `projects` alone. */
   claimPersonal(
     identity: PersonalRunnerIdentity,
-    terms: WorkerPoolClaimTerms,
+    terms: WorkerPoolPersonalClaimTerms,
     assignment: string,
     bearer: string,
     projects: readonly ProjectId[],
   ): Promise<WorkerPoolPersonalClaimed | undefined>;
+  /** How the run of each of `assignments` this registration claimed benching its credential ended, where it ended under an outcome, one for each such assignment. */
+  credentialOutcomes(
+    identity: PersonalRunnerIdentity,
+    assignments: readonly string[],
+  ): Promise<readonly WorkerPoolCredentialOutcome[]>;
   /** Whether `claim` on the same terms would take an attempt now, taking none. */
   waiting(
     identity: WorkerPoolIdentity,
@@ -465,8 +486,11 @@ export interface WorkerPoolPollSettings {
  * Where what a caller's newest poll named is kept, under its current
  * registration alone: the runner, which a poll naming none keeps none of, so a
  * machine moved back to a runner too old to name itself is not shown as the
- * version it left; and the capabilities and the memory ceiling, which a poll
- * naming none leaves as they were recorded.
+ * version it left; the capabilities and the memory ceiling, which a poll
+ * naming none leaves as they were recorded; and, for a personal runner,
+ * whether those capabilities name exactly the agents it takes, which every
+ * poll writes afresh from its release, so a runner moved back to an earlier
+ * one is read as that one.
  */
 export interface WorkerPoolRunners {
   named(
@@ -474,6 +498,7 @@ export interface WorkerPoolRunners {
     runner: WorkerRunner | undefined,
     capabilities: readonly string[] | undefined,
     memoryCeilingMib?: number,
+    agentsAdvertised?: boolean,
   ): Promise<void>;
 }
 
@@ -607,6 +632,7 @@ async function workerPoolClaimMade(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
+  contract: string | undefined,
 ): Promise<WorkerPoolClaimer> {
   const { access, assignments } = ports;
   const held = (memoryRoomMib: number | undefined): WorkerPoolClaimTerms => ({
@@ -648,11 +674,15 @@ async function workerPoolClaimMade(
           claim: () => Promise.resolve(undefined),
           waiting: () => Promise.resolve(false),
         };
+      const runnerBenchesCredential = contractVersionAccepted(
+        workerContractRunnerCredentialOutcomes,
+        contract,
+      );
       return {
         claim: (assignment, bearer, room) =>
           assignments.claimPersonal(
             identity,
-            held(room),
+            { ...held(room), runnerBenchesCredential },
             assignment,
             bearer,
             projects,
@@ -732,7 +762,12 @@ async function workerPoolClaims(
   if (wanted <= 0 && !answersWaiting) return { assignments };
   if (wanted <= 0 && asked.memoryRoomMib === 0)
     return { assignments, jobsWaiting: false };
-  const claimer = await workerPoolClaimMade(ports, identity, settings);
+  const claimer = await workerPoolClaimMade(
+    ports,
+    identity,
+    settings,
+    asked.contract,
+  );
   let room = asked.memoryRoomMib;
   let exhausted = false;
   for (let taken = 0; taken < wanted; taken += 1) {
@@ -797,6 +832,34 @@ function workerPoolSessionsClaimed(
 }
 
 /**
+ * How the credential stopped each job of `stopped`, named only to a personal
+ * runner whose poll's release reads it, and absent where it names none.
+ */
+async function workerPoolCredentialOutcomesNamed(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  stopped: readonly string[],
+  contract: string | undefined,
+): Promise<Pick<WorkerPoolReconciliation, "credentialOutcomes">> {
+  if (
+    identity.kind !== "Personal" ||
+    stopped.length === 0 ||
+    !contractVersionAccepted(workerContractRunnerCredentialOutcomes, contract)
+  )
+    return {};
+  const outcomes = await ports.assignments.credentialOutcomes(
+    identity,
+    stopped,
+  );
+  const named = new Set(stopped);
+  if (outcomes.some((outcome) => !named.delete(outcome.assignment)))
+    throw new Error(
+      "a credential outcome named a job its answer does not stop, or one twice",
+    );
+  return outcomes.length === 0 ? {} : { credentialOutcomes: [...outcomes] };
+}
+
+/**
  * One reconciliation pass, which is a renewal of what is held and a claim of
  * what is not, each kind through its own rows. Each kind's room is the least
  * of what the pool asked, the plane's per-poll bound and what its held bound
@@ -813,13 +876,14 @@ export async function workerPoolReconcile(
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
   const claimant = workerPoolSessionClaimant(identity);
+  const jobsStopped = await workerPoolHeldReconciled(
+    ports.assignments,
+    identity,
+    holding.jobs,
+    settings.leaseSecs,
+  );
   const stop = [
-    ...(await workerPoolHeldReconciled(
-      ports.assignments,
-      identity,
-      holding.jobs,
-      settings.leaseSecs,
-    )),
+    ...jobsStopped,
     ...(claimant === undefined
       ? []
       : await workerPoolHeldReconciled(
@@ -855,6 +919,12 @@ export async function workerPoolReconcile(
       ...(asked.contract === undefined ? {} : { contract: asked.contract }),
     }),
     stop,
+    ...(await workerPoolCredentialOutcomesNamed(
+      ports,
+      identity,
+      jobsStopped,
+      asked.contract,
+    )),
   };
 }
 
@@ -883,7 +953,8 @@ async function workerPoolHoldingRead(
 
 /**
  * Records the runner this poll named, and the capabilities it has and the
- * memory ceiling it takes jobs under where it named them, and the poll as the
+ * memory ceiling it takes jobs under where it named them, whether a personal
+ * runner's release advertises its agents among them, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -906,6 +977,8 @@ async function workerPoolPollRecorded(
     asked.runner,
     asked.capabilities,
     asked.memoryCeilingMib,
+    identity.kind === "Personal" &&
+      contractVersionAccepted(workerContractRunnerAgents, asked.contract),
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (

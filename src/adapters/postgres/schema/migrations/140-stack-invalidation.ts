@@ -50,8 +50,8 @@ const signature = `public.${stackInvalidationFunction}(in_tenant text, in_projec
 
 const fields = ["version", "command", "ticket", "workCycle", "evidence"];
 
-export const migration137: Migration = {
-  version: 137,
+export const migration140: Migration = {
+  version: 140,
   name: "the finalizer abandons an evaluation whose stack no longer stands",
   statements: [
     `CREATE TABLE public.evaluation_stack_dead (

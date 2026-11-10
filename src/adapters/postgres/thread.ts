@@ -26,6 +26,7 @@
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
+import { sessionEfforts } from "../../contract/http.ts";
 
 import {
   placementRoutes,
@@ -50,6 +51,7 @@ import {
 } from "../../interpreter/projectStore.ts";
 import {
   allThreadWakeReasons,
+  type ThreadProjectTexts,
   type ThreadSeededDraft,
   type ThreadSeededRefusal,
 } from "../../interpreter/thread.ts";
@@ -391,7 +393,8 @@ async function threadOpen(
           FROM open_member_thread(
             ${input.partition.tenant},${input.partition.project},
             ${input.principal},${input.session},${input.key},
-            ${input.credentialSlot},${input.systemPrompt})`,
+            ${input.credentialSlot},${input.systemPrompt},
+            ${input.model ?? null},${input.effort ?? null})`,
   );
   return threadOpenAnswered(pool, streamsMax, input.partition, answered.rows);
 }
@@ -624,6 +627,41 @@ export function postgresThreads(
   };
 }
 
+/** The project's texts, model and effort a thread is opened with, each absent where the project has not set it. */
+async function threadProjectTexts(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<ThreadProjectTexts> {
+  const found = await pool.query<{
+    north_star: string | null;
+    thread_standing_rules: string | null;
+    thread_model: string | null;
+    thread_effort: string | null;
+  }>(
+    sql`SELECT north_star,thread_standing_rules,thread_model,thread_effort
+            FROM selector_project_settings
+           WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return {};
+  return {
+    ...(row.north_star === null ? {} : { northStar: row.north_star }),
+    ...(row.thread_standing_rules === null
+      ? {}
+      : { standingRules: row.thread_standing_rules }),
+    ...(row.thread_model === null ? {} : { model: row.thread_model }),
+    ...(row.thread_effort === null
+      ? {}
+      : {
+          effort: sessionRowMember(
+            sessionEfforts,
+            row.thread_effort,
+            "thread effort",
+          ),
+        }),
+  };
+}
+
 /**
  * What a thread's first turn is seeded from. The project's two texts are read
  * as themselves rather than as the whole resolved settings record, so the
@@ -634,23 +672,7 @@ export function postgresThreads(
  */
 export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
   return {
-    projectTexts: async (partition) => {
-      const found = await pool.query<{
-        north_star: string | null;
-        thread_standing_rules: string | null;
-      }>(
-        sql`SELECT north_star,thread_standing_rules FROM selector_project_settings
-             WHERE tenant=${partition.tenant} AND project=${partition.project}`,
-      );
-      const row = found.rows[0];
-      if (row === undefined) return {};
-      return {
-        ...(row.north_star === null ? {} : { northStar: row.north_star }),
-        ...(row.thread_standing_rules === null
-          ? {}
-          : { standingRules: row.thread_standing_rules }),
-      };
-    },
+    projectTexts: (partition) => threadProjectTexts(pool, partition),
 
     drafts: async (partition, author, limit) => {
       const found = await pool.query<{

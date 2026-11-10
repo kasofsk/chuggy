@@ -206,6 +206,7 @@ export const attemptEvidences = [
   "Fenced",
   "RunFailed",
   "RunRateLimited",
+  "RunCreditsExhausted",
   "RunTurnsExhausted",
   "RunUploadRefused",
   "RunCloneFailed",
@@ -238,6 +239,7 @@ export type RunStepEvidence = (typeof runStepEvidences)[number];
 export const runEndedEvidences = [
   "RunFailed",
   "RunRateLimited",
+  "RunCreditsExhausted",
   "RunTurnsExhausted",
   "RunUploadRefused",
   ...runStepEvidences,

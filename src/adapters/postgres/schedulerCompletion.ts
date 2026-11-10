@@ -760,10 +760,12 @@ function schedulerStepOf(evidence: string | null): RunStepEvidence | undefined {
   return runStepEvidences.find((step) => step === evidence);
 }
 
-/** What the manifest says of a run `evidence` has a report for: a failed step's, or a usage limit's. */
+/** What the manifest says of a run `evidence` has a report for: a failed step's, a usage limit's, or running out of credits. */
 function schedulerEndedReport(evidence: string | null): string | undefined {
   if (evidence === "RunRateLimited")
     return "The account's usage limit stopped the run.";
+  if (evidence === "RunCreditsExhausted")
+    return "The account ran out of credits.";
   const step = schedulerStepOf(evidence);
   return step === undefined ? undefined : schedulerStepReport(step);
 }

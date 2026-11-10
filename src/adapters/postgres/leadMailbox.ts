@@ -28,6 +28,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { sessionEfforts } from "../../contract/http.ts";
 import {
   allSessionStates,
   allSessionTurnFailures,
@@ -76,6 +77,8 @@ interface LeadSessionRow {
   readonly agent_reference: string | null;
   readonly system_prompt: string | null;
   readonly auto_compact_window: string | null;
+  readonly model: string | null;
+  readonly effort: string | null;
   readonly tokens: string | null;
 }
 
@@ -135,6 +138,12 @@ function leadSessionOf(row: LeadSessionRow): LeadSessionStanding {
             "lead auto-compact window",
           ),
         }),
+    ...(row.model === null ? {} : { model: row.model }),
+    ...(row.effort === null
+      ? {}
+      : {
+          effort: sessionRowMember(sessionEfforts, row.effort, "lead effort"),
+        }),
     ...(row.tokens === null
       ? {}
       : {
@@ -178,7 +187,8 @@ async function leadOpen(
           ${opening.partition.tenant},${opening.partition.project},
           ${opening.session},${opening.principal},
           ${opening.credentialSlot},${opening.systemPrompt},
-          ${opening.autoCompactWindow})`,
+          ${opening.autoCompactWindow},${opening.model ?? null},
+          ${opening.effort ?? null})`,
   );
   const row = opened.rows[0];
   return {
@@ -194,7 +204,7 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
       const found = await pool.query<LeadSessionRow>(
         sql`SELECT session,state,agent_reference,system_prompt,
                    auto_compact_window::text AS auto_compact_window,
-                   tokens::text AS tokens
+                   model,effort,tokens::text AS tokens
               FROM lead_session(${partition.tenant},${partition.project})`,
       );
       const row = found.rows[0];

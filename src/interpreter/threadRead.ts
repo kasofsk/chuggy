@@ -62,6 +62,7 @@ import {
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
+  type SessionEffort,
 } from "../contract/http.ts";
 import { consolePageSchema } from "../contract/consolePage.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
@@ -291,6 +292,9 @@ export interface ThreadStore {
     readonly key: ThreadOpenKey;
     readonly systemPrompt: string;
     readonly credentialSlot: string;
+    /** What the thread runs on, each absent where the project chose none. */
+    readonly model?: string;
+    readonly effort?: SessionEffort;
   }): Promise<ThreadOpened>;
   /**
    * Opens one of the principal's own threads in their reserved partition,

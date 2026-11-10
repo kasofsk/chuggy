@@ -39,8 +39,8 @@ function exclusion(table: string, other: string): string {
        FOR EACH ROW EXECUTE FUNCTION public.${table}_is_not_${other}()`;
 }
 
-export const migration136: Migration = {
-  version: 136,
+export const migration139: Migration = {
+  version: 139,
   name: "the finalizer prepares the stack an evaluation runs over",
   statements: [
     `CREATE TABLE public.evaluation_stack_none (

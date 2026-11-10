@@ -590,6 +590,7 @@ export type AttemptEvidence =
   | "Fenced"
   | "RunFailed"
   | "RunRateLimited"
+  | "RunCreditsExhausted"
   | "RunTurnsExhausted"
   | "RunUploadRefused"
   | "RunCloneFailed"
@@ -615,6 +616,7 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "Fenced",
   "RunFailed",
   "RunRateLimited",
+  "RunCreditsExhausted",
   "RunTurnsExhausted",
   "RunUploadRefused",
   "RunCloneFailed",

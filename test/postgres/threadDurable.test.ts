@@ -1072,7 +1072,7 @@ test("two opens racing for the last place never take the member past their limit
   const held = await rig.sessions.harness.begin();
   try {
     await held.query(
-      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6,$7,NULL,NULL)`,
       values(winner, threadRigKey()),
     );
     const racing = rig.apiPool.query<{
@@ -1080,7 +1080,7 @@ test("two opens racing for the last place never take the member past their limit
       threads_max: string;
     }>(
       `SELECT opened,threads_max::text AS threads_max
-         FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+         FROM open_member_thread($1,$2,$3,$4,$5,$6,$7,NULL,NULL)`,
       values(loser, threadRigKey()),
     );
     await waitForABlockedStatement();
@@ -1122,11 +1122,11 @@ test("two opens racing under one key answer the one thread the winner opened", a
   const held = await rig.sessions.harness.begin();
   try {
     await held.query(
-      `SELECT opened FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      `SELECT opened FROM open_member_thread($1,$2,$3,$4,$5,$6,$7,NULL,NULL)`,
       values(winner),
     );
     const racing = rig.apiPool.query<{ opened: string; session: string }>(
-      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6,$7,NULL,NULL)`,
       values(`thread-keyrace-loser-${partition.project}`),
     );
     await waitForABlockedStatement();
@@ -2362,7 +2362,7 @@ test("each door a thread passes through is the role's it was granted to and no o
   await onlyTheseRolesMay(
     [apiRole],
     threadOpenFunction,
-    `SELECT ${threadOpenFunction}(${named},'session-grants','key-grants','slot','prompt')`,
+    `SELECT ${threadOpenFunction}(${named},'session-grants','key-grants','slot','prompt',NULL,NULL)`,
   );
   await onlyTheseRolesMay(
     [apiRole],

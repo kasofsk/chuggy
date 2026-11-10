@@ -56,12 +56,14 @@
  *
  * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY AND THE AUTHORITY. A poll is
  * not durable, so the scheduler sees no session and no pool is placeable to
- * it. A registered pool is enabled, and revoked where the authority withholds
+ * it. The agents a pool takes are read only beside a session, so it asks of
+ * a placement naming no agent and pools advertising none. A registered pool is enabled, and revoked where the authority withholds
  * the `Execute` its polls are admitted by; an owner's personal pool is revoked
  * where it withholds the permit its polls are admitted by, or the owner's
  * `Read` of the project its claims are asked under.
  */
 
+import type { AccountAgent } from "../contract/rosters.ts";
 import type {
   BlockedReason,
   ExecutionRoute,
@@ -180,6 +182,8 @@ export interface WorkerPoolRunner extends WorkerPoolPolicy {
   readonly capabilities: readonly string[];
   /** The most memory, in MiB, it takes one execution of: the model's `CeilingMib`, or undefined where it is `Unbounded`. */
   readonly memoryCeilingMib: number | undefined;
+  /** Whether its capabilities name exactly the agents it takes now, which is the model's `agentsAdvertised`. */
+  readonly agentsAdvertised: boolean;
 }
 
 /** One poll as the model's `RunnerSession`: the pool it resolved to, the principal it authenticated as, whether its token is live, and its slots. */
@@ -192,7 +196,7 @@ export interface WorkerPoolSession {
   readonly heldMax: number;
 }
 
-/** An execution as the guard reads it: its logical status, the phase of its placement, the requirement, route and demand it was pinned with, and the memory, in MiB, it runs with. */
+/** An execution as the guard reads it: its logical status, the phase of its placement, the requirement, route and demand it was pinned with, the memory, in MiB, it runs with, and the agent its attempt runs, undefined for one running commands, which is the model's `AgentUnnamed`. */
 export interface WorkerPoolPlacement {
   readonly partition: Partition;
   readonly status: ExecutionStatus;
@@ -201,6 +205,7 @@ export interface WorkerPoolPlacement {
   readonly route: ExecutionRoute;
   readonly demand: WorkerPoolDemand;
   readonly memoryMib: number;
+  readonly agent: AccountAgent | undefined;
 }
 
 /** A registered pool beside the poll it is making, if it is making one. */
@@ -234,6 +239,29 @@ export function workerPoolInventoryMatches(
         )
       );
   }
+}
+
+/** The capability token a pool names an agent it takes with. */
+export function workerPoolAgentToken(agent: AccountAgent): string {
+  return `Agent:${agent}`;
+}
+
+/**
+ * Whether the pool takes the placement's agent now, which is the model's
+ * `agentOffered`: an attempt naming no agent, or one whose agent a pool
+ * advertising its agents names. It configures no pool, so a pool leaving out
+ * an agent leaves that agent's execution unavailable rather than
+ * incompatible.
+ */
+export function workerPoolAgentOffered(
+  placement: WorkerPoolPlacement,
+  pool: WorkerPoolRunner,
+): boolean {
+  return (
+    placement.agent === undefined ||
+    !pool.agentsAdvertised ||
+    pool.capabilities.includes(workerPoolAgentToken(placement.agent))
+  );
 }
 
 /** Whether the pool takes an execution of the placement's size, which is the model's `sizeFits`: one at or under its ceiling, or any where it names none. */
@@ -339,9 +367,9 @@ export function workerPoolIsLive({
 /**
  * Whether the owner's fallback lets the pool take the execution now, which is
  * the model's `ownerFallbackAllows`: under a Strict fallback no owner's
- * personal pool, and under either none of them live. An outcome configures a
- * pool without it, since it refuses one only for an owner's pool that is
- * itself configured.
+ * personal pool, and under either none of them live and taking the
+ * execution's agent. An outcome configures a pool without it, since it
+ * refuses one only for an owner's pool that is itself configured.
  */
 export function workerPoolOwnerFallbackAllows(
   pool: WorkerPoolRunner,
@@ -352,7 +380,11 @@ export function workerPoolOwnerFallbackAllows(
   const owners = workerPoolOwnerPools(placement, registry);
   return (
     (placement.demand.ownerFallback === "Preferred" || owners.length === 0) &&
-    !owners.some(workerPoolIsLive)
+    !owners.some(
+      (owner) =>
+        workerPoolIsLive(owner) &&
+        workerPoolAgentOffered(placement, owner.pool),
+    )
   );
 }
 
@@ -379,7 +411,8 @@ export function workerPoolCanAssign(
     workerPoolSessionIsCurrent(pool, session) &&
     workerPoolSessionHasSlot(session) &&
     workerPoolInventoryMatches(placement.requirement, pool) &&
-    workerPoolSizeFits(placement, pool)
+    workerPoolSizeFits(placement, pool) &&
+    workerPoolAgentOffered(placement, pool)
   );
 }
 
@@ -407,7 +440,8 @@ export function workerPoolPlacementOutcome(
         workerPoolPolicyAllows(pool, placement) &&
         workerPoolOwnerFallbackAllows(pool, placement, enrolments) &&
         workerPoolSessionIsCurrent(pool, session) &&
-        workerPoolSessionHasSlot(session),
+        workerPoolSessionHasSlot(session) &&
+        workerPoolAgentOffered(placement, pool),
     )
   )
     return "Placeable";
@@ -444,6 +478,7 @@ function workerPoolOutcomeRegisteredRunner(
     revoked: registered.revoked,
     capabilities: registered.capabilities,
     memoryCeilingMib: registered.memoryCeilingMib,
+    agentsAdvertised: false,
   };
 }
 
@@ -466,6 +501,7 @@ export function workerPoolOutcomeRegistered(
       route: execution.route,
       demand: workerPoolDemandOf(execution),
       memoryMib: execution.resources?.memoryMib ?? memoryMibDefault,
+      agent: undefined,
     },
     registered.map((pool) => ({
       pool: workerPoolOutcomeRegisteredRunner(pool),

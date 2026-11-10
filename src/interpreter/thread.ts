@@ -42,6 +42,7 @@ import {
   threadMessageCharsMax,
   threadSeedingCharsMax,
   threadWakeCharsMax,
+  type SessionEffort,
 } from "../contract/http.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
 import {
@@ -384,14 +385,17 @@ export interface ThreadSeededRefusal {
 }
 
 /**
- * The two texts a project binds its threads by, each absent where the project
- * has set none. They are read together because one thread composition needs
- * both, and narrow because a thread is not the lead: no prompt and no limit of
- * the lead's is reachable through them.
+ * What a project binds its threads by — its two texts, and the model and effort
+ * a thread opens under — each absent where the project has set none. They are
+ * read together because opening a thread needs all of them, and narrow because
+ * a thread is not the lead: no prompt, limit, model or effort of the lead's is
+ * reachable through them.
  */
 export interface ThreadProjectTexts {
   readonly northStar?: string;
   readonly standingRules?: string;
+  readonly model?: string;
+  readonly effort?: SessionEffort;
 }
 
 /**

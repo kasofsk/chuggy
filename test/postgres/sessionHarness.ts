@@ -130,6 +130,9 @@ export interface SessionRigOpening {
   readonly systemPrompt?: string;
   /** The window a lead holds, written as `open_project_lead` writes it: the administrative door takes none. */
   readonly autoCompactWindow?: number;
+  /** The model and effort the session runs on, written as the lead's and a thread's doors write them. */
+  readonly model?: string;
+  readonly effort?: string;
 }
 
 /** Opens one session, refusing anything but the arm the case expected. */
@@ -158,6 +161,11 @@ export async function sessionRigSession(
     await rig.harness.query(
       `UPDATE agent_session SET auto_compact_window=$2 WHERE session=$1`,
       [session, opening.autoCompactWindow],
+    );
+  if (opening.model !== undefined || opening.effort !== undefined)
+    await rig.harness.query(
+      `UPDATE agent_session SET model=$2,effort=$3 WHERE session=$1`,
+      [session, opening.model ?? null, opening.effort ?? null],
     );
   return session;
 }

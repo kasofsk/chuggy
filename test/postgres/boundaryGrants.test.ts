@@ -621,7 +621,7 @@ function boundaryGrantsDoor(
 }
 
 const boundaryGrantsSettingsWrite =
-  "update_selector_project_settings(text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text)";
+  "update_selector_project_settings(text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text,text,text,text,text)";
 
 /** The doors and functions a role reaches the schema through, and the roles each is shut to. */
 const boundaryGrantsDoors: readonly DoorDeclared[] = [
@@ -682,7 +682,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [apiRole, schedulerRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${leadOpenFunction}(text,text,text,text,text,text,bigint)`,
+    `${leadOpenFunction}(text,text,text,text,text,text,bigint,text,text)`,
     [selectorServiceRole],
     [apiRole, workerPlaneRole],
   ),

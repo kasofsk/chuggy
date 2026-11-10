@@ -490,7 +490,7 @@ async function openingAgainstAnOpen(
   let committed = false;
   try {
     await holding.query(
-      "SELECT opened FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)",
+      "SELECT opened FROM open_member_thread($1,$2,$3,$4,$5,$6,$7,NULL,NULL)",
       [
         partition.tenant,
         partition.project,
@@ -654,7 +654,7 @@ test("a project's own standing rules reach the wake through the candidate", asyn
   await rig.sessions.harness.query(
     `SELECT revision FROM update_selector_project_settings(
        $1,$2,0,NULL,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-       NULL,NULL,'User','thread wake suite')`,
+       NULL,NULL,NULL,NULL,NULL,NULL,'User','thread wake suite')`,
     [partition.tenant, partition.project, stated],
   );
   await fromTheHead();
