@@ -58,6 +58,7 @@ import {
   inquiryRigMember,
   inquiryRigOpen,
   inquiryRigProject,
+  type InquiryRigRunOpening,
   type InquiryRig,
   type InquiryRigMember,
 } from "./inquiryHarness.ts";
@@ -406,12 +407,20 @@ async function subsidyPublished(
   }
 }
 
-/** A project storing a subsidized lead whose lead stands on `credentialSlot`, and a member the tenant grants no hosted runs. */
-async function subsidizedProject(label: string, credentialSlot?: string) {
+/** The slot, model and effort a lead opened on the profile stands on. */
+const onTheProfile: InquiryRigRunOpening = {
+  credentialSlot: subsidy.credentialSlot,
+  model: subsidy.model,
+  effort: subsidy.effort,
+};
+
+/** A project storing a subsidized lead whose lead stands as `standing` opens it, and a member the tenant grants no hosted runs. */
+async function subsidizedProject(
+  label: string,
+  standing: InquiryRigRunOpening = {},
+) {
   const partition = await inquiryRigProject(rig, `http-${label}`);
-  await inquiryRigLead(rig, partition, `http-${label}`, {
-    ...(credentialSlot === undefined ? {} : { credentialSlot }),
-  });
+  await inquiryRigLead(rig, partition, `http-${label}`, standing);
   assert.equal(
     await postgresSessionPlacement(rig.apiPool).write(
       partition,
@@ -470,15 +479,48 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
       "a lead on the hosted slot was forked on the subsidy",
     );
 
-    const replaced = await subsidizedProject(
-      "subsidy-replaced",
-      subsidy.credentialSlot,
-    );
+    const replaced = await subsidizedProject("subsidy-replaced", onTheProfile);
     await using app = inquiryApp(replaced.principal);
     await asked(app, replaced.partition, "who pays for this?");
     assert.deepEqual(await forkSlots(replaced.partition), [
       { credential_slot: subsidy.credentialSlot },
     ]);
+  } finally {
+    await subsidyPublished(undefined);
+  }
+});
+
+/**
+ * The subsidy pays for the profile's model and effort, not only its slot, and a
+ * lead opened before the profile last changed them stands on the old ones until
+ * it is replaced.
+ */
+test("a member the tenant grants no hosted runs asks a subsidized lead only where it stands on the profile's model and effort", async () => {
+  await subsidyPublished(subsidy);
+  try {
+    for (const [label, standing] of [
+      ["subsidy-old-model", { ...onTheProfile, model: "claude-opus-5-5" }],
+      ["subsidy-old-effort", { ...onTheProfile, effort: "high" }],
+    ] as const) {
+      const project = await subsidizedProject(label, standing);
+      await using app = inquiryApp(project.principal);
+      const refused = await app.inject({
+        method: "POST",
+        url: pathOf(project.partition),
+        headers: versioned,
+        payload: {
+          session: `inq-http-${randomUUID()}`,
+          turn: `inq-turn-http-${randomUUID()}`,
+          question: "who pays for this?",
+        },
+      });
+      assert.equal(refused.statusCode, 403, `${label}: ${refused.body}`);
+      assert.deepEqual(
+        await forkSlots(project.partition),
+        [],
+        `${label}: a lead off the profile was forked on the subsidy`,
+      );
+    }
   } finally {
     await subsidyPublished(undefined);
   }

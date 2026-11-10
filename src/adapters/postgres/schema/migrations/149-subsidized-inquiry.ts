@@ -1,13 +1,14 @@
 /**
  * An inquiry admitted on the lead's subsidy forks only a lead on the profile's
- * credential slot.
+ * credential slot, model and effort.
  *
  * `open_lead_inquiry` TAKES WHETHER THE TURN WAS ADMITTED ON THE SUBSIDY, and
  * still no slot. A member's inquiry of a subsidized lead asks no hosted grant,
- * but the fork runs on the slot of whichever lead is standing, and a lead opened
- * before its project chose the subsidy stands on the selector's own slot until
- * its next decision replaces it. So such an inquiry answers `LeadNotSubsidized`
- * unless the parent's slot is the one `session_lead_profile` answers. The door
+ * but the fork runs on the slot, model and effort of whichever lead is standing,
+ * and a lead opened before its project chose the subsidy, or before the profile
+ * last changed, stands on what it opened on until its next decision replaces
+ * it. So such an inquiry answers `LeadNotSubsidized` unless the parent's slot,
+ * model and effort are the ones `session_lead_profile` answers. The door
  * reads the profile itself, so an offering changed since the API admitted the
  * turn is the one the fork is held to.
  */
@@ -26,7 +27,7 @@ const inquiryOpen = `public.${leadInquiryOpenFunction}(in_tenant text, in_projec
 
 export const migration149: Migration = {
   version: 149,
-  name: "an inquiry admitted on the lead's subsidy forks only a lead on the profile's slot",
+  name: "an inquiry admitted on the lead's subsidy forks only a lead on the profile's slot, model and effort",
   statements: [
     `DROP FUNCTION ${before}`,
     `CREATE FUNCTION ${inquiryOpen} RETURNS TABLE(opened text, ordinal bigint, session text)
@@ -44,7 +45,7 @@ export const migration149: Migration = {
          RETURN QUERY SELECT 'AlreadyOpen'::text,standing,in_session; RETURN;
        END IF;
        SELECT s.session,s.state,s.agent_reference,s.credential_slot,
-              s.account,s.cluster,s.system_prompt
+              s.model,s.effort,s.account,s.cluster,s.system_prompt
          INTO parent FROM agent_session s
         WHERE s.tenant=in_tenant AND s.project=in_project
           AND s.session=(SELECT candidate.session FROM agent_session candidate
@@ -60,8 +61,8 @@ export const migration149: Migration = {
        IF parent.state<>'Open' THEN
          RETURN QUERY SELECT 'LeadClosed'::text,NULL::bigint,parent.session; RETURN;
        END IF;
-       IF in_subsidized AND parent.credential_slot IS DISTINCT FROM
-            (SELECT p.credential_slot FROM ${sessionLeadProfileFunction}(in_tenant,in_project) p) THEN
+       IF in_subsidized AND (parent.credential_slot,parent.model,parent.effort) IS DISTINCT FROM
+            (SELECT (p.credential_slot,p.model,p.effort) FROM ${sessionLeadProfileFunction}(in_tenant,in_project) p) THEN
          RETURN QUERY SELECT 'LeadNotSubsidized'::text,NULL::bigint,parent.session; RETURN;
        END IF;
        SELECT (SELECT coalesce(max(t.batch_last),0) FROM session_turn t
