@@ -26,8 +26,8 @@ import type { MemberChat } from "../../interpreter/memberChat.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
 import { phaseTags, type Phase } from "../../domain/phase.ts";
 import {
-  allExecutionStatuses,
-  type ExecutionStatus,
+  allExecutionStandings,
+  type ExecutionStanding,
 } from "../../interpreter/executionScheduler.ts";
 import type { ForgeInstallationId } from "../../interpreter/forgeInstallation.ts";
 import {
@@ -2148,7 +2148,7 @@ function executionSelection(value: unknown): {
     | { readonly selection: "NonTerminal" }
     | {
         readonly selection: "Selected";
-        readonly states: readonly ExecutionStatus[];
+        readonly states: readonly ExecutionStanding[];
       };
 } {
   if (value === undefined) return {};
@@ -2161,13 +2161,13 @@ function executionSelection(value: unknown): {
   const refused = (values as readonly string[]).find(
     (state) =>
       state === "NonTerminal" ||
-      !allExecutionStatuses.includes(state as ExecutionStatus),
+      !allExecutionStandings.includes(state as ExecutionStanding),
   );
   if (refused !== undefined) throw executionSelectionRefused(refused);
   return {
     selection: {
       selection: "Selected",
-      states: values as ExecutionStatus[],
+      states: values as ExecutionStanding[],
     },
   };
 }

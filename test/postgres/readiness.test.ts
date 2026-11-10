@@ -12,9 +12,8 @@ import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
 import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
   allNativeActionResolutions,
-  isApprovalResolution,
-  type ApprovalResolution,
-  type NativeActionResolution,
+  isEscalationResolution,
+  type EscalationResolution,
 } from "../../src/interpreter/projectCommand.ts";
 import {
   graphOf,
@@ -148,9 +147,7 @@ function parkedGraph(action: SeededAction): TicketGraph {
  * The command one answer names, decided by the answer alone. A settle answer
  * revokes the ticket; every other answer resumes it (`model/domain.qnt`).
  */
-function answerNames(
-  resolution: Exclude<NativeActionResolution, ApprovalResolution>,
-): TicketCommand["type"] {
+function answerNames(resolution: EscalationResolution): TicketCommand["type"] {
   return resolution === "Revoke" ? "RevokeTicket" : "ResumeTicket";
 }
 
@@ -161,7 +158,7 @@ function answerNames(
  * stands behind it refusing a command the park does not offer.
  */
 function assertAnswerNames(
-  resolution: Exclude<NativeActionResolution, ApprovalResolution>,
+  resolution: EscalationResolution,
   action: SeededAction,
   command: TicketCommand,
 ): void {
@@ -185,12 +182,7 @@ async function resolvedAnswer(
 }
 
 test("every answer a desk task admits becomes the domain command it names", async () => {
-  const answerable = allNativeActionResolutions.filter(
-    (
-      resolution,
-    ): resolution is Exclude<NativeActionResolution, ApprovalResolution> =>
-      !isApprovalResolution(resolution),
-  );
+  const answerable = allNativeActionResolutions.filter(isEscalationResolution);
   for (const resolution of answerable) {
     const label = `resolution-${resolution}`;
     const partition = await postgresHarnessProject(harness.store, label);

@@ -10,6 +10,8 @@
  */
 
 import {
+  approvalApproversSchema,
+  approvalWorkloadSchema,
   configurationFollowingSchema,
   configurationReferencePathSchema,
   configurationRequirementCapabilitiesMax,
@@ -657,6 +659,22 @@ const nativeActionFields = {
     .array(z.enum(nativeActionResolutions))
     .min(1)
     .max(nativeActionResolutions.length),
+  approval: z
+    .strictObject({
+      execution: identitySchema,
+      workCycle: ticketNumberSchema,
+      stage: ticketNumberSchema.describe(
+        "The stage's positive key, as a task identity names it.",
+      ),
+      generation: ticketNumberSchema,
+      evaluator: ticketNumberSchema,
+      instructions: approvalWorkloadSchema.shape.instructions,
+      approvers: approvalApproversSchema,
+    })
+    .optional()
+    .describe(
+      "What an EvaluationApproval asks, present on that kind alone: the execution it stands for, which reads Awaiting until it is answered or no longer owed, where that execution stands in the ticket's evaluation, and its workload's instructions and approvers as the ticket was released with them.",
+    ),
 };
 
 function nativeActionKindAdmits(
@@ -668,13 +686,14 @@ function nativeActionKindAdmits(
 const nativeActionAdmitsItsKind = (value: {
   readonly kind: NativeActionKind;
   readonly admits: readonly NativeActionResolution[];
+  readonly approval?: unknown;
 }) =>
   value.admits.every((resolution) =>
     nativeActionKindAdmits(value.kind).includes(resolution),
-  );
+  ) && (value.kind === "EvaluationApproval") === (value.approval !== undefined);
 
 const nativeActionPairing =
-  "a native action admits an answer its kind does not ask for";
+  "a native action admits an answer its kind does not ask for, or asks what only an EvaluationApproval asks";
 
 export const nativeActionResponseSchema = z
   .object(nativeActionFields)
@@ -882,9 +901,14 @@ export const executionSummarySchema = z.object({
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
   requirementIdentity: identitySchema,
-  requirement: executionRequirementSchema,
-  requirementDigest: digestSchema,
-  requirementSource: z.enum(requirementSources),
+  /**
+   * What a runner must offer to take it. This, its digest, its source and
+   * `platformDefaultVersion` are absent together, and only for an approval
+   * evaluator's execution, which a person answers and no runner takes.
+   */
+  requirement: executionRequirementSchema.optional(),
+  requirementDigest: digestSchema.optional(),
+  requirementSource: z.enum(requirementSources).optional(),
   /**
    * The spawn request that made this execution, which is its spawn set's
    * identity. Optional for the deployment window and not because a summary can
@@ -894,7 +918,7 @@ export const executionSummarySchema = z.object({
    */
   request: identitySchema.optional(),
   worker: workerSchema.optional(),
-  platformDefaultVersion: ticketNumberSchema,
+  platformDefaultVersion: ticketNumberSchema.optional(),
   /**
    * The CPUs, in millis, and the memory, in MiB, its task was released with.
    * A field absent is the deployment's own size, which this read cannot see.
@@ -907,7 +931,10 @@ export const executionSummarySchema = z.object({
     .optional(),
   /**
    * `Running` once the open attempt's run has started, though a runner's
-   * placement stores it `Launching` until it ends.
+   * placement stores it `Launching` until it ends. `Awaiting` is an approval
+   * evaluator's execution waiting on a person, which no runner takes and no
+   * slot is held for until it is answered or `Cancelled`; the open
+   * `EvaluationApproval` action naming it is what that person answers.
    */
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),

@@ -1,8 +1,8 @@
 /**
  * An approval workload of a version 2 catalog: an evaluator a person answers,
- * which a plan stage lists by name and which is never the work. Nothing runs
- * one yet, so a release drawing one is refused and a scheduler reading one is
- * told so.
+ * which a plan stage lists by name and which is never the work. A release
+ * drawing one is ready, and a scheduler reading one to place is told it runs
+ * on no runner.
  */
 
 import assert from "node:assert/strict";
@@ -243,27 +243,17 @@ test("a ticket's overrides may not change a workload's runner to or from Approva
   }
 });
 
-test("a release whose program draws an approval evaluator is refused as not yet runnable, and one leaving it out is not", () => {
-  assert.equal(
-    releaseFault(catalogOf(), { program: gatedProgram }),
-    "ApprovalNotRunnable",
-  );
-  assert.equal(
-    releaseFault(catalogOf(), {
-      program: [{ key: 2, evaluators: [{ key: 1 }] }],
-    }),
-    "ApprovalNotRunnable",
-  );
-  assert.equal(
-    draftReleaseRefusalCode("ApprovalNotRunnable"),
-    "ApprovalNotRunnable",
-  );
-  assert.equal(
-    releaseFault(catalogOf(), {
-      program: [{ key: 1, evaluators: [{ key: 1 }] }],
-    }),
-    "Ready",
-  );
+test("a release whose program draws an approval evaluator is ready, as one leaving it out is", () => {
+  for (const program of [
+    gatedProgram,
+    [{ key: 2, evaluators: [{ key: 1 }] }],
+    [{ key: 1, evaluators: [{ key: 1 }] }],
+  ])
+    assert.equal(
+      releaseFault(catalogOf(), { program }),
+      "Ready",
+      JSON.stringify(program),
+    );
   assert.equal(
     releaseFault(catalogOf(), {
       selection: { evaluation: "ungated" },

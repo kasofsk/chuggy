@@ -124,7 +124,7 @@ test("execution selections reject empty, duplicate, and unbounded pages", () => 
 
 test("a refused execution selection names the value it refused and the values it accepts", () => {
   const accepts =
-    "accepts NonTerminal alone or distinct states among Queued, Admitted, Launching, Running, Terminal, Cancelled";
+    "accepts NonTerminal alone or distinct states among Queued, Admitted, Launching, Running, Terminal, Cancelled, Awaiting";
   const refusal = (states: readonly string[]) => () =>
     checkedExecutionListQuery({
       limit: 10,

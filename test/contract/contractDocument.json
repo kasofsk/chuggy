@@ -901,7 +901,7 @@
             },
             "resolution": {
               "type": "string",
-              "enum": ["Resume", "Revoke", "Approve", "Decline"]
+              "enum": ["Resume", "Revoke", "Approve", "Decline", "Reject"]
             }
           },
           "required": [

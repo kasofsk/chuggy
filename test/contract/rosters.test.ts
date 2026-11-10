@@ -182,7 +182,7 @@ import {
   allAttemptStates,
   allBlockedReasons,
   allExecutionOutcomes,
-  allExecutionStatuses,
+  allExecutionStandings,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -477,7 +477,7 @@ test("the resume points are the model's, less the absent one", () => {
 
 test("the phase and scheduler rosters are the model's", () => {
   assert.deepEqual([...phaseRoster], [...phaseTags]);
-  assert.deepEqual([...executionStatuses], [...allExecutionStatuses]);
+  assert.deepEqual([...executionStatuses], [...allExecutionStandings]);
   assert.deepEqual([...executionOutcomes], [...allExecutionOutcomes]);
   assert.deepEqual([...attemptStates], [...allAttemptStates]);
   assert.deepEqual([...artifactRoles], [...allArtifactRoles]);
@@ -700,6 +700,7 @@ test("the refusal code roster is exhaustive over its union", () => {
     ApprovalAsWork: true,
     OverridesChangeApprovalRunner: true,
     ApprovalNotRunnable: true,
+    ApprovalNotAnswerable: true,
   };
   assert.deepEqual(sorted(operationRefusalCodes), keysOf(refusals));
 });

@@ -16,6 +16,7 @@ sentences-escalation-evaluation-blocked = { -evaluation(case: "upper") } could n
 sentences-escalation-landing-unavailable = { -landing(case: "upper") } could not run
 sentences-native-escalation = { -escalation }
 sentences-native-approval = awaiting your { -approval }
+sentences-native-evaluation-approval = awaiting your { -evaluation } { -approval }
 
 ## What the actor did with a submission.
 
@@ -73,6 +74,7 @@ sentences-refusal-overrides-move-definition = Only start settings can change whi
 sentences-refusal-approval-as-work = { -approval(case: "upper", form: "a") } cannot be the { -work-stage } · Select another { -workload }
 sentences-refusal-overrides-change-approval = { -override(case: "upper", form: "plural") } cannot make or unmake { -approval(form: "a") }
 sentences-refusal-approval-not-runnable = { -approval(case: "upper") } { -stage(form: "plural") } are not supported yet · Leave that { -stage } out
+sentences-refusal-approval-not-answerable = { -evaluation(case: "upper") } { -approval(form: "plural") } cannot be answered yet
 
 ## Why a ticket following its configuration stays on the revision it holds.
 

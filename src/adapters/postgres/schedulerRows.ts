@@ -117,10 +117,11 @@ export interface ExecutionRow {
   /** The catalog entries the ticket selected, as text, which a version 1 ticket holds none of. */
   readonly configuration_selection: string | null;
   readonly requirement_identity: string;
-  readonly requirement_value: string;
-  readonly requirement_digest: string;
-  readonly requirement_source: string;
-  readonly platform_default_version: string;
+  /** The four requirement columns, which an approval's execution holds none of. */
+  readonly requirement_value: string | null;
+  readonly requirement_digest: string | null;
+  readonly requirement_source: string | null;
+  readonly platform_default_version: string | null;
   readonly cpu_millis: number | null;
   readonly memory_mib: number | null;
   readonly status: string;
@@ -351,21 +352,49 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     requirementIdentity: row.requirement_identity,
-    requirement: asExecutionRequirement(
-      JSON.parse(row.requirement_value) as unknown,
-    ),
-    requirementDigest: row.requirement_digest,
-    requirementSource: executionRowRequirementSource(row.requirement_source),
+    ...executionRowRequirement(row),
     ...executionRowAgentCapability(row),
-    platformDefaultVersion: projectRowCounter(
-      row.platform_default_version,
-      "platform default version",
-    ),
     ...executionRowResources(row),
     status: executionRowStatus(row.status),
     ...executionRowSettlement(row),
     attemptsOpened: projectRowCounter(row.attempts_opened, "attempts opened"),
     retriesSpent: projectRowCounter(row.retries_spent, "retries spent"),
+  };
+}
+
+/**
+ * The requirement a placed execution was registered under. Only an approval's
+ * execution holds none, and no runner is ever asked to take one, so a row
+ * without one reaching a read that places work is a contradiction.
+ */
+function executionRowRequirement(
+  row: ExecutionRow,
+): Pick<
+  LogicalExecution,
+  | "requirement"
+  | "requirementDigest"
+  | "requirementSource"
+  | "platformDefaultVersion"
+> {
+  if (
+    row.requirement_value === null ||
+    row.requirement_digest === null ||
+    row.requirement_source === null ||
+    row.platform_default_version === null
+  )
+    throw new Error(
+      `postgres scheduler: execution ${row.execution} awaits a person and names no requirement to place`,
+    );
+  return {
+    requirement: asExecutionRequirement(
+      JSON.parse(row.requirement_value) as unknown,
+    ),
+    requirementDigest: row.requirement_digest,
+    requirementSource: executionRowRequirementSource(row.requirement_source),
+    platformDefaultVersion: projectRowCounter(
+      row.platform_default_version,
+      "platform default version",
+    ),
   };
 }
 

@@ -35,6 +35,11 @@
  * the cluster. It guards an arithmetic rather than an authority; the authority
  * stays the durable allocations, which is why no count is cached anywhere.
  *
+ * AN APPROVAL IS REGISTERED AND NEVER ADMITTED. Its execution is queued as any
+ * is, which holds no slot, but names no requirement because a person answers
+ * it, and admission passes over every row that names none. `mayAdmit` only
+ * permits an admission, so a queued row nothing admits is one the model allows.
+ *
  * A LAPSED ATTEMPT LEASE IS ENDED BEFORE ANY LAUNCH IS OFFERED, AND ENDING IT IS
  * ITS OWN CALL. An attempt whose lease has run out is no longer live, but its
  * row still says it is, and the partial unique index that makes one unfenced
@@ -93,9 +98,11 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import {
+  ticketTaskAwaitsPerson,
   ticketTaskKey,
   ticketTaskRequirement,
   ticketTaskResources,
+  type TicketTaskKey,
 } from "../../interpreter/ticketDefinition.ts";
 
 import {
@@ -408,6 +415,71 @@ interface ExecutionCreateInput {
 }
 
 /**
+ * Registers one task that runs on a runner, queued for admission, with the
+ * requirement and size its release stored, and answers how many rows it made.
+ */
+async function schedulerCreatePlaced(
+  client: pg.PoolClient,
+  claim: RequestClaim,
+  input: ExecutionCreateInput,
+  registered: {
+    readonly execution: string;
+    readonly task: number;
+    readonly definition: unknown;
+    readonly key: TicketTaskKey;
+    readonly route: string;
+  },
+): Promise<number> {
+  const { execution, task, definition, key, route } = registered;
+  const materialized = ticketTaskRequirement(definition, key);
+  const resources = ticketTaskResources(definition, key);
+  const requirementValue = JSON.stringify(materialized.stored);
+  const inserted = await client.query(sql`INSERT INTO execution
+       (tenant,project,execution,ticket,task,source_request,account,cluster,
+        configuration_revision,configuration_digest,requirement_identity,requirement_value,
+        requirement_digest,requirement_source,platform_default_version,placement,
+        owner,owner_fallback,cpu_millis,memory_mib)
+       VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
+        ${task},${claim.request},${input.capacity_account},${input.cluster},
+        ${input.configuration_revision},${input.configuration_digest},${execution},
+        ${requirementValue}::jsonb,${materialized.digest},${materialized.source},
+        ${materialized.platformDefaultVersion},${route},
+        ${input.owner},${input.owner_fallback},
+        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null})
+       ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
+  return inserted.rowCount ?? 0;
+}
+
+/**
+ * Registers one approval evaluator's task, which waits on a person. It is
+ * queued as every registration is, but names no requirement and no size, which
+ * is what admission passes over, and the row's own trigger opens the action a
+ * person answers it by.
+ */
+async function schedulerCreateAwaiting(
+  client: pg.PoolClient,
+  claim: RequestClaim,
+  input: ExecutionCreateInput,
+  registered: {
+    readonly execution: string;
+    readonly task: number;
+    readonly route: string;
+  },
+): Promise<number> {
+  const { execution, task, route } = registered;
+  const inserted = await client.query(sql`INSERT INTO execution
+       (tenant,project,execution,ticket,task,source_request,account,cluster,
+        configuration_revision,configuration_digest,requirement_identity,
+        placement,owner,owner_fallback)
+       VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
+        ${task},${claim.request},${input.capacity_account},${input.cluster},
+        ${input.configuration_revision},${input.configuration_digest},${execution},
+        ${route},${input.owner},${input.owner_fallback})
+       ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
+  return inserted.rowCount ?? 0;
+}
+
+/**
  * Creates the executions this request authorizes that do not exist yet, and
  * only those. THE REQUIREMENT AND THE SIZE ARE COPIED, NOT RESOLVED: what a
  * task runs under was resolved when the ticket was released and stored beside
@@ -460,26 +532,20 @@ async function schedulerCreateExecutions(
         ? undefined
         : projectRowCounter(input.evaluator, "task evaluator"),
     );
-    const materialized = ticketTaskRequirement(definition, key);
-    const resources = ticketTaskResources(definition, key);
     const execution = `${executionStem}-${input.task}`;
-    const requirementIdentity = execution;
-    const requirementValue = JSON.stringify(materialized.stored);
-    const requirementDigest = materialized.digest;
-    const inserted = await client.query(sql`INSERT INTO execution
-       (tenant,project,execution,ticket,task,source_request,account,cluster,
-        configuration_revision,configuration_digest,requirement_identity,requirement_value,
-        requirement_digest,requirement_source,platform_default_version,placement,
-        owner,owner_fallback,cpu_millis,memory_mib)
-       VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
-        ${task},${claim.request},${input.capacity_account},${input.cluster},
-        ${input.configuration_revision},${input.configuration_digest},${requirementIdentity},
-        ${requirementValue}::jsonb,${requirementDigest},${materialized.source},
-        ${materialized.platformDefaultVersion},${routes[kind]},
-        ${input.owner},${input.owner_fallback},
-        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null})
-       ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
-    created += inserted.rowCount ?? 0;
+    created += ticketTaskAwaitsPerson(definition, key)
+      ? await schedulerCreateAwaiting(client, claim, input, {
+          execution,
+          task,
+          route: routes[kind],
+        })
+      : await schedulerCreatePlaced(client, claim, input, {
+          execution,
+          task,
+          definition,
+          key,
+          route: routes[kind],
+        });
   }
   return created;
 }
@@ -743,7 +809,8 @@ async function schedulerAdmit(
        LEFT JOIN LATERAL (SELECT count(*) AS held FROM execution x
                            WHERE x.account = e.account
                              AND x.status IN ('Admitted', 'Launching', 'Running')) h ON true
-      WHERE e.cluster = ${cluster} AND e.status = 'Queued' AND h.held < a.maximum
+      WHERE e.cluster = ${cluster} AND e.status = 'Queued'
+        AND e.requirement_value IS NOT NULL AND h.held < a.maximum
       ORDER BY (greatest(a.reserved - h.held, 0) > 0) DESC,
                e.registered_at, e.execution LIMIT 1
       FOR UPDATE OF e`,
@@ -769,7 +836,9 @@ async function schedulerNoCandidate(
   cluster: ClusterId,
 ): Promise<Admitted> {
   const queued = await client.query<{ one: number }>(
-    sql`SELECT 1 AS one FROM execution WHERE cluster = ${cluster} AND status = 'Queued' LIMIT 1`,
+    sql`SELECT 1 AS one FROM execution
+      WHERE cluster = ${cluster} AND status = 'Queued' AND requirement_value IS NOT NULL
+      LIMIT 1`,
   );
   return queued.rows.length > 0
     ? { admitted: "AccountAtMaximum" }

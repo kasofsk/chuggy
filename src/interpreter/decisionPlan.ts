@@ -436,8 +436,8 @@ export function inputBundleReferencesOf(
 /**
  * The phases an open native action can stand in: `Escalated` carries the desk
  * task, `Finalization` carries the finalization approval. `native_action` admits
- * one open row per ticket, so a ticket leaving either phase must take its
- * question with it or the next one cannot be opened at all.
+ * one open row of either per ticket, so a ticket leaving either phase must take
+ * its question with it or the next one cannot be opened at all.
  */
 const materializationActionablePhases: readonly Phase[] = [
   "Escalated",
