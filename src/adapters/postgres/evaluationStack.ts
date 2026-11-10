@@ -323,8 +323,8 @@ async function stackPrepare(
   const cycle =
     prepared.prepared === "Stack" ? prepared.stack.cycle : prepared.cycle;
   return postgresTransaction(pool, async (client) => {
-    await client.query(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${stackPrepareLockKey(partition, ticket, cycle)}, 0))`,
+    await client.query<{ locked: string | null }>(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${stackPrepareLockKey(partition, ticket, cycle)}, 0))::text AS locked`,
     );
     if (await stackEvaluated(client, partition, ticket, cycle))
       return "Evaluated";
@@ -393,7 +393,7 @@ async function stackUnprepared(
                   WHERE q.tenant = d.tenant AND q.project = d.project
                     AND q.ticket = d.ticket AND t.kind = 'Evaluation'
                     AND t.cycle = w.cycle)
-         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
+         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation ?? null}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
          LIMIT ${limit}`,
   );
   return found.rows.map((row) => ({
@@ -658,7 +658,7 @@ async function stackEvaluating(
                  SELECT 1 FROM evaluation_stack_dead k
                   WHERE k.tenant = s.tenant AND k.project = s.project
                     AND k.ticket = s.ticket AND k.work_cycle = s.work_cycle)
-         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
+         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation ?? null}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
          LIMIT ${limit}`,
   );
   const evaluating: EvaluatingStack[] = [];
@@ -758,7 +758,7 @@ async function stackRemovable(
                        WHERE q.tenant = s.tenant AND q.project = s.project
                          AND q.ticket = s.ticket AND t.kind = 'Work'
                          AND t.cycle > s.work_cycle))
-             ORDER BY md5(s.tenant || s.project || s.ticket::text || s.work_cycle::text || coalesce(${rotation}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
+             ORDER BY md5(s.tenant || s.project || s.ticket::text || s.work_cycle::text || coalesce(${rotation ?? null}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
              LIMIT ${limit}`,
   );
   return found.rows.map((row) => ({
