@@ -49,6 +49,7 @@ import type {
 import { projectRowCounter } from "./rows.ts";
 import {
   interactionsReadSignature,
+  leadOfferingSignature,
   leadOpenSignature,
   leadRunnerStandingSignature,
   selectorSignatures,
@@ -60,6 +61,7 @@ import {
   leadRunnerStandingFunction,
   selectorInteractionsReadFunction,
   selectorProposalRetireFunction,
+  sessionLeadOfferingFunction,
   sessionRouteFunction,
   sessionSystemPromptSetFunction,
 } from "./schema/shared.ts";
@@ -319,6 +321,7 @@ export const leadDoorSignatures: readonly string[] = (
     [sessionSystemPromptSetFunction, systemPromptSetSignature],
     [leadOpenFunction, leadOpenSignature],
     [sessionRouteFunction, sessionRouteSignature],
+    [sessionLeadOfferingFunction, leadOfferingSignature],
     [leadRunnerStandingFunction, leadRunnerStandingSignature],
   ] as readonly (readonly [string, string])[]
 ).map(leadDoorNamed);

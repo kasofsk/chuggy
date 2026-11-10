@@ -99,6 +99,79 @@ test("the selector command parses every plain-data dependency", async () => {
   });
 });
 
+const subsidizedLead = {
+  credentialSlot: "anthropic-api",
+  model: "claude-haiku-5-5",
+  effort: "low",
+  autoCompactWindow: 100_000,
+  inputBytesPerDecision: 65_536,
+  turnTokensMax: 200_000,
+};
+
+/** The lead host's configuration the selector command composes from `configuration`. */
+async function selectorLeadPolicyRead(
+  configuration: unknown,
+): Promise<unknown> {
+  const program = `
+    const root = await import('./src/roots/selector.ts');
+    process.stdout.write(JSON.stringify(
+      root.selectorLeadPolicy(root.selectorConfiguration(process.env)),
+    ));
+  `;
+  const found = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...validEnvironment,
+        CHUG_SELECTOR_CONFIG: JSON.stringify(configuration),
+      },
+    },
+  );
+  return JSON.parse(found.stdout);
+}
+
+test("a subsidized lead the configuration names is carried into the lead host's configuration, and one it does not name is absent", async () => {
+  const lead = {
+    pollIntervalMs: 10,
+    implementationRevision: "selector-1",
+    principal: "selector-service",
+    credentialSlot: "claude-code",
+  };
+  assert.deepEqual(await selectorLeadPolicyRead(validConfiguration), lead);
+  assert.deepEqual(
+    await selectorLeadPolicyRead({ ...validConfiguration, subsidizedLead }),
+    { ...lead, subsidizedLead },
+  );
+});
+
+test("a subsidized lead outside the bounds its counterpart for every lead has is a configuration refusal", async () => {
+  for (const refused of [
+    { credentialSlot: "" },
+    { credentialSlot: "s".repeat(257) },
+    { model: "-flag" },
+    { model: "a model" },
+    { effort: "extreme" },
+    { autoCompactWindow: 99_999 },
+    { autoCompactWindow: 1_000_001 },
+    { inputBytesPerDecision: 0 },
+    { turnTokensMax: 0 },
+    { turnTokensMax: 1_000_001 },
+    { unknown: true },
+  ]) {
+    const failure = await executeFailure({
+      ...validEnvironment,
+      CHUG_SELECTOR_CONFIG: JSON.stringify({
+        ...validConfiguration,
+        subsidizedLead: { ...subsidizedLead, ...refused },
+      }),
+    });
+    assert.equal(failure.code, 2, JSON.stringify(refused));
+    assert.match(failure.stderr, /^selector configuration: /u);
+  }
+});
+
 test("the source's token source confirms an issuer's invalid_client before it is a refusal", async () => {
   const program = `
     const root = await import('./src/roots/selector.ts');

@@ -79,6 +79,7 @@ import {
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
+import { postgresSubsidizedLeadPrecondition } from "../adapters/postgres/sessionPlacement.ts";
 import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
 import {
   postgresFailedLanding,
@@ -452,7 +453,13 @@ export function selectorProcessRoot(
         clock: { nowIso: () => new Date().toISOString() },
         wakesPerPassMax: config.wakes.wakesPerPassMax,
       },
-      { pool, additional: selectorProcessPreconditions(pool, additional) },
+      {
+        pool,
+        additional: selectorProcessPreconditions(pool, [
+          ...additional,
+          postgresSubsidizedLeadPrecondition(pool, lead.policy.subsidizedLead),
+        ]),
+      },
       config.runtime,
     ),
   );

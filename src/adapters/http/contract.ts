@@ -71,7 +71,7 @@ import {
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
-import type { SessionRoutes } from "../../interpreter/sessionPlacement.ts";
+import type { SessionPlacementChoice } from "../../interpreter/sessionPlacement.ts";
 import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import {
   asThreadOpenKey,
@@ -321,10 +321,16 @@ export function parseProjectOwnerFallback(
   return projectOwnerFallbackSchema.parse(body).fallback;
 }
 
-/** One session placement as the wire carries it, keyed by the session kind each route is for. */
-export function parseSessionPlacement(body: unknown): SessionRoutes {
+/** One session placement as the wire carries it, keyed by the session kind each route is for, and the lead's offering where it names one. */
+export function parseSessionPlacement(body: unknown): SessionPlacementChoice {
   const parsed = sessionPlacementSchema.parse(body);
-  return { Thread: parsed.thread, Lead: parsed.lead };
+  return {
+    Thread: parsed.thread,
+    Lead: parsed.lead,
+    ...(parsed.leadOffering === undefined
+      ? {}
+      : { leadOffering: parsed.leadOffering }),
+  };
 }
 
 /** One retirement as the wire carries it, which is the binding and nothing else. */

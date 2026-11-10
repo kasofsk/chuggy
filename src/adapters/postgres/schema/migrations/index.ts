@@ -142,6 +142,7 @@ import { migration141 } from "./141-active-work-started-runs.ts";
 import { migration142 } from "./142-lead-prompt-default.ts";
 import { migration143 } from "./143-lead-credential-slot.ts";
 import { migration144 } from "./144-project-landing-queues.ts";
+import { migration145 } from "./145-subsidized-lead.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -289,4 +290,5 @@ export const migrations: readonly Migration[] = [
   migration142,
   migration143,
   migration144,
+  migration145,
 ];

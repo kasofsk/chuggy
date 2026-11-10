@@ -486,6 +486,8 @@ function placement(
   return {
     thread: { route: project.threads, source: "Default" },
     lead: { route: "Pool", source: "Default" },
+    leadOffering: "Own",
+    leadOfferings: ["Own"],
     choices: ["InCluster", "Pool"],
     runners: { mine: mine(site, project), project: project.runner },
   };

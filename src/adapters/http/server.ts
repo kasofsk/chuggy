@@ -256,6 +256,7 @@ import {
   placementReadResponse,
   placementWriteResponse,
   sessionPlacementBody,
+  sessionPlacementWriteResponse,
   notFound,
   sessionBearerRefusedResponse,
   actionReportResponse,
@@ -1795,12 +1796,13 @@ function registerActionReports(
  * Where a project's executions run: read under `Read` and written whole under
  * `Administer`, a hosted route needing the tenant's grant besides.
  */
-function registerPlacement<Routes, View>(
+function registerPlacement<Routes, View, Written>(
   app: FastifyInstance,
   path: string,
-  placement: PlacementAdministration<Routes, View>,
+  placement: PlacementAdministration<Routes, View, Written>,
   parse: (body: unknown) => Routes,
   body: (view: View) => unknown,
+  written: (result: Written) => NativeHttpResponse,
 ): void {
   app.get(path, async (request, reply) => {
     nativeHttpSend(
@@ -1815,16 +1817,15 @@ function registerPlacement<Routes, View>(
     path,
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      const written = parse(request.body);
+      const chosen = parse(request.body);
       nativeHttpSend(
         reply,
-        placementWriteResponse(
+        written(
           await placement.write(
             principalOf(request),
             partitionOf(request),
-            written,
+            chosen,
           ),
-          body,
         ),
       );
     },
@@ -3200,6 +3201,7 @@ function registerPlacements(
       ownerFallback,
       parseProjectOwnerFallback,
       ownerFallbackBody,
+      (result) => placementWriteResponse(result, ownerFallbackBody),
     );
   if (placement !== undefined)
     registerPlacement(
@@ -3208,6 +3210,7 @@ function registerPlacements(
       placement,
       parseExecutionPlacement,
       executionPlacementBody,
+      (result) => placementWriteResponse(result, executionPlacementBody),
     );
   if (sessionPlacement !== undefined)
     registerPlacement(
@@ -3216,6 +3219,7 @@ function registerPlacements(
       sessionPlacement,
       parseSessionPlacement,
       sessionPlacementBody,
+      sessionPlacementWriteResponse,
     );
 }
 

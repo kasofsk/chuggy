@@ -121,7 +121,7 @@ test("a project's own row overrides the published default, and the deployment's 
   assert.equal(
     await postgresSessionPlacement(apiPool).write(
       placed,
-      { Thread: "InCluster", Lead: "Pool" },
+      { Thread: "InCluster", Lead: "Pool", leadOffering: "Own" },
       owner,
     ),
     "Written",
@@ -166,7 +166,11 @@ test("a kind the routing does not name is refused rather than placed", async () 
 test("a write that changes nothing is unchanged, and a project that does not exist is not found", async () => {
   const partition = await postgresHarnessProject(harness.store, "repeat");
   const store = postgresSessionPlacement(apiPool);
-  const placement = { Thread: "Pool", Lead: "Pool" } as const;
+  const placement = {
+    Thread: "Pool",
+    Lead: "Pool",
+    leadOffering: "Own",
+  } as const;
   assert.equal(await store.write(partition, placement, owner), "Written");
   assert.equal(await store.write(partition, placement, owner), "Unchanged");
   assert.equal(
@@ -188,7 +192,14 @@ test("a write that changes one kind's route is written, and that route reads bac
     [{ Thread: "Pool", Lead: "Pool" }, ["Pool", "Pool"]],
     [{ Thread: "InCluster", Lead: "Pool" }, ["InCluster", "Pool"]],
   ] as const) {
-    assert.equal(await store.write(partition, placement, owner), "Written");
+    assert.equal(
+      await store.write(
+        partition,
+        { ...placement, leadOffering: "Own" },
+        owner,
+      ),
+      "Written",
+    );
     const [thread, lead] = reads;
     assert.deepEqual(await routed(partition), {
       Thread: `${thread}/Project`,
@@ -340,7 +351,7 @@ test("a member's personal runner is no runner of theirs or of the project's, how
 test("only the API writes a placement, the API and the selector resolve one, and only the scheduler publishes a routing", async () => {
   const partition = await postgresHarnessProject(harness.store, "privileges");
   const project = `'${partition.tenant}','${partition.project}'`;
-  const door = `SELECT ${sessionPlacementSetFunction}(${project},'Pool','Pool','Member','someone')`;
+  const door = `SELECT ${sessionPlacementSetFunction}(${project},'Pool','Pool','Own','Member','someone')`;
   const reads = [
     [
       sessionRouteFunction,
