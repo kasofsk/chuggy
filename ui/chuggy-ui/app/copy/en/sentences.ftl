@@ -67,6 +67,9 @@ sentences-refusal-overrides-unknown = { -override(case: "upper", form: "plural")
 sentences-refusal-capacity-reached = { -project(case: "upper") } full · Finish or { -revoke } { -ticket(form: "a") }
 sentences-refusal-landing-request-closed = { -landing(case: "upper") } request closed · { -ticket(case: "upper") } still waiting
 sentences-refusal-overrides-move-definition = Only start settings can change while { -escalation }
+sentences-refusal-approval-as-work = { -approval(case: "upper", form: "a") } cannot be the { -work-stage } · Select another { -workload }
+sentences-refusal-overrides-change-approval = { -override(case: "upper", form: "plural") } cannot make or unmake { -approval(form: "a") }
+sentences-refusal-approval-not-runnable = { -approval(case: "upper") } { -stage(form: "plural") } are not supported yet · Leave that { -stage } out
 
 ## Why a ticket following its configuration stays on the revision it holds.
 

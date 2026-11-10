@@ -17,10 +17,13 @@ not imported. Task instruction documents under `.chug/tasks/` are not
 configuration declarations.
 
 A version 2 configuration is a catalog: workloads, the evaluation plans that
-run them, and the defaults a ticket takes where it selects none. A workload may
-be a path to a JSON file holding one, and a prompt may name the file holding
-its text; both are paths under `.chug/`, read at the commit the import reads
-and stored inline. This tree's catalogs keep their prompts in `.chug/prompts/`
+run them, and the defaults a ticket takes where it selects none. A workload's
+`runner` is `Agent`, `Commands` or `Approval`; an `Approval` is answered by a
+person, its `approvers` a role (`Developer`, the default, or `Admin`) or a list
+of principals, and is only ever an evaluator. A workload may be a path to a
+JSON file holding one, and a prompt may name the file holding its text; both
+are paths under `.chug/`, read at the commit the import reads and stored
+inline. This tree's catalogs keep their prompts in `.chug/prompts/`
 and the workloads they share in `.chug/workloads/`, and its reviewer's prompt is
 `.chug/tasks/review-change.md` itself.
 

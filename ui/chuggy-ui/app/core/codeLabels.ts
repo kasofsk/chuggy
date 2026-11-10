@@ -17,6 +17,7 @@
 
 import {
   blockedReasons,
+  operationBoundaryRefusalCodes,
   type AccountAgent,
   gitEvidences,
   type changeProposalCreations,
@@ -34,6 +35,7 @@ import {
   type FinalizationUnavailableKind,
   type GitEvidenceLabel,
   type NativeActionKind,
+  type OperationBoundaryRefusalCode,
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
@@ -850,8 +852,17 @@ export function operationStateLabel(state: OperationState): Copy {
   }
 }
 
+/** Whether a refusal is one the boundary decided rather than the machine. */
+function operationRefusalIsBoundary(
+  code: OperationRefusalCode,
+): code is OperationBoundaryRefusalCode {
+  return operationBoundaryRefusalCodes.some((known) => known === code);
+}
+
 /** Why the actor declined the mutation, as the fragment that goes after it. */
 export function operationRefusalLabel(code: OperationRefusalCode): Copy {
+  if (operationRefusalIsBoundary(code))
+    return operationRefusalBoundaryLabel(code);
   switch (code) {
     case "TicketAlreadyExists":
       return { id: "codes-refusal-ticket-exists" };
@@ -883,6 +894,14 @@ export function operationRefusalLabel(code: OperationRefusalCode): Copy {
       return { id: "codes-refusal-evaluation-not-current" };
     case "FinalizationNotCurrent":
       return { id: "codes-refusal-landing-not-current" };
+  }
+}
+
+/** Why the boundary declined the mutation, as `operationRefusalLabel` words it. */
+function operationRefusalBoundaryLabel(
+  code: OperationBoundaryRefusalCode,
+): Copy {
+  switch (code) {
     case "AuthoringChanged":
       return { id: "codes-refusal-authoring-changed" };
     case "ConfigurationInvalid":
@@ -919,6 +938,12 @@ export function operationRefusalLabel(code: OperationRefusalCode): Copy {
       return { id: "codes-refusal-landing-request-closed" };
     case "OverridesMoveDefinition":
       return { id: "codes-refusal-overrides-move-definition" };
+    case "ApprovalAsWork":
+      return { id: "codes-refusal-approval-as-work" };
+    case "OverridesChangeApprovalRunner":
+      return { id: "codes-refusal-overrides-change-approval" };
+    case "ApprovalNotRunnable":
+      return { id: "codes-refusal-approval-not-runnable" };
   }
 }
 

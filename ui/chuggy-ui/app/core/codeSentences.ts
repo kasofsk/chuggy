@@ -303,6 +303,12 @@ export function operationRefusalSentence(refused: OperationRefusal): Copy {
       return { id: "sentences-refusal-landing-request-closed" };
     case "OverridesMoveDefinition":
       return { id: "sentences-refusal-overrides-move-definition" };
+    case "ApprovalAsWork":
+      return { id: "sentences-refusal-approval-as-work" };
+    case "OverridesChangeApprovalRunner":
+      return { id: "sentences-refusal-overrides-change-approval" };
+    case "ApprovalNotRunnable":
+      return { id: "sentences-refusal-approval-not-runnable" };
   }
 }
 

@@ -1132,7 +1132,9 @@ function nativeDraftInitializationMethod(
               readiness.fault === "SelectionUnknown" ||
               readiness.fault === "SelectionUnsupported"
                 ? "SelectionUnknown"
-                : "ConfigurationIncomplete",
+                : readiness.fault === "ApprovalAsWork"
+                  ? "ApprovalAsWork"
+                  : "ConfigurationIncomplete",
           },
         };
       const commandedCheckStage = ticketCommandedCheckStage(readiness.ticket);

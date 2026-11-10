@@ -159,6 +159,14 @@ export type ExecutionOutcome = (typeof executionOutcomes)[number];
 export const executionTaskKinds = ["Work", "Evaluation"] as const;
 export type ExecutionTaskKind = (typeof executionTaskKinds)[number];
 
+/** What a catalog workload is carried out by: an agent the worker briefs, its own command lines, or a person who approves or rejects. */
+export const workloadRunners = ["Agent", "Commands", "Approval"] as const;
+export type WorkloadRunner = (typeof workloadRunners)[number];
+
+/** Who may answer an approval by role: anyone holding the project's develop permit, or its administer permit. */
+export const approvalRoles = ["Developer", "Admin"] as const;
+export type ApprovalRole = (typeof approvalRoles)[number];
+
 /** What carries out a task: an agent the worker briefs, or the stage's own command lines. */
 export const briefingCarriers = ["Agent", "Commands"] as const;
 export type BriefingCarrier = (typeof briefingCarriers)[number];
@@ -365,6 +373,9 @@ export const operationBoundaryRefusalCodes = [
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",
+  "ApprovalAsWork",
+  "OverridesChangeApprovalRunner",
+  "ApprovalNotRunnable",
 ] as const;
 export type OperationBoundaryRefusalCode =
   (typeof operationBoundaryRefusalCodes)[number];
@@ -374,10 +385,13 @@ export type OperationBoundaryRefusalCode =
  * either document, either alone being fine: a configuration commanding no check
  * stage contradicts a brief that appends check lines to it, a brief naming no
  * repository has nothing to pair with, a configuration imported from a
- * repository contradicts a brief working in a different one, and a program
- * leaving out the task a brief's check lines join would never run them. A
- * revision of the draft mends each, so each is refused under its own code
- * rather than as the configuration's.
+ * repository contradicts a brief working in a different one, a program
+ * leaving out the task a brief's check lines join would never run them, an
+ * approval selected as the work has no change to make, an override may not
+ * make a workload an approval or one no longer, and a program drawing an
+ * approval evaluator draws one nothing runs yet. A revision of the draft mends
+ * each, so each is refused under its own code rather than as the
+ * configuration's.
  */
 export const releasePairingFaults = [
   "BriefChecksUncommanded",
@@ -389,6 +403,9 @@ export const releasePairingFaults = [
   "ProgramSkipsBriefChecks",
   "OverridesUnsupported",
   "OverridesUnknown",
+  "ApprovalAsWork",
+  "OverridesChangeApprovalRunner",
+  "ApprovalNotRunnable",
 ] as const satisfies readonly OperationBoundaryRefusalCode[];
 export type ReleasePairingFault = (typeof releasePairingFaults)[number];
 

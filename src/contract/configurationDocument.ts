@@ -36,11 +36,12 @@ import {
 import {
   configurationCanonicalCharsMax,
   configurationPromptTextCharsMax,
+  identitySchema,
   nativeHttpDraftEvaluatorsMax,
   repositoryConfigurationNameCharsMax,
 } from "./http.ts";
 import { contractJsonSchemaInput } from "./jsonSchema.ts";
-import { outputRenderers } from "./rosters.ts";
+import { approvalRoles, outputRenderers, workloadRunners } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
 import {
   workerRepositoryDirectory,
@@ -717,10 +718,40 @@ export const commandsWorkloadSchema = z.strictObject({
   ...workloadPlacementShape,
 });
 
-/** One workload, which is one of the two runners. */
+/** The most principals an approval workload names as its approvers. */
+export const approvalPrincipalsMax = 64;
+
+/** The longest text an approval workload's instructions hold, in UTF-16 code units. */
+export const approvalInstructionsCharsMax = 4_096;
+
+/** Who may answer an approval: everyone holding a role's permit on the project, or the principals listed. */
+export const approvalApproversSchema = z
+  .union([
+    z.enum(approvalRoles),
+    z.array(identitySchema).min(1).max(approvalPrincipalsMax),
+  ])
+  .describe(
+    "Developer is anyone holding the project's develop permit and Admin anyone holding its administer permit; a list names each principal who may answer, encoded as a ticket's creator is. Absent is Developer.",
+  );
+
+/** A workload a person answers: approve or reject a ticket's work, as one evaluator of a plan stage. */
+export const approvalWorkloadSchema = z.strictObject({
+  runner: z.literal("Approval"),
+  approvers: approvalApproversSchema.optional(),
+  instructions: z
+    .string()
+    .min(1)
+    .max(approvalInstructionsCharsMax)
+    .regex(configurationPromptTextPattern)
+    .optional()
+    .describe("What the approver is shown to look at."),
+});
+
+/** One workload, which is one of the three runners. */
 export const workloadSchema = z.discriminatedUnion("runner", [
   agentWorkloadSchema,
   commandsWorkloadSchema,
+  approvalWorkloadSchema,
 ]);
 
 /** A prompt one ticket names in place of a workload's: its text, or the path of a prompt file its catalog's import read. */
@@ -736,7 +767,7 @@ export const workloadPromptOverrideSchema = z
 /** What one ticket replaces of one workload: any of its fields, each in place of the workload's whole. */
 export const workloadOverrideSchema = z
   .strictObject({
-    runner: z.enum(["Agent", "Commands"]).optional(),
+    runner: z.enum(workloadRunners).optional(),
     purpose: agentWorkloadSchema.shape.purpose,
     prompt: workloadPromptOverrideSchema.optional(),
     worker: z
@@ -747,10 +778,12 @@ export const workloadOverrideSchema = z
     practices: configurationPracticesSchema.optional(),
     brief: configurationBriefSchema.optional(),
     commands: configurationCommandLinesSchema.optional(),
+    approvers: approvalWorkloadSchema.shape.approvers,
+    instructions: approvalWorkloadSchema.shape.instructions,
     ...workloadPlacementShape,
   })
   .describe(
-    "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema.",
+    "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval.",
   );
 
 /** Whether a map holds no more entries than a catalog map may. */
@@ -848,7 +881,9 @@ export const configurationFollowingSchema = z.enum(configurationFollowings);
 
 /** The catalog entries a ticket runs on where it selects none, and the revision it follows where it chooses none. */
 export const workloadDefaultsSchema = z.strictObject({
-  work: configurationCatalogNameSchema,
+  work: configurationCatalogNameSchema.describe(
+    "The importer also holds that it names no Approval workload, which is only ever an evaluator.",
+  ),
   evaluation: configurationCatalogNameSchema,
   finalization: configurationCatalogNameSchema.optional(),
   configuration: configurationFollowingSchema.optional(),

@@ -697,6 +697,9 @@ test("the refusal code roster is exhaustive over its union", () => {
     TicketCapacityReached: true,
     FinalizationRequestClosed: true,
     OverridesMoveDefinition: true,
+    ApprovalAsWork: true,
+    OverridesChangeApprovalRunner: true,
+    ApprovalNotRunnable: true,
   };
   assert.deepEqual(sorted(operationRefusalCodes), keysOf(refusals));
 });
