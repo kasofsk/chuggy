@@ -84,7 +84,7 @@ export type CommandsWorkload = WorkloadReadonly<
   z.output<typeof commandsWorkloadSchema>
 >;
 
-/** A workload a person answers, which names no runner, image or worker. */
+/** A workload a person answers, which runs on no runner and names no image or worker. */
 export type ApprovalWorkload = WorkloadReadonly<
   z.output<typeof approvalWorkloadSchema>
 >;

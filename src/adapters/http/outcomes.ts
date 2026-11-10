@@ -2255,6 +2255,14 @@ export function draftInitializationResponse(
         "The selection names nothing the configuration holds.",
       ),
     );
+  if (initialized.initialized === "ApprovalAsWork")
+    return response(
+      409,
+      nativeHttpError(
+        "ApprovalAsWork",
+        "The selection names an approval as the work.",
+      ),
+    );
   const value = initialized.value;
   return response(200, {
     configuration: value.configuration,

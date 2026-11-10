@@ -981,6 +981,7 @@ export type DraftInitializationRead =
   | { readonly initialized: "ConfigurationNotFound" }
   | { readonly initialized: "ConfigurationIncomplete" }
   | { readonly initialized: "SelectionUnknown" }
+  | { readonly initialized: "ApprovalAsWork" }
   | { readonly initialized: "PolicyUnavailable" };
 
 export interface DraftInitializationSnapshot extends Omit<
