@@ -108,7 +108,11 @@ type Worker = keyof typeof workers | "NotWritten";
 
 /** Who claimed an attempt: a member's personal runner, a pool a member registered, a pool nobody did, or the cluster. */
 type Claim =
-  | { readonly by: "Personal"; readonly owner: string }
+  | {
+      readonly by: "Personal";
+      readonly owner: string;
+      readonly benchesCredential?: boolean;
+    }
   | { readonly by: "Pool"; readonly registeredBy: string | null }
   | { readonly by: "Cluster" };
 
@@ -145,9 +149,15 @@ async function spendingAttempt(label: string, worker: Worker, claim: Claim) {
   switch (claim.by) {
     case "Personal":
       await rig.harness.query(
-        `UPDATE execution_attempt SET pool=$2,pool_principal=$3,personal=true,assignment=$3
+        `UPDATE execution_attempt SET pool=$2,pool_principal=$3,personal=true,assignment=$3,
+            runner_benches_credential=$4
           WHERE attempt=$1`,
-        [attempt.attempt, claim.owner, principal],
+        [
+          attempt.attempt,
+          claim.owner,
+          principal,
+          claim.benchesCredential === true,
+        ],
       );
       break;
     case "Pool":
@@ -495,6 +505,112 @@ test("a run ended rate limited keeps its limit with or without one named, and a 
     true,
   );
   assert.deepEqual(await limitsOf(other), []);
+});
+
+/** The limit kept against `attempt` alone, which is none where its run named neither a window nor a reset. */
+async function attemptLimitOf(attempt: Attempt) {
+  return rig.harness.query(
+    `SELECT usage_window,extract(epoch FROM resets_at)::bigint::text AS resets_at
+       FROM execution_attempt_limit WHERE attempt=$1`,
+    [attempt.attempt],
+  );
+}
+
+test("a run ended rate limited keeps the limit it named against its attempt, whoever claimed it, and keeps none where it named none", async () => {
+  const resetsAt = secondsFromNow(3_600);
+  const claims: readonly Claim[] = [
+    { by: "Personal", owner: `owner-${randomUUID()}` },
+    { by: "Personal", owner: `owner-${randomUUID()}`, benchesCredential: true },
+    { by: "Pool", registeredBy: `member-${randomUUID()}` },
+    { by: "Cluster" },
+  ];
+  for (const [index, claim] of claims.entries()) {
+    const named = await spendingAttempt(`kept-${index}`, "Claude", claim);
+    assert.equal(
+      await endPosted(named, "RunRateLimited", {
+        window: "seven_day",
+        resetsAt,
+      }),
+      true,
+    );
+    assert.deepEqual(
+      await attemptLimitOf(named),
+      [{ usage_window: "seven_day", resets_at: String(resetsAt) }],
+      claim.by,
+    );
+    const windowOnly = await spendingAttempt(
+      `window-${index}`,
+      "Claude",
+      claim,
+    );
+    assert.equal(
+      await endPosted(windowOnly, "RunRateLimited", { window: "five_hour" }),
+      true,
+    );
+    assert.deepEqual(await attemptLimitOf(windowOnly), [
+      { usage_window: "five_hour", resets_at: null },
+    ]);
+    const unnamed = await spendingAttempt(`unnamed-${index}`, "Claude", claim);
+    assert.equal(await endPosted(unnamed, "RunRateLimited"), true);
+    assert.deepEqual(await attemptLimitOf(unnamed), []);
+  }
+  const failed = await spendingAttempt("kept-failed", "Claude", {
+    by: "Personal",
+    owner: `owner-${randomUUID()}`,
+    benchesCredential: true,
+  });
+  assert.equal(
+    await endPosted(failed, "RunFailed", { window: "five_hour", resetsAt }),
+    true,
+  );
+  assert.deepEqual(await attemptLimitOf(failed), []);
+});
+
+test("a limit benched by the personal runner that handed its job the credential pauses no account, where a pool's and an earlier runner's pause theirs as before", async () => {
+  const resetsAt = secondsFromNow(7_200);
+  const limit = { window: "five_hour", resetsAt } as const;
+  const benching = `owner-${randomUUID()}`;
+  const benched = await spendingAttempt("benched", "Claude", {
+    by: "Personal",
+    owner: benching,
+    benchesCredential: true,
+  });
+  assert.equal(await endPosted(benched, "RunRateLimited", limit), true);
+  assert.deepEqual(await limitsOf(benching), []);
+  const earlier = `owner-${randomUUID()}`;
+  const unbenched = await spendingAttempt("unbenched", "Claude", {
+    by: "Personal",
+    owner: earlier,
+  });
+  assert.equal(await endPosted(unbenched, "RunRateLimited", limit), true);
+  assert.deepEqual(
+    (await limitsOf(earlier)).map((kept) => kept["attempt"]),
+    [unbenched.attempt],
+  );
+  const registrant = `member-${randomUUID()}`;
+  const pooled = await spendingAttempt("pooled", "Claude", {
+    by: "Pool",
+    registeredBy: registrant,
+  });
+  assert.equal(await endPosted(pooled, "RunRateLimited", limit), true);
+  assert.deepEqual(
+    (await limitsOf(registrant)).map((kept) => kept["attempt"]),
+    [pooled.attempt],
+  );
+});
+
+test("only a personal runner's claim is recorded as benching its credential", async () => {
+  const pooled = await spendingAttempt("bench-pool", "Claude", {
+    by: "Pool",
+    registeredBy: `member-${randomUUID()}`,
+  });
+  await assert.rejects(
+    rig.harness.query(
+      `UPDATE execution_attempt SET runner_benches_credential=true WHERE attempt=$1`,
+      [pooled.attempt],
+    ),
+    /execution_attempt_benches_credential_is_personal/u,
+  );
 });
 
 test("an ending the boundary refuses keeps no limit", async () => {

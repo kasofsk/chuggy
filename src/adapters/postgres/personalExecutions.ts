@@ -19,7 +19,9 @@
  * execution larger than the room the terms name, which chooses among what
  * that allows as the order does rather than being a term of it. Its account
  * is its owner, and it passes over an attempt whose agent that account has
- * paused as a pool's claim does.
+ * paused as a pool's claim does. It records on the attempt whether its runner
+ * benches the credential it hands the job, which is what keeps the job's
+ * usage limit off that account.
  *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
@@ -31,12 +33,14 @@ import type pg from "pg";
 
 import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import { asProjectId, type ProjectId } from "../../interpreter/projectStore.ts";
+import type { WorkerPoolCredentialOutcome } from "../../contract/workerPool.ts";
 import type {
   PersonalRunnerIdentity,
   WorkerPoolClaimed,
   WorkerPoolClaimTerms,
   WorkerPoolExecutionHolds,
   WorkerPoolPersonalClaimed,
+  WorkerPoolPersonalClaimTerms,
 } from "../../interpreter/workerPool.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 
@@ -51,7 +55,7 @@ export interface PersonalExecutionClaim {
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
   identity: PersonalRunnerIdentity,
-  terms: WorkerPoolClaimTerms,
+  terms: WorkerPoolPersonalClaimTerms,
   claim: PersonalExecutionClaim,
 ): Promise<WorkerPoolPersonalClaimed | undefined> {
   const room = terms.memoryRoomMib ?? null;
@@ -102,6 +106,7 @@ export async function personalExecutionClaimed(
       UPDATE execution_attempt a SET
         pool=${identity.owner},pool_principal=${identity.principal},
         personal=true,assignment=${claim.assignment},pool_refusal=NULL,
+        runner_benches_credential=${terms.runnerBenchesCredential === true},
         capability_secret_digest=${claim.digest},
         lease_owner=${identity.owner},
         lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
@@ -164,6 +169,60 @@ export async function personalExecutionWaiting(
       ) AS waiting`,
   );
   return found.rows[0]?.waiting === true;
+}
+
+/**
+ * How the run of each of `assignments` this registration claimed benching its
+ * credential ended, where it ended under an outcome: withdrawn
+ * `RunRateLimited`, with the reset its limit named, or lost
+ * `RunCreditsExhausted`. An assignment of any other ending, or claimed by an
+ * earlier release, names none.
+ */
+export async function personalExecutionCredentialOutcomes(
+  pool: pg.Pool,
+  identity: PersonalRunnerIdentity,
+  assignments: readonly string[],
+): Promise<WorkerPoolCredentialOutcome[]> {
+  if (assignments.length === 0) return [];
+  const found = await pool.query<{
+    assignment: string | null;
+    evidence: string | null;
+    resets_at: string | null;
+  }>(
+    sql`SELECT a.assignment,a.evidence,
+          extract(epoch FROM l.resets_at)::bigint::text AS resets_at
+        FROM execution_attempt a
+        LEFT JOIN execution_attempt_limit l
+          ON l.tenant=a.tenant AND l.project=a.project
+         AND l.execution=a.execution AND l.attempt=a.attempt
+        WHERE a.tenant=${identity.tenant} AND a.personal AND a.pool=${identity.owner}
+          AND a.pool_principal=${identity.principal}
+          AND a.runner_benches_credential
+          AND a.assignment=ANY(${[...assignments]}::text[])
+          AND ((a.state='Withdrawn' AND a.evidence='RunRateLimited')
+               OR (a.state='Lost' AND a.evidence='RunCreditsExhausted'))
+        ORDER BY a.assignment`,
+  );
+  return found.rows.map(personalExecutionCredentialOutcome);
+}
+
+/** The outcome one row of `personalExecutionCredentialOutcomes` names. */
+function personalExecutionCredentialOutcome(row: {
+  readonly assignment: string | null;
+  readonly evidence: string | null;
+  readonly resets_at: string | null;
+}): WorkerPoolCredentialOutcome {
+  if (row.assignment === null)
+    throw new Error("a credential outcome's attempt names no assignment");
+  if (row.evidence === "RunCreditsExhausted")
+    return { assignment: row.assignment, outcome: "CreditsExhausted" };
+  if (row.evidence !== "RunRateLimited")
+    throw new Error(`no credential outcome is read as ${String(row.evidence)}`);
+  return {
+    assignment: row.assignment,
+    outcome: "UsageLimited",
+    ...(row.resets_at === null ? {} : { resetsAt: Number(row.resets_at) }),
+  };
 }
 
 /** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */

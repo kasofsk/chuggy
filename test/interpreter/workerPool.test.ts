@@ -26,6 +26,10 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
+  workerPoolReconciliationSchema,
+  type WorkerPoolCredentialOutcome,
+} from "../../src/contract/workerPool.ts";
+import {
   workerPoolHeldImages,
   workerPoolHeldNamedMax,
   workerPoolOwnersAskedMax,
@@ -118,6 +122,7 @@ const idle: WorkerPoolAssignments = {
   waiting: () => Promise.resolve(false),
   waitingPersonal: () => Promise.resolve(false),
   allowlisted: () => Promise.resolve([]),
+  credentialOutcomes: () => Promise.resolve([]),
   polled: () => Promise.resolve(),
   renew: () => Promise.resolve(true),
   refuse: () => Promise.resolve(false),
@@ -1499,6 +1504,147 @@ test("a personal runner's job names its own attempt's project to a poll whose re
     "none",
     "none",
   ]);
+});
+
+/** A durable side whose held jobs `live` alone renews, answering an outcome for each stopped job `outcomes` names, and recording what each claim and lookup was asked. */
+function benching(outcomes: readonly WorkerPoolCredentialOutcome[]) {
+  const reached: unknown[] = [];
+  const assignments: WorkerPoolAssignments = {
+    ...idle,
+    renew: (_caller, assignment) => Promise.resolve(assignment === "live"),
+    claim: (_caller, terms) =>
+      Promise.resolve((reached.push(["claim", terms]), undefined)),
+    allowlisted: () => Promise.resolve([asProjectId("project")]),
+    claimPersonal: (_caller, terms) =>
+      Promise.resolve((reached.push(["claimPersonal", terms]), undefined)),
+    credentialOutcomes: (_caller, stopped) =>
+      Promise.resolve(
+        (reached.push(["credentialOutcomes", stopped]),
+        outcomes.filter((outcome) => stopped.includes(outcome.assignment))),
+      ),
+  };
+  return { reached, assignments };
+}
+
+const benchedOutcomes: readonly WorkerPoolCredentialOutcome[] = [
+  { assignment: "limited", outcome: "UsageLimited", resetsAt: 1_900_000_000 },
+  { assignment: "empty", outcome: "CreditsExhausted" },
+];
+
+/** The jobs a runner holds in `benching`'s durable side: one live, two stopped under an outcome and one stopped under none. */
+const benchedHolding = {
+  jobs: ["live", "limited", "empty", "failed"],
+  sessions: [],
+};
+
+/** A plane's settings whose held bound leaves `benchedHolding` room for one more job. */
+const benchedSettings: WorkerPoolPollSettings = { ...settings, heldMax: 5 };
+
+/** The terms a claim by `benchedSettings` is held to, as `claim` and `claimPersonal` are each asked them. */
+const benchedTerms = {
+  leaseSecs: benchedSettings.leaseSecs,
+  heldMax: benchedSettings.heldMax,
+  memoryMibDefault: benchedSettings.memoryMib,
+};
+
+test("a personal runner whose release reads credential outcomes is told each beside its job's stop, and claims as one that benches its credential", async () => {
+  const { reached, assignments } = benching(benchedOutcomes);
+  const answered = await workerPoolReconcile(
+    ports(assignments),
+    runner,
+    benchedHolding,
+    { wanted: 1, wantedSessions: 0, contract: workerContractRelease },
+    benchedSettings,
+  );
+  assert.deepEqual(answered.stop, ["limited", "empty", "failed"]);
+  assert.deepEqual(answered.credentialOutcomes, benchedOutcomes);
+  assert.equal(
+    workerPoolReconciliationSchema.safeParse(answered).success,
+    true,
+  );
+  assert.deepEqual(reached, [
+    ["claimPersonal", { ...benchedTerms, runnerBenchesCredential: true }],
+    ["credentialOutcomes", ["limited", "empty", "failed"]],
+  ]);
+});
+
+test("a personal runner of an earlier release is never named an outcome, and claims as one that pauses its owner's account", async () => {
+  for (const contract of ["1.48.0", "1.20.0", undefined]) {
+    const { reached, assignments } = benching(benchedOutcomes);
+    const answered = await workerPoolReconcile(
+      ports(assignments),
+      runner,
+      benchedHolding,
+      {
+        wanted: 1,
+        wantedSessions: 0,
+        ...(contract === undefined ? {} : { contract }),
+      },
+      benchedSettings,
+    );
+    assert.deepEqual(answered.stop, ["limited", "empty", "failed"]);
+    assert.equal(Object.hasOwn(answered, "credentialOutcomes"), false);
+    assert.deepEqual(
+      reached,
+      [["claimPersonal", { ...benchedTerms, runnerBenchesCredential: false }]],
+      String(contract),
+    );
+  }
+});
+
+test("a pool and a chat host are never named an outcome or asked for one, nor a runner whose answer stops nothing, and an answer naming none leaves the field out", async () => {
+  for (const caller of [identity, host]) {
+    const { reached, assignments } = benching(benchedOutcomes);
+    const answered = await workerPoolReconcile(
+      ports(assignments),
+      caller,
+      benchedHolding,
+      { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+      benchedSettings,
+    );
+    assert.deepEqual(answered.stop, ["limited", "empty", "failed"]);
+    assert.equal(Object.hasOwn(answered, "credentialOutcomes"), false);
+    assert.deepEqual(reached, [], caller.kind);
+  }
+  const quiet = benching(benchedOutcomes);
+  const unstopped = await workerPoolReconcile(
+    ports(quiet.assignments),
+    runner,
+    { jobs: ["live"], sessions: [] },
+    { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+    benchedSettings,
+  );
+  assert.equal(Object.hasOwn(unstopped, "credentialOutcomes"), false);
+  assert.deepEqual(quiet.reached, []);
+  const none = benching([]);
+  const unnamed = await workerPoolReconcile(
+    ports(none.assignments),
+    runner,
+    benchedHolding,
+    { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+    benchedSettings,
+  );
+  assert.equal(Object.hasOwn(unnamed, "credentialOutcomes"), false);
+});
+
+test("an outcome the durable side names for a job the answer does not stop fails the poll rather than answering it", async () => {
+  const { assignments } = benching([]);
+  await assert.rejects(
+    workerPoolReconcile(
+      ports({
+        ...assignments,
+        credentialOutcomes: () =>
+          Promise.resolve([
+            { assignment: "live", outcome: "CreditsExhausted" },
+          ]),
+      }),
+      runner,
+      benchedHolding,
+      { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+      benchedSettings,
+    ),
+    /does not stop/u,
+  );
 });
 
 test("a personal runner whose owner may read nothing it allowlists claims nothing, and is told nothing is waiting without asking", async () => {

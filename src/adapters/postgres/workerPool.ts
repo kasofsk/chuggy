@@ -128,6 +128,7 @@ import {
 } from "../../interpreter/workerPoolRegistrationToken.ts";
 import {
   personalExecutionClaimed,
+  personalExecutionCredentialOutcomes,
   personalExecutionWaiting,
   personalExecutionsAllowlisted,
   personalExecutionsPolled,
@@ -876,6 +877,8 @@ export function postgresWorkerPoolAssignments(
       return personalExecutionWaiting(pool, identity, terms, projects);
     },
     allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
+    credentialOutcomes: (identity, assignments) =>
+      personalExecutionCredentialOutcomes(pool, identity, assignments),
     polled: (identity, executions) =>
       identity.kind === "Personal"
         ? personalExecutionsPolled(pool, identity, executions)
