@@ -26,6 +26,7 @@ import {
 } from "../app/core/epicTrains.ts";
 import type {
   EpicTrainGround,
+  EpicTrainsRead,
   EpicTrainsSeen,
 } from "../app/core/epicTrains.ts";
 
@@ -58,10 +59,21 @@ function restingOn(ticket: number) {
   return epicTrainRestingAt(card);
 }
 
+/** A read of the graph above, holding its tickets and any Done beside them. */
+function graphRead(read: {
+  readonly running: readonly number[];
+  readonly done: readonly number[];
+}): EpicTrainsRead {
+  return {
+    ...read,
+    held: [...new Set([1, 2, 3, ...read.done])].sort((a, b) => a - b),
+  };
+}
+
 function seenAfter(
-  ...reads: readonly { running: number[]; done: number[] }[]
+  ...given: readonly { running: number[]; done: number[] }[]
 ): EpicTrainsSeen {
-  const [first, ...rest] = reads;
+  const [first, ...rest] = given.map(graphRead);
   if (first === undefined) throw new Error("a read is given");
   return rest.reduce(
     (seen, read) => epicTrainsSeenNext(seen, read, drawn.connectors),
@@ -71,7 +83,7 @@ function seenAfter(
 
 test("the first read only places a resting train on every member with a run under way", () => {
   expect(
-    epicTrainsSeenFirst({ running: [1, 3], done: [] }).trains,
+    epicTrainsSeenFirst(graphRead({ running: [1, 3], done: [] })).trains,
   ).toStrictEqual([
     { train: "Resting", ticket: 1 },
     { train: "Resting", ticket: 3 },
@@ -139,26 +151,34 @@ test("a read that leaves a member running keeps the very train it had", () => {
   const [train] = relayed.trains;
   const after = epicTrainsSeenNext(
     relayed,
-    { running: [2, 3], done: [1] },
+    graphRead({ running: [2, 3], done: [1] }),
     drawn.connectors,
   );
   expect(after.trains[0]).toBe(train);
   expect(after.trains[1]).toStrictEqual({ train: "Relaying", from: 1, to: 3 });
 });
 
-test("two reads draw the same trains when the same members run and the same tickets are done", () => {
+test("two reads draw the same trains when the same members run and the graph holds the same tickets, the same of them done", () => {
+  const read = (
+    running: number[],
+    done: number[],
+    held = [1, 2, 3],
+  ): EpicTrainsRead => ({ running, held, done });
+  expect(epicTrainsReadSame(read([1, 2], [3]), read([1, 2], [3]))).toBe(true);
+  expect(epicTrainsReadSame(read([1], []), read([2], []))).toBe(false);
+  expect(epicTrainsReadSame(read([1], []), read([1], [2]))).toBe(false);
+  expect(epicTrainsReadSame(read([1], []), read([1], [], [1, 2, 3, 4]))).toBe(
+    false,
+  );
+});
+
+test("a ticket new to the graph and already Done did not finish, so its dependent's train emerges", () => {
+  const before: EpicTrainsRead = { running: [], held: [2, 3], done: [] };
+  const after: EpicTrainsRead = { running: [2], held: [1, 2, 3], done: [1] };
   expect(
-    epicTrainsReadSame(
-      { running: [1, 2], done: [3] },
-      { running: [1, 2], done: [3] },
-    ),
-  ).toBe(true);
-  expect(
-    epicTrainsReadSame({ running: [1], done: [] }, { running: [2], done: [] }),
-  ).toBe(false);
-  expect(
-    epicTrainsReadSame({ running: [1], done: [] }, { running: [1], done: [2] }),
-  ).toBe(false);
+    epicTrainsSeenNext(epicTrainsSeenFirst(before), after, drawn.connectors)
+      .trains,
+  ).toStrictEqual([{ train: "Emerging", ticket: 2 }]);
 });
 
 test("an emerging train grows from its card over its own span, then rests", () => {

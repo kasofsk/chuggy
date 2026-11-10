@@ -39,6 +39,18 @@ function epicTrainTransform(pose: EpicTrainPose): string {
   return `translate(${String(pose.at.x)} ${String(pose.at.y)}) scale(${String(pose.scale)}) translate(${String(-half)} ${String(-half)})`;
 }
 
+/** How long a train has moved for as it is drawn: none before its first
+ * frame, and since that frame after it, so a new ground draws a train that
+ * has come to rest at rest rather than back at its start. */
+function epicTrainDrawnElapsedMs(
+  train: EpicTrain,
+  moving: boolean,
+  begun: { readonly train: EpicTrain; readonly atMs: number } | undefined,
+): number {
+  if (!moving) return Infinity;
+  return begun?.train === train ? performance.now() - begun.atMs : 0;
+}
+
 /** One train, drawn at its first pose and stepped from there to its rest. A
  * new ground, as each read of the graph brings, steps the same train on from
  * where it had got to rather than from its start. */
@@ -71,7 +83,11 @@ const EpicTrainDrawn = memo(function EpicTrainDrawn(props: {
       cancelAnimationFrame(frame);
     };
   }, [train, ground, moving]);
-  const pose = epicTrainPose(train, moving ? 0 : Infinity, ground);
+  const pose = epicTrainPose(
+    train,
+    epicTrainDrawnElapsedMs(train, moving, begun.current),
+    ground,
+  );
   if (pose === undefined) return null;
   return (
     <g

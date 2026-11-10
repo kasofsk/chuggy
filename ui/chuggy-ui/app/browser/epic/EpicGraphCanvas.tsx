@@ -235,8 +235,14 @@ function EpicGraphControls(props: {
 /** The run each member has under way, and what the trains are found from:
  * which members run and which tickets are Done, both from the ticket list's
  * rows where they hold the ticket, so a ticket's run ending and its coming to
- * be Done are seen in the order they happened. */
-function useEpicGraphHeld(held: EpicPageHeld, drawn: EpicGraphDrawn) {
+ * be Done are seen in the order they happened. What is Done is read from the
+ * whole graph rather than the cards drawn, so leaving the tickets outside the
+ * epic out and drawing them again finishes none of them. */
+function useEpicGraphHeld(
+  held: EpicPageHeld,
+  graph: EpicGraphResponse,
+  drawn: EpicGraphDrawn,
+) {
   const tickets = readValue(held.rowsState)?.tickets;
   return useMemo(() => {
     const byTicket = new Map(
@@ -249,19 +255,21 @@ function useEpicGraphHeld(held: EpicPageHeld, drawn: EpicGraphDrawn) {
         epicGraphRunOf(byTicket.get(card.node.ticket)),
       ]),
     );
+    const ascending = (nodes: readonly { readonly ticket: number }[]) =>
+      [...new Set(nodes.map((node) => node.ticket))].sort(
+        (left, right) => left - right,
+      );
     const read: EpicTrainsRead = {
       running: members
         .filter((card) => runs.get(card.node.ticket) !== undefined)
         .map((card) => card.node.ticket)
         .sort((left, right) => left - right),
-      done: drawn.cards
-        .filter(
-          (card) =>
-            (byTicket.get(card.node.ticket)?.phase ?? card.node.phase) ===
-            "Done",
-        )
-        .map((card) => card.node.ticket)
-        .sort((left, right) => left - right),
+      held: ascending(graph.nodes),
+      done: ascending(
+        graph.nodes.filter(
+          (node) => (byTicket.get(node.ticket)?.phase ?? node.phase) === "Done",
+        ),
+      ),
     };
     const cardOf = new Map(drawn.cards.map((card) => [card.node.ticket, card]));
     const ground: EpicTrainGround = {
@@ -272,7 +280,7 @@ function useEpicGraphHeld(held: EpicPageHeld, drawn: EpicGraphDrawn) {
         ),
     };
     return { runs, read, ground };
-  }, [drawn, tickets]);
+  }, [drawn, graph, tickets]);
 }
 
 /** Everything the view transforms, drawn again only when what it draws
@@ -281,11 +289,16 @@ const EpicGraphScene = memo(function EpicGraphScene(props: {
   readonly held: EpicPageHeld;
   readonly cards: EpicGraphCardKinds;
   readonly cardsHeld: EpicGraphCardsHeld;
+  readonly graph: EpicGraphResponse;
   readonly drawn: EpicGraphDrawn;
 }): ReactNode {
   const arrow = `epic-graph-arrow-${useId().replace(/[^a-zA-Z0-9-]/gu, "")}`;
   const { drawn } = props;
-  const { runs, read, ground } = useEpicGraphHeld(props.held, drawn);
+  const { runs, read, ground } = useEpicGraphHeld(
+    props.held,
+    props.graph,
+    drawn,
+  );
   const cards = props.cardsHeld;
   return (
     <>
@@ -364,6 +377,7 @@ export default function EpicGraphCanvas(props: {
             held={props.held}
             cards={props.cards}
             cardsHeld={props.cardsHeld}
+            graph={props.graph}
             drawn={drawn}
           />
         </g>

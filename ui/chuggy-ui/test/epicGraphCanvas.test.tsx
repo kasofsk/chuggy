@@ -9,7 +9,12 @@ import type { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { epicGraphDrawn } from "../app/core/epicGraph.ts";
 import { epicGraphQuery } from "../app/core/epics.ts";
+import {
+  epicTrainEmergingMs,
+  epicTrainRestingAt,
+} from "../app/core/epicTrains.ts";
 import {
   epicGraph,
   epicPageDrawn,
@@ -311,4 +316,108 @@ test("a reader who takes no motion is drawn the relayed train already at rest on
   const { train } = await relayed(false);
   expect(train?.dataset["train"]).toBe("Relaying");
   expect(train?.dataset["phase"]).toBe("Resting");
+});
+
+/** Animation frames held until a case runs them, at the moment it names. */
+function framesHeld(): { readonly ran: (atMs: number) => void } {
+  const waiting = new Map<number, FrameRequestCallback>();
+  let next = 0;
+  vi.stubGlobal("requestAnimationFrame", (step: FrameRequestCallback) => {
+    next += 1;
+    waiting.set(next, step);
+    return next;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (frame: number) => {
+    waiting.delete(frame);
+  });
+  return {
+    ran: (atMs) => {
+      const steps = [...waiting.values()];
+      waiting.clear();
+      vi.spyOn(performance, "now").mockReturnValue(atMs);
+      for (const step of steps) step(atMs);
+    },
+  };
+}
+
+async function readAgain(client: QueryClient): Promise<void> {
+  await client.refetchQueries();
+  await settled();
+  await settled();
+}
+
+test("leaving the tickets outside the epic out and drawing them again finishes none of them, so a dependent of a Done one has its train emerge", async () => {
+  framesHeld();
+  epicServing.graph = {
+    nodes: [
+      { ticket: 2, title: "Schema", phase: "Done", member: false },
+      { ticket: 4, title: "Charge", phase: "Pending", member: true },
+      { ticket: 5, title: "Refund", phase: "Pending", member: true },
+    ],
+    edges: [{ from: 2, to: 5 }],
+  };
+  epicServing.rows = [epicRow(4, "Pending"), epicRow(5, "Pending")];
+  const { client } = await epicPageDrawn(abilitiesNone, { motion: true });
+  const graphic = await canvas();
+  const toggle = screen.getByRole("checkbox", {
+    name: "Show tickets outside the epic (1)",
+  });
+  fireEvent.click(toggle);
+  await settled();
+  fireEvent.click(toggle);
+  await settled();
+  epicServing.rows = [
+    epicRow(4, "Pending"),
+    epicRow(5, "Work", { status: "Running", cycle: 1 }),
+  ];
+  await readAgain(client);
+  const train = graphic.querySelector<SVGGElement>(".epic-train");
+  expect(train?.dataset["train"]).toBe("Emerging");
+});
+
+test("a train that has come to rest stays at rest on its card when a read moves the card", async () => {
+  const frames = framesHeld();
+  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
+  const { client } = await epicPageDrawn(abilitiesNone, { motion: true });
+  const graphic = await canvas();
+  epicServing.rows = [
+    epicRow(4, "Done"),
+    epicRow(5, "Work", { status: "Running", cycle: 1 }),
+  ];
+  await readAgain(client);
+  const train = graphic.querySelector<SVGGElement>(".epic-train");
+  expect(train?.dataset["train"]).toBe("Emerging");
+  act(() => {
+    frames.ran(1000);
+  });
+  act(() => {
+    frames.ran(1000 + epicTrainEmergingMs);
+  });
+  expect(train?.dataset["phase"]).toBe("Resting");
+  const moved = {
+    nodes: [
+      ...epicGraph.nodes,
+      { ticket: 6, title: "Ledger", phase: "Pending", member: true },
+    ],
+    edges: [
+      { from: 2, to: 5 },
+      { from: 4, to: 6 },
+      { from: 6, to: 5 },
+    ],
+  };
+  epicServing.graph = moved;
+  await readAgain(client);
+  const card = epicGraphDrawn(moved, true).cards.find(
+    (drawn) => drawn.node.ticket === 5,
+  );
+  if (card === undefined) throw new Error("the card is drawn");
+  const rest = epicTrainRestingAt(card);
+  expect(train?.isConnected).toBe(true);
+  expect(train?.dataset["phase"]).toBe("Resting");
+  expect(train?.getAttribute("transform")).toMatch(
+    new RegExp(
+      `^translate\\(${String(rest.x)} ${String(rest.y)}\\) scale\\(1\\)`,
+      "u",
+    ),
+  );
 });

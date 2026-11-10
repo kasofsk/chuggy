@@ -25,7 +25,9 @@ import type {
 export interface EpicTrainsRead {
   /** The members with a run under way, ascending. */
   readonly running: readonly number[];
-  /** The tickets drawn that are Done, ascending. */
+  /** The tickets the graph holds, drawn or not, ascending. */
+  readonly held: readonly number[];
+  /** The tickets the graph holds that are Done, ascending. */
   readonly done: readonly number[];
 }
 
@@ -51,7 +53,11 @@ export function epicTrainsReadSame(
 ): boolean {
   const same = (a: readonly number[], b: readonly number[]) =>
     a.length === b.length && a.every((ticket, at) => b[at] === ticket);
-  return same(left.running, right.running) && same(left.done, right.done);
+  return (
+    same(left.running, right.running) &&
+    same(left.held, right.held) &&
+    same(left.done, right.done)
+  );
 }
 
 /** How many of the latest reads, the one a dependent starts in counted, a
@@ -83,7 +89,9 @@ export function epicTrainsSeenFirst(read: EpicTrainsRead): EpicTrainsSeen {
   };
 }
 
-/** The tickets whose run ended, or that came to be Done, between two reads. */
+/** The tickets whose run ended, or that came to be Done, between two reads.
+ * A ticket the read before did not hold did not come to be Done: it is new to
+ * the graph, whatever it was before. */
 function epicTrainsSeenFinished(
   previous: EpicTrainsRead,
   next: EpicTrainsRead,
@@ -91,7 +99,10 @@ function epicTrainsSeenFinished(
   const left = previous.running.filter(
     (ticket) => !next.running.includes(ticket),
   );
-  const done = next.done.filter((ticket) => !previous.done.includes(ticket));
+  const done = next.done.filter(
+    (ticket) =>
+      previous.held.includes(ticket) && !previous.done.includes(ticket),
+  );
   return [...new Set([...left, ...done])].sort((a, b) => a - b);
 }
 
