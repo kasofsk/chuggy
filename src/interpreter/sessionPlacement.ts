@@ -19,6 +19,7 @@ import {
   placementRouteHosted,
   placementWritten,
   type PlacementAdministration,
+  type PlacementHeld,
   type PlacementRead,
   type PlacementWrite,
   type PlacementWritten,
@@ -133,6 +134,11 @@ export interface SessionPlacementChoice extends SessionRoutes {
   readonly leadOffering?: LeadOffering;
 }
 
+/** A session placement as the store writes it: each kind's route, and the lead's offering the hosted grant was decided on. */
+export interface SessionPlacementStored extends SessionRoutes {
+  readonly leadOffering: LeadOffering;
+}
+
 export interface SessionPlacementStore extends SessionRouteReads {
   /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
   leadOffering(partition: Partition): Promise<LeadOffering>;
@@ -142,7 +148,7 @@ export interface SessionPlacementStore extends SessionRouteReads {
   subsidizedLeadOffered(): Promise<boolean>;
   write(
     partition: Partition,
-    placement: SessionPlacementChoice,
+    placement: SessionPlacementStored,
     authority: Authority,
   ): Promise<PlacementWrite>;
 }
@@ -199,28 +205,32 @@ async function sessionPlacementView(
 }
 
 /**
- * The routes a write is held to the hosted grant for, or its refusal: a
- * subsidized lead needs no grant, and is admitted only in cluster while the
- * profile is published. An offering not named is the row's stored one while
- * the lead stays in cluster, since that is the one the store keeps.
+ * The placement a write stores and the routes it is held to the hosted grant
+ * for, or its refusal: a subsidized lead needs no grant, and is admitted only
+ * in cluster while the profile is published. An offering not named is the
+ * row's stored one while the lead stays in cluster, and `Own` otherwise.
  */
 async function sessionPlacementHeld(
   store: SessionPlacementStore,
   partition: Partition,
-  placement: SessionPlacementChoice,
-): Promise<readonly PlacementRoute[] | SessionPlacementRefusal> {
-  const offering =
-    placement.leadOffering ??
-    (placement.Lead === "InCluster"
-      ? await store.storedLeadOffering(partition)
-      : "Own");
-  switch (offering) {
+  choice: SessionPlacementChoice,
+): Promise<PlacementHeld<SessionPlacementStored> | SessionPlacementRefusal> {
+  const placement: SessionPlacementStored = {
+    Thread: choice.Thread,
+    Lead: choice.Lead,
+    leadOffering:
+      choice.leadOffering ??
+      (choice.Lead === "InCluster"
+        ? await store.storedLeadOffering(partition)
+        : "Own"),
+  };
+  switch (placement.leadOffering) {
     case "Own":
-      return [placement.Thread, placement.Lead];
+      return { placement, routes: [placement.Thread, placement.Lead] };
     case "Subsidized":
       return placement.Lead === "InCluster" &&
         (await store.subsidizedLeadOffered())
-        ? [placement.Thread]
+        ? { placement, routes: [placement.Thread] }
         : "LeadOfferingNotAdmitted";
   }
 }
@@ -244,12 +254,16 @@ export function sessionPlacementAdministration(
       };
     },
     write: (principal, partition, placement) =>
-      placementWritten<SessionPlacementView, SessionPlacementRefusal>(
+      placementWritten<
+        SessionPlacementStored,
+        SessionPlacementView,
+        SessionPlacementRefusal
+      >(
         access,
         principal,
         partition,
         () => sessionPlacementHeld(store, partition, placement),
-        (authority) => store.write(partition, placement, authority),
+        (authority, held) => store.write(partition, held, authority),
         (hosted) =>
           sessionPlacementView(
             store,

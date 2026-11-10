@@ -27,11 +27,15 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type {
-  SessionPlacementChoice,
-  SessionRouting,
-  SubsidizedLeadProfile,
+import {
+  sessionPlacementAdministration,
+  type SessionPlacementChoice,
+  type SessionPlacementStore,
+  type SessionPlacementStored,
+  type SessionRouting,
+  type SubsidizedLeadProfile,
 } from "../../src/interpreter/sessionPlacement.ts";
 import {
   postgresHarnessDenial,
@@ -40,6 +44,7 @@ import {
   postgresHarnessRolePool,
   type PostgresHarness,
 } from "./harness.ts";
+import { memoryProjectAccess } from "./projectAccessMemory.ts";
 
 let harness: PostgresHarness;
 let apiPool: pg.Pool;
@@ -111,13 +116,44 @@ async function subsidizedLeadStored(
 
 async function subsidizedLeadWritten(
   partition: Partition,
-  placement: SessionPlacementChoice,
+  placement: SessionPlacementStored,
   subject = "an-owner",
 ): Promise<string> {
   return postgresSessionPlacement(apiPool).write(partition, placement, {
     ...owner,
     subject: asAuthoritySubject(subject),
   });
+}
+
+/** An administrator of `partition`, granted hosted runs where `hosted`, as their subject is stamped. */
+const administrator = (partition: Partition, hosted: boolean) => {
+  const principal = asPrincipal(hosted ? "a-hosted-owner" : "an-owner");
+  const access = memoryProjectAccess();
+  access.grant({ partition, principal, access: new Set(["Administer"]) });
+  if (hosted)
+    access.grantTenant({
+      tenant: partition.tenant,
+      principal,
+      access: new Set(["ExecuteHosted"]),
+    });
+  return { access, principal };
+};
+
+/** `choice` written by an administrator of `partition` through the real administration over `store`, answered with its result. */
+async function subsidizedLeadAdministered(
+  partition: Partition,
+  choice: SessionPlacementChoice,
+  hosted = false,
+  store: SessionPlacementStore = postgresSessionPlacement(apiPool),
+): Promise<string> {
+  const { access, principal } = administrator(partition, hosted);
+  return (
+    await sessionPlacementAdministration(access, store).write(
+      principal,
+      partition,
+      choice,
+    )
+  ).result;
 }
 
 test("a selector started with a profile publishes it and one started without withdraws it, and the API reads both through its door", async () => {
@@ -188,7 +224,7 @@ test("a write naming no offering keeps a stored subsidized lead while it stays i
   await subsidizedLeadStarted(profile);
   const partition = await postgresHarnessProject(harness.store, "kept");
   assert.equal(
-    await subsidizedLeadWritten(partition, {
+    await subsidizedLeadAdministered(partition, {
       Thread: "Pool",
       Lead: "InCluster",
       leadOffering: "Subsidized",
@@ -196,17 +232,88 @@ test("a write naming no offering keeps a stored subsidized lead while it stays i
     "Written",
   );
   assert.equal(
-    await subsidizedLeadWritten(partition, {
+    await subsidizedLeadAdministered(partition, {
       Thread: "Pool",
       Lead: "InCluster",
     }),
     "Unchanged",
   );
   assert.equal(
-    await subsidizedLeadWritten(partition, {
-      Thread: "InCluster",
+    await subsidizedLeadAdministered(
+      partition,
+      { Thread: "InCluster", Lead: "InCluster" },
+      true,
+    ),
+    "Written",
+  );
+  assert.deepEqual(await subsidizedLeadStored(partition), [
+    {
+      lead_route: "InCluster",
+      lead_offering: "Subsidized",
+      set_by_subject: "a-hosted-owner",
+      set: true,
+    },
+  ]);
+  assert.equal(
+    await subsidizedLeadAdministered(
+      partition,
+      { Thread: "InCluster", Lead: "Pool" },
+      true,
+    ),
+    "Written",
+  );
+  assert.equal(
+    await subsidizedLeadAdministered(
+      partition,
+      { Thread: "InCluster", Lead: "InCluster" },
+      true,
+    ),
+    "Written",
+  );
+  assert.deepEqual(await subsidizedLeadStored(partition), [
+    {
+      lead_route: "InCluster",
+      lead_offering: "Own",
+      set_by_subject: "a-hosted-owner",
+      set: true,
+    },
+  ]);
+});
+
+test("a write held to a stored subsidized lead stores it, though the row is reset before the write reaches it", async () => {
+  await subsidizedLeadStarted(profile);
+  const partition = await postgresHarnessProject(harness.store, "raced");
+  assert.equal(
+    await subsidizedLeadAdministered(partition, {
+      Thread: "Pool",
       Lead: "InCluster",
+      leadOffering: "Subsidized",
     }),
+    "Written",
+  );
+  const real = postgresSessionPlacement(apiPool);
+  const racing: SessionPlacementStore = {
+    ...real,
+    storedLeadOffering: async (at) => {
+      const stored = await real.storedLeadOffering(at);
+      assert.equal(
+        await subsidizedLeadAdministered(
+          partition,
+          { Thread: "Pool", Lead: "Pool" },
+          true,
+        ),
+        "Written",
+      );
+      return stored;
+    },
+  };
+  assert.equal(
+    await subsidizedLeadAdministered(
+      partition,
+      { Thread: "Pool", Lead: "InCluster" },
+      false,
+      racing,
+    ),
     "Written",
   );
   assert.deepEqual(await subsidizedLeadStored(partition), [
@@ -217,34 +324,16 @@ test("a write naming no offering keeps a stored subsidized lead while it stays i
       set: true,
     },
   ]);
-  assert.equal(
-    await subsidizedLeadWritten(partition, {
-      Thread: "InCluster",
-      Lead: "Pool",
-    }),
-    "Written",
-  );
-  assert.equal(
-    await subsidizedLeadWritten(partition, {
-      Thread: "InCluster",
-      Lead: "InCluster",
-    }),
-    "Written",
-  );
-  assert.deepEqual(await subsidizedLeadStored(partition), [
-    {
-      lead_route: "InCluster",
-      lead_offering: "Own",
-      set_by_subject: "an-owner",
-      set: true,
-    },
-  ]);
 });
 
 test("a write of the offering alone is written and stamped with its setter", async () => {
   await subsidizedLeadStarted(profile);
   const partition = await postgresHarnessProject(harness.store, "stamped");
-  const placement = { Thread: "Pool", Lead: "InCluster" } as const;
+  const placement = {
+    Thread: "Pool",
+    Lead: "InCluster",
+    leadOffering: "Own",
+  } as const;
   assert.equal(await subsidizedLeadWritten(partition, placement), "Written");
   assert.equal(
     await subsidizedLeadWritten(

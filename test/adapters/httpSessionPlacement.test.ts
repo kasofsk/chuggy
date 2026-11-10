@@ -21,7 +21,7 @@ import type { ProjectAccessKind } from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   sessionPlacementAdministration,
-  type SessionPlacementChoice,
+  type SessionPlacementStored,
   type SessionPlacementStore,
 } from "../../src/interpreter/sessionPlacement.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
@@ -43,7 +43,7 @@ interface StoreOffering {
 
 /** A store whose lead is the project's own Pool row, asking runners after the member it was asked about, each standing apart from the others. */
 function storeRecording(
-  written: SessionPlacementChoice[],
+  written: SessionPlacementStored[],
   answered: PlacementWrite = "Written",
   offering: StoreOffering = { offered: false, stored: "Own", resolved: "Own" },
 ): SessionPlacementStore {
@@ -73,7 +73,7 @@ function storeRecording(
 function appOver(
   project: readonly ProjectAccessKind[],
   hosted: boolean,
-  written: SessionPlacementChoice[] = [],
+  written: SessionPlacementStored[] = [],
   offering?: StoreOffering,
 ) {
   const access = memoryProjectAccess();
@@ -118,7 +118,7 @@ test("a caller who may not read the project is not found", async () => {
 });
 
 test("an administrator without the hosted grant places sessions on runners and is refused the cluster by its code", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(["Read", "Administer"], false, written);
   const put = (payload: unknown) =>
     app.inject({
@@ -140,11 +140,13 @@ test("an administrator without the hosted grant places sessions on runners and i
     hostedRunsNotGrantedCode,
   );
   assert.equal((await put({ thread: "Pool" })).statusCode, 400);
-  assert.deepEqual(written, [{ Thread: "Pool", Lead: "Pool" }]);
+  assert.deepEqual(written, [
+    { Thread: "Pool", Lead: "Pool", leadOffering: "Own" },
+  ]);
 });
 
 test("an administrator the tenant grants hosted runs places sessions in cluster", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(["Read", "Administer"], true, written);
   const placed = await app.inject({
     method: "PUT",
@@ -157,11 +159,13 @@ test("an administrator the tenant grants hosted runs places sessions in cluster"
     sessionPlacementResponseSchema.parse(placed.json()).choices,
     ["InCluster", "Pool"],
   );
-  assert.deepEqual(written, [{ Thread: "InCluster", Lead: "InCluster" }]);
+  assert.deepEqual(written, [
+    { Thread: "InCluster", Lead: "InCluster", leadOffering: "Own" },
+  ]);
 });
 
 test("a reader who does not administer the project writes nothing and is not told it exists", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(["Read"], true, written);
   const refused = await app.inject({
     method: "PUT",
@@ -190,7 +194,7 @@ const subsidizedPublished: StoreOffering = {
 };
 
 test("while the deployment publishes a subsidized lead, an administrator without the hosted grant places the lead on it, and is told the deployment admits it", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(
     ["Read", "Administer"],
     false,
@@ -224,7 +228,7 @@ test("while the deployment publishes a subsidized lead, an administrator without
 
 test("while the deployment publishes none, a subsidized lead is refused by its code, even to an administrator holding the hosted grant, and is not listed", async () => {
   for (const hosted of [false, true]) {
-    const written: SessionPlacementChoice[] = [];
+    const written: SessionPlacementStored[] = [];
     await using app = appOver(["Read", "Administer"], hosted, written);
     const refused = await putPlacement(app, {
       thread: "Pool",
@@ -246,7 +250,7 @@ test("while the deployment publishes none, a subsidized lead is refused by its c
 });
 
 test("a subsidized lead on runners is refused by its code, however the deployment offers it", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(
     ["Read", "Administer"],
     true,
@@ -267,7 +271,7 @@ test("a subsidized lead on runners is refused by its code, however the deploymen
 });
 
 test("a write naming no offering keeps a stored subsidized lead without the hosted grant, and moving it to runners needs none either", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(["Read", "Administer"], false, written, {
     offered: true,
     stored: "Subsidized",
@@ -282,13 +286,13 @@ test("a write naming no offering keeps a stored subsidized lead without the host
     200,
   );
   assert.deepEqual(written, [
-    { Thread: "Pool", Lead: "InCluster" },
-    { Thread: "Pool", Lead: "Pool" },
+    { Thread: "Pool", Lead: "InCluster", leadOffering: "Subsidized" },
+    { Thread: "Pool", Lead: "Pool", leadOffering: "Own" },
   ]);
 });
 
 test("a write naming no offering keeps a stored subsidized lead without the hosted grant while an override resolves it as its own", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(["Read", "Administer"], false, written, {
     offered: true,
     stored: "Subsidized",
@@ -298,12 +302,14 @@ test("a write naming no offering keeps a stored subsidized lead without the host
     (await putPlacement(app, { thread: "Pool", lead: "InCluster" })).statusCode,
     200,
   );
-  assert.deepEqual(written, [{ Thread: "Pool", Lead: "InCluster" }]);
+  assert.deepEqual(written, [
+    { Thread: "Pool", Lead: "InCluster", leadOffering: "Subsidized" },
+  ]);
 });
 
 test("a write naming no offering keeps a stored subsidized lead only while the deployment publishes one, and is refused by its code otherwise", async () => {
   for (const hosted of [false, true]) {
-    const written: SessionPlacementChoice[] = [];
+    const written: SessionPlacementStored[] = [];
     await using app = appOver(["Read", "Administer"], hosted, written, {
       offered: false,
       stored: "Subsidized",
@@ -323,7 +329,7 @@ test("a write naming no offering keeps a stored subsidized lead only while the d
 });
 
 test("a write naming no offering for an in-cluster lead its row keeps as its own still needs the hosted grant", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(
     ["Read", "Administer"],
     false,
@@ -339,7 +345,7 @@ test("a write naming no offering for an in-cluster lead its row keeps as its own
 });
 
 test("a reader who does not administer the project is not told it exists by an offering it names", async () => {
-  const written: SessionPlacementChoice[] = [];
+  const written: SessionPlacementStored[] = [];
   await using app = appOver(["Read"], true, written);
   const refused = await putPlacement(app, {
     thread: "Pool",

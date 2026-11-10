@@ -96,29 +96,42 @@ export async function placementReader(
   return { administers, hosted };
 }
 
+/** The placement a write stores, and the routes the hosted grant is decided on for it. */
+export interface PlacementHeld<Placement> {
+  readonly placement: Placement;
+  readonly routes: readonly PlacementRoute[];
+}
+
 /**
  * A placement an administrator writes, refused where it names a hosted route
  * the tenant does not grant them, and answered with the view read after it.
- * `held` is asked only of an administrator, and answers the routes the grant
- * decides or the write's own refusal.
+ * `held` is asked only of an administrator, and answers the placement to write
+ * with the routes the grant decides, or the write's own refusal.
  */
-export async function placementWritten<View, Refusal extends string = never>(
+export async function placementWritten<
+  Placement,
+  View,
+  Refusal extends string = never,
+>(
   access: ProjectAccess,
   principal: Principal,
   partition: Partition,
-  held: () => Promise<readonly PlacementRoute[] | Refusal>,
-  write: (authority: Authority) => Promise<PlacementWrite>,
+  held: () => Promise<PlacementHeld<Placement> | Refusal>,
+  write: (
+    authority: Authority,
+    placement: Placement,
+  ) => Promise<PlacementWrite>,
   view: (hosted: boolean) => Promise<View>,
 ): Promise<PlacementWritten<View, Refusal>> {
   const authority = await access.authorize(principal, partition, "Administer");
   if (authority === undefined) return { result: "NotFound" };
-  const routes = await held();
-  if (typeof routes === "string")
-    return { result: routes } as PlacementWritten<View, Refusal>;
+  const decided = await held();
+  if (typeof decided === "string")
+    return { result: decided } as PlacementWritten<View, Refusal>;
   const hosted = await hostedRunsGranted(access, principal, partition.tenant);
-  if (placementRefused(routes, hosted))
+  if (placementRefused(decided.routes, hosted))
     return { result: "HostedRunsNotGranted" };
-  const written = await write(authority);
+  const written = await write(authority, decided.placement);
   if (written === "NotFound") return { result: "NotFound" };
   return { result: written, view: await view(hosted) };
 }

@@ -11,13 +11,13 @@
  *
  * THE OFFERING IS THE LEAD'S, ON ITS `InCluster` ROUTE. A project's row reads
  * `Own` until an administrator writes otherwise, so every lead runs as it did.
- * `set_project_session_placement` takes the offering, and one it is not named
- * is kept while the lead stays in cluster and is `Own` otherwise.
+ * `set_project_session_placement` writes the offering it is given, which is
+ * the one the API decided the hosted grant on.
  * `session_lead_offering` answers `Subsidized` only where the lead's route is
  * the row's own and the profile stands, so an override, a default or a
  * withdrawn profile runs the lead as its own, and the row's choice holds again
  * once the profile does. `stored_lead_offering` answers the row's choice
- * itself, which is what a write naming no offering is held to.
+ * itself, which is what the API keeps for a write naming no offering.
  */
 
 import {
@@ -99,26 +99,22 @@ export const migration145: Migration = {
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-     DECLARE standing project_session_placement%ROWTYPE; chosen text;
+     DECLARE standing project_session_placement%ROWTYPE;
      BEGIN
        PERFORM 1 FROM project p
         WHERE p.tenant=in_tenant AND p.project=in_project;
        IF NOT FOUND THEN RETURN 'NotFound'; END IF;
        SELECT * INTO standing FROM project_session_placement x
         WHERE x.tenant=in_tenant AND x.project=in_project FOR UPDATE;
-       chosen := coalesce(in_lead_offering,
-                          CASE WHEN in_lead='InCluster'
-                               THEN coalesce(standing.lead_offering,'Own')
-                               ELSE 'Own' END);
        IF FOUND AND standing.thread_route=in_thread
           AND standing.lead_route=in_lead
-          AND standing.lead_offering=chosen THEN
+          AND standing.lead_offering=in_lead_offering THEN
          RETURN 'Unchanged';
        END IF;
        INSERT INTO project_session_placement
          (tenant,project,thread_route,lead_route,lead_offering,
           set_by_kind,set_by_subject,set_at)
-         VALUES (in_tenant,in_project,in_thread,in_lead,chosen,
+         VALUES (in_tenant,in_project,in_thread,in_lead,in_lead_offering,
                  in_authority_kind,in_authority_subject,now())
          ON CONFLICT (tenant,project) DO UPDATE
            SET thread_route=EXCLUDED.thread_route,

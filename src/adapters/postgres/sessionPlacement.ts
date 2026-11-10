@@ -223,7 +223,7 @@ export function postgresSessionPlacement(pool: pg.Pool): SessionPlacementStore {
       const found = await pool.query<{ outcome: string | null }>(
         sql`SELECT set_project_session_placement(
               ${partition.tenant},${partition.project},${placement.Thread},
-              ${placement.Lead},${placement.leadOffering ?? null}::text,
+              ${placement.Lead},${placement.leadOffering},
               ${authority.kind},${authority.subject})::text AS outcome`,
       );
       return placementWriteOutcome(found.rows[0]?.outcome);
