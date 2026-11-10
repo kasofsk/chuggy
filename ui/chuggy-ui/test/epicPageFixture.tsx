@@ -79,6 +79,11 @@ function epicRevision(revision: number) {
     changedAt: "2026-10-01T00:00:00Z",
     actor: { kind: "user", subject: "dana" },
     title: `Billing ${String(revision)}`,
+    visibility: "Active",
+    changes:
+      revision === 1
+        ? { kind: "Created" }
+        : { kind: "Revised", fields: ["title"], added: [], removed: [] },
   };
 }
 

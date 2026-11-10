@@ -3,7 +3,11 @@
  * through and the reads of its list, its view, its history and its graph.
  */
 
-import type { EpicHistoryQuery, EpicListQuery } from "../contract/epics.ts";
+import type {
+  EpicHistoryQuery,
+  EpicListQuery,
+  EpicRevisionField,
+} from "../contract/epics.ts";
 import type {
   EpicCommand,
   EpicOutcome,
@@ -48,11 +52,25 @@ export interface EpicListPage {
   readonly nextAfter?: number;
 }
 
+/** What a revision changed from the one before it, the first having none before it. */
+export type EpicRevisionChanges =
+  | { readonly kind: "Created" }
+  | {
+      readonly kind: "Revised";
+      readonly fields: readonly EpicRevisionField[];
+      /** Member tickets gained, ascending. */
+      readonly added: readonly number[];
+      /** Member tickets lost, ascending. */
+      readonly removed: readonly number[];
+    };
+
 export interface EpicRevision {
   readonly revision: number;
   readonly changedAt: string;
   readonly actor: EpicActor;
   readonly title: string;
+  readonly visibility: EpicVisibility;
+  readonly changes: EpicRevisionChanges;
 }
 
 export interface EpicHistoryPage {

@@ -15,7 +15,11 @@ import {
   configurationRequirementCapabilitiesMax,
 } from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
-import { epicTicketsMax, epicVisibilitySchema } from "./epics.ts";
+import {
+  epicRevisionFields,
+  epicTicketsMax,
+  epicVisibilitySchema,
+} from "./epics.ts";
 import { z } from "zod";
 
 import {
@@ -2610,6 +2614,21 @@ export const epicHistoryResponseSchema = z.strictObject({
       changedAt: instantSchema,
       actor: z.strictObject({ kind: identitySchema, subject: identitySchema }),
       title: z.string(),
+      visibility: epicVisibilitySchema,
+      /** What the revision changed from the one before it; `fields` in the order `epicRevisionFields` names them. */
+      changes: z.discriminatedUnion("kind", [
+        z.strictObject({ kind: z.literal("Created") }),
+        z.strictObject({
+          kind: z.literal("Revised"),
+          fields: z
+            .array(z.enum(epicRevisionFields))
+            .max(epicRevisionFields.length),
+          /** Member tickets gained, ascending. */
+          added: z.array(ticketNumberSchema).max(epicTicketsMax),
+          /** Member tickets lost, ascending. */
+          removed: z.array(ticketNumberSchema).max(epicTicketsMax),
+        }),
+      ]),
     }),
   ),
   nextAfter: ticketNumberSchema.optional(),
