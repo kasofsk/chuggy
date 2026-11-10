@@ -104,6 +104,8 @@ export type LeadRunnerStanding = (typeof leadRunnerStandings)[number];
 /** The reads every door that spends a session asks of where it runs. */
 export interface SessionRouteReads {
   route(partition: Partition, kind: SessionKind): Promise<SessionRouteResolved>;
+  /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
+  leadOffering(partition: Partition): Promise<LeadOffering>;
   /** `mine` and `inquiry` are `Unregistered` where no member is named. */
   runners(
     partition: Partition,
@@ -111,8 +113,11 @@ export interface SessionRouteReads {
   ): Promise<SessionRunners>;
 }
 
-/** The reads a lead's admission asks: where it runs, and whether a runner there could take it. */
-export interface LeadRouteReads extends Pick<SessionRouteReads, "route"> {
+/** The reads a lead's admission asks: where it runs, as which offering, and whether a runner there could take it. */
+export interface LeadRouteReads extends Pick<
+  SessionRouteReads,
+  "route" | "leadOffering"
+> {
   leadRunners(partition: Partition): Promise<LeadRunnerStanding>;
 }
 
@@ -140,8 +145,6 @@ export interface SessionPlacementStored extends SessionRoutes {
 }
 
 export interface SessionPlacementStore extends SessionRouteReads {
-  /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
-  leadOffering(partition: Partition): Promise<LeadOffering>;
   /** The offering the project's own row keeps, however it resolves: the one a write naming none keeps while its lead stays in cluster. */
   storedLeadOffering(partition: Partition): Promise<LeadOffering>;
   /** Whether the deployment publishes a subsidized lead. */
@@ -293,11 +296,29 @@ export type SessionSpend =
   | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
 
 /**
+ * Whether a member's turn of this kind on this route is spent without their
+ * hosted grant: an inquiry of a subsidized lead, which the offering pays for.
+ */
+async function sessionSpendSubsidized(
+  routes: SessionRouteReads,
+  partition: Partition,
+  kind: SessionKind,
+  route: PlacementRoute,
+): Promise<boolean> {
+  return (
+    kind === "Inquiry" &&
+    placementRouteHosted[route] &&
+    (await routes.leadOffering(partition)) === "Subsidized"
+  );
+}
+
+/**
  * The route a member may spend a turn of this kind on now: a hosted one under
- * the tenant's grant, and a runner one where a runner that would take it is
- * registered, the turn stamped with this route and so both asked of the
- * resolution it keeps. A turn of a member's own session is never in cluster,
- * whatever the site's routing says, and only their chat host takes it.
+ * the tenant's grant, or under the lead's subsidy for an inquiry, and a runner
+ * one where a runner that would take it is registered, the turn stamped with
+ * this route and so both asked of the resolution it keeps. A turn of a
+ * member's own session is never in cluster, whatever the site's routing says,
+ * and only their chat host takes it.
  */
 export async function sessionSpendRoute(
   access: ProjectAccess,
@@ -314,7 +335,10 @@ export async function sessionSpendRoute(
       ? { spend: "Admitted", route: "Pool" }
       : { spend: "NoRunner" };
   const { route } = await routes.route(partition, kind);
-  if (!(await placementRouteGranted(access, principal, partition, route)))
+  if (
+    !(await sessionSpendSubsidized(routes, partition, kind, route)) &&
+    !(await placementRouteGranted(access, principal, partition, route))
+  )
     return { spend: "HostedRunsNotGranted" };
   if (placementRouteHosted[route]) return { spend: "Admitted", route };
   return sessionRunnerServes(
@@ -331,16 +355,21 @@ export const allLeadAdmissions = [
 ] as const;
 export type LeadAdmission = (typeof allLeadAdmissions)[number];
 
-/** A lead's admission, carrying the route an admitted turn is stamped with. */
+/** A lead's admission, carrying the route an admitted turn is stamped with and the offering it was admitted as. */
 export type LeadRouteAdmission =
-  | { readonly admission: "Admitted"; readonly route: PlacementRoute }
+  | {
+      readonly admission: "Admitted";
+      readonly route: PlacementRoute;
+      readonly offering: LeadOffering;
+    }
   | { readonly admission: LeadAdmissionRefusal };
 
 /**
- * Whether a project's lead may take a turn now: on a hosted route the tenant
- * must grant the lead's principal, and on a runner route one of the project's
- * must be live with its owner's account not paused, since a turn offered to
- * none that may take it would hold its decision until the decision's deadline.
+ * Whether a project's lead may take a turn now: on a hosted route a subsidized
+ * lead is admitted as one and asks no grant, and otherwise the tenant must
+ * grant the lead's principal; on a runner route one of the project's must be
+ * live with its owner's account not paused, since a turn offered to none that
+ * may take it would hold its decision until the decision's deadline.
  */
 export async function leadAdmission(
   access: ProjectAccess,
@@ -349,13 +378,16 @@ export async function leadAdmission(
   partition: Partition,
 ): Promise<LeadRouteAdmission> {
   const { route } = await routes.route(partition, "Lead");
-  if (placementRouteHosted[route])
+  if (placementRouteHosted[route]) {
+    if ((await routes.leadOffering(partition)) === "Subsidized")
+      return { admission: "Admitted", route, offering: "Subsidized" };
     return (await hostedRunsGranted(access, principal, partition.tenant))
-      ? { admission: "Admitted", route }
+      ? { admission: "Admitted", route, offering: "Own" }
       : { admission: "HostedRunsNotGranted" };
+  }
   switch (await routes.leadRunners(partition)) {
     case "Live":
-      return { admission: "Admitted", route };
+      return { admission: "Admitted", route, offering: "Own" };
     case "Paused":
       return { admission: "UsagePaused" };
     case "Offline":

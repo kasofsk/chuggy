@@ -12,7 +12,7 @@
  *
  * A SPENT OR REINSTRUCTED LEAD IS REPLACED BEFORE A DECISION, AND ONLY THEN.
  * Every turn resumes the whole session, so a lead whose newest decision turn
- * spent more than `leadTurnTokensMax` is closed and a successor opened; and a
+ * spent more than its turn bound is closed and a successor opened; and a
  * lead's instructions are its system prompt alone, so one stored with a prompt
  * other than the one this decision composes is replaced the same way. It is
  * taken lazily, when the next decision asks, so a quiet project keeps a lead
@@ -56,11 +56,19 @@
  * opened under; on a runner route it asks instead whether one of the project's
  * runners is live and its owner's account not paused. The runtime asks it
  * before it takes a permit for the project, and the offer asks it again and stamps the turn with the route it admitted.
+ *
+ * A SUBSIDIZED LEAD RUNS ON THE DEPLOYMENT'S PROFILE, AND ONLY AS ONE. Its
+ * settings carry the profile's slot, model, effort and turn bound, and a lead
+ * holding any other is replaced. Admission asks no grant of it, so a turn is
+ * offered only where admission and the settings it was opened under name the
+ * same offering: a lead opened on the selector's own slot is never admitted by
+ * a subsidy read after.
  */
 
 import {
   leadSeedingDecisionsMax,
   leadTurnTokensMax,
+  type SessionEffort,
 } from "../contract/http.ts";
 import { leadTurnDocumentVersion } from "../contract/workerDocuments.ts";
 import {
@@ -344,6 +352,37 @@ interface LeadPolicyPorts {
   admission(partition: Partition): Promise<LeadRouteAdmission>;
 }
 
+/** What a lead deciding under one runtime is opened on, and the turn spend past which it is replaced. */
+export interface LeadRunsOn {
+  readonly credentialSlot: string;
+  readonly model?: string;
+  readonly effort?: SessionEffort;
+  readonly turnTokensMax: number;
+}
+
+/** A lead's own runtime on the selector's slot under `leadTurnTokensMax`, or a subsidized one on its profile's. */
+export function leadRunsOn(
+  runtime: SelectorLeadRuntime,
+  credentialSlot: string,
+): LeadRunsOn {
+  switch (runtime.offering) {
+    case "Own":
+      return {
+        credentialSlot,
+        ...(runtime.model === undefined ? {} : { model: runtime.model }),
+        ...(runtime.effort === undefined ? {} : { effort: runtime.effort }),
+        turnTokensMax: leadTurnTokensMax,
+      };
+    case "Subsidized":
+      return {
+        credentialSlot: runtime.credentialSlot,
+        model: runtime.model,
+        effort: runtime.effort,
+        turnTokensMax: runtime.turnTokensMax,
+      };
+  }
+}
+
 /**
  * Whether an open lead is replaced before this decision: its newest decision
  * turn spent more than the bound, or it holds a system prompt, a compaction
@@ -356,17 +395,16 @@ export function leadStandingReplaced(
   standing: LeadSessionStanding,
   systemPrompt: string,
   autoCompactWindow: number,
-  runtime: SelectorLeadRuntime,
-  credentialSlot: string,
+  runsOn: LeadRunsOn,
 ): boolean {
   return (
     standing.systemPrompt !== systemPrompt ||
-    standing.credentialSlot !== credentialSlot ||
+    standing.credentialSlot !== runsOn.credentialSlot ||
     standing.autoCompactWindow !== autoCompactWindow ||
-    standing.model !== runtime.model ||
-    standing.effort !== runtime.effort ||
+    standing.model !== runsOn.model ||
+    standing.effort !== runsOn.effort ||
     (standing.decisionTurnTokens !== undefined &&
-      standing.decisionTurnTokens > leadTurnTokensMax)
+      standing.decisionTurnTokens > runsOn.turnTokensMax)
   );
 }
 
@@ -398,18 +436,13 @@ async function leadStanding(
 ): Promise<LeadSessionStanding> {
   const systemPrompt = leadTurnInstructions(request);
   const { autoCompactWindow } = request.constraints.limits;
-  const runtime = request.constraints.lead;
+  const runsOn = leadRunsOn(
+    request.constraints.lead,
+    ports.config.credentialSlot,
+  );
   const held = await ports.mailbox.lead(partition);
   if (held !== undefined && held.state === "Open") {
-    if (
-      !leadStandingReplaced(
-        held,
-        systemPrompt,
-        autoCompactWindow,
-        runtime,
-        ports.config.credentialSlot,
-      )
-    )
+    if (!leadStandingReplaced(held, systemPrompt, autoCompactWindow, runsOn))
       return held;
     const closed = await ports.mailbox.closeLead(partition, held.session);
     if (!leadClosedReplaces(closed)) return held;
@@ -418,10 +451,11 @@ async function leadStanding(
     partition,
     session: ports.sessions.session(),
     principal: ports.config.principal,
-    credentialSlot: ports.config.credentialSlot,
+    credentialSlot: runsOn.credentialSlot,
     systemPrompt,
     autoCompactWindow,
-    ...runtime,
+    ...(runsOn.model === undefined ? {} : { model: runsOn.model }),
+    ...(runsOn.effort === undefined ? {} : { effort: runsOn.effort }),
   });
   const opened = await ports.mailbox.lead(partition);
   if (opened === undefined || opened.state !== "Open")
@@ -487,6 +521,11 @@ async function leadTurnOffer(
     throw new Error("the lead may not take a turn now", {
       cause: admitted.admission,
     });
+  if (admitted.offering !== request.constraints.lead.offering)
+    throw new Error(
+      "the lead was admitted as another offering than it was opened under",
+      { cause: admitted.offering },
+    );
   const turn = asSessionTurnId(request.attempt);
   const enqueued = await ports.mailbox.offer({
     partition,

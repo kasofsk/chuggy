@@ -67,6 +67,8 @@ export const sessionLeadOfferingFunction = "session_lead_offering";
 export const storedLeadOfferingFunction = "stored_lead_offering";
 /** The subsidized lead the selector publishes, as the API reads it. */
 export const subsidizedLeadReadFunction = "read_subsidized_lead";
+/** The subsidized lead one project's lead runs as, no row where it runs as its own. */
+export const sessionLeadProfileFunction = "session_lead_profile";
 /** Whether a live runner of one project could take its lead now, or every live one's owner is paused, and until when. */
 export const leadRunnerStandingFunction = "lead_runner_standing";
 /** The route a session's oldest queued turn was admitted on, which is the only one that may run next. */

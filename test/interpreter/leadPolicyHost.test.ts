@@ -22,6 +22,7 @@ import type {
 } from "../../src/interpreter/leadMailbox.ts";
 import {
   leadSelectorPolicy,
+  leadRunsOn,
   leadStandingReplaced,
   leadTurnInput,
   type LeadDecisionTail,
@@ -69,6 +70,7 @@ import {
   selectorSettingsTextCharsMax,
   type SessionEffort,
 } from "../../src/contract/http.ts";
+import type { LeadOffering } from "../../src/contract/rosters.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -146,7 +148,7 @@ const request: SelectorPolicyRequest = {
       concurrentDecisions: 4,
       selectionsPerMinute: 60,
     },
-    lead: {},
+    lead: { offering: "Own" },
   },
 };
 
@@ -600,8 +602,7 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
         standing,
         composedPrompt,
         resolvedWindow,
-        {},
-        leadCredentialSlot,
+        leadRunsOn({ offering: "Own" }, leadCredentialSlot),
       ),
       replaced,
       label,
@@ -718,7 +719,7 @@ const chosenRequest: SelectorPolicyRequest = {
   ...request,
   constraints: {
     ...request.constraints,
-    lead: { model: "claude-sonnet-5-5", effort: "medium" },
+    lead: { offering: "Own", model: "claude-sonnet-5-5", effort: "medium" },
   },
 };
 
@@ -1581,5 +1582,162 @@ test("a lead no longer admitted when its turn is offered offers none", async () 
       /may not take a turn/u,
     );
     assert.deepEqual(double.offers, []);
+  }
+});
+
+/** The deployment's subsidized lead, every field unlike what `request` resolves an own lead to. */
+const subsidizedRuntime = {
+  offering: "Subsidized",
+  model: "claude-haiku-5-5",
+  effort: "medium",
+  credentialSlot: "anthropic-api",
+  turnTokensMax: 120_000,
+} as const;
+
+const subsidizedWindow = 100_000;
+
+/** `request` deciding for a project whose lead runs as the subsidized one, its settings resolved as the profile has them. */
+const subsidizedRequest: SelectorPolicyRequest = {
+  ...request,
+  constraints: {
+    ...request.constraints,
+    limits: {
+      ...request.constraints.limits,
+      autoCompactWindow: subsidizedWindow,
+    },
+    lead: subsidizedRuntime,
+  },
+};
+
+/** Routes keeping the lead in cluster as whichever offering `offering` currently answers. */
+function offeredRoutes(offering: () => LeadOffering): LeadRouteReads {
+  return {
+    ...sessionRoutesAt(),
+    leadOffering: () => Promise.resolve(offering()),
+  };
+}
+
+test("a subsidized lead of a tenant granting no hosted runs is admitted, asking no grant, and opens on the profile's slot, model, effort and window", async () => {
+  const authority = hostedAuthority("Refused");
+  const double = mailboxDouble({ absent: true });
+  const policy = hostedPolicyOf(
+    double,
+    authority.access,
+    offeredRoutes(() => "Subsidized"),
+  );
+  assert.equal(await policy.leadAdmission(partition), "Admitted");
+  await policy.execute(subsidizedRequest, new AbortController().signal);
+  assert.deepEqual(authority.asked, [], "a subsidized lead spends no grant");
+  assert.deepEqual(
+    double.openings.map((opening) => [
+      opening.credentialSlot,
+      opening.model,
+      opening.effort,
+      opening.autoCompactWindow,
+    ]),
+    [["anthropic-api", "claude-haiku-5-5", "medium", subsidizedWindow]],
+  );
+  assert.equal(double.offers.length, 1);
+});
+
+test("an own lead in cluster of a tenant granting no hosted runs is still refused, and one granted opens on the selector's slot", async () => {
+  const refused = hostedAuthority("Refused");
+  assert.equal(
+    await hostedPolicyOf(
+      mailboxDouble({ absent: true }),
+      refused.access,
+      offeredRoutes(() => "Own"),
+    ).leadAdmission(partition),
+    "HostedRunsNotGranted",
+  );
+  assert.equal(refused.asked.length, 1);
+  const double = mailboxDouble({ absent: true });
+  await hostedPolicyOf(
+    double,
+    hostedAuthority("Granted").access,
+    offeredRoutes(() => "Own"),
+  ).execute(chosenRequest, new AbortController().signal);
+  assert.deepEqual(
+    double.openings.map((opening) => [
+      opening.credentialSlot,
+      opening.model,
+      opening.effort,
+      opening.autoCompactWindow,
+    ]),
+    [[leadCredentialSlot, "claude-sonnet-5-5", "medium", resolvedWindow]],
+  );
+});
+
+test("a subsidized lead whose turn spent more than the profile's turn bound is replaced before the next decision, and one at it is not", async () => {
+  for (const [spent, replaced] of [
+    [subsidizedRuntime.turnTokensMax + 1, true],
+    [subsidizedRuntime.turnTokensMax, false],
+  ] as const) {
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      autoCompactWindow: subsidizedWindow,
+      model: subsidizedRuntime.model,
+      effort: subsidizedRuntime.effort,
+      credentialSlot: subsidizedRuntime.credentialSlot,
+      decisionTurnTokens: spent,
+    });
+    await hostedPolicyOf(
+      double,
+      hostedAuthority("Refused").access,
+      offeredRoutes(() => "Subsidized"),
+    ).execute(subsidizedRequest, new AbortController().signal);
+    assert.deepEqual(
+      double.closings,
+      replaced ? ["lead-session"] : [],
+      String(spent),
+    );
+    assert.equal(double.openings.length, replaced ? 1 : 0, String(spent));
+  }
+  assert.ok(
+    subsidizedRuntime.turnTokensMax + 1 < leadTurnTokensMax,
+    "the case spends less than an own lead's bound",
+  );
+});
+
+test("switching a lead between its own and the subsidized offering replaces it before each next decision", async () => {
+  let offering: LeadOffering = "Own";
+  const double = mailboxDouble({ absent: true });
+  const policy = hostedPolicyOf(
+    double,
+    hostedAuthority("Granted").access,
+    offeredRoutes(() => offering),
+  );
+  await policy.execute(request, new AbortController().signal);
+  offering = "Subsidized";
+  await policy.execute(subsidizedRequest, new AbortController().signal);
+  offering = "Own";
+  await policy.execute(request, new AbortController().signal);
+  assert.deepEqual(double.closings, ["lead-successor-1", "lead-successor-2"]);
+  assert.deepEqual(
+    double.openings.map((opening) => [opening.session, opening.credentialSlot]),
+    [
+      ["lead-successor-1", leadCredentialSlot],
+      ["lead-successor-2", "anthropic-api"],
+      ["lead-successor-3", leadCredentialSlot],
+    ],
+  );
+});
+
+test("a lead admitted as another offering than its settings opened it under offers no turn", async () => {
+  for (const [admitted, decided] of [
+    ["Subsidized", request],
+    ["Own", subsidizedRequest],
+  ] as const) {
+    const double = mailboxDouble({ absent: true });
+    await assert.rejects(
+      hostedPolicyOf(
+        double,
+        hostedAuthority("Granted").access,
+        offeredRoutes(() => admitted),
+      ).execute(decided, new AbortController().signal),
+      /admitted as another offering/u,
+      admitted,
+    );
+    assert.deepEqual(double.offers, [], admitted);
   }
 });

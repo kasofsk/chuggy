@@ -160,6 +160,10 @@ function sessionRoutesRecording(asked: unknown[]): SessionRouteReads {
       asked.push({ route: named, kind });
       return routes.route(named, kind);
     },
+    leadOffering: (named) => {
+      asked.push({ leadOffering: named });
+      return routes.leadOffering(named);
+    },
     runners: (named, principal) => {
       asked.push({ runners: named, principal });
       return routes.runners(named, principal);

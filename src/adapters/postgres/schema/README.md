@@ -478,7 +478,8 @@ at boot and deletes it at a boot that offers none; the API role reads it
 through `read_subsidized_lead` alone. It has no project key, being the
 deployment's: it is a single row, keyed `singleton` and held to it by a CHECK.
 It has no unfinished work: `session_lead_offering` reads it when asked, so a
-stored `Subsidized` reads `Own` while no row stands.
+stored `Subsidized` reads `Own` while no row stands. The selector's settings
+read and the API's reach it, per project, through `session_lead_profile`.
 
 `session_routing` — the session routing the scheduler last published: the
 default per kind and each project's override. It is a single row, keyed
