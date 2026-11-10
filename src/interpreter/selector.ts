@@ -57,6 +57,8 @@ export interface SelectorInteraction {
   readonly context: {
     readonly operationalContext: SelectorOperationalContext;
     readonly handoffNote: JsonValue;
+    /** The project's standing attention, absent on a row written before it was recorded. */
+    readonly attention?: SelectorProjectState["attention"];
     /** What the lead was told had moved, absent on a row written before the window was recorded. */
     readonly changes?: readonly ProjectNotification[];
   };
@@ -390,6 +392,8 @@ export interface SelectorObservation {
   readonly changes: readonly ProjectNotification[];
   readonly operationalContext: SelectorOperationalContext;
   readonly handoffNote: JsonValue;
+  /** The project's standing attention, absent on an observation stored before it was carried. */
+  readonly attention?: SelectorProjectState["attention"];
   readonly nextCandidateScan: Exclude<
     SelectorCandidateScan,
     { readonly state: "Unstarted" }
@@ -1235,6 +1239,20 @@ function selectorInstructionsVersion(
   return `${String(settings.revision)}.${String(settings.projectRevision)}`;
 }
 
+/** What an interaction records of the observation beside its view: what the lead was told. */
+function selectorInteractionContext(
+  observation: SelectorObservation,
+): SelectorInteraction["context"] {
+  return {
+    operationalContext: observation.operationalContext,
+    handoffNote: observation.handoffNote,
+    ...(observation.attention === undefined
+      ? {}
+      : { attention: observation.attention }),
+    changes: observation.changes,
+  };
+}
+
 function selectorInteraction(
   execution: SelectorPolicyExecution,
   observation: SelectorObservation,
@@ -1249,11 +1267,7 @@ function selectorInteraction(
     instructions: settings.basePrompt,
     observedView: observation.candidates,
     observedToken: observation.token,
-    context: {
-      operationalContext: observation.operationalContext,
-      handoffNote: observation.handoffNote,
-      changes: observation.changes,
-    },
+    context: selectorInteractionContext(observation),
     toolActivity: execution.toolActivity,
     result: checkedJson(execution.result, "selector result"),
     implementationRevision: execution.implementationRevision,
@@ -1408,6 +1422,9 @@ function persistablePolicyObservation(
         context: {
           operationalContext: observation.operationalContext,
           handoffNote: observation.handoffNote,
+          ...(observation.attention === undefined
+            ? {}
+            : { attention: observation.attention }),
         },
       },
       "selector interaction input",
@@ -1426,6 +1443,9 @@ function persistablePolicyObservation(
       changes: persistedInput.changes,
       operationalContext: persistedInput.context.operationalContext,
       handoffNote: persistedInput.context.handoffNote,
+      ...(persistedInput.context.attention === undefined
+        ? {}
+        : { attention: persistedInput.context.attention }),
       nextCandidateScan: observation.nextCandidateScan,
       ...(observation.resourceLimit === undefined
         ? {}
@@ -1516,11 +1536,7 @@ function failedSelectorInteraction(
     instructions: settings.basePrompt,
     observedView: observation.candidates,
     observedToken: observation.token,
-    context: {
-      operationalContext: observation.operationalContext,
-      handoffNote: observation.handoffNote,
-      changes: observation.changes,
-    },
+    context: selectorInteractionContext(observation),
     toolActivity: measured?.toolActivity ?? [],
     result: { outcome: "Failed", code: policyFailureCode(error) },
     implementationRevision: measured?.implementationRevision ?? "Unavailable",
@@ -2086,6 +2102,40 @@ function candidateScanQuery(
 }
 
 /**
+ * The page one observation is about: the scan's next, or a fresh one where the
+ * view reset under it, and none where an exhausted scan's view has not moved or
+ * the fresh page reset too.
+ */
+async function observeSelectorProjectPage(
+  state: SelectorProjectState,
+  source: Pick<SelectorObservationSource, "dispatchView">,
+  pageLimit: number,
+  candidateBytesMax: number,
+): Promise<Exclude<BoundedCandidatePage, { result: "Reset" }> | undefined> {
+  const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
+  const query = candidateScanQuery(scan, pageLimit);
+  let page =
+    scan.state === "Exhausted"
+      ? await source.dispatchView(state.partition, query)
+      : await boundedCandidatePage(
+          source,
+          state.partition,
+          query,
+          candidateBytesMax,
+        );
+  if (scan.state === "Exhausted" && page.result === "Page") return undefined;
+  if (page.result === "Reset")
+    page = await boundedCandidatePage(
+      source,
+      state.partition,
+      { limit: pageLimit },
+      candidateBytesMax,
+    );
+  if (page.result === "Reset") return undefined;
+  return page;
+}
+
+/**
  * Polls current state after every wake-up or cursor reset and never mixes view
  * watermarks, the notification page read once by the caller and handed in, so a
  * row cannot arrive between two reads and be counted as the trigger for a
@@ -2108,31 +2158,19 @@ export async function observeSelectorProject(
 ): Promise<SelectorObservation | undefined> {
   if (!selectorProjectMoved(state, notifications)) return undefined;
   const changes = notifications.result === "Events" ? notifications.events : [];
-  const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
-  const query = candidateScanQuery(scan, pageLimit);
-  let page =
-    scan.state === "Exhausted"
-      ? await source.dispatchView(state.partition, query)
-      : await boundedCandidatePage(
-          source,
-          state.partition,
-          query,
-          candidateBytesMax,
-        );
-  if (scan.state === "Exhausted" && page.result === "Page") return undefined;
-  if (page.result === "Reset")
-    page = await boundedCandidatePage(
-      source,
-      state.partition,
-      { limit: pageLimit },
-      candidateBytesMax,
-    );
-  if (page.result === "Reset") return undefined;
+  const page = await observeSelectorProjectPage(
+    state,
+    source,
+    pageLimit,
+    candidateBytesMax,
+  );
+  if (page === undefined) return undefined;
   const observed = {
     notificationCursor: notifications.cursor,
     changes,
     operationalContext: await source.operationalContext(state.partition),
     handoffNote: state.handoffNote,
+    attention: state.attention,
   };
   if (page.result === "Oversized")
     return {

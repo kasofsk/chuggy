@@ -112,11 +112,13 @@ const leadStandingInstructions = `# How you act on this project
   a revision of that draft's own dependencies.
 - \`release_draft\` answers an accepted operation rather than an outcome. Read
   the operation to learn what happened.
-- Your memory of earlier turns can end between any two turns. Your successor
-  is given the handoff note, a summary of your recent decisions (which tickets
-  each dispatched and refused), the standing refusals and the cursor, and
-  nothing of what you read or reasoned. The note says what happened, and a
-  hold is a refusal.`;
+- Every turn gives you the handoff note, the standing attention
+  (\`attention\`) and the dispatch budget (\`dispatchesMax\`), and a turn
+  dispatches no more than that budget. Your memory of earlier turns can end
+  between any two turns. Your successor is also given a summary of your recent
+  decisions (which tickets each dispatched and refused), the standing refusals
+  and the cursor, and nothing of what you read or reasoned. The note says what
+  happened, and a hold is a refusal.`;
 
 /** The objectives themselves, before the bound they are checked against is known. */
 function leadObjectives(

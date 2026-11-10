@@ -60,6 +60,7 @@ import {
 } from "../../contract/http.ts";
 import { notificationSchema } from "../../contract/responses.ts";
 import {
+  selectorAttentions,
   selectorDeliveryStates,
   type LeadAdmissionRefusal,
 } from "../../contract/rosters.ts";
@@ -202,12 +203,14 @@ const selectorContextSchema = z
   .strictObject({
     operationalContext: selectorOperationalContextSchema,
     handoffNote: jsonValueSchema,
+    attention: z.enum(selectorAttentions).optional(),
     changes: z.array(notificationSchema).readonly().optional(),
   })
   .readonly()
   .transform((value): SelectorInteraction["context"] => ({
     operationalContext: value.operationalContext,
     handoffNote: value.handoffNote,
+    ...(value.attention === undefined ? {} : { attention: value.attention }),
     ...(value.changes === undefined
       ? {}
       : { changes: value.changes.map(retainedChange) }),
@@ -316,12 +319,14 @@ const selectorObservationSchema = z
     changes: z.array(notificationSchema).readonly(),
     operationalContext: selectorOperationalContextSchema,
     handoffNote: jsonValueSchema,
+    attention: z.enum(selectorAttentions).optional(),
     nextCandidateScan: observedScanSchema,
     resourceLimit: z.literal("CandidateTooLarge").optional(),
   })
   .transform(
     ({
       resourceLimit,
+      attention,
       changes,
       candidates,
       configurations,
@@ -330,6 +335,7 @@ const selectorObservationSchema = z
       ...observation,
       candidates: observedCandidates(candidates, configurations),
       changes: changes.map(retainedChange),
+      ...(attention === undefined ? {} : { attention }),
       ...(resourceLimit === undefined ? {} : { resourceLimit }),
     }),
   );
