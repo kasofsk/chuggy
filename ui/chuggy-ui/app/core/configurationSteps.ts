@@ -22,6 +22,8 @@ import { configurationFollowingOf } from "../../../../src/contract/configuration
 
 import { finalizationLine, gitMergePolicyLabel } from "./codeLabels.ts";
 import {
+  catalogApproversLine,
+  catalogWorkloadRuns,
   configurationCatalogOf,
   configurationCatalogSelected,
   configurationCatalogWorkload,
@@ -29,6 +31,7 @@ import {
 import type {
   CatalogFinalizer,
   CatalogPlanStage,
+  CatalogWorkload,
   ConfigurationCatalog,
 } from "./configurationCatalog.ts";
 import {
@@ -217,8 +220,30 @@ function catalogFiles(workload: StepsRecord): readonly unknown[] {
   return Array.isArray(files) ? files : [];
 }
 
+/** Who may answer an approval workload, none for any other. */
+function catalogApprovers(workload: StepsRecord): readonly CopyOrData[] {
+  if (workload["runner"] !== "Approval") return [];
+  const approvers = workload["approvers"] ?? "Developer";
+  if (approvers === "Developer" || approvers === "Admin")
+    return [catalogApproversLine(approvers)];
+  const principals = stepsStrings(approvers);
+  return principals.length === 0 ? [] : [catalogApproversLine(principals)];
+}
+
 /** The values a catalog workload opens onto, in the order they are drawn. */
 const catalogDetailReads: readonly CatalogDetailRead[] = [
+  {
+    name: { id: "configuration-steps-approvers" },
+    field: "approvers",
+    code: false,
+    read: catalogApprovers,
+  },
+  {
+    name: { id: "configuration-steps-instructions" },
+    field: "instructions",
+    code: false,
+    read: (workload) => stepsString(workload["instructions"]),
+  },
   {
     name: { id: "configuration-steps-arguments" },
     field: "worker",
@@ -478,6 +503,28 @@ function catalogDocumentsOf(
   };
 }
 
+/** Who runs one catalog workload: its agent and prompt file, its commands,
+ * a person, or the runner it names where the console knows none. */
+function catalogRunsOf(
+  workload: CatalogWorkload,
+): ConfigurationStepRuns | undefined {
+  switch (workload.runner) {
+    case "Agent":
+      return {
+        by: workload.agent ?? { id: "configuration-steps-agent" },
+        from: workload.promptPath,
+        more: 0,
+      };
+    case "Commands":
+      return stepsCommandsRuns(workload.commands);
+    case "Approval":
+    case "Unknown":
+      return { by: catalogWorkloadRuns(workload), from: undefined, more: 0 };
+    case undefined:
+      return undefined;
+  }
+}
+
 /** One catalog workload run as one step. */
 function catalogRowOf(
   documents: CatalogDocuments,
@@ -492,26 +539,18 @@ function catalogRowOf(
     override: overriding === undefined ? undefined : stepsRecord(overriding),
   };
   const details = catalogDetailsOf(held);
-  const commands = workload?.runner === "Commands";
   return stepsRow({
     step,
     workload: name === step ? undefined : name,
-    runs:
-      workload?.runner === undefined
-        ? undefined
-        : commands
-          ? stepsCommandsRuns(workload.commands)
-          : {
-              by: workload.agent ?? { id: "configuration-steps-agent" },
-              from: workload.promptPath,
-              more: 0,
-            },
+    runs: workload === undefined ? undefined : catalogRunsOf(workload),
     model:
       workload?.runner === "Agent" ? stepsModel(workload.model) : undefined,
     overrides: catalogOverridesOf(held, details),
     details,
     prompt:
-      workload?.prompt === undefined
+      workload?.prompt === undefined ||
+      workload.runner === "Approval" ||
+      workload.runner === "Unknown"
         ? []
         : [
             {

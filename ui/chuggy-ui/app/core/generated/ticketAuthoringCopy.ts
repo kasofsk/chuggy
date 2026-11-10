@@ -453,6 +453,10 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-skeleton-in-place": {
     readonly field: unknown;
   };
+  readonly "ticket-authoring-skeleton-approvers": {
+    readonly developer: unknown;
+    readonly admin: unknown;
+  };
   readonly "ticket-authoring-placeholder-setup": Record<never, never>;
   readonly "ticket-authoring-placeholder-path": Record<never, never>;
   readonly "ticket-authoring-placeholder-content": Record<never, never>;
@@ -461,6 +465,8 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-placeholder-motivation": Record<never, never>;
   readonly "ticket-authoring-placeholder-done": Record<never, never>;
   readonly "ticket-authoring-placeholder-constraint": Record<never, never>;
+  readonly "ticket-authoring-placeholder-principal": Record<never, never>;
+  readonly "ticket-authoring-placeholder-instructions": Record<never, never>;
   readonly "ticket-authoring-workload-runner": Record<never, never>;
   readonly "ticket-authoring-workload-purpose": {
     readonly default: unknown;
@@ -508,4 +514,9 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-workload-resources": Record<never, never>;
   readonly "ticket-authoring-workload-cpus": Record<never, never>;
   readonly "ticket-authoring-workload-memory": Record<never, never>;
+  readonly "ticket-authoring-workload-approvers": {
+    readonly developer: unknown;
+    readonly admin: unknown;
+  };
+  readonly "ticket-authoring-workload-instructions": Record<never, never>;
 }

@@ -144,6 +144,7 @@ export interface TicketCopy {
   readonly "ticket-steps-not-started": Record<never, never>;
   readonly "ticket-steps-not-on-page": Record<never, never>;
   readonly "ticket-plan-commands": Record<never, never>;
+  readonly "ticket-plan-approval": Record<never, never>;
   readonly "ticket-plan-evaluator": {
     readonly key: unknown;
   };

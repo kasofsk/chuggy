@@ -23,10 +23,14 @@ import {
   gitMergePolicyLabel,
 } from "./codeLabels.ts";
 import {
+  catalogApproversLine,
   catalogFinalizerApproval,
+  catalogPlanLine,
   catalogWorkloadModel,
+  catalogWorkloadRuns,
 } from "./configurationCatalog.ts";
 import type {
+  CatalogApproval,
   CatalogFinalizer,
   CatalogPlanStage,
   CatalogWorkload,
@@ -50,6 +54,8 @@ export type CatalogEntryDetail =
   | {
       readonly kind: "Plan";
       readonly stages: readonly CatalogPlanStage[];
+      /** The stages in one line, saying where one waits on a person. */
+      readonly line: CopyOrData;
     }
   | { readonly kind: "Finalizer"; readonly finalizer: CatalogFinalizer }
   | { readonly kind: "Prompt"; readonly path: string; readonly text: string };
@@ -223,7 +229,7 @@ function catalogEntriesGroups(
       title: catalogGroupTitles.Plan,
       entries: [...catalog.plans].map(([name, stages]) =>
         catalogEntryOf(
-          { kind: "Plan", stages },
+          { kind: "Plan", stages, line: catalogPlanLine(catalog, stages) },
           name,
           catalogDefaultsOf(catalog, "evaluation", name),
         ),
@@ -289,14 +295,6 @@ export function catalogDefaultLabel(role: CatalogDefaultRole): Copy {
   return catalogDefaultLabels[role];
 }
 
-/** A workload's model, or what it runs where it names none. */
-function catalogEntryRuns(workload: CatalogWorkload): CopyOrData {
-  return (
-    catalogWorkloadModel(workload) ??
-    workload.runner ?? { id: "configuration-catalog-unread" }
-  );
-}
-
 /** The first line of a prompt that says anything, its heading marks dropped. */
 function catalogPromptOpening(text: string): string {
   const line = text
@@ -315,19 +313,29 @@ export function catalogEntrySummary(
   switch (detail.kind) {
     case "Workload": {
       const { workload } = detail;
+      const runs = copyOrDataText(text, catalogWorkloadRuns(workload));
       if (workload.runner === "Commands")
         return [
           text({ id: "configuration-catalog-commands" }),
           ...workload.commands,
         ].join(" · ");
+      if (workload.approval !== undefined)
+        return [
+          runs,
+          copyOrDataText(
+            text,
+            catalogApproversLine(workload.approval.approvers),
+          ),
+        ].join(" · ");
+      if (workload.runner === "Unknown") return runs;
       return [
-        copyOrDataText(text, catalogEntryRuns(workload)),
+        runs,
         workload.promptPath ??
           text({ id: "configuration-catalog-prompt-inline" }),
       ].join(" · ");
     }
     case "Plan":
-      return detail.stages.map((stage) => stage.name).join(" → ");
+      return copyOrDataText(text, detail.line);
     case "Finalizer":
       return [
         text(catalogFinalizerApproval(detail.finalizer)),
@@ -342,8 +350,31 @@ export function catalogEntrySummary(
   }
 }
 
+/** What an approval workload says beyond its runner: who may answer it, and
+ * what they are shown where it says. */
+function catalogWorkloadApprovalFields<Field>(
+  approval: CatalogApproval,
+  field: (label: Copy, value: CopyOrData) => Field,
+): readonly Field[] {
+  return [
+    field(
+      { id: "configuration-catalog-field-approvers" },
+      catalogApproversLine(approval.approvers),
+    ),
+    ...(approval.instructions === undefined
+      ? []
+      : [
+          field(
+            { id: "configuration-catalog-field-instructions" },
+            approval.instructions,
+          ),
+        ]),
+  ];
+}
+
 /** What a workload says, field by field: a command list where it runs
- * commands, and its model and prompt where an agent runs it. */
+ * commands, its model and prompt where an agent runs it, who answers it where
+ * a person does, and its runner alone where the console knows no such runner. */
 function catalogWorkloadFields<Field>(
   detail: Extract<CatalogEntry["detail"], { kind: "Workload" }>,
   field: (label: Copy, value: CopyOrData) => Field,
@@ -351,14 +382,25 @@ function catalogWorkloadFields<Field>(
   const { workload } = detail;
   const unread: Copy = { id: "configuration-catalog-unread" };
   const commanded = workload.runner === "Commands";
-  return [
+  const shown = [
     ...(detail.path === undefined
       ? []
       : [field({ id: "configuration-catalog-field-file" }, detail.path)]),
     field(
       { id: "configuration-catalog-field-runner" },
-      workload.runner ?? unread,
+      workload.runner === "Agent" || commanded
+        ? workload.runner
+        : catalogWorkloadRuns(workload),
     ),
+  ];
+  if (workload.approval !== undefined)
+    return [
+      ...shown,
+      ...catalogWorkloadApprovalFields(workload.approval, field),
+    ];
+  if (workload.runner === "Unknown") return shown;
+  return [
+    ...shown,
     field({ id: "configuration-catalog-field-evaluator" }, workload.purpose),
     field(
       { id: "configuration-catalog-field-reevaluate" },
