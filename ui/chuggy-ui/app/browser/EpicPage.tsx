@@ -1,243 +1,141 @@
 /**
- * One epic: what it says, how far its tickets have come, the tickets outside
- * it that they wait on, the graph between them, and the revisions it has been
- * through. The figures are the API's and nothing here derives them. A reader
- * who may write epics is offered the form to revise it, which is sent at the
- * revision this page read.
+ * One epic, as a header over three tabs: its title, where its tickets stand
+ * and what may be done to it, and under the tabs its overview with the graph
+ * first, its tickets as the ticket list draws them, and its revisions.
+ *
+ * Every read is made here, once, and handed to whichever tab is drawn, so a
+ * tab switch reads nothing again, and one clock ticks the whole page. The
+ * graph is read again whenever the epic's revision moves or the ticket list's
+ * rows do, which is how a card's state and its train keep up with the tickets.
+ * The figures are the API's and nothing here derives them.
  */
 
-import { Link, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useParams } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { EpicViewResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { instantFigure } from "../core/figures.ts";
+import { epicGraphQuery, epicHistoryQuery, epicQuery } from "../core/epics.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
-import {
-  epicFormFrom,
-  epicGraphQuery,
-  epicHistoryQuery,
-  epicQuery,
-} from "../core/epics.ts";
+import { ticketListAskDefault } from "../core/projectTableFilters.ts";
+import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
+import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import { usePanelState } from "./api.ts";
-import { DataPanel, PanelUnready } from "./DataPanel.tsx";
-import { EpicFormPanel } from "./EpicForm.tsx";
-import { EpicGraph } from "./EpicGraph.tsx";
-import { EpicProgress, EpicStatusPill } from "./EpicsPage.tsx";
-import { useNowMs } from "./Freshness.tsx";
+import { useCreatorEmails } from "./creatorEmails.ts";
+import { PanelUnready } from "./DataPanel.tsx";
+import { EpicHeader } from "./epic/EpicHeader.tsx";
+import { EpicPageHeldProvider } from "./epic/EpicPageHeld.tsx";
+import type { EpicPageHeld } from "./epic/EpicPageHeld.tsx";
+import { EpicTabs } from "./epic/EpicTabs.tsx";
+import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
-import { Button } from "./ui/Button.tsx";
+import { readValue } from "./ticket/TicketPageHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
-import { Field, Fields } from "./ui/Fields.tsx";
-import { Figure } from "./ui/Figure.tsx";
-import { MarkdownReport } from "./ui/MarkdownReport.tsx";
-import { Panel } from "./ui/Panel.tsx";
-import { Pill } from "./ui/Pill.tsx";
 
-import "./Epic.css";
-
-function TicketLinks(props: {
-  readonly partition: PartitionIdentity;
-  readonly tickets: readonly number[];
-}): ReactNode {
-  const text = useCopyText();
-  if (props.tickets.length === 0)
-    return <span>{text({ id: "epics-none-value" })}</span>;
-  return (
-    <span className="epic-chips">
-      {props.tickets.map((ticket) => (
-        <Link
-          key={ticket}
-          to="/$tenant/$project/tickets/$ticket"
-          params={{ ...props.partition, ticket: String(ticket) }}
-        >
-          {`#${String(ticket)}`}
-        </Link>
-      ))}
-    </span>
-  );
+/** The graph read again once the epic's revision or the ticket list's rows
+ * move past what this page last drew, and never for the first of either. */
+function useEpicGraphLive(
+  partition: PartitionIdentity,
+  epic: number,
+  revision: number | undefined,
+  rows: ProjectTicketRows | undefined,
+): void {
+  const client = useQueryClient();
+  const seen = useRef({ revision, rows });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { revision, rows };
+    const moved =
+      (before.revision !== undefined && before.revision !== revision) ||
+      (before.rows !== undefined && before.rows !== rows);
+    if (moved)
+      void client.invalidateQueries({
+        queryKey: epicGraphQuery(partition, epic).queryKey,
+        exact: true,
+      });
+  }, [client, partition, epic, revision, rows]);
 }
 
-function EpicSummary(props: {
-  readonly partition: PartitionIdentity;
-  readonly epic: EpicViewResponse;
-}): ReactNode {
-  const text = useCopyText();
-  const { epic } = props;
-  return (
-    <Panel title={epic.title}>
-      <div className="grid gap-3">
-        <div className="epic-row-head">
-          <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
-          <EpicStatusPill status={epic.status} />
-          {epic.visibility === "Archived" ? (
-            <Pill tone="retired">
-              {text({ id: "epics-visibility-archived" })}
-            </Pill>
-          ) : null}
-        </div>
-        {epic.summary === undefined ? null : <p>{epic.summary}</p>}
-        <EpicProgress progress={epic.progress} />
-        <Fields>
-          <Field name={text({ id: "epics-field-tickets" })}>
-            <TicketLinks partition={props.partition} tickets={epic.tickets} />
-          </Field>
-          <Field
-            name={text({ id: "epics-field-waiting-outside" })}
-            absent={epic.waitingOnOutside.length === 0}
-          >
-            <TicketLinks
-              partition={props.partition}
-              tickets={epic.waitingOnOutside}
-            />
-          </Field>
-          <Field name={text({ id: "epics-field-revision" })}>
-            {String(epic.revision)}
-          </Field>
-        </Fields>
-        {epic.description === "" ? null : (
-          <MarkdownReport text={epic.description} />
-        )}
-      </div>
-    </Panel>
-  );
-}
-
-function EpicGraphPanel(props: {
+function EpicPageOf(props: {
   readonly partition: PartitionIdentity;
   readonly epic: number;
+  readonly children: ReactNode;
 }): ReactNode {
+  const { partition, epic } = props;
   const text = useCopyText();
-  const state = usePanelState(epicGraphQuery(props.partition, props.epic));
-  return (
-    <DataPanel title={text({ id: "epics-graph" })} state={state}>
-      {(graph) => <EpicGraph partition={props.partition} graph={graph} />}
-    </DataPanel>
-  );
-}
-
-/** One page of the history, newest first, and the older one once it is asked for. */
-function EpicHistoryPage(props: {
-  readonly partition: PartitionIdentity;
-  readonly epic: number;
-  readonly after: number | undefined;
-  readonly nowMs: number;
-}): ReactNode {
-  const text = useCopyText();
-  const [older, setOlder] = useState(false);
-  const state = usePanelState(
-    epicHistoryQuery(props.partition, props.epic, props.after),
-  );
-  if (state.state !== "Ready") return <PanelUnready state={state} />;
-  const { revisions, nextAfter } = state.value;
-  return (
-    <>
-      <ol
-        className="grid gap-1 text-sm"
-        aria-label={text({ id: "epics-revisions-label" })}
-      >
-        {revisions.map((revision) => (
-          <li key={revision.revision} className="flex flex-wrap gap-2">
-            <span>
-              {text({
-                id: "epics-revision",
-                args: { revision: String(revision.revision) },
-              })}
-            </span>
-            <span>{revision.title}</span>
-            <span className="text-ink-3">{revision.actor.subject}</span>
-            <Figure figure={instantFigure(revision.changedAt, props.nowMs)} />
-          </li>
-        ))}
-      </ol>
-      {nextAfter === undefined ? null : older ? (
-        <EpicHistoryPage
-          partition={props.partition}
-          epic={props.epic}
-          after={nextAfter}
-          nowMs={props.nowMs}
-        />
-      ) : (
-        <div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setOlder(true);
-            }}
-          >
-            {text({ id: "epics-show-older" })}
-          </Button>
-        </div>
-      )}
-    </>
-  );
-}
-
-function EpicRevision(props: {
-  readonly partition: PartitionIdentity;
-  readonly epic: EpicViewResponse;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <Panel title={text({ id: "ui-edit" })} collapsible={{ open: false }}>
-      <EpicFormPanel
-        key={props.epic.number}
-        partition={props.partition}
-        held={{
-          epic: props.epic.number,
-          revision: props.epic.revision,
-          form: epicFormFrom(props.epic),
-        }}
-        submit={text({ id: "ui-save" })}
-        onSaved={() => undefined}
-      />
-    </Panel>
-  );
-}
-
-export function EpicPage(): ReactNode {
-  const text = useCopyText();
-  const params = useParams({ from: "/$tenant/$project/epics/$epic" });
-  const partition: PartitionIdentity = {
-    tenant: params.tenant,
-    project: params.project,
-  };
-  const epic = Number(params.epic);
   const nowMs = useNowMs();
-  const state = usePanelState(epicQuery(partition, epic));
+  const epicState = usePanelState(epicQuery(partition, epic));
+  const graphState = usePanelState(epicGraphQuery(partition, epic));
+  const historyState = usePanelState(
+    epicHistoryQuery(partition, epic, undefined),
+  );
+  const rowsState = usePanelState(
+    ticketRowsQuery(partition, ticketListAskDefault),
+  );
+  const creatorEmails = useCreatorEmails(partition);
   const writing = !projectAbilityRefused(
     useProjectAbilities(partition),
     "writeEpic",
+  );
+  useEpicGraphLive(
+    partition,
+    epic,
+    readValue(epicState)?.revision,
+    readValue(rowsState),
   );
   if (!Number.isSafeInteger(epic) || epic <= 0)
     return (
       <EmptyState label={text({ id: "epics-not-found" })} variant="page" />
     );
+  const held: EpicPageHeld = {
+    partition,
+    epic,
+    epicState,
+    graphState,
+    historyState,
+    rowsState,
+    creatorEmails,
+    writing,
+    nowMs,
+  };
+  const view = readValue(epicState);
   return (
-    <div className="grid min-w-0 gap-4" data-fills-width>
-      <ScreenTitle>{text({ id: "epics-page-title" })}</ScreenTitle>
-      {state.state === "Ready" ? (
-        <>
-          <EpicSummary partition={partition} epic={state.value} />
-          {writing ? (
-            <EpicRevision partition={partition} epic={state.value} />
-          ) : null}
-        </>
-      ) : (
-        <PanelUnready state={state} />
-      )}
-      <EpicGraphPanel partition={partition} epic={epic} />
-      <Panel title={text({ id: "epics-history" })}>
-        <EpicHistoryPage
+    <FreshnessInstants>
+      <div className="grid min-w-0 gap-4" data-fills-width>
+        <ScreenTitle>{text({ id: "epics-page-title" })}</ScreenTitle>
+        {view === undefined ? (
+          <PanelUnready state={epicState} />
+        ) : (
+          <EpicHeader held={held} view={view} />
+        )}
+        <EpicTabs
           partition={partition}
           epic={epic}
-          after={undefined}
-          nowMs={nowMs}
+          memberCount={view?.tickets.length}
         />
-      </Panel>
-    </div>
+        <EpicPageHeldProvider value={held}>
+          {props.children}
+        </EpicPageHeldProvider>
+      </div>
+    </FreshnessInstants>
+  );
+}
+
+/** The layout every tab is drawn in, handed the tab its address names, and
+ * drawn afresh for each epic it names, so that nothing it holds of one epic
+ * is drawn at another's address. */
+export function EpicPage(props: { readonly children: ReactNode }): ReactNode {
+  const params = useParams({ from: "/$tenant/$project/epics/$epic" });
+  return (
+    <EpicPageOf
+      key={`${params.tenant}/${params.project}/${params.epic}`}
+      partition={{ tenant: params.tenant, project: params.project }}
+      epic={Number(params.epic)}
+    >
+      {props.children}
+    </EpicPageOf>
   );
 }

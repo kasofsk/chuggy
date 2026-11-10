@@ -1,23 +1,21 @@
 /**
- * The epic console logic: the address's view, the graph's layout, the form's
- * request and the sentences a refusal is drawn as.
+ * The epic console logic: the address's view, how progress is drawn, the
+ * form's request and the sentences a refusal is drawn as.
  */
 
 import { expect, test } from "vitest";
 
 import { epicListQueryParse } from "../../../src/contract/epics.ts";
 import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
-import type { EpicGraphResponse } from "../../../src/contract/responses.ts";
 import {
   epicDraftRefusal,
   epicFormFaults,
   epicFormFrom,
-  epicGraphColumnWidth,
-  epicGraphLabelCharsMax,
-  epicGraphLayout,
-  epicGraphRowHeight,
   epicPickerOptions,
+  epicProgressBar,
+  epicProgressCounts,
   epicProgressLine,
+  epicProgressMovingAny,
   epicStatusLook,
   epicTicketsParsed,
   epicWriteFrom,
@@ -114,117 +112,76 @@ test("progress is said as what is done of what there is", () => {
   ).toBe("2 of 5 done");
 });
 
-const graph: EpicGraphResponse = {
-  nodes: [
-    { ticket: 5, title: "Charge", phase: "Work", member: true },
-    { ticket: 2, title: "Schema", phase: "Done", member: false },
-    { ticket: 7, phase: "Pending", member: true },
-    { ticket: 4, title: "Refund", phase: "Pending", member: true },
-  ],
-  edges: [
-    { from: 2, to: 5 },
-    { from: 5, to: 7 },
-    { from: 5, to: 4 },
-    { from: 9, to: 4 },
-  ],
+const counted = {
+  Pending: 0,
+  Work: 0,
+  Evaluation: 0,
+  Finalization: 0,
+  Done: 0,
+  Escalated: 0,
+  Revoked: 0,
 };
 
-test("a node stands in the column of its longest chain, and every edge runs rightward", () => {
-  const layout = epicGraphLayout(graph, copyTextEn);
-  const at = new Map(layout.nodes.map((node) => [node.ticket, node]));
-  expect(at.get(2)?.x).toBe(0);
-  expect(at.get(5)?.x).toBe(epicGraphColumnWidth);
-  expect(at.get(4)?.x).toBe(2 * epicGraphColumnWidth);
-  expect(at.get(7)?.x).toBe(2 * epicGraphColumnWidth);
-  expect(layout.edges).toHaveLength(3);
-  for (const edge of layout.edges) expect(edge.from.x).toBeLessThan(edge.to.x);
+test("a bar's fill is the rounded share done of the total, and an empty epic's is none", () => {
+  expect(
+    epicProgressBar({
+      byPhase: { ...counted, Done: 1, Pending: 2 },
+      drafts: 0,
+      done: 1,
+      total: 3,
+    }),
+  ).toStrictEqual({ sharePercent: 33, moving: "Still" });
+  expect(
+    epicProgressBar({ byPhase: counted, drafts: 0, done: 0, total: 0 })
+      .sharePercent,
+  ).toBe(0);
 });
 
-test("nodes of one column take rows by ticket number", () => {
-  const layout = epicGraphLayout(graph, copyTextEn);
-  const column = layout.nodes.filter(
-    (node) => node.x === 2 * epicGraphColumnWidth,
-  );
-  expect(column.map((node) => [node.ticket, node.y])).toStrictEqual([
-    [4, 0],
-    [7, epicGraphRowHeight],
+test("a bar shimmers while a member moves, and sweeps its empty track while nothing is done", () => {
+  for (const phase of ["Work", "Evaluation", "Finalization"] as const) {
+    const moving = { ...counted, [phase]: 1, Done: 1 };
+    expect(
+      epicProgressBar({ byPhase: moving, drafts: 0, done: 1, total: 2 }).moving,
+      phase,
+    ).toBe("Shimmer");
+    expect(
+      epicProgressMovingAny({ byPhase: moving, drafts: 0, done: 1, total: 2 }),
+    ).toBe(true);
+  }
+  expect(
+    epicProgressBar({
+      byPhase: { ...counted, Work: 2 },
+      drafts: 0,
+      done: 0,
+      total: 2,
+    }).moving,
+  ).toBe("Sweep");
+  expect(
+    epicProgressMovingAny({
+      byPhase: { ...counted, Escalated: 1, Pending: 1 },
+      drafts: 0,
+      done: 0,
+      total: 2,
+    }),
+  ).toBe(false);
+});
+
+test("the counts name each phase a member is in, in the phases' order, and none for an empty epic", () => {
+  expect(
+    epicProgressCounts({
+      byPhase: { ...counted, Revoked: 1, Pending: 2, Done: 3 },
+      drafts: 0,
+      done: 3,
+      total: 5,
+    }),
+  ).toStrictEqual([
+    { phase: "Pending", count: 2 },
+    { phase: "Done", count: 3 },
+    { phase: "Revoked", count: 1 },
   ]);
-  expect(layout.height).toBe(2 * epicGraphRowHeight);
-});
-
-test("an edge from a ticket the graph does not hold is left undrawn", () => {
-  const layout = epicGraphLayout(graph, copyTextEn);
-  expect(layout.edges.some((edge) => edge.from.ticket === 9)).toBe(false);
-});
-
-test("a cycle is laid out without looping and draws no backward edge", () => {
-  const layout = epicGraphLayout(
-    {
-      nodes: [
-        { ticket: 1, phase: "Pending", member: true },
-        { ticket: 2, phase: "Pending", member: true },
-      ],
-      edges: [
-        { from: 1, to: 2 },
-        { from: 2, to: 1 },
-      ],
-    },
-    copyTextEn,
-  );
-  expect(layout.nodes).toHaveLength(2);
-  for (const edge of layout.edges) expect(edge.from.x).toBeLessThan(edge.to.x);
-});
-
-test("a cycle hanging off a chain leaves the chain's columns as they were", () => {
-  const layout = epicGraphLayout(
-    {
-      nodes: [1, 2, 3, 4, 5].map((ticket) => ({
-        ticket,
-        phase: "Pending" as const,
-        member: true,
-      })),
-      edges: [
-        { from: 1, to: 2 },
-        { from: 2, to: 3 },
-        { from: 4, to: 5 },
-        { from: 5, to: 4 },
-        { from: 3, to: 4 },
-      ],
-    },
-    copyTextEn,
-  );
-  const at = new Map(layout.nodes.map((node) => [node.ticket, node.x]));
-  expect([1, 2, 3].map((ticket) => at.get(ticket))).toStrictEqual([
-    0,
-    epicGraphColumnWidth,
-    2 * epicGraphColumnWidth,
-  ]);
-  for (const edge of layout.edges) expect(edge.from.x).toBeLessThan(edge.to.x);
-});
-
-test("a label past what its node holds is cut, and a draft says so where it has no title", () => {
-  const layout = epicGraphLayout(
-    {
-      nodes: [
-        { ticket: 3, title: "x".repeat(epicGraphLabelCharsMax), member: true },
-        { ticket: 4, member: true },
-        { ticket: 5, title: "Short", phase: "Work", member: true },
-      ],
-      edges: [],
-    },
-    copyTextEn,
-  );
-  const label = new Map(layout.nodes.map((node) => [node.ticket, node.label]));
-  expect([...(label.get(3) ?? "")]).toHaveLength(epicGraphLabelCharsMax);
-  expect(label.get(3)?.endsWith("…")).toBe(true);
-  expect(label.get(4)).toBe("#4 Draft");
-  expect(label.get(5)).toBe("#5 Short");
-});
-
-test("an empty graph has a height and no nodes", () => {
-  const layout = epicGraphLayout({ nodes: [], edges: [] }, copyTextEn);
-  expect(layout.nodes).toStrictEqual([]);
-  expect(layout.height).toBe(epicGraphRowHeight);
+  expect(
+    epicProgressCounts({ byPhase: counted, drafts: 0, done: 0, total: 0 }),
+  ).toStrictEqual([]);
 });
 
 test("tickets are read from numbers, commas, spaces and hashes", () => {

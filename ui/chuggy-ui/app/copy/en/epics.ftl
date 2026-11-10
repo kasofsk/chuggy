@@ -1,5 +1,5 @@
 ## A project's epics, one epic's page, its graph and its form:
-## `app/core/epics.ts`, `EpicsPage.tsx`, `EpicPage.tsx`, `EpicGraph.tsx`,
+## `app/core/epics.ts`, `EpicsPage.tsx`, `EpicPage.tsx`, `epic/`,
 ## `EpicForm.tsx`, `EpicChips.tsx`.
 
 epics-title = { -epic(case: "upper", form: "plural") }
@@ -13,7 +13,6 @@ epics-search-placeholder = Search titles and summaries…
 epics-show-more = Show more
 epics-show-older = Show older
 epics-reload = Reload the { -epic }
-epics-progress-label = Progress
 epics-chip-archived = { $title } (archived)
 
 ## A status, and how far an epic's tickets have come.
@@ -25,6 +24,7 @@ epics-status-attention = Needs attention
 epics-status-done = Done
 epics-progress-none = no { -ticket(form: "plural") }
 epics-progress = { $done } of { $total } done
+epics-progress-count = { $count } { $phase }
 
 ## The list's filters, and the form's fields.
 
@@ -41,19 +41,48 @@ epics-field-summary = Summary
 epics-field-description = Description
 epics-field-tickets = { -ticket(case: "upper", form: "plural") }
 epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
-epics-field-waiting-outside = Waiting on outside
-epics-field-revision = { -revision(case: "upper") }
 epics-faults-label = Faults
-epics-none-value = None
 
-## The graph and the history.
+## The page's header, its tabs, the graph and the history.
 
-epics-graph = Graph
-epics-graph-empty = No { -ticket(form: "plural") }.
+epics-tabs-label = { -epic(case: "upper") }
+epics-tab-overview = Overview
+epics-tab-tickets = { -ticket(case: "upper", form: "plural") }
+epics-tab-history = History
+epics-tickets-none = This { -epic } holds no { -ticket(form: "plural") }
+epics-edit = Edit the { -epic }
+epics-archive = Archive
+epics-archive-title = Archive this { -epic }?
+epics-archive-body = An archived { -epic } takes no new { -ticket(form: "plural") } and keeps the ones it holds.
+epics-reactivate = Reactivate
+epics-reactivate-title = Reactivate this { -epic }?
+epics-reactivate-body = The { -epic } is active again and takes new { -ticket(form: "plural") }.
+epics-note-attention = Needs attention:
+epics-note-attention-escalated = is { -escalation }
+epics-note-waiting = Waiting on { $count ->
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+} outside this { -epic }:
+epics-saved = { -revision(case: "upper") } { $revision } · saved by { $actor }
+
+epics-graph-empty = This { -epic } has no { -ticket(form: "plural") } to draw
+epics-graph-loading = Drawing the graph…
+epics-graph-failed = The graph could not be read.
+epics-graph-outside-shown = Show { -ticket(form: "plural") } outside the { -epic } ({ $count })
+epics-graph-controls = Graph view
+epics-graph-zoom-in = Zoom in
+epics-graph-zoom-out = Zoom out
+epics-graph-fit = Fit to view
+epics-graph-full-enter = Enter full screen
+epics-graph-full-exit = Exit full screen
+epics-card-untitled = Untitled
+epics-card-open = Open { -ticket } #{ $ticket }: { $title }
+epics-card-open-outside = Open { -ticket } #{ $ticket }: { $title }, outside the { -epic }
+epics-card-run-work = { -work-stage(case: "upper") }
+epics-card-run-work-detail = { -work-stage(case: "upper") } in { -cycle } { $cycle }
+epics-card-run-evaluation = { -stage(case: "upper") } { $stage }
+epics-card-run-evaluation-detail = { -stage(case: "upper") } { $stage } of { -cycle } { $cycle }
 epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
-epics-graph-node = { -ticket(case: "upper") } { $ticket }, { $standing }
-epics-graph-node-titled = { -ticket(case: "upper") } { $ticket } { $title }, { $standing }
-epics-graph-node-outside = { $node }, outside the { -epic }
 epics-history = History
 epics-revisions-label = { -revision(case: "upper", form: "plural") }
 epics-revision = { -revision(case: "upper") } { $revision }

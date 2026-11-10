@@ -16,6 +16,7 @@ import {
 } from "../app/browser/ticket/TicketHeader.tsx";
 import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
+import { intersectionObserverStubbed } from "./intersectionObserver.ts";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
@@ -65,27 +66,6 @@ test("every state's label is its word after a mark, and only a moving state's ma
   expect(small?.dataset["tone"]).toBe("evaluation");
 });
 
-/** An observer the case reports through, as a browser reports a header
- * leaving the view. */
-function observerStubbed(): (intersecting: boolean) => void {
-  let report: (intersecting: boolean) => void = () => undefined;
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class {
-      constructor(told: (entries: { isIntersecting: boolean }[]) => void) {
-        report = (intersecting) => {
-          told([{ isIntersecting: intersecting }]);
-        };
-      }
-      observe(): void {}
-      disconnect(): void {}
-    },
-  );
-  return (intersecting) => {
-    report(intersecting);
-  };
-}
-
 function headerDrawn(): void {
   renderCopied(
     <TicketHeader
@@ -102,7 +82,7 @@ function headerDrawn(): void {
 }
 
 test("the bar holding the small label and the title shows once the header has scrolled out of view, and goes when it is back", () => {
-  const report = observerStubbed();
+  const report = intersectionObserverStubbed();
   headerDrawn();
   const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
   expect(bar?.hidden).toBe(true);
