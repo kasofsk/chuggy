@@ -437,7 +437,7 @@ export function inputBundleReferencesOf(
  * The phases this plan withdraws an open native action for, `Escalated`'s desk
  * task and `Finalization`'s approval, one open row of either per ticket, which a
  * ticket leaving the phase must take with it or the next cannot open. An
- * evaluation approval stands in `Evaluation` and migration 147's
+ * evaluation approval stands in `Evaluation` and migration 148's
  * `ticket_leaving_evaluation_closes_its_approvals` withdraws it in the database.
  */
 const materializationActionablePhases: readonly Phase[] = [
@@ -495,7 +495,7 @@ const finalizationAnsweredEvents: readonly Entry["event"]["type"][] = [
 /**
  * Derives the durable consequences of one decision from the event it
  * journals, the obligations it owes and the two replayed states, graphs and
- * ledgers, it stands between. The database derives one more: migration 147
+ * ledgers, it stands between. The database derives one more: migration 148
  * withdraws a ticket's evaluation approvals when it leaves `Evaluation`.
  */
 export function materializationOf(
