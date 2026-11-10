@@ -10,17 +10,38 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { EpicGraphResponse } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { epicGraphStandingOf } from "../../core/epics.ts";
 import { projectTableRow } from "../../core/projectTableRows.ts";
 import { ticketListStandingOf } from "../../core/ticketListView.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { TicketListRow } from "../ProjectTable.tsx";
 import { TicketTitleNumber, TicketTitleWords } from "../TicketCells.tsx";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
+import { TicketStateChip } from "../ticket/TicketStateChip.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { EpicGraphNodeState } from "./EpicGraphCards.tsx";
+import { Pill } from "../ui/Pill.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
 
 import "../ProjectTable.css";
+
+/** The state of a ticket the ticket list holds no row of, as the graph says
+ * it, and a draft's word where it was never released. */
+function EpicTicketsNodeState(props: {
+  readonly node: EpicGraphResponse["nodes"][number];
+  readonly graph: EpicGraphResponse;
+}): ReactNode {
+  const text = useCopyText();
+  const standing = epicGraphStandingOf(props.node, props.graph);
+  return standing === undefined ? (
+    <Pill tone="neutral">{text({ id: "standing-draft" })}</Pill>
+  ) : (
+    <TicketStateChip
+      ticket={props.node.ticket}
+      standing={standing}
+      hint={undefined}
+    />
+  );
+}
 
 /** A member the rows do not hold, drawn by its number and title, and by its
  * state where the graph holds it. */
@@ -54,7 +75,7 @@ function EpicTicketsUnheld(props: {
         {graph === undefined || node === undefined ? null : (
           <div className="ticket-list-foot">
             <span className="ticket-list-foot-standing">
-              <EpicGraphNodeState node={node} graph={graph} />
+              <EpicTicketsNodeState node={node} graph={graph} />
             </span>
           </div>
         )}

@@ -88,33 +88,32 @@ export interface EpicsCopy {
   readonly "epics-graph-outside-shown": {
     readonly count: unknown;
   };
-  readonly "epics-graph-controls": Record<never, never>;
-  readonly "epics-graph-zoom-in": Record<never, never>;
-  readonly "epics-graph-zoom-out": Record<never, never>;
-  readonly "epics-graph-fit": Record<never, never>;
-  readonly "epics-graph-full-enter": Record<never, never>;
-  readonly "epics-graph-full-exit": Record<never, never>;
-  readonly "epics-card-untitled": Record<never, never>;
-  readonly "epics-card-open": {
-    readonly ticket: unknown;
-    readonly title: unknown;
-  };
-  readonly "epics-card-open-outside": {
-    readonly ticket: unknown;
-    readonly title: unknown;
-  };
-  readonly "epics-card-run-work": Record<never, never>;
-  readonly "epics-card-run-work-detail": {
-    readonly cycle: unknown;
-  };
-  readonly "epics-card-run-evaluation": {
-    readonly stage: unknown;
-  };
-  readonly "epics-card-run-evaluation-detail": {
-    readonly stage: unknown;
-    readonly cycle: unknown;
-  };
   readonly "epics-graph-label": Record<never, never>;
+  readonly "epics-graph-key": Record<never, never>;
+  readonly "epics-graph-key-done": Record<never, never>;
+  readonly "epics-graph-key-running": Record<never, never>;
+  readonly "epics-graph-key-ready": Record<never, never>;
+  readonly "epics-graph-key-blocked": Record<never, never>;
+  readonly "epics-graph-key-escalated": Record<never, never>;
+  readonly "epics-graph-arrows": Record<never, never>;
+  readonly "epics-graph-unconnected": Record<never, never>;
+  readonly "epics-card-untitled": Record<never, never>;
+  readonly "epics-card": {
+    readonly ticket: unknown;
+    readonly title: unknown;
+    readonly state: unknown;
+  };
+  readonly "epics-card-outside": {
+    readonly ticket: unknown;
+    readonly title: unknown;
+    readonly state: unknown;
+  };
+  readonly "epics-side-label": Record<never, never>;
+  readonly "epics-side-depends-on": Record<never, never>;
+  readonly "epics-side-blocks": Record<never, never>;
+  readonly "epics-side-none": Record<never, never>;
+  readonly "epics-side-open": Record<never, never>;
+  readonly "epics-side-dispatch": Record<never, never>;
   readonly "epics-show-older": Record<never, never>;
   readonly "epics-revisions-label": Record<never, never>;
   readonly "epics-revision": {

@@ -75,6 +75,23 @@ function TicketStateMarkPaths(props: {
   }
 }
 
+/** A state's mark alone, in the colour of the text around it. */
+export function TicketStateMark(props: {
+  readonly standing: TicketStateStanding;
+}): ReactNode {
+  const mark = ticketStateLabelOf(props.standing).mark;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="ticket-state-mark"
+      data-spins={mark === "Spin" || undefined}
+    >
+      <TicketStateMarkPaths mark={mark} />
+    </svg>
+  );
+}
+
 const ticketStateFormAttributes = {
   Filled: "filled",
   Tinted: "tinted",
@@ -96,14 +113,7 @@ export function TicketStateLabel(props: {
       data-tone={label.tone}
       data-standing={label.standing}
     >
-      <svg
-        viewBox="0 0 16 16"
-        aria-hidden="true"
-        className="ticket-state-mark"
-        data-spins={label.mark === "Spin" || undefined}
-      >
-        <TicketStateMarkPaths mark={label.mark} />
-      </svg>
+      <TicketStateMark standing={props.standing} />
       <span
         className="ticket-state-word"
         data-words={

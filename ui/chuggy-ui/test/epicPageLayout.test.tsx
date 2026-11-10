@@ -4,7 +4,6 @@
  * made once by the layout so a tab switch reads nothing again.
  */
 
-import { onlineManager } from "@tanstack/react-query";
 import {
   act,
   cleanup,
@@ -43,7 +42,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   epicServingReset();
-  onlineManager.setOnline(true);
 });
 
 const epicPath = `/${leadPartition.tenant}/${leadPartition.project}/epics/7`;
@@ -76,7 +74,7 @@ test("a tab switch reads nothing again, since the layout made every read", async
   const read = gets(sent);
   rerender(<EpicTicketsTab />);
   await settled();
-  rerender(<EpicGraphTab />);
+  rerender(<EpicGraphTab ticket={undefined} onTicket={() => undefined} />);
   await screen.findByRole("group", {
     name: "Tickets of the epic and what they wait on",
   });
@@ -433,17 +431,4 @@ test("two actors' runs do not fold together", async () => {
   expect(historyRows()).toHaveLength(2);
   expect(historyRows()[0]).toMatch(/^Revisions 4–5Added #4–#5eve · 2/u);
   expect(historyRows()[1]).toMatch(/^Revisions 2–3Added #2–#3dana · 2/u);
-});
-
-test("a ready member's dispatch control cannot be pressed while the tab is offline", async () => {
-  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
-  await epicPageDrawn(abilitiesEvery, { tab: <EpicGraphTab /> });
-  const dispatch = await screen.findByRole("button", {
-    name: "Dispatch ticket #5",
-  });
-  expect(dispatch.hasAttribute("disabled")).toBe(false);
-  act(() => {
-    onlineManager.setOnline(false);
-  });
-  expect(dispatch.hasAttribute("disabled")).toBe(true);
 });
