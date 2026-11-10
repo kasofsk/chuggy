@@ -1,7 +1,8 @@
 /**
  * A project's epics as the console reads and writes them: the reads, the words
- * a status is drawn in, the layout of an epic's graph, and the form an epic is
- * edited through.
+ * a status is drawn in, the state each ticket of an epic's graph stands in and
+ * the ticket its Graph tab's address selects, and the form an epic is edited
+ * through.
  *
  * Progress and status are the API's, derived from the members' phases; nothing
  * here recomputes them. What is decided here is how they are said and drawn.
@@ -37,6 +38,10 @@ import { consolePartitionQuery } from "./consoleQuery.ts";
 import type { ConsoleWrite } from "./consoleWrite.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
 import type { Copy } from "./copy.ts";
+import type { EpicGraphTicket } from "./epicGraph.ts";
+import type { ProjectTableRow } from "./projectTableRows.ts";
+import { ticketListStandingOf } from "./ticketListView.ts";
+import type { TicketListStanding } from "./ticketListView.ts";
 import { epicStatusTone, phaseTone, type Tone } from "./tones.ts";
 
 export type EpicStatusWord = EpicSummaryResponse["status"];
@@ -115,6 +120,66 @@ export function epicGraphQuery(partition: PartitionIdentity, epic: number) {
     `${epicResourcePrefix}-${String(epic)}-graph`,
     (ports) => apiEpicGraph(ports, partition, epic),
   );
+}
+
+/** Where a node stands where the ticket list holds no row of it: its phase,
+ * a Pending one ready once every dependency the graph holds of it is Done;
+ * a draft never released has none. */
+export function epicGraphStandingOf(
+  node: EpicGraphResponse["nodes"][number],
+  graph: EpicGraphResponse,
+): TicketListStanding | undefined {
+  if (node.phase !== "Pending") return node.phase;
+  const done = new Set(
+    graph.nodes
+      .filter((other) => other.phase === "Done")
+      .map((other) => other.ticket),
+  );
+  return graph.edges.every(
+    (edge) => edge.to !== node.ticket || done.has(edge.from),
+  )
+    ? "Ready"
+    : "Blocked";
+}
+
+/** Each ticket the graph names once, in the state the ticket list's row says
+ * where it holds one, and otherwise the graph's. */
+export function epicGraphTicketsOf(
+  graph: EpicGraphResponse,
+  rows: ReadonlyMap<number, ProjectTableRow>,
+): ReadonlyMap<number, EpicGraphTicket> {
+  const tickets = new Map<number, EpicGraphTicket>();
+  for (const node of graph.nodes) {
+    if (tickets.has(node.ticket)) continue;
+    const row = rows.get(node.ticket);
+    const standing =
+      row === undefined
+        ? (epicGraphStandingOf(node, graph) ?? "Draft")
+        : ticketListStandingOf(row);
+    tickets.set(node.ticket, { node, standing });
+  }
+  return tickets;
+}
+
+/** What of the Graph tab its address holds: the ticket selected. */
+export interface EpicGraphAddress {
+  readonly ticket?: number;
+}
+
+/** The selection an address names, read off the query the router parsed,
+ * which hands a number back as one and a quoted one as text; anything but a
+ * ticket number is none. */
+export function epicGraphAddressOf(
+  search: Readonly<Record<string, unknown>>,
+): EpicGraphAddress {
+  const value = search["ticket"];
+  const read =
+    typeof value === "string" && /^[0-9]+$/u.test(value)
+      ? Number(value)
+      : value;
+  return typeof read === "number" && Number.isSafeInteger(read) && read > 0
+    ? { ticket: read }
+    : {};
 }
 
 /** Every epic read of a project read again, which any write to an epic leaves stale. */

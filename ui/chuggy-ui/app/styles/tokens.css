@@ -264,9 +264,7 @@
     --height-progress: 0.375rem; /* epic: the progress bar */
     --width-progress-row: 15rem; /* epic: that bar in a list's row */
     --size-progress-swatch: 0.5rem; /* epic: a group's key under the bar */
-    --height-epic-graph-least: 20rem; /* epic: the least the graph's canvas stands */
-    --height-epic-graph: 60vh; /* epic: the share of the viewport it takes */
-    --height-epic-graph-most: 44rem; /* epic: the most it stands */
+    --width-epic-graph-side: 17rem; /* epic: the selected ticket beside its graph */
   }
 
   :root[data-theme="light"] {

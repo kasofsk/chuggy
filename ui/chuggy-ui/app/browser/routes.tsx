@@ -33,8 +33,8 @@ import {
   forgeCallbackRoutePath,
 } from "../core/forgeAuthorization.ts";
 import type { ForgeCallbackQuery } from "../core/forgeAuthorization.ts";
-import { epicsQueryOf } from "../core/epics.ts";
-import type { EpicsQuery } from "../core/epics.ts";
+import { epicGraphAddressOf, epicsQueryOf } from "../core/epics.ts";
+import type { EpicGraphAddress, EpicsQuery } from "../core/epics.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
@@ -247,10 +247,30 @@ const epicTicketsRoute = createRoute({
   component: EpicTicketsTab,
 });
 
+/** The Graph tab, whose selected ticket is the address's, written in place. */
+function EpicGraphRoute(): ReactNode {
+  const navigate = useNavigate({ from: epicGraphRoute.fullPath });
+  const onTicket = useCallback(
+    (ticket: number) => {
+      void navigate({ search: { ticket }, replace: true });
+    },
+    [navigate],
+  );
+  return (
+    <EpicGraphTab
+      ticket={epicGraphRoute.useSearch().ticket}
+      onTicket={onTicket}
+    />
+  );
+}
+
 const epicGraphRoute = createRoute({
   getParentRoute: () => epicRoute,
   path: "/graph",
-  component: EpicGraphTab,
+  component: EpicGraphRoute,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): EpicGraphAddress => epicGraphAddressOf(search),
 });
 
 const epicHistoryRoute = createRoute({
