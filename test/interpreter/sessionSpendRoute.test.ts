@@ -75,7 +75,7 @@ function grantingNoHostedRuns(asked: string[]): ProjectAccess {
   };
 }
 
-test("a member the tenant grants no hosted runs may ask a subsidized lead in cluster, asking no grant", async () => {
+test("a member the tenant grants no hosted runs may ask a subsidized lead in cluster, on the subsidy", async () => {
   const asked: string[] = [];
   assert.deepEqual(
     await sessionSpendRoute(
@@ -87,7 +87,25 @@ test("a member the tenant grants no hosted runs may ask a subsidized lead in clu
     ),
     { spend: "Admitted", route: "InCluster", subsidized: true },
   );
-  assert.deepEqual(asked, []);
+  assert.deepEqual(asked, ["ExecuteHosted"]);
+});
+
+test("a member the tenant grants hosted runs asks a subsidized lead in cluster on their grant, not the subsidy", async () => {
+  assert.deepEqual(
+    await sessionSpendRoute(
+      {
+        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+        authorizeTenant: (principal) =>
+          Promise.resolve(memberAuthority(principal)),
+        authorizeSite: projectAccessSiteRefused,
+      },
+      sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized"),
+      member,
+      project,
+      "Inquiry",
+    ),
+    { spend: "Admitted", route: "InCluster", subsidized: false },
+  );
 });
 
 test("a member the tenant grants no hosted runs is refused an inquiry of an own lead in cluster, and a thread of a subsidized one", async () => {

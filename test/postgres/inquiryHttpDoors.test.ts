@@ -483,3 +483,20 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
     await subsidyPublished(undefined);
   }
 });
+
+/**
+ * The subsidy is a way in for a member without the grant, never a refusal of
+ * one with it: a lead still on the hosted slot is asked on the member's grant.
+ */
+test("a member the tenant grants hosted runs asks a subsidized lead still on the hosted slot", async () => {
+  await subsidyPublished(subsidy);
+  try {
+    const { partition } = await subsidizedProject("subsidy-granted");
+    const member = inquiryRigMember(rig, partition, "http-subsidy-granted");
+    await using app = inquiryApp(member.principal);
+    await asked(app, partition, "who pays for this?");
+    assert.equal((await forkSlots(partition)).length, 1);
+  } finally {
+    await subsidyPublished(undefined);
+  }
+});

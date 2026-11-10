@@ -303,10 +303,11 @@ export type SessionSpend =
   | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
 
 /**
- * Whether a member's turn of this kind on this route is spent without their
- * hosted grant: an inquiry of a subsidized lead, which the offering pays for.
- * The inquiry door forks it only from a lead on the profile's slot, since one
- * opened before the project chose the subsidy stands on the hosted one.
+ * Whether a member's turn of this kind on this route may be spent without
+ * their hosted grant: an inquiry of a subsidized lead, which the offering pays
+ * for. The inquiry door forks it only from a lead on the profile's slot, since
+ * one opened before the project chose the subsidy stands on the hosted one, so
+ * it is asked only of a member the grant does not already admit.
  */
 async function sessionSpendSubsidized(
   routes: SessionRouteReads,
@@ -344,17 +345,15 @@ export async function sessionSpendRoute(
       ? { spend: "Admitted", route: "Pool", subsidized: false }
       : { spend: "NoRunner" };
   const { route } = await routes.route(partition, kind);
-  const subsidized = await sessionSpendSubsidized(
-    routes,
+  const granted = await placementRouteGranted(
+    access,
+    principal,
     partition,
-    kind,
     route,
   );
-  if (
-    !subsidized &&
-    !(await placementRouteGranted(access, principal, partition, route))
-  )
-    return { spend: "HostedRunsNotGranted" };
+  const subsidized =
+    !granted && (await sessionSpendSubsidized(routes, partition, kind, route));
+  if (!granted && !subsidized) return { spend: "HostedRunsNotGranted" };
   if (placementRouteHosted[route])
     return { spend: "Admitted", route, subsidized };
   return sessionRunnerServes(
