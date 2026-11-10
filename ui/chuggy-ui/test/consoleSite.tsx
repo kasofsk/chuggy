@@ -291,7 +291,21 @@ const consoleReads: readonly ConsoleRead[] = [
       `${projectPath}/epics/${String(consoleEpic.number)}/history`,
     ),
     schema: epicHistoryResponseSchema,
-    body: () => ({ revisions: [] }),
+    body: () => ({
+      revisions: [
+        {
+          revision: consoleEpic.revision,
+          changedAt: "2026-08-27T00:00:00Z",
+          actor: {
+            kind: "user",
+            subject: projectPeopleListed.people[0]?.subject ?? "",
+          },
+          title: consoleEpic.title,
+          visibility: consoleEpic.visibility,
+          changes: { kind: "Created" },
+        },
+      ],
+    }),
   },
   {
     path: consoleReadAt(

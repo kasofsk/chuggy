@@ -360,6 +360,10 @@ function catalogWorkloadFields<Field>(
       workload.runner ?? unread,
     ),
     field({ id: "configuration-catalog-field-evaluator" }, workload.purpose),
+    field(
+      { id: "configuration-catalog-field-reevaluate" },
+      workload.reevaluate,
+    ),
     ...(commanded
       ? [
           field(

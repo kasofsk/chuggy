@@ -114,10 +114,28 @@ epics-side-dispatch = { -dispatch(case: "upper") }
 
 ## The History tab.
 
-epics-history = History
 epics-show-older = Show older
 epics-revisions-label = { -revision(case: "upper", form: "plural") }
 epics-revision = { -revision(case: "upper") } { $revision }
+epics-history-revisions = { -revision(case: "upper", form: "plural") } { $from }–{ $to }
+epics-history-count = { $count ->
+    [one] { $count } { -revision }
+   *[other] { $count } { -revision(form: "plural") }
+}
+epics-history-each = { -revision(case: "upper") } { $revision } · { $change }
+epics-history-show-each = Show each
+epics-history-created = Created
+epics-history-saved = Saved
+epics-history-added = Added { $tickets }
+epics-history-removed = Removed { $tickets }
+epics-history-edited = Edited { $fields }
+epics-history-field-title = title
+epics-history-field-summary = summary
+epics-history-field-description = description
+epics-history-archived = Archived
+epics-history-reactivated = Reactivated
+epics-history-list = { $first }, { $rest }
+epics-history-also = { $first } · { $rest }
 
 ## The edit page.
 

@@ -114,11 +114,46 @@ export interface EpicsCopy {
   readonly "epics-side-none": Record<never, never>;
   readonly "epics-side-open": Record<never, never>;
   readonly "epics-side-dispatch": Record<never, never>;
-  readonly "epics-history": Record<never, never>;
   readonly "epics-show-older": Record<never, never>;
   readonly "epics-revisions-label": Record<never, never>;
   readonly "epics-revision": {
     readonly revision: unknown;
+  };
+  readonly "epics-history-revisions": {
+    readonly from: unknown;
+    readonly to: unknown;
+  };
+  readonly "epics-history-count": {
+    readonly count: unknown;
+  };
+  readonly "epics-history-each": {
+    readonly revision: unknown;
+    readonly change: unknown;
+  };
+  readonly "epics-history-show-each": Record<never, never>;
+  readonly "epics-history-created": Record<never, never>;
+  readonly "epics-history-saved": Record<never, never>;
+  readonly "epics-history-added": {
+    readonly tickets: unknown;
+  };
+  readonly "epics-history-removed": {
+    readonly tickets: unknown;
+  };
+  readonly "epics-history-edited": {
+    readonly fields: unknown;
+  };
+  readonly "epics-history-field-title": Record<never, never>;
+  readonly "epics-history-field-summary": Record<never, never>;
+  readonly "epics-history-field-description": Record<never, never>;
+  readonly "epics-history-archived": Record<never, never>;
+  readonly "epics-history-reactivated": Record<never, never>;
+  readonly "epics-history-list": {
+    readonly first: unknown;
+    readonly rest: unknown;
+  };
+  readonly "epics-history-also": {
+    readonly first: unknown;
+    readonly rest: unknown;
   };
   readonly "epics-edit": Record<never, never>;
   readonly "epics-edit-save": Record<never, never>;

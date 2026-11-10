@@ -295,6 +295,7 @@ const catalogFieldNames: Readonly<Record<string, Copy>> = {
   authority: { id: "configuration-steps-authority" },
   framing: { id: "configuration-steps-framing" },
   brief: { id: "configuration-steps-brief" },
+  reevaluate: { id: "configuration-steps-reevaluate" },
   executionRequirement: { id: "configuration-steps-run-requirement" },
 };
 
