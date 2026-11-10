@@ -92,13 +92,15 @@ function caseOf(over: Over = {}): Case {
   const reads: string[] = [];
   const store = storeOf(over, reads);
   const git: Pick<GitPromotionPort, "observeTarget" | "mintStack"> = {
-    observeTarget: () =>
-      Promise.resolve(
+    observeTarget: () => {
+      reads.push("tip");
+      return Promise.resolve(
         over.observed ?? {
           observed: "Target",
           target: { ref: asGitRefName("refs/heads/main"), commit: tip },
         },
-      ),
+      );
+    },
     mintStack: (minting) => {
       mints.push(minting);
       return Promise.resolve(
@@ -168,6 +170,11 @@ test("a Stacked ticket's accepted work chooses the stack, mints it and hands bac
   assert.equal(c.mints[0]?.candidate, own);
   assert.equal(c.mints[0]?.tip.commit, tip);
   assert.equal(c.mints[0]?.ref, "refs/heads/chuggy/stack/2/1");
+  assert.deepEqual(
+    c.reads,
+    ["queue", "tip"],
+    "the queue is read before the tip",
+  );
 });
 
 test("only a Stacked ticket stacks, and the queue is not read for any other", async () => {
