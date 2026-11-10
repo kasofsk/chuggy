@@ -8,6 +8,7 @@ import type { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 
 import fastify, {
+  errorCodes,
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
@@ -122,6 +123,7 @@ import {
   parseProjectRepositoryBind,
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
+  parsePersonalRunnerProject,
   parseProjectOwnerFallback,
   parseThreadLimit,
   parseAccountAgent,
@@ -1708,12 +1710,40 @@ function registerBodylessRoutes(
   });
 }
 
+/**
+ * A project put on or taken off the caller's own allowlist. The put's body,
+ * which names the project's priority, may be left out: an empty body is no
+ * body under any media type, as a client or a proxy may frame a bodyless
+ * write, and one that is not empty is read as the API's media type alone.
+ */
 function registerPersonalRunnerProjects(
   app: FastifyInstance,
   runners: PersonalRunnerService,
 ): void {
-  registerBodylessRoutes(app, (scope) => {
+  void app.register((scope, _options, registered) => {
+    const json = scope.getDefaultJsonParser("error", "error");
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser(
+      "*",
+      { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
+      (request, body, parsed) => {
+        const text = body.toString();
+        if (text.length === 0) parsed(null, undefined);
+        else if (
+          request.headers["content-type"]?.split(";", 1)[0] ===
+          nativeHttpMediaType
+        )
+          void json(request, text, parsed);
+        else
+          parsed(
+            new errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE(
+              request.headers["content-type"],
+            ),
+          );
+      },
+    );
     registerPersonalRunnerProjectRoutes(scope, runners);
+    registered();
   });
 }
 
@@ -1722,6 +1752,7 @@ function registerPersonalRunnerProjectRoutes(
   runners: PersonalRunnerService,
 ): void {
   app.put(nativeHttpRoutes.personalRunnerProject, async (request, reply) => {
+    const priority = parsePersonalRunnerProject(request.body);
     nativeHttpSend(
       reply,
       personalRunnerAllowedResponse(
@@ -1729,6 +1760,7 @@ function registerPersonalRunnerProjectRoutes(
           principalOf(request),
           tenantOf(request),
           personalRunnerProjectOf(request),
+          priority,
         ),
       ),
     );

@@ -966,6 +966,12 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["agent_account_setting", null, "SELECT", apiRole, false],
   ["agent_account_setting", null, "INSERT", boundaryOwnerRole, true],
   ["agent_account_press", null, "UPDATE", boundaryOwnerRole, true],
+  ["personal_runner_project", "priority", "UPDATE", apiRole, true],
+  ["personal_runner_project", "priority", "SELECT", poolPlaneRole, true],
+  ["personal_runner_project", "priority", "UPDATE", poolPlaneRole, false],
+  ["execution", "ticket", "SELECT", poolPlaneRole, true],
+  ["execution", "registered_at", "SELECT", poolPlaneRole, true],
+  ["execution_attempt", "claimed_at", "SELECT", poolPlaneRole, true],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {

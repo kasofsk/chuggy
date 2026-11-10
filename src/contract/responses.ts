@@ -150,6 +150,7 @@ import {
   outputContentEncodings,
   outputRenderers,
   ownerFallbacks,
+  personalRunnerPriorities,
   phaseRoster,
   placementRouteSources,
   leadOfferings,
@@ -2840,10 +2841,17 @@ const personalRunnerListedSchema = z.strictObject({
   runner: runnerListedSchema.optional(),
 });
 
-/** A member's own runners in one tenant, oldest first, and the projects every one of them may serve, in project order. */
+/** A member's own runners in one tenant, oldest first, and the projects every one of them may serve, in project order, each at its priority. */
 export const personalRunnerResponseSchema = z.strictObject({
   runners: z.array(personalRunnerListedSchema).min(1).max(personalRunnersMax),
-  projects: z.array(identitySchema).max(personalRunnerProjectsMax),
+  projects: z
+    .array(
+      z.strictObject({
+        project: identitySchema,
+        priority: z.enum(personalRunnerPriorities),
+      }),
+    )
+    .max(personalRunnerProjectsMax),
 });
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema

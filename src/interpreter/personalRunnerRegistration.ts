@@ -29,6 +29,7 @@
  * host's redemption answers its own credentials, which name no capabilities.
  */
 
+import type { PersonalRunnerPriority } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   chatHostCredentialsOf,
@@ -91,10 +92,16 @@ export interface PersonalRunnerView {
   readonly runner?: WorkerRunnerListed;
 }
 
+/** One project a member's runners serve, at the priority its owner gave it. */
+export interface PersonalRunnerProjectView {
+  readonly project: ProjectId;
+  readonly priority: PersonalRunnerPriority;
+}
+
 /** A member's runners in a tenant, oldest first, and the projects they serve, in project order. */
 export interface PersonalRunnerOwnerView {
   readonly runners: readonly PersonalRunnerView[];
-  readonly projects: readonly ProjectId[];
+  readonly projects: readonly PersonalRunnerProjectView[];
 }
 
 /** What one registration came to: written, no tenant to write it in, or the member already holding `personalRunnersMax`. */
@@ -107,8 +114,9 @@ export type PersonalRunnerAllowed = "Allowed" | "NotFound" | "LimitReached";
  * The registry personal runners are known by. `clientsOf` answers the clients
  * of a member's runners, oldest first; `deregister` deletes the member's runner
  * naming a client, and with the last of them their allowlist, answering
- * whether there was one to delete; `disallow` answers whether the member has a
- * runner at all.
+ * whether there was one to delete; `allow` adds a project at `priority`, or at
+ * `Normal` where it names none, and writes `priority` over one already there;
+ * `disallow` answers whether the member has a runner at all.
  */
 export interface PersonalRunnerRegistry {
   clientsOf(key: PersonalRunnerKey): Promise<readonly string[]>;
@@ -120,6 +128,7 @@ export interface PersonalRunnerRegistry {
   allow(
     key: PersonalRunnerKey,
     project: ProjectId,
+    priority?: PersonalRunnerPriority,
   ): Promise<PersonalRunnerAllowed>;
   disallow(key: PersonalRunnerKey, project: ProjectId): Promise<boolean>;
 }
@@ -460,15 +469,16 @@ export type PersonalRunnerRead =
 export type PersonalRunnerDisallowed = "Removed" | "NotFound";
 
 /**
- * Adding a project to the caller's own allowlist, only where the caller may
- * read it: a project the owner cannot see is one their runners may not serve,
- * and is answered as a project that is not there.
+ * Adding a project to the caller's own allowlist, or writing its priority,
+ * only where the caller may read it: a project the owner cannot see is one
+ * their runners may not serve, and is answered as a project that is not there.
  */
 async function personalRunnerProjectAllowed(
   access: ProjectAccess,
   registry: PersonalRunnerRegistry,
   key: PersonalRunnerKey,
   project: ProjectId,
+  priority: PersonalRunnerPriority | undefined,
 ): Promise<PersonalRunnerAllowed> {
   if (
     (await access.authorize(
@@ -478,7 +488,7 @@ async function personalRunnerProjectAllowed(
     )) === undefined
   )
     return "NotFound";
-  return registry.allow(key, project);
+  return registry.allow(key, project, priority);
 }
 
 /**
@@ -533,10 +543,12 @@ export interface PersonalRunnerService {
   runners(principal: Principal, tenant: TenantId): Promise<PersonalRunnerRead>;
   /** Whether the tenant permits the caller to register a runner, which is what minting asks. */
   permitted(principal: Principal, tenant: TenantId): Promise<boolean>;
+  /** A project added to the caller's runners, at `priority` where it names one; one already there keeps its own unless it does. */
   allow(
     principal: Principal,
     tenant: TenantId,
     project: ProjectId,
+    priority?: PersonalRunnerPriority,
   ): Promise<PersonalRunnerAllowed>;
   disallow(
     principal: Principal,
@@ -620,12 +632,13 @@ export function personalRunnerService(input: {
         tenant,
         "RegisterPersonalRunner",
       )) !== undefined,
-    allow: (owner, tenant, project) =>
+    allow: (owner, tenant, project, priority) =>
       personalRunnerProjectAllowed(
         access,
         ports.registry,
         { tenant, owner },
         project,
+        priority,
       ),
     disallow: async (owner, tenant, project) =>
       (await ports.registry.disallow({ tenant, owner }, project))

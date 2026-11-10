@@ -278,7 +278,7 @@ const ownRunner = {
       executionsLive: false,
     },
   ],
-  projects: ["atlas"],
+  projects: [{ project: "atlas", priority: "Normal" }],
 };
 
 test("the reader's own run that their offline runner holds says it waits on it, and where it is managed", async () => {
@@ -365,7 +365,10 @@ test("the reader's own run waiting on no runner of theirs keeps its line and say
   const served = pausedRun(true);
   await runPageDrawn(atlas, {
     ...served,
-    personalRunner: { ...ownRunner, projects: ["borealis"] },
+    personalRunner: {
+      ...ownRunner,
+      projects: [{ project: "borealis", priority: "Normal" }],
+    },
   });
   const card = nowCard();
   expect(card.textContent).not.toContain("Paused");

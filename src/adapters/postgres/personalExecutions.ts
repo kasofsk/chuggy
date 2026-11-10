@@ -23,6 +23,13 @@
  * benches the credential it hands the job, which is what keeps the job's
  * usage limit off that account.
  *
+ * OF WHAT IT MAY TAKE, IT TAKES A STARTED TICKET'S FIRST, then a higher
+ * project's, then the oldest ticket's: `execution_attempt_started`, the
+ * priority its owner gave the project on their allowlist, and
+ * `execution_ticket_registered`, with the attempt's own opening breaking a
+ * tie. Priority chooses what starts, and nothing started waits behind it. This
+ * is a choice among what the guard allows, as the room is.
+ *
  * A RUNNER ADVERTISING ITS AGENTS IS OFFERED ONLY THE AGENTS IT NAMES, which is
  * the model's `agentOffered` and `worker_pool_agent_offered`: one whose poll
  * named a release reading `workerContractRunnerAgents` takes an attempt whose
@@ -62,7 +69,18 @@ export interface PersonalExecutionClaim {
   readonly projects: readonly ProjectId[];
 }
 
-/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, serialized with every other claim and fence of their runners, and the project it is in. */
+/** Serializes a claim with every other claim and fence of the owner's runners, to the end of its transaction. */
+async function personalExecutionClaimLocked(
+  client: pg.PoolClient,
+  identity: PersonalRunnerIdentity,
+): Promise<void> {
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(
+          'personal-runner-claim:' || ${identity.tenant} || '/' || ${identity.owner}, 0))::text AS locked`,
+  );
+}
+
+/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, in the order the header states, serialized with every other claim and fence of their runners, and the project it is in. */
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
   identity: PersonalRunnerIdentity,
@@ -70,10 +88,7 @@ export async function personalExecutionClaimed(
   claim: PersonalExecutionClaim,
 ): Promise<WorkerPoolPersonalClaimed | undefined> {
   const room = terms.memoryRoomMib ?? null;
-  await client.query<{ locked: string | null }>(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(
-          'personal-runner-claim:' || ${identity.tenant} || '/' || ${identity.owner}, 0))::text AS locked`,
-  );
+  await personalExecutionClaimLocked(client, identity);
   const found = await client.query<{
     requirement: unknown;
     runtime: string | null;
@@ -109,7 +124,9 @@ export async function personalExecutionClaimed(
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
           AND (held.paused_until IS NULL OR held.admitted_by_press)
-        ORDER BY q.opened_at,q.attempt
+        ORDER BY execution_attempt_started(q.tenant,q.project,q.execution,q.attempt) DESC,
+          CASE l.priority WHEN 'High' THEN 0 WHEN 'Normal' THEN 1 ELSE 2 END,
+          execution_ticket_registered(x.tenant,x.project,x.ticket),q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED),
       spent AS (UPDATE agent_account_press p SET spent_at=now() FROM chosen c
         WHERE c.admitted_by_press AND p.principal=${identity.owner} AND p.agent=c.agent

@@ -1,7 +1,8 @@
 /**
  * The reader's own runners in this workspace, as a list: a row each, saying
  * what it declared and runs and whether it is polling, and taking it off; the
- * projects every one of them takes work in; the command that registers one
+ * projects every one of them takes work in, each at the priority the reader
+ * gives it; the command that registers one
  * more, where the workspace lets them and they hold fewer than a member may;
  * their chat host; and each agent of their own account a pause holds, which
  * none of their runners takes work for until it ends.
@@ -28,6 +29,8 @@ import type {
   PersonalRunnerResponse,
   WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
+import { personalRunnerPriorities } from "../../../../../src/contract/rosters.ts";
+import type { PersonalRunnerPriority } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { agentAccountsPaused } from "../../core/agentAccounts.ts";
 import { accountAgentLabel } from "../../core/codeLabels.ts";
@@ -48,6 +51,8 @@ import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
   myRunnerAddable,
+  myRunnerPriorityChosen,
+  myRunnerPriorityLabel,
   myRunnerRemovalLine,
   myRunnerRoom,
   myRunnersCountLine,
@@ -100,10 +105,13 @@ import {
 
 type PersonalRunnerListed = PersonalRunnerResponse["runners"][number];
 
-/** A project the reader's runners take work in, or stop taking it in. */
+type PersonalRunnerProjectListed = PersonalRunnerResponse["projects"][number];
+
+/** A project the reader's runners take work in, at `priority` where it is named, or stop taking it in. */
 interface MyRunnerServed {
   readonly project: string;
   readonly served: boolean;
+  readonly priority?: PersonalRunnerPriority;
 }
 
 /** The runners read again whatever a change answered, and a removal a 404
@@ -152,6 +160,7 @@ function myRunnerServesWrite(
           ports,
           { tenant, project: served.project },
           served.served,
+          served.priority,
         ),
         false,
       ),
@@ -424,11 +433,43 @@ function MyRunnerProjectAdd(props: {
   );
 }
 
+/** The menu a project's priority is chosen from. */
+function MyRunnerProjectPriority(props: {
+  readonly served: PersonalRunnerProjectListed;
+  readonly onPrioritize: (priority: PersonalRunnerPriority) => void;
+}): ReactNode {
+  const text = useCopyText();
+  const { project, priority } = props.served;
+  return (
+    <Picker
+      label={text({
+        id: "runners-personal-project-priority",
+        args: { project },
+      })}
+      value={priority}
+      align="start"
+      options={personalRunnerPriorities.map((each) => ({
+        value: each,
+        text: text(myRunnerPriorityLabel(each)),
+      }))}
+      onChoose={(value) => {
+        const chosen = myRunnerPriorityChosen(value);
+        if (chosen !== undefined && chosen !== priority)
+          props.onPrioritize(chosen);
+      }}
+    />
+  );
+}
+
 /** The projects every runner of the reader's takes work in, each with the
- * press that removes it. */
+ * menu its priority is chosen from and the press that removes it. */
 function MyRunnerProjectsTable(props: {
-  readonly projects: readonly string[];
+  readonly projects: readonly PersonalRunnerProjectListed[];
   readonly busy: boolean;
+  readonly onPrioritize: (
+    project: string,
+    priority: PersonalRunnerPriority,
+  ) => void;
   readonly onRemove: (project: string) => void;
 }): ReactNode {
   const text = useCopyText();
@@ -437,6 +478,9 @@ function MyRunnerProjectsTable(props: {
       <thead>
         <tr>
           <th scope="col">{text({ id: "runners-personal-project-col" })}</th>
+          <th scope="col">
+            {text({ id: "runners-personal-project-priority-col" })}
+          </th>
           <th scope="col" className="w-[8em]">
             <span className="visually-hidden">
               {text({ id: "runners-col-remove" })}
@@ -445,22 +489,32 @@ function MyRunnerProjectsTable(props: {
         </tr>
       </thead>
       <tbody>
-        {props.projects.map((project) => (
-          <tr key={project}>
+        {props.projects.map((served) => (
+          <tr key={served.project}>
             <th scope="row">
-              <span className="people-name block text-ink-1">{project}</span>
+              <span className="people-name block text-ink-1">
+                {served.project}
+              </span>
             </th>
+            <td>
+              <MyRunnerProjectPriority
+                served={served}
+                onPrioritize={(priority) => {
+                  props.onPrioritize(served.project, priority);
+                }}
+              />
+            </td>
             <td className="people-edit">
               <Button
                 variant="quiet"
                 size="sm"
                 named={text({
                   id: "runners-personal-project-remove",
-                  args: { project },
+                  args: { project: served.project },
                 })}
                 disabled={props.busy}
                 onClick={() => {
-                  props.onRemove(project);
+                  props.onRemove(served.project);
                 }}
               >
                 {text({ id: "runners-remove" })}
@@ -482,10 +536,18 @@ function MyRunnerProjects(props: {
   const text = useCopyText();
   const { held, writing } = props;
   const busy = writing.busy;
-  const serves = (project: string, served: boolean): void => {
+  const serves = (
+    project: string,
+    served: boolean,
+    priority?: PersonalRunnerPriority,
+  ): void => {
     if (busy) return;
     writing.removing.reset();
-    writing.serving.mutate({ project, served });
+    writing.serving.mutate({
+      project,
+      served,
+      ...(priority === undefined ? {} : { priority }),
+    });
   };
   return (
     <SettingsListingSection
@@ -506,6 +568,9 @@ function MyRunnerProjects(props: {
         <MyRunnerProjectsTable
           projects={held.projects}
           busy={busy}
+          onPrioritize={(project, priority) => {
+            serves(project, true, priority);
+          }}
           onRemove={(project) => {
             serves(project, false);
           }}

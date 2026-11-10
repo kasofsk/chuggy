@@ -100,11 +100,16 @@ runners-personal-removal-last = { -runner(case: "upper") } { $short } is your la
 runners-personal-removal = { -runner(case: "upper") } { $short } stops taking your work in this { -workspace }.
 runners-personal-projects = { -project(case: "upper", form: "plural") }
 # spells -work-stage: the work in general
-runners-personal-projects-about = { -personal-runner(case: "upper", form: "plural") } take work in these.
+runners-personal-projects-about = { -personal-runner(case: "upper", form: "plural") } take work in these, higher priority first.
 runners-personal-projects-none = No { -project } yet
 runners-personal-project-col = { -project(case: "upper") }
 runners-personal-project-add = Add { -project(form: "a") }
 runners-personal-project-remove = Remove { $project }
+runners-personal-project-priority-col = Priority
+runners-personal-project-priority = Priority of { $project }
+runners-personal-project-priority-high = High
+runners-personal-project-priority-normal = Normal
+runners-personal-project-priority-low = Low
 runners-personal-paused = Paused { -agent(form: "plural") }
 runners-personal-usage = Usage
 

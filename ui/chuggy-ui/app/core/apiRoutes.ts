@@ -101,6 +101,7 @@ import type {
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
+  personalRunnerProjectSchema,
   projectOwnerFallbackSchema,
   forgeAuthorizationSchema,
   leadInquirySchema,
@@ -119,7 +120,10 @@ import type {
   chatThreadMessageSchema,
   threadOfferReplyRequestSchema,
 } from "../../../../src/contract/requests.ts";
-import type { AccountAgent } from "../../../../src/contract/rosters.ts";
+import type {
+  AccountAgent,
+  PersonalRunnerPriority,
+} from "../../../../src/contract/rosters.ts";
 import type { z } from "zod";
 
 import { apiRead } from "./apiRequest.ts";
@@ -643,11 +647,12 @@ export function apiDeregisterChatHost(
   );
 }
 
-/** The reader's runners take work in one more project, or in one fewer. */
+/** The reader's runners take work in one more project, or in one fewer; one they take work in keeps its priority unless `priority` names one. */
 export function apiPersonalRunnerServes(
   ports: ApiPorts,
   partition: PartitionIdentity,
   serves: boolean,
+  priority?: PersonalRunnerPriority,
 ): Promise<ApiResult<undefined>> {
   return apiRead(
     ports,
@@ -657,6 +662,13 @@ export function apiPersonalRunnerServes(
         tenant: partition.tenant,
         project: partition.project,
       }),
+      ...(serves && priority !== undefined
+        ? {
+            body: {
+              priority,
+            } satisfies z.infer<typeof personalRunnerProjectSchema>,
+          }
+        : {}),
     },
     () => undefined,
   );

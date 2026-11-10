@@ -25,6 +25,10 @@ import {
   personalRunnersMax,
 } from "../../contract/http.ts";
 import {
+  personalRunnerPriorities,
+  type PersonalRunnerPriority,
+} from "../../contract/rosters.ts";
+import {
   allRegistrationTokenKinds,
   personalRunnerTokensLiveMax,
   type PersonalRunnerAllowed,
@@ -133,11 +137,12 @@ async function personalRunnerDeleted(
   return true;
 }
 
-/** One addition to a member's allowlist, under the lock their runners are written under. */
+/** One addition to a member's allowlist, or its priority written over one already there, under the lock their runners are written under. */
 async function personalRunnerProjectInserted(
   client: pg.PoolClient,
   key: PersonalRunnerKey,
   project: ProjectId,
+  priority: PersonalRunnerPriority | undefined,
 ): Promise<PersonalRunnerAllowed> {
   await personalRunnerLocked(client, key);
   const standing = await client.query<{
@@ -159,10 +164,17 @@ async function personalRunnerProjectInserted(
   );
   const row = standing.rows[0];
   if (row === undefined || !row.registered || !row.active) return "NotFound";
-  if (row.held) return "Allowed";
+  if (row.held) {
+    if (priority !== undefined)
+      await client.query(sql`UPDATE personal_runner_project a SET priority=${priority}
+        WHERE a.tenant=${key.tenant as string} AND a.owner=${key.owner as string}
+          AND a.project=${project as string}`);
+    return "Allowed";
+  }
   if (row.allowed >= personalRunnerProjectsMax) return "LimitReached";
-  await client.query(sql`INSERT INTO personal_runner_project(tenant,owner,project)
-    VALUES(${key.tenant as string},${key.owner as string},${project as string})`);
+  await client.query(sql`INSERT INTO personal_runner_project(tenant,owner,project,priority)
+    VALUES(${key.tenant as string},${key.owner as string},${project as string},
+      ${priority ?? "Normal"})`);
   return "Allowed";
 }
 
@@ -202,6 +214,14 @@ async function personalRunnersListed(
   }));
 }
 
+/** A priority as its row's CHECK holds it, which a value off the roster is a fault in. */
+function personalRunnerPriorityRead(stored: string): PersonalRunnerPriority {
+  const priority = personalRunnerPriorities.find((each) => each === stored);
+  if (priority === undefined)
+    throw new Error(`no personal runner priority is read as ${stored}`);
+  return priority;
+}
+
 /** A member's runners and the projects they serve, or nothing where they have none. */
 async function personalRunnersRead(
   pool: pg.Pool,
@@ -209,14 +229,17 @@ async function personalRunnersRead(
 ): Promise<PersonalRunnerOwnerView | undefined> {
   const runners = await personalRunnersListed(pool, key);
   if (runners.length === 0) return undefined;
-  const allowed = await pool.query<{ project: string }>(
-    sql`SELECT a.project FROM personal_runner_project a
+  const allowed = await pool.query<{ project: string; priority: string }>(
+    sql`SELECT a.project,a.priority FROM personal_runner_project a
       WHERE a.tenant=${key.tenant} AND a.owner=${key.owner}
       ORDER BY a.project LIMIT ${personalRunnerProjectsMax}`,
   );
   return {
     runners,
-    projects: allowed.rows.map((row) => asProjectId(row.project)),
+    projects: allowed.rows.map((row) => ({
+      project: asProjectId(row.project),
+      priority: personalRunnerPriorityRead(row.priority),
+    })),
   };
 }
 
@@ -238,9 +261,9 @@ export function postgresPersonalRunnerRegistry(
         personalRunnerDeleted(client, key, clientId),
       ),
     runners: (key) => personalRunnersRead(pool, key),
-    allow: (key, project) =>
+    allow: (key, project, priority) =>
       postgresTransaction(pool, (client) =>
-        personalRunnerProjectInserted(client, key, project),
+        personalRunnerProjectInserted(client, key, project, priority),
       ),
     disallow: async (key, project) => {
       const found = await pool.query<{ registered: boolean }>(
