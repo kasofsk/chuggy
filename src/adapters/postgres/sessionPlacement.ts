@@ -202,6 +202,17 @@ export function postgresSessionPlacement(pool: pg.Pool): SessionPlacementStore {
         "lead offering",
       );
     },
+    storedLeadOffering: async (partition) => {
+      const found = await pool.query<{ offering: string | null }>(
+        sql`SELECT stored_lead_offering(
+              ${partition.tenant},${partition.project})::text AS offering`,
+      );
+      return sessionRowMember(
+        leadOfferings,
+        found.rows[0]?.offering ?? null,
+        "lead offering",
+      );
+    },
     subsidizedLeadOffered: async () => {
       const found = await pool.query<{ credential_slot: string | null }>(
         sql`SELECT credential_slot FROM read_subsidized_lead()`,

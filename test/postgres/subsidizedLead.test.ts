@@ -18,6 +18,7 @@ import {
   schedulerRole,
   selectorServiceRole,
   sessionLeadOfferingFunction,
+  storedLeadOfferingFunction,
   subsidizedLeadReadFunction,
   ticketServiceRole,
   workerPlaneRole,
@@ -173,6 +174,14 @@ test("only the selector writes the profile, only the API reads it through its do
       postgresHarnessDenial(sessionLeadOfferingFunction),
       role,
     );
+  const stored = `SELECT ${storedLeadOfferingFunction}(${project})`;
+  assert.equal(await harness.attemptAs(apiRole, stored), undefined);
+  for (const role of [selectorServiceRole, schedulerRole, workerPlaneRole])
+    assert.match(
+      (await harness.attemptAs(role, stored)) ?? "",
+      postgresHarnessDenial(storedLeadOfferingFunction),
+      role,
+    );
 });
 
 test("a write naming no offering keeps a stored subsidized lead while it stays in cluster, and one moving it to runners resets it", async () => {
@@ -287,7 +296,9 @@ test("a stored subsidized lead resolves so only from the project's own row and o
   const partition = await postgresHarnessProject(harness.store, "resolved");
   const unplaced = await postgresHarnessProject(harness.store, "unplaced");
   await subsidizedLeadStarted(profile);
+  const api = postgresSessionPlacement(apiPool);
   assert.equal(await subsidizedLeadResolved(unplaced), "Own");
+  assert.equal(await api.storedLeadOffering(unplaced), "Own");
   assert.equal(
     await subsidizedLeadWritten(partition, {
       Thread: "Pool",
@@ -297,12 +308,10 @@ test("a stored subsidized lead resolves so only from the project's own row and o
     "Written",
   );
   assert.equal(await subsidizedLeadResolved(partition), "Subsidized");
-  assert.equal(
-    await postgresSessionPlacement(apiPool).leadOffering(partition),
-    "Subsidized",
-  );
+  assert.equal(await api.leadOffering(partition), "Subsidized");
   await subsidizedLeadStarted(undefined);
   assert.equal(await subsidizedLeadResolved(partition), "Own");
+  assert.equal(await api.storedLeadOffering(partition), "Subsidized");
   await subsidizedLeadStarted(profile);
   assert.equal(await subsidizedLeadResolved(partition), "Subsidized");
   const overridden = async (routing: SessionRouting) => {
@@ -323,6 +332,7 @@ test("a stored subsidized lead resolves so only from the project's own row and o
     ]),
   });
   assert.equal(await subsidizedLeadResolved(partition), "Own");
+  assert.equal(await api.storedLeadOffering(partition), "Subsidized");
   await overridden({
     routes: { Thread: "Pool", Lead: "Pool" },
     projectRoutes: new Map(),

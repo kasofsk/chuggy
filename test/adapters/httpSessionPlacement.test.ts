@@ -34,9 +34,10 @@ const url = "/api/v1/tenants/acme/projects/atlas/session-placement";
 const authorized = { authorization: "Bearer valid" };
 const json = { "content-type": "application/vnd.chuggy.v1+json" };
 
-/** What the deployment offers and what the project's lead offering resolves to. */
+/** What the deployment offers, what the project's row keeps, and what its lead offering resolves to. */
 interface StoreOffering {
   readonly offered: boolean;
+  readonly stored: LeadOffering;
   readonly resolved: LeadOffering;
 }
 
@@ -44,10 +45,11 @@ interface StoreOffering {
 function storeRecording(
   written: SessionPlacementChoice[],
   answered: PlacementWrite = "Written",
-  offering: StoreOffering = { offered: false, resolved: "Own" },
+  offering: StoreOffering = { offered: false, stored: "Own", resolved: "Own" },
 ): SessionPlacementStore {
   return {
     leadOffering: () => Promise.resolve(offering.resolved),
+    storedLeadOffering: () => Promise.resolve(offering.stored),
     subsidizedLeadOffered: () => Promise.resolve(offering.offered),
     route: (_partition, kind) =>
       Promise.resolve(
@@ -181,7 +183,11 @@ async function putPlacement(app: ReturnType<typeof appOver>, payload: unknown) {
   });
 }
 
-const subsidizedPublished: StoreOffering = { offered: true, resolved: "Own" };
+const subsidizedPublished: StoreOffering = {
+  offered: true,
+  stored: "Own",
+  resolved: "Own",
+};
 
 test("while the deployment publishes a subsidized lead, an administrator without the hosted grant places the lead on it, and is told the deployment admits it", async () => {
   const written: SessionPlacementChoice[] = [];
@@ -260,10 +266,11 @@ test("a subsidized lead on runners is refused by its code, however the deploymen
   assert.deepEqual(written, []);
 });
 
-test("a write naming no offering keeps a lead that resolves subsidized without the hosted grant, and moving it to runners needs none either", async () => {
+test("a write naming no offering keeps a stored subsidized lead without the hosted grant, and moving it to runners needs none either", async () => {
   const written: SessionPlacementChoice[] = [];
   await using app = appOver(["Read", "Administer"], false, written, {
     offered: true,
+    stored: "Subsidized",
     resolved: "Subsidized",
   });
   assert.equal(
@@ -280,7 +287,42 @@ test("a write naming no offering keeps a lead that resolves subsidized without t
   ]);
 });
 
-test("a write naming no offering for an in-cluster lead that resolves as its own still needs the hosted grant", async () => {
+test("a write naming no offering keeps a stored subsidized lead without the hosted grant while an override resolves it as its own", async () => {
+  const written: SessionPlacementChoice[] = [];
+  await using app = appOver(["Read", "Administer"], false, written, {
+    offered: true,
+    stored: "Subsidized",
+    resolved: "Own",
+  });
+  assert.equal(
+    (await putPlacement(app, { thread: "Pool", lead: "InCluster" })).statusCode,
+    200,
+  );
+  assert.deepEqual(written, [{ Thread: "Pool", Lead: "InCluster" }]);
+});
+
+test("a write naming no offering keeps a stored subsidized lead only while the deployment publishes one, and is refused by its code otherwise", async () => {
+  for (const hosted of [false, true]) {
+    const written: SessionPlacementChoice[] = [];
+    await using app = appOver(["Read", "Administer"], hosted, written, {
+      offered: false,
+      stored: "Subsidized",
+      resolved: "Own",
+    });
+    const refused = await putPlacement(app, {
+      thread: "Pool",
+      lead: "InCluster",
+    });
+    assert.equal(refused.statusCode, 422);
+    assert.equal(
+      refused.json<HttpErrorEnvelope>().error.code,
+      leadOfferingNotAdmittedCode,
+    );
+    assert.deepEqual(written, []);
+  }
+});
+
+test("a write naming no offering for an in-cluster lead its row keeps as its own still needs the hosted grant", async () => {
   const written: SessionPlacementChoice[] = [];
   await using app = appOver(
     ["Read", "Administer"],

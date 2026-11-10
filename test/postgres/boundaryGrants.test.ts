@@ -53,6 +53,7 @@ import {
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   statusMoveFunction,
+  storedLeadOfferingFunction,
   subsidizedLeadReadFunction,
   ticketLandingsReadFunction,
   ticketRateLimitResumableFunction,
@@ -683,6 +684,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${sessionLeadOfferingFunction}(text,text)`,
     [apiRole, selectorServiceRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${storedLeadOfferingFunction}(text,text)`,
+    [apiRole],
+    [selectorServiceRole, schedulerRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
     `${subsidizedLeadReadFunction}()`,

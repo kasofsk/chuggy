@@ -136,6 +136,8 @@ export interface SessionPlacementChoice extends SessionRoutes {
 export interface SessionPlacementStore extends SessionRouteReads {
   /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
   leadOffering(partition: Partition): Promise<LeadOffering>;
+  /** The offering the project's own row keeps, however it resolves: the one a write naming none keeps while its lead stays in cluster. */
+  storedLeadOffering(partition: Partition): Promise<LeadOffering>;
   /** Whether the deployment publishes a subsidized lead. */
   subsidizedLeadOffered(): Promise<boolean>;
   write(
@@ -199,8 +201,8 @@ async function sessionPlacementView(
 /**
  * The routes a write is held to the hosted grant for, or its refusal: a
  * subsidized lead needs no grant, and is admitted only in cluster while the
- * profile is published. An offering not named is the one the lead resolves to
- * while it stays in cluster, which is the one the store keeps.
+ * profile is published. An offering not named is the row's stored one while
+ * the lead stays in cluster, since that is the one the store keeps.
  */
 async function sessionPlacementHeld(
   store: SessionPlacementStore,
@@ -210,7 +212,7 @@ async function sessionPlacementHeld(
   const offering =
     placement.leadOffering ??
     (placement.Lead === "InCluster"
-      ? await store.leadOffering(partition)
+      ? await store.storedLeadOffering(partition)
       : "Own");
   switch (offering) {
     case "Own":

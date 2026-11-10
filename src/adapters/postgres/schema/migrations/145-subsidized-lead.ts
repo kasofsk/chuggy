@@ -16,7 +16,8 @@
  * `session_lead_offering` answers `Subsidized` only where the lead's route is
  * the row's own and the profile stands, so an override, a default or a
  * withdrawn profile runs the lead as its own, and the row's choice holds again
- * once the profile does.
+ * once the profile does. `stored_lead_offering` answers the row's choice
+ * itself, which is what a write naming no offering is held to.
  */
 
 import {
@@ -26,6 +27,7 @@ import {
   sessionLeadOfferingFunction,
   sessionPlacementSetFunction,
   sessionRouteFunction,
+  storedLeadOfferingFunction,
   subsidizedLeadReadFunction,
   type Migration,
 } from "../shared.ts";
@@ -35,6 +37,8 @@ const placementSetBefore = `public.${sessionPlacementSetFunction}(in_tenant text
 const placementSet = `public.${sessionPlacementSetFunction}(in_tenant text, in_project text, in_thread text, in_lead text, in_lead_offering text, in_authority_kind text, in_authority_subject text)`;
 
 const offering = `public.${sessionLeadOfferingFunction}(in_tenant text, in_project text)`;
+
+const stored = `public.${storedLeadOfferingFunction}(in_tenant text, in_project text)`;
 
 const profileRead = `public.${subsidizedLeadReadFunction}()`;
 
@@ -138,5 +142,15 @@ export const migration145: Migration = {
            ON p.tenant=in_tenant AND p.project=in_project
      $$`,
     ...owned(offering, [apiRole, selectorServiceRole]),
+    `CREATE FUNCTION ${stored} RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+       SELECT coalesce(
+         (SELECT p.lead_offering FROM project_session_placement p
+           WHERE p.tenant=in_tenant AND p.project=in_project),
+         'Own')
+     $$`,
+    ...owned(stored, [apiRole]),
   ],
 };

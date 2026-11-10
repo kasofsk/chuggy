@@ -63,6 +63,8 @@ export const sessionRouteFunction = "session_route";
 export const sessionRunnerStandingFunction = "session_runner_standing";
 /** The lead's offering one project resolves to, which is its own row's only while that row routes it and the deployment offers it. */
 export const sessionLeadOfferingFunction = "session_lead_offering";
+/** The lead's offering one project's own row keeps, `Own` where it has none, however it resolves. */
+export const storedLeadOfferingFunction = "stored_lead_offering";
 /** The subsidized lead the selector publishes, as the API reads it. */
 export const subsidizedLeadReadFunction = "read_subsidized_lead";
 /** Whether a live runner of one project could take its lead now, or every live one's owner is paused, and until when. */
