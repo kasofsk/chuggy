@@ -26,8 +26,8 @@
  * first frame — the engine at rest.
  *
  * `LocomotiveEngine` is the sprite alone, kept apart from the ground so the
- * card reads as one thing that holds its place and one that passes under it,
- * and so an epic's graph can draw it on a card running its work. The strip
+ * card reads as one thing that holds its place and one that passes under it.
+ * The strip
  * above a waiting composer draws chuggernaut's train instead, which crosses
  * the strip rather than standing on a ground, and so shares no drawing with
  * this engine.
@@ -198,7 +198,7 @@ const spriteRects: readonly PixelRect[] = [
   ...spriteFrameRects(3, 1, "B", "fading"),
 ];
 
-export function LocomotiveEngine(): ReactNode {
+function LocomotiveEngine(): ReactNode {
   return (
     <span className="locomotive-engine" aria-hidden="true">
       <svg

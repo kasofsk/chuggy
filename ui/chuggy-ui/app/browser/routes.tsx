@@ -55,11 +55,11 @@ import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { EpicPage } from "./EpicPage.tsx";
-import {
-  EpicHistoryTab,
-  EpicOverviewTab,
-  EpicTicketsTab,
-} from "./epic/EpicPageTabs.tsx";
+import { EpicEditPage } from "./epic/EpicEditPage.tsx";
+import { EpicGraphTab } from "./epic/EpicGraphTab.tsx";
+import { EpicHistoryTab } from "./epic/EpicHistoryTab.tsx";
+import { EpicOverviewTab } from "./epic/EpicOverviewTab.tsx";
+import { EpicTicketsTab } from "./epic/EpicTicketsTab.tsx";
 import { EpicsPage } from "./EpicsPage.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
@@ -227,7 +227,8 @@ function EpicRoute(): ReactNode {
   );
 }
 
-/** One epic: its header and tabs, over the tab its address names. */
+/** One epic: its header and tabs, over the tab its address names or its
+ * edit page. */
 const epicRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/epics/$epic",
@@ -246,10 +247,22 @@ const epicTicketsRoute = createRoute({
   component: EpicTicketsTab,
 });
 
+const epicGraphRoute = createRoute({
+  getParentRoute: () => epicRoute,
+  path: "/graph",
+  component: EpicGraphTab,
+});
+
 const epicHistoryRoute = createRoute({
   getParentRoute: () => epicRoute,
   path: "/history",
   component: EpicHistoryTab,
+});
+
+const epicEditRoute = createRoute({
+  getParentRoute: () => epicRoute,
+  path: "/edit",
+  component: EpicEditPage,
 });
 
 const leadRoute = createRoute({
@@ -384,7 +397,13 @@ const projectCreationRoute = createRoute({
 
 function TicketCreationRoute(): ReactNode {
   const query = ticketCreationRoute.useSearch();
-  return <TicketCreationFrom from={query.from} draft={query.draft} />;
+  return (
+    <TicketCreationFrom
+      from={query.from}
+      draft={query.draft}
+      epic={query.epic}
+    />
+  );
 }
 
 const ticketCreationRoute = createRoute({
@@ -474,7 +493,9 @@ const routeTree = rootRoute.addChildren([
     epicRoute.addChildren([
       epicOverviewRoute,
       epicTicketsRoute,
+      epicGraphRoute,
       epicHistoryRoute,
+      epicEditRoute,
     ]),
     leadRoute,
     catalogRoute,

@@ -1,83 +1,37 @@
-/* The epic page: the progress bar and its counts, the header's notes, and the
-   graph's canvas with its cards, connectors, controls and trains. A card
-   outside the epic is dashed and its connectors too, so what the epic holds
-   does not rest on hue alone. */
+/* The epic page's header, and the bar of where an epic's tickets stand, which
+   the epics list draws too: one segment a group, in the group's tone, Pending
+   in the track's, each named in a key or in words beside it. */
 
 @layer page {
-  .epic-standing {
+  .epic-header-top {
     display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  /* It grows to push the actions to the far end, so once they wrap they
+     start under the title rather than at the right. */
+  .epic-header-heading {
+    display: flex;
+    flex: 1 1 auto;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
+    min-width: 0;
   }
 
-  .epic-progress {
-    display: inline-flex;
+  .epic-header-actions {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
   }
 
-  .epic-progress-track {
-    display: block;
-    flex: none;
-    width: var(--width-progress-row);
-    height: var(--height-progress);
-    overflow: hidden;
-  }
-
-  .epic-progress[data-size="page"] .epic-progress-track {
-    width: var(--width-progress-page);
-  }
-
-  .epic-progress-ground {
-    fill: var(--surface-2);
-  }
-
-  .epic-progress-fill {
-    fill: var(--tone-pass);
-  }
-
-  /* A band of light crossing the fill, or the empty track where nothing is
-     done yet; `translateX` is a share of the track, which is the band's
-     reference box in an SVG. */
-  .epic-progress-glint {
-    fill: var(--surface-0);
-    opacity: 0.45;
-    animation: epic-progress-glint var(--duration-shimmer) linear infinite;
-  }
-
-  .epic-progress-track[data-moving="Sweep"] .epic-progress-glint {
-    fill: var(--ink-3);
-    opacity: 0.35;
-  }
-
-  @keyframes epic-progress-glint {
-    from {
-      transform: translateX(0);
-    }
-
-    to {
-      transform: translateX(140%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .epic-progress-glint {
-      display: none;
-    }
-  }
-
-  .epic-progress-figure {
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
+  .epic-header-summary {
+    max-width: var(--measure);
+    margin: 0;
     color: var(--ink-2);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .epic-progress-counts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1);
   }
 
   .epic-header-note {
@@ -92,225 +46,90 @@
     font-size: var(--text-sm);
   }
 
-  .epic-graph-section {
+  .epic-progress {
     display: grid;
     gap: var(--space-2);
+    min-width: 0;
   }
 
-  /* The canvas: as tall as a share of the viewport, never less than a
-     comfortable least nor more than it may take of a page. */
-  .epic-graph-frame {
-    position: relative;
-    height: clamp(
-      var(--height-epic-graph-least),
-      var(--height-epic-graph),
-      var(--height-epic-graph-most)
-    );
-    overflow: hidden;
-    border: var(--hairline) solid var(--edge);
-    border-radius: var(--radius-2);
-    background: var(--surface-2);
+  .epic-progress[data-size="row"] {
+    width: var(--width-progress-row);
+    max-width: 100%;
+    gap: var(--space-1);
   }
 
-  .epic-graph-frame[data-saying] {
-    display: grid;
-    place-items: center;
-  }
-
-  .epic-graph-frame[data-full="Screen"] {
-    height: 100%;
-    border-radius: 0;
-  }
-
-  .epic-graph-frame[data-full="Overlay"] {
-    position: fixed;
-    inset: 0;
-    z-index: calc(var(--z-overlay) + 10);
-    height: auto;
-    border: 0;
-    border-radius: 0;
-  }
-
-  .epic-graph-saying {
-    margin: 0;
-    color: var(--ink-3);
-  }
-
-  .epic-graph-canvas {
+  .epic-progress-track {
     display: block;
     width: 100%;
-    height: 100%;
-    cursor: grab;
-    touch-action: none;
-    user-select: none;
+    height: var(--height-progress);
+    overflow: hidden;
+    border-radius: var(--radius-1);
+    background: var(--edge);
   }
 
-  .epic-graph-canvas:active {
-    cursor: grabbing;
+  /* A hairline of the page between two segments, so each reads as its own. */
+  .epic-progress-segment {
+    stroke: var(--surface-0);
+    stroke-width: 1;
   }
 
-  .epic-graph-connector {
-    fill: none;
-    stroke: var(--edge-strong);
-    stroke-width: 1.5;
+  .epic-progress-segment[data-tone="pass"] {
+    fill: var(--tone-pass);
   }
 
-  .epic-graph-connector[data-outside] {
-    stroke-dasharray: 4 3;
+  .epic-progress-segment[data-tone="live"] {
+    fill: var(--tone-live);
   }
 
-  .epic-graph-arrow {
-    fill: var(--edge-strong);
+  .epic-progress-segment[data-tone="parked"] {
+    fill: var(--tone-parked);
   }
 
-  .epic-graph-controls {
-    position: absolute;
-    left: var(--space-3);
-    bottom: var(--space-3);
+  .epic-progress-segment[data-tone="Track"] {
+    fill: var(--edge);
+  }
+
+  .epic-progress-key {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .epic-graph-control {
-    display: grid;
-    place-items: center;
-    width: var(--height-icon);
-    height: var(--height-icon);
-    border: var(--hairline) solid var(--edge-control);
-    border-radius: var(--radius-2);
-    background: var(--surface-1);
-    color: var(--ink-1);
-    font-size: var(--text-lg);
-    line-height: 1;
-  }
-
-  .epic-graph-control:hover {
-    background: var(--surface-0);
-  }
-
-  .epic-graph-control:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  .epic-graph-full {
-    position: absolute;
-    top: var(--space-3);
-    right: var(--space-3);
-  }
-
-  /* A card fills the box the layout gave it; its state stands over the
-     link's corner rather than inside it. */
-  .epic-card {
-    position: relative;
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-  }
-
-  .epic-card-link {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    box-sizing: border-box;
-    height: 100%;
-    padding: var(--space-2) var(--space-3);
-    border: var(--hairline) solid var(--edge-strong);
-    border-radius: var(--radius-2);
-    background: var(--surface-1);
-    color: var(--ink-1);
-    text-decoration: none;
-    transition:
-      border-color var(--duration-1) var(--ease-out),
-      background var(--duration-1) var(--ease-out);
-  }
-
-  .epic-card-link:hover {
-    border-color: var(--edge-control);
-    background: var(--surface-0);
-  }
-
-  .epic-card-link:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  .epic-card[data-outside] .epic-card-link {
-    padding: var(--space-1) var(--space-2);
-    border-style: dashed;
-    background: transparent;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
     color: var(--ink-2);
-  }
-
-  .epic-card-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-
-  .epic-card-number {
-    color: var(--ink-3);
     font-size: var(--text-sm);
+  }
+
+  .epic-progress-key li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .epic-progress-swatch {
+    flex: none;
+    width: var(--size-progress-swatch);
+    height: var(--size-progress-swatch);
+    border-radius: var(--radius-1);
+  }
+
+  .epic-progress-swatch .epic-progress-segment {
+    stroke: none;
+  }
+
+  .epic-progress-swatch .epic-progress-segment[data-tone="Track"] {
+    stroke: var(--edge-strong);
+    stroke-width: 1;
+  }
+
+  .epic-progress-count {
+    color: var(--ink-1);
     font-variant-numeric: tabular-nums;
   }
 
-  .epic-card-title {
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    font-size: var(--text-md);
-    font-weight: var(--weight-medium);
-    line-height: var(--leading-tight);
-    overflow-wrap: anywhere;
-  }
-
-  .epic-card-title[data-lines="1"] {
-    display: block;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-size: var(--text-sm);
-    font-weight: var(--weight-regular);
-  }
-
-  .epic-card-foot {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: auto;
+  .epic-progress-said {
     color: var(--ink-2);
     font-size: var(--text-sm);
-  }
-
-  .epic-card-state {
-    position: absolute;
-    top: var(--space-2);
-    right: var(--space-2);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-1);
-  }
-
-  .epic-card-notes:empty {
-    display: none;
-  }
-
-  .epic-card-waits {
-    position: absolute;
-    left: var(--space-3);
-    bottom: var(--space-2);
-  }
-
-  .epic-trains {
-    pointer-events: none;
-  }
-
-  .epic-train-engine {
-    display: block;
-    width: 100%;
-    height: 100%;
+    font-variant-numeric: tabular-nums;
   }
 }

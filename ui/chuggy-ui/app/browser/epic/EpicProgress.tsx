@@ -1,27 +1,25 @@
 /**
- * How far an epic's tickets have come: its status chip, a slim bar with the
- * figure beside it, and a chip for each phase its members are in.
+ * How far an epic's tickets have come: its status chip, and a slim bar with a
+ * segment for each group of its members, Done first, then Running, Escalated
+ * and Pending, each in its group's tone, Pending in the track's. An empty
+ * epic draws no bar.
  *
- * The bar is an SVG, so its fill is as wide as the share done without a
- * `style` attribute the served policy refuses. While any member moves on its
- * own the fill shimmers, or, with nothing done yet, the empty track sweeps;
- * both are the sheet's keyframes, timed off tokens reduced motion zeroes.
+ * The bar is an SVG, so a segment is as wide as its share without a `style`
+ * attribute the served policy refuses. Under the bar on the page a key names
+ * each group with its count; in a list's row the bar has its words beside it.
+ * Nothing moves.
  */
 
-import { useId } from "react";
 import type { ReactNode } from "react";
 
 import type { EpicSummaryResponse } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-import { phaseLabel } from "../../core/codeLabels.ts";
 import {
-  epicProgressBar,
-  epicProgressCounts,
-  epicProgressLine,
-  epicProgressMovingAny,
+  epicProgressSaid,
+  epicProgressSegments,
   epicStatusLook,
 } from "../../core/epics.ts";
-import { phaseTone } from "../../core/tones.ts";
+import type { EpicProgressSegment } from "../../core/epics.ts";
 import { Pill } from "../ui/Pill.tsx";
 
 import "./epic.css";
@@ -36,109 +34,113 @@ export function EpicStatusChip(props: {
   return <Pill tone={look.tone}>{text(look.word)}</Pill>;
 }
 
-/** The track, its fill, and the highlight that says something is moving. */
+/** What the bar says, each part in words, joined as a sentence or a line. */
+function useEpicProgressSaid(
+  progress: EpicProgressFigures,
+  joint: string,
+): string {
+  const text = useCopyText();
+  return epicProgressSaid(progress)
+    .map((part) => text(part))
+    .join(joint);
+}
+
+/** The track and a segment for each group with members. */
 function EpicProgressTrack(props: {
-  readonly progress: EpicProgressFigures;
+  readonly segments: readonly EpicProgressSegment[];
 }): ReactNode {
-  const clip = `epic-progress-${useId().replace(/[^a-zA-Z0-9-]/gu, "")}`;
-  const bar = epicProgressBar(props.progress);
-  const share = `${String(bar.sharePercent)}%`;
   return (
-    <svg
-      className="epic-progress-track"
-      data-moving={bar.moving}
-      aria-hidden="true"
-    >
-      <defs>
-        <clipPath id={clip}>
-          <rect
-            width={bar.moving === "Sweep" ? "100%" : share}
-            height="100%"
-            rx="3"
-          />
-        </clipPath>
-      </defs>
-      <rect
-        className="epic-progress-ground"
-        width="100%"
-        height="100%"
-        rx="3"
-      />
-      <rect className="epic-progress-fill" width={share} height="100%" rx="3" />
-      {bar.moving === "Still" ? null : (
-        <g clipPath={`url(#${clip})`}>
-          <rect
-            className="epic-progress-glint"
-            x="-40%"
-            width="40%"
-            height="100%"
-          />
-        </g>
-      )}
+    <svg className="epic-progress-track" aria-hidden="true">
+      {props.segments.map((segment) => (
+        <rect
+          key={segment.group}
+          className="epic-progress-segment"
+          data-group={segment.group}
+          data-tone={segment.tone}
+          x={`${String(segment.startPercent)}%`}
+          width={`${String(segment.sharePercent)}%`}
+          height="100%"
+        />
+      ))}
     </svg>
   );
 }
 
-/** The bar and its `done/total`, read as a progress bar named in words. */
-export function EpicProgressBar(props: {
+/** The bar, read as a progress bar of the members done, named in words. */
+function EpicProgressBar(props: {
   readonly progress: EpicProgressFigures;
-  readonly size: "row" | "page";
+  readonly segments: readonly EpicProgressSegment[];
 }): ReactNode {
-  const text = useCopyText();
-  const { progress } = props;
-  const said = text(epicProgressLine(progress));
+  const said = useEpicProgressSaid(props.progress, ", ");
   return (
-    <span
-      className="epic-progress"
-      data-size={props.size}
+    <div
+      className="epic-progress-bar"
       role="progressbar"
       aria-valuemin={0}
-      aria-valuemax={progress.total}
-      aria-valuenow={progress.done}
+      aria-valuemax={props.progress.total}
+      aria-valuenow={props.progress.done}
       aria-label={said}
-      aria-busy={epicProgressMovingAny(progress) || undefined}
       title={said}
     >
-      <EpicProgressTrack progress={progress} />
-      <span className="epic-progress-figure num">
-        {`${String(progress.done)}/${String(progress.total)}`}
-      </span>
-    </span>
+      <EpicProgressTrack segments={props.segments} />
+    </div>
   );
 }
 
-/** A chip for each phase at least one member is in, none for an empty epic. */
-export function EpicProgressCounts(props: {
-  readonly progress: EpicProgressFigures;
+/** A swatch, the count and the word for each group with members. */
+function EpicProgressKey(props: {
+  readonly segments: readonly EpicProgressSegment[];
 }): ReactNode {
   const text = useCopyText();
-  const counts = epicProgressCounts(props.progress);
-  if (counts.length === 0) return null;
   return (
-    <span className="epic-progress-counts">
-      {counts.map(({ phase, count }) => (
-        <Pill key={phase} tone={phaseTone(phase)}>
-          {text({
-            id: "epics-progress-count",
-            args: { count: String(count), phase: text(phaseLabel(phase)) },
-          })}
-        </Pill>
+    <ul
+      className="epic-progress-key"
+      aria-label={text({ id: "epics-progress-key" })}
+    >
+      {props.segments.map((segment) => (
+        <li key={segment.group} data-group={segment.group}>
+          <svg className="epic-progress-swatch" aria-hidden="true">
+            <rect
+              className="epic-progress-segment"
+              data-tone={segment.tone}
+              width="100%"
+              height="100%"
+            />
+          </svg>
+          <span className="epic-progress-count num">{segment.count}</span>
+          <span>{text(segment.word)}</span>
+        </li>
       ))}
-    </span>
+    </ul>
   );
 }
 
-/** The status, the bar and the counts, as a row of the list or a page's
- * header draws them. */
-export function EpicStanding(props: {
-  readonly epic: Pick<EpicSummaryResponse, "status" | "progress">;
-  readonly size: "row" | "page";
+/** The header's bar, the page's full width, with its key under it. */
+export function EpicProgressPage(props: {
+  readonly progress: EpicProgressFigures;
 }): ReactNode {
+  const segments = epicProgressSegments(props.progress);
+  if (segments.length === 0) return null;
   return (
-    <span className="epic-standing" data-size={props.size}>
-      <EpicStatusChip status={props.epic.status} />
-      <EpicProgressBar progress={props.epic.progress} size={props.size} />
-      <EpicProgressCounts progress={props.epic.progress} />
-    </span>
+    <div className="epic-progress" data-size="page">
+      <EpicProgressBar progress={props.progress} segments={segments} />
+      <EpicProgressKey segments={segments} />
+    </div>
+  );
+}
+
+/** A list row's bar, with what it says beside it. */
+export function EpicProgressRow(props: {
+  readonly progress: EpicProgressFigures;
+}): ReactNode {
+  const segments = epicProgressSegments(props.progress);
+  const said = useEpicProgressSaid(props.progress, " · ");
+  return (
+    <div className="epic-progress" data-size="row">
+      {segments.length === 0 ? null : (
+        <EpicProgressBar progress={props.progress} segments={segments} />
+      )}
+      <span className="epic-progress-said">{said}</span>
+    </div>
   );
 }

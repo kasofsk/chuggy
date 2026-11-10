@@ -223,7 +223,6 @@
     --duration-travel: 800ms; /* one tile of the locomotive's ground */
     --duration-waiting-travel: 12000ms; /* one crossing of the waiting strip */
     --duration-chug: 800ms; /* one full cycle of the locomotive's sprite */
-    --duration-shimmer: 2400ms; /* one pass of the light along a moving bar */
     /* a word for waiting coming in: a fade, which reduced motion keeps */
     --duration-word: 2000ms;
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
@@ -263,8 +262,8 @@
     --height-context-brief: 6.2em; /* context: a folded brief, before it fades */
     --size-context-swatch: 0.625rem; /* context: a category's key */
     --height-progress: 0.375rem; /* epic: the progress bar */
-    --width-progress-row: 4.5rem; /* epic: that bar in a list's row */
-    --width-progress-page: 10rem; /* epic: that bar in its page's header */
+    --width-progress-row: 15rem; /* epic: that bar in a list's row */
+    --size-progress-swatch: 0.5rem; /* epic: a group's key under the bar */
     --height-epic-graph-least: 20rem; /* epic: the least the graph's canvas stands */
     --height-epic-graph: 60vh; /* epic: the share of the viewport it takes */
     --height-epic-graph-most: 44rem; /* epic: the most it stands */
@@ -287,7 +286,6 @@
       --duration-travel: 0ms;
       --duration-waiting-travel: 0ms;
       --duration-chug: 0ms;
-      --duration-shimmer: 0ms;
     }
   }
 }

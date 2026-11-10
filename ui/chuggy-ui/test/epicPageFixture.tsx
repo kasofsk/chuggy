@@ -10,7 +10,7 @@ import { vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { EpicPage } from "../app/browser/EpicPage.tsx";
-import { EpicOverviewTab } from "../app/browser/epic/EpicPageTabs.tsx";
+import { EpicOverviewTab } from "../app/browser/epic/EpicOverviewTab.tsx";
 import { renderCopied } from "./copied.tsx";
 import { leadPartition } from "./leadFixture.ts";
 import { abilitiesFetch } from "./projectAbilitiesFixture.ts";
@@ -134,7 +134,10 @@ export const epicServing = {
   graphStatus: 200,
   history: epicHistory as unknown,
   older: { revisions: [] } as unknown,
+  /** The rows a read under the epic's filter is answered with. */
   rows: [] as readonly unknown[],
+  /** The rows a read under no epic is answered with. */
+  unfiltered: [] as readonly unknown[],
   queues: { queues: [], truncated: false } as unknown,
   queuesStatus: 200,
 };
@@ -146,6 +149,7 @@ export function epicServingReset(): void {
   epicServing.history = epicHistory;
   epicServing.older = { revisions: [] };
   epicServing.rows = [];
+  epicServing.unfiltered = [];
   epicServing.queues = { queues: [], truncated: false };
   epicServing.queuesStatus = 200;
 }
@@ -176,7 +180,9 @@ function epicServed(
       return answer({
         partition: leadPartition,
         sequence: 900,
-        tickets: epicServing.rows,
+        tickets: new URL(url, "http://x").searchParams.has("epic")
+          ? epicServing.rows
+          : epicServing.unfiltered,
       });
     return answer(epicServing.view);
   };
@@ -209,8 +215,6 @@ export async function epicPageDrawn(
     readonly written?: (request: SentRequest) => Response;
     readonly client?: QueryClient;
     readonly tab?: ReactNode;
-    /** Whether the reader takes motion; a case stating nothing takes none. */
-    readonly motion?: boolean;
   } = {},
 ): Promise<{
   readonly sent: readonly SentRequest[];
@@ -222,10 +226,7 @@ export async function epicPageDrawn(
     epicServed(options.written ?? (() => answer({}, 503))),
   );
   vi.stubGlobal("fetch", abilitiesFetch(abilities, scripted.fetch));
-  viewportAtEm(
-    viewportDeskEm,
-    options.motion === undefined ? undefined : { motion: options.motion },
-  );
+  viewportAtEm(viewportDeskEm);
   const drawn = renderCopied(
     <EpicPageHarness client={client}>{options.tab}</EpicPageHarness>,
   );

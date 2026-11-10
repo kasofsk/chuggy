@@ -22,8 +22,8 @@ export interface EpicPageHeld {
   readonly graphState: PanelState<EpicGraphResponse>;
   /** The newest page of the epic's revisions. */
   readonly historyState: PanelState<EpicHistoryResponse>;
-  /** The rows the ticket list holds unfiltered, which a member's card and
-   * row are drawn from where they hold it. */
+  /** The ticket list's rows under the epic's filter, which a member's card
+   * and row are drawn from where they hold it. */
   readonly rowsState: PanelState<ProjectTicketRows>;
   /** The emails a member row draws its creator by. */
   readonly creatorEmails: ReadonlyMap<string, string>;
