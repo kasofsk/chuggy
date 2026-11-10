@@ -62,6 +62,7 @@ import {
   selectorProposalReviewResponseSchema,
   inboxResponseSchema,
   ticketLandingsResponseSchema,
+  landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
 } from "./responses.ts";
 
@@ -396,6 +397,11 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.ticketLandings,
     response: ticketLandingsResponseSchema,
+  },
+  landingQueues: {
+    method: "GET",
+    path: nativeHttpRoutes.landingQueues,
+    response: landingQueuesResponseSchema,
   },
 } as const;
 

@@ -523,6 +523,13 @@ export const ticketLandingConflictBytesMax = 2_048;
 /** The longest reference name a landing answers, which is the longest one its rows carry. */
 export const ticketLandingRefCharsMax = 256;
 
+/**
+ * How many ranked tickets one read of a project's landing queues answers,
+ * holders and waiters together: the earliest-ranked of them, so a queue it
+ * answers has its holder and its earliest waiters.
+ */
+export const landingQueueTicketsAnsweredMax = nativeHttpPageItemsMax;
+
 /** How many of the entries under `.chug/` a configuration import read none of one answer names. */
 export const repositoryConfigurationIgnoredAnsweredMax = 10;
 
@@ -588,6 +595,7 @@ export const nativeHttpRoutes = {
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
+  landingQueues: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/landing-queues`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
   inbox: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/inbox`,

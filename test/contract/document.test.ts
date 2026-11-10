@@ -79,6 +79,7 @@ const documentRouteNames = [
   "hostedRuns",
   "inbox",
   "installation",
+  "landingQueues",
   "lead",
   "leadContext",
   "leadInquiries",
