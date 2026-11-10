@@ -1,24 +1,12 @@
 /**
- * An epic's graph as its Graph tab draws it: each ticket with the state it is
- * drawn in, where each card stands, the curve each edge takes from a
- * dependency to what waits on it, the chain a card traces, which ticket is
- * selected, and how far the graph is scaled to the panel it sits in.
- *
- * Cards run top to bottom, laid out by dagre. A ticket outside the epic is a
- * smaller card, and the reader may leave those out, which lays the graph out
- * again without them. A member with no edge either way stands in a row under
- * the graph rather than in it, so tickets unrelated to the rest do not make
- * one rank many cards wide.
+ * An epic's graph as its Graph tab draws it, once `epicGraphLayout.ts` has
+ * laid it out: the sizes and gaps it is laid out by, the curve each edge takes
+ * from a dependency to what waits on it, the chain a card traces, which ticket
+ * is selected, and how far the graph is scaled to the panel it sits in.
  */
 
-import { Graph, layout } from "@dagrejs/dagre";
-import type { EdgeLabel, GraphLabel, NodeLabel } from "@dagrejs/dagre";
-
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
-import { epicGraphStandingOf } from "./epics.ts";
-import type { ProjectTableRow } from "./projectTableRows.ts";
 import type { TicketStateStanding } from "./ticketHeader.ts";
-import { ticketListStandingOf } from "./ticketListView.ts";
 
 type EpicGraphNode = EpicGraphResponse["nodes"][number];
 
@@ -77,125 +65,9 @@ export interface EpicGraphDrawn {
   readonly height: number;
 }
 
-/** Each ticket the graph names once, in the state the ticket list's row says
- * where it holds one, and otherwise the graph's. */
-function epicGraphDrawnTickets(
-  graph: EpicGraphResponse,
-  rows: ReadonlyMap<number, ProjectTableRow>,
-): ReadonlyMap<number, EpicGraphTicket> {
-  const tickets = new Map<number, EpicGraphTicket>();
-  for (const node of graph.nodes) {
-    if (tickets.has(node.ticket)) continue;
-    const row = rows.get(node.ticket);
-    const standing =
-      row === undefined
-        ? (epicGraphStandingOf(node, graph) ?? "Draft")
-        : ticketListStandingOf(row);
-    tickets.set(node.ticket, { node, standing });
-  }
-  return tickets;
-}
-
-function epicGraphEdgeKey(from: number, to: number): string {
+/** The key an edge between two tickets is known by. */
+export function epicGraphEdgeKey(from: number, to: number): string {
   return `${String(from)}-${String(to)}`;
-}
-
-/** The edges between tickets drawn, each once, none from a ticket to itself. */
-function epicGraphDrawnEdges(
-  graph: EpicGraphResponse,
-  drawn: ReadonlySet<number>,
-): readonly { readonly from: number; readonly to: number }[] {
-  const seen = new Set<string>();
-  return graph.edges.filter((edge) => {
-    const key = epicGraphEdgeKey(edge.from, edge.to);
-    if (
-      seen.has(key) ||
-      edge.from === edge.to ||
-      !drawn.has(edge.from) ||
-      !drawn.has(edge.to)
-    )
-      return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function epicGraphCardSize(node: EpicGraphNode): {
-  readonly width: number;
-  readonly height: number;
-} {
-  return node.member
-    ? { width: epicGraphMemberWidth, height: epicGraphMemberHeight }
-    : { width: epicGraphOutsideWidth, height: epicGraphOutsideHeight };
-}
-
-/**
- * The graph laid out, with the tickets outside the epic or without them. A
- * node named twice is drawn once, and an edge into a node the graph does not
- * hold is left undrawn.
- */
-export function epicGraphDrawn(
-  graph: EpicGraphResponse,
-  rows: ReadonlyMap<number, ProjectTableRow>,
-  outsideShown: boolean,
-): EpicGraphDrawn {
-  const tickets = epicGraphDrawnTickets(graph, rows);
-  const shown = [...tickets.values()]
-    .filter((ticket) => outsideShown || ticket.node.member)
-    .sort((left, right) => left.node.ticket - right.node.ticket);
-  const edges = epicGraphDrawnEdges(
-    graph,
-    new Set(shown.map((ticket) => ticket.node.ticket)),
-  );
-  const joined = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
-  const laid = new Graph<GraphLabel, NodeLabel, EdgeLabel>();
-  laid.setGraph({
-    rankdir: "TB",
-    nodesep: epicGraphNodeGap,
-    ranksep: epicGraphRankGap,
-    marginx: epicGraphMargin,
-    marginy: epicGraphMargin,
-  });
-  laid.setDefaultEdgeLabel(() => ({}));
-  const placed = shown.filter(
-    (ticket) => joined.has(ticket.node.ticket) || !ticket.node.member,
-  );
-  for (const ticket of placed)
-    laid.setNode(String(ticket.node.ticket), epicGraphCardSize(ticket.node));
-  for (const edge of edges) laid.setEdge(String(edge.from), String(edge.to));
-  layout(laid);
-  const cards = placed.map((ticket): EpicGraphCard => {
-    const at = laid.node(String(ticket.node.ticket));
-    return {
-      ...ticket,
-      x: (at.x ?? 0) - at.width / 2,
-      y: (at.y ?? 0) - at.height / 2,
-      width: at.width,
-      height: at.height,
-    };
-  });
-  const box = laid.graph();
-  return {
-    tickets,
-    cards,
-    edges: edges.map((edge): EpicGraphEdge => {
-      const from = tickets.get(edge.from);
-      const to = tickets.get(edge.to);
-      return {
-        ...edge,
-        outside: from?.node.member !== true || to?.node.member !== true,
-        met: from?.standing === "Done",
-        points: (
-          laid.edge(String(edge.from), String(edge.to)).points ?? []
-        ).map((point) => ({ x: point.x, y: point.y })),
-      };
-    }),
-    unconnected: shown.filter(
-      (ticket) => ticket.node.member && !joined.has(ticket.node.ticket),
-    ),
-    width: cards.length === 0 ? 0 : (box.width ?? 0),
-    height: cards.length === 0 ? 0 : (box.height ?? 0),
-  };
 }
 
 function epicGraphNumber(value: number): string {

@@ -1,7 +1,8 @@
 /**
  * A project's epics as the console reads and writes them: the reads, the words
- * a status is drawn in, the layout of an epic's graph, and the form an epic is
- * edited through.
+ * a status is drawn in, the state each ticket of an epic's graph stands in and
+ * the ticket its Graph tab's address selects, and the form an epic is edited
+ * through.
  *
  * Progress and status are the API's, derived from the members' phases; nothing
  * here recomputes them. What is decided here is how they are said and drawn.
@@ -37,6 +38,9 @@ import { consolePartitionQuery } from "./consoleQuery.ts";
 import type { ConsoleWrite } from "./consoleWrite.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
 import type { Copy } from "./copy.ts";
+import type { EpicGraphTicket } from "./epicGraph.ts";
+import type { ProjectTableRow } from "./projectTableRows.ts";
+import { ticketListStandingOf } from "./ticketListView.ts";
 import type { TicketListStanding } from "./ticketListView.ts";
 import { epicStatusTone, phaseTone, type Tone } from "./tones.ts";
 
@@ -136,6 +140,25 @@ export function epicGraphStandingOf(
   )
     ? "Ready"
     : "Blocked";
+}
+
+/** Each ticket the graph names once, in the state the ticket list's row says
+ * where it holds one, and otherwise the graph's. */
+export function epicGraphTicketsOf(
+  graph: EpicGraphResponse,
+  rows: ReadonlyMap<number, ProjectTableRow>,
+): ReadonlyMap<number, EpicGraphTicket> {
+  const tickets = new Map<number, EpicGraphTicket>();
+  for (const node of graph.nodes) {
+    if (tickets.has(node.ticket)) continue;
+    const row = rows.get(node.ticket);
+    const standing =
+      row === undefined
+        ? (epicGraphStandingOf(node, graph) ?? "Draft")
+        : ticketListStandingOf(row);
+    tickets.set(node.ticket, { node, standing });
+  }
+  return tickets;
 }
 
 /** What of the Graph tab its address holds: the ticket selected. */

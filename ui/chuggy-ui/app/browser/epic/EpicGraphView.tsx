@@ -9,10 +9,10 @@
  * the served policy refuses; wider than that, the panel scrolls sideways and
  * opens centred on the selected card.
  *
- * It is loaded on its own, once the Graph tab asks for it.
+ * Its layout is loaded on its own, once the Graph tab draws it.
  */
 
-import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type {
@@ -22,7 +22,6 @@ import type {
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { Copy } from "../../core/copy.ts";
 import {
-  epicGraphDrawn,
   epicGraphEdgeKeyOf,
   epicGraphEdgePath,
   epicGraphMemberHeight,
@@ -37,10 +36,12 @@ import type {
   EpicGraphTicket,
   EpicGraphTrace,
 } from "../../core/epicGraph.ts";
+import { epicGraphTicketsOf } from "../../core/epics.ts";
 import { landingQueuePlaceOf } from "../../core/landingQueues.ts";
 import { projectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
+import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -50,6 +51,8 @@ import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicGraphSide } from "./EpicGraphSide.tsx";
 
 import "./epicGraph.css";
+
+const EpicGraphLaid = lazy(() => import("./EpicGraphLaid.tsx"));
 
 /** What every card on one graph is drawn against. */
 interface EpicGraphCardsHeld {
@@ -315,30 +318,20 @@ function EpicGraphUnconnected(props: {
   );
 }
 
-export default function EpicGraphView(props: {
+/** The graph as it is drawn once it is laid out, beside the ticket selected. */
+function EpicGraphViewDrawn(props: {
   readonly held: EpicPageHeld;
   readonly graph: EpicGraphResponse;
+  readonly drawn: EpicGraphDrawn;
+  readonly rows: ReadonlyMap<number, ProjectTableRow>;
   readonly ticket: number | undefined;
   readonly onTicket: (ticket: number) => void;
+  readonly traced: number | undefined;
+  readonly onTraced: (ticket: number | undefined) => void;
+  readonly outsideShown: boolean;
+  readonly onOutsideShown: (shown: boolean) => void;
 }): ReactNode {
-  const { held, graph } = props;
-  const [outsideShown, setOutsideShown] = useState(true);
-  const [traced, setTraced] = useState<number | undefined>(undefined);
-  const tickets = readValue(held.rowsState)?.tickets;
-  const rows = useMemo(
-    () =>
-      new Map(
-        (tickets ?? []).map((ticket) => [
-          ticket.ticket,
-          projectTableRow(ticket),
-        ]),
-      ),
-    [tickets],
-  );
-  const drawn = useMemo(
-    () => epicGraphDrawn(graph, rows, outsideShown),
-    [graph, rows, outsideShown],
-  );
+  const { held, graph, drawn, traced } = props;
   const trace = useMemo(
     () =>
       traced === undefined || !drawn.tickets.has(traced)
@@ -354,7 +347,7 @@ export default function EpicGraphView(props: {
     trace,
     queues: held.queues,
     onSelect: props.onTicket,
-    onTrace: setTraced,
+    onTrace: props.onTraced,
   };
   return (
     <div className="epic-graph">
@@ -364,7 +357,7 @@ export default function EpicGraphView(props: {
           graph={graph}
           ticket={chosen}
           held={drawn.tickets}
-          row={rows.get(chosen.node.ticket)}
+          row={props.rows.get(chosen.node.ticket)}
           onTicket={props.onTicket}
         />
       )}
@@ -372,8 +365,8 @@ export default function EpicGraphView(props: {
         <EpicGraphBar
           drawn={drawn}
           outside={graph.nodes.filter((node) => !node.member).length}
-          outsideShown={outsideShown}
-          onOutsideShown={setOutsideShown}
+          outsideShown={props.outsideShown}
+          onOutsideShown={props.onOutsideShown}
         />
         {drawn.cards.length === 0 ? null : (
           <EpicGraphDrawing drawn={drawn} held={cardsHeld} />
@@ -381,5 +374,51 @@ export default function EpicGraphView(props: {
         <EpicGraphUnconnected drawn={drawn} held={cardsHeld} />
       </div>
     </div>
+  );
+}
+
+/** The graph beside the ticket selected; it suspends until its layout's own
+ * chunk is loaded. */
+export function EpicGraphView(props: {
+  readonly held: EpicPageHeld;
+  readonly graph: EpicGraphResponse;
+  readonly ticket: number | undefined;
+  readonly onTicket: (ticket: number) => void;
+}): ReactNode {
+  const [outsideShown, setOutsideShown] = useState(true);
+  const [traced, setTraced] = useState<number | undefined>(undefined);
+  const tickets = readValue(props.held.rowsState)?.tickets;
+  const rows = useMemo(
+    () =>
+      new Map(
+        (tickets ?? []).map((ticket) => [
+          ticket.ticket,
+          projectTableRow(ticket),
+        ]),
+      ),
+    [tickets],
+  );
+  const graphTickets = useMemo(
+    () => epicGraphTicketsOf(props.graph, rows),
+    [props.graph, rows],
+  );
+  return (
+    <EpicGraphLaid
+      graph={props.graph}
+      tickets={graphTickets}
+      outsideShown={outsideShown}
+    >
+      {(drawn) => (
+        <EpicGraphViewDrawn
+          {...props}
+          drawn={drawn}
+          rows={rows}
+          traced={traced}
+          onTraced={setTraced}
+          outsideShown={outsideShown}
+          onOutsideShown={setOutsideShown}
+        />
+      )}
+    </EpicGraphLaid>
   );
 }

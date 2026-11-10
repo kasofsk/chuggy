@@ -2,19 +2,18 @@
  * The epic page's Graph tab: the members and the tickets outside the epic
  * they wait on, drawn beside the ticket selected, or the one line its read is
  * drawn as while it is not ready. The ticket selected is the address's. The
- * graph is loaded on its own, once the tab is.
+ * graph's layout is loaded on its own, once the tab is.
  */
 
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicGraphView } from "./EpicGraphView.tsx";
 
 import "./epicGraph.css";
-
-const EpicGraphView = lazy(() => import("./EpicGraphView.tsx"));
 
 /** The graph's own place, holding a line where the graph is not yet drawn. */
 function EpicGraphFrameSaying(props: {

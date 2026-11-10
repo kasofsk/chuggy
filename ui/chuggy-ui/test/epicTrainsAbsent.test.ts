@@ -22,7 +22,7 @@ const epicSources = import.meta.glob<string>(
 test("the epic page's sources are read", () => {
   expect(Object.keys(epicSources)).toContain("../app/core/epics.ts");
   expect(Object.keys(epicSources)).toContain(
-    "../app/browser/epic/EpicGraphView.tsx",
+    "../app/browser/epic/EpicGraphLaid.tsx",
   );
 });
 

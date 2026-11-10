@@ -9,7 +9,6 @@ import { expect, test } from "vitest";
 
 import type { EpicGraphResponse } from "../../../src/contract/responses.ts";
 import {
-  epicGraphDrawn,
   epicGraphEdgeKeyOf,
   epicGraphEdgePath,
   epicGraphMemberHeight,
@@ -23,10 +22,25 @@ import {
   epicGraphSelectedOf,
   epicGraphTraced,
 } from "../app/core/epicGraph.ts";
-import { epicGraphStandingOf } from "../app/core/epics.ts";
+import { epicGraphDrawn as epicGraphLaid } from "../app/core/epicGraphLayout.ts";
+import { epicGraphStandingOf, epicGraphTicketsOf } from "../app/core/epics.ts";
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
 
 const noRows: ReadonlyMap<number, ProjectTableRow> = new Map();
+
+/** The graph laid out with each ticket in the state its row, or the graph,
+ * says. */
+function epicGraphDrawn(
+  drawing: EpicGraphResponse,
+  rows: ReadonlyMap<number, ProjectTableRow>,
+  outsideShown: boolean,
+) {
+  return epicGraphLaid(
+    drawing,
+    epicGraphTicketsOf(drawing, rows),
+    outsideShown,
+  );
+}
 
 /** A chain 1 → 2 → 3 with a branch 2 → 4, an outside ticket 9 that 3 waits
  * on, and a member 6 nothing touches. */
