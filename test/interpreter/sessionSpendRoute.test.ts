@@ -35,8 +35,8 @@ function refusingEverything(asked: string[]): ProjectAccess {
 
 test("a member's own turn is spent on their chat host whatever the site routes, asks no grant, and is refused where they have none", async () => {
   for (const [host, spent] of [
-    ["Live", { spend: "Admitted", route: "Pool" }],
-    ["Offline", { spend: "Admitted", route: "Pool" }],
+    ["Live", { spend: "Admitted", route: "Pool", subsidized: false }],
+    ["Offline", { spend: "Admitted", route: "Pool", subsidized: false }],
     ["Unregistered", { spend: "NoRunner" }],
   ] as const satisfies readonly (readonly [SessionRunnerStanding, unknown])[]) {
     const asked: string[] = [];
@@ -85,7 +85,7 @@ test("a member the tenant grants no hosted runs may ask a subsidized lead in clu
       project,
       "Inquiry",
     ),
-    { spend: "Admitted", route: "InCluster" },
+    { spend: "Admitted", route: "InCluster", subsidized: true },
   );
   assert.deepEqual(asked, []);
 });

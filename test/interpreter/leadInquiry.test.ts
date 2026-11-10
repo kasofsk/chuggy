@@ -352,6 +352,46 @@ test("the question the door offers carries the standing rule and the asker", asy
   assert.equal(document.standing, inquiryStanding);
 });
 
+test("a question admitted on the lead's subsidy is offered as one, and a lead off the profile's slot is a hosted run the member is not granted", async () => {
+  for (const [offering, held, subsidized] of [
+    ["Subsidized", [], true],
+    ["Own", ["ExecuteHosted"], false],
+  ] as const) {
+    const asked: unknown[] = [];
+    const web = webOver(
+      storeAnswering({}, asked),
+      accessHolding("Mutate", ...held),
+      sessionRoutesAt({ Lead: "InCluster" }, undefined, offering),
+    );
+    const asking = await web.askLead(reader, partition, {
+      session,
+      turn,
+      question: "who pays for this?",
+    });
+    assert.equal(asking.result, "Asked", offering);
+    assert.equal(
+      (asked[0] as { readonly subsidized: boolean }).subsidized,
+      subsidized,
+      offering,
+    );
+  }
+  const web = webOver(
+    storeAnswering({ opened: { opened: "LeadNotSubsidized" } }, []),
+    accessHolding("Mutate"),
+    sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized"),
+  );
+  assert.equal(
+    (
+      await web.askLead(reader, partition, {
+        session,
+        turn,
+        question: "who pays for this?",
+      })
+    ).result,
+    "HostedRunsNotGranted",
+  );
+});
+
 test("a question outside the door's bound is refused before a store is reached", async () => {
   const asked: unknown[] = [];
   const web = webOver(

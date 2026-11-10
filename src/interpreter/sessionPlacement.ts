@@ -290,14 +290,23 @@ export function sessionRunnerServes(
   return placementRouteHosted[route] || mine !== "Unregistered";
 }
 
-/** A member's turn admitted on the route it is stamped with, or the reason it is not. */
+/**
+ * A member's turn admitted on the route it is stamped with, and whether on the
+ * lead's subsidy rather than their grant, or the reason it is not.
+ */
 export type SessionSpend =
-  | { readonly spend: "Admitted"; readonly route: PlacementRoute }
+  | {
+      readonly spend: "Admitted";
+      readonly route: PlacementRoute;
+      readonly subsidized: boolean;
+    }
   | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
 
 /**
  * Whether a member's turn of this kind on this route is spent without their
  * hosted grant: an inquiry of a subsidized lead, which the offering pays for.
+ * The inquiry door forks it only from a lead on the profile's slot, since one
+ * opened before the project chose the subsidy stands on the hosted one.
  */
 async function sessionSpendSubsidized(
   routes: SessionRouteReads,
@@ -332,20 +341,27 @@ export async function sessionSpendRoute(
       "Pool",
       (await routes.runners(partition, principal)).inquiry,
     )
-      ? { spend: "Admitted", route: "Pool" }
+      ? { spend: "Admitted", route: "Pool", subsidized: false }
       : { spend: "NoRunner" };
   const { route } = await routes.route(partition, kind);
+  const subsidized = await sessionSpendSubsidized(
+    routes,
+    partition,
+    kind,
+    route,
+  );
   if (
-    !(await sessionSpendSubsidized(routes, partition, kind, route)) &&
+    !subsidized &&
     !(await placementRouteGranted(access, principal, partition, route))
   )
     return { spend: "HostedRunsNotGranted" };
-  if (placementRouteHosted[route]) return { spend: "Admitted", route };
+  if (placementRouteHosted[route])
+    return { spend: "Admitted", route, subsidized };
   return sessionRunnerServes(
     route,
     sessionRunnersServing(await routes.runners(partition, principal), kind),
   )
-    ? { spend: "Admitted", route }
+    ? { spend: "Admitted", route, subsidized }
     : { spend: "NoRunner" };
 }
 

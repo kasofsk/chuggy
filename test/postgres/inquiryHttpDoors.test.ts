@@ -36,13 +36,23 @@ import {
 } from "../../src/contract/responses.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
+import { selectorServiceRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  postgresSessionPlacement,
+  postgresSubsidizedLeadPrecondition,
+} from "../../src/adapters/postgres/sessionPlacement.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import {
   oidcPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { postgresHarnessKeying } from "./harness.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+} from "../../src/interpreter/operationInbox.ts";
+import type { SubsidizedLeadProfile } from "../../src/interpreter/sessionPlacement.ts";
+import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
 import {
   inquiryRigLead,
   inquiryRigMember,
@@ -368,4 +378,108 @@ test("an inquiry whose asker's membership is gone is answered with no asker", as
     page.inquiries.map(({ session, asker }) => ({ session, asker })),
     [{ session: accepted.session, asker: undefined }],
   );
+});
+
+const subsidy: SubsidizedLeadProfile = {
+  credentialSlot: "anthropic-api",
+  model: "claude-haiku-5-5",
+  effort: "medium",
+  autoCompactWindow: 100_000,
+  inputBytesPerDecision: 65_536,
+  turnTokensMax: 200_000,
+};
+
+/** Publishes `published` as the selector does as it starts, or withdraws it. */
+async function subsidyPublished(
+  published: SubsidizedLeadProfile | undefined,
+): Promise<void> {
+  const selector = postgresHarnessRolePool(selectorServiceRole);
+  try {
+    assert.deepEqual(
+      await postgresSubsidizedLeadPrecondition(selector, published).check(
+        new AbortController().signal,
+      ),
+      { met: "Met" },
+    );
+  } finally {
+    await selector.end();
+  }
+}
+
+/** A project storing a subsidized lead whose lead stands on `credentialSlot`, and a member the tenant grants no hosted runs. */
+async function subsidizedProject(label: string, credentialSlot?: string) {
+  const partition = await inquiryRigProject(rig, `http-${label}`);
+  await inquiryRigLead(rig, partition, `http-${label}`, {
+    ...(credentialSlot === undefined ? {} : { credentialSlot }),
+  });
+  assert.equal(
+    await postgresSessionPlacement(rig.apiPool).write(
+      partition,
+      { Thread: "InCluster", Lead: "InCluster", leadOffering: "Subsidized" },
+      {
+        kind: asAuthorityKind("Member"),
+        subject: asAuthoritySubject("an-owner"),
+      },
+    ),
+    "Written",
+  );
+  const principal = oidcPrincipal(
+    threadRigIssuer,
+    `member-http-${label}-${randomUUID()}`,
+  );
+  rig.sessions.harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate"]),
+  });
+  return { partition, principal };
+}
+
+/** The credential slot of every fork `partition`'s lead has. */
+function forkSlots(partition: Partition) {
+  return rig.sessions.harness.query(
+    `SELECT credential_slot FROM agent_session
+      WHERE tenant=$1 AND project=$2 AND kind='Inquiry'`,
+    [partition.tenant, partition.project],
+  );
+}
+
+/**
+ * The subsidy pays for an inquiry only on its own slot, and a lead opened
+ * before its project chose it stands on the hosted one until it is replaced.
+ */
+test("a member the tenant grants no hosted runs asks a subsidized lead only where it stands on the profile's slot", async () => {
+  await subsidyPublished(subsidy);
+  try {
+    const standing = await subsidizedProject("subsidy-standing");
+    await using refusing = inquiryApp(standing.principal);
+    const refused = await refusing.inject({
+      method: "POST",
+      url: pathOf(standing.partition),
+      headers: versioned,
+      payload: {
+        session: `inq-http-${randomUUID()}`,
+        turn: `inq-turn-http-${randomUUID()}`,
+        question: "who pays for this?",
+      },
+    });
+    assert.equal(refused.statusCode, 403, refused.body);
+    assert.deepEqual(
+      await forkSlots(standing.partition),
+      [],
+      "a lead on the hosted slot was forked on the subsidy",
+    );
+
+    const replaced = await subsidizedProject(
+      "subsidy-replaced",
+      subsidy.credentialSlot,
+    );
+    await using app = inquiryApp(replaced.principal);
+    await asked(app, replaced.partition, "who pays for this?");
+    assert.deepEqual(await forkSlots(replaced.partition), [
+      { credential_slot: subsidy.credentialSlot },
+    ]);
+  } finally {
+    await subsidyPublished(undefined);
+  }
 });

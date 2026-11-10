@@ -455,6 +455,7 @@ test("the closing door refuses a lead an inquiry is still forked from", async ()
       asker: member.authority.subject,
     }),
     route: "InCluster",
+    subsidized: false,
   });
   assert.equal(asked.opened, "Opened");
   assert.equal(
