@@ -58,6 +58,7 @@ import {
   personalRunnerProjectsMax,
   personalRunnersMax,
   resultReportCharsMax,
+  approvalFeedbackCharsMax,
   runContextItemsMax,
   runContextNameCharsMax,
   runContextPageReadingsMax,
@@ -676,6 +677,11 @@ const nativeActionFields = {
     .describe(
       "What an EvaluationApproval asks, present on that kind alone: the execution it stands for, which reads Awaiting until it is answered or no longer owed, where that execution stands in the ticket's evaluation, and its workload's instructions and approvers as the ticket was released with them.",
     ),
+  answerable: z
+    .boolean()
+    .describe(
+      "Whether the caller of this read may answer this action: for an EvaluationApproval, whether its approvers name them and they are a person rather than an agent or a session.",
+    ),
 };
 
 function nativeActionKindAdmits(
@@ -1078,16 +1084,32 @@ const executionAttemptSchema = z.object({
   refusal: z.string().min(1).max(workerPoolEvidenceCharsMax).optional(),
 });
 
-const executionResultSchema = z.object({
-  manifest: identitySchema,
-  attempt: identitySchema,
-  schemaVersion: countSchema,
-  digest: z.string().min(1),
-  verdict: z.enum(resultVerdicts),
-  recordedAt: instantSchema,
-  artifacts: page(resultArtifactSchema),
-  report: z.string().min(1).max(resultReportCharsMax).optional(),
+/** Who answered an evaluation approval, when, how and with what feedback, which is the whole of what that answer's result was written from. */
+const executionResultApprovalSchema = z.strictObject({
+  action: identitySchema,
+  principal: z.string().min(1),
+  resolution: z.enum(nativeActionKindResolutions.EvaluationApproval),
+  answeredAt: instantSchema,
+  feedback: z.string().min(1).max(approvalFeedbackCharsMax).optional(),
 });
+
+const executionResultSchema = z
+  .object({
+    manifest: identitySchema,
+    /** The attempt whose worker reported this result, absent on one a person's answer to an approval wrote. */
+    attempt: identitySchema.optional(),
+    approval: executionResultApprovalSchema.optional(),
+    schemaVersion: countSchema,
+    digest: z.string().min(1),
+    verdict: z.enum(resultVerdicts),
+    recordedAt: instantSchema,
+    artifacts: page(resultArtifactSchema),
+    report: z.string().min(1).max(resultReportCharsMax).optional(),
+  })
+  .refine(
+    (value) => (value.attempt === undefined) !== (value.approval === undefined),
+    "a result is a worker attempt's or an approval's answer, and never both",
+  );
 
 export const executionResponseSchema = executionSummarySchema.extend({
   attempts: page(executionAttemptSchema),

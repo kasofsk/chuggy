@@ -102,6 +102,7 @@ const nativeActionRepresentation = ticketNativeActionsResponse([
     kind: "FinalizationApproval",
     authorizingSequence: 11,
     admits: ["Approve", "Decline"],
+    answerable: true,
   },
 ]).body;
 

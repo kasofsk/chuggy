@@ -63,6 +63,7 @@
  */
 
 import { sql } from "@ts-safeql/sql-tag";
+import { randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import { materialDigest } from "../../interpreter/ticketDefinition.ts";
@@ -133,6 +134,7 @@ import {
   storedSelectionText,
 } from "./ticketBrief.ts";
 import { postgresTransaction } from "./pool.ts";
+import { schedulerRole } from "./schema.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 
@@ -482,6 +484,23 @@ async function decisionAnswerAction(
   );
   if (changed.rows.length !== 1)
     throw new Error("native action resolution fence failed");
+}
+
+/**
+ * Settles an evaluation approval its stored answer resolves, through the one door that writes that answer's result and submits its completion.
+ * The door reads the answer, who gave it and the fence it names from the operation, so nothing here is taken on trust.
+ */
+async function decisionAnswerEvaluationApproval(
+  client: pg.PoolClient,
+  partition: Partition,
+  cause: DecisionCause,
+): Promise<void> {
+  await client.query(
+    sql`SELECT answer_evaluation_approval(
+          ${partition.tenant},${partition.project},${cause.id},
+          ${`manifest-${randomUUID()}`},${`completion-${randomUUID()}`},
+          ${schedulerRole})`,
+  );
 }
 
 async function decisionActions(
@@ -961,7 +980,9 @@ async function decisionApply(
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Refused" };
     case "Answered":
-      await decisionAnswerAction(client, lease.partition, outcome.answer);
+      if (outcome.answer.kind === "EvaluationApproval")
+        await decisionAnswerEvaluationApproval(client, lease.partition, cause);
+      else await decisionAnswerAction(client, lease.partition, outcome.answer);
       await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Answered" };

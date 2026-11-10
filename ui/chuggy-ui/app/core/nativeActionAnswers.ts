@@ -10,8 +10,9 @@
  * was raised at, which is how the API refuses an answer to an action that has
  * moved on.
  *
- * AN EVALUATION APPROVAL IS OFFERED NO ANSWER. The writer refuses one
- * `ApprovalNotAnswerable`, so a button for it could only be refused.
+ * AN EVALUATION APPROVAL IS OFFERED NO ANSWER. Its `Reject` must carry
+ * feedback, which no button here can write. No action the read says the caller
+ * may not answer is offered an answer either.
  */
 
 import { nativeActionKindResolutions } from "../../../../src/contract/rosters.ts";
@@ -59,7 +60,7 @@ export function nativeActionAnswers(
   action: NativeActionResponse,
 ): readonly TicketAction[] {
   const kind = action.kind;
-  if (!nativeActionAnswered(kind)) return [];
+  if (!nativeActionAnswered(kind) || !action.answerable) return [];
   return nativeActionKindResolutions[kind]
     .filter((resolution) => action.admits.includes(resolution))
     .map((resolution) => ({

@@ -418,6 +418,27 @@ export const inquiriesAnsweredMax = 32;
 export const resultReportCharsMax = 8_192;
 
 /**
+ * The longest feedback a person's answer to an evaluation approval carries.
+ * That answer's result report is the feedback behind the name of who gave it, so the feedback leaves the report's other half to the name.
+ */
+export const approvalFeedbackCharsMax = resultReportCharsMax / 2;
+
+/** A character no retained report carries: a control character, which a key truncates at or a reader cannot see. */
+const reportControlCharacter = /\p{Cc}/u;
+
+/**
+ * Whether text is feedback an approval's answer may carry: well formed, not blank, within its bound, and free of what a report refuses.
+ * The stored report is held to the same characters, so feedback admitted here is never refused when the verdict is written.
+ */
+export function isApprovalFeedback(value: string): boolean {
+  return (
+    isBoundedText(value, approvalFeedbackCharsMax) &&
+    /\S/u.test(value) &&
+    !reportControlCharacter.test(value)
+  );
+}
+
+/**
  * The first manifest schema version whose result carries a summary at all, below
  * which a reader has none to draw rather than an empty one.
  */

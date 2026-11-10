@@ -957,6 +957,19 @@ export const programSkipsPlannedEvaluationsCode =
   "ProgramSkipsPlannedEvaluations";
 
 /**
+ * What a resolution of a native action is answered with when nothing is accepted.
+ * An agent or a session never answers an evaluation approval, a reader its approvers do not name may not, only that kind takes feedback, and its `Reject` needs some.
+ */
+export const nativeActionAnswerRefusalCodes = [
+  "ApproverNotAPerson",
+  "NotAnApprover",
+  "FeedbackNotAsked",
+  "RejectionWithoutFeedback",
+] as const;
+export type NativeActionAnswerRefusalCode =
+  (typeof nativeActionAnswerRefusalCodes)[number];
+
+/**
  * What the project-artifact routes answer while the store cannot, and what the
  * message door answers when it cannot ask the store whether an image it was
  * named is the project's. Shared so a console can say an image was the reason.

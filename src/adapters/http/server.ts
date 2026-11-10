@@ -1017,12 +1017,17 @@ function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
     nativeHttpEndpoints.inbox,
     (request, principal, partition) => {
       const query = nativeHttpEndpoints.inbox.query.parse(request.query);
-      return inbox.read(principal, partition, {
-        ...(query.cursor === undefined
-          ? {}
-          : { after: parseTicketActivityCursor(query.cursor, partition) }),
-        limit: query.limit,
-      });
+      return inbox.read(
+        principal,
+        partition,
+        {
+          ...(query.cursor === undefined
+            ? {}
+            : { after: parseTicketActivityCursor(query.cursor, partition) }),
+          limit: query.limit,
+        },
+        request.viaSession,
+      );
     },
     inboxResponse,
   );
@@ -1185,23 +1190,29 @@ function registerNativeActions(
       principalOf(request),
       partitionOf(request),
       asTicketIdField(params, "ticket"),
+      request.viaSession,
     );
     nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
   app.get(`${root}/native-actions`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
     const partition = partitionOf(request);
-    const result = await web.nativeActions(principalOf(request), partition, {
-      ...(query["cursor"] === undefined
-        ? {}
-        : {
-            after: parseNativeActionCursor(
-              textField(query, "cursor"),
-              partition,
-            ),
-          }),
-      limit: integerField(query, "limit", 50),
-    });
+    const result = await web.nativeActions(
+      principalOf(request),
+      partition,
+      {
+        ...(query["cursor"] === undefined
+          ? {}
+          : {
+              after: parseNativeActionCursor(
+                textField(query, "cursor"),
+                partition,
+              ),
+            }),
+        limit: integerField(query, "limit", 50),
+      },
+      request.viaSession,
+    );
     nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
 }

@@ -222,6 +222,10 @@ export interface CodesCopy {
   readonly "codes-mutation-not-admitted": Record<never, never>;
   readonly "codes-mutation-decided": Record<never, never>;
   readonly "codes-mutation-skips-evaluations": Record<never, never>;
+  readonly "codes-mutation-approver-not-a-person": Record<never, never>;
+  readonly "codes-mutation-not-an-approver": Record<never, never>;
+  readonly "codes-mutation-feedback-not-asked": Record<never, never>;
+  readonly "codes-mutation-rejection-without-feedback": Record<never, never>;
   readonly "codes-deferral-dispatch-backlog": Record<never, never>;
   readonly "codes-deferral-mailbox-full": Record<never, never>;
   readonly "codes-deferral-mailbox-unavailable": Record<never, never>;

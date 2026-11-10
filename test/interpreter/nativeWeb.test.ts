@@ -274,6 +274,10 @@ function readStore(calls: string[]): NativeReadStore {
       calls.push(`read:nativeActions:page:${String(query.limit)}`);
       return Promise.resolve({ actions: [] });
     },
+    nativeActionAsked: () => {
+      calls.push("read:nativeActionAsked");
+      return Promise.resolve({ kind: "TicketEscalation" as const });
+    },
   };
 }
 
