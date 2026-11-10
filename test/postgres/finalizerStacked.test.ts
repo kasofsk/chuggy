@@ -8,6 +8,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import type { FinalizationClaim } from "../../src/interpreter/finalizer.ts";
 import { recordStackBeneathNobody } from "./evaluationStackLandings.ts";
 import {
   finalizerBriefLanding,
@@ -32,6 +34,14 @@ before(async () => {
 after(async () => {
   await rig.close();
 });
+
+/** The part of a claim the re-check count reads. */
+function claimOf(project: FinalizerProject): FinalizationClaim {
+  return {
+    partition: project.partition,
+    ticket: project.ticket,
+  } as FinalizationClaim;
+}
 
 /** A Stacked ticket whose worker published one commit, with the reference moved once by the ticket beneath it. */
 async function stackedAfterBeneath(label: string): Promise<{
@@ -119,6 +129,11 @@ test("directLandingInvalidatesAStack: a landing after the stack was minted gives
   assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(attempts[0]?.["recheck_commit"], worked);
   assert.equal(attempts[0]?.["candidate_commit"], null);
+  assert.equal(
+    await postgresFinalizer(rig.pool).ticketRecheckFailures(claimOf(project)),
+    0,
+    "a re-check forced by a stack that stopped standing is not counted",
+  );
 });
 
 test("a stacked ticket evaluated over no stack lands as a serialized one does, sent back where the reference moved past its commit", async () => {
@@ -134,4 +149,9 @@ test("a stacked ticket evaluated over no stack lands as a serialized one does, s
   const [attempt] = await attemptsOf(project);
   assert.equal(attempt?.["failure_kind"], "RecheckRequired");
   assert.equal(attempt?.["recheck_commit"], worked);
+  assert.equal(
+    await postgresFinalizer(rig.pool).ticketRecheckFailures(claimOf(project)),
+    1,
+    "a re-check forced by the target having moved is counted",
+  );
 });
