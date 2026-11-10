@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
 import {
@@ -37,7 +38,10 @@ import {
   recordStack,
   stackedSubject,
 } from "./evaluationStackLandings.ts";
-import { postgresHarnessRolePool } from "./harness.ts";
+import {
+  postgresHarnessAdvisoryWaiting,
+  postgresHarnessRolePool,
+} from "./harness.ts";
 
 let rig: FinalizerRig;
 let servicePool: pg.Pool;
@@ -170,7 +174,8 @@ test("a cycle is prepared under a lock keyed on it, so a record and a decision n
       .finally(() => {
         settled = true;
       });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    while (!settled && !(await postgresHarnessAdvisoryWaiting(rig.harness)))
+      await delay(10);
     assert.equal(settled, false, "a preparation waits on one in flight");
     await holder.query("COMMIT");
     assert.equal(await waiting, "Written");

@@ -1198,26 +1198,29 @@ async function finalizerIntegratePrepared(
 }
 
 /**
- * Records the send-back a serialized landing gets when the target moved past
- * the commit it evaluated, naming that commit for the work cycle to re-report,
- * unless the ticket has already been sent back as often as its bound allows.
- * Nothing is merged, so the commit that lands is the commit that was evaluated.
+ * Records the send-back a landing gets when the target moved past the commit
+ * it evaluated, naming that commit for the work cycle to re-report and merging
+ * nothing. A counted send-back holds instead once the ticket has been sent back
+ * as often as its bound allows, and one from a stacked cycle is not counted.
  */
 async function finalizerRecheckRequired(
   service: FinalizerService,
   subject: FinalizerPreparation,
   target: ObservedTarget,
   accepted: GitObjectId,
+  counted: "Counted" | "Uncounted",
   tally: FinalizerTally,
 ): Promise<void> {
-  const config = checkedFinalizerConfig(service.config);
-  const rework = finalizationRecheckRework(
-    await service.store.ticketRecheckFailures(subject.view.claim),
-    config.recheckReworksMax,
-  );
-  if (rework.rework === "Hold") {
-    finalizerHold(service, tally, rework.hold);
-    return;
+  if (counted === "Counted") {
+    const config = checkedFinalizerConfig(service.config);
+    const rework = finalizationRecheckRework(
+      await service.store.ticketRecheckFailures(subject.view.claim),
+      config.recheckReworksMax,
+    );
+    if (rework.rework === "Hold") {
+      finalizerHold(service, tally, rework.hold);
+      return;
+    }
   }
   await finalizerRecordAttempt(
     service,
@@ -1261,7 +1264,14 @@ async function finalizerContainedPrepared(
       );
       return;
     case "Uncontained":
-      await finalizerRecheckRequired(service, subject, target, accepted, tally);
+      await finalizerRecheckRequired(
+        service,
+        subject,
+        target,
+        accepted,
+        "Counted",
+        tally,
+      );
       return;
     case "Unread":
       finalizerHold(service, tally, "IntegrationUnanswered");
@@ -1301,7 +1311,14 @@ async function finalizerStackedPrepared(
     integrated.integrated === "Candidate" &&
     integrated.tree !== stack.stackTree
   ) {
-    await finalizerRecheckRequired(service, subject, target, accepted, tally);
+    await finalizerRecheckRequired(
+      service,
+      subject,
+      target,
+      accepted,
+      "Uncounted",
+      tally,
+    );
     return;
   }
   await finalizerIntegrated(
@@ -2400,6 +2417,7 @@ async function finalizerProposalMergeRechecked(
     gathered.subject,
     target,
     gathered.handoff.source.commit,
+    "Uncounted",
     tally,
   );
 }
