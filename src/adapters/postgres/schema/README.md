@@ -464,8 +464,8 @@ their next open until they are under it.
 the lead's offering, and who set it; an inquiry runs where the lead does.
 Owned by the boundary owner, which is what `set_project_session_placement`
 runs as; the API role writes it through that door alone, and every reader
-reaches it through `session_route` and `session_lead_offering`. Its key and
-identity are `(tenant, project)` and it points at `project`. It is changed by
+reaches it through `session_route`, `session_lead_offering` and
+`stored_lead_offering`. Its key and identity are `(tenant, project)` and it points at `project`. It is changed by
 that door alone, which answers `Unchanged` and keeps the setter where nothing
 moved; a row backfilled for a project that ran before it names no setter.
 `project_session_placement_subsidized_lead_is_in_cluster` holds a `Subsidized`
