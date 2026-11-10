@@ -12,6 +12,7 @@ import type {
   DraftResponse,
   DispatchViewResponse,
   ExecutionsResponse,
+  LandingQueuesResponse,
   LeadReadResponse,
   TicketNativeActionsResponse,
   TicketResponse,
@@ -34,6 +35,8 @@ export interface TicketReads {
   readonly leadState: PanelState<LeadReadResponse>;
   readonly deliveryState: TicketDeliveryState;
   readonly landingsState: TicketLandingsState;
+  /** The project's landing queues, nothing while the read is out or failed. */
+  readonly queues: LandingQueuesResponse | undefined;
 }
 
 export function readValue<T>(state: PanelState<T>): T | undefined {

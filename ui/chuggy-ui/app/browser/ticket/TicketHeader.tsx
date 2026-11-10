@@ -1,6 +1,7 @@
 /**
  * The head of every tab of the ticket page: the title with its number, the
- * epics it belongs to, the state label and the one fragment beside it, the actions, and the tabs. Once
+ * epics it belongs to, the state label and the one fragment beside it, its
+ * place in a landing queue where it holds one, the actions, and the tabs. Once
  * the header has scrolled out of view, a thin bar holding the small label and
  * the title sticks to the top of the page in its place.
  */
@@ -10,10 +11,12 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import type {
   TicketHeaderFragment,
   TicketStateStanding,
 } from "../../core/ticketHeader.ts";
+import { LandingQueueChip } from "./LandingQueueChip.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
@@ -125,6 +128,7 @@ export function TicketHeader(props: {
   readonly title: string;
   readonly standing: TicketStateStanding;
   readonly fragment: TicketHeaderFragment;
+  readonly queued?: LandingQueuePlace | undefined;
   readonly nowMs: number;
   readonly epics: ReactNode;
   readonly actions: ReactNode;
@@ -144,6 +148,7 @@ export function TicketHeader(props: {
             fragment={props.fragment}
             nowMs={props.nowMs}
           />
+          <LandingQueueChip place={props.queued} />
         </div>
         {props.actions}
       </div>

@@ -10,6 +10,7 @@ import type {
   EpicGraphResponse,
   EpicHistoryResponse,
   EpicViewResponse,
+  LandingQueuesResponse,
 } from "../../../../../src/contract/responses.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import type { ProjectTicketRows } from "../../core/projectTicketPages.ts";
@@ -26,6 +27,8 @@ export interface EpicPageHeld {
   readonly rowsState: PanelState<ProjectTicketRows>;
   /** The emails a member row draws its creator by. */
   readonly creatorEmails: ReadonlyMap<string, string>;
+  /** The project's landing queues, nothing while the read is out or failed. */
+  readonly queues: LandingQueuesResponse | undefined;
   /** Whether this reader may revise the epic. */
   readonly writing: boolean;
   readonly nowMs: number;

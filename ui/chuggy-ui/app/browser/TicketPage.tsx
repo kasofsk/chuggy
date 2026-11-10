@@ -24,6 +24,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
+import { landingQueuePlaceOf } from "../core/landingQueues.ts";
 import { ticketLandingsHeld } from "../core/ticketLandings.ts";
 import {
   parkedOverridesFence,
@@ -78,6 +79,7 @@ import {
 } from "./ticket/TicketDraft.tsx";
 import type { TicketDraftDeletion } from "./ticket/TicketDraft.tsx";
 import { TicketHeader, TicketTabs } from "./ticket/TicketHeader.tsx";
+import { useLandingQueues } from "./ticket/LandingQueueChip.tsx";
 import { useTicketLandings } from "./ticket/TicketLandings.tsx";
 import { useTicketExecutions } from "./ticket/TicketRuns.tsx";
 import {
@@ -270,6 +272,7 @@ function TicketStandingHeader(props: {
         },
         text,
       )}
+      queued={landingQueuePlaceOf(held.reads.queues, held.ticket)}
       nowMs={held.nowMs}
       actions={<TicketHeaderActions {...props.actions} />}
       epics={<EpicChips partition={held.partition} epics={ticket.epics} />}
@@ -441,6 +444,7 @@ function TicketPageOf(props: {
   const leadState = useLead(partition);
   const deliveryState = useTicketDelivery(partition, ticket);
   const landingsState = useTicketLandings(partition, ticket);
+  const queues = useLandingQueues(partition);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
     return <TicketPageNotFound />;
   const reads: TicketReads = {
@@ -453,6 +457,7 @@ function TicketPageOf(props: {
     leadState,
     deliveryState,
     landingsState,
+    queues,
   };
   if (unreleased !== undefined)
     return (

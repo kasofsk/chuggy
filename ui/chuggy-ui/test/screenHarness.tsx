@@ -95,6 +95,9 @@ export const ticketLandedNowhere = {
 /** What the read of a ticket's landings answers for one that has had none. */
 export const ticketLandingsNone = { landings: [], truncated: false };
 
+/** What the read of a project's landing queues answers where no ticket queues. */
+export const landingQueuesNone = { queues: [], truncated: false };
+
 /**
  * The API as a case scripts it: every submission accepted and remembered, the
  * operation route answering one standing, a ticket's action reach answering
@@ -106,6 +109,8 @@ export function apiDouble(served: {
   readonly route: (url: string) => Response | Promise<Response>;
   readonly reach?: (url: string) => Response | Promise<Response>;
   readonly landings?: (url: string) => Response | Promise<Response>;
+  /** The project's landing queues, none unless a case names some. */
+  readonly queues?: (url: string) => Response | Promise<Response>;
 }): ApiDouble {
   let submissions = 0;
   let submitted: unknown;
@@ -123,6 +128,8 @@ export function apiDouble(served: {
       return served.reach?.(url) ?? answer(ticketLandedNowhere);
     if (url.includes("/landings"))
       return served.landings?.(url) ?? answer(ticketLandingsNone);
+    if (url.includes("/landing-queues"))
+      return served.queues?.(url) ?? answer(landingQueuesNone);
     return served.route(url);
   };
   return {

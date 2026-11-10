@@ -535,6 +535,13 @@
     vertical-align: -0.125em;
   }
 
+  /* A place in a landing queue: the merge mark and its figure, as wide as
+     its figure whatever row or header it stands in. */
+  .landing-queue-chip {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+
   .ticket-header-actions {
     display: flex;
     flex-wrap: wrap;

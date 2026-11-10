@@ -24,6 +24,7 @@ import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import { usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
+import { useLandingQueues } from "./ticket/LandingQueueChip.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { EpicHeader } from "./epic/EpicHeader.tsx";
 import { EpicPageHeldProvider } from "./epic/EpicPageHeld.tsx";
@@ -76,6 +77,7 @@ function EpicPageOf(props: {
     ticketRowsQuery(partition, ticketListAskDefault),
   );
   const creatorEmails = useCreatorEmails(partition);
+  const queues = useLandingQueues(partition);
   const writing = !projectAbilityRefused(
     useProjectAbilities(partition),
     "writeEpic",
@@ -98,6 +100,7 @@ function EpicPageOf(props: {
     historyState,
     rowsState,
     creatorEmails,
+    queues,
     writing,
     nowMs,
   };
