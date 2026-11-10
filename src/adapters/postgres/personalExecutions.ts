@@ -23,6 +23,17 @@
  * benches the credential it hands the job, which is what keeps the job's
  * usage limit off that account.
  *
+ * A RUNNER ADVERTISING ITS AGENTS IS OFFERED ONLY THE AGENTS IT NAMES, which is
+ * the model's `agentOffered` and `worker_pool_agent_offered`: one whose poll
+ * named a release reading `workerContractRunnerAgents` takes an attempt whose
+ * agent is NULL, as a command stage's is, or whose `Agent:` token its
+ * capabilities name, and any other runner takes every agent. What it names is
+ * what its newest poll advertised, so an answer that claims a job of an agent
+ * and, in the same answer, stops the job that benched that agent's last
+ * credential offers it before the runner can leave the agent out: the runner
+ * runs it on the credential whose bench ends soonest, the run may fail once,
+ * and its next poll advertises what it takes.
+ *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
  * runner's current one and its project to be on the allowlist, so a project
@@ -86,7 +97,7 @@ export async function personalExecutionClaimed(
           AND x.placement='Pool' AND x.status='Launching'
           AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
-          AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND worker_pool_inventory_matches(x.requirement_value,r.capabilities) AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised)
           AND (r.memory_ceiling_mib IS NULL
                OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
           AND (${room}::bigint IS NULL
@@ -154,7 +165,7 @@ export async function personalExecutionWaiting(
           AND x.placement='Pool' AND x.status='Launching'
           AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
-          AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND worker_pool_inventory_matches(x.requirement_value,r.capabilities) AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised)
           AND (r.memory_ceiling_mib IS NULL
                OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
           AND (${room}::bigint IS NULL

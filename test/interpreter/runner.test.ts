@@ -292,6 +292,7 @@ const runnerGuards = [
   "placementOutcome",
   "inventoryMatches",
   "sizeFits",
+  "agentOffered",
   "policyAllows",
   "policyConfigures",
   "sessionIsCurrent",
@@ -326,6 +327,7 @@ const runnerOutcome = {
     "sessionHasSlot(s.sessions.get(rid))",
     "inventoryMatches(p.requirement, s.sessions.get(rid).inventory)",
     "sizeFits(p, s.sessions.get(rid).inventory)",
+    "agentOffered(p, s.sessions.get(rid).inventory)",
   ],
 };
 

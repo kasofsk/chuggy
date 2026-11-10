@@ -11,6 +11,7 @@ module mc_registered_runner {
     executionCapabilities: Set(
       "Agent:Claude", "Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
     memoryCeiling: Unbounded,
+    agentsAdvertised: false,
     revision: 1
   }
   pure val changedInventory: CapabilityInventory = {
@@ -19,6 +20,11 @@ module mc_registered_runner {
   /// Every capability of `inventory` under a ceiling below each execution's size.
   pure val smallInventory: CapabilityInventory = {
     ...inventory, memoryCeiling: CeilingMib(2048), revision: 3
+  }
+  /// Every capability of `inventory` but Claude, advertised as the agents it takes.
+  pure val benchedInventory: CapabilityInventory = {
+    ...inventory, executionCapabilities: Set("Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
+    agentsAdvertised: true, revision: 4
   }
   pure val profile: ExecutionProfile = {
     route: RegisteredRunner, personalRunnerAllowed: true, minimumTrust: 1,
@@ -45,7 +51,8 @@ module mc_registered_runner {
     executions: profiles.keys().mapBy(id => execution(id)),
     placements: profiles.keys().mapBy(id => { execution: id, attemptGeneration: 1,
       requirement: requirement, profile: profiles.get(id), requirementIdentity: id,
-      requirementDigest: 101, memoryMib: 4096, phase: Waiting }),
+      requirementDigest: 101, memoryMib: 4096,
+      agent: if (id == 2) AgentUnnamed else AgentNamed("Agent:Claude"), phase: Waiting }),
     runners: Map(1 -> owners, 2 -> dedicated),
     sessions: Map(1 -> session(1), 2 -> session(2)),
     assignments: Map()
@@ -78,11 +85,13 @@ module mc_registered_runner {
     s.runners.keys().exists(o => ownedBy(s, id, o))
   }
   /// Whether binding would give a non-Personal runner an execution while one
-  /// of its owner's runners for it takes new work under a current session.
+  /// of its owner's runners for it takes new work, and the execution's agent,
+  /// under a current session.
   pure def bindsPastLiveOwner(s: RunnerState, id: int, rid: int): bool = and {
     s.runners.get(rid).class != Personal,
     s.runners.keys().exists(o => and {
       ownedBy(s, id, o), not(s.runners.get(o).draining),
+      agentOffered(s.placements.get(id), s.runners.get(o).retainedInventory),
       if (s.sessions.keys().contains(o)) sessionIsCurrent(s.runners.get(o), s.sessions.get(o)) else false
     })
   }
@@ -94,7 +103,7 @@ module mc_registered_runner {
   /// runner took the work, and nothing after the binding undoes it.
   var boundPastStrictOwner: bool
   /// Whether some binding gave a non-Personal runner an execution while one of
-  /// its owner's runners for it was live.
+  /// its owner's runners for it was live and took its agent.
   var boundPastLiveOwner: bool
   action ghostsKept = all { boundPastStrictOwner' = boundPastStrictOwner, boundPastLiveOwner' = boundPastLiveOwner }
   action init = all {
@@ -128,7 +137,7 @@ module mc_registered_runner {
   action takeover = nondet rid = runnerState.runners.keys().oneOf()
     all {
       runnerState.runners.get(rid).sessionGeneration < 3,
-      nondet nextInventory = Set(inventory, changedInventory, smallInventory).oneOf()
+      nondet nextInventory = Set(inventory, changedInventory, smallInventory, benchedInventory).oneOf()
       runnerState' = takeOver(runnerState, rid, nextInventory, 1),
       ghostsKept
     }

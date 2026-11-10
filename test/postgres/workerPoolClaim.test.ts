@@ -46,6 +46,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
+import type { AccountAgent } from "../../src/contract/rosters.ts";
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
@@ -232,6 +233,8 @@ function othersUnplanted(c: RunnerCase): string | undefined {
   for (const other of c.others) {
     if (other.pool.class === "Personal" && !runnerOwned(other.pool))
       return "a personal pool owning nothing beside the case's is no member's runner";
+    if (!runnerOwned(other.pool) && other.pool.agentsAdvertised)
+      return "a project's pool beside the case's advertises no agents";
     const policy = policyUnplanted(other.pool);
     if (policy.length > 0)
       return `the pool beside the case's varies ${policy.join(", ")}, which no row carries`;
@@ -262,6 +265,8 @@ function inexpressible(c: RunnerCase): string | undefined {
   const policy = policyUnplanted(c.pool);
   if (policy.length > 0)
     return `the registry has no column for ${policy.join(", ")}, which every pool holds as registered`;
+  if (!runnerOwned(c.pool) && c.pool.agentsAdvertised)
+    return "the registry has no column for the agents a project's pool advertises, which it never does";
   if (runnerOwned(c.pool)) {
     const reason = runnerUnplanted(
       { pool: c.pool, session: c.session },
@@ -383,6 +388,50 @@ interface Owned {
 
 const unowned: Owned = { owner: null, fallback: null };
 
+/** An invocation whose worker spends each agent, Claude by the bare arguments that predate modes too, or none where it runs commands. */
+const spending = {
+  Claude: {
+    ...schedulerInvocation,
+    worker: {
+      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+      setup: [],
+      files: [],
+    },
+  },
+  Codex: {
+    ...schedulerInvocation,
+    worker: {
+      mode: {
+        type: "SingleAgent",
+        agent: "Codex",
+        arguments: [],
+        model: "model",
+      },
+      setup: [],
+      files: [],
+    },
+  },
+  BareArguments: {
+    ...schedulerInvocation,
+    worker: { arguments: ["--verbose"], setup: [], files: [] },
+  },
+  Commands: {
+    ...schedulerInvocation,
+    worker: {
+      mode: { type: "Commands", commands: ["just check"] },
+      setup: [],
+      files: [],
+    },
+  },
+} as const satisfies Record<string, WorkTaskInvocation>;
+
+/** The invocation an attempt running `agent` is invoked with, or one running commands where it runs none. */
+function invocationRunning(
+  agent: AccountAgent | undefined,
+): WorkTaskInvocation {
+  return agent === undefined ? spending.Commands : spending[agent];
+}
+
 /** The next execution admitted and opened as an attempt, invoked with `invocation` unless that is null, marked for a pool unless `inCluster`, and owned as `owned` says. */
 async function opened(
   project: SchedulerProject,
@@ -487,22 +536,24 @@ async function plantedRunner(
     live ? polledSecsAgo : undefined,
     allowed.map((project) => project.project),
     pool.memoryCeilingMib,
+    pool.agentsAdvertised,
   );
   return identity;
 }
 
-/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise, under `memoryCeilingMib` where that is named. */
+/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise, under `memoryCeilingMib` where that is named, and advertising its agents where `agentsAdvertised` says so. */
 async function plantedRunnerRows(
   identity: PersonalPlaneIdentity,
   capabilities: readonly string[],
   polledSecsAgo: number | undefined,
   allowlist: readonly ProjectId[],
   memoryCeilingMib?: number,
+  agentsAdvertised = false,
 ): Promise<void> {
   await rig.harness.query(
-    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at,memory_ceiling_mib)
+    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at,memory_ceiling_mib,agents_advertised)
       VALUES($1,$2,$3,$4,$5,
-        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END,$8)`,
+        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END,$8,$9)`,
     [
       identity.tenant,
       identity.owner,
@@ -512,6 +563,7 @@ async function plantedRunnerRows(
       polledSecsAgo !== undefined,
       polledSecsAgo ?? 0,
       memoryCeilingMib ?? null,
+      agentsAdvertised,
     ],
   );
   for (const project of allowlist)
@@ -733,6 +785,7 @@ async function plantedTarget(
     named.project,
     c.placement.route === "InCluster",
     owned,
+    invocationRunning(c.placement.agent),
   );
   if (c.placement.phase === "Assigned")
     await claimedBy(pools.other, `assigned-${randomUUID()}`);
@@ -1621,39 +1674,6 @@ test("a capability requirement names no image, and its pod runs the pool's own",
   assert.equal(await podImage(assignment), site.image);
 });
 
-/** An invocation whose worker spends each agent, or none where it runs commands. */
-const spending = {
-  Claude: {
-    ...schedulerInvocation,
-    worker: {
-      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-      setup: [],
-      files: [],
-    },
-  },
-  Codex: {
-    ...schedulerInvocation,
-    worker: {
-      mode: {
-        type: "SingleAgent",
-        agent: "Codex",
-        arguments: [],
-        model: "model",
-      },
-      setup: [],
-      files: [],
-    },
-  },
-  Commands: {
-    ...schedulerInvocation,
-    worker: {
-      mode: { type: "Commands", commands: ["just check"] },
-      setup: [],
-      files: [],
-    },
-  },
-} as const satisfies Record<string, WorkTaskInvocation>;
-
 /** A limit whose reset is ahead, which pauses an agent until a reading after it or a press. */
 const limited: AgentAccountHarnessState = {
   limit: { observedSecs: -60, resetsSecs: 3600 },
@@ -1907,3 +1927,143 @@ test("of a member's runner and a pool they registered claiming at once, one pres
     [true, false],
   );
 });
+
+/** `runner` as its poll names `agents` among its capabilities beside `pinned`'s platform, advertising them as the agents it takes where `advertised` says so. */
+async function runnerAdvertised(
+  runner: PersonalPlaneIdentity,
+  agents: readonly string[],
+  advertised: boolean,
+): Promise<void> {
+  await postgresWorkerPoolRunners(planePool).named(
+    runner,
+    undefined,
+    [workerPoolPlatformToken(pinned), ...agents],
+    undefined,
+    advertised,
+  );
+}
+
+/** A member's live runner of `project`, naming `pinned`'s platform alone until a poll names more. */
+async function advertisingRunner(
+  project: SchedulerProject,
+  label: string,
+  member: Principal,
+): Promise<PersonalPlaneIdentity> {
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner: member,
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(runner, [workerPoolPlatformToken(pinned)], 0, [
+    project.partition.project,
+  ]);
+  return runner;
+}
+
+for (const [why, agents, advertised, taken] of [
+  [
+    "advertising Codex alone takes Codex's job and the command's",
+    ["Agent:Codex"],
+    true,
+    ["Codex", null, undefined],
+  ],
+  [
+    "advertising no agent takes the command's job alone",
+    [],
+    true,
+    [null, undefined],
+  ],
+  [
+    "advertising both agents takes every job",
+    ["Agent:Claude", "Agent:Codex"],
+    true,
+    ["Claude", "Codex", null, "Claude", undefined],
+  ],
+  [
+    "of an earlier release naming Codex alone takes every job",
+    ["Agent:Codex"],
+    false,
+    ["Claude", "Codex", null, "Claude", undefined],
+  ],
+] as const)
+  test(`a runner ${why}, a job of bare arguments being Claude's, the probe answering each claim`, async () => {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const label = `claim-agents-${randomUUID().slice(0, 8)}`;
+    const project = await releasedUnder(label, pinned, 4);
+    for (const invocation of [
+      spending.Claude,
+      spending.Codex,
+      spending.Commands,
+      spending.BareArguments,
+    ])
+      await opened(
+        project,
+        false,
+        { owner: member, fallback: "Strict" },
+        invocation,
+      );
+    const runner = await advertisingRunner(project, label, member);
+    await runnerAdvertised(runner, agents, advertised);
+    assert.deepEqual(
+      await claimedInTurn(runner, project.partition, taken.length),
+      taken,
+    );
+  });
+
+test("every poll writes afresh whether its runner advertises its agents, so a runner moved back to an earlier release is read as one", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const project = await releasedUnder("claim-agents-moved", pinned, 1);
+  await opened(
+    project,
+    false,
+    { owner: member, fallback: "Strict" },
+    spending.Claude,
+  );
+  const runner = await advertisingRunner(project, "claim-agents-moved", member);
+  const kept = async () =>
+    (
+      (await rig.harness.query(
+        `SELECT agents_advertised FROM personal_runner WHERE principal=$1`,
+        [runner.principal],
+      )) as readonly { agents_advertised: boolean }[]
+    ).map((row) => row.agents_advertised);
+  await runnerAdvertised(runner, ["Agent:Codex"], true);
+  assert.deepEqual(await kept(), [true]);
+  assert.equal(await takes(runner, project.partition), false);
+  await runnerAdvertised(runner, ["Agent:Codex"], false);
+  assert.deepEqual(await kept(), [false]);
+  assert.equal(await takes(runner, project.partition), true);
+});
+
+for (const fallback of ["Preferred", "Strict"] as const)
+  test(`a ${fallback} job whose owner's live runner leaves out its agent is ${fallback === "Preferred" ? "the pool's, and is deferred to the runner again once it advertises it" : "never the pool's, before or after the runner advertises it"}, each probe answering its claim`, async () => {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const label = `claim-agents-${fallback.toLowerCase()}`;
+    const project = await releasedUnder(label, pinned, 2);
+    const owned: Owned = { owner: member, fallback };
+    const pool = await pollingPool(project, label, pinned);
+    const runner = await advertisingRunner(project, label, member);
+    await runnerAdvertised(runner, ["Agent:Codex"], true);
+    await opened(project, false, owned, spending.Claude);
+    assert.equal(
+      await takes(pool, project.partition),
+      fallback === "Preferred",
+      "the runner leaves out Claude",
+    );
+    assert.equal(await takes(runner, project.partition), false);
+    await runnerAdvertised(runner, ["Agent:Claude", "Agent:Codex"], true);
+    await opened(project, false, owned, spending.Claude);
+    assert.equal(
+      await takes(pool, project.partition),
+      false,
+      "the runner advertises Claude again",
+    );
+    assert.deepEqual(
+      await claimedInTurn(runner, project.partition, 3),
+      fallback === "Preferred"
+        ? ["Claude", undefined, undefined]
+        : ["Claude", "Claude", undefined],
+      "the runner takes what waited for it",
+    );
+  });

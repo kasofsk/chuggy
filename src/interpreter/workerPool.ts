@@ -112,6 +112,7 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerAgents,
   workerContractRunnerCredentialOutcomes,
   workerContractRunnerJobsWaiting,
   workerContractRunnerProjects,
@@ -485,8 +486,11 @@ export interface WorkerPoolPollSettings {
  * Where what a caller's newest poll named is kept, under its current
  * registration alone: the runner, which a poll naming none keeps none of, so a
  * machine moved back to a runner too old to name itself is not shown as the
- * version it left; and the capabilities and the memory ceiling, which a poll
- * naming none leaves as they were recorded.
+ * version it left; the capabilities and the memory ceiling, which a poll
+ * naming none leaves as they were recorded; and, for a personal runner,
+ * whether those capabilities name exactly the agents it takes, which every
+ * poll writes afresh from its release, so a runner moved back to an earlier
+ * one is read as that one.
  */
 export interface WorkerPoolRunners {
   named(
@@ -494,6 +498,7 @@ export interface WorkerPoolRunners {
     runner: WorkerRunner | undefined,
     capabilities: readonly string[] | undefined,
     memoryCeilingMib?: number,
+    agentsAdvertised?: boolean,
   ): Promise<void>;
 }
 
@@ -948,7 +953,8 @@ async function workerPoolHoldingRead(
 
 /**
  * Records the runner this poll named, and the capabilities it has and the
- * memory ceiling it takes jobs under where it named them, and the poll as the
+ * memory ceiling it takes jobs under where it named them, whether a personal
+ * runner's release advertises its agents among them, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -971,6 +977,8 @@ async function workerPoolPollRecorded(
     asked.runner,
     asked.capabilities,
     asked.memoryCeilingMib,
+    identity.kind === "Personal" &&
+      contractVersionAccepted(workerContractRunnerAgents, asked.contract),
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (

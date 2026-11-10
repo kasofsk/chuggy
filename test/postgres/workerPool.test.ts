@@ -690,12 +690,12 @@ const poolPlaneColumns = [
   [
     "personal_runner",
     "SELECT",
-    "capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
+    "agents_advertised,capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
   ],
   [
     "personal_runner",
     "UPDATE",
-    "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+    "agents_advertised,capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
   ],
   ["personal_runner_project", "SELECT", "owner,project,tenant"],
   ["project", "SELECT", "lifecycle,project,tenant"],
@@ -723,8 +723,9 @@ const poolPlaneColumns = [
  * plane reads to do it; this is every other column the plane may touch, so an
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
- * liveness and the runner, capabilities and memory ceiling its poll named are
- * all of its row the plane writes, as a chat host's liveness and runner are of
+ * liveness and the runner, capabilities and memory ceiling its poll named,
+ * and whether a personal runner's capabilities advertise its agents, are all
+ * of its row the plane writes, as a chat host's liveness and runner are of
  * its, while a pool's registrant is the account its claims spend and a press
  * is read and spent by the claim it lets through, as a personal runner's
  * claim records whether it benches its credential, whose outcome is read off

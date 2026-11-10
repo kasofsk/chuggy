@@ -1,8 +1,8 @@
 /**
  * The cases a worker pool's assignment guard is held to, restated from
  * `model/tests/runner_test.qnt` for a pool: every run there that exercises
- * `canAssign`, `placementOutcome`, `inventoryMatches`, `sizeFits` or
- * `policyAllows`, and
+ * `canAssign`, `placementOutcome`, `inventoryMatches`, `sizeFits`,
+ * `agentOffered` or `policyAllows`, and
  * for each term those guards conjoin a case in which that term refuses the
  * assignment.
  *
@@ -19,6 +19,10 @@
  * A CASE IS ONE POOL BESIDE THE OTHERS REGISTERED WITH IT, since an owner's
  * fallback reads the owner's personal pools; the guard is asked of the case's
  * pool, and the outcome of all of them.
+ *
+ * AN EXECUTION'S AGENT IS CLAUDE unless a case names another or none, as an
+ * execution's attempt runs one; no pool advertises its agents unless a case
+ * says so, as a project's pool never does.
  *
  * A CONTAINER MATCHES A CAPABILITY SUBSET VACUOUSLY, since it carries no
  * capabilities. So the table refuses a container to a pool that declares
@@ -87,7 +91,7 @@ export const runnerTerm = {
   slot: "s.slotsUsed < s.slotsOffered",
   fallback:
     "r.class == Personal or p.profile.ownerFallback == Preferred or ownerRunners(s, e, p).size() == 0",
-  live: "r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)))",
+  live: "r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)) or not(agentOffered(p, s.runners.get(o).retainedInventory)))",
   containerPlatform:
     "ContainerRequirement: i.platforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
   capabilityPlatform:
@@ -95,6 +99,8 @@ export const runnerTerm = {
   capabilitySubset:
     "CapabilityRequirement: c.capabilities.subseteq(i.executionCapabilities)",
   size: "CeilingMib: p.memoryMib <= m",
+  agent:
+    "AgentNamed: not(i.agentsAdvertised) or i.executionCapabilities.contains(a)",
 } as const;
 
 const partition: Partition = {
@@ -124,6 +130,7 @@ const placement: WorkerPoolPlacement = {
   route: "Pool",
   demand: workerPoolDemandRouted,
   memoryMib: 4_096,
+  agent: "Claude",
 };
 
 const pool: WorkerPoolRunner = {
@@ -135,6 +142,7 @@ const pool: WorkerPoolRunner = {
   ...workerPoolPolicyRegistered,
   capabilities: ["Platform:Linux:Amd64", "Agent:Claude", "Agent:Codex"],
   memoryCeilingMib: undefined,
+  agentsAdvertised: false,
 };
 
 const session: WorkerPoolSession = {
@@ -223,6 +231,76 @@ function ownersPoolRegistered(
 ): WorkerPoolEnrolment {
   return { ...ownersPool, pool: { ...ownersPool.pool, ...varied } };
 }
+
+/** `owner`'s personal pool advertising `agents` as the ones it takes, beside its platform. */
+function advertising(agents: readonly string[]): WorkerPoolRunner {
+  return {
+    ...personal,
+    capabilities: ["Platform:Linux:Amd64", ...agents],
+    agentsAdvertised: true,
+  };
+}
+
+/** `ownersPool` advertising `agents` as the ones it takes. */
+function ownersPoolAdvertising(agents: readonly string[]): WorkerPoolEnrolment {
+  return {
+    ...ownersPool,
+    pool: {
+      ...advertising(agents),
+      pool: "pool-owner",
+      principal: ownersPoolPrincipal,
+    },
+  };
+}
+
+const assignedByAgent: readonly RunnerCase[] = [
+  {
+    ...assignable,
+    name: "a personal pool advertising Codex alone is assigned its owner's Codex execution",
+    model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
+    pool: advertising(["Agent:Codex"]),
+    placement: { ...owned, agent: "Codex" },
+  },
+  {
+    ...assignable,
+    name: "a personal pool advertising no agent is assigned its owner's execution running commands",
+    model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
+    pool: advertising([]),
+    placement: { ...owned, agent: undefined },
+  },
+  {
+    ...assignable,
+    name: "a personal pool advertising both agents is assigned its owner's Claude execution",
+    model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
+    pool: advertising(["Agent:Claude", "Agent:Codex"]),
+    placement: owned,
+  },
+  {
+    ...assignable,
+    name: "a personal pool advertising both agents is assigned its owner's Codex execution",
+    model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
+    pool: advertising(["Agent:Claude", "Agent:Codex"]),
+    placement: { ...owned, agent: "Codex" },
+  },
+  {
+    ...assignable,
+    name: "a personal pool not advertising its agents is assigned its owner's Claude execution while it names Codex alone",
+    model: "runnerNotAdvertisingAgentsTakesAnyAgentTest",
+    pool: {
+      ...personal,
+      capabilities: ["Platform:Linux:Amd64", "Agent:Codex"],
+    },
+    placement: owned,
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned an owner's Claude execution while the owner's polling personal pool advertises Codex alone",
+    model:
+      "preferredFallbackTakesDedicatedWhileOwnerRunnerLeavesOutItsAgentTest",
+    others: [ownersPoolAdvertising(["Agent:Codex"])],
+    placement: owned,
+  },
+];
 
 const assigned: readonly RunnerCase[] = [
   {
@@ -594,6 +672,59 @@ const refusedByFallback: readonly RunnerCase[] = [
   ),
 ];
 
+const refusedByAgent: readonly RunnerCase[] = [
+  refused(
+    "a personal pool advertising Codex alone is assigned nothing of its owner's Claude execution, which is unavailable",
+    [runnerTerm.agent],
+    "Unavailable",
+    {
+      model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
+      pool: advertising(["Agent:Codex"]),
+      placement: owned,
+    },
+  ),
+  refused(
+    "a personal pool advertising no agent is assigned nothing of its owner's Codex execution",
+    [runnerTerm.agent],
+    "Unavailable",
+    {
+      model: "advertisingRunnerTakesOnlyTheAgentsItNamesTest",
+      pool: advertising([]),
+      placement: { ...owned, agent: "Codex" },
+    },
+  ),
+  refused(
+    "a dedicated pool is assigned nothing of an owner's whose polling personal pool advertises its agent again",
+    [runnerTerm.live],
+    "Placeable",
+    {
+      model:
+        "preferredFallbackTakesDedicatedWhileOwnerRunnerLeavesOutItsAgentTest",
+      others: [ownersPoolAdvertising(["Agent:Claude", "Agent:Codex"])],
+      placement: owned,
+    },
+  ),
+  refused(
+    "a dedicated pool is assigned nothing of an owner's running commands whose polling personal pool advertises no agent",
+    [runnerTerm.live],
+    "Placeable",
+    {
+      others: [ownersPoolAdvertising([])],
+      placement: { ...owned, agent: undefined },
+    },
+  ),
+  refused(
+    "a dedicated pool is assigned nothing of a strict owner's whose polling personal pool leaves out its agent, which is unavailable",
+    [runnerTerm.fallback],
+    "Unavailable",
+    {
+      model: "strictFallbackWaitsWhileOwnerRunnerLeavesOutItsAgentTest",
+      others: [ownersPoolAdvertising(["Agent:Codex"])],
+      placement: ownedStrict,
+    },
+  ),
+];
+
 const refusedBySession: readonly RunnerCase[] = [
   refused(
     "a registered pool making no poll is unavailable",
@@ -780,9 +911,11 @@ const refusedByInventory: readonly RunnerCase[] = [
 /** Every case, the assigned ones first. */
 export const runnerCases: readonly RunnerCase[] = [
   ...assigned,
+  ...assignedByAgent,
   ...refusedByPlacement,
   ...refusedByPolicy,
   ...refusedByFallback,
   ...refusedBySession,
   ...refusedByInventory,
+  ...refusedByAgent,
 ];
