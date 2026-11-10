@@ -75,6 +75,7 @@ import { repositoryLabel } from "../../core/projectRepositories.ts";
 import { configurationFollowings } from "../../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../../src/contract/configurationSelection.ts";
 import {
+  catalogWorkloadWorks,
   configurationCatalogSelected,
   configurationCatalogSelection,
   type ConfigurationCatalog,
@@ -613,7 +614,9 @@ function ticketYamlSelectionNames(
 ): readonly string[] {
   switch (field) {
     case "work":
-      return catalog.workloads.map((workload) => workload.name);
+      return catalog.workloads
+        .filter(catalogWorkloadWorks)
+        .map((workload) => workload.name);
     case "evaluation":
       return [...catalog.plans.keys()];
     case "finalization":

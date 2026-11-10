@@ -340,6 +340,7 @@ ticket-authoring-hint-evaluators = how many { -evaluator(form: "plural") } judge
 
 ticket-authoring-skeleton-default = { $default } where left out
 ticket-authoring-skeleton-in-place = in place of { $field }
+ticket-authoring-skeleton-approvers = { $developer } where left out, { $admin }, or the principals listed
 # spells -run: the verb
 ticket-authoring-placeholder-setup = a command run before the { -workload }
 ticket-authoring-placeholder-path = a path in the working directory
@@ -350,8 +351,10 @@ ticket-authoring-placeholder-credential = a credential it may mint
 ticket-authoring-placeholder-motivation = why the work matters
 ticket-authoring-placeholder-done = what done looks like
 ticket-authoring-placeholder-constraint = what it must not do
+ticket-authoring-placeholder-principal = a principal who may answer
+ticket-authoring-placeholder-instructions = what the approver is shown
 # spells -run: the verb
-ticket-authoring-workload-runner = how the { -workload } runs: { -agent(form: "a") } briefed with its prompt, or commands the worker runs itself
+ticket-authoring-workload-runner = how the { -workload } runs: { -agent(form: "a") } briefed with its prompt, or commands the worker runs itself; { -approval(form: "a") } stays one, and nothing else becomes one
 ticket-authoring-workload-purpose = what the { -workload } is as { -evaluator(form: "a") }; { $default } where left out
 ticket-authoring-workload-prompt = what the { -agent } is briefed with: a \`{ $path }\` to a prompt file the { -catalog } stores, or \`{ $text }\`
 ticket-authoring-workload-path = a prompt file the { -catalog } stores, read as the text its import stored
@@ -395,4 +398,6 @@ ticket-authoring-workload-capabilities = tokens { -runner(form: "a") }'s pool mu
 ticket-authoring-workload-resources = the CPU and memory the { -workload } is given
 ticket-authoring-workload-cpus = whole CPUs
 ticket-authoring-workload-memory = memory, in MiB
+ticket-authoring-workload-approvers = who may answer the { -approval }: { $developer } or { $admin } for everyone holding that permit, or the principals listed; { $developer } where left out
+ticket-authoring-workload-instructions = what the approver is shown
 `;

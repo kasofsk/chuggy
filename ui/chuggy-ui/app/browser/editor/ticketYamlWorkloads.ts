@@ -6,6 +6,9 @@
  * A FIELD NOT SET IS STILL SHOWN, as a comment, because the editor is where an
  * author learns what a workload may say: uncommenting a skeleton and filling
  * it in is how a field is overridden that the catalog left out.
+ *
+ * AN APPROVAL STAYS AN APPROVAL. A release refuses an override changing a
+ * runner to or from Approval, so nothing here offers either.
  */
 
 import {
@@ -14,6 +17,10 @@ import {
   allPracticeIds,
   workloadReevaluations,
 } from "../../../../../src/contract/configurationDocument.ts";
+import {
+  approvalRoles,
+  type WorkloadRunner,
+} from "../../../../../src/contract/rosters.ts";
 import {
   codexReasoningEfforts,
   filesystemAccesses,
@@ -40,18 +47,29 @@ const ticketYamlWorkloadSlots = {
   motivation: { id: "ticket-authoring-placeholder-motivation" },
   done: { id: "ticket-authoring-placeholder-done" },
   constraint: { id: "ticket-authoring-placeholder-constraint" },
+  approvers: {
+    id: "ticket-authoring-skeleton-approvers",
+    args: { developer: "Developer", admin: "Admin" },
+  },
+  principal: { id: "ticket-authoring-placeholder-principal" },
+  instructions: { id: "ticket-authoring-placeholder-instructions" },
 } as const satisfies Readonly<Record<string, Copy>>;
 
-/** Each field a workload may set and the commented skeleton shown where it does not, in the order the schema declares them. A skeleton's lines are code; `{slot}` is where its copy goes. */
+const agent: readonly WorkloadRunner[] = ["Agent"];
+const commands: readonly WorkloadRunner[] = ["Commands"];
+const worker: readonly WorkloadRunner[] = ["Agent", "Commands"];
+const approval: readonly WorkloadRunner[] = ["Approval"];
+
+/** Each field a workload may set, the runners that take it, and the commented skeleton shown where it does not, in the order the schema declares them. A skeleton's lines are code; `{slot}` is where its copy goes. */
 const ticketYamlWorkloadSkeletons: readonly (readonly [
   field: string,
-  runner: "Agent" | "Commands" | "Both",
+  runners: readonly WorkloadRunner[],
   skeleton: readonly string[],
 ])[] = [
-  ["purpose", "Agent", ["purpose: Check  # {purpose}"]],
+  ["purpose", agent, ["purpose: Check  # {purpose}"]],
   [
     "worker",
-    "Commands",
+    commands,
     [
       "worker:",
       "  setup:",
@@ -63,7 +81,7 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
   ],
   [
     "authority",
-    "Both",
+    worker,
     [
       "authority:",
       "  tools:",
@@ -75,15 +93,15 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
       "  mayCompleteTask: true",
     ],
   ],
-  ["framing", "Agent", ["framing: Chuggy"]],
+  ["framing", agent, ["framing: Chuggy"]],
   [
     "practices",
-    "Agent",
+    agent,
     ["practices:", ...allPracticeIds.map((id) => `  - ${id}`)],
   ],
   [
     "brief",
-    "Agent",
+    agent,
     [
       "brief:",
       "  motivation:",
@@ -94,11 +112,11 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
       "    - <{constraint}>",
     ],
   ],
-  ["reevaluate", "Both", ["reevaluate: OnChange  # {reevaluate}"]],
-  ["image", "Both", ["image: <registry/path:tag@sha256:digest>"]],
+  ["reevaluate", worker, ["reevaluate: OnChange  # {reevaluate}"]],
+  ["image", worker, ["image: <registry/path:tag@sha256:digest>"]],
   [
     "executionRequirement",
-    "Both",
+    worker,
     [
       "executionRequirement:",
       "  mode: Capability",
@@ -108,7 +126,9 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
       "    - Agent:Claude",
     ],
   ],
-  ["resources", "Both", ["resources:", "  cpus: 2", "  memoryMib: 4096"]],
+  ["resources", worker, ["resources:", "  cpus: 2", "  memoryMib: 4096"]],
+  ["approvers", approval, ["approvers:  # {approvers}", "  - <{principal}>"]],
+  ["instructions", approval, ["instructions: <{instructions}>"]],
 ];
 
 /** A skeleton's line with each slot filled in the reader's words. */
@@ -144,7 +164,7 @@ export function ticketYamlWorkloadUnset(
   );
   const lines = ticketYamlWorkloadSkeletons.flatMap(
     ([field, takes, written]) => {
-      if (takes !== "Both" && takes !== runner) return [];
+      if (!takes.some((taking) => taking === runner)) return [];
       if (ticketYamlWorkloadField(workload, field) !== undefined) return [];
       const skeleton = written.map((line) =>
         ticketYamlWorkloadFilled(line, text),
@@ -173,7 +193,7 @@ const ticketYamlWorkloadFields: readonly (readonly [
   hint: Copy,
   values?: readonly string[] | "PromptPaths",
 ])[] = [
-  ["runner", { id: "ticket-authoring-workload-runner" }, ["Agent", "Commands"]],
+  ["runner", { id: "ticket-authoring-workload-runner" }, worker],
   [
     "purpose",
     { id: "ticket-authoring-workload-purpose", args: { default: "Review" } },
@@ -253,6 +273,15 @@ const ticketYamlWorkloadFields: readonly (readonly [
   ["resources", { id: "ticket-authoring-workload-resources" }],
   ["cpus", { id: "ticket-authoring-workload-cpus" }],
   ["memoryMib", { id: "ticket-authoring-workload-memory" }],
+  [
+    "approvers",
+    {
+      id: "ticket-authoring-workload-approvers",
+      args: { developer: "Developer", admin: "Admin" },
+    },
+    approvalRoles,
+  ],
+  ["instructions", { id: "ticket-authoring-workload-instructions" }],
 ];
 
 /** What each field of a written workload means and takes; the prompt files the catalog stores are what a prompt path may name. */
