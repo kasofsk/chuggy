@@ -15,9 +15,13 @@ import type {
   EpicGraphResponse,
   EpicViewResponse,
 } from "../../../../src/contract/responses.ts";
-import { epicGraphStandingOf } from "./epicGraph.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
-import { epicFormFrom, epicWrite, epicWriteFrom } from "./epics.ts";
+import {
+  epicFormFrom,
+  epicGraphStandingOf,
+  epicWrite,
+  epicWriteFrom,
+} from "./epics.ts";
 import { ticketListAskDefault } from "./projectTableFilters.ts";
 import type { ProjectTableRow } from "./projectTableRows.ts";
 import { rosterSearchMatches } from "./rosterSearch.ts";

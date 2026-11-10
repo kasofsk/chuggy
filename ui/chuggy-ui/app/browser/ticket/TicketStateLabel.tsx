@@ -99,7 +99,7 @@ const ticketStateFormAttributes = {
 } as const satisfies Record<TicketStateLabelForm, string>;
 
 /** A state's mark alone, in its tone, where its word is drawn apart from it. */
-export function TicketStateMark(props: {
+export function TicketStateInkMark(props: {
   readonly standing: TicketStateStanding;
 }): ReactNode {
   const label = ticketStateLabelOf(props.standing);
