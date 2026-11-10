@@ -514,6 +514,7 @@ test("the settings are read, written whole and paged for their revisions", async
       limits: apiLimits,
       installationLimits: apiLimits,
       operationalContextMaxAgeMs: 1,
+      leadOffering: "Own",
     },
   };
   const held = recording((url) =>

@@ -1,6 +1,9 @@
 /** Where a case's sessions run, fixed rather than resolved, for the suites about what a route decides. */
 
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
+import type {
+  LeadOffering,
+  PlacementRoute,
+} from "../../src/contract/rosters.ts";
 import type {
   LeadRouteReads,
   SessionRouteKind,
@@ -15,7 +18,7 @@ function sessionRoutesLeadRunners(
   return () => Promise.resolve(runners.project === "Live" ? "Live" : "Offline");
 }
 
-/** Routes fixed per routed kind, an inquiry following the lead as the definer has it. */
+/** Routes fixed per routed kind, an inquiry following the lead as the definer has it, and the lead's offering. */
 export function sessionRoutesAt(
   routes: Partial<Record<SessionRouteKind, PlacementRoute>> = {},
   runners: SessionRunners = {
@@ -23,6 +26,7 @@ export function sessionRoutesAt(
     inquiry: "Unregistered",
     project: "Unregistered",
   },
+  offering: LeadOffering = "Own",
 ): SessionRouteReads & LeadRouteReads {
   return {
     route: (_partition, kind) =>
@@ -30,6 +34,7 @@ export function sessionRoutesAt(
         route: routes[kind === "Thread" ? "Thread" : "Lead"] ?? "InCluster",
         source: "Project",
       }),
+    leadOffering: () => Promise.resolve(offering),
     runners: () => Promise.resolve(runners),
     leadRunners: sessionRoutesLeadRunners(runners),
   };
@@ -53,6 +58,7 @@ export function sessionRoutesFlipping(
         source: "Project",
       });
     },
+    leadOffering: () => Promise.resolve("Own"),
     runners: () => Promise.resolve(runners),
     leadRunners: sessionRoutesLeadRunners(runners),
   };

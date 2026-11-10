@@ -96,6 +96,7 @@ import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts"
 import {
   allLeadAdmissions,
   type LeadAdmission,
+  type SubsidizedLeadProfile,
 } from "../../src/interpreter/sessionPlacement.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -3368,6 +3369,73 @@ test("a rejected measured execution retains its available provenance", async () 
   );
 });
 
+/** What one cycle records of a decision measured on `model`, for a project allowing only `claude-opus-5-5` and leading as `subsidized` where given. */
+async function measuredModelRecorded(
+  model: string,
+  subsidized?: SubsidizedLeadProfile,
+): Promise<JsonValue | undefined> {
+  let recorded: JsonValue | undefined;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+    },
+    promptObservationSource(),
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (interaction) => {
+        recorded = interaction.result;
+        return Promise.resolve(true);
+      },
+    },
+    policyHost(() =>
+      Promise.resolve({ ...waitingExecution(), modelRevision: model }),
+    ),
+    {
+      operation: asOperationId(`measured-${model}`),
+      selectorDecisionReference: `measured-${model}`,
+    },
+    resolvedSelectorSettings(
+      partition,
+      selectorRuntimeSettings,
+      0,
+      { modelAllowlist: ["claude-opus-5-5"] },
+      subsidized,
+    ),
+  );
+  return recorded;
+}
+
+test("a subsidized lead's turn measuring the profile's model passes the model check its project's allowlist would fail, and another model does not", async () => {
+  const profile: SubsidizedLeadProfile = {
+    credentialSlot: "anthropic-api",
+    model: "claude-haiku-5-5",
+    effort: "medium",
+    autoCompactWindow: 100_000,
+    inputBytesPerDecision: 262_144,
+    turnTokensMax: 120_000,
+  };
+  const violation = { outcome: "Failed", code: "ControlViolation" };
+  assert.deepEqual(
+    await measuredModelRecorded("claude-haiku-5-5"),
+    violation,
+    "an own lead is held to its project's allowlist",
+  );
+  assert.notDeepEqual(
+    await measuredModelRecorded("claude-haiku-5-5", profile),
+    violation,
+  );
+  assert.deepEqual(
+    await measuredModelRecorded("claude-opus-5-5", profile),
+    violation,
+    "a subsidized lead on any other model fails, its project's included",
+  );
+});
+
 test("structurally invalid JSON is audited instead of reaching persistence", async () => {
   let recordedFailure: JsonValue | undefined;
   await runSelectorCycle(
@@ -3818,7 +3886,7 @@ test("the selector policy host starts once and bounds cancellation evidence", as
       models: Object.freeze(["model"]),
       tools: Object.freeze([]),
       limits: Object.freeze(selectorRuntimeSettings.limits),
-      lead: Object.freeze({}),
+      lead: Object.freeze({ offering: "Own" as const }),
     }),
   };
   const first = host.start(request);

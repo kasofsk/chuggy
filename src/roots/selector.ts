@@ -129,7 +129,12 @@ const configurationSchema = z
       .strict(),
     subsidizedLead: subsidizedLead.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      value.subsidizedLead?.credentialSlot !== value.lead.credentialSlot,
+    "a subsidized lead runs on a credential slot of its own",
+  );
 
 /** The parsed source, whose credential the environment completes with the secret the configuration must not carry. */
 export interface SelectorSourceCommandConfig extends Omit<

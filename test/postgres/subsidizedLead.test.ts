@@ -9,7 +9,13 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import {
+  postgresSelectorProjectSettings,
+  postgresSelectorRuntimeControl,
+} from "../../src/adapters/postgres/selector.ts";
+import {
+  postgresLeadRouteReads,
   postgresSessionPlacement,
+  postgresSessionRouteReads,
   postgresSessionRoutingPrecondition,
   postgresSubsidizedLeadPrecondition,
 } from "../../src/adapters/postgres/sessionPlacement.ts";
@@ -18,6 +24,7 @@ import {
   schedulerRole,
   selectorServiceRole,
   sessionLeadOfferingFunction,
+  sessionLeadProfileFunction,
   storedLeadOfferingFunction,
   subsidizedLeadReadFunction,
   ticketServiceRole,
@@ -29,6 +36,11 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  leadInputBytesMax,
+  type SelectorProjectOverrides,
+  type SelectorResolvedSettings,
+} from "../../src/interpreter/selector.ts";
 import {
   sessionPlacementAdministration,
   type SessionPlacementChoice,
@@ -427,4 +439,142 @@ test("a stored subsidized lead resolves so only from the project's own row and o
     projectRoutes: new Map(),
   });
   assert.equal(await subsidizedLeadResolved(partition), "Subsidized");
+});
+
+const settingsAdministrator = {
+  kind: asAuthorityKind("User"),
+  subject: asAuthoritySubject("selector-admin"),
+};
+
+/** Overrides set above the profile on every bound it holds, on another model than its. */
+const settingsAboveProfile: SelectorProjectOverrides = {
+  leadModel: "claude-opus-5-5",
+  leadEffort: "max",
+  modelAllowlist: ["claude-opus-5-5"],
+  limits: { autoCompactWindow: 400_000, inputBytesPerDecision: 2_000_000 },
+};
+
+/** What a decision of `partition` runs under, as the selector's own settings read resolves it. */
+async function subsidizedLeadDecidedUnder(
+  partition: Partition,
+): Promise<SelectorResolvedSettings> {
+  return postgresSelectorRuntimeControl(selectorPool).projectSettings(
+    partition,
+  );
+}
+
+test("a subsidized project's settings, as the selector and the API read and write them, run its lead on the profile and under its bounds", async () => {
+  await subsidizedLeadStarted(profile);
+  const partition = await postgresHarnessProject(harness.store, "settings");
+  const settings = postgresSelectorProjectSettings(apiPool);
+  const first = await settings.write(
+    partition,
+    0,
+    settingsAboveProfile,
+    settingsAdministrator,
+  );
+  assert.equal(first.written, "Settings");
+  assert.equal(
+    await subsidizedLeadAdministered(partition, {
+      Thread: "Pool",
+      Lead: "InCluster",
+      leadOffering: "Subsidized",
+    }),
+    "Written",
+  );
+  const subsidized = {
+    offering: "Subsidized",
+    model: profile.model,
+    effort: profile.effort,
+    credentialSlot: profile.credentialSlot,
+    turnTokensMax: profile.turnTokensMax,
+  };
+  const decided = await subsidizedLeadDecidedUnder(partition);
+  assert.deepEqual(decided.lead, subsidized);
+  assert.deepEqual(decided.modelAllowlist, [profile.model]);
+  assert.deepEqual(
+    [decided.limits.autoCompactWindow, decided.limits.inputBytesPerDecision],
+    [profile.autoCompactWindow, profile.inputBytesPerDecision],
+  );
+  assert.equal(leadInputBytesMax(decided), profile.inputBytesPerDecision);
+  assert.deepEqual(
+    (await settings.read(partition)).settings.effective,
+    decided,
+    "the API reads what the selector decides under",
+  );
+  const rewritten = await settings.write(
+    partition,
+    1,
+    settingsAboveProfile,
+    settingsAdministrator,
+  );
+  assert.ok(rewritten.written === "Settings");
+  assert.deepEqual(rewritten.settings.effective.lead, subsidized);
+});
+
+test("a project switched back to its own lead runs on its own model, effort and bounds again", async () => {
+  await subsidizedLeadStarted(profile);
+  const partition = await postgresHarnessProject(harness.store, "switched");
+  assert.equal(
+    (
+      await postgresSelectorProjectSettings(apiPool).write(
+        partition,
+        0,
+        settingsAboveProfile,
+        settingsAdministrator,
+      )
+    ).written,
+    "Settings",
+  );
+  for (const leadOffering of ["Subsidized", "Own"] as const)
+    assert.equal(
+      await subsidizedLeadAdministered(
+        partition,
+        { Thread: "Pool", Lead: "InCluster", leadOffering },
+        true,
+      ),
+      "Written",
+      leadOffering,
+    );
+  const decided = await subsidizedLeadDecidedUnder(partition);
+  assert.deepEqual(decided.lead, {
+    offering: "Own",
+    model: "claude-opus-5-5",
+    effort: "max",
+  });
+  assert.deepEqual(decided.modelAllowlist, ["claude-opus-5-5"]);
+  assert.deepEqual(
+    [decided.limits.autoCompactWindow, decided.limits.inputBytesPerDecision],
+    [400_000, 2_000_000],
+  );
+});
+
+test("the selector's lead admission reads a subsidized offering, and only the selector and the API may ask a project's profile", async () => {
+  await subsidizedLeadStarted(profile);
+  const partition = await postgresHarnessProject(harness.store, "profiled");
+  assert.equal(
+    await subsidizedLeadAdministered(partition, {
+      Thread: "Pool",
+      Lead: "InCluster",
+      leadOffering: "Subsidized",
+    }),
+    "Written",
+  );
+  assert.equal(
+    await postgresLeadRouteReads(selectorPool).leadOffering(partition),
+    "Subsidized",
+  );
+  assert.equal(
+    await postgresSessionRouteReads(apiPool).leadOffering(partition),
+    "Subsidized",
+  );
+  const asked = `SELECT * FROM ${sessionLeadProfileFunction}('${partition.tenant}','${partition.project}')`;
+  for (const role of [apiRole, selectorServiceRole])
+    assert.equal(await harness.attemptAs(role, asked), undefined, role);
+  for (const role of [schedulerRole, ticketServiceRole, workerPlaneRole])
+    assert.match(
+      (await harness.attemptAs(role, asked)) ?? "",
+      postgresHarnessDenial(sessionLeadProfileFunction),
+      role,
+    );
 });

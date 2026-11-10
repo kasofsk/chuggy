@@ -25,6 +25,8 @@ import { z } from "zod";
 import {
   imageMediaTypes,
   projectArtifactEncoding,
+  sessionEfforts,
+  sessionModelSchema,
   agentSessionPromptCharsMax,
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
@@ -759,6 +761,10 @@ export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   limits: selectorLimitsResponseSchema,
   installationLimits: selectorLimitsResponseSchema,
   operationalContextMaxAgeMs: countSchema,
+  /** The model and effort the lead runs on, each absent where it takes the site's model or the runtime's effort, and whether they are the subsidized lead's. */
+  leadModel: sessionModelSchema.optional(),
+  leadEffort: z.enum(sessionEfforts).optional(),
+  leadOffering: z.enum(leadOfferings),
 });
 
 export const selectorProjectSettingsResponseSchema = z.strictObject({

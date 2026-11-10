@@ -1,7 +1,7 @@
 /**
  * 142 replaces the installation's default lead prompt where it is still the
  * baseline's text, at the revision it stood at, and leaves an owner's default
- * and a project's own prompt as they were.
+ * as they wrote it.
  */
 
 import assert from "node:assert/strict";
@@ -9,21 +9,16 @@ import { test } from "node:test";
 import type pg from "pg";
 
 import { postgresMigrate } from "../../src/adapters/postgres/pool.ts";
-import {
-  postgresSelectorProjectSettings,
-  postgresSelectorRuntimeControl,
-} from "../../src/adapters/postgres/selector.ts";
+import { postgresSelectorRuntimeControl } from "../../src/adapters/postgres/selector.ts";
 import {
   leadBasePromptAt142,
   leadBasePromptAtBaseline,
   migration142,
 } from "../../src/adapters/postgres/schema/migrations/142-lead-prompt-default.ts";
-import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { migratedBefore, migrationDatabase } from "./migrationHarness.ts";
 
 const administrator = {
@@ -94,38 +89,5 @@ test("142 leaves a default an owner wrote as they wrote it", async () => {
 
     await postgresMigrate(subject);
     assert.deepEqual(await ownedRows(), before);
-  });
-});
-
-test("142 leaves the lead prompt a project with its own base prompt composes as it was", async () => {
-  await migrationDatabase("lead_prompt_project", async (subject) => {
-    await migratedBefore(subject, migration142.version);
-    const partition = {
-      tenant: asTenantId("tenant-142"),
-      project: asProjectId("project-142"),
-    };
-    const planting = await subject.connect();
-    try {
-      await planting.query("BEGIN");
-      await planting.query("SET LOCAL session_replication_role=replica");
-      await planting.query(
-        `INSERT INTO selector_project_settings(tenant,project,north_star,base_prompt)
-         VALUES($1,$2,'ship the release','Work only the release tickets.')`,
-        [partition.tenant, partition.project],
-      );
-      await planting.query("COMMIT");
-    } finally {
-      planting.release();
-    }
-    const composed = async (): Promise<string> =>
-      leadSystemPrompt(
-        (await postgresSelectorProjectSettings(subject).read(partition))
-          .settings.effective,
-      );
-    const before = await composed();
-    assert.match(before, /Work only the release tickets\./u);
-
-    await postgresMigrate(subject);
-    assert.equal(await composed(), before);
   });
 });

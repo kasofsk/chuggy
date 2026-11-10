@@ -86,6 +86,7 @@ const effective = {
   limits: installationLimits,
   installationLimits,
   operationalContextMaxAgeMs: 60_000,
+  leadOffering: "Own",
 };
 
 function settingsBody(

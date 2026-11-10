@@ -145,6 +145,8 @@ import { migration144 } from "./144-project-landing-queues.ts";
 import { migration145 } from "./145-subsidized-lead.ts";
 import { migration146 } from "./146-approval-refusals.ts";
 import { migration147 } from "./147-runner-priority.ts";
+import { migration148 } from "./148-session-lead-profile.ts";
+import { migration149 } from "./149-subsidized-inquiry.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -295,4 +297,6 @@ export const migrations: readonly Migration[] = [
   migration145,
   migration146,
   migration147,
+  migration148,
+  migration149,
 ];

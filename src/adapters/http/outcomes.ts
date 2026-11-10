@@ -616,6 +616,13 @@ function selectorProjectSettingsBody(
       limits: effective.limits,
       installationLimits: effective.installationLimits,
       operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
+      ...(effective.lead.model === undefined
+        ? {}
+        : { leadModel: effective.lead.model }),
+      ...(effective.lead.effort === undefined
+        ? {}
+        : { leadEffort: effective.lead.effort }),
+      leadOffering: effective.lead.offering,
     },
   };
 }

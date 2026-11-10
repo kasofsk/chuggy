@@ -339,12 +339,13 @@ test("the thread bundle the root composes reaches the thread reads", async () =>
 
 /**
  * The inquiry routes over the composition the root builds, driven against pools
- * that record what they were asked and place the lead in cluster: `nativeHttp.ts`
- * reaches its three doors and the session route through `composeNativeWeb` and
- * passes no bundle for them, because there is nothing about an inquiry for a
- * deployment to choose, so what a case can observe is which pool the
- * composition reached and that it reached one at all. The doors' own answers
- * are `test/postgres/inquiryHttpDoors.test.ts`'s.
+ * that record what they were asked and place the lead in cluster as a
+ * subsidized one, asked by a member the tenant grants no hosted runs:
+ * `nativeHttp.ts` reaches its three doors, the session route and the lead's
+ * offering through `composeNativeWeb` and passes no bundle for them, because
+ * there is nothing about an inquiry for a deployment to choose, so what a case
+ * can observe is which pool the composition reached and that it reached one at
+ * all. The doors' own answers are `test/postgres/inquiryHttpDoors.test.ts`'s.
  */
 const inquiryComposedProgram = `
   const compose = await import('./src/compose.ts');
@@ -356,7 +357,9 @@ const inquiryComposedProgram = `
       return {
         rows: text.includes('session_route')
           ? [{ route: 'InCluster', source: 'Default' }]
-          : [],
+          : text.includes('session_lead_offering')
+            ? [{ offering: 'Subsidized' }]
+            : [],
       };
     },
   });
@@ -366,7 +369,7 @@ const inquiryComposedProgram = `
     { digest: () => 'digest' },
     {
       authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
-      authorizeTenant: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
+      authorizeTenant: async () => undefined,
     },
     { admits: async () => ({ admitted: 'Admitted' }) },
   );
@@ -406,6 +409,7 @@ test("the composition the root builds reaches the inquiry doors, over the API po
     "read_lead_inquiries",
     "read_lead_inquiry",
     "session_route",
+    "session_lead_offering",
     "open_lead_inquiry",
   ])
     assert.ok(
