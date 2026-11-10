@@ -56,13 +56,17 @@ export interface TicketPlan {
   readonly landing: Copy | undefined;
 }
 
-/** What a workload runs on: its agent and model, or that it runs commands. */
+/** What a workload runs on: its agent and model, that it runs commands, or
+ * that a person approves it. */
 function ticketPlanRuns(
   workload: CatalogWorkload,
   text: CopyText,
 ): string | undefined {
   if (workload.runner === "Commands")
     return text({ id: "ticket-plan-commands" });
+  if (workload.runner === "Approval")
+    return text({ id: "ticket-plan-approval" });
+  if (workload.runner !== "Agent") return undefined;
   const said = [workload.agent, workload.model].filter(
     (part) => part !== undefined,
   );

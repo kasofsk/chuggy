@@ -28,10 +28,17 @@ import {
   workloadConfigurationVersion,
 } from "../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
-import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
+import {
+  approvalRoles,
+  briefFinalizationModes,
+  workloadRunners,
+  type ApprovalRole,
+  type WorkloadRunner,
+} from "../../../../src/contract/rosters.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { configurationModelLabelOf } from "./configurationView.ts";
+import { creatorLabel } from "./labels.ts";
 
 const optionalString = () => z.string().optional().catch(undefined);
 
@@ -46,6 +53,11 @@ const catalogWorkloadSchema = z.looseObject({
   commands: z.array(z.string()).optional().catch(undefined),
   reevaluate: optionalString(),
   access: optionalString(),
+  approvers: z
+    .union([z.enum(approvalRoles), z.array(z.string())])
+    .optional()
+    .catch(undefined),
+  instructions: optionalString(),
 });
 
 const catalogModeSchema = z.looseObject({
@@ -93,11 +105,20 @@ const catalogSchema = z.looseObject({
   }),
 });
 
+/** A workload's runner: one of the contract's, Unknown where it writes one the console does not know, and absent where the catalog names it by a file no import has read. */
+export type CatalogRunner = WorkloadRunner | "Unknown" | undefined;
+
+/** What an approval workload asks: who may answer it, and what they are shown. */
+export interface CatalogApproval {
+  /** A role whose permit holders may answer, or the principals listed. */
+  readonly approvers: ApprovalRole | readonly string[];
+  readonly instructions: string | undefined;
+}
+
 /** One workload, as much of it as a reader choosing among them is shown. */
 export interface CatalogWorkload {
   readonly name: string;
-  /** Agent or Commands, as written; absent where the catalog names it by a file no import has read. */
-  readonly runner: string | undefined;
+  readonly runner: CatalogRunner;
   /** What it is as an evaluator, Review where it says nothing. */
   readonly purpose: string;
   /** Its agent's model, labelled; absent for a commands workload and for an
@@ -116,6 +137,8 @@ export interface CatalogWorkload {
   readonly agentArguments: readonly string[];
   /** The access it declares, where the catalog writes one. */
   readonly access: string | undefined;
+  /** What it asks of a person, for an approval workload alone. */
+  readonly approval: CatalogApproval | undefined;
   /** The workload exactly as the catalog writes it, for a view of it as a document. */
   readonly definition: unknown;
 }
@@ -127,6 +150,55 @@ export function catalogWorkloadModel(
 ): CopyOrData | undefined {
   if (workload.runner !== "Agent") return undefined;
   return workload.model ?? { id: "configuration-catalog-model-default" };
+}
+
+/** Who may answer an approval: a role in words, or the people listed. */
+export function catalogApproversLine(
+  approvers: CatalogApproval["approvers"],
+): CopyOrData {
+  if (approvers === "Developer")
+    return { id: "configuration-catalog-approvers-developer" };
+  if (approvers === "Admin")
+    return { id: "configuration-catalog-approvers-admin" };
+  return approvers.map((principal) => creatorLabel(principal).text).join(", ");
+}
+
+/** What a workload runs, as the one word beside its name: its model where an agent runs it, and its runner otherwise. */
+export function catalogWorkloadRuns(workload: CatalogWorkload): CopyOrData {
+  switch (workload.runner) {
+    case "Agent":
+      return catalogWorkloadModel(workload) ?? workload.runner;
+    case "Commands":
+      return workload.runner;
+    case "Approval":
+      return { id: "configuration-catalog-approval" };
+    case "Unknown":
+      return { id: "configuration-catalog-runner-unknown" };
+    case undefined:
+      return { id: "configuration-catalog-unread" };
+  }
+}
+
+/** Whether a ticket may select a workload as its work, which an approval never is. */
+export function catalogWorkloadWorks(workload: CatalogWorkload): boolean {
+  return workload.runner !== "Approval";
+}
+
+/** A plan's stages in one line, saying so where any of them waits on a person's approval. */
+export function catalogPlanLine(
+  catalog: ConfigurationCatalog,
+  stages: readonly CatalogPlanStage[],
+): CopyOrData {
+  const line = stages.map((stage) => stage.name).join(" → ");
+  const approved = stages.some((stage) =>
+    stage.evaluators.some(
+      (name) =>
+        configurationCatalogWorkload(catalog, name)?.runner === "Approval",
+    ),
+  );
+  return approved
+    ? { id: "configuration-catalog-plan-approved", args: { stages: line } }
+    : line;
 }
 
 export interface CatalogPlanStage {
@@ -153,19 +225,28 @@ export interface ConfigurationCatalog {
   };
 }
 
+/** A runner as written, read as one of the contract's or as unknown. */
+function configurationCatalogRunner(
+  written: string | undefined,
+): CatalogRunner {
+  if (written === undefined) return undefined;
+  return workloadRunners.find((runner) => runner === written) ?? "Unknown";
+}
+
 function configurationCatalogEntry(
   name: string,
   value: unknown,
 ): CatalogWorkload {
   const workload = catalogWorkloadSchema.safeParse(value).data;
-  const agent = workload?.runner === "Agent";
+  const runner = configurationCatalogRunner(workload?.runner);
+  const agent = runner === "Agent";
   const mode = catalogModeSchema.safeParse(workload?.worker?.mode).data;
   return {
     name,
-    runner: workload?.runner,
+    runner,
     purpose: workload?.purpose ?? "Review",
     model: agent
-      ? configurationModelLabelOf(workload.worker?.mode).label
+      ? configurationModelLabelOf(workload?.worker?.mode).label
       : undefined,
     prompt: workload?.prompt?.text,
     promptPath: workload?.prompt?.path,
@@ -175,6 +256,13 @@ function configurationCatalogEntry(
     effort: mode?.effort,
     agentArguments: mode?.arguments ?? [],
     access: workload?.access,
+    approval:
+      runner === "Approval"
+        ? {
+            approvers: workload?.approvers ?? "Developer",
+            instructions: workload?.instructions,
+          }
+        : undefined,
     definition: value,
   };
 }
@@ -371,33 +459,27 @@ function configurationCatalogChoice(
   };
 }
 
-/** What a workload runs, as the one word beside its name. */
-function configurationCatalogRuns(workload: CatalogWorkload): CopyOrData {
-  return (
-    catalogWorkloadModel(workload) ??
-    workload.runner ?? { id: "configuration-catalog-unread" }
-  );
-}
-
 export function configurationCatalogChoices(
   catalog: ConfigurationCatalog,
   text: CopyText,
 ): CatalogChoices {
   const { defaults } = catalog;
   return {
-    work: catalog.workloads.map((workload) =>
-      configurationCatalogChoice(
-        text,
-        workload.name,
-        configurationCatalogRuns(workload),
-        defaults.work,
+    work: catalog.workloads
+      .filter(catalogWorkloadWorks)
+      .map((workload) =>
+        configurationCatalogChoice(
+          text,
+          workload.name,
+          catalogWorkloadRuns(workload),
+          defaults.work,
+        ),
       ),
-    ),
     evaluation: [...catalog.plans].map(([name, stages]) =>
       configurationCatalogChoice(
         text,
         name,
-        stages.map((stage) => stage.name).join(" → "),
+        catalogPlanLine(catalog, stages),
         defaults.evaluation,
       ),
     ),

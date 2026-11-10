@@ -176,6 +176,7 @@ ticket-steps-phase-landing = { -landing(case: "upper") }
 ticket-steps-not-started = Not started
 ticket-steps-not-on-page = Not on this page
 ticket-plan-commands = commands
+ticket-plan-approval = a person's { -approval }
 ticket-plan-evaluator = { -evaluator(case: "upper") } { $key }
 ticket-now-watch = Watch
 ticket-now-title = { $status } { $step }

@@ -56,6 +56,13 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-default-landing": Record<never, never>;
   readonly "configuration-catalog-model-default": Record<never, never>;
   readonly "configuration-catalog-unread": Record<never, never>;
+  readonly "configuration-catalog-runner-unknown": Record<never, never>;
+  readonly "configuration-catalog-approval": Record<never, never>;
+  readonly "configuration-catalog-approvers-developer": Record<never, never>;
+  readonly "configuration-catalog-approvers-admin": Record<never, never>;
+  readonly "configuration-catalog-plan-approved": {
+    readonly stages: unknown;
+  };
   readonly "configuration-catalog-commands": Record<never, never>;
   readonly "configuration-catalog-prompt-inline": Record<never, never>;
   readonly "configuration-catalog-prompt-written-inline": Record<never, never>;
@@ -75,6 +82,8 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-field-reevaluate": Record<never, never>;
   readonly "configuration-catalog-field-model": Record<never, never>;
   readonly "configuration-catalog-field-prompt": Record<never, never>;
+  readonly "configuration-catalog-field-approvers": Record<never, never>;
+  readonly "configuration-catalog-field-instructions": Record<never, never>;
   readonly "configuration-catalog-field-approval": Record<never, never>;
   readonly "configuration-catalog-field-landing": Record<never, never>;
   readonly "configuration-catalog-field-policy": Record<never, never>;
