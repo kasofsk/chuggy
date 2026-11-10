@@ -412,8 +412,7 @@ function kubernetesSessionContainer(
  * stops it. A grant naming a credential this site does not mount, and a
  * credential slot the grant does not name, are both that inability: the pod
  * would start, find no file where it was told to look, and fail every turn it
- * was ever given. A credential whose mount names a kind of Claude credential
- * reaches only the pod placed on its own slot.
+ * was ever given.
  */
 export function kubernetesSessionPodRequest(
   config: KubernetesSessionLaunchConfig,
