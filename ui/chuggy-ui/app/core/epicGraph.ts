@@ -1,330 +1,248 @@
 /**
- * An epic's graph as its canvas draws it: where each ticket's card stands, the
- * curve each connector takes from a dependency to its dependent, the current
- * run a member's card names, and the view the canvas is panned and zoomed to.
- *
- * Cards stand in layers, left to right: each in the column one past the
- * deepest of its dependencies, so every connector runs rightward. A ticket
- * outside the epic is a smaller card, and the reader may leave those out, which
- * lays the graph out again without them.
+ * An epic's graph as its Graph tab draws it, once `epicGraphLayout.ts` has
+ * laid it out: the sizes and gaps it is laid out by, the curve each edge takes
+ * from a dependency to what waits on it, the chain a card traces, which ticket
+ * is selected, and how far the graph is scaled to the panel it sits in.
  */
 
-import type {
-  EpicGraphResponse,
-  ProjectTicket,
-} from "../../../../src/contract/responses.ts";
-
-import type { TicketListStanding } from "./ticketListView.ts";
+import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
+import type { TicketStateStanding } from "./ticketHeader.ts";
 
 type EpicGraphNode = EpicGraphResponse["nodes"][number];
 
-export const epicGraphMemberWidth = 240;
-export const epicGraphMemberHeight = 112;
-export const epicGraphOutsideWidth = 192;
-export const epicGraphOutsideHeight = 64;
-export const epicGraphColumnGap = 96;
-export const epicGraphRowGap = 24;
+export const epicGraphMemberWidth = 216;
+export const epicGraphMemberHeight = 74;
+export const epicGraphOutsideWidth = 168;
+export const epicGraphOutsideHeight = 52;
+/** Between two cards of one rank. */
+export const epicGraphNodeGap = 22;
+/** Between one rank and the next. */
+export const epicGraphRankGap = 34;
+/** Around the graph, so a card's focus ring is not cut at its edge. */
+export const epicGraphMargin = 6;
+/** The least the graph is scaled down to fit its panel; narrower, it scrolls. */
+export const epicGraphScaleLeast = 0.78;
 
-/** One card as it is placed. */
-export interface EpicGraphCard {
+/** A ticket of the graph and the state its card is drawn in. */
+export interface EpicGraphTicket {
   readonly node: EpicGraphNode;
+  readonly standing: TicketStateStanding;
+}
+
+/** One card as it is placed, by its top left corner. */
+export interface EpicGraphCard extends EpicGraphTicket {
   readonly x: number;
   readonly y: number;
   readonly width: number;
   readonly height: number;
 }
 
-/** A point of the canvas, in its own units. */
 export interface EpicGraphPoint {
   readonly x: number;
   readonly y: number;
 }
 
-/** A connector as the cubic curve it is drawn along, from the dependency's
- * right edge to the dependent's left. */
-export interface EpicGraphConnector {
+/** An edge from a dependency to its dependent, through the points the layout
+ * routed it by. */
+export interface EpicGraphEdge {
   readonly from: number;
   readonly to: number;
-  /** Whether either end is outside the epic, which draws it dashed. */
+  /** Either end is outside the epic, which draws it dashed. */
   readonly outside: boolean;
-  readonly curve: readonly [
-    EpicGraphPoint,
-    EpicGraphPoint,
-    EpicGraphPoint,
-    EpicGraphPoint,
-  ];
+  /** The dependency is Done, so what it held is met. */
+  readonly met: boolean;
+  readonly points: readonly EpicGraphPoint[];
 }
 
 export interface EpicGraphDrawn {
+  /** Every ticket the graph names, drawn or left out. */
+  readonly tickets: ReadonlyMap<number, EpicGraphTicket>;
   readonly cards: readonly EpicGraphCard[];
-  readonly connectors: readonly EpicGraphConnector[];
+  readonly edges: readonly EpicGraphEdge[];
+  /** The members with no edge either way, lowest number first. */
+  readonly unconnected: readonly EpicGraphTicket[];
   readonly width: number;
   readonly height: number;
 }
 
+/** The key an edge between two tickets is known by. */
+export function epicGraphEdgeKey(from: number, to: number): string {
+  return `${String(from)}-${String(to)}`;
+}
+
+function epicGraphNumber(value: number): string {
+  return String(Math.round(value * 100) / 100);
+}
+
 /**
- * The column of each node: one past the deepest of its dependencies, found by
- * taking each node once its dependencies are placed, so every pass is bounded
- * by the nodes and edges given. A node on a cycle is never freed that way and
- * stands in the first column.
+ * The edge as a smooth SVG path through its points: the uniform B-spline d3
+ * calls `curveBasis`, which starts at the first point and ends at the last,
+ * and a straight line where there are only two.
  */
-function epicGraphDrawnColumns(
-  tickets: readonly number[],
+export function epicGraphEdgePath(points: readonly EpicGraphPoint[]): string {
+  const at = (x: number, y: number) =>
+    `${epicGraphNumber(x)} ${epicGraphNumber(y)}`;
+  const [first, second] = points;
+  if (first === undefined) return "";
+  if (second === undefined) return `M ${at(first.x, first.y)}`;
+  const steps = [`M ${at(first.x, first.y)}`];
+  let before = first;
+  let here = second;
+  const curved = (next: EpicGraphPoint) => {
+    steps.push(
+      `C ${at((2 * before.x + here.x) / 3, (2 * before.y + here.y) / 3)} ${at((before.x + 2 * here.x) / 3, (before.y + 2 * here.y) / 3)} ${at((before.x + 4 * here.x + next.x) / 6, (before.y + 4 * here.y + next.y) / 6)}`,
+    );
+    before = here;
+    here = next;
+  };
+  for (const [index, next] of points.slice(2).entries()) {
+    if (index === 0)
+      steps.push(
+        `L ${at((5 * before.x + here.x) / 6, (5 * before.y + here.y) / 6)}`,
+      );
+    curved(next);
+  }
+  if (points.length > 2) curved(here);
+  steps.push(`L ${at(here.x, here.y)}`);
+  return steps.join(" ");
+}
+
+/** What a card traces: itself, everything it waits on and everything waiting
+ * on it, all the way along, and the edges along those chains. */
+export interface EpicGraphTrace {
+  readonly tickets: ReadonlySet<number>;
+  readonly edges: ReadonlySet<string>;
+}
+
+/** Every ticket reached from one along the edges in one direction, the ticket
+ * itself included; each is taken once, so the walk is bounded by the edges
+ * given, a cycle included. */
+function epicGraphTraceReached(
+  ticket: number,
   edges: readonly { readonly from: number; readonly to: number }[],
-): ReadonlyMap<number, number> {
-  const waiting = new Map(tickets.map((ticket) => [ticket, 0]));
-  const outgoing = new Map<number, number[]>();
+  onward: (edge: {
+    readonly from: number;
+    readonly to: number;
+  }) => readonly [number, number],
+): ReadonlySet<number> {
+  const next = new Map<number, number[]>();
   for (const edge of edges) {
-    waiting.set(edge.to, (waiting.get(edge.to) ?? 0) + 1);
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to]);
+    const [here, there] = onward(edge);
+    next.set(here, [...(next.get(here) ?? []), there]);
   }
-  const column = new Map(tickets.map((ticket) => [ticket, 0]));
-  const freed = tickets.filter((ticket) => waiting.get(ticket) === 0);
-  for (let next = 0; next < freed.length; next += 1) {
-    const ticket = freed[next];
-    if (ticket === undefined) break;
-    const at = column.get(ticket) ?? 0;
-    for (const to of outgoing.get(ticket) ?? []) {
-      column.set(to, Math.max(column.get(to) ?? 0, at + 1));
-      const left = (waiting.get(to) ?? 0) - 1;
-      waiting.set(to, left);
-      if (left === 0) freed.push(to);
-    }
-  }
-  for (const ticket of tickets)
-    if ((waiting.get(ticket) ?? 0) > 0) column.set(ticket, 0);
-  return column;
+  const reached = new Set([ticket]);
+  const waiting = [ticket];
+  for (let at = 0; at < waiting.length; at += 1)
+    for (const there of next.get(waiting[at] ?? ticket) ?? [])
+      if (!reached.has(there)) {
+        reached.add(there);
+        waiting.push(there);
+      }
+  return reached;
 }
 
-/** The curve from one card's right edge to another's left, leaving and
- * arriving level. */
-function epicGraphDrawnCurve(
-  from: EpicGraphCard,
-  to: EpicGraphCard,
-): EpicGraphConnector["curve"] {
-  const start = { x: from.x + from.width, y: from.y + from.height / 2 };
-  const end = { x: to.x, y: to.y + to.height / 2 };
-  const pull = Math.max(epicGraphColumnGap / 2, (end.x - start.x) / 2);
-  return [
-    start,
-    { x: start.x + pull, y: start.y },
-    { x: end.x - pull, y: end.y },
-    end,
-  ];
+export function epicGraphTraced(
+  ticket: number,
+  edges: readonly EpicGraphEdge[],
+): EpicGraphTrace {
+  const above = epicGraphTraceReached(ticket, edges, (edge) => [
+    edge.to,
+    edge.from,
+  ]);
+  const below = epicGraphTraceReached(ticket, edges, (edge) => [
+    edge.from,
+    edge.to,
+  ]);
+  return {
+    tickets: new Set([...above, ...below]),
+    edges: new Set(
+      edges
+        .filter(
+          (edge) =>
+            (above.has(edge.from) && above.has(edge.to)) ||
+            (below.has(edge.from) && below.has(edge.to)),
+        )
+        .map((edge) => epicGraphEdgeKey(edge.from, edge.to)),
+    ),
+  };
 }
 
-/** The cards of the nodes given, each column's stacked by ticket number. */
-function epicGraphDrawnCards(
-  nodes: readonly EpicGraphNode[],
-  columns: ReadonlyMap<number, number>,
-): readonly EpicGraphCard[] {
-  const columnOf = (ticket: number) => columns.get(ticket) ?? 0;
-  const ordered = [...nodes].sort(
-    (left, right) =>
-      columnOf(left.ticket) - columnOf(right.ticket) ||
-      left.ticket - right.ticket,
+/** The key an edge is traced by. */
+export function epicGraphEdgeKeyOf(edge: EpicGraphEdge): string {
+  return epicGraphEdgeKey(edge.from, edge.to);
+}
+
+function epicGraphRunning(standing: TicketStateStanding): boolean {
+  return (
+    standing === "Work" ||
+    standing === "Evaluation" ||
+    standing === "Finalization"
   );
-  const below = new Map<number, number>();
-  return ordered.map((node): EpicGraphCard => {
-    const column = columnOf(node.ticket);
-    const y = below.get(column) ?? 0;
-    const height = node.member ? epicGraphMemberHeight : epicGraphOutsideHeight;
-    below.set(column, y + height + epicGraphRowGap);
-    return {
-      node,
-      x: column * (epicGraphMemberWidth + epicGraphColumnGap),
-      y,
-      width: node.member ? epicGraphMemberWidth : epicGraphOutsideWidth,
-      height,
-    };
-  });
 }
 
 /**
- * The graph laid out, with the tickets outside the epic or without them. A
- * node named twice is drawn once; an edge into a node the graph does not
- * hold, or one on a cycle, is left undrawn rather than looped on.
+ * The ticket selected: the one the address names where the graph holds it;
+ * otherwise the first running member, top to bottom and then left to right,
+ * else the first Ready one, else the topmost card, the unconnected row after
+ * the graph. None where nothing is drawn.
  */
-export function epicGraphDrawn(
-  graph: EpicGraphResponse,
-  outsideShown: boolean,
-): EpicGraphDrawn {
-  const seen = new Set<number>();
-  const nodes = graph.nodes.filter((node) => {
-    if (seen.has(node.ticket) || (!outsideShown && !node.member)) return false;
-    seen.add(node.ticket);
-    return true;
-  });
-  const edges = graph.edges.filter(
-    (edge) => seen.has(edge.from) && seen.has(edge.to) && edge.from !== edge.to,
-  );
-  const cards = epicGraphDrawnCards(
-    nodes,
-    epicGraphDrawnColumns(
-      nodes.map((node) => node.ticket).sort((left, right) => left - right),
-      edges,
+export function epicGraphSelectedOf(
+  drawn: EpicGraphDrawn,
+  named: number | undefined,
+): number | undefined {
+  if (named !== undefined && drawn.tickets.has(named)) return named;
+  const read = [
+    ...[...drawn.cards].sort(
+      (left, right) => left.y - right.y || left.x - right.x,
     ),
-  );
-  const byTicket = new Map(cards.map((card) => [card.node.ticket, card]));
-  const connectors = edges.flatMap((edge): EpicGraphConnector[] => {
-    const from = byTicket.get(edge.from);
-    const to = byTicket.get(edge.to);
-    return from === undefined || to === undefined || from.x >= to.x
-      ? []
-      : [
-          {
-            from: edge.from,
-            to: edge.to,
-            outside: !from.node.member || !to.node.member,
-            curve: epicGraphDrawnCurve(from, to),
-          },
-        ];
-  });
-  return {
-    cards,
-    connectors,
-    width: Math.max(0, ...cards.map((card) => card.x + card.width)),
-    height: Math.max(0, ...cards.map((card) => card.y + card.height)),
-  };
+    ...drawn.unconnected,
+  ];
+  const members = read.filter((ticket) => ticket.node.member);
+  return (
+    members.find((ticket) => epicGraphRunning(ticket.standing)) ??
+    members.find((ticket) => ticket.standing === "Ready") ??
+    read[0]
+  )?.node.ticket;
 }
 
-/** The connector's curve as an SVG path. */
-export function epicGraphConnectorPath(connector: EpicGraphConnector): string {
-  const [start, pullStart, pullEnd, end] = connector.curve;
-  return `M ${String(start.x)} ${String(start.y)} C ${String(pullStart.x)} ${String(pullStart.y)}, ${String(pullEnd.x)} ${String(pullEnd.y)}, ${String(end.x)} ${String(end.y)}`;
-}
-
-/** The point a share of the way along the connector's curve. */
-export function epicGraphConnectorPoint(
-  connector: EpicGraphConnector,
-  share: number,
-): EpicGraphPoint {
-  const t = Math.min(1, Math.max(0, share));
-  const [p0, p1, p2, p3] = connector.curve;
-  const u = 1 - t;
-  const at = (a: number, b: number, c: number, d: number) =>
-    u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
-  return { x: at(p0.x, p1.x, p2.x, p3.x), y: at(p0.y, p1.y, p2.y, p3.y) };
-}
-
-/** Where a node stands where the ticket list holds no row of it: its phase,
- * a Pending one ready once every dependency the graph holds of it is Done;
- * a draft never released has none. */
-export function epicGraphStandingOf(
-  node: EpicGraphNode,
+/** What a ticket waits on and what waits on it, each lowest number first. */
+export function epicGraphNeighboursOf(
   graph: EpicGraphResponse,
-): TicketListStanding | undefined {
-  if (node.phase !== "Pending") return node.phase;
-  const done = new Set(
-    graph.nodes
-      .filter((other) => other.phase === "Done")
-      .map((other) => other.ticket),
-  );
-  return graph.edges.every(
-    (edge) => edge.to !== node.ticket || done.has(edge.from),
-  )
-    ? "Ready"
-    : "Blocked";
-}
-
-/** The run a member's card names: its work in a cycle, or a stage of the
- * evaluation of one. */
-export type EpicGraphRun =
-  | { readonly run: "Work"; readonly cycle: number }
-  | {
-      readonly run: "Evaluation";
-      readonly cycle: number;
-      readonly stage: number;
-    };
-
-/** The run a ticket's row says it has under way, none where its latest has
- * ended or it has none. */
-export function epicGraphRunOf(
-  ticket: Pick<ProjectTicket, "latestExecution"> | undefined,
-): EpicGraphRun | undefined {
-  const latest = ticket?.latestExecution;
-  if (
-    latest === undefined ||
-    latest.status === "Terminal" ||
-    latest.status === "Cancelled"
-  )
-    return undefined;
-  const identity = latest.identity;
-  switch (identity.type) {
-    case "WorkTask":
-      return { run: "Work", cycle: identity.value.cycle };
-    case "EvaluationTask":
-      return {
-        run: "Evaluation",
-        cycle: identity.value.workCycle,
-        stage: identity.value.stage,
-      };
-  }
-}
-
-/** Where the canvas looks: the offset of the graph's origin within the frame,
- * in the frame's pixels, and how far it is zoomed. */
-export interface EpicGraphView {
-  readonly x: number;
-  readonly y: number;
-  readonly zoom: number;
-}
-
-export interface EpicGraphSize {
-  readonly width: number;
-  readonly height: number;
-}
-
-export const epicGraphZoomLeast = 0.2;
-export const epicGraphZoomMost = 2;
-/** How much one press of zoom in or out changes the zoom by. */
-export const epicGraphZoomStep = 1.25;
-/** The frame's pixels left around the graph when it is fitted. */
-export const epicGraphFitPadding = 24;
-
-function epicGraphZoomBounded(zoom: number): number {
-  return Math.min(epicGraphZoomMost, Math.max(epicGraphZoomLeast, zoom));
-}
-
-/** The whole graph centred in the frame, zoomed out until it fits and never
- * in past its own size. A frame not yet measured shows it at its own size. */
-export function epicGraphFitted(
-  graph: EpicGraphSize,
-  frame: EpicGraphSize,
-): EpicGraphView {
-  const room = {
-    width: frame.width - 2 * epicGraphFitPadding,
-    height: frame.height - 2 * epicGraphFitPadding,
-  };
-  if (room.width <= 0 || room.height <= 0 || graph.width <= 0)
-    return { x: epicGraphFitPadding, y: epicGraphFitPadding, zoom: 1 };
-  const zoom = epicGraphZoomBounded(
-    Math.min(1, room.width / graph.width, room.height / graph.height),
-  );
+  ticket: number,
+): {
+  readonly dependsOn: readonly number[];
+  readonly blocks: readonly number[];
+} {
+  const of = (tickets: readonly number[]) =>
+    [...new Set(tickets)]
+      .filter((other) => other !== ticket)
+      .sort((left, right) => left - right);
   return {
-    x: (frame.width - graph.width * zoom) / 2,
-    y: (frame.height - graph.height * zoom) / 2,
-    zoom,
+    dependsOn: of(
+      graph.edges.filter((edge) => edge.to === ticket).map((edge) => edge.from),
+    ),
+    blocks: of(
+      graph.edges.filter((edge) => edge.from === ticket).map((edge) => edge.to),
+    ),
   };
 }
 
-/** The view zoomed by a factor about the frame's centre, within the bounds. */
-export function epicGraphZoomed(
-  view: EpicGraphView,
-  factor: number,
-  frame: EpicGraphSize,
-): EpicGraphView {
-  const zoom = epicGraphZoomBounded(view.zoom * factor);
-  const centre = { x: frame.width / 2, y: frame.height / 2 };
-  const scale = zoom / view.zoom;
-  return {
-    x: centre.x - (centre.x - view.x) * scale,
-    y: centre.y - (centre.y - view.y) * scale,
-    zoom,
-  };
+/** How far the graph is scaled to fit its panel: never past its own size,
+ * and never under the least, past which the panel scrolls instead. */
+export function epicGraphScaleOf(width: number, panelWidth: number): number {
+  if (width <= 0 || panelWidth <= 0) return 1;
+  return Math.min(1, Math.max(epicGraphScaleLeast, panelWidth / width));
 }
 
-/** The view as an SVG transform. */
-export function epicGraphViewTransform(view: EpicGraphView): string {
-  return `translate(${String(view.x)} ${String(view.y)}) scale(${String(view.zoom)})`;
+/** Where the panel opens scrolled to, so the selected card stands in its
+ * middle where the scaled graph is wider than it. */
+export function epicGraphScrollOf(
+  centre: number,
+  scaledWidth: number,
+  panelWidth: number,
+): number {
+  return Math.min(
+    Math.max(0, scaledWidth - panelWidth),
+    Math.max(0, centre - panelWidth / 2),
+  );
 }

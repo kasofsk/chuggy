@@ -92,20 +92,25 @@ epics-graph-empty = This { -epic } has no { -ticket(form: "plural") } to draw
 epics-graph-loading = Drawing the graph…
 epics-graph-failed = The graph could not be read.
 epics-graph-outside-shown = Show { -ticket(form: "plural") } outside the { -epic } ({ $count })
-epics-graph-controls = Graph view
-epics-graph-zoom-in = Zoom in
-epics-graph-zoom-out = Zoom out
-epics-graph-fit = Fit to view
-epics-graph-full-enter = Enter full screen
-epics-graph-full-exit = Exit full screen
-epics-card-untitled = Untitled
-epics-card-open = Open { -ticket } #{ $ticket }: { $title }
-epics-card-open-outside = Open { -ticket } #{ $ticket }: { $title }, outside the { -epic }
-epics-card-run-work = { -work-stage(case: "upper") }
-epics-card-run-work-detail = { -work-stage(case: "upper") } in { -cycle } { $cycle }
-epics-card-run-evaluation = { -stage(case: "upper") } { $stage }
-epics-card-run-evaluation-detail = { -stage(case: "upper") } { $stage } of { -cycle } { $cycle }
 epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
+epics-graph-key = Key
+epics-graph-key-done = Done
+epics-graph-key-running = Running
+epics-graph-key-ready = Ready
+epics-graph-key-blocked = Blocked
+epics-graph-key-escalated = { -escalation(case: "upper") }
+# spells -run: to run is a verb here
+epics-graph-arrows = Arrows run from a { -ticket } to what waits on it
+epics-graph-unconnected = Unlinked { -ticket(form: "plural") }
+epics-card-untitled = Untitled
+epics-card = #{ $ticket } { $title }: { $state }
+epics-card-outside = #{ $ticket } { $title }: { $state }, outside the { -epic }
+epics-side-label = Selected { -ticket }
+epics-side-depends-on = Depends on
+epics-side-blocks = Blocks
+epics-side-none = None
+epics-side-open = Open { -ticket }
+epics-side-dispatch = { -dispatch(case: "upper") }
 
 ## The History tab.
 
