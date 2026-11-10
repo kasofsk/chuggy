@@ -726,9 +726,9 @@ const poolPlaneColumns = [
  * liveness and the runner, capabilities and memory ceiling its poll named are
  * all of its row the plane writes, as a chat host's liveness and runner are of
  * its, while a pool's registrant is the account its claims spend and a press
- * is read and spent by the claim it lets through. A personal runner's claim
- * records whether it benches its credential, and an attempt's ending and its
- * limit are read to tell that runner how its job's credential stopped it.
+ * is read and spent by the claim it lets through, as a personal runner's
+ * claim records whether it benches its credential, whose outcome is read off
+ * its attempt's ending and limit.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
