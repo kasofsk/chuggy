@@ -14,6 +14,7 @@ import {
   placementRouteSources,
   placementRoutes,
   sessionRunnerStandings,
+  type LeadOffering,
 } from "../../contract/rosters.ts";
 import type { SessionKind } from "../../interpreter/agentSession.ts";
 import type { Principal } from "../../interpreter/principal.ts";
@@ -125,6 +126,21 @@ async function sessionRoute(
   };
 }
 
+async function sessionLeadOffering(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<LeadOffering> {
+  const found = await pool.query<{ offering: string | null }>(
+    sql`SELECT session_lead_offering(
+          ${partition.tenant},${partition.project})::text AS offering`,
+  );
+  return sessionRowMember(
+    leadOfferings,
+    found.rows[0]?.offering ?? null,
+    "lead offering",
+  );
+}
+
 async function sessionRunners(
   pool: pg.Pool,
   partition: Partition,
@@ -164,6 +180,7 @@ async function sessionRunners(
 export function postgresSessionRouteReads(pool: pg.Pool): SessionRouteReads {
   return {
     route: (partition, kind) => sessionRoute(pool, partition, kind),
+    leadOffering: (partition) => sessionLeadOffering(pool, partition),
     runners: (partition, member) => sessionRunners(pool, partition, member),
   };
 }
@@ -172,6 +189,7 @@ export function postgresSessionRouteReads(pool: pg.Pool): SessionRouteReads {
 export function postgresLeadRouteReads(pool: pg.Pool): LeadRouteReads {
   return {
     route: (partition, kind) => sessionRoute(pool, partition, kind),
+    leadOffering: (partition) => sessionLeadOffering(pool, partition),
     leadRunners: async (partition) => {
       const found = await pool.query<{ standing: string | null }>(
         sql`SELECT standing
@@ -191,17 +209,6 @@ export function postgresLeadRouteReads(pool: pg.Pool): LeadRouteReads {
 export function postgresSessionPlacement(pool: pg.Pool): SessionPlacementStore {
   return {
     ...postgresSessionRouteReads(pool),
-    leadOffering: async (partition) => {
-      const found = await pool.query<{ offering: string | null }>(
-        sql`SELECT session_lead_offering(
-              ${partition.tenant},${partition.project})::text AS offering`,
-      );
-      return sessionRowMember(
-        leadOfferings,
-        found.rows[0]?.offering ?? null,
-        "lead offering",
-      );
-    },
     storedLeadOffering: async (partition) => {
       const found = await pool.query<{ offering: string | null }>(
         sql`SELECT stored_lead_offering(

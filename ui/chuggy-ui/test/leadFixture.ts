@@ -333,6 +333,7 @@ export function leadSelectorSettingsBody(
       limits: leadSelectorSettingsLimits,
       installationLimits: leadSelectorSettingsLimits,
       operationalContextMaxAgeMs: 60_000,
+      leadOffering: "Own",
       ...resolved,
     },
   };
