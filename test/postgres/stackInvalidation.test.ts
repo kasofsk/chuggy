@@ -105,6 +105,14 @@ async function ownEvaluating(project: FinalizerProject) {
   );
 }
 
+async function rankOf(project: FinalizerProject): Promise<unknown> {
+  const [row] = await rig.harness.query(
+    `SELECT ticket_finalization_rank($1,$2,$3)::text AS rank`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  return row?.["rank"];
+}
+
 async function operationsOf(project: FinalizerProject) {
   return rig.harness.query(
     `SELECT operation, authority_kind, command_tag FROM operation
@@ -164,6 +172,15 @@ test("the writer abandons the evaluation, opens a new cycle and counts no rework
   const project = await evaluatingOverGone("invalidate-decided");
   const epoch = asRecoveryEpoch(project.epoch);
   assert.equal(await finalizerPhase(rig, project.partition), "Evaluation");
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, request_generation, kind, work_cycle, finalization_generation)
+     VALUES ($1,$2,'earlier-request',1,0,$3,1,1,'RunFinalizer',1,1)`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  const ranked = await rankOf(project);
+  assert.equal(ranked, "1", "the ticket holds a rank to keep");
   assert.equal(
     await finalizerStore().invalidate(
       project.partition,
@@ -182,6 +199,7 @@ test("the writer abandons the evaluation, opens a new cycle and counts no rework
 
   assert.deepEqual(drained.decided, ["Committed"]);
   assert.equal(await finalizerPhase(rig, project.partition), "Work");
+  assert.equal(await rankOf(project), ranked, "the invalidation kept its rank");
   const [counted] = await rig.harness.query(
     `SELECT ticket_stacked_failures($1,$2,$3) AS failures`,
     [project.partition.tenant, project.partition.project, project.ticket],
