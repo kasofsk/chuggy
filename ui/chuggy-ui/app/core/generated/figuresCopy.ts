@@ -28,6 +28,10 @@ export interface FiguresCopy {
     readonly day: unknown;
     readonly clock: unknown;
   };
+  readonly "figures-instant-span": {
+    readonly from: unknown;
+    readonly to: unknown;
+  };
   readonly "figures-month-january": Record<never, never>;
   readonly "figures-month-february": Record<never, never>;
   readonly "figures-month-march": Record<never, never>;

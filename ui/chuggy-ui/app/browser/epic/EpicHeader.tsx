@@ -26,6 +26,7 @@ import {
   epicVisibilityWrite,
   epicWriteFrom,
 } from "../../core/epics.ts";
+import { epicActorLabel } from "../../core/epicHistory.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { currentOrigin } from "../ports.ts";
@@ -321,7 +322,7 @@ function EpicHeaderSaved(props: {
             id: "epics-saved",
             args: {
               revision: String(props.view.revision),
-              actor: saved.actor.subject,
+              actor: epicActorLabel(saved.actor, props.held.creatorEmails).text,
             },
           })}{" "}
           <Figure figure={instantFigure(saved.changedAt, props.held.nowMs)} />
