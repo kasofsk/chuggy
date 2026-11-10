@@ -346,6 +346,7 @@ export interface FinalizerService {
   readonly stacks?: Pick<
     EvaluationStackStore,
     | "removable"
+    | "unrecorded"
     | "remove"
     | "current"
     | "read"
@@ -2785,8 +2786,9 @@ async function finalizerStackUnheld(
 }
 
 /**
- * Takes down the published stack of every cycle that is over: its ticket is
- * Done or Revoked or has begun a later work cycle. The removal is noted after
+ * Takes down the published stack of every cycle that is over, and the ref of
+ * a cycle decided Unpublished, where its ticket is Done or Revoked or has begun a
+ * later work cycle. The removal is noted after
  * the ref is gone, so a pass that stops between the two deletes nothing twice
  * that matters, and a ref the remote will not release is tried again.
  */
@@ -2805,6 +2807,19 @@ async function finalizerSweepStacks(
       },
       ref: stackRefOf(due.ticket, due.cycle),
       commit: due.commit,
+    });
+    if (removed.removed === "Removed")
+      await stacks.remove(due.partition, due.ticket, due.cycle);
+  }
+  for (const due of await stacks.unrecorded(stackRemovalsPerPassMax)) {
+    const removed = await service.git.removeUnrecordedStack({
+      repository: {
+        partition: due.partition,
+        repository: asRepositoryId(due.repository),
+        recoveryEpoch: epoch,
+      },
+      ref: stackRefOf(due.ticket, due.cycle),
+      candidate: due.candidate,
     });
     if (removed.removed === "Removed")
       await stacks.remove(due.partition, due.ticket, due.cycle);

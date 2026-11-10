@@ -44,6 +44,7 @@ import type {
   EvaluationStack,
   EvaluationStackStore,
   RemovableStack,
+  UnrecordedStack,
   StackInvalidationOffered,
   StackDecision,
   StackPrepared,
@@ -126,6 +127,15 @@ interface RemovableRow {
   readonly work_cycle: string;
   readonly repository: string;
   readonly stack_commit: string;
+}
+
+interface UnrecordedRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly ticket: string;
+  readonly work_cycle: string;
+  readonly repository: string;
+  readonly candidate: string;
 }
 
 interface LandingRow {
@@ -773,6 +783,69 @@ async function stackRemovable(
   }));
 }
 
+async function stackUnrecorded(
+  pool: pg.Pool,
+  limit: number,
+  rotation: number | undefined,
+): Promise<readonly UnrecordedStack[]> {
+  const found = await pool.query<UnrecordedRow>(
+    sql`SELECT n.tenant, n.project, n.ticket::text AS ticket,
+               n.work_cycle::text AS work_cycle,
+               d.brief->>'repository' AS repository, w.commit AS candidate
+          FROM evaluation_stack_none n
+          JOIN ticket_definition d
+            ON d.tenant = n.tenant AND d.project = n.project AND d.ticket = n.ticket
+          JOIN ticket_projection p
+            ON p.tenant = n.tenant AND p.project = n.project AND p.ticket = n.ticket
+          JOIN LATERAL (
+            SELECT s.commit
+              FROM execution e
+              JOIN execution_request_task t
+                ON t.tenant = e.tenant AND t.project = e.project
+                   AND t.request = e.source_request AND t.task = e.task
+              JOIN execution_result r
+                ON r.tenant = e.tenant AND r.project = e.project
+                   AND r.execution = e.execution
+              JOIN execution_result_source s
+                ON s.tenant = r.tenant AND s.project = r.project
+                   AND s.manifest = r.manifest
+             WHERE e.tenant = n.tenant AND e.project = n.project
+               AND e.ticket = n.ticket AND t.kind = 'Work'
+               AND t.cycle = n.work_cycle
+               AND e.status = 'Terminal' AND e.outcome = 'Passed'
+               AND r.verdict = 'Pass'
+             ORDER BY e.task DESC LIMIT 1) w ON true
+         WHERE n.reason = 'Unpublished'
+           AND d.brief->>'repository' IS NOT NULL
+           AND NOT EXISTS (
+                 SELECT 1 FROM evaluation_stack_removal r
+                  WHERE r.tenant = n.tenant AND r.project = n.project
+                    AND r.ticket = n.ticket AND r.work_cycle = n.work_cycle)
+           AND (p.phase IN ('Done', 'Revoked')
+                OR EXISTS (
+                  SELECT 1
+                    FROM execution q
+                    JOIN execution_request_task t
+                      ON t.tenant = q.tenant AND t.project = q.project
+                         AND t.request = q.source_request AND t.task = q.task
+                   WHERE q.tenant = n.tenant AND q.project = n.project
+                     AND q.ticket = n.ticket AND t.kind = 'Work'
+                     AND t.cycle > n.work_cycle))
+         ORDER BY md5(n.tenant || n.project || n.ticket::text || n.work_cycle::text || coalesce(${rotation ?? null}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
+         LIMIT ${limit}`,
+  );
+  return found.rows.map((row) => ({
+    partition: {
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    },
+    ticket: asTicketId(projectRowCounter(row.ticket, "stack ticket")),
+    cycle: projectRowCounter(row.work_cycle, "stack cycle"),
+    repository: row.repository,
+    candidate: asGitObjectId(row.candidate),
+  }));
+}
+
 export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
   return {
     prepare: (partition, prepared) => stackPrepare(pool, partition, prepared),
@@ -789,6 +862,7 @@ export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
     evaluated: (partition, ticket, cycle) =>
       stackEvaluated(pool, partition, ticket, cycle),
     removable: (limit, rotation) => stackRemovable(pool, limit, rotation),
+    unrecorded: (limit, rotation) => stackUnrecorded(pool, limit, rotation),
     remove: async (partition, ticket, cycle) => {
       const removed = await pool.query(
         sql`INSERT INTO evaluation_stack_removal (tenant, project, ticket, work_cycle)

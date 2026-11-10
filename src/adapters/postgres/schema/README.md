@@ -690,9 +690,10 @@ depth)`, a ticket is beneath a stack once, and it points at `evaluation_stack`.
 It has no unfinished work.
 
 `evaluation_stack_removal` — that a stack's commit was taken down from the
-reference it was published on, once. Granted and refused as `evaluation_stack`
-is, to the finalizer alone. Its identity is that of the stack it points at. It
-has no unfinished work.
+reference it was published on, once, or that the reference of a cycle decided
+unstacked as `Unpublished` was. Granted and refused as `evaluation_stack` is, to
+the finalizer alone. Its identity is that of the cycle it names, which holds a
+stack or a decision. It has no unfinished work.
 
 `evaluation_stack_none` — that the finalizer decided a work cycle is evaluated
 unstacked, and why. Granted and refused as `evaluation_stack` is, and a cycle is

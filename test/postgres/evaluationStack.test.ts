@@ -107,7 +107,7 @@ test("a stack removal is noted once", async () => {
      VALUES ($1,$2,$3,2)`,
     [project.partition.tenant, project.partition.project, project.ticket],
   );
-  assert.match(missing, /evaluation_stack_removal_names_a_stack/u);
+  assert.match(missing, /a removal names a prepared work cycle/u);
 });
 
 test("no role changes or deletes a stack, a beneath ticket or a removal", async () => {

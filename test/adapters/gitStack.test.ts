@@ -333,3 +333,81 @@ test("directLandingInvalidatesAStack: a landing that is not beneath moves the me
 
   assert.notEqual(integrated.tree, minted.tree);
 });
+
+/** What `removeUnrecordedStack` is asked about a ref of ticket 7's first cycle accepted at `candidate`. */
+function unrecorded(fixture: Fixture, candidate: GitObjectId) {
+  return {
+    repository: fixture.binding,
+    ref: stackRefOf(7, 1),
+    candidate,
+  };
+}
+
+const stackRef = "refs/heads/chuggy/stack/7/1";
+
+test("a ref nobody recorded is taken down where it holds a stack of the candidate or the candidate itself", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "below.txt", "below\n");
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const git = port(fixture, "scratch");
+  const alone = branchCommit(fixture, "alone", "alone.txt", "alone\n");
+  run(fixture.remote, "update-ref", stackRef, alone);
+  assert.deepEqual(
+    await git.removeUnrecordedStack(unrecorded(fixture, alone)),
+    {
+      removed: "Removed",
+    },
+  );
+  assert.throws(() => run(fixture.remote, "rev-parse", "--verify", stackRef));
+
+  const minted = await git.mintStack(minting(fixture, [below], top));
+  assert.equal(minted.minted, "Stack");
+  assert.deepEqual(
+    await port(fixture, "elsewhere").removeUnrecordedStack(
+      unrecorded(fixture, top),
+    ),
+    { removed: "Removed" },
+  );
+  assert.throws(() => run(fixture.remote, "rev-parse", "--verify", stackRef));
+});
+
+test("a ref that is neither the candidate nor a stack containing it is left alone, and so is one that is gone", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "below.txt", "below\n");
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const git = port(fixture, "scratch");
+  assert.deepEqual(await git.removeUnrecordedStack(unrecorded(fixture, top)), {
+    removed: "Removed",
+  });
+
+  run(fixture.remote, "update-ref", stackRef, below);
+  await git.removeUnrecordedStack(unrecorded(fixture, top));
+  assert.equal(
+    run(fixture.remote, "rev-parse", stackRef),
+    below,
+    "another ticket's work",
+  );
+
+  const minted = await git.mintStack(minting(fixture, [], below));
+  assert.equal(minted.minted, "Stack");
+  await git.removeUnrecordedStack(unrecorded(fixture, top));
+  assert.equal(
+    run(fixture.remote, "rev-parse", stackRef),
+    below,
+    "a stack that lacks the candidate",
+  );
+
+  run(fixture.seed, "checkout", "-q", "top");
+  writeFileSync(join(fixture.seed, "more.txt"), "more\n");
+  run(fixture.seed, "add", "-A");
+  run(fixture.seed, "-c", "commit.gpgsign=false", "commit", "-qm", "later");
+  run(fixture.seed, "push", "-q", fixture.remote, "top:later");
+  const later = run(fixture.seed, "rev-parse", "HEAD");
+  run(fixture.remote, "update-ref", stackRef, later);
+  await git.removeUnrecordedStack(unrecorded(fixture, top));
+  assert.equal(
+    run(fixture.remote, "rev-parse", stackRef),
+    later,
+    "a commit of another author that contains the candidate",
+  );
+});

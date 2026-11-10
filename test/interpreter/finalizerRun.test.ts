@@ -1132,13 +1132,21 @@ function recordingStacks(
   recorder: () => GitRecorder,
 ): Pick<
   GitRecorder,
-  "stackRemovals" | "stackRemoved" | "mintStack" | "removeStack"
+  | "stackRemovals"
+  | "stackRemoved"
+  | "mintStack"
+  | "removeStack"
+  | "removeUnrecordedStack"
 > {
   return {
     stackRemovals: [],
     stackRemoved: { removed: "Removed" },
     mintStack: () => Promise.resolve({ minted: "Conflicted" }),
     removeStack: (removal) => {
+      recorder().stackRemovals.push(removal.ref);
+      return Promise.resolve(recorder().stackRemoved);
+    },
+    removeUnrecordedStack: (removal) => {
       recorder().stackRemovals.push(removal.ref);
       return Promise.resolve(recorder().stackRemoved);
     },
@@ -5056,6 +5064,7 @@ test("a project closing while its proposal is queued gives it up, reads where it
 /** A store of stacks due to be taken down, noting each removal it is told of. */
 function stacksDue(
   cycles: readonly number[],
+  unrecorded: readonly number[] = [],
 ): NonNullable<FinalizerService["stacks"]> & { noted: number[] } {
   const noted: number[] = [];
   return {
@@ -5078,6 +5087,16 @@ function stacksDue(
           commit: asGitObjectId(`${String(cycle)}`.repeat(40)),
         })),
       ),
+    unrecorded: () =>
+      Promise.resolve(
+        unrecorded.map((cycle) => ({
+          partition,
+          ticket: asTicketId(1),
+          cycle,
+          repository: "repository-run",
+          candidate: asGitObjectId(commitOf("c")),
+        })),
+      ),
     remove: (_partition, _ticket, cycle) => {
       noted.push(cycle);
       return Promise.resolve("Removed");
@@ -5094,6 +5113,14 @@ test("a pass takes down the stack of every cycle that is over and notes each rem
     "refs/heads/chuggy/stack/1/2",
   ]);
   assert.deepEqual(stacks.noted, [1, 2]);
+});
+
+test("a cycle decided Unpublished that is over has its ref taken down and the removal noted", async () => {
+  const remote = recordingGit();
+  const stacks = stacksDue([], [3]);
+  await passOver({ ...serviceOf(recordingStore([]), remote), stacks });
+  assert.deepEqual(remote.stackRemovals, ["refs/heads/chuggy/stack/1/3"]);
+  assert.deepEqual(stacks.noted, [3]);
 });
 
 test("a stack whose ref would not come down is not noted, so a later pass tries it again", async () => {

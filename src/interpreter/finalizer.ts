@@ -1289,6 +1289,16 @@ export interface GitPromotionPort {
     readonly commit: GitObjectId;
   }): Promise<StackRemoved>;
 
+  /**
+   * Deletes the ref a stack may have been published at without being recorded,
+   * only while it holds the candidate itself or a stack commit that contains it.
+   */
+  removeUnrecordedStack(removal: {
+    readonly repository: RepositoryBinding;
+    readonly ref: GitRefName;
+    readonly candidate: GitObjectId;
+  }): Promise<StackRemoved>;
+
   /** Advances the target ref to the candidate under a permit, conditionally on the target it observed. */
   promoteCandidate(promotion: CandidatePromotion): Promise<CandidatePromoted>;
 

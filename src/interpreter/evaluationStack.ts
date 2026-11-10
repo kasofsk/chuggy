@@ -85,6 +85,16 @@ export interface RemovableStack {
   readonly commit: GitObjectId;
 }
 
+/** A cycle decided to be evaluated unstacked because its stack could not be published, whose push may have landed unrecorded. */
+export interface UnrecordedStack {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+  readonly cycle: number;
+  readonly repository: string;
+  /** The commit the work was accepted at, which any stack of the cycle contains. */
+  readonly candidate: GitObjectId;
+}
+
 /** A Stacked ticket being evaluated over a stack, with what decides whether the stack still stands. */
 export interface EvaluatingStack {
   readonly partition: Partition;
@@ -150,6 +160,11 @@ export interface EvaluationStackStore {
     limit: number,
     rotation?: number,
   ): Promise<readonly RemovableStack[]>;
+  /** The cycles decided Unpublished that are over and not yet taken down, at most `limit` of them. */
+  unrecorded(
+    limit: number,
+    rotation?: number,
+  ): Promise<readonly UnrecordedStack[]>;
   /** Notes that a cycle's stack commit was taken down, and says whether this was the first note. */
   remove(
     partition: Partition,

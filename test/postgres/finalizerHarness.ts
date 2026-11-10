@@ -1133,6 +1133,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     },
     mintStack: () => Promise.resolve({ minted: "Conflicted" }),
     removeStack: () => Promise.resolve({ removed: "Removed" }),
+    removeUnrecordedStack: () => Promise.resolve({ removed: "Removed" }),
   };
   return fake;
 }

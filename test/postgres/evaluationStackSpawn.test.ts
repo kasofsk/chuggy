@@ -322,6 +322,39 @@ test("a stack of a Done or Revoked ticket is due to be taken down", async () => 
   }
 });
 
+test("a cycle decided Unpublished is due to be taken down once its ticket is over, and until it is noted", async () => {
+  const { project } = await stackedSubject(rig, "service-unrecorded");
+  const ticket = asTicketId(project.ticket);
+  await rig.harness.query(
+    `INSERT INTO evaluation_stack_none (tenant, project, ticket, work_cycle, reason)
+     VALUES ($1,$2,$3,1,'Unpublished')`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  const due = async () =>
+    (await finalizer.unrecorded(1000)).filter(
+      (each) =>
+        each.partition.project === project.partition.project &&
+        each.ticket === ticket,
+    );
+  assert.deepEqual(await due(), [], "the ticket is still at its cycle");
+  await finalizerSpawnTasks(rig, project, [2]);
+  assert.deepEqual(await due(), [], "a cycle not yet begun is no later cycle");
+  await finalizerPassedWork(rig, project, "service-unrecorded-2", []);
+  assert.deepEqual(
+    (await due()).map((each) => [each.cycle, each.repository]),
+    [[1, project.repository]],
+  );
+  assert.equal(await finalizer.remove(project.partition, ticket, 1), "Removed");
+  assert.deepEqual(await due(), []);
+});
+
+test("a removal names a cycle that was prepared", async () => {
+  const { project } = await stackedSubject(rig, "service-removal-unnamed");
+  await assert.rejects(
+    finalizer.remove(project.partition, asTicketId(project.ticket), 9),
+  );
+});
+
 /** Every project that the bounded read named at some rotation, one row at a time. */
 async function seenAcrossRotations(
   read: (

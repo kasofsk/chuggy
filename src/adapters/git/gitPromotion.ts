@@ -78,7 +78,7 @@ import {
   candidateIntegrate,
   candidatePrepare,
 } from "./gitCandidate.ts";
-import { stackMint, stackRemove } from "./gitStack.ts";
+import { stackMint, stackRemove, stackRemoveUnrecorded } from "./gitStack.ts";
 import {
   scratchFetchRef,
   scratchHasCommit,
@@ -327,6 +327,21 @@ async function gitPromotionRemoveStack(
   });
 }
 
+/** Deletes the ref of a stack that may have been published unrecorded. */
+async function gitPromotionRemoveUnrecordedStack(
+  own: GitPromotionState,
+  removal: Parameters<GitPromotionPort["removeUnrecordedStack"]>[0],
+): Promise<StackRemoved> {
+  const authorized = await gitPromotionCredentialOf(own, removal.repository);
+  if (authorized.authorized === "Refused")
+    return { removed: "Failed", evidence: authorized.evidence };
+  return stackRemoveUnrecorded(own.scratch, authorized.credential, {
+    repository: removal.repository.repository,
+    ref: removal.ref,
+    candidate: removal.candidate,
+  });
+}
+
 /** The reason GitHub declines a push with where the credential behind it may not create or update a workflow file. */
 const gitPromotionWorkflowsRefusal =
   "refusing to allow a GitHub App to create or update workflow ";
@@ -544,6 +559,8 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
       gitPromotionIntegrate(own, integration),
     mintStack: (minting) => gitPromotionMintStack(own, minting),
     removeStack: (removal) => gitPromotionRemoveStack(own, removal),
+    removeUnrecordedStack: (removal) =>
+      gitPromotionRemoveUnrecordedStack(own, removal),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
     proveCandidateAncestry: (proof) => gitPromotionProve(own, proof),
     proveHeadAdoptable: (question) => gitPromotionAdoptable(own, question),

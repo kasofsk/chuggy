@@ -24,6 +24,7 @@ import type {
 } from "../../interpreter/finalizer.ts";
 import {
   scratchCommitShape,
+  scratchCommitWritten,
   scratchCommitTreeFixed,
   scratchFetchHistory,
   scratchFetchRef,
@@ -52,10 +53,9 @@ function stackMessage(into: GitObjectId, commit: GitObjectId): string {
 async function stackHolds(
   scratch: GitScratch,
   credential: RepositoryCredential,
-  minting: StackMinting,
+  repository: RepositoryId,
   commit: GitObjectId,
 ): Promise<boolean> {
-  const repository = minting.repository.repository;
   if (await scratchHasCommit(scratch, repository, commit)) return true;
   await scratchFetchHistory(
     scratch,
@@ -131,7 +131,7 @@ export async function stackMint(
   }
   const commits = [...minting.beneath, minting.candidate];
   for (const commit of [minting.tip.commit, ...commits]) {
-    if (!(await stackHolds(scratch, credential, minting, commit)))
+    if (!(await stackHolds(scratch, credential, repository, commit)))
       return { minted: "Failed", evidence: "ObjectMissing" };
   }
   let running = minting.tip.commit;
@@ -211,4 +211,67 @@ export async function stackRemove(
   return evidence === undefined
     ? { removed: "Removed" }
     : { removed: "Failed", evidence };
+}
+
+/** Whether `commit` is the work itself or a merge of the stack identity that contains it. */
+async function stackIsOfCandidate(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  repository: RepositoryId,
+  commit: GitObjectId,
+  candidate: GitObjectId,
+): Promise<boolean | undefined> {
+  if (!(await stackHolds(scratch, credential, repository, commit)))
+    return undefined;
+  if (commit !== candidate) {
+    const written = await scratchCommitWritten(scratch, repository, commit);
+    if (
+      written?.name !== stackIdentity.name ||
+      written.email !== stackIdentity.email ||
+      !written.subject.startsWith("chug: stack ")
+    )
+      return false;
+  }
+  return scratchIsAncestor(scratch, repository, candidate, commit);
+}
+
+/**
+ * Deletes the ref a stack may have been published at without a record: the
+ * ref is read, and taken down under a lease on that value only where it is
+ * the work itself or a stack commit that contains it. Any other ref is left.
+ */
+export async function stackRemoveUnrecorded(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  removal: {
+    readonly repository: RepositoryId;
+    readonly ref: GitRefName;
+    readonly candidate: GitObjectId;
+  },
+): Promise<StackRemoved> {
+  const repository = removal.repository;
+  const read = await scratchReadRef(
+    scratch,
+    repository,
+    credential,
+    removal.ref,
+  );
+  if (read.read === "Absent") return { removed: "Removed" };
+  if (read.read === "Unreachable")
+    return { removed: "Failed", evidence: "RemoteUnreachable" };
+  const ours = await stackIsOfCandidate(
+    scratch,
+    credential,
+    repository,
+    read.value,
+    removal.candidate,
+  );
+  if (ours === undefined)
+    return { removed: "Failed", evidence: "RemoteUnreachable" };
+  if (!ours) return { removed: "Removed" };
+  return stackRemove(scratch, credential, {
+    repository,
+    ref: removal.ref,
+    commit: read.value,
+  });
 }

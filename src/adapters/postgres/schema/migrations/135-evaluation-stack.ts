@@ -13,7 +13,8 @@
  *
  * `evaluation_stack_removal` RECORDS THAT A STACK'S COMMIT WAS TAKEN DOWN from
  * the reference it was published on, once, so a sweep does not take it down
- * twice.
+ * twice. A cycle decided Unpublished is recorded the same way, once its ref
+ * is gone.
  *
  * `ticket_stacked_failures` IS A DOOR, NOT A GRANT. It counts the
  * `TicketEvaluationReworkStarted` events of a ticket whose evaluated work cycle
@@ -100,10 +101,7 @@ export const migration135: Migration = {
        ticket bigint NOT NULL,
        work_cycle bigint NOT NULL,
        removed_at timestamp with time zone NOT NULL DEFAULT now(),
-       PRIMARY KEY (tenant,project,ticket,work_cycle),
-       CONSTRAINT evaluation_stack_removal_names_a_stack
-         FOREIGN KEY (tenant,project,ticket,work_cycle)
-         REFERENCES public.evaluation_stack(tenant,project,ticket,work_cycle))`,
+       PRIMARY KEY (tenant,project,ticket,work_cycle))`,
     `CREATE TRIGGER evaluation_stack_is_immutable BEFORE DELETE OR UPDATE ON public.evaluation_stack
        FOR EACH ROW EXECUTE FUNCTION public.project_creation_is_immutable()`,
     `CREATE TRIGGER evaluation_stack_beneath_is_immutable BEFORE DELETE OR UPDATE ON public.evaluation_stack_beneath

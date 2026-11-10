@@ -578,6 +578,38 @@ export async function scratchHasCommit(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/** Who wrote one commit and the first line of its message, as the object itself records them. */
+export interface ScratchCommitWritten {
+  readonly name: string;
+  readonly email: string;
+  readonly subject: string;
+}
+
+/** The author and subject one commit records, or `undefined` where git could not answer. */
+export async function scratchCommitWritten(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<ScratchCommitWritten | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
+    argv: [
+      "--no-replace-objects",
+      "show",
+      "--no-patch",
+      "--format=%an%n%ae%n%s",
+      commit,
+      "--",
+    ],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  const [name, email, subject] = ran.stdout.split("\n");
+  return name === undefined || email === undefined || subject === undefined
+    ? undefined
+    : { name, email, subject };
+}
+
 /** One commit's tree and its parents in order, as the object itself records them. */
 export interface ScratchCommitShape {
   readonly tree: GitObjectId;

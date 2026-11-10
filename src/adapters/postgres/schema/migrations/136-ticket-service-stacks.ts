@@ -59,6 +59,23 @@ export const migration136: Migration = {
          FOREIGN KEY (tenant,project) REFERENCES public.project(tenant,project))`,
     `CREATE TRIGGER evaluation_stack_none_is_immutable BEFORE DELETE OR UPDATE ON public.evaluation_stack_none
        FOR EACH ROW EXECUTE FUNCTION public.project_creation_is_immutable()`,
+    `CREATE FUNCTION public.evaluation_stack_removal_names_a_cycle() RETURNS trigger
+       LANGUAGE plpgsql
+       AS $$
+       BEGIN
+         IF NOT EXISTS (SELECT 1 FROM public.evaluation_stack o
+                         WHERE o.tenant = NEW.tenant AND o.project = NEW.project
+                           AND o.ticket = NEW.ticket AND o.work_cycle = NEW.work_cycle)
+            AND NOT EXISTS (SELECT 1 FROM public.evaluation_stack_none o
+                             WHERE o.tenant = NEW.tenant AND o.project = NEW.project
+                               AND o.ticket = NEW.ticket AND o.work_cycle = NEW.work_cycle) THEN
+           RAISE EXCEPTION 'a removal names a prepared work cycle'
+             USING ERRCODE = 'foreign_key_violation';
+         END IF;
+         RETURN NEW;
+       END $$`,
+    `CREATE TRIGGER evaluation_stack_removal_names_a_cycle BEFORE INSERT ON public.evaluation_stack_removal
+       FOR EACH ROW EXECUTE FUNCTION public.evaluation_stack_removal_names_a_cycle()`,
     exclusion("evaluation_stack", "evaluation_stack_none"),
     exclusion("evaluation_stack_none", "evaluation_stack"),
     `GRANT SELECT,INSERT ON TABLE public.evaluation_stack_none TO ${finalizerRole}`,
