@@ -23,6 +23,8 @@ export function sessionPlacementBody(
   return {
     thread: { route: input.thread ?? "Pool", source: "Default" },
     lead: { route: input.lead ?? "Pool", source: "Default" },
+    leadOffering: "Own",
+    leadOfferings: ["Own"],
     choices: ["Pool"],
     runners: {
       mine: input.mine ?? "Live",

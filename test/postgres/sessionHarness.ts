@@ -205,7 +205,7 @@ export async function sessionRigRouted(
   lead: PlacementRoute,
 ): Promise<void> {
   await rig.harness.query(
-    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Member','an-owner')`,
+    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,NULL,'Member','an-owner')`,
     [partition.tenant, partition.project, thread, lead],
   );
 }

@@ -14,6 +14,9 @@
  * holds EXECUTE on everything, so a case run as the owner would be green over
  * any grant at all and would say nothing about the control.
  *
+ * The same composed process publishes the subsidized lead it is configured
+ * with as it starts, which the API then reads.
+ *
  * A SIGNATURE NO FUNCTION HAS IS A RAISE, NOT A REFUSAL.
  * `has_function_privilege` resolves a signature exactly, so a hand-copied
  * argument type does not answer false — it throws, and the precondition that
@@ -40,6 +43,7 @@ import {
   sessionSystemPromptSetFunction,
   threadWakeCandidatesFunction,
   threadWakeCursorAdvanceFunction,
+  subsidizedLeadReadFunction,
   threadWakeFunction,
 } from "../../src/adapters/postgres/schema/shared.ts";
 import {
@@ -200,6 +204,9 @@ const composedRootProgram = `
         implementationRevision: 'test',
         principal: 'principal-lead-doors',
         credentialSlot: 'claude-code',
+        ...(process.env.CHUG_SELECTOR_SUBSIDIZED_LEAD === undefined
+          ? {}
+          : { subsidizedLead: JSON.parse(process.env.CHUG_SELECTOR_SUBSIDIZED_LEAD) }),
       },
       controlDeadlineMs: 1000,
     },
@@ -210,37 +217,76 @@ const composedRootProgram = `
   process.stdout.write(JSON.stringify(started));
 `;
 
+/** Starts and stops the composed selector process, answering what its start said. */
+async function composedRootStarted(
+  environment: NodeJS.ProcessEnv = {},
+): Promise<{ readonly started: string; readonly precondition?: string }> {
+  const { stdout } = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      composedRootProgram,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        CHUG_SELECTOR_URL: selectorDatabaseUrl(),
+        ...environment,
+      },
+    },
+  );
+  return JSON.parse(stdout) as {
+    readonly started: string;
+    readonly precondition?: string;
+  };
+}
+
+test("the composed selector process publishes the subsidized lead it starts with, and withdraws it when it starts with none", async () => {
+  const published = async () =>
+    (
+      await apiPool.query<{ credential_slot: string; model: string }>(
+        `SELECT credential_slot,model FROM ${subsidizedLeadReadFunction}()`,
+      )
+    ).rows;
+  const profile = {
+    credentialSlot: "anthropic-api",
+    model: "claude-haiku-5-5",
+    effort: "low",
+    autoCompactWindow: 100_000,
+    inputBytesPerDecision: 65_536,
+    turnTokensMax: 200_000,
+  };
+  assert.deepEqual(
+    await composedRootStarted({
+      CHUG_SELECTOR_SUBSIDIZED_LEAD: JSON.stringify(profile),
+    }),
+    { started: "Started" },
+  );
+  assert.deepEqual(await published(), [
+    { credential_slot: "anthropic-api", model: "claude-haiku-5-5" },
+  ]);
+  assert.deepEqual(await composedRootStarted(), { started: "Started" });
+  assert.deepEqual(await published(), []);
+});
+
 test("the composed selector process refuses to start when one door is not granted", async () => {
   const owner = postgresPool(postgresHarnessUrl());
   const door = `${sessionSystemPromptSetFunction}(${systemPromptSetSignature})`;
-  let stdout: string;
+  let started: Awaited<ReturnType<typeof composedRootStarted>>;
   await owner.query(
     `REVOKE EXECUTE ON FUNCTION ${door} FROM ${selectorServiceRole}`,
   );
   try {
-    ({ stdout } = await execute(
-      process.execPath,
-      [
-        "--experimental-strip-types",
-        "--input-type=module",
-        "--eval",
-        composedRootProgram,
-      ],
-      {
-        cwd: process.cwd(),
-        env: { ...process.env, CHUG_SELECTOR_URL: selectorDatabaseUrl() },
-      },
-    ));
+    started = await composedRootStarted();
   } finally {
     await owner.query(
       `GRANT EXECUTE ON FUNCTION ${door} TO ${selectorServiceRole}`,
     );
     await owner.end();
   }
-  const started = JSON.parse(stdout) as {
-    readonly started: string;
-    readonly precondition?: string;
-  };
   assert.equal(
     started.started,
     "CouldNotRun",

@@ -47,10 +47,12 @@ import {
   repositoryRetirementWriteFunction,
   schedulerRole,
   selectorServiceRole,
+  sessionLeadOfferingFunction,
   sessionPlacementSetFunction,
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   statusMoveFunction,
+  subsidizedLeadReadFunction,
   ticketLandingsReadFunction,
   ticketRateLimitResumableFunction,
   ticketServiceRole,
@@ -672,9 +674,19 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${sessionPlacementSetFunction}(text,text,text,text,text,text)`,
+    `${sessionPlacementSetFunction}(text,text,text,text,text,text,text)`,
     [apiRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${sessionLeadOfferingFunction}(text,text)`,
+    [apiRole, selectorServiceRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${subsidizedLeadReadFunction}()`,
+    [apiRole],
+    [selectorServiceRole, schedulerRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
     `${leadSessionFunction}(text,text)`,
@@ -913,6 +925,8 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["invite_link", "note", "UPDATE", accessPlaneRole, false],
   ["invite_link", "create_accounts", "UPDATE", accessPlaneRole, false],
   ["selector_lead_refusal", null, "DELETE", selectorServiceRole, true],
+  ["subsidized_lead", null, "DELETE", selectorServiceRole, true],
+  ["subsidized_lead", null, "SELECT", apiRole, false],
   [
     "project_repository",
     "pipelines_writable",

@@ -2651,6 +2651,10 @@
         "lead": {
           "type": "string",
           "enum": ["InCluster", "Pool"]
+        },
+        "leadOffering": {
+          "type": "string",
+          "enum": ["Own", "Subsidized"]
         }
       },
       "required": ["thread", "lead"],

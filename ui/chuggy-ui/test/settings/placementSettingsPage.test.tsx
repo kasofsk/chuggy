@@ -62,6 +62,8 @@ const granted = {
 const sessionsGranted = {
   thread: { route: "Pool", source: "Default" },
   lead: { route: "InCluster", source: "Override" },
+  leadOffering: "Own",
+  leadOfferings: ["Own"],
   choices: ["InCluster", "Pool"],
   runners: { mine: "Offline", project: "Live" },
 };
