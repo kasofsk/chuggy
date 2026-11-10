@@ -15,16 +15,15 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { epicGraphQuery, epicHistoryQuery, epicQuery } from "../core/epics.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
-import { ticketListAskDefault } from "../core/projectTableFilters.ts";
+import { epicMembersQuery } from "../core/epicTickets.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
-import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import { usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { useLandingQueues } from "./ticket/LandingQueueChip.tsx";
@@ -76,8 +75,7 @@ function EpicPageOf(props: {
   const historyState = usePanelState(
     epicHistoryQuery(partition, epic, undefined),
   );
-  const ask = useMemo(() => ({ ...ticketListAskDefault, epic }), [epic]);
-  const rowsState = usePanelState(ticketRowsQuery(partition, ask));
+  const rowsState = usePanelState(epicMembersQuery(partition, epic));
   const creatorEmails = useCreatorEmails(partition);
   const queues = useLandingQueues(partition);
   const writing = !projectAbilityRefused(

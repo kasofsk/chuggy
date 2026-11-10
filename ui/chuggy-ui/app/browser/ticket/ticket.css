@@ -781,6 +781,35 @@
     stroke-linejoin: round;
   }
 
+  /* A mark or a word drawn apart from the label takes its tone's ink itself. */
+  .ticket-state-ink {
+    color: var(--ink-3);
+  }
+
+  .ticket-state-ink[data-tone="pass"] {
+    color: var(--tone-pass);
+  }
+
+  .ticket-state-ink[data-tone="queued"] {
+    color: var(--tone-queued);
+  }
+
+  .ticket-state-ink[data-tone="live"] {
+    color: var(--tone-live);
+  }
+
+  .ticket-state-ink[data-tone="evaluation"] {
+    color: var(--tone-evaluation);
+  }
+
+  .ticket-state-ink[data-tone="finalization"] {
+    color: var(--tone-finalization);
+  }
+
+  .ticket-state-ink[data-tone="parked"] {
+    color: var(--tone-parked);
+  }
+
   .ticket-state-filled-path {
     fill: currentColor;
     stroke: none;

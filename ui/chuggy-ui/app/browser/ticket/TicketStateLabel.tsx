@@ -98,6 +98,19 @@ const ticketStateFormAttributes = {
   Outlined: "outlined",
 } as const satisfies Record<TicketStateLabelForm, string>;
 
+/** A state's word alone, in its tone, where its mark is drawn apart from it. */
+export function TicketStateWord(props: {
+  readonly standing: TicketStateStanding;
+}): ReactNode {
+  const label = ticketStateLabelOf(props.standing);
+  const text = useCopyText();
+  return (
+    <span className="ticket-state-ink" data-tone={label.tone}>
+      {text(label.word)}
+    </span>
+  );
+}
+
 export function TicketStateLabel(props: {
   readonly standing: TicketStateStanding;
   readonly size: TicketStateLabelSize;
