@@ -48,6 +48,7 @@ export interface ConfigurationStepsCopy {
   readonly "configuration-steps-authority": Record<never, never>;
   readonly "configuration-steps-framing": Record<never, never>;
   readonly "configuration-steps-brief": Record<never, never>;
+  readonly "configuration-steps-reevaluate": Record<never, never>;
   readonly "configuration-steps-run-requirement": Record<never, never>;
   readonly "configuration-steps-tools": Record<never, never>;
   readonly "configuration-steps-credentials": Record<never, never>;

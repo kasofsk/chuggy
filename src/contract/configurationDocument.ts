@@ -686,6 +686,17 @@ const workloadPlacementShape = {
   resources: configurationResourceSizeSchema.optional(),
 };
 
+/** Whether a workload run as an evaluator must run again where the ticket's own diff has not changed since it last passed. */
+export const workloadReevaluations = ["Always", "OnChange"] as const;
+
+/** When a workload is run again as an evaluator; absent is Always. */
+const workloadReevaluateSchema = z
+  .enum(workloadReevaluations)
+  .optional()
+  .describe(
+    "Whether the workload, run as an evaluator, must run again where the ticket's own diff has not changed since it last passed: Always says it must, OnChange that it need not; absent is Always.",
+  );
+
 /** A workload an agent carries out: its own prompt, worker and authority, with every framing opt-in. */
 export const agentWorkloadSchema = z.strictObject({
   runner: z.literal("Agent"),
@@ -706,6 +717,7 @@ export const agentWorkloadSchema = z.strictObject({
     ),
   practices: configurationPracticesSchema.optional(),
   brief: configurationBriefSchema.optional(),
+  reevaluate: workloadReevaluateSchema,
   ...workloadPlacementShape,
 });
 
@@ -715,6 +727,7 @@ export const commandsWorkloadSchema = z.strictObject({
   commands: configurationCommandLinesSchema,
   worker: configurationPreparationSchema.optional(),
   authority: configurationAuthoritySchema.optional(),
+  reevaluate: workloadReevaluateSchema,
   ...workloadPlacementShape,
 });
 
@@ -780,6 +793,7 @@ export const workloadOverrideSchema = z
     commands: configurationCommandLinesSchema.optional(),
     approvers: approvalWorkloadSchema.shape.approvers,
     instructions: approvalWorkloadSchema.shape.instructions,
+    reevaluate: workloadReevaluateSchema,
     ...workloadPlacementShape,
   })
   .describe(

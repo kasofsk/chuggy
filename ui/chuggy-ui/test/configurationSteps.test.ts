@@ -138,6 +138,13 @@ test("an override that drops a resource names it without a count", () => {
   expect(work.overrides).toEqual(["CPUs", "8192 MiB"]);
 });
 
+test("an override of when a workload runs again is named by its field", () => {
+  const work = workRow(
+    steps({ workloads: { build: { reevaluate: "OnChange" } } }),
+  );
+  expect(work.overrides).toEqual(["Reevaluates"]);
+});
+
 test("an override of one workload marks no other step", () => {
   const read = steps(
     { workloads: { gates: { commands: ["npm run gate"] } } },

@@ -52,6 +52,7 @@ configuration-catalog-field-file = File
 # spells -runner: the workload's own runner field, Agent or Commands, not a machine
 configuration-catalog-field-runner = Runner
 configuration-catalog-field-evaluator = As { -evaluator(form: "a") }
+configuration-catalog-field-reevaluate = Reevaluates
 configuration-catalog-field-model = Model
 configuration-catalog-field-prompt = Prompt
 configuration-catalog-field-approval = { -approval(case: "upper") }
