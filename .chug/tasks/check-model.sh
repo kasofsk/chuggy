@@ -10,7 +10,7 @@
 # THE RANDOMIZED RUNS ARE SEEDED FROM THE KEY WHEN A PASS CAN BE RECORDED.
 # `track-record run` hands the gate the key a pass is recorded under as
 # TRACK_RECORD_KEY, and its leading hex digits, as many as quint's simulator
-# takes for a seed, seed both runs and every suite: a pass on record is the one
+# takes for a seed, seed every run and every suite: a pass on record is the one
 # sweep that reproduces it, and a model that differs, or anything else
 # `.chug/tasks/_ci-select.sh` keys this gate on, sweeps afresh. Without a key
 # nothing is seeded and every sweep is afresh.

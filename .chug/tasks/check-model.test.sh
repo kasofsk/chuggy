@@ -167,7 +167,7 @@ run_in_repo() {
 # the total the success line prints is a fixture size this suite knows.
 model_repo 0.33.1
 run_in_repo
-check "a clean model run exits 0" 0 "$RC" "0 failure(s), 14 test(s) run"
+check "a clean model run exits 0" 0 "$RC" "0 failure(s), 15 test(s) run"
 
 # A CALLER'S FORCE_COLOR MUST NOT REACH QUINT. Every verdict is read out of
 # Quint's own text, so a colour escape in front of the passing count reads as a
@@ -179,7 +179,7 @@ FORCE_COLOR=1
 export FORCE_COLOR
 run_in_repo
 unset FORCE_COLOR
-check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "14 test(s) run"
+check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "15 test(s) run"
 
 # A SUITE THAT SELECTED NOTHING IS NOT A SUITE THAT PASSED. Quint runs only the
 # names its match selects and exits 0 when that is none of them, so a renamed
@@ -224,7 +224,7 @@ check "a refuted invariant is a finding" 1 "$RC" "violated an invariant"
 check "a refuted invariant prints its seed" 1 "$RC" "0x1c6f70db7e06ad9b"
 
 # A PASS THAT CAN BE RECORDED IS ONE SWEEP THAT REPRODUCES IT. With a key,
-# both randomized runs and every suite are seeded from its leading hex digits,
+# every randomized run and every suite are seeded from its leading hex digits,
 # and the stage says so; without one, nothing is. A key that is no key seeds
 # nothing and runs nothing.
 key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -240,14 +240,14 @@ set -e
 check "a key names the seed it gives the runs" 0 "$RC" "seeded 0x0123456789abcdef from TRACK_RECORD_KEY"
 seeded="$(grep '^run ' "$STUB_LOG" | grep -c -- ' --seed=0x0123456789abcdef ' || true)"
 printf 'seeded runs %s\n' "$seeded" >> "$OUT"
-check "a key seeds both randomized runs" 0 "$RC" "seeded runs 2"
+check "a key seeds every randomized run" 0 "$RC" "seeded runs 3"
 # Each suite carries the gate's sample bound beside the seed, because under a
 # seed quint's own default is a single sample, which would try one draw of
 # each run and no other.
 suites="$(grep '^test ' "$STUB_LOG" | grep -vc '/evaluator\.qnt$' || true)"
 seeded="$(grep '^test ' "$STUB_LOG" | grep -c -- '^test --seed=0x0123456789abcdef --max-samples=200 ' || true)"
 printf 'seeded suites %s of %s\n' "$seeded" "$suites" >> "$OUT"
-check "a key seeds every suite and bounds its samples" 0 "$RC" "seeded suites 14 of 14"
+check "a key seeds every suite and bounds its samples" 0 "$RC" "seeded suites 15 of 15"
 : > "$STUB_LOG"
 run_in_repo
 seeded="$(grep -c -- '--seed' "$STUB_LOG" || true)"
@@ -255,7 +255,7 @@ printf 'seeded calls %s\n' "$seeded" >> "$OUT"
 check "without a key no run is seeded" 0 "$RC" "seeded calls 0"
 bounded="$(grep -c -- '^test --max-samples=200 ' "$STUB_LOG" || true)"
 printf 'bounded suites %s\n' "$bounded" >> "$OUT"
-check "without a key every suite still bounds its samples" 0 "$RC" "bounded suites 14"
+check "without a key every suite still bounds its samples" 0 "$RC" "bounded suites 15"
 : > "$STUB_LOG"
 OUT="$WORK/.out"
 set +e
