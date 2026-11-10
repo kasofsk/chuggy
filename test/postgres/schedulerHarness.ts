@@ -42,8 +42,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 
+import type { Config } from "../../src/domain/config.ts";
 import { revokeTicketCommand } from "../../src/actor/command.ts";
-import type { CanonicalConfiguration } from "../../src/interpreter/authoring.ts";
+import type {
+  CanonicalConfiguration,
+  ReleaseAuthoring,
+} from "../../src/interpreter/authoring.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import { postgresDependencyPins } from "../../src/adapters/postgres/dependencyDeliveries.ts";
 import {
@@ -273,7 +277,8 @@ async function schedulerCapacityFor(
  * A project with one dispatched ticket, a spawn request to register, and
  * capacity behind it. It is made in the partition a case names, which is how
  * two projects share a name, and released under the configuration a case
- * names, because what a ticket runs at is resolved by its release.
+ * names, with the program and under the writer's bounds a case names,
+ * because what a ticket runs at is resolved by its release.
  */
 export async function schedulerProject(
   rig: SchedulerRig,
@@ -282,6 +287,10 @@ export async function schedulerProject(
   canonical?: CanonicalConfiguration,
   partition: Partition = postgresHarnessPartition(label),
   overrides?: ConfigurationOverrides,
+  release: {
+    readonly authoring?: ReleaseAuthoring;
+    readonly config?: Config;
+  } = {},
 ): Promise<SchedulerProject> {
   await rig.harness.store.createProject(partition);
   const memory = await postgresHarnessHistory(
@@ -289,9 +298,10 @@ export async function schedulerProject(
     partition,
     label,
     postgresHarnessJournal().length,
-    undefined,
+    release.authoring,
     canonical,
     overrides,
+    release.config,
   );
   const spawn = await schedulerSpawnRequest(rig, partition);
   return {

@@ -66,7 +66,8 @@ import type {
 import { blockedReasons, type BlockedReason } from "../../contract/rosters.ts";
 import { parseStoredProjectCommand } from "../../interpreter/wire.ts";
 import {
-  isApprovalResolution,
+  allNativeActionKinds,
+  isEscalationResolution,
   isSchedulerCompletion,
   type FinalizationSubmission,
   type ProjectCommand,
@@ -536,8 +537,12 @@ async function nativeActionSource(
   operation: string,
   command: Extract<ProjectCommand, { readonly command: "ResolveNativeAction" }>,
 ): Promise<DecisionInput["source"]> {
-  const action = await pool.query<{ ticket: string; state: string }>(
-    sql`SELECT a.ticket::text, a.state FROM native_action a
+  const action = await pool.query<{
+    ticket: string;
+    state: string;
+    kind: string;
+  }>(
+    sql`SELECT a.ticket::text, a.state, a.kind FROM native_action a
       JOIN native_action_resolution r USING (tenant, project, action)
      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
        AND a.action=${command.action}
@@ -550,6 +555,9 @@ async function nativeActionSource(
       `native action ${command.action} is not open at the requested fence`,
     );
   const ticket = projectRowCounter(open.ticket, "native action ticket");
+  const kind = allNativeActionKinds.find((each) => each === open.kind);
+  if (kind === undefined)
+    throw new Error(`native action ${command.action} is of no known kind`);
   const answered = {
     kind: "Operation" as const,
     operation: asOperationId(operation),
@@ -557,12 +565,14 @@ async function nativeActionSource(
     nativeAction: {
       action: command.action,
       authorizingSeq: command.authorizingSeq,
+      kind,
       resolution: command.resolution,
       open: open.state === "Open",
     },
   };
   const resolution = command.resolution;
-  if (isApprovalResolution(resolution)) return answered;
+  if (kind !== "TicketEscalation" || !isEscalationResolution(resolution))
+    return answered;
   return {
     ...answered,
     ticketCommand: ticketCommandOf({

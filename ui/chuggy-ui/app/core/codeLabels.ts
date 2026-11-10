@@ -563,6 +563,8 @@ export function nativeActionKindLabel(kind: NativeActionKind): Copy {
       return { id: "codes-native-escalation" };
     case "FinalizationApproval":
       return { id: "codes-native-approval" };
+    case "EvaluationApproval":
+      return { id: "codes-native-evaluation-approval" };
   }
 }
 
@@ -944,6 +946,8 @@ function operationRefusalBoundaryLabel(
       return { id: "codes-refusal-overrides-change-approval" };
     case "ApprovalNotRunnable":
       return { id: "codes-refusal-approval-not-runnable" };
+    case "ApprovalNotAnswerable":
+      return { id: "codes-refusal-approval-not-answerable" };
   }
 }
 

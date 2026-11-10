@@ -15,10 +15,10 @@ import {
 } from "./085-dependencies-change.ts";
 
 /** Every refusal the machine decides, as 114 admitted them. */
-const domainRefusals = [...domainRefusalsAt085, "EvaluationNotCurrent"];
+export const domainRefusals = [...domainRefusalsAt085, "EvaluationNotCurrent"];
 
 /** The boundary's own refusals: 085's, and the three this adds. */
-const boundaryRefusals = [
+export const boundaryRefusals = [
   ...boundaryRefusalsAt085,
   "ApprovalAsWork",
   "OverridesChangeApprovalRunner",

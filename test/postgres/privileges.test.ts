@@ -948,7 +948,8 @@ test("the API reads a ticket's open questions and no more of the desk", async ()
       {
         table_name: "native_action",
         privilege_type: "SELECT",
-        columns: "action,authorizing_seq,kind,project,state,tenant,ticket",
+        columns:
+          "action,authorizing_seq,execution,kind,project,state,tenant,ticket",
       },
       {
         table_name: "native_action_resolution",

@@ -9,18 +9,38 @@
  * button. `ResolveNativeAction` carries the action's identity and the fence it
  * was raised at, which is how the API refuses an answer to an action that has
  * moved on.
+ *
+ * AN EVALUATION APPROVAL IS OFFERED NO ANSWER. The writer refuses one
+ * `ApprovalNotAnswerable`, so a button for it could only be refused.
  */
 
 import { nativeActionKindResolutions } from "../../../../src/contract/rosters.ts";
-import type { NativeActionResolution } from "../../../../src/contract/rosters.ts";
+import type { NativeActionKind } from "../../../../src/contract/rosters.ts";
 import type { NativeActionResponse } from "../../../../src/contract/responses.ts";
 
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 
+/** A kind the console offers answers to. */
+export type NativeActionAnswered = Exclude<
+  NativeActionKind,
+  "EvaluationApproval"
+>;
+
+/** An answer the console offers, which is one an answered kind admits. */
+export type NativeActionOffered =
+  (typeof nativeActionKindResolutions)[NativeActionAnswered][number];
+
+/** Whether the console offers this kind's answers. */
+export function nativeActionAnswered(
+  kind: NativeActionKind,
+): kind is NativeActionAnswered {
+  return kind !== "EvaluationApproval";
+}
+
 /** What the button says, which is the resolution without the noun the mutation
  * beside it already names. */
 export function nativeActionAnswerName(
-  resolution: NativeActionResolution,
+  resolution: NativeActionOffered,
 ): TicketActionName {
   switch (resolution) {
     case "Resume":
@@ -38,7 +58,9 @@ export function nativeActionAnswerName(
 export function nativeActionAnswers(
   action: NativeActionResponse,
 ): readonly TicketAction[] {
-  return nativeActionKindResolutions[action.kind]
+  const kind = action.kind;
+  if (!nativeActionAnswered(kind)) return [];
+  return nativeActionKindResolutions[kind]
     .filter((resolution) => action.admits.includes(resolution))
     .map((resolution) => ({
       action: nativeActionAnswerName(resolution),

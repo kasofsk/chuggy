@@ -59,6 +59,8 @@ export function nativeActionKindSentence(kind: NativeActionKind): Copy {
       return { id: "sentences-native-escalation" };
     case "FinalizationApproval":
       return { id: "sentences-native-approval" };
+    case "EvaluationApproval":
+      return { id: "sentences-native-evaluation-approval" };
   }
 }
 
@@ -309,6 +311,8 @@ export function operationRefusalSentence(refused: OperationRefusal): Copy {
       return { id: "sentences-refusal-overrides-change-approval" };
     case "ApprovalNotRunnable":
       return { id: "sentences-refusal-approval-not-runnable" };
+    case "ApprovalNotAnswerable":
+      return { id: "sentences-refusal-approval-not-answerable" };
   }
 }
 

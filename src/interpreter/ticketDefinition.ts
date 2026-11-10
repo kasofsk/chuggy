@@ -437,6 +437,22 @@ function ticketStoredTask(
 }
 
 /**
+ * Whether one task's stored material is an approval's, which a person answers
+ * and no runner takes, so it names who may answer in place of a requirement.
+ */
+export function ticketTaskAwaitsPerson(
+  stored: unknown,
+  key: TicketTaskKey,
+): boolean {
+  const task = ticketStoredTask(stored, key);
+  if (task === undefined)
+    throw new TypeError(
+      `ticket definition: the stored material resolves nothing for ${key}`,
+    );
+  return task["approvers"] !== undefined;
+}
+
+/**
  * The requirement one task runs under, read back out of the stored material.
  * IT IS READ AND NOT RE-MATERIALIZED: the requirement folds in platform
  * defaults this image carries, so resolving it a second time would run a cycle

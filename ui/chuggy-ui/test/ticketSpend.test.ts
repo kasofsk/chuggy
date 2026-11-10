@@ -47,6 +47,14 @@ function spent(cycle: Cycle | Ledger): readonly unknown[] {
   ];
 }
 
+/** What a placed run is placed on, which an approval's names none of. */
+const requirement: RunTimed["requirement"] = {
+  mode: "Container",
+  operatingSystem: "Linux",
+  architecture: "Amd64",
+  image: "worker:v2",
+};
+
 /** A run registered at an instant a case names, taken and ended where it says. */
 function timed(
   registeredAt: string,
@@ -54,6 +62,7 @@ function timed(
   terminalAt?: string,
 ): RunTimed {
   return {
+    requirement,
     registeredAt,
     ...(takenAt === undefined ? {} : { takenAt }),
     ...(terminalAt === undefined ? {} : { terminalAt }),
@@ -61,6 +70,14 @@ function timed(
 }
 
 const minuteMs = 60_000;
+
+test("an approval's wait on a person is neither run time nor wait", () => {
+  const approval: RunTimed = { registeredAt: "2026-11-07T10:00:00Z" };
+  const placed = timed("2026-11-07T10:00:00Z", "2026-11-07T10:01:00Z");
+  expect(
+    runTimeOf([approval, placed], Date.parse("2026-11-07T10:05:00Z")),
+  ).toEqual({ ranMs: 4 * minuteMs, waitedMs: minuteMs });
+});
 
 test("a run's time runs from when it was taken to its end, and its wait from its registration to when it was taken", () => {
   const run = timed(

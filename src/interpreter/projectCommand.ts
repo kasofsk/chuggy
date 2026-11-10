@@ -96,6 +96,7 @@ export function isCompletionTicketCommand(
 export const nativeActionResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
   FinalizationApproval: ["Approve", "Decline"],
+  EvaluationApproval: ["Approve", "Reject"],
 } as const;
 
 /** The kinds of question a native action puts to a person. */
@@ -118,11 +119,19 @@ export type EscalationResolution =
 export type ApprovalResolution =
   (typeof nativeActionResolutions)["FinalizationApproval"][number];
 
-export type NativeActionResolution = EscalationResolution | ApprovalResolution;
+/** The two answers an evaluation approval admits, either of which the writer refuses `ApprovalNotAnswerable`. */
+export type EvaluationApprovalResolution =
+  (typeof nativeActionResolutions)["EvaluationApproval"][number];
 
-/** Every resolution, so a suite and a database CHECK iterate rather than restate. */
-export const allNativeActionResolutions: readonly NativeActionResolution[] =
-  allNativeActionKinds.flatMap((kind) => [...nativeActionResolutions[kind]]);
+export type NativeActionResolution =
+  EscalationResolution | ApprovalResolution | EvaluationApprovalResolution;
+
+/** Every resolution once, so a suite and a database CHECK iterate rather than restate. */
+export const allNativeActionResolutions: readonly NativeActionResolution[] = [
+  ...new Set(
+    allNativeActionKinds.flatMap((kind) => [...nativeActionResolutions[kind]]),
+  ),
+];
 
 /**
  * The one answer that reduces outstanding correctness risk rather than adding
@@ -131,7 +140,16 @@ export const allNativeActionResolutions: readonly NativeActionResolution[] =
  */
 export const safetyResolution: NativeActionResolution = "Revoke";
 
-/** Whether an answer is one of the two that name no ticket command. */
+/** Whether an answer is one of the two an escalation admits, each naming a ticket command. */
+export function isEscalationResolution(
+  resolution: NativeActionResolution,
+): resolution is EscalationResolution {
+  return nativeActionResolutions.TicketEscalation.some(
+    (each) => each === resolution,
+  );
+}
+
+/** Whether an answer is one of the two a finalization approval admits, which name no ticket command. */
 export function isApprovalResolution(
   resolution: NativeActionResolution,
 ): resolution is ApprovalResolution {

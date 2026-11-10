@@ -38,7 +38,8 @@ export type BoundaryRefusalCode =
   | "OverridesMoveDefinition"
   | "ApprovalAsWork"
   | "OverridesChangeApprovalRunner"
-  | "ApprovalNotRunnable";
+  | "ApprovalNotRunnable"
+  | "ApprovalNotAnswerable";
 
 /** Every boundary refusal, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
@@ -63,6 +64,7 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "ApprovalAsWork",
   "OverridesChangeApprovalRunner",
   "ApprovalNotRunnable",
+  "ApprovalNotAnswerable",
 ];
 
 /**

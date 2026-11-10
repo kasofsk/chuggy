@@ -304,7 +304,9 @@ function TicketRunDetailsFields(props: {
   const none = text({ id: "ticket-value-none" });
   return (
     <Fields>
-      <Field name={text({ id: "ticket-run-runner" })}>{details.runner}</Field>
+      {details.runner === undefined ? null : (
+        <Field name={text({ id: "ticket-run-runner" })}>{details.runner}</Field>
+      )}
       {details.image === undefined ? null : (
         <Field name={text({ id: "ticket-run-image" })}>
           <Identity label={details.image} />

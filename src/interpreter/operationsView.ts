@@ -9,11 +9,11 @@ import type {
   AttemptEvidence,
   AttemptState,
   ExecutionOutcome,
-  ExecutionStatus,
+  ExecutionStanding,
   ExecutionTaskKind,
 } from "./executionScheduler.ts";
 import type { ExecutionRunResource, RunTotals } from "./runEvidence.ts";
-import { allExecutionStatuses } from "./executionScheduler.ts";
+import { allExecutionStandings } from "./executionScheduler.ts";
 import type { Principal } from "./principal.ts";
 import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import type { Partition } from "./projectStore.ts";
@@ -86,7 +86,7 @@ export type ExecutionSelection =
   | { readonly selection: "NonTerminal" }
   | {
       readonly selection: "Selected";
-      readonly states: readonly ExecutionStatus[];
+      readonly states: readonly ExecutionStanding[];
     };
 
 /**
@@ -147,16 +147,17 @@ export interface ExecutionSummary {
   readonly configurationRevision: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;
   readonly requirementIdentity: string;
-  readonly requirement: ExecutionRequirement;
-  readonly requirementDigest: string;
-  readonly requirementSource: RequirementSource;
+  /** What a runner must offer to take it, absent with the three beside it only for an approval's execution, which no runner takes. */
+  readonly requirement?: ExecutionRequirement;
+  readonly requirementDigest?: string;
+  readonly requirementSource?: RequirementSource;
   /** The spawn request that made this execution, which is its spawn set's identity. */
   readonly request: string;
   readonly worker?: Worker;
-  readonly platformDefaultVersion: number;
+  readonly platformDefaultVersion?: number;
   /** The size its task was released with, absent where it names none and the deployment's is used. */
   readonly resources?: TaskResources;
-  readonly status: ExecutionStatus;
+  readonly status: ExecutionStanding;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent: number;
   /** How many times the fabric opened another attempt after losing one. */
@@ -191,13 +192,14 @@ export interface ExecutionSummary {
 /**
  * The same summary carrying the label the image its requirement pins is
  * catalogued under. A requirement stated as capabilities names no image of
- * its own, and keeps none.
+ * its own, and keeps none, as an approval's execution, which names no
+ * requirement, does.
  */
 export function executionSummaryLabelled(
   summary: ExecutionSummary,
   workers: ReadonlyMap<string, Worker>,
 ): ExecutionSummary {
-  if (summary.requirement.mode !== "Container") return summary;
+  if (summary.requirement?.mode !== "Container") return summary;
   const worker = workers.get(summary.requirement.image);
   return worker === undefined ? summary : { ...summary, worker };
 }
@@ -240,7 +242,9 @@ export function ticketLatestExecution(
     ...(summary.runStartedAt === undefined
       ? {}
       : { runStartedAt: summary.runStartedAt }),
-    requirement: summary.requirement,
+    ...(summary.requirement === undefined
+      ? {}
+      : { requirement: summary.requirement }),
     ...(summary.worker === undefined ? {} : { worker: summary.worker }),
     registeredAt: summary.registeredAt,
     ...(summary.terminalAt === undefined
@@ -254,7 +258,9 @@ export function executionSummaryImages(
   summaries: readonly ExecutionSummary[],
 ): readonly string[] {
   return summaries.flatMap((summary) =>
-    summary.requirement.mode === "Container" ? [summary.requirement.image] : [],
+    summary.requirement?.mode === "Container"
+      ? [summary.requirement.image]
+      : [],
   );
 }
 
@@ -393,7 +399,7 @@ export function executionSelectionRefused(
 ): RangeError {
   const named = refused === undefined ? "no state" : JSON.stringify(refused);
   return new RangeError(
-    `execution state selection is invalid: it refused ${named}, and accepts NonTerminal alone or distinct states among ${allExecutionStatuses.join(", ")}`,
+    `execution state selection is invalid: it refused ${named}, and accepts NonTerminal alone or distinct states among ${allExecutionStandings.join(", ")}`,
   );
 }
 
@@ -424,7 +430,7 @@ export function checkedExecutionListQuery(
     if (states.length < 1) throw executionSelectionRefused(undefined);
     const refused = states.find(
       (state, index) =>
-        !allExecutionStatuses.includes(state) ||
+        !allExecutionStandings.includes(state) ||
         states.indexOf(state) !== index,
     );
     if (refused !== undefined) throw executionSelectionRefused(refused);

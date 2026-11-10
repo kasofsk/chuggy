@@ -10,6 +10,7 @@ export interface SentencesCopy {
   readonly "sentences-escalation-landing-unavailable": Record<never, never>;
   readonly "sentences-native-escalation": Record<never, never>;
   readonly "sentences-native-approval": Record<never, never>;
+  readonly "sentences-native-evaluation-approval": Record<never, never>;
   readonly "sentences-state-pending": Record<never, never>;
   readonly "sentences-state-succeeded": Record<never, never>;
   readonly "sentences-state-refused": Record<never, never>;
@@ -105,6 +106,7 @@ export interface SentencesCopy {
   readonly "sentences-refusal-approval-as-work": Record<never, never>;
   readonly "sentences-refusal-overrides-change-approval": Record<never, never>;
   readonly "sentences-refusal-approval-not-runnable": Record<never, never>;
+  readonly "sentences-refusal-approval-not-answerable": Record<never, never>;
   readonly "sentences-following-held": {
     readonly refusal: unknown;
   };
