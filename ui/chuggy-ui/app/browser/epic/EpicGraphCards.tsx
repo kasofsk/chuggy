@@ -42,7 +42,7 @@ import { TicketStateLabel } from "../ticket/TicketStateLabel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 
 import "../ProjectTable.css";
-import "./epic.css";
+import "./epicGraph.css";
 
 /** What every card on one graph is drawn against. */
 export interface EpicGraphCardsHeld {
@@ -99,6 +99,25 @@ function epicGraphRunWords(run: EpicGraphRun): {
   }
 }
 
+/** The state of a ticket the ticket list holds no row of, as the graph says
+ * it, and a draft's word where it was never released. */
+export function EpicGraphNodeState(props: {
+  readonly node: EpicGraphResponse["nodes"][number];
+  readonly graph: EpicGraphResponse;
+}): ReactNode {
+  const text = useCopyText();
+  const standing = epicGraphStandingOf(props.node, props.graph);
+  return standing === undefined ? (
+    <Pill tone="neutral">{text({ id: "standing-draft" })}</Pill>
+  ) : (
+    <TicketStateChip
+      ticket={props.node.ticket}
+      standing={standing}
+      hint={undefined}
+    />
+  );
+}
+
 /** The member's state, over the card: the list's own chip, its dispatch
  * where it is ready, from the row the list holds; or, where it holds none, the
  * state the graph says, and a draft's word where it was never released. */
@@ -106,21 +125,10 @@ function EpicGraphMemberState(props: {
   readonly card: EpicGraphCard;
   readonly held: EpicGraphCardsHeld;
 }): ReactNode {
-  const text = useCopyText();
   const { node } = props.card;
   const row = props.held.rows.get(node.ticket);
-  if (row === undefined) {
-    const standing = epicGraphStandingOf(node, props.held.graph);
-    return standing === undefined ? (
-      <Pill tone="neutral">{text({ id: "standing-draft" })}</Pill>
-    ) : (
-      <TicketStateChip
-        ticket={node.ticket}
-        standing={standing}
-        hint={undefined}
-      />
-    );
-  }
+  if (row === undefined)
+    return <EpicGraphNodeState node={node} graph={props.held.graph} />;
   if (ticketListStandingOf(row) !== "Ready")
     return <TicketListState row={row} />;
   return (

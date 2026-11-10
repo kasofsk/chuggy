@@ -90,8 +90,16 @@ const consolePageTicketTabs = [
   "/usage",
 ] as const;
 
-/** The epic page and each of its tabs: every one is the epic's page. */
-const consolePageEpicTabs = ["", "/", "/tickets", "/history"] as const;
+/** The epic page, each of its tabs and its edit page: every one is the
+ * epic's page. */
+const consolePageEpicTabs = [
+  "",
+  "/",
+  "/tickets",
+  "/graph",
+  "/history",
+  "/edit",
+] as const;
 
 /** The router's identity of a route under a project, by where it is. */
 function consolePageRouteId(path: string): string {

@@ -1,0 +1,8 @@
+/* The epic page's Overview tab: the description at reading width. */
+
+@layer page {
+  .epic-overview {
+    max-width: var(--width-reading);
+    min-width: 0;
+  }
+}

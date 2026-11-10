@@ -1,15 +1,18 @@
 /**
  * What the new-ticket address says about where a ticket starts: from nothing,
- * from another ticket it duplicates, or on a draft the project already holds,
- * which its submit releases.
+ * from nothing in an epic its picker starts on, from another ticket it
+ * duplicates, or on a draft the project already holds, which its submit
+ * releases.
  *
  * A draft named beside a ticket to duplicate wins, because the draft is what
- * a submit would write to and the duplicate only what a form is seeded from.
+ * a submit would write to and the duplicate only what a form is seeded from;
+ * either wins over an epic, which only a new ticket's form offers.
  */
 
 export interface TicketCreationQuery {
   readonly from?: number;
   readonly draft?: number;
+  readonly epic?: number;
 }
 
 function ticketCreationNumberOf(value: unknown): number | undefined {
@@ -30,5 +33,7 @@ export function ticketCreationQueryOf(
   const draft = ticketCreationNumberOf(search["draft"]);
   if (draft !== undefined) return { draft };
   const from = ticketCreationNumberOf(search["from"]);
-  return from === undefined ? {} : { from };
+  if (from !== undefined) return { from };
+  const epic = ticketCreationNumberOf(search["epic"]);
+  return epic === undefined ? {} : { epic };
 }

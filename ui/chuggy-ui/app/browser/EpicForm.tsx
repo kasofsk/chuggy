@@ -133,6 +133,36 @@ function EpicFormReload(props: { readonly onReload: () => void }): ReactNode {
   );
 }
 
+/** Submit; Cancel, where the form offers it; and the reload a stale refusal
+ * asks for. */
+function EpicFormActions(props: {
+  readonly submit: string;
+  readonly busy: boolean;
+  readonly onCancel: (() => void) | undefined;
+  readonly onReload: (() => void) | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="submit" variant="primary" disabled={props.busy}>
+        {props.submit}
+      </Button>
+      {props.onCancel === undefined ? null : (
+        <Button onClick={props.onCancel}>{text({ id: "ui-cancel" })}</Button>
+      )}
+      {props.onReload === undefined ? null : (
+        <EpicFormReload onReload={props.onReload} />
+      )}
+    </div>
+  );
+}
+
+/** The fields a form is typed into: the list's own by default. */
+export type EpicFormFieldsDrawn = (props: {
+  readonly form: EpicForm;
+  readonly onChange: (form: EpicForm) => void;
+}) => ReactNode;
+
 export function EpicFormPanel(props: {
   readonly partition: PartitionIdentity;
   readonly held: EpicHeld | undefined;
@@ -141,6 +171,9 @@ export function EpicFormPanel(props: {
     readonly epic: number;
     readonly revision: number;
   }) => void;
+  readonly fields?: EpicFormFieldsDrawn;
+  /** Leaves the form with nothing written, where it offers that. */
+  readonly onCancel?: () => void;
 }): ReactNode {
   const { partition, held } = props;
   const client = useQueryClient();
@@ -163,6 +196,7 @@ export function EpicFormPanel(props: {
   );
   const failure = writing.error?.failure;
   const refusedStale = failure?.outcome === "Conflict" && stale(failure.code);
+  const Fields = props.fields ?? EpicFormFields;
   return (
     <form
       className="grid gap-3"
@@ -177,26 +211,26 @@ export function EpicFormPanel(props: {
         });
       }}
     >
-      <EpicFormFields form={form} onChange={setForm} />
+      <Fields form={form} onChange={setForm} />
       <EpicFormFaults faults={faults} />
       {writing.error === null ? null : (
         <p className="notice notice-danger notice-inline" role="alert">
           <ConsoleWriteRefusedWords refused={writing.error} />
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" disabled={writing.isPending || faults.length > 0}>
-          {props.submit}
-        </Button>
-        {refusedStale ? (
-          <EpicFormReload
-            onReload={() => {
-              setReloading(true);
-              void epicsInvalidated(client, partition);
-            }}
-          />
-        ) : null}
-      </div>
+      <EpicFormActions
+        submit={props.submit}
+        busy={writing.isPending || faults.length > 0}
+        onCancel={props.onCancel}
+        onReload={
+          refusedStale
+            ? () => {
+                setReloading(true);
+                void epicsInvalidated(client, partition);
+              }
+            : undefined
+        }
+      />
     </form>
   );
 }

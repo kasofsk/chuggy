@@ -1,7 +1,7 @@
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
- * address's so a link holds the view, and one row an epic with its status,
- * how much of it is done and where its tickets stand. Each page of rows is
+ * address's so a link holds the view, and one row an epic with its status
+ * and a bar of where its tickets stand, with what the bar says beside it. Each page of rows is
  * read under its own cursor, and "Show more" mounts the next, so a page
  * already read is not read again.
  */
@@ -26,7 +26,7 @@ import type { EpicsQuery } from "../core/epics.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { EpicFormPanel } from "./EpicForm.tsx";
-import { EpicStanding } from "./epic/EpicProgress.tsx";
+import { EpicProgressRow, EpicStatusChip } from "./epic/EpicProgress.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -46,26 +46,31 @@ function EpicRow(props: {
   const { epic } = props;
   return (
     <li className="epic-row" data-epic={epic.number}>
-      <div className="epic-row-head">
-        <h3 className="epic-row-title">
-          <Link
-            to="/$tenant/$project/epics/$epic"
-            params={{ ...props.partition, epic: String(epic.number) }}
-          >
-            {epic.title}
-          </Link>
-        </h3>
-        <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
-        {epic.visibility === "Archived" ? (
-          <Pill tone="retired">
-            {text({ id: "epics-visibility-archived" })}
-          </Pill>
-        ) : null}
+      <div className="epic-row-main">
+        <div className="epic-row-head">
+          <h3 className="epic-row-title">
+            <Link
+              to="/$tenant/$project/epics/$epic"
+              params={{ ...props.partition, epic: String(epic.number) }}
+            >
+              {epic.title}
+            </Link>
+          </h3>
+          <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
+          <EpicStatusChip status={epic.status} />
+          {epic.visibility === "Archived" ? (
+            <Pill tone="retired">
+              {text({ id: "epics-visibility-archived" })}
+            </Pill>
+          ) : null}
+        </div>
+        {epic.summary === undefined ? null : (
+          <p className="epic-row-summary" title={epic.summary}>
+            {epic.summary}
+          </p>
+        )}
       </div>
-      {epic.summary === undefined ? null : (
-        <p className="text-ink-2 text-sm">{epic.summary}</p>
-      )}
-      <EpicStanding epic={epic} size="row" />
+      <EpicProgressRow progress={epic.progress} />
     </li>
   );
 }

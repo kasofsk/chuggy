@@ -14,7 +14,6 @@ epics-create = Create { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
 epics-show-more = Show more
-epics-show-older = Show older
 epics-reload = Reload the { -epic }
 epics-chip-archived = { $title } (archived)
 
@@ -27,7 +26,13 @@ epics-status-attention = Needs attention
 epics-status-done = Done
 epics-progress-none = no { -ticket(form: "plural") }
 epics-progress = { $done } of { $total } done
-epics-progress-count = { $count } { $phase }
+epics-progress-said-running = { $count } running
+epics-progress-said-escalated = { $count } { -escalation }
+epics-progress-done = Done
+epics-progress-running = Running
+epics-progress-escalated = { -escalation(case: "upper") }
+epics-progress-pending = Pending
+epics-progress-key = { -ticket(case: "upper", form: "plural") } by state
 
 ## The list's filters, and the form's fields.
 
@@ -41,19 +46,24 @@ epics-sort-oldest = Oldest
 epics-sort-title = Title
 epics-field-title = Title
 epics-field-summary = Summary
+epics-field-summary-count = { $count } / { $most }
 epics-field-description = Description
+epics-field-description-format = Markdown
 epics-field-tickets = { -ticket(case: "upper", form: "plural") }
 epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
 epics-faults-label = Faults
 
-## The page's header, its tabs, the graph and the history.
+## The page's header and its tabs.
 
 epics-tabs-label = { -epic(case: "upper") }
 epics-tab-overview = Overview
 epics-tab-tickets = { -ticket(case: "upper", form: "plural") }
+epics-tab-graph = Graph
 epics-tab-history = History
-epics-tickets-none = This { -epic } holds no { -ticket(form: "plural") }
-epics-edit = Edit the { -epic }
+epics-new-ticket = New { -ticket }
+epics-menu-label = More actions
+epics-copy-link = Copy link
+epics-copy-link-copied = Copied
 epics-archive = Archive
 epics-archive-title = Archive this { -epic }?
 epics-archive-body = An archived { -epic } takes no new { -ticket(form: "plural") } and keeps the ones it holds.
@@ -67,6 +77,16 @@ epics-note-waiting = Waiting on { $count ->
    *[other] { $count } { -ticket(form: "plural") }
 } outside this { -epic }:
 epics-saved = { -revision(case: "upper") } { $revision } · saved by { $actor }
+
+## The Overview tab.
+
+epics-overview-description = Description
+
+## The Tickets tab.
+
+epics-tickets-none = This { -epic } holds no { -ticket(form: "plural") }
+
+## The Graph tab.
 
 epics-graph-empty = This { -epic } has no { -ticket(form: "plural") } to draw
 epics-graph-loading = Drawing the graph…
@@ -86,9 +106,18 @@ epics-card-run-work-detail = { -work-stage(case: "upper") } in { -cycle } { $cyc
 epics-card-run-evaluation = { -stage(case: "upper") } { $stage }
 epics-card-run-evaluation-detail = { -stage(case: "upper") } { $stage } of { -cycle } { $cycle }
 epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
+
+## The History tab.
+
 epics-history = History
+epics-show-older = Show older
 epics-revisions-label = { -revision(case: "upper", form: "plural") }
 epics-revision = { -revision(case: "upper") } { $revision }
+
+## The edit page.
+
+epics-edit = Edit the { -epic }
+epics-edit-save = Save
 
 ## What a form has wrong before it is sent, and what a refused write says.
 
