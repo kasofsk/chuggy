@@ -196,6 +196,11 @@ import {
 import { postgresActionObservations } from "../adapters/postgres/actionObservation.ts";
 import { postgresTicketActionReach } from "../adapters/postgres/actionReach.ts";
 import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
+import { postgresLandingQueues } from "../adapters/postgres/landingQueues.ts";
+import {
+  landingQueueReads,
+  type LandingQueueReads,
+} from "../interpreter/landingQueues.ts";
 import {
   ticketLandingReads,
   type TicketLandingReads,
@@ -765,6 +770,17 @@ export function nativeTicketLandings(
     access,
     store: postgresTicketLandings(pools.pool),
     artifacts,
+  });
+}
+
+/** The landing queues route's service: one project's candidates are read through their door over the API pool. */
+export function nativeLandingQueues(
+  pools: Pick<NativePools, "pool">,
+  access: ProjectAccess,
+): LandingQueueReads {
+  return landingQueueReads({
+    access,
+    store: postgresLandingQueues(pools.pool),
   });
 }
 
@@ -1597,6 +1613,7 @@ async function main(): Promise<void> {
     composeProjectInbox(pool, selectorReviewPool, access, usageResume),
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
+    nativeLandingQueues(pools, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

@@ -160,6 +160,8 @@ function scopedApp(
     memberChatRecorded(reached, granted),
     recorded(reached, "inbox"),
     recorded(reached, "agentAccounts"),
+    undefined,
+    recorded(reached, "landingQueues"),
   );
 }
 

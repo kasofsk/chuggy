@@ -751,6 +751,88 @@ export async function finalizerStoreReleasedBrief(
   );
 }
 
+/** What a sibling ticket is written with. */
+export interface FinalizerSibling {
+  readonly landing: "Direct" | "Serialized" | "Stacked";
+  readonly phase: string;
+  /** Whether its finalization request is still to be drawn. */
+  readonly pending: boolean;
+  readonly target?: string;
+  /** How far from the project's request it entered the journal, before it when negative. */
+  readonly after?: number;
+  /** How its brief lands it, `Push` where it names none. */
+  readonly mode?: BriefFinalizationMode;
+  /** The repository its brief names, the project's where absent and none where null. */
+  readonly repository?: string | null;
+}
+
+/**
+ * Writes a ticket beside `project`'s, numbered one after it and entering at the
+ * journal entry `how.after` from its request, and answers it as a project so
+ * the attempt helpers can write beside it.
+ */
+export async function finalizerSibling(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  label: string,
+  how: FinalizerSibling,
+): Promise<FinalizerProject> {
+  const ticket = project.ticket + 1;
+  const request = finalizerIdentity(`request-${label}`);
+  const keys = [project.partition.tenant, project.partition.project, ticket];
+  const [found] = await rig.harness.query(
+    `SELECT brief FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  const brief = found?.["brief"] as StoredBrief | null | undefined;
+  if (brief === null || brief === undefined)
+    throw new Error("finalizer harness: the project's ticket has no brief");
+  const rest = Object.fromEntries(
+    Object.entries(brief).filter(
+      ([field]) =>
+        field !== "landing" &&
+        field !== "finalization" &&
+        field !== "repository",
+    ),
+  );
+  const repository =
+    how.repository === undefined ? project.repository : how.repository;
+  await finalizerStoreReleasedBrief(
+    (sql, values) => rig.harness.query(sql, [...values]),
+    keys,
+    {
+      ...rest,
+      ...(repository === null ? {} : { repository }),
+      ...(how.landing === "Direct" ? {} : { landing: how.landing }),
+      finalization: {
+        mode: how.mode ?? "Push",
+        ...(how.target === undefined ? {} : { target: how.target }),
+      },
+    },
+  );
+  await rig.harness.query(
+    `INSERT INTO ticket_projection (tenant, project, ticket, phase, seq)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [...keys, how.phase, project.authorizingSeq + 100],
+  );
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, request_generation, kind, state, work_cycle,
+        finalization_generation)
+     VALUES ($1,$2,$3,$4,1,$5,$4,1,'RunFinalizer',$6,1,1)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      project.authorizingSeq + (how.after ?? 0),
+      ticket,
+      how.pending ? "Open" : "Fulfilled",
+    ],
+  );
+  return { ...project, ticket, request };
+}
+
 /**
  * Rewrites the brief a released ticket runs with, as a case about a brief its
  * release did not carry has to: a ticket runs what its release stored, so the

@@ -97,9 +97,6 @@ import {
   serializedWaiting,
   type SerializedCandidate,
 } from "../../interpreter/serializedHolder.ts";
-import { briefLandsOn } from "../../interpreter/ticketBrief.ts";
-import { phaseRoster } from "../../contract/rosters.ts";
-import { releasedBriefOf } from "./ticketBrief.ts";
 import {
   allLifecycles,
   asProjectId,
@@ -110,6 +107,7 @@ import {
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import { serializedCandidateOfRow } from "./serializedCandidates.ts";
 import {
   finalizerChangeProposalAttempt,
   finalizerChangeProposalDecline,
@@ -332,29 +330,12 @@ async function finalizerSerializedCandidates(
            AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
            AND p.phase IN ('Work', 'Evaluation', 'Finalization')`,
   );
-  return found.rows.map((row) => {
-    const brief = releasedBriefOf(row.brief);
-    return {
-      partition: {
-        tenant: asTenantId(row.tenant),
-        project: asProjectId(row.project),
-      },
-      ticket: asTicketId(
-        projectRowCounter(
-          finalizerRowPresent(row.ticket, "serialized ticket"),
-          "serialized ticket",
-        ),
-      ),
-      phase: finalizerRowValue(phaseRoster, row.phase, "ticket phase"),
-      finalization: brief?.finalization,
-      repository: brief?.repository,
-      target: brief === undefined ? undefined : briefLandsOn(brief),
-      rank:
-        row.rank === null
-          ? undefined
-          : projectRowCounter(row.rank, "serialized rank"),
-    };
-  });
+  return found.rows.map((row) =>
+    serializedCandidateOfRow(
+      { tenant: asTenantId(row.tenant), project: asProjectId(row.project) },
+      row,
+    ),
+  );
 }
 
 /**

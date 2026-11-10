@@ -221,9 +221,11 @@ import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
 import type {
   ProjectAbilitiesResponse,
   RepositoryConfigurationHeadDeclaration,
+  LandingQueuesResponse,
   TicketLandingsResponse,
 } from "../../contract/responses.ts";
 import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
+import type { LandingQueues } from "../../interpreter/landingQueues.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -1587,6 +1589,23 @@ export function ticketLandingsResponse(
   const body: TicketLandingsResponse = {
     landings: [...landings.landings],
     truncated: landings.truncated,
+  };
+  return response(200, body);
+}
+
+/** A project the caller may not read and one that does not exist answer alike, as the project's ticket list answers them. */
+export function landingQueuesResponse(
+  read: LandingQueues | undefined,
+): NativeHttpResponse {
+  if (read === undefined) return notFound();
+  const body: LandingQueuesResponse = {
+    queues: read.queues.map((queue) => ({
+      repository: queue.repository,
+      ...(queue.target === undefined ? {} : { target: queue.target }),
+      holder: Number(queue.holder),
+      waiting: queue.waiting.map(Number),
+    })),
+    truncated: read.truncated,
   };
   return response(200, body);
 }
