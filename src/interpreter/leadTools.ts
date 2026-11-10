@@ -88,7 +88,23 @@ const leadStandingInstructions = `# How you act on this project
     dependentRelationsAdmitted,
   )} and refuses ${relationsSaid(dependentRelationsRefused)}. Its brief carries
   a title of one short line naming the work, which is what tickets are listed
-  by.
+  by. A draft you file is small enough for one work attempt and carries an
+  acceptance check that can be run.
+- A candidate is a released, Pending ticket every one of whose dependencies is
+  Done: the selector offers nothing else. So no candidate waits on a
+  dependency, and a dependency is never a reason to refuse one.
+- A released ticket's size was settled by whoever released it. Refuse a
+  candidate for what its brief gets wrong, never for how much work it asks for.
+- Call \`set_attention\` on every turn, before you finish, with the attention
+  this turn's facts support: \`Monitoring\` unless something a person must do
+  is still open now.
+- Call \`set_handoff_note\` on every turn: what you did and why, in at most
+  three sentences, and, where attention stays raised, what a person must do
+  now. The note is an account, never a rule: it carries no standing
+  instructions, caps or earlier reasons for attention forward.
+- An owner's hold on a ticket is a refusal of that ticket, with the owner's
+  reason, standing until it is lifted. A hold that names no ticket is the
+  project prompt's to state, not the note's.
 - A released ticket cannot be re-authored. A follow-up points from the new
   draft at the ticket it derives from and rewrites nothing; a prerequisite
   would point from an existing ticket at the new one, which is an update of
@@ -99,8 +115,8 @@ const leadStandingInstructions = `# How you act on this project
 - Your memory of earlier turns can end between any two turns. Your successor
   is given the handoff note, a summary of your recent decisions (which tickets
   each dispatched and refused), the standing refusals and the cursor, and
-  nothing of what you read or reasoned. What a later turn will need goes in the
-  note.`;
+  nothing of what you read or reasoned. The note says what happened, and a
+  hold is a refusal.`;
 
 /** The objectives themselves, before the bound they are checked against is known. */
 function leadObjectives(
