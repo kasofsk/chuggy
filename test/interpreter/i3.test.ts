@@ -595,6 +595,35 @@ test("a spawn bundle pins the tree its source expects, and only that", () => {
   assert.deepEqual(kinds(), []);
 });
 
+/**
+ * An evaluation's bundle pins the identity of its change, and no bundle pins
+ * one it was not given. Catches the identity dropped between the observation
+ * and the references.
+ */
+test("a spawn bundle pins the change identity its source observed, and only that", () => {
+  const configuration = {
+    configurationRevision: "revision",
+    configurationDigest: "d".repeat(64),
+  };
+  const source = {
+    repository: asRepositoryId("repository"),
+    targetCommit: asGitObjectId("a".repeat(40)),
+    manifests: [],
+  };
+  const kinds = (changeIdentity?: string) =>
+    inputBundleReferencesOf(configuration, {
+      bundle: "bundle",
+      source: {
+        ...source,
+        ...(changeIdentity === undefined ? {} : { changeIdentity }),
+      },
+    }).filter((reference) => reference.kind === "ChangeIdentity");
+  assert.deepEqual(kinds("8".repeat(40)), [
+    { kind: "ChangeIdentity", reference: "8".repeat(40) },
+  ]);
+  assert.deepEqual(kinds(), []);
+});
+
 /** Catches a base named where nothing knew one, which a check would narrow to. */
 test("a spawn bundle whose source knows no change base names none", () => {
   const references = inputBundleReferencesOf(

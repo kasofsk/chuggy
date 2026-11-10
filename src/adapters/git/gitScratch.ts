@@ -99,6 +99,7 @@ export interface GitScratchCall {
   readonly environment?: GitEnvironment;
   readonly input?: Uint8Array | string;
   readonly outputBytesMax?: number;
+  readonly stdoutEncoding?: "utf8" | "latin1";
 }
 
 /** One path and the blob that is to stand at it. */
@@ -248,6 +249,9 @@ export function scratchRun(
     ...(call.outputBytesMax === undefined
       ? {}
       : { outputBytesMax: call.outputBytesMax }),
+    ...(call.stdoutEncoding === undefined
+      ? {}
+      : { stdoutEncoding: call.stdoutEncoding }),
     input: call.input ?? "",
   });
 }

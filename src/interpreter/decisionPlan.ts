@@ -177,6 +177,9 @@ function executionRequestBundle(
             ...(source.expectedTree === undefined
               ? {}
               : { expectedTree: source.expectedTree }),
+            ...(source.changeIdentity === undefined
+              ? {}
+              : { changeIdentity: source.changeIdentity }),
           },
         }),
     ...(images === undefined || images.length === 0 ? {} : { images }),
@@ -410,6 +413,14 @@ export function inputBundleReferencesOf(
                 {
                   kind: "ExpectedTree" as const,
                   reference: source.expectedTree,
+                },
+              ]),
+          ...(source.changeIdentity === undefined
+            ? []
+            : [
+                {
+                  kind: "ChangeIdentity" as const,
+                  reference: source.changeIdentity,
                 },
               ]),
         ]),

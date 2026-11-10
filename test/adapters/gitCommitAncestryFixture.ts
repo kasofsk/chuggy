@@ -41,7 +41,6 @@ import type { GitEnvironment } from "../../src/adapters/git/gitRun.ts";
 import { scratchDigestOf } from "../../src/adapters/git/gitScratch.ts";
 import type {
   CommitAncestry,
-  CommitAncestryPort,
   CommitAncestryQuestion,
 } from "../../src/interpreter/commitAncestry.ts";
 import {
@@ -368,7 +367,7 @@ export function fixtureCredentials(
 export function fixturePort(
   fixture: Fixture,
   chosen: Partial<GitCommitAncestryOptions> = {},
-): CommitAncestryPort {
+): ReturnType<typeof gitCommitAncestry> {
   return gitCommitAncestry({
     scratchDirectory: fixture.scratch,
     identity: { name: "chug", email: "chug@example.test" },
