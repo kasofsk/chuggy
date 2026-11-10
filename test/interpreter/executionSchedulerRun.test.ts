@@ -1977,6 +1977,23 @@ test("a rework after a failed landing is told the ref its finalization lands on,
   );
 });
 
+test("a launched work task's briefing names the ref its finalization lands on as the one to merge", async () => {
+  const placements: AttemptPlacement[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  await landingTargetRef(
+    landingService(landingBrief, placements, recorded),
+    placements,
+    recorded,
+  );
+  const [placed] = placements;
+  assert.ok(placed !== undefined);
+  assert.ok(
+    placed.invocation.briefing.text.includes(
+      "git fetch origin refs/heads/release",
+    ),
+  );
+});
+
 test("a work task whose ticket names no repository, or one no binding answers for, is told no ref", async () => {
   for (const brief of [
     asDraftBrief({ intent: "Fix the importer.", links: [] }),

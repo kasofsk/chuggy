@@ -91,6 +91,7 @@ export type BriefingSectionId =
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
   | "DependencyDeliveries"
+  | "TargetMergeFirst"
   | "FailedLanding"
   | "PriorEvaluationReports"
   | "PriorWorkReports"
@@ -98,6 +99,7 @@ export type BriefingSectionId =
   | "CheckCommands"
   | "Practices"
   | "RuntimeContext"
+  | "TargetMergeLast"
   | "RequiredResult";
 
 /** The fixed order #97 pins, and the only statement of it in this tree. */
@@ -110,6 +112,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "WhyItMatters",
   "AcceptanceAndConstraints",
   "DependencyDeliveries",
+  "TargetMergeFirst",
   "FailedLanding",
   "PriorEvaluationReports",
   "PriorWorkReports",
@@ -117,6 +120,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "CheckCommands",
   "Practices",
   "RuntimeContext",
+  "TargetMergeLast",
   "RequiredResult",
 ];
 
@@ -127,7 +131,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 15;
+export const briefingTemplateVersion = 16;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -152,6 +156,8 @@ export function briefingHeading(
       return "Acceptance criteria and constraints";
     case "DependencyDeliveries":
       return "What this ticket's dependencies delivered";
+    case "TargetMergeFirst":
+      return "Bring the target in first";
     case "FailedLanding":
       return "The change that failed to land";
     case "PriorEvaluationReports":
@@ -170,6 +176,8 @@ export function briefingHeading(
       return "Practices for this task";
     case "RuntimeContext":
       return "Runtime context";
+    case "TargetMergeLast":
+      return "Bring the target in again before you report";
     case "RequiredResult":
       return carrier === "Commands"
         ? "The result this stage reports"
@@ -201,7 +209,7 @@ export const briefingPipelinesUnwritable: readonly string[] = [
  */
 export const briefingReworkPreface: readonly string[] = [
   "Evaluators of an earlier change made for this ticket reported the findings below.",
-  "Address what the reports name before anything else; where a report names a command, run it before you report.",
+  "Address what the reports name before anything else the ticket asks for; where a report names a command, run it before you report.",
   "Add commits on top of the commit this workspace is at. An amended or rebased commit is refused and the run's work is lost, so a finding about a commit's message is answered in the message of a new commit.",
 ];
 
@@ -315,6 +323,40 @@ export function briefingFailedLandingLines(
       ? "Then run the checks on that tree and reproduce the failure there before changing anything to fix it. A failure that does not reproduce may have come from a change queued ahead of this one that never landed; say so in your report."
       : "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
     `Commit what you change after the merge on top of it, with \`${briefingWorkerGit} commit -m <message>\` saying why each change was needed.`,
+  ];
+}
+
+/** The commands that fetch the ref a change lands on and merge its head into the workspace. */
+function briefingTargetMergeCommands(targetRef: string): string {
+  return `run \`git fetch origin ${targetRef}\`, then \`${briefingWorkerGit} merge --no-edit FETCH_HEAD\``;
+}
+
+/** How a merge of the target that conflicts is resolved, the target's own side never rewritten. */
+const briefingTargetMergeResolution: readonly string[] = [
+  `Where a merge stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree.`,
+  "Where both sides took the same next number or version, such as a migration's or a release's, move this change's own to the next free one, and leave what the target already holds exactly as it is.",
+];
+
+/** What a work task does before anything else: merge the head of the ref its change lands on. */
+export function briefingTargetMergeFirstLines(
+  targetRef: string,
+): readonly string[] {
+  return [
+    `This change lands on ${targetRef}.`,
+    `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef)}.`,
+    "Where the workspace is already at that head, git says it is already up to date and nothing changes.",
+    ...briefingTargetMergeResolution,
+  ];
+}
+
+/** What a work task does as its last step: merge the target's head again, and verify the merged tree where that brought anything in. */
+export function briefingTargetMergeLastLines(
+  targetRef: string,
+): readonly string[] {
+  return [
+    `As your last step before you report, bring ${targetRef} in again: ${briefingTargetMergeCommands(targetRef)}.`,
+    `Where that brought anything in, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree.`,
+    ...briefingTargetMergeResolution,
   ];
 }
 
