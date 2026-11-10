@@ -20,6 +20,13 @@ export const sessionTaskVariable = "CHUG_SESSION_TASK";
 export const workerCredentialFilesVariable = "CHUG_WORKER_CREDENTIAL_FILES";
 
 /**
+ * Which kind of Claude credential a pod's credential slot is, as the image's
+ * credential setting, a JSON document such as `{"kind":"ApiKey"}`. A pod told
+ * none reads its slot as a subscription's token.
+ */
+export const workerClaudeCredentialVariable = "CHUG_WORKER_CLAUDE_CREDENTIAL";
+
+/**
  * The variables a credential the plane holds as a file may be written under in
  * a job's environment: a name ending `_FILE`, and none in the prefixes chuggy,
  * its agent runtime and git read their own settings from.

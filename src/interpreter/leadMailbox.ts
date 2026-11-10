@@ -56,6 +56,8 @@ export interface LeadSessionStanding {
   readonly model?: string;
   /** The effort it runs at, absent where the runtime chooses. */
   readonly effort?: SessionEffort;
+  /** The named credential mount its pods speak through, which it was opened on. */
+  readonly credentialSlot: string;
   /**
    * What the pod measured of the newest answered decision turn, absent where
    * there is none or it measured nothing. An inquiry's turns are not the lead's.

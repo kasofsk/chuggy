@@ -28,6 +28,7 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "../contract/http.ts";
+import { claudeCredentialMountKinds } from "../contract/rosters.ts";
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
@@ -381,12 +382,37 @@ const schedulerWorkerSidecarsSchema = z.array(
   }),
 );
 
+/**
+ * What each session bound is parsed as, keyed over the bounds themselves the
+ * way the launcher's own checks are, so a bound added there and forgotten here
+ * does not compile rather than falling quietly to the whole-number default.
+ * The dollar cap reads its floor from the launcher's constant, so the two tiers
+ * admit one set of values rather than agreeing by coincidence.
+ */
+const schedulerSessionBoundKinds: {
+  readonly [Bound in keyof SessionBounds]: z.ZodType<number>;
+} = {
+  mailboxPollMs: schedulerBoundSchema,
+  idleMs: schedulerBoundSchema,
+  resultDrainMs: schedulerBoundSchema,
+  loadTimeoutMs: schedulerBoundSchema,
+  turnsMax: schedulerBoundSchema,
+  budgetUsd: z.number().finite().min(kubernetesSessionBudgetUsdMin),
+};
+
 const schedulerCredentialMountsSchema = z.record(
   schedulerTextSchema,
   z.strictObject({
     secretName: schedulerTextSchema,
     key: schedulerTextSchema,
     mountPath: schedulerTextSchema,
+    claudeCredential: z.enum(claudeCredentialMountKinds).exactOptional(),
+    sessionBounds: z
+      .strictObject({
+        budgetUsd: schedulerSessionBoundKinds.budgetUsd,
+        turnsMax: schedulerSessionBoundKinds.turnsMax,
+      })
+      .exactOptional(),
   }),
 );
 
@@ -538,24 +564,6 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
   }
   return merged;
 }
-
-/**
- * What each session bound is parsed as, keyed over the bounds themselves the
- * way the launcher's own checks are, so a bound added there and forgotten here
- * does not compile rather than falling quietly to the whole-number default.
- * The dollar cap reads its floor from the launcher's constant, so the two tiers
- * admit one set of values rather than agreeing by coincidence.
- */
-const schedulerSessionBoundKinds: {
-  readonly [Bound in keyof SessionBounds]: z.ZodType<number>;
-} = {
-  mailboxPollMs: schedulerBoundSchema,
-  idleMs: schedulerBoundSchema,
-  resultDrainMs: schedulerBoundSchema,
-  loadTimeoutMs: schedulerBoundSchema,
-  turnsMax: schedulerBoundSchema,
-  budgetUsd: z.number().finite().min(kubernetesSessionBudgetUsdMin),
-};
 
 /** The label every offered entry names itself by, which a boot publishes. */
 function schedulerWorkerCatalog(
