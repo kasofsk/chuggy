@@ -90,6 +90,7 @@ const settings: SelectorProjectSettingsResponse = {
       selectionsPerMinute: 6,
     },
     operationalContextMaxAgeMs: 60_000,
+    leadOffering: "Own",
   },
 };
 

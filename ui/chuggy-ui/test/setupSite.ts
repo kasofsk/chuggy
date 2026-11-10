@@ -418,6 +418,7 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
       limits,
       installationLimits: limits,
       operationalContextMaxAgeMs: 1,
+      leadOffering: "Own",
     },
   };
 }

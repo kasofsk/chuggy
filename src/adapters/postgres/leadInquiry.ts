@@ -146,7 +146,8 @@ function leadInquiryOpening(row: {
     opened === "NoLead" ||
     opened === "LeadNotStarted" ||
     opened === "LeadClosed" ||
-    opened === "InFlight"
+    opened === "InFlight" ||
+    opened === "LeadNotSubsidized"
   )
     return { opened };
   if ((opened === "Opened" || opened === "AlreadyOpen") && row.ordinal !== null)
@@ -167,6 +168,7 @@ async function leadInquiryOpen(
     readonly turn: SessionTurnId;
     readonly question: string;
     readonly route: PlacementRoute;
+    readonly subsidized: boolean;
   },
 ): Promise<LeadInquiryOpened> {
   const answered = await pool.query<{
@@ -178,7 +180,8 @@ async function leadInquiryOpen(
           FROM open_lead_inquiry(
             ${input.partition.tenant},${input.partition.project},
             ${input.principal},${input.session},
-            ${input.turn},${input.question},${input.route})`,
+            ${input.turn},${input.question},${input.route},
+            ${input.subsidized})`,
   );
   const row = answered.rows[0];
   if (row === undefined)
