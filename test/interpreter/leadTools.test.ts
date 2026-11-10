@@ -7,7 +7,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { selectorSettingsTextCharsMax } from "../../src/contract/http.ts";
+import {
+  leadObjectivesFixedCharsMax,
+  selectorSettingsTextCharsMax,
+} from "../../src/contract/http.ts";
 import {
   allChuggyTools,
   allDependentRelations,
@@ -141,6 +144,27 @@ test("the objectives carry the project's prompt, its north star and the standing
   const guided = leadSystemPrompt(settings("Select.", "Ship the console."));
   assert.ok(guided.includes("# North Star\n\nShip the console."));
   assert.ok(guided.indexOf("Ship the console.") > guided.indexOf("Select."));
+});
+
+test("the objectives say what a candidate is, require attention and a note every turn, and make a hold a refusal", () => {
+  const bare = leadSystemPrompt(settings("Select."));
+  for (const rule of [
+    "every one of whose dependencies is\n  Done",
+    "a dependency is never a reason to refuse one",
+    "never for how much work it asks for",
+    "small enough for one work attempt",
+    "Call `set_attention` on every turn",
+    "Call `set_handoff_note` on every turn",
+    "The note is an account, never a rule",
+    "An owner's hold on a ticket is a refusal of that ticket",
+  ])
+    assert.ok(bare.includes(rule), `the objectives state ${rule}`);
+  assert.ok(!bare.includes("What a later turn will need goes in the"));
+  assert.ok(
+    bare.indexOf("Derived work only.") < bare.indexOf("A candidate is a"),
+    "what a candidate is follows the derived-work rule",
+  );
+  assert.ok(leadObjectivesFixedChars <= leadObjectivesFixedCharsMax);
 });
 
 test("the largest objectives a project may legally set are ones the session row holds", () => {
