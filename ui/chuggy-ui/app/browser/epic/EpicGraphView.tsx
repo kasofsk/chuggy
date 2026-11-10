@@ -12,7 +12,7 @@
  * Its layout is loaded on its own, once the Graph tab draws it.
  */
 
-import { lazy, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type {
@@ -49,10 +49,9 @@ import { EpicGraphCard, epicGraphTraceAttribute } from "./EpicGraphCard.tsx";
 import type { EpicGraphTraceMark } from "./EpicGraphCard.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicGraphSide } from "./EpicGraphSide.tsx";
+import { EpicGraphLaidLazy } from "./EpicGraphLaidLazy.ts";
 
 import "./epicGraph.css";
-
-const EpicGraphLaid = lazy(() => import("./EpicGraphLaid.tsx"));
 
 /** What every card on one graph is drawn against. */
 interface EpicGraphCardsHeld {
@@ -403,7 +402,7 @@ export function EpicGraphView(props: {
     [props.graph, rows],
   );
   return (
-    <EpicGraphLaid
+    <EpicGraphLaidLazy
       graph={props.graph}
       tickets={graphTickets}
       outsideShown={outsideShown}
@@ -419,6 +418,6 @@ export function EpicGraphView(props: {
           onOutsideShown={setOutsideShown}
         />
       )}
-    </EpicGraphLaid>
+    </EpicGraphLaidLazy>
   );
 }
