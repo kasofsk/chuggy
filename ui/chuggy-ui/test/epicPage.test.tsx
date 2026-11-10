@@ -64,16 +64,18 @@ async function saved(typed: string): Promise<void> {
 }
 
 test("the epic is drawn with its figures, its graph and its history", async () => {
-  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTab /> });
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTab ticket={undefined} onTicket={() => undefined} />,
+  });
   expect(screen.getAllByText("In progress").length).toBeGreaterThan(0);
   expect(screen.getByRole("progressbar", { name: "1 of 2 done" })).toBeTruthy();
   const graphic = await screen.findByRole("group", {
     name: "Tickets of the epic and what they wait on",
   });
-  expect(graphic.querySelectorAll("path.epic-graph-connector")).toHaveLength(2);
+  expect(graphic.querySelectorAll("path.epic-graph-edge")).toHaveLength(2);
   expect(
-    graphic.querySelector("[data-outside] a")?.getAttribute("aria-label"),
-  ).toBe("Open ticket #2: Schema, outside the epic");
+    graphic.querySelector("[data-outside] button")?.getAttribute("aria-label"),
+  ).toMatch(/^#2 Schema: .+, outside the epic$/u);
   expect(graphic.querySelectorAll("[data-member]")).toHaveLength(2);
   expect(document.querySelector(".epic-header-saved")?.textContent).toContain(
     "Revision 3 · saved by",
