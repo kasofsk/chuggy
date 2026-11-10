@@ -73,6 +73,7 @@ import type {
 } from "../../interpreter/finalizer.ts";
 import {
   candidateAdoptable,
+  candidateCommitTree,
   candidateContains,
   candidateHeld,
   candidateIntegrate,
@@ -522,6 +523,16 @@ async function gitPromotionAdoptable(
   return candidateAdoptable(own.scratch, authorized.credential, question);
 }
 
+/** Reads the tree one commit records, a credential refused being no answer. */
+async function gitPromotionCommitTree(
+  own: GitPromotionState,
+  question: Parameters<GitPromotionPort["readCommitTree"]>[0],
+): Promise<GitObjectId | undefined> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return undefined;
+  return candidateCommitTree(own.scratch, authorized.credential, question);
+}
+
 /** The adapter over its options, refusing at construction what it could never serve. */
 export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
   const own: GitPromotionState = {
@@ -564,5 +575,6 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
     proveCandidateAncestry: (proof) => gitPromotionProve(own, proof),
     proveHeadAdoptable: (question) => gitPromotionAdoptable(own, question),
+    readCommitTree: (question) => gitPromotionCommitTree(own, question),
   };
 }

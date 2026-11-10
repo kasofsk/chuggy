@@ -2353,6 +2353,88 @@ function finalizerProposalMergeReleased(
       );
 }
 
+/**
+ * Whether a merge the forge made is the tree its ticket was evaluated on. Only
+ * a Stacked ticket evaluated over a stack is asked: its merge lands what was
+ * evaluated only where the merge commit's tree is the stack's, as its push
+ * does, and anything else lands as it did before.
+ */
+async function finalizerProposalMergeEvaluated(
+  service: FinalizerService,
+  view: FinalizationView,
+  merged: GitObjectId,
+): Promise<"Evaluated" | "Differs" | "Unread"> {
+  const { finalization, claim, repository } = view;
+  if (finalization?.kind !== "GitMerge" || finalization.policy !== "Stacked")
+    return "Evaluated";
+  const stack = await service.stacks?.current(claim.partition, claim.ticket);
+  if (stack === undefined) return "Evaluated";
+  if (repository === undefined)
+    throw new Error(
+      "finalizer pass: a merge was concluded against no bound repository",
+    );
+  const tree = await service.git.readCommitTree({ repository, commit: merged });
+  if (tree === undefined) return "Unread";
+  return tree === stack.stackTree ? "Evaluated" : "Differs";
+}
+
+/**
+ * Sends a Stacked ticket whose merge left a tree it was not evaluated on back
+ * to re-check the commit it was accepted at, at its rank, as a push that would
+ * leave one is. The merge has landed, so the re-check evaluates what it left.
+ */
+async function finalizerProposalMergeRechecked(
+  service: FinalizerService,
+  view: FinalizationView,
+  tally: FinalizerTally,
+): Promise<void> {
+  const { target } = finalizerCandidateOf(view);
+  const gathered = await finalizerGathered(service, view, target, tally);
+  if (gathered === undefined) return;
+  if (gathered.handoff?.kind !== "Source")
+    throw new Error(
+      "finalizer pass: a stacked merge was concluded for work with no source commit",
+    );
+  await finalizerRecheckRequired(
+    service,
+    gathered.subject,
+    target,
+    gathered.handoff.source.commit,
+    tally,
+  );
+}
+
+/** Concludes a proposal the forge holds, or has merged where the merge is the tree that was evaluated. */
+async function finalizerProposalConcluded(
+  service: FinalizerService,
+  view: FinalizationView,
+  merged: GitObjectId | undefined,
+  tally: FinalizerTally,
+): Promise<void> {
+  const evaluated =
+    merged === undefined
+      ? "Evaluated"
+      : await finalizerProposalMergeEvaluated(service, view, merged);
+  switch (evaluated) {
+    case "Evaluated":
+      await finalizerConclude(
+        service,
+        view,
+        { outcome: "FinalizationSucceeded" },
+        tally,
+      );
+      return;
+    case "Differs":
+      await finalizerProposalMergeRechecked(service, view, tally);
+      return;
+    case "Unread":
+      finalizerHold(service, tally, "IntegrationUnanswered");
+      return;
+    default:
+      return assertNever(evaluated);
+  }
+}
+
 /** Performs the one act the proposal step named, every arm of it a durable move or a hold. */
 async function finalizerProposalDecided(
   service: FinalizerService,
@@ -2365,12 +2447,7 @@ async function finalizerProposalDecided(
       finalizerHold(service, tally, decision.hold);
       return;
     case "Conclude":
-      await finalizerConclude(
-        service,
-        view,
-        { outcome: "FinalizationSucceeded" },
-        tally,
-      );
+      await finalizerProposalConcluded(service, view, decision.merged, tally);
       return;
     case "RefuseProposalAttempt":
       await finalizerReleaseProposalAttempt(

@@ -1014,6 +1014,9 @@ interface GitRecorder extends GitPromotionPort {
   readonly heldQuestions: CandidateHeldQuestion[];
   readonly containedQuestions: CandidateHeldQuestion[];
   readonly stackRemovals: GitRefName[];
+  readonly treeReads: GitObjectId[];
+  /** The tree every commit is read as recording, absent where none could be read. */
+  commitTree: GitObjectId | undefined;
   stackRemoved: StackRemoved;
   promoted: CandidatePromoted;
   proved: AncestryProved;
@@ -1045,6 +1048,21 @@ function recordingContainment(
   };
 }
 
+/** The half of that remote that reads a commit's tree, every commit recording the tree a stack is given until a case says otherwise. */
+function recordingTrees(
+  git: () => GitRecorder,
+): Pick<GitRecorder, "treeReads" | "commitTree" | "readCommitTree"> {
+  return {
+    treeReads: [],
+    commitTree: asGitObjectId(commitOf("d")),
+    readCommitTree: (question) => {
+      const own = git();
+      own.treeReads.push(question.commit);
+      return Promise.resolve(own.commitTree);
+    },
+  };
+}
+
 /** An integration that answered a candidate, recording the tree given. */
 function integratedAs(candidate: string, tree = "d"): CandidateIntegrated {
   return {
@@ -1070,6 +1088,7 @@ function recordingGit(): GitRecorder {
     adoptions: [],
     heldQuestions: [],
     ...recordingContainment(() => own),
+    ...recordingTrees(() => own),
     ...recordingStacks(() => own),
     adoptable: "Adoptable",
     held: "Unheld",
@@ -4343,6 +4362,89 @@ test("a stacked landing by pull request prepares the same merge result as the pr
   };
   await passOver(proposingStacked(differing, moved));
   assert.equal(differing.attempts[0]?.failureKind, "RecheckRequired");
+});
+
+/** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
+async function stackedMergeConcluding(
+  stack: EvaluationStack | undefined,
+  commitTree: GitObjectId | undefined,
+): Promise<{
+  store: FinalizerRecorder;
+  git: GitRecorder;
+  report: Awaited<ReturnType<typeof passOver>>;
+}> {
+  const store = recordingStore([
+    proposedView("request-one", { ...proposalMerged, policy: "Stacked" }),
+  ]);
+  store.gathering = {
+    work: [passedWork],
+    artifacts: [],
+    sources: [sourceOf(passedWork, "c")],
+  };
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const git = recordingGit();
+  git.commitTree = commitTree;
+  const service: FinalizerService = {
+    ...mergingService(store, forge, {}, git),
+    ticketBriefs: briefsOf(
+      briefBranch,
+      landingBranch,
+      "PullRequestMerge",
+      "Stacked",
+    ),
+    stacks: { ...stacksDue([]), current: () => Promise.resolve(stack) },
+  };
+  await passOver(service);
+  await passOver(service);
+  assert.equal(forge.merges.length, 1);
+  return { store, git, report: await passOver(service) };
+}
+
+test("a stacked merge whose commit records the stack's tree concludes the landing", async () => {
+  const { store, git } = await stackedMergeConcluding(
+    stackOf(stackedTree),
+    stackedTree,
+  );
+
+  assert.deepEqual(git.treeReads, [commitOf("e")]);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("a stacked merge that left another tree than the stack's is sent back to re-check the accepted commit, and concludes no success", async () => {
+  const { store, report } = await stackedMergeConcluding(
+    stackOf(stackedTree),
+    asGitObjectId(commitOf("8")),
+  );
+
+  assert.equal(report.holds, 0);
+  assert.deepEqual(store.concluded, []);
+  assert.equal(store.attempts.length, 1);
+  assert.equal(store.attempts[0]?.outcome, "Failed");
+  assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
+  assert.equal(store.attempts[0]?.recheckCommit, commitOf("c"));
+});
+
+test("a stacked merge whose tree cannot be read holds, and neither concludes nor records anything", async () => {
+  const { store, report } = await stackedMergeConcluding(
+    stackOf(stackedTree),
+    undefined,
+  );
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.concluded, []);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("a stacked merge evaluated over no stack concludes as a serialized one does, reading no tree", async () => {
+  const { store, git } = await stackedMergeConcluding(
+    undefined,
+    asGitObjectId(commitOf("8")),
+  );
+
+  assert.deepEqual(git.treeReads, []);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
 });
 
 test("a direct landing never reads a stack", async () => {

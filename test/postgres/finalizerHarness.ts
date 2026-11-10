@@ -1131,6 +1131,9 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       fake.acts.push("adopt");
       return Promise.resolve("Unadoptable");
     },
+    readCommitTree: () => {
+      throw new Error("finalizer harness: the pass asked for a commit's tree");
+    },
     mintStack: () => Promise.resolve({ minted: "Conflicted" }),
     removeStack: () => Promise.resolve({ removed: "Removed" }),
     removeUnrecordedStack: () => Promise.resolve({ removed: "Removed" }),

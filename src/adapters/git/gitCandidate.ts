@@ -51,6 +51,7 @@ import {
   type CandidatePrepared,
   type CandidatePreparation,
   type GitObjectId,
+  type GitPromotionPort,
   type GitRefName,
   type HeadAdoption,
   type HeadAdoptionQuestion,
@@ -426,6 +427,26 @@ async function candidateAdoptableBase(
   return (await scratchHasCommit(scratch, repository, base.value))
     ? base.value
     : undefined;
+}
+
+/** The tree a commit records, brought into the scratch by its hash where it is not there, and nothing where either could not be read. */
+export async function candidateCommitTree(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: Parameters<GitPromotionPort["readCommitTree"]>[0],
+): Promise<GitObjectId | undefined> {
+  const repository = question.repository.repository;
+  if (!(await scratchHasCommit(scratch, repository, question.commit)))
+    await scratchFetchHistory(
+      scratch,
+      repository,
+      credential,
+      question.commit,
+      scratch.options.remoteTimeoutMsMax,
+    );
+  if (!(await scratchHasCommit(scratch, repository, question.commit)))
+    return undefined;
+  return (await scratchCommitShape(scratch, repository, question.commit))?.tree;
 }
 
 /** Brings the head read into the scratch, by its branch and then by its hash where the branch has moved past it. */

@@ -1307,6 +1307,12 @@ export interface GitPromotionPort {
 
   /** Reads whether a proposal's head is its pinned head brought up to date with its base. */
   proveHeadAdoptable(question: HeadAdoptionQuestion): Promise<HeadAdoption>;
+
+  /** Reads the tree a commit of the repository records, and nothing where it could not be read. */
+  readCommitTree(question: {
+    readonly repository: RepositoryBinding;
+    readonly commit: GitObjectId;
+  }): Promise<GitObjectId | undefined>;
 }
 
 /** What resolving a repository credential found, a denial kept apart from an outage. */
