@@ -134,7 +134,7 @@ interface UnrecordedRow {
   readonly project: string;
   readonly ticket: string;
   readonly work_cycle: string;
-  readonly repository: string;
+  readonly repository: string | null;
   readonly candidate: string;
 }
 
@@ -841,7 +841,7 @@ async function stackUnrecorded(
     },
     ticket: asTicketId(projectRowCounter(row.ticket, "stack ticket")),
     cycle: projectRowCounter(row.work_cycle, "stack cycle"),
-    repository: row.repository,
+    repository: finalizerRowPresent(row.repository, "unrecorded repository"),
     candidate: asGitObjectId(row.candidate),
   }));
 }
