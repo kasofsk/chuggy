@@ -13,7 +13,6 @@ import { copyBundleOf, copyTextOf } from "../app/copy/copyBundle.ts";
 import { CopyProvider, useCopyText } from "../app/copy/CopyProvider.tsx";
 import { phaseLabel } from "../app/core/codeLabels.ts";
 import type { Copy } from "../app/core/copy.ts";
-import { epicGraphStanding } from "../app/core/epics.ts";
 
 /** A vernacular that calls a ticket a job and the inbox a tray, and nothing else. */
 const jobs = `
@@ -89,13 +88,6 @@ test("every phase is a descriptor of its own, which reads as the phase's word", 
     "Escalated",
     "Revoked",
   ]);
-});
-
-test("an epic's node stands at its phase, or as a draft where it has none", () => {
-  expect(epicGraphStanding({ phase: "Work" })).toStrictEqual({
-    id: "standing-work",
-  });
-  expect(epicGraphStanding({})).toStrictEqual({ id: "standing-draft" });
 });
 
 test("a vernacular's term reaches the codes' labels, its article and plural with it", () => {

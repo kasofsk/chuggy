@@ -90,6 +90,9 @@ const consolePageTicketTabs = [
   "/usage",
 ] as const;
 
+/** The epic page and each of its tabs: every one is the epic's page. */
+const consolePageEpicTabs = ["", "/", "/tickets", "/history"] as const;
+
 /** The router's identity of a route under a project, by where it is. */
 function consolePageRouteId(path: string): string {
   return `/$tenant/$project/${path}`;
@@ -123,10 +126,16 @@ const consolePageRoutes: ReadonlyMap<
     "/$tenant/$project/tickets/$ticket/edit",
     (match) => ({ page: "TicketEdit", ticket: consolePageTicketOf(match) }),
   ],
-  [
-    "/$tenant/$project/epics/$epic",
-    (match) => ({ page: "Epic", epic: Number(match.params["epic"]) }),
-  ],
+  ...consolePageEpicTabs.map(
+    (tab) =>
+      [
+        `/$tenant/$project/epics/$epic${tab}`,
+        (match: ConsolePageMatch) => ({
+          page: "Epic",
+          epic: Number(match.params["epic"]),
+        }),
+      ] as const,
+  ),
   ["/$tenant/$project/settings", consolePageSettings()],
   ["/$tenant/$project/settings/", consolePageSettings()],
   ["/$tenant/$project/settings/workspace", consolePageSettings()],

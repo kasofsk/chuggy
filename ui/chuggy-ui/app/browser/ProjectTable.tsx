@@ -181,7 +181,7 @@ function ticketListFilterOf(word: unknown): TicketFilter {
 
 /** The row's state: a chip as wide on every row, so the column lines up, with
  * what holds it there on hover. */
-function TicketListState(props: {
+export function TicketListState(props: {
   readonly row: ProjectTableRow;
   readonly dispatch?: TicketRowDispatch | undefined;
 }): ReactNode {
@@ -224,7 +224,7 @@ function TicketListRepository(props: {
   );
 }
 
-function TicketListDependencies(props: {
+export function TicketListDependencies(props: {
   readonly row: ProjectTableRow;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
 }): ReactNode {
@@ -284,7 +284,7 @@ function TicketListWaits(props: {
   );
 }
 
-function TicketListRow(props: {
+export function TicketListRow(props: {
   readonly row: ProjectTableRow;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
   readonly partition: PartitionIdentity;

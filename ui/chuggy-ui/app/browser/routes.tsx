@@ -55,6 +55,11 @@ import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { EpicPage } from "./EpicPage.tsx";
+import {
+  EpicHistoryTab,
+  EpicOverviewTab,
+  EpicTicketsTab,
+} from "./epic/EpicPageTabs.tsx";
 import { EpicsPage } from "./EpicsPage.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
@@ -214,10 +219,37 @@ const epicsRoute = createRoute({
     epicsQueryOf(search),
 });
 
+function EpicRoute(): ReactNode {
+  return (
+    <EpicPage>
+      <Outlet />
+    </EpicPage>
+  );
+}
+
+/** One epic: its header and tabs, over the tab its address names. */
 const epicRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/epics/$epic",
-  component: EpicPage,
+  component: EpicRoute,
+});
+
+const epicOverviewRoute = createRoute({
+  getParentRoute: () => epicRoute,
+  path: "/",
+  component: EpicOverviewTab,
+});
+
+const epicTicketsRoute = createRoute({
+  getParentRoute: () => epicRoute,
+  path: "/tickets",
+  component: EpicTicketsTab,
+});
+
+const epicHistoryRoute = createRoute({
+  getParentRoute: () => epicRoute,
+  path: "/history",
+  component: EpicHistoryTab,
 });
 
 const leadRoute = createRoute({
@@ -439,7 +471,11 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     inboxRoute,
     epicsRoute,
-    epicRoute,
+    epicRoute.addChildren([
+      epicOverviewRoute,
+      epicTicketsRoute,
+      epicHistoryRoute,
+    ]),
     leadRoute,
     catalogRoute,
     projectSettingsRoutes(partitionRoute),

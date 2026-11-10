@@ -11,6 +11,7 @@
 import {
   hashKey,
   notifyManager,
+  onlineManager,
   queryOptions,
   useQuery,
   useQueryClient,
@@ -48,6 +49,15 @@ export function useApiPorts(): ApiPorts {
   return useMemo<ApiPorts>(
     () => apiPortsOver(holder, apiFetch, sleepMs),
     [holder],
+  );
+}
+
+/** Whether this tab reaches the network, as the cache's own reads and writes
+ * hold it: a write pressed while it does not waits rather than being sent. */
+export function useApiOnline(): boolean {
+  return useSyncExternalStore(
+    (changed) => onlineManager.subscribe(changed),
+    () => onlineManager.isOnline(),
   );
 }
 

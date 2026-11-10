@@ -83,6 +83,7 @@ import {
   ticketOffersStartable,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
+import { useApiOnline } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { applyResourceArrival } from "./stream.tsx";
@@ -797,6 +798,8 @@ export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
 /** The press a ready row's state chip answers, where the row may be dispatched. */
 export interface TicketRowDispatch {
   readonly busy: boolean;
+  /** This tab does not reach the network, so a press would not be sent. */
+  readonly offline: boolean;
   readonly effect: string;
   readonly press: () => void;
 }
@@ -819,6 +822,7 @@ export function TicketRowDispatchScope(props: {
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   const runner = useWorkRunner(props.partition, "Unknown");
+  const online = useApiOnline();
   const text = useCopyText();
   const { offers } = ticketOffersStartable(
     ticketOffersAllowed(
@@ -845,6 +849,7 @@ export function TicketRowDispatchScope(props: {
         props.children(
           {
             busy: acting.busy,
+            offline: !online,
             effect,
             press: () => {
               acting.submitting.submit(offered);
