@@ -101,6 +101,13 @@ function epicWeb(held: EpicCase): EpicWeb {
             changedAt: "2026-11-05T09:00:00.000Z",
             actor: { kind: "User", subject: "geoff" },
             title: "the footer",
+            visibility: "Archived",
+            changes: {
+              kind: "Revised",
+              fields: ["title", "visibility"],
+              added: [3],
+              removed: [1],
+            },
           },
         ],
       });
@@ -164,9 +171,21 @@ test("the list, the view, the history and the graph answer what their schemas na
   assert.equal(view.statusCode, 200);
   assert.deepEqual(epicViewResponseSchema.parse(view.json()).tickets, [1, 3]);
   assert.equal(history.statusCode, 200);
-  assert.equal(
-    epicHistoryResponseSchema.parse(history.json()).revisions.length,
-    1,
+  assert.deepEqual(
+    epicHistoryResponseSchema
+      .parse(history.json())
+      .revisions.map((each) => [each.visibility, each.changes]),
+    [
+      [
+        "Archived",
+        {
+          kind: "Revised",
+          fields: ["title", "visibility"],
+          added: [3],
+          removed: [1],
+        },
+      ],
+    ],
   );
   assert.equal(graph.statusCode, 200);
   assert.equal(epicGraphResponseSchema.parse(graph.json()).edges.length, 1);
