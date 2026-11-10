@@ -384,6 +384,8 @@ ticket-authoring-workload-brief = the claim the { -workload } is briefed with: m
 # spells -run: the verb
 ticket-authoring-workload-commands = the lines a commands { -workload } runs at the { -repository } root
 # spells -run: the verb
+ticket-authoring-workload-reevaluate = whether the { -workload } must run again as { -evaluator(form: "a") } when the { -ticket }'s own diff has not changed since it last passed; { $default } where left out
+# spells -run: the verb
 ticket-authoring-workload-image = the image the { -workload } runs in, in place of its { -run } requirement
 # spells -run: the verb
 ticket-authoring-workload-execution = where the { -workload } runs, in place of its image

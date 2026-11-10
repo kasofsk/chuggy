@@ -138,6 +138,23 @@ test("a workload read from a file names it first among its fields, and one with 
   ).not.toContain("File");
 });
 
+test("a workload says whether it runs again as an evaluator, Always where it names nothing", () => {
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    workloads: Record<string, Record<string, unknown>>;
+  };
+  catalog.workloads["gates"] = {
+    ...catalog.workloads["gates"],
+    reevaluate: "OnChange",
+  };
+  const reevaluates = (key: string) =>
+    catalogEntryFields(
+      entryOf(entriesOf(JSON.stringify(catalog)), key),
+      copyTextEn,
+    ).find(([label]) => label === "Reevaluates")?.[1];
+  expect(reevaluates("workloads/gates")).toBe("OnChange");
+  expect(reevaluates("workloads/review")).toBe("Always");
+});
+
 test("a plan's fields are its stages, each with the evaluators it runs", () => {
   expect(
     catalogEntryFields(entryOf(entries, "plans/gated"), copyTextEn),

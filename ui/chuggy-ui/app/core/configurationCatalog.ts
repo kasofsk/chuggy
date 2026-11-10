@@ -44,6 +44,7 @@ const catalogWorkloadSchema = z.looseObject({
     .catch(undefined),
   worker: z.looseObject({ mode: z.unknown() }).optional().catch(undefined),
   commands: z.array(z.string()).optional().catch(undefined),
+  reevaluate: optionalString(),
   access: optionalString(),
 });
 
@@ -105,6 +106,8 @@ export interface CatalogWorkload {
   readonly prompt: string | undefined;
   readonly promptPath: string | undefined;
   readonly commands: readonly string[];
+  /** Whether it runs again as an evaluator of an unchanged diff, Always where it says nothing. */
+  readonly reevaluate: string;
   /** The agent that runs it, as the mode names it. */
   readonly agent: string | undefined;
   /** Its reasoning effort, where the mode names one. */
@@ -167,6 +170,7 @@ function configurationCatalogEntry(
     prompt: workload?.prompt?.text,
     promptPath: workload?.prompt?.path,
     commands: workload?.commands ?? [],
+    reevaluate: workload?.reevaluate ?? "Always",
     agent: mode?.agent,
     effort: mode?.effort,
     agentArguments: mode?.arguments ?? [],

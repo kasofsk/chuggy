@@ -205,6 +205,32 @@ function approvalCatalog(approval: object): object {
   };
 }
 
+/** A catalog whose agent and commands workloads each name when they are run again as evaluators. */
+function reevaluateCatalog(reevaluate: unknown): object {
+  return {
+    version: 2,
+    image: "worker:v1",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Build." },
+        worker: { mode: claude, setup: [], files: [] },
+      },
+      review: {
+        runner: "Agent",
+        prompt: { text: "Review." },
+        worker: { mode: claude, setup: [], files: [] },
+        reevaluate,
+      },
+      tests: { runner: "Commands", commands: ["npm test"], reevaluate },
+    },
+    plans: {
+      standard: [{ name: "checks", evaluators: ["tests", "review"] }],
+    },
+    defaults: { work: "build", evaluation: "standard" },
+  };
+}
+
 /** One file declaring a configuration under a name. */
 function declared(declaredConfiguration: unknown, name = "declared"): unknown {
   return { version: 1, name, configuration: declaredConfiguration };
@@ -332,6 +358,8 @@ const shapes: readonly unknown[] = [
     instructions: "Check the migration.\nThen the release notes.",
   }),
   approvalCatalog({ approvers: ["5:issuersubject", "5:issuerother"] }),
+  reevaluateCatalog("Always"),
+  reevaluateCatalog("OnChange"),
 ];
 
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -653,10 +681,18 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
     { commands: ["true"] },
     { resources: { cpus: 1 } },
     { executionRequirement: containerRequirement },
+    { reevaluate: "Always" },
   ].map(
     (approval) =>
       [
         declared(approvalCatalog(approval)),
+        "ConfigurationInvalid:ReleaseShapeInvalid",
+      ] as const,
+  ),
+  ...["Never", "onChange", "", true].map(
+    (reevaluate) =>
+      [
+        declared(reevaluateCatalog(reevaluate)),
         "ConfigurationInvalid:ReleaseShapeInvalid",
       ] as const,
   ),

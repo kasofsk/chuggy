@@ -181,6 +181,26 @@ test("a workload the catalog does not hold is left for its reader to refuse, not
   assert.deepEqual(Object.keys(effective.workloads), ["build", "review"]);
 });
 
+test("a workload override may name when it is run again as an evaluator, and only as the catalog may", () => {
+  for (const reevaluate of ["Always", "OnChange"] as const) {
+    const overrides = { workloads: { review: { reevaluate } } };
+    assert.deepEqual(configurationOverridesSchema.parse(overrides), overrides);
+    const effective = configurationWithOverrides(catalog, overrides) as {
+      workloads: Record<string, unknown>;
+    };
+    assert.deepEqual(effective.workloads["review"], {
+      ...catalog.workloads.review,
+      reevaluate,
+    });
+  }
+  assert.equal(
+    configurationOverridesSchema.safeParse({
+      workloads: { review: { reevaluate: "Never" } },
+    }).success,
+    false,
+  );
+});
+
 test("a workload override naming a field no workload has is refused by the schema", () => {
   assert.equal(
     configurationOverridesSchema.safeParse({
