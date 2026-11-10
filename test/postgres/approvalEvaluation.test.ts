@@ -412,6 +412,97 @@ test("a revoke closes the approval and cancels the execution it stood for", asyn
   );
 });
 
+/**
+ * Files the finalizer's invalidation of work cycle 1's evaluation as
+ * `submit_stack_invalidation` writes it. That door also asks for a passed work
+ * result this rig's reported work has none of, and `stackInvalidation.test.ts`
+ * drives it; here only the decision it leads to is in question.
+ */
+async function invalidationFiled(at: Evaluating): Promise<void> {
+  const { tenant, project } = at.project.partition;
+  const operation = `stack-invalidation-${randomUUID()}`;
+  const transaction = await rig.harness.begin();
+  try {
+    const [claimed] = (await transaction.query(
+      `UPDATE project SET ingress_next = ingress_next + 1
+        WHERE tenant=$1 AND project=$2
+        RETURNING ingress_next - 1 AS ordinal, lifecycle_generation AS generation, head`,
+      [tenant, project],
+    )) as readonly { ordinal: string; generation: string; head: string }[];
+    assert.ok(claimed !== undefined);
+    const command = JSON.stringify({
+      version: 1,
+      command: "SubmitStackInvalidation",
+      ticket: at.project.ticket,
+      workCycle: 1,
+      evidence: Number(claimed.head),
+    });
+    await transaction.query(
+      `INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES ($1,$2,$3,'Finalizer','finalizer','CorrectnessReducing','finalizer-v1',
+               encode(sha256(convert_to($3,'UTF8')),'hex'),
+               encode(sha256(convert_to($4,'UTF8')),'hex'), $4, 'InvalidateEvaluation')`,
+      [tenant, project, operation, command],
+    );
+    await transaction.query(
+      `INSERT INTO decision_input
+         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES ($1,$2,$3,'Operation',$4,'Completion',$5)`,
+      [tenant, project, claimed.ordinal, operation, claimed.generation],
+    );
+    await transaction.query(
+      `INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES ($1,$2,true,1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready = true, generation = project_readiness.generation + 1`,
+      [tenant, project],
+    );
+  } catch (failure) {
+    await transaction.rollback();
+    throw failure;
+  }
+  await transaction.commit();
+}
+
+test("an invalidated evaluation closes the approval and cancels the execution it stood for", async () => {
+  const at = await evaluating("approval-invalidated", "signOff");
+  const awaiting = await awaitingOf(at);
+  const { tenant, project } = at.project.partition;
+  await invalidationFiled(at);
+  await postgresHarnessDrain(
+    rig.harness,
+    at.project.partition,
+    at.memory,
+    at.config,
+  );
+  assert.deepEqual(await openOf(at), []);
+  const [cancellation] = (await rig.harness.query(
+    `SELECT request FROM execution_request
+      WHERE tenant=$1 AND project=$2 AND kind='CancelTicketWork'`,
+    [tenant, project],
+  )) as readonly { request: string }[];
+  assert.ok(cancellation !== undefined, "the invalidation cancelled nothing");
+  await rig.store.registerCancellation(
+    await schedulerClaimFor(
+      rig,
+      at.project.partition,
+      cancellation.request,
+      schedulerOwner("approval-invalidated-cancel"),
+    ),
+  );
+  assert.equal(
+    (await evaluations(at)).find((row) => row.execution === awaiting.execution)
+      ?.status,
+    "Cancelled",
+  );
+  assert.deepEqual(
+    (await actions(at)).map((row) => row.state),
+    ["Withdrawn"],
+  );
+});
+
 /** The approval evaluator of work cycle `cycle`'s first run, as the ticket owes it. */
 function approvalTask(cycle: number): TaskIdentity {
   return evaluationTaskOf(1, cycle, 1, 1, 1);
