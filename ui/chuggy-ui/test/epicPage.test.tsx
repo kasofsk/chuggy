@@ -88,7 +88,7 @@ test("a reader who may not write epics is sent from the edit page to the Overvie
   expect(epicNavigated).toStrictEqual([overviewPath(7)]);
 });
 
-test("the edit page holds the epic's title, its summary counted against the most it may hold, and its description as Markdown", async () => {
+test("the edit page holds the epic's title, its summary counted against the most it may hold, and its description as Markdown, and not its tickets", async () => {
   await editDrawn(abilitiesEvery);
   expect(title().value).toBe("Billing");
   expect(
@@ -101,6 +101,7 @@ test("the edit page holds the epic's title, its summary counted against the most
   expect(description.value).toBe("The **whole** of billing");
   expect(description.hasAttribute("data-mono")).toBe(true);
   expect(screen.getByText("Markdown")).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Tickets" })).toBeNull();
 });
 
 test("Save sends at the revision the page read and returns to the Overview", async () => {

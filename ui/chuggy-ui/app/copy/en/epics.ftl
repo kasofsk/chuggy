@@ -82,6 +82,23 @@ epics-overview-description = Description
 ## The Tickets tab.
 
 epics-tickets-none = This { -epic } holds no { -ticket(form: "plural") }
+epics-tickets-filter = Filter { -ticket(form: "plural") }
+epics-tickets-no-match = No { -ticket(form: "plural") } match
+epics-tickets-running = Running
+epics-tickets-group = { $word }, { $count }
+epics-tickets-after = after
+epics-tickets-blocks = blocks { $count }
+epics-tickets-menu = More actions for #{ $ticket }
+epics-tickets-remove = Remove from { -epic }
+epics-tickets-add = Add { -ticket(form: "plural") }
+epics-tickets-add-search = Number or title
+epics-tickets-add-none = No { -ticket(form: "plural") } found
+epics-tickets-add-member = In this { -epic }
+epics-tickets-add-chosen = Add { $count ->
+    [0] { -ticket(form: "plural") }
+    [one] { $count } { -ticket }
+   *[other] { $count } { -ticket(form: "plural") }
+}
 
 ## The Graph tab.
 

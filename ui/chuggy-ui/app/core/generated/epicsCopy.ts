@@ -82,6 +82,28 @@ export interface EpicsCopy {
   };
   readonly "epics-overview-description": Record<never, never>;
   readonly "epics-tickets-none": Record<never, never>;
+  readonly "epics-tickets-filter": Record<never, never>;
+  readonly "epics-tickets-no-match": Record<never, never>;
+  readonly "epics-tickets-running": Record<never, never>;
+  readonly "epics-tickets-group": {
+    readonly word: unknown;
+    readonly count: unknown;
+  };
+  readonly "epics-tickets-after": Record<never, never>;
+  readonly "epics-tickets-blocks": {
+    readonly count: unknown;
+  };
+  readonly "epics-tickets-menu": {
+    readonly ticket: unknown;
+  };
+  readonly "epics-tickets-remove": Record<never, never>;
+  readonly "epics-tickets-add": Record<never, never>;
+  readonly "epics-tickets-add-search": Record<never, never>;
+  readonly "epics-tickets-add-none": Record<never, never>;
+  readonly "epics-tickets-add-member": Record<never, never>;
+  readonly "epics-tickets-add-chosen": {
+    readonly count: unknown;
+  };
   readonly "epics-graph-empty": Record<never, never>;
   readonly "epics-graph-loading": Record<never, never>;
   readonly "epics-graph-failed": Record<never, never>;
