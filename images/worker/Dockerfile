@@ -286,7 +286,12 @@ RUN case "$TARGETARCH" in \
 # and the lead told they do not exist. What that probe asks is `toolListing.mjs`,
 # which a suite drives against a stub server, so the gate itself is tested.
 # `contractProbe.mjs` imports every entry of the installed contract and holds it
-# to the scripts' own `zod`. Each argues itself in its own header, and every
+# to the scripts' own `zod`. `confinementProbe.mjs` drives a session on its own
+# prompt against a stub Messages endpoint and holds it to reading its checkout
+# and nothing else. It runs as the user a pod runs as, over a temporary
+# directory of its own, because the runtime refuses `bypassPermissions` to root
+# and the probe's control is a session without that prompt, which runs under
+# it. Each argues itself in its own header, and every
 # probe's files are removed once the probes have run, because a build's verdict
 # is not something a pod needs.
 #
@@ -318,7 +323,13 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   && /opt/chuggy/bin/node sdkProbe.mjs \
   && /opt/chuggy/bin/node toolProbe.mjs \
   && /opt/chuggy/bin/node contractProbe.mjs \
+  && probe="$(mktemp -d)" \
+  && chown 1000:1000 "$probe" \
+  && TMPDIR="$probe" setpriv --reuid=1000 --regid=1000 --clear-groups \
+    /opt/chuggy/bin/node confinementProbe.mjs \
+  && rm -rf "$probe" \
   && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs contractProbe.mjs \
+    confinementProbe.mjs \
   && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/worker.mjs";' \
   && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/chatSupervisor.mjs";' \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
