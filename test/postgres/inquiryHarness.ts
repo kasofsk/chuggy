@@ -90,6 +90,9 @@ export interface InquiryRigRunOpening {
   readonly systemPrompt?: string;
   /** How many batches the settled turn flushes; none makes a session with no head. */
   readonly batches?: number;
+  readonly credentialSlot?: string;
+  readonly model?: string;
+  readonly effort?: string;
 }
 
 /**
@@ -111,6 +114,11 @@ export async function inquiryRigRun(
       : { principal: opening.principal }),
     capabilities: ["ProjectRead"],
     systemPrompt: opening.systemPrompt ?? inquiryRigLeadPrompt,
+    ...(opening.credentialSlot === undefined
+      ? {}
+      : { credentialSlot: opening.credentialSlot }),
+    ...(opening.model === undefined ? {} : { model: opening.model }),
+    ...(opening.effort === undefined ? {} : { effort: opening.effort }),
   });
   const turn = await sessionRigTurn(rig.sessions, partition, session, label);
   const attempt = await sessionRigAttempt(

@@ -133,6 +133,7 @@ export interface SessionRigOpening {
   /** The model and effort the session runs on, written as the lead's and a thread's doors write them. */
   readonly model?: string;
   readonly effort?: string;
+  readonly credentialSlot?: string;
 }
 
 /** Opens one session, refusing anything but the arm the case expected. */
@@ -150,7 +151,7 @@ export async function sessionRigSession(
     principal: asPrincipal(opening.principal ?? `principal-${label}`),
     ...(opening.parent === undefined ? {} : { parent: opening.parent }),
     capabilities: opening.capabilities ?? ["RepositoryRead"],
-    credentialSlot: "claude-code",
+    credentialSlot: opening.credentialSlot ?? "claude-code",
     ...(opening.systemPrompt === undefined
       ? {}
       : { systemPrompt: opening.systemPrompt }),

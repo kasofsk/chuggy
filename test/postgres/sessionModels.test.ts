@@ -28,7 +28,10 @@ import {
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
 import type { LeadOpening } from "../../src/interpreter/leadMailbox.ts";
-import { leadStandingReplaced } from "../../src/interpreter/leadPolicyHost.ts";
+import {
+  leadRunsOn,
+  leadStandingReplaced,
+} from "../../src/interpreter/leadPolicyHost.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -207,7 +210,7 @@ test("a thread opens under the project's thread model, and neither the lead's se
         partition,
       )
     ).lead,
-    { model: "claude-sonnet-5-5", effort: "medium" },
+    { offering: "Own", model: "claude-sonnet-5-5", effort: "medium" },
   );
 
   const threadsOnly = await threadRigProject(rig, "thread-facts-only");
@@ -221,7 +224,7 @@ test("a thread opens under the project's thread model, and neither the lead's se
         threadsOnly,
       )
     ).lead,
-    {},
+    { offering: "Own" },
     "a thread's model and effort are not the lead's",
   );
 });
@@ -253,8 +256,7 @@ test("a lead holding the resolved model and effort is kept, and one holding anot
       standing,
       leadOpened.systemPrompt,
       leadOpened.autoCompactWindow,
-      runtime,
-      leadOpened.credentialSlot,
+      leadRunsOn({ offering: "Own", ...runtime }, leadOpened.credentialSlot),
     );
   assert.equal(replaced({ model: "sonnet", effort: "low" }), false);
   assert.equal(replaced({ model: "opus", effort: "low" }), true, "model");
@@ -277,8 +279,7 @@ test("a lead opened before a project could choose a model is served its facts an
       standing,
       leadOpened.systemPrompt,
       leadOpened.autoCompactWindow,
-      {},
-      leadOpened.credentialSlot,
+      leadRunsOn({ offering: "Own" }, leadOpened.credentialSlot),
     ),
     false,
   );
