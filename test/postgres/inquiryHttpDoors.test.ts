@@ -459,6 +459,33 @@ function forkSlots(partition: Partition) {
 }
 
 /**
+ * Asks `partition`'s lead a question as `app`'s member, and holds the door to
+ * refusing it as a lead not yet replaced on the subsidized profile.
+ */
+async function askedNotSubsidized(
+  app: ReturnType<typeof inquiryApp>,
+  partition: Partition,
+  label: string,
+): Promise<void> {
+  const refused = await app.inject({
+    method: "POST",
+    url: pathOf(partition),
+    headers: versioned,
+    payload: {
+      session: `inq-http-${randomUUID()}`,
+      turn: `inq-turn-http-${randomUUID()}`,
+      question: "who pays for this?",
+    },
+  });
+  assert.equal(refused.statusCode, 409, `${label}: ${refused.body}`);
+  assert.equal(
+    refused.json<{ error: { code: string } }>().error.code,
+    leadNotSubsidizedCode,
+    label,
+  );
+}
+
+/**
  * The subsidy pays for an inquiry only on its own slot, and a lead opened
  * before its project chose it stands on the hosted one until it is replaced.
  */
@@ -467,21 +494,7 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
   try {
     const standing = await subsidizedProject("subsidy-standing");
     await using refusing = inquiryApp(standing.principal);
-    const refused = await refusing.inject({
-      method: "POST",
-      url: pathOf(standing.partition),
-      headers: versioned,
-      payload: {
-        session: `inq-http-${randomUUID()}`,
-        turn: `inq-turn-http-${randomUUID()}`,
-        question: "who pays for this?",
-      },
-    });
-    assert.equal(refused.statusCode, 409, refused.body);
-    assert.equal(
-      refused.json<{ error: { code: string } }>().error.code,
-      leadNotSubsidizedCode,
-    );
+    await askedNotSubsidized(refusing, standing.partition, "subsidy-standing");
     assert.deepEqual(
       await forkSlots(standing.partition),
       [],
@@ -513,22 +526,7 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
     ] as const) {
       const project = await subsidizedProject(label, standing);
       await using app = inquiryApp(project.principal);
-      const refused = await app.inject({
-        method: "POST",
-        url: pathOf(project.partition),
-        headers: versioned,
-        payload: {
-          session: `inq-http-${randomUUID()}`,
-          turn: `inq-turn-http-${randomUUID()}`,
-          question: "who pays for this?",
-        },
-      });
-      assert.equal(refused.statusCode, 409, `${label}: ${refused.body}`);
-      assert.equal(
-        refused.json<{ error: { code: string } }>().error.code,
-        leadNotSubsidizedCode,
-        label,
-      );
+      await askedNotSubsidized(app, project.partition, label);
       assert.deepEqual(
         await forkSlots(project.partition),
         [],
@@ -553,21 +551,7 @@ test("a subsidized inquiry forks only a lead on its own system prompt", async ()
       systemPromptOwn: false,
     });
     await using app = inquiryApp(project.principal);
-    const refused = await app.inject({
-      method: "POST",
-      url: pathOf(project.partition),
-      headers: versioned,
-      payload: {
-        session: `inq-http-${randomUUID()}`,
-        turn: `inq-turn-http-${randomUUID()}`,
-        question: "who pays for this?",
-      },
-    });
-    assert.equal(refused.statusCode, 409, refused.body);
-    assert.equal(
-      refused.json<{ error: { code: string } }>().error.code,
-      leadNotSubsidizedCode,
-    );
+    await askedNotSubsidized(app, project.partition, "subsidy-prompt-not-own");
     assert.deepEqual(
       await forkSlots(project.partition),
       [],
