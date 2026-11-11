@@ -130,9 +130,13 @@
   /* A block drawn in its state's form: filled in its tone, tinted with its
      wash and edged in it, or outlined; the form, not hue alone, sets them
      apart. */
-  .epic-overview-graph-block {
+  .epic-overview-graph-block,
+  .epic-overview-graph-number {
     --epic-overview-tone: var(--ink-3);
     --epic-overview-wash: var(--surface-1);
+  }
+
+  .epic-overview-graph-block {
     stroke-width: 3;
   }
 
@@ -152,37 +156,61 @@
     stroke-dasharray: 8 6;
   }
 
-  .epic-overview-graph-block[data-tone="pass"] {
+  /* A block's number: the surface's colour on a filled block, its tone on a
+     tinted one, ink on an outline. */
+  .epic-overview-graph-number {
+    fill: var(--ink-1);
+    font-weight: var(--weight-strong);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
+  .epic-overview-graph-number[data-form="Filled"] {
+    fill: var(--surface-1);
+  }
+
+  .epic-overview-graph-number[data-form="Tinted"] {
+    fill: var(--epic-overview-tone);
+  }
+
+  .epic-overview-graph-block[data-tone="pass"],
+  .epic-overview-graph-number[data-tone="pass"] {
     --epic-overview-tone: var(--tone-pass);
     --epic-overview-wash: var(--wash-pass);
   }
 
-  .epic-overview-graph-block[data-tone="queued"] {
+  .epic-overview-graph-block[data-tone="queued"],
+  .epic-overview-graph-number[data-tone="queued"] {
     --epic-overview-tone: var(--tone-queued);
     --epic-overview-wash: var(--wash-queued);
   }
 
-  .epic-overview-graph-block[data-tone="live"] {
+  .epic-overview-graph-block[data-tone="live"],
+  .epic-overview-graph-number[data-tone="live"] {
     --epic-overview-tone: var(--tone-live);
     --epic-overview-wash: var(--wash-live);
   }
 
-  .epic-overview-graph-block[data-tone="evaluation"] {
+  .epic-overview-graph-block[data-tone="evaluation"],
+  .epic-overview-graph-number[data-tone="evaluation"] {
     --epic-overview-tone: var(--tone-evaluation);
     --epic-overview-wash: var(--wash-evaluation);
   }
 
-  .epic-overview-graph-block[data-tone="finalization"] {
+  .epic-overview-graph-block[data-tone="finalization"],
+  .epic-overview-graph-number[data-tone="finalization"] {
     --epic-overview-tone: var(--tone-finalization);
     --epic-overview-wash: var(--wash-finalization);
   }
 
-  .epic-overview-graph-block[data-tone="parked"] {
+  .epic-overview-graph-block[data-tone="parked"],
+  .epic-overview-graph-number[data-tone="parked"] {
     --epic-overview-tone: var(--tone-parked);
     --epic-overview-wash: var(--wash-parked);
   }
 
-  .epic-overview-graph-block[data-tone="retired"] {
+  .epic-overview-graph-block[data-tone="retired"],
+  .epic-overview-graph-number[data-tone="retired"] {
     --epic-overview-tone: var(--tone-retired);
   }
 
