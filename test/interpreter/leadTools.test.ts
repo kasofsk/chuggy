@@ -99,12 +99,13 @@ test("origination, revoking, updating, dispatching and offering are admitted for
   );
 });
 
-test("a lead and a thread both list the project's repositories, read its images, a run's error text, a ticket's landings, the docs and their own abilities, and a lead's decision may report any of them", () => {
+test("a lead and a thread both list the project's repositories, read its images, a run's error text, a ticket's landings, the project's landing queues, the docs and their own abilities, and a lead's decision may report any of them", () => {
   for (const tool of [
     "list_repositories",
     "fetch_image",
     "read_run_error",
     "read_ticket_landings",
+    "read_landing_queues",
     "read_docs",
     "read_abilities",
   ]) {

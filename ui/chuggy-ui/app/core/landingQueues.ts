@@ -1,6 +1,6 @@
 /**
  * A ticket's place in its project's landing queues: whether it holds its
- * reference or waits on it, and where. A ticket holds a rank on one reference
+ * reference or waits on it, where, and which reference that is. A ticket holds a rank on one reference
  * at most, so the first queue naming it is its only one; a ticket in none,
  * which is every Direct one, has no place.
  *
@@ -48,6 +48,10 @@ export interface LandingQueuePlace {
   readonly truncated: boolean;
   /** The ticket holding the reference, which is this one where it holds it. */
   readonly holder: number;
+  readonly repository: string;
+  /** The branch the queue's briefs name, absent where they name none and the
+   * reference is the repository's default branch. */
+  readonly target?: string;
 }
 
 /** The ticket's place, or nothing where no queue the read answered names it. */
@@ -65,6 +69,8 @@ export function landingQueuePlaceOf(
       total: order.length,
       truncated: queues?.truncated ?? false,
       holder: queue.holder,
+      repository: queue.repository,
+      ...(queue.target === undefined ? {} : { target: queue.target }),
     };
   }
   return undefined;
@@ -83,12 +89,27 @@ export function landingQueuePlaceFigure(place: LandingQueuePlace): Copy {
   };
 }
 
-/** The place in words, naming the ticket that holds the reference. */
+/** The reference a place is in the queue of: its target where the queue names
+ * one, and otherwise its repository's default branch. */
+export function landingQueuePlaceReference(place: LandingQueuePlace): Copy {
+  return place.target === undefined
+    ? {
+        id: "ticket-queue-reference-default",
+        args: { repository: place.repository },
+      }
+    : {
+        id: "ticket-queue-reference-target",
+        args: { target: place.target, repository: place.repository },
+      };
+}
+
+/** The place in words, naming the reference and the ticket that holds it. */
 export function landingQueuePlaceWords(place: LandingQueuePlace): Copy {
   const args = {
     position: String(place.position),
     total: String(place.total),
     holder: String(place.holder),
+    reference: landingQueuePlaceReference(place),
   };
   if (place.truncated)
     return place.holding

@@ -46,6 +46,7 @@ import {
   configurationCanonicalCharsMax,
   jsonStringChars,
   jsonTextBytes,
+  landingQueueTicketsAnsweredMax,
   leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
@@ -67,6 +68,7 @@ import {
   ticketLandingsAnsweredMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
+import { briefBranchCharsMax, briefRepositoryCharsMax } from "./brief.ts";
 import { epicContentBytesMax, epicTicketsMax } from "./epics.ts";
 import {
   epicStatusRoster,
@@ -137,6 +139,9 @@ export {
 
 /** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
 export { ticketLandingsAnsweredMax } from "./http.ts";
+
+/** What `read_landing_queues`'s route answers: at most this many tickets, holders and waiters together, the earliest-ranked. */
+export { landingQueueTicketsAnsweredMax } from "./http.ts";
 
 /** What the epic tools hold an argument to: the title and summary a revision carries, the most one revision weighs and holds, and the most one page answers. */
 export {
@@ -218,6 +223,39 @@ export const chuggyToolTicketLandingBytesMax =
  */
 export const chuggyToolTicketLandingsResponseBytesMax =
   ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
+  nativeHttpBodyBytesMax;
+
+/**
+ * What one queue `read_landing_queues`'s route answers weighs beside its
+ * repository, its target and its waiters: the names and brackets around them,
+ * and its holder at the largest number a ticket's may be.
+ */
+const chuggyToolLandingQueueFieldsBytesMax = textUtf8Bytes(
+  `${JSON.stringify({
+    repository: "",
+    target: "",
+    holder: Number.MAX_SAFE_INTEGER,
+    waiting: [],
+  })},`,
+);
+
+/** What one waiter weighs in a queue's `waiting`: the largest number a ticket's may be, and its comma. */
+const chuggyToolLandingQueueWaiterBytesMax = textUtf8Bytes(
+  `${String(Number.MAX_SAFE_INTEGER)},`,
+);
+
+/**
+ * What `read_landing_queues`'s route may answer: as many queues as one read
+ * answers tickets, each with its repository and target escaping every
+ * character and its fields at their heaviest, as many waiters as it answers
+ * tickets, and an ordinary answer's bound for the fields around them.
+ */
+export const chuggyToolLandingQueuesResponseBytesMax =
+  landingQueueTicketsAnsweredMax *
+    (jsonStringChars(briefRepositoryCharsMax) +
+      jsonStringChars(briefBranchCharsMax) +
+      chuggyToolLandingQueueFieldsBytesMax +
+      chuggyToolLandingQueueWaiterBytesMax) +
   nativeHttpBodyBytesMax;
 
 /**
@@ -436,6 +474,7 @@ const chuggyToolRoster = {
     "read_refusals",
     "read_ticket_refusals",
     "read_ticket_landings",
+    "read_landing_queues",
     "read_lead",
     "read_lead_transcript",
     "list_executions",
@@ -603,6 +642,16 @@ export const chuggyToolRoutes = {
   agenticRefusals: nativeHttpRoutes.agenticRefusals,
   ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
   ticketLandings: nativeHttpRoutes.ticketLandings,
+  /**
+   * What `read_landing_queues` answers, taking nothing: the project's landing
+   * queues, one for each reference a Serialized or Stacked ticket lands on,
+   * each naming its repository and its target, a queue naming none being the
+   * repository's default branch's. A queue's holder is the one ticket that may
+   * land on that reference now, and its waiters are the tickets ranked behind
+   * it, in rank order, none of which lands there before the holder stops
+   * holding it. A ticket alone in a queue is its holder and waits on nobody.
+   */
+  landingQueues: nativeHttpRoutes.landingQueues,
   lead: nativeHttpRoutes.lead,
   leadTranscript: nativeHttpRoutes.leadTranscript,
   executions: nativeHttpRoutes.executions,
