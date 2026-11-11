@@ -302,6 +302,37 @@ export function ticketRunQueryOf(
   };
 }
 
+/** What a run's page can offer beyond its Summary and Details. */
+export interface TicketRunOffers {
+  /** A command stage's result that lists the commands it ran. */
+  readonly commands: boolean;
+  /** An agent carried the run out, so its context was recorded. */
+  readonly agent: boolean;
+  /** An earlier verdict settled it, so nothing ran and nothing was recorded. */
+  readonly carried: boolean;
+}
+
+/** The sub-tabs a run offers: Output only where a command run wrote some,
+ * Context only where an agent carried the run out, and for a run an earlier
+ * verdict settled only its Summary and Details, since it has no transcript. */
+export function ticketRunViewsOffered(
+  offers: TicketRunOffers,
+): readonly TicketRunView[] {
+  return ticketRunViews.filter((view) => {
+    switch (view) {
+      case "Summary":
+      case "Details":
+        return true;
+      case "Transcript":
+        return !offers.carried;
+      case "Output":
+        return offers.commands;
+      case "Context":
+        return offers.agent && !offers.carried;
+    }
+  });
+}
+
 /** The sub-tab a run page draws: the one its address names where the run
  * offers it, and otherwise Summary, or Transcript while the run is live. */
 export function ticketRunViewShown(
@@ -342,7 +373,8 @@ export interface TicketRunDetails {
   readonly image: Label | undefined;
   readonly worker: string | undefined;
   readonly cpus: string | undefined;
-  readonly waited: Figure;
+  /** How long it waited, absent for a run an earlier verdict settled, which waited for nothing. */
+  readonly waited: Figure | undefined;
   readonly attempts: number;
   readonly model: string | undefined;
   readonly turns: number | undefined;
@@ -405,7 +437,10 @@ export function ticketRunDetailsOf(
       cpuMillis === undefined
         ? undefined
         : String(cpuMillis / ticketRunCpuMillis),
-    waited: ticketRunWaited(execution, nowMs),
+    waited:
+      execution.carriedFrom === undefined
+        ? ticketRunWaited(execution, nowMs)
+        : undefined,
     attempts: execution.attempts.length,
     model: models.length === 0 ? undefined : models.join(", "),
     turns: totals?.turns,

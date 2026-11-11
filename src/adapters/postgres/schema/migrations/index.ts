@@ -155,6 +155,7 @@ import { migration154 } from "./154-session-system-prompt-own.ts";
 import { migration155 } from "./155-approval-answered.ts";
 import { migration156 } from "./156-personal-runner-contention.ts";
 import { migration157 } from "./157-carried-verdict.ts";
+import { migration158 } from "./158-carried-verdict-read.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -315,4 +316,5 @@ export const migrations: readonly Migration[] = [
   migration155,
   migration156,
   migration157,
+  migration158,
 ];

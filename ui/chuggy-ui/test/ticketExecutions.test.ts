@@ -82,6 +82,35 @@ test("a frame for a listed execution replaces it where it stands", () => {
   expect(folded?.executions[1]?.status).toBe("Terminal");
 });
 
+test("a frame for an execution an earlier verdict settled keeps the run it was carried from", () => {
+  const held = page([execution("e1", 1), execution("e3", 3)]);
+  const carriedFrom = { execution: "e1", task: 1, workCycle: 1 };
+  const folded = ticketExecutionsFolded(7, held, {
+    resource: "e3",
+    representation: execution("e3", 3, {
+      status: "Terminal",
+      outcome: "Passed",
+      carriedFrom,
+    }),
+  });
+  expect(folded?.executions.map((row) => row.carriedFrom)).toEqual([
+    undefined,
+    carriedFrom,
+  ]);
+});
+
+test("a frame whose carry names no source run is not folded over the listed row", () => {
+  const held = page([execution("e1", 1)]);
+  const folded = ticketExecutionsFolded(7, held, {
+    resource: "e1",
+    representation: {
+      ...execution("e1", 1, { status: "Terminal" }),
+      carriedFrom: { workCycle: 1 },
+    },
+  });
+  expect(folded).toBe(held);
+});
+
 /** The identities sort against the tasks here, so a fold in either order is
  * distinguishable from a fold in the other. */
 test("a frame for an execution nobody listed lands in task order", () => {

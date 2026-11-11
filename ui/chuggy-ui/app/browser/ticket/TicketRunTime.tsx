@@ -6,12 +6,14 @@
  * What is drawn is `core/figures.ts`'s reading of `core/runTotals.ts`'s sums.
  * Inline by default; a cell the stylesheet stacks puts the wait under the run.
  * A line that says its run is still going says so only once something took it.
+ * Runs an earlier verdict settled, which never ran, say only that they were
+ * reused.
  */
 
 import type { ReactNode } from "react";
 
 import { runTimeLineOf } from "../../core/figures.ts";
-import { runTimeOf } from "../../core/runTotals.ts";
+import { runTimeOf, runTimeReused } from "../../core/runTotals.ts";
 import type { RunTimed } from "../../core/runTotals.ts";
 import { Figure } from "../ui/Figure.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -25,6 +27,14 @@ export function TicketRunTime(props: {
 }): ReactNode {
   const line = runTimeLineOf(runTimeOf(props.runs, props.nowMs));
   const text = useCopyText();
+  if (runTimeReused(props.runs))
+    return (
+      <span className="ticket-run-time" data-line="reused">
+        <span className="ticket-run-time-main">
+          {text({ id: "ticket-run-reused" })}
+        </span>
+      </span>
+    );
   switch (line.line) {
     case "Waiting":
       return (

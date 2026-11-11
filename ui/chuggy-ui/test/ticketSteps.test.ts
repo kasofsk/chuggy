@@ -189,6 +189,28 @@ test("the current cycle is headed by its number and the cycle before it, each ru
   expect(steps.columns[1]?.boxes[0]?.address).toEqual({ to: "Run", task: 6 });
 });
 
+test("a stage an earlier verdict settled says which cycle it was reused from, and leads to that cycle's run", () => {
+  const steps = stepsOf([
+    ...cycleOne,
+    { execution: "e-5", task: 5, identity: workIdentity(2), outcome: "Passed" },
+    {
+      execution: "e-6",
+      task: 6,
+      identity: evalIdentity(2, 1, 1),
+      outcome: "Passed",
+      carriedFrom: { execution: "e-2", task: 2, workCycle: 1 },
+    },
+  ]);
+  const checks = steps.columns[1]?.boxes[0];
+  expect([checks?.name, checks?.mark, checks?.line]).toEqual([
+    "checks",
+    "Check",
+    { line: "Words", words: "Reused from cycle 1" },
+  ]);
+  expect(checks?.address).toEqual({ to: "Run", task: 2 });
+  expect(steps.columns[0]?.boxes[0]?.line.line).toBe("Ran");
+});
+
 test("a stage of several evaluators lists each with its own mark and page inside its one box", () => {
   const review = stepsOf(cycleTwoReviewing).columns[1]?.boxes[1];
   expect(review?.address).toBeUndefined();
