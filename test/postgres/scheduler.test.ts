@@ -931,22 +931,52 @@ test("a result manifest and its artifacts are written once", async () => {
   }
 });
 
-test("the server's move table answers exactly as the interpreter's", async () => {
-  const moves = allExecutionStatuses.flatMap((before) =>
-    allExecutionStatuses.map((after) => ({ before, after })),
+test("the server's move table answers exactly as the interpreter's, with and without a requirement", async () => {
+  const moves = [true, false].flatMap((requirementNamed) =>
+    allExecutionStatuses.flatMap((before) =>
+      allExecutionStatuses.map((after) => ({
+        before,
+        after,
+        requirementNamed,
+      })),
+    ),
   );
   const answered = (await harness.query(
-    `SELECT m.before, m.after, ${statusMoveFunction}(m.before, m.after) AS legal
-       FROM unnest($1::text[], $2::text[]) AS m(before, after)`,
-    [moves.map((each) => each.before), moves.map((each) => each.after)],
-  )) as readonly { before: string; after: string; legal: boolean }[];
+    `SELECT m.before, m.after, m.named AS "requirementNamed",
+            ${statusMoveFunction}(m.before, m.after, m.named) AS legal
+       FROM unnest($1::text[], $2::text[], $3::boolean[]) AS m(before, after, named)`,
+    [
+      moves.map((each) => each.before),
+      moves.map((each) => each.after),
+      moves.map((each) => each.requirementNamed),
+    ],
+  )) as readonly {
+    before: string;
+    after: string;
+    requirementNamed: boolean;
+    legal: boolean;
+  }[];
   assert.deepEqual(
     answered,
     moves.map((each) => ({
-      before: each.before,
-      after: each.after,
-      legal: executionLegalMove(each.before, each.after),
+      ...each,
+      legal: executionLegalMove(each.before, each.after, each.requirementNamed),
     })),
+  );
+});
+
+test("an execution naming a requirement is refused Queued to Terminal by the row it is", async () => {
+  const fixture = await schedulerFixture("named-terminal");
+  const execution = await schedulerRegister(fixture, "named-terminal");
+  const [row] = (await harness.query(
+    `SELECT status, requirement_value IS NOT NULL AS named FROM execution
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [fixture.partition.tenant, fixture.partition.project, execution],
+  )) as readonly { status: string; named: boolean }[];
+  assert.deepEqual(row, { status: "Queued", named: true });
+  await assert.rejects(
+    schedulerAdvance(fixture, execution, "Terminal"),
+    /may not move from Queued to Terminal/,
   );
 });
 

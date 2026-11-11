@@ -83,9 +83,12 @@ module execution_capacity {
 
   /// Terminal and cancelled executions are absorbing; infrastructure may
   /// observe retries inside Launching/Running without creating a model step.
-  pure def legalStatusMove(before: ExecutionStatus, after: ExecutionStatus): bool =
+  /// An execution that names no requirement is never placed, so it may reach
+  /// Terminal from Queued, and neither status owns a slot. One that names a
+  /// requirement leaves Queued only by admission or cancellation.
+  pure def legalStatusMove(before: ExecutionStatus, after: ExecutionStatus, requirementNamed: bool): bool =
     match before {
-      | Queued => after == Admitted or after == Cancelled
+      | Queued => after == Admitted or after == Cancelled or (after == Terminal and not(requirementNamed))
       | Admitted => after == Launching or after == Terminal or after == Cancelled
       | Launching => after == Running or after == Terminal or after == Cancelled
       | Running => after == Terminal or after == Cancelled
