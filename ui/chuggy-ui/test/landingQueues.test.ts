@@ -1,7 +1,8 @@
 /**
  * A ticket's place in its project's landing queues: the holder first, a waiter
  * at its position, a ticket in no queue at none, and each queue of a project
- * counted on its own, and a read cut by rank giving each total as a least.
+ * counted on its own, a read cut by rank giving each total as a least, and the
+ * words naming the reference each queue is on.
  */
 
 import { expect, test } from "vitest";
@@ -10,6 +11,7 @@ import type { LandingQueuesResponse } from "../../../src/contract/responses.ts";
 import {
   landingQueuePlaceFigure,
   landingQueuePlaceOf,
+  landingQueuePlaceReference,
   landingQueuePlaceTone,
   landingQueuePlaceWords,
 } from "../app/core/landingQueues.ts";
@@ -31,6 +33,7 @@ test("the holder is first of its queue's total, and holds it", () => {
     total: 3,
     truncated: false,
     holder: 4,
+    repository,
   });
 });
 
@@ -41,6 +44,7 @@ test("a waiter is at its rank counted from one with the holder first, and names 
     total: 3,
     truncated: false,
     holder: 4,
+    repository,
   });
 });
 
@@ -59,6 +63,8 @@ test("two queues of one project are each counted on their own", () => {
     total: 2,
     truncated: false,
     holder: 7,
+    repository,
+    target: "refs/heads/release",
   });
   expect(landingQueuePlaceOf(queues, 3)).toStrictEqual({
     holding: false,
@@ -66,12 +72,15 @@ test("two queues of one project are each counted on their own", () => {
     total: 2,
     truncated: false,
     holder: 7,
+    repository,
+    target: "refs/heads/release",
   });
   expect(landingQueuePlaceOf(queues, 9)).toMatchObject({
     position: 2,
     total: 3,
     truncated: false,
     holder: 4,
+    repository,
   });
 });
 
@@ -89,7 +98,15 @@ test("the holder is toned and worded as landing next, a waiter as waiting", () =
   expect(landingQueuePlaceWords(holder).id).toBe("ticket-queue-holding");
   expect(landingQueuePlaceWords(waiter)).toStrictEqual({
     id: "ticket-queue-waiting",
-    args: { position: "3", total: "3", holder: "4" },
+    args: {
+      position: "3",
+      total: "3",
+      holder: "4",
+      reference: {
+        id: "ticket-queue-reference-default",
+        args: { repository },
+      },
+    },
   });
 });
 
@@ -105,6 +122,7 @@ test("a read cut by rank gives each total as the least its queue holds, in figur
     total: 3,
     truncated: true,
     holder: 4,
+    repository,
   });
   expect(landingQueuePlaceFigure(waiter)).toStrictEqual({
     id: "ticket-queue-place-cut",
@@ -112,4 +130,22 @@ test("a read cut by rank gives each total as the least its queue holds, in figur
   });
   expect(landingQueuePlaceWords(waiter).id).toBe("ticket-queue-waiting-cut");
   expect(landingQueuePlaceWords(holder).id).toBe("ticket-queue-holding-cut");
+});
+
+test("a queue with a target is worded as that target in its repository, and one without as the repository's default branch", () => {
+  const onTarget = landingQueuePlaceOf(queues, 3);
+  const onDefault = landingQueuePlaceOf(queues, 9);
+  if (onTarget === undefined || onDefault === undefined)
+    throw new Error("both are queued");
+  expect(landingQueuePlaceReference(onTarget)).toStrictEqual({
+    id: "ticket-queue-reference-target",
+    args: { target: "refs/heads/release", repository },
+  });
+  expect(landingQueuePlaceReference(onDefault)).toStrictEqual({
+    id: "ticket-queue-reference-default",
+    args: { repository },
+  });
+  expect(landingQueuePlaceWords(onTarget)).toMatchObject({
+    args: { reference: landingQueuePlaceReference(onTarget) },
+  });
 });

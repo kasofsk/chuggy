@@ -1,7 +1,8 @@
 /**
  * A ticket's place in its landing queue as its chip draws it: the merge mark
  * and `position/total`, named in words that say a holder lands next and a
- * waiter waits at its place, each naming the ticket that holds the reference;
+ * waiter waits at its place, each naming the reference, its target or its
+ * repository's default branch, and the ticket that holds it;
  * a total read from a cut read drawn and named as a least; a title rather
  * than a focusable tooltip inside a link; and nothing at all for a ticket in
  * no queue.
@@ -15,11 +16,13 @@ import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
-const holderWords = "Lands next: #4 holds the target, 1 of 3 in its queue";
+const repository = "https://github.com/acme/widgets.git";
 
-const waiterWords = "Waiting 3 of 3 to land: #4 holds the target";
+const holderWords = `Lands next: #4 holds refs/heads/release in ${repository}, 1 of 3 in its queue`;
 
-test("a holder's chip draws the merge mark and 1/total, and is named as landing next", () => {
+const waiterWords = `Waiting 3 of 3 to land: #4 holds ${repository}'s default branch`;
+
+test("a holder's chip draws the merge mark and 1/total, and is named as landing next on its queue's target", () => {
   renderCopied(
     <LandingQueueChip
       place={{
@@ -28,6 +31,8 @@ test("a holder's chip draws the merge mark and 1/total, and is named as landing 
         total: 3,
         truncated: false,
         holder: 4,
+        repository,
+        target: "refs/heads/release",
       }}
     />,
   );
@@ -40,7 +45,7 @@ test("a holder's chip draws the merge mark and 1/total, and is named as landing 
   expect(chip.getAttribute("tabindex")).toBe("0");
 });
 
-test("a waiter's chip draws its position of the total, and is named as waiting behind the holder", () => {
+test("a waiter's chip draws its position of the total, and is named as waiting behind the holder on its repository's default branch", () => {
   renderCopied(
     <LandingQueueChip
       place={{
@@ -49,6 +54,7 @@ test("a waiter's chip draws its position of the total, and is named as waiting b
         total: 3,
         truncated: false,
         holder: 4,
+        repository,
       }}
     />,
   );
@@ -67,11 +73,12 @@ test("a place from a cut read draws its total as a least, and names it so", () =
         total: 3,
         truncated: true,
         holder: 4,
+        repository,
       }}
     />,
   );
   const chip = screen.getByRole("img", {
-    name: "Waiting 3 of at least 3 to land: #4 holds the target",
+    name: `Waiting 3 of at least 3 to land: #4 holds ${repository}'s default branch`,
   });
   expect(chip.textContent).toBe("3/3+");
 });
@@ -86,6 +93,7 @@ test("inside a link the chip says its words as a title and takes no focus of its
           total: 3,
           truncated: false,
           holder: 4,
+          repository,
         }}
         inLink
       />

@@ -364,6 +364,22 @@ test("read_ticket_landings's route reaches a ticket's landings under a lead's an
   }
 });
 
+test("read_landing_queues's route reaches the project's landing queues under a lead's and a thread's own bearer", async () => {
+  assert.equal(
+    chuggyToolRoutes.landingQueues,
+    nativeHttpRoutes.landingQueues,
+    "read_landing_queues calls no route",
+  );
+  for (const kind of ["Lead", "Thread"] as const) {
+    const reached: string[] = [];
+    await using app = scopedApp(reached, undefined, kind);
+    await app.inject(
+      routeRequest(`GET ${chuggyToolRoutes.landingQueues}`, own, sessionToken),
+    );
+    assert.deepEqual(reached, ["landingQueues.read"], kind);
+  }
+});
+
 test("read_abilities's route reaches the session's own abilities under a lead's and a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.abilities,

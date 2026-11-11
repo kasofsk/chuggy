@@ -181,6 +181,7 @@ export interface TicketCopy {
   };
   readonly "ticket-queue-holding": {
     readonly holder: unknown;
+    readonly reference: unknown;
     readonly position: unknown;
     readonly total: unknown;
   };
@@ -188,6 +189,7 @@ export interface TicketCopy {
     readonly position: unknown;
     readonly total: unknown;
     readonly holder: unknown;
+    readonly reference: unknown;
   };
   readonly "ticket-queue-place-cut": {
     readonly position: unknown;
@@ -195,6 +197,7 @@ export interface TicketCopy {
   };
   readonly "ticket-queue-holding-cut": {
     readonly holder: unknown;
+    readonly reference: unknown;
     readonly position: unknown;
     readonly total: unknown;
   };
@@ -202,6 +205,14 @@ export interface TicketCopy {
     readonly position: unknown;
     readonly total: unknown;
     readonly holder: unknown;
+    readonly reference: unknown;
+  };
+  readonly "ticket-queue-reference-target": {
+    readonly target: unknown;
+    readonly repository: unknown;
+  };
+  readonly "ticket-queue-reference-default": {
+    readonly repository: unknown;
   };
   readonly "ticket-nothing-has-run": Record<never, never>;
   readonly "ticket-run-nav-label": Record<never, never>;
