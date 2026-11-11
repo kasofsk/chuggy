@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   createTicketCommand,
   dispatchTicketCommand,
+  invalidateEvaluationCommand,
   reportFinalizationResultCommand,
   reportTaskTerminalCommand,
   resumeTicketCommand,
@@ -12,7 +13,10 @@ import {
 } from "../../src/actor/command.ts";
 import type { Entry, Replayed } from "../../src/actor/journal.ts";
 import { assertNever } from "../../src/domain/assertNever.ts";
-import type { EvaluationFailurePolicy } from "../../src/domain/deciders.ts";
+import {
+  alwaysPolicy,
+  type EvaluationFailurePolicy,
+} from "../../src/domain/deciders.ts";
 import { retryableIn } from "../../src/domain/enablement.ts";
 import type { Config } from "../../src/domain/config.ts";
 import type {
@@ -93,6 +97,7 @@ import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import {
   aDispatchSource,
   anAcceptedSource,
+  anInvalidationEvidence,
   evaluatorOf,
   releasedTicketOf,
 } from "../../src/domain/config.ts";
@@ -744,6 +749,123 @@ test("only a re-check send-back pins the accepted commit to re-report", () => {
   ]);
   assert.deepEqual(recheckReferences("MergeConflict", accepted), []);
   assert.deepEqual(recheckReferences("RecheckRequired"), []);
+});
+
+/** The commit a ticket's first work cycle was accepted at, which a later work spawn's source names. */
+const recheckAcceptedCommit = asGitObjectId("7".repeat(40));
+
+/**
+ * The `Recheck` references the bundle of the work spawn `decided` owes pins,
+ * reached by the input it arrived in and run at the accepted commit's row.
+ */
+function recheckPinnedBy(decided: Decided, arrived: DecisionInput) {
+  const spawn = materializationOf(
+    arrived,
+    decided.before,
+    decided.after,
+    decided.entry,
+    decided.obligations,
+    {
+      source: {
+        repository: asRepositoryId("repository"),
+        target: { commit: recheckAcceptedCommit },
+        manifests: [],
+      },
+    },
+  ).execution[0];
+  assert.equal(spawn?.kind, "SpawnWork");
+  assert.ok(spawn.bundle !== undefined);
+  return inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    spawn.bundle,
+  ).filter((reference) => reference.kind === "Recheck");
+}
+
+/** The envelope the finalizer's boundary submits a dead stack's invalidation in. */
+function stackInvalidationInput(event: TicketCommand): DecisionInput {
+  assert.equal(event.type, "InvalidateEvaluation");
+  return {
+    partition,
+    ordinal: 1,
+    deferredPasses: 0,
+    priority: "Completion",
+    source: {
+      kind: "Operation",
+      operation: asOperationId("invalidation"),
+      command: {
+        version: 1,
+        command: "SubmitStackInvalidation",
+        ticket: id(event.value.ticket),
+        workCycle: event.value.workCycle,
+        evidence: event.value.evidence,
+      },
+      ticketCommand: event,
+    },
+  };
+}
+
+/** A ticket whose first work cycle was accepted and is being evaluated. */
+function evaluatingFirstCycle(): ActorState {
+  return walked([
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    workDone(1),
+  ]);
+}
+
+/**
+ * A ticket whose stack stopped standing is evaluated again, no rework, so its
+ * next work cycle re-checks the commit the abandoned evaluation accepted.
+ * Catches the agent run again over an unchanged candidate, for an abandonment
+ * and for a failed stage taken back the same way.
+ */
+test("a work cycle an invalidation entered pins exactly one re-check of the accepted commit", () => {
+  const invalidation = invalidateEvaluationCommand(
+    id(1),
+    1,
+    anInvalidationEvidence,
+  );
+  const invalidated = decidedAt(evaluatingFirstCycle(), invalidation);
+  assert.equal(invalidated.entry.event.type, "TicketEvaluationInvalidated");
+  const failureInvalidated = decidedAt(
+    evaluatingFirstCycle(),
+    judged(1, 1, "EvaluatorFail"),
+    refinementInstance,
+    alwaysPolicy({
+      type: "InvalidateEvaluationFailure",
+      value: anInvalidationEvidence,
+    }),
+  );
+  assert.equal(
+    failureInvalidated.entry.event.type,
+    "TicketEvaluationFailureInvalidated",
+  );
+  for (const [decided, arrived] of [
+    [invalidated, stackInvalidationInput(invalidation)],
+    [failureInvalidated, arrivedAs(judged(1, 1, "EvaluatorFail"))],
+  ] as const)
+    assert.deepEqual(recheckPinnedBy(decided, arrived), [
+      { kind: "Recheck", reference: recheckAcceptedCommit },
+    ]);
+});
+
+/** Catches a re-check pinned on a spawn whose work is to be done, not reported again. */
+test("an initial work cycle and an evaluation rework pin no re-check", () => {
+  const dispatch = dispatchTicketCommand(id(1), aDispatchSource);
+  const dispatched = decidedAt(
+    walked([createTicketCommand(plainDefinitionOf(1))]),
+    dispatch,
+  );
+  const reworked = decidedAt(
+    evaluatingFirstCycle(),
+    judged(1, 1, "EvaluatorFail"),
+  );
+  assert.equal(reworked.entry.event.type, "TicketEvaluationReworkStarted");
+  assert.deepEqual(recheckPinnedBy(dispatched, input(dispatch)), []);
+  assert.deepEqual(
+    recheckPinnedBy(reworked, arrivedAs(judged(1, 1, "EvaluatorFail"))),
+    [],
+  );
 });
 
 test("a spawn bundle pins one reference per image the brief named, with the digest the store answered", () => {
