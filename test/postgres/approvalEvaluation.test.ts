@@ -291,6 +291,26 @@ test("the ticket's and the project's action reads and the inbox say what the app
   assert.deepEqual(inbox.actions, [listed]);
 });
 
+test("the move rule reads an approval's row as naming no requirement, and lets it go from Queued to Terminal", async () => {
+  const at = await evaluating("approval-move-rule", "signOff");
+  const awaiting = await awaitingOf(at);
+  assert.equal(awaiting.status, "Queued");
+  const terminalized = rig.harness.query(
+    `UPDATE execution SET status='Terminal'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [
+      at.project.partition.tenant,
+      at.project.partition.project,
+      awaiting.execution,
+    ],
+  );
+  await assert.rejects(terminalized, (error: Error) => {
+    assert.doesNotMatch(error.message, /may not move/);
+    assert.match(error.message, /execution_awaiting_is_never_admitted/);
+    return true;
+  });
+});
+
 test("the executions read says the approval awaits, and it is no queued work", async () => {
   const at = await evaluating("approval-standing", "signOff");
   const awaiting = await awaitingOf(at);
