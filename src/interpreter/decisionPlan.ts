@@ -142,11 +142,24 @@ function requestTasks(
 }
 
 /**
+ * The events that send a ticket back to work over a candidate that has not
+ * changed: an evaluation abandoned because its stack stopped standing.
+ */
+const executionRequestRecheckEvents: readonly Entry["event"]["type"][] = [
+  "TicketEvaluationInvalidated",
+  "TicketEvaluationFailureInvalidated",
+];
+
+/**
  * The bundle a spawn pins, carrying the evidence of the finalization that
  * caused it where one did. A bundle built from evidence pins no source of its
  * own, because the evidence carries the failed attempt's whole bundle forward
  * — target commit and all — and a second one under that kind leaves a worker
  * two answers to what its work is based on.
+ *
+ * A WORK CYCLE AN INVALIDATION ENTERED RE-CHECKS ITS SOURCE'S COMMIT. That
+ * commit is the work the abandoned evaluation accepted, read from the row the
+ * cycle runs at, so the worker reports it again rather than redoing it.
  */
 function executionRequestBundle(
   input: DecisionInput,
@@ -158,6 +171,7 @@ function executionRequestBundle(
     entry.event.type === "TicketFinalizationNeedsWork"
       ? input.source.finalizationRequest?.evidence
       : undefined;
+  const recheck = executionRequestRecheckEvents.includes(entry.event.type);
   return {
     bundle: identity(entry, index, inputBundleIdentityKind),
     ...(evidence === undefined ? {} : { evidence }),
@@ -180,6 +194,7 @@ function executionRequestBundle(
             ...(source.changeIdentity === undefined
               ? {}
               : { changeIdentity: source.changeIdentity }),
+            ...(recheck ? { recheck: source.target.commit } : {}),
           },
         }),
     ...(images === undefined || images.length === 0 ? {} : { images }),
@@ -423,6 +438,9 @@ export function inputBundleReferencesOf(
                   reference: source.changeIdentity,
                 },
               ]),
+          ...(source.recheck === undefined
+            ? []
+            : [{ kind: "Recheck" as const, reference: source.recheck }]),
         ]),
     ...(evidence === undefined ? [] : inputBundleEvidenceReferences(evidence)),
     ...(dependencies === undefined
