@@ -44,6 +44,7 @@ import {
   sessionTurnStoppedSchema,
   type SessionPlaneRouteName,
 } from "../../contract/sessionPlane.ts";
+import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
 import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
 import {
@@ -134,11 +135,13 @@ import {
 } from "../../interpreter/resultManifest.ts";
 import {
   contractVersionAccepted,
+  contractVersionRefusal,
   workerContractAccepted,
   workerContractEvaluatedTrees,
   workerContractLiveStops,
   workerContractProjectReads,
   workerContractRunnerSessions,
+  workerContractSystemPromptsOwn,
   workerContractTargetRefs,
   workerContractThreadOffer,
   workerContractTicketDispatch,
@@ -1406,9 +1409,27 @@ function sessionTurnKindTold(
     : kind;
 }
 
+/**
+ * A session's facts, or a refusal of the release asked with where the session
+ * runs on its own system prompt and the release predates the field: a pod that
+ * dropped it would load its project's settings, so it is never answered the
+ * facts without it.
+ */
 function sessionFactsRoute(register: SessionRegistrar): void {
-  register("facts", (request, _reply, { identity }) =>
-    Promise.resolve({
+  register("facts", (request, reply, { identity }) => {
+    if (
+      identity.systemPromptOwn === true &&
+      !contractVersionAccepted(
+        workerContractSystemPromptsOwn,
+        workerContractOffered(request),
+      )
+    )
+      return Promise.resolve(
+        reply
+          .code(contractVersionRefusalStatus)
+          .send(contractVersionRefusal(workerContractSystemPromptsOwn)),
+      );
+    return Promise.resolve({
       tenant: identity.partition.tenant,
       project: identity.partition.project,
       session: identity.session,
@@ -1429,8 +1450,9 @@ function sessionFactsRoute(register: SessionRegistrar): void {
       ...(identity.forkFrom === undefined
         ? {}
         : { forkFrom: identity.forkFrom }),
-    }),
-  );
+      ...(identity.systemPromptOwn === true ? { systemPromptOwn: true } : {}),
+    });
+  });
 }
 
 function sessionHeartbeatRoute(

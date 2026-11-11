@@ -16,6 +16,7 @@
  * deployment.
  */
 
+import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
@@ -60,7 +61,12 @@ import {
 import type { ThreadLimitStore } from "../../src/interpreter/threadLimit.ts";
 import type { ThreadLiveHub } from "../../src/interpreter/threadLive.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
+import {
+  asSessionTurnId,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
+import { sessionRigAttempt } from "./sessionHarness.ts";
 import { postgresHarnessKeying } from "./harness.ts";
 import type { SessionStoreDouble } from "./storeDouble.ts";
 
@@ -236,6 +242,37 @@ export async function threadRigLimit(
   );
   if (written === "NotFound")
     throw new Error("thread rig: the limit's project is not there");
+}
+
+/** What a session's pod is told of it through the plane's own authentication, once a turn waits on it. */
+export async function threadRigFacts(
+  rig: ThreadRig,
+  partition: Partition,
+  session: SessionId,
+  label: string,
+) {
+  const pod = await sessionRigAttempt(rig.sessions, partition, session, label);
+  const facts = await rig.sessions.plane.authenticate(pod.secret);
+  assert.ok(facts !== undefined, "the pod's bearer was not recognised");
+  return facts;
+}
+
+/** A decision turn on the project's lead, which is what an attempt on it opens to take. */
+export async function threadRigLeadTurn(
+  rig: ThreadRig,
+  partition: Partition,
+): Promise<void> {
+  assert.equal(
+    (
+      await rig.mailbox.offer({
+        partition,
+        turn: asSessionTurnId(`turn-lead-${randomUUID()}`),
+        input: "{}",
+        route: "InCluster",
+      })
+    ).offered,
+    "Enqueued",
+  );
 }
 
 /** A turn identity no other case is using. */

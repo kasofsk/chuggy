@@ -248,7 +248,8 @@ export const sessionEndedSchema = z.strictObject({
  * session has none, as `model` and `effort` are where it opened under the
  * site's session model and the runtime's own effort. `autoCompactWindow` is a
  * lead's alone: the context, in tokens, at which its runtime compacts the
- * conversation.
+ * conversation; and `systemPromptOwn` is present only where the session runs
+ * on its own system prompt and loads nothing of its project's settings.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
@@ -270,6 +271,7 @@ export const sessionFactsAnswerSchema = z.object({
   model: sessionModelSchema.optional(),
   effort: z.enum(sessionEfforts).optional(),
   forkFrom: sessionIdentitySchema.optional(),
+  systemPromptOwn: z.literal(true).optional(),
 });
 
 /** One turn as the mailbox hands it over, its input opaque to the plane. */
