@@ -36,8 +36,9 @@
 # OWN. `ci_unit_partition` asks the graph over the tree in hand which of the
 # suites `check-source.sh --unit` runs are closed, as
 # `.chug/tasks/_import-graph.sh` says what that is. A closed suite,
-# `source-unit:<suite>`, reads what it reaches, where node looks from it, and
-# what every suite runs under, and is selected and keyed on that; the open
+# `source-unit:<suite>`, reads what it reaches, where node looks from it, what
+# every suite runs under, and for a `*.linux.test.ts` the worker image's node,
+# and is selected and keyed on that; the open
 # ones are `source-unit`, selected and keyed as the stage was whole. A graph
 # that cannot be built or believed leaves every suite open.
 #
@@ -422,6 +423,8 @@ ci_declare() { # <gate id or suite path>
 				awk -F/ '{ d = $1; for (i = 2; i < NF; i++) { print d; d = d "/" $i } if (NF > 1) print d }' |
 				sort -u)
 			ci_unit_harness
+			# Off Linux, check-source runs this suite in the node the worker image pins.
+			case "$1" in *.linux.test.ts) ci_code images/worker/Dockerfile ;; esac
 		else
 			ci_declare source-unit
 		fi

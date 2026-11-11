@@ -2754,6 +2754,17 @@ check "the runner's own gate runs the same suites, given none" 0 "$RC" "unit ran
 		$unit_open $unit_closed
 }
 
+# A closed suite check-source runs in the worker image off Linux reads the
+# image's node pin too.
+unit_repo
+graph_module test/unit/kernel.linux.test.ts 'import { decide } from "../../src/domain/deciders.ts";' \
+	'export const kernel = decide;'
+commit_all "a closed suite for Linux"
+printf '# changed\n' >> "$R/images/worker/Dockerfile"
+# shellcheck disable=SC2086 # a path a word, by construction
+unit_change "an edit to the worker image beside a closed Linux suite" test/unit/kernel.linux.test.ts $unit_open
+check "which it reads as closed" 0 "$RC" "ci: unit suites 4 closed, 2 open;"
+
 # A suite that gains a read of the filesystem, or a module loaded by a name
 # that is not a literal, or an import that resolves to nothing, is open in the
 # change that brings it, directly or through a module it reaches.
