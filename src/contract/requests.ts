@@ -17,6 +17,8 @@ import {
   forgeAuthorizationVerifierCharsMax,
   forgeAuthorizationVerifierCharsMin,
   inquiryQuestionCharsMax,
+  approvalFeedbackCharsMax,
+  isApprovalFeedback,
   leadAutoCompactWindowTokensMax,
   leadAutoCompactWindowTokensMin,
   leadDispatchesMax,
@@ -109,6 +111,13 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
     action: z.string(),
     authorizingSequence: countSchema,
     resolution: z.enum(nativeActionResolutions),
+    /** What the person says of the work, which only an evaluation approval asks for and its `Reject` requires. */
+    feedback: z
+      .string()
+      .min(1)
+      .max(approvalFeedbackCharsMax)
+      .refine(isApprovalFeedback, "feedback is not text an answer carries")
+      .optional(),
   }),
   z.strictObject({
     mutation: z.literal("ManualDispatch"),

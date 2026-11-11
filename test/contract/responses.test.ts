@@ -545,6 +545,7 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
         kind: "TicketEscalation",
         authorizingSequence: 11,
         admits: ["Revoke"],
+        answerable: true,
       },
     ]).body,
   );
@@ -554,6 +555,7 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
       kind: "TicketEscalation",
       authorizingSequence: 11,
       admits: ["Revoke"],
+      answerable: true,
     },
   ]);
   assert.deepEqual(
@@ -570,6 +572,7 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
           kind: "TicketEscalation",
           authorizingSequence: 11,
           admits: ["Approve"],
+          answerable: true,
         },
       ],
     }),
@@ -582,6 +585,7 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
           kind: "TicketEscalation",
           authorizingSequence: 11,
           admits: [],
+          answerable: true,
         },
       ],
     }),

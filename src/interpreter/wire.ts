@@ -55,7 +55,10 @@ import {
 import { checkedSelectorDecisionReference } from "./dispatchView.ts";
 import { configurationOverridesSchema } from "../contract/configurationOverrides.ts";
 import { finalizationUnavailableKinds } from "../contract/rosters.ts";
-import { dispatchViewSchemaVersion } from "../contract/http.ts";
+import {
+  dispatchViewSchemaVersion,
+  isApprovalFeedback,
+} from "../contract/http.ts";
 import { asTicketId } from "../domain/ids.ts";
 
 /** Writes one `Entry` as the text a store keeps. */
@@ -325,7 +328,10 @@ export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
       record["authorizingSeq"] >= 1 &&
       allNativeActionResolutions.some(
         (resolution) => resolution === record["resolution"],
-      )
+      ) &&
+      (record["feedback"] === undefined ||
+        (typeof record["feedback"] === "string" &&
+          isApprovalFeedback(record["feedback"])))
     ) {
       return { parsed: "Ok", value: record as ProjectCommand };
     }

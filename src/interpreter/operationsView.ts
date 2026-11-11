@@ -1,6 +1,7 @@
 import type { AgentAccountPause } from "./agentAccount.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskIdentity } from "../domain/generated/modelTypes.ts";
+import type { EvaluationApprovalResolution } from "./projectCommand.ts";
 import type {
   CanonicalConfiguration,
   ConfigurationRevisionId,
@@ -290,9 +291,20 @@ export interface ResultArtifactResource {
   readonly output?: OutputDefinition;
 }
 
+/** Who answered an evaluation approval, when, how and with what feedback, which is what that answer's result was written from. */
+export interface ExecutionResultApproval {
+  readonly action: string;
+  readonly principal: string;
+  readonly resolution: EvaluationApprovalResolution;
+  readonly answeredAt: PublicInstant;
+  readonly feedback?: string;
+}
+
 export interface ExecutionResultResource {
   readonly manifest: ResultManifestId;
-  readonly attempt: AttemptId;
+  /** The attempt whose worker reported this result, absent where a person's answer to an approval wrote it. */
+  readonly attempt?: AttemptId;
+  readonly approval?: ExecutionResultApproval;
   readonly schemaVersion: number;
   readonly digest: ArtifactDigest;
   readonly verdict: "Pass" | "Fail";
