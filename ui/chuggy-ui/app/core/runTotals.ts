@@ -148,7 +148,7 @@ export function runSpendOf(summaries: readonly ExecutionSummary[]): RunSpend {
 /** What a run's time and its wait are read off. */
 export type RunTimed = Pick<
   ExecutionSummary,
-  "requirement" | "registeredAt" | "takenAt" | "terminalAt"
+  "requirement" | "registeredAt" | "takenAt" | "terminalAt" | "carriedFrom"
 >;
 
 /** A run's time and its wait, or a set's sums of them; `ranMs` is absent
@@ -165,9 +165,11 @@ function runTimeInstantMs(stated: string | undefined): number | undefined {
 }
 
 /** A run's time and wait added. An approval's execution names no requirement
- * and is placed on no runner, so its wait on a person counts as neither. */
+ * and is placed on no runner, so its wait on a person counts as neither, and
+ * an execution an earlier verdict settled never ran, so neither does its. */
 function runTimeAdded(held: RunTime, run: RunTimed, nowMs: number): RunTime {
-  if (run.requirement === undefined) return held;
+  if (run.requirement === undefined || run.carriedFrom !== undefined)
+    return held;
   const registeredMs = runTimeInstantMs(run.registeredAt);
   const takenMs = runTimeInstantMs(run.takenAt);
   const endMs = runTimeInstantMs(run.terminalAt) ?? nowMs;
@@ -189,6 +191,12 @@ export function runTimeOf(runs: readonly RunTimed[], nowMs: number): RunTime {
     ranMs: undefined,
     waitedMs: 0,
   });
+}
+
+/** Whether every one of the runs was settled on an earlier verdict rather
+ * than run, which is a time nothing measured; none is not reused. */
+export function runTimeReused(runs: readonly RunTimed[]): boolean {
+  return runs.length > 0 && runs.every((run) => run.carriedFrom !== undefined);
 }
 
 /** Which work cycle a task belongs to, a work task's own or an evaluation's. */

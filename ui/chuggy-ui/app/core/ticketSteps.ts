@@ -160,15 +160,36 @@ function ticketStepsSideBySide(count: number): Copy {
   };
 }
 
-/** A run's box: its mark, how long it ran, and its page. */
-function ticketStepsRan(name: string, set: TaskSet): TicketStepRan {
+/** A run's box: its mark, how long it ran, and its page. A run an earlier
+ * verdict settled says which cycle it was reused from, and leads to that
+ * cycle's run. */
+function ticketStepsRan(
+  name: string,
+  set: TaskSet,
+  text: CopyText,
+): TicketStepRan {
   const last = [...set.executions]
     .sort((left, right) => left.task - right.task)
     .at(-1);
-  return {
+  const marked = {
     name,
     mark: ticketRunMarkOf(set.verdict),
     tone: verdictTone(set.verdict),
+  };
+  const carried = last?.carriedFrom;
+  if (carried !== undefined)
+    return {
+      ...marked,
+      line: ticketStepsWords(
+        text({
+          id: "ticket-run-reused-from",
+          args: { cycle: String(carried.workCycle) },
+        }),
+      ),
+      address: { to: "Run", task: carried.task },
+    };
+  return {
+    ...marked,
     line: {
       line: "Ran",
       runs: set.executions,
@@ -192,7 +213,7 @@ function ticketStepsEvaluator(
       line: stopped ? ticketStepsWords(text(ticketStepsNotReached)) : undefined,
       address: undefined,
     };
-  return ticketStepsRan(evaluator.name, ran.set);
+  return ticketStepsRan(evaluator.name, ran.set, text);
 }
 
 /** A stage that ran: one box, its evaluators listed inside it where it runs
@@ -216,7 +237,7 @@ function ticketStepsStageRan(
   ];
   const one = keys.length <= 1 ? current[0] : undefined;
   if (one !== undefined)
-    return { ...ticketStepsRan(stage.name, one.set), evaluators: [] };
+    return { ...ticketStepsRan(stage.name, one.set, text), evaluators: [] };
   return {
     name: stage.name,
     mark: ticketRunMarkOf(row.verdict),
@@ -437,7 +458,7 @@ export function ticketStepsOf(
   const work =
     cycle?.work === undefined
       ? ticketStepsWaiting(name, plan.work, stopped, text)
-      : { ...ticketStepsRan(name, cycle.work), evaluators: [] };
+      : { ...ticketStepsRan(name, cycle.work, text), evaluators: [] };
   return {
     cycle: cycle?.ordinal,
     previous: ticketStepsPrevious(reads, text),

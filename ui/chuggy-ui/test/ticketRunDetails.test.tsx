@@ -220,6 +220,103 @@ test("a run nothing has taken waits until now, and reads as waiting", async () =
   expect(metaSaid()[0]).toBe("Waiting 9m");
 });
 
+/** Cycle 2's check, settled on the passing verdict cycle 1's check earned. */
+function carriedRun(): RunPageServed {
+  const evaluation = (task: number, cycle: number) =>
+    runSummary({
+      execution: `execution-check-${String(cycle)}`,
+      task,
+      taskKind: "Evaluation",
+      identity: {
+        type: "EvaluationTask",
+        value: {
+          ticket: 11,
+          workCycle: cycle,
+          stage: 1,
+          generation: 1,
+          evaluator: 1,
+        },
+      },
+      registeredAt: "2026-08-27T00:00:00Z",
+      terminalAt: "2026-08-27T00:00:01Z",
+      runTotals: undefined,
+    });
+  const source = { ...evaluation(1, 1), takenAt: "2026-08-27T00:00:00Z" };
+  const carriedFrom = {
+    execution: "execution-check-1",
+    task: 1,
+    workCycle: 1,
+  };
+  const carried = { ...evaluation(2, 2), carriedFrom };
+  return {
+    ticket,
+    executions: [source, carried],
+    execution: {
+      ...carried,
+      startedAt: "2026-08-27T00:00:01Z",
+      carrier: "Agent",
+      attempts: [
+        {
+          attempt: "a-carried",
+          number: 1,
+          generation: 1,
+          state: "Carried",
+          openedAt: "2026-08-27T00:00:01Z",
+          endedAt: "2026-08-27T00:00:01Z",
+        },
+      ],
+      result: {
+        manifest,
+        attempt: "a-carried",
+        schemaVersion: 3,
+        digest: runDigest,
+        verdict: "Pass",
+        recordedAt: "2026-08-27T00:00:01Z",
+        artifacts: [],
+        report: "APPROVE: the change does what the brief asks.",
+      },
+    },
+    transcripts: [],
+  };
+}
+
+test("a run an earlier verdict settled says which cycle it was reused from, and draws that run's report with no time, wait or transcript", async () => {
+  pageClock.atMs = Date.parse("2026-08-27T01:00:00Z");
+  const drawn = await runPageDrawn(
+    atlas,
+    carriedRun(),
+    <TicketRunPageAt task={2} />,
+  );
+  const meta = document.querySelector(".ticket-run-meta");
+  expect(meta?.textContent).toBe("Reused from cycle 1");
+  expect(meta?.querySelector("a")?.textContent).toBe("Reused from cycle 1");
+  const views = within(
+    screen.getByRole("navigation", { name: "Run" }),
+  ).getAllByRole("link");
+  expect(views.map((view) => view.textContent)).toEqual(["Summary", "Details"]);
+  expect(
+    drawn.container.querySelector(".ticket-run-body")?.textContent,
+  ).toContain("APPROVE: the change does what the brief asks.");
+  expect(drawn.reads.some((url) => url.includes("/transcript"))).toBe(false);
+  expect(
+    [...document.querySelectorAll(".ticket-run-time")].map(
+      (time) => time.textContent,
+    ),
+  ).toContain("Reused");
+});
+
+test("a run an earlier verdict settled lists no wait among its details", async () => {
+  const drawn = await runPageDrawn(
+    atlas,
+    carriedRun(),
+    <TicketRunPageAt task={2} view="Details" />,
+  );
+  const body = drawn.container.querySelector<HTMLElement>(".ticket-run-body");
+  if (body === null) throw new Error("no run drawn");
+  expect(within(body).queryAllByText("Waited")).toEqual([]);
+  expect(field(body, "Attempts")).toBe("1");
+});
+
 /** A diagnostic a worker uploads that no task output declares. */
 const undeclared = artifact(0, ".chuggy/lint-output.txt", 1234);
 

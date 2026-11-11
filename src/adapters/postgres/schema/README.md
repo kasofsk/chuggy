@@ -732,7 +732,8 @@ that of the stack it points at. It has no unfinished work.
 verdict an earlier execution of its ticket earned rather than run, and which.
 Written by the scheduler in the transaction that settles it, and
 `execution_verdict_carry_is_immutable` refuses every change and delete of every
-role. Its identity is the execution it settled, and it points at that execution
-and at the one it carried from. Whether a stack beneath that verdict landed is
+role. The API reads it, to name the source on an execution's read. Its
+identity is the execution it settled, and it points at that execution and at
+the one it carried from. Whether a stack beneath that verdict landed is
 read through `ticket_cycle_beneath_landed`, which calls the same
 `evaluation_stack_landings` the finalizer does. It has no unfinished work.

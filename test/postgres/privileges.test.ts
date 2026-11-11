@@ -1465,6 +1465,27 @@ test("the API reads a worker's artifact reservations and writes none", async () 
     );
 });
 
+test("the API reads which execution a carried one carried from and writes no carry", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT tenant,project,execution,source_execution FROM execution_verdict_carry",
+    ),
+    undefined,
+  );
+  for (const refused of [
+    "SELECT carried_at FROM execution_verdict_carry",
+    "DELETE FROM execution_verdict_carry",
+    "UPDATE execution_verdict_carry SET source_execution='other'",
+    "INSERT INTO execution_verdict_carry(execution) VALUES('execution')",
+  ])
+    assert.match(
+      (await harness.attemptAs(apiRole, refused)) ?? "",
+      postgresHarnessDenial("execution_verdict_carry"),
+      refused,
+    );
+});
+
 test("the API reads an execution's route, owner and fallback and writes none of them", async () => {
   assert.equal(
     await harness.attemptAs(

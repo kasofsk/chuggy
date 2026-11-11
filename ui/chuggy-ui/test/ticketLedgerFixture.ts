@@ -50,6 +50,8 @@ export interface ExecutionShape {
   readonly terminalAt?: string;
   readonly carrier?: BriefingCarrier;
   readonly runStartedAt?: string;
+  /** The earlier run whose passing verdict settled it, which nothing then takes. */
+  readonly carriedFrom?: ExecutionSummary["carriedFrom"];
 }
 
 /** A work task's identity, in the cycle a case names. */
@@ -127,6 +129,7 @@ export function ledgerExecution(shape: ExecutionShape): ExecutionSummary {
     shape.status !== "Cancelled";
   const taken =
     untaken !== true &&
+    shape.carriedFrom === undefined &&
     shape.status !== "Queued" &&
     shape.status !== "Admitted";
   return {

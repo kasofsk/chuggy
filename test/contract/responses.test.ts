@@ -64,6 +64,7 @@ import {
   draftWrittenResponseSchema,
   executionRequirementSchema,
   executionResponseSchema,
+  executionSummarySchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeAuthorizationResponseSchema,
@@ -760,6 +761,27 @@ test("an execution page and an execution detail parse with their results", () =>
   assert.equal(detail.result?.verdict, "Pass");
   assert.equal(detail.result?.artifacts[0]?.output?.renderer, "Markdown");
   assert.throws(() => executionResponseSchema.parse(page.executions[0]));
+});
+
+test("a carried execution names the run it was carried from, and one that ran names none", () => {
+  const carriedFrom = {
+    execution: asExecutionId("execution-source"),
+    task: asTaskId(3),
+    workCycle: 1,
+  };
+  const carried = executionResponseSchema.parse(
+    executionResponse({ ...execution, carriedFrom }).body,
+  );
+  assert.deepEqual(carried.carriedFrom, carriedFrom);
+  const ran = executionResponseSchema.parse(executionResponse(execution).body);
+  assert.equal(Object.hasOwn(ran, "carriedFrom"), false);
+  for (const half of [
+    { execution: "execution-source", workCycle: 1 },
+    { ...carriedFrom, attempt: "attempt-1" },
+  ])
+    assert.throws(() =>
+      executionSummarySchema.parse({ ...executionSummary, carriedFrom: half }),
+    );
 });
 
 /**
