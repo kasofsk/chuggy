@@ -60,6 +60,11 @@ import {
   kubernetesPoolBackend,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
+import {
+  personalRunnerHeldAnsweredMax,
+  personalRunnerWaitingCountedMax,
+} from "../../src/contract/http.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { apiRole, poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -130,6 +135,7 @@ import {
   schedulerRigOpen,
   schedulerInCluster,
   schedulerRuntime,
+  type SchedulerCapacity,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -175,6 +181,42 @@ const leaseSecs = 300;
 
 /** The size a claim reads an execution naming no memory as, which no case's size is. */
 const memoryMibDefault = 256;
+
+/** The member's read of their runners, which counts what waits for them as the API answers it. */
+const personalRunners = postgresPersonalRunnerRegistry(
+  apiPool,
+  memoryMibDefault,
+);
+
+/** How many attempts the owner's read counts waiting in each of `projects`, every project read. */
+async function waitingCounted(
+  identity: PersonalRunnerIdentity,
+  projects: readonly ProjectId[],
+): Promise<ReadonlyMap<ProjectId, number>> {
+  const read = await personalRunners.runners(
+    { tenant: identity.tenant, owner: identity.owner },
+    () => Promise.resolve(true),
+  );
+  return new Map(
+    (read?.projects ?? [])
+      .filter(({ project }) => projects.includes(project))
+      .map(({ project, waiting }) => [project, waiting]),
+  );
+}
+
+/** The sum of what `counted` names. */
+function waitingSum(counted: ReadonlyMap<ProjectId, number>): number {
+  return [...counted.values()].reduce((sum, each) => sum + each, 0);
+}
+
+/** Whether `identity` is the only runner its owner holds in its tenant. */
+async function runnerAlone(identity: PersonalRunnerIdentity): Promise<boolean> {
+  const [row] = (await rig.harness.query(
+    `SELECT count(*)::int AS held FROM personal_runner WHERE tenant=$1 AND owner=$2`,
+    [identity.tenant, identity.owner],
+  )) as readonly { held: number }[];
+  return row?.held === 1;
+}
 
 /** Whether a pool is planted as a member's runner rather than a registry row. */
 function runnerOwned(pool: WorkerPoolRunner): boolean {
@@ -333,7 +375,8 @@ const harnessImage = (
 /**
  * A project whose every execution runs `requirement`, and with the size
  * `resources` names where it names one, written into the release before
- * registration copies it out.
+ * registration copies it out, on the capacity `capacity` names beside the
+ * harness's own.
  */
 async function releasedUnder(
   label: string,
@@ -341,11 +384,12 @@ async function releasedUnder(
   tasks: number,
   resources?: TaskResources,
   partition?: Partition,
+  capacity: Omit<SchedulerCapacity, "tasks"> = {},
 ): Promise<SchedulerProject> {
   const project = await schedulerProject(
     rig,
     label,
-    { tasks },
+    { tasks, ...capacity },
     undefined,
     partition,
   );
@@ -629,7 +673,14 @@ async function takes(
   );
 }
 
-/** Whether a pool or runner claims an attempt, a runner across `projects`, under `assignment` and within `memoryRoomMib` where it is named, the probe asked first and held to the claim's answer. */
+/**
+ * Whether a pool or runner claims an attempt, a runner across `projects`,
+ * under `assignment` and within `memoryRoomMib` where it is named, the probe
+ * asked first and held to the claim's answer. Where a runner names no room,
+ * its owner's count of what waits is held to the claim too: something waits
+ * where the owner's only runner takes something, and what it takes was
+ * counted.
+ */
 async function takesAmong(
   identity: PlantedIdentity,
   projects: readonly ProjectId[],
@@ -647,17 +698,43 @@ async function takesAmong(
       ? await assignments.waiting(identity, terms, [])
       : await assignments.waitingPersonal(identity, terms, projects);
   const bearer = `bearer-${randomUUID()}`;
-  const claimed =
-    identity.kind === "Dedicated"
-      ? await assignments.claim(identity, terms, assignment, bearer, [])
-      : await assignments.claimPersonal(
-          identity,
-          terms,
-          assignment,
-          bearer,
-          projects,
-        );
+  if (identity.kind === "Dedicated") {
+    const claimed = await assignments.claim(
+      identity,
+      terms,
+      assignment,
+      bearer,
+      [],
+    );
+    assert.equal(asked, claimed !== undefined, "the probe answers the claim");
+    return claimed !== undefined;
+  }
+  const counting = memoryRoomMib === undefined;
+  const before = counting
+    ? await waitingCounted(identity, projects)
+    : new Map<ProjectId, number>();
+  const claimed = await assignments.claimPersonal(
+    identity,
+    terms,
+    assignment,
+    bearer,
+    projects,
+  );
   assert.equal(asked, claimed !== undefined, "the probe answers the claim");
+  if (!counting) return claimed !== undefined;
+  if (claimed !== undefined) {
+    const after = await waitingCounted(identity, projects);
+    assert.ok(
+      (after.get(claimed.project) ?? 0) < (before.get(claimed.project) ?? 0),
+      "what a runner takes was counted waiting",
+    );
+  }
+  if (await runnerAlone(identity))
+    assert.equal(
+      waitingSum(before) > 0,
+      claimed !== undefined,
+      "something waits where the owner's only runner takes something",
+    );
   return claimed !== undefined;
 }
 
@@ -874,6 +951,22 @@ function sessionIdentity(
       };
 }
 
+/** That the owner counts something waiting in `home` exactly where their runner's registration could take it, its slots aside, as the probe held to the claim answers. */
+async function waitingCountedProbed(
+  runner: PersonalPlaneIdentity,
+  home: Partition,
+): Promise<void> {
+  assert.equal(
+    ((await waitingCounted(runner, [home.project])).get(home.project) ?? 0) > 0,
+    await assignments.waitingPersonal(
+      runner,
+      { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER, memoryMibDefault },
+      [home.project],
+    ),
+    "the owner counts waiting what their runner's registration could take with its slots aside",
+  );
+}
+
 /** Whether the case's claim took its execution's attempt, from the rows the case planted, a live runner's last poll `polledSecsAgo` before now. */
 async function claimTook(
   c: RunnerCase,
@@ -909,6 +1002,8 @@ async function claimTook(
     home,
     pools.ownersRevoked,
   );
+  if (pools.pool.kind === "Personal")
+    await waitingCountedProbed(pools.pool, home);
   const claimed = await claimAsked(
     identity,
     session.heldMax,
@@ -2344,4 +2439,106 @@ test("an execution an earlier attempt of was claimed is started, and one whose e
       label,
     );
   }
+});
+
+/** Two runners of one owner in one project released with `tasks` executions, and the owner. */
+async function contendedRunners(
+  label: string,
+  tasks: number,
+): Promise<{
+  readonly project: SchedulerProject;
+  readonly busy: PersonalPlaneIdentity;
+  readonly idle: PersonalPlaneIdentity;
+  readonly owned: Owned;
+}> {
+  const project = await releasedUnder(
+    label,
+    pinned,
+    tasks,
+    undefined,
+    undefined,
+    { slotsMax: tasks, maximum: tasks },
+  );
+  const owner = asPrincipal(
+    `https://issuer.invalid#${label}-owner-${randomUUID()}`,
+  );
+  const runner = (named: string): PersonalPlaneIdentity => ({
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner,
+    principal: asPrincipal(
+      `https://issuer.invalid#${label}-${named}-${randomUUID()}`,
+    ),
+  });
+  const busy = runner("busy");
+  const idle = runner("idle");
+  await plantedRunnerRows(busy, declaringAll(pinned), 0, [
+    project.partition.project,
+  ]);
+  await plantedRunnerRows(idle, declaringAll(pinned), 0, []);
+  return { project, busy, idle, owned: { owner, fallback: "Strict" } };
+}
+
+/** What the owner's read answers of one runner, found by its principal. */
+async function runnerRead(identity: PersonalRunnerIdentity) {
+  const [row] = (await rig.harness.query(
+    `SELECT client_id FROM personal_runner WHERE principal=$1`,
+    [identity.principal],
+  )) as readonly { client_id: string }[];
+  const read = await personalRunners.runners(
+    { tenant: identity.tenant, owner: identity.owner },
+    () => Promise.resolve(true),
+  );
+  return read?.runners.find((runner) => runner.id === row?.client_id);
+}
+
+test("a member's read names what each runner holds, the earliest claimed first and as far as its bound, and a runner holding nothing holds none", async () => {
+  const { project, busy, idle, owned } = await contendedRunners(
+    "held-read",
+    personalRunnerHeldAnsweredMax + 1,
+  );
+  for (let claim = 0; claim <= personalRunnerHeldAnsweredMax; claim += 1) {
+    await opened(project, false, owned);
+    assert.equal(await takes(busy, project.partition), true);
+  }
+  const held = await runnerRead(busy);
+  assert.deepEqual(
+    held?.held,
+    Array.from({ length: personalRunnerHeldAnsweredMax }, (_, at) => ({
+      project: project.partition.project,
+      ticket: project.ticket,
+      identity: {
+        type: "WorkTask",
+        value: { ticket: project.ticket, cycle: at + 1 },
+      },
+    })),
+  );
+  assert.equal(held?.heldTruncated, true);
+  const nothing = await runnerRead(idle);
+  assert.deepEqual([nothing?.held, nothing?.heldTruncated], [[], false]);
+});
+
+test("an attempt a runner no longer holds is not read as held, and the count of what waits stops at its bound and says more wait", async () => {
+  const { project, busy, owned } = await contendedRunners(
+    "held-ended",
+    personalRunnerWaitingCountedMax + 2,
+  );
+  const first = await opened(project, false, owned);
+  assert.equal(await takes(busy, project.partition), true);
+  await withdrawnUnclaimed(first.attempt);
+  assert.deepEqual((await runnerRead(busy))?.held, []);
+  for (let open = 0; open <= personalRunnerWaitingCountedMax; open += 1)
+    await opened(project, false, owned);
+  const read = await personalRunners.runners(
+    { tenant: busy.tenant, owner: busy.owner },
+    () => Promise.resolve(true),
+  );
+  assert.deepEqual(read?.projects, [
+    {
+      project: project.partition.project,
+      priority: "Normal",
+      waiting: personalRunnerWaitingCountedMax,
+      waitingTruncated: true,
+    },
+  ]);
 });

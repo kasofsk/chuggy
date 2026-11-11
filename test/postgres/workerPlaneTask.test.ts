@@ -737,20 +737,20 @@ test("the column takes the longest invocation a briefing composes to, and refuse
   assert.equal(await storedInvocation(past), null);
 });
 
-test("the worker plane reads an invocation only through its function, and the pool plane only whether there is one", async () => {
+test("the worker plane reads an invocation only through its function, and the pool plane and the API only whether there is one", async () => {
   for (const [pool, column] of [
     [planePool, "invocation"],
     [planePool, "invoked"],
     [poolPlanePool, "invocation"],
     [apiPool, "invocation"],
-    [apiPool, "invoked"],
   ] as const)
     await assert.rejects(
       pool.query(`SELECT ${column} FROM execution_attempt LIMIT 1`),
       /permission denied/u,
       column,
     );
-  await poolPlanePool.query("SELECT invoked FROM execution_attempt LIMIT 1");
+  for (const pool of [poolPlanePool, apiPool])
+    await pool.query("SELECT invoked FROM execution_attempt LIMIT 1");
   await planePool.query("SELECT live FROM read_worker_task('')");
   for (const pool of [poolPlanePool, apiPool])
     await assert.rejects(

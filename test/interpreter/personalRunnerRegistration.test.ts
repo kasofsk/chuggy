@@ -31,6 +31,7 @@ import {
   asProjectId,
   asTenantId,
   type Partition,
+  type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
 import {
   workerRunnerReleasesRead,
@@ -111,21 +112,35 @@ function rowViewed(row: Row): PersonalRunnerView {
     live: false,
     executionsLive: false,
     ...(row.runner === undefined ? {} : { runner: row.runner }),
+    held: [],
+    heldTruncated: false,
   };
 }
+
+/** How many attempts the fake registry finds waiting in a project it is let count. */
+const waitingCounted = 2;
 
 /** Where a member's runners and allowlist are kept. */
 function memberAt(key: PersonalRunnerKey): string {
   return `${key.tenant}\n${key.owner}`;
 }
 
-/** One member's allowlist as the registry reads it, in project order. */
-function allowlistViewed(
+/** One member's allowlist as the registry reads it, in project order, counting what waits only where `readable` answers. */
+async function allowlistViewed(
   held: ReadonlyMap<string, PersonalRunnerPriority> | undefined,
-): PersonalRunnerOwnerView["projects"] {
-  return [...(held ?? [])]
-    .sort(([one], [two]) => one.localeCompare(two))
-    .map(([named, priority]) => ({ project: asProjectId(named), priority }));
+  readable: (project: ProjectId) => Promise<boolean>,
+): Promise<PersonalRunnerOwnerView["projects"]> {
+  const viewed: PersonalRunnerOwnerView["projects"][number][] = [];
+  for (const [named, priority] of [...(held ?? [])].sort(([one], [two]) =>
+    one.localeCompare(two),
+  ))
+    viewed.push({
+      project: asProjectId(named),
+      priority,
+      waiting: (await readable(asProjectId(named))) ? waitingCounted : 0,
+      waitingTruncated: false,
+    });
+  return viewed;
 }
 
 /** The registry a case drives, its rows and allowlists in sight, failing its next registration where `failNext` is set. */
@@ -180,15 +195,16 @@ function registry(): FakeRegistry {
       }
       return Promise.resolve(true);
     },
-    runners: (key) =>
-      Promise.resolve(
-        rows.has(memberAt(key))
-          ? {
-              runners: (rows.get(memberAt(key)) ?? []).map(rowViewed),
-              projects: allowlistViewed(allowed.get(memberAt(key))),
-            }
-          : undefined,
-      ),
+    runners: async (key, readable) =>
+      rows.has(memberAt(key))
+        ? {
+            runners: (rows.get(memberAt(key)) ?? []).map(rowViewed),
+            projects: await allowlistViewed(
+              allowed.get(memberAt(key)),
+              readable,
+            ),
+          }
+        : undefined,
     allow: (key, named, priority) => {
       if (!rows.has(memberAt(key))) return Promise.resolve("NotFound");
       const held =
@@ -518,6 +534,8 @@ test("a redemption registers the minter's runner in the tenant, naming no projec
             registeredAt: "2026-10-09T00:00:00.000Z",
             live: false,
             executionsLive: false,
+            held: [],
+            heldTruncated: false,
           },
         ],
         projects: [],
@@ -548,8 +566,32 @@ test("registering again adds a runner beside the member's first, which keeps its
     ],
   );
   assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
-    { project, priority: "Normal" },
+    {
+      project,
+      priority: "Normal",
+      waiting: waitingCounted,
+      waitingTruncated: false,
+    },
   ]);
+});
+
+test("a member's read counts what waits only in a project they may still read, asking the owner's Read of each", async () => {
+  const composed = service();
+  await registered(composed);
+  assert.equal(
+    await composed.runners.allow(member, tenant, project),
+    "Allowed",
+  );
+  const asked: unknown[] = [];
+  const unread = service(
+    { tenant: new Map([[member, ["RegisterPersonalRunner"]]]) },
+    { ports: composed.ports, asked },
+  );
+  const read = await unread.runners.runners(member, tenant);
+  assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
+    { project, priority: "Normal", waiting: 0, waitingTruncated: false },
+  ]);
+  assert.deepEqual(asked, [["project", member, { tenant, project }, "Read"]]);
 });
 
 test("a member's runner is read with the runner its poll named and the version pinned for that package", async () => {
@@ -708,7 +750,12 @@ test("a project joins the allowlist only where its owner may read it, asked in t
   );
   const read = await composed.runners.runners(member, tenant);
   assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
-    { project, priority: "Low" },
+    {
+      project,
+      priority: "Low",
+      waiting: waitingCounted,
+      waitingTruncated: false,
+    },
   ]);
   assert.equal(
     await composed.runners.disallow(member, tenant, project),
@@ -758,7 +805,17 @@ test("an owner takes one runner off by its client, the client first, and the oth
     read.result === "Found"
       ? [read.value.runners.map((runner) => runner.id), read.value.projects]
       : undefined,
-    [["chuggy-personal-2"], [{ project, priority: "Normal" }]],
+    [
+      ["chuggy-personal-2"],
+      [
+        {
+          project,
+          priority: "Normal",
+          waiting: waitingCounted,
+          waitingTruncated: false,
+        },
+      ],
+    ],
   );
   assert.equal(
     await composed.runners.deregisterRunner(

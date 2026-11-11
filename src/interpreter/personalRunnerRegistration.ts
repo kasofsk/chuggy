@@ -31,6 +31,7 @@
 
 import type { PersonalRunnerPriority } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
+import type { TaskIdentity } from "../domain/generated/modelTypes.ts";
 import {
   chatHostCredentialsOf,
   chatHostDeregisteredAt,
@@ -75,12 +76,21 @@ export interface PersonalRunnerRegistration extends PersonalRunnerKey {
   readonly principal: Principal;
 }
 
+/** One attempt a runner's registration claimed and still holds: the project, the ticket and the task its execution runs. */
+export interface PersonalRunnerHeldView {
+  readonly project: ProjectId;
+  readonly ticket: number;
+  readonly identity: TaskIdentity;
+}
+
 /**
  * One runner as its owner reads it, by the client it registered: its newest
  * poll of either kind, absent until it polls, and whether that poll is within
  * the window a runner is held live for; whether its newest poll for executions
- * is, which is the liveness a pool's claim defers to under Preferred; and the
- * runner its newest poll named, absent where it named none.
+ * is, which is the liveness a pool's claim defers to under Preferred; the
+ * runner its newest poll named, absent where it named none; and what it holds,
+ * the earliest claimed first, as far as `personalRunnerHeldAnsweredMax`, with
+ * `heldTruncated` where it holds more.
  */
 export interface PersonalRunnerView {
   readonly id: string;
@@ -90,12 +100,22 @@ export interface PersonalRunnerView {
   readonly live: boolean;
   readonly executionsLive: boolean;
   readonly runner?: WorkerRunnerListed;
+  readonly held: readonly PersonalRunnerHeldView[];
+  readonly heldTruncated: boolean;
 }
 
-/** One project a member's runners serve, at the priority its owner gave it. */
+/**
+ * One project a member's runners serve, at the priority its owner gave it, and
+ * how many of its attempts one of them could take now, room and slots aside,
+ * as far as `personalRunnerWaitingCountedMax`, with `waitingTruncated` where
+ * more wait. A project its owner may no longer read is one their runners take
+ * nothing of, and counts none.
+ */
 export interface PersonalRunnerProjectView {
   readonly project: ProjectId;
   readonly priority: PersonalRunnerPriority;
+  readonly waiting: number;
+  readonly waitingTruncated: boolean;
 }
 
 /** A member's runners in a tenant, oldest first, and the projects they serve, in project order. */
@@ -114,7 +134,8 @@ export type PersonalRunnerAllowed = "Allowed" | "NotFound" | "LimitReached";
  * The registry personal runners are known by. `clientsOf` answers the clients
  * of a member's runners, oldest first; `deregister` deletes the member's runner
  * naming a client, and with the last of them their allowlist, answering
- * whether there was one to delete; `allow` adds a project at `priority`, or at
+ * whether there was one to delete; `runners` counts what waits only in the
+ * projects `readable` answers; `allow` adds a project at `priority`, or at
  * `Normal` where it names none, and writes `priority` over one already there;
  * `disallow` answers whether the member has a runner at all.
  */
@@ -124,7 +145,10 @@ export interface PersonalRunnerRegistry {
     registration: PersonalRunnerRegistration,
   ): Promise<PersonalRunnerWritten>;
   deregister(key: PersonalRunnerKey, clientId: string): Promise<boolean>;
-  runners(key: PersonalRunnerKey): Promise<PersonalRunnerOwnerView | undefined>;
+  runners(
+    key: PersonalRunnerKey,
+    readable: (project: ProjectId) => Promise<boolean>,
+  ): Promise<PersonalRunnerOwnerView | undefined>;
   allow(
     key: PersonalRunnerKey,
     project: ProjectId,
@@ -571,13 +595,26 @@ export interface PersonalRunnerService {
   ): Promise<PersonalRunnerDeregistered>;
 }
 
-/** A member's runners in a tenant, each with the release its newest poll named as the site lists it. */
+/**
+ * A member's runners in a tenant, each with the release its newest poll named
+ * as the site lists it, counting what waits only where the member may still
+ * read the project, as a claim asks before it takes anything.
+ */
 async function personalRunnersListed(
-  registry: PersonalRunnerRegistry,
+  access: ProjectAccess,
+  ports: PersonalRunnerPorts,
   releases: WorkerRunnerReleases,
   key: PersonalRunnerKey,
 ): Promise<PersonalRunnerRead> {
-  const found = await registry.runners(key);
+  const found = await ports.registry.runners(
+    key,
+    async (project) =>
+      (await access.authorize(
+        key.owner,
+        { tenant: key.tenant, project },
+        "Read",
+      )) !== undefined,
+  );
   if (found === undefined) return { result: "NotFound" };
   return {
     result: "Found",
@@ -625,7 +662,7 @@ export function personalRunnerService(input: {
     redeem: (offered) =>
       personalRunnerTokenRedeem(access, minting, ports, site, offered),
     runners: (owner, tenant) =>
-      personalRunnersListed(ports.registry, releases, { tenant, owner }),
+      personalRunnersListed(access, ports, releases, { tenant, owner }),
     permitted: async (principal, tenant) =>
       (await access.authorizeTenant(
         principal,

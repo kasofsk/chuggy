@@ -186,7 +186,12 @@ function known<Value extends string>(
  * three, is a row `execution_request_task_check` could not have admitted, so
  * it is refused here rather than answered as the other arm.
  */
-function executionIdentity(row: ExecutionViewRow): TaskIdentity {
+export function executionIdentity(
+  row: Pick<
+    ExecutionViewRow,
+    "ticket" | "task_kind" | "cycle" | "stage" | "generation" | "evaluator"
+  >,
+): TaskIdentity {
   const ticket = projectRowCounter(row.ticket, "execution ticket");
   const cycle = projectRowCounter(row.cycle, "execution task cycle");
   if (taskKind(row.task_kind) === "Work") {

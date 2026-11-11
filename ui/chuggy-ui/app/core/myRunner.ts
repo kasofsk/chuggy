@@ -1,6 +1,7 @@
 /**
  * What a member's own runners are drawn as, derived: the words for a project's
- * fallback, how a runner is told from another, whether one more may be
+ * fallback, how a runner is told from another, what it is running and how
+ * many wait in a project it serves, whether one more may be
  * registered, the projects they may be given, whether a run of the reader's is
  * waiting on them and on a pause of their own account, and what taking a
  * member's runners off came to.
@@ -16,6 +17,7 @@ import type {
   AgentPause,
   ExecutionSummary,
   PersonalRunnerResponse,
+  TaskIdentity,
 } from "../../../../src/contract/responses.ts";
 import {
   ownerFallbacks,
@@ -43,6 +45,37 @@ export function myRunnerPriorityLabel(priority: PersonalRunnerPriority): Copy {
     case "Low":
       return { id: "runners-personal-project-priority-low" };
   }
+}
+
+/** What an attempt a runner holds runs: its cycle's work, or a stage of its evaluation. */
+export function myRunnerHeldLabel(identity: TaskIdentity): Copy {
+  switch (identity.type) {
+    case "WorkTask":
+      return {
+        id: "runners-personal-running-work",
+        args: { cycle: identity.value.cycle },
+      };
+    case "EvaluationTask":
+      return {
+        id: "runners-personal-running-evaluation",
+        args: {
+          stage: identity.value.stage,
+          cycle: identity.value.workCycle,
+        },
+      };
+  }
+}
+
+/** How many attempts wait in a project, marked where more wait than the read counted. */
+export function myRunnerWaitingLabel(
+  served: PersonalRunnerResponse["projects"][number],
+): CopyOrData {
+  return served.waitingTruncated
+    ? {
+        id: "runners-personal-project-waiting-more",
+        args: { count: served.waiting },
+      }
+    : String(served.waiting);
 }
 
 /** The priority a menu answered, where it is one this wire knows. */

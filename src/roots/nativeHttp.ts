@@ -166,7 +166,10 @@ import {
   personalRunnerService,
   type PersonalRunnerService,
 } from "../interpreter/personalRunnerRegistration.ts";
-import type { WorkerPoolClients } from "../interpreter/workerPool.ts";
+import {
+  workerPoolMemoryMibDefault,
+  type WorkerPoolClients,
+} from "../interpreter/workerPool.ts";
 import { runnerReleasesPinned } from "./runnerReleases.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import {
@@ -243,6 +246,12 @@ const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
 const poolPlaneUrlVariable = "CHUG_API_POOL_PLANE_URL";
 const poolRegistryHostVariable = "CHUG_API_POOL_REGISTRY_HOST";
+/**
+ * The pool plane's size for an execution naming none, read under the plane's
+ * own name as the scheduler reads it, so the count of what waits for a
+ * member's runners sizes an execution as their claim does.
+ */
+const poolPlaneMemoryVariable = "CHUG_POOL_PLANE_MEMORY_MIB";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
  * rather than defaulted: the slot is what a per-user Anthropic credential
@@ -419,7 +428,13 @@ function nativePersonalRunners(
       ...nativeRegistrationTokenDrawing,
     },
     ports: {
-      registry: postgresPersonalRunnerRegistry(pool),
+      registry: postgresPersonalRunnerRegistry(
+        pool,
+        positiveEnvironment(
+          poolPlaneMemoryVariable,
+          workerPoolMemoryMibDefault,
+        ),
+      ),
       chatHosts: postgresChatHostRegistry(pool),
       clients: nativeRunnerClients(),
       clientId: () => `chuggy-personal-${randomUUID()}`,

@@ -1,6 +1,7 @@
 /**
  * A member's own runners, derived: the words for a project's fallback, how one
- * runner is told from another, whether one more may be registered, the
+ * runner is told from another, what it is running and how many wait in a
+ * project, whether one more may be registered, the
  * projects they may be given, when a run waits on the reader's runners, what
  * taking a member's runners off came to, and where a session's missing runner
  * is added.
@@ -15,10 +16,12 @@ import { copyOrDataText } from "../app/core/copy.ts";
 import {
   memberRunnerRemoved,
   myRunnerAddable,
+  myRunnerHeldLabel,
   myRunnerRemovalLine,
   myRunnerRoom,
   myRunnersCountLine,
   myRunnerShort,
+  myRunnerWaitingLabel,
   ownerFallbackAbout,
   ownerFallbackChoices,
   ownerFallbackChosen,
@@ -40,11 +43,20 @@ const held = {
   registeredAt: "2026-10-01T00:00:00Z",
   live: true,
   executionsLive: true,
+  held: [],
+  heldTruncated: false,
 };
 
 const runner: PersonalRunnerResponse = {
   runners: [held],
-  projects: [{ project: "atlas", priority: "Normal" }],
+  projects: [
+    {
+      project: "atlas",
+      priority: "Normal",
+      waiting: 0,
+      waitingTruncated: false,
+    },
+  ],
 };
 
 /** The reader's runners, each live for threads and for executions as named. */
@@ -284,4 +296,40 @@ test("a thread's, an inquiry's and a member's own chat's missing runner is named
   expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", "Lead"))).toBe(
     "Runner offline",
   );
+});
+
+test("what a runner holds is named by its cycle's work, or by its stage and the cycle it judges", () => {
+  expect(
+    copyTextEn(
+      myRunnerHeldLabel({ type: "WorkTask", value: { ticket: 7, cycle: 2 } }),
+    ),
+  ).toBe("Work · cycle 2");
+  expect(
+    copyTextEn(
+      myRunnerHeldLabel({
+        type: "EvaluationTask",
+        value: {
+          ticket: 7,
+          workCycle: 3,
+          stage: 1,
+          generation: 1,
+          evaluator: 2,
+        },
+      }),
+    ),
+  ).toBe("Stage 1 · cycle 3");
+});
+
+test("a project's count of what waits is the count, and the count marked where more wait than one read counts", () => {
+  const served = runner.projects[0];
+  if (served === undefined) throw new Error("no project planted");
+  expect(
+    copyOrDataText(copyTextEn, myRunnerWaitingLabel({ ...served, waiting: 4 })),
+  ).toBe("4");
+  expect(
+    copyOrDataText(
+      copyTextEn,
+      myRunnerWaitingLabel({ ...served, waiting: 99, waitingTruncated: true }),
+    ),
+  ).toBe("99+");
 });

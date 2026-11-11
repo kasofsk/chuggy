@@ -58,8 +58,13 @@ vi.mock("@tanstack/react-router", () => ({
 
 const tenantPath = `${nativeHttpBasePath}/tenants/${leadPartition.tenant}`;
 
-/** A runner of the reader's whose id ends in `tail`, polling where `live`. */
-function runnerListed(tail: string, live = true): unknown {
+/** A runner of the reader's whose id ends in `tail`, polling where `live`, holding `held`. */
+function runnerListed(
+  tail: string,
+  live = true,
+  held: readonly unknown[] = [],
+  heldTruncated = false,
+): unknown {
   return {
     id: `chuggy-personal-${tail}-0000-4000-8000-000000000000`,
     capabilities: ["Platform:Linux:Amd64"],
@@ -67,17 +72,28 @@ function runnerListed(tail: string, live = true): unknown {
     polledAt: "2026-10-01T00:01:00Z",
     live,
     executionsLive: live,
+    held,
+    heldTruncated,
   };
+}
+
+/** A project the reader's runners serve at Normal, with `waiting` attempts waiting in it. */
+function projectServed(
+  project: string,
+  waiting = 0,
+  waitingTruncated = false,
+): unknown {
+  return { project, priority: "Normal", waiting, waitingTruncated };
 }
 
 const runnerHeld = {
   runners: [runnerListed("3f2a9c1e")],
-  projects: [{ project: "atlas", priority: "Normal" }],
+  projects: [projectServed("atlas")],
 };
 
 const runnersTwo = {
   runners: [runnerListed("3f2a9c1e"), runnerListed("a81c04d2", false)],
-  projects: [{ project: "atlas", priority: "Normal" }],
+  projects: [projectServed("atlas")],
 };
 
 /** Projects the reader reads: two in this workspace, one in another. */
@@ -296,6 +312,66 @@ test("each of a member's runners is a row of its own, saying whether it is polli
     ["a81c04d2", "Offline"],
   ]);
   expect(screen.getByText("2 personal runners")).toBeTruthy();
+});
+
+test("each runner says what it is running, each ticket linked with what it runs, and Idle where it holds nothing; each project says how many wait", async () => {
+  drawing = {
+    granted: true,
+    runner: {
+      runners: [
+        runnerListed(
+          "3f2a9c1e",
+          true,
+          [
+            {
+              project: "atlas",
+              ticket: 12,
+              identity: { type: "WorkTask", value: { ticket: 12, cycle: 1 } },
+            },
+            {
+              project: "borealis",
+              ticket: 4,
+              identity: {
+                type: "EvaluationTask",
+                value: {
+                  ticket: 4,
+                  workCycle: 2,
+                  stage: 1,
+                  generation: 1,
+                  evaluator: 1,
+                },
+              },
+            },
+          ],
+          true,
+        ),
+        runnerListed("a81c04d2"),
+      ],
+      projects: [
+        projectServed("atlas", 3),
+        projectServed("borealis", 99, true),
+      ],
+    },
+  };
+  await drawMyRunner();
+  const [busy, idle] = within(screen.getByRole("table", { name: "Runners" }))
+    .getAllByRole("row")
+    .slice(1);
+  expect(
+    within(busy ?? document.body)
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toStrictEqual(["atlas #12", "borealis #4"]);
+  expect(busy?.textContent).toContain("Work · cycle 1");
+  expect(busy?.textContent).toContain("Stage 1 · cycle 2");
+  expect(busy?.textContent).toContain("More not shown");
+  expect(idle?.textContent).toContain("Idle");
+  expect(
+    within(screen.getByRole("table", { name: "Projects" }))
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.querySelectorAll("td")[1]?.textContent),
+  ).toStrictEqual(["Waiting3", "Waiting99+"]);
 });
 
 test("a member holding a runner may register another, and one holding as many as a member may is told so", async () => {

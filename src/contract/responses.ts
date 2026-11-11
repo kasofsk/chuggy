@@ -57,8 +57,10 @@ import {
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
+  personalRunnerHeldAnsweredMax,
   personalRunnerProjectsMax,
   personalRunnersMax,
+  personalRunnerWaitingCountedMax,
   resultReportCharsMax,
   approvalFeedbackCharsMax,
   principalCharsMax,
@@ -2891,12 +2893,20 @@ export type PersonalRunnerCredentialsResponse = z.infer<
   typeof personalRunnerCredentialsSchema
 >;
 
+/** One attempt a member's runner claimed and still holds, placing or running: its project, its ticket, and what its execution is. */
+const personalRunnerHeldSchema = z.strictObject({
+  project: identitySchema,
+  ticket: ticketNumberSchema,
+  identity: taskIdentitySchema,
+});
+
 /**
  * One of a member's runners, named by `id`, the client its registration made.
  * `polledAt` is its newest poll, absent until it polls, and `live` whether that
  * poll is recent enough for the runner to be taking work; `executionsLive` is
  * the same of its newest poll for executions alone, which is what a pool's
- * claim defers to under Preferred.
+ * claim defers to under Preferred; `held` is what it holds, the earliest
+ * claimed first, and `heldTruncated` says it holds more than one read answers.
  */
 const personalRunnerListedSchema = z.strictObject({
   id: identitySchema,
@@ -2907,9 +2917,17 @@ const personalRunnerListedSchema = z.strictObject({
   executionsLive: z.boolean(),
   /** What its newest poll named, absent where it named none. */
   runner: runnerListedSchema.optional(),
+  held: z.array(personalRunnerHeldSchema).max(personalRunnerHeldAnsweredMax),
+  heldTruncated: z.boolean(),
 });
 
-/** A member's own runners in one tenant, oldest first, and the projects every one of them may serve, in project order, each at its priority. */
+/**
+ * A member's own runners in one tenant, oldest first, and the projects every
+ * one of them may serve, in project order, each at its priority. `waiting` is
+ * how many of a project's attempts one of the runners could take now, room
+ * and slots aside, and none where the member may no longer read it;
+ * `waitingTruncated` says more wait than one read counts.
+ */
 export const personalRunnerResponseSchema = z.strictObject({
   runners: z.array(personalRunnerListedSchema).min(1).max(personalRunnersMax),
   projects: z
@@ -2917,6 +2935,8 @@ export const personalRunnerResponseSchema = z.strictObject({
       z.strictObject({
         project: identitySchema,
         priority: z.enum(personalRunnerPriorities),
+        waiting: countSchema.max(personalRunnerWaitingCountedMax),
+        waitingTruncated: z.boolean(),
       }),
     )
     .max(personalRunnerProjectsMax),

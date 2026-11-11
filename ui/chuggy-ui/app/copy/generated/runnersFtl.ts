@@ -116,6 +116,14 @@ runners-personal-project-priority = Priority of { $project }
 runners-personal-project-priority-high = High
 runners-personal-project-priority-normal = Normal
 runners-personal-project-priority-low = Low
+runners-personal-project-waiting-col = Waiting
+runners-personal-project-waiting-more = { $count }+
+runners-personal-running-col = Running
+runners-personal-running-idle = Idle
+# The ticket a runner holds an attempt of, in its project.
+runners-personal-running-ticket = { $project } #{ $ticket }
+runners-personal-running-work = { -work-stage(case: "upper") } · { -cycle } { $cycle }
+runners-personal-running-evaluation = { -stage(case: "upper") } { $stage } · { -cycle } { $cycle }
 runners-personal-paused = Paused { -agent(form: "plural") }
 runners-personal-usage = Usage
 
