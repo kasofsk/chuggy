@@ -33,6 +33,7 @@ import {
   poolPlaneRole,
   projectChangeAppendFunction,
   projectLandingQueueCandidatesFunction,
+  ticketEvaluationStacksReadFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   projectCreateFunction,
@@ -779,6 +780,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${projectLandingQueueCandidatesFunction}(text,text)`,
+    [apiRole],
+    [finalizerRole, ticketServiceRole, schedulerRole],
+  ),
+  boundaryGrantsDoor(
+    `${ticketEvaluationStacksReadFunction}(text,text,bigint,integer)`,
     [apiRole],
     [finalizerRole, ticketServiceRole, schedulerRole],
   ),

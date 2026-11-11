@@ -118,6 +118,7 @@ function appOver(
         return Promise.resolve(records);
       },
     },
+    stacks: { stacks: () => Promise.resolve([]) },
     artifacts: {
       readArtifact: (request) => {
         read.push(`artifact ${request.artifact}`);

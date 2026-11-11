@@ -18,7 +18,10 @@ import type pg from "pg";
 
 import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
-import { postgresTicketLandings } from "../../src/adapters/postgres/ticketLandings.ts";
+import {
+  postgresTicketLandingStacks,
+  postgresTicketLandings,
+} from "../../src/adapters/postgres/ticketLandings.ts";
 import {
   apiRole,
   boundaryOwnerRole,
@@ -116,6 +119,7 @@ function landingsOf(
       authorizeSite: projectAccessSiteRefused,
     },
     store: postgresTicketLandings(apiPool),
+    stacks: postgresTicketLandingStacks(apiPool),
     artifacts: store,
   }).read(reader, project.partition, asTicketId(project.ticket));
 }

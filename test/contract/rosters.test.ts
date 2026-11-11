@@ -36,6 +36,7 @@ import {
   finalizationAttemptOutcomes,
   finalizationFailureKinds,
   finalizationRecheckReasons,
+  evaluationUnstackedReasons,
   finalizationUnavailableKinds,
   gitEvidences,
   nativeActionKindResolutions,
@@ -119,8 +120,11 @@ import {
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
+  ticketLandingStackDepthMax,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
+import { unstackedReasons } from "../../src/interpreter/evaluationStack.ts";
+import { stackDepthMax } from "../../src/interpreter/stackChoice.ts";
 import {
   artifactFailures,
   resultManifestRejections,
@@ -294,6 +298,10 @@ test("the git evidences are the interpreter's", () => {
  * forge may answer: `allChangeProposalMerges` and
  * `allChangeProposalUnmergeableReasons` name members no row is written with.
  */
+test("a stack a landing read answers is as deep as the finalizer stacks", () => {
+  assert.equal(ticketLandingStackDepthMax, stackDepthMax);
+});
+
 test("the attempt and pull request codes a landing carries are the ones a row holds", () => {
   assert.deepEqual(
     [...finalizationAttemptOutcomes],
@@ -307,6 +315,7 @@ test("the attempt and pull request codes a landing carries are the ones a row ho
     [...finalizationRecheckReasons],
     [...allFinalizationRecheckReasons],
   );
+  assert.deepEqual([...evaluationUnstackedReasons], [...unstackedReasons]);
   assert.deepEqual(
     [...changeProposalCreations],
     [...allChangeProposalCreationsStored],

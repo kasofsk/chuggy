@@ -718,8 +718,9 @@ stack or a decision. It has no unfinished work.
 
 `evaluation_stack_none` — that the finalizer decided a work cycle is evaluated
 unstacked, and why. Granted and refused as `evaluation_stack` is, and a cycle is
-left this or a stack, never both. Its identity is `(tenant, project, ticket,
-work_cycle)` and it points at `project`. It has no unfinished work.
+left this or a stack, never both. The API reads it and the stack only through
+`read_ticket_evaluation_stacks`, which runs as the boundary owner. Its identity
+is `(tenant, project, ticket, work_cycle)` and it points at `project`. It has no unfinished work.
 
 `evaluation_stack_dead` — that a stack stopped standing under an evaluation
 that was running over it, and the journal position it was found at. Written

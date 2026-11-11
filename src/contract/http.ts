@@ -562,6 +562,12 @@ export const ticketLandingsAnsweredMax = 8;
  */
 export const ticketLandingConflictBytesMax = 2_048;
 
+/** How many of a ticket's work cycles the landings read answers the stack of, the newest of them, oldest first. */
+export const ticketLandingStacksAnsweredMax = 8;
+
+/** The most tickets beneath a stack, restating the interpreter's `stackDepthMax`. */
+export const ticketLandingStackDepthMax = 3;
+
 /** The longest reference name a landing answers, which is the longest one its rows carry. */
 export const ticketLandingRefCharsMax = 256;
 

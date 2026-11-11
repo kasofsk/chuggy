@@ -339,6 +339,9 @@ export const ticketFinalizationRankFunction = "ticket_finalization_rank";
 /** The API's door for one project's tickets on a landing queue, each with its rank. */
 export const projectLandingQueueCandidatesFunction =
   "project_landing_queue_candidates";
+/** The API's door for what the finalizer prepared each of a Stacked ticket's work cycles over. */
+export const ticketEvaluationStacksReadFunction =
+  "read_ticket_evaluation_stacks";
 /** How many evaluations of a ticket that ran over a stack sent it back to work. */
 export const ticketStackedFailuresFunction = "ticket_stacked_failures";
 /** The landings on a reference since a stack's tip, followed as a chain to a depth. */

@@ -1831,8 +1831,8 @@ const landingsRow = {
 
 /**
  * The root's own landings service over a pool answering as the door would of
- * one failed landing, and a store holding its manifest. It reads the ticket
- * once and says what each double was asked.
+ * one failed landing and no prepared cycle, and a store holding its manifest.
+ * It reads the ticket once and says what each double was asked.
  */
 const ticketLandingsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
@@ -1841,6 +1841,10 @@ const ticketLandingsProgram = `
   const pooled = (named) => ({
     query: async (query) => {
       const text = String(query.text);
+      if (text.includes('read_ticket_evaluation_stacks')) {
+        asked.push(named + ' stacks');
+        return { rows: [] };
+      }
       asked.push(named + ' ' + (text.includes('read_ticket_landings') ? 'landings' : 'other'));
       return { rows: [${JSON.stringify(landingsRow)}] };
     },
@@ -1904,5 +1908,6 @@ test("a ticket's landings are read over the API pool, and a conflict from the st
     "access Read",
     "pool landings",
     "artifact conflict-1",
+    "pool stacks",
   ]);
 });

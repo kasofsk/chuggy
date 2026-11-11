@@ -35,12 +35,19 @@
  *
  * A LINK IS ANSWERED ONLY WHERE A REPORT COULD CARRY IT, since a console
  * offers it to be opened.
+ *
+ * A STACKED TICKET'S READ ALSO ANSWERS WHAT EACH OF ITS NEWEST WORK CYCLES WAS
+ * PREPARED OVER, a stack or a decision to evaluate unstacked, as the finalizer
+ * left it. Whether a stack still stands is not answered: the finalizer derives
+ * it from the queue it lands in and the landings since its tip, and this read
+ * gathers neither.
  */
 
 import { isActionReportLink } from "../contract/actionReport.ts";
 import {
   ticketLandingConflictBytesMax,
   ticketLandingsAnsweredMax,
+  ticketLandingStacksAnsweredMax,
   jsonTextBytes,
 } from "../contract/http.ts";
 import type {
@@ -73,10 +80,12 @@ import {
   type ProjectArtifactId,
   type ProjectArtifactPort,
 } from "./finalizerPreparation.ts";
+import type { UnstackedReason } from "./evaluationStack.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
+import type { StackMember } from "./stackChoice.ts";
 
 /** How a concluded request's journal event says it concluded. */
 export type TicketLandingConclusion = "Succeeded" | "NeedsWork" | "Unavailable";
@@ -189,6 +198,33 @@ export interface TicketLandingsStore {
   ): Promise<readonly TicketLandingRecord[] | undefined>;
 }
 
+/** What one work cycle's evaluation was prepared over: a stack, or the decision to evaluate it unstacked. */
+export type TicketLandingStack =
+  | {
+      readonly cycle: number;
+      readonly prepared: "Stacked";
+      readonly beneath: readonly StackMember[];
+      readonly reference: string;
+      readonly tip: GitObjectId;
+    }
+  | {
+      readonly cycle: number;
+      readonly prepared: "Unstacked";
+      readonly reason: UnstackedReason;
+    };
+
+export interface TicketLandingStacksStore {
+  /**
+   * The newest `count` of a Stacked ticket's work cycles the finalizer left a
+   * stack or a decision for, oldest first, and none for any other ticket.
+   */
+  stacks(
+    partition: Partition,
+    ticket: TicketId,
+    count: number,
+  ): Promise<readonly TicketLandingStack[]>;
+}
+
 /** Where one landing stands, with the hold, the wait or the commit its state carries. */
 export type TicketLandingStanding =
   | { readonly state: "Held"; readonly hold: TicketLandingHold }
@@ -215,6 +251,11 @@ export type TicketLanding = TicketLandingStanding & {
 export interface TicketLandings {
   readonly landings: readonly TicketLanding[];
   readonly truncated: boolean;
+  /** Absent where the finalizer prepared no work cycle of the ticket. */
+  readonly stacks?: {
+    readonly cycles: readonly TicketLandingStack[];
+    readonly truncated: boolean;
+  };
 }
 
 export interface TicketLandingReads {
@@ -229,6 +270,7 @@ export interface TicketLandingReads {
 export interface TicketLandingPorts {
   readonly access: ProjectAccess;
   readonly store: TicketLandingsStore;
+  readonly stacks: TicketLandingStacksStore;
   readonly artifacts: Pick<ProjectArtifactPort, "readArtifact">;
 }
 
@@ -362,6 +404,23 @@ async function ticketLanding(
   };
 }
 
+/** The newest work cycles the read answers the stack of, and whether there were more. */
+async function ticketLandingsReadStacks(
+  ports: TicketLandingPorts,
+  partition: Partition,
+  ticket: TicketId,
+): Promise<TicketLandings["stacks"]> {
+  const count = ticketLandingStacksAnsweredMax + 1;
+  const cycles = await ports.stacks.stacks(partition, ticket, count);
+  if (cycles.length > count)
+    throw new Error(
+      "ticket landings: the stack store answered more than it was asked",
+    );
+  if (cycles.length === 0) return undefined;
+  const truncated = cycles.length > ticketLandingStacksAnsweredMax;
+  return { cycles: truncated ? cycles.slice(1) : cycles, truncated };
+}
+
 async function ticketLandingsRead(
   ports: TicketLandingPorts,
   partition: Partition,
@@ -379,7 +438,12 @@ async function ticketLandingsRead(
   const landings: TicketLanding[] = [];
   for (const record of answered)
     landings.push(await ticketLanding(ports, partition, record));
-  return { landings, truncated };
+  const stacks = await ticketLandingsReadStacks(ports, partition, ticket);
+  return {
+    landings,
+    truncated,
+    ...(stacks === undefined ? {} : { stacks }),
+  };
 }
 
 export function ticketLandingReads(
