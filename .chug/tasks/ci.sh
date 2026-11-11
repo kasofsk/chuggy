@@ -42,10 +42,12 @@
 # check: a file a gate reads that its declaration does not name, a different
 # server behind the same URL, a container reused by name, a file outside the
 # tree or outside the scope `_ignored-inputs.sh` keys, such as a package
-# changed under node_modules by hand, and git's own state: HEAD, the index and
-# history, except where a gate keys them itself. With TRACK_RECORD_OFF=1, or
-# without a token, a `track-record` that runs or a record directory, nothing is
-# wrapped, every gate runs itself, and one line names the first reason why.
+# changed under node_modules by hand, the build npm installed for this machine
+# of a package built for each platform, and git's own state: HEAD, the index
+# and history, except where a gate keys them itself. With TRACK_RECORD_OFF=1,
+# or without a token, a `track-record` that runs or a record directory,
+# nothing is wrapped, every gate runs itself, and one line names the first
+# reason why.
 #
 # ONE RUN AT A TIME HOLDS A CHECKOUT. A second is refused while the first is
 # alive, since two would share the logs and each other's machine, and of two
@@ -197,14 +199,14 @@ record_salt="chuggy-ci-2"
 
 # A key holds npm's own record of what it installed rather than the lock, since
 # a lock that changed after `npm ci` names packages that are not the ones
-# installed: the whole of it, or the packages a gate names with what each
-# depends on, which `_installed-inputs.sh` prints. It holds the ignored files
-# too, which `_ignored-inputs.sh` prints and says the scope of: every one a
-# walk of the tree can reach, or those within a gate's pathspecs. And it holds
-# what `_probed-inputs.sh` prints of the places a gate's tools look that the
-# tree need not hold.
+# installed: the whole of it less each build for one platform, or the packages
+# a gate names with what each depends on, both of which `_installed-inputs.sh`
+# prints. It holds the ignored files too, which `_ignored-inputs.sh` prints and
+# says the scope of: every one a walk of the tree can reach, or those within a
+# gate's pathspecs. And it holds what `_probed-inputs.sh` prints of the places
+# a gate's tools look that the tree need not hold.
 record_tool_node="node --version"
-record_tool_install="cat node_modules/.package-lock.json"
+record_tool_install="sh .chug/tasks/_installed-inputs.sh --whole"
 record_tool_ignored="sh .chug/tasks/_ignored-inputs.sh"
 record_tool_installed="sh .chug/tasks/_installed-inputs.sh"
 record_tool_probed="sh .chug/tasks/_probed-inputs.sh"

@@ -1771,6 +1771,25 @@ git init -q "$R/.claude/worktrees/agent"
 key_of written
 same_key sealed written
 check "what npm, a console's build and Claude Code write is the same key" 0 "$RC" "same key"
+# The build npm installed for this machine is no part of a key, and the
+# package that asks for it is: one lock installed on two machines is one key,
+# and a build that moves with its package is a new one.
+platform_lock() { # <a's version> <build> <cpu>
+	printf '{"packages":{"node_modules/a":{"version":"%s","optionalDependencies":' "$1"
+	printf '{"a-x64":"%s","a-arm64":"%s"}},' "$1" "$1"
+	printf '"node_modules/%s":{"version":"%s","optional":true,"os":["linux"],"cpu":["%s"]}}}\n' \
+		"$2" "$1" "$3"
+}
+platform_lock 2.0.0 a-x64 x64 > "$R/node_modules/.package-lock.json"
+key_of x64
+platform_lock 2.0.0 a-arm64 arm64 > "$R/node_modules/.package-lock.json"
+key_of arm64
+same_key x64 arm64
+check "an install that differs only in this machine's build is the same key" 0 "$RC" "same key"
+platform_lock 2.0.1 a-arm64 arm64 > "$R/node_modules/.package-lock.json"
+key_of moved
+same_key arm64 moved
+check "a build that moves with the package asking for it is a new key" 0 "$RC" "new key"
 OUT="$WORK/toolfails"
 refute "nothing in scope makes a tool fail" 0 0 "toolfail|"
 # An install npm kept no record of is one no key can hold, so the tool that
@@ -2037,6 +2056,39 @@ sh "$INSTALLED" --lock "$WORK/bare-lock.json" a > "$WORK/.closure" 2>&1
 RC=$?
 set -e
 check "a record that holds no packages fails" 1 "$RC" "holds no packages"
+# The whole record is the record less each build for one platform, an entry
+# stating an os, a cpu or a libc, wherever it is installed; the package asking
+# for one stays. A call naming a package beside it could not run, and a record
+# that cannot be read fails it as it fails a closure.
+printf '{ "packages": {
+  "node_modules/n": { "version": "1.0.0", "integrity": "sha512-n",
+    "optionalDependencies": { "n-os": "1.0.0", "n-cpu": "1.0.0", "n-libc": "1.0.0" } },
+  "node_modules/n-os": { "version": "1.0.0", "optional": true, "os": ["linux"] },
+  "node_modules/n/node_modules/n-cpu": { "version": "1.0.0", "optional": true, "cpu": ["x64"] },
+  "node_modules/n-libc": { "version": "1.0.0", "optional": true, "libc": ["glibc"] }
+} }\n' > "$WORK/whole.json"
+whole_of() { # <lock> [package...] — the whole record, as $OUT
+	whole_lock="$1"
+	shift
+	set +e
+	sh "$INSTALLED" --lock "$whole_lock" --whole "$@" > "$WORK/.whole" 2>&1
+	RC=$?
+	set -e
+	OUT="$WORK/.whole"
+}
+whole_of "$WORK/whole.json"
+check "the whole record keeps the package asking for a build" 0 "$RC" '"node_modules/n": {'
+check "the whole record keeps what that package asks for" 0 "$RC" '"n-cpu": "1.0.0"'
+for build in node_modules/n-os node_modules/n/node_modules/n-cpu node_modules/n-libc; do
+	refute "the whole record leaves out $build" 0 "$RC" "\"$build\""
+done
+whole_of "$WORK/whole.json" n
+check "a whole record naming a package could not run" 2 "$RC" "nothing follows --whole"
+printf 'not a lock\n' > "$WORK/broken-lock.json"
+whole_of "$WORK/broken-lock.json"
+check "a whole record that cannot be read fails" 1 "$RC" "cannot be read"
+whole_of "$WORK/bare-lock.json"
+check "a whole record that holds no packages fails" 1 "$RC" "holds no packages"
 
 # A place a tool looks is described whatever git makes of what is there, a
 # file tracked, untracked or ignored each by its content, and a place that
