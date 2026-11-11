@@ -10,8 +10,8 @@
  * was raised at, which is how the API refuses an answer to an action that has
  * moved on.
  *
- * AN EVALUATION APPROVAL IS OFFERED NO ANSWER. The writer refuses one
- * `ApprovalNotAnswerable`, so a button for it could only be refused.
+ * AN EVALUATION APPROVAL IS OFFERED NO ANSWER. Its `Reject` must carry
+ * feedback, which no button here can write.
  */
 
 import { nativeActionKindResolutions } from "../../../../src/contract/rosters.ts";

@@ -79,6 +79,7 @@ const approval = {
   kind: "FinalizationApproval",
   authorizingSequence: 51,
   admits: ["Approve", "Decline"],
+  answerable: true,
 };
 
 const escalated = {
@@ -86,6 +87,7 @@ const escalated = {
   kind: "TicketEscalation",
   authorizingSequence: 52,
   admits: ["Revoke"],
+  answerable: true,
 };
 
 /** One ticket waiting on an approval, until an answer has been submitted. */

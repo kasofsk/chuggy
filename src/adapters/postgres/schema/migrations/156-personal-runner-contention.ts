@@ -20,8 +20,8 @@ import {
   type Migration,
 } from "../shared.ts";
 
-export const migration155: Migration = {
-  version: 155,
+export const migration156: Migration = {
+  version: 156,
   name: "the API reads what a member's runners hold and what waits for them",
   statements: [
     `GRANT SELECT(pool,personal,pool_principal,invoked,recovery_epoch)

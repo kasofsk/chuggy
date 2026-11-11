@@ -149,6 +149,7 @@ import type {
   RepositoryDefaultBranchPort,
 } from "../interpreter/repositoryConfiguration.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
+import type { ProjectInbox } from "../interpreter/projectInbox.ts";
 import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
@@ -480,6 +481,23 @@ function nativeSelectorPrincipal(issuer: string): Principal | undefined {
   const subject = process.env[selectorSubjectVariable];
   if (subject === undefined || subject.length === 0) return undefined;
   return oidcPrincipal(issuer, subject);
+}
+
+/** The project inbox, knowing the site's selector under this API's issuer as the agent no person's approval is asked of. */
+function nativeProjectInbox(
+  pools: NativePools,
+  access: ProjectAccess,
+  usageResume: TicketUsageResumeBounds | undefined,
+  issuer: string,
+): ProjectInbox {
+  const selector = nativeSelectorPrincipal(issuer);
+  return composeProjectInbox(
+    pools.pool,
+    pools.selectorReviewPool,
+    access,
+    usageResume,
+    selector === undefined ? {} : { selector },
+  );
 }
 
 /** What writes the authority's tuples, or nothing where this deployment names no write port. */
@@ -1625,7 +1643,7 @@ async function main(): Promise<void> {
     composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
     composeMemberChat(pool, access, threads),
-    composeProjectInbox(pool, selectorReviewPool, access, usageResume),
+    nativeProjectInbox(pools, access, usageResume, authenticationConfig.issuer),
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),

@@ -415,6 +415,7 @@ test("each relation carries exactly the indexes its recovery, its identities and
       "native_action_approves_an_attempt_once",
       "native_action_asks_for_an_execution_once",
       "native_action_decision_opens_one_desk",
+      "native_action_names_its_execution",
       "native_action_one_open",
       "native_action_pkey",
       "project_repository_is_referenceable",

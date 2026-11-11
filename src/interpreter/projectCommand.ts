@@ -119,7 +119,7 @@ export type EscalationResolution =
 export type ApprovalResolution =
   (typeof nativeActionResolutions)["FinalizationApproval"][number];
 
-/** The two answers an evaluation approval admits, either of which the writer refuses `ApprovalNotAnswerable`. */
+/** The two answers an evaluation approval admits, each of which is that evaluator's verdict on the work. */
 export type EvaluationApprovalResolution =
   (typeof nativeActionResolutions)["EvaluationApproval"][number];
 
@@ -188,6 +188,8 @@ export type ProjectCommand =
       readonly action: string;
       readonly authorizingSeq: number;
       readonly resolution: NativeActionResolution;
+      /** What the person says of the work, which only an evaluation approval takes and its `Reject` requires. */
+      readonly feedback?: string;
     }
   | {
       readonly version: 1;

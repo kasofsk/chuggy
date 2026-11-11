@@ -90,6 +90,7 @@ import {
   threadLimitReachedCode,
   briefFinalizationModeOf,
   type BriefFinalizationMode,
+  type NativeActionAnswerRefusalCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
@@ -459,10 +460,54 @@ export function submissionResponse(
           "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
         ),
       );
+    case "AnswerRefused":
+      return nativeActionAnswerRefusalResponse(result.code);
     case "Authorized":
       return acceptedResponse(partition, result.acceptance);
     default:
       return assertNever(result);
+  }
+}
+
+/** What a resolution no caller may give, or whose feedback its action refuses, is answered with. */
+function nativeActionAnswerRefusalResponse(
+  code: NativeActionAnswerRefusalCode,
+): NativeHttpResponse {
+  switch (code) {
+    case "ApproverNotAPerson":
+      return response(
+        403,
+        nativeHttpError(
+          code,
+          "An evaluation approval is answered by a person, never by an agent or through a session.",
+        ),
+      );
+    case "NotAnApprover":
+      return response(
+        403,
+        nativeHttpError(
+          code,
+          "The approval's approvers, as the ticket was released with them, do not name you.",
+        ),
+      );
+    case "FeedbackNotAsked":
+      return response(
+        422,
+        nativeHttpError(
+          code,
+          "Only an answer to an evaluation approval carries feedback.",
+        ),
+      );
+    case "RejectionWithoutFeedback":
+      return response(
+        422,
+        nativeHttpError(
+          code,
+          "Rejecting the work needs feedback saying what is wrong with it.",
+        ),
+      );
+    default:
+      return assertNever(code);
   }
 }
 

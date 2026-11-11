@@ -72,6 +72,7 @@ const approval: NativeActionResponse = {
   kind: "FinalizationApproval",
   authorizingSequence: 51,
   admits: ["Approve", "Decline"],
+  answerable: true,
 };
 
 test("a Pending ticket blocked by one revoked dependency needs you, and names it singular", () => {
