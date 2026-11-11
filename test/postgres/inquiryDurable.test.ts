@@ -136,6 +136,7 @@ async function inquiryAsk(
       asker: member.authority.subject,
     }),
     route,
+    subsidized: false,
   });
   return { ...identities, opened };
 }
@@ -240,6 +241,7 @@ test("a member's question forks the lead once, and a retry is the same fork", as
       asker: member.authority.subject,
     }),
     route: "InCluster",
+    subsidized: false,
   });
   assert.deepEqual(retried, {
     opened: "AlreadyOpen",
@@ -282,6 +284,7 @@ test("a retry is answered its own ordinal even once the lead is closed", async (
       asker: member.authority.subject,
     }),
     route: "InCluster",
+    subsidized: false,
   });
   assert.deepEqual(retried, {
     opened: "AlreadyOpen",
@@ -1227,6 +1230,7 @@ test("a session identity another member holds raises rather than being answered"
         asker: other.authority.subject,
       }),
       route: "InCluster",
+      subsidized: false,
     }),
     /duplicate key value violates unique constraint "agent_session_pkey"/,
   );
@@ -1242,6 +1246,7 @@ test("a session identity another member holds raises rather than being answered"
         asker: other.authority.subject,
       }),
       route: "InCluster",
+      subsidized: false,
     }),
     /duplicate key value violates unique constraint "agent_session_pkey"/,
     "another member was told the question they never asked was already open",
@@ -1259,6 +1264,7 @@ test("a session identity another member holds raises rather than being answered"
         asker: elsewhere.member.authority.subject,
       }),
       route: "InCluster",
+      subsidized: false,
     }),
     /agent_session_identity_is_never_reused/,
     "a session id another project already holds was opened again",
@@ -1286,6 +1292,7 @@ test("a second turn on a fork the caller already opened is refused", async () =>
         asker: member.authority.subject,
       }),
       route: "InCluster",
+      subsidized: false,
     }),
     /duplicate key value violates unique constraint "agent_session_pkey"/,
   );
@@ -1304,7 +1311,11 @@ const otherRoles = [
 
 /** Every door an inquiry passes through, beside its arguments and its role. */
 const doors: readonly (readonly [string, string, string])[] = [
-  [leadInquiryOpenFunction, "'t','p','k','s','u','','InCluster'", apiRole],
+  [
+    leadInquiryOpenFunction,
+    "'t','p','k','s','u','','InCluster',false",
+    apiRole,
+  ],
   [leadInquiriesReadFunction, "'t','p',1", apiRole],
   [leadInquiryReadFunction, "'t','p','s'", apiRole],
   [sessionAttemptReadFunction, "''", workerPlaneRole],
@@ -1398,7 +1409,7 @@ test("the door takes no roster, no account and no credential slot", async () => 
   const taken = String(held[0]?.["taken"]);
   assert.equal(
     taken,
-    "in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_question text, in_route text",
+    "in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_question text, in_route text, in_subsidized boolean",
   );
   for (const chosen of ["capabilities", "account", "cluster", "credential"])
     assert.ok(
@@ -1416,6 +1427,7 @@ test("a principal the project never admitted still cannot spend another's quota"
     turn: inquiryRigIdentities("nobody").turn,
     question: leadInquiryTurnInput({ question: asked, asker: "nobody" }),
     route: "InCluster",
+    subsidized: false,
   });
   assert.equal(
     opened.opened,

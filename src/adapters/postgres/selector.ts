@@ -79,6 +79,7 @@ import {
 import { asConfigurationVersion } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import type { SelectorProposalReviewStore } from "../../interpreter/selectorReview.ts";
+import type { SubsidizedLeadProfile } from "../../interpreter/sessionPlacement.ts";
 
 const jsonValueSchema: z.ZodType<JsonValue> = z.json();
 const reviewFeedbackSchema = z
@@ -846,12 +847,23 @@ interface SelectorProjectOverrideRow {
   readonly thread_effort: string | null;
 }
 
+/** The subsidized lead the project's lead runs as, every column NULL where it runs as its own. */
+interface SelectorProjectProfileRow {
+  readonly profile_credential_slot: string | null;
+  readonly profile_model: string | null;
+  readonly profile_effort: string | null;
+  readonly profile_auto_compact_window: string | null;
+  readonly profile_input_bytes_per_decision: string | null;
+  readonly profile_turn_tokens_max: string | null;
+}
+
 /**
  * One project's override columns beside the installation defaults they fall
  * back to, which is what the read and the write both answer with. The project's
  * revision is NULL for a project that has never overridden anything.
  */
-interface SelectorProjectSettingsRow extends SelectorProjectOverrideRow {
+interface SelectorProjectSettingsRow
+  extends SelectorProjectOverrideRow, SelectorProjectProfileRow {
   readonly revision: string | null;
   readonly installation_revision: string;
   readonly installation_mode: string;
@@ -982,7 +994,44 @@ function selectorProjectOverridesOf(
   };
 }
 
-/** Builds the record from one row, which carries both halves of the resolution. */
+/** The profile `session_lead_profile` joined to the row, absent where it answered none. */
+function selectorProjectProfileOf(
+  row: SelectorProjectProfileRow,
+): SubsidizedLeadProfile | undefined {
+  if (row.profile_credential_slot === null) return undefined;
+  return {
+    credentialSlot: row.profile_credential_slot,
+    model: sessionRowText(row.profile_model, "subsidized lead model"),
+    effort: sessionRowMember(
+      sessionEfforts,
+      row.profile_effort,
+      "subsidized lead effort",
+    ),
+    autoCompactWindow: projectRowCounter(
+      sessionRowText(
+        row.profile_auto_compact_window,
+        "subsidized lead autoCompactWindow",
+      ),
+      "subsidized lead autoCompactWindow",
+    ),
+    inputBytesPerDecision: projectRowCounter(
+      sessionRowText(
+        row.profile_input_bytes_per_decision,
+        "subsidized lead inputBytesPerDecision",
+      ),
+      "subsidized lead inputBytesPerDecision",
+    ),
+    turnTokensMax: projectRowCounter(
+      sessionRowText(
+        row.profile_turn_tokens_max,
+        "subsidized lead turnTokensMax",
+      ),
+      "subsidized lead turnTokensMax",
+    ),
+  };
+}
+
+/** Builds the record from one row, which carries both halves of the resolution and the profile its lead runs as. */
 function selectorProjectSettingsRecordOf(
   partition: Partition,
   row: SelectorProjectSettingsRow,
@@ -1007,6 +1056,7 @@ function selectorProjectSettingsRecordOf(
       }),
       revision,
       overrides,
+      selectorProjectProfileOf(row),
     ),
   };
 }
@@ -1040,11 +1090,19 @@ async function readProjectSettings(
          installation.mode AS installation_mode,
          installation.dispatch_mode AS installation_dispatch_mode,
          installation.base_prompt AS installation_base_prompt,
-         installation.controls AS installation_controls
+         installation.controls AS installation_controls,
+         profile.credential_slot AS profile_credential_slot,
+         profile.model AS profile_model,profile.effort AS profile_effort,
+         profile.auto_compact_window::text AS profile_auto_compact_window,
+         profile.input_bytes_per_decision::text
+           AS profile_input_bytes_per_decision,
+         profile.turn_tokens_max::text AS profile_turn_tokens_max
        FROM selector_runtime_settings installation
        LEFT JOIN selector_project_settings overrides
          ON overrides.tenant=${partition.tenant}
         AND overrides.project=${partition.project}
+       LEFT JOIN session_lead_profile(${partition.tenant},${partition.project})
+         profile ON true
       WHERE installation.singleton=1`,
   );
   const row = found.rows[0];
@@ -1083,11 +1141,19 @@ async function readStandingProjectSettings(
          installation.dispatch_mode AS installation_dispatch_mode,
          installation.base_prompt AS installation_base_prompt,
          installation.controls AS installation_controls,
+         profile.credential_slot AS profile_credential_slot,
+         profile.model AS profile_model,profile.effort AS profile_effort,
+         profile.auto_compact_window::text AS profile_auto_compact_window,
+         profile.input_bytes_per_decision::text
+           AS profile_input_bytes_per_decision,
+         profile.turn_tokens_max::text AS profile_turn_tokens_max,
          moved.administrator_kind,moved.administrator_subject,moved.recorded_at
        FROM selector_runtime_settings installation
        LEFT JOIN selector_project_settings overrides
          ON overrides.tenant=${partition.tenant}
         AND overrides.project=${partition.project}
+       LEFT JOIN session_lead_profile(${partition.tenant},${partition.project})
+         profile ON true
        LEFT JOIN selector_project_settings_history moved
          ON moved.tenant=overrides.tenant
         AND moved.project=overrides.project
@@ -1167,13 +1233,20 @@ async function writeProjectSettings(
            model_allowlist,tool_allowlist,tokens_per_decision::text,
            milliseconds_per_decision::text,tool_calls_per_decision::text,
            dispatches_per_decision::text,
-           input_bytes_per_decision::text,candidate_pages_per_decision::text,
-           auto_compact_window::text,
+           written.input_bytes_per_decision::text,
+           candidate_pages_per_decision::text,
+           written.auto_compact_window::text,
            operational_context_max_age_ms::text,
            lead_model,lead_effort,thread_model,thread_effort,
            installation_revision::text,
            installation_mode,installation_dispatch_mode,installation_base_prompt,
-           installation_controls
+           installation_controls,
+           profile.credential_slot AS profile_credential_slot,
+           profile.model AS profile_model,profile.effort AS profile_effort,
+           profile.auto_compact_window::text AS profile_auto_compact_window,
+           profile.input_bytes_per_decision::text
+             AS profile_input_bytes_per_decision,
+           profile.turn_tokens_max::text AS profile_turn_tokens_max
          FROM update_selector_project_settings(
            ${partition.tenant},${partition.project},${expectedRevision},
            ${overrides.northStar ?? null},${overrides.threadStandingRules ?? null},
@@ -1191,7 +1264,9 @@ async function writeProjectSettings(
            ${overrides.operationalContextMaxAgeMs ?? null},
            ${overrides.leadModel ?? null},${overrides.leadEffort ?? null},
            ${overrides.threadModel ?? null},${overrides.threadEffort ?? null},
-           ${administrator.kind},${administrator.subject})`,
+           ${administrator.kind},${administrator.subject}) written
+         LEFT JOIN session_lead_profile(${partition.tenant},${partition.project})
+           profile ON true`,
     );
   } catch (failure) {
     const refusal = selectorWriteRefusal(failure);
