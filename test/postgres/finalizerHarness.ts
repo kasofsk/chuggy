@@ -764,6 +764,8 @@ export interface FinalizerSibling {
   readonly mode?: BriefFinalizationMode;
   /** The repository its brief names, the project's where absent and none where null. */
   readonly repository?: string | null;
+  /** The branch its work happens on, the project's where absent. */
+  readonly branch?: string;
 }
 
 /**
@@ -802,6 +804,7 @@ export async function finalizerSibling(
     keys,
     {
       ...rest,
+      ...(how.branch === undefined ? {} : { branch: how.branch }),
       ...(repository === null ? {} : { repository }),
       ...(how.landing === "Direct" ? {} : { landing: how.landing }),
       finalization: {
@@ -911,6 +914,22 @@ export async function finalizerBriefFinalizationTarget(
   );
 }
 
+/** This project's ticket merging a proposal from `branch`, into `target` or the default where it names none. */
+export async function finalizerBriefProposal(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  branch: string,
+  target?: string,
+): Promise<void> {
+  await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
+    briefWith(briefWith(brief, "branch", branch), "finalization", {
+      mode: "PullRequestMerge",
+      ...(target === undefined ? {} : { target }),
+    }),
+  );
+}
+
 /** The landing this project's ticket concludes under, set to one that lands nothing. */
 export async function finalizerBriefLandsNothing(
   rig: FinalizerRig,
@@ -967,6 +986,8 @@ export function finalizerIdentity(label: string): string {
 export interface FinalizerAttempt {
   readonly attempt?: string;
   readonly target?: string;
+  /** The reference it was prepared onto, `refs/heads/main` where absent. */
+  readonly targetRef?: string;
   readonly outcome?: FinalizationAttemptOutcome;
   readonly candidate?: string | null;
   readonly failureKind?: string | null;
@@ -1027,7 +1048,7 @@ export async function finalizerPrepare(
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
         proposal_base_commit, recheck_commit)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -1050,6 +1071,7 @@ export async function finalizerPrepare(
       attempt.proposalBase?.ref ?? null,
       attempt.proposalBase?.commit ?? null,
       attempt.recheckCommit ?? null,
+      attempt.targetRef ?? "refs/heads/main",
     ],
   );
   return identity;

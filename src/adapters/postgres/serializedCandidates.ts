@@ -8,7 +8,7 @@ import { phaseRoster } from "../../contract/rosters.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SerializedCandidate } from "../../interpreter/serializedHolder.ts";
-import { briefLandsOn } from "../../interpreter/ticketBrief.ts";
+import { briefQueuesOn } from "../../interpreter/ticketBrief.ts";
 import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 import { projectRowCounter } from "./rows.ts";
 import { releasedBriefOf } from "./ticketBrief.ts";
@@ -42,7 +42,7 @@ export function serializedCandidateOfRow(
     ),
     finalization: brief?.finalization,
     repository: brief?.repository,
-    target: brief === undefined ? undefined : briefLandsOn(brief),
+    target: brief === undefined ? undefined : briefQueuesOn(brief),
     rank:
       row.rank === null
         ? undefined

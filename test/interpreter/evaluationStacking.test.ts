@@ -68,6 +68,8 @@ interface Over {
   observed?: TargetObserved;
   minted?: StackMinted;
   queueFails?: boolean;
+  /** How the brief lands its work, a push naming no reference where absent. */
+  landing?: { branch: string; finalization: { mode: string; target?: string } };
 }
 
 /** The store a case reads, noting each read in `reads`. */
@@ -76,8 +78,8 @@ function storeOf(
   reads: string[],
 ): EvaluationStackingPorts["store"] {
   return {
-    queue: () => {
-      reads.push("queue");
+    queue: (_partition, _repository, target) => {
+      reads.push(`queue ${target ?? "default"}`);
       return over.queueFails === true
         ? Promise.reject(new RangeError("the queue is too large"))
         : Promise.resolve(over.queue ?? [holderEntry]);
@@ -92,8 +94,8 @@ function caseOf(over: Over = {}): Case {
   const reads: string[] = [];
   const store = storeOf(over, reads);
   const git: Pick<GitPromotionPort, "observeTarget" | "mintStack"> = {
-    observeTarget: () => {
-      reads.push("tip");
+    observeTarget: (binding) => {
+      reads.push(`tip ${binding.targetRef ?? "default"}`);
       return Promise.resolve(
         over.observed ?? {
           observed: "Target",
@@ -126,6 +128,7 @@ function caseOf(over: Over = {}): Case {
               links: [],
               repository,
               finalization: { mode: "Push" },
+              ...over.landing,
               landing: over.policy ?? "Stacked",
             }),
           ),
@@ -172,9 +175,30 @@ test("a Stacked ticket's accepted work chooses the stack, mints it and hands bac
   assert.equal(c.mints[0]?.ref, "refs/heads/chuggy/stack/2/1");
   assert.deepEqual(
     c.reads,
-    ["queue", "tip"],
+    ["queue default", "tip default"],
     "the queue is read before the tip",
   );
+});
+
+test("a proposal is stacked on the queue and the tip of the base it opens into, never its own branch", async () => {
+  for (const [target, read] of [
+    [undefined, "default"],
+    ["refs/heads/release", "refs/heads/release"],
+  ] as const) {
+    const c = caseOf({
+      landing: {
+        branch: "refs/heads/topic",
+        finalization: {
+          mode: "PullRequestMerge",
+          ...(target === undefined ? {} : { target }),
+        },
+      },
+    });
+    const prepared = await ask(c);
+    assert.equal(prepared?.prepared, "Stack", read);
+    assert.deepEqual(c.reads, [`queue ${read}`, `tip ${read}`]);
+    assert.equal(c.mints[0]?.tip.commit, tip);
+  }
 });
 
 test("only a Stacked ticket stacks, and the queue is not read for any other", async () => {

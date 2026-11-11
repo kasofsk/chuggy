@@ -33,7 +33,7 @@ import {
 } from "./finalizer.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import { stackFor } from "./stackChoice.ts";
-import { briefLandsOn, type TicketBriefPort } from "./ticketBrief.ts";
+import { briefQueuesOn, type TicketBriefPort } from "./ticketBrief.ts";
 
 export interface EvaluationStackingPorts {
   readonly store: Pick<EvaluationStackStore, "queue" | "stackFailures">;
@@ -44,7 +44,7 @@ export interface EvaluationStackingPorts {
 async function queueRead(
   ports: EvaluationStackingPorts,
   due: UnpreparedStack,
-  target: ReturnType<typeof briefLandsOn>,
+  target: ReturnType<typeof briefQueuesOn>,
 ) {
   return Promise.all([
     ports.store.queue(due.partition, due.repository, target),
@@ -79,7 +79,7 @@ export async function stackPrepared(
     repository: asRepositoryId(due.repository),
     recoveryEpoch: epoch,
   };
-  const target = briefLandsOn(brief);
+  const target = briefQueuesOn(brief);
   const read = await queueRead(ports, due, target);
   if (read === undefined) return undefined;
   const observed = await repositoryTargetObserved(

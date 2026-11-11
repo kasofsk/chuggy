@@ -25,6 +25,7 @@ import {
   finalizerAccept,
   finalizerBriefFinalizationTarget,
   finalizerBriefLanding,
+  finalizerBriefProposal,
   finalizerCommit,
   finalizerDrain,
   finalizerEvaluation,
@@ -235,6 +236,104 @@ test("two references are queued apart", async () => {
   const claims = await drawn([first, second], "targets");
   assert.equal(includes(claims, first), true);
   assert.equal(includes(claims, second), true);
+});
+
+/** A project whose real ticket is Serialized and merges a proposal from a branch of its own, into `target` or the default. */
+async function proposing(
+  label: string,
+  target?: string,
+): Promise<FinalizerProject> {
+  const project = await serialized(label);
+  await finalizerBriefProposal(
+    rig,
+    project.partition,
+    project.ticket,
+    `refs/heads/${label}`,
+    target,
+  );
+  return project;
+}
+
+test("two proposals from their own branches into the default are one queue on it, the later waiting unclaimed", async () => {
+  for (const landing of ["Serialized", "Stacked"] as const) {
+    const first = await proposing(`proposal-first-${landing}`);
+    const second = await sibling(first, `proposal-second-${landing}`, {
+      landing,
+      phase: "Finalization",
+      pending: true,
+      mode: "PullRequestMerge",
+      branch: `refs/heads/proposal-second-${landing}`,
+    });
+    const claims = await drawn([first, second], `proposal-${landing}`);
+    assert.equal(includes(claims, first), true, landing);
+    assert.equal(includes(claims, second), false, landing);
+    assert.equal(await untouched(second), true, landing);
+  }
+});
+
+test("proposals into two bases are two queues, and a push and a proposal onto one named reference are one", async () => {
+  const main = await proposing("bases-main", "refs/heads/main");
+  const release = await sibling(main, "bases-release", {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+    mode: "PullRequestMerge",
+    branch: "refs/heads/bases-release",
+    target: "refs/heads/release",
+  });
+  const apart = await drawn([main, release], "bases");
+  assert.equal(includes(apart, main), true);
+  assert.equal(includes(apart, release), true);
+
+  const push = await serialized("bases-push");
+  await finalizerBriefFinalizationTarget(
+    rig,
+    push.partition,
+    push.ticket,
+    "refs/heads/main",
+  );
+  const proposal = await sibling(push, "bases-proposal", {
+    landing: "Stacked",
+    phase: "Finalization",
+    pending: true,
+    mode: "PullRequestMerge",
+    branch: "refs/heads/bases-proposal",
+    target: "refs/heads/main",
+  });
+  const together = await drawn([push, proposal], "bases-together");
+  assert.equal(includes(together, push), true);
+  assert.equal(includes(together, proposal), false);
+  assert.equal(await untouched(proposal), true);
+});
+
+test("a proposal sent back to re-check holds its base through the re-check and its re-evaluation, ahead of a proposal from another branch", async () => {
+  for (const phase of ["Work", "Evaluation"]) {
+    const first = await proposing(`proposal-recheck-${phase}`);
+    const rechecking = await sibling(
+      first,
+      `proposal-recheck-${phase}-flight`,
+      {
+        landing: "Stacked",
+        phase,
+        pending: false,
+        after: -1,
+        mode: "PullRequestMerge",
+        branch: `refs/heads/proposal-recheck-${phase}-flight`,
+      },
+    );
+    await finalizerPrepare(rig, rechecking, `proposal-recheck-${phase}`, {
+      outcome: "Failed",
+      failureKind: "RecheckRequired",
+      recheckCommit: finalizerCommit(),
+      targetRef: `refs/heads/proposal-recheck-${phase}-flight`,
+    });
+    assert.equal(
+      includes(await drawn([first], `proposal-recheck-${phase}`), first),
+      false,
+      phase,
+    );
+    assert.equal(await untouched(first), true, phase);
+  }
 });
 
 test("a re-check in flight holds the reference ahead of an earlier entry", async () => {

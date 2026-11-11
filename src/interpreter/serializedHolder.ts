@@ -21,10 +21,12 @@
  * queue, and a ticket naming no repository is in none either: nothing it does
  * can collide on a reference it does not name.
  *
- * A reference is `(partition, repository, target)`, and an absent target is the
- * repository's default, which this does not resolve: a ticket naming that
- * default and one omitting it are two queues. A git merge's mode is not part of
- * it, so a push and a merged proposal onto one reference queue together.
+ * A reference is `(partition, repository, target)`, the target being what the
+ * landing advances: a merged proposal's base, never the branch it is opened
+ * from. An absent target is the repository's default, which this does not
+ * resolve: a ticket naming that default and one omitting it are two queues. A
+ * git merge's mode is not part of it, so a push and a merged proposal onto one
+ * reference queue together.
  */
 
 import type { BriefFinalizationOf } from "../contract/brief.ts";
