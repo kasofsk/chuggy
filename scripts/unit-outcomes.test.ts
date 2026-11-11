@@ -7,14 +7,14 @@ import {
   type UnitOutcome,
 } from "./unit-outcomes.ts";
 
-const suite = "test/suite.test.ts";
+const suite = "scripts/unit-outcomes.test.ts";
 
 /** What the runner hands a reporter when `suite` prints `message`. */
 function printed(message: string): Parameters<typeof unitOutcomesRead>[1] {
   return {
     type: "test:stdout",
     data: { file: suite, message },
-  } as Parameters<typeof unitOutcomesRead>[1];
+  };
 }
 
 test("a log past twice the cap keeps its end, cut back to the cap", () => {
