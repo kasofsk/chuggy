@@ -21,6 +21,7 @@ import {
 } from "./finalizerHarness.ts";
 import {
   landingCommits,
+  landingRequest,
   landingTarget,
   landingWrite,
   stackedSubject,
@@ -246,4 +247,113 @@ test("a reference other than the one asked is not in the queue", async () => {
     0,
   );
   assert.equal((await asked("elsewhere")).length, 0);
+});
+
+/** A ticket's landing by a proposal from a branch of its own into the default, opened at `onto` and merged at `merged` where it was. */
+async function proposedLanding(
+  subject: Awaited<ReturnType<typeof stackedSubject>>,
+  label: string,
+  landing: {
+    ticket: number;
+    accepted: string;
+    onto: string;
+    merged?: string;
+  },
+): Promise<void> {
+  const head = `refs/heads/${label}`;
+  await landingWrite(
+    rig,
+    await landingRequest(rig, subject.project, landing.ticket, label),
+    subject.work,
+    label,
+    {
+      ticket: landing.ticket,
+      accepted: landing.accepted,
+      onto: landing.onto,
+      candidate: finalizerCommit(),
+      proposal: {
+        head,
+        ...(landing.merged === undefined ? {} : { merged: landing.merged }),
+      },
+    },
+  );
+}
+
+test("a proposal's stack is read on its base, and stands once the proposal beneath merges at the commit the stack names", async () => {
+  const subject = await stackedSubject(
+    rig,
+    "stack-proposal-stands",
+    finalizerCommit(),
+    "refs/heads/stack-proposal-stands",
+  );
+  const { project } = subject;
+  const c = landingCommits("tip", "merged", "a7");
+  await stackedOn(project, c.tip, [{ ticket: 7, commit: c.a7 }]);
+  const [unmerged] = await store.queue(
+    project.partition,
+    project.repository,
+    undefined,
+  );
+  assert.equal(unmerged?.ticket, project.ticket, "it queues on its base");
+  assert.deepEqual(unmerged.stack?.landings, []);
+
+  await proposedLanding(subject, "stack-proposal-seven", {
+    ticket: 7,
+    accepted: c.a7,
+    onto: c.tip,
+    merged: c.merged,
+  });
+  const [mine] = await store.queue(
+    project.partition,
+    project.repository,
+    undefined,
+  );
+  assert.deepEqual(
+    mine?.stack?.landings.map((one) => [one.ticket, one.commit]),
+    [[7, c.a7]],
+  );
+  assert.equal(
+    stackStands(mine?.stack ?? { beneath: [], landings: [] }, []),
+    true,
+  );
+});
+
+test("a proposal's stack stops standing when something else lands on its base before the proposal beneath merges", async () => {
+  const subject = await stackedSubject(
+    rig,
+    "stack-proposal-overtaken",
+    finalizerCommit(),
+    "refs/heads/stack-proposal-overtaken",
+  );
+  const { project, work } = subject;
+  const c = landingCommits("tip", "other", "merged", "a7", "a8");
+  await landingWrite(rig, project, work, "overtaken-8", {
+    ticket: 8,
+    accepted: c.a8,
+    onto: c.tip,
+    candidate: c.other,
+  });
+  await proposedLanding(subject, "stack-proposal-overtaken-seven", {
+    ticket: 7,
+    accepted: c.a7,
+    onto: c.other,
+    merged: c.merged,
+  });
+  await stackedOn(project, c.tip, [{ ticket: 7, commit: c.a7 }]);
+  const [mine] = await store.queue(
+    project.partition,
+    project.repository,
+    undefined,
+  );
+  assert.deepEqual(
+    mine?.stack?.landings.map((one) => [one.ticket, one.commit]),
+    [
+      [8, c.a8],
+      [7, c.a7],
+    ],
+  );
+  assert.equal(
+    stackStands(mine?.stack ?? { beneath: [], landings: [] }, []),
+    false,
+  );
 });

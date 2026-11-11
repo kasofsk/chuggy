@@ -36,6 +36,8 @@ import {
   asBriefTitle,
   asDraftBrief,
   briefIntentLines,
+  briefLandsOn,
+  briefQueuesOn,
   draftBriefByMode,
 } from "../../src/interpreter/ticketBrief.ts";
 
@@ -482,6 +484,52 @@ test("a brief proposing into the default branch brands its head and no base", ()
       "a proposal into the default branch has no head where the brief names no branch",
     );
   }
+});
+
+test("a proposal queues on the base it opens into, the default where it names none, and lands on its own branch", () => {
+  for (const finalization of proposing)
+    for (const target of [undefined, "refs/heads/rt/landing"] as const) {
+      const brief = asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        branch: "refs/heads/rt/work",
+        finalization: {
+          ...finalization,
+          ...(target === undefined ? {} : { target }),
+        },
+      });
+      assert.equal(briefQueuesOn(brief), target, finalization.kind);
+      assert.equal(briefLandsOn(brief), "refs/heads/rt/work");
+    }
+});
+
+test("a push queues on the reference it lands on", () => {
+  const push = (over: { branch?: string; target?: string }) =>
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      ...(over.branch === undefined ? {} : { branch: over.branch }),
+      finalization: {
+        mode: "Push",
+        ...(over.target === undefined ? {} : { target: over.target }),
+      },
+      landing: "Serialized",
+    });
+  for (const brief of [
+    push({}),
+    push({ branch: "refs/heads/rt/work" }),
+    push({ branch: "refs/heads/rt/work", target: "refs/heads/rt/landing" }),
+    push({ target: "refs/heads/rt/landing" }),
+  ])
+    assert.equal(briefQueuesOn(brief), briefLandsOn(brief));
+  assert.equal(
+    briefQueuesOn(push({ target: "refs/heads/rt/landing" })),
+    "refs/heads/rt/landing",
+  );
+  assert.equal(
+    briefQueuesOn(push({ branch: "refs/heads/rt/work" })),
+    "refs/heads/rt/work",
+  );
 });
 
 test("a brief stored by its mode is read forward to its kind, its landing the git merge's policy", () => {

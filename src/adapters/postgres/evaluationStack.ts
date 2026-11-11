@@ -14,9 +14,11 @@
  * STANDING IS DERIVED HERE AND STORED NOWHERE. A recorded stack's landings are
  * the finalization attempts promoted onto its reference since its tip, followed
  * as a chain: the first was prepared on the tip, each next on the commit the
- * one before landed. A proposal that is not merged has landed nothing. The
- * chain is read to one landing past the stack's depth, which is as far as a
- * prefix of it can reach.
+ * one before landed. A proposal that is not merged has landed nothing, and one
+ * that is is followed by its base: its attempt names the head it pushed, so
+ * what it moved is the proposal's base, from the base commit it was opened at
+ * to its merge. The chain is read to one landing past the stack's depth, which
+ * is as far as a prefix of it can reach.
  *
  * WHAT A LANDING WAS ACCEPTED AT IS THE COMMIT OF THE RESULT MANIFEST ITS
  * ATTEMPT'S BUNDLE PINNED, first by ordinal, which is where the failed-landing
@@ -67,7 +69,7 @@ import {
   type StackPolicy,
   type StackStanding,
 } from "../../interpreter/stackChoice.ts";
-import { briefLandsOn } from "../../interpreter/ticketBrief.ts";
+import { briefQueuesOn } from "../../interpreter/ticketBrief.ts";
 import { finalizerRole } from "./schema.ts";
 import { finalizerRowPresent } from "./finalizerRows.ts";
 import { postgresTransaction } from "./pool.ts";
@@ -222,7 +224,7 @@ async function stackLandingsSince(
 ): Promise<StackStanding["landings"] | "Unreadable"> {
   const found = await pool.query<LandingRow>(
     sql`WITH RECURSIVE promoted AS (
-          SELECT a.ticket, a.target_commit,
+          SELECT a.ticket, coalesce(c.base_commit, a.target_commit) AS target_commit,
                  coalesce(c.merge_commit, a.candidate_commit) AS landed_commit,
                  (SELECT s.commit
                     FROM input_bundle_reference m
@@ -245,7 +247,8 @@ async function stackLandingsSince(
               ON c.tenant = a.tenant AND c.project = a.project
              AND c.request = a.request
            WHERE a.tenant = ${partition.tenant} AND a.project = ${partition.project}
-             AND a.repository = ${stack.repository} AND a.target_ref = ${stack.target}
+             AND a.repository = ${stack.repository}
+             AND coalesce(c.base_ref, a.target_ref) = ${stack.target}
              AND (c.request IS NULL OR c.merge = 'Merged')
         ), chain AS (
           SELECT 1 AS depth, p.ticket, p.landed_commit, p.accepted
@@ -503,7 +506,7 @@ function stackQueueRanked(
       finalization?.kind !== "GitMerge" ||
       finalization.policy === "Direct" ||
       row.rank === null ||
-      briefLandsOn(brief) !== target
+      briefQueuesOn(brief) !== target
     )
       return [];
     return [{ row, policy: finalization.policy, rank: row.rank }];
@@ -699,7 +702,7 @@ async function stackEvaluatingOf(
     ticket: asTicketId(ticket),
     cycle,
     repository: record.repository,
-    target: briefLandsOn(brief),
+    target: briefQueuesOn(brief),
     standing: await stackStandingOf(pool, partition, record),
   };
 }
