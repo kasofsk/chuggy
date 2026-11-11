@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import type { NativeActionAgents } from "./interpreter/nativeActionAnswer.ts";
 import type pg from "pg";
 
 import { artifactRootPrecondition } from "./adapters/artifacts/artifactRoot.ts";
@@ -398,8 +399,10 @@ export function composeProjectInbox(
   selectorReviewPool: pg.Pool,
   access: ProjectAccess,
   usageResume?: TicketUsageResumeBounds,
+  agents: NativeActionAgents = {},
 ): ProjectInbox {
   return projectInbox(access, {
+    agents,
     store: postgresInboxReads(apiPool, usageResume),
     operationalReads: postgresOperationalReads(apiPool),
     refusals: postgresAgenticRefusalBinding(apiPool),

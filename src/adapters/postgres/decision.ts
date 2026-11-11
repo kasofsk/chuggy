@@ -25,7 +25,11 @@
  * AN ANSWERED ACTION IS THAT SAME SHAPE WITH ONE ROW MORE. An approval answer
  * names no domain command, so the transaction records which answer was given
  * and settles the input, and writes no entry, no projection and no focused work
- * — which is the whole of what keeps approval out of `TicketGraph`.
+ * — which is the whole of what keeps approval out of `TicketGraph`. An answer
+ * to an evaluation approval goes through `answer_evaluation_approval`, which
+ * also writes that evaluator's result and submits its completion under the
+ * scheduler's authority; the completion is decided as its own input, and an
+ * approval a cancellation withdrew first is refused `TicketChanged`.
  *
  * AN ESCALATED TICKET'S OVERRIDES CHANGE IN THE SAME SHAPE, AND THE ACTION
  * STAYS OPEN. The change is held, in this order, to the open escalation it
@@ -63,6 +67,7 @@
  */
 
 import { sql } from "@ts-safeql/sql-tag";
+import { randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import { materialDigest } from "../../interpreter/ticketDefinition.ts";
@@ -133,6 +138,7 @@ import {
   storedSelectionText,
 } from "./ticketBrief.ts";
 import { postgresTransaction } from "./pool.ts";
+import { schedulerRole } from "./schema.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 
@@ -482,6 +488,28 @@ async function decisionAnswerAction(
   );
   if (changed.rows.length !== 1)
     throw new Error("native action resolution fence failed");
+}
+
+/**
+ * Settles an evaluation approval its stored answer resolves, through the one door that writes that answer's result and submits its completion.
+ * The door reads the answer, who gave it and the fence it names from the operation, so nothing here is taken on trust.
+ * It answers whether the answer was taken, or whether a cancellation settled the execution and withdrew the approval first.
+ */
+async function decisionAnswerEvaluationApproval(
+  client: pg.PoolClient,
+  partition: Partition,
+  cause: DecisionCause,
+): Promise<"Answered" | "Withdrawn"> {
+  const answered = await client.query<{ answered: string | null }>(
+    sql`SELECT answer_evaluation_approval(
+          ${partition.tenant},${partition.project},${cause.id},
+          ${`manifest-${randomUUID()}`},${`completion-${randomUUID()}`},
+          ${schedulerRole}) AS answered`,
+  );
+  const verdict = answered.rows[0]?.answered;
+  if (verdict !== "Answered" && verdict !== "Withdrawn")
+    throw new Error(`the approval door answered ${String(verdict)}`);
+  return verdict;
 }
 
 async function decisionActions(
@@ -926,6 +954,29 @@ async function decisionApplyJournaled(
   return { decided: "Committed", lease: { ...lease, head: seq } };
 }
 
+/**
+ * Records an answer to an open action and settles its input, or answers false
+ * having written nothing where the action is an evaluation approval a
+ * cancellation withdrew first.
+ */
+async function decisionApplyAnswer(
+  client: pg.PoolClient,
+  lease: Lease,
+  cause: DecisionCause,
+  outcome: Extract<DecisionOutcome, { readonly outcome: "Answered" }>,
+): Promise<boolean> {
+  if (outcome.answer.kind !== "EvaluationApproval")
+    await decisionAnswerAction(client, lease.partition, outcome.answer);
+  else if (
+    (await decisionAnswerEvaluationApproval(client, lease.partition, cause)) ===
+    "Withdrawn"
+  )
+    return false;
+  await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
+  await notifyDecision(client, lease.partition, cause, outcome);
+  return true;
+}
+
 /** Writes everything the decision asks for, and answers with the lease its commit advanced. */
 async function decisionApply(
   client: pg.PoolClient,
@@ -961,10 +1012,16 @@ async function decisionApply(
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Refused" };
     case "Answered":
-      await decisionAnswerAction(client, lease.partition, outcome.answer);
-      await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
-      await notifyDecision(client, lease.partition, cause, outcome);
-      return { decided: "Answered" };
+      return (await decisionApplyAnswer(client, lease, cause, outcome))
+        ? { decided: "Answered" }
+        : decisionApply(
+            client,
+            lease,
+            cause,
+            releaseRefused("TicketChanged"),
+            standing,
+            draftRelease,
+          );
     case "OverridesChanged":
       await decisionStoreOverrides(client, lease.partition, outcome.change);
       await decisionSettle(client, lease, cause, { settled: "Answered" }, null);

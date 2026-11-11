@@ -45,6 +45,7 @@ function openAction(
     kind,
     authorizingSequence: fence,
     admits: [...admits],
+    answerable: true,
   };
 }
 
@@ -136,7 +137,14 @@ test("the answers over a list are every action's, in the order it listed them", 
   expect(nativeActionsAnswers([])).toStrictEqual([]);
 });
 
-test("an evaluation approval is offered no answer, which the API would refuse", () => {
+test("an action the caller may not answer is offered nothing", () => {
+  for (const kind of nativeActionKinds)
+    expect(
+      nativeActionAnswers({ ...openAction(kind), answerable: false }),
+    ).toStrictEqual([]);
+});
+
+test("an evaluation approval is offered no answer, having no field for a rejection's feedback", () => {
   expect(nativeActionAnswers(openAction("EvaluationApproval"))).toStrictEqual(
     [],
   );

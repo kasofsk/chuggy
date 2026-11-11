@@ -24,7 +24,7 @@ import { asSafeInteger, asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
   type EvaluationApprovalAsked,
-  type NativeActionPage,
+  type NativeActionAskedPage,
   type NativeReadStore,
   type OperationResource,
   type ProjectRead,
@@ -33,7 +33,7 @@ import {
   ticketEscalationResource,
   type RunnerLossResource,
   type RunStepFailureResource,
-  type TicketNativeAction,
+  type TicketNativeActionAsked,
   type TicketDependencyResource,
   type TicketPhaseFilter,
   type TicketResource,
@@ -82,6 +82,7 @@ import {
 } from "../../interpreter/configurationFollowing.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
+import type { NativeActionAsked } from "../../interpreter/nativeActionAnswer.ts";
 import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
 import {
   configurationVersionOf,
@@ -732,7 +733,7 @@ async function evaluationApprovalsAsked(
 }
 
 /** `actions` with what each evaluation approval among them asks beside it. */
-async function nativeActionsAsking<T extends TicketNativeAction>(
+async function nativeActionsAsking<T extends TicketNativeActionAsked>(
   client: pg.Pool | pg.PoolClient,
   partition: Partition,
   actions: readonly T[],
@@ -747,7 +748,7 @@ async function nativeActionsAsking<T extends TicketNativeAction>(
   });
 }
 
-function openNativeAction(row: OpenNativeActionRow): TicketNativeAction {
+function openNativeAction(row: OpenNativeActionRow): TicketNativeActionAsked {
   if (
     row.action === null ||
     row.kind === null ||
@@ -771,7 +772,7 @@ function openNativeAction(row: OpenNativeActionRow): TicketNativeAction {
 function nativeActionPage(
   rows: readonly ProjectNativeActionRow[],
   limit: number,
-): NativeActionPage {
+): NativeActionAskedPage {
   const listed = rows.slice(0, limit).map((row) => ({
     ticket: asTicketId(projectRowCounter(row.ticket, "native action ticket")),
     ...openNativeAction(row),
@@ -1343,11 +1344,39 @@ function nativeReadsResources(
   };
 }
 
-/** The two desk reads, which are the open native actions a ticket and a project carry. */
+/** What one action asks of whoever answers it, in whatever state it stands. */
+async function nativeReadsActionAsked(
+  pool: pg.Pool,
+  partition: Partition,
+  action: string,
+): Promise<NativeActionAsked | undefined> {
+  const found = await pool.query<{ action: string; kind: string }>(
+    sql`SELECT a.action,a.kind FROM native_action a
+      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+        AND a.action=${action}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const kind = nativeActionKind(row.kind);
+  if (kind !== "EvaluationApproval") return { kind };
+  const approval = (await evaluationApprovalsAsked(pool, partition, [row])).get(
+    row.action,
+  );
+  if (approval === undefined)
+    throw new Error("native read: an evaluation approval stands for nothing");
+  return { kind, approvers: approval.approvers };
+}
+
+/** The desk reads: the open native actions a ticket and a project carry, and what one action asks of whoever answers it. */
 function nativeReadsActions(
   pool: pg.Pool,
-): Pick<NativeReadStore, "ticketNativeActions" | "nativeActions"> {
+): Pick<
+  NativeReadStore,
+  "ticketNativeActions" | "nativeActions" | "nativeActionAsked"
+> {
   return {
+    nativeActionAsked: (partition, action) =>
+      nativeReadsActionAsked(pool, partition, action),
     ticketNativeActions: async (partition, ticket) => {
       const found = await pool.query<OpenNativeActionRow>(
         sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,

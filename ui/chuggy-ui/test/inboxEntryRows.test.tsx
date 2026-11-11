@@ -115,6 +115,7 @@ const approval: ProjectNativeActionResponse = {
   kind: "FinalizationApproval",
   authorizingSequence: 51,
   admits: ["Approve", "Decline"],
+  answerable: true,
 };
 
 /** The inbox holding `entries`, every address it reads kept. */

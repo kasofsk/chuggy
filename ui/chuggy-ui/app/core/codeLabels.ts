@@ -966,6 +966,14 @@ export function mutationRefusalLabel(code: MutationRefusalCode): Copy {
       return { id: "codes-mutation-decided" };
     case "ProgramSkipsPlannedEvaluations":
       return { id: "codes-mutation-skips-evaluations" };
+    case "ApproverNotAPerson":
+      return { id: "codes-mutation-approver-not-a-person" };
+    case "NotAnApprover":
+      return { id: "codes-mutation-not-an-approver" };
+    case "FeedbackNotAsked":
+      return { id: "codes-mutation-feedback-not-asked" };
+    case "RejectionWithoutFeedback":
+      return { id: "codes-mutation-rejection-without-feedback" };
   }
 }
 
