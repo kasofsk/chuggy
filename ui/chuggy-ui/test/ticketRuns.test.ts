@@ -9,7 +9,7 @@ import { expect, test } from "vitest";
 import type { ExecutionResponse } from "../../../src/contract/responses.ts";
 import { runTimeLineOf } from "../app/core/figures.ts";
 import { runResultLinePlain } from "../app/core/runResult.ts";
-import { runTimeOf } from "../app/core/runTotals.ts";
+import { runTimeOf, runTimeReused } from "../app/core/runTotals.ts";
 import type { RunTimed } from "../app/core/runTotals.ts";
 import { runTranscriptStepsCut } from "../app/core/runTranscript.ts";
 import type { ConversationExchange } from "../app/core/conversation.ts";
@@ -32,6 +32,7 @@ import {
   ticketRunTaskOf,
   ticketRunViewShown,
   ticketRunViews,
+  ticketRunViewsOffered,
 } from "../app/core/ticketRuns.ts";
 import type { TicketRunsCycle } from "../app/core/ticketRuns.ts";
 import { landingConflicted, landingLanded } from "./ticketLandingsFixture.ts";
@@ -317,6 +318,64 @@ test("a cycle's line sums its runs' times and does not draw the gap between them
     ran: { kind: "Duration", text: "7m" },
     waited: undefined,
   });
+});
+
+/** A cycle-2 review an earlier verdict settled, carried from cycle 1's. */
+const carried = ledgerExecution({
+  execution: "e-6",
+  task: 6,
+  identity: evalIdentity(2, 2, 1),
+  outcome: "Passed",
+  registeredAt: "2026-11-07T10:00:00Z",
+  terminalAt: "2026-11-07T10:00:01Z",
+  carriedFrom: { execution: "e-3", task: 3, workCycle: 1 },
+});
+
+test("a run an earlier verdict settled counts as neither a run nor a wait, and reads as reused", () => {
+  const nowMs = Date.parse("2026-11-07T12:00:00Z");
+  expect(runTimeOf([carried], nowMs)).toEqual({
+    ranMs: undefined,
+    waitedMs: 0,
+  });
+  expect(runTimeReused([carried])).toBe(true);
+  const ran = ledgerExecution({
+    execution: "e-4",
+    task: 4,
+    identity: workIdentity(2),
+    outcome: "Passed",
+    registeredAt: "2026-11-07T10:00:00Z",
+    terminalAt: "2026-11-07T10:04:00Z",
+  });
+  expect(lineOf([ran, carried], nowMs)).toEqual({
+    line: "Ran",
+    ran: { kind: "Duration", text: "4m" },
+    waited: undefined,
+  });
+  expect(runTimeReused([ran, carried])).toBe(false);
+  expect(runTimeReused([])).toBe(false);
+});
+
+test("a run an earlier verdict settled offers its Summary and Details, and no transcript or context", () => {
+  expect(
+    ticketRunViewsOffered({ commands: false, agent: true, carried: true }),
+  ).toEqual(["Summary", "Details"]);
+  expect(
+    ticketRunViewsOffered({ commands: false, agent: true, carried: false }),
+  ).toEqual(["Summary", "Transcript", "Details", "Context"]);
+  expect(
+    ticketRunViewsOffered({ commands: true, agent: false, carried: false }),
+  ).toEqual(["Summary", "Transcript", "Details", "Output"]);
+});
+
+test("a run an earlier verdict settled lists no wait in its details", () => {
+  const details = ticketRunDetailsOf(
+    { ...carried, attempts: [] },
+    Date.parse("2026-11-07T12:00:00Z"),
+    copyTextEn,
+  );
+  expect(details.waited).toBeUndefined();
+  expect(details.apiTime).toBeUndefined();
+  expect(details.tokens).toBeUndefined();
 });
 
 test("a sub-tab's address is its word, read in any case, and an unknown word is no sub-tab", () => {

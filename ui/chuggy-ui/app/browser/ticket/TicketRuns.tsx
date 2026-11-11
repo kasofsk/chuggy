@@ -226,7 +226,7 @@ function TicketRunsRowDrawn(props: {
   const marked = ticketRunsRowMark(row);
   const text = useCopyText();
   const spend =
-    row.kind === "Run"
+    row.kind === "Run" && row.execution.carriedFrom === undefined
       ? spendFigures(
           row.execution.runTotals,
           row.execution.runTotals?.costBasis,

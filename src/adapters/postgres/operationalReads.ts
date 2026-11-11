@@ -37,6 +37,7 @@ import {
   executionSummaryLabelled,
   executionSummaryTotalled,
   type ExecutionAttemptResource,
+  type ExecutionCarrySource,
   type ExecutionListQuery,
   type ExecutionPage,
   type ExecutionResource,
@@ -594,7 +595,50 @@ async function executionsTaken(
   );
 }
 
-/** A page's summaries with their workers labelled, their runs totalled, when each was taken, and the reader's own pause on those waiting. */
+interface ExecutionCarriedRow {
+  readonly execution: string;
+  readonly source_execution: string;
+  readonly task: string;
+  readonly cycle: string;
+}
+
+/**
+ * The execution whose passing verdict settled each of `executions`, its task
+ * and the work cycle it ran in, for those an earlier verdict settled rather
+ * than a run.
+ */
+async function executionsCarried(
+  pool: pg.Pool,
+  partition: Partition,
+  executions: readonly string[],
+): Promise<ReadonlyMap<string, ExecutionCarrySource>> {
+  if (executions.length === 0) return new Map();
+  const found = await pool.query<ExecutionCarriedRow>(
+    sql`SELECT k.execution,k.source_execution,f.task::text AS task,
+               t.cycle::text AS cycle
+          FROM execution_verdict_carry k
+          JOIN execution f
+            ON f.tenant=k.tenant AND f.project=k.project
+           AND f.execution=k.source_execution
+          JOIN execution_request_task t
+            ON t.tenant=f.tenant AND t.project=f.project
+           AND t.request=f.source_request AND t.task=f.task
+         WHERE k.tenant=${partition.tenant} AND k.project=${partition.project}
+           AND k.execution=ANY(${[...executions]}::text[])`,
+  );
+  return new Map(
+    found.rows.map((row) => [
+      row.execution,
+      {
+        execution: asExecutionId(row.source_execution),
+        task: asTaskId(projectRowCounter(row.task, "carried task")),
+        workCycle: projectRowCounter(row.cycle, "carried work cycle"),
+      },
+    ]),
+  );
+}
+
+/** A page's summaries with their workers labelled, their runs totalled, when each was taken, the reader's own pause on those waiting, and the run each carried one was carried from. */
 async function executionPageAnswered(
   pool: pg.Pool,
   partition: Partition,
@@ -609,6 +653,7 @@ async function executionPageAnswered(
   const totals = await postgresExecutionRunTotals(pool, partition, executions);
   const taken = await executionsTaken(pool, partition, executions);
   const paused = await executionsPaused(pool, partition, reader, executions);
+  const carried = await executionsCarried(pool, partition, executions);
   return summaries.map((summary) => {
     const answered = executionSummaryTotalled(
       executionSummaryLabelled(summary, workers),
@@ -616,10 +661,12 @@ async function executionPageAnswered(
     );
     const takenAt = taken.get(summary.execution);
     const pause = paused.get(summary.execution);
+    const carriedFrom = carried.get(summary.execution);
     return {
       ...answered,
       ...(takenAt === undefined ? {} : { takenAt }),
       ...(pause === undefined ? {} : { paused: pause }),
+      ...(carriedFrom === undefined ? {} : { carriedFrom }),
     };
   });
 }

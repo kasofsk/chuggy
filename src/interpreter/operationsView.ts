@@ -188,6 +188,14 @@ export interface ExecutionSummary {
    * unclaimed and the agent paused.
    */
   readonly paused?: AgentAccountPause;
+  /** The earlier execution of the ticket whose passing verdict settled this one rather than a run, its task and the work cycle it ran in. */
+  readonly carriedFrom?: ExecutionCarrySource;
+}
+
+export interface ExecutionCarrySource {
+  readonly execution: ExecutionId;
+  readonly task: TaskId;
+  readonly workCycle: number;
 }
 
 /**

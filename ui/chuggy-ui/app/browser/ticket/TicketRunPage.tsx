@@ -33,7 +33,7 @@ import {
   ticketRunsFind,
   ticketRunTaskOf,
   ticketRunViewShown,
-  ticketRunViews,
+  ticketRunViewsOffered,
 } from "../../core/ticketRuns.ts";
 import type {
   TicketRunDetails as TicketRunDetailsFacts,
@@ -108,7 +108,48 @@ export function TicketRunsFrame(props: {
   );
 }
 
+/** What a run an earlier verdict settled says in place of its time and
+ * spend: the cycle it was reused from, as a link to that cycle's run. */
+function TicketRunReusedFrom(props: {
+  readonly held: TicketPageHeld;
+  readonly carried: NonNullable<ExecutionResponse["carriedFrom"]>;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <p className="ticket-run-meta">
+      <Link
+        to="/$tenant/$project/tickets/$ticket/runs/$task"
+        params={{
+          ...props.held.partition,
+          ticket: String(props.held.ticket),
+          task: String(props.carried.task),
+        }}
+      >
+        {text({
+          id: "ticket-run-reused-from",
+          args: { cycle: String(props.carried.workCycle) },
+        })}
+      </Link>
+    </p>
+  );
+}
+
+/** What a run says beside its name: the cycle it was reused from where an
+ * earlier verdict settled it, and otherwise its time and spend. */
 function TicketRunMeta(props: {
+  readonly held: TicketPageHeld;
+  readonly step: TicketRunStep;
+  readonly nowMs: number;
+}): ReactNode {
+  const carried = props.step.execution.carriedFrom;
+  return carried === undefined ? (
+    <TicketRunMetaRan step={props.step} nowMs={props.nowMs} />
+  ) : (
+    <TicketRunReusedFrom held={props.held} carried={carried} />
+  );
+}
+
+function TicketRunMetaRan(props: {
   readonly step: TicketRunStep;
   readonly nowMs: number;
 }): ReactNode {
@@ -149,6 +190,7 @@ function TicketRunMeta(props: {
 }
 
 function TicketRunHead(props: {
+  readonly held: TicketPageHeld;
   readonly step: TicketRunStep;
   readonly nowMs: number;
 }): ReactNode {
@@ -163,20 +205,20 @@ function TicketRunHead(props: {
         <span className="ticket-run-cycle">{text(cycleLabel(step.cycle))}</span>
         <Pill tone={tone}>{text(setVerdictLabel(step.verdict))}</Pill>
       </div>
-      <TicketRunMeta step={step} nowMs={props.nowMs} />
+      <TicketRunMeta held={props.held} step={step} nowMs={props.nowMs} />
     </div>
   );
 }
 
-/** The sub-tabs a run offers: Output only where a command run wrote some, and
- * Context only where an agent carried the run out. */
-function ticketRunViewsOffered(
+/** The sub-tabs a run offers, read off its result and its execution. */
+function ticketRunViewsOfRead(
   opened: RunResultOpened | undefined,
   read: ExecutionResponse,
 ): readonly TicketRunView[] {
-  return ticketRunViews.filter((view) => {
-    if (view === "Output") return opened?.opened === "Commands";
-    return view !== "Context" || contextRunOffered(read);
+  return ticketRunViewsOffered({
+    commands: opened?.opened === "Commands",
+    agent: contextRunOffered(read),
+    carried: read.carriedFrom !== undefined,
   });
 }
 
@@ -324,9 +366,11 @@ function TicketRunDetailsFields(props: {
       >
         {details.cpus ?? text({ id: "ticket-value-default" })}
       </Field>
-      <Field name={text({ id: "ticket-field-waited" })}>
-        <Figure figure={details.waited} />
-      </Field>
+      {details.waited === undefined ? null : (
+        <Field name={text({ id: "ticket-field-waited" })}>
+          <Figure figure={details.waited} />
+        </Field>
+      )}
       <Field name={text({ id: "ticket-field-attempts" })}>
         {details.attempts}
       </Field>
@@ -470,7 +514,7 @@ function TicketRunRead(props: {
 }): ReactNode {
   const { held, step, read } = props;
   const opened = useRunResultOpened(held.partition, read.execution, read);
-  const offered = ticketRunViewsOffered(opened, read);
+  const offered = ticketRunViewsOfRead(opened, read);
   const live = ticketRunLive(step.verdict);
   const shown = ticketRunViewShown(props.asked.view, offered, live);
   return (
@@ -510,7 +554,7 @@ function TicketRunFound(props: {
   const read = readValue(state);
   return (
     <>
-      <TicketRunHead step={step} nowMs={held.nowMs} />
+      <TicketRunHead held={held} step={step} nowMs={held.nowMs} />
       {read === undefined ? (
         <PanelUnready state={state} />
       ) : (

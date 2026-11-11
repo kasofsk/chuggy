@@ -212,6 +212,10 @@ export interface TicketCopy {
   readonly "ticket-run-view-context": Record<never, never>;
   readonly "ticket-run-no-summary": Record<never, never>;
   readonly "ticket-run-no-transcript": Record<never, never>;
+  readonly "ticket-run-reused": Record<never, never>;
+  readonly "ticket-run-reused-from": {
+    readonly cycle: unknown;
+  };
   readonly "ticket-run-runner": Record<never, never>;
   readonly "ticket-run-image": Record<never, never>;
   readonly "ticket-run-worker": Record<never, never>;

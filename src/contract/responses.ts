@@ -1005,6 +1005,19 @@ export const executionSummarySchema = z.object({
    * it waits unclaimed and that agent is paused.
    */
   paused: agentPauseSchema.optional(),
+  /**
+   * The earlier execution of the same ticket whose passing verdict settled
+   * this one, its task and the work cycle it ran in, present only on an
+   * execution settled that way rather than run: its one attempt is `Carried`,
+   * and never placed or ran.
+   */
+  carriedFrom: z
+    .strictObject({
+      execution: identitySchema,
+      task: countSchema,
+      workCycle: ticketNumberSchema,
+    })
+    .optional(),
 });
 export type ExecutionSummary = z.infer<typeof executionSummarySchema>;
 

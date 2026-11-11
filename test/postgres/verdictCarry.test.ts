@@ -18,6 +18,15 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
+import type pg from "pg";
+
+import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import {
+  executionResponseSchema,
+  executionsResponseSchema,
+} from "../../src/contract/responses.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 
 import { resultManifestSchemaVersion } from "../../src/contract/workerDocuments.ts";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
@@ -37,6 +46,7 @@ import {
   schedulerDeclaredSource,
   schedulerDigest,
   schedulerInCluster,
+  schedulerIngressPool,
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
@@ -46,12 +56,15 @@ import {
 } from "./schedulerHarness.ts";
 
 let rig: SchedulerRig;
+let ingress: pg.Pool;
 
 before(async () => {
   rig = await schedulerRigOpen();
+  ingress = schedulerIngressPool();
 });
 
 after(async () => {
+  await ingress.end();
   await rig.close();
 });
 
@@ -552,6 +565,68 @@ test("a carried verdict whose source kept no report is settled under a report na
     source_execution: first.review,
     source_reports: 0,
   });
+});
+
+test("the API's reads name the execution a carried one carried from, and an execution that ran names none", async () => {
+  const { at, first, later } = await launchedAfter("read");
+  await rig.store.carryVerdict(openingOf(at, later.review), first.review);
+  const reads = postgresOperationalReads(ingress);
+  const reader = asPrincipal("carry-reader");
+  const [source] = await rig.harness.query(
+    `SELECT task::int AS task FROM execution
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [...key(at), first.review],
+  );
+  const carriedFrom = {
+    execution: first.review,
+    task: source?.["task"],
+    workCycle: 1,
+  };
+
+  const page = await reads.executions(
+    at.project.partition,
+    { limit: 20, ticket: asTicketId(at.project.ticket) },
+    reader,
+  );
+  executionsResponseSchema.parse({ executions: page.executions });
+  const carried = page.executions.filter(
+    (summary) => summary.carriedFrom !== undefined,
+  );
+  assert.deepEqual(
+    carried.map((summary) => [summary.execution, summary.carriedFrom]),
+    [[later.review, carriedFrom]],
+  );
+
+  const whole = await reads.execution(
+    at.project.partition,
+    later.review,
+    reader,
+  );
+  assert.ok(whole !== undefined);
+  executionResponseSchema.parse(whole);
+  assert.deepEqual(whole.carriedFrom, carriedFrom);
+  assert.deepEqual(
+    whole.attempts.map((attempt) => [
+      attempt.state,
+      attempt.run,
+      attempt.claimedAt,
+    ]),
+    [["Carried", undefined, undefined]],
+  );
+  assert.equal(whole.runTotals, undefined, "a carried execution ran nothing");
+  assert.equal(
+    (await reads.executionSummary(at.project.partition, later.review, reader))
+      ?.carriedFrom?.execution,
+    first.review,
+  );
+
+  const ran = await reads.execution(at.project.partition, first.review, reader);
+  assert.ok(ran !== undefined);
+  assert.equal(
+    "carriedFrom" in ran,
+    false,
+    "an execution that ran names no carry",
+  );
 });
 
 test("a carried evaluation releases its slot, fulfils its request and leaves no attempt for any sweep", async () => {
