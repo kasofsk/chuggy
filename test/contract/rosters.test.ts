@@ -292,16 +292,20 @@ test("the git evidences are the interpreter's", () => {
   assert.deepEqual([...gitEvidences], [...allGitEvidence]);
 });
 
+test("a stack a landing read answers is as deep as the finalizer stacks", () => {
+  assert.equal(ticketLandingStackDepthMax, stackDepthMax);
+});
+
+test("the reasons a landing answers a cycle evaluated unstacked are the interpreter's", () => {
+  assert.deepEqual([...evaluationUnstackedReasons], [...unstackedReasons]);
+});
+
 /**
  * The codes a landing carries of its attempt and its pull request are the
  * interpreter's rosters of what a row holds, and not the wider ones of what a
  * forge may answer: `allChangeProposalMerges` and
  * `allChangeProposalUnmergeableReasons` name members no row is written with.
  */
-test("a stack a landing read answers is as deep as the finalizer stacks", () => {
-  assert.equal(ticketLandingStackDepthMax, stackDepthMax);
-});
-
 test("the attempt and pull request codes a landing carries are the ones a row holds", () => {
   assert.deepEqual(
     [...finalizationAttemptOutcomes],
@@ -315,7 +319,6 @@ test("the attempt and pull request codes a landing carries are the ones a row ho
     [...finalizationRecheckReasons],
     [...allFinalizationRecheckReasons],
   );
-  assert.deepEqual([...evaluationUnstackedReasons], [...unstackedReasons]);
   assert.deepEqual(
     [...changeProposalCreations],
     [...allChangeProposalCreationsStored],
