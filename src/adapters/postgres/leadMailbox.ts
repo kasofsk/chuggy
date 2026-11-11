@@ -86,6 +86,7 @@ interface LeadSessionRow {
   readonly model: string | null;
   readonly effort: string | null;
   readonly credential_slot: string | null;
+  readonly system_prompt_own: boolean | null;
   readonly tokens: string | null;
 }
 
@@ -152,6 +153,7 @@ function leadSessionOf(row: LeadSessionRow): LeadSessionStanding {
           effort: sessionRowMember(sessionEfforts, row.effort, "lead effort"),
         }),
     credentialSlot: sessionRowText(row.credential_slot, "credential slot"),
+    systemPromptOwn: row.system_prompt_own === true,
     ...(row.tokens === null
       ? {}
       : {
@@ -196,7 +198,7 @@ async function leadOpen(
           ${opening.session},${opening.principal},
           ${opening.credentialSlot},${opening.systemPrompt},
           ${opening.autoCompactWindow},${opening.model ?? null},
-          ${opening.effort ?? null})`,
+          ${opening.effort ?? null},${opening.systemPromptOwn})`,
   );
   const row = opened.rows[0];
   return {
@@ -212,7 +214,7 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
       const found = await pool.query<LeadSessionRow>(
         sql`SELECT session,state,agent_reference,system_prompt,
                    auto_compact_window::text AS auto_compact_window,
-                   model,effort,credential_slot,tokens::text AS tokens
+                   model,effort,credential_slot,system_prompt_own,tokens::text AS tokens
               FROM lead_session(${partition.tenant},${partition.project})`,
       );
       const row = found.rows[0];

@@ -117,6 +117,7 @@ interface SessionAuthorityRow extends SessionIdentityRow {
   readonly model: string | null;
   readonly effort: string | null;
   readonly fork_from: string | null;
+  readonly system_prompt_own: boolean | null;
   readonly live: boolean | null;
 }
 
@@ -182,6 +183,7 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
           ),
         }),
     ...(row.fork_from === null ? {} : { forkFrom: row.fork_from }),
+    ...(row.system_prompt_own === true ? { systemPromptOwn: true } : {}),
     live: row.live === true,
   };
 }
@@ -245,7 +247,7 @@ async function sessionPlaneAuthenticate(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
                kind,principal,capabilities,credential_slot,agent_reference,
                system_prompt,auto_compact_window::text AS auto_compact_window,
-               model,effort,fork_from,live
+               model,effort,fork_from,system_prompt_own,live
           FROM read_session_attempt(${sessionSecretDigest(secret)})`,
   );
   const row = found.rows[0];

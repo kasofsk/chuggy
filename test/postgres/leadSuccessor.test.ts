@@ -82,6 +82,7 @@ const successorOpening = {
   credentialSlot: "claude-code",
   systemPrompt: "the successor's objectives",
   autoCompactWindow: 300_000,
+  systemPromptOwn: false,
 } as const;
 
 /**
@@ -351,7 +352,7 @@ test("the successor door is the selector service's own and no other role's", asy
   assert.match(
     (await rig.sessions.harness.attemptAs(
       apiRole,
-      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL,NULL,NULL,NULL)`,
+      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL,NULL,NULL,NULL,false)`,
     )) ?? "the API executed the door",
     postgresHarnessDenial(leadOpenFunction),
     "and the refusal is the server's, not a privilege the case only asked about",

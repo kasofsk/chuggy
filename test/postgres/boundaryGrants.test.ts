@@ -713,7 +713,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [apiRole, schedulerRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${leadOpenFunction}(text,text,text,text,text,text,bigint,text,text)`,
+    `${leadOpenFunction}(text,text,text,text,text,text,bigint,text,text,boolean)`,
     [selectorServiceRole],
     [apiRole, workerPlaneRole],
   ),

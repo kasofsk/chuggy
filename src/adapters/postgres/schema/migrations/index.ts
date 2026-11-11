@@ -151,6 +151,7 @@ import { migration150 } from "./150-session-lead-profile.ts";
 import { migration151 } from "./151-subsidized-inquiry.ts";
 import { migration152 } from "./152-requirementless-terminal.ts";
 import { migration153 } from "./153-subsidy-monthly-caps.ts";
+import { migration154 } from "./154-session-system-prompt-own.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -307,4 +308,5 @@ export const migrations: readonly Migration[] = [
   migration151,
   migration152,
   migration153,
+  migration154,
 ];

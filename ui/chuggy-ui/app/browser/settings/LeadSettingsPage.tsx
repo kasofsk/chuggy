@@ -13,6 +13,9 @@
  * revision's Restore both go through `selectorSettingsWriting.ts`'s one door,
  * so the overrides no section draws are carried by each of them alike — the
  * same door the Lead page's strip writes mode and dispatch mode through.
+ *
+ * A subsidized lead's model and effort are the profile's, read from the
+ * effective settings and not edited here.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -21,9 +24,13 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { SelectorProjectSettingsResponse } from "../../../../../src/contract/responses.ts";
-import { projectLeadPresent } from "../../core/projectLead.ts";
+import {
+  projectLeadFound,
+  projectLeadPresent,
+} from "../../core/projectLead.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
+  selectorSettingsModelPinned,
   selectorSettingsSectionCleared,
   selectorSettingsSectionRestored,
   selectorSettingsTextNames,
@@ -59,6 +66,7 @@ import type {
 import { Notice } from "../ui/Notice.tsx";
 import { SelectorLimitsSection } from "./lead/SelectorLimitsSection.tsx";
 import { SelectorModelsSection } from "./lead/SelectorModelsSection.tsx";
+import type { SelectorModelsSubsidy } from "./lead/SelectorModelsSection.tsx";
 import type { SelectorRowsChrome } from "./lead/SelectorRowsSection.tsx";
 import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
 import { SelectorTextSection } from "./lead/SelectorTextSection.tsx";
@@ -73,6 +81,8 @@ type SelectorSettingsWriter = SelectorSettingsSectionName | "revisions";
 interface SelectorSettingsSectionChrome {
   readonly draft: SelectorSettingsDraft;
   readonly settings: SelectorProjectSettingsResponse;
+  /** The month's subsidy spend, where the lead read answers it. */
+  readonly subsidy: SelectorModelsSubsidy | undefined;
   readonly editing: SelectorSettingsSectionName | undefined;
   readonly writing: SelectorSettingsWriting<SelectorSettingsWriter>;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
@@ -154,6 +164,8 @@ function SelectorSettingsSections(props: {
       />
       <SelectorModelsSection
         {...selectorRowsChrome(chrome, "models", savable)}
+        pinned={selectorSettingsModelPinned(chrome.settings.effective)}
+        subsidy={chrome.subsidy}
       />
     </>
   );
@@ -172,9 +184,14 @@ function SelectorSettingsForm(props: {
   const [editing, setEditing] = useState<
     SelectorSettingsSectionName | undefined
   >(undefined);
+  const lead = useLead(props.partition);
   const chrome: SelectorSettingsSectionChrome = {
     draft: held.draft,
     settings: props.settings,
+    subsidy:
+      lead.state === "Ready"
+        ? projectLeadFound(lead.value)?.subsidy
+        : undefined,
     editing,
     writing,
     onChange: held.setDraft,

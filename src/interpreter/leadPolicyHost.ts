@@ -359,10 +359,11 @@ export interface LeadRunsOn {
   readonly credentialSlot: string;
   readonly model?: string;
   readonly effort?: SessionEffort;
+  readonly systemPromptOwn: boolean;
   readonly turnTokensMax: number;
 }
 
-/** A lead's own runtime on the selector's slot under `leadTurnTokensMax`, or a subsidized one on its profile's. */
+/** A lead's own runtime on the selector's slot under `leadTurnTokensMax` and its project's settings, or a subsidized one on its profile's and its own system prompt alone. */
 export function leadRunsOn(
   runtime: SelectorLeadRuntime,
   credentialSlot: string,
@@ -373,6 +374,7 @@ export function leadRunsOn(
         credentialSlot,
         ...(runtime.model === undefined ? {} : { model: runtime.model }),
         ...(runtime.effort === undefined ? {} : { effort: runtime.effort }),
+        systemPromptOwn: false,
         turnTokensMax: leadTurnTokensMax,
       };
     case "Subsidized":
@@ -380,6 +382,7 @@ export function leadRunsOn(
         credentialSlot: runtime.credentialSlot,
         model: runtime.model,
         effort: runtime.effort,
+        systemPromptOwn: true,
         turnTokensMax: runtime.turnTokensMax,
       };
   }
@@ -388,8 +391,8 @@ export function leadRunsOn(
 /**
  * Whether an open lead is replaced before this decision: its newest decision
  * turn spent more than the bound, or it holds a system prompt, a compaction
- * window, a model, an effort or a credential slot other than the one this
- * decision runs under. A
+ * window, a model, an effort, a credential slot or a standing on its own
+ * system prompt other than the one this decision runs under. A
  * turn that measured nothing says nothing, and a lead holding no model or no
  * effort holds what an unset one resolves to.
  */
@@ -405,6 +408,7 @@ export function leadStandingReplaced(
     standing.autoCompactWindow !== autoCompactWindow ||
     standing.model !== runsOn.model ||
     standing.effort !== runsOn.effort ||
+    standing.systemPromptOwn !== runsOn.systemPromptOwn ||
     (standing.decisionTurnTokens !== undefined &&
       standing.decisionTurnTokens > runsOn.turnTokensMax)
   );
@@ -413,7 +417,8 @@ export function leadStandingReplaced(
 /**
  * Whether a lead the door would not close may still take this decision: it is
  * on the slot this decision's offering pays for, and a subsidized one is on the
- * profile's model and effort too, which its model check is held to.
+ * profile's model and effort too, which its model check is held to, and on its
+ * own system prompt, so no project's settings run beside the profile's slot.
  */
 function leadStandsFor(
   standing: LeadSessionStanding,
@@ -423,7 +428,9 @@ function leadStandsFor(
   if (standing.credentialSlot !== runsOn.credentialSlot) return false;
   return (
     runtime.offering === "Own" ||
-    (standing.model === runsOn.model && standing.effort === runsOn.effort)
+    (standing.model === runsOn.model &&
+      standing.effort === runsOn.effort &&
+      standing.systemPromptOwn === runsOn.systemPromptOwn)
   );
 }
 
@@ -467,7 +474,7 @@ async function leadStanding(
     if (!leadClosedReplaces(closed)) {
       if (!leadStandsFor(held, request.constraints.lead, runsOn))
         throw new Error(
-          "the lead that stands runs on another slot or model than this decision's offering pays for",
+          "the lead that stands runs on another slot, model or system prompt than this decision's offering pays for",
           { cause: closed },
         );
       return held;
@@ -482,6 +489,7 @@ async function leadStanding(
     autoCompactWindow,
     ...(runsOn.model === undefined ? {} : { model: runsOn.model }),
     ...(runsOn.effort === undefined ? {} : { effort: runsOn.effort }),
+    systemPromptOwn: runsOn.systemPromptOwn,
   });
   const opened = await ports.mailbox.lead(partition);
   if (opened === undefined || opened.state !== "Open")

@@ -496,6 +496,33 @@ export function selectorSettingsModelValue(
   return effort === undefined ? value : selectorSettingsEffortLabel(effort);
 }
 
+/** The rows a subsidized lead pins, each read as the profile's own value. */
+export type SelectorSettingsModelPinned = Readonly<
+  Partial<Record<SelectorSettingsModelName, CopyOrData>>
+>;
+
+/**
+ * What the lead's model and effort read as where its lead is subsidized: the
+ * profile's, as the effective settings name them, which no override of the
+ * project's moves. None is pinned where the lead is the members' own.
+ */
+export function selectorSettingsModelPinned(
+  effective: SelectorProjectSettingsResponse["effective"],
+): SelectorSettingsModelPinned {
+  switch (effective.leadOffering) {
+    case "Own":
+      return {};
+    case "Subsidized":
+      return {
+        leadModel: effective.leadModel ?? { id: "lead-settings-default" },
+        leadEffort:
+          effective.leadEffort === undefined
+            ? { id: "lead-settings-default" }
+            : selectorSettingsEffortLabel(effective.leadEffort),
+      };
+  }
+}
+
 /** One model or effort row under what a reader typed or chose, empty being Default. */
 export function selectorSettingsModelTyped(
   draft: SelectorSettingsDraft,

@@ -702,6 +702,79 @@ test("the Models section reads Default for a row the project never set, and the 
   }
 });
 
+/** The model rows' text, each row as it reads. */
+function modelRows(): readonly (string | null)[] {
+  return Array.from(
+    sectionOf("Models").querySelectorAll(".selector-limit"),
+    (row) => row.textContent,
+  );
+}
+
+/** The project's subsidized lead, on the profile's model and effort, over
+ * overrides of its own the profile's stand in place of. */
+const subsidizedRead = settingsBody(
+  12,
+  { northStar: "ship the console", leadModel: "sonnet" },
+  {
+    leadOffering: "Subsidized",
+    leadModel: "claude-haiku-5-5",
+    leadEffort: "low",
+  },
+);
+
+test("a subsidized project's lead reads the profile's model and effort, pinned, and its boxes are disabled with the line that says why", async () => {
+  await drawSettings({ read: subsidizedRead });
+  expect(modelRows().slice(0, 2)).toStrictEqual([
+    "Lead modelclaude-haiku-5-5Pinned",
+    "Lead effortLowPinned",
+  ]);
+  const why = "Set by chuggy for its subsidized lead";
+  expect(within(sectionOf("Models")).getByText(why)).toBeTruthy();
+  await turned(() => {
+    edit("Models");
+  });
+  for (const [row, value] of [
+    ["Lead model", "claude-haiku-5-5"],
+    ["Lead effort", "Low"],
+  ] as const) {
+    const pinned = box(row);
+    expect(pinned.value, row).toBe(value);
+    expect(pinned.disabled, row).toBe(true);
+    const line = document.getElementById(
+      pinned.getAttribute("aria-describedby") ?? "",
+    );
+    expect(line?.textContent, row).toBe(why);
+  }
+  expect(box("Chat model").disabled).toBe(false);
+});
+
+test("a subsidized lead's month reads what it spent against its cap", async () => {
+  await drawSettings({
+    read: subsidizedRead,
+    lead: {
+      ...leadBody(1, 1),
+      subsidy: { tenantMicros: 1_250_000, tenantMonthlyMicros: 50_000_000 },
+    },
+  });
+  expect(modelRows()).toContain("Allowance$1.25 of $50.00");
+});
+
+/** Guards the members' own lead: its rows read its overrides and stay
+ * editable, and nothing says pinned or spent. */
+test("a project whose lead is its own reads and edits its lead model as before", async () => {
+  await drawSettings({
+    read: settingsBody(12, { leadModel: "sonnet" }),
+  });
+  expect(screen.queryByText("Pinned")).toBeNull();
+  expect(screen.queryByText("Allowance")).toBeNull();
+  expect(screen.queryByText(/subsidized/u)).toBeNull();
+  await turned(() => {
+    edit("Models");
+  });
+  expect(box("Lead model").value).toBe("sonnet");
+  expect(box("Lead model").disabled).toBe(false);
+});
+
 test("a lead model and effort chosen in the Models section are written beside every other override", async () => {
   const server = await drawSettings({
     answering: () => ({

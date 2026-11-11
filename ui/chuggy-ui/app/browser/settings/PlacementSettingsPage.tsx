@@ -6,7 +6,12 @@
  * A HOSTED ROUTE IS OFFERED ONLY WHERE THE API SAYS SO. The placement read
  * answers the routes this reader may choose, so the choice is drawn from that
  * list and never from the roster; a write the grant still refuses says so in
- * the section rather than retrying.
+ * the section rather than retrying. The subsidized lead is offered where the
+ * read says the deployment admits it.
+ *
+ * EVERY SESSION WRITE NAMES THE LEAD'S OFFERING as the draft holds it. One
+ * naming none keeps the offering the project's row stores, which may be one
+ * the deployment has withdrawn and the read no longer answers.
  *
  * WHAT THE READER DID NOT MOVE IS WRITTEN AS LAST READ. A route they may not
  * choose is drawn as it stands rather than moved to one they may, and a save
@@ -43,23 +48,28 @@ import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import type { Copy, CopyText } from "../../core/copy.ts";
 import {
   executionPlacementQuery,
+  selectorSettingsQuery,
   sessionPlacementQuery,
 } from "../../core/projectQueries.ts";
 import type { ProjectQueryKeyOf } from "../../core/projectQueryKeys.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
-  runnerRouteLabel,
   runnerRouteSourceLabel,
+  runnersLeadPlacementChoices,
   runnersPlacementDraft,
+  runnersPlacementLabel,
   runnersPlacementMoved,
   runnersPlacementOptions,
   runnersPlacementRefusal,
-  runnersPlacementRoute,
   runnersPlacementUnhosted,
+  runnersPlacementValue,
   runnersPlacementWrites,
   runnerStandingLabel,
+  runnersSubsidizedLine,
 } from "../../core/runners.ts";
 import type {
+  RunnersLeadPlacement,
+  RunnersPlacementChoice,
   RunnersPlacementDraft,
   RunnersPlacementMoves,
   RunnersPlacementOption,
@@ -87,6 +97,8 @@ import { SettingsPage } from "./SettingsPage.tsx";
 interface PlacementRow {
   readonly kind: keyof RunnersPlacementDraft;
   readonly resolved: ExecutionPlacementResponse["work"];
+  /** What the kind is drawn as running on: its route, and the lead's offering. */
+  readonly placed: RunnersPlacementChoice;
   readonly runners: SessionRunnerStanding | undefined;
 }
 
@@ -100,21 +112,25 @@ function PlacementTable(props: {
     {
       kind: "work",
       resolved: execution.work,
+      placed: execution.work.route,
       runners: undefined,
     },
     {
       kind: "evaluation",
       resolved: execution.evaluation,
+      placed: execution.evaluation.route,
       runners: undefined,
     },
     {
       kind: "thread",
       resolved: session.thread,
+      placed: session.thread.route,
       runners: session.runners.mine,
     },
     {
       kind: "lead",
       resolved: session.lead,
+      placed: { route: session.lead.route, offering: session.leadOffering },
       runners: session.runners.project,
     },
   ];
@@ -132,7 +148,7 @@ function PlacementTable(props: {
         {rows.map((row) => (
           <tr key={row.kind}>
             <th scope="row">{text(placementKindLabels[row.kind])}</th>
-            <td>{text(runnerRouteLabel(row.resolved.route))}</td>
+            <td>{text(runnersPlacementLabel(row.placed))}</td>
             <td>{text(runnerRouteSourceLabel(row.resolved.source))}</td>
             <td>
               {row.runners === undefined || row.resolved.route !== "Pool"
@@ -146,11 +162,12 @@ function PlacementTable(props: {
   );
 }
 
-function PlacementChoice(props: {
+function PlacementChoice<T extends RunnersPlacementChoice>(props: {
   readonly label: string;
-  readonly value: PlacementRoute;
-  readonly options: readonly RunnersPlacementOption[];
-  readonly onChoose: (route: PlacementRoute) => void;
+  readonly value: T;
+  readonly options: readonly RunnersPlacementOption<T>[];
+  readonly about?: (choice: T) => string | undefined;
+  readonly onChoose: (choice: T) => void;
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -158,15 +175,21 @@ function PlacementChoice(props: {
       <span className="text-sm text-ink-3">{props.label}</span>
       <RadioGroup
         label={props.label}
-        value={props.value}
-        options={props.options.map((option) => ({
-          value: option.route,
-          text: text(runnerRouteLabel(option.route)),
-          disabled: !option.choosable,
-        }))}
+        value={runnersPlacementValue(props.value)}
+        options={props.options.map((option) => {
+          const about = props.about?.(option.choice);
+          return {
+            value: runnersPlacementValue(option.choice),
+            text: text(runnersPlacementLabel(option.choice)),
+            ...(about === undefined ? {} : { description: about }),
+            disabled: !option.choosable,
+          };
+        })}
         onChoose={(value) => {
-          const route = runnersPlacementRoute(value);
-          if (route !== undefined) props.onChoose(route);
+          const chosen = props.options.find(
+            (option) => runnersPlacementValue(option.choice) === value,
+          );
+          if (chosen?.choosable === true) props.onChoose(chosen.choice);
         }}
       />
     </div>
@@ -229,25 +252,48 @@ const placementKindLabels: Readonly<Record<keyof RunnersPlacementDraft, Copy>> =
     lead: { id: "runners-placement-lead" },
   };
 
-/** The draft's kinds in the order the table draws them, each with which
- * placement's choices it is chosen from. */
+/** The route kinds in the order the table draws them, each with which
+ * placement's choices it is chosen from; the lead is drawn after them. */
 const placementEditorKinds = [
   ["work", "execution"],
   ["evaluation", "execution"],
   ["thread", "session"],
-  ["lead", "session"],
 ] as const;
 
+/** The subsidized lead's line, naming the model the effective settings say it
+ * runs, read only while it is offered. */
+function usePlacementSubsidizedLine(
+  partition: PartitionIdentity,
+  offered: boolean,
+): string {
+  const text = useCopyText();
+  const settings = usePanelState({
+    ...selectorSettingsQuery(partition),
+    enabled: offered,
+  });
+  return text(
+    runnersSubsidizedLine(
+      settings.state === "Ready" ? settings.value.effective : undefined,
+    ),
+  );
+}
+
 function PlacementEditor(props: {
+  readonly partition: PartitionIdentity;
   readonly read: RunnersPlacementDraft;
   readonly draft: RunnersPlacementDraft;
   readonly choices: {
     readonly execution: readonly PlacementRoute[];
     readonly session: readonly PlacementRoute[];
   };
+  readonly leadChoices: readonly RunnersLeadPlacement[];
   readonly onMove: (moves: RunnersPlacementMoves) => void;
 }): ReactNode {
   const text = useCopyText();
+  const subsidized = usePlacementSubsidizedLine(
+    props.partition,
+    props.leadChoices.some((choice) => choice.offering === "Subsidized"),
+  );
   return (
     <div className="grid gap-3">
       {placementEditorKinds.map(([kind, placement]) => (
@@ -264,6 +310,17 @@ function PlacementEditor(props: {
           }}
         />
       ))}
+      <PlacementChoice
+        label={text(placementKindLabels.lead)}
+        value={props.draft.lead}
+        options={runnersPlacementOptions(props.read.lead, props.leadChoices)}
+        about={(choice) =>
+          choice.offering === "Subsidized" ? subsidized : undefined
+        }
+        onChoose={(lead) => {
+          props.onMove({ lead });
+        }}
+      />
     </div>
   );
 }
@@ -387,9 +444,11 @@ function PlacementSection(props: {
     >
       {editing ? (
         <PlacementEditor
+          partition={props.partition}
           read={read}
           draft={draft}
           choices={choices}
+          leadChoices={runnersLeadPlacementChoices(props.session)}
           onMove={(moved) => {
             setMoves({ ...moves, ...moved });
           }}
