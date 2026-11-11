@@ -143,7 +143,9 @@ function requestTasks(
 
 /**
  * The events that send a ticket back to work over a candidate that has not
- * changed: an evaluation abandoned because its stack stopped standing.
+ * changed, an evaluation abandoned because its stack stopped standing. The
+ * cycle's source is the work that evaluation accepted, so its spawn re-checks
+ * that commit rather than redoing it.
  */
 const executionRequestRecheckEvents: readonly Entry["event"]["type"][] = [
   "TicketEvaluationInvalidated",
@@ -156,10 +158,6 @@ const executionRequestRecheckEvents: readonly Entry["event"]["type"][] = [
  * own, because the evidence carries the failed attempt's whole bundle forward
  * — target commit and all — and a second one under that kind leaves a worker
  * two answers to what its work is based on.
- *
- * A WORK CYCLE AN INVALIDATION ENTERED RE-CHECKS ITS SOURCE'S COMMIT. That
- * commit is the work the abandoned evaluation accepted, read from the row the
- * cycle runs at, so the worker reports it again rather than redoing it.
  */
 function executionRequestBundle(
   input: DecisionInput,
