@@ -16,9 +16,17 @@
  * branch — which the finalizer's first promotion creates where the brief lands
  * its work there.
  *
- * AND NOTHING BUT THE DISPATCH OBSERVES A REF. Every later spawn reads the row
- * the dispatch or an accepted work result wrote, so a rework runs at the commit
- * that was judged rather than at whatever the branch holds by then.
+ * AND NOTHING BUT THE DISPATCH OBSERVES A REF TO RUN AT. Every later spawn reads
+ * the row the dispatch or an accepted work result wrote, so a rework runs at
+ * the commit that was judged rather than at whatever the branch holds by then.
+ *
+ * AN EVALUATION PINS THE IDENTITY OF ITS TICKET'S CHANGE, which is the one read
+ * of a ref after the dispatch and decides nothing the spawn runs at. It is
+ * taken at the ticket's own work commit, never a stack's, over the current tip
+ * of the reference the ticket lands on: the one its finalization targets, or
+ * the repository's default, read as the finalizer reads a proposal's base and
+ * never the branch the work happens on. Where any of it could not be read, the
+ * spawn pins none and is otherwise the same.
  *
  * WHERE THE CHANGE STARTED IS WALKED BACK, NOT STORED. A spawn's commit is a
  * work result of this ticket's own wherever a pass moved the source to it, and
@@ -37,12 +45,15 @@
  */
 
 import {
+  repositoryBindingNarrowed,
+  repositoryBindingWidened,
   repositoryTargetObserved,
   type GitObjectId,
   type GitPromotionPort,
   type GitRefName,
   type RepositoryId,
 } from "./finalizer.ts";
+import type { ChangeIdentity, ChangeIdentityPort } from "./changeIdentity.ts";
 import type { CommitAncestry, CommitAncestryPort } from "./commitAncestry.ts";
 import type { CommitTreePort } from "./commitTree.ts";
 import { asTicketId } from "../domain/ids.ts";
@@ -51,6 +62,10 @@ import type { EvaluationStackSpawn } from "./evaluationStackSpawn.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import { digestFold, type ResultManifestId } from "./resultManifest.ts";
+import {
+  briefFinalizationTarget,
+  type TicketBriefPort,
+} from "./ticketBrief.ts";
 import {
   unsourcedTicketReference,
   type ExecutionSourceObservation,
@@ -181,6 +196,57 @@ async function executionExpectedTree(
     .catch((): undefined => undefined);
 }
 
+/**
+ * The identity of the ticket's change at `row.commit` over the tip of the
+ * reference the ticket lands on, or nothing for any spawn but an evaluation,
+ * where the binding is gone, or where the tip or the identity could not be
+ * read. A port that cannot work at all answers nothing, as an unknown does.
+ */
+async function executionChangeIdentity(
+  ports: {
+    readonly bindings: ProjectRepositoryBindingRead;
+    readonly git: Pick<GitPromotionPort, "observeTarget">;
+    readonly identities: Partial<ChangeIdentityPort>;
+    readonly briefs: TicketBriefPort | undefined;
+  },
+  request: {
+    readonly partition: Partition;
+    readonly ticket: number;
+    readonly kind: string;
+  },
+  row: { readonly repository: RepositoryId; readonly commit: GitObjectId },
+): Promise<ChangeIdentity | undefined> {
+  const { identities, briefs } = ports;
+  if (
+    request.kind !== "Evaluation" ||
+    identities.changeIdentity === undefined ||
+    briefs === undefined
+  )
+    return undefined;
+  const repository = await ports.bindings.binding(
+    request.partition,
+    row.repository,
+  );
+  if (repository === undefined) return undefined;
+  const brief = await briefs.brief(request.partition, request.ticket);
+  const observed = await ports.git
+    .observeTarget(
+      repositoryBindingNarrowed(
+        repositoryBindingWidened(repository),
+        briefFinalizationTarget(brief?.finalization),
+      ),
+    )
+    .catch((): undefined => undefined);
+  if (observed?.observed !== "Target") return undefined;
+  return identities
+    .changeIdentity({
+      repository,
+      work: row.commit,
+      target: observed.target.commit,
+    })
+    .catch((): undefined => undefined);
+}
+
 async function executionSourceObserved(
   bindings: ProjectRepositoryBindingRead,
   git: Pick<GitPromotionPort, "observeTarget">,
@@ -209,12 +275,30 @@ async function executionSourceObserved(
   };
 }
 
+/** The stack an evaluation of a prepared work cycle runs over, and nothing for any other spawn. */
+function executionSourceStack(
+  stacks: EvaluationStackSpawn | undefined,
+  request: Parameters<ExecutionSourceObservationPort["spawnSource"]>[0],
+): ReturnType<EvaluationStackSpawn["spawned"]> | undefined {
+  return request.kind === "Evaluation" && request.cycle !== undefined
+    ? stacks?.spawned({
+        partition: request.partition,
+        ticket: asTicketId(request.ticket),
+        cycle: request.cycle,
+        deferredPasses: request.deferredPasses ?? 0,
+      })
+    : undefined;
+}
+
 export function executionSourceObservation(
   bindings: ProjectRepositoryBindingRead,
   git: Pick<GitPromotionPort, "observeTarget">,
   history: ExecutionSourceHistoryPort,
-  ancestry: CommitAncestryPort & Partial<CommitTreePort>,
+  ancestry: CommitAncestryPort &
+    Partial<CommitTreePort> &
+    Partial<ChangeIdentityPort>,
   stacks?: EvaluationStackSpawn,
+  briefs?: TicketBriefPort,
 ): ExecutionSourceObservationPort {
   return {
     observe: (request) => executionSourceObserved(bindings, git, request),
@@ -238,19 +322,16 @@ export function executionSourceObservation(
         request,
         at,
       );
-      const stack =
-        request.kind === "Evaluation" && request.cycle !== undefined
-          ? await stacks?.spawned({
-              partition: request.partition,
-              ticket: asTicketId(request.ticket),
-              cycle: request.cycle,
-              deferredPasses: request.deferredPasses ?? 0,
-            })
-          : undefined;
+      const stack = await executionSourceStack(stacks, request);
       const record = stack?.stack === "Stack" ? stack.record : undefined;
       const expectedTree =
         record?.stackTree ??
         (await executionExpectedTree(bindings, ancestry, request, at));
+      const changeIdentity = await executionChangeIdentity(
+        { bindings, git, identities: ancestry, briefs },
+        request,
+        at,
+      );
       return {
         repository: row.repository,
         target:
@@ -266,6 +347,7 @@ export function executionSourceObservation(
         manifests: work?.manifests ?? [],
         ...(changeBase === undefined ? {} : { changeBase }),
         ...(expectedTree === undefined ? {} : { expectedTree }),
+        ...(changeIdentity === undefined ? {} : { changeIdentity }),
         ...(record === undefined ? {} : { stack: { record } }),
         ...(stack?.stack === "Pending" ? { stackPending: true as const } : {}),
       } satisfies ExecutionSourceObservation;

@@ -10,6 +10,7 @@
  * `spawnSource` answers everything else out of the ticket's own history.
  */
 
+import type { ChangeIdentity } from "./changeIdentity.ts";
 import type { EvaluationStack } from "./evaluationStack.ts";
 import type {
   GitObjectId,
@@ -40,6 +41,13 @@ export interface ExecutionSourceObservation {
    * one that names no tree.
    */
   readonly expectedTree?: GitObjectId;
+  /**
+   * The identity of the ticket's change at its own work commit, over the tip
+   * of the reference the ticket lands on, where it could be read: none for any
+   * other spawn, and none for an evaluation whose identity could not be read.
+   * A stack's commit never stands in for the work commit here.
+   */
+  readonly changeIdentity?: ChangeIdentity;
   /**
    * The stack the evaluation runs over, where its work cycle was prepared with
    * one: the target above is then the stack's commit and the expected tree its
