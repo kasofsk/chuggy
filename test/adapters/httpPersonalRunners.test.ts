@@ -21,10 +21,12 @@ import {
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
 import type {
+  PersonalRunnerOwnerView,
   PersonalRunnerRead,
   PersonalRunnerRedemption,
   PersonalRunnerService,
   PersonalRunnerTokenRedeemed,
+  PersonalRunnerView,
 } from "../../src/interpreter/personalRunnerRegistration.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
@@ -77,67 +79,61 @@ function fakeRunnersRedeemed(
   }
 }
 
+/** What the first of the caller's runners holds: a ticket's work and another's evaluation. */
+const runnerOneHeld: PersonalRunnerView["held"] = [
+  {
+    project: asProjectId("atlas"),
+    ticket: 7,
+    identity: { type: "WorkTask", value: { ticket: 7, cycle: 1 } },
+  },
+  {
+    project: asProjectId("atlas"),
+    ticket: 9,
+    identity: {
+      type: "EvaluationTask",
+      value: { ticket: 9, workCycle: 2, stage: 1, generation: 1, evaluator: 3 },
+    },
+  },
+];
+
+/** The caller's two runners in the tenant they hold any in, and the project they serve. */
+const runnersOwned: PersonalRunnerOwnerView = {
+  runners: [
+    {
+      id: "chuggy-personal-one",
+      capabilities: ["linux"],
+      registeredAt: "2026-10-09T12:00:00.000Z",
+      polledAt: "2026-10-09T12:01:00.000Z",
+      live: true,
+      executionsLive: false,
+      runner: { package: "chuggy-linux", version: "0.14.0" },
+      held: runnerOneHeld,
+      heldTruncated: true,
+    },
+    {
+      id: "chuggy-personal-two",
+      capabilities: ["macos"],
+      registeredAt: "2026-10-09T12:02:00.000Z",
+      live: false,
+      executionsLive: false,
+      held: [],
+      heldTruncated: false,
+    },
+  ],
+  projects: [
+    {
+      project: asProjectId("atlas"),
+      priority: "High",
+      waiting: 99,
+      waitingTruncated: true,
+    },
+  ],
+};
+
 /** The caller's runners as the tenant a case names answers them: two in one, none elsewhere. */
 function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
   return tenant === "acme"
-    ? {
-        result: "Found",
-        value: {
-          runners: [
-            {
-              id: "chuggy-personal-one",
-              capabilities: ["linux"],
-              registeredAt: "2026-10-09T12:00:00.000Z",
-              polledAt: "2026-10-09T12:01:00.000Z",
-              live: true,
-              executionsLive: false,
-              runner: { package: "chuggy-linux", version: "0.14.0" },
-              held: [
-                {
-                  project: asProjectId("atlas"),
-                  ticket: 7,
-                  identity: {
-                    type: "WorkTask",
-                    value: { ticket: 7, cycle: 1 },
-                  },
-                },
-                {
-                  project: asProjectId("atlas"),
-                  ticket: 9,
-                  identity: {
-                    type: "EvaluationTask",
-                    value: {
-                      ticket: 9,
-                      workCycle: 2,
-                      stage: 1,
-                      generation: 1,
-                      evaluator: 3,
-                    },
-                  },
-                },
-              ],
-              heldTruncated: true,
-            },
-            {
-              id: "chuggy-personal-two",
-              capabilities: ["macos"],
-              registeredAt: "2026-10-09T12:02:00.000Z",
-              live: false,
-              executionsLive: false,
-              held: [],
-              heldTruncated: false,
-            },
-          ],
-          projects: [
-            {
-              project: asProjectId("atlas"),
-              priority: "High",
-              waiting: 99,
-              waitingTruncated: true,
-            },
-          ],
-        },
-      }
+    ? { result: "Found", value: runnersOwned }
     : { result: "NotFound" };
 }
 
@@ -430,58 +426,10 @@ test("a member reads their own runners, each by its id with what it holds, besid
   await using app = runnersApp(calls);
   const found = await app.inject({ url: runner("acme"), headers: bearer });
   assert.equal(found.statusCode, 200);
-  assert.deepEqual(personalRunnerResponseSchema.parse(found.json()), {
-    runners: [
-      {
-        id: "chuggy-personal-one",
-        capabilities: ["linux"],
-        registeredAt: "2026-10-09T12:00:00.000Z",
-        polledAt: "2026-10-09T12:01:00.000Z",
-        live: true,
-        executionsLive: false,
-        runner: { package: "chuggy-linux", version: "0.14.0" },
-        held: [
-          {
-            project: "atlas",
-            ticket: 7,
-            identity: { type: "WorkTask", value: { ticket: 7, cycle: 1 } },
-          },
-          {
-            project: "atlas",
-            ticket: 9,
-            identity: {
-              type: "EvaluationTask",
-              value: {
-                ticket: 9,
-                workCycle: 2,
-                stage: 1,
-                generation: 1,
-                evaluator: 3,
-              },
-            },
-          },
-        ],
-        heldTruncated: true,
-      },
-      {
-        id: "chuggy-personal-two",
-        capabilities: ["macos"],
-        registeredAt: "2026-10-09T12:02:00.000Z",
-        live: false,
-        executionsLive: false,
-        held: [],
-        heldTruncated: false,
-      },
-    ],
-    projects: [
-      {
-        project: "atlas",
-        priority: "High",
-        waiting: 99,
-        waitingTruncated: true,
-      },
-    ],
-  });
+  assert.deepEqual(
+    personalRunnerResponseSchema.parse(found.json()),
+    runnersOwned,
+  );
   assert.equal(
     (await app.inject({ url: runner("other"), headers: bearer })).statusCode,
     404,

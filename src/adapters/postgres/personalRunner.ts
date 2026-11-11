@@ -349,7 +349,7 @@ async function personalRunnersWaiting(
   projects: readonly ProjectId[],
 ): Promise<ReadonlyMap<string, number>> {
   if (projects.length === 0) return new Map();
-  const found = await pool.query<{ project: string; waiting: number | null }>(
+  const found = await pool.query<{ project: string; waiting: number }>(
     sql`SELECT l.project,(SELECT count(*)::int FROM (
         SELECT 1
         FROM execution_attempt q
@@ -375,7 +375,7 @@ async function personalRunnersWaiting(
       WHERE l.tenant=${key.tenant} AND l.owner=${key.owner}
         AND l.project=ANY(${[...projects] as string[]}::text[])`,
   );
-  return new Map(found.rows.map((row) => [row.project, row.waiting ?? 0]));
+  return new Map(found.rows.map((row) => [row.project, row.waiting]));
 }
 
 /** The registry over the API's pool, an execution naming no memory sized at `memoryMibDefault` as the pool plane sizes it. */
