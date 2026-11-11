@@ -155,6 +155,10 @@ import {
   type FinalizerService,
 } from "../../src/interpreter/finalizerRun.ts";
 import {
+  finalizerLandingBaseRef,
+  finalizerRemoteDefaultRef,
+} from "../../src/interpreter/finalizerLanding.ts";
+import {
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
@@ -2349,6 +2353,33 @@ test("a brief that lands by merging its proposal opens one exactly as a brief th
   assert.equal(forge.creates[0]?.head.ref, briefBranch);
   assert.equal(forge.creates[0]?.base.ref, landingBranch);
   assert.deepEqual(forge.merges, [], "a create is not yet a proposal to merge");
+});
+
+test("the base a proposing work task is briefed to merge is the base the finalizer opens its proposal into", async () => {
+  for (const mode of ["PullRequest", "PullRequestMerge"] as const) {
+    for (const named of [landingBranch, undefined]) {
+      const store = recordingStore([proposedView("request-one")]);
+      const forge = recordingForge(store);
+      forge.created = "Created";
+      const briefs = briefsOf(briefBranch, named, mode);
+      await passOver({
+        ...serviceOf(store, recordingGit()),
+        forges: forgesOf(forge),
+        ticketBriefs: briefs,
+      });
+      const briefed = finalizerLandingBaseRef(
+        await briefs.brief(partition, 1),
+        binding,
+      );
+      const opened = forge.creates[0]?.base.ref;
+      assert.equal(opened, named ?? "refs/heads/main", `${mode} ${named}`);
+      assert.equal(
+        briefed,
+        named ?? finalizerRemoteDefaultRef,
+        `${mode} ${named}: a base named by none is the remote's default, which a fetch names HEAD`,
+      );
+    }
+  }
 });
 
 /** The service a merging case drives: the same brief, landing by merging what it opened. */
