@@ -25,8 +25,8 @@ const before = `public.${leadInquiryOpenFunction}(in_tenant text, in_project tex
 
 const inquiryOpen = `public.${leadInquiryOpenFunction}(in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_question text, in_route text, in_subsidized boolean)`;
 
-export const migration150: Migration = {
-  version: 150,
+export const migration151: Migration = {
+  version: 151,
   name: "an inquiry admitted on the lead's subsidy forks only a lead on the profile's slot, model and effort",
   statements: [
     `DROP FUNCTION ${before}`,

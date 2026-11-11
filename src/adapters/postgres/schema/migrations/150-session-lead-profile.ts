@@ -20,8 +20,8 @@ import {
 
 const signature = `public.${sessionLeadProfileFunction}(in_tenant text, in_project text)`;
 
-export const migration149: Migration = {
-  version: 149,
+export const migration150: Migration = {
+  version: 150,
   name: "one project's settings read carries the subsidized lead its lead runs as",
   statements: [
     `CREATE FUNCTION ${signature}
