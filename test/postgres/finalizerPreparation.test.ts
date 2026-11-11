@@ -2756,13 +2756,12 @@ test("a failure keeps a base only where a forge reported it, and a queue's faile
   assert.deepEqual(await attemptsOf(project), []);
 });
 
-test("a re-check failure keeps the accepted commit to re-report, is counted for the ticket, and no other failure keeps one", async () => {
+test("a re-check failure keeps the accepted commit to re-report, and no other failure keeps one", async () => {
   const { project } = await finalizerSubject(rig, "recheck", [
     { path: "one.txt", content: "one\n" },
   ]);
   const claim = await finalizerClaim(rig, project, "owner-recheck");
   const store = postgresFinalizer(rig.pool);
-  assert.equal(await store.ticketRecheckFailures(claim), 0);
   const accepted = asGitObjectId(finalizerCommit());
   assert.deepEqual(
     await store.recordAttempt(
@@ -2788,11 +2787,6 @@ test("a re-check failure keeps the accepted commit to re-report, is counted for 
       [project.partition.tenant, project.partition.project],
     ),
     [{ recheck_commit: accepted }],
-  );
-  assert.equal(
-    await store.ticketRecheckFailures(claim),
-    1,
-    "only the re-checks are counted",
   );
   for (const [label, failure] of [
     ["recheck-unnamed", { failureKind: "RecheckRequired" }],

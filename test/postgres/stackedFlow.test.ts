@@ -4,7 +4,7 @@
  * queue as it stands and mints over A. Where A lands, B lands by its merge
  * being the stack's tree and is never re-checked; where A's evaluation fails
  * instead, B's stack stops standing and B is re-checked at its rank, at the
- * front of the queue, with nothing counted toward its re-check cap.
+ * front of the queue.
  *
  * B IS THE TICKET THE WRITER AND THE FINALIZER DRIVE, AND A IS WRITTEN BY HAND.
  * The harness drives one ticket through the writer, so A's definition, phase,
@@ -21,7 +21,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -39,10 +38,7 @@ import {
   type EvaluationStack,
 } from "../../src/interpreter/evaluationStack.ts";
 import { stackPrepared } from "../../src/interpreter/evaluationStacking.ts";
-import {
-  asGitObjectId,
-  type FinalizationClaim,
-} from "../../src/interpreter/finalizer.ts";
+import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   stackStands,
@@ -423,13 +419,6 @@ async function aReworked(pair: Pair, label: string): Promise<void> {
   );
 }
 
-function bClaim(pair: Pair): FinalizationClaim {
-  return {
-    partition: pair.b.partition,
-    ticket: pair.b.ticket,
-  } as FinalizationClaim;
-}
-
 test("B evaluates over a stack holding A, and once A lands B lands as its merge is the stack's tree, with no re-check", async () => {
   const pair = await pairOpened("flow-lands", "Finalization");
 
@@ -494,13 +483,9 @@ test("B evaluates over a stack holding A, and once A lands B lands as its merge 
     stack.stackTree,
     "what B lands on A is the tree it was evaluated over",
   );
-  assert.equal(
-    await postgresFinalizer(rig.pool).ticketRecheckFailures(bClaim(pair)),
-    0,
-  );
 });
 
-test("B evaluates over a stack holding A, and once A's evaluation fails B is re-checked at its rank and the front, counting nothing", async () => {
+test("B evaluates over a stack holding A, and once A's evaluation fails B is re-checked at its rank and the front", async () => {
   const pair = await pairOpened("flow-fails", "Evaluation");
 
   assert.deepEqual(await queued(pair), [
@@ -540,11 +525,6 @@ test("B evaluates over a stack holding A, and once A's evaluation fails B is re-
   assert.equal(attempts[0]?.["outcome"], "Failed");
   assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(attempts[0]?.["recheck_commit"], pair.bCommit);
-  assert.equal(
-    await postgresFinalizer(rig.pool).ticketRecheckFailures(bClaim(pair)),
-    0,
-    "a re-check a dead stack forced counts nothing toward the cap",
-  );
   assert.equal(await rankOf(pair.b, pair.b.ticket), rank, "B keeps its rank");
   assert.deepEqual(
     await queued(pair),
