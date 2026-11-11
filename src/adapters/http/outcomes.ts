@@ -82,6 +82,7 @@ import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
+  leadNotSubsidizedCode,
   leadOfferingNotAdmittedCode,
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
@@ -3070,7 +3071,9 @@ export function leadInquiryResponse(
  * The ask door's refusals, each naming which one it met; `InquiriesInFlight` is
  * `409` and carries no `retry-after`, because a retry cannot succeed until one
  * of the asker's own inquiries settles, and `SubsidyExhausted` is `403`, since
- * none can until the month turns or the project moves its lead. Asking is idempotent on the two
+ * none can until the month turns or the project moves its lead, and
+ * `LeadNotSubsidized` is `409` beside `LeadNotStarted`, since the lead's own
+ * next decision is what lets a retry succeed. Asking is idempotent on the two
  * identities the caller minted, so its two successes are one status and one
  * body — a retry is told the ordinal it has, not that a second fork was opened.
  */
@@ -3106,6 +3109,14 @@ export function askLeadResponse(
       return response(
         409,
         nativeHttpError("LeadClosed", "The lead takes no more turns."),
+      );
+    case "LeadNotSubsidized":
+      return response(
+        409,
+        nativeHttpError(
+          leadNotSubsidizedCode,
+          "The lead moves to the subsidy at its next decision.",
+        ),
       );
     case "InFlight":
       return response(

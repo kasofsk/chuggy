@@ -20,7 +20,9 @@ import test from "node:test";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   hostedRunsNotGrantedCode,
+  leadNotSubsidizedCode,
   noRunnerCode,
+  subsidyExhaustedCode,
 } from "../../src/contract/rosters.ts";
 import {
   nativeHttpMediaType,
@@ -223,8 +225,10 @@ test("each refusal reaches the wire as its own status and its own code", async (
     ["LeadNotStarted", 409, "LeadNotStarted"],
     ["LeadClosed", 409, "LeadClosed"],
     ["InFlight", 409, "InquiriesInFlight"],
+    ["LeadNotSubsidized", 409, leadNotSubsidizedCode],
     ["HostedRunsNotGranted", 403, hostedRunsNotGrantedCode],
     ["NoRunner", 403, noRunnerCode],
+    ["SubsidyExhausted", 403, subsidyExhaustedCode],
   ];
   for (const [result, status, code] of refusals) {
     const held: InquiryCase = {

@@ -105,6 +105,8 @@ lead-inquiry-refusal-not-started = Not started
 lead-inquiry-refusal-closed = Closed
 lead-inquiry-refusal-in-flight = In flight
 lead-inquiry-refusal-needs-hosted-runs = Needs { -hosted-runs }
+lead-inquiry-refusal-subsidy-exhausted = Month's allowance spent · Resumes next month or on { -runner(form: "plural") }
+lead-inquiry-refusal-not-subsidized = Moving to { -brand-name } · Takes { -inquiry(form: "plural") } after the { -lead }'s next pass
 lead-inquiry-refusal-unknown = Refused
 lead-inquiry-refusal-no-lead = No { -lead }
 
