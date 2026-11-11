@@ -12,8 +12,10 @@ import {
   type RepositoryBinding,
 } from "../../src/interpreter/finalizer.ts";
 import {
+  finalizerLandingBaseRef,
   finalizerLandingOf,
   finalizerLandingRef,
+  finalizerRemoteDefaultRef,
 } from "../../src/interpreter/finalizerLanding.ts";
 import {
   asProjectId,
@@ -108,4 +110,52 @@ test("where the ticket lands is read in the finalizer's order: `None` before an 
   assert.deepEqual(finalizerLandingOf(unbranched, binding), {
     landing: "Unbranched",
   });
+});
+
+test("a proposal's work task merges the base it opens into: the reference its finalization names, or the remote's default and never the binding's", () => {
+  for (const mode of ["PullRequest", "PullRequestMerge"]) {
+    const named = asDraftBrief({
+      ...intent,
+      branch: "refs/heads/work",
+      finalization: { mode, target: "refs/heads/release" },
+    });
+    assert.equal(
+      finalizerLandingBaseRef(named, boundToMain),
+      "refs/heads/release",
+    );
+    const unnamed = asDraftBrief({
+      ...intent,
+      branch: "refs/heads/work",
+      finalization: { mode },
+    });
+    for (const each of [binding, boundToMain]) {
+      assert.equal(
+        finalizerLandingBaseRef(unnamed, each),
+        finalizerRemoteDefaultRef,
+        mode,
+      );
+    }
+  }
+});
+
+test("a push's work task merges the ref the push lands on", () => {
+  for (const brief of [
+    asDraftBrief({
+      ...intent,
+      branch: "refs/heads/work",
+      finalization: { mode: "Push", target: "refs/heads/release" },
+    }),
+    asDraftBrief({ ...intent, branch: "refs/heads/work" }),
+    asDraftBrief(intent),
+    asDraftBrief({ ...intent, finalization: { mode: "None" } }),
+  ]) {
+    assert.equal(
+      finalizerLandingBaseRef(brief, boundToMain),
+      finalizerLandingRef(brief, boundToMain),
+    );
+  }
+  assert.equal(
+    finalizerLandingBaseRef(asDraftBrief(intent), binding),
+    undefined,
+  );
 });

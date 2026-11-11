@@ -287,8 +287,6 @@ import {
   type RepositoryBinding,
   type TargetObserved,
   inputBundleReferencesMax,
-  repositoryBindingNarrowed,
-  repositoryBindingWidened,
   repositoryTargetObserved,
 } from "./finalizer.ts";
 import {
@@ -326,6 +324,7 @@ import { stackInvalidations } from "./stackInvalidation.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
   finalizerLandingOf,
+  finalizerProposalBaseBinding,
   type FinalizerBranches,
   type FinalizerLanding,
 } from "./finalizerLanding.ts";
@@ -613,7 +612,9 @@ async function finalizerGatherProposalBase(
     briefFinalizationTarget(branches.brief?.finalization) !== undefined
   )
     return undefined;
-  return service.git.observeTarget(repositoryBindingWidened(binding));
+  return service.git.observeTarget(
+    finalizerProposalBaseBinding(binding, undefined),
+  );
 }
 
 /**
@@ -1635,7 +1636,7 @@ async function finalizerProposalBase(
   target: GitRefName | undefined,
 ): Promise<ObservedTarget | undefined> {
   const observed = await service.git.observeTarget(
-    repositoryBindingNarrowed(repositoryBindingWidened(binding), target),
+    finalizerProposalBaseBinding(binding, target),
   );
   return observed.observed === "Target" ? observed.target : undefined;
 }

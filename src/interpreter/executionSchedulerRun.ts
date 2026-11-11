@@ -191,7 +191,10 @@ import {
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 import type { FinalizerConfig, GitRefName, RepositoryId } from "./finalizer.ts";
-import { finalizerLandingRef } from "./finalizerLanding.ts";
+import {
+  finalizerLandingBaseRef,
+  finalizerLandingRef,
+} from "./finalizerLanding.ts";
 import { runEndedLoss } from "./runEvidence.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
@@ -794,18 +797,27 @@ interface TaskLaunch {
   readonly targetRef?: GitRefName;
 }
 
-/** The ref the ticket's finalization lands on, resolved from its brief and the binding it names as the finalizer resolves it. */
-async function schedulerTargetRef(
+/**
+ * The ref the ticket's finalization lands on and the base a work task merges
+ * in, each resolved from its brief and the binding it names as the finalizer
+ * resolves it.
+ */
+async function schedulerLanding(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   brief: DraftBrief | undefined,
-): Promise<GitRefName | undefined> {
-  if (brief?.repository === undefined) return undefined;
+): Promise<{ readonly targetRef?: GitRefName; readonly baseRef?: string }> {
+  if (brief?.repository === undefined) return {};
   const binding = await service.bindings.binding(
     execution.partition,
     brief.repository,
   );
-  return finalizerLandingRef(brief, binding);
+  const targetRef = finalizerLandingRef(brief, binding);
+  const baseRef = finalizerLandingBaseRef(brief, binding);
+  return {
+    ...(targetRef === undefined ? {} : { targetRef }),
+    ...(baseRef === undefined ? {} : { baseRef }),
+  };
 }
 
 /** Selects the authored evaluation role after its pinned configuration has been read. */
@@ -851,7 +863,11 @@ async function schedulerPrepared(
     execution.partition,
     execution.ticket,
   );
-  const targetRef = await schedulerTargetRef(service, execution, brief);
+  const { targetRef, baseRef } = await schedulerLanding(
+    service,
+    execution,
+    brief,
+  );
   const composed = composeTaskInvocation(service.practices, {
     purpose: schedulerTaskPurpose(execution, configuration),
     ...(execution.stage === undefined ? {} : { stage: execution.stage }),
@@ -861,7 +877,7 @@ async function schedulerPrepared(
     ...project,
     priorWorkReports,
     ...rework,
-    ...(targetRef === undefined ? {} : { targetRef }),
+    ...(baseRef === undefined ? {} : { targetRef: baseRef }),
     ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });
