@@ -203,9 +203,9 @@ cp "$ROOT/tsconfig.json" "$R/.claude/worktrees/agent-x/tsconfig.json"
 seal
 check "a checkout nested under .claude/ is not this tree's source" 0 "$RC" "0 stage(s) failed"
 
-# A console under ui/ is linted by its own configuration, in a run of its own,
-# and the root's run skips it: a finding there is still a finding, and the
-# root's own sources are still linted beside it.
+# A console under ui/ is left out of the root's run, whose configuration would
+# report its stray `debugger` as well, and the root's own sources are still
+# linted beside it. The console's own configuration is check-console's to run.
 fixture
 clean_source
 mkdir -p "$R/ui/console"
@@ -220,9 +220,9 @@ printf '%s\n' 'debugger;' > "$R/ui/console/stray.js"
 	printf '%s\n' '}'
 } > "$R/src/domain/floating.ts"
 seal
-check "a console's own configuration lints it" 1 "$RC" "ui/console/stray.js"
-check "with the rule that configuration names" 1 "$RC" "no-debugger"
-check "while the root's run still lints the root's sources" 1 "$RC" "no-floating-promises"
+check "the root's run still lints the root's sources" 1 "$RC" "no-floating-promises"
+refute "and leaves a console's directory out" 1 "$RC" "ui/console/stray.js"
+refute "so nothing there is reported" 1 "$RC" "no-debugger"
 
 # --- What the unit stage runs ------------------------------------------------
 #

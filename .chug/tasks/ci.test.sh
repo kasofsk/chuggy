@@ -20,6 +20,7 @@ SELECT="$HERE/_ci-select.sh"
 IGNORED="$HERE/_ignored-inputs.sh"
 INSTALLED="$HERE/_installed-inputs.sh"
 PROBED="$HERE/_probed-inputs.sh"
+IMPORT_GRAPH="$HERE/_import-graph.sh"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
 
@@ -59,6 +60,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	cp "$IGNORED" "$R/.chug/tasks/_ignored-inputs.sh"
 	cp "$INSTALLED" "$R/.chug/tasks/_installed-inputs.sh"
 	cp "$PROBED" "$R/.chug/tasks/_probed-inputs.sh"
+	cp "$IMPORT_GRAPH" "$R/.chug/tasks/_import-graph.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -359,7 +361,8 @@ set +e
 RC=$?
 set -e
 refute "a model change beside a changed page selects Quint" 0 "$RC" "check-model: SKIPPED"
-check "a model change beside a changed page still skips the database" 0 "$RC" "check-postgres: SKIPPED"
+check "a model change beside a changed page still skips the console's copy" 0 "$RC" \
+	"check-console-copy: SKIPPED"
 
 # A file is a page by its last suffix alone: one that only carries the letters
 # is code, and one kept under the replayed corpus is still a page.
@@ -449,7 +452,6 @@ set +e
 RC=$?
 set -e
 refute "an action's document selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
-check "an action's document skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
 # A PATH THAT WENT AWAY IS A PATH THAT CHANGED: a deletion selects what read
 # the file, whether committed, staged or only left in the tree, a rename
@@ -575,7 +577,6 @@ printf -- '-- roles, changed\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
 commit_all roles
 run_last_commit
 refute "the roles file selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
-check "the roles file skips the database" 0 "$RC" "check-postgres: SKIPPED"
 printf -- '-- wipe, changed\n' > "$R/deploy/rig/wipe-tickets.sql"
 commit_all wipe
 run_last_commit
@@ -1385,13 +1386,17 @@ refute "doc-lint is not wrapped" 0 "$RC" "run|--name|doc-lint|"
 refute "check-agent-lag is not wrapped" 0 "$RC" "run|--name|check-agent-lag|"
 check "the store defaults to the shared one" 0 "$RC" "env|FRESH=unset|URL=https://track-record.vteng.io|NAMESPACE=chuggy|"
 # A gate keyed on the whole tree holds the whole install record and every
-# ignored file, and passes no inputs.
+# ignored file, and passes no inputs. The server gates are among them here,
+# since this fixture holds no depcruise to build their import graph with.
 common="--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|"
 keyed=0
 for gate in \
 	"check-paths|${common}--tool|git log --diff-filter=D --name-only --format=|--|./.chug/tasks/check-paths.sh|" \
 	"source-static|--|./.chug/tasks/check-source.sh|--static|" \
-	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|"; do
+	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|" \
+	"check-postgres|${common}--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-postgres.sh|" \
+	"check-queries|${common}--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-queries.sh|" \
+	"check-keto|${common}--env|CHUG_KETO_READ_URL|--env|CHUG_KETO_WRITE_URL|--env|CHUG_KETO_IMAGE|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-keto.sh|"; do
 	id="${gate%%|*}"
 	shape="${gate#*|}"
 	case "$shape" in --\|*) shape="$common$shape" ;; esac
@@ -1413,10 +1418,7 @@ for gate in \
 	"check-console-copy|packages|--|./.chug/tasks/check-console-copy.sh|" \
 	"check-conformance|packages|--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
 	"check-random|packages|--env|CHUG_WALK_SAMPLES|--env|CHUG_WALK_SEED_BASE|--env|CHUG_WALK_SEED|--env|CHUG_WALK_INSTANCE|--|./.chug/tasks/check-random.sh|" \
-	"check-console|install|--|./.chug/tasks/check-console.sh|" \
-	"check-postgres|install|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-postgres.sh|" \
-	"check-queries|install|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-queries.sh|" \
-	"check-keto|install|--env|CHUG_KETO_READ_URL|--env|CHUG_KETO_WRITE_URL|--env|CHUG_KETO_IMAGE|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-keto.sh|"; do
+	"check-console|install|--|./.chug/tasks/check-console.sh|"; do
 	id="${gate%%|*}"
 	rest="${gate#*|}"
 	held="${rest%%|*}"
@@ -1442,18 +1444,13 @@ done
 # the console the root's settings and the package directory and compiler
 # settings above the contract, the replays that package directory, the
 # generated API the one above its generator, the console's copy gate the ones
-# above its tool, the query check the linter's
-# settings, and the server gates the package directories and manifests above
-# their database helper. The model's gate looks nowhere else, and a whole-tree
-# key holds every place already.
+# above its tool. The model's gate looks nowhere else, and a whole-tree key
+# holds every place already.
 for gate in \
 	"check-console|'.editorconfig'|'.prettierrc'|':(glob)postcss.config.*'|'src/tsconfig.json'|'src/node_modules'" \
 	"check-conformance|'src/node_modules'" "check-random|'src/node_modules'" \
 	"check-model-api|'scripts/node_modules'" \
-	"check-console-copy|'ui/chuggy-ui/tools/node_modules'|'ui/chuggy-ui/node_modules'" \
-	"check-queries|':(glob)eslint.config.*'|'eslint-suppressions.json'" \
-	"check-postgres|'.chug/tasks/node_modules'|'.chug/tasks/package.json'" \
-	"check-keto|'.chug/node_modules'|'.chug/package.json'"; do
+	"check-console-copy|'ui/chuggy-ui/tools/node_modules'|'ui/chuggy-ui/node_modules'"; do
 	id="${gate%%|*}"
 	grep "^run|--name|$id|" "$TRLOG" > "$WORK/.line" || true
 	OUT="$WORK/.line"
@@ -1466,7 +1463,7 @@ for gate in \
 done
 OUT="$WORK/.log"
 printf 'looking %s\n' "$(grep -c "|--tool|$record_tool_probed" "$TRLOG" || true)" >> "$OUT"
-check "no other gate holds a place a tool looks" 0 "$RC" "looking 8"
+check "no other gate holds a place a tool looks" 0 "$RC" "looking 5"
 # Every gate neither table names is keyed on the whole tree and nothing more.
 printf 'plain %s\n' "$(grep -cF "|$common--|./" "$TRLOG" || true)" >> "$OUT"
 check "a whole-tree gate whose verdict reads nothing else is keyed on nothing else" 0 "$RC" \
@@ -1516,18 +1513,6 @@ pin_scope check-console "$record_tool_install" ui src/contract test/fixtures/con
 	':(glob)**/package.json' -- .browserslistrc browserslist .editorconfig .npmrc .prettierrc \
 	package.yaml lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*' \
 	src/node_modules src/package.json src/tsconfig.json
-pin_scope check-postgres "$record_tool_install" src test deploy/rig/wipe-tickets.sql package.json \
-	.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh \
-	.chug/tasks/_test-timeout.sh -- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
-pin_scope check-queries "$record_tool_install" src test scripts ui package.json tsconfig.json \
-	eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
-	.chug/tasks/check-queries.sh \
-	-- ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json \
-	.chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
-pin_scope check-keto "$record_tool_install" src test .chug/tasks/keto package.json \
-	.chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
-	.chug/tasks/check-keto.sh .chug/tasks/_test-timeout.sh \
-	-- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
 
 run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_URL=http://store.test TRACK_RECORD_NAMESPACE=elsewhere
 recorded_log
@@ -1610,9 +1595,10 @@ done
 git -C "$R" add -A
 run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1
 recorded_log
-pin_scope .chug/tasks/ci.test.sh "" .chug/tasks/ci.test.sh .chug/tasks/ci.sh .chug/tasks/_ci-select.sh \
-	.chug/tasks/_ignored-inputs.sh .chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh \
-	.chug/tasks/_suite.sh justfile package.json
+pin_scope .chug/tasks/ci.test.sh "$record_tool_installed 'dependency-cruiser'" .chug/tasks/ci.test.sh \
+	.chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_import-graph.sh .chug/tasks/_ignored-inputs.sh \
+	.chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh .chug/tasks/_suite.sh \
+	.dependency-cruiser.cjs tsconfig.json justfile package.json
 pin_scope .chug/tasks/check-source.test.sh "$record_tool_install" .chug/tasks/check-source.test.sh \
 	.chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh tsconfig.json tsconfig.contract.json \
 	eslint.config.js .prettierrc.json .prettierignore package.json
@@ -1633,10 +1619,11 @@ pin_scope .chug/tasks/check-model-api.test.sh "$record_tool_installed '@informal
 	scripts/generate-model-api.ts src/generated src/domain/generated .chug/tasks/check-model-api.sh \
 	':(glob)**/package.json' -- scripts/node_modules scripts/package.json
 pin_scope .chug/tasks/check-shell-quoting.test.sh "$record_tool_install"
-pin_scope .chug/tasks/check-random.test.sh "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" \
-	.chug/tasks/check-random.test.sh .chug/tasks/_suite.sh src test .chug/tasks/check-conformance.sh \
-	src/domain src/generated test/random test/conformance test/domain test/itf model \
-	.chug/tasks/check-random.sh ':(glob)**/package.json' -- src/node_modules src/package.json
+grep "^run|--name|.chug/tasks/check-random.test.sh|" "$TRLOG" > "$WORK/.line" || true
+OUT="$WORK/.line"
+check "the random replay's suite, with no graph to read, is keyed on the whole tree" 0 "$RC" \
+	"run|--name|.chug/tasks/check-random.test.sh|--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|--platform|"
+OUT="$WORK/.log"
 pin_scope .chug/tasks/emit-goldens.test.sh "$record_tool_installed 'prettier' '@informalsystems/quint' '@kasofsk/chug-ticket-domain'" \
 	.chug/tasks/emit-goldens.test.sh .chug/tasks/emit-goldens.sh .chug/tasks/_suite.sh .gitignore \
 	.prettierignore ':(glob)model/**/*.qnt' .chug/tasks/check-model.sh
@@ -1887,7 +1874,8 @@ stored_change() { # <label> <id that must rerun>...
 printf 'export const a = 1\n' > "$R/ui/chuggy-ui/a.ts"
 stored_change "a console change" check-console check-source
 OUT="$WORK/.stored"
-check "a console change reuses the server's gate" 0 "$RC" "reused check-postgres|"
+check "a console change reruns the server's gate, whose graph no depcruise here can build" 0 "$RC" \
+	"ran check-postgres|"
 printf 'export const a = 1\n' > "$R/src/a.ts"
 stored_change "a source change" check-postgres check-keto
 printf '# the model, read\n' > "$R/model/README.md"
@@ -1938,7 +1926,7 @@ stored_rerun() { # <label> [VAR=value...]
 printf 'module m { val x = 1 }\n' > "$R/model/m.qnt"
 stored_rerun "a model change"
 OUT="$WORK/.stored"
-check "a model change reuses the server's gate" 0 "$RC" "reused check-postgres|"
+check "a model change reuses the console's gate" 0 "$RC" "reused check-console|"
 printf '# a gate comment\n' >> "$R/.chug/tasks/check-model.sh"
 stored_rerun "the gate's own script"
 OUT="$WORK/.stored"
@@ -2283,5 +2271,388 @@ OUT="$WORK/.first"
 check "of two runs taking over a dead holder's lock, the first runs" 0 "$RC" "all gates clean"
 check "a takeover leaves no lock and no claim" 0 \
 	"$([ ! -L "$lock" ] && [ ! -L "$lock.$holder" ]; echo $?)" ""
+
+# THE SERVER GATES' CODE IS WHAT THEIR SUITES IMPORT. The fixture is a small
+# tree of modules, cruised by the tree's own dependency-cruiser under its own
+# settings through a depcruise that counts its runs, that fails under
+# STUB_DEPCRUISE=fail, prints what no reader can parse under =garbage, and
+# loses every edge or every entry under =edges or =entries. Each entry a graph
+# declaration names is a module in it, and each module imports or is imported,
+# as the boundaries' rules require.
+GRAPH_CALLS="$WORK/depcruise.calls"
+cat > "$WORK/depcruise-mangle.js" <<'MANGLE'
+const fs = require("node:fs");
+const [mode, file] = process.argv.slice(2);
+const cruised = JSON.parse(fs.readFileSync(file, "utf8"));
+const entry = (path) =>
+  /\.test\.ts$|^src\/roots\/migrate\.ts$/u.test(path);
+if (mode === "edges") for (const each of cruised.modules) each.dependencies = [];
+if (mode === "entries") {
+  cruised.modules = cruised.modules.filter((each) => !entry(each.source));
+  for (const each of cruised.modules)
+    each.dependencies = each.dependencies.filter((dependency) => !entry(dependency.resolved));
+}
+process.stdout.write(JSON.stringify(cruised));
+MANGLE
+graph_module() { # <path> <line>...
+	mkdir -p "$R/$(dirname "$1")"
+	graph_path="$1"
+	shift
+	printf '%s\n' "$@" > "$R/$graph_path"
+}
+graph_repo() {
+	stub_repo 0
+	cp "$ROOT/.dependency-cruiser.cjs" "$ROOT/tsconfig.json" "$R/"
+	mkdir -p "$R/node_modules/.bin"
+	cat > "$R/node_modules/.bin/depcruise" <<STUB
+#!/bin/sh
+echo ran >> "$GRAPH_CALLS"
+case "\${STUB_DEPCRUISE:-}" in
+fail) exit 1 ;;
+garbage) echo 'not a graph'; exit 0 ;;
+esac
+"$ROOT/node_modules/.bin/depcruise" "\$@" > "$WORK/depcruise.out" || exit
+if [ -n "\${STUB_DEPCRUISE:-}" ]; then
+	node "$WORK/depcruise-mangle.js" "\$STUB_DEPCRUISE" "$WORK/depcruise.out"
+else
+	cat "$WORK/depcruise.out"
+fi
+STUB
+	chmod +x "$R/node_modules/.bin/depcruise"
+	printf 'node_modules\n' > "$R/.gitignore"
+	printf '{"name": "fixture"}\n' > "$R/package.json"
+	printf 'export default [];\n' > "$R/eslint.config.js"
+	printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/check-random.test.sh"
+	for helper in _postgres.sh _keto.sh _test-timeout.sh; do
+		printf '# helper\n' > "$R/.chug/tasks/$helper"
+	done
+	mkdir -p "$R/.chug/tasks/keto" "$R/deploy/rig" "$R/test/fixtures/fluxDeliveries" "$R/ui/chuggy-ui/app"
+	printf 'version: v0\n' > "$R/.chug/tasks/keto/keto.yml"
+	printf -- '-- wipe\n' > "$R/deploy/rig/wipe-tickets.sql"
+	printf 'HTTP/1.1 200 OK\n' > "$R/test/fixtures/fluxDeliveries/push.http"
+	mkdir -p "$R/src/roots"
+	printf '[]\n' > "$R/src/roots/runnerReleases.json"
+	printf '{}\n' > "$R/test/interpreter.json"
+	printf 'export const shown = 1;\n' > "$R/ui/chuggy-ui/app/shown.ts"
+	graph_module src/contract/configurationDocument.ts 'export const document = 1;'
+	graph_module src/kinds.ts 'export type Kind = "a";'
+	graph_module src/shape.ts 'export type Shape = { readonly side: number };'
+	graph_module src/shapes.ts 'export type { Shape } from "./shape.ts";'
+	graph_module src/domain/deciders.ts 'export const decide = 1;'
+	graph_module src/adapters/postgres/pool.ts \
+		'import { document } from "../../contract/configurationDocument.ts";' 'export const pool = document;'
+	for root in migrate provisionAgentSession provisionProjectAccess nativeHttp controlPlane \
+		provisionAccessDefaults; do
+		graph_module "src/roots/$root.ts" \
+			'import { document } from "../contract/configurationDocument.ts";' "export const $root = document;"
+	done
+	graph_module .chug/tasks/postgres-databases.ts \
+		'import { pool } from "../../src/adapters/postgres/pool.ts";' 'export const databases = pool;'
+	graph_module test/postgres/harness.ts 'export const harness = 1;'
+	graph_module test/postgres/schedulerRootPorts.ts \
+		'import { harness } from "./harness.ts";' 'export const ports = harness;'
+	graph_module test/postgres/store.test.ts \
+		'import { pool } from "../../src/adapters/postgres/pool.ts";' \
+		'import type { Kind } from "../../src/kinds.ts";' \
+		'import { ports } from "./schedulerRootPorts.ts";' \
+		'export const kind: Kind = "a";' 'export const stored = pool + ports;'
+	graph_module test/keto/access.test.ts \
+		'import { document } from "../../src/contract/configurationDocument.ts";' \
+		'import type { Shape } from "../../src/shapes.ts";' \
+		'export const square: Shape = { side: document };'
+	graph_module test/random/walk.test.ts \
+		'import { decide } from "../../src/domain/deciders.ts";' 'export const walked = decide;'
+	graph_module test/conformance/replay.test.ts \
+		'import { decide } from "../../src/domain/deciders.ts";' 'export const replayed = decide;'
+	graph_module test/interpreter/taskBriefing.test.ts \
+		'import { decide } from "../../src/domain/deciders.ts";' 'export const briefed = decide;'
+	commit_all baseline
+	: > "$GRAPH_CALLS"
+}
+# The last commit as the change, through the suite stage too.
+graph_run() { # [VAR=value...]
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && env CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=1 "$@" ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+# Each gate and suite that reads the graph, checked as selected or skipped:
+# the ones given ran, and the rest were skipped.
+graph_selected() { # <label> [<gate id or suite>...]
+	graph_label="$1"
+	shift
+	for graph_reader in check-postgres check-queries check-keto check-random.test.sh; do
+		graph_named=0
+		for graph_given do [ "$graph_given" != "$graph_reader" ] || graph_named=1; done
+		if [ "$graph_reader" = check-random.test.sh ]; then
+			graph_ran="  - .chug/tasks/check-random.test.sh"
+			if [ "$graph_named" = 1 ]; then
+				check "$graph_label selects $graph_reader" 0 "$RC" "$graph_ran"
+			else
+				refute "$graph_label leaves out $graph_reader" 0 "$RC" "$graph_ran"
+			fi
+		elif [ "$graph_named" = 1 ]; then
+			check "$graph_label selects $graph_reader" 0 "$RC" "stub $graph_reader"
+		else
+			check "$graph_label leaves out $graph_reader" 0 "$RC" "$graph_reader: SKIPPED"
+		fi
+	done
+}
+# A change, committed, and which readers of the graph it must select.
+graph_change() { # <label> <gate id or suite>... — the change already made in $R
+	graph_change_label="$1"
+	shift
+	commit_all "$graph_change_label"
+	graph_run
+	graph_selected "$graph_change_label" "$@"
+}
+
+graph_repo
+printf 'export const briefed2 = 2;\n' >> "$R/test/interpreter/taskBriefing.test.ts"
+graph_change "a test outside every server suite's graph"
+printf 'export const shown2 = 2;\n' >> "$R/ui/chuggy-ui/app/shown.ts"
+graph_change "a module under the console"
+printf 'export const document2 = 2;\n' >> "$R/src/contract/configurationDocument.ts"
+graph_change "a source every server suite reaches" check-postgres check-queries check-keto
+printf 'export const harness2 = 2;\n' >> "$R/test/postgres/harness.ts"
+graph_change "a helper under the database suites" check-postgres
+printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
+graph_change "a module reached only through an import of a type" check-postgres
+printf 'export type Side = number;\n' >> "$R/src/shape.ts"
+graph_change "a module reached only through a re-export of a type" check-keto
+printf 'export const decide2 = 2;\n' >> "$R/src/domain/deciders.ts"
+graph_change "a decider the walk imports" check-random.test.sh
+printf '{"changed": 1}\n' > "$R/test/interpreter.json"
+graph_change "a file under the tests that is no module" check-postgres check-queries check-keto \
+	check-random.test.sh
+printf '{}\n' > "$R/test/interpreter/brief.json"
+graph_change "a new file under the tests that no import names" check-postgres check-queries check-keto \
+	check-random.test.sh
+git -C "$R" rm -q test/interpreter/brief.json
+graph_change "a file deleted from the tests" check-postgres check-queries check-keto check-random.test.sh
+git -C "$R" rm -q test/interpreter/taskBriefing.test.ts
+graph_change "a module deleted from the tests" check-postgres check-queries check-keto check-random.test.sh
+printf '# notes\n' > "$R/test/postgres/NOTES.md"
+graph_change "a page among the database suites"
+OUT="$GRAPH_CALLS"
+printf 'calls %s\n' "$(grep -c . "$GRAPH_CALLS")" >> "$GRAPH_CALLS"
+check "depcruise ran once a run, and not for a page" 0 0 "calls 11"
+
+# A file that declares into every scope selects the typed tool wherever it is,
+# when it starts to, when it stops, and as a declaration file of any name; no
+# server suite reads it.
+graph_repo
+graph_module test/interpreter/ambient.ts 'export const ambient = 1;' \
+	'import "./taskBriefing.test.ts";'
+commit_all ambient-baseline
+printf 'declare global {\n  interface Ambient { readonly seen: true }\n}\n' >> "$R/test/interpreter/ambient.ts"
+graph_change "a test that starts declaring into every scope" check-queries
+graph_module test/interpreter/ambient.ts 'export const ambient = 1;' 'import "./taskBriefing.test.ts";'
+graph_change "a test that stops declaring into every scope" check-queries
+printf 'declare module "shown" {}\n' > "$R/ui/chuggy-ui/app/shown.d.ts"
+graph_change "a declaration file under the console" check-queries
+
+# What each declaration names by hand selects its gate: the files its suites
+# and scripts read by a path, and the processes they run by one.
+graph_repo
+for case in \
+	"deploy/rig/wipe-tickets.sql|check-postgres" "test/fixtures/fluxDeliveries/push.http|check-postgres" \
+	"src/roots/runnerReleases.json|check-postgres" ".chug/tasks/keto/keto.yml|check-keto" \
+	".chug/tasks/_postgres.sh|check-postgres|check-queries|check-keto" ".chug/tasks/_keto.sh|check-keto" \
+	".chug/tasks/_test-timeout.sh|check-postgres|check-keto" \
+	".chug/tasks/postgres-databases.ts|check-postgres|check-queries|check-keto" \
+	"package.json|check-postgres|check-queries|check-keto" "tsconfig.json|check-queries" \
+	"eslint.config.js|check-queries" ".dependency-cruiser.cjs|check-postgres|check-keto" \
+	"src/roots/migrate.ts|check-postgres|check-queries" "src/roots/nativeHttp.ts|check-postgres" \
+	"src/roots/controlPlane.ts|check-postgres" "src/roots/provisionAgentSession.ts|check-postgres|check-keto" \
+	"src/roots/provisionProjectAccess.ts|check-postgres|check-keto" \
+	"src/roots/provisionAccessDefaults.ts|check-keto" "test/postgres/schedulerRootPorts.ts|check-postgres" \
+	".chug/tasks/check-postgres.sh|check-postgres" ".chug/tasks/check-queries.sh|check-queries" \
+	".chug/tasks/check-keto.sh|check-keto" ".chug/tasks/check-conformance.sh|check-random.test.sh"; do
+	path="${case%%|*}"
+	case "$path" in
+	*.ts) printf 'export const changed = 1;\n' >> "$R/$path" ;;
+	*.json) printf '{"changed": 1}\n' > "$R/$path" ;;
+	*.js | *.cjs) printf '\n' >> "$R/$path" ;;
+	*) printf '# changed\n' >> "$R/$path" ;;
+	esac
+	commit_all "$path"
+	graph_run
+	gates="${case#*|}|"
+	while [ -n "$gates" ]; do
+		gate="${gates%%|*}"
+		if [ "$gate" = check-random.test.sh ]; then
+			check "$path selects $gate" 0 "$RC" "  - .chug/tasks/$gate"
+		else
+			check "$path selects $gate" 0 "$RC" "stub $gate"
+		fi
+		gates="${gates#*|}"
+	done
+done
+
+# A GRAPH THAT CANNOT BE COMPUTED OR BELIEVED SELECTS: each reader of it runs
+# on a change to a module under the console, which no graph of theirs reaches.
+for case in "no depcruise|STUB_DEPCRUISE=" "a depcruise that fails|STUB_DEPCRUISE=fail" \
+	"output that is no graph|STUB_DEPCRUISE=garbage" "a graph with no edges|STUB_DEPCRUISE=edges" \
+	"a graph without its entries|STUB_DEPCRUISE=entries"; do
+	label="${case%%|*}"
+	graph_repo
+	[ "$label" != "no depcruise" ] || rm "$R/node_modules/.bin/depcruise"
+	printf 'export const shown2 = 2;\n' >> "$R/ui/chuggy-ui/app/shown.ts"
+	commit_all console
+	graph_run "${case#*|}"
+	graph_selected "$label" check-postgres check-queries check-keto check-random.test.sh
+done
+# A package that does not resolve is an install behind the lock, and an
+# import of it anywhere leaves no graph believed.
+graph_repo
+graph_module test/interpreter/taskBriefing.test.ts \
+	'import { decide } from "../../src/domain/deciders.ts";' 'import { z } from "zod";' \
+	'export const briefed = decide + String(z);'
+graph_change "a package that does not resolve" check-postgres check-queries check-keto \
+	check-random.test.sh
+
+# The keys read the graph the selection does, built once for both, and hold
+# what the suites reach, a type-only import's included, and not the tests
+# beside them; a graph that cannot be computed keys on the whole tree.
+graph_repo
+printf 'export const document2 = 2;\n' >> "$R/src/contract/configurationDocument.ts"
+printf 'export const walked2 = 2;\n' >> "$R/test/random/walk.test.ts"
+commit_all several
+: > "$TRLOG"
+graph_run PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" TRACK_RECORD_TOKEN=t
+graph_selected "a change several graphs reach" check-postgres check-queries check-keto check-random.test.sh
+OUT="$GRAPH_CALLS"
+printf 'calls %s\n' "$(grep -c . "$GRAPH_CALLS")" >> "$GRAPH_CALLS"
+check "depcruise ran once for every selection and key of a run" 0 0 "calls 1"
+grep "^run|--name|check-postgres|" "$TRLOG" > "$WORK/.line" || true
+OUT="$WORK/.line"
+check "the database's key holds a suite" 0 0 "|--inputs|test/postgres/store.test.ts|"
+check "the database's key holds a module its suites import a type from" 0 0 "|--inputs|src/kinds.ts|"
+check "the database's key holds a file under the tests that is no module" 0 0 \
+	"|--inputs|test/interpreter.json|"
+check "the database's key holds what its scripts read by a path" 0 0 "|--inputs|deploy/rig/wipe-tickets.sql|"
+refute "the database's key leaves out a test its suites do not import" 0 0 \
+	"test/interpreter/taskBriefing.test.ts"
+refute "the database's key leaves out the sources its suites do not import" 0 0 "src/domain/deciders.ts"
+refute "the database's key names no directory it once held whole" 0 0 "|--inputs|test|"
+check "the database's key scopes the ignored files to the directories it held whole" 0 0 \
+	"$record_tool_ignored "
+check "the database's key scopes the ignored files under the tests" 0 0 "'test'|"
+grep "^run|--name|check-queries|" "$TRLOG" > "$WORK/.line" || true
+check "the query check's key holds what its lint reaches" 0 0 "|--inputs|src/adapters/postgres/pool.ts|"
+refute "the query check's key leaves out the suites" 0 0 "test/postgres/store.test.ts"
+grep "^run|--name|.chug/tasks/check-random.test.sh|" "$TRLOG" > "$WORK/.line" || true
+check "the random replay's key holds what its walk imports" 0 0 "|--inputs|src/domain/deciders.ts|"
+refute "the random replay's key leaves out the database's suites" 0 0 "test/postgres/store.test.ts"
+graph_repo
+printf 'export const shown2 = 2;\n' >> "$R/ui/chuggy-ui/app/shown.ts"
+commit_all console
+: > "$TRLOG"
+graph_run PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" TRACK_RECORD_TOKEN=t STUB_DEPCRUISE=fail
+grep "^run|--name|check-postgres|" "$TRLOG" > "$WORK/.line" || true
+OUT="$WORK/.line"
+check "a graph that cannot be computed keys the database on the whole tree" 0 0 \
+	"run|--name|check-postgres|--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|"
+
+# What no reader of the graph reads leaves it out: the model, which only the
+# random replay's own gate reads, an action's document and the roles file.
+graph_repo
+mkdir -p "$R/model" "$R/.chug/actions" "$R/deploy/rig/postgres"
+printf 'module m {}\n' > "$R/model/domain.qnt"
+printf '{"before": 1}\n' > "$R/.chug/actions/build.json"
+printf -- '-- roles\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
+commit_all unread-baseline
+printf 'module m { val changed = 1 }\n' > "$R/model/domain.qnt"
+graph_change "a model change" check-random.test.sh
+printf '{"after": 1}\n' > "$R/.chug/actions/build.json"
+graph_change "an action's document"
+printf -- '-- roles, changed\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
+graph_change "the roles file"
+
+# Each key holds exactly what the graph and the declaration name: what it holds
+# of the install, its inputs as the scope of its ignored files with the
+# directories it no longer holds whole beside them, the places its tools look,
+# and its inputs, the graph's own settings and what the entries reach first.
+graph_pin() { # <id> <held> <inputs> <directories> <places> — each list a path a word
+	set -f
+	graph_specs=""
+	graph_inputs=""
+	for graph_word in $3; do
+		graph_specs="$graph_specs '$graph_word'"
+		graph_inputs="$graph_inputs--inputs|$graph_word|"
+	done
+	for graph_word in $4; do graph_specs="$graph_specs '$graph_word'"; done
+	graph_places=""
+	for graph_word in $5; do graph_places="$graph_places '$graph_word'"; done
+	set +f
+	[ -z "$graph_places" ] || graph_places="--tool|$record_tool_probed$graph_places|"
+	grep "^run|--name|$1|" "$TRLOG" > "$WORK/.line" || true
+	OUT="$WORK/.line"
+	check "$1 holds exactly what its graph and its declaration name" 0 0 \
+		"run|--name|$1|--tool|$record_tool_node|--tool|$2|--tool|$record_tool_ignored$graph_specs|$graph_places$graph_inputs--salt|$salt|"
+}
+graph_repo
+: > "$TRLOG"
+graph_run PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" TRACK_RECORD_TOKEN=t CHUG_CI_BASE=no-such-base
+graph_own=".chug/tasks/_import-graph.sh .dependency-cruiser.cjs tsconfig.json"
+graph_unheld="src/roots/runnerReleases.json test/fixtures/fluxDeliveries/push.http test/interpreter.json"
+graph_server_looks=".chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json"
+graph_pin check-postgres "$record_tool_install" "$graph_own .chug/tasks/postgres-databases.ts \
+	src/adapters/postgres/pool.ts src/contract/configurationDocument.ts src/kinds.ts \
+	src/roots/controlPlane.ts src/roots/migrate.ts src/roots/nativeHttp.ts \
+	src/roots/provisionAgentSession.ts src/roots/provisionProjectAccess.ts $graph_unheld \
+	test/postgres/harness.ts test/postgres/schedulerRootPorts.ts test/postgres/store.test.ts \
+	deploy/rig/wipe-tickets.sql src/roots/runnerReleases.json test/fixtures/fluxDeliveries package.json \
+	.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh \
+	.chug/tasks/_test-timeout.sh" "src test" "$graph_server_looks"
+graph_pin check-queries "$record_tool_install" "$graph_own .chug/tasks/postgres-databases.ts \
+	src/adapters/postgres/pool.ts src/contract/configurationDocument.ts src/roots/migrate.ts \
+	$graph_unheld package.json tsconfig.json eslint.config.js .chug/tasks/_postgres.sh \
+	.chug/tasks/postgres-databases.ts .chug/tasks/check-queries.sh" "src test scripts" \
+	":(glob)eslint.config.* .eslintignore .eslintcache eslint-suppressions.json $graph_server_looks"
+graph_pin check-keto "$record_tool_install" "$graph_own .chug/tasks/postgres-databases.ts \
+	src/adapters/postgres/pool.ts src/contract/configurationDocument.ts \
+	src/roots/provisionAccessDefaults.ts src/roots/provisionAgentSession.ts \
+	src/roots/provisionProjectAccess.ts src/roots/runnerReleases.json src/shape.ts src/shapes.ts \
+	test/fixtures/fluxDeliveries/push.http test/interpreter.json test/keto/access.test.ts \
+	.chug/tasks/keto package.json .chug/tasks/_keto.sh .chug/tasks/_postgres.sh \
+	.chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh .chug/tasks/_test-timeout.sh" \
+	"src test" "$graph_server_looks"
+graph_pin .chug/tasks/check-random.test.sh \
+	"$record_tool_installed 'dependency-cruiser' 'zod' '@kasofsk/chug-ticket-domain'" \
+	".chug/tasks/check-random.test.sh .chug/tasks/_suite.sh .chug/tasks/check-conformance.sh $graph_own \
+	src/domain/deciders.ts src/roots/runnerReleases.json test/conformance/replay.test.ts \
+	test/fixtures/fluxDeliveries/push.http test/interpreter.json test/random/walk.test.ts \
+	src/domain src/generated test/random test/conformance test/domain test/itf model \
+	.chug/tasks/check-random.sh :(glob)**/package.json" "src test" "src/node_modules src/package.json"
+
+# A KEY ON THE GRAPH IS REUSED ACROSS TREES THAT DIFFER ONLY OUTSIDE IT. Against
+# the stub's store, every gate selected by a base that does not resolve, a
+# change no suite of the database imports reuses its pass, and one it imports,
+# by a type alone, runs it again.
+graph_repo
+lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/node_modules/.package-lock.json"
+rm -rf "$WORK/graph-store"
+mkdir -p "$WORK/graph-store"
+graph_stored() { # <label> <ran or reused> <gate>
+	commit_any "$1"
+	graph_run PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" TRACK_RECORD_TOKEN=t \
+		STUB_TR_STORE="$WORK/graph-store" CHUG_CI_BASE=no-such-base
+	sed -n 's/^stub \([a-z-]*\)$/ran \1|/p; s/^track-record: REUSED \([^ ]*\) .*/reused \1|/p' \
+		"$OUT" > "$WORK/.stored"
+	OUT="$WORK/.stored"
+	check "$1 leaves $3 $2" 0 "$RC" "$2 $3|"
+}
+graph_stored "a first run" ran check-postgres
+graph_stored "the same tree again" reused check-postgres
+printf 'export const shown2 = 2;\n' >> "$R/ui/chuggy-ui/app/shown.ts"
+graph_stored "a console change" reused check-postgres
+printf 'export const briefed2 = 2;\n' >> "$R/test/interpreter/taskBriefing.test.ts"
+graph_stored "a test no database suite imports" reused check-postgres
+printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
+graph_stored "a module a database suite imports a type from" ran check-postgres
+graph_stored "the tree that moved, again" reused check-postgres
 
 done_ "ci.test.sh"

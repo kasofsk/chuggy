@@ -20,6 +20,18 @@
 # inputs means no lookup and no record, so a suite check-postgres or
 # check-keto finds but git does not track never earns a pass.
 #
+# A GATE WHOSE CODE IS WHAT ITS SUITES IMPORT DECLARES IT WITH `ci_imports`:
+# every tracked file its entries reach in the module graph, an import of a
+# type alone included, and every file under the directories it names that the
+# graph holds no module for, so a fixture, a deletion or a file not yet
+# resolved there still selects it. What a module reads by a path, the graph
+# cannot see, and each such path is declared beside it. A graph that cannot be
+# built or believed selects the gate on any change but a page's and keys it on
+# the whole tree. A key on the graph is reused across trees that differ only
+# outside it, so an input the declaration misses keeps vouching until the salt
+# moves or `just check-full` runs the gate. A typed tool reads too what any
+# file declares into every scope, which no import names: `ci_ambient`.
+#
 # A PLACE A TOOL LOOKS IS AN INPUT WHILE IT HOLDS NOTHING. Prettier, ESLint,
 # Vite, PostCSS and browserslist look for their settings in each directory
 # above the files they read, npm for its own, and node for a package in each
@@ -68,7 +80,8 @@
 # and what else they copy. The replays', the generated API's, the golden
 # emitter's, the shell-quoting gate's and the console copy gate's run over the
 # tree's own files, so their declarations hold their gate's, and the random
-# replay's copies the sources and the tests whole.
+# replay's, which copies the sources and the tests, what its walk and its
+# replay import of them.
 #
 # A GATE THAT READS NAMED PACKAGES FOLLOWS THEM, NOT THE PACKAGE FILES. Quint
 # and the ticket package are all `check-model` takes from them, so the lock
@@ -80,6 +93,7 @@
 ci_select_init() {
 	CI_SELECT_MODE=full
 	CI_CHANGED_FILES=""
+	CI_CHANGED_CODE=""
 	CI_MERGE_BASE=""
 	CI_SEQUENCER_CHANGED=0
 
@@ -123,6 +137,7 @@ ci_select_init() {
 	fi
 	CI_SELECT_MODE=changed
 	CI_SELECT_REASON="changes since $merge_base"
+	CI_CHANGED_CODE="$(printf '%s\n' "$CI_CHANGED_FILES" | grep -v '\.md$' || true)"
 	if [ -n "$CI_CHANGED_FILES" ] && ci_changed_within .chug/tasks/ci.sh .chug/tasks/_ci-select.sh; then
 		CI_SEQUENCER_CHANGED=1
 	fi
@@ -172,6 +187,65 @@ ci_compiler_looks() { # <directory>...
 ci_install() { CI_INPUTS_INSTALL=1; }
 ci_tree() { CI_INPUTS_TREE=1; }
 
+# Every tracked file the entries import, by any path, and every file under the
+# directories that is no module the graph holds, from the graph
+# `.chug/tasks/_import-graph.sh` builds once a run over every directory and
+# entry a declaration names, and its own inputs. A graph that cannot be built
+# or believed, or that reaches a module git does not track, leaves the
+# declaration reading the whole tree. Selecting on a change of pages alone
+# builds none, since no page selects a code gate.
+ci_imports() { # <directory>... -- <entry>...
+	ci_imports_dirs=""
+	ci_imports_entries=""
+	ci_imports_into=dirs
+	for ci_spec do
+		if [ "$ci_spec" = "--" ]; then
+			ci_imports_into=entries
+		elif [ "$ci_imports_into" = dirs ]; then
+			ci_imports_dirs="$ci_imports_dirs$ci_spec
+"
+		else
+			ci_imports_entries="$ci_imports_entries$ci_spec
+"
+		fi
+	done
+	set -f
+	# shellcheck disable=SC2086 # a path a word, by construction
+	ci_graph_roots_add $ci_imports_dirs $ci_imports_entries
+	set +f
+	[ "${CI_GRAPH_COLLECTING:-0}" = 1 ] && return 0
+	CI_INPUTS_WITHIN="$CI_INPUTS_WITHIN$ci_imports_dirs"
+	ci_code .chug/tasks/_import-graph.sh .dependency-cruiser.cjs tsconfig.json
+	ci_packages dependency-cruiser
+	[ "${CI_INPUTS_SELECTING:-0}" = 1 ] && [ -z "$CI_CHANGED_CODE" ] && return 0
+	if ci_imports_read; then
+		CI_INPUTS_CODE="$CI_INPUTS_CODE$ci_imports_read"
+	else
+		CI_INPUTS_UNREAD="$ci_imports_why"
+		ci_tree
+		ci_code .
+	fi
+}
+
+# A typed tool reads what a file declares into every other's scope: a file
+# that holds `declare global` or `declare module`, or is named `*.d.ts`, at the
+# base or now, wherever it is.
+ci_ambient() {
+	CI_INPUTS_AMBIENT=1
+	if ! ci_ambient_held="$(
+		git -c core.quotePath=false grep -l -E "$ci_ambient_declares" -- \
+			'*.ts' '*.tsx' '*.mts' '*.cts' 2>/dev/null || [ "$?" = 1 ]
+	)" || ! ci_ambient_typed="$(git -c core.quotePath=false ls-files -- '*.d.ts' 2>/dev/null)"; then
+		ci_tree
+		ci_code .
+		return 0
+	fi
+	ci_ambient_held="$(printf '%s\n%s\n' "$ci_ambient_held" "$ci_ambient_typed" | sed '/^$/d' | sort -u)"
+	[ -z "$ci_ambient_held" ] || CI_INPUTS_CODE="$CI_INPUTS_CODE$ci_ambient_held
+"
+}
+ci_ambient_declares='declare[[:space:]]+(global|module)([^[:alnum:]_$]|$)'
+
 # Every package manifest, for a gate that runs node over files below the
 # root: node takes a module's type from the nearest manifest above it, and npm
 # reads every workspace's, so one arriving between a gate's files and the root
@@ -187,8 +261,11 @@ ci_toolchain() {
 
 # What a gate or suite reads: $CI_INPUTS_CODE, $CI_INPUTS_TEXT and
 # $CI_INPUTS_PROBES, a git pathspec a line; $CI_INPUTS_PACKAGES, a package a
-# line; $CI_INPUTS_INSTALL, 1 for the whole install; and $CI_INPUTS_TREE, 1
-# for a key on the whole tree.
+# line; $CI_INPUTS_INSTALL, 1 for the whole install; $CI_INPUTS_TREE, 1 for a
+# key on the whole tree; $CI_INPUTS_WITHIN, a directory a line under which a
+# path the import graph holds no module for is read; $CI_INPUTS_AMBIENT, 1
+# where what a file declares into every scope is read; and $CI_INPUTS_UNREAD,
+# why an import graph asked for could not be read.
 # A gate it does not name is read as text from the whole tree and keyed on it.
 ci_inputs() { # <gate id or suite path>
 	CI_INPUTS_CODE=""
@@ -197,6 +274,9 @@ ci_inputs() { # <gate id or suite path>
 	CI_INPUTS_PACKAGES=""
 	CI_INPUTS_INSTALL=0
 	CI_INPUTS_TREE=0
+	CI_INPUTS_WITHIN=""
+	CI_INPUTS_AMBIENT=0
+	CI_INPUTS_UNREAD=""
 	ci_declare "$1"
 }
 
@@ -266,20 +346,31 @@ ci_declare() { # <gate id or suite path>
 		ci_packages zod @kasofsk/chug-ticket-domain
 		;;
 	check-postgres)
-		ci_code src test deploy/rig/wipe-tickets.sql package.json .chug/tasks/_postgres.sh \
-			.chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh .chug/tasks/_test-timeout.sh
+		ci_imports src test -- 'test/postgres/*.test.ts' .chug/tasks/postgres-databases.ts \
+			src/roots/migrate.ts src/roots/provisionAgentSession.ts src/roots/provisionProjectAccess.ts \
+			src/roots/nativeHttp.ts src/roots/controlPlane.ts src/adapters/postgres/pool.ts \
+			test/postgres/schedulerRootPorts.ts
+		ci_code deploy/rig/wipe-tickets.sql src/roots/runnerReleases.json test/fixtures/fluxDeliveries \
+			package.json .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
+			.chug/tasks/check-postgres.sh .chug/tasks/_test-timeout.sh
 		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
 	check-queries)
-		ci_code src test scripts ui package.json tsconfig.json eslint.config.js \
+		ci_imports src test scripts -- src/adapters/postgres src/roots/migrate.ts \
+			.chug/tasks/postgres-databases.ts
+		ci_ambient
+		ci_code package.json tsconfig.json eslint.config.js \
 			.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-queries.sh
 		ci_probes ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
 		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
 	check-keto)
-		ci_code src test .chug/tasks/keto package.json .chug/tasks/_keto.sh \
+		ci_imports src test -- 'test/keto/*.test.ts' .chug/tasks/postgres-databases.ts \
+			src/roots/provisionAccessDefaults.ts src/roots/provisionProjectAccess.ts \
+			src/roots/provisionAgentSession.ts
+		ci_code .chug/tasks/keto package.json .chug/tasks/_keto.sh \
 			.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh \
 			.chug/tasks/_test-timeout.sh
 		ci_node_looks .chug/tasks .chug
@@ -297,15 +388,20 @@ ci_declare() { # <gate id or suite path>
 		ci_packages @informalsystems/quint prettier @kasofsk/chug-ticket-domain
 		;;
 	.chug/tasks/ci.test.sh)
-		ci_code "$1" .chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_ignored-inputs.sh \
-			.chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh .chug/tasks/_suite.sh \
-			justfile package.json
+		ci_code "$1" .chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_import-graph.sh \
+			.chug/tasks/_ignored-inputs.sh .chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh \
+			.chug/tasks/_suite.sh .dependency-cruiser.cjs tsconfig.json justfile package.json
+		ci_packages dependency-cruiser
 		;;
 	.chug/tasks/check-source.test.sh)
 		ci_code "$1" .chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh \
 			tsconfig.json tsconfig.contract.json eslint.config.js .prettierrc.json .prettierignore \
 			package.json
 		ci_install
+		;;
+	.chug/tasks/check-console.test.sh)
+		ci_code "$1" .chug/tasks/check-console.sh .chug/tasks/_suite.sh
+		ci_packages eslint
 		;;
 	.chug/tasks/check-boundaries.test.sh)
 		ci_code "$1" .chug/tasks/check-boundaries.sh .chug/tasks/_suite.sh tsconfig.json \
@@ -327,7 +423,8 @@ ci_declare() { # <gate id or suite path>
 		ci_declare "${ci_suite_over%.test.sh}"
 		;;
 	.chug/tasks/check-random.test.sh)
-		ci_code "$1" .chug/tasks/_suite.sh src test .chug/tasks/check-conformance.sh
+		ci_code "$1" .chug/tasks/_suite.sh .chug/tasks/check-conformance.sh
+		ci_imports src test -- 'test/random/*.test.ts' 'test/conformance/*.test.ts'
 		ci_declare check-random
 		;;
 	.chug/tasks/emit-goldens.test.sh)
@@ -362,11 +459,143 @@ ci_declare() { # <gate id or suite path>
 ci_selected() { # <gate id or suite path>
 	[ "$CI_SELECT_MODE" = "full" ] && return 0
 	[ -n "$CI_CHANGED_FILES" ] || return 1
+	CI_INPUTS_SELECTING=1
 	ci_inputs "$1"
+	CI_INPUTS_SELECTING=0
 	ci_changed_listed "$CI_INPUTS_TEXT" ||
 		ci_changed_listed "$CI_INPUTS_CODE" ':(exclude)*.md' ||
 		ci_changed_listed "$CI_INPUTS_PROBES" ||
-		ci_packages_moved
+		ci_packages_moved ||
+		ci_changed_unheld ||
+		ci_changed_ambient
+}
+
+# The graph, built once: over every directory and entry a declaration names,
+# where ci.sh has asked each declaration with `ci_graph_roster`, and over the
+# ones asked so far otherwise. `$CI_GRAPH_DIR` holds it and the answers read
+# from it, or a directory of its own is made.
+CI_GRAPH_STATE=""
+CI_GRAPH_ROOTS=""
+ci_graph_roots_add() { # <directory or entry>...
+	for ci_root do
+		case "$ci_root" in */*\**) ci_root="${ci_root%/*}" ;; esac
+		case "
+$CI_GRAPH_ROOTS" in *"
+$ci_root
+"*) ;; *) CI_GRAPH_ROOTS="$CI_GRAPH_ROOTS$ci_root
+" ;; esac
+	done
+}
+ci_graph_roster() { # <gate id or suite path>...
+	CI_GRAPH_COLLECTING=1
+	for ci_id do ci_inputs "$ci_id"; done
+	CI_GRAPH_COLLECTING=0
+}
+# What became of the build is read off the files it leaves, so a declaration
+# asked inside a command substitution builds nothing a second time.
+ci_graph_build() {
+	[ -z "$CI_GRAPH_STATE" ] || return 0
+	CI_GRAPH_STATE=failed
+	CI_GRAPH_WHY="no directory for it could be made"
+	if [ -z "${CI_GRAPH_DIR:-}" ]; then
+		CI_GRAPH_DIR="$(mktemp -d 2>/dev/null)" || return 0
+	fi
+	mkdir -p "$CI_GRAPH_DIR" 2>/dev/null || return 0
+	if [ ! -f "$CI_GRAPH_DIR/graph.json" ] && [ ! -f "$CI_GRAPH_DIR/graph.err" ]; then
+		set --
+		for ci_root in $CI_GRAPH_ROOTS; do
+			[ ! -e "$ci_root" ] || set -- "$@" "$ci_root"
+		done
+		if sh .chug/tasks/_import-graph.sh build "$CI_GRAPH_DIR/graph.part" "$@" \
+			2>"$CI_GRAPH_DIR/graph.err"; then
+			mv "$CI_GRAPH_DIR/graph.part" "$CI_GRAPH_DIR/graph.json" && rm -f "$CI_GRAPH_DIR/graph.err"
+		fi
+	fi
+	if [ -f "$CI_GRAPH_DIR/graph.json" ]; then
+		CI_GRAPH_STATE=built
+	else
+		CI_GRAPH_WHY="$(tail -n 1 "$CI_GRAPH_DIR/graph.err" 2>/dev/null)"
+	fi
+}
+
+ci_graph_ask() { sh .chug/tasks/_import-graph.sh "$@"; }
+
+# What `ci_imports` adds for the directories and entries in hand, as
+# $ci_imports_read, a path a line, or why there is none, as $ci_imports_why.
+# Each answer is kept beside the graph, so asking again reads no graph.
+ci_imports_read() {
+	ci_graph_build
+	if [ "$CI_GRAPH_STATE" != built ]; then
+		ci_imports_why="the import graph could not be computed: $CI_GRAPH_WHY"
+		return 1
+	fi
+	ci_imports_key="$(printf '%s--\n%s' "$ci_imports_dirs" "$ci_imports_entries" | cksum | tr ' ' '-')"
+	ci_imports_answer="$CI_GRAPH_DIR/inputs.$ci_imports_key"
+	if [ ! -f "$ci_imports_answer" ]; then
+		ci_graph="$CI_GRAPH_DIR/graph.json"
+		set -f
+		# shellcheck disable=SC2086 # a path a word, by construction
+		if ! ci_reach="$(ci_graph_ask reach "$ci_graph" $ci_imports_entries 2>"$ci_imports_answer.err")"; then
+			set +f
+			ci_imports_why="the import graph cannot be believed: $(tail -n 1 "$ci_imports_answer.err")"
+			return 1
+		fi
+		ci_untracked="$(printf '%s\n' "$ci_reach" | ci_graph_ask holds "$ci_graph" --untracked)" &&
+			# shellcheck disable=SC2086 # a path a word, by construction
+			ci_unheld="$(git -c core.quotePath=false ls-files -- $ci_imports_dirs ':(exclude)*.md' |
+				ci_graph_ask holds "$ci_graph" --not)" || {
+			set +f
+			ci_imports_why="the import graph could not be read"
+			return 1
+		}
+		set +f
+		if [ -n "$ci_untracked" ]; then
+			ci_imports_why="the import graph reaches $(printf '%s\n' "$ci_untracked" | head -n 1), which git does not track"
+			return 1
+		fi
+		printf '%s\n%s\n' "$ci_reach" "$ci_unheld" | sed '/^$/d' | sort -u >"$ci_imports_answer.part" &&
+			mv "$ci_imports_answer.part" "$ci_imports_answer" || {
+			ci_imports_why="the import graph's answer could not be kept"
+			return 1
+		}
+	fi
+	ci_imports_read="$(cat "$ci_imports_answer")
+"
+}
+
+# Whether the change holds a path, other than a page, under a directory a
+# graph declaration names that the graph holds no module for: a file deleted,
+# one not yet tracked, or one no import names.
+ci_changed_unheld() {
+	[ -n "$CI_INPUTS_WITHIN" ] && [ -n "$CI_CHANGED_CODE" ] && [ -z "$CI_INPUTS_UNREAD" ] || return 1
+	ci_unheld_changed="$(printf '%s\n' "$CI_CHANGED_FILES" | grep -v '\.md$' | while IFS= read -r ci_path; do
+		for ci_dir in $CI_INPUTS_WITHIN; do
+			case "$ci_path" in "$ci_dir"/*)
+				printf '%s\n' "$ci_path"
+				break
+				;;
+			esac
+		done
+	done | ci_graph_ask holds "$CI_GRAPH_DIR/graph.json" --not)" || return 0
+	[ -n "$ci_unheld_changed" ]
+}
+
+# Whether the change holds a file that declares into every scope, at the base
+# or now, for a declaration that reads one.
+ci_changed_ambient() {
+	[ "$CI_INPUTS_AMBIENT" = 1 ] || return 1
+	ci_ambient_changed="$(printf '%s\n' "$CI_CHANGED_FILES" | while IFS= read -r ci_path; do
+		case "$ci_path" in
+		*.d.ts) printf '%s\n' "$ci_path" ;;
+		*.ts | *.tsx | *.mts | *.cts)
+			if { [ -f "$ci_path" ] && grep -qE "$ci_ambient_declares" "$ci_path"; } ||
+				git show "$CI_MERGE_BASE:$ci_path" 2>/dev/null | grep -qE "$ci_ambient_declares"; then
+				printf '%s\n' "$ci_path"
+			fi
+			;;
+		esac
+	done)"
+	[ -n "$ci_ambient_changed" ]
 }
 
 # Whether the change touched what a list of pathspecs, one a line, matches,

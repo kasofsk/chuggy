@@ -29,17 +29,19 @@
 # and a `track-record` that runs. Every gate but check-roster, doc-lint and
 # check-agent-lag, and every suite, then runs under `track-record run`, keyed
 # on what `.chug/tasks/_ci-select.sh` declares it reads: the tracked files its
-# pathspecs match as they are on disk, the ignored files among them, what
-# sits where its tools look for settings the tree need not hold, and npm's
-# record of the packages it names, or of the whole install. A gate declared
-# keyed on the whole tree is keyed on every tracked file, every ignored file
-# in scope and the whole install. Every key also holds the version of node,
-# what else that gate's verdict reads, and the salt below; none holds this
-# script, the selection or the base it selects against. A key on record
-# replays its log instead of running, and only an exit of 0 is recorded. A
-# reused pass is a pass and nothing more: it is counted as one, and the clean
-# line says how many there were. What no key sees, a reused pass does not
-# check: a file a gate reads that its declaration does not name, a different
+# pathspecs match or its import graph reaches, as they are on disk, the
+# ignored files among them, what sits where its tools look for settings the
+# tree need not hold, and npm's record of the packages it names, or of the
+# whole install. A gate declared keyed on the whole tree is keyed on every
+# tracked file, every ignored file in scope and the whole install. Every key
+# also holds the version of node, what else that gate's verdict reads, and the
+# salt below; none holds this script, the selection or the base it selects
+# against. A key on record replays its log instead of running, and only an
+# exit of 0 is recorded. A reused pass is a pass and nothing more: it is
+# counted as one, and the clean line says how many there were. What no key
+# sees, a reused pass does not check: a file a gate reads that its declaration
+# does not name, for which a key on an import graph goes on vouching across
+# trees until the salt moves or `just check-full` runs the gate, a different
 # server behind the same URL, a container reused by name, a file outside the
 # tree or outside the scope `_ignored-inputs.sh` keys, such as a package
 # changed under node_modules by hand, the build npm installed for this machine
@@ -182,6 +184,12 @@ fi
 
 . ./.chug/tasks/_ci-select.sh
 ci_select_init
+# Every declaration is asked for what its import graph is built over before
+# any is asked what it reads, so the one graph a run builds serves them all.
+CI_GRAPH_DIR="$log_dir/import-graph"
+# shellcheck disable=SC2046 # a gate id or a suite path a word
+ci_graph_roster $(sed -n 's/^run_selected_gate \([a-z-]*\) .*/\1/p' .chug/tasks/ci.sh) \
+	$(git ls-files '*.test.sh' 2>/dev/null || true)
 if [ -n "$only" ]; then
 	echo "ci: only run (--only $only_named)"
 else
@@ -195,7 +203,7 @@ fi
 # store keeps the first pass recorded for a key, and a fresh run does not
 # replace it; bump the salt when passes already recorded must stop counting
 # for a reason no key can see, such as a pass found to be false.
-record_salt="chuggy-ci-2"
+record_salt="chuggy-ci-3"
 
 # A key holds npm's own record of what it installed rather than the lock, since
 # a lock that changed after `npm ci` names packages that are not the ones
@@ -305,7 +313,7 @@ record_scope() { # <gate id or suite path>
 	set -f
 	IFS='
 '
-	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE; do
+	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE$CI_INPUTS_WITHIN; do
 		record_specs="$record_specs $(record_quote "$record_word")"
 	done
 	for record_word in $CI_INPUTS_PACKAGES; do
