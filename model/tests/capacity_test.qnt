@@ -62,11 +62,72 @@ module execution_capacity_test {
     not(provenanceWellFormed(unprovenanced)),
     not(capacitySafe(10, entitlements, unprovenanced))
   })
-  run terminalIsAbsorbingTest = assert(and {
-    legalStatusMove(Terminal, Terminal),
-    not(legalStatusMove(Terminal, Queued)),
-    not(legalStatusMove(Cancelled, Admitted))
-  })
+  run terminalIsAbsorbingTest = assert(Set(true, false).forall(named => and {
+    legalStatusMove(Terminal, Terminal, named),
+    not(legalStatusMove(Terminal, Queued, named)),
+    not(legalStatusMove(Cancelled, Admitted, named))
+  }))
+
+  pure val statuses = Set(Queued, Admitted, Launching, Running, Terminal, Cancelled)
+  /// The moves an execution that names a requirement may make, written out
+  /// pair by pair so a change to any arm of `legalStatusMove` is seen here.
+  pure val requirementBearingMoves = Set(
+    (Queued, Admitted), (Queued, Cancelled),
+    (Admitted, Launching), (Admitted, Terminal), (Admitted, Cancelled),
+    (Launching, Running), (Launching, Terminal), (Launching, Cancelled),
+    (Running, Terminal), (Running, Cancelled),
+    (Terminal, Terminal), (Cancelled, Cancelled))
+
+  run requirementBearingMovesAreExactlyTheTableTest = assert(
+    tuples(statuses, statuses).forall(m =>
+      legalStatusMove(m._1, m._2, true) == requirementBearingMoves.contains(m)))
+  run requirementlessMovesAddOnlyQueuedToTerminalTest = assert(
+    tuples(statuses, statuses).forall(m =>
+      legalStatusMove(m._1, m._2, false) ==
+        requirementBearingMoves.union(Set((Queued, Terminal))).contains(m)))
+
+  /// One registration beside the ledger `fourSix`, moved by `legalStatusMove`
+  /// alone, with whether it names a requirement fixed when it registers.
+  var registered: Execution
+  var registeredRequirementNamed: bool
+
+  action register(named: bool): bool = all {
+    registered' = queuedA,
+    registeredRequirementNamed' = named
+  }
+  action move(after: ExecutionStatus): bool = all {
+    legalStatusMove(registered.status, after, registeredRequirementNamed),
+    registered' = { ...registered, status: after },
+    registeredRequirementNamed' = registeredRequirementNamed
+  }
+  action holdsNoSlotSafely: bool = all {
+    assert(activeCount(fourSix.union(Set(registered))) == activeCount(fourSix)),
+    assert(capacitySafe(10, entitlements, fourSix.union(Set(registered)))),
+    registered' = registered,
+    registeredRequirementNamed' = registeredRequirementNamed
+  }
+
+  run requirementlessQueuedReachesTerminalTest =
+    register(false)
+      .then(holdsNoSlotSafely)
+      .then(move(Terminal))
+      .then(holdsNoSlotSafely)
+      .then(all {
+        assert(registered.status == Terminal),
+        registered' = registered,
+        registeredRequirementNamed' = registeredRequirementNamed
+      })
+  run requirementBearingQueuedNeverReachesTerminalTest =
+    register(true).then(move(Terminal)).fail()
+  run requirementBearingQueuedStillReachesTerminalByAdmissionTest =
+    register(true)
+      .then(move(Admitted))
+      .then(move(Terminal))
+      .then(all {
+        assert(registered.status == Terminal),
+        registered' = registered,
+        registeredRequirementNamed' = registeredRequirementNamed
+      })
   run maximumAndClusterGateAdmissionTest = assert(and {
     mayAdmit(10, entitlements, fourFive, queuedA),
     not(mayAdmit(10, entitlements, fourSix, queuedA))

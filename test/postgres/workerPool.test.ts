@@ -650,7 +650,7 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
   const [granted] = (
     await planePool.query(
       `SELECT has_function_privilege('${workerPoolReleaseFunction}(text,text,text,text,text)', 'EXECUTE') AS releases,
-              has_function_privilege('${statusMoveFunction}(text,text)', 'EXECUTE') AS moves_status`,
+              has_function_privilege('${statusMoveFunction}(text,text,boolean)', 'EXECUTE') AS moves_status`,
     )
   ).rows as { releases: boolean; moves_status: boolean }[];
   assert.deepEqual(granted, { releases: true, moves_status: false });
