@@ -907,6 +907,11 @@
             "resolution": {
               "type": "string",
               "enum": ["Resume", "Revoke", "Approve", "Decline", "Reject"]
+            },
+            "feedback": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 7922
             }
           },
           "required": [

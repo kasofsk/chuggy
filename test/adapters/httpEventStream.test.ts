@@ -434,6 +434,7 @@ test("an approval reaches the stream when it opens and again when it is answered
     kind: "FinalizationApproval",
     authorizingSequence: 11,
     admits: ["Approve", "Decline"],
+    answerable: true,
   };
   let waiting = true;
   const rig = await rigOf({ actions: () => (waiting ? [approval] : []) });

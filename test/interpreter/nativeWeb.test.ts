@@ -274,6 +274,10 @@ function readStore(calls: string[]): NativeReadStore {
       calls.push(`read:nativeActions:page:${String(query.limit)}`);
       return Promise.resolve({ actions: [] });
     },
+    nativeActionAsked: () => {
+      calls.push("read:nativeActionAsked");
+      return Promise.resolve({ kind: "TicketEscalation" as const });
+    },
   };
 }
 
@@ -674,10 +678,15 @@ test("a ticket's open actions reauthorize and conceal an inaccessible ticket", a
         kind: "TicketEscalation",
         authorizingSequence: 7,
         admits: ["Resume", "Revoke"],
+        answerable: true,
       },
     ],
   );
-  assert.deepEqual(allowed.calls, ["authorize:Read", "read:nativeActions:1"]);
+  assert.deepEqual(allowed.calls, [
+    "authorize:Read",
+    "read:nativeActions:1",
+    "authorize:Mutate",
+  ]);
 });
 
 test("a project's open actions authorize and enforce their page bound", async () => {

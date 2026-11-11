@@ -644,6 +644,20 @@ function publicMutationOverridesCommand(
   };
 }
 
+/** An answer to an open native action, with what the person said of the work where they said anything. */
+function publicMutationAnswerCommand(
+  mutation: Extract<PublicMutation, { mutation: "ResolveNativeAction" }>,
+): ProjectCommand {
+  return {
+    version: 1,
+    command: "ResolveNativeAction",
+    action: mutation.action,
+    authorizingSeq: mutation.authorizingSequence,
+    resolution: mutation.resolution,
+    ...(mutation.feedback === undefined ? {} : { feedback: mutation.feedback }),
+  };
+}
+
 function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
   switch (mutation.mutation) {
     case "RevokeTicket":
@@ -685,13 +699,7 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
     case "ChangeTicketOverrides":
       return publicMutationOverridesCommand(mutation);
     case "ResolveNativeAction":
-      return {
-        version: 1,
-        command: "ResolveNativeAction",
-        action: mutation.action,
-        authorizingSeq: mutation.authorizingSequence,
-        resolution: mutation.resolution,
-      };
+      return publicMutationAnswerCommand(mutation);
     case "ManualDispatch":
       return {
         version: 1,

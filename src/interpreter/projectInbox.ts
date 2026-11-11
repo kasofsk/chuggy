@@ -33,10 +33,17 @@ import {
   projectPageLimitMax,
   ticketsWithLatestExecutions,
   type ProjectNativeAction,
+  type ProjectNativeActionAsked,
   type TicketActivityPosition,
   type TicketResource,
 } from "./nativeWeb.ts";
 import type { OperationalReadStore } from "./operationsView.ts";
+import type { SessionId } from "./agentSession.ts";
+import {
+  nativeActionCallerOf,
+  nativeActionsAnswerable,
+  type NativeActionAgents,
+} from "./nativeActionAnswer.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
@@ -59,7 +66,7 @@ export interface InboxReadPage {
   /** Every ticket of the union, before any cursor. */
   readonly count: number;
   readonly tickets: readonly TicketResource[];
-  readonly actions: readonly ProjectNativeAction[];
+  readonly actions: readonly ProjectNativeActionAsked[];
   readonly nextAfter?: TicketActivityPosition;
 }
 
@@ -90,10 +97,13 @@ export interface ProjectInbox {
     principal: Principal,
     partition: Partition,
     query: ProjectInboxQuery,
+    viaSession?: SessionId,
   ): Promise<AuthorizedResult<ProjectInboxPage>>;
 }
 
 export interface ProjectInboxPorts {
+  /** The principals no person's approval is asked of, which every action's answerability is read against. */
+  readonly agents?: NativeActionAgents;
   readonly store: InboxReadStore;
   readonly operationalReads: Pick<
     OperationalReadStore,
@@ -150,7 +160,7 @@ function projectInboxNamed(
 /** The page's tickets in its order, each with what the other reads say of it. */
 function projectInboxEntries(
   tickets: readonly TicketResource[],
-  page: InboxReadPage,
+  page: { readonly actions: readonly ProjectNativeAction[] },
   refusals: readonly AgenticRefusalStanding[],
   proposals: readonly SelectorProposalHeld[],
 ): readonly ProjectInboxEntry[] {
@@ -170,7 +180,7 @@ export function projectInbox(
   ports: ProjectInboxPorts,
 ): ProjectInbox {
   return {
-    read: async (principal, partition, query) => {
+    read: async (principal, partition, query, viaSession) => {
       const asked = checkedProjectInboxQuery(query);
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { result: "NotFound" };
@@ -201,10 +211,22 @@ export function projectInbox(
         page.tickets,
         principal,
       );
+      const actions = await nativeActionsAnswerable(
+        access,
+        ports.agents ?? {},
+        nativeActionCallerOf(principal, viaSession),
+        partition,
+        page.actions,
+      );
       return {
         result: "Authorized",
         value: {
-          entries: projectInboxEntries(tickets, page, refusals, proposals),
+          entries: projectInboxEntries(
+            tickets,
+            { actions },
+            refusals,
+            proposals,
+          ),
           count: page.count,
           ...(page.nextAfter === undefined
             ? {}

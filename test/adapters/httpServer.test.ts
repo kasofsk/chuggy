@@ -140,6 +140,7 @@ const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
         kind: "TicketEscalation",
         authorizingSequence: 11,
         admits: ["Resume", "Revoke"],
+        answerable: true,
       },
     ],
   ],
@@ -151,6 +152,7 @@ const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
         kind: "FinalizationApproval",
         authorizingSequence: 13,
         admits: ["Approve", "Decline"],
+        answerable: true,
       },
     ],
   ],
@@ -1346,6 +1348,7 @@ test("a ticket's open actions answer per kind with the fence and the answers", a
       kind: "TicketEscalation",
       authorizingSequence: 11,
       admits: ["Resume", "Revoke"],
+      answerable: true,
     },
   ]);
   assert.deepEqual(await listed(2), [
@@ -1354,6 +1357,7 @@ test("a ticket's open actions answer per kind with the fence and the answers", a
       kind: "FinalizationApproval",
       authorizingSequence: 13,
       admits: ["Approve", "Decline"],
+      answerable: true,
     },
   ]);
   assert.deepEqual(await listed(3), []);
