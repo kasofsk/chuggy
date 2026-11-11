@@ -474,7 +474,7 @@ async function leadStanding(
     if (!leadClosedReplaces(closed)) {
       if (!leadStandsFor(held, request.constraints.lead, runsOn))
         throw new Error(
-          "the lead that stands runs on another slot or model than this decision's offering pays for",
+          "the lead that stands runs on another slot, model or system prompt than this decision's offering pays for",
           { cause: closed },
         );
       return held;

@@ -410,11 +410,12 @@ async function subsidyPublished(
   }
 }
 
-/** The slot, model and effort a lead opened on the profile stands on. */
+/** The slot, model, effort and own system prompt a lead opened on the profile stands on. */
 const onTheProfile: InquiryRigRunOpening = {
   credentialSlot: subsidy.credentialSlot,
   model: subsidy.model,
   effort: subsidy.effort,
+  systemPromptOwn: true,
 };
 
 /** A project storing a subsidized lead whose lead stands as `standing` opens it, and a member the tenant grants no hosted runs. */
@@ -524,6 +525,40 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
         `${label}: a lead off the profile was forked on the subsidy`,
       );
     }
+  } finally {
+    await subsidyPublished(undefined);
+  }
+});
+
+/**
+ * A lead stored before a session held its own system prompt reads it unset, and
+ * may already stand on the profile's slot, model and effort. Forked on the
+ * subsidy, it would load its project's settings beside the profile's slot.
+ */
+test("a subsidized inquiry forks only a lead on its own system prompt", async () => {
+  await subsidyPublished(subsidy);
+  try {
+    const project = await subsidizedProject("subsidy-prompt-not-own", {
+      ...onTheProfile,
+      systemPromptOwn: false,
+    });
+    await using app = inquiryApp(project.principal);
+    const refused = await app.inject({
+      method: "POST",
+      url: pathOf(project.partition),
+      headers: versioned,
+      payload: {
+        session: `inq-http-${randomUUID()}`,
+        turn: `inq-turn-http-${randomUUID()}`,
+        question: "who pays for this?",
+      },
+    });
+    assert.equal(refused.statusCode, 403, refused.body);
+    assert.deepEqual(
+      await forkSlots(project.partition),
+      [],
+      "a lead on its project's settings was forked on the subsidy",
+    );
   } finally {
     await subsidyPublished(undefined);
   }
