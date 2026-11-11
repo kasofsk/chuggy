@@ -31,14 +31,12 @@ import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import type { Config } from "../../src/domain/config.ts";
 import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
-import {
-  canonicalConfigurationOf,
-  type ReleaseAuthoring,
-} from "../../src/interpreter/authoring.ts";
+import type { ReleaseAuthoring } from "../../src/interpreter/authoring.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { approvalCatalogOf, approvalMixedRelease } from "./approvalCatalog.ts";
 import { id, stoppedReport } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
@@ -74,41 +72,11 @@ after(async () => {
 const reader = asPrincipal("approval-reader");
 const instructions = "Read the change and say whether it may land.";
 
-/** A catalog evaluating by `plan`: an approval alone, a command beside it, or a command alone. */
 function catalogOf(plan: "signOff" | "mixed" | "ungated") {
-  return canonicalConfigurationOf({
-    version: 2,
-    image: "worker:v2",
-    workloads: {
-      build: {
-        runner: "Agent",
-        prompt: { text: "Build it." },
-        worker: {
-          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-          setup: [],
-          files: [],
-        },
-      },
-      tests: { runner: "Commands", commands: ["npm test"] },
-      approval: { runner: "Approval", instructions, approvers: "Admin" },
-    },
-    plans: {
-      signOff: [{ name: "sign-off", evaluators: ["approval"] }],
-      mixed: [{ name: "checks", evaluators: ["tests", "approval"] }],
-      ungated: [{ name: "checks", evaluators: ["tests"] }],
-    },
-    defaults: { work: "build", evaluation: plan },
-  });
+  return approvalCatalogOf(plan, "Admin", instructions);
 }
 
-/** A stage of two evaluators, and the bounds a writer must hold to take a release of one. */
-const mixed = {
-  authoring: {
-    deps: new Set<number>(),
-    prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-  },
-  config: { ...refinementInstance, nTasks: 2 },
-} satisfies { authoring: ReleaseAuthoring; config: Config };
+const mixed = approvalMixedRelease;
 
 /** A case's project, the memory its last decision left, and the bounds its writer decides under. */
 interface Evaluating {

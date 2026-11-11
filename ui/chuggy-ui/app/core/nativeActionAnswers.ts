@@ -11,8 +11,7 @@
  * moved on.
  *
  * AN EVALUATION APPROVAL IS OFFERED NO ANSWER. Its `Reject` must carry
- * feedback, which no button here can write. No action the read says the caller
- * may not answer is offered an answer either.
+ * feedback, which no button here can write.
  */
 
 import { nativeActionKindResolutions } from "../../../../src/contract/rosters.ts";
@@ -60,7 +59,7 @@ export function nativeActionAnswers(
   action: NativeActionResponse,
 ): readonly TicketAction[] {
   const kind = action.kind;
-  if (!nativeActionAnswered(kind) || !action.answerable) return [];
+  if (!nativeActionAnswered(kind)) return [];
   return nativeActionKindResolutions[kind]
     .filter((resolution) => action.admits.includes(resolution))
     .map((resolution) => ({

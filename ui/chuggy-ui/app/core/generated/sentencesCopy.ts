@@ -119,10 +119,7 @@ export interface SentencesCopy {
   readonly "sentences-mutation-approver-not-a-person": Record<never, never>;
   readonly "sentences-mutation-not-an-approver": Record<never, never>;
   readonly "sentences-mutation-feedback-not-asked": Record<never, never>;
-  readonly "sentences-mutation-rejection-without-feedback": Record<
-    never,
-    never
-  >;
+  readonly "sentences-mutation-rejection-without-feedback": Record<never, never>;
   readonly "sentences-draft-changed": Record<never, never>;
   readonly "sentences-draft-not-editable": Record<never, never>;
   readonly "sentences-draft-deletion-changed": Record<never, never>;

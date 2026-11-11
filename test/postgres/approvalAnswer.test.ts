@@ -36,6 +36,7 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { approvalCatalogOf, approvalMixedRelease } from "./approvalCatalog.ts";
 import {
   postgresHarnessDrain,
   postgresHarnessSubmission,
@@ -54,7 +55,6 @@ import {
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
-import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 
 let rig: SchedulerRig;
 let ingress: pg.Pool;
@@ -70,36 +70,6 @@ after(async () => {
 });
 
 const approver = "approval-person";
-
-/** A catalog evaluating by an approval alone, or by a command beside one. */
-function catalogOf(plan: "signOff" | "mixed") {
-  return canonicalConfigurationOf({
-    version: 2,
-    image: "worker:v2",
-    workloads: {
-      build: {
-        runner: "Agent",
-        prompt: { text: "Build it." },
-        worker: {
-          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-          setup: [],
-          files: [],
-        },
-      },
-      tests: { runner: "Commands", commands: ["npm test"] },
-      approval: {
-        runner: "Approval",
-        instructions: "Say whether it may land.",
-        approvers: "Developer",
-      },
-    },
-    plans: {
-      signOff: [{ name: "sign-off", evaluators: ["approval"] }],
-      mixed: [{ name: "checks", evaluators: ["tests", "approval"] }],
-    },
-    defaults: { work: "build", evaluation: plan },
-  });
-}
 
 /** A case's project, the memory its last decision left, and the bounds its writer decides under. */
 interface Answering {
@@ -174,18 +144,12 @@ async function evaluating(
   const release =
     plan === "signOff"
       ? { authoring: plainAuthoring, config: refinementInstance }
-      : {
-          authoring: {
-            deps: new Set<number>(),
-            prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-          },
-          config: { ...refinementInstance, nTasks: 2 },
-        };
+      : approvalMixedRelease;
   const project = await schedulerProject(
     rig,
     label,
     { tasks: 1 },
-    catalogOf(plan),
+    approvalCatalogOf(plan, "Developer", "Say whether it may land."),
     undefined,
     undefined,
     release,

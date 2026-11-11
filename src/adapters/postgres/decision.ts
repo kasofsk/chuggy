@@ -492,8 +492,7 @@ async function decisionAnswerAction(
 
 /**
  * Settles an evaluation approval its stored answer resolves, through the one door that writes that answer's result and submits its completion.
- * The door reads the answer, who gave it and the fence it names from the operation, so nothing here is taken on trust.
- * It answers whether the answer was taken, or whether a cancellation settled the execution and withdrew the approval first.
+ * The door reads the answer, who gave it and the fence it names from the operation, and answers `Withdrawn` where a cancellation withdrew the approval first.
  */
 async function decisionAnswerEvaluationApproval(
   client: pg.PoolClient,
