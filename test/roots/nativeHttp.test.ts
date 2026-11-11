@@ -1825,6 +1825,8 @@ const landingsRow = {
   head_commit: null,
   merged_head: null,
   proposal_status: null,
+  recheck_reason: null,
+  recheck_base_ref: null,
 };
 
 /**
