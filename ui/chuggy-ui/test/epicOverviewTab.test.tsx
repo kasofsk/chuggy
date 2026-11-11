@@ -111,7 +111,7 @@ test("Running says None where nothing is running", async () => {
   expect(part("running").querySelector("li")).toBeNull();
 });
 
-test("the small graph draws a block for each member and an edge as a line, and is a link to the Graph tab", async () => {
+test("the small graph draws a block for each member, numbered, and an edge as a line, and is a link to the Graph tab", async () => {
   await epicPageDrawn(abilitiesNone);
   const link = within(part("graph")).getByRole("link", {
     name: "Graph of the epic",
@@ -123,7 +123,6 @@ test("the small graph draws a block for each member and an edge as a line, and i
     expect(link.querySelectorAll("rect")).toHaveLength(2);
   });
   expect(link.querySelectorAll("polyline")).toHaveLength(1);
-  expect(link.querySelector("text")).toBeNull();
   expect(
     [...link.querySelectorAll("rect")].map((block) => [
       block.getAttribute("data-ticket"),
@@ -132,6 +131,15 @@ test("the small graph draws a block for each member and an edge as a line, and i
   ).toStrictEqual([
     ["4", "pass"],
     ["5", "queued"],
+  ]);
+  expect(
+    [...link.querySelectorAll("text")].map((number) => [
+      number.textContent,
+      number.getAttribute("data-tone"),
+    ]),
+  ).toStrictEqual([
+    ["#4", "pass"],
+    ["#5", "queued"],
   ]);
 });
 
