@@ -25,6 +25,16 @@ import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
+  asForgeBindingId,
+  asForgeCredentialReference,
+  asProposalDisplayUrl,
+  asProposalNumber,
+  asProposalRemoteIdentity,
+  type ChangeProposalForges,
+  type ChangeProposalPort,
+  type ChangeProposalRequest,
+} from "../../src/interpreter/changeProposal.ts";
+import {
   stackRefOf,
   type EvaluationStack,
 } from "../../src/interpreter/evaluationStack.ts";
@@ -46,10 +56,12 @@ import {
 } from "./evaluationStackLandings.ts";
 import { releasedEvaluatorDefinition } from "./migrationHarness.ts";
 import { seedJournalEntry } from "./nativeActionFixture.ts";
+import type { FinalizerPassReport } from "../../src/interpreter/finalizerRun.ts";
 import {
   finalizerBriefLanding,
   finalizerBriefProposal,
   finalizerDeclareSource,
+  finalizerExpireClaim,
   finalizerRemoteCommit,
   finalizerGitVerb,
   finalizerIdentity,
@@ -616,4 +628,148 @@ test("B proposing over A is re-checked where the base moved past A's merge, its 
   assert.equal(attempts.length, 1);
   assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(attempts[0]?.["recheck_commit"], pair.bCommit);
+});
+
+/** The proposal a fixture forge answers with, which is the request's own fields, open and mergeable. */
+function proposalOpened(request: ChangeProposalRequest) {
+  return {
+    identity: {
+      forge: request.binding.forge,
+      remote: asProposalRemoteIdentity("proposal-flow"),
+      number: asProposalNumber(1),
+    },
+    repository: request.repository,
+    marker: request.marker,
+    head: request.head,
+    base: request.base,
+    title: request.title,
+    body: request.body,
+    status: "Open" as const,
+    mergeability: "Mergeable" as const,
+    url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
+  };
+}
+
+/**
+ * A forge that opens what it is asked for and merges it into the base as a
+ * commit recording `tree`, over the base's tip and the head it was asked to
+ * merge, which is what a forge's merge leaves on the remote.
+ */
+function forgeMergingAt(
+  origin: string,
+  tree: () => string,
+): ChangeProposalForges {
+  const refused = (what: string) => () => {
+    throw new Error(`the pass asked this forge to ${what}`);
+  };
+  const port: ChangeProposalPort = {
+    create: (request) =>
+      Promise.resolve({
+        created: "Created",
+        evidence: proposalOpened(request),
+      }),
+    readByMarker: () => Promise.resolve({ read: "Absent" }),
+    readByNumber: refused("read a proposal by number"),
+    merge: (request) => {
+      const base = finalizerGitVerb(origin, "rev-parse", landingTarget);
+      const merged = finalizerGitVerb(
+        origin,
+        "-c",
+        "user.name=forge",
+        "-c",
+        "user.email=forge@example.test",
+        "commit-tree",
+        tree(),
+        "-p",
+        base,
+        "-p",
+        request.headCommit,
+        "-m",
+        "merge",
+      );
+      finalizerGitVerb(origin, "update-ref", landingTarget, merged, base);
+      return Promise.resolve({
+        merged: "Merged",
+        mergeCommit: asGitObjectId(merged),
+      });
+    },
+    updateBranch: refused("update a proposal"),
+    readQueue: refused("read a merge queue"),
+    enqueue: refused("queue a proposal"),
+    dequeue: refused("dequeue a proposal"),
+  };
+  const binding = {
+    forge: asForgeBindingId("forge-flow"),
+    credential: asForgeCredentialReference("forge-flow-proposals"),
+  };
+  return { selector: { select: () => port }, bindingOf: () => binding };
+}
+
+/** B, prepared over A's merge, taken through its push, its proposal and the merge `forges` makes, and what the pass after that merge reported. */
+async function bProposalMerged(
+  pair: Pair,
+  label: string,
+  forges: ChangeProposalForges,
+): Promise<FinalizerPassReport | undefined> {
+  let report: FinalizerPassReport | undefined;
+  for (const step of ["push", "open", "merge", "conclude"]) {
+    await finalizerExpireClaim(rig, pair.b);
+    report = await finalizerPassOnce(
+      rig,
+      pair.b,
+      finalizerRemotePort(rig),
+      `${label}-${step}`,
+      forges,
+    );
+  }
+  return report;
+}
+
+test("B's proposal stacked over A's, merged into the base at a commit recording the stack's tree, lands", async () => {
+  const label = "flow-proposal-lands";
+  const pair = await pairOpened(label, "Evaluation", true);
+  const stack = await bStacked(pair);
+  await aProposalMerged(pair, label);
+  await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), label);
+
+  const concluding = await bProposalMerged(
+    pair,
+    label,
+    forgeMergingAt(pair.remote.origin, () => stack.stackTree),
+  );
+
+  assert.equal(concluding?.conclusions, 1, "B's merge concludes its landing");
+  assert.deepEqual(
+    (await bAttempts(pair)).map((attempt) => attempt["failure_kind"]),
+    [null],
+    "B is never sent back",
+  );
+});
+
+test("B's proposal stacked over A's, merged into the base at a commit recording another tree, is re-checked at its accepted commit", async () => {
+  const label = "flow-proposal-differs";
+  const pair = await pairOpened(label, "Evaluation", true);
+  await bStacked(pair);
+  await aProposalMerged(pair, label);
+  await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), label);
+
+  const concluding = await bProposalMerged(
+    pair,
+    label,
+    forgeMergingAt(pair.remote.origin, () =>
+      finalizerGitVerb(
+        pair.remote.origin,
+        "rev-parse",
+        `${pair.aCommit}^{tree}`,
+      ),
+    ),
+  );
+
+  assert.equal(concluding?.conclusions, 0, "B's merge concludes nothing");
+  const rechecked = (await bAttempts(pair)).filter(
+    (attempt) => attempt["failure_kind"] !== null,
+  );
+  assert.equal(rechecked.length, 1);
+  assert.equal(rechecked[0]?.["failure_kind"], "RecheckRequired");
+  assert.equal(rechecked[0]?.["recheck_commit"], pair.bCommit);
 });
