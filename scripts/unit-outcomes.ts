@@ -20,10 +20,10 @@ import { inspect } from "node:util";
 /** What the runner hands a reporter, one event at a time. */
 type TestEvent = TestsStreamEventMap["data"][0];
 
-/** The most of one suite's log kept; past it, the start is dropped and the end kept. */
+/** Where one suite's log is cut back to once it passes twice this: the start is dropped and the end kept. */
 export const unitOutcomesLogCharsMax = 1_048_576;
 
-interface UnitOutcome {
+export interface UnitOutcome {
   log: string;
   passed: boolean | undefined;
 }
@@ -56,7 +56,7 @@ function unitOutcomesFailure(name: string, error: unknown): string {
   return `✖ ${name}\n    ${shown}\n`;
 }
 
-function unitOutcomesRead(
+export function unitOutcomesRead(
   outcomes: Map<string, UnitOutcome>,
   event: TestEvent,
 ): void {
