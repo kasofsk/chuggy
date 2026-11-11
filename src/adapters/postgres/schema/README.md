@@ -335,11 +335,12 @@ selector ran. The selector service reads it and moves it forward through
 needed a project's lead was refused under, and since when. The selector
 service alone writes it, directly, and the API role reads it through
 `read_lead_refusal` alone, which answers a `UsagePaused` refusal with when the
-pause ends as `lead_runner_standing` reads it now. Its key and identity
+pause ends as `lead_runner_standing` reads it now, and a `SubsidyExhausted`
+one with the first instant of the next month in UTC. Its key and identity
 are `(tenant, project)` and it points at `project`. A refused cycle writes it,
 moving `refused_since` only where the refusal is another, and an admitted or
 quiet cycle deletes it, so a project with no row is one no refusal stands for;
-`selector_lead_refusal_is_known` holds the refusal to the roster as 130 wrote
+`selector_lead_refusal_is_known` holds the refusal to the roster as 153 wrote
 it. It has no unfinished work: it records what a cycle met and starts nothing.
 
 `session_attempt` — one physical run of a session, its lease, its bearer digest
@@ -473,7 +474,8 @@ offering to an `InCluster` lead. It has no unfinished work: a project with no
 row runs where the published routing's default sends it.
 
 `subsidized_lead` — the subsidized lead the selector offers: its credential
-slot, model, effort and bounds. Owned by the selector service, which writes it
+slot, model, effort and bounds, and its monthly caps per tenant and on every
+tenant together, with what a turn that failed or never settled is charged. Owned by the selector service, which writes it
 at boot and deletes it at a boot that offers none; the API role reads it
 through `read_subsidized_lead` alone. It has no project key, being the
 deployment's: it is a single row, keyed `singleton` and held to it by a CHECK.
@@ -481,6 +483,9 @@ It has no unfinished work: `session_lead_offering` reads it when asked, so a
 stored `Subsidized` reads `Own` while no row stands. The selector's settings
 read and the API's reach it, per project, through `session_lead_profile`, and
 `open_lead_inquiry` holds an inquiry admitted on the subsidy to its slot.
+Both reach what a project's tenant and the deployment spent of it this month
+through `subsidized_lead_spend`, which sums the Lead and Inquiry turns on its
+slot by `session_turn_enqueued`.
 
 `session_routing` — the session routing the scheduler last published: the
 default per kind and each project's override. It is a single row, keyed

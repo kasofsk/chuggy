@@ -79,7 +79,9 @@ const credential = z
  * The subsidized lead a deployment offers, each field held to the bounds its
  * counterpart for every lead already has: the lead's credential slot, a
  * project's lead model, effort and compaction window, a decision's input
- * budget, and the turn spend past which a lead is replaced.
+ * budget, and the turn spend past which a lead is replaced. Its month's caps,
+ * per tenant and on every tenant's together, and what a turn that failed or
+ * never settled is charged, are each a positive count of micro-dollars.
  */
 const subsidizedLead = z
   .object({
@@ -91,6 +93,9 @@ const subsidizedLead = z
       .max(leadAutoCompactWindowTokensMax),
     inputBytesPerDecision: positiveInteger.safe(),
     turnTokensMax: positiveInteger.max(leadTurnTokensMax),
+    tenantMonthlyMicros: positiveInteger.safe(),
+    deploymentMonthlyMicros: positiveInteger.safe(),
+    unmeasuredTurnMicros: positiveInteger.safe(),
   })
   .strict();
 const configurationSchema = z

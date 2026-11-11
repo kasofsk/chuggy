@@ -47,7 +47,7 @@ import {
   type SessionPlacementStore,
   type SessionPlacementStored,
   type SessionRouting,
-  type SubsidizedLeadProfile,
+  type SubsidizedLeadOffer,
 } from "../../src/interpreter/sessionPlacement.ts";
 import {
   postgresHarnessDenial,
@@ -78,18 +78,21 @@ const owner = {
   subject: asAuthoritySubject("an-owner"),
 };
 
-const profile: SubsidizedLeadProfile = {
+const profile: SubsidizedLeadOffer = {
   credentialSlot: "anthropic-api",
   model: "claude-haiku-5-5",
   effort: "low",
   autoCompactWindow: 100_000,
   inputBytesPerDecision: 65_536,
   turnTokensMax: 200_000,
+  tenantMonthlyMicros: 5_000_000,
+  deploymentMonthlyMicros: 50_000_000,
+  unmeasuredTurnMicros: 100_000,
 };
 
 /** Starts the selector's publication with `published`, or with none. */
 async function subsidizedLeadStarted(
-  published: SubsidizedLeadProfile | undefined,
+  published: SubsidizedLeadOffer | undefined,
 ): Promise<void> {
   assert.deepEqual(
     await postgresSubsidizedLeadPrecondition(selectorPool, published).check(

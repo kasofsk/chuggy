@@ -13,8 +13,8 @@ import type { SelectorCycleIdentity } from "./selector.ts";
  * relation took some of its dispatches and not the rest.
  *
  * A PROJECT WHOSE LEAD MAY NOT TAKE A TURN IS NAMED BY WHAT STOPPED IT.
- * `HostedRunsNotGranted` is the tenant's answer on a hosted route,
- * `RunnerOffline` and `UsagePaused` the project's runners' on a runner route,
+ * `HostedRunsNotGranted` is the tenant's answer on a hosted route and
+ * `SubsidyExhausted` the subsidy's, `RunnerOffline` and `UsagePaused` the project's runners' on a runner route,
  * and `AdmissionUndecided` a read that gave none, so an outage never reads as a
  * settled denial.
  */

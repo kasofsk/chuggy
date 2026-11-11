@@ -47,6 +47,7 @@ import {
   sessionStoreStreamRows,
 } from "./sessionStoreReads.ts";
 import { interactionInstant, readSelectorInteractions } from "./selector.ts";
+import { postgresSubsidizedLeadSpend } from "./sessionPlacement.ts";
 import {
   sessionRowMember,
   sessionRowText,
@@ -235,5 +236,7 @@ export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
       readSelectorInteractions(pool, partition, undefined, limit, true),
     planningIntent: (partition) => leadPlanningIntent(pool, partition),
     leadRefusal: (partition) => leadRefusal(pool, partition),
+    subsidizedLeadSpend: (partition) =>
+      postgresSubsidizedLeadSpend(pool, partition),
   };
 }

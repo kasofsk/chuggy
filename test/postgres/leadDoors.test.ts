@@ -258,6 +258,9 @@ test("the composed selector process publishes the subsidized lead it starts with
     autoCompactWindow: 100_000,
     inputBytesPerDecision: 65_536,
     turnTokensMax: 200_000,
+    tenantMonthlyMicros: 5_000_000,
+    deploymentMonthlyMicros: 50_000_000,
+    unmeasuredTurnMicros: 100_000,
   };
   assert.deepEqual(
     await composedRootStarted({

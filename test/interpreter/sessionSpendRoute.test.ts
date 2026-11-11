@@ -11,9 +11,15 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { sessionSpendRoute } from "../../src/interpreter/sessionPlacement.ts";
+import {
+  leadAdmission,
+  sessionSpendRoute,
+} from "../../src/interpreter/sessionPlacement.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
-import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
+import {
+  sessionRoutesAt,
+  sessionRoutesSubsidyUnspent,
+} from "./sessionRoutesFixture.ts";
 
 const member = asPrincipal("principal-spend");
 const own = memberScopePartition(asTenantId("tenant-spend"), member);
@@ -131,4 +137,134 @@ test("a member the tenant grants no hosted runs is refused an inquiry of an own 
     );
     assert.deepEqual(asked, ["ExecuteHosted"], `${offering} ${kind}`);
   }
+});
+
+/** A subsidy whose tenant, or whose deployment, has reached its month's cap. */
+const subsidySpent = {
+  tenant: {
+    ...sessionRoutesSubsidyUnspent,
+    tenantMicros: sessionRoutesSubsidyUnspent.tenantMonthlyMicros,
+  },
+  deployment: {
+    ...sessionRoutesSubsidyUnspent,
+    deploymentMicros: sessionRoutesSubsidyUnspent.deploymentMonthlyMicros,
+  },
+} as const;
+
+test("an inquiry of a subsidized lead whose tenant or deployment has reached its cap is refused SubsidyExhausted, whatever grant its asker holds, and asks no grant", async () => {
+  for (const [cap, spend] of Object.entries(subsidySpent))
+    for (const granted of [false, true]) {
+      const asked: string[] = [];
+      assert.deepEqual(
+        await sessionSpendRoute(
+          {
+            authorize: (principal) =>
+              Promise.resolve(memberAuthority(principal)),
+            authorizeTenant: (principal, _tenant, kind) => {
+              asked.push(kind);
+              return Promise.resolve(
+                granted ? memberAuthority(principal) : undefined,
+              );
+            },
+            authorizeSite: projectAccessSiteRefused,
+          },
+          sessionRoutesAt(
+            { Lead: "InCluster" },
+            undefined,
+            "Subsidized",
+            spend,
+          ),
+          member,
+          project,
+          "Inquiry",
+        ),
+        { spend: "SubsidyExhausted" },
+        `${cap} ${String(granted)}`,
+      );
+      assert.deepEqual(asked, [], `${cap} ${String(granted)}`);
+    }
+});
+
+test("an inquiry of a subsidized lead under both caps, and a thread of one past them, are admitted as before", async () => {
+  assert.deepEqual(
+    await sessionSpendRoute(
+      grantingNoHostedRuns([]),
+      sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized", {
+        ...sessionRoutesSubsidyUnspent,
+        tenantMicros: sessionRoutesSubsidyUnspent.tenantMonthlyMicros - 1,
+      }),
+      member,
+      project,
+      "Inquiry",
+    ),
+    { spend: "Admitted", route: "InCluster", subsidized: true },
+  );
+  assert.deepEqual(
+    await sessionSpendRoute(
+      {
+        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+        authorizeTenant: (principal) =>
+          Promise.resolve(memberAuthority(principal)),
+        authorizeSite: projectAccessSiteRefused,
+      },
+      sessionRoutesAt(
+        { Thread: "InCluster", Lead: "InCluster" },
+        undefined,
+        "Subsidized",
+        subsidySpent.tenant,
+      ),
+      member,
+      project,
+      "Thread",
+    ),
+    { spend: "Admitted", route: "InCluster", subsidized: false },
+  );
+});
+
+test("a subsidized lead is refused SubsidyExhausted where its tenant or deployment has reached its cap, and admitted one micro-dollar short of either", async () => {
+  const unasked: ProjectAccess = refusingEverything([]);
+  for (const spend of Object.values(subsidySpent))
+    assert.deepEqual(
+      await leadAdmission(
+        unasked,
+        sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized", spend),
+        member,
+        project,
+      ),
+      { admission: "SubsidyExhausted" },
+    );
+  for (const spend of [
+    {
+      ...subsidySpent.tenant,
+      tenantMicros: subsidySpent.tenant.tenantMicros - 1,
+    },
+    {
+      ...subsidySpent.deployment,
+      deploymentMicros: subsidySpent.deployment.deploymentMicros - 1,
+    },
+  ])
+    assert.deepEqual(
+      await leadAdmission(
+        unasked,
+        sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized", spend),
+        member,
+        project,
+      ),
+      { admission: "Admitted", route: "InCluster", offering: "Subsidized" },
+    );
+});
+
+test("a lead that resolves Subsidized while its spend read answers no subsidy is undecided rather than admitted", async () => {
+  await assert.rejects(
+    leadAdmission(
+      refusingEverything([]),
+      {
+        ...sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized"),
+        subsidizedLeadSpend: () => Promise.resolve(undefined),
+      },
+      member,
+      project,
+    ),
+    /answered no subsidy/u,
+  );
 });

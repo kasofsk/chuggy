@@ -69,6 +69,8 @@ export const storedLeadOfferingFunction = "stored_lead_offering";
 export const subsidizedLeadReadFunction = "read_subsidized_lead";
 /** The subsidized lead one project's lead runs as, no row where it runs as its own. */
 export const sessionLeadProfileFunction = "session_lead_profile";
+/** What one project's tenant and the whole deployment spent of the subsidy this month, beside their caps, no row where its lead runs as its own. */
+export const subsidizedLeadSpendFunction = "subsidized_lead_spend";
 /** Whether a live runner of one project could take its lead now, or every live one's owner is paused, and until when. */
 export const leadRunnerStandingFunction = "lead_runner_standing";
 /** The route a session's oldest queued turn was admitted on, which is the only one that may run next. */

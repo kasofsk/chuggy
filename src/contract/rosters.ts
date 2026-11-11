@@ -897,14 +897,16 @@ export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
 
 /**
  * Why a selector cycle that needed a project's lead was refused one: on a
- * hosted route the tenant grants the lead's principal no hosted runs, and on a
- * runner route none of the project's runners is live, or every live one's
- * owner has their Claude account paused.
+ * hosted route the tenant grants the lead's principal no hosted runs, or a
+ * subsidized lead's tenant or the whole deployment has spent its month's
+ * subsidy, and on a runner route none of the project's runners is live, or
+ * every live one's owner has their Claude account paused.
  */
 export const leadAdmissionRefusals = [
   "HostedRunsNotGranted",
   "RunnerOffline",
   "UsagePaused",
+  "SubsidyExhausted",
 ] as const;
 export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
 
@@ -946,6 +948,13 @@ export type PersonalRunnerPriority = (typeof personalRunnerPriorities)[number];
  * so the code is shared rather than spelled at each end.
  */
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
+
+/**
+ * What the inquiry door answers a question of a subsidized lead whose tenant
+ * or deployment has spent this month's subsidy, shared as the hosted-runs
+ * code is.
+ */
+export const subsidyExhaustedCode = "SubsidyExhausted";
 
 /**
  * What a release or an update answers a caller whose draft runs less than its
