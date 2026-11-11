@@ -804,6 +804,18 @@ export const sessionCapabilities = [
 export type SessionCapability = (typeof sessionCapabilities)[number];
 
 /**
+ * What a person's own agent may do beyond any session, reaching chuggy through
+ * `chuggy-linux mcp` as that person. It is kept out of `sessionCapabilities`
+ * so that no session's facts can name it.
+ */
+export const personalAgentCapabilities = ["ProjectSettings"] as const;
+export type PersonalAgentCapability =
+  (typeof personalAgentCapabilities)[number];
+
+/** Either kind of capability a chuggy tool may be admitted under. */
+export type ToolCapability = SessionCapability | PersonalAgentCapability;
+
+/**
  * The kinds of Claude credential a site's mount may say its file is, spelled
  * as the image's credential setting spells them: the two that need nothing
  * named beside the file.

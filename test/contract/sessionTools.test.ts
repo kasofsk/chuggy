@@ -15,19 +15,38 @@ import test from "node:test";
 import {
   configurationCanonicalCharsMax,
   dispatchViewSchemaVersion,
+  leadAutoCompactWindowTokensMax,
+  leadDispatchesMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
+  nativeHttpPathSegmentCharsMax,
+  nativeHttpRoutes,
+  runModelCharsMax,
+  selectorAllowlistNameCharsMax,
+  selectorAllowlistNamesMax,
+  selectorSettingsTextCharsMax,
+  sessionEfforts,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import * as authoring from "../../src/contract/authoring.ts";
 import * as brief from "../../src/contract/brief.ts";
 import * as configurationSelection from "../../src/contract/configurationSelection.ts";
 import * as epics from "../../src/contract/epics.ts";
-import { epicViewResponseSchema } from "../../src/contract/responses.ts";
 import {
+  epicViewResponseSchema,
+  selectorProjectSettingsResponseSchema,
+} from "../../src/contract/responses.ts";
+import {
+  leadOfferings,
+  personalAgentCapabilities,
   phaseRoster,
+  placementRoutes,
+  selectorDispatchModes,
+  selectorModes,
   sessionCapabilities,
 } from "../../src/contract/rosters.ts";
+import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
+import { sessionFactsAnswerSchema } from "../../src/contract/sessionPlane.ts";
 import * as epicDomain from "../../src/domain/epics.ts";
 import {
   allChuggyTools,
@@ -38,11 +57,13 @@ import {
   chuggyToolDispatchViewResponseBytesMax,
   chuggyToolDocsResponseBytesMax,
   chuggyToolEpicViewResponseBytesMax,
+  chuggyToolLeadSettingsResponseBytesMax,
   chuggyToolNames,
   chuggyToolPagesMax,
   chuggyToolPrefix,
   chuggyToolResponseBytesMax,
   chuggyToolServerName,
+  chuggyToolRoutes,
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
 } from "../../src/contract/sessionTools.ts";
@@ -105,6 +126,10 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "navigate",
     "offer_release",
     "offer_revoke",
+    "read_lead_settings",
+    "update_lead_settings",
+    "read_placement",
+    "update_placement",
   ]);
 });
 
@@ -126,10 +151,13 @@ test("no tool re-authors a released ticket, whatever roster holds it", () => {
 test("every capability is mapped and every tool is gated by exactly one, but the docs both reading scopes hold", () => {
   assert.deepEqual(
     Object.keys(chuggyToolCapabilities).sort(),
-    [...sessionCapabilities].sort(),
+    [...sessionCapabilities, ...personalAgentCapabilities].sort(),
   );
   const gates = new Map<string, number>();
-  for (const capability of sessionCapabilities)
+  for (const capability of [
+    ...sessionCapabilities,
+    ...personalAgentCapabilities,
+  ])
     for (const tool of chuggyToolCapabilities[capability])
       gates.set(tool, (gates.get(tool) ?? 0) + 1);
   for (const tool of allChuggyTools)
@@ -204,6 +232,31 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "offer_release",
     "offer_revoke",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.ProjectSettings, [
+    "read_lead_settings",
+    "update_lead_settings",
+    "read_placement",
+    "update_placement",
+  ]);
+});
+
+/**
+ * A lead must not rewrite the settings it runs under, and a thread must not
+ * make an administrator's write on a chat message's strength, so the settings
+ * tools are a person's own agent's alone and no session can be opened with
+ * what admits them.
+ */
+test("no session can hold the capability that admits the settings tools", () => {
+  assert.ok(
+    !(sessionCapabilities as readonly string[]).includes("ProjectSettings"),
+  );
+  assert.ok(
+    !sessionFactsAnswerSchema.shape.capabilities.safeParse(["ProjectSettings"])
+      .success,
+  );
+  const sessionTools = new Set(chuggyToolNames(sessionCapabilities));
+  for (const tool of chuggyToolNames(["ProjectSettings"]))
+    assert.ok(!sessionTools.has(tool), tool);
 });
 
 test("each capability admits the runtime's own tools the roster gives it and no other", () => {
@@ -218,6 +271,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     LeadDecision: [],
     MemberRead: [],
     ThreadOffer: [],
+    ProjectSettings: [],
   });
 });
 
@@ -232,7 +286,10 @@ test("a capability that maps built-ins alone admits no chuggy tool", () => {
 
 /** A member that admitted nothing would be a control nothing could be seen obeying. */
 test("every capability admits a tool, the runtime's own or the chuggy server's", () => {
-  for (const capability of sessionCapabilities)
+  for (const capability of [
+    ...sessionCapabilities,
+    ...personalAgentCapabilities,
+  ])
     assert.ok(
       builtInToolCapabilities[capability].length +
         chuggyToolCapabilities[capability].length >
@@ -259,7 +316,19 @@ test("the qualified names are the roster's own, prefixed, and never repeated", (
       "set_planning_intent",
     ].map((tool) => `${chuggyToolPrefix}${tool}`),
   );
-  const every = chuggyToolNames(sessionCapabilities);
+  assert.deepEqual(
+    chuggyToolNames(["ProjectSettings"]),
+    [
+      "read_lead_settings",
+      "update_lead_settings",
+      "read_placement",
+      "update_placement",
+    ].map((tool) => `${chuggyToolPrefix}${tool}`),
+  );
+  const every = chuggyToolNames([
+    ...sessionCapabilities,
+    ...personalAgentCapabilities,
+  ]);
   assert.equal(new Set(every).size, every.length);
   assert.deepEqual(
     every,
@@ -401,6 +470,110 @@ test("an epic view of the heaviest epic the domain saves is under the bound the 
   assert.ok(bytes <= chuggyToolEpicViewResponseBytesMax);
 });
 
+test("the settings tools reach the route table's own lead-settings and placement routes", () => {
+  assert.equal(
+    chuggyToolRoutes.selectorSettings,
+    nativeHttpRoutes.selectorSettings,
+  );
+  assert.equal(
+    chuggyToolRoutes.sessionPlacement,
+    nativeHttpRoutes.sessionPlacement,
+  );
+});
+
+/** The longest member of a roster. */
+function longestOf<Member extends string>(roster: readonly Member[]): Member {
+  return roster.reduce((longest, member) =>
+    member.length > longest.length ? member : longest,
+  );
+}
+
+/**
+ * The heaviest lead settings the wire admits: every text, allowlist name and
+ * identity of control characters, which JSON escapes heaviest, at its longest;
+ * every allowlist at its most names; every model of the heaviest character a
+ * model may hold; and every count the largest a count may be.
+ */
+function heaviestLeadSettings(): unknown {
+  const escaped = "\u0001";
+  const text = escaped.repeat(selectorSettingsTextCharsMax);
+  const allowlist = Array.from({ length: selectorAllowlistNamesMax }, () =>
+    escaped.repeat(selectorAllowlistNameCharsMax),
+  );
+  const identity = escaped.repeat(nativeHttpPathSegmentCharsMax);
+  const model = "€".repeat(runModelCharsMax);
+  const count = Number.MAX_SAFE_INTEGER;
+  const limits = {
+    tokensPerDecision: count,
+    millisecondsPerDecision: count,
+    toolCallsPerDecision: count,
+    dispatchesPerDecision: count,
+    inputBytesPerDecision: count,
+    candidatePagesPerDecision: count,
+    autoCompactWindow: count,
+  };
+  const effectiveLimits = {
+    ...limits,
+    concurrentDecisions: count,
+    selectionsPerMinute: count,
+  };
+  return {
+    partition: { tenant: identity, project: identity },
+    revision: count,
+    overrides: {
+      northStar: text,
+      threadStandingRules: text,
+      mode: longestOf(selectorModes),
+      dispatchMode: longestOf(selectorDispatchModes),
+      basePrompt: text,
+      modelAllowlist: allowlist,
+      toolAllowlist: allowlist,
+      limits: {
+        ...limits,
+        dispatchesPerDecision: leadDispatchesMax,
+        autoCompactWindow: leadAutoCompactWindowTokensMax,
+      },
+      operationalContextMaxAgeMs: count,
+      leadModel: model,
+      leadEffort: longestOf(sessionEfforts),
+      threadModel: model,
+      threadEffort: longestOf(sessionEfforts),
+    },
+    effective: {
+      revision: count,
+      projectRevision: count,
+      mode: longestOf(selectorModes),
+      installationMode: longestOf(selectorModes),
+      dispatchMode: longestOf(selectorDispatchModes),
+      basePrompt: text,
+      northStar: text,
+      threadStandingRules: text,
+      modelAllowlist: allowlist,
+      toolAllowlist: allowlist,
+      limits: effectiveLimits,
+      installationLimits: effectiveLimits,
+      operationalContextMaxAgeMs: count,
+      leadModel: model,
+      leadEffort: longestOf(sessionEfforts),
+      leadOffering: longestOf(leadOfferings),
+    },
+  };
+}
+
+/**
+ * Lead settings at their heaviest are far past an ordinary answer's bound, so
+ * the settings tools reading them, or a write's answer, under that bound would
+ * refuse settings the server holds.
+ */
+test("the heaviest lead settings the wire admits are under the bound the settings tools read them with", () => {
+  const settings = selectorProjectSettingsResponseSchema.parse(
+    heaviestLeadSettings(),
+  );
+  const bytes = Buffer.byteLength(JSON.stringify(settings), "utf8");
+  assert.ok(bytes > nativeHttpBodyBytesMax);
+  assert.ok(bytes <= chuggyToolLeadSettingsResponseBytesMax);
+});
+
 test("the request shapes a drafting tool publishes, and their bounds, are the package entry's own", async () => {
   const entry =
     (await import("@chuggy/worker-contract/sessionTools")) as Record<
@@ -431,6 +604,10 @@ test("the request shapes a drafting tool publishes, and their bounds, are the pa
     epicContentBytesMax: epics.epicContentBytesMax,
     epicPageLimitMax: epics.epicPageLimitMax,
     epicTicketsMax: epics.epicTicketsMax,
+    selectorProjectOverridesSchema,
+    selectorSettingsTextCharsMax,
+    placementRoutes,
+    leadOfferings,
   };
   for (const [name, value] of Object.entries(published))
     assert.equal(entry[name], value, name);
