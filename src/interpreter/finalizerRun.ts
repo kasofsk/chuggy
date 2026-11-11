@@ -255,7 +255,6 @@ import {
 } from "./finalizationProposal.ts";
 import {
   checkedFinalizerConfig,
-  finalizationRecheckRework,
   finalizationNext,
   promotionDeclineOf,
   type AncestryProved,
@@ -1201,28 +1200,16 @@ async function finalizerIntegratePrepared(
 /**
  * Records the send-back a landing gets when the target moved past the commit
  * it evaluated, naming that commit for the work cycle to re-report and merging
- * nothing. A counted send-back holds instead once the ticket has been sent back
- * as often as its bound allows, and one from a stacked cycle is not counted.
+ * nothing. It is never held: each one is paid for by another landing's
+ * progress, so a ticket cannot be sent back on its own.
  */
 async function finalizerRecheckRequired(
   service: FinalizerService,
   subject: FinalizerPreparation,
   target: ObservedTarget,
   accepted: GitObjectId,
-  counted: "Counted" | "Uncounted",
   tally: FinalizerTally,
 ): Promise<void> {
-  if (counted === "Counted") {
-    const config = checkedFinalizerConfig(service.config);
-    const rework = finalizationRecheckRework(
-      await service.store.ticketRecheckFailures(subject.view.claim),
-      config.recheckReworksMax,
-    );
-    if (rework.rework === "Hold") {
-      finalizerHold(service, tally, rework.hold);
-      return;
-    }
-  }
   await finalizerRecordAttempt(
     service,
     finalizerAttemptOf(service, {
@@ -1270,7 +1257,6 @@ async function finalizerContainedPrepared(
         subject,
         target,
         accepted,
-        "Counted",
         tally,
       );
       return;
@@ -1317,7 +1303,6 @@ async function finalizerStackedPrepared(
       subject,
       target,
       accepted,
-      "Uncounted",
       tally,
     );
     return;
@@ -2418,7 +2403,6 @@ async function finalizerProposalMergeRechecked(
     gathered.subject,
     target,
     gathered.handoff.source.commit,
-    "Uncounted",
     tally,
   );
 }

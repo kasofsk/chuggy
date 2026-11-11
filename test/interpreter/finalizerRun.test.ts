@@ -924,20 +924,6 @@ function recordingHolds(
   };
 }
 
-/** The count of re-check failures, which is the attempts this store has recorded for them. */
-function recordingRechecks(
-  store: () => FinalizerRecorder,
-): Pick<FinalizerStore, "ticketRecheckFailures"> {
-  return {
-    ticketRecheckFailures: () =>
-      Promise.resolve(
-        store().attempts.filter(
-          (attempt) => attempt.failureKind === "RecheckRequired",
-        ).length,
-      ),
-  };
-}
-
 /** A store that answers from the views a case hands it and records every move. */
 function recordingStore(
   views: readonly FinalizationView[],
@@ -947,7 +933,6 @@ function recordingStore(
     ...recordingLedgers(),
     ...recordingProposalCounters(),
     ...recordingProposals(() => own),
-    ...recordingRechecks(() => own),
     gathering: {
       work: [passedWork],
       artifacts: [handoffOf("one.txt", "one")],
@@ -4161,29 +4146,50 @@ test("a serialized landing whose target moved past the accepted commit is sent b
   assert.deepEqual(git.promotions, []);
 });
 
-test("a serialized landing already sent back as often as its bound allows holds, and records nothing", async () => {
+test("a serialized landing whose target keeps moving is sent back every time, far past any count, and never held", async () => {
   const store = sourcedStore();
   const git = recordingGit();
   git.contained = "Uncontained";
   const service = landingService(store, git, "Serialized", {
-    recheckReworksMax: 1,
-    holdPassesMax: 2,
+    holdPassesMax: 1,
   });
+  const sends = 10;
 
-  await passOver(service);
-  assert.equal(store.attempts.length, 1);
-  const held = await passOver(service);
+  for (let pass = 1; pass <= sends; pass++) {
+    const report = await passOver(service);
+    assert.equal(report.holds, 0, `pass ${String(pass)}`);
+    assert.equal(store.attempts.length, pass);
+  }
 
-  assert.equal(held.holds, 1);
-  assert.equal(store.attempts.length, 1, "past the bound nothing is reworked");
+  assert.ok(
+    store.attempts.every(
+      (attempt) =>
+        attempt.failureKind === "RecheckRequired" &&
+        attempt.recheckCommit === commitOf("c"),
+    ),
+  );
   assert.deepEqual(store.concluded, []);
+  assert.equal(store.heldKind, undefined);
+});
+
+test("a ticket held with its re-checks exhausted after two send-backs is sent back to re-check once resumed, and not held again", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Uncontained";
+  const service = landingService(store, git, "Serialized");
   await passOver(service);
-  assert.deepEqual(store.concluded, [
-    {
-      outcome: "FinalizationResultUnavailable",
-      kind: "RecheckReworksExhausted",
-    },
-  ]);
+  await passOver(service);
+  store.heldKind = "RecheckReworksExhausted";
+  store.heldPasses = finalizerDefaults.holdPassesMax;
+
+  const report = await passOver(service);
+
+  assert.equal(report.holds, 0);
+  assert.deepEqual(store.concluded, []);
+  assert.ok(!store.holds.includes("RecheckReworksExhausted"));
+  assert.equal(store.attempts.length, 3);
+  assert.equal(store.attempts[2]?.failureKind, "RecheckRequired");
+  assert.equal(store.attempts[2]?.recheckCommit, commitOf("c"));
 });
 
 test("a serialized landing the target already holds is recorded landed, before any containment is asked", async () => {
@@ -4292,42 +4298,6 @@ test("rechecksWhenTreeDiffers: a stacked landing whose merge result is not the s
   recheckRecorded(store);
 });
 
-/** Answers that the store's ticket has already been sent back as often as the default bound allows, in cycles evaluated unstacked. */
-function recheckReworksSpent(store: FinalizerRecorder): void {
-  store.ticketRecheckFailures = () =>
-    Promise.resolve(finalizerDefaults.recheckReworksMax);
-}
-
-test("uncountedRecheckNeverHolds: a stack evaluated over a tip that has since moved is re-checked at its rank even where earlier unstacked cycles spent the bound", async () => {
-  const store = sourcedStore();
-  recheckReworksSpent(store);
-  const git = recordingGit();
-  git.integrated = {
-    integrated: "Candidate",
-    candidate: asGitObjectId(commitOf("e")),
-    tree: asGitObjectId(commitOf("7")),
-  };
-
-  const report = await passOver(
-    stackedService(store, git, stackOf(stackedTree)),
-  );
-
-  assert.equal(report.holds, 0);
-  recheckRecorded(store);
-});
-
-test("a stacked ticket evaluated over no stack is held once its re-checks spent the bound, as a serialized one is", async () => {
-  const store = sourcedStore();
-  recheckReworksSpent(store);
-  const git = recordingGit();
-  git.contained = "Uncontained";
-
-  const report = await passOver(stackedService(store, git, undefined));
-
-  assert.equal(report.holds, 1);
-  assert.deepEqual(store.attempts, []);
-});
-
 test("aStackedTicketEvaluatedUnstackedLandsAsSerialized: with no stack record it lands by containment, and is re-checked where uncontained", async () => {
   const contained = recordingGit();
   contained.contained = "Contained";
@@ -4414,7 +4384,6 @@ test("a stacked landing by pull request prepares the same merge result as the pr
 async function stackedMergeConcluding(
   stack: EvaluationStack | undefined,
   commitTree: GitObjectId | undefined,
-  rechecksSpent = false,
 ): Promise<{
   store: FinalizerRecorder;
   git: GitRecorder;
@@ -4428,7 +4397,6 @@ async function stackedMergeConcluding(
     artifacts: [],
     sources: [sourceOf(passedWork, "c")],
   };
-  if (rechecksSpent) recheckReworksSpent(store);
   const forge = recordingForge(store);
   forge.created = "Created";
   const git = recordingGit();
@@ -4472,18 +4440,6 @@ test("a stacked merge that left another tree than the stack's is sent back to re
   assert.equal(store.attempts[0]?.outcome, "Failed");
   assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
   assert.equal(store.attempts[0]?.recheckCommit, commitOf("c"));
-});
-
-test("uncountedRecheckNeverHolds: a stacked merge the forge landed on another tree is re-checked even where earlier unstacked cycles spent the bound, rather than held with its merge landed", async () => {
-  const { store, report } = await stackedMergeConcluding(
-    stackOf(stackedTree),
-    asGitObjectId(commitOf("8")),
-    true,
-  );
-
-  assert.equal(report.holds, 0);
-  assert.deepEqual(store.concluded, []);
-  assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
 });
 
 test("a stacked merge whose tree cannot be read holds, and neither concludes nor records anything", async () => {
