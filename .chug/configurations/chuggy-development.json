@@ -2,7 +2,7 @@
   "version": 1,
   "name": "chuggy-development",
   "configuration": {
-    "version": 2,
+    "version": 3,
     "image": "registry.chuggy.internal/chuggy/worker@sha256:722257abd3e46bffac7639423fbe4f68cac3491ba4b5e54e210492f2b22cbef9",
     "workloads": {
       "build": {
@@ -290,9 +290,19 @@
         }
       ]
     },
+    "finalizers": {
+      "stacked": {
+        "finalization": {
+          "kind": "GitMerge",
+          "mode": "PullRequestMerge",
+          "policy": "Stacked"
+        }
+      }
+    },
     "defaults": {
       "work": "build",
-      "evaluation": "standard"
+      "evaluation": "standard",
+      "finalization": "stacked"
     }
   }
 }
