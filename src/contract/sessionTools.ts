@@ -644,12 +644,12 @@ export const chuggyToolRoutes = {
   ticketLandings: nativeHttpRoutes.ticketLandings,
   /**
    * What `read_landing_queues` answers, taking nothing: the project's landing
-   * queues, one for each reference a Serialized or Stacked ticket lands on,
-   * each naming its repository and its target, a queue naming none being the
-   * repository's default branch's. A queue's holder is the one ticket that may
-   * land on that reference now, and its waiters are the tickets ranked behind
-   * it, in rank order, none of which lands there before the holder stops
-   * holding it. A ticket alone in a queue is its holder and waits on nobody.
+   * queues, one for each reference a Serialized or Stacked ticket lands on, by
+   * its repository and its target, a queue naming none being the repository's
+   * default branch's. A queue's holder is the one ticket that may land on that
+   * reference now, and its waiters are the tickets ranked behind it, none of
+   * which lands there before the holder stops holding it; a ticket alone in a
+   * queue is its holder and waits on nobody.
    */
   landingQueues: nativeHttpRoutes.landingQueues,
   lead: nativeHttpRoutes.lead,
