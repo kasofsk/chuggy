@@ -1252,13 +1252,7 @@ async function finalizerContainedPrepared(
       );
       return;
     case "Uncontained":
-      await finalizerRecheckRequired(
-        service,
-        subject,
-        target,
-        accepted,
-        tally,
-      );
+      await finalizerRecheckRequired(service, subject, target, accepted, tally);
       return;
     case "Unread":
       finalizerHold(service, tally, "IntegrationUnanswered");
@@ -1298,13 +1292,7 @@ async function finalizerStackedPrepared(
     integrated.integrated === "Candidate" &&
     integrated.tree !== stack.stackTree
   ) {
-    await finalizerRecheckRequired(
-      service,
-      subject,
-      target,
-      accepted,
-      tally,
-    );
+    await finalizerRecheckRequired(service, subject, target, accepted, tally);
     return;
   }
   await finalizerIntegrated(
