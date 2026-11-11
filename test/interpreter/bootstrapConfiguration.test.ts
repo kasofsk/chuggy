@@ -348,6 +348,25 @@ test("a declaration written to the shape its worker is told, at every bound it i
   );
 });
 
+test("its reviewer and the one its worker is told to declare are reevaluated on change, while the work and the checks name no reevaluation", () => {
+  assert.equal(bootstrapWorkload("review").reevaluate, "OnChange");
+  assert.equal(bootstrapWorkload("work").reevaluate, undefined);
+  const imported = declaredTo(atEveryBound);
+  if (imported.readiness !== "Ready") assert.fail(JSON.stringify(imported));
+  const [declaration] = imported.declarations;
+  assert.ok(declaration !== undefined);
+  const declared = catalogOf(declaration.configuration);
+  assert.equal(bootstrapWorkload("review", declared).reevaluate, "OnChange");
+  assert.equal(bootstrapWorkload("work", declared).reevaluate, undefined);
+  const checks = declared.workloads["checks"];
+  assert.equal(checks?.runner, "Commands");
+  assert.equal(
+    checks.runner === "Commands" ? checks.reevaluate : "absent",
+    undefined,
+    "a commands workload reruns on every evaluated tree",
+  );
+});
+
 test("one past any bound its worker is told is refused for that bound", () => {
   for (const [past, fault] of [
     [{ ...atEveryBound, lines: atEveryBound.lines + 1 }, "ReleaseShapeInvalid"],

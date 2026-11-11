@@ -140,6 +140,46 @@ test("every declaration this tree makes imports, each one releasable", () => {
   assert.equal(found.declarations.length, names.length);
 });
 
+test("every declaration this tree makes reevaluates its reviewers on change and reruns its commands on every tree", () => {
+  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
+    name.endsWith(".json"),
+  );
+  const found = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: names.map((name) => ({
+      path: `${repositoryConfigurationRoot}${name}`,
+      kind: "File",
+      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
+    })),
+    referenced: treeReferenced(),
+  });
+  if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
+  const evaluators = found.declarations.flatMap(({ name, configuration }) => {
+    if (configuration.version === 1) return [];
+    const evaluated = new Set(
+      Object.values(configuration.plans).flatMap((stages) =>
+        stages.flatMap((stage) => stage.evaluators),
+      ),
+    );
+    return Object.entries(configuration.workloads)
+      .filter(([workload]) => evaluated.has(workload))
+      .map(([workload, value]) => ({
+        at: `${name}/${workload}`,
+        runner: value.runner,
+        reevaluate: "reevaluate" in value ? value.reevaluate : undefined,
+      }));
+  });
+  assert.deepEqual(evaluators.map(({ runner }) => runner).sort(), [
+    "Agent",
+    "Agent",
+    "Commands",
+    "Commands",
+  ]);
+  for (const { at, runner, reevaluate } of evaluators)
+    assert.equal(reevaluate, runner === "Agent" ? "OnChange" : undefined, at);
+});
+
 test("a ticket of the development catalog naming no finalization lands by a Stacked pull request merge", () => {
   const path = `${repositoryConfigurationRoot}chuggy-development.json`;
   const found = repositoryConfigurationImportReadiness({
