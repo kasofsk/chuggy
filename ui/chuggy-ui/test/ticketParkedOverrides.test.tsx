@@ -89,6 +89,7 @@ const escalation = {
   kind: "TicketEscalation",
   authorizingSequence: 7,
   admits: ["Resume", "Revoke"],
+  answerable: true,
 };
 
 /** What a change is answered with: taken, or refused under a boundary code. */

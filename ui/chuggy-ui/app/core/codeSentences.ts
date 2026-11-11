@@ -21,6 +21,7 @@
  */
 
 import {
+  nativeActionAnswerRefusalCodes,
   programSkipsPlannedEvaluationsCode,
   type EscalationKind,
   type NativeActionKind,
@@ -352,6 +353,7 @@ export const mutationRefusalCodes = [
   "MutationNotAdmitted",
   "OperationNotPending",
   programSkipsPlannedEvaluationsCode,
+  ...nativeActionAnswerRefusalCodes,
 ] as const;
 export type MutationRefusalCode = (typeof mutationRefusalCodes)[number];
 
@@ -367,6 +369,14 @@ export function mutationRefusalSentence(code: MutationRefusalCode): Copy {
       return { id: "sentences-mutation-decided" };
     case "ProgramSkipsPlannedEvaluations":
       return { id: "sentences-mutation-skips-evaluations" };
+    case "ApproverNotAPerson":
+      return { id: "sentences-mutation-approver-not-a-person" };
+    case "NotAnApprover":
+      return { id: "sentences-mutation-not-an-approver" };
+    case "FeedbackNotAsked":
+      return { id: "sentences-mutation-feedback-not-asked" };
+    case "RejectionWithoutFeedback":
+      return { id: "sentences-mutation-feedback-missing" };
   }
 }
 

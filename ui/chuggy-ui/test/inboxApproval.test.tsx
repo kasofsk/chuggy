@@ -100,6 +100,7 @@ const approval: ProjectNativeActionResponse = {
   kind: "FinalizationApproval",
   authorizingSequence: 51,
   admits: ["Approve", "Decline"],
+  answerable: true,
 };
 
 const finalizing: ProjectTicket = {
