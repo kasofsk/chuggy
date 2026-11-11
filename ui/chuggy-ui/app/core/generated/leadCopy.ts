@@ -95,6 +95,8 @@ export interface LeadCopy {
   readonly "lead-inquiry-refusal-closed": Record<never, never>;
   readonly "lead-inquiry-refusal-in-flight": Record<never, never>;
   readonly "lead-inquiry-refusal-needs-hosted-runs": Record<never, never>;
+  readonly "lead-inquiry-refusal-subsidy-exhausted": Record<never, never>;
+  readonly "lead-inquiry-refusal-not-subsidized": Record<never, never>;
   readonly "lead-inquiry-refusal-unknown": Record<never, never>;
   readonly "lead-inquiry-refusal-no-lead": Record<never, never>;
   readonly "lead-settings-title": Record<never, never>;

@@ -610,6 +610,16 @@ test("a door that refuses is drawn as a word, not as a blank panel", async () =>
     { code: "LeadClosed", word: "Closed", status: 409 },
     { code: "HostedRunsNotGranted", word: "Needs hosted runs", status: 403 },
     { code: "NoRunner", word: "No chat host", status: 403 },
+    {
+      code: "SubsidyExhausted",
+      word: "Month's allowance spent · Resumes next month or on runners",
+      status: 403,
+    },
+    {
+      code: "LeadNotSubsidized",
+      word: "Moving to chuggy · Takes questions after the lead's next pass",
+      status: 409,
+    },
   ];
   for (const refused of refusals) {
     const server = await drawInquiries({

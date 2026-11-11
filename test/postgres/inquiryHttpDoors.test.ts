@@ -29,6 +29,7 @@ import {
   nativeHttpMediaType,
 } from "../../src/contract/http.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
+import { leadNotSubsidizedCode } from "../../src/contract/rosters.ts";
 import {
   leadInquiriesResponseSchema,
   leadInquiryAcceptedSchema,
@@ -476,7 +477,11 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
         question: "who pays for this?",
       },
     });
-    assert.equal(refused.statusCode, 403, refused.body);
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.equal(
+      refused.json<{ error: { code: string } }>().error.code,
+      leadNotSubsidizedCode,
+    );
     assert.deepEqual(
       await forkSlots(standing.partition),
       [],
@@ -518,7 +523,12 @@ test("a member the tenant grants no hosted runs asks a subsidized lead only wher
           question: "who pays for this?",
         },
       });
-      assert.equal(refused.statusCode, 403, `${label}: ${refused.body}`);
+      assert.equal(refused.statusCode, 409, `${label}: ${refused.body}`);
+      assert.equal(
+        refused.json<{ error: { code: string } }>().error.code,
+        leadNotSubsidizedCode,
+        label,
+      );
       assert.deepEqual(
         await forkSlots(project.partition),
         [],
@@ -553,7 +563,11 @@ test("a subsidized inquiry forks only a lead on its own system prompt", async ()
         question: "who pays for this?",
       },
     });
-    assert.equal(refused.statusCode, 403, refused.body);
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.equal(
+      refused.json<{ error: { code: string } }>().error.code,
+      leadNotSubsidizedCode,
+    );
     assert.deepEqual(
       await forkSlots(project.partition),
       [],
