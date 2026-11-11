@@ -648,6 +648,13 @@ export const finalizationRecheckReasons = [
   "MergedTreeDiffers",
 ] as const;
 
+/** Why the finalizer decided a work cycle is evaluated unstacked, restating the interpreter's `unstackedReasons`. */
+export const evaluationUnstackedReasons = [
+  "Unchosen",
+  "Conflicted",
+  "Unpublished",
+] as const;
+
 /** What a stored change proposal says its create came to, restating `allChangeProposalCreationsStored`. */
 export const changeProposalCreations = [
   "Created",

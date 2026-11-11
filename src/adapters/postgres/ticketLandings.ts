@@ -9,6 +9,9 @@
  * A COLUMN THE DOOR ANSWERS IS NARROWED TO ITS ROSTER HERE, and a value no
  * writer of this tree can have stored fails the read rather than reaching a
  * reader as a code it was never told of.
+ *
+ * WHAT EACH WORK CYCLE WAS PREPARED OVER IS READ THROUGH A DOOR OF ITS OWN,
+ * which only the API may call.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -18,7 +21,7 @@ import {
   finalizationUnavailableKinds,
   type FinalizationUnavailableKind,
 } from "../../contract/rosters.ts";
-import type { TicketId } from "../../domain/ids.ts";
+import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
@@ -36,6 +39,7 @@ import {
   allFinalizationRequestStates,
   asGitObjectId,
 } from "../../interpreter/finalizer.ts";
+import { unstackedReasons } from "../../interpreter/evaluationStack.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
@@ -48,6 +52,8 @@ import {
   type TicketLandingQueueRemoval,
   type TicketLandingRecheck,
   type TicketLandingRecord,
+  type TicketLandingStack,
+  type TicketLandingStacksStore,
   type TicketLandingsStore,
   type TicketLandingWait,
 } from "../../interpreter/ticketLandings.ts";
@@ -375,5 +381,70 @@ export function postgresTicketLandings(pool: pg.Pool): TicketLandingsStore {
   return {
     landings: (partition, ticket, count) =>
       ticketLandingsRead(pool, partition, ticket, count),
+  };
+}
+
+/** One prepared work cycle as its door answers it: a stack's columns, or a decision's reason. */
+interface TicketLandingStackRow {
+  readonly work_cycle: string | null;
+  readonly target_ref: string | null;
+  readonly tip: string | null;
+  readonly beneath_tickets: string[] | null;
+  readonly beneath_commits: string[] | null;
+  readonly reason: string | null;
+}
+
+function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
+  const cycle = projectRowCounter(
+    finalizerRowPresent(row.work_cycle, "work cycle"),
+    "work cycle",
+  );
+  if (row.reason !== null)
+    return {
+      cycle,
+      prepared: "Unstacked",
+      reason: finalizerRowValue(unstackedReasons, row.reason, "stack reason"),
+    };
+  const tickets = finalizerRowPresent(row.beneath_tickets, "beneath tickets");
+  const commits = finalizerRowPresent(row.beneath_commits, "beneath commits");
+  if (tickets.length === 0 || tickets.length !== commits.length)
+    throw new Error(
+      "ticket landings: a stack's beneath tickets and commits do not pair",
+    );
+  return {
+    cycle,
+    prepared: "Stacked",
+    beneath: tickets.map((ticket, at) => ({
+      ticket: asTicketId(projectRowCounter(ticket, "beneath ticket")),
+      commit: asGitObjectId(finalizerRowPresent(commits[at] ?? null, "commit")),
+    })),
+    reference: finalizerRowPresent(row.target_ref, "target ref"),
+    tip: asGitObjectId(finalizerRowPresent(row.tip, "tip")),
+  };
+}
+
+async function ticketLandingStacksRead(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: TicketId,
+  count: number,
+): Promise<readonly TicketLandingStack[]> {
+  const found = await pool.query<TicketLandingStackRow>(
+    sql`SELECT s.work_cycle::text AS work_cycle,s.target_ref,s.tip,
+               s.beneath_tickets::text[] AS beneath_tickets,
+               s.beneath_commits,s.reason
+          FROM read_ticket_evaluation_stacks(${partition.tenant},${partition.project},${ticket},${count}::integer) s
+         ORDER BY s.work_cycle`,
+  );
+  return found.rows.map(ticketLandingStack);
+}
+
+/** The API's read of what each of a ticket's work cycles was prepared over. */
+export function postgresTicketLandingStacks(
+  pool: pg.Pool,
+): TicketLandingStacksStore {
+  return {
+    stacks: (partition, ticket, count) =>
+      ticketLandingStacksRead(pool, partition, ticket, count),
   };
 }

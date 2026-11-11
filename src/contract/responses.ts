@@ -93,6 +93,8 @@ import {
   threadsAnsweredMax,
   workerPoolsAnsweredMax,
   ticketLandingsAnsweredMax,
+  ticketLandingStackDepthMax,
+  ticketLandingStacksAnsweredMax,
   ticketNumberSchema,
   landingQueueTicketsAnsweredMax,
 } from "./http.ts";
@@ -144,6 +146,7 @@ import {
   finalizationAttemptOutcomes,
   finalizationFailureKinds,
   finalizationRecheckReasons,
+  evaluationUnstackedReasons,
   finalizationUnavailableKinds,
   gitEvidences,
   nativeActionKindResolutions,
@@ -3156,10 +3159,55 @@ export const ticketLandingSchema = z.discriminatedUnion("state", [
 ]);
 export type TicketLandingResponse = z.infer<typeof ticketLandingSchema>;
 
-/** A ticket's newest landings, oldest first, `truncated` where it has had more than one read answers. */
+/**
+ * What the finalizer prepared one work cycle's evaluation over: a stack, with
+ * the tickets beneath it bottom first, each with the commit it must land, the
+ * reference it was built on and that reference's tip; or the decision to
+ * evaluate it unstacked, with why.
+ */
+export const ticketLandingStackSchema = z.discriminatedUnion("prepared", [
+  z.strictObject({
+    cycle: ticketNumberSchema,
+    prepared: z.literal("Stacked"),
+    beneath: z
+      .array(
+        z.strictObject({
+          ticket: ticketNumberSchema,
+          commit: landingCommitSchema,
+        }),
+      )
+      .min(1)
+      .max(ticketLandingStackDepthMax),
+    reference: z.string().min(1),
+    tip: landingCommitSchema,
+  }),
+  z.strictObject({
+    cycle: ticketNumberSchema,
+    prepared: z.literal("Unstacked"),
+    reason: z.enum(evaluationUnstackedReasons),
+  }),
+]);
+export type TicketLandingStackResponse = z.infer<
+  typeof ticketLandingStackSchema
+>;
+
+/**
+ * A ticket's newest landings, oldest first, `truncated` where it has had more
+ * than one read answers; and for a Stacked ticket, its newest work cycles the
+ * finalizer prepared, oldest first, absent where it prepared none.
+ */
 export const ticketLandingsResponseSchema = z.strictObject({
   landings: z.array(ticketLandingSchema).max(ticketLandingsAnsweredMax),
   truncated: z.boolean(),
+  stacks: z
+    .strictObject({
+      cycles: z
+        .array(ticketLandingStackSchema)
+        .min(1)
+        .max(ticketLandingStacksAnsweredMax),
+      truncated: z.boolean(),
+    })
+    .optional(),
 });
 export type TicketLandingsResponse = z.infer<
   typeof ticketLandingsResponseSchema

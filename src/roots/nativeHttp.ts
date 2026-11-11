@@ -199,7 +199,10 @@ import {
 } from "../interpreter/actionReport.ts";
 import { postgresActionObservations } from "../adapters/postgres/actionObservation.ts";
 import { postgresTicketActionReach } from "../adapters/postgres/actionReach.ts";
-import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
+import {
+  postgresTicketLandingStacks,
+  postgresTicketLandings,
+} from "../adapters/postgres/ticketLandings.ts";
 import { postgresLandingQueues } from "../adapters/postgres/landingQueues.ts";
 import {
   landingQueueReads,
@@ -791,7 +794,7 @@ export function nativeActionReach(
 
 /**
  * The landings route's service: the finalizer's rows are read through their
- * door over the API pool, and a conflict's manifest from the project-owned
+ * doors over the API pool, and a conflict's manifest from the project-owned
  * store the finalizer wrote it to.
  */
 export function nativeTicketLandings(
@@ -802,6 +805,7 @@ export function nativeTicketLandings(
   return ticketLandingReads({
     access,
     store: postgresTicketLandings(pools.pool),
+    stacks: postgresTicketLandingStacks(pools.pool),
     artifacts,
   });
 }
