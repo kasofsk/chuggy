@@ -851,6 +851,7 @@ async function schedulerPrepared(
     execution.partition,
     execution.ticket,
   );
+  const targetRef = await schedulerTargetRef(service, execution, brief);
   const composed = composeTaskInvocation(service.practices, {
     purpose: schedulerTaskPurpose(execution, configuration),
     ...(execution.stage === undefined ? {} : { stage: execution.stage }),
@@ -860,19 +861,18 @@ async function schedulerPrepared(
     ...project,
     priorWorkReports,
     ...rework,
+    ...(targetRef === undefined ? {} : { targetRef }),
     ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });
   switch (composed.composed) {
-    case "Composed": {
-      const targetRef = await schedulerTargetRef(service, execution, brief);
+    case "Composed":
       return {
         profile: policy.profile,
         ...(policy.image === undefined ? {} : { image: policy.image }),
         invocation: composed.invocation,
         ...(targetRef === undefined ? {} : { targetRef }),
       };
-    }
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
         metrics.briefing(composed.fault);
