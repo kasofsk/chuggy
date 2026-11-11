@@ -13,6 +13,10 @@ export interface FiguresCopy {
   readonly "figures-basis-list": Record<never, never>;
   readonly "figures-basis-mixed": Record<never, never>;
   readonly "figures-basis-title": Record<never, never>;
+  readonly "figures-cost-capped": {
+    readonly spent: unknown;
+    readonly cap: unknown;
+  };
   readonly "figures-tokens": Record<never, never>;
   readonly "figures-ago": {
     readonly elapsed: unknown;

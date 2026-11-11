@@ -138,6 +138,9 @@ export interface LeadCopy {
   readonly "lead-settings-model-thread-model": Record<never, never>;
   readonly "lead-settings-model-thread-effort": Record<never, never>;
   readonly "lead-settings-model-alias": Record<never, never>;
+  readonly "lead-settings-model-pinned": Record<never, never>;
+  readonly "lead-settings-model-pinned-about": Record<never, never>;
+  readonly "lead-settings-subsidy": Record<never, never>;
   readonly "lead-settings-effort-low": Record<never, never>;
   readonly "lead-settings-effort-medium": Record<never, never>;
   readonly "lead-settings-effort-high": Record<never, never>;

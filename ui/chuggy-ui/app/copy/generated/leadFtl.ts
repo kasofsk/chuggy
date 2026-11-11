@@ -150,6 +150,9 @@ lead-settings-model-lead-effort = { -lead(case: "upper") } effort
 lead-settings-model-thread-model = { -thread(case: "upper") } model
 lead-settings-model-thread-effort = { -thread(case: "upper") } effort
 lead-settings-model-alias = Alias
+lead-settings-model-pinned = Pinned
+lead-settings-model-pinned-about = Set by { -brand-name } for its subsidized { -lead }
+lead-settings-subsidy = Allowance
 
 lead-settings-effort-low = Low
 lead-settings-effort-medium = Medium

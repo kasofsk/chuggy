@@ -133,6 +133,11 @@
     flex: none;
   }
 
+  .selector-pinned {
+    display: flex;
+    min-width: 8em;
+  }
+
   .selector-was {
     display: flex;
     align-items: center;
