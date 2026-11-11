@@ -205,6 +205,8 @@ export interface ExecutionRequestBundle {
     readonly expectedTree?: string;
     /** The identity of the ticket's change an evaluation was spawned for. */
     readonly changeIdentity?: string;
+    /** The accepted commit a work spawn re-checks rather than reworks. */
+    readonly recheck?: string;
   };
   /** The brief's own images, read at the same gather the source observes and carried regardless of it. */
   readonly images?: readonly BriefImageReference[];
