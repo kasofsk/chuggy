@@ -25,7 +25,10 @@ import {
   type ProjectCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import type { LeadAdmission } from "./sessionPlacement.ts";
+import type {
+  LeadAdmission,
+  SubsidizedLeadProfile,
+} from "./sessionPlacement.ts";
 import {
   notificationPageLimitMax,
   type NotificationBatch,
@@ -600,15 +603,29 @@ export interface SelectorResolvedSettings extends SelectorRuntimeSettings {
   readonly northStar?: string;
   /** Always a value: a project that overrides nothing runs its threads under the code default. */
   readonly threadStandingRules: string;
-  /** What the lead runs on, absent where it takes the site's session model and the runtime's effort. */
+  /** What the lead runs on: the project's own choice, or the deployment's subsidized lead. */
   readonly lead: SelectorLeadRuntime;
 }
 
-/** The model and the effort a lead is opened under, each absent where the project chose none. */
-export interface SelectorLeadRuntime {
-  readonly model?: string;
-  readonly effort?: SessionEffort;
-}
+/**
+ * What a lead is opened under. An `Own` lead takes the project's model and
+ * effort, each absent where it chose none, on the selector's credential slot
+ * and under `leadTurnTokensMax`; a `Subsidized` one takes each of them from
+ * the deployment's profile.
+ */
+export type SelectorLeadRuntime =
+  | {
+      readonly offering: "Own";
+      readonly model?: string;
+      readonly effort?: SessionEffort;
+    }
+  | {
+      readonly offering: "Subsidized";
+      readonly model: string;
+      readonly effort: SessionEffort;
+      readonly credentialSlot: string;
+      readonly turnTokensMax: number;
+    };
 
 /** The revisions an in-flight decision is conditioned on, which is both rows it read. */
 export interface SelectorSettingsFence {
@@ -638,12 +655,67 @@ export function selectorSettingsFenceHolds(
 }
 
 /**
+ * A project's resolution held to the subsidized lead it runs as: the profile's
+ * model, effort, slot and turn bound, its model the only one the check admits,
+ * and the project's window and input budget no higher than the profile's.
+ */
+function resolvedSelectorSettingsSubsidized(
+  resolved: SelectorResolvedSettings,
+  profile: SubsidizedLeadProfile,
+): SelectorResolvedSettings {
+  return {
+    ...resolved,
+    modelAllowlist: [profile.model],
+    limits: {
+      ...resolved.limits,
+      inputBytesPerDecision: Math.min(
+        resolved.limits.inputBytesPerDecision,
+        profile.inputBytesPerDecision,
+      ),
+      autoCompactWindow: Math.min(
+        resolved.limits.autoCompactWindow,
+        profile.autoCompactWindow,
+      ),
+    },
+    lead: {
+      offering: "Subsidized",
+      model: profile.model,
+      effort: profile.effort,
+      credentialSlot: profile.credentialSlot,
+      turnTokensMax: profile.turnTokensMax,
+    },
+  };
+}
+
+/**
  * Resolves every field to the project's own value, or to the installation
- * default. An installation pause is the one direction the default is a ceiling:
- * it is the kill switch, so `mode` resolves to `Paused` whatever the project
- * asked for, and the resolved value never claims a selector that will not run.
+ * default, held to `subsidized` where the project's lead runs as that profile.
  */
 export function resolvedSelectorSettings(
+  partition: Partition,
+  defaults: SelectorRuntimeSettings,
+  projectRevision: number,
+  overrides: SelectorProjectOverrides,
+  subsidized?: SubsidizedLeadProfile,
+): SelectorResolvedSettings {
+  const resolved = resolvedSelectorSettingsOwn(
+    partition,
+    defaults,
+    projectRevision,
+    overrides,
+  );
+  return subsidized === undefined
+    ? resolved
+    : resolvedSelectorSettingsSubsidized(resolved, subsidized);
+}
+
+/**
+ * The resolution before any profile. An installation pause is the one
+ * direction the default is a ceiling: it is the kill switch, so `mode`
+ * resolves to `Paused` whatever the project asked for, and the resolved value
+ * never claims a selector that will not run.
+ */
+function resolvedSelectorSettingsOwn(
   partition: Partition,
   defaults: SelectorRuntimeSettings,
   projectRevision: number,
@@ -691,6 +763,7 @@ export function resolvedSelectorSettings(
       overrides.threadStandingRules,
     ),
     lead: {
+      offering: "Own",
       ...(overrides.leadModel === undefined
         ? {}
         : { model: overrides.leadModel }),

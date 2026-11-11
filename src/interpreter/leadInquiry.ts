@@ -82,7 +82,12 @@ export type LeadInquiryOpened =
       readonly ordinal: number;
     }
   | {
-      readonly opened: "NoLead" | "LeadNotStarted" | "LeadClosed" | "InFlight";
+      readonly opened:
+        | "NoLead"
+        | "LeadNotStarted"
+        | "LeadClosed"
+        | "InFlight"
+        | "LeadNotSubsidized";
     };
 
 /**
@@ -111,6 +116,8 @@ export interface LeadInquiryStore {
     readonly question: string;
     /** The route the turn was admitted on, which it keeps whatever the lead's route becomes. */
     readonly route: PlacementRoute;
+    /** Whether the turn was admitted on the lead's subsidy rather than the member's grant. */
+    readonly subsidized: boolean;
   }): Promise<LeadInquiryOpened>;
 }
 
@@ -239,5 +246,7 @@ export function leadInquiryAsked(
       ordinal: opened.ordinal,
     };
   }
+  if (opened.opened === "LeadNotSubsidized")
+    return { result: "HostedRunsNotGranted" };
   return { result: opened.opened };
 }

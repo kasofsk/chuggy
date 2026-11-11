@@ -2854,6 +2854,7 @@ function nativeLeadInquiryMethods(
             asker: authority.subject,
           }),
           route: spend.route,
+          subsidized: spend.subsidized,
         }),
         input.session,
         input.turn,

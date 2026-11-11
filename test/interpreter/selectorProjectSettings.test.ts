@@ -20,6 +20,8 @@ import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   leadDispatchesMax,
+  leadInputBytesMax,
+  leadObservationBytesMax,
   resolvedSelectorSettings,
   selectorSettingsFence,
   selectorSettingsFenceHolds,
@@ -35,6 +37,7 @@ import {
   type SelectorProjectSettingsWriteOutcome,
   type SelectorSettingsMovement,
 } from "../../src/interpreter/selectorProjectSettings.ts";
+import type { SubsidizedLeadProfile } from "../../src/interpreter/sessionPlacement.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -439,7 +442,7 @@ test("the door keeps a model name and one of the five efforts, and refuses what 
 test("a project's lead model and effort resolve to the lead's, and its thread's never do", () => {
   assert.deepEqual(
     resolvedSelectorSettings(partition, defaults, 1, {}).lead,
-    {},
+    { offering: "Own" },
     "an unset override is the site's model and the runtime's effort",
   );
   assert.deepEqual(
@@ -449,15 +452,106 @@ test("a project's lead model and effort resolve to the lead's, and its thread's 
       threadModel: "claude-opus-5-5",
       threadEffort: "max",
     }).lead,
-    { model: "claude-sonnet-5-5", effort: "medium" },
+    { offering: "Own", model: "claude-sonnet-5-5", effort: "medium" },
   );
   assert.deepEqual(
     resolvedSelectorSettings(partition, defaults, 1, {
       threadModel: "claude-opus-5-5",
       threadEffort: "max",
     }).lead,
-    {},
+    { offering: "Own" },
   );
+});
+
+const subsidizedProfile: SubsidizedLeadProfile = {
+  credentialSlot: "anthropic-api",
+  model: "claude-haiku-5-5",
+  effort: "medium",
+  autoCompactWindow: 100_000,
+  inputBytesPerDecision: 262_144,
+  turnTokensMax: 120_000,
+};
+
+test("a subsidized project's lead resolves to the profile's model, effort, slot and turn bound, whatever the project chose", () => {
+  const resolved = resolvedSelectorSettings(
+    partition,
+    defaults,
+    1,
+    { leadModel: "claude-opus-5-5", leadEffort: "max" },
+    subsidizedProfile,
+  );
+  assert.deepEqual(resolved.lead, {
+    offering: "Subsidized",
+    model: "claude-haiku-5-5",
+    effort: "medium",
+    credentialSlot: "anthropic-api",
+    turnTokensMax: 120_000,
+  });
+});
+
+test("a subsidized project's window and input budget are no higher than the profile's, and its other limits are its own", () => {
+  const overrides: SelectorProjectOverrides = {
+    limits: {
+      autoCompactWindow: 400_000,
+      inputBytesPerDecision: 2_000_000,
+      toolCallsPerDecision: 7,
+    },
+  };
+  const own = resolvedSelectorSettings(partition, defaults, 1, overrides);
+  const subsidized = resolvedSelectorSettings(
+    partition,
+    defaults,
+    1,
+    overrides,
+    subsidizedProfile,
+  );
+  assert.deepEqual(
+    [own.limits.autoCompactWindow, own.limits.inputBytesPerDecision],
+    [400_000, 2_000_000],
+  );
+  assert.deepEqual(subsidized.limits, {
+    ...own.limits,
+    autoCompactWindow: subsidizedProfile.autoCompactWindow,
+    inputBytesPerDecision: subsidizedProfile.inputBytesPerDecision,
+  });
+  assert.equal(leadInputBytesMax(subsidized), 262_144);
+  const below = resolvedSelectorSettings(
+    partition,
+    defaults,
+    1,
+    { limits: { autoCompactWindow: 100_000, inputBytesPerDecision: 4_096 } },
+    { ...subsidizedProfile, autoCompactWindow: 150_000 },
+  );
+  assert.deepEqual(
+    [below.limits.autoCompactWindow, below.limits.inputBytesPerDecision],
+    [100_000, 4_096],
+    "a project below the profile keeps its own",
+  );
+});
+
+test("a subsidized lead's input budget is still held to the mailbox row", () => {
+  const resolved = resolvedSelectorSettings(
+    partition,
+    defaults,
+    1,
+    { limits: { inputBytesPerDecision: leadObservationBytesMax * 2 } },
+    {
+      ...subsidizedProfile,
+      inputBytesPerDecision: leadObservationBytesMax * 2,
+    },
+  );
+  assert.equal(leadInputBytesMax(resolved), leadObservationBytesMax);
+});
+
+test("a subsidized project's model check admits the profile's model alone, in place of its own allowlist", () => {
+  const resolved = resolvedSelectorSettings(
+    partition,
+    defaults,
+    1,
+    { modelAllowlist: ["claude-opus-5-5"] },
+    subsidizedProfile,
+  );
+  assert.deepEqual(resolved.modelAllowlist, ["claude-haiku-5-5"]);
 });
 
 test("a compaction window inside the runtime's bounds is kept, and one outside them is refused", () => {
