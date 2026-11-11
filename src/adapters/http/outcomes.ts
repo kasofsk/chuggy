@@ -1677,6 +1677,18 @@ export function ticketLandingsResponse(
   const body: TicketLandingsResponse = {
     landings: [...landings.landings],
     truncated: landings.truncated,
+    ...(landings.stacks === undefined
+      ? {}
+      : {
+          stacks: {
+            cycles: landings.stacks.cycles.map((cycle) =>
+              cycle.prepared === "Stacked"
+                ? { ...cycle, beneath: [...cycle.beneath] }
+                : cycle,
+            ),
+            truncated: landings.stacks.truncated,
+          },
+        }),
   };
   return response(200, body);
 }

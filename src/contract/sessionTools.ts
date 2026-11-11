@@ -66,6 +66,8 @@ import {
   ticketLandingConflictBytesMax,
   ticketLandingRefCharsMax,
   ticketLandingsAnsweredMax,
+  ticketLandingStackDepthMax,
+  ticketLandingStacksAnsweredMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
 import { briefBranchCharsMax, briefRepositoryCharsMax } from "./brief.ts";
@@ -137,8 +139,11 @@ export {
   runTranscriptPageBatchesMax,
 } from "./http.ts";
 
-/** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
-export { ticketLandingsAnsweredMax } from "./http.ts";
+/** What `read_ticket_landings`'s route answers: at most this many landings, the newest, and the stacks of at most this many work cycles, the newest. */
+export {
+  ticketLandingsAnsweredMax,
+  ticketLandingStacksAnsweredMax,
+} from "./http.ts";
 
 /** What `read_landing_queues`'s route answers: at most this many tickets, holders and waiters together, the earliest-ranked. */
 export { landingQueueTicketsAnsweredMax } from "./http.ts";
@@ -218,12 +223,45 @@ export const chuggyToolTicketLandingBytesMax =
   chuggyToolTicketLandingFieldsBytesMax;
 
 /**
+ * What one work cycle's stack `read_ticket_landings`'s route answers weighs
+ * beside its reference: the deepest stack there may be, its cycle and the
+ * tickets beneath it at the largest number a ticket's may be, and its comma. A
+ * cycle decided unstacked carries none of these and weighs less.
+ */
+const chuggyToolTicketLandingStackFieldsBytesMax = textUtf8Bytes(
+  `${JSON.stringify({
+    cycle: Number.MAX_SAFE_INTEGER,
+    prepared: "Stacked",
+    beneath: Array.from({ length: ticketLandingStackDepthMax }, () => ({
+      ticket: Number.MAX_SAFE_INTEGER,
+      commit: "f".repeat(64),
+    })),
+    reference: "",
+    tip: "f".repeat(64),
+  })},`,
+);
+
+/**
+ * What the stacks `read_ticket_landings`'s route answers may weigh: as many
+ * work cycles as one read answers stacks of, each the deepest with its
+ * reference escaping every character, and the names and brackets around them.
+ */
+export const chuggyToolTicketLandingStacksBytesMax =
+  ticketLandingStacksAnsweredMax *
+    (jsonStringChars(ticketLandingRefCharsMax) +
+      chuggyToolTicketLandingStackFieldsBytesMax) +
+  textUtf8Bytes(
+    `,${JSON.stringify({ stacks: { cycles: [], truncated: false } })}`,
+  );
+
+/**
  * What `read_ticket_landings`'s route may answer: as many landings as one read
- * answers, each at its heaviest, and an ordinary answer's bound for the fields
- * around them.
+ * answers, each at its heaviest, the stacks it answers at their heaviest, and
+ * an ordinary answer's bound for the fields around them.
  */
 export const chuggyToolTicketLandingsResponseBytesMax =
   ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
+  chuggyToolTicketLandingStacksBytesMax +
   nativeHttpBodyBytesMax;
 
 /**
@@ -642,6 +680,16 @@ export const chuggyToolRoutes = {
   selectorHistory: nativeHttpRoutes.selectorHistory,
   agenticRefusals: nativeHttpRoutes.agenticRefusals,
   ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
+  /**
+   * What `read_ticket_landings` answers of a Stacked ticket beside its
+   * landings: under `stacks`, each of its newest work cycles the finalizer
+   * prepared an evaluation for, oldest first, with a cycle prepared neither
+   * way and a ticket that is not Stacked answering nothing there. A cycle
+   * evaluated over a stack answers the tickets beneath it, bottom first, each
+   * with the commit it must land, and the reference the stack was built on
+   * with that reference's tip; a cycle decided unstacked answers why,
+   * `Unchosen`, `Conflicted` or `Unpublished`.
+   */
   ticketLandings: nativeHttpRoutes.ticketLandings,
   /**
    * What `read_landing_queues` answers, taking nothing: the project's landing

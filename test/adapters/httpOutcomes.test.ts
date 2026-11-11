@@ -48,6 +48,8 @@ import {
   ticketLandingConflictBytesMax,
   ticketLandingRefCharsMax,
   ticketLandingsAnsweredMax,
+  ticketLandingStackDepthMax,
+  ticketLandingStacksAnsweredMax,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
 import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
@@ -63,6 +65,7 @@ import {
   chuggyToolRunErrorResponseBytesMax,
   chuggyToolRunTranscriptResponseBytesMax,
   chuggyToolTicketLandingBytesMax,
+  chuggyToolTicketLandingStacksBytesMax,
   chuggyToolTicketLandingsResponseBytesMax,
   imageMediaTypes,
   projectArtifactEncoding,
@@ -97,6 +100,7 @@ import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   ticketLandingReads,
   type TicketLandingRecord,
+  type TicketLandingStack,
 } from "../../src/interpreter/ticketLandings.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import { landingQueuesOf } from "../../src/interpreter/landingQueues.ts";
@@ -1006,6 +1010,20 @@ function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
   ];
 }
 
+/** The deepest stack there may be, its cycle and its tickets at the largest numbers a ticket's may be and its reference at its bound. */
+function landingStackHeaviest(): TicketLandingStack {
+  return {
+    cycle: landingCountHeaviest,
+    prepared: "Stacked",
+    beneath: Array.from({ length: ticketLandingStackDepthMax }, () => ({
+      ticket: asTicketId(landingCountHeaviest),
+      commit: landingCommitHeaviest,
+    })),
+    reference: landingRefHeaviest,
+    tip: landingCommitHeaviest,
+  };
+}
+
 /**
  * A ticket's read over a store answering `record` as often as it is asked, and
  * a manifest naming more paths of `character` than one landing's conflict
@@ -1044,6 +1062,10 @@ async function landingsReadHeaviest(
       landings: (_partition, _ticket, count) =>
         Promise.resolve(Array.from({ length: count }, () => record)),
     },
+    stacks: {
+      stacks: (_partition, _ticket, count) =>
+        Promise.resolve(Array.from({ length: count }, landingStackHeaviest)),
+    },
     artifacts: {
       readArtifact: () =>
         Promise.resolve({ read: "Content" as const, content: manifest }),
@@ -1071,6 +1093,12 @@ test("the heaviest landings a ticket's read answers are answered within what rea
       const read = await landingsReadHeaviest(record, character);
       const [landing] = read.landings;
       assert.equal(read.landings.length, ticketLandingsAnsweredMax);
+      assert.equal(read.stacks?.cycles.length, ticketLandingStacksAnsweredMax);
+      assert.ok(
+        Buffer.byteLength(`,"stacks":${JSON.stringify(read.stacks)}`) <=
+          chuggyToolTicketLandingStacksBytesMax,
+        "the stacks outweigh their bound",
+      );
       assert.equal(
         landing?.proposal?.url,
         landingLinkHeaviest,

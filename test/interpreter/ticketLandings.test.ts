@@ -11,6 +11,7 @@ import {
   jsonTextBytes,
   ticketLandingConflictBytesMax,
   ticketLandingsAnsweredMax,
+  ticketLandingStacksAnsweredMax,
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asProposalQueueWord } from "../../src/interpreter/changeProposal.ts";
@@ -34,6 +35,7 @@ import {
   ticketLandingReads,
   ticketLandingState,
   type TicketLandingRecord,
+  type TicketLandingStack,
 } from "../../src/interpreter/ticketLandings.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -205,8 +207,10 @@ function readsOver(
   records: readonly TicketLandingRecord[] | undefined,
   artifact: ProjectArtifactRead = { read: "NotFound" },
   allowed = true,
+  stacks: readonly TicketLandingStack[] = [],
 ) {
   const asked: string[] = [];
+  const stacksAsked: number[] = [];
   const reads = ticketLandingReads({
     access: {
       authorize: (who) =>
@@ -220,6 +224,13 @@ function readsOver(
         return Promise.resolve(records);
       },
     },
+    stacks: {
+      stacks: (_partition, named, count) => {
+        assert.equal(named, ticket);
+        stacksAsked.push(count);
+        return Promise.resolve(stacks);
+      },
+    },
     artifacts: {
       readArtifact: (request) => {
         asked.push(`artifact ${request.artifact}`);
@@ -227,7 +238,11 @@ function readsOver(
       },
     },
   });
-  return { asked, read: () => reads.read(reader, partition, ticket) };
+  return {
+    asked,
+    stacksAsked,
+    read: () => reads.read(reader, partition, ticket),
+  };
 }
 
 test("one read asks the store for one landing more than it answers, and answers the newest of them oldest first", async () => {
@@ -348,4 +363,57 @@ test("a pull request's link is answered only where a report could carry it", asy
     "https://user:secret@forge.example/acme/atlas/pull/9",
   ])
     assert.deepEqual(await answered(url), proposal, url ?? "none");
+});
+
+/** A cycle decided unstacked, numbered `cycle`. */
+function unstacked(cycle: number): TicketLandingStack {
+  return { cycle, prepared: "Unstacked", reason: "Unchosen" };
+}
+
+test("a Stacked ticket's prepared cycles are answered beside its landings, a stack with its beneath, reference and tip and a decision with its reason", async () => {
+  const stacks: readonly TicketLandingStack[] = [
+    {
+      cycle: 1,
+      prepared: "Stacked",
+      beneath: [
+        { ticket: asTicketId(3), commit: commitOf("c") },
+        { ticket: asTicketId(4), commit: commitOf("d") },
+      ],
+      reference: "refs/heads/main",
+      tip: commitOf("e"),
+    },
+    { cycle: 2, prepared: "Unstacked", reason: "Conflicted" },
+  ];
+  const over = readsOver([], undefined, true, stacks);
+  assert.deepEqual(await over.read(), {
+    landings: [],
+    truncated: false,
+    stacks: { cycles: stacks, truncated: false },
+  });
+  assert.deepEqual(over.stacksAsked, [ticketLandingStacksAnsweredMax + 1]);
+});
+
+test("a ticket with no prepared cycle answers no stacks, and one with more than a read answers answers the newest, oldest first, and says there were more", async () => {
+  assert.equal((await readsOver([]).read())?.stacks, undefined);
+  const many = Array.from(
+    { length: ticketLandingStacksAnsweredMax + 1 },
+    (_, at) => unstacked(at + 1),
+  );
+  assert.deepEqual(
+    (await readsOver([], undefined, true, many).read())?.stacks,
+    {
+      cycles: many.slice(1),
+      truncated: true,
+    },
+  );
+  const too = [...many, unstacked(many.length + 1)];
+  await assert.rejects(readsOver([], undefined, true, too).read());
+});
+
+test("a caller who may not read the project, and a ticket the project does not have, ask for no stacks", async () => {
+  const refused = readsOver([], undefined, false, [unstacked(1)]);
+  assert.equal(await refused.read(), undefined);
+  const missing = readsOver(undefined, undefined, true, [unstacked(1)]);
+  assert.equal(await missing.read(), undefined);
+  assert.deepEqual([...refused.stacksAsked, ...missing.stacksAsked], []);
 });
