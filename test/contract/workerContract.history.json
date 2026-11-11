@@ -303,5 +303,10 @@
     "release": "1.60.0",
     "wire": "c8130a1272e1c42efe6fed67e5a7f63b353987271d12d7d67ab61b29778acfcf",
     "files": "35e7670fc1cccf22ee8e8f06860aacfac2f177a1cc9c4bcd5731ad91a1e1af88"
+  },
+  {
+    "release": "1.61.0",
+    "wire": "83b4d923045afb56325547b88cf8e2c25f1cc5a47e1437b531dcc273115becb9",
+    "files": "e19e33354ca0d728a9a21c8d5f962feffd269d40485c5147c48c8f4ace261168"
   }
 ]

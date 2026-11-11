@@ -24,6 +24,8 @@ import {
   briefingReworkPreface,
   briefingRoleInstructions,
   briefingSectionOrder,
+  briefingTargetMergeFirstLines,
+  briefingTargetMergeLastLines,
   briefingTemplateSections,
   briefingTemplateVersion,
   briefingDependencyLines,
@@ -182,6 +184,10 @@ function templateWording(): readonly string[] {
     ...briefingReworkPreface,
     ...briefingPipelinesUnwritable,
     ...failedLandings.flatMap(briefingFailedLandingLines),
+    ...briefingTargetMergeFirstLines("refs/heads/target", true),
+    ...briefingTargetMergeFirstLines("refs/heads/target", false),
+    ...briefingTargetMergeLastLines("refs/heads/target", true),
+    ...briefingTargetMergeLastLines("refs/heads/target", false),
     ...dependencyWording(),
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
@@ -214,7 +220,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [15, "81f2e756a3536e5ec19b3c7e6320a49695923c667c5b345db329263284bd8cc1"],
+    [16, "e6c3d77787109b1435da546714620c77e5d1fb43a5c3973bc5c4ec5a569f4590"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -242,6 +248,10 @@ test("the digest reads every string the template states", () => {
     ...briefingReworkPreface,
     ...briefingPipelinesUnwritable,
     ...failedLandings.flatMap(briefingFailedLandingLines),
+    ...briefingTargetMergeFirstLines("refs/heads/target", true),
+    ...briefingTargetMergeFirstLines("refs/heads/target", false),
+    ...briefingTargetMergeLastLines("refs/heads/target", true),
+    ...briefingTargetMergeLastLines("refs/heads/target", false),
     ...dependencyWording(),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);

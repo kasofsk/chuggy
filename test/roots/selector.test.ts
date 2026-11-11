@@ -146,7 +146,7 @@ test("a subsidized lead the configuration names is carried into the lead host's 
   );
 });
 
-test("a subsidized lead outside the bounds its counterpart for every lead has is a configuration refusal", async () => {
+test("a subsidized lead outside the bounds its counterpart for every lead has, or on the lead's own credential slot, is a configuration refusal", async () => {
   for (const refused of [
     { credentialSlot: "" },
     { credentialSlot: "s".repeat(257) },
@@ -158,6 +158,7 @@ test("a subsidized lead outside the bounds its counterpart for every lead has is
     { inputBytesPerDecision: 0 },
     { turnTokensMax: 0 },
     { turnTokensMax: 1_000_001 },
+    { credentialSlot: validConfiguration.lead.credentialSlot },
     { unknown: true },
   ]) {
     const failure = await executeFailure({

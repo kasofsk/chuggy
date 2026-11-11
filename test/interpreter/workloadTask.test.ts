@@ -129,6 +129,31 @@ test("an unframed work workload leads with its prompt as written and no template
   assert.deepEqual(sectionsOf(invocation), ["Prompt", "TicketIntent"]);
 });
 
+test("an unframed work workload is told to bring its target in first and again before it reports", () => {
+  const invocation = composed({
+    ...viewOf("Work", { taskKind: "Work" }),
+    targetRef: "refs/heads/main",
+  });
+  assert.deepEqual(sectionsOf(invocation), [
+    "Prompt",
+    "TicketIntent",
+    "TargetMergeFirst",
+    "TargetMergeLast",
+  ]);
+});
+
+test("a commanded evaluator is told nothing of its target", () => {
+  const view = viewOf("Check", {
+    taskKind: "Evaluation",
+    stage: 0,
+    evaluator: 1,
+  });
+  assert.deepEqual(
+    composed({ ...view, targetRef: "refs/heads/main" }).briefing.text,
+    composed(view).briefing.text,
+  );
+});
+
 test("a framed workload carries the template's role and result wording and its own brief around its prompt", () => {
   const invocation = composed(
     viewOf("Review", { taskKind: "Evaluation", stage: 1, evaluator: 1 }),

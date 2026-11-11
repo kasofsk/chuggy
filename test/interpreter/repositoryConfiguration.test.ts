@@ -40,6 +40,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
 
 const repository = asRepositoryId("repository-one");
 const commit = asGitObjectId("a".repeat(40));
@@ -98,12 +99,12 @@ test("a repository declaration becomes a ready immutable revision", () => {
   );
 });
 
-test("every declaration this tree makes imports, each one releasable", () => {
-  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
-    name.endsWith(".json"),
-  );
-  assert.ok(names.includes("basic-coding.json"));
-  const referenced = new Map<string, RepositoryConfigurationReferenced>(
+/** Every file this tree holds under `.chug/`, as an import reads the files a declaration references. */
+function treeReferenced(): ReadonlyMap<
+  string,
+  RepositoryConfigurationReferenced
+> {
+  return new Map(
     readdirSync(repositoryDeclarationRoot, {
       recursive: true,
       withFileTypes: true,
@@ -117,6 +118,13 @@ test("every declaration this tree makes imports, each one releasable", () => {
         ];
       }),
   );
+}
+
+test("every declaration this tree makes imports, each one releasable", () => {
+  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
+    name.endsWith(".json"),
+  );
+  assert.ok(names.includes("basic-coding.json"));
   const found = repositoryConfigurationImportReadiness({
     repository,
     commit,
@@ -125,11 +133,35 @@ test("every declaration this tree makes imports, each one releasable", () => {
       kind: "File",
       content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
     })),
-    referenced,
+    referenced: treeReferenced(),
   });
   assert.equal(found.readiness, "Ready", JSON.stringify(found));
   if (found.readiness !== "Ready") return;
   assert.equal(found.declarations.length, names.length);
+});
+
+test("a ticket of the development catalog naming no finalization lands by a Stacked pull request merge", () => {
+  const path = `${repositoryConfigurationRoot}chuggy-development.json`;
+  const found = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [{ path, kind: "File", content: readFileSync(path, "utf8") }],
+    referenced: treeReferenced(),
+  });
+  assert.equal(found.readiness, "Ready", JSON.stringify(found));
+  if (found.readiness !== "Ready") return;
+  assert.deepEqual(
+    catalogSelectedFinalizer(found.declarations[0]?.configuration, undefined),
+    {
+      finalizer: {
+        finalization: {
+          kind: "GitMerge",
+          mode: "PullRequestMerge",
+          policy: "Stacked",
+        },
+      },
+    },
+  );
 });
 
 test("one bad declaration refuses the snapshot without partial output", () => {

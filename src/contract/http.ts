@@ -756,7 +756,8 @@ export const leadSeedingDecisionsMax = 16;
 
 /**
  * What a lead's newest decision turn may spend before the lead is replaced by
- * a seeded successor, as the pod measures it.
+ * a seeded successor, as the pod measures it. A subsidized lead's profile
+ * names its own, no higher than this.
  */
 export const leadTurnTokensMax = 1_000_000;
 

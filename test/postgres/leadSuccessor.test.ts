@@ -35,7 +35,10 @@ import {
   asSessionId,
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import { leadStandingReplaced } from "../../src/interpreter/leadPolicyHost.ts";
+import {
+  leadRunsOn,
+  leadStandingReplaced,
+} from "../../src/interpreter/leadPolicyHost.ts";
 import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -452,6 +455,7 @@ test("the closing door refuses a lead an inquiry is still forked from", async ()
       asker: member.authority.subject,
     }),
     route: "InCluster",
+    subsidized: false,
   });
   assert.equal(asked.opened, "Opened");
   assert.equal(
@@ -570,8 +574,7 @@ test("a lead opened before it held a window still serves its facts, and the sele
       standing,
       "the windowless objectives",
       successorOpening.autoCompactWindow,
-      {},
-      successorOpening.credentialSlot,
+      leadRunsOn({ offering: "Own" }, successorOpening.credentialSlot),
     ),
     true,
     "a lead holding no window is replaced at the next decision",
