@@ -70,6 +70,7 @@ import {
   type FinalizationAttemptOutcome,
   type FinalizationClaim,
   type FinalizationFailureKind,
+  type FinalizationRecheckReason,
   type GitObjectId,
   type GitRefName,
   type InputBundle,
@@ -515,6 +516,10 @@ export interface AttemptRecord {
   readonly groupCommit?: GitObjectId;
   /** The accepted commit a `RecheckRequired` failure sends back to be re-reported on the moved target. */
   readonly recheckCommit?: GitObjectId;
+  /** Why a `RecheckRequired` failure was sent back, absent on every other attempt. */
+  readonly recheckReason?: FinalizationRecheckReason;
+  /** The base a proposing ticket's re-check read where it lands, which the target — the proposal's head — cannot say. */
+  readonly recheckBaseRef?: GitRefName;
   readonly attemptDigest: string;
 }
 
@@ -625,10 +630,10 @@ export function canonicalChangeProposalRequest(
 
 /**
  * The exact bytes one attempt's digest is taken over, binding it to the request
- * it answers. The base ref an unheld target was read from, a proposal's base
- * and a queue's group commit are last parts only where there is one, the two
- * later ones each behind its own label, so every attempt without them keeps the
- * bytes it had.
+ * it answers. The base ref an unheld target was read from, a proposal's base,
+ * a queue's group commit and a re-check's commit, reason and base are last
+ * parts only where there is one, all but the first each behind its own label,
+ * so every attempt without them keeps the bytes it had.
  */
 export function canonicalFinalizationAttempt(
   record: Omit<AttemptRecord, "attemptDigest">,
@@ -665,6 +670,12 @@ export function canonicalFinalizationAttempt(
     ...(record.recheckCommit === undefined
       ? []
       : ["recheckCommit", record.recheckCommit]),
+    ...(record.recheckReason === undefined
+      ? []
+      : ["recheckReason", record.recheckReason]),
+    ...(record.recheckBaseRef === undefined
+      ? []
+      : ["recheckBaseRef", record.recheckBaseRef]),
   ]);
 }
 

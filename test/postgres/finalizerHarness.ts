@@ -999,6 +999,10 @@ export interface FinalizerAttempt {
   };
   /** The accepted commit a `RecheckRequired` failure re-reports, and no other failure keeps one. */
   readonly recheckCommit?: string;
+  /** Why a `RecheckRequired` failure was sent back. */
+  readonly recheckReason?: string;
+  /** The base a re-check was read against, where it records one. */
+  readonly recheckBaseRef?: string;
   /** The base a failed attempt's proposal failed on, as its ref and commit were read. */
   readonly proposalBase?: { readonly ref: string; readonly commit: string };
 }
@@ -1047,8 +1051,8 @@ export async function finalizerPrepare(
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
-        proposal_base_commit, recheck_commit)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+        proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$23,$24)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -1072,6 +1076,8 @@ export async function finalizerPrepare(
       attempt.proposalBase?.commit ?? null,
       attempt.recheckCommit ?? null,
       attempt.targetRef ?? "refs/heads/main",
+      attempt.recheckReason ?? null,
+      attempt.recheckBaseRef ?? null,
     ],
   );
   return identity;

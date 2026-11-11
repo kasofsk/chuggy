@@ -13,6 +13,7 @@ import {
   allCommitPermitStates,
   allFinalizationAttemptOutcomes,
   allFinalizationFailureKinds,
+  allFinalizationRecheckReasons,
   allInputBundleReferenceKinds,
   allIntegrationStrategies,
   allPromotionDeclines,
@@ -237,6 +238,41 @@ test("an attempt keeps the ref its target was read from only as a bounded name",
       String(baseRef.length),
     );
   }
+});
+
+test("an attempt keeps a re-check's reason only from its closed set on a re-check, and a base only beside a reason read before a merge", async () => {
+  for (const [label, failureKind, reason, baseRef] of [
+    ["unknown", "RecheckRequired", "Withdrawn", undefined],
+    ["conflict", "MergeConflict", "TargetMoved", undefined],
+    ["merged", "RecheckRequired", "MergedTreeDiffers", "refs/heads/main"],
+    ["unreasoned", "RecheckRequired", undefined, "refs/heads/main"],
+    ["empty", "RecheckRequired", "TargetMoved", ""],
+    ["long", "RecheckRequired", "StackTreeDiffers", "r".repeat(257)],
+  ] as const) {
+    await assert.rejects(
+      finalizerPrepare(rig, project, `recheck-${label}`, {
+        outcome: "Failed",
+        failureKind,
+        ...(failureKind === "RecheckRequired"
+          ? { recheckCommit: finalizerCommit() }
+          : {}),
+        ...(reason === undefined ? {} : { recheckReason: reason }),
+        ...(baseRef === undefined ? {} : { recheckBaseRef: baseRef }),
+      }),
+      /finalization_attempt_recheck_reason_is_known/u,
+      label,
+    );
+  }
+  for (const reason of allFinalizationRecheckReasons)
+    await finalizerPrepare(rig, project, `recheck-admitted-${reason}`, {
+      outcome: "Failed",
+      failureKind: "RecheckRequired",
+      recheckCommit: finalizerCommit(),
+      recheckReason: reason,
+      ...(reason === "MergedTreeDiffers"
+        ? {}
+        : { recheckBaseRef: "refs/heads/main" }),
+    });
 });
 
 test("an attempt names a request, a repository and a configuration that were retained", async () => {
