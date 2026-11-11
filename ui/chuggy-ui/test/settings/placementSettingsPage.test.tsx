@@ -29,7 +29,7 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { leadPartition, leadSelectorSettingsBody } from "../leadFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { renderCopied } from "../copied.tsx";
 
@@ -82,6 +82,8 @@ interface Drawing {
   /** The owner fallback's read, answered as absent where a case names none so
    * the placement's own Edit is the page's only one. */
   readonly fallback?: unknown;
+  /** The lead's effective settings, which the subsidized lead's line reads. */
+  readonly settings?: unknown;
 }
 
 async function drawPage(
@@ -96,6 +98,8 @@ async function drawPage(
       return drawing.fallback === undefined
         ? answer({ error: { code: "NotFound" } }, 404)
         : answer(drawing.fallback);
+    if (request.url.endsWith("/selector-settings"))
+      return answer(drawing.settings ?? leadSelectorSettingsBody());
     if (request.url.endsWith("/session-placement"))
       return (drawing.sessionsHeld ?? Promise.resolve()).then(() =>
         drawing.sessionsFailing === true
@@ -198,7 +202,10 @@ test("a reader the tenant granted hosted runs is offered both routes, and a save
     wrote.map((one) => [one.url.split("/").pop(), one.body]),
   ).toStrictEqual([
     ["execution-placement", { work: "InCluster", evaluation: "Pool" }],
-    ["session-placement", { thread: "InCluster", lead: "Pool" }],
+    [
+      "session-placement",
+      { thread: "InCluster", lead: "Pool", leadOffering: "Own" },
+    ],
   ]);
   expect(screen.getByText("Written")).toBeTruthy();
   expect(placementRows()).toContain("EvaluationRunnersProject");
@@ -276,7 +283,10 @@ test("a reader without the hosted grant who moves work alone writes work's place
   expect(placementRows()).toContain("ChatHosted runsDefault");
 });
 
-test("a reader who moves chat alone writes the session placement alone", async () => {
+/** A row storing the subsidized lead after the deployment withdrew it reads
+ * `Own`, and a write naming no offering would be held to the stored one and
+ * refused, so a chat move names the offering read. */
+test("a reader who moves chat alone writes the session placement alone, naming the lead's offering as read", async () => {
   const sent = await drawPage({
     written: [
       answer({
@@ -289,9 +299,114 @@ test("a reader who moves chat alone writes the session placement alone", async (
   await choose("Chat", "Hosted runs");
   await press("Save changes");
   expect(puts(sent)).toStrictEqual([
-    ["session-placement", { thread: "InCluster", lead: "InCluster" }],
+    [
+      "session-placement",
+      { thread: "InCluster", lead: "InCluster", leadOffering: "Own" },
+    ],
   ]);
   expect(screen.getByText("Written")).toBeTruthy();
+});
+
+/** The deployment publishes the subsidized lead, and this project's lead is
+ * the members' own. */
+const subsidyOffered = {
+  ...sessionsGranted,
+  leadOfferings: ["Own", "Subsidized"],
+};
+
+/** The subsidized lead's line under its choice in the lead's group. */
+function leadLine(): string | null | undefined {
+  const lead = screen.getByRole("radiogroup", { name: "Lead" });
+  const id = radio("Lead", "Subsidized").getAttribute("aria-describedby");
+  return id === null
+    ? undefined
+    : lead.querySelector(`[id="${id}"]`)?.textContent;
+}
+
+test("the subsidized lead is offered beside the lead's routes wherever the deployment admits it, and choosing it writes the offering", async () => {
+  const sent = await drawPage({
+    sessions: subsidyOffered,
+    written: [
+      answer({
+        ...subsidyOffered,
+        lead: { route: "InCluster", source: "Project" },
+        leadOffering: "Subsidized",
+      }),
+    ],
+  });
+  await press("Edit");
+  expect(offered("Lead")).toStrictEqual(["InCluster", "Pool", "Subsidized"]);
+  expect(offered("Chat")).toStrictEqual(["InCluster", "Pool"]);
+  expect(leadLine()).toBe("Runs on chuggy · Free up to a monthly allowance");
+  await choose("Lead", "Subsidized");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    [
+      "session-placement",
+      { thread: "Pool", lead: "InCluster", leadOffering: "Subsidized" },
+    ],
+  ]);
+  expect(placementRows()).toContain("LeadSubsidizedProject");
+});
+
+/** A grantless administrator may not choose hosted runs, and the subsidized
+ * lead needs no grant, so it is theirs to choose. */
+test("a reader without the hosted grant may still choose the subsidized lead", async () => {
+  await drawPage({
+    ...grantless,
+    sessions: { ...grantless.sessions, leadOfferings: ["Own", "Subsidized"] },
+  });
+  await press("Edit");
+  expect(radio("Lead", "Hosted runs").hasAttribute("disabled")).toBe(true);
+  expect(radio("Lead", "Subsidized").hasAttribute("disabled")).toBe(false);
+});
+
+test("a subsidized project's lead is drawn subsidized, its line names the model it runs, and a chat move keeps it subsidized", async () => {
+  const subsidizedSessions = {
+    ...subsidyOffered,
+    leadOffering: "Subsidized",
+  };
+  const sent = await drawPage({
+    sessions: subsidizedSessions,
+    settings: leadSelectorSettingsBody(
+      12,
+      {},
+      {
+        leadOffering: "Subsidized",
+        leadModel: "claude-haiku-5-5",
+        leadEffort: "low",
+      },
+    ),
+    written: [answer(subsidizedSessions)],
+  });
+  expect(placementRows()).toContain("LeadSubsidizedSite");
+  await press("Edit");
+  expect(radio("Lead", "Subsidized").getAttribute("aria-checked")).toBe("true");
+  expect(leadLine()).toBe(
+    "Runs claude-haiku-5-5 on chuggy · Free up to a monthly allowance",
+  );
+  await choose("Chat", "Hosted runs");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    [
+      "session-placement",
+      { thread: "InCluster", lead: "InCluster", leadOffering: "Subsidized" },
+    ],
+  ]);
+});
+
+/** Where the deployment admits no subsidized lead the editor is as it was,
+ * and nothing reads the lead's settings for a line no choice carries. */
+test("a project the deployment offers no subsidized lead is offered the lead's routes alone", async () => {
+  const sent = await drawPage();
+  expect(placementRows()).toContain("LeadHosted runsSite");
+  await press("Edit");
+  expect(offered("Lead")).toStrictEqual(["InCluster", "Pool"]);
+  expect(screen.queryByText("Subsidized")).toBeNull();
+  expect(screen.queryByText(/Free up to a monthly allowance/u)).toBeNull();
+  expect(sent.some((one) => one.url.endsWith("/selector-settings"))).toBe(
+    false,
+  );
 });
 
 /** A drawing a case moves under the page while its editor is open. */
@@ -366,7 +481,10 @@ test("a lead moved under an open editor is drawn where it moved, and a chat move
   await choose("Chat", "Hosted runs");
   await press("Save changes");
   expect(puts(sent)).toStrictEqual([
-    ["session-placement", { thread: "InCluster", lead: "Pool" }],
+    [
+      "session-placement",
+      { thread: "InCluster", lead: "Pool", leadOffering: "Own" },
+    ],
   ]);
 });
 
@@ -393,7 +511,10 @@ test("a lead moved to hosted under a grantless editor is written hosted when cha
   await choose("Chat", "Runners");
   await press("Save changes");
   expect(puts(sent)).toStrictEqual([
-    ["session-placement", { thread: "Pool", lead: "InCluster" }],
+    [
+      "session-placement",
+      { thread: "Pool", lead: "InCluster", leadOffering: "Own" },
+    ],
   ]);
 });
 

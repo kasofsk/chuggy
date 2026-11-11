@@ -14,6 +14,7 @@ figures-absent-waiting = Waiting
 figures-basis-list = list
 figures-basis-mixed = mixed
 figures-basis-title = List price, not a bill
+figures-cost-capped = { $spent } of { $cap }
 figures-tokens = tok
 figures-ago = { $elapsed } ago
 figures-since = { $happened } { $elapsed } ago
