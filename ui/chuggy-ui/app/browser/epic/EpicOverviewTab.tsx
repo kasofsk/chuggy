@@ -118,7 +118,7 @@ function EpicOverviewList(props: {
   );
 }
 
-/** The graph in small, without words: blocks filled by state, edges lines. */
+/** The graph in small: blocks filled by state and numbered, edges lines. */
 function EpicOverviewGraphDrawn(props: {
   readonly graph: EpicGraphResponse;
   readonly tickets: ReadonlyMap<number, EpicGraphTicket>;
@@ -160,6 +160,21 @@ function EpicOverviewGraphDrawn(props: {
                 height={block.height}
                 rx={14}
               />
+            ))}
+            {small.blocks.map((block) => (
+              <text
+                key={block.ticket}
+                className="epic-overview-graph-number"
+                data-tone={block.tone}
+                data-form={block.form}
+                x={block.x + block.width / 2}
+                y={block.y + block.height / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={30}
+              >
+                #{block.ticket}
+              </text>
             ))}
           </svg>
         );
