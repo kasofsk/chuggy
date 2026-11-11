@@ -2083,7 +2083,7 @@ for build in node_modules/n-os node_modules/n/node_modules/n-cpu node_modules/n-
 	refute "the whole record leaves out $build" 0 "$RC" "\"$build\""
 done
 whole_of "$WORK/whole.json" n
-check "a whole record naming a package could not run" 2 "$RC" "--whole names no package"
+check "a whole record naming a package could not run" 2 "$RC" "nothing follows --whole"
 printf 'not a lock\n' > "$WORK/broken-lock.json"
 whole_of "$WORK/broken-lock.json"
 check "a whole record that cannot be read fails" 1 "$RC" "cannot be read"

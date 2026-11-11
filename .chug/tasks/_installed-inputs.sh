@@ -21,9 +21,10 @@
 #
 # THE WHOLE INSTALL IS THE RECORD LESS EACH BUILD FOR ONE PLATFORM, printed
 # with `--whole` in place of names. npm installs the build that fits the
-# machine it runs on and records only that one, so one lock installed on two
-# machines is recorded differently by those builds alone, and a key that held
-# them would never reuse a pass from one machine on the other. A build for one
+# machine it runs on, and some releases record only that one where others
+# record every platform's, so one lock installed on two machines, or by two
+# releases, can be recorded differently by those builds alone, and a key that
+# held them would reuse no pass from one on the other. A build for one
 # platform is an entry stating an `os`, a `cpu` or a `libc`; what the key holds
 # of it is the package that names it among its optional dependencies.
 #
@@ -50,7 +51,7 @@ if [ "${1:-}" = "--whole" ]; then
 	whole=1
 	shift
 	if [ "$#" -ne 0 ]; then
-		echo "_installed-inputs: --whole names no package" >&2
+		echo "_installed-inputs: nothing follows --whole" >&2
 		exit 2
 	fi
 elif [ "$#" -eq 0 ]; then
