@@ -206,12 +206,16 @@ export type LeadInquiryRead =
  * takes no more, `InFlight` their own unanswered questions,
  * `HostedRunsNotGranted` a lead run in cluster for a tenant that grants them no
  * hosted runs, `NoRunner` a lead run on runners where they have registered
- * none. A question too long is not an arm here: it is bounded where it
- * is read off the wire, so it is an invalid request rather than something this
- * door met.
+ * none, `SubsidyExhausted` a subsidized lead whose tenant or deployment has
+ * spent this month's subsidy. A question too long is not an arm here: it is
+ * bounded where it is read off the wire, so it is an invalid request rather
+ * than something this door met.
  */
 export type LeadInquiryAsked =
-  | { readonly result: "NotFound" | "HostedRunsNotGranted" | "NoRunner" }
+  | {
+      readonly result:
+        "NotFound" | "HostedRunsNotGranted" | "NoRunner" | "SubsidyExhausted";
+    }
   | {
       readonly result: "NoLead" | "LeadNotStarted" | "LeadClosed" | "InFlight";
     }

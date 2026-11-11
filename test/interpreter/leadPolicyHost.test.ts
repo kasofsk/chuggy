@@ -62,6 +62,7 @@ import { selectorOperationalContext } from "./selectorFixture.ts";
 import {
   sessionRoutesAt,
   sessionRoutesFlipping,
+  sessionRoutesSubsidyUnspent,
 } from "./sessionRoutesFixture.ts";
 import {
   agenticRefusalReasonCharsMax,
@@ -1614,6 +1615,10 @@ function offeredRoutes(offering: () => LeadOffering): LeadRouteReads {
   return {
     ...sessionRoutesAt(),
     leadOffering: () => Promise.resolve(offering()),
+    subsidizedLeadSpend: () =>
+      Promise.resolve(
+        offering() === "Subsidized" ? sessionRoutesSubsidyUnspent : undefined,
+      ),
   };
 }
 

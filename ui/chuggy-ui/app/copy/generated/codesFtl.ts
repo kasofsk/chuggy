@@ -77,6 +77,7 @@ codes-lead-absence-unnamed = No { -lead } named for this { -site }
 codes-lead-absence-hosted-runs = { -hosted-runs(case: "upper") } not granted
 codes-lead-absence-runner-offline = No live { -runner }
 codes-lead-absence-usage-paused = Paused for usage
+codes-lead-absence-subsidy-exhausted = Month's allowance spent · Resumes next month or on { -runner(form: "plural") }
 
 ## Where one landing stands.
 

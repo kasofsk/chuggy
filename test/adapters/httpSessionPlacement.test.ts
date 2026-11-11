@@ -49,6 +49,7 @@ function storeRecording(
 ): SessionPlacementStore {
   return {
     leadOffering: () => Promise.resolve(offering.resolved),
+    subsidizedLeadSpend: () => Promise.resolve(undefined),
     storedLeadOffering: () => Promise.resolve(offering.stored),
     subsidizedLeadOffered: () => Promise.resolve(offering.offered),
     route: (_partition, kind) =>

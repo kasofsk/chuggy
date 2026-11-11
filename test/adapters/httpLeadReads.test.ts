@@ -18,6 +18,7 @@ import test from "node:test";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
+import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import {
   agenticRefusalsResponseSchema,
   leadResponseSchema,
@@ -44,6 +45,7 @@ import type {
   LeadRefused,
   LeadStanding,
 } from "../../src/interpreter/leadRead.ts";
+import type { SubsidizedLeadSpend } from "../../src/interpreter/sessionPlacement.ts";
 import type {
   SessionContextRead,
   SessionContextTurn,
@@ -227,6 +229,8 @@ interface LeadCase {
   readonly refusalRows?: number;
   /** Whether the ledger's newest entry lifts the refusal before it. */
   readonly lifted?: boolean;
+  /** What the project's subsidy has spent this month, where its lead resolves `Subsidized`. */
+  readonly subsidy?: SubsidizedLeadSpend;
 }
 
 /**
@@ -339,6 +343,7 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
             .slice(0, limit),
         ),
       leadRefusal: () => Promise.resolve(shape.refused),
+      subsidizedLeadSpend: () => Promise.resolve(shape.subsidy),
     },
     store: {
       readBatch: (object) =>
@@ -591,6 +596,47 @@ test("a lead refused for usage names when the pause ends, with a session and wit
     nativeHttpEndpoints.lead.response.parse(found.json()),
     found.json(),
   );
+});
+
+/**
+ * A subsidized lead's read says what its tenant spent of the subsidy this
+ * month against its cap, and never the deployment's spend or cap; a lead run
+ * as its own says neither, and both bodies are the lead endpoint's and the
+ * Session event's shape.
+ */
+test("a subsidized lead answers its tenant's spend this month and its cap, and an own lead answers neither", async () => {
+  await using subsidized = appOf({
+    subsidy: {
+      tenantMicros: 1_250_000,
+      tenantMonthlyMicros: 5_000_000,
+      deploymentMicros: 40_000_000,
+      deploymentMonthlyMicros: 50_000_000,
+    },
+  });
+  const found = await subsidized.inject({
+    url: `${root}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(found.json<{ subsidy: unknown }>().subsidy, {
+    tenantMicros: 1_250_000,
+    tenantMonthlyMicros: 5_000_000,
+  });
+  assert.deepEqual(
+    nativeHttpEndpoints.lead.response.parse(found.json()),
+    found.json(),
+  );
+  assert.deepEqual(
+    projectChangeRepresentationSchemas.Session.parse(found.json()),
+    found.json(),
+  );
+  await using own = appOf({});
+  const ownFound = await own.inject({
+    url: `${root}/lead`,
+    headers: authorized,
+  });
+  assert.equal(ownFound.statusCode, 200);
+  assert.equal(Object.hasOwn(ownFound.json(), "subsidy"), false);
 });
 
 /**

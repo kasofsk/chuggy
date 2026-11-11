@@ -216,6 +216,8 @@ export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
       return { id: "codes-lead-absence-runner-offline" };
     case "UsagePaused":
       return { id: "codes-lead-absence-usage-paused" };
+    case "SubsidyExhausted":
+      return { id: "codes-lead-absence-subsidy-exhausted" };
   }
 }
 
