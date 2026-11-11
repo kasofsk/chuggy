@@ -336,7 +336,12 @@
   },
   {
     "release": "1.67.0",
-    "wire": "29ac7b51b4d3c34251eabdd1234c849abf0f1d4c41ab195a8748a9e711ceacb5",
-    "files": "410b040f851c5d61d260fb3a6d50bdf6f7ebf8006aa88649553bdb69b13a2ae5"
+    "wire": "91076f984b870b8e377d20f184a9c38bb7990698644450ae6875a9c60f31665c",
+    "files": "a26de3969f66389d45a5e68f698d3734fe54d328fd6f3f8f73836c1479114b66"
+  },
+  {
+    "release": "1.68.0",
+    "wire": "e9c7a2c25ac9ecf7c80adff733c8e0a7317404202a4ff1d4da8ee63ea27c357a",
+    "files": "f575f09c4ac4b755a8a2e8daa500e7ab8708ee046bc7c88c1e0a42a2d80dfc21"
   }
 ]

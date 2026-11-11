@@ -81,7 +81,10 @@ test("origination, revoking, updating, dispatching and offering are admitted for
   }
   const projectTools = new Set<string>(
     Object.entries(chuggyToolCapabilities)
-      .filter(([capability]) => capability !== "MemberRead")
+      .filter(
+        ([capability]) =>
+          capability !== "MemberRead" && capability !== "ProjectSettings",
+      )
       .flatMap(([, tools]) => tools),
   );
   assert.deepEqual(
