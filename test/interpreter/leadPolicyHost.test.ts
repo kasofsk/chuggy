@@ -216,6 +216,8 @@ interface MailboxOptions {
   readonly decisionTurnTokens?: number;
   /** The slot the lead was opened on, the decision's own unless a case says otherwise. */
   readonly credentialSlot?: string;
+  /** Whether the lead runs on its own system prompt alone, which it does not unless a case says so. */
+  readonly systemPromptOwn?: boolean;
   /** What the closing door answers, which closes the lead only where it is `Closed`. */
   readonly closed?: LeadClosed;
 }
@@ -250,6 +252,7 @@ function mailboxStanding(
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.effort === undefined ? {} : { effort: options.effort }),
     credentialSlot: options.credentialSlot ?? leadCredentialSlot,
+    systemPromptOwn: options.systemPromptOwn ?? false,
     ...(options.decisionTurnTokens === undefined
       ? {}
       : { decisionTurnTokens: options.decisionTurnTokens }),
@@ -281,6 +284,7 @@ function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
             ...(opening.model === undefined ? {} : { model: opening.model }),
             ...(opening.effort === undefined ? {} : { effort: opening.effort }),
             credentialSlot: opening.credentialSlot,
+            systemPromptOwn: opening.systemPromptOwn,
           };
         return Promise.resolve({
           opened: "Opened" as const,
@@ -554,6 +558,7 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
     state: "Open",
     autoCompactWindow: resolvedWindow,
     credentialSlot: leadCredentialSlot,
+    systemPromptOwn: false,
   } as const;
   const cases: readonly (readonly [string, LeadSessionStanding, boolean])[] = [
     ["composed, unmeasured", { ...open, systemPrompt: composedPrompt }, false],
@@ -573,6 +578,7 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
         state: "Open",
         systemPrompt: composedPrompt,
         credentialSlot: leadCredentialSlot,
+        systemPromptOwn: false,
       },
       true,
     ],
@@ -596,6 +602,11 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
     ],
     ["another prompt", { ...open, systemPrompt: "an older prompt" }, true],
     ["no prompt", open, true],
+    [
+      "on its own system prompt",
+      { ...open, systemPrompt: composedPrompt, systemPromptOwn: true },
+      true,
+    ],
   ];
   for (const [label, standing, replaced] of cases)
     assert.equal(
@@ -1639,8 +1650,9 @@ test("a subsidized lead of a tenant granting no hosted runs is admitted, asking 
       opening.model,
       opening.effort,
       opening.autoCompactWindow,
+      opening.systemPromptOwn,
     ]),
-    [["anthropic-api", "claude-haiku-5-5", "medium", subsidizedWindow]],
+    [["anthropic-api", "claude-haiku-5-5", "medium", subsidizedWindow, true]],
   );
   assert.equal(double.offers.length, 1);
 });
@@ -1668,8 +1680,17 @@ test("an own lead in cluster of a tenant granting no hosted runs is still refuse
       opening.model,
       opening.effort,
       opening.autoCompactWindow,
+      opening.systemPromptOwn,
     ]),
-    [[leadCredentialSlot, "claude-sonnet-5-5", "medium", resolvedWindow]],
+    [
+      [
+        leadCredentialSlot,
+        "claude-sonnet-5-5",
+        "medium",
+        resolvedWindow,
+        false,
+      ],
+    ],
   );
 });
 
@@ -1684,6 +1705,7 @@ test("a subsidized lead whose turn spent more than the profile's turn bound is r
       model: subsidizedRuntime.model,
       effort: subsidizedRuntime.effort,
       credentialSlot: subsidizedRuntime.credentialSlot,
+      systemPromptOwn: true,
       decisionTurnTokens: spent,
     });
     await hostedPolicyOf(
@@ -1702,6 +1724,48 @@ test("a subsidized lead whose turn spent more than the profile's turn bound is r
     subsidizedRuntime.turnTokensMax + 1 < leadTurnTokensMax,
     "the case spends less than an own lead's bound",
   );
+});
+
+/** A lead on every part of the subsidized profile but its own system prompt, as a lead stored before it held one stands. */
+const subsidizedProfileWithSettings = {
+  agentReference: "agent-session-9",
+  autoCompactWindow: subsidizedWindow,
+  credentialSlot: subsidizedRuntime.credentialSlot,
+  model: subsidizedRuntime.model,
+  effort: subsidizedRuntime.effort,
+  systemPromptOwn: false,
+} as const;
+
+test("a lead on the subsidized profile that loads its project's settings is replaced before a subsidized decision, by one on its own system prompt", async () => {
+  const double = mailboxDouble(subsidizedProfileWithSettings);
+  await hostedPolicyOf(
+    double,
+    hostedAuthority("Refused").access,
+    offeredRoutes(() => "Subsidized"),
+  ).execute(subsidizedRequest, new AbortController().signal);
+  assert.deepEqual(double.closings, ["lead-session"]);
+  assert.deepEqual(
+    double.openings.map((opening) => opening.systemPromptOwn),
+    [true],
+  );
+  assert.equal(double.offers.length, 1);
+});
+
+test("a lead on the subsidized profile that loads its project's settings, which the door will not close, offers no subsidized turn", async () => {
+  const double = mailboxDouble({
+    ...subsidizedProfileWithSettings,
+    closed: "TurnInFlight",
+  });
+  await assert.rejects(
+    hostedPolicyOf(
+      double,
+      hostedAuthority("Refused").access,
+      offeredRoutes(() => "Subsidized"),
+    ).execute(subsidizedRequest, new AbortController().signal),
+    /the lead that stands runs on another slot/u,
+  );
+  assert.deepEqual(double.openings, []);
+  assert.deepEqual(double.offers, []);
 });
 
 test("switching a lead between its own and the subsidized offering replaces it before each next decision", async () => {
@@ -1792,6 +1856,7 @@ test("a subsidized lead the door will not close offers no turn where it is off t
     credentialSlot: subsidizedRuntime.credentialSlot,
     model: "claude-sonnet-5-5",
     effort: subsidizedRuntime.effort,
+    systemPromptOwn: true,
     closed: "InquiryOpen",
   });
   await assert.rejects(
@@ -1812,6 +1877,7 @@ test("a subsidized lead on its profile the door will not close still takes the d
     credentialSlot: subsidizedRuntime.credentialSlot,
     model: subsidizedRuntime.model,
     effort: subsidizedRuntime.effort,
+    systemPromptOwn: true,
     decisionTurnTokens: subsidizedRuntime.turnTokensMax + 1,
     closed: "InquiryOpen",
   });

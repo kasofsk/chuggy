@@ -68,6 +68,8 @@ export interface SessionPlaneIdentity {
    * the lead rather than resuming a fork whose store holds nothing.
    */
   readonly forkFrom?: string;
+  /** Present where the session runs on its own system prompt with none of its project's settings; an inquiry's is its lead's. */
+  readonly systemPromptOwn?: true;
   /** Whether the attempt may still act, which every route requires before anything else. */
   readonly live: boolean;
 }
