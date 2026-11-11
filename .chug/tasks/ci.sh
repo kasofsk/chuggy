@@ -38,18 +38,18 @@
 # salt below; none holds this script, the selection or the base it selects
 # against. A key on record replays its log instead of running, and only an
 # exit of 0 is recorded. A reused pass is a pass and nothing more: it is
-# counted as one, and the clean line says how many there were. What no key
-# sees, a reused pass does not check: a file a gate reads that its declaration
-# does not name, for which a key on an import graph goes on vouching across
-# trees until the salt moves or `just check-full` runs the gate, a different
-# server behind the same URL, a container reused by name, a file outside the
-# tree or outside the scope `_ignored-inputs.sh` keys, such as a package
-# changed under node_modules by hand, the build npm installed for this machine
-# of a package built for each platform, and git's own state: HEAD, the index
-# and history, except where a gate keys them itself. With TRACK_RECORD_OFF=1,
-# or without a token, a `track-record` that runs or a record directory,
-# nothing is wrapped, every gate runs itself, and one line names the first
-# reason why.
+# counted as one for each gate, shell suite or unit suite it holds, and the
+# clean line says how many there were. What no key sees, a reused pass does
+# not check: a file a gate reads that its declaration does not name, for which
+# a key on an import graph goes on vouching across trees until the salt moves
+# or `just check-full` runs the gate, a different server behind the same URL,
+# a container reused by name, a file outside the tree or outside the scope
+# `_ignored-inputs.sh` keys, such as a package changed under node_modules by
+# hand, the build npm installed for this machine of a package built for each
+# platform, and git's own state: HEAD, the index and history, except where a
+# gate keys them itself. With TRACK_RECORD_OFF=1, or without a token, a
+# `track-record` that runs or a record directory, nothing is wrapped, every
+# gate runs itself, and one line names the first reason why.
 #
 # ONE RUN AT A TIME HOLDS A CHECKOUT. A second is refused while the first is
 # alive, since two would share the logs and each other's machine, and of two
@@ -595,7 +595,6 @@ run_unit_stage() { # <label> <script> --unit
 	export CHUG_UNIT_RESULTS
 
 	unit_pending="$unit_entries"
-	unit_reused=0
 	unit_reused_suites=0
 	if [ -n "$record" ]; then
 		# shellcheck disable=SC2086 # an entry a word, by construction
@@ -604,7 +603,6 @@ run_unit_stage() { # <label> <script> --unit
 		for unit_entry in $unit_entries; do
 			if [ "$(cat "$unit_entry.rc" 2>/dev/null)" = 0 ] &&
 				record_reused "$(cat "$unit_entry.name")" "$unit_entry.err"; then
-				unit_reused=$((unit_reused + 1))
 				unit_reused_suites=$((unit_reused_suites + $(grep -c '' "$unit_entry.suites")))
 			else
 				unit_pending="$unit_pending $unit_entry"
@@ -653,7 +651,7 @@ run_unit_stage() { # <label> <script> --unit
 	for unit_entry in $unit_pending; do
 		[ "$(cat "$unit_entry.rc" 2>/dev/null)" = 0 ] || unit_red="$unit_red $unit_entry"
 	done
-	reused=$((reused + unit_reused))
+	reused=$((reused + unit_reused_suites))
 	echo "ci: unit suites $unit_closed_count closed, $unit_open_count open; $unit_selected selected, $unit_reused_suites reused, $unit_ran ran"
 	for unit_entry in $unit_red; do unit_red_show "$unit_entry"; done
 	case "$unit_verdict" in

@@ -2833,6 +2833,9 @@ unit_stored() { # <label> <suite>...
 	unit_stored "a first run under a token" $unit_open $unit_closed
 	unit_stored "the same tree again"
 	check "which reuses every suite" 0 "$RC" "5 selected, 5 reused, 0 ran"
+	# Every wrapped stub gate and every unit suite, each open one counted
+	# though they are one entry.
+	check "and counts each reused suite in the run's total" 0 "$RC" "ci: all gates clean (23 reused)"
 	printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
 	unit_stored "a module one closed suite reaches" test/unit/typed.test.ts $unit_open
 	check "which reuses the other closed suites" 0 "$RC" "5 selected, 2 reused, 3 ran"
