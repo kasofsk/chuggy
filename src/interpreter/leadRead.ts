@@ -70,6 +70,7 @@ import type {
 } from "../contract/rosters.ts";
 import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
+import type { SubsidizedLeadSpend } from "./sessionPlacement.ts";
 import type { JsonValue, SelectorProjectState } from "./selector.ts";
 
 /** One turn of the lead's mailbox as a reader sees it; its input is not a reader's business. */
@@ -141,13 +142,24 @@ export interface LeadReadStore extends SessionStoreRowsRead {
   ): Promise<readonly SessionStoreStreamRow[]>;
   /** The lead refusal the selector keeps for the project, or nothing where none stands. */
   leadRefusal(partition: Partition): Promise<LeadRefused | undefined>;
+  /** What the project's tenant and the deployment spent of the subsidy this month, absent where its lead runs as its own. */
+  subsidizedLeadSpend(
+    partition: Partition,
+  ): Promise<SubsidizedLeadSpend | undefined>;
+}
+
+/** What a subsidized lead's tenant spent of the subsidy this month, beside its cap. */
+export interface LeadSubsidy {
+  readonly tenantMicros: number;
+  readonly tenantMonthlyMicros: number;
 }
 
 /**
  * What the last selector cycle that needed a project's lead was refused
  * admission for, kept only until a cycle is admitted or has nothing to decide,
  * and since when that has been the answer. `until` is when a `UsagePaused`
- * refusal's pause ends as it stands at the read, absent where none holds now.
+ * refusal's pause ends as it stands at the read, absent where none holds now,
+ * and the next month's first instant for `SubsidyExhausted`.
  */
 export interface LeadRefused {
   readonly reason: LeadAdmissionRefusal;
@@ -183,7 +195,10 @@ export interface HandoffNotePreview {
   readonly truncated: boolean;
 }
 
-/** A lead that holds a session carries the refusal the selector keeps for it, where one stands. */
+/**
+ * A lead that holds a session carries the refusal the selector keeps for it,
+ * where one stands, and a subsidized one its tenant's spend this month.
+ */
 export type LeadRead =
   | { readonly result: "NotFound" }
   | { readonly result: "None"; readonly absence: LeadAbsence }
@@ -192,6 +207,7 @@ export type LeadRead =
       readonly lead: LeadStanding;
       readonly streams: readonly SessionStoreStreamRow[];
       readonly refusal?: LeadRefused;
+      readonly subsidy?: LeadSubsidy;
     };
 
 export interface LeadTranscriptQuery {

@@ -106,6 +106,10 @@ export interface SessionRouteReads {
   route(partition: Partition, kind: SessionKind): Promise<SessionRouteResolved>;
   /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
   leadOffering(partition: Partition): Promise<LeadOffering>;
+  /** What the project's tenant and the deployment spent of the subsidy this month, absent where its lead does not resolve `Subsidized`. */
+  subsidizedLeadSpend(
+    partition: Partition,
+  ): Promise<SubsidizedLeadSpend | undefined>;
   /** `mine` and `inquiry` are `Unregistered` where no member is named. */
   runners(
     partition: Partition,
@@ -116,7 +120,7 @@ export interface SessionRouteReads {
 /** The reads a lead's admission asks: where it runs, as which offering, and whether a runner there could take it. */
 export interface LeadRouteReads extends Pick<
   SessionRouteReads,
-  "route" | "leadOffering"
+  "route" | "leadOffering" | "subsidizedLeadSpend"
 > {
   leadRunners(partition: Partition): Promise<LeadRunnerStanding>;
 }
@@ -132,6 +136,40 @@ export interface SubsidizedLeadProfile {
   readonly autoCompactWindow: number;
   readonly inputBytesPerDecision: number;
   readonly turnTokensMax: number;
+}
+
+/**
+ * What a deployment's subsidized lead may spend in one calendar month in UTC:
+ * each tenant's cap, the cap on every tenant's together, and what a turn on
+ * its slot is charged where it failed or an ended attempt left it in flight,
+ * since neither is measured.
+ */
+export interface SubsidizedLeadAllowance {
+  readonly tenantMonthlyMicros: number;
+  readonly deploymentMonthlyMicros: number;
+  readonly unmeasuredTurnMicros: number;
+}
+
+/** The subsidized lead a deployment publishes: what it runs on, and what it may spend. */
+export type SubsidizedLeadOffer = SubsidizedLeadProfile &
+  SubsidizedLeadAllowance;
+
+/** What one tenant's subsidized sessions and every tenant's spent this month, each beside its cap. */
+export interface SubsidizedLeadSpend {
+  readonly tenantMicros: number;
+  readonly tenantMonthlyMicros: number;
+  readonly deploymentMicros: number;
+  readonly deploymentMonthlyMicros: number;
+}
+
+/** Whether the tenant or the deployment has reached its cap, past which no subsidized turn is admitted this month. */
+export function subsidizedLeadSpendExhausted(
+  spend: SubsidizedLeadSpend,
+): boolean {
+  return (
+    spend.tenantMicros >= spend.tenantMonthlyMicros ||
+    spend.deploymentMicros >= spend.deploymentMonthlyMicros
+  );
 }
 
 /** A session placement as an administrator writes it: each kind's route, and the lead's offering where it names one. */
@@ -292,15 +330,35 @@ export function sessionRunnerServes(
 
 /**
  * A member's turn admitted on the route it is stamped with, and whether on the
- * lead's subsidy rather than their grant, or the reason it is not.
+ * lead's subsidy rather than their grant, or the reason it is not. Only an
+ * inquiry is refused `SubsidyExhausted`.
  */
 export type SessionSpend =
+  SessionSpendThread | { readonly spend: "SubsidyExhausted" };
+
+/** What a turn of a member's thread is answered, which no subsidy pays for. */
+export type SessionSpendThread =
   | {
       readonly spend: "Admitted";
       readonly route: PlacementRoute;
       readonly subsidized: boolean;
     }
   | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
+
+/**
+ * Whether an inquiry on this route forks a lead its tenant or the deployment
+ * may no longer spend the subsidy on. It forks the lead's own slot whoever
+ * asks, so a member holding the hosted grant is refused it too.
+ */
+async function sessionSpendSubsidyExhausted(
+  routes: SessionRouteReads,
+  partition: Partition,
+  route: PlacementRoute,
+): Promise<boolean> {
+  if (!placementRouteHosted[route]) return false;
+  const spend = await routes.subsidizedLeadSpend(partition);
+  return spend !== undefined && subsidizedLeadSpendExhausted(spend);
+}
 
 /**
  * Whether a member's turn of this kind on this route may be spent without
@@ -328,14 +386,36 @@ async function sessionSpendSubsidized(
  * one where a runner that would take it is registered, the turn stamped with
  * this route and so both asked of the resolution it keeps. A turn of a
  * member's own session is never in cluster, whatever the site's routing says,
- * and only their chat host takes it.
+ * and only their chat host takes it, and an inquiry of a subsidized lead whose
+ * tenant or deployment has reached its cap is refused before anything else.
  */
+export function sessionSpendRoute(
+  access: ProjectAccess,
+  routes: SessionRouteReads,
+  principal: Principal,
+  partition: Partition,
+  kind: "Inquiry",
+): Promise<SessionSpend>;
+export function sessionSpendRoute(
+  access: ProjectAccess,
+  routes: SessionRouteReads,
+  principal: Principal,
+  partition: Partition,
+  kind: "Thread",
+): Promise<SessionSpendThread>;
+export function sessionSpendRoute(
+  access: ProjectAccess,
+  routes: SessionRouteReads,
+  principal: Principal,
+  partition: Partition,
+  kind: Exclude<SessionKind, "Lead">,
+): Promise<SessionSpend>;
 export async function sessionSpendRoute(
   access: ProjectAccess,
   routes: SessionRouteReads,
   principal: Principal,
   partition: Partition,
-  kind: SessionKind,
+  kind: Exclude<SessionKind, "Lead">,
 ): Promise<SessionSpend> {
   if (memberScopeReserved(partition))
     return sessionRunnerServes(
@@ -345,6 +425,11 @@ export async function sessionSpendRoute(
       ? { spend: "Admitted", route: "Pool", subsidized: false }
       : { spend: "NoRunner" };
   const { route } = await routes.route(partition, kind);
+  if (
+    kind === "Inquiry" &&
+    (await sessionSpendSubsidyExhausted(routes, partition, route))
+  )
+    return { spend: "SubsidyExhausted" };
   const granted = await placementRouteGranted(
     access,
     principal,
@@ -364,6 +449,22 @@ export async function sessionSpendRoute(
     : { spend: "NoRunner" };
 }
 
+/** A subsidized lead admitted while its tenant and the deployment are under their caps. */
+async function leadAdmissionSubsidized(
+  routes: LeadRouteReads,
+  partition: Partition,
+  route: PlacementRoute,
+): Promise<LeadRouteAdmission> {
+  const spend = await routes.subsidizedLeadSpend(partition);
+  if (spend === undefined)
+    throw new Error(
+      "the lead resolved Subsidized and its spend read answered no subsidy",
+    );
+  return subsidizedLeadSpendExhausted(spend)
+    ? { admission: "SubsidyExhausted" }
+    : { admission: "Admitted", route, offering: "Subsidized" };
+}
+
 export const allLeadAdmissions = [
   "Admitted",
   ...leadAdmissionRefusals,
@@ -381,7 +482,8 @@ export type LeadRouteAdmission =
 
 /**
  * Whether a project's lead may take a turn now: on a hosted route a subsidized
- * lead is admitted as one and asks no grant, and otherwise the tenant must
+ * lead is admitted as one and asks no grant, unless its tenant or the
+ * deployment has reached its month's cap, and otherwise the tenant must
  * grant the lead's principal; on a runner route one of the project's must be
  * live with its owner's account not paused, since a turn offered to none that
  * may take it would hold its decision until the decision's deadline.
@@ -395,7 +497,7 @@ export async function leadAdmission(
   const { route } = await routes.route(partition, "Lead");
   if (placementRouteHosted[route]) {
     if ((await routes.leadOffering(partition)) === "Subsidized")
-      return { admission: "Admitted", route, offering: "Subsidized" };
+      return leadAdmissionSubsidized(routes, partition, route);
     return (await hostedRunsGranted(access, principal, partition.tenant))
       ? { admission: "Admitted", route, offering: "Own" }
       : { admission: "HostedRunsNotGranted" };

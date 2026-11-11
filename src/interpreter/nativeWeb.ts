@@ -191,6 +191,7 @@ import {
   type LeadRead,
   type LeadReadStore,
   type LeadRefused,
+  type LeadSubsidy,
   type LeadTranscriptQuery,
   type LeadTranscriptRead,
   type SessionHeldWalk,
@@ -2058,6 +2059,22 @@ async function nativeLeadSessionRefusal(
     : {};
 }
 
+/** A subsidized lead's tenant's spend this month and its cap, and nothing for a lead run as its own. */
+async function nativeLeadSubsidy(
+  ports: NativeLeadPorts,
+  partition: Partition,
+): Promise<{ readonly subsidy?: LeadSubsidy }> {
+  const spend = await ports.leads.subsidizedLeadSpend(partition);
+  return spend === undefined
+    ? {}
+    : {
+        subsidy: {
+          tenantMicros: spend.tenantMicros,
+          tenantMonthlyMicros: spend.tenantMonthlyMicros,
+        },
+      };
+}
+
 /**
  * Whether a released ticket waits on a dispatch decision. A view being rebuilt
  * answers no candidates, so it says none waits until it stands again.
@@ -2103,6 +2120,7 @@ function nativeLeadSessionMethods(
           sessionStoreStreamsAnswered,
         ),
         ...(await nativeLeadSessionRefusal(access, ports, partition)),
+        ...(await nativeLeadSubsidy(ports, partition)),
       };
     },
     leadTranscript: async (principal, partition, query) => {

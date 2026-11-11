@@ -51,7 +51,7 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
-import type { SubsidizedLeadProfile } from "../../src/interpreter/sessionPlacement.ts";
+import type { SubsidizedLeadOffer } from "../../src/interpreter/sessionPlacement.ts";
 import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
 import {
   inquiryRigLead,
@@ -381,18 +381,21 @@ test("an inquiry whose asker's membership is gone is answered with no asker", as
   );
 });
 
-const subsidy: SubsidizedLeadProfile = {
+const subsidy: SubsidizedLeadOffer = {
   credentialSlot: "anthropic-api",
   model: "claude-haiku-5-5",
   effort: "medium",
   autoCompactWindow: 100_000,
   inputBytesPerDecision: 65_536,
   turnTokensMax: 200_000,
+  tenantMonthlyMicros: 5_000_000,
+  deploymentMonthlyMicros: 50_000_000,
+  unmeasuredTurnMicros: 100_000,
 };
 
 /** Publishes `published` as the selector does as it starts, or withdraws it. */
 async function subsidyPublished(
-  published: SubsidizedLeadProfile | undefined,
+  published: SubsidizedLeadOffer | undefined,
 ): Promise<void> {
   const selector = postgresHarnessRolePool(selectorServiceRole);
   try {
@@ -538,6 +541,54 @@ test("a member the tenant grants hosted runs asks a subsidized lead still on the
     await using app = inquiryApp(member.principal);
     await asked(app, partition, "who pays for this?");
     assert.equal((await forkSlots(partition)).length, 1);
+  } finally {
+    await subsidyPublished(undefined);
+  }
+});
+
+/**
+ * The subsidy's cap bounds an inquiry's admission as it does the lead's: the
+ * fork's spend counts toward its tenant's month, and once that reaches the cap
+ * the door opens no fork, so a refused inquiry spends nothing.
+ */
+test("an inquiry's spend counts toward its tenant's month, and one asked past the cap is refused SubsidyExhausted and opens no fork", async () => {
+  await subsidyPublished({ ...subsidy, tenantMonthlyMicros: 1_000 });
+  try {
+    const capped = await subsidizedProject("subsidy-capped", onTheProfile);
+    await using app = inquiryApp(capped.principal);
+    const accepted = await asked(app, capped.partition, "who pays for this?");
+    await rig.sessions.harness.query(
+      `UPDATE session_turn
+          SET state='Answered',result='answered',ended_at=now(),
+              model=$4,tokens=1,cost_micros=1000,duration_ms=1,tools='{}'
+        WHERE tenant=$1 AND project=$2 AND session=$3`,
+      [
+        capped.partition.tenant,
+        capped.partition.project,
+        accepted.session,
+        subsidy.model,
+      ],
+    );
+    const refused = await app.inject({
+      method: "POST",
+      url: pathOf(capped.partition),
+      headers: versioned,
+      payload: {
+        session: `inq-http-${randomUUID()}`,
+        turn: `inq-turn-http-${randomUUID()}`,
+        question: "and now?",
+      },
+    });
+    assert.equal(refused.statusCode, 403, refused.body);
+    assert.equal(
+      refused.json<{ error: { code: string } }>().error.code,
+      "SubsidyExhausted",
+    );
+    assert.equal(
+      (await forkSlots(capped.partition)).length,
+      1,
+      "an inquiry past the cap opened a fork",
+    );
   } finally {
     await subsidyPublished(undefined);
   }

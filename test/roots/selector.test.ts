@@ -106,6 +106,9 @@ const subsidizedLead = {
   autoCompactWindow: 100_000,
   inputBytesPerDecision: 65_536,
   turnTokensMax: 200_000,
+  tenantMonthlyMicros: 5_000_000,
+  deploymentMonthlyMicros: 50_000_000,
+  unmeasuredTurnMicros: 100_000,
 };
 
 /** The lead host's configuration the selector command composes from `configuration`. */
@@ -158,6 +161,11 @@ test("a subsidized lead outside the bounds its counterpart for every lead has, o
     { inputBytesPerDecision: 0 },
     { turnTokensMax: 0 },
     { turnTokensMax: 1_000_001 },
+    { tenantMonthlyMicros: 0 },
+    { deploymentMonthlyMicros: 0 },
+    { unmeasuredTurnMicros: 0 },
+    { unmeasuredTurnMicros: 1.5 },
+    { tenantMonthlyMicros: Number.MAX_SAFE_INTEGER + 1 },
     { credentialSlot: validConfiguration.lead.credentialSlot },
     { unknown: true },
   ]) {

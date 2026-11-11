@@ -1754,7 +1754,8 @@ export const leadStoreStreamResponseSchema = z.object({
  * The admission refusal the last cycle that needed a lead met, which has been
  * the answer since `since`. A `UsagePaused` refusal names in `until` the
  * earliest instant one of the paused runner owners stops being paused, as the
- * pause stands at the read, and never whose account it is or why.
+ * pause stands at the read, and never whose account it is or why, and a
+ * `SubsidyExhausted` one the first instant of the next calendar month in UTC.
  */
 export const leadRefusalResponseSchema = z.object({
   reason: z.enum(leadAdmissionRefusals),
@@ -1764,9 +1765,19 @@ export const leadRefusalResponseSchema = z.object({
 export type LeadRefusalResponse = z.infer<typeof leadRefusalResponseSchema>;
 
 /**
+ * What a subsidized lead's tenant has spent of the subsidy this calendar month
+ * in UTC, and its cap, each in micro-dollars.
+ */
+export const leadSubsidyResponseSchema = z.object({
+  tenantMicros: countSchema,
+  tenantMonthlyMicros: countSchema,
+});
+
+/**
  * The project's lead session: what it is, what it decided under, its mailbox
- * tail, and the refusal kept for it where one stands and neither the
- * selector's pause nor its want of a grant outranks it.
+ * tail, the refusal kept for it where one stands and neither the selector's
+ * pause nor its want of a grant outranks it, and a subsidized lead's spend
+ * this month, absent for a lead run as its own.
  */
 export const leadResponseSchema = z.object({
   session: identitySchema,
@@ -1780,6 +1791,7 @@ export const leadResponseSchema = z.object({
     .array(leadStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
   refusal: leadRefusalResponseSchema.optional(),
+  subsidy: leadSubsidyResponseSchema.optional(),
 });
 export type LeadResponse = z.infer<typeof leadResponseSchema>;
 

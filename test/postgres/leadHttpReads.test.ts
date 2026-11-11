@@ -31,6 +31,7 @@ import {
 } from "../../src/contract/responses.ts";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import { postgresSubsidizedLeadPrecondition } from "../../src/adapters/postgres/sessionPlacement.ts";
 import { postgresSessionContext } from "../../src/adapters/postgres/sessionContext.ts";
 import {
   postgresSelectorProjectSettings,
@@ -752,6 +753,100 @@ test("a lead refused for usage answers when the pause ends, and never whose acco
   const carried = found.json<{ refusal: object }>().refusal;
   assert.deepEqual(Object.keys(carried).sort(), ["reason", "since", "until"]);
   assert.ok(!found.body.includes(owner), "the read names the owner");
+});
+
+/** A project whose lead runs in cluster as `offering`, its lead opened on `slot` with one answered turn of `costMicros`. */
+async function subsidizedLeadSpent(
+  label: string,
+  offering: "Own" | "Subsidized",
+  slot: string,
+  costMicros: number,
+): Promise<Partition> {
+  const partition = await readableProject(label);
+  await rig.sessions.harness.query(
+    `SELECT set_project_session_placement($1,$2,'Pool','InCluster',$3,'Member','an-owner')`,
+    [partition.tenant, partition.project, offering],
+  );
+  const session = await sessionRigSession(rig.sessions, partition, label, {
+    kind: "Lead",
+    credentialSlot: slot,
+  });
+  await rig.sessions.harness.query(
+    `INSERT INTO session_turn
+       (tenant,project,session,turn,ordinal,input_kind,input,state,result,
+        ended_at,model,tokens,cost_micros,duration_ms,tools,route)
+     VALUES ($1,$2,$3,$4,1,'Observation','{}','Answered','{}',now(),
+             'claude-haiku-5-5',1,$5,1,'{}','InCluster')`,
+    [partition.tenant, partition.project, session, `turn-${label}`, costMicros],
+  );
+  return partition;
+}
+
+/**
+ * A subsidized lead's read carries what its tenant spent of the subsidy this
+ * month and its cap, and a refusal for the spent subsidy ends as the month
+ * does; a lead run as its own carries neither.
+ */
+test("a subsidized project's lead answers its month's spend and cap and when a spent subsidy resumes, and an own project's answers neither", async () => {
+  const slot = `subsidy-http-${randomUUID()}`;
+  const published = postgresSubsidizedLeadPrecondition(rig.selectorPool, {
+    credentialSlot: slot,
+    model: "claude-haiku-5-5",
+    effort: "low",
+    autoCompactWindow: 100_000,
+    inputBytesPerDecision: 65_536,
+    turnTokensMax: 200_000,
+    tenantMonthlyMicros: 2_000,
+    deploymentMonthlyMicros: 20_000,
+    unmeasuredTurnMicros: 10,
+  });
+  assert.deepEqual(await published.check(new AbortController().signal), {
+    met: "Met",
+  });
+  try {
+    const subsidized = await subsidizedLeadSpent(
+      "http-subsidized",
+      "Subsidized",
+      slot,
+      2_000,
+    );
+    await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+      subsidized,
+      "SubsidyExhausted",
+    );
+    await using app = leadApp("http-subsidized");
+    const found = await app.inject({
+      url: `${pathOf(subsidized)}/lead`,
+      headers: authorized,
+    });
+    assert.equal(found.statusCode, 200, found.body);
+    const lead = leadResponseSchema.parse(found.json());
+    assert.deepEqual(lead.subsidy, {
+      tenantMicros: 2_000,
+      tenantMonthlyMicros: 2_000,
+    });
+    const now = new Date();
+    assert.equal(lead.refusal?.reason, "SubsidyExhausted");
+    assert.equal(
+      lead.refusal.until,
+      new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+      ).toISOString(),
+    );
+
+    const own = await subsidizedLeadSpent("http-own", "Own", slot, 500);
+    await using ownApp = leadApp("http-own");
+    const ownFound = await ownApp.inject({
+      url: `${pathOf(own)}/lead`,
+      headers: authorized,
+    });
+    assert.equal(ownFound.statusCode, 200, ownFound.body);
+    assert.equal(Object.hasOwn(ownFound.json(), "subsidy"), false);
+  } finally {
+    await postgresSubsidizedLeadPrecondition(rig.selectorPool, undefined).check(
+      new AbortController().signal,
+    );
+  }
 });
 
 test("the refusals the wire names are the refusals the selector may keep", async () => {
