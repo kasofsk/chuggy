@@ -240,14 +240,22 @@ export function executionOwnsSlot(status: ExecutionStatus): boolean {
   }
 }
 
-/** Whether the move is one the model permits, which is the model's `legalStatusMove`. */
+/**
+ * Whether the move is one the model permits for an execution that does or
+ * does not name a requirement, which is the model's `legalStatusMove`.
+ */
 export function executionLegalMove(
   before: ExecutionStatus,
   after: ExecutionStatus,
+  requirementNamed: boolean,
 ): boolean {
   switch (before) {
     case "Queued":
-      return after === "Admitted" || after === "Cancelled";
+      return (
+        after === "Admitted" ||
+        after === "Cancelled" ||
+        (after === "Terminal" && !requirementNamed)
+      );
     case "Admitted":
       return (
         after === "Launching" || after === "Terminal" || after === "Cancelled"
