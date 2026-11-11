@@ -640,7 +640,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [schedulerRole, workerPlaneRole, apiRole],
   ),
   {
-    signature: `${statusMoveFunction}(text,text)`,
+    signature: `${statusMoveFunction}(text,text,boolean)`,
     definer: false,
     callers: [schedulerRole],
     strangers: [poolPlaneRole],

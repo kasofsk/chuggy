@@ -650,7 +650,7 @@ test("each outcome a pool-routed execution settles with is the status the model 
     const { status, by, run } = runnerConclusions[outcome];
     assert.equal(writers.get(by), status, `${outcome} is ${by}'s ${status}`);
     assert.ok(
-      executionLegalMove("Launching", status),
+      executionLegalMove("Launching", status, true),
       `the ledger cannot take ${outcome}'s ${status} from Launching`,
     );
     const shown = runs.find((each) => each.startsWith(`${run} `));

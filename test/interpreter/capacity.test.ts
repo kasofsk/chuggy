@@ -98,27 +98,72 @@ test("slot ownership is the table model/capacity.qnt writes", () => {
   }
 });
 
-test("the legal moves are the table model/capacity.qnt writes", () => {
+/**
+ * The statuses one arm permits for an execution that does or does not name a
+ * requirement. Each disjunct is a move, unconditional or held to an execution
+ * naming none by `not(requirementNamed)`; any other reading of the flag is a
+ * shape this cannot read, and fails rather than guesses.
+ */
+function legalMovesPermitted(
+  arm: { subject: string; body: string },
+  requirementNamed: boolean,
+): ReadonlySet<string> {
+  const permitted = new Set<string>();
+  for (const disjunct of arm.body.split(" or ")) {
+    const target = /after == ([A-Za-z]+)/.exec(disjunct)?.[1];
+    assert.ok(target, `no move is readable in ${arm.subject}: ${disjunct}`);
+    const flag = disjunct.replace(/after == [A-Za-z]+/, "").trim();
+    if (flag === "") permitted.add(target);
+    else {
+      assert.match(
+        flag,
+        /^\(\s*and not\(requirementNamed\)\)$/,
+        `${arm.subject}: ${disjunct} is not a shape this reads`,
+      );
+      if (!requirementNamed) permitted.add(target);
+    }
+  }
+  return permitted;
+}
+
+test("the legal moves are the table model/capacity.qnt writes, with and without a requirement", () => {
   const arms = matchArms(
     matchBody(
       capacitySource(),
-      "legalStatusMove(before: ExecutionStatus, after: ExecutionStatus): bool =\n    match before {",
+      "legalStatusMove(before: ExecutionStatus, after: ExecutionStatus, requirementNamed: bool): bool =\n    match before {",
     ),
   );
   assert.equal(arms.length, allExecutionStatuses.length);
-  for (const arm of arms) {
-    const permitted = new Set(
-      [...arm.body.matchAll(/after == ([A-Za-z]+)/g)].map((found) => found[1]),
-    );
-    assert.ok(permitted.size > 0, `no move is readable at ${arm.subject}`);
-    for (const after of allExecutionStatuses) {
-      assert.equal(
-        executionLegalMove(arm.subject as ExecutionStatus, after),
-        permitted.has(after),
-        `legalStatusMove disagrees with the model at ${arm.subject} -> ${after}`,
-      );
+  for (const requirementNamed of [true, false]) {
+    for (const arm of arms) {
+      const permitted = legalMovesPermitted(arm, requirementNamed);
+      assert.ok(permitted.size > 0, `no move is readable at ${arm.subject}`);
+      for (const after of allExecutionStatuses) {
+        assert.equal(
+          executionLegalMove(
+            arm.subject as ExecutionStatus,
+            after,
+            requirementNamed,
+          ),
+          permitted.has(after),
+          `legalStatusMove disagrees with the model at ${arm.subject} -> ${after}, requirementNamed ${requirementNamed}`,
+        );
+      }
     }
   }
+});
+
+test("only an execution naming no requirement may go from Queued to Terminal", () => {
+  assert.equal(executionLegalMove("Queued", "Terminal", false), true);
+  assert.equal(executionLegalMove("Queued", "Terminal", true), false);
+  for (const before of allExecutionStatuses)
+    for (const after of allExecutionStatuses)
+      if (before !== "Queued" || after !== "Terminal")
+        assert.equal(
+          executionLegalMove(before, after, false),
+          executionLegalMove(before, after, true),
+          `naming a requirement changes ${before} -> ${after}`,
+        );
 });
 
 /** One registration, with only the fields the capacity arithmetic reads. */
