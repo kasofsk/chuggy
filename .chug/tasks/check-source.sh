@@ -133,27 +133,20 @@ residue() {
 	return 1
 }
 
-# One linter process per configuration. A console under `ui/` carries an
-# `eslint.config.js` of its own, which the linter applies to the files below
-# it, and each configuration's typed rules hold a TypeScript program of their
-# own. The root's run is told to skip each console's directory, so the runs
-# are a partition of what `eslint .` reads and not a narrowing of it. Each
-# process is given the heap V8 gives one on a machine with memory to spare,
-# because in a container V8 sizes the heap to a share of the container's, and
-# the root's program alone outgrows that share.
+# The root's configuration over the root's tree. A console under `ui/` carries
+# an `eslint.config.js` of its own, and its own `lint` script, which
+# `check-console.sh` runs, is what lints it; so the root's run is told to skip
+# each console's directory rather than lint it a second time. The process is
+# given the heap V8 gives one on a machine with memory to spare, because in a
+# container V8 sizes the heap to a share of the container's, and the root's
+# program alone outgrows that share.
 lint() {
-	rc=0
-	heap="${NODE_OPTIONS:-} --max-old-space-size=4096"
 	for config in ui/*/eslint.config.js; do
 		[ -f "$config" ] || continue
-		console="${config%/eslint.config.js}"
-		set -- "$@" --ignore-pattern "$console/**"
-		NODE_OPTIONS="$heap" CHUG_SAFEQL_DATABASE_URL= \
-			./node_modules/.bin/eslint "$console" || rc=1
+		set -- "$@" --ignore-pattern "${config%/eslint.config.js}/**"
 	done
-	NODE_OPTIONS="$heap" CHUG_SAFEQL_DATABASE_URL= \
-		./node_modules/.bin/eslint "$@" . || rc=1
-	return "$rc"
+	NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096" CHUG_SAFEQL_DATABASE_URL= \
+		./node_modules/.bin/eslint "$@" .
 }
 
 if [ "$run_static" -eq 1 ]; then

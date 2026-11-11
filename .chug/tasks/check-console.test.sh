@@ -172,6 +172,20 @@ check "a script that fails is a finding" 1 "$RC" "npm run lint\` failed"
 check "the failing run's own output is shown" 1 "$RC" "boom"
 check "the finding line counts what it found" 1 "$RC" "1 finding(s) across 1 built console(s)"
 
+# A console's lint is its own configuration's, run from its own directory, and
+# no other gate lints it: what that configuration reports is this gate's finding.
+ESLINT="$(cd "$HERE/../.." && pwd)/node_modules/.bin/eslint"
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "type": "module",
+	"scripts": { "typecheck": "true", "lint": "\"'"$ESLINT"'\" .", "test": "true",
+	"build": "true" } }'
+printf '%s\n' 'export default [{ rules: { "no-debugger": "error" } }];' > "$R/ui/built/eslint.config.js"
+printf '%s\n' 'debugger;' > "$R/ui/built/stray.js"
+seal
+check "a console's own configuration lints it" 1 "$RC" "npm run lint\` failed"
+check "with the rule that configuration names" 1 "$RC" "no-debugger"
+check "over the console's own files" 1 "$RC" "stray.js"
+
 # --- How long each script took ----------------------------------------------
 
 # Every script that ran has one line naming its console, the script, the whole

@@ -307,6 +307,10 @@ ci_declare() { # <gate id or suite path>
 			package.json
 		ci_install
 		;;
+	.chug/tasks/check-console.test.sh)
+		ci_code "$1" .chug/tasks/check-console.sh .chug/tasks/_suite.sh
+		ci_packages eslint
+		;;
 	.chug/tasks/check-boundaries.test.sh)
 		ci_code "$1" .chug/tasks/check-boundaries.sh .chug/tasks/_suite.sh tsconfig.json \
 			.dependency-cruiser.cjs package.json
