@@ -376,7 +376,7 @@ export function mutationRefusalSentence(code: MutationRefusalCode): Copy {
     case "FeedbackNotAsked":
       return { id: "sentences-mutation-feedback-not-asked" };
     case "RejectionWithoutFeedback":
-      return { id: "sentences-mutation-rejection-without-feedback" };
+      return { id: "sentences-mutation-feedback-missing" };
   }
 }
 
