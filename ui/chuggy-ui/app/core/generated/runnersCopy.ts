@@ -25,6 +25,11 @@ export interface RunnersCopy {
   readonly "runners-standing-live": Record<never, never>;
   readonly "runners-route-hosted": Record<never, never>;
   readonly "runners-route-pool": Record<never, never>;
+  readonly "runners-route-subsidized": Record<never, never>;
+  readonly "runners-subsidized-about": {
+    readonly model: unknown;
+  };
+  readonly "runners-subsidized-about-unnamed": Record<never, never>;
   readonly "runners-source-override": Record<never, never>;
   readonly "runners-source-project": Record<never, never>;
   readonly "runners-source-default": Record<never, never>;

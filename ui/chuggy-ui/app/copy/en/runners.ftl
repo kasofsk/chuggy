@@ -26,6 +26,12 @@ runners-standing-offline = Offline
 runners-standing-live = Live
 runners-route-hosted = { -hosted-runs(case: "upper") }
 runners-route-pool = { -runner(case: "upper", form: "plural") }
+runners-route-subsidized = Subsidized
+# The model is code, as Claude Code takes it.
+# spells -run: to run is a verb here
+runners-subsidized-about = Runs { $model } on { -brand-name } · Free up to a monthly allowance
+# spells -run: to run is a verb here
+runners-subsidized-about-unnamed = Runs on { -brand-name } · Free up to a monthly allowance
 runners-source-override = { -site(case: "upper") }
 runners-source-project = { -project(case: "upper") }
 runners-source-default = Default

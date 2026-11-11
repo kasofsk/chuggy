@@ -151,6 +151,15 @@ export function costAmountFigure(costUsdMicros: number): Figure {
   return { kind: "Cost", text: costText(costUsdMicros) };
 }
 
+/** A spend against the cap it is held to, each amount as `costAmountFigure`
+ * reads it, for a line that already says what the cap is. */
+export function costCappedText(spentMicros: number, capMicros: number): Copy {
+  return {
+    id: "figures-cost-capped",
+    args: { spent: costText(spentMicros), cap: costText(capMicros) },
+  };
+}
+
 /**
  * Whole above ten of a unit, one decimal below it, so two figures never read
  * alike. The bucket is chosen from the rounded figure rather than the raw one,

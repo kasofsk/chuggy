@@ -354,6 +354,64 @@ test("a session told what it forks from is told the reference the plane resolved
   await forking.close();
 });
 
+/** What the plane answers a pod offering `release` for a session of `over`. */
+async function factsAnswered(
+  over: Partial<SessionPlaneIdentity>,
+  release: string | undefined,
+) {
+  const app = sessionPlane({
+    authority: {
+      authenticate: () => Promise.resolve({ ...identity, ...over }),
+    },
+  });
+  const answered = await app.inject({
+    method: "GET",
+    url: "/v1/session",
+    headers: {
+      ...held,
+      ...(release === undefined ? {} : { [workerContractHeader]: release }),
+    },
+  });
+  await app.close();
+  return answered;
+}
+
+test("a session on its own system prompt is told so, and a lead or a thread on its project's settings is not", async () => {
+  const told = await factsAnswered(
+    { systemPromptOwn: true },
+    workerContractRelease,
+  );
+  assert.equal(told.statusCode, 200);
+  assert.equal(told.json<{ systemPromptOwn?: true }>().systemPromptOwn, true);
+  for (const kind of ["Lead", "Thread"] as const) {
+    const answered = await factsAnswered({ kind }, workerContractRelease);
+    assert.equal(answered.statusCode, 200, kind);
+    assert.equal("systemPromptOwn" in answered.json<object>(), false, kind);
+  }
+});
+
+test("a pod whose release predates a session's own system prompt is refused that session's facts, and answered a session on its project's settings as before", async () => {
+  for (const release of ["1.62.0", "1.0.0", undefined]) {
+    const refused = await factsAnswered({ systemPromptOwn: true }, release);
+    assert.equal(refused.statusCode, 409, String(release));
+    assert.deepEqual(
+      refused.json(),
+      {
+        action: "stop",
+        reason: "UnsupportedContractVersion",
+        accepted: {
+          min: "1.63",
+          max: workerContractRelease.split(".").slice(0, 2).join("."),
+        },
+      },
+      String(release),
+    );
+    const own = await factsAnswered({}, release);
+    assert.equal(own.statusCode, 200, String(release));
+    assert.equal(own.json<{ session: string }>().session, identity.session);
+  }
+});
+
 /** What a loss port's read answers for a live attempt on an open session that failed no turn. */
 const open: SessionPodEnding = { turnFailure: undefined, sessionClosed: false };
 

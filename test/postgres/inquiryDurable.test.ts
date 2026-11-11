@@ -653,6 +653,35 @@ test("an inquiry is told its lead's model and effort, and holds none of its own"
   );
 });
 
+test("an inquiry of a lead on its own system prompt is told so, holding none of its own, and one of a lead without it is not", async () => {
+  for (const systemPromptOwn of [true, false]) {
+    const label = `prompt-own-${String(systemPromptOwn)}`;
+    const { partition, lead, member } = await inquirySubject(label);
+    await rig.sessions.harness.query(
+      `UPDATE agent_session SET system_prompt_own=$2 WHERE session=$1`,
+      [lead.session, systemPromptOwn],
+    );
+    const opened = await inquiryAsk(partition, member, label);
+    assert.equal(opened.opened.opened, "Opened");
+    const attempt = await inquiryAttempt(partition, opened.session, label);
+
+    const facts = await rig.sessions.plane.authenticate(attempt.secret);
+    assert.deepEqual(
+      [facts?.kind, facts?.systemPromptOwn],
+      ["Inquiry", systemPromptOwn ? true : undefined],
+      label,
+    );
+    assert.deepEqual(
+      await rig.sessions.harness.query(
+        `SELECT system_prompt_own FROM agent_session WHERE session=$1`,
+        [opened.session],
+      ),
+      [{ system_prompt_own: false }],
+      label,
+    );
+  }
+});
+
 /**
  * A fork that has ALREADY BOUND a reference is still told the parent's. The
  * case above reads the fork before one exists, so a `fork_from` that preferred
