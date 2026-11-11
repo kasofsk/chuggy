@@ -510,6 +510,12 @@ export const personalRunnerProjectsMax = 64;
 /** How many personal runners one member may hold in one tenant, which their read answers whole. */
 export const personalRunnersMax = 16;
 
+/** How many of the attempts one personal runner holds its owner's read answers with, the earliest claimed first. */
+export const personalRunnerHeldAnsweredMax = 8;
+
+/** How far one member's read counts the attempts waiting in each project their runners serve. */
+export const personalRunnerWaitingCountedMax = 99;
+
 /** How many of a ticket's landings one read answers with, the newest of them, oldest first. */
 export const ticketLandingsAnsweredMax = 8;
 

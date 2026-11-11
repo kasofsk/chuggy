@@ -174,12 +174,19 @@ function ChatHostRow(props: {
 }
 
 /** The head of a listing of a member's registered hosts: runners, or a chat host. */
-export function HostListingHead(props: { readonly name: string }): ReactNode {
+export function HostListingHead(props: {
+  readonly name: string;
+  /** The column what a host is running is drawn in, beside its name, where it has one. */
+  readonly running?: string;
+}): ReactNode {
   const text = useCopyText();
   return (
     <thead>
       <tr>
         <th scope="col">{props.name}</th>
+        {props.running === undefined ? null : (
+          <th scope="col">{props.running}</th>
+        )}
         <th scope="col">{text({ id: "runners-col-version" })}</th>
         <th scope="col" className="w-[9em]">
           {text({ id: "runners-col-registered" })}

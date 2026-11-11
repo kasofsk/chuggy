@@ -92,6 +92,31 @@ function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
               live: true,
               executionsLive: false,
               runner: { package: "chuggy-linux", version: "0.14.0" },
+              held: [
+                {
+                  project: asProjectId("atlas"),
+                  ticket: 7,
+                  identity: {
+                    type: "WorkTask",
+                    value: { ticket: 7, cycle: 1 },
+                  },
+                },
+                {
+                  project: asProjectId("atlas"),
+                  ticket: 9,
+                  identity: {
+                    type: "EvaluationTask",
+                    value: {
+                      ticket: 9,
+                      workCycle: 2,
+                      stage: 1,
+                      generation: 1,
+                      evaluator: 3,
+                    },
+                  },
+                },
+              ],
+              heldTruncated: true,
             },
             {
               id: "chuggy-personal-two",
@@ -99,9 +124,18 @@ function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
               registeredAt: "2026-10-09T12:02:00.000Z",
               live: false,
               executionsLive: false,
+              held: [],
+              heldTruncated: false,
             },
           ],
-          projects: [{ project: asProjectId("atlas"), priority: "High" }],
+          projects: [
+            {
+              project: asProjectId("atlas"),
+              priority: "High",
+              waiting: 99,
+              waitingTruncated: true,
+            },
+          ],
         },
       }
     : { result: "NotFound" };
@@ -391,7 +425,7 @@ test("a member reads their chat host and takes it off, as themselves, and a tena
   ]);
 });
 
-test("a member reads their own runners, each by its id, beside the projects they serve, and a tenant they have none in is not found", async () => {
+test("a member reads their own runners, each by its id with what it holds, beside the projects they serve with what waits in each, and a tenant they have none in is not found", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
   const found = await app.inject({ url: runner("acme"), headers: bearer });
@@ -406,6 +440,28 @@ test("a member reads their own runners, each by its id, beside the projects they
         live: true,
         executionsLive: false,
         runner: { package: "chuggy-linux", version: "0.14.0" },
+        held: [
+          {
+            project: "atlas",
+            ticket: 7,
+            identity: { type: "WorkTask", value: { ticket: 7, cycle: 1 } },
+          },
+          {
+            project: "atlas",
+            ticket: 9,
+            identity: {
+              type: "EvaluationTask",
+              value: {
+                ticket: 9,
+                workCycle: 2,
+                stage: 1,
+                generation: 1,
+                evaluator: 3,
+              },
+            },
+          },
+        ],
+        heldTruncated: true,
       },
       {
         id: "chuggy-personal-two",
@@ -413,9 +469,18 @@ test("a member reads their own runners, each by its id, beside the projects they
         registeredAt: "2026-10-09T12:02:00.000Z",
         live: false,
         executionsLive: false,
+        held: [],
+        heldTruncated: false,
       },
     ],
-    projects: [{ project: "atlas", priority: "High" }],
+    projects: [
+      {
+        project: "atlas",
+        priority: "High",
+        waiting: 99,
+        waitingTruncated: true,
+      },
+    ],
   });
   assert.equal(
     (await app.inject({ url: runner("other"), headers: bearer })).statusCode,

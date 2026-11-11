@@ -1413,11 +1413,21 @@ export function personalRunnerResponse(
           live: runner.live,
           executionsLive: runner.executionsLive,
           ...runnerListedBody(runner.runner),
+          held: runner.held.map(({ project, ticket, identity }) => ({
+            project,
+            ticket,
+            identity,
+          })),
+          heldTruncated: runner.heldTruncated,
         })),
-        projects: result.value.projects.map(({ project, priority }) => ({
-          project,
-          priority,
-        })),
+        projects: result.value.projects.map(
+          ({ project, priority, waiting, waitingTruncated }) => ({
+            project,
+            priority,
+            waiting,
+            waitingTruncated,
+          }),
+        ),
       } satisfies PersonalRunnerResponse);
     default:
       return assertNever(result);
