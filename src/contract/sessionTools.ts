@@ -49,12 +49,18 @@ import {
   leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
+  nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
+  runModelCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
+  selectorAllowlistNameCharsMax,
+  selectorAllowlistNamesMax,
+  selectorSettingsTextCharsMax,
+  sessionEfforts,
   textUtf8Bytes,
   ticketLandingConflictBytesMax,
   ticketLandingRefCharsMax,
@@ -62,8 +68,17 @@ import {
   workerPlaneUploadBytesMax,
 } from "./http.ts";
 import { epicContentBytesMax, epicTicketsMax } from "./epics.ts";
-import { epicStatusRoster } from "./responses.ts";
-import { phaseRoster, type SessionCapability } from "./rosters.ts";
+import {
+  epicStatusRoster,
+  type SelectorProjectSettingsResponse,
+} from "./responses.ts";
+import {
+  leadOfferings,
+  phaseRoster,
+  selectorDispatchModes,
+  selectorModes,
+  type ToolCapability,
+} from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
@@ -131,6 +146,11 @@ export {
   epicTicketsMax,
   epicTitleCharsMax,
 } from "./epics.ts";
+
+/** What the lead-settings and placement tools publish as their arguments' shapes, and the bound a settings text is held to. */
+export { selectorProjectOverridesSchema } from "./requests.ts";
+export { selectorSettingsTextCharsMax } from "./http.ts";
+export { leadOfferings, placementRoutes } from "./rosters.ts";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -256,6 +276,105 @@ const chuggyToolEpicViewFieldsBytesMax = textUtf8Bytes(
 export const chuggyToolEpicViewResponseBytesMax =
   epicContentBytesMax +
   chuggyToolEpicViewFieldsBytesMax +
+  nativeHttpBodyBytesMax;
+
+/** The longest member of a roster, which is the most it writes into a body. */
+function chuggyToolLeadSettingsLongest<Member extends string>(
+  roster: readonly Member[],
+): Member {
+  return roster.reduce((longest, member) =>
+    member.length > longest.length ? member : longest,
+  );
+}
+
+/** Every limit a project's settings name, each at the largest a count may be. */
+const chuggyToolLeadSettingsLimits = {
+  tokensPerDecision: Number.MAX_SAFE_INTEGER,
+  millisecondsPerDecision: Number.MAX_SAFE_INTEGER,
+  toolCallsPerDecision: Number.MAX_SAFE_INTEGER,
+  dispatchesPerDecision: Number.MAX_SAFE_INTEGER,
+  inputBytesPerDecision: Number.MAX_SAFE_INTEGER,
+  candidatePagesPerDecision: Number.MAX_SAFE_INTEGER,
+  autoCompactWindow: Number.MAX_SAFE_INTEGER,
+};
+
+/** The limits the selector runs a project under, which add the shared pool's to a project's own. */
+const chuggyToolLeadSettingsEffectiveLimits = {
+  ...chuggyToolLeadSettingsLimits,
+  concurrentDecisions: Number.MAX_SAFE_INTEGER,
+  selectionsPerMinute: Number.MAX_SAFE_INTEGER,
+};
+
+/**
+ * The lead settings' body with every field present, every string empty and
+ * every allowlist naming nothing, and each other field at its heaviest: every
+ * count the largest a count may be and every word its roster's longest.
+ */
+const chuggyToolLeadSettingsFieldsBytesMax = textUtf8Bytes(
+  JSON.stringify({
+    partition: { tenant: "", project: "" },
+    revision: Number.MAX_SAFE_INTEGER,
+    overrides: {
+      northStar: "",
+      threadStandingRules: "",
+      mode: chuggyToolLeadSettingsLongest(selectorModes),
+      dispatchMode: chuggyToolLeadSettingsLongest(selectorDispatchModes),
+      basePrompt: "",
+      modelAllowlist: [],
+      toolAllowlist: [],
+      limits: chuggyToolLeadSettingsLimits,
+      operationalContextMaxAgeMs: Number.MAX_SAFE_INTEGER,
+      leadModel: "",
+      leadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
+      threadModel: "",
+      threadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
+    },
+    effective: {
+      revision: Number.MAX_SAFE_INTEGER,
+      projectRevision: Number.MAX_SAFE_INTEGER,
+      mode: chuggyToolLeadSettingsLongest(selectorModes),
+      installationMode: chuggyToolLeadSettingsLongest(selectorModes),
+      dispatchMode: chuggyToolLeadSettingsLongest(selectorDispatchModes),
+      basePrompt: "",
+      northStar: "",
+      threadStandingRules: "",
+      modelAllowlist: [],
+      toolAllowlist: [],
+      limits: chuggyToolLeadSettingsEffectiveLimits,
+      installationLimits: chuggyToolLeadSettingsEffectiveLimits,
+      operationalContextMaxAgeMs: Number.MAX_SAFE_INTEGER,
+      leadModel: "",
+      leadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
+      leadOffering: chuggyToolLeadSettingsLongest(leadOfferings),
+    },
+  } satisfies SelectorProjectSettingsResponse),
+);
+
+/** What a string of at most `chars` characters adds to that body over the empty one, every character escaped. */
+function chuggyToolLeadSettingsStringBytesMax(chars: number): number {
+  return jsonStringChars(chars) - jsonStringChars(0);
+}
+
+/** What an allowlist at its most names adds to that body over the empty one: each name at its heaviest, and the commas between them. */
+const chuggyToolLeadSettingsAllowlistBytesMax =
+  selectorAllowlistNamesMax *
+    (jsonStringChars(selectorAllowlistNameCharsMax) + 1) -
+  1;
+
+/**
+ * What the lead settings' route may answer, which a write answers on success
+ * and inside its conflict alike: the body's fields at their heaviest; the
+ * three texts of its overrides and the three of its effective settings, each
+ * at the longest a settings text may be; the two allowlists of each; its
+ * partition's two identities; the three models it names; and an ordinary
+ * answer's bound for the answer around them.
+ */
+export const chuggyToolLeadSettingsResponseBytesMax =
+  chuggyToolLeadSettingsFieldsBytesMax +
+  6 * chuggyToolLeadSettingsStringBytesMax(selectorSettingsTextCharsMax) +
+  4 * chuggyToolLeadSettingsAllowlistBytesMax +
+  2 * chuggyToolLeadSettingsStringBytesMax(nativeHttpPathSegmentCharsMax) +
+  3 * chuggyToolLeadSettingsStringBytesMax(runModelCharsMax) +
   nativeHttpBodyBytesMax;
 
 /**
@@ -386,13 +505,27 @@ const chuggyToolRoster = {
    * member's word.
    */
   ThreadOffer: ["navigate", "offer_release", "offer_revoke"],
-} as const satisfies Readonly<Record<SessionCapability, readonly string[]>>;
+  /**
+   * What a person's own agent does to a project's lead settings and to where
+   * its lead runs, which the API authorizes as it does the console's own read
+   * or write of them. Only that person's agent holds it and no session can,
+   * because a lead must not rewrite the settings it runs under and a thread
+   * must not make an administrator's write on the strength of a chat message.
+   */
+  ProjectSettings: [
+    "read_lead_settings",
+    "update_lead_settings",
+    "read_placement",
+    "update_placement",
+  ],
+} as const satisfies Readonly<Record<ToolCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
  * session may see of the project, what it may author, what it may decide, what
- * a member's own session reads of them, and what a thread may offer its
- * member, each named once.
+ * a member's own session reads of them, what a thread may offer its member,
+ * and what a person's own agent may do to a project's settings, each named
+ * once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
@@ -402,12 +535,13 @@ export const allChuggyTools = [
   ...chuggyToolRoster.LeadDecision,
   ...chuggyToolMemberReads,
   ...chuggyToolRoster.ThreadOffer,
+  ...chuggyToolRoster.ProjectSettings,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
 /** The same roster as the map a capability is looked up in. */
 export const chuggyToolCapabilities: Readonly<
-  Record<SessionCapability, readonly ChuggyTool[]>
+  Record<ToolCapability, readonly ChuggyTool[]>
 > = chuggyToolRoster;
 
 /**
@@ -416,7 +550,7 @@ export const chuggyToolCapabilities: Readonly<
  * two capabilities admitted would still be named once.
  */
 export function chuggyToolNames(
-  capabilities: readonly SessionCapability[],
+  capabilities: readonly ToolCapability[],
 ): readonly string[] {
   const admitted = new Set<ChuggyTool>(
     capabilities.flatMap((capability) => [
@@ -430,7 +564,7 @@ export function chuggyToolNames(
 
 /** The agent runtime's own tools each capability admits, which the image grants and an allowlist names. */
 export const builtInToolCapabilities: Readonly<
-  Record<SessionCapability, readonly string[]>
+  Record<ToolCapability, readonly string[]>
 > = {
   RepositoryRead: ["Glob", "Grep", "Read"],
   RepositoryWrite: ["Edit", "NotebookEdit", "Write"],
@@ -442,6 +576,7 @@ export const builtInToolCapabilities: Readonly<
   LeadDecision: [],
   MemberRead: [],
   ThreadOffer: [],
+  ProjectSettings: [],
 };
 
 /**
@@ -493,6 +628,8 @@ export const chuggyToolRoutes = {
   epic: nativeHttpRoutes.epic,
   epicHistory: nativeHttpRoutes.epicHistory,
   epicGraph: nativeHttpRoutes.epicGraph,
+  selectorSettings: nativeHttpRoutes.selectorSettings,
+  sessionPlacement: nativeHttpRoutes.sessionPlacement,
   /**
    * What a member's own session reads, each at its tenant and none at a
    * project: `read_my_abilities` the tenant's questions, `list_projects` the
