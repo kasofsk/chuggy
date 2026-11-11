@@ -262,14 +262,18 @@ function openingOf(at: Carrying, execution: ExecutionId): AttemptOpening {
   };
 }
 
-/** A worker's report on `attempt`, sealed by the acceptance a real ingress applies. */
+/**
+ * A worker's report on `attempt`, sealed by the acceptance a real ingress
+ * applies. With no `report` it is a version 2 manifest, which keeps none.
+ */
 function reportOf(
   attempt: PhysicalAttempt,
   verdict: "Pass" | "Fail",
-  report: string,
+  report: string | undefined,
   work: boolean,
   handoffs: readonly ReturnType<typeof schedulerArtifact>[] = [],
 ): AttemptReport {
+  const source = work ? schedulerDeclaredSource(attempt) : null;
   const accepted = acceptResultManifest(
     {
       partition: attempt.partition,
@@ -277,14 +281,24 @@ function reportOf(
       attempt: attempt.attempt,
     },
     attempt.capability.manifest,
-    JSON.stringify({
-      version: resultManifestSchemaVersion,
-      verdict,
-      report,
-      handoffs,
-      diagnostics: [],
-      source: work ? schedulerDeclaredSource(attempt) : null,
-    }),
+    JSON.stringify(
+      report === undefined
+        ? {
+            version: 2,
+            verdict,
+            handoffs,
+            diagnostics: [],
+            ...(source === null ? {} : { source }),
+          }
+        : {
+            version: resultManifestSchemaVersion,
+            verdict,
+            report,
+            handoffs,
+            diagnostics: [],
+            source,
+          },
+    ),
     schedulerDigest,
   );
   if (accepted.accepted === "Rejected")
@@ -297,7 +311,7 @@ async function settled(
   at: Carrying,
   execution: ExecutionId,
   verdict: "Pass" | "Fail",
-  report: string,
+  report: string | undefined,
   options: { work?: boolean; handoffs?: number } = {},
 ): Promise<void> {
   const opened = await rig.store.openAttempt(openingOf(at, execution));
@@ -383,7 +397,7 @@ async function evaluated(
   evaluations: Evaluated,
   review: {
     verdict?: "Pass" | "Fail";
-    report?: string;
+    report?: string | null;
     handoffs?: number;
   } = {},
 ): Promise<void> {
@@ -391,7 +405,9 @@ async function evaluated(
     at,
     evaluations.review,
     review.verdict ?? "Pass",
-    review.report ?? "APPROVE: the change does what the brief asks.",
+    review.report === null
+      ? undefined
+      : (review.report ?? "APPROVE: the change does what the brief asks."),
     { handoffs: review.handoffs ?? 0 },
   );
   await settled(at, evaluations.tests, "Pass", "npm test passed.");
@@ -499,6 +515,42 @@ test("a re-check over the same diff carries the review and runs the commands aga
     capability_secret_digest: null,
     ended: true,
     artifacts: 0,
+  });
+});
+
+test("a carried verdict whose source kept no report is settled under a report naming its source", async () => {
+  const { at, first, later, opened } = await launchedAfter("unreported", {
+    report: null,
+  });
+  assert.deepEqual(opened, { opened: "Carried", source: first.review });
+  const carried = await rig.store.carryVerdict(
+    openingOf(at, later.review),
+    first.review,
+  );
+  assert.ok(carried.terminalized === "Terminalized");
+  assert.equal(carried.outcome, "Passed");
+
+  const [row] = await rig.harness.query(
+    `SELECT e.status, e.outcome, p.report, c.source_execution,
+            (SELECT count(*)::int FROM execution s
+               JOIN execution_result_report q
+                 ON q.tenant=s.tenant AND q.project=s.project AND q.manifest=s.result_manifest
+              WHERE s.tenant=e.tenant AND s.project=e.project
+                AND s.execution=c.source_execution) AS source_reports
+       FROM execution e
+       JOIN execution_result_report p
+         ON p.tenant=e.tenant AND p.project=e.project AND p.manifest=e.result_manifest
+       JOIN execution_verdict_carry c
+         ON c.tenant=e.tenant AND c.project=e.project AND c.execution=e.execution
+      WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
+    [...key(at), later.review],
+  );
+  assert.deepEqual(row, {
+    status: "Terminal",
+    outcome: "Passed",
+    report: `The passing verdict of ${first.review} was carried, and it kept no report.`,
+    source_execution: first.review,
+    source_reports: 0,
   });
 });
 
