@@ -31,6 +31,9 @@
  * BOTH ITS WORKLOADS TAKE CHUGGY'S FRAMING AND THE ONE BRIEF, since what the
  * brief says of the request's limit binds the worker and the reviewer alike.
  *
+ * ITS REVIEWER IS REEVALUATED ON CHANGE, and so is the one it tells its worker
+ * to declare, while the checks it tells it to command rerun on every tree.
+ *
  * IT TELLS ITS WORKER THE SHAPE OF WHAT IT ASKS FOR. The worker is handed a
  * rendered briefing and never a configuration document, so without the shape
  * the one thing it must write is a guess the import refuses after it lands.
@@ -189,7 +192,7 @@ function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
     `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}, with the prompt files under .chug/ it names; a limit the request sets on what may change does not stop you writing them.`,
     `Each file in ${repositoryConfigurationRoot} is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
     `C is {"version":${String(workloadConfigurationVersion)},"image":I,"workloads":{"work":W,"checks":K,"review":R},"plans":{"standard":[{"name":"checks","evaluators":["checks"]},{"name":"review","evaluators":["review"]}]},"defaults":{"work":"work","evaluation":"standard"}}: the workloads a ticket may run, the plan its change is held to, and the work and plan a ticket selecting none runs.`,
-    `W is ${bootstrapAgentSkeleton("", "P")}, P the path of a file under .chug/ holding the prompt the worker is handed, as written; R is ${bootstrapAgentSkeleton('"purpose":"Review",', "Q")}, Q the path of one telling a reviewer what to hold a change to.`,
+    `W is ${bootstrapAgentSkeleton("", "P")}, P the path of a file under .chug/ holding the prompt the worker is handed, as written; R is ${bootstrapAgentSkeleton('"purpose":"Review","reevaluate":"OnChange",', "Q")}, Q the path of one telling a reviewer what to hold a change to.`,
     `K is {"runner":"Commands","commands":[L],"worker":{"setup":[L],"files":[]}}, which runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit. A plan's stages run in the order listed and a failed stage ends evaluation, so the cheap checks stage goes before the review.`,
     `Each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it. Each L runs under sh -eu with CHUG_CHANGE_BASE set to the commit the change started from where that is known, and unset otherwise, so a check of only what changed reads it as \${CHUG_CHANGE_BASE-} and runs everything where that is empty. CHUG_TENANT, CHUG_PROJECT, CHUG_REPOSITORY (its clone URL), CHUG_TICKET, CHUG_ATTEMPT and CHUG_STAGE (Work, or Evaluation:N counted from one) name the job each L runs in, and are always set.`,
     bootstrapSchemaLine(input.publicOrigin),
@@ -240,15 +243,15 @@ function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
   };
 }
 
-/** One framed agent workload whose prompt is these lines, a paragraph each. */
+/** One framed agent workload whose prompt is these lines, a paragraph each, and how it is run as an evaluator. */
 function bootstrapWorkload(
   input: BootstrapConfigurationInput,
   lines: readonly string[],
-  purpose: { readonly purpose?: "Review" },
+  evaluator: { readonly purpose?: "Review"; readonly reevaluate?: "OnChange" },
 ): unknown {
   return {
     runner: "Agent",
-    ...purpose,
+    ...evaluator,
     prompt: { text: lines.join("\n\n") },
     worker: { mode: bootstrapWorkerMode, setup: [], files: [] },
     framing: "Chuggy",
@@ -267,6 +270,7 @@ function bootstrapConfigurationValue(
       work: bootstrapWorkload(input, bootstrapWorkLines(input), {}),
       review: bootstrapWorkload(input, bootstrapReviewLines, {
         purpose: "Review",
+        reevaluate: "OnChange",
       }),
     },
     plans: { review: [{ name: "review", evaluators: ["review"] }] },

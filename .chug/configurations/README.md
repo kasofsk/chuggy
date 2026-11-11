@@ -25,7 +25,9 @@ JSON file holding one, and a prompt may name the file holding its text; both
 are paths under `.chug/`, read at the commit the import reads and stored
 inline. This tree's catalogs keep their prompts in `.chug/prompts/`
 and the workloads they share in `.chug/workloads/`, and its reviewer's prompt is
-`.chug/tasks/review-change.md` itself.
+`.chug/tasks/review-change.md` itself. Its review is `reevaluate`
+`OnChange`, so a pass is carried across work cycles that leave the ticket's own
+diff unchanged, and its checks always rerun.
 
 The `version` above is the envelope's schema version, not the configuration's.
 A configuration's own version is a number the server assigns on import: one per
