@@ -4,7 +4,7 @@
  * queue as it stands and mints over A. Where A lands, B lands by its merge
  * being the stack's tree and is never re-checked; where A's evaluation fails
  * instead, B's stack stops standing and B is re-checked at its rank, at the
- * front of the queue, with nothing counted toward its re-check cap.
+ * front of the queue.
  *
  * B IS THE TICKET THE WRITER AND THE FINALIZER DRIVE, AND A IS WRITTEN BY HAND.
  * The harness drives one ticket through the writer, so A's definition, phase,
@@ -21,18 +21,24 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  asForgeBindingId,
+  asForgeCredentialReference,
+  asProposalDisplayUrl,
+  asProposalNumber,
+  asProposalRemoteIdentity,
+  type ChangeProposalForges,
+  type ChangeProposalPort,
+  type ChangeProposalRequest,
+} from "../../src/interpreter/changeProposal.ts";
 import {
   stackRefOf,
   type EvaluationStack,
 } from "../../src/interpreter/evaluationStack.ts";
 import { stackPrepared } from "../../src/interpreter/evaluationStacking.ts";
-import {
-  asGitObjectId,
-  type FinalizationClaim,
-} from "../../src/interpreter/finalizer.ts";
+import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   stackStands,
@@ -46,9 +52,13 @@ import {
 } from "./evaluationStackLandings.ts";
 import { releasedEvaluatorDefinition } from "./migrationHarness.ts";
 import { seedJournalEntry } from "./nativeActionFixture.ts";
+import type { FinalizerPassReport } from "../../src/interpreter/finalizerRun.ts";
 import {
   finalizerBriefLanding,
+  finalizerBriefProposal,
   finalizerDeclareSource,
+  finalizerExpireClaim,
+  finalizerRemoteCommit,
   finalizerGitVerb,
   finalizerIdentity,
   finalizerPassedWork,
@@ -188,6 +198,7 @@ async function aPlaced(
     readonly commit: string;
     readonly tip: string;
   },
+  branch?: string,
 ): Promise<string> {
   const [brief] = await rig.harness.query(
     `SELECT brief FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
@@ -196,7 +207,10 @@ async function aPlaced(
   await finalizerStoreReleasedBrief(
     (sql, values) => rig.harness.query(sql, [...values]),
     [...keysOf(project, ticket)],
-    brief?.["brief"] as Record<string, unknown>,
+    {
+      ...(brief?.["brief"] as Record<string, unknown>),
+      ...(branch === undefined ? {} : { branch }),
+    },
   );
   await rig.harness.query(
     `INSERT INTO ticket_projection (tenant, project, ticket, phase, seq)
@@ -243,7 +257,11 @@ async function aPlaced(
  * B, accepted at a commit of its own off the reference's tip, and A ranked
  * ahead of it in `phase`, accepted at another, each touching a file of its own.
  */
-async function pairOpened(label: string, phase: string): Promise<Pair> {
+async function pairOpened(
+  label: string,
+  phase: string,
+  proposing = false,
+): Promise<Pair> {
   const { project, remote, work } = await finalizerSubject(rig, label, []);
   const tip = finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main");
   const ticket = project.ticket;
@@ -260,11 +278,21 @@ async function pairOpened(label: string, phase: string): Promise<Pair> {
   const aTicket = ticket + 1;
   const aRef = `refs/heads/chuggy/tickets/${String(aTicket)}/attempts/a`;
   const aCommit = finalizerRemoteAttempt(remote, "a.txt", "a\n", aRef);
-  const aRequest = await aPlaced(project, aTicket, phase, label, {
-    ref: aRef,
-    commit: aCommit,
-    tip,
-  });
+  if (proposing)
+    await finalizerBriefProposal(
+      rig,
+      project.partition,
+      ticket,
+      `refs/heads/${label}-b`,
+    );
+  const aRequest = await aPlaced(
+    project,
+    aTicket,
+    phase,
+    label,
+    { ref: aRef, commit: aCommit, tip },
+    proposing ? `refs/heads/${label}-a` : undefined,
+  );
   return {
     b: project,
     bWork: work,
@@ -391,13 +419,6 @@ async function aReworked(pair: Pair, label: string): Promise<void> {
   );
 }
 
-function bClaim(pair: Pair): FinalizationClaim {
-  return {
-    partition: pair.b.partition,
-    ticket: pair.b.ticket,
-  } as FinalizationClaim;
-}
-
 test("B evaluates over a stack holding A, and once A lands B lands as its merge is the stack's tree, with no re-check", async () => {
   const pair = await pairOpened("flow-lands", "Finalization");
 
@@ -462,13 +483,9 @@ test("B evaluates over a stack holding A, and once A lands B lands as its merge 
     stack.stackTree,
     "what B lands on A is the tree it was evaluated over",
   );
-  assert.equal(
-    await postgresFinalizer(rig.pool).ticketRecheckFailures(bClaim(pair)),
-    0,
-  );
 });
 
-test("B evaluates over a stack holding A, and once A's evaluation fails B is re-checked at its rank and the front, counting nothing", async () => {
+test("B evaluates over a stack holding A, and once A's evaluation fails B is re-checked at its rank and the front", async () => {
   const pair = await pairOpened("flow-fails", "Evaluation");
 
   assert.deepEqual(await queued(pair), [
@@ -508,15 +525,231 @@ test("B evaluates over a stack holding A, and once A's evaluation fails B is re-
   assert.equal(attempts[0]?.["outcome"], "Failed");
   assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(attempts[0]?.["recheck_commit"], pair.bCommit);
-  assert.equal(
-    await postgresFinalizer(rig.pool).ticketRecheckFailures(bClaim(pair)),
-    0,
-    "a re-check a dead stack forced counts nothing toward the cap",
-  );
   assert.equal(await rankOf(pair.b, pair.b.ticket), rank, "B keeps its rank");
   assert.deepEqual(
     await queued(pair),
     [[pair.b.ticket, "Pending"]],
     "and the front",
   );
+});
+
+/** A's proposal, from its own branch, merged into the reference at A's commit. */
+async function aProposalMerged(pair: Pair, label: string): Promise<void> {
+  finalizerGitVerb(
+    pair.remote.origin,
+    "update-ref",
+    landingTarget,
+    pair.aCommit,
+    pair.tip,
+  );
+  await landingWrite(
+    rig,
+    { ...pair.b, request: pair.aRequest },
+    pair.bWork,
+    label,
+    {
+      ticket: pair.aTicket,
+      accepted: pair.aCommit,
+      onto: pair.tip,
+      candidate: pair.aCommit,
+      proposal: { head: `refs/heads/${label}-a`, merged: pair.aCommit },
+    },
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.aTicket)],
+  );
+}
+
+test("B proposing from its own branch is stacked over A proposing from another while A is evaluated, on the base's tip, and lands on the stack's tree once A merges", async () => {
+  const pair = await pairOpened("flow-proposals", "Evaluation", true);
+
+  assert.deepEqual(await queued(pair), [
+    [pair.aTicket, "Evaluation"],
+    [pair.b.ticket, "Pending"],
+  ]);
+  const stack = await bStacked(pair);
+  assert.deepEqual(stack.beneath, [
+    { ticket: pair.aTicket, commit: pair.aCommit },
+  ]);
+  assert.equal(stack.target, landingTarget, "minted on the base");
+  assert.equal(stack.tip, pair.tip);
+
+  await aProposalMerged(pair, "flow-proposals");
+  assert.equal((await bStanding(pair)).stands, true, "A merged as stacked");
+
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-proposals",
+  );
+  const [attempt, ...rest] = await bAttempts(pair);
+  assert.deepEqual(rest, []);
+  assert.equal(attempt?.["outcome"], "Prepared");
+  assert.equal(attempt?.["failure_kind"], null);
+});
+
+test("B proposing over A is re-checked where the base moved past A's merge, its landing not the stack's tree", async () => {
+  const pair = await pairOpened("flow-proposals-moved", "Evaluation", true);
+  await bStacked(pair);
+  await aProposalMerged(pair, "flow-proposals-moved");
+  finalizerGitVerb(pair.remote.seed, "fetch", "-q", pair.remote.origin, "main");
+  finalizerGitVerb(pair.remote.seed, "reset", "-q", "--hard", "FETCH_HEAD");
+  finalizerRemoteCommit(pair.remote, "other.txt", "other\n", "other");
+
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-proposals-moved",
+  );
+  const attempts = await bAttempts(pair);
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
+  assert.equal(attempts[0]?.["recheck_commit"], pair.bCommit);
+});
+
+/** The proposal a fixture forge answers with, which is the request's own fields, open and mergeable. */
+function proposalOpened(request: ChangeProposalRequest) {
+  return {
+    identity: {
+      forge: request.binding.forge,
+      remote: asProposalRemoteIdentity("proposal-flow"),
+      number: asProposalNumber(1),
+    },
+    repository: request.repository,
+    marker: request.marker,
+    head: request.head,
+    base: request.base,
+    title: request.title,
+    body: request.body,
+    status: "Open" as const,
+    mergeability: "Mergeable" as const,
+    url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
+  };
+}
+
+/**
+ * A forge that opens what it is asked for and merges it into the base as a
+ * commit recording `tree`, over the base's tip and the head it was asked to
+ * merge, which is what a forge's merge leaves on the remote.
+ */
+function forgeMergingAt(
+  origin: string,
+  tree: () => string,
+): ChangeProposalForges {
+  const refused = (what: string) => () => {
+    throw new Error(`the pass asked this forge to ${what}`);
+  };
+  const port: ChangeProposalPort = {
+    create: (request) =>
+      Promise.resolve({
+        created: "Created",
+        evidence: proposalOpened(request),
+      }),
+    readByMarker: () => Promise.resolve({ read: "Absent" }),
+    readByNumber: refused("read a proposal by number"),
+    merge: (request) => {
+      const base = finalizerGitVerb(origin, "rev-parse", landingTarget);
+      const merged = finalizerGitVerb(
+        origin,
+        "-c",
+        "user.name=forge",
+        "-c",
+        "user.email=forge@example.test",
+        "commit-tree",
+        tree(),
+        "-p",
+        base,
+        "-p",
+        request.headCommit,
+        "-m",
+        "merge",
+      );
+      finalizerGitVerb(origin, "update-ref", landingTarget, merged, base);
+      return Promise.resolve({
+        merged: "Merged",
+        mergeCommit: asGitObjectId(merged),
+      });
+    },
+    updateBranch: refused("update a proposal"),
+    readQueue: refused("read a merge queue"),
+    enqueue: refused("queue a proposal"),
+    dequeue: refused("dequeue a proposal"),
+  };
+  const binding = {
+    forge: asForgeBindingId("forge-flow"),
+    credential: asForgeCredentialReference("forge-flow-proposals"),
+  };
+  return { selector: { select: () => port }, bindingOf: () => binding };
+}
+
+/** B, prepared over A's merge, taken through its push, its proposal and the merge `forges` makes, and what the pass after that merge reported. */
+async function bProposalMerged(
+  pair: Pair,
+  label: string,
+  forges: ChangeProposalForges,
+): Promise<FinalizerPassReport | undefined> {
+  let report: FinalizerPassReport | undefined;
+  for (const step of ["push", "open", "merge", "conclude"]) {
+    await finalizerExpireClaim(rig, pair.b);
+    report = await finalizerPassOnce(
+      rig,
+      pair.b,
+      finalizerRemotePort(rig),
+      `${label}-${step}`,
+      forges,
+    );
+  }
+  return report;
+}
+
+test("B's proposal stacked over A's, merged into the base at a commit recording the stack's tree, lands", async () => {
+  const label = "flow-proposal-lands";
+  const pair = await pairOpened(label, "Evaluation", true);
+  const stack = await bStacked(pair);
+  await aProposalMerged(pair, label);
+  await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), label);
+
+  const concluding = await bProposalMerged(
+    pair,
+    label,
+    forgeMergingAt(pair.remote.origin, () => stack.stackTree),
+  );
+
+  assert.equal(concluding?.conclusions, 1, "B's merge concludes its landing");
+  assert.deepEqual(
+    (await bAttempts(pair)).map((attempt) => attempt["failure_kind"]),
+    [null],
+    "B is never sent back",
+  );
+});
+
+test("B's proposal stacked over A's, merged into the base at a commit recording another tree, is re-checked at its accepted commit", async () => {
+  const label = "flow-proposal-differs";
+  const pair = await pairOpened(label, "Evaluation", true);
+  await bStacked(pair);
+  await aProposalMerged(pair, label);
+  await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), label);
+
+  const concluding = await bProposalMerged(
+    pair,
+    label,
+    forgeMergingAt(pair.remote.origin, () =>
+      finalizerGitVerb(
+        pair.remote.origin,
+        "rev-parse",
+        `${pair.aCommit}^{tree}`,
+      ),
+    ),
+  );
+
+  assert.equal(concluding?.conclusions, 0, "B's merge concludes nothing");
+  const rechecked = (await bAttempts(pair)).filter(
+    (attempt) => attempt["failure_kind"] !== null,
+  );
+  assert.equal(rechecked.length, 1);
+  assert.equal(rechecked[0]?.["failure_kind"], "RecheckRequired");
+  assert.equal(rechecked[0]?.["recheck_commit"], pair.bCommit);
 });

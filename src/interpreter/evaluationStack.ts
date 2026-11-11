@@ -32,7 +32,7 @@ export interface EvaluationStack {
   readonly ticket: TicketId;
   readonly cycle: number;
   readonly repository: string;
-  /** The reference the stack was built on, as the finalization attempts name it. */
+  /** The reference the stack was built on, as a push's attempt or a proposal's base names it. */
   readonly target: string;
   /** The reference's commit the stack was built on. */
   readonly tip: GitObjectId;
@@ -101,7 +101,7 @@ export interface EvaluatingStack {
   readonly ticket: TicketId;
   readonly cycle: number;
   readonly repository: string;
-  /** The reference its brief lands on, absent for the repository's default. */
+  /** The reference its brief queues on, absent for the repository's default. */
   readonly target: string | undefined;
   readonly standing: StackStanding;
 }

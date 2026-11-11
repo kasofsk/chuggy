@@ -679,8 +679,6 @@ function projectWriterPreflight(
       throw new Error(
         "project writer: an input names neither command nor answer",
       );
-    if (answer.kind === "EvaluationApproval")
-      return refusedPlan(memory, boundaryRefusal("ApprovalNotAnswerable"));
     return closed
       ? refusedPlan(memory, boundaryRefusal("TicketChanged"))
       : {

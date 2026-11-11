@@ -1,17 +1,22 @@
 /**
  * Where a ticket's finalization lands, as its brief and its repository's
  * binding say before anything is read of the remote. The finalizer gathers its
- * view from it, and a work task is told the ref it names, so the two cannot
- * name different refs for one ticket.
+ * view and reads a proposal's base from it, and a work task is told the ref to
+ * merge from it, so the two cannot name different refs for one ticket.
  */
 
 import { briefFinalizationOpensProposal } from "../contract/brief.ts";
 import {
   repositoryBindingNarrowed,
+  repositoryBindingWidened,
   type GitRefName,
   type RepositoryBinding,
 } from "./finalizer.ts";
-import { briefLandsOn, type DraftBrief } from "./ticketBrief.ts";
+import {
+  briefFinalizationTarget,
+  briefLandsOn,
+  type DraftBrief,
+} from "./ticketBrief.ts";
 
 /**
  * The branches one brief names: where the work happened, and where the
@@ -93,4 +98,43 @@ export function finalizerLandingRef(
 ): GitRefName | undefined {
   const landing = finalizerLandingOf(brief, binding);
   return landing.landing === "Lands" ? landing.repository.targetRef : undefined;
+}
+
+/**
+ * The binding a proposal's base is read through: the reference its
+ * finalization names, read as itself rather than through the binding's own, or
+ * the branch the remote defaults to where it names none.
+ */
+export function finalizerProposalBaseBinding(
+  binding: RepositoryBinding,
+  named: GitRefName | undefined,
+): RepositoryBinding {
+  return repositoryBindingNarrowed(repositoryBindingWidened(binding), named);
+}
+
+/** What `git fetch origin` names the branch the remote defaults to by. */
+export const finalizerRemoteDefaultRef = "HEAD";
+
+/**
+ * The ref a work task merges in to meet the change it lands beside: where the
+ * ticket lands, for a push, and for a proposal the base it opens into rather
+ * than the branch it opens from. A base the remote defaults to is named as
+ * `finalizerRemoteDefaultRef`, because only the finalizer's own read of the
+ * remote says which branch that is.
+ */
+export function finalizerLandingBaseRef(
+  brief: DraftBrief | undefined,
+  binding: RepositoryBinding | undefined,
+): string | undefined {
+  const landing = finalizerLandingOf(brief, binding);
+  if (landing.landing !== "Lands") return undefined;
+  const finalization = landing.branches.brief?.finalization;
+  if (!briefFinalizationOpensProposal(finalization))
+    return landing.repository.targetRef;
+  return (
+    finalizerProposalBaseBinding(
+      landing.binding,
+      briefFinalizationTarget(finalization),
+    ).targetRef ?? finalizerRemoteDefaultRef
+  );
 }

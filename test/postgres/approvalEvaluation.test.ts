@@ -19,26 +19,30 @@ import {
 } from "../../src/adapters/postgres/nativeReads.ts";
 import {
   executionsResponseSchema,
+  projectNativeActionsResponseSchema,
   ticketNativeActionsResponseSchema,
 } from "../../src/contract/responses.ts";
+import type { SessionId } from "../../src/interpreter/agentSession.ts";
+import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
+import { projectInbox } from "../../src/interpreter/projectInbox.ts";
+import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
+import { unaskedNativeWebPorts } from "../interpreter/nativeWebFixtures.ts";
+import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import type { Config } from "../../src/domain/config.ts";
 import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
-import {
-  canonicalConfigurationOf,
-  type ReleaseAuthoring,
-} from "../../src/interpreter/authoring.ts";
+import type { ReleaseAuthoring } from "../../src/interpreter/authoring.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { approvalCatalogOf, approvalMixedRelease } from "./approvalCatalog.ts";
 import { id, stoppedReport } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
   postgresHarnessDrain,
   postgresHarnessReport,
   postgresHarnessResume,
-  postgresHarnessSubmission,
 } from "./harness.ts";
 import {
   schedulerClaimFor,
@@ -68,41 +72,11 @@ after(async () => {
 const reader = asPrincipal("approval-reader");
 const instructions = "Read the change and say whether it may land.";
 
-/** A catalog evaluating by `plan`: an approval alone, a command beside it, or a command alone. */
 function catalogOf(plan: "signOff" | "mixed" | "ungated") {
-  return canonicalConfigurationOf({
-    version: 2,
-    image: "worker:v2",
-    workloads: {
-      build: {
-        runner: "Agent",
-        prompt: { text: "Build it." },
-        worker: {
-          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-          setup: [],
-          files: [],
-        },
-      },
-      tests: { runner: "Commands", commands: ["npm test"] },
-      approval: { runner: "Approval", instructions, approvers: "Admin" },
-    },
-    plans: {
-      signOff: [{ name: "sign-off", evaluators: ["approval"] }],
-      mixed: [{ name: "checks", evaluators: ["tests", "approval"] }],
-      ungated: [{ name: "checks", evaluators: ["tests"] }],
-    },
-    defaults: { work: "build", evaluation: plan },
-  });
+  return approvalCatalogOf(plan, "Admin", instructions);
 }
 
-/** A stage of two evaluators, and the bounds a writer must hold to take a release of one. */
-const mixed = {
-  authoring: {
-    deps: new Set<number>(),
-    prog: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-  },
-  config: { ...refinementInstance, nTasks: 2 },
-} satisfies { authoring: ReleaseAuthoring; config: Config };
+const mixed = approvalMixedRelease;
 
 /** A case's project, the memory its last decision left, and the bounds its writer decides under. */
 interface Evaluating {
@@ -273,7 +247,6 @@ test("the ticket's and the project's action reads and the inbox say what the app
     id(at.project.ticket),
   );
   assert.deepEqual(ticketActions, [asked]);
-  ticketNativeActionsResponseSchema.parse({ actions: ticketActions });
   const listed = { ticket: id(at.project.ticket), ...asked };
   assert.deepEqual(
     (await native.nativeActions(at.project.partition, { limit: 10 })).actions,
@@ -289,6 +262,98 @@ test("the ticket's and the project's action reads and the inbox say what the app
     [id(at.project.ticket)],
   );
   assert.deepEqual(inbox.actions, [listed]);
+});
+
+/** The three action reads over the real store, under an access holding an administrator, a developer and a reader. */
+function answerableReads(at: Evaluating) {
+  const { partition } = at.project;
+  const access = memoryProjectAccess();
+  const held = {
+    admin: ["Read", "Mutate", "Administer"],
+    developer: ["Read", "Mutate"],
+  } as const;
+  for (const [name, kinds] of Object.entries(held))
+    access.grant({
+      partition,
+      principal: asPrincipal(`approval-${name}`),
+      access: new Set(kinds),
+    });
+  const [, inbox, authoring, notifications, backlog] = unaskedNativeWebPorts;
+  const web = nativeWeb(
+    access,
+    postgresNativeReads(ingress),
+    inbox,
+    authoring,
+    notifications,
+    backlog,
+  );
+  const desk = projectInbox(access, {
+    store: postgresInboxReads(ingress),
+    operationalReads: postgresOperationalReads(ingress),
+    refusals: { binding: () => Promise.resolve([]) },
+    proposals: selectorProposalReviews(access, {
+      awaitingApproval: () => Promise.resolve([]),
+      approve: () => Promise.resolve(false),
+      reject: () => Promise.resolve(false),
+      reviewFeedback: () => Promise.resolve([]),
+      recentReviewFeedback: () => Promise.resolve([]),
+    }),
+  });
+  return { web, desk };
+}
+
+test("each of the three action reads says the approval is answerable by an approver and by nobody else", async () => {
+  const at = await evaluating("approval-answerable", "signOff");
+  const { partition, ticket } = at.project;
+  const { web, desk } = answerableReads(at);
+  const session = "approval-session" as SessionId;
+  const callers = [
+    [asPrincipal("approval-admin"), undefined, true],
+    [asPrincipal("approval-developer"), undefined, false],
+    [asPrincipal("approval-admin"), session, false],
+  ] as const;
+  for (const [principal, viaSession, answerable] of callers) {
+    const named = `${principal} ${viaSession ?? "in person"}`;
+    const ticketActions = await web.ticketNativeActions(
+      principal,
+      partition,
+      id(ticket),
+      viaSession,
+    );
+    assert.deepEqual(
+      ticketActions?.map((action) => action.answerable),
+      [answerable],
+      named,
+    );
+    ticketNativeActionsResponseSchema.parse({ actions: ticketActions });
+    const listed = await web.nativeActions(
+      principal,
+      partition,
+      { limit: 10 },
+      viaSession,
+    );
+    assert.ok(listed.result === "Authorized");
+    assert.deepEqual(
+      listed.value.actions.map((action) => action.answerable),
+      [answerable],
+      named,
+    );
+    projectNativeActionsResponseSchema.parse({ actions: listed.value.actions });
+    const read = await desk.read(
+      principal,
+      partition,
+      { limit: 10 },
+      viaSession,
+    );
+    assert.ok(read.result === "Authorized");
+    assert.deepEqual(
+      read.value.entries.flatMap((entry) =>
+        entry.actions.map((action) => action.answerable),
+      ),
+      [answerable],
+      named,
+    );
+  }
 });
 
 test("the move rule reads an approval's row as naming no requirement, and lets it go from Queued to Terminal", async () => {
@@ -334,46 +399,6 @@ test("the executions read says the approval awaits, and it is no queued work", a
   const status = await operational.status(at.project.partition);
   assert.equal(status.queued, 0);
   assert.equal(status.accountActive, 0);
-});
-
-test("an answer to an evaluation approval is refused by name and leaves it open", async () => {
-  const at = await evaluating("approval-answered", "signOff");
-  const [open] = await openOf(at);
-  assert.ok(open !== undefined);
-  for (const resolution of ["Approve", "Reject"] as const) {
-    const label = `approval-answer-${resolution}`;
-    const submission = postgresHarnessSubmission(at.project.partition, label);
-    const accepted = await rig.harness.inbox.accept({
-      ...submission,
-      command: {
-        version: 1,
-        command: "ResolveNativeAction",
-        action: open.action,
-        authorizingSeq: open.seq,
-        resolution,
-      },
-    });
-    assert.equal(accepted.accepted, "Accepted", resolution);
-    await postgresHarnessDrain(rig.harness, at.project.partition, at.memory);
-    assert.deepEqual(
-      await rig.harness.query(
-        `SELECT d.outcome_code FROM decision_input d
-          WHERE d.tenant=$1 AND d.project=$2 AND d.input_kind='Operation'
-            AND d.input_id=$3`,
-        [
-          at.project.partition.tenant,
-          at.project.partition.project,
-          submission.operation,
-        ],
-      ),
-      [{ outcome_code: "ApprovalNotAnswerable" }],
-      resolution,
-    );
-  }
-  assert.deepEqual(
-    (await openOf(at)).map((row) => row.action),
-    [open.action],
-  );
 });
 
 test("a stage's other evaluator is admitted while its approval waits", async () => {

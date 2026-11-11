@@ -111,7 +111,6 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_PROPOSAL_MERGE_READINGS_MAX: "13",
     CHUG_FINALIZER_PROPOSAL_UPDATES_MAX: "14",
     CHUG_FINALIZER_PROPOSAL_QUEUE_REWORKS_MAX: "15",
-    CHUG_FINALIZER_RECHECK_REWORKS_MAX: "16",
   });
   assert.deepEqual(settings.runtime, {
     idleIntervalMilliseconds: 250,
@@ -133,8 +132,19 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     proposalMergeReadingsMax: 13,
     proposalUpdatesMax: 14,
     proposalQueueReworksMax: 15,
-    recheckReworksMax: 16,
   });
+});
+
+test("a moved target's re-check has no bound, so a deployment naming one changes nothing", () => {
+  for (const value of ["16", "0", "eight"])
+    assert.deepEqual(
+      finalizerSettingsOf({
+        ...complete,
+        CHUG_FINALIZER_RECHECK_REWORKS_MAX: value,
+      }).finalizer,
+      finalizerDefaults,
+      value,
+    );
 });
 
 test("a bound that is not a positive integer is refused rather than rounded", () => {

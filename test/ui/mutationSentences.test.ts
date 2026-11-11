@@ -22,6 +22,7 @@ import test from "node:test";
 
 import { classify } from "../../src/contract/outcomes.ts";
 import type { ApiOutcome } from "../../src/contract/outcomes.ts";
+import { nativeActionAnswerRefusalCodes } from "../../src/contract/rosters.ts";
 import {
   cancellationResponse,
   submissionResponse,
@@ -78,6 +79,7 @@ const submitted = {
   NotFound: { result: "NotFound" },
   Backlogged: { result: "Backlogged", scope: "Project", retryAfterSeconds: 3 },
   ProgramSkipsPlannedEvaluations: { result: "ProgramSkipsPlannedEvaluations" },
+  AnswerRefused: { result: "AnswerRefused", code: "NotAnApprover" },
   Authorized: { result: "Authorized", acceptance: acceptances.Accepted },
 } as const satisfies Record<
   NativeSubmissionResult["result"],
@@ -92,6 +94,10 @@ const cancellationResults = {
 /** Every submission arm, and every acceptance the authorized one can carry. */
 const submissions: readonly NativeSubmissionResult[] = [
   ...Object.values(submitted),
+  ...nativeActionAnswerRefusalCodes.map(
+    (code) =>
+      ({ result: "AnswerRefused", code }) satisfies NativeSubmissionResult,
+  ),
   ...Object.values(acceptances).map(
     (acceptance) =>
       ({ result: "Authorized", acceptance }) satisfies NativeSubmissionResult,

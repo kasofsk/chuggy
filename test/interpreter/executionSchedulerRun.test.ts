@@ -1994,6 +1994,94 @@ test("a launched work task's briefing names the ref its finalization lands on as
   );
 });
 
+/** What a launched work task's briefing says the change lands on, the fetch each target-merge section runs, first and last, and the ref its launch carried. */
+async function landingMerges(brief: DraftBrief): Promise<{
+  readonly lands?: string;
+  readonly fetches: readonly string[];
+  readonly launched?: string;
+}> {
+  const placements: AttemptPlacement[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  const launched = await landingTargetRef(
+    landingService(brief, placements, recorded),
+    placements,
+    recorded,
+  );
+  const [placed] = placements;
+  assert.ok(placed !== undefined);
+  const fetches = ["TargetMergeFirst", "TargetMergeLast"].map((id) => {
+    const section = placed.invocation.briefing.sections.find(
+      (each) => each.section === id,
+    );
+    const fetch = /`git fetch origin ([^`]+)`/.exec(
+      section?.lines.join("\n") ?? "",
+    );
+    assert.ok(fetch?.[1] !== undefined, `${id} fetches nothing`);
+    return fetch[1];
+  });
+  const lands = placed.invocation.briefing.sections.find(
+    (each) => each.section === "TargetMergeFirst",
+  )?.lines[0];
+  return {
+    ...(lands === undefined ? {} : { lands }),
+    fetches,
+    ...(launched === undefined ? {} : { launched }),
+  };
+}
+
+/** The landing brief, finalized as `finalization` says instead. */
+function landingBriefFinalized(finalization: {
+  readonly mode: string;
+  readonly target?: string;
+}): DraftBrief {
+  return asDraftBrief({
+    intent: "Fix the importer.",
+    links: [],
+    repository: landingRepository,
+    branch: "refs/heads/rt/ticket-brief",
+    finalization,
+  });
+}
+
+for (const mode of ["PullRequestMerge", "PullRequest"] as const) {
+  test(`a work task whose brief lands by ${mode} naming no target merges the remote's default branch, first and last, not its own branch`, async () => {
+    assert.deepEqual(await landingMerges(landingBriefFinalized({ mode })), {
+      lands: "This change lands on origin's default branch.",
+      fetches: ["HEAD", "HEAD"],
+      launched: "refs/heads/rt/ticket-brief",
+    });
+  });
+
+  test(`a work task whose brief lands by ${mode} into a named target merges that target, first and last`, async () => {
+    assert.deepEqual(
+      await landingMerges(
+        landingBriefFinalized({ mode, target: "refs/heads/release" }),
+      ),
+      {
+        lands: "This change lands on refs/heads/release.",
+        fetches: ["refs/heads/release", "refs/heads/release"],
+        launched: "refs/heads/rt/ticket-brief",
+      },
+    );
+  });
+}
+
+test("a work task whose brief pushes merges the ref it pushes to, first and last", async () => {
+  assert.deepEqual(await landingMerges(landingBrief), {
+    lands: "This change lands on refs/heads/release.",
+    fetches: ["refs/heads/release", "refs/heads/release"],
+    launched: "refs/heads/release",
+  });
+  assert.deepEqual(
+    await landingMerges(landingBriefFinalized({ mode: "Push" })),
+    {
+      lands: "This change lands on refs/heads/rt/ticket-brief.",
+      fetches: ["refs/heads/rt/ticket-brief", "refs/heads/rt/ticket-brief"],
+      launched: "refs/heads/rt/ticket-brief",
+    },
+  );
+});
+
 test("a work task whose ticket names no repository, or one no binding answers for, is told no ref", async () => {
   for (const brief of [
     asDraftBrief({ intent: "Fix the importer.", links: [] }),

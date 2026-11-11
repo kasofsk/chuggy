@@ -49,7 +49,9 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { leadInquirySchema } from "../../../../src/contract/requests.ts";
 import {
   hostedRunsNotGrantedCode,
+  leadNotSubsidizedCode,
   noRunnerCode,
+  subsidyExhaustedCode,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
@@ -176,6 +178,8 @@ export const inquiryRefusalWords: Readonly<Record<string, Copy>> = {
   LeadClosed: { id: "lead-inquiry-refusal-closed" },
   InquiriesInFlight: { id: "lead-inquiry-refusal-in-flight" },
   [hostedRunsNotGrantedCode]: { id: "lead-inquiry-refusal-needs-hosted-runs" },
+  [subsidyExhaustedCode]: { id: "lead-inquiry-refusal-subsidy-exhausted" },
+  [leadNotSubsidizedCode]: { id: "lead-inquiry-refusal-not-subsidized" },
 };
 
 export const inquiryRefusalWordUnknown: Copy = {

@@ -574,7 +574,7 @@ export interface BriefingView {
   readonly priorWorkReports: PriorWorkReports;
   readonly priorEvaluationReports: PriorEvaluationReports;
   readonly failedLanding?: FailedLanding;
-  /** The ref the ticket's change lands on, absent where nothing names one. */
+  /** The ref a work task merges in: where the ticket's change lands, or the base its proposal opens into, absent where nothing names one. */
   readonly targetRef?: string;
   readonly brief?: DraftBrief;
   readonly grant: PolicyAuthorityGrant;

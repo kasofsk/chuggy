@@ -49,6 +49,7 @@ import { textCodePointsCount } from "../contract/http.ts";
 import { briefingLineCharsMax } from "../contract/workerTask.ts";
 import type { ChangeProposalStatus } from "./changeProposal.ts";
 import type { FinalizationFailureKind } from "./finalizer.ts";
+import { finalizerRemoteDefaultRef } from "./finalizerLanding.ts";
 import type {
   DependencyChange,
   DependencyDelivery,
@@ -131,7 +132,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 16;
+export const briefingTemplateVersion = 17;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -360,13 +361,20 @@ function briefingTargetMergeResolution(
   ];
 }
 
+/** How a line names the ref a change lands on, the remote's default branch by what it is rather than by `HEAD`. */
+function briefingTargetName(targetRef: string): string {
+  return targetRef === finalizerRemoteDefaultRef
+    ? "origin's default branch"
+    : targetRef;
+}
+
 /** What a work task does before anything else: merge the head of the ref its change lands on. */
 export function briefingTargetMergeFirstLines(
   targetRef: string,
   pipelinesWritable: boolean,
 ): readonly string[] {
   return [
-    `This change lands on ${targetRef}.`,
+    `This change lands on ${briefingTargetName(targetRef)}.`,
     `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
     "Where the workspace is already at that head, git says it is already up to date and nothing changes.",
     ...briefingTargetMergeResolution(pipelinesWritable),
@@ -379,7 +387,7 @@ export function briefingTargetMergeLastLines(
   pipelinesWritable: boolean,
 ): readonly string[] {
   return [
-    `As your last step before you report, bring ${targetRef} in again: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
+    `As your last step before you report, bring ${briefingTargetName(targetRef)} in again: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
     `Where that brought anything in, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree.`,
     ...briefingTargetMergeResolution(pipelinesWritable),
   ];

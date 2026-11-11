@@ -149,26 +149,26 @@ test("a subsidized lead the configuration names is carried into the lead host's 
   );
 });
 
-test("a subsidized lead outside the bounds its counterpart for every lead has, or on the lead's own credential slot, is a configuration refusal", async () => {
-  for (const refused of [
-    { credentialSlot: "" },
-    { credentialSlot: "s".repeat(257) },
-    { model: "-flag" },
-    { model: "a model" },
-    { effort: "extreme" },
-    { autoCompactWindow: 99_999 },
-    { autoCompactWindow: 1_000_001 },
-    { inputBytesPerDecision: 0 },
-    { turnTokensMax: 0 },
-    { turnTokensMax: 1_000_001 },
-    { tenantMonthlyMicros: 0 },
-    { deploymentMonthlyMicros: 0 },
-    { unmeasuredTurnMicros: 0 },
-    { unmeasuredTurnMicros: 1.5 },
-    { tenantMonthlyMicros: Number.MAX_SAFE_INTEGER + 1 },
-    { credentialSlot: validConfiguration.lead.credentialSlot },
-    { unknown: true },
-  ]) {
+for (const refused of [
+  { credentialSlot: "" },
+  { credentialSlot: "s".repeat(257) },
+  { model: "-flag" },
+  { model: "a model" },
+  { effort: "extreme" },
+  { autoCompactWindow: 99_999 },
+  { autoCompactWindow: 1_000_001 },
+  { inputBytesPerDecision: 0 },
+  { turnTokensMax: 0 },
+  { turnTokensMax: 1_000_001 },
+  { tenantMonthlyMicros: 0 },
+  { deploymentMonthlyMicros: 0 },
+  { unmeasuredTurnMicros: 0 },
+  { unmeasuredTurnMicros: 1.5 },
+  { tenantMonthlyMicros: Number.MAX_SAFE_INTEGER + 1 },
+  { credentialSlot: validConfiguration.lead.credentialSlot },
+  { unknown: true },
+]) {
+  test(`a subsidized lead with ${JSON.stringify(refused)}, outside the bounds its counterpart for every lead has or on the lead's own credential slot, is a configuration refusal`, async () => {
     const failure = await executeFailure({
       ...validEnvironment,
       CHUG_SELECTOR_CONFIG: JSON.stringify({
@@ -176,10 +176,10 @@ test("a subsidized lead outside the bounds its counterpart for every lead has, o
         subsidizedLead: { ...subsidizedLead, ...refused },
       }),
     });
-    assert.equal(failure.code, 2, JSON.stringify(refused));
+    assert.equal(failure.code, 2);
     assert.match(failure.stderr, /^selector configuration: /u);
-  }
-});
+  });
+}
 
 test("the source's token source confirms an issuer's invalid_client before it is a refusal", async () => {
   const program = `

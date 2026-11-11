@@ -115,6 +115,23 @@ export interface RunnersCopy {
   readonly "runners-personal-project-priority-high": Record<never, never>;
   readonly "runners-personal-project-priority-normal": Record<never, never>;
   readonly "runners-personal-project-priority-low": Record<never, never>;
+  readonly "runners-personal-project-waiting-col": Record<never, never>;
+  readonly "runners-personal-project-waiting-more": {
+    readonly count: unknown;
+  };
+  readonly "runners-personal-running-col": Record<never, never>;
+  readonly "runners-personal-running-idle": Record<never, never>;
+  readonly "runners-personal-running-ticket": {
+    readonly project: unknown;
+    readonly ticket: unknown;
+  };
+  readonly "runners-personal-running-work": {
+    readonly cycle: unknown;
+  };
+  readonly "runners-personal-running-evaluation": {
+    readonly stage: unknown;
+    readonly cycle: unknown;
+  };
   readonly "runners-personal-paused": Record<never, never>;
   readonly "runners-personal-usage": Record<never, never>;
   readonly "runners-chat-host-title": Record<never, never>;

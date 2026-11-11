@@ -38,7 +38,19 @@ import {
   threadOfferReplyText,
   type ThreadOfferReply,
 } from "../contract/threadOffers.ts";
-import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
+import type {
+  EscalationKind,
+  NativeActionAnswerRefusalCode,
+  ResumePoint,
+} from "../contract/rosters.ts";
+import {
+  nativeActionAnswerer,
+  nativeActionCallerOf,
+  nativeActionFeedbackRefusal,
+  nativeActionsAnswerable,
+  type NativeActionAgents,
+  type NativeActionAsked,
+} from "./nativeActionAnswer.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { ApprovalApprovers } from "./workloadConfiguration.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
@@ -495,13 +507,18 @@ export interface TicketResource {
  * answers this action offered. Those are what was recorded when the action was
  * opened, which is a subset of what its kind may ask for.
  */
-export interface TicketNativeAction {
+export interface TicketNativeActionAsked {
   readonly action: string;
   readonly kind: NativeActionKind;
   readonly authorizingSequence: number;
   readonly admits: readonly NativeActionResolution[];
   /** What an `EvaluationApproval` asks, which only that kind carries. */
   readonly approval?: EvaluationApprovalAsked;
+}
+
+/** One open action as a caller reads it: what it asks, and whether that caller may answer it. */
+export interface TicketNativeAction extends TicketNativeActionAsked {
+  readonly answerable: boolean;
 }
 
 /**
@@ -522,6 +539,11 @@ export interface EvaluationApprovalAsked {
 }
 
 /** The same action listed across a project, where the ticket is not the path. */
+export interface ProjectNativeActionAsked extends TicketNativeActionAsked {
+  readonly ticket: TicketId;
+}
+
+/** That action as a caller reads it across the project. */
 export interface ProjectNativeAction extends TicketNativeAction {
   readonly ticket: TicketId;
 }
@@ -535,6 +557,12 @@ export interface NativeActionPosition {
 export interface NativeActionPageQuery {
   readonly after?: NativeActionPosition;
   readonly limit: number;
+}
+
+/** One page of open actions as the store reads them, before any caller is asked about. */
+export interface NativeActionAskedPage {
+  readonly actions: readonly ProjectNativeActionAsked[];
+  readonly nextAfter?: NativeActionPosition;
 }
 
 export interface NativeActionPage {
@@ -721,11 +749,16 @@ export interface NativeReadStore {
   ticketNativeActions(
     partition: Partition,
     ticket: TicketId,
-  ): Promise<readonly TicketNativeAction[] | undefined>;
+  ): Promise<readonly TicketNativeActionAsked[] | undefined>;
   nativeActions(
     partition: Partition,
     query: NativeActionPageQuery,
-  ): Promise<NativeActionPage>;
+  ): Promise<NativeActionAskedPage>;
+  /** What one action asks of whoever answers it, open or not, or nothing where the project holds no such action. */
+  nativeActionAsked(
+    partition: Partition,
+    action: string,
+  ): Promise<NativeActionAsked | undefined>;
 }
 
 export interface NativeSubmission {
@@ -740,7 +773,8 @@ export interface NativeSubmission {
 /**
  * `ProgramSkipsPlannedEvaluations` is a release or an update whose program runs
  * less than its configuration plans, submitted by a caller not holding
- * `SkipPlannedEvaluations`; nothing was accepted.
+ * `SkipPlannedEvaluations`; nothing was accepted. `AnswerRefused` is a
+ * resolution its caller may not give, or whose feedback its action does not take, and nothing was accepted either.
  */
 export type NativeSubmissionResult =
   | { readonly result: "NotFound" }
@@ -750,6 +784,10 @@ export type NativeSubmissionResult =
       readonly retryAfterSeconds: number;
     }
   | { readonly result: "ProgramSkipsPlannedEvaluations" }
+  | {
+      readonly result: "AnswerRefused";
+      readonly code: NativeActionAnswerRefusalCode;
+    }
   | { readonly result: "Authorized"; readonly acceptance: Accepted };
 
 export type NativeCancellation =
@@ -798,11 +836,13 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
     ticket: TicketId,
+    viaSession?: SessionId,
   ): Promise<readonly TicketNativeAction[] | undefined>;
   nativeActions(
     principal: Principal,
     partition: Partition,
     query: NativeActionPageQuery,
+    viaSession?: SessionId,
   ): Promise<AuthorizedResult<NativeActionPage>>;
   operationalStatus(
     principal: Principal,
@@ -1540,6 +1580,58 @@ async function nativeSubmitPlanRefusal(
     : undefined;
 }
 
+/** What a resolution's submission reads to decide who may give it: the action it names, and which principals are agents. */
+interface NativeSubmitAnswers {
+  readonly reads: Pick<NativeReadStore, "nativeActionAsked">;
+  readonly agents: NativeActionAgents;
+}
+
+/**
+ * The authority a submission is accepted under, or what it is answered instead.
+ * A resolution of an action the project holds is held to who may answer that action and to the feedback it takes; any other submission asks the access its command names.
+ */
+async function nativeSubmitAuthority(
+  access: ProjectAccess,
+  answers: NativeSubmitAnswers,
+  principal: Principal,
+  submission: NativeSubmission,
+): Promise<{ readonly authority: Authority } | NativeSubmissionResult> {
+  const command = submission.command;
+  const asked =
+    command.command === "ResolveNativeAction"
+      ? await answers.reads.nativeActionAsked(
+          submission.partition,
+          command.action,
+        )
+      : undefined;
+  if (command.command !== "ResolveNativeAction" || asked === undefined) {
+    const authority = await access.authorize(
+      principal,
+      submission.partition,
+      submissionAccess(command),
+    );
+    return authority === undefined ? { result: "NotFound" } : { authority };
+  }
+  const answerer = await nativeActionAnswerer(
+    access,
+    answers.agents,
+    nativeActionCallerOf(principal, submission.viaSession),
+    submission.partition,
+    asked,
+  );
+  if (answerer.answerer === "NotFound") return { result: "NotFound" };
+  if (answerer.answerer === "Refused")
+    return { result: "AnswerRefused", code: answerer.code };
+  const feedback = nativeActionFeedbackRefusal(
+    asked.kind,
+    command.resolution,
+    command.feedback,
+  );
+  return feedback === undefined
+    ? { authority: answerer.authority }
+    : { result: "AnswerRefused", code: feedback };
+}
+
 /**
  * A release or an update that runs less than its plan asks
  * `SkipPlannedEvaluations` beside `Mutate`, before anything is accepted.
@@ -1549,14 +1641,17 @@ function nativeSubmitMethod(
   inbox: OperationInbox,
   backlog: ExecutionBacklogGuard,
   authoring: AuthoringStore,
+  answers: NativeSubmitAnswers,
 ): NativeWeb["submit"] {
   return async (principal, submission) => {
-    const authority = await access.authorize(
+    const authorized = await nativeSubmitAuthority(
+      access,
+      answers,
       principal,
-      submission.partition,
-      submissionAccess(submission.command),
+      submission,
     );
-    if (authority === undefined) return { result: "NotFound" };
+    if ("result" in authorized) return authorized;
+    const authority = authorized.authority;
     const refused = await nativeSubmitPlanRefusal(
       access,
       authoring,
@@ -1607,14 +1702,10 @@ function nativeOperationalOutputContent(
     const artifact = resource?.result?.artifacts.find(
       (candidate) => candidate.ordinal === ordinal,
     );
-    if (resource?.result === undefined || artifact === undefined)
+    const attempt = resource?.result?.attempt;
+    if (attempt === undefined || artifact === undefined)
       return { read: "NotFound" };
-    return contents().read({
-      partition,
-      execution,
-      attempt: resource.result.attempt,
-      artifact,
-    });
+    return contents().read({ partition, execution, attempt, artifact });
   };
 }
 
@@ -1845,21 +1936,51 @@ function nativeRunEvidenceMethods(
   };
 }
 
-/** The ticket reads, each reauthorizing before it reaches the projection. */
+/** The ticket reads, each reauthorizing before it reaches the projection, and each action read saying whether its caller may answer. */
 function nativeTicketMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
+  agents: NativeActionAgents,
 ): Pick<NativeWeb, "ticket" | "ticketNativeActions" | "nativeActions"> {
   return {
     ticket: authorizedProjectRead(access, (partition, ticket) =>
       reads.ticket(partition, ticket),
     ),
-    ticketNativeActions: authorizedProjectRead(access, (partition, ticket) =>
-      reads.ticketNativeActions(partition, ticket),
-    ),
-    nativeActions: authorizedProjectValue(access, (partition, query) =>
-      reads.nativeActions(partition, checkedNativeActionPageQuery(query)),
-    ),
+    ticketNativeActions: async (principal, partition, ticket, viaSession) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return undefined;
+      const actions = await reads.ticketNativeActions(partition, ticket);
+      return actions === undefined
+        ? undefined
+        : nativeActionsAnswerable(
+            access,
+            agents,
+            nativeActionCallerOf(principal, viaSession),
+            partition,
+            actions,
+          );
+    },
+    nativeActions: async (principal, partition, query, viaSession) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const page = await reads.nativeActions(
+        partition,
+        checkedNativeActionPageQuery(query),
+      );
+      return {
+        result: "Authorized",
+        value: {
+          ...page,
+          actions: await nativeActionsAnswerable(
+            access,
+            agents,
+            nativeActionCallerOf(principal, viaSession),
+            partition,
+            page.actions,
+          ),
+        },
+      };
+    },
   };
 }
 
@@ -2960,6 +3081,7 @@ export async function ticketsWithLatestExecutions(
 function nativeProjectionMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
+  agents: NativeActionAgents,
   operationalReads?: OperationalReadStore,
 ): Pick<
   NativeWeb,
@@ -2991,7 +3113,7 @@ function nativeProjectionMethods(
           }
         : read;
     },
-    ...nativeTicketMethods(access, reads),
+    ...nativeTicketMethods(access, reads, agents),
   };
 }
 
@@ -3014,6 +3136,39 @@ function nativeCancelMethod(
       result: "Found",
       cancellation: await inbox.cancel({ partition, operation, authority }),
     };
+  };
+}
+
+/** The principals no person's approval is asked of, which is the site's selector where the lead ports name one. */
+export function nativeWebAgents(leads?: NativeLeadPorts): NativeActionAgents {
+  return leads?.selector === undefined ? {} : { selector: leads.selector };
+}
+
+/** The submission, the cancellation and the reads of tickets and their actions, each knowing which callers are agents. */
+function nativeDeskMethods(
+  access: ProjectAccess,
+  reads: NativeReadStore,
+  inbox: OperationInbox,
+  backlog: ExecutionBacklogGuard,
+  authoring: AuthoringStore,
+  desk: {
+    readonly agents: NativeActionAgents;
+    readonly operationalReads: OperationalReadStore | undefined;
+  },
+): Pick<NativeWeb, "submit" | "cancel"> &
+  ReturnType<typeof nativeProjectionMethods> {
+  return {
+    submit: nativeSubmitMethod(access, inbox, backlog, authoring, {
+      reads,
+      agents: desk.agents,
+    }),
+    ...nativeProjectionMethods(
+      access,
+      reads,
+      desk.agents,
+      desk.operationalReads,
+    ),
+    cancel: nativeCancelMethod(access, reads, inbox),
   };
 }
 
@@ -3071,9 +3226,10 @@ export function nativeWeb(
       access,
       selectorContexts,
     ),
-    submit: nativeSubmitMethod(access, inbox, backlog, authoring),
-    ...nativeProjectionMethods(access, reads, operationalReads),
-    cancel: nativeCancelMethod(access, reads, inbox),
+    ...nativeDeskMethods(access, reads, inbox, backlog, authoring, {
+      agents: nativeWebAgents(leads),
+      operationalReads,
+    }),
     notifications: authorizedProjectValue(access, (partition, cursor) =>
       notifications.read(partition, checkedNotificationCursor(cursor)),
     ),

@@ -5,6 +5,7 @@
  * already re-exports `./publicResource.ts`, so no caller sees the difference.
  */
 
+import { principalCharsMax } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
 
 declare const principalBrand: unique symbol;
@@ -12,13 +13,7 @@ declare const principalBrand: unique symbol;
 /** An authenticated session subject, opaque to the application boundary. */
 export type Principal = string & { readonly [principalBrand]: true };
 
-/**
- * The longest principal a stored row holds, which `./operationInbox.ts` bounds
- * an audited authority by rather than declaring a second number. Project
- * access derives one from the other, so a principal wider than the column that
- * records what it submitted is refused where it is composed.
- */
-export const principalCharsMax = 256;
+export { principalCharsMax };
 
 /** Brands a bounded principal. */
 export function asPrincipal(value: string): Principal {

@@ -207,7 +207,8 @@ export type LeadInquiryRead =
  * `HostedRunsNotGranted` a lead run in cluster for a tenant that grants them no
  * hosted runs, `NoRunner` a lead run on runners where they have registered
  * none, `SubsidyExhausted` a subsidized lead whose tenant or deployment has
- * spent this month's subsidy. A question too long is not an arm here: it is
+ * spent this month's subsidy, `LeadNotSubsidized` a project moved to the
+ * subsidized lead whose standing lead has not yet been replaced. A question too long is not an arm here: it is
  * bounded where it is read off the wire, so it is an invalid request rather
  * than something this door met.
  */
@@ -217,7 +218,12 @@ export type LeadInquiryAsked =
         "NotFound" | "HostedRunsNotGranted" | "NoRunner" | "SubsidyExhausted";
     }
   | {
-      readonly result: "NoLead" | "LeadNotStarted" | "LeadClosed" | "InFlight";
+      readonly result:
+        | "NoLead"
+        | "LeadNotStarted"
+        | "LeadClosed"
+        | "InFlight"
+        | "LeadNotSubsidized";
     }
   | {
       readonly result: "Asked" | "AlreadyAsked";
@@ -250,7 +256,5 @@ export function leadInquiryAsked(
       ordinal: opened.ordinal,
     };
   }
-  if (opened.opened === "LeadNotSubsidized")
-    return { result: "HostedRunsNotGranted" };
   return { result: opened.opened };
 }

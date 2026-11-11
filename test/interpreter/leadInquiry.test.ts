@@ -356,7 +356,7 @@ test("the question the door offers carries the standing rule and the asker", asy
   assert.equal(document.standing, inquiryStanding);
 });
 
-test("a question admitted on the lead's subsidy is offered as one, and a lead off the profile's slot is a hosted run the member is not granted", async () => {
+test("a question admitted on the lead's subsidy is offered as one, and a lead not yet replaced on the profile's slot is refused as that rather than as hosted runs", async () => {
   for (const [offering, held, subsidized] of [
     ["Subsidized", [], true],
     ["Own", ["ExecuteHosted"], false],
@@ -392,7 +392,7 @@ test("a question admitted on the lead's subsidy is offered as one, and a lead of
         question: "who pays for this?",
       })
     ).result,
-    "HostedRunsNotGranted",
+    "LeadNotSubsidized",
   );
 });
 
@@ -509,6 +509,7 @@ test("each refusal the durable side names is the refusal the door answers", () =
     "LeadNotStarted",
     "LeadClosed",
     "InFlight",
+    "LeadNotSubsidized",
   ] as const)
     assert.deepEqual(leadInquiryAsked({ opened }, session, turn), {
       result: opened,

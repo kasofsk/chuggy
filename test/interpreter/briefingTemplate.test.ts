@@ -47,6 +47,7 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { allChangeProposalStatuses } from "../../src/interpreter/changeProposal.ts";
+import { finalizerRemoteDefaultRef } from "../../src/interpreter/finalizerLanding.ts";
 
 /** Every shape a failed landing is told in, its commits fixed so only the wording moves the digest. */
 const failedLandings: readonly FailedLanding[] = [
@@ -188,6 +189,8 @@ function templateWording(): readonly string[] {
     ...briefingTargetMergeFirstLines("refs/heads/target", false),
     ...briefingTargetMergeLastLines("refs/heads/target", true),
     ...briefingTargetMergeLastLines("refs/heads/target", false),
+    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, true),
+    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, true),
     ...dependencyWording(),
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
@@ -220,7 +223,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [16, "e6c3d77787109b1435da546714620c77e5d1fb43a5c3973bc5c4ec5a569f4590"],
+    [17, "5894c78881ca5a536df15b28c5dd69a38cb0c8e9e7b14d433602f33c38e8a276"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -252,6 +255,8 @@ test("the digest reads every string the template states", () => {
     ...briefingTargetMergeFirstLines("refs/heads/target", false),
     ...briefingTargetMergeLastLines("refs/heads/target", true),
     ...briefingTargetMergeLastLines("refs/heads/target", false),
+    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, true),
+    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, true),
     ...dependencyWording(),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);

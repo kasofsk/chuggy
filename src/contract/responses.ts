@@ -57,9 +57,13 @@ import {
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
+  personalRunnerHeldAnsweredMax,
   personalRunnerProjectsMax,
   personalRunnersMax,
+  personalRunnerWaitingCountedMax,
   resultReportCharsMax,
+  approvalFeedbackCharsMax,
+  principalCharsMax,
   runContextItemsMax,
   runContextNameCharsMax,
   runContextPageReadingsMax,
@@ -678,6 +682,11 @@ const nativeActionFields = {
     .describe(
       "What an EvaluationApproval asks, present on that kind alone: the execution it stands for, which reads Awaiting until it is answered or no longer owed, where that execution stands in the ticket's evaluation, and its workload's instructions and approvers as the ticket was released with them.",
     ),
+  answerable: z
+    .boolean()
+    .describe(
+      "Whether the caller of this read may answer this action: for an EvaluationApproval, whether its approvers name them and they are a person rather than an agent or a session.",
+    ),
 };
 
 function nativeActionKindAdmits(
@@ -1084,16 +1093,32 @@ const executionAttemptSchema = z.object({
   refusal: z.string().min(1).max(workerPoolEvidenceCharsMax).optional(),
 });
 
-const executionResultSchema = z.object({
-  manifest: identitySchema,
-  attempt: identitySchema,
-  schemaVersion: countSchema,
-  digest: z.string().min(1),
-  verdict: z.enum(resultVerdicts),
-  recordedAt: instantSchema,
-  artifacts: page(resultArtifactSchema),
-  report: z.string().min(1).max(resultReportCharsMax).optional(),
+/** Who answered an evaluation approval, when, how and with what feedback, which is the whole of what that answer's result was written from. */
+const executionResultApprovalSchema = z.strictObject({
+  action: identitySchema,
+  principal: z.string().min(1).max(principalCharsMax),
+  resolution: z.enum(nativeActionKindResolutions.EvaluationApproval),
+  answeredAt: instantSchema,
+  feedback: z.string().min(1).max(approvalFeedbackCharsMax).optional(),
 });
+
+const executionResultSchema = z
+  .object({
+    manifest: identitySchema,
+    /** The attempt whose worker reported this result, absent on one a person's answer to an approval wrote. */
+    attempt: identitySchema.optional(),
+    approval: executionResultApprovalSchema.optional(),
+    schemaVersion: countSchema,
+    digest: z.string().min(1),
+    verdict: z.enum(resultVerdicts),
+    recordedAt: instantSchema,
+    artifacts: page(resultArtifactSchema),
+    report: z.string().min(1).max(resultReportCharsMax).optional(),
+  })
+  .refine(
+    (value) => (value.attempt === undefined) !== (value.approval === undefined),
+    "a result is a worker attempt's or an approval's answer, and never both",
+  );
 
 export const executionResponseSchema = executionSummarySchema.extend({
   attempts: page(executionAttemptSchema),
@@ -2868,12 +2893,20 @@ export type PersonalRunnerCredentialsResponse = z.infer<
   typeof personalRunnerCredentialsSchema
 >;
 
+/** One attempt a member's runner claimed and still holds, placing or running: its project, its ticket, and what its execution is. */
+const personalRunnerHeldSchema = z.strictObject({
+  project: identitySchema,
+  ticket: ticketNumberSchema,
+  identity: taskIdentitySchema,
+});
+
 /**
  * One of a member's runners, named by `id`, the client its registration made.
  * `polledAt` is its newest poll, absent until it polls, and `live` whether that
  * poll is recent enough for the runner to be taking work; `executionsLive` is
  * the same of its newest poll for executions alone, which is what a pool's
- * claim defers to under Preferred.
+ * claim defers to under Preferred; `held` is what it holds, the earliest
+ * claimed first, and `heldTruncated` says it holds more than one read answers.
  */
 const personalRunnerListedSchema = z.strictObject({
   id: identitySchema,
@@ -2884,9 +2917,17 @@ const personalRunnerListedSchema = z.strictObject({
   executionsLive: z.boolean(),
   /** What its newest poll named, absent where it named none. */
   runner: runnerListedSchema.optional(),
+  held: z.array(personalRunnerHeldSchema).max(personalRunnerHeldAnsweredMax),
+  heldTruncated: z.boolean(),
 });
 
-/** A member's own runners in one tenant, oldest first, and the projects every one of them may serve, in project order, each at its priority. */
+/**
+ * A member's own runners in one tenant, oldest first, and the projects every
+ * one of them may serve, in project order, each at its priority. `waiting` is
+ * how many of a project's attempts one of the runners could take now, room
+ * and slots aside, and none where the member may no longer read it;
+ * `waitingTruncated` says more wait than one read counts.
+ */
 export const personalRunnerResponseSchema = z.strictObject({
   runners: z.array(personalRunnerListedSchema).min(1).max(personalRunnersMax),
   projects: z
@@ -2894,6 +2935,8 @@ export const personalRunnerResponseSchema = z.strictObject({
       z.strictObject({
         project: identitySchema,
         priority: z.enum(personalRunnerPriorities),
+        waiting: countSchema.max(personalRunnerWaitingCountedMax),
+        waitingTruncated: z.boolean(),
       }),
     )
     .max(personalRunnerProjectsMax),

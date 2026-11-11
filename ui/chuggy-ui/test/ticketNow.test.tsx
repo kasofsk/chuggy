@@ -276,9 +276,18 @@ const ownRunner = {
       registeredAt: "2026-08-27T00:00:00Z",
       live: false,
       executionsLive: false,
+      held: [],
+      heldTruncated: false,
     },
   ],
-  projects: [{ project: "atlas", priority: "Normal" }],
+  projects: [
+    {
+      project: "atlas",
+      priority: "Normal",
+      waiting: 0,
+      waitingTruncated: false,
+    },
+  ],
 };
 
 test("the reader's own run that their offline runner holds says it waits on it, and where it is managed", async () => {

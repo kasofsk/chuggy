@@ -418,6 +418,42 @@ export const inquiriesAnsweredMax = 32;
 export const resultReportCharsMax = 8_192;
 
 /**
+ * The longest principal a stored row holds, which `../interpreter/operationInbox.ts` bounds
+ * an audited authority by rather than declaring a second number. Project
+ * access derives one from the other, so a principal wider than the column that
+ * records what it submitted is refused where it is composed.
+ */
+export const principalCharsMax = 256;
+
+/**
+ * The longest feedback a person's answer to an evaluation approval carries: the
+ * result report's bound less the longest preamble naming who answered, which is
+ * `Approved by ` or `Rejected by `, the widest principal and the separator
+ * before the feedback. No admitted feedback overflows its report, and none is
+ * truncated to fit.
+ */
+export const approvalFeedbackCharsMax =
+  resultReportCharsMax -
+  Math.max("Approved by ".length, "Rejected by ".length) -
+  principalCharsMax -
+  ": ".length;
+
+/** A character no retained report carries: a control character, which a key truncates at or a reader cannot see. */
+const reportControlCharacter = /\p{Cc}/u;
+
+/**
+ * Whether text is feedback an approval's answer may carry: well formed, not blank, within its bound, and free of what a report refuses.
+ * The stored report is held to the same characters, so feedback admitted here is never refused when the verdict is written.
+ */
+export function isApprovalFeedback(value: string): boolean {
+  return (
+    isBoundedText(value, approvalFeedbackCharsMax) &&
+    /\S/u.test(value) &&
+    !reportControlCharacter.test(value)
+  );
+}
+
+/**
  * The first manifest schema version whose result carries a summary at all, below
  * which a reader has none to draw rather than an empty one.
  */
@@ -509,6 +545,12 @@ export const personalRunnerProjectsMax = 64;
 
 /** How many personal runners one member may hold in one tenant, which their read answers whole. */
 export const personalRunnersMax = 16;
+
+/** How many of the attempts one personal runner holds its owner's read answers with, the earliest claimed first. */
+export const personalRunnerHeldAnsweredMax = 8;
+
+/** How far one member's read counts the attempts waiting in each project their runners serve. */
+export const personalRunnerWaitingCountedMax = 99;
 
 /** How many of a ticket's landings one read answers with, the newest of them, oldest first. */
 export const ticketLandingsAnsweredMax = 8;

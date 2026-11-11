@@ -591,6 +591,8 @@ const consoleReads: readonly ConsoleRead[] = [
           registeredAt: "2026-08-26T00:00:00Z",
           live: true,
           executionsLive: false,
+          held: [],
+          heldTruncated: false,
         },
       ],
       projects: [],

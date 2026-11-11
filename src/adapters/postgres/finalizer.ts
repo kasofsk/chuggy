@@ -837,47 +837,6 @@ function postgresFinalizerPreparation(
   };
 }
 
-/**
- * Counts the attempts of the ticket's requests that recorded a target moved
- * past what was evaluated, leaving out those whose evaluated work cycle has a
- * stack record: such an attempt was sent back because a stack stopped being
- * what the target holds, which queue activity bounds without this cap.
- */
-async function finalizerRecheckFailures(
-  client: pg.PoolClient,
-  claim: FinalizationClaim,
-): Promise<number> {
-  const found = await client.query<{ failures: string }>(
-    sql`SELECT count(*) AS failures
-         FROM finalization_attempt a
-        WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
-          AND a.ticket = ${claim.ticket}
-          AND a.failure_kind = 'RecheckRequired'
-          AND NOT EXISTS (
-                SELECT 1
-                  FROM input_bundle_reference m
-                  JOIN execution_result r
-                    ON r.tenant = m.tenant AND r.project = m.project
-                       AND r.manifest = m.reference_id
-                  JOIN execution e
-                    ON e.tenant = r.tenant AND e.project = r.project
-                       AND e.execution = r.execution
-                  JOIN execution_request_task t
-                    ON t.tenant = e.tenant AND t.project = e.project
-                       AND t.request = e.source_request AND t.task = e.task
-                  JOIN evaluation_stack s
-                    ON s.tenant = a.tenant AND s.project = a.project
-                       AND s.ticket = a.ticket AND s.work_cycle = t.cycle
-                 WHERE m.tenant = a.tenant AND m.project = a.project
-                   AND m.bundle = a.input_bundle
-                   AND m.reference_kind = 'ResultManifest')`,
-  );
-  return projectRowCounter(
-    found.rows[0]?.failures ?? "0",
-    "ticket recheck failures",
-  );
-}
-
 /** The moves a change proposal owns, over the same pool the rest of the authority runs on. */
 function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
   return {
@@ -989,10 +948,6 @@ export function postgresFinalizer(
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),
-      ),
-    ticketRecheckFailures: (claim) =>
-      postgresTransaction(pool, (client) =>
-        finalizerRecheckFailures(client, claim),
       ),
     extendClaim: (claim, leaseSecs) =>
       postgresTransaction(pool, (client) =>

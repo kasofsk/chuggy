@@ -152,6 +152,8 @@ import { migration151 } from "./151-subsidized-inquiry.ts";
 import { migration152 } from "./152-requirementless-terminal.ts";
 import { migration153 } from "./153-subsidy-monthly-caps.ts";
 import { migration154 } from "./154-session-system-prompt-own.ts";
+import { migration155 } from "./155-approval-answered.ts";
+import { migration156 } from "./156-personal-runner-contention.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -309,4 +311,6 @@ export const migrations: readonly Migration[] = [
   migration152,
   migration153,
   migration154,
+  migration155,
+  migration156,
 ];

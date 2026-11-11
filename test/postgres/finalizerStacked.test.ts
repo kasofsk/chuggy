@@ -9,13 +9,16 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
-import type { FinalizationClaim } from "../../src/interpreter/finalizer.ts";
 import { recordStackBeneathNobody } from "./evaluationStackLandings.ts";
+import { postgresHarnessResume } from "./harness.ts";
 import {
   finalizerBriefLanding,
+  finalizerClaim,
   finalizerDeclareSource,
+  finalizerDrain,
   finalizerGitVerb,
   finalizerPassOnce,
+  finalizerPhase,
   finalizerRemoteAttempt,
   finalizerRemoteCommit,
   finalizerRemotePort,
@@ -34,14 +37,6 @@ before(async () => {
 after(async () => {
   await rig.close();
 });
-
-/** The part of a claim the re-check count reads. */
-function claimOf(project: FinalizerProject): FinalizationClaim {
-  return {
-    partition: project.partition,
-    ticket: project.ticket,
-  } as FinalizationClaim;
-}
 
 /** A Stacked ticket whose worker published one commit, with the reference moved once by the ticket beneath it. */
 async function stackedAfterBeneath(label: string): Promise<{
@@ -129,11 +124,6 @@ test("directLandingInvalidatesAStack: a landing after the stack was minted gives
   assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(attempts[0]?.["recheck_commit"], worked);
   assert.equal(attempts[0]?.["candidate_commit"], null);
-  assert.equal(
-    await postgresFinalizer(rig.pool).ticketRecheckFailures(claimOf(project)),
-    0,
-    "a re-check forced by a stack that stopped standing is not counted",
-  );
 });
 
 test("a stacked ticket evaluated over no stack lands as a serialized one does, sent back where the reference moved past its commit", async () => {
@@ -149,11 +139,6 @@ test("a stacked ticket evaluated over no stack lands as a serialized one does, s
   const [attempt] = await attemptsOf(project);
   assert.equal(attempt?.["failure_kind"], "RecheckRequired");
   assert.equal(attempt?.["recheck_commit"], worked);
-  assert.equal(
-    await postgresFinalizer(rig.pool).ticketRecheckFailures(claimOf(project)),
-    1,
-    "a re-check forced by the target having moved is counted",
-  );
 });
 
 /**
@@ -207,30 +192,73 @@ async function passesBehindTheTarget(
   return holds;
 }
 
-test("a ticket sent back three times by a stack that stopped standing is not held, where one sent back by the target moving is held on the third", async () => {
-  const stacked = await stackedAfterBeneath("recheck-stacked");
-  await stackRecorded(
-    stacked.project,
-    mergedTree(stacked.remote, stacked.worked),
-  );
-  const heldStacked = await passesBehindTheTarget(
-    stacked.project,
-    stacked.remote,
-    3,
-    "recheck-stacked",
-  );
-  assert.deepEqual(heldStacked, [0, 0, 0]);
-  const attempts = await attemptsOf(stacked.project);
-  assert.equal(attempts.length, 3);
-  assert.ok(attempts.every((a) => a["failure_kind"] === "RecheckRequired"));
+test("a ticket sent back three times is never held, whether a stack stopped standing or the target moved", async () => {
+  for (const label of ["recheck-stacked", "recheck-plain"]) {
+    const sent = await stackedAfterBeneath(label);
+    if (label === "recheck-stacked")
+      await stackRecorded(sent.project, mergedTree(sent.remote, sent.worked));
+    const holds = await passesBehindTheTarget(
+      sent.project,
+      sent.remote,
+      3,
+      label,
+    );
+    assert.deepEqual(holds, [0, 0, 0], label);
+    const attempts = await attemptsOf(sent.project);
+    assert.equal(attempts.length, 3, label);
+    assert.ok(
+      attempts.every((a) => a["failure_kind"] === "RecheckRequired"),
+      label,
+    );
+  }
+});
 
-  const plain = await stackedAfterBeneath("recheck-plain");
-  const heldPlain = await passesBehindTheTarget(
-    plain.project,
-    plain.remote,
-    3,
-    "recheck-plain",
+/**
+ * A ticket escalated at `RecheckReworksExhausted`, which a pass once held at
+ * and none holds at now, goes on to its re-check when resumed.
+ */
+test("a ticket escalated with its re-checks exhausted is sent back to re-check once resumed, and not held again", async () => {
+  const { project, worked } = await stackedAfterBeneath("recheck-resumed");
+  const store = postgresFinalizer(rig.pool);
+  const claim = await finalizerClaim(rig, project, "owner-recheck-escalated");
+  await store.recordHold({ claim, kind: "RecheckReworksExhausted" });
+  const submitted = await store.submitResult({
+    claim,
+    conclusion: {
+      outcome: "FinalizationResultUnavailable",
+      kind: "RecheckReworksExhausted",
+    },
+  });
+  assert.equal(submitted.submitted, "Submitted");
+  let { memory } = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
   );
-  assert.deepEqual(heldPlain, [0, 0, 1]);
-  assert.equal((await attemptsOf(plain.project)).length, 2);
+  assert.equal(await finalizerPhase(rig, project.partition), "Escalated");
+  assert.equal(
+    await postgresHarnessResume(
+      rig.harness,
+      project.partition,
+      project.ticket,
+      "recheck-resumed",
+    ),
+    "Accepted",
+  );
+  ({ memory } = await finalizerDrain(rig.harness, project.partition, memory));
+  assert.equal(await finalizerPhase(rig, project.partition), "Finalization");
+
+  const report = await finalizerPassOnce(
+    rig,
+    project,
+    finalizerRemotePort(rig),
+    "recheck-resumed",
+  );
+
+  assert.equal(report.holds, 0);
+  const attempts = await attemptsOf(project);
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
+  assert.equal(attempts[0]?.["recheck_commit"], worked);
+  await finalizerDrain(rig.harness, project.partition, memory);
 });
