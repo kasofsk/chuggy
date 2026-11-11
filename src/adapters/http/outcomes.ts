@@ -86,6 +86,7 @@ import {
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
   selectorProposalNotHeldCode,
+  subsidyExhaustedCode,
   threadLimitReachedCode,
   briefFinalizationModeOf,
   type BriefFinalizationMode,
@@ -2510,6 +2511,14 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         ...(result.refusal === undefined
           ? {}
           : { refusal: leadRefusalBody(result.refusal) }),
+        ...(result.subsidy === undefined
+          ? {}
+          : {
+              subsidy: {
+                tenantMicros: result.subsidy.tenantMicros,
+                tenantMonthlyMicros: result.subsidy.tenantMonthlyMicros,
+              },
+            }),
       });
   }
 }
@@ -3005,7 +3014,8 @@ export function leadInquiryResponse(
 /**
  * The ask door's refusals, each naming which one it met; `InquiriesInFlight` is
  * `409` and carries no `retry-after`, because a retry cannot succeed until one
- * of the asker's own inquiries settles. Asking is idempotent on the two
+ * of the asker's own inquiries settles, and `SubsidyExhausted` is `403`, since
+ * none can until the month turns or the project moves its lead. Asking is idempotent on the two
  * identities the caller minted, so its two successes are one status and one
  * body — a retry is told the ordinal it has, not that a second fork was opened.
  */
@@ -3021,6 +3031,14 @@ export function askLeadResponse(
       return hostedRunsRefused();
     case "NoRunner":
       return noRunnerRefused();
+    case "SubsidyExhausted":
+      return response(
+        403,
+        nativeHttpError(
+          subsidyExhaustedCode,
+          "The lead's subsidy for this month is spent.",
+        ),
+      );
     case "LeadNotStarted":
       return response(
         409,

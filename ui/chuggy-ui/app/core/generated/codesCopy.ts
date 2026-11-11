@@ -53,6 +53,7 @@ export interface CodesCopy {
   readonly "codes-lead-absence-hosted-runs": Record<never, never>;
   readonly "codes-lead-absence-runner-offline": Record<never, never>;
   readonly "codes-lead-absence-usage-paused": Record<never, never>;
+  readonly "codes-lead-absence-subsidy-exhausted": Record<never, never>;
   readonly "codes-landing-running": Record<never, never>;
   readonly "codes-landing-held": Record<never, never>;
   readonly "codes-landing-waiting": Record<never, never>;

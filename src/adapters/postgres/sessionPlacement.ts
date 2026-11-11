@@ -29,13 +29,15 @@ import {
   type SessionRouteResolved,
   type SessionRouting,
   type SessionRunners,
-  type SubsidizedLeadProfile,
+  type SubsidizedLeadOffer,
+  type SubsidizedLeadSpend,
 } from "../../interpreter/sessionPlacement.ts";
 import {
   placementWriteOutcome,
   projectRoutesDocument,
 } from "./executionPlacement.ts";
-import { sessionRowMember } from "./sessionRows.ts";
+import { projectRowCounter } from "./rows.ts";
+import { sessionRowMember, sessionRowText } from "./sessionRows.ts";
 
 /** Publishes the session routing this scheduler places under, before its loop reads anything. */
 export function postgresSessionRoutingPrecondition(
@@ -71,7 +73,7 @@ export function postgresSessionRoutingPrecondition(
  */
 export function postgresSubsidizedLeadPrecondition(
   pool: pg.Pool,
-  profile: SubsidizedLeadProfile | undefined,
+  profile: SubsidizedLeadOffer | undefined,
 ): RuntimePrecondition {
   return {
     name: "subsidized-lead-published",
@@ -83,11 +85,15 @@ export function postgresSubsidizedLeadPrecondition(
         await pool.query(
           sql`INSERT INTO subsidized_lead
                 (singleton,credential_slot,model,effort,auto_compact_window,
-                 input_bytes_per_decision,turn_tokens_max,published_at)
+                 input_bytes_per_decision,turn_tokens_max,
+                 tenant_monthly_micros,deployment_monthly_micros,
+                 unmeasured_turn_micros,published_at)
               VALUES (1,${profile.credentialSlot},${profile.model},
                       ${profile.effort},${profile.autoCompactWindow},
                       ${profile.inputBytesPerDecision},
-                      ${profile.turnTokensMax},now())
+                      ${profile.turnTokensMax},${profile.tenantMonthlyMicros},
+                      ${profile.deploymentMonthlyMicros},
+                      ${profile.unmeasuredTurnMicros},now())
               ON CONFLICT (singleton) DO UPDATE
                 SET credential_slot=EXCLUDED.credential_slot,
                     model=EXCLUDED.model,
@@ -95,6 +101,9 @@ export function postgresSubsidizedLeadPrecondition(
                     auto_compact_window=EXCLUDED.auto_compact_window,
                     input_bytes_per_decision=EXCLUDED.input_bytes_per_decision,
                     turn_tokens_max=EXCLUDED.turn_tokens_max,
+                    tenant_monthly_micros=EXCLUDED.tenant_monthly_micros,
+                    deployment_monthly_micros=EXCLUDED.deployment_monthly_micros,
+                    unmeasured_turn_micros=EXCLUDED.unmeasured_turn_micros,
                     published_at=EXCLUDED.published_at`,
         );
       signal.throwIfAborted();
@@ -141,6 +150,41 @@ async function sessionLeadOffering(
   );
 }
 
+/** What `partition`'s tenant and the deployment spent of the subsidy this month, absent where its lead runs as its own. */
+export async function postgresSubsidizedLeadSpend(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<SubsidizedLeadSpend | undefined> {
+  const found = await pool.query<{
+    tenant_micros: string | null;
+    tenant_monthly_micros: string | null;
+    deployment_micros: string | null;
+    deployment_monthly_micros: string | null;
+  }>(
+    sql`SELECT tenant_micros::text AS tenant_micros,
+               tenant_monthly_micros::text AS tenant_monthly_micros,
+               deployment_micros::text AS deployment_micros,
+               deployment_monthly_micros::text AS deployment_monthly_micros
+          FROM subsidized_lead_spend(${partition.tenant},${partition.project})`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const micros = (value: string | null, field: string): number =>
+    projectRowCounter(sessionRowText(value, field), field);
+  return {
+    tenantMicros: micros(row.tenant_micros, "subsidy tenantMicros"),
+    tenantMonthlyMicros: micros(
+      row.tenant_monthly_micros,
+      "subsidy tenantMonthlyMicros",
+    ),
+    deploymentMicros: micros(row.deployment_micros, "subsidy deploymentMicros"),
+    deploymentMonthlyMicros: micros(
+      row.deployment_monthly_micros,
+      "subsidy deploymentMonthlyMicros",
+    ),
+  };
+}
+
 async function sessionRunners(
   pool: pg.Pool,
   partition: Partition,
@@ -181,6 +225,8 @@ export function postgresSessionRouteReads(pool: pg.Pool): SessionRouteReads {
   return {
     route: (partition, kind) => sessionRoute(pool, partition, kind),
     leadOffering: (partition) => sessionLeadOffering(pool, partition),
+    subsidizedLeadSpend: (partition) =>
+      postgresSubsidizedLeadSpend(pool, partition),
     runners: (partition, member) => sessionRunners(pool, partition, member),
   };
 }
@@ -190,6 +236,8 @@ export function postgresLeadRouteReads(pool: pg.Pool): LeadRouteReads {
   return {
     route: (partition, kind) => sessionRoute(pool, partition, kind),
     leadOffering: (partition) => sessionLeadOffering(pool, partition),
+    subsidizedLeadSpend: (partition) =>
+      postgresSubsidizedLeadSpend(pool, partition),
     leadRunners: async (partition) => {
       const found = await pool.query<{ standing: string | null }>(
         sql`SELECT standing

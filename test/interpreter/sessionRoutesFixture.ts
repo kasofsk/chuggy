@@ -9,7 +9,16 @@ import type {
   SessionRouteKind,
   SessionRouteReads,
   SessionRunners,
+  SubsidizedLeadSpend,
 } from "../../src/interpreter/sessionPlacement.ts";
+
+/** A subsidy neither its tenant nor the deployment has spent any of this month. */
+export const sessionRoutesSubsidyUnspent: SubsidizedLeadSpend = {
+  tenantMicros: 0,
+  tenantMonthlyMicros: 1_000_000,
+  deploymentMicros: 0,
+  deploymentMonthlyMicros: 10_000_000,
+};
 
 /** A lead's runners as the project's standing would have them, none of their owners paused. */
 function sessionRoutesLeadRunners(
@@ -18,7 +27,7 @@ function sessionRoutesLeadRunners(
   return () => Promise.resolve(runners.project === "Live" ? "Live" : "Offline");
 }
 
-/** Routes fixed per routed kind, an inquiry following the lead as the definer has it, and the lead's offering. */
+/** Routes fixed per routed kind, an inquiry following the lead as the definer has it, the lead's offering, and a subsidized one's spend. */
 export function sessionRoutesAt(
   routes: Partial<Record<SessionRouteKind, PlacementRoute>> = {},
   runners: SessionRunners = {
@@ -27,6 +36,7 @@ export function sessionRoutesAt(
     project: "Unregistered",
   },
   offering: LeadOffering = "Own",
+  spend: SubsidizedLeadSpend = sessionRoutesSubsidyUnspent,
 ): SessionRouteReads & LeadRouteReads {
   return {
     route: (_partition, kind) =>
@@ -35,6 +45,8 @@ export function sessionRoutesAt(
         source: "Project",
       }),
     leadOffering: () => Promise.resolve(offering),
+    subsidizedLeadSpend: () =>
+      Promise.resolve(offering === "Subsidized" ? spend : undefined),
     runners: () => Promise.resolve(runners),
     leadRunners: sessionRoutesLeadRunners(runners),
   };
@@ -59,6 +71,7 @@ export function sessionRoutesFlipping(
       });
     },
     leadOffering: () => Promise.resolve("Own"),
+    subsidizedLeadSpend: () => Promise.resolve(undefined),
     runners: () => Promise.resolve(runners),
     leadRunners: sessionRoutesLeadRunners(runners),
   };

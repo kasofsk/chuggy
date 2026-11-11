@@ -116,7 +116,7 @@ import {
   leadAdmission,
   type LeadRouteAdmission,
   type LeadRouteReads,
-  type SubsidizedLeadProfile,
+  type SubsidizedLeadOffer,
 } from "./sessionPlacement.ts";
 
 /**
@@ -155,7 +155,7 @@ export interface LeadPolicyConfig {
   /** The named credential mount a lead's pod speaks through, which a deployment decides. */
   readonly credentialSlot: string;
   /** The subsidized lead this deployment offers, absent where it offers none. */
-  readonly subsidizedLead?: SubsidizedLeadProfile;
+  readonly subsidizedLead?: SubsidizedLeadOffer;
 }
 
 /** What a turn that measured nothing is answered as, so a control still decides. */
