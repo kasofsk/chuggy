@@ -641,6 +641,13 @@ export const finalizationFailureKinds = [
   "RecheckRequired",
 ] as const;
 
+/** Why one finalization attempt was sent back to re-check, restating the interpreter's `allFinalizationRecheckReasons`. */
+export const finalizationRecheckReasons = [
+  "TargetMoved",
+  "StackTreeDiffers",
+  "MergedTreeDiffers",
+] as const;
+
 /** What a stored change proposal says its create came to, restating `allChangeProposalCreationsStored`. */
 export const changeProposalCreations = [
   "Created",

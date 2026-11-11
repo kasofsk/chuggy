@@ -80,7 +80,8 @@ async function stackRecorded(
 
 async function attemptsOf(project: FinalizerProject) {
   return rig.as(
-    `SELECT outcome, failure_kind, candidate_commit, recheck_commit
+    `SELECT outcome, failure_kind, candidate_commit, recheck_commit,
+            recheck_reason, recheck_base_ref
        FROM finalization_attempt WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
   );
@@ -123,6 +124,8 @@ test("directLandingInvalidatesAStack: a landing after the stack was minted gives
   assert.equal(attempts[0]?.["outcome"], "Failed");
   assert.equal(attempts[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(attempts[0]?.["recheck_commit"], worked);
+  assert.equal(attempts[0]?.["recheck_reason"], "StackTreeDiffers");
+  assert.equal(attempts[0]?.["recheck_base_ref"], null);
   assert.equal(attempts[0]?.["candidate_commit"], null);
 });
 
@@ -139,6 +142,8 @@ test("a stacked ticket evaluated over no stack lands as a serialized one does, s
   const [attempt] = await attemptsOf(project);
   assert.equal(attempt?.["failure_kind"], "RecheckRequired");
   assert.equal(attempt?.["recheck_commit"], worked);
+  assert.equal(attempt?.["recheck_reason"], "TargetMoved");
+  assert.equal(attempt?.["recheck_base_ref"], null);
 });
 
 /**

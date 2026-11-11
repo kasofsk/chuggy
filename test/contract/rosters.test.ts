@@ -35,6 +35,7 @@ import {
   executionTaskKinds,
   finalizationAttemptOutcomes,
   finalizationFailureKinds,
+  finalizationRecheckReasons,
   finalizationUnavailableKinds,
   gitEvidences,
   nativeActionKindResolutions,
@@ -200,6 +201,7 @@ import {
 import {
   allFinalizationAttemptOutcomes,
   allFinalizationFailureKinds,
+  allFinalizationRecheckReasons,
   allFinalizationHoldKinds,
   allGitEvidence,
   finalizerIdentityCharsMax,
@@ -302,6 +304,10 @@ test("the attempt and pull request codes a landing carries are the ones a row ho
     [...allFinalizationFailureKinds],
   );
   assert.deepEqual(
+    [...finalizationRecheckReasons],
+    [...allFinalizationRecheckReasons],
+  );
+  assert.deepEqual(
     [...changeProposalCreations],
     [...allChangeProposalCreationsStored],
   );
@@ -337,6 +343,10 @@ function landingCarrying(
     attempt: {
       outcome: codes["outcome"] ?? "Failed",
       failureKind: codes["failureKind"] ?? "MergeConflict",
+      recheck: {
+        reason: codes["recheckReason"] ?? "TargetMoved",
+        baseRef: "refs/heads/main",
+      },
       targetRef: "refs/heads/main",
       targetCommit: commit,
       preparedAt: "2026-10-07T12:00:00.000000Z",
@@ -383,6 +393,7 @@ test("every code a landing can carry is a member of a contract roster", () => {
   const rostered: readonly (readonly [string, readonly string[]])[] = [
     ["outcome", finalizationAttemptOutcomes],
     ["failureKind", finalizationFailureKinds],
+    ["recheckReason", finalizationRecheckReasons],
     ["creation", changeProposalCreations],
     ["merge", changeProposalMerges],
     ["mergeReason", changeProposalMergeReasons],

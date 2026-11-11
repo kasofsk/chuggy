@@ -266,6 +266,7 @@ import {
   type FinalizationClaim,
   type FinalizationConclusion,
   type FinalizationOffer,
+  type FinalizationRecheckReason,
   type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
@@ -1113,8 +1114,8 @@ async function finalizerLanded(
 
 /**
  * Whether one candidate still has anything to land, answered before it is
- * integrated: `true` where it has, and `false` where the attempt is already
- * recorded as landed or the pass is held.
+ * integrated: where it would land where it has, and `undefined` where the attempt
+ * is already recorded as landed or the pass is held.
  */
 async function finalizerUnlanded(
   service: FinalizerService,
@@ -1122,12 +1123,12 @@ async function finalizerUnlanded(
   target: ObservedTarget,
   candidate: GitObjectId,
   tally: FinalizerTally,
-): Promise<boolean> {
+): Promise<ObservedTarget | "Unheld" | undefined> {
   const landing = await finalizerLandingTarget(service, subject, target);
-  if (landing === "Unheld") return true;
+  if (landing === "Unheld") return landing;
   if (landing === undefined) {
     finalizerHold(service, tally, "TargetUnobserved");
-    return false;
+    return undefined;
   }
   const held = await service.git.proveCandidateHeld({
     repository: subject.repository,
@@ -1136,29 +1137,36 @@ async function finalizerUnlanded(
   });
   switch (held) {
     case "Unheld":
-      return true;
+      return landing;
     case "Held":
       await finalizerLanded(service, subject, landing, candidate, tally);
-      return false;
+      return undefined;
     case "Unread":
       finalizerHold(service, tally, "IntegrationUnanswered");
-      return false;
+      return undefined;
     default:
       return assertNever(held);
   }
 }
 
+/** The target one candidate is integrated against, and where it lands, which is the base a proposing brief opens into. */
+interface FinalizerLandableTarget {
+  readonly target: ObservedTarget;
+  readonly landing: ObservedTarget | "Unheld";
+}
+
 /**
  * Re-observes the target a candidate lands on. Where it cannot be read the
  * pass is held, and where it already holds the candidate the attempt is
- * concluded; both answer `undefined`, and anything else answers the target.
+ * concluded; both answer `undefined`, and anything else answers the target and
+ * where the candidate lands.
  */
 async function finalizerLandable(
   service: FinalizerService,
   subject: FinalizerPreparation,
   candidate: GitObjectId,
   tally: FinalizerTally,
-): Promise<ObservedTarget | undefined> {
+): Promise<FinalizerLandableTarget | undefined> {
   const target = finalizerIntegrationTarget(
     subject,
     await service.git.observeTarget(subject.repository),
@@ -1167,9 +1175,14 @@ async function finalizerLandable(
     finalizerHold(service, tally, "TargetUnobserved");
     return undefined;
   }
-  return (await finalizerUnlanded(service, subject, target, candidate, tally))
-    ? target
-    : undefined;
+  const landing = await finalizerUnlanded(
+    service,
+    subject,
+    target,
+    candidate,
+    tally,
+  );
+  return landing === undefined ? undefined : { target, landing };
 }
 
 /** Re-observes and integrates one candidate, however that candidate was prepared. */
@@ -1179,8 +1192,9 @@ async function finalizerIntegratePrepared(
   candidate: GitObjectId,
   tally: FinalizerTally,
 ): Promise<void> {
-  const target = await finalizerLandable(service, subject, candidate, tally);
-  if (target === undefined) return;
+  const landable = await finalizerLandable(service, subject, candidate, tally);
+  if (landable === undefined) return;
+  const { target } = landable;
   const integrated = await service.git.integrateCandidate({
     repository: subject.repository,
     target,
@@ -1197,17 +1211,36 @@ async function finalizerIntegratePrepared(
   );
 }
 
+/** Why one landing is sent back to re-check, and the base it was read against where its target is a proposal's head. */
+interface FinalizerRecheck {
+  readonly reason: FinalizationRecheckReason;
+  readonly baseRef?: GitRefName;
+}
+
+/** The re-check a landing that was read against `landing` is sent back with. */
+function finalizerRecheckOf(
+  reason: FinalizationRecheckReason,
+  subject: FinalizerPreparation,
+  landing: ObservedTarget | "Unheld",
+): FinalizerRecheck {
+  return landing === "Unheld" ||
+    !briefFinalizationOpensProposal(subject.view.finalization)
+    ? { reason }
+    : { reason, baseRef: landing.ref };
+}
+
 /**
  * Records the send-back a landing gets when the target moved past the commit
- * it evaluated, naming that commit for the work cycle to re-report and merging
- * nothing. It is never held: each one is paid for by another landing's
- * progress, so a ticket cannot be sent back on its own.
+ * it evaluated, naming that commit for the work cycle to re-report and why,
+ * and merging nothing. It is never held: each one is paid for by another
+ * landing's progress, so a ticket cannot be sent back on its own.
  */
 async function finalizerRecheckRequired(
   service: FinalizerService,
   subject: FinalizerPreparation,
   target: ObservedTarget,
   accepted: GitObjectId,
+  recheck: FinalizerRecheck,
   tally: FinalizerTally,
 ): Promise<void> {
   await finalizerRecordAttempt(
@@ -1217,6 +1250,10 @@ async function finalizerRecheckRequired(
       outcome: "Failed",
       failureKind: "RecheckRequired",
       recheckCommit: accepted,
+      recheckReason: recheck.reason,
+      ...(recheck.baseRef === undefined
+        ? {}
+        : { recheckBaseRef: recheck.baseRef }),
     }),
     tally,
   );
@@ -1233,8 +1270,9 @@ async function finalizerContainedPrepared(
   accepted: GitObjectId,
   tally: FinalizerTally,
 ): Promise<void> {
-  const target = await finalizerLandable(service, subject, accepted, tally);
-  if (target === undefined) return;
+  const landable = await finalizerLandable(service, subject, accepted, tally);
+  if (landable === undefined) return;
+  const { target, landing } = landable;
   const contained = await service.git.proveTargetContained({
     repository: subject.repository,
     target,
@@ -1252,7 +1290,14 @@ async function finalizerContainedPrepared(
       );
       return;
     case "Uncontained":
-      await finalizerRecheckRequired(service, subject, target, accepted, tally);
+      await finalizerRecheckRequired(
+        service,
+        subject,
+        target,
+        accepted,
+        finalizerRecheckOf("TargetMoved", subject, landing),
+        tally,
+      );
       return;
     case "Unread":
       finalizerHold(service, tally, "IntegrationUnanswered");
@@ -1280,8 +1325,9 @@ async function finalizerStackedPrepared(
     await finalizerContainedPrepared(service, subject, accepted, tally);
     return;
   }
-  const target = await finalizerLandable(service, subject, accepted, tally);
-  if (target === undefined) return;
+  const landable = await finalizerLandable(service, subject, accepted, tally);
+  if (landable === undefined) return;
+  const { target, landing } = landable;
   const integrated = await service.git.integrateCandidate({
     repository: subject.repository,
     target,
@@ -1292,7 +1338,14 @@ async function finalizerStackedPrepared(
     integrated.integrated === "Candidate" &&
     integrated.tree !== stack.stackTree
   ) {
-    await finalizerRecheckRequired(service, subject, target, accepted, tally);
+    await finalizerRecheckRequired(
+      service,
+      subject,
+      target,
+      accepted,
+      finalizerRecheckOf("StackTreeDiffers", subject, landing),
+      tally,
+    );
     return;
   }
   await finalizerIntegrated(
@@ -2391,6 +2444,7 @@ async function finalizerProposalMergeRechecked(
     gathered.subject,
     target,
     gathered.handoff.source.commit,
+    { reason: "MergedTreeDiffers" },
     tally,
   );
 }

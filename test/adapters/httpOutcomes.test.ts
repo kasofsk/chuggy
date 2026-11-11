@@ -78,6 +78,7 @@ import { configurationRevisionDigest } from "../../src/interpreter/configuration
 import {
   allFinalizationAttemptOutcomes,
   allFinalizationFailureKinds,
+  allFinalizationRecheckReasons,
   asFinalizationAttemptId,
   asGitObjectId,
   asGitRefName,
@@ -942,6 +943,10 @@ function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
     attempt: {
       outcome: landingCodeHeaviest(allFinalizationAttemptOutcomes),
       failureKind: landingCodeHeaviest(allFinalizationFailureKinds),
+      recheck: {
+        reason: landingCodeHeaviest(allFinalizationRecheckReasons),
+        baseRef: landingRefHeaviest,
+      },
       targetRef: landingRefHeaviest,
       targetCommit: landingCommitHeaviest,
       candidateCommit: landingCommitHeaviest,

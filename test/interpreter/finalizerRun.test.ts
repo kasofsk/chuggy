@@ -91,6 +91,7 @@ import {
   type FinalizationClaim,
   type FinalizationConclusion,
   type FinalizationFailureKind,
+  type FinalizationRecheckReason,
   type GitEvidence,
   type FinalizationView,
   type FinalizerStore,
@@ -4109,13 +4110,18 @@ test("a serialized landing whose accepted commit holds the target's tip lands th
   assert.equal(store.attempts[0]?.failureKind, undefined);
 });
 
-/** The one attempt a landing sent back to re-check the accepted commit leaves. */
-function recheckRecorded(store: FinalizerRecorder): void {
+/** The one attempt a landing that lands on its target sent back to re-check the accepted commit for `reason` leaves. */
+function recheckRecorded(
+  store: FinalizerRecorder,
+  reason: FinalizationRecheckReason,
+): void {
   assert.equal(store.attempts.length, 1);
   const recorded = store.attempts[0];
   assert.equal(recorded?.outcome, "Failed");
   assert.equal(recorded?.failureKind, "RecheckRequired");
   assert.equal(recorded?.recheckCommit, commitOf("c"));
+  assert.equal(recorded?.recheckReason, reason);
+  assert.equal(recorded?.recheckBaseRef, undefined);
   assert.equal(recorded?.candidate, undefined);
   assert.deepEqual(recorded?.target, attemptOf("any").target);
 }
@@ -4130,7 +4136,7 @@ test("a serialized landing whose target moved past the accepted commit is sent b
   assert.equal(report.holds, 0);
   assert.deepEqual(git.integrations, [], "no merge candidate is built");
   assert.deepEqual(git.promotions, []);
-  recheckRecorded(store);
+  recheckRecorded(store, "TargetMoved");
 
   const settling = recordingStore([
     {
@@ -4295,7 +4301,7 @@ test("rechecksWhenTreeDiffers: a stacked landing whose merge result is not the s
 
   assert.equal(report.holds, 0);
   assert.deepEqual(git.promotions, []);
-  recheckRecorded(store);
+  recheckRecorded(store, "StackTreeDiffers");
 });
 
 test("aStackedTicketEvaluatedUnstackedLandsAsSerialized: with no stack record it lands by containment, and is re-checked where uncontained", async () => {
@@ -4312,6 +4318,7 @@ test("aStackedTicketEvaluatedUnstackedLandsAsSerialized: with no stack record it
   const sent = sourcedStore();
   await passOver(stackedService(sent, moved, undefined));
   assert.equal(sent.attempts[0]?.failureKind, "RecheckRequired");
+  assert.equal(sent.attempts[0]?.recheckReason, "TargetMoved");
   assert.deepEqual(moved.integrations, []);
 });
 
@@ -4378,6 +4385,25 @@ test("a stacked landing by pull request prepares the same merge result as the pr
   };
   await passOver(proposingStacked(differing, moved));
   assert.equal(differing.attempts[0]?.failureKind, "RecheckRequired");
+  assert.equal(differing.attempts[0]?.recheckReason, "StackTreeDiffers");
+  assert.equal(differing.attempts[0]?.recheckBaseRef, landingBranch);
+});
+
+test("a serialized landing by pull request sent back to re-check records why, and the base it read where the target is the proposal's head", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Uncontained";
+
+  await passOver({
+    ...proposingStacked(store, git),
+    stacks: { ...stacksDue([]), current: () => Promise.resolve(undefined) },
+  });
+
+  assert.equal(store.attempts.length, 1);
+  assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
+  assert.equal(store.attempts[0]?.recheckReason, "TargetMoved");
+  assert.equal(store.attempts[0]?.recheckBaseRef, landingBranch);
+  assert.notEqual(store.attempts[0]?.target.ref, landingBranch);
 });
 
 /** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
@@ -4440,6 +4466,8 @@ test("a stacked merge that left another tree than the stack's is sent back to re
   assert.equal(store.attempts[0]?.outcome, "Failed");
   assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
   assert.equal(store.attempts[0]?.recheckCommit, commitOf("c"));
+  assert.equal(store.attempts[0]?.recheckReason, "MergedTreeDiffers");
+  assert.equal(store.attempts[0]?.recheckBaseRef, undefined);
 });
 
 test("a stacked merge whose tree cannot be read holds, and neither concludes nor records anything", async () => {

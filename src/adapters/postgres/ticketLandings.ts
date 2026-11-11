@@ -32,6 +32,7 @@ import {
 import {
   allFinalizationAttemptOutcomes,
   allFinalizationFailureKinds,
+  allFinalizationRecheckReasons,
   allFinalizationRequestStates,
   asGitObjectId,
 } from "../../interpreter/finalizer.ts";
@@ -45,6 +46,7 @@ import {
   type TicketLandingHold,
   type TicketLandingProposal,
   type TicketLandingQueueRemoval,
+  type TicketLandingRecheck,
   type TicketLandingRecord,
   type TicketLandingsStore,
   type TicketLandingWait,
@@ -90,6 +92,8 @@ interface TicketLandingRow {
   readonly proposal_status: string | null;
   readonly queue_removal_reason: string | null;
   readonly queue_removal_actor: string | null;
+  readonly recheck_reason: string | null;
+  readonly recheck_base_ref: string | null;
 }
 
 /** The event names a conclusion is journalled under, beside the conclusion each names. */
@@ -145,10 +149,31 @@ function ticketLandingHold(
   };
 }
 
+/**
+ * Why the attempt was sent back to re-check, where it recorded why, and the
+ * base it was read against: the one it recorded, or for a merged proposal's
+ * the base that proposal was opened into.
+ */
+function ticketLandingRecheck(
+  row: TicketLandingRow,
+): TicketLandingRecheck | undefined {
+  if (row.recheck_reason === null) return undefined;
+  const reason = finalizerRowValue(
+    allFinalizationRecheckReasons,
+    row.recheck_reason,
+    "recheck reason",
+  );
+  const baseRef =
+    row.recheck_base_ref ??
+    (reason === "MergedTreeDiffers" ? row.base_ref : null);
+  return baseRef === null ? { reason } : { reason, baseRef };
+}
+
 function ticketLandingAttempt(
   row: TicketLandingRow,
 ): TicketLandingAttempt | undefined {
   if (row.outcome === null) return undefined;
+  const recheck = ticketLandingRecheck(row);
   return {
     outcome: finalizerRowValue(
       allFinalizationAttemptOutcomes,
@@ -164,6 +189,7 @@ function ticketLandingAttempt(
             "failure kind",
           ),
         }),
+    ...(recheck === undefined ? {} : { recheck }),
     targetRef: finalizerRowPresent(row.target_ref, "target ref"),
     targetCommit: asGitObjectId(
       finalizerRowPresent(row.target_commit, "target commit"),
@@ -330,7 +356,8 @@ async function ticketLandingsRead(
                l.merge_wait,
                to_char(l.merge_heard_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS merge_heard_at,
                l.head_commit,l.merged_head,l.proposal_status,
-               l.queue_removal_reason,l.queue_removal_actor
+               l.queue_removal_reason,l.queue_removal_actor,
+               l.recheck_reason,l.recheck_base_ref
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true
