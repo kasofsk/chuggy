@@ -34,9 +34,11 @@ import {
   runTranscriptResponse,
   submissionResponse,
   ticketLandingsResponse,
+  landingQueuesResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import { actionReportLinkCharsMax } from "../../src/contract/actionReport.ts";
 import {
+  landingQueueTicketsAnsweredMax,
   nativeHttpError,
   projectArtifactUploadBytesMax,
   proposalMergeStateCharsMax,
@@ -56,6 +58,7 @@ import {
 } from "../../src/contract/responses.ts";
 import {
   chuggyToolImageResponseBytesMax,
+  chuggyToolLandingQueuesResponseBytesMax,
   chuggyToolResponseBytesMax,
   chuggyToolRunErrorResponseBytesMax,
   chuggyToolRunTranscriptResponseBytesMax,
@@ -95,6 +98,11 @@ import {
   type TicketLandingRecord,
 } from "../../src/interpreter/ticketLandings.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import { landingQueuesOf } from "../../src/interpreter/landingQueues.ts";
+import {
+  briefBranchCharsMax,
+  briefRepositoryCharsMax,
+} from "../../src/contract/brief.ts";
 import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
 import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
@@ -1081,4 +1089,41 @@ test("the heaviest landings a ticket's read answers are answered within what rea
       assert.ok(weighed <= chuggyToolTicketLandingsResponseBytesMax, what);
       assert.ok(weighed > chuggyToolResponseBytesMax, what);
     }
+});
+
+/**
+ * As many queues as one read answers tickets, each its own holder at the
+ * largest number a ticket's may be, on a repository and a target of control
+ * characters at their bounds, the target's last three telling them apart.
+ */
+function landingQueuesHeaviest() {
+  return landingQueuesOf(partition, {
+    candidates: Array.from(
+      { length: landingQueueTicketsAnsweredMax },
+      (_none, at) => ({
+        partition,
+        ticket: asTicketId(Number.MAX_SAFE_INTEGER - at),
+        phase: "Finalization" as const,
+        finalization: {
+          kind: "GitMerge" as const,
+          mode: "Push" as const,
+          policy: "Serialized" as const,
+        },
+        repository: "\u0001".repeat(briefRepositoryCharsMax),
+        target: `${"\u0001".repeat(briefBranchCharsMax - 3)}${String(at).padStart(3, "0")}`,
+        rank: at,
+      }),
+    ),
+    truncated: true,
+  });
+}
+
+test("the heaviest landing queues a project's read answers are answered within what read_landing_queues reads and past what an ordinary tool reads", () => {
+  const read = landingQueuesHeaviest();
+  assert.equal(read.queues.length, landingQueueTicketsAnsweredMax);
+  const weighed = Buffer.byteLength(
+    JSON.stringify(landingQueuesResponse(read).body),
+  );
+  assert.ok(weighed <= chuggyToolLandingQueuesResponseBytesMax);
+  assert.ok(weighed > chuggyToolResponseBytesMax);
 });

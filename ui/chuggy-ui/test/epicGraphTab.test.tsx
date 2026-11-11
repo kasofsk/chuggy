@@ -460,7 +460,7 @@ test("a queued member's card draws its place in the landing queue", async () => 
   const chip = card(5).querySelector<HTMLElement>(".landing-queue-chip");
   expect(chip?.textContent).toBe("2/2");
   expect(chip?.getAttribute("title")).toBe(
-    "Waiting 2 of 2 to land: #9 holds the target",
+    "Waiting 2 of 2 to land: #9 holds https://forge.test/acme/billing's default branch",
   );
   expect(card(4).querySelector(".landing-queue-chip")).toBeNull();
 });

@@ -107,7 +107,7 @@ function rowOf(ticket: number): HTMLElement {
 test("a queued row draws its place just before its state chip, and a row in no queue draws none", async () => {
   await listDrawn(() => answer(queued));
   const holding = within(rowOf(11)).getByRole("img", {
-    name: "Lands next: #11 holds the target, 1 of 2 in its queue",
+    name: `Lands next: #11 holds ${repository}'s default branch, 1 of 2 in its queue`,
   });
   expect(holding.textContent).toBe("1/2");
   expect(holding.nextElementSibling?.className).toContain(
@@ -115,7 +115,7 @@ test("a queued row draws its place just before its state chip, and a row in no q
   );
   expect(
     within(rowOf(12)).getByRole("img", {
-      name: "Waiting 2 of 2 to land: #11 holds the target",
+      name: `Waiting 2 of 2 to land: #11 holds ${repository}'s default branch`,
     }).textContent,
   ).toBe("2/2");
   expect(rowOf(13).querySelector(".landing-queue-chip")).toBeNull();

@@ -1,7 +1,7 @@
 /**
  * The landing queues route over its real service and the real project access,
- * with the store beneath them doubled: what a reader is answered, and who is
- * answered nothing.
+ * with the store beneath them doubled: what a reader is answered, who is
+ * answered nothing, and what `read_landing_queues` is answered through it.
  *
  * EVERY BODY IS READ THROUGH THE SCHEMA THE ENDPOINT PUBLISHES, and then held
  * whole, so a field the schema would let through and the route should not send
@@ -13,6 +13,7 @@ import { test } from "node:test";
 
 import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { nativeHttpRoutes } from "../../src/contract/http.ts";
+import { chuggyToolRoutes } from "../../src/contract/sessionTools.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   landingQueueReads,
@@ -175,4 +176,34 @@ test("the route takes no write", async () => {
       404,
       method,
     );
+});
+
+/** The URL `read_landing_queues` calls in the project these cases ask about. */
+const toolUrl = chuggyToolRoutes.landingQueues.replace(
+  /:([a-z]+)/gu,
+  (_whole, name) => (name === "tenant" ? "acme" : "atlas"),
+);
+
+test("read_landing_queues is answered the queues the route answers a reader", async () => {
+  await using app = appOver(["Read"], twoReferences, []);
+  const route = await app.inject({ url, headers: authorized });
+  const tool = await app.inject({ url: toolUrl, headers: authorized });
+  assert.equal(tool.statusCode, 200);
+  assert.deepEqual(tool.json(), route.json());
+});
+
+test("read_landing_queues is refused to a caller who may not read the project, as the route is, and nothing is read", async () => {
+  for (const held of [
+    [],
+    ["Administer"],
+    ["Mutate", "Execute"],
+  ] as readonly ProjectAccessKind[][]) {
+    const read: string[] = [];
+    await using app = appOver(held, twoReferences, read);
+    const route = await app.inject({ url, headers: authorized });
+    const tool = await app.inject({ url: toolUrl, headers: authorized });
+    assert.equal(tool.statusCode, 404, held.join());
+    assert.deepEqual(tool.json(), route.json(), held.join());
+    assert.deepEqual(read, [], held.join());
+  }
 });

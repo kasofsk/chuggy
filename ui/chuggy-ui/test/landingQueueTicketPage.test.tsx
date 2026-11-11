@@ -111,7 +111,7 @@ test("a queued ticket's header draws its place after its state label's fragment"
     "success",
   );
   const chip = within(state).getByRole("img", {
-    name: "Waiting 2 of 2 to land: #8 holds the target",
+    name: `Waiting 2 of 2 to land: #8 holds ${repository}'s default branch`,
   });
   expect(chip.textContent).toBe("2/2");
   expect(state.lastElementChild).toBe(chip);
