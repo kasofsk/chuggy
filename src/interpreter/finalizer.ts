@@ -337,6 +337,18 @@ export const allFinalizationFailureKinds: readonly FinalizationFailureKind[] = [
   "RecheckRequired",
 ];
 
+/**
+ * Why a landing was sent back to re-check: the accepted commit does not hold
+ * the target's tip, the merge with the target is not the stack's tree, or the
+ * merge a proposal left is not the tree the ticket was evaluated on.
+ */
+export type FinalizationRecheckReason =
+  "TargetMoved" | "StackTreeDiffers" | "MergedTreeDiffers";
+
+/** Every re-check reason, so a suite and a database CHECK iterate rather than restate. */
+export const allFinalizationRecheckReasons: readonly FinalizationRecheckReason[] =
+  ["TargetMoved", "StackTreeDiffers", "MergedTreeDiffers"];
+
 /** Whether a permit is still the authority for the one irreversible act, or has been spent. */
 export type CommitPermitState = "Granted" | "Concluded";
 

@@ -64,6 +64,7 @@ import type {
   ConflictSummary,
   FinalizationAttemptOutcome,
   FinalizationFailureKind,
+  FinalizationRecheckReason,
   FinalizationRequestState,
   GitObjectId,
 } from "./finalizer.ts";
@@ -108,10 +109,21 @@ export const ticketLandingQueueRemovalHolds: readonly FinalizationUnavailableKin
     "ProposalMergesExhausted",
   ];
 
-/** One request's newest attempt, as its row holds it. */
+/**
+ * Why one attempt was sent back to re-check, and the ref of the base it was
+ * read against where its target is a proposal's head: the base it read, or
+ * for a merged proposal the base that proposal was opened into.
+ */
+export interface TicketLandingRecheck {
+  readonly reason: FinalizationRecheckReason;
+  readonly baseRef?: string;
+}
+
+/** One request's newest attempt, as its row holds it, its re-check present where it recorded one. */
 export interface TicketLandingAttempt {
   readonly outcome: FinalizationAttemptOutcome;
   readonly failureKind?: FinalizationFailureKind;
+  readonly recheck?: TicketLandingRecheck;
   readonly targetRef: string;
   readonly targetCommit: GitObjectId;
   readonly candidateCommit?: GitObjectId;

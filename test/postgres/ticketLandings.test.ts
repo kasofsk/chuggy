@@ -431,6 +431,85 @@ test("a landing whose target already held its candidate answers Landed at the ta
   );
 });
 
+/** The newest attempt one project's only landing answers. */
+async function landingAttemptOf(project: FinalizerProject) {
+  const read = await landingsOf(project);
+  assert.equal(read?.landings.length, 1);
+  return read?.landings[0]?.attempt;
+}
+
+test("a landing sent back to re-check answers why, and one by pull request the base its re-check read, where no pull request was opened", async () => {
+  for (const [mode, reason, baseRef] of [
+    ["Push", "TargetMoved", undefined],
+    ["Push", "StackTreeDiffers", undefined],
+    ["PullRequestMerge", "TargetMoved", "refs/heads/main"],
+    ["PullRequestMerge", "StackTreeDiffers", "refs/heads/main"],
+  ] as const) {
+    const label = `recheck-${mode}-${reason}`;
+    const project = await finalizing(label, mode);
+    const target = finalizerCommit();
+    const attempt = await finalizerPrepare(rig, project, label, {
+      outcome: "Failed",
+      failureKind: "RecheckRequired",
+      recheckCommit: finalizerCommit(),
+      recheckReason: reason,
+      target,
+      ...(baseRef === undefined
+        ? {}
+        : { targetRef: headRef, recheckBaseRef: baseRef }),
+    });
+    const read = await landingsOf(project);
+    assert.equal(read?.landings[0]?.proposal, undefined, label);
+    assert.deepEqual(
+      read?.landings[0]?.attempt,
+      {
+        outcome: "Failed",
+        failureKind: "RecheckRequired",
+        recheck: baseRef === undefined ? { reason } : { reason, baseRef },
+        targetRef: baseRef === undefined ? "refs/heads/main" : headRef,
+        targetCommit: target,
+        preparedAt: await preparedAt(project, attempt),
+      },
+      label,
+    );
+  }
+});
+
+test("a merged pull request sent back to re-check answers the base it was opened into", async () => {
+  const project = await finalizing("recheck-merged", "PullRequestMerge");
+  const promoted = await promotion(project, "recheck-merged");
+  await proposalOver(project, promoted, createdAs(forgeSaid("Merged")));
+  await finalizerPrepare(rig, project, "recheck-merged", {
+    outcome: "Failed",
+    failureKind: "RecheckRequired",
+    recheckCommit: finalizerCommit(),
+    recheckReason: "MergedTreeDiffers",
+    targetRef: headRef,
+  });
+  assert.deepEqual((await landingAttemptOf(project))?.recheck, {
+    reason: "MergedTreeDiffers",
+    baseRef: "refs/heads/main",
+  });
+});
+
+test("a re-check recorded with no reason answers its attempt as before, with no re-check", async () => {
+  const project = await finalizing("recheck-unreasoned", "Push");
+  const target = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, "recheck-unreasoned", {
+    outcome: "Failed",
+    failureKind: "RecheckRequired",
+    recheckCommit: finalizerCommit(),
+    target,
+  });
+  assert.deepEqual(await landingAttemptOf(project), {
+    outcome: "Failed",
+    failureKind: "RecheckRequired",
+    targetRef: "refs/heads/main",
+    targetCommit: target,
+    preparedAt: await preparedAt(project, attempt),
+  });
+});
+
 test("a landing whose pull request the forge would not merge for a conflict answers Failed, the conflict recorded after it, and the mergeability its reading found", async () => {
   const project = await finalizing("merge-conflict", "PullRequestMerge");
   const promoted = await promotion(project, "merge-conflict");

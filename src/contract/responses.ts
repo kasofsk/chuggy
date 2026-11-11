@@ -143,6 +143,7 @@ import {
   executionTaskKinds,
   finalizationAttemptOutcomes,
   finalizationFailureKinds,
+  finalizationRecheckReasons,
   finalizationUnavailableKinds,
   gitEvidences,
   nativeActionKindResolutions,
@@ -3039,10 +3040,21 @@ export type PersonalRunnerPermitResponse = z.infer<
 /** A commit, at either width git addresses an object at. */
 const landingCommitSchema = actionReportDocumentSchema.shape.commit;
 
+/**
+ * Why the newest attempt was sent back to re-check, where it recorded why, and
+ * the ref of the base it was read against where its target is a proposal's
+ * head.
+ */
+const ticketLandingRecheckSchema = z.strictObject({
+  reason: z.enum(finalizationRecheckReasons),
+  baseRef: z.string().min(1).optional(),
+});
+
 /** The newest attempt one landing recorded. */
 const ticketLandingAttemptSchema = z.strictObject({
   outcome: z.enum(finalizationAttemptOutcomes),
   failureKind: z.enum(finalizationFailureKinds).optional(),
+  recheck: ticketLandingRecheckSchema.optional(),
   targetRef: z.string().min(1),
   targetCommit: landingCommitSchema,
   candidateCommit: landingCommitSchema.optional(),
