@@ -93,6 +93,7 @@ TRUNCATE TABLE
   public.execution_run_total,
   public.execution_run_transcript_batch,
   public.execution_run_turn,
+  public.execution_verdict_carry,
   public.finalization_attempt,
   public.finalization_change_proposal,
   public.finalization_reconciliation,

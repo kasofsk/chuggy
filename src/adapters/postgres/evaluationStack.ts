@@ -11,8 +11,9 @@
  * evaluation that already ran unstacked. A lock keyed on the cycle is taken
  * first, so two replicas cannot leave a record and a decision for one cycle.
  *
- * STANDING IS DERIVED HERE AND STORED NOWHERE. A recorded stack's landings are
- * the finalization attempts promoted onto its reference since its tip, followed
+ * STANDING IS DERIVED HERE AND STORED NOWHERE. A recorded stack's landings, as
+ * `evaluation_stack_landings` reads them for this and for the scheduler's carry
+ * door, are the finalization attempts promoted onto its reference since its tip, followed
  * as a chain: the first was prepared on the tip, each next on the commit the
  * one before landed. A proposal that is not merged has landed nothing, and one
  * that is is followed by its base: its attempt names the head it pushed, so
@@ -140,10 +141,11 @@ interface UnrecordedRow {
   readonly candidate: string;
 }
 
+/** One landing the chain read answers, every column of which the query checker reads as nullable. */
 interface LandingRow {
-  readonly ticket: string;
+  readonly ticket: string | null;
   readonly accepted: string | null;
-  readonly depth: number;
+  readonly depth: number | null;
 }
 
 function stackPhaseOf(phase: string, evaluating: boolean): StackPhase {
@@ -223,46 +225,19 @@ async function stackLandingsSince(
   limit: number,
 ): Promise<StackStanding["landings"] | "Unreadable"> {
   const found = await pool.query<LandingRow>(
-    sql`WITH RECURSIVE promoted AS (
-          SELECT a.ticket, coalesce(c.base_commit, a.target_commit) AS target_commit,
-                 coalesce(c.merge_commit, a.candidate_commit) AS landed_commit,
-                 (SELECT s.commit
-                    FROM input_bundle_reference m
-                    JOIN execution_result_source s
-                      ON s.tenant = m.tenant AND s.project = m.project
-                     AND s.manifest = m.reference_id
-                   WHERE m.tenant = a.tenant AND m.project = a.project
-                     AND m.bundle = a.input_bundle
-                     AND m.reference_kind = 'ResultManifest'
-                   ORDER BY m.ordinal
-                   LIMIT 1) AS accepted
-            FROM finalization_attempt a
-            JOIN commit_permit p
-              ON p.tenant = a.tenant AND p.project = a.project
-             AND p.attempt = a.attempt
-            JOIN finalization_reconciliation r
-              ON r.tenant = p.tenant AND r.project = p.project
-             AND r.permit = p.permit AND r.verdict = 'Promoted'
-            LEFT JOIN finalization_change_proposal c
-              ON c.tenant = a.tenant AND c.project = a.project
-             AND c.request = a.request
-           WHERE a.tenant = ${partition.tenant} AND a.project = ${partition.project}
-             AND a.repository = ${stack.repository}
-             AND coalesce(c.base_ref, a.target_ref) = ${stack.target}
-             AND (c.request IS NULL OR c.merge = 'Merged')
-        ), chain AS (
-          SELECT 1 AS depth, p.ticket, p.landed_commit, p.accepted
-            FROM promoted p WHERE p.target_commit = ${stack.tip}
-          UNION ALL
-          SELECT n.depth + 1, p.ticket, p.landed_commit, p.accepted
-            FROM chain n JOIN promoted p ON p.target_commit = n.landed_commit
-           WHERE n.depth < ${limit}::integer
-        )
-        SELECT ticket::text AS ticket, accepted, depth FROM chain ORDER BY depth`,
+    sql`SELECT landing_ticket::text AS ticket, landing_accepted AS accepted,
+               landing_depth AS depth
+          FROM evaluation_stack_landings(${partition.tenant}, ${partition.project},
+                 ${stack.repository}, ${stack.target}, ${stack.tip}, ${limit}::integer)
+         ORDER BY landing_depth`,
   );
   const landings: StackMember[] = [];
   for (const row of found.rows) {
-    if (row.depth !== landings.length + 1 || row.accepted === null)
+    if (
+      row.depth !== landings.length + 1 ||
+      row.accepted === null ||
+      row.ticket === null
+    )
       return "Unreadable";
     landings.push({
       ticket: asTicketId(projectRowCounter(row.ticket, "landed ticket")),

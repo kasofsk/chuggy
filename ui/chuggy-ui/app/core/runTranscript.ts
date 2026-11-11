@@ -507,7 +507,8 @@ export function runTranscriptRead(
 }
 
 /** Where a run's trailing exchange stands once the run is over: a run that
- * reported answered, and a run that ended any other way did not. A run still
+ * reported or carried a verdict answered, and a run that ended any other way
+ * did not. A run still
  * placing or running settles nothing. */
 function runTranscriptEndedStanding(
   state: AttemptState,
@@ -517,6 +518,7 @@ function runTranscriptEndedStanding(
     case "Running":
       return undefined;
     case "Reported":
+    case "Carried":
       return { standing: "Answered" };
     case "Lost":
     case "Withdrawn":

@@ -597,7 +597,8 @@ async function schedulerStoredStates(
          recovery_epoch,state,ended_at,capability,capability_secret_digest,manifest)
        VALUES ($1,$2,$3,$4,$5,$6,$7,
          CASE WHEN $7 IN ('Placing','Running') THEN NULL ELSE now() END,
-         'capability-' || gen_random_uuid(),repeat('0',64),'manifest-' || gen_random_uuid())
+         'capability-' || gen_random_uuid(),
+         CASE WHEN $7 = 'Carried' THEN NULL ELSE repeat('0',64) END,'manifest-' || gen_random_uuid())
        RETURNING state`,
       [
         ...partition,

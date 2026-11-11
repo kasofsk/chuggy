@@ -174,6 +174,7 @@ import {
   recordScheduler,
   type AttemptEvidenceRecord,
   type AttemptLoss,
+  type AttemptOpened,
   type AttemptOpening,
   type BlockedReason,
   type ExecutionPolicy,
@@ -187,6 +188,7 @@ import {
   type SchedulerTelemetry,
   type AttemptPlacementPort,
   type ClusterId,
+  type Terminalized,
   type WaitingAttempt,
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
@@ -1192,36 +1194,44 @@ async function schedulerLaunchOne(
     case "NotLaunchable":
     case "BackingOff":
       return false;
-    case "RetriesExhausted": {
-      const outcome = await service.store.retriesExhausted(
-        execution.partition,
-        execution.execution,
-      );
+    case "RetriesExhausted":
+    case "AssignmentEnded":
+    case "StepFailed":
+    case "Carried": {
+      const outcome = await schedulerLaunchConcluded(service, opening, opened);
       recordScheduler(service.metrics, (metrics) => {
         metrics.terminalization(outcome.terminalized);
       });
       return false;
     }
-    case "AssignmentEnded": {
-      const outcome = await service.store.assignmentEnded(
-        execution.partition,
-        execution.execution,
-      );
-      recordScheduler(service.metrics, (metrics) => {
-        metrics.terminalization(outcome.terminalized);
-      });
-      return false;
-    }
-    case "StepFailed": {
-      const outcome = await service.store.stepFailed(
-        execution.partition,
-        execution.execution,
-      );
-      recordScheduler(service.metrics, (metrics) => {
-        metrics.terminalization(outcome.terminalized);
-      });
-      return false;
-    }
+  }
+}
+
+/** An opening that settles its execution rather than launching it. */
+type SchedulerConcludingOpening = Extract<
+  AttemptOpened,
+  {
+    readonly opened:
+      "RetriesExhausted" | "AssignmentEnded" | "StepFailed" | "Carried";
+  }
+>;
+
+/** Settles the execution an opening concluded rather than launched, by the move its answer names. */
+function schedulerLaunchConcluded(
+  service: ExecutionSchedulerService,
+  opening: AttemptOpening,
+  opened: SchedulerConcludingOpening,
+): Promise<Terminalized> {
+  const { partition, execution } = opening;
+  switch (opened.opened) {
+    case "RetriesExhausted":
+      return service.store.retriesExhausted(partition, execution);
+    case "AssignmentEnded":
+      return service.store.assignmentEnded(partition, execution);
+    case "StepFailed":
+      return service.store.stepFailed(partition, execution);
+    case "Carried":
+      return service.store.carryVerdict(opening, opened.source);
   }
 }
 

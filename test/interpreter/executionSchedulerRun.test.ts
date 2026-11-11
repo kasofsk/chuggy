@@ -205,6 +205,28 @@ function recordedConclusion(
   });
 }
 
+/** The store's concluding moves, each recorded by name and answered as a settlement. */
+function recordedConclusions(
+  calls: string[],
+): Pick<
+  ExecutionSchedulerStore,
+  "retriesExhausted" | "assignmentEnded" | "stepFailed" | "carryVerdict"
+> {
+  return {
+    retriesExhausted: () =>
+      recordedConclusion(calls, "retriesExhausted", "Failed"),
+    assignmentEnded: () =>
+      recordedConclusion(calls, "assignmentEnded", "ProcessFailed"),
+    stepFailed: () => recordedConclusion(calls, "stepFailed", "ProcessFailed"),
+    carryVerdict: (opening, source) =>
+      recordedConclusion(
+        calls,
+        `carryVerdict:${opening.execution}:${source}`,
+        "Passed",
+      ),
+  };
+}
+
 /** A store that records every durable move asked of it and takes none. */
 function recordingStore(calls: string[]): ExecutionSchedulerStore {
   return {
@@ -225,11 +247,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
       calls.push(`ended:${loss}:${evidence}`);
       return Promise.resolve(true);
     },
-    retriesExhausted: () =>
-      recordedConclusion(calls, "retriesExhausted", "Failed"),
-    assignmentEnded: () =>
-      recordedConclusion(calls, "assignmentEnded", "ProcessFailed"),
-    stepFailed: () => recordedConclusion(calls, "stepFailed", "ProcessFailed"),
+    ...recordedConclusions(calls),
     terminalize: () =>
       Promise.resolve({
         terminalized: "Terminalized",
@@ -634,6 +652,23 @@ test("an execution whose last attempt's run ended on a failed step is concluded 
   };
   assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
   assert.deepEqual(calls, ["stepFailed"]);
+});
+
+test("an evaluation that carries an earlier verdict is settled on it and placed nowhere", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    openAttempt: () =>
+      Promise.resolve({
+        opened: "Carried",
+        source: asExecutionId("execution-earlier"),
+      }),
+  };
+  assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
+  assert.deepEqual(calls, [
+    `carryVerdict:${execution.execution}:execution-earlier`,
+  ]);
 });
 
 test("an execution inside its placement backoff is left alone", async () => {

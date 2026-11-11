@@ -61,6 +61,10 @@
  * attempt names a pool, a launch opens no other for its execution and answers
  * `AssignmentEnded`, which the pass concludes.
  *
+ * AN EVALUATION THAT CARRIES AN EARLIER VERDICT OPENS NO ATTEMPT TO RUN. A
+ * launch that has opened none asks `./schedulerCarry.ts` under its row lock
+ * and answers `Carried`, which the pass settles in a transaction of its own.
+ *
  * AN ATTEMPT A POOL REFUSED IS NEVER REAPED. Its lease lapses because the
  * refusal stops the pool renewing it, so the lapse says nothing the refusal
  * did not. The reaper passes over a row whose `pool_refusal` is set, whatever
@@ -151,6 +155,10 @@ import {
   schedulerRunnerLostTickets,
 } from "./schedulerResume.ts";
 import {
+  schedulerCarrySource,
+  schedulerCarryVerdict,
+} from "./schedulerCarry.ts";
+import {
   schedulerAssignmentEnded,
   schedulerBlockExecution,
   schedulerEvidence,
@@ -160,12 +168,14 @@ import {
   schedulerStepFailed,
   schedulerTerminalize,
 } from "./schedulerCompletion.ts";
+import { verdictCarryWorkloadDigest } from "../../interpreter/verdictCarry.ts";
 import {
   attemptRowImageFault,
   attemptRowPhysical,
   executionRowLogical,
   executionRowTaskKind,
   schedulerRowPartition,
+  schedulerRowWorkloadTask,
   type AttemptRow,
   type ExecutionRow,
 } from "./schedulerRows.ts";
@@ -406,6 +416,9 @@ interface ExecutionCreateInput {
   stage: string | null;
   evaluator: string | null;
   definition: string;
+  configuration_canonical: string;
+  configuration_overrides: string | null;
+  configuration_selection: string | null;
   configuration_revision: string;
   configuration_digest: string;
   capacity_account: string;
@@ -428,9 +441,11 @@ async function schedulerCreatePlaced(
     readonly definition: unknown;
     readonly key: TicketTaskKey;
     readonly route: string;
+    readonly workloadDigest: string | undefined;
   },
 ): Promise<number> {
-  const { execution, task, definition, key, route } = registered;
+  const { execution, task, definition, key, route, workloadDigest } =
+    registered;
   const materialized = ticketTaskRequirement(definition, key);
   const resources = ticketTaskResources(definition, key);
   const requirementValue = JSON.stringify(materialized.stored);
@@ -438,14 +453,15 @@ async function schedulerCreatePlaced(
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,requirement_value,
         requirement_digest,requirement_source,platform_default_version,placement,
-        owner,owner_fallback,cpu_millis,memory_mib)
+        owner,owner_fallback,cpu_millis,memory_mib,workload_digest)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${execution},
         ${requirementValue}::jsonb,${materialized.digest},${materialized.source},
         ${materialized.platformDefaultVersion},${route},
         ${input.owner},${input.owner_fallback},
-        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null})
+        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null},
+        ${workloadDigest ?? null})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
   return inserted.rowCount ?? 0;
 }
@@ -495,7 +511,9 @@ async function schedulerCreateExecutions(
   const inputs =
     await client.query<ExecutionCreateInput>(sql`SELECT t.task::text AS task,t.kind,t.stage::text AS stage,
        t.evaluator::text AS evaluator,
-       d.definition::text AS definition,q.configuration_revision,
+       d.definition::text AS definition,c.canonical AS configuration_canonical,
+       d.overrides::text AS configuration_overrides,
+       d.selection::text AS configuration_selection,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster,
        r.authority_subject AS owner,f.fallback AS owner_fallback
      FROM execution_request q
@@ -545,6 +563,9 @@ async function schedulerCreateExecutions(
           definition,
           key,
           route: routes[kind],
+          workloadDigest: verdictCarryWorkloadDigest(
+            schedulerRowWorkloadTask(input, kind),
+          ),
         });
   }
   return created;
@@ -986,6 +1007,10 @@ async function schedulerOpenAttempt(
   const execution = executionRowLogical(row);
   if (!executionOwnsSlot(execution.status) || row.attempt_live) {
     return { opened: "NotLaunchable", status: execution.status };
+  }
+  if (execution.attemptsOpened === 0) {
+    const source = await schedulerCarrySource(client, row);
+    if (source !== undefined) return { opened: "Carried", source };
   }
   if (row.assignment_made) return { opened: "AssignmentEnded" };
   if (row.step_failed) return { opened: "StepFailed" };
@@ -1572,6 +1597,10 @@ export function postgresExecutionScheduler(
     stepFailed: (partition, execution) =>
       postgresTransaction(pool, (client) =>
         schedulerStepFailed(client, partition, execution),
+      ),
+    carryVerdict: (opening, source) =>
+      postgresTransaction(pool, (client) =>
+        schedulerCarryVerdict(client, opening, source),
       ),
     terminalize: (report) =>
       postgresTransaction(pool, (client) =>

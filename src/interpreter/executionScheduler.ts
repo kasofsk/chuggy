@@ -572,7 +572,13 @@ export interface PhysicalAttempt extends FencedAttempt {
 
 /** What an attempt is doing, which is below the logical grain and never reaches `TicketGraph`. */
 export type AttemptState =
-  "Placing" | "Running" | "Reported" | "Lost" | "Withdrawn" | "Superseded";
+  | "Placing"
+  | "Running"
+  | "Reported"
+  | "Lost"
+  | "Withdrawn"
+  | "Superseded"
+  | "Carried";
 
 /** Every attempt state, so a suite and a database CHECK iterate rather than restate. */
 export const allAttemptStates: readonly AttemptState[] = [
@@ -582,6 +588,7 @@ export const allAttemptStates: readonly AttemptState[] = [
   "Lost",
   "Withdrawn",
   "Superseded",
+  "Carried",
 ];
 
 /**
@@ -716,7 +723,9 @@ export interface AttemptOpening {
  * What a placement reservation produced: the fenced physical attempt, or why
  * none was opened. `AssignmentEnded` is an execution a pool has claimed an
  * attempt of, and `StepFailed` one whose last attempt's run ended on a failed
- * step, for each of which no other is opened.
+ * step, for each of which no other is opened; `Carried` is an evaluation that
+ * carries the passing verdict of `source`, an earlier work cycle's, rather than
+ * running.
  */
 export type AttemptOpened =
   | { readonly opened: "Opened"; readonly attempt: PhysicalAttempt }
@@ -724,7 +733,8 @@ export type AttemptOpened =
   | { readonly opened: "BackingOff" }
   | { readonly opened: "RetriesExhausted" }
   | { readonly opened: "AssignmentEnded" }
-  | { readonly opened: "StepFailed" };
+  | { readonly opened: "StepFailed" }
+  | { readonly opened: "Carried"; readonly source: ExecutionId };
 
 /**
  * What the scheduler reports of one attempt, which the terminal transaction
@@ -989,6 +999,18 @@ export interface ExecutionSchedulerStore {
   stepFailed(
     partition: Partition,
     execution: ExecutionId,
+  ): Promise<Terminalized>;
+
+  /**
+   * Terminalizes an evaluation that carries `source`'s passing verdict as
+   * `Passed`, under an attempt that never places and a manifest of its own
+   * holding `source`'s report, and records the carry, as `retriesExhausted`
+   * settles a spent budget. An execution that has opened an attempt since is
+   * not carried, and answers `Fenced`.
+   */
+  carryVerdict(
+    opening: AttemptOpening,
+    source: ExecutionId,
   ): Promise<Terminalized>;
 
   /**

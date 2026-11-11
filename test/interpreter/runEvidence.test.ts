@@ -53,7 +53,7 @@ test("a run is complete exactly when its attempt can no longer write", () => {
   const complete = allAttemptStates.filter((state) => runIsComplete(state));
   assert.deepEqual(
     [...complete],
-    ["Reported", "Lost", "Withdrawn", "Superseded"],
+    ["Reported", "Lost", "Withdrawn", "Superseded", "Carried"],
   );
 });
 

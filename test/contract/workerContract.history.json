@@ -333,5 +333,10 @@
     "release": "1.66.0",
     "wire": "64acb2106b8b01de570358d22991eecb92f297dd1c4b7aa2c309fcabbb8961fe",
     "files": "a53a06220bbb3a8f984145ba8d843f083578e23a05b3918b8f4d7d71828a371f"
+  },
+  {
+    "release": "1.67.0",
+    "wire": "29ac7b51b4d3c34251eabdd1234c849abf0f1d4c41ab195a8748a9e711ceacb5",
+    "files": "410b040f851c5d61d260fb3a6d50bdf6f7ebf8006aa88649553bdb69b13a2ae5"
   }
 ]

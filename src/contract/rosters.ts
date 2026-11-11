@@ -199,6 +199,7 @@ export const attemptStates = [
   "Lost",
   "Withdrawn",
   "Superseded",
+  "Carried",
 ] as const;
 export type AttemptState = (typeof attemptStates)[number];
 

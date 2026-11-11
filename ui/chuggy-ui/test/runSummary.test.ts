@@ -38,6 +38,13 @@ test("a reported run draws the summary its own result carries", () => {
   });
 });
 
+test("an attempt that carried an earlier verdict draws the report its result carried", () => {
+  expect(runSummaryOf({ attempt: "a1", state: "Carried" }, result())).toEqual({
+    summary: "Report",
+    report: "the tests pass",
+  });
+});
+
 /** #363: a worker below the schema that carries a summary reports none. */
 test("a result older than the summary field is told apart from an absent one", () => {
   expect(
