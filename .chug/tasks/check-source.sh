@@ -36,7 +36,14 @@
 # suites rather than naming the ones it wants — a suite added anywhere else
 # runs here without being listed, and a directory nothing covers is a glob
 # matching nothing rather than a quiet pass. The clean line reports the split,
-# because a stage that narrowed its own scope has to say so.
+# because a stage that narrowed its own scope has to say so. The listing is
+# `.chug/tasks/_unit-suites.sh`, which `ci.sh` selects among.
+#
+# GIVEN SUITES, THE STAGE RUNS THOSE, in the one runner it runs all of them in
+# given none, and refuses a suite that is not one of its own. Under
+# CHUG_UNIT_RESULTS a second reporter, `scripts/unit-outcomes.ts`, keeps each
+# suite's outcome and log apart from the rest of the run, and `--unit-outcome`
+# replays them, so a caller can record a pass for each suite of one run.
 #
 # EVERY UNIT TEST IS CAPPED, by `.chug/tasks/_test-timeout.sh`, whose header
 # says why.
@@ -55,10 +62,12 @@
 # Usage:
 #   .chug/tasks/check-source.sh
 #   .chug/tasks/check-source.sh --static
-#   .chug/tasks/check-source.sh --unit
+#   .chug/tasks/check-source.sh --unit [<suite>...]
+#   .chug/tasks/check-source.sh --unit-outcome <suite>...
 #
 # Env: CHUG_TEST_TIMEOUT_MS — the cap on one unit test, read by
 # `.chug/tasks/_test-timeout.sh`.
+#      CHUG_UNIT_RESULTS — where each suite's outcome is kept and replayed from.
 #
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
@@ -74,12 +83,48 @@ fi
 cd "$root" || exit 2
 
 mode="${1:-all}"
+[ "$#" -eq 0 ] || shift
 case "$mode" in
 --static) run_static=1; run_unit=0 ;;
 --unit) run_static=0; run_unit=1 ;;
+--unit-outcome) run_static=0; run_unit=0 ;;
 all) run_static=1; run_unit=1 ;;
-*) echo "check-source: LINTER ERROR — expected --static or --unit"; exit 2 ;;
+*) echo "check-source: LINTER ERROR — expected --static, --unit or --unit-outcome"; exit 2 ;;
 esac
+if [ "$#" -gt 0 ] && [ "$mode" != --unit ] && [ "$mode" != --unit-outcome ]; then
+	echo "check-source: LINTER ERROR — only --unit and --unit-outcome take suites"
+	exit 2
+fi
+
+# What a run under CHUG_UNIT_RESULTS found of each suite named, replayed: its
+# log, and a status that is the worst of theirs, a suite with no outcome there
+# being one that did not run.
+if [ "$mode" = --unit-outcome ]; then
+	results="${CHUG_UNIT_RESULTS:-}"
+	if [ "$#" -eq 0 ] || [ -z "$results" ]; then
+		echo "check-source: LINTER ERROR — --unit-outcome takes suites, and CHUG_UNIT_RESULTS naming where they ran"
+		exit 2
+	fi
+	passed=0
+	failed=0
+	unrun=0
+	for suite do
+		case "$(cat "$results/$suite.outcome" 2>/dev/null || true)" in
+		pass) passed=$((passed + 1)) ;;
+		fail) failed=$((failed + 1)) ;;
+		*)
+			echo "check-source: $suite did not run"
+			unrun=$((unrun + 1))
+			continue
+			;;
+		esac
+		cat "$results/$suite.log" 2>/dev/null || true
+	done
+	echo "check-source: unit $passed suite(s) passed, $failed failed, $unrun did not run"
+	[ "$unrun" -eq 0 ] || exit 2
+	[ "$failed" -eq 0 ] || exit 1
+	exit 0
+fi
 
 sources="$(git ls-files 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 2>/dev/null || true)"
 if [ -z "$sources" ]; then
@@ -164,26 +209,29 @@ fi
 # list would send it back to whole-tree discovery; the glob is checked first
 # and separately.
 if [ "$run_unit" -eq 1 ]; then
-	suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
-	if [ -z "$suites" ]; then
+	. "$here/_unit-suites.sh"
+	unit_listed=0
+	unit_suites_list || unit_listed=$?
+	if [ "$unit_listed" -ne 0 ]; then
 		echo "check-source: LINTER ERROR — no tracked suite; the suite glob matched nothing"
 		exit 2
 	fi
-
-# The server-side arms mirror how those gates find their own work — the
-# directory itself, not below it — so a suite nested deeper than they look is
-# this stage's, which is what keeps the two halves a partition. The `ui/` arm
-# is the whole subtree instead, because a console owns every file under its own
-# directory and there is no depth at which one of its suites becomes this
-# runner's.
-	owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$|^test/keto/[^/]*\.test\.ts$|^ui/'
-	unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
 	if [ -z "$unit_suites" ]; then
 		echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
 		exit 2
 	fi
 	unit_count="$(printf '%s\n' "$unit_suites" | grep -c '' || true)"
-	owned_count="$(printf '%s\n' "$suites" | grep -Ec "$owned" || true)"
+	owned_count="$(printf '%s\n' "$unit_owned" | grep -c . || true)"
+	unit_named=""
+	for suite do
+		if ! printf '%s\n' "$unit_suites" | grep -qxF -- "$suite"; then
+			echo "check-source: LINTER ERROR — $suite is not one of the unit suites"
+			exit 2
+		fi
+		unit_named="$unit_named$suite
+"
+	done
+	[ -z "$unit_named" ] || unit_suites="$(printf '%s' "$unit_named" | sort -u)"
 
 	. "$here/_test-timeout.sh"
 	test_timeout_read "check-source"
@@ -223,6 +271,20 @@ if [ "$run_unit" -eq 1 ]; then
 		fi
 	fi
 
+	# Each suite's outcome and log, written under CHUG_UNIT_RESULTS where it
+	# names a directory, by a second reporter beside the one printed.
+	results="${CHUG_UNIT_RESULTS:-}"
+	reporter="$here/../../scripts/unit-outcomes.ts"
+	if [ -n "$results" ]; then
+		if ! mkdir -p "$results" 2>/dev/null; then
+			echo "check-source: LINTER ERROR — CHUG_UNIT_RESULTS=$results is no directory that can be made"
+			exit 2
+		fi
+		results="$(cd "$results" && pwd)"
+		CHUG_UNIT_RESULTS="$results"
+		export CHUG_UNIT_RESULTS
+	fi
+
 	set -f
 	IFS='
 '
@@ -232,7 +294,8 @@ if [ "$run_unit" -eq 1 ]; then
 		# shellcheck disable=SC2086 # the suite list is newline-separated by construction
 		set -- $host_suites
 		unset IFS
-		stage "  unit     " node --test --test-reporter=dot \
+		stage "  unit     " node --test --test-reporter=dot --test-reporter-destination=stdout \
+			${results:+"--test-reporter=$reporter"} ${results:+"--test-reporter-destination=$results/outcomes"} \
 			--test-timeout="$test_timeout_ms" --test-force-exit "$@"
 	fi
 	if [ -n "$linux_suites" ]; then
@@ -244,8 +307,10 @@ if [ "$run_unit" -eq 1 ]; then
 		# Mounted at its own path, read-only, so the suites resolve the same
 		# installed modules at the same paths they would on the host; `--init`
 		# so an interrupt reaches the runner rather than a PID 1 that drops it.
-		stage "  linux    " docker run --rm --init -v "$root:$root:ro" -w "$root" "$linux_image" \
-			node --test --test-reporter=dot \
+		stage "  linux    " docker run --rm --init -v "$root:$root:ro" ${results:+-v} ${results:+"$results:$results"} \
+			-w "$root" -e CHUG_UNIT_RESULTS="$results" "$linux_image" \
+			node --test --test-reporter=dot --test-reporter-destination=stdout \
+			${results:+"--test-reporter=$reporter"} ${results:+"--test-reporter-destination=$results/outcomes"} \
 			--test-timeout="$test_timeout_ms" --test-force-exit "$@"
 	fi
 	unset IFS
@@ -255,7 +320,10 @@ if [ "$run_unit" -eq 1 ]; then
 	if [ -n "$linux_suites" ]; then
 		linux_note=", $(printf '%s\n' "$linux_suites" | grep -c '') of them in $linux_image"
 	fi
-	echo "check-source: unit ran $unit_count suite(s)$linux_note; $owned_count left to check-conformance, check-random, check-postgres, check-keto and check-console"
+	ran_count="$(printf '%s\n' "$unit_suites" | grep -c '')"
+	of_note=""
+	[ "$ran_count" -eq "$unit_count" ] || of_note=" of $unit_count"
+	echo "check-source: unit ran $ran_count$of_note suite(s)$linux_note; $owned_count left to check-conformance, check-random, check-postgres, check-keto and check-console"
 fi
 
 echo "check-source: $failed stage(s) failed, $ran run"

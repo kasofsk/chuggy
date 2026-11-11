@@ -267,6 +267,44 @@ run_in "$R" --unit
 check "a console's own suite is not this stage's, at any depth" 0 "$RC" "0 stage(s) failed"
 check "and the split counts it as another gate's" 0 "$RC" "unit ran 1 suite(s); 1 left to"
 
+# Given suites, the stage runs those and no other, and refuses one that is not
+# among them, as another gate's is not; under CHUG_UNIT_RESULTS each suite's
+# outcome is kept apart from the rest of the run, and `--unit-outcome` replays
+# it, a suite with none being one that did not run.
+fixture
+clean_source
+mkdir -p "$R/test/conformance"
+failing_suite "$R/test/domain/red.test.ts" "this named one is meant to fail"
+failing_suite "$R/test/conformance/replay.test.ts" "the corpus gate's own"
+git -C "$R" add -A
+run_in "$R" --unit test/domain/a.test.ts
+check "a suite named is the one run" 0 "$RC" "unit ran 1 of 2 suite(s); 1 left to"
+run_in "$R" --unit test/conformance/replay.test.ts
+check "a suite another gate owns is not this stage's to run" 2 "$RC" "is not one of the unit suites"
+run_in "$R" --static test/domain/a.test.ts
+check "the static stages take no suites" 2 "$RC" "only --unit and --unit-outcome take suites"
+RESULTS="$WORK/results"
+rm -rf "$RESULTS"
+CHUG_UNIT_RESULTS="$RESULTS"
+export CHUG_UNIT_RESULTS
+run_in "$R" --unit
+check "a red suite beside a clean one is a finding" 1 "$RC" "this named one is meant to fail"
+OUT="$WORK/.outcomes"
+cat "$RESULTS/test/domain/a.test.ts.outcome" "$RESULTS/test/domain/red.test.ts.outcome" > "$OUT"
+check "each suite's outcome is its own" 0 0 "pass
+fail"
+run_in "$R" --unit-outcome test/domain/a.test.ts
+check "a clean suite's outcome replays as clean" 0 "$RC" "1 suite(s) passed, 0 failed, 0 did not run"
+run_in "$R" --unit-outcome test/domain/a.test.ts test/domain/red.test.ts
+check "a red suite's outcome replays as a finding" 1 "$RC" "this named one is meant to fail"
+check "and counts it" 1 "$RC" "1 suite(s) passed, 1 failed, 0 did not run"
+run_in "$R" --unit-outcome test/domain/a.test.ts test/domain/red.test.ts test/domain/unrun.test.ts
+check "a suite with no outcome did not run, which is not a pass" 2 "$RC" \
+	"test/domain/unrun.test.ts did not run"
+unset CHUG_UNIT_RESULTS
+run_in "$R" --unit-outcome test/domain/a.test.ts
+check "with nowhere named to replay from, nothing replays" 2 "$RC" "CHUG_UNIT_RESULTS naming where they ran"
+
 # --- What a unit test may take, and where it runs ------------------------------
 #
 # A test that never settles holds an interval open as well, so the case proves

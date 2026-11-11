@@ -62,6 +62,12 @@
 # the red ones again as its last lines, where a reader that keeps only the end
 # of the output still finds them.
 #
+# THE UNIT STAGE IS ONE GATE OF MANY KEYS. Each closed unit suite is selected
+# and keyed on its own, and the open ones together as the stage was whole, as
+# `.chug/tasks/_ci-select.sh` declares; what is selected and has no pass on
+# record runs in one runner, and the stage reports what it found, selected,
+# reused and ran, and each red suite by name.
+#
 # `--only <gate>...` runs those gates and nothing else, under the key a full
 # run gives each, so a pass it records is one a later run reuses.
 #
@@ -203,7 +209,7 @@ fi
 # store keeps the first pass recorded for a key, and a fresh run does not
 # replace it; bump the salt when passes already recorded must stop counting
 # for a reason no key can see, such as a pass found to be false.
-record_salt="chuggy-ci-3"
+record_salt="chuggy-ci-4"
 
 # A key holds npm's own record of what it installed rather than the lock, since
 # a lock that changed after `npm ci` names packages that are not the ones
@@ -291,9 +297,16 @@ record_reused() { # <name> <stderr file>
 	return 1
 }
 
-# A word as the shell reads it back, for `eval`.
+# A word as the shell reads it back, for `eval`, printed or as $record_quoted,
+# the second forking nothing for a word that holds no quote.
 record_quote() { # <word>
 	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+record_quote_into() { # <word>
+	case "$1" in
+	*\'*) record_quoted="$(record_quote "$1")" ;;
+	*) record_quoted="'$1'" ;;
+	esac
 }
 
 # What a gate's or a suite's key holds of the tree, the ignored files, the
@@ -314,13 +327,16 @@ record_scope() { # <gate id or suite path>
 	IFS='
 '
 	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE$CI_INPUTS_WITHIN; do
-		record_specs="$record_specs $(record_quote "$record_word")"
+		record_quote_into "$record_word"
+		record_specs="$record_specs $record_quoted"
 	done
 	for record_word in $CI_INPUTS_PACKAGES; do
-		record_packages="$record_packages $(record_quote "$record_word")"
+		record_quote_into "$record_word"
+		record_packages="$record_packages $record_quoted"
 	done
 	for record_word in $CI_INPUTS_PROBES; do
-		record_probes="$record_probes $(record_quote "$record_word")"
+		record_quote_into "$record_word"
+		record_probes="$record_probes $record_quoted"
 	done
 	if [ "$CI_INPUTS_INSTALL" = 1 ]; then
 		printf '%s ' --tool "$(record_quote "$record_tool_install")"
@@ -332,7 +348,8 @@ record_scope() { # <gate id or suite path>
 		printf '%s ' --tool "$(record_quote "$record_tool_probed$record_probes")"
 	fi
 	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE; do
-		printf '%s ' --inputs "$(record_quote "$record_word")"
+		record_quote_into "$record_word"
+		printf '%s ' --inputs "$record_quoted"
 	done
 	unset IFS
 	set +f
@@ -460,10 +477,215 @@ run_gate() { # <gate-id> <label> <script> [args...]
 	fi
 }
 
+# THE UNIT STAGE KEYS EACH CLOSED SUITE ON ITS OWN AND RUNS WHAT IT MUST AT
+# ONCE. Each entry is a closed suite, keyed on what `_ci-select.sh` declares
+# of it, or every open suite together, keyed as the stage was keyed whole; an
+# entry's command replays what one run of the runner found of its suites, and
+# says it did not run where that run has not happened. So under a token each
+# entry is asked once before the run, where a pass on record is reused and a
+# miss records nothing, the suites of every miss run together in one runner,
+# and each miss is asked again, now replaying its suites' outcome, which
+# records the pass where they passed. Each round is so many entries at a time.
+unit_entries_max=16
+
+# Each entry's command, so many at a time, its status, output and stderr
+# beside it.
+unit_entries_run() { # <entry>...
+	printf '%s\0' "$@" | xargs -0 -n 1 -P "$unit_entries_max" sh -c \
+		'e="$1"; eval "set -- $(cat "$e.cmd")"; "$@" >"$e.out" 2>"$e.err"; echo "$?" >"$e.rc"' unit-entry
+}
+
+# An entry: its name, its suites, and its command, under `track-record run`
+# with its key where there is a token.
+unit_entry() { # <id> <suites, a path a line>
+	unit_count=$((unit_count + 1))
+	unit_entry="$unit_dir/$unit_count"
+	printf '%s\n' "$1" >"$unit_entry.name"
+	printf '%s\n' "$2" >"$unit_entry.suites"
+	record_quote_into "$unit_script"
+	unit_words="$record_quoted --unit-outcome"
+	set -f
+	for unit_suite in $2; do
+		record_quote_into "$unit_suite"
+		unit_words="$unit_words $record_quoted"
+	done
+	set +f
+	if [ -n "$record" ]; then
+		record_quote_into "$1"
+		unit_words="track-record run --name $record_quoted --tool $(record_quote "$record_tool_node") \
+			$(record_scope "$1") --salt $(record_quote "$record_salt") --env CHUG_SETUP_PROGRAM -- $unit_words"
+	fi
+	printf '%s\n' "$unit_words" >"$unit_entry.cmd"
+	unit_entries="$unit_entries $unit_entry"
+}
+
+# The suites of a red entry by name, each with the end of its log, or the
+# entry's own end where its suites all passed and it did not.
+unit_red_show() { # <entry>
+	unit_red_any=0
+	set -f
+	for unit_suite in $(cat "$1.suites"); do
+		case "$(cat "$unit_results/$unit_suite.outcome" 2>/dev/null || true)" in
+		pass) continue ;;
+		fail) echo "ci: FAILED — $unit_suite" ;;
+		*) echo "ci: LINTER ERROR — $unit_suite did not run; this is not a pass" ;;
+		esac
+		unit_red_any=1
+		[ ! -f "$unit_results/$unit_suite.log" ] || show_log_tail "$unit_results/$unit_suite.log"
+	done
+	set +f
+	if [ "$unit_red_any" = 0 ]; then
+		echo "ci: LINTER ERROR — $(cat "$1.name") could not be replayed or recorded; this is not a pass"
+		cat "$1.out" "$1.err" >"$1.log"
+		show_log_tail "$1.log"
+	fi
+}
+
+run_unit_stage() { # <label> <script> --unit
+	label="$1"
+	unit_script="$2"
+	if [ -z "$only" ] && [ "$CI_SELECT_MODE" = changed ] && [ "$CI_SEQUENCER_CHANGED" != 1 ] &&
+		[ -z "$CI_CHANGED_CODE" ] && ! ci_selected source-unit; then
+		printf '\n--- %s: SKIPPED (no relevant changes)\n' "$label"
+		return 0
+	fi
+	if ! ci_unit_partition; then
+		shift
+		if [ -n "$only" ] || ci_gate_selected source-unit; then
+			run_gate source-unit "$label" "$@"
+		else
+			printf '\n--- %s: SKIPPED (no relevant changes)\n' "$label"
+		fi
+		return 0
+	fi
+	unit_every=0
+	if [ -n "$only" ] || [ "$CI_SELECT_MODE" = full ] || [ "$CI_SEQUENCER_CHANGED" = 1 ]; then
+		unit_every=1
+	fi
+	unit_open_count="$(printf '%s' "$CI_UNIT_OPEN" | grep -c '' || true)"
+	unit_closed_count="$(printf '%s' "$CI_UNIT_CLOSED" | grep -c '' || true)"
+	unit_dir="$log_dir/unit"
+	unit_results="$unit_dir/results"
+	rm -rf "$unit_dir"
+	mkdir -p "$unit_results"
+	unit_count=0
+	unit_entries=""
+	unit_selected=0
+	if [ -n "$CI_UNIT_OPEN" ] && { [ "$unit_every" = 1 ] || ci_selected source-unit; }; then
+		unit_entry source-unit "$CI_UNIT_OPEN"
+		unit_selected="$unit_open_count"
+	fi
+	set -f
+	for unit_suite in $CI_UNIT_CLOSED; do
+		if [ "$unit_every" = 1 ] || ci_selected "source-unit:$unit_suite"; then
+			unit_entry "source-unit:$unit_suite" "$unit_suite"
+			unit_selected=$((unit_selected + 1))
+		fi
+	done
+	set +f
+	if [ -z "$unit_entries" ]; then
+		printf '\n--- %s: SKIPPED (no relevant changes)\n' "$label"
+		return 0
+	fi
+	ran=$((ran + 1))
+	printf '\n--- %s\n' "$label"
+	[ -z "$CI_UNIT_WHY" ] || echo "ci: every unit suite is open, as $CI_UNIT_WHY"
+	gate_started="$(date +%s)"
+	CHUG_UNIT_RESULTS="$unit_results"
+	export CHUG_UNIT_RESULTS
+
+	unit_pending="$unit_entries"
+	unit_reused=0
+	unit_reused_suites=0
+	if [ -n "$record" ]; then
+		# shellcheck disable=SC2086 # an entry a word, by construction
+		unit_entries_run $unit_entries
+		unit_pending=""
+		for unit_entry in $unit_entries; do
+			if [ "$(cat "$unit_entry.rc" 2>/dev/null)" = 0 ] &&
+				record_reused "$(cat "$unit_entry.name")" "$unit_entry.err"; then
+				unit_reused=$((unit_reused + 1))
+				unit_reused_suites=$((unit_reused_suites + $(grep -c '' "$unit_entry.suites")))
+			else
+				unit_pending="$unit_pending $unit_entry"
+			fi
+		done
+	fi
+
+	unit_run_suites=""
+	for unit_entry in $unit_pending; do
+		unit_run_suites="$unit_run_suites$(cat "$unit_entry.suites")
+"
+	done
+	unit_ran=0
+	unit_rc=0
+	if [ -n "$unit_run_suites" ]; then
+		unit_ran="$(printf '%s' "$unit_run_suites" | grep -c '')"
+		set -f
+		# shellcheck disable=SC2086 # a suite a word, by construction
+		set -- "$unit_script" --unit $unit_run_suites
+		set +f
+		set +e
+		if [ "$quiet" = 1 ]; then
+			"$@" >"$log_dir/source-unit.log" 2>&1
+		else
+			"$@"
+		fi
+		unit_rc=$?
+		set -e
+		# shellcheck disable=SC2086 # an entry a word, by construction
+		unit_entries_run $unit_pending
+	fi
+
+	# The stage is a finding where the runner or an entry found one, and a
+	# could-not-run where either could not run, which outranks a finding.
+	unit_verdict=0
+	unit_red=""
+	for unit_rc_seen in "$unit_rc" $(for unit_entry in $unit_pending; do
+		cat "$unit_entry.rc" 2>/dev/null || echo 2
+	done); do
+		case "$unit_rc_seen" in
+		0) ;;
+		1) [ "$unit_verdict" = 2 ] || unit_verdict=1 ;;
+		*) unit_verdict=2 ;;
+		esac
+	done
+	for unit_entry in $unit_pending; do
+		[ "$(cat "$unit_entry.rc" 2>/dev/null)" = 0 ] || unit_red="$unit_red $unit_entry"
+	done
+	reused=$((reused + unit_reused))
+	echo "ci: unit suites $unit_closed_count closed, $unit_open_count open; $unit_selected selected, $unit_reused_suites reused, $unit_ran ran"
+	for unit_entry in $unit_red; do unit_red_show "$unit_entry"; done
+	case "$unit_verdict" in
+	0)
+		[ "$quiet" != 1 ] || echo "ci: clean — $label ($(($(date +%s) - gate_started))s)"
+		;;
+	1)
+		echo "ci: FAILED — $label"
+		failed=$((failed + 1))
+		;;
+	*)
+		echo "ci: LINTER ERROR — $label could not run; this is not a pass"
+		errored=$((errored + 1))
+		;;
+	esac
+	if [ "$unit_verdict" != 0 ]; then
+		if [ -z "$unit_red" ] && [ -f "$log_dir/source-unit.log" ]; then show_log_tail "$log_dir/source-unit.log"; fi
+		note_red "$label" "$log_dir/source-unit.log"
+	fi
+}
+
 run_selected_gate() { # <gate-id> <label> <script> [args...]
 	gate_id="$1"
 	label="$2"
 	shift 2
+	if [ "$gate_id" = source-unit ]; then
+		case "${only:- $gate_id }" in
+		*" $gate_id "*) run_unit_stage "$label" "$@" ;;
+		*) printf '\n--- %s: SKIPPED (not named by --only)\n' "$label" ;;
+		esac
+		return 0
+	fi
 	if [ -n "$only" ]; then
 		case "$only" in
 		*" $gate_id "*) run_gate "$gate_id" "$label" "$@" ;;

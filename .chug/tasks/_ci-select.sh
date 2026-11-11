@@ -32,6 +32,15 @@
 # moves or `just check-full` runs the gate. A typed tool reads too what any
 # file declares into every scope, which no import names: `ci_ambient`.
 #
+# A UNIT SUITE WHOSE GRAPH IS THE WHOLE OF WHAT IT LOADS IS DECLARED ON ITS
+# OWN. `ci_unit_partition` asks the graph over the tree in hand which of the
+# suites `check-source.sh --unit` runs are closed, as
+# `.chug/tasks/_import-graph.sh` says what that is. A closed suite,
+# `source-unit:<suite>`, reads what it reaches, where node looks from it, and
+# what every suite runs under, and is selected and keyed on that; the open
+# ones are `source-unit`, selected and keyed as the stage was whole. A graph
+# that cannot be built or believed leaves every suite open.
+#
 # A PLACE A TOOL LOOKS IS AN INPUT WHILE IT HOLDS NOTHING. Prettier, ESLint,
 # Vite, PostCSS and browserslist look for their settings in each directory
 # above the files they read, npm for its own, and node for a package in each
@@ -153,8 +162,42 @@ ci_changed_list() { # [<pathspec>...]
 }
 
 ci_changed_within() { # <pathspec>...
+	if [ "$CI_SELECT_MODE" = changed ] && ci_literal "$@"; then
+		ci_changed_among "$CI_CHANGED_FILES" "$@"
+		return
+	fi
 	ci_within="$(ci_changed_list "$@" 2>/dev/null)" || return 0
 	[ -n "$ci_within" ]
+}
+
+# A pathspec with no magic and no wildcard matches the path it names and what
+# is under it, so what it matches of the change already listed is what git
+# would list for it, read without asking git again.
+ci_literal() { # <pathspec>...
+	[ "$#" -gt 0 ] || return 1
+	for ci_spec do
+		case "$ci_spec" in '' | :* | *[*?[\\]*) return 1 ;; esac
+	done
+}
+ci_changed_among() { # <paths, one a line> <literal pathspec>...
+	[ -n "$1" ] || return 1
+	ci_among="$1"
+	shift
+	printf '%s\n' "$ci_among" | awk '
+		BEGIN {
+			for (i = 1; i < ARGC; i++) {
+				spec = ARGV[i]
+				sub(/\/+$/, "", spec)
+				specs[i] = spec
+				delete ARGV[i]
+			}
+		}
+		{
+			for (i in specs) {
+				if (specs[i] == "." || $0 == specs[i] || index($0, specs[i] "/") == 1) { found = 1; exit }
+			}
+		}
+		END { exit found ? 0 : 1 }' "$@"
 }
 
 # The declaration's verbs, each appending to what `ci_inputs` reports.
@@ -259,6 +302,62 @@ ci_toolchain() {
 	ci_install
 }
 
+# What every unit suite runs under: the runner's gate, its cap, the listing,
+# the graph that says which suite is closed, the reporter that keeps each
+# suite's outcome, and the root's tools.
+ci_unit_harness() {
+	ci_code .chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_unit-suites.sh \
+		.chug/tasks/_import-graph.sh scripts/unit-outcomes.ts
+	ci_toolchain
+}
+
+# The unit suites as $unit_suites, or a failure where none can be listed.
+ci_unit_listed() {
+	[ -r ./.chug/tasks/_unit-suites.sh ] || return 1
+	. ./.chug/tasks/_unit-suites.sh
+	unit_suites_list || return 1
+	[ -n "$unit_suites" ]
+}
+
+# The graph is built over the directory at the root that holds each unit
+# suite, or over the suite itself where the root does.
+ci_unit_roots() {
+	ci_unit_listed || return 0
+	for ci_suite in $unit_suites; do
+		ci_graph_roots_add "${ci_suite%%/*}"
+	done
+}
+
+# The unit suites `check-source.sh --unit` runs, each closed or open, as
+# $CI_UNIT_CLOSED and $CI_UNIT_OPEN, a path a line, read from the graph over
+# the tree in hand. A graph that cannot be computed or believed leaves every
+# suite open, and $CI_UNIT_WHY says why. Fails where git lists no unit suite.
+ci_unit_partition() {
+	CI_UNIT_CLOSED=""
+	CI_UNIT_OPEN=""
+	CI_UNIT_WHY=""
+	ci_unit_listed || return 1
+	CI_UNIT_OPEN="$unit_suites"
+	ci_graph_build
+	if [ "$CI_GRAPH_STATE" != built ]; then
+		CI_UNIT_WHY="the import graph could not be computed: $CI_GRAPH_WHY"
+		return 0
+	fi
+	ci_unit_answer="$CI_GRAPH_DIR/units"
+	if [ ! -f "$ci_unit_answer/verdicts" ]; then
+		rm -rf "$ci_unit_answer.part"
+		if ! mkdir -p "$ci_unit_answer.part" ||
+			! printf '%s\n' "$unit_suites" |
+			ci_graph_ask suites "$CI_GRAPH_DIR/graph.json" "$ci_unit_answer.part" 2>"$ci_unit_answer.err" ||
+			! mv "$ci_unit_answer.part" "$ci_unit_answer"; then
+			CI_UNIT_WHY="the import graph cannot be believed: $(tail -n 1 "$ci_unit_answer.err" 2>/dev/null)"
+			return 0
+		fi
+	fi
+	CI_UNIT_CLOSED="$(awk -F '\t' '$1 == "closed" { print $2 }' "$ci_unit_answer/verdicts")"
+	CI_UNIT_OPEN="$(awk -F '\t' '$1 == "open" { print $2 }' "$ci_unit_answer/verdicts")"
+}
+
 # What a gate or suite reads: $CI_INPUTS_CODE, $CI_INPUTS_TEXT and
 # $CI_INPUTS_PROBES, a git pathspec a line; $CI_INPUTS_PACKAGES, a package a
 # line; $CI_INPUTS_INSTALL, 1 for the whole install; $CI_INPUTS_TREE, 1 for a
@@ -304,13 +403,28 @@ ci_declare() { # <gate id or suite path>
 		ci_toolchain
 		;;
 	source-unit)
+		[ "${CI_GRAPH_COLLECTING:-0}" != 1 ] || ci_unit_roots
 		ci_tree
 		ci_code src test ui images scripts deploy model .chug/configurations \
 			.chug/workloads .chug/actions tsconfig.contract.json tsconfig.contract-pack.json \
-			.chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/check-console-sheets.sh
+			.chug/tasks/check-console-sheets.sh
 		ci_text deploy/rig/images/README.md .chug/actions/README.md .chug/prompts \
 			.chug/tasks/review-change.md
-		ci_toolchain
+		ci_unit_harness
+		;;
+	source-unit:*)
+		if ci_unit_reached="$(cat "${CI_GRAPH_DIR:-}/units/reach/${1#source-unit:}" 2>/dev/null)" &&
+			[ -n "$ci_unit_reached" ]; then
+			CI_INPUTS_CODE="$CI_INPUTS_CODE$ci_unit_reached
+"
+			# shellcheck disable=SC2046 # a directory a word, by construction
+			ci_node_looks $(printf '%s\n' "$ci_unit_reached" |
+				awk -F/ '{ d = $1; for (i = 2; i < NF; i++) { print d; d = d "/" $i } if (NF > 1) print d }' |
+				sort -u)
+			ci_unit_harness
+		else
+			ci_declare source-unit
+		fi
 		;;
 	check-console)
 		ci_text ui
@@ -390,13 +504,15 @@ ci_declare() { # <gate id or suite path>
 	.chug/tasks/ci.test.sh)
 		ci_code "$1" .chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_import-graph.sh \
 			.chug/tasks/_ignored-inputs.sh .chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh \
-			.chug/tasks/_suite.sh .dependency-cruiser.cjs tsconfig.json justfile package.json
+			.chug/tasks/_suite.sh .chug/tasks/_unit-suites.sh .chug/tasks/check-source.sh \
+			.chug/tasks/_test-timeout.sh scripts/unit-outcomes.ts .dependency-cruiser.cjs tsconfig.json \
+			justfile package.json
 		ci_packages dependency-cruiser
 		;;
 	.chug/tasks/check-source.test.sh)
 		ci_code "$1" .chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh \
-			tsconfig.json tsconfig.contract.json eslint.config.js .prettierrc.json .prettierignore \
-			package.json
+			.chug/tasks/_unit-suites.sh scripts/unit-outcomes.ts tsconfig.json tsconfig.contract.json \
+			eslint.config.js .prettierrc.json .prettierignore package.json
 		ci_install
 		;;
 	.chug/tasks/check-console.test.sh)
@@ -599,18 +715,24 @@ ci_changed_ambient() {
 }
 
 # Whether the change touched what a list of pathspecs, one a line, matches,
-# narrowed by any pathspec given beside it; an empty list matches nothing.
-ci_changed_listed() { # <pathspecs, one a line> [<pathspec>...]
+# less the pages where the exclusion of them is given beside it; an empty list
+# matches nothing.
+ci_changed_listed() { # <pathspecs, one a line> [':(exclude)*.md']
 	[ -n "$1" ] || return 1
 	ci_listed="$1"
-	shift
+	ci_narrowed="${2:-}"
 	set -f
 	IFS='
 '
 	# shellcheck disable=SC2086 # a pathspec a line, by construction
-	set -- $ci_listed "$@"
+	set -- $ci_listed
 	unset IFS
 	set +f
+	if [ "$ci_narrowed" = ':(exclude)*.md' ] && [ "$CI_SELECT_MODE" = changed ] && ci_literal "$@"; then
+		ci_changed_among "$CI_CHANGED_CODE" "$@"
+		return
+	fi
+	[ -z "$ci_narrowed" ] || set -- "$@" "$ci_narrowed"
 	ci_changed_within "$@"
 }
 
