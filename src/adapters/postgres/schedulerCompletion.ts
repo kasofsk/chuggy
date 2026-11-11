@@ -138,6 +138,7 @@ export const schedulerEvidence = {
     "an evaluator reports on a work cycle that records no passed result",
   ForeignManifest:
     "a manifest is bound to an execution other than the one reporting it",
+  CarriedUnpassed: "a carried verdict names an execution that did not pass",
 } as const;
 
 /**
@@ -521,7 +522,7 @@ async function schedulerReporterReported(
  * the execution then records, which is the manifest's own outcome unless the
  * caller authored that manifest itself.
  */
-async function schedulerSettle(
+export async function schedulerSettle(
   client: pg.PoolClient,
   execution: LogicalExecution,
   manifest: ResultManifest,
@@ -545,7 +546,7 @@ async function schedulerSettle(
  * it. `Retired` is this task's own end and `NotAdmitted` the project's, which
  * the completion boundary distinguishes and so does every caller here.
  */
-type TerminalStanding =
+export type TerminalStanding =
   | { readonly standing: "Open"; readonly execution: LogicalExecution }
   | { readonly standing: "Settled"; readonly execution: LogicalExecution }
   | { readonly standing: "Retired" }
@@ -574,7 +575,7 @@ async function schedulerLockSourceRequest(
 }
 
 /** Locks the registration and the project, and says whether either has already ended this. */
-async function schedulerTerminalStanding(
+export async function schedulerTerminalStanding(
   client: pg.PoolClient,
   partition: Partition,
   execution: ExecutionId,
@@ -889,7 +890,9 @@ export function schedulerStepFailed(
 }
 
 /** What a settled registration already says, for a caller that offered no manifest to compare. */
-function schedulerSettledAlready(execution: LogicalExecution): Terminalized {
+export function schedulerSettledAlready(
+  execution: LogicalExecution,
+): Terminalized {
   const outcome = execution.outcome;
   const operation = execution.completionOperation;
   if (outcome === undefined || operation === undefined) {

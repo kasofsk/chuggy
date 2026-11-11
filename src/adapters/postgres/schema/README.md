@@ -727,3 +727,12 @@ only by `submit_stack_invalidation`, in the transaction that files the
 invalidation, and never changed. The finalizer and the ticket service read it,
 the second to take a failing verdict of that cycle as no rework. Its identity is
 that of the stack it points at. It has no unfinished work.
+
+`execution_verdict_carry` — that an evaluation was settled on the passing
+verdict an earlier execution of its ticket earned rather than run, and which.
+Written by the scheduler in the transaction that settles it, and
+`execution_verdict_carry_is_immutable` refuses every change and delete of every
+role. Its identity is the execution it settled, and it points at that execution
+and at the one it carried from. Whether a stack beneath that verdict landed is
+read through `ticket_cycle_beneath_landed`, which calls the same
+`evaluation_stack_landings` the finalizer does. It has no unfinished work.

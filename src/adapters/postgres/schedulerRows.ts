@@ -86,6 +86,7 @@ import { declaredConfigurationIsCatalog } from "../../interpreter/authoring.ts";
 import {
   catalogWorkloadTask,
   workloadTaskPositionOf,
+  type WorkloadTask,
 } from "../../interpreter/workloadTask.ts";
 
 /** One execution row joined to the request and task row that authorized it. */
@@ -272,23 +273,49 @@ function executionRowWorkloadCapability(
   row: ExecutionRow,
   configuration: unknown,
 ) {
-  const position = workloadTaskPositionOf(
+  const task = schedulerRowWorkloadTask(
+    row,
     executionRowTaskKind(row.task_kind),
-    taskRowStage(row.stage).stage,
-    taskRowEvaluator(row.evaluator).evaluator,
+    configuration,
   );
-  const task =
-    position === undefined
-      ? undefined
-      : catalogWorkloadTask(
-          configuration,
-          storedOverridesOf(row.configuration_overrides),
-          storedSelectionOf(row.configuration_selection),
-          position,
-        );
   return task === undefined || task.workload.runner === "Approval"
     ? undefined
     : executionAgentCapability({ worker: task.workload.worker });
+}
+
+/** The columns a task of a catalog's workload is resolved from, as a registration and the row it made both hold them. */
+export interface SchedulerWorkloadColumns {
+  readonly configuration_canonical: string;
+  readonly configuration_overrides: string | null;
+  readonly configuration_selection: string | null;
+  readonly stage: string | null;
+  readonly evaluator: string | null;
+}
+
+/**
+ * The workload one task of a catalog runs, its ticket's overrides applied,
+ * under the selection its ticket holds; none for a version 1 configuration or
+ * a position the selection does not name.
+ */
+export function schedulerRowWorkloadTask(
+  row: SchedulerWorkloadColumns,
+  kind: ExecutionTaskKind,
+  configuration: unknown = JSON.parse(row.configuration_canonical) as unknown,
+): WorkloadTask | undefined {
+  if (!declaredConfigurationIsCatalog(configuration)) return undefined;
+  const position = workloadTaskPositionOf(
+    kind,
+    taskRowStage(row.stage).stage,
+    taskRowEvaluator(row.evaluator).evaluator,
+  );
+  return position === undefined
+    ? undefined
+    : catalogWorkloadTask(
+        configuration,
+        storedOverridesOf(row.configuration_overrides),
+        storedSelectionOf(row.configuration_selection),
+        position,
+      );
 }
 
 /** The size a registration copied, absent where it copied none and every field is the deployment's. */

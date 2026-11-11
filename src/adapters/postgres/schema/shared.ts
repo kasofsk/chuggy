@@ -341,6 +341,10 @@ export const projectLandingQueueCandidatesFunction =
   "project_landing_queue_candidates";
 /** How many evaluations of a ticket that ran over a stack sent it back to work. */
 export const ticketStackedFailuresFunction = "ticket_stacked_failures";
+/** The landings on a reference since a stack's tip, followed as a chain to a depth. */
+export const stackLandingsFunction = "evaluation_stack_landings";
+/** The scheduler's door for whether a ticket's work cycle was unstacked or had everything beneath it land as its stack named. */
+export const stackBeneathLandedFunction = "ticket_cycle_beneath_landed";
 /** The finalizer's door for abandoning an evaluation whose stack no longer stands. */
 export const stackInvalidationFunction = "submit_stack_invalidation";
 export const activeWorkFunction = "project_active_work";

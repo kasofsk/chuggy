@@ -1182,7 +1182,7 @@ const schedulerWritePrivileges = [
     table_name: "execution",
     privilege_type: "INSERT",
     columns:
-      "account,cluster,configuration_digest,configuration_revision,cpu_millis,execution,memory_mib,owner,owner_fallback,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
+      "account,cluster,configuration_digest,configuration_revision,cpu_millis,execution,memory_mib,owner,owner_fallback,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket,workload_digest",
   },
   {
     table_name: "execution",
@@ -1229,6 +1229,11 @@ const schedulerWritePrivileges = [
     table_name: "execution_routing",
     privilege_type: "UPDATE",
     columns: executionRoutingColumns,
+  },
+  {
+    table_name: "execution_verdict_carry",
+    privilege_type: "INSERT",
+    columns: "execution,project,source_execution,tenant",
   },
   {
     table_name: "project",

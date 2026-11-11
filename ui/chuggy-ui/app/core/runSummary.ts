@@ -49,6 +49,7 @@ function runSummaryWithoutResult(attempt: RunAttemptSummary): RunSummary {
     case "Superseded":
       return { summary: "Ended" };
     case "Reported":
+    case "Carried":
       return { summary: "Absent" };
   }
 }
