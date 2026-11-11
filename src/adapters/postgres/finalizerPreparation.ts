@@ -93,6 +93,7 @@ import {
 import {
   asAttemptId,
   asExecutionId,
+  type AttemptId,
 } from "../../interpreter/schedulerIdentity.ts";
 import { postgresInputBundleWrite } from "./inputBundle.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
@@ -102,7 +103,7 @@ import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 /** One passed work execution of the ticket, with the revision it ran under. */
 interface WorkRow {
   readonly execution: string;
-  readonly attempt: string;
+  readonly attempt: string | null;
   readonly spawn: string;
   readonly task: string;
   readonly manifest: string;
@@ -114,7 +115,7 @@ interface WorkRow {
 /** One handoff artifact one of those executions declared. */
 interface ArtifactRow {
   readonly execution: string;
-  readonly attempt: string;
+  readonly attempt: string | null;
   readonly path: string;
   readonly digest: string;
   readonly bytes: string;
@@ -123,7 +124,7 @@ interface ArtifactRow {
 /** One source handoff declared by passed work. */
 interface SourceRow {
   readonly execution: string;
-  readonly attempt: string;
+  readonly attempt: string | null;
   readonly repository: string;
   readonly ref: string;
   readonly commit: string;
@@ -248,6 +249,16 @@ async function preparationSelection(
   return selection === undefined ? {} : { selection };
 }
 
+/**
+ * The attempt whose worker reported a passed work result. Only an answer to an
+ * evaluation approval writes a result naming none, and that is never work.
+ */
+function preparationWorkAttempt(attempt: string | null): AttemptId {
+  if (attempt === null)
+    throw new Error("finalizer preparation: a work result names no attempt");
+  return asAttemptId(attempt);
+}
+
 /** Everything the ticket's passed work declared, gathered before any decision runs. */
 export async function finalizerPreparationGathering(
   client: pg.PoolClient,
@@ -260,7 +271,7 @@ export async function finalizerPreparationGathering(
     ...(await preparationSelection(client, claim)),
     work: work.map((row): HandoffWork => ({
       execution: asExecutionId(row.execution),
-      attempt: asAttemptId(row.attempt),
+      attempt: preparationWorkAttempt(row.attempt),
       spawn: row.spawn,
       task: projectRowCounter(row.task, "execution task"),
       manifest: asResultManifestId(row.manifest),
@@ -272,14 +283,14 @@ export async function finalizerPreparationGathering(
     })),
     artifacts: artifacts.map((row): HandoffArtifact => ({
       execution: asExecutionId(row.execution),
-      attempt: asAttemptId(row.attempt),
+      attempt: preparationWorkAttempt(row.attempt),
       path: asArtifactPath(row.path),
       digest: asArtifactDigest(row.digest),
       bytes: projectRowCounter(row.bytes, "artifact bytes"),
     })),
     sources: sources.map((row): HandoffSource => ({
       execution: asExecutionId(row.execution),
-      attempt: asAttemptId(row.attempt),
+      attempt: preparationWorkAttempt(row.attempt),
       repository: asRepositoryId(row.repository),
       ref: asGitRefName(row.ref),
       commit: asGitObjectId(row.commit),

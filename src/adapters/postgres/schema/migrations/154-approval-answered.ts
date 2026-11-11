@@ -14,7 +14,9 @@
  * digest is taken over its own label, its binding to the action, its verdict
  * and its report, so it is no worker manifest's and binds no attempt. The
  * report is the feedback behind the name of who gave it, which is what every
- * reader of a failed evaluator's report already reads.
+ * reader of a failed evaluator's report already reads. Only this door writes
+ * one: the scheduler's insert on `execution_result` is narrowed to the columns
+ * it held before, so it may not name an action.
  *
  * `answer_evaluation_approval` IS THE ONE DOOR, AND THE DECIDING TRANSACTION
  * CALLS IT. The writer's transaction already holds the project; the door locks
@@ -41,6 +43,7 @@
 import {
   apiRole,
   boundaryOwnerRole,
+  schedulerRole,
   ticketServiceRole,
   type Migration,
 } from "../shared.ts";
@@ -94,10 +97,11 @@ export const migration154: Migration = {
     `ALTER TABLE public.execution
        DROP CONSTRAINT execution_awaiting_is_never_admitted,
        ADD CONSTRAINT execution_awaiting_is_never_admitted CHECK (requirement_value IS NOT NULL OR status IN ('Queued', 'Cancelled') OR (status = 'Terminal' AND outcome IS NOT NULL AND outcome IN ('Passed', 'Failed')))`,
-    `GRANT SELECT (resolution, answered_by, answered_at, feedback) ON TABLE public.native_action TO ${apiRole}`,
+    `GRANT SELECT (answered_by, answered_at, feedback) ON TABLE public.native_action TO ${apiRole}`,
     `GRANT SELECT (action) ON TABLE public.execution_result TO ${apiRole}`,
-    `GRANT SELECT (answered_by, answered_at, feedback), UPDATE (resolution, answered_by, answered_at, feedback) ON TABLE public.native_action TO ${boundaryOwnerRole}`,
-    `GRANT INSERT (action) ON TABLE public.execution_result TO ${boundaryOwnerRole}`,
+    `GRANT UPDATE (resolution, answered_by, answered_at, feedback) ON TABLE public.native_action TO ${boundaryOwnerRole}`,
+    `REVOKE INSERT ON TABLE public.execution_result FROM ${schedulerRole}`,
+    `GRANT INSERT (tenant, project, manifest, execution, attempt, manifest_ordinal, schema_version, digest, verdict, recorded_at) ON TABLE public.execution_result TO ${schedulerRole}`,
     migration154CommandValidity(),
     `CREATE FUNCTION ${answerFunction} RETURNS text
      LANGUAGE plpgsql SECURITY DEFINER

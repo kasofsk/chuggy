@@ -504,7 +504,7 @@ async function decisionAnswerEvaluationApproval(
     sql`SELECT answer_evaluation_approval(
           ${partition.tenant},${partition.project},${cause.id},
           ${`manifest-${randomUUID()}`},${`completion-${randomUUID()}`},
-          ${schedulerRole}) AS answered`,
+          ${schedulerRole})::text AS answered`,
   );
   const verdict = answered.rows[0]?.answered;
   if (verdict !== "Answered" && verdict !== "Withdrawn")

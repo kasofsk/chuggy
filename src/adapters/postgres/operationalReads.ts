@@ -2,7 +2,6 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { agentPauseReasons } from "../../contract/rosters.ts";
-import { nativeActionResolutions } from "../../interpreter/projectCommand.ts";
 import type { AgentAccountPause } from "../../interpreter/agentAccount.ts";
 import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
@@ -147,7 +146,6 @@ interface ResultViewRow {
   readonly action: string | null;
   readonly answered_by: string | null;
   readonly answered_at: string | null;
-  readonly resolution: string | null;
   readonly feedback: string | null;
 }
 
@@ -801,19 +799,12 @@ async function attempts(
   return found.rows.map((row) => attemptResource(row, runs.get(row.attempt)));
 }
 
-/** Who a result is from: the attempt whose worker reported it, or the answer a person gave its approval. */
+/** Who a result is from: the attempt whose worker reported it, or the answer a person gave its approval, whose resolution its verdict is. */
 function resultResourceAuthor(
   row: ResultViewRow,
 ): Pick<ExecutionResultResource, "attempt" | "approval"> {
   if (row.attempt !== null) return { attempt: asAttemptId(row.attempt) };
-  const resolution = nativeActionResolutions.EvaluationApproval.find(
-    (known) => known === row.resolution,
-  );
-  if (
-    row.action === null ||
-    row.answered_by === null ||
-    resolution === undefined
-  )
+  if (row.action === null || row.answered_by === null)
     throw new Error(
       "operational read: a result names neither an attempt nor an answer",
     );
@@ -821,7 +812,7 @@ function resultResourceAuthor(
     approval: {
       action: row.action,
       principal: row.answered_by,
-      resolution,
+      resolution: resultVerdict(row.verdict) === "Pass" ? "Approve" : "Reject",
       answeredAt: projectRowInstant(row.answered_at, "answering time"),
       ...(row.feedback === null ? {} : { feedback: row.feedback }),
     },
@@ -839,7 +830,7 @@ async function resultResource(
                to_char(r.recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS recorded_at,p.report,
                r.action,a.answered_by,
                to_char(a.answered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS answered_at,
-               a.resolution,a.feedback
+               a.feedback
           FROM execution_result r
           LEFT JOIN execution_result_report p
             ON p.tenant=r.tenant AND p.project=r.project AND p.manifest=r.manifest
