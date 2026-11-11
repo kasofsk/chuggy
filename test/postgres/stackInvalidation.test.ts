@@ -23,6 +23,7 @@ import { stackInvalidations } from "../../src/interpreter/stackInvalidation.ts";
 import {
   finalizerCommit,
   finalizerBriefLanding,
+  finalizerBriefProposal,
   finalizerDeclareSource,
   finalizerAccept,
   finalizerDrain,
@@ -59,8 +60,11 @@ after(async () => {
   await servicePool.end();
 });
 
-/** A Stacked ticket evaluating over a stack whose one ticket beneath is nowhere in the queue. */
-async function evaluatingOverGone(label: string): Promise<FinalizerProject> {
+/** A Stacked ticket evaluating over a stack whose one ticket beneath is nowhere in the queue, merging a proposal from `proposing` where named. */
+async function evaluatingOverGone(
+  label: string,
+  proposing?: string,
+): Promise<FinalizerProject> {
   const entering = await finalizerEntering(rig, label);
   const [pinned] = await rig.harness.query(
     `SELECT revision, digest FROM configuration_revision WHERE tenant=$1 AND project=$2`,
@@ -85,6 +89,13 @@ async function evaluatingOverGone(label: string): Promise<FinalizerProject> {
     "Stacked",
     project.repository,
   );
+  if (proposing !== undefined)
+    await finalizerBriefProposal(
+      rig,
+      project.partition,
+      project.ticket,
+      proposing,
+    );
   const work = await finalizerPassedWork(rig, project, label, []);
   await finalizerDeclareSource(
     rig,
@@ -166,6 +177,16 @@ test("the sweep finds the evaluation over a stack that no longer stands, and off
   const marked = await serviceStore().dead(project.partition, found.ticket);
   assert.deepEqual([...marked.keys()], [1]);
   assert.ok((marked.get(1) ?? -1) >= 0);
+});
+
+test("an evaluation over a proposal's stack is read on the proposal's base, not its own branch", async () => {
+  const project = await evaluatingOverGone(
+    "invalidate-proposal",
+    "refs/heads/invalidate-proposal",
+  );
+  const [found] = await ownEvaluating(project);
+  assert.ok(found !== undefined);
+  assert.equal(found.target, undefined, "the base it names none of");
 });
 
 test("the writer abandons the evaluation, opens a new cycle and counts no rework", async () => {

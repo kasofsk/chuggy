@@ -191,6 +191,20 @@ export function briefLandsOn(
     : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
 }
 
+/**
+ * The reference a brief queues and stacks on, which is the one its landing
+ * moves for every other ticket: a proposal's base, the reference its
+ * finalization names, and a push's `briefLandsOn`. Absent where it names
+ * neither, which is the repository's default.
+ */
+export function briefQueuesOn(
+  brief: Pick<DraftBrief, "finalization" | "branch">,
+): GitRefName | undefined {
+  return briefFinalizationOpensProposal(brief.finalization)
+    ? briefFinalizationTarget(brief.finalization)
+    : briefLandsOn(brief);
+}
+
 /** One ticket's brief, as everything but the wire holds it. */
 export interface DraftBrief {
   readonly title?: BriefTitle;

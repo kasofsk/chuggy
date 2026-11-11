@@ -18,8 +18,10 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { EvaluationStack } from "../../src/interpreter/evaluationStack.ts";
 import {
   finalizerBriefLanding,
+  finalizerBriefProposal,
   finalizerCommit,
   finalizerDeclareSource,
+  finalizerDigest,
   finalizerGrantPermit,
   finalizerIdentity,
   finalizerPassedWork,
@@ -41,6 +43,12 @@ export interface Landing {
   readonly verdict?: "Promoted" | "NotPromoted";
   /** Whether the attempt's bundle pins a result manifest, which it does unless a case says it does not. */
   readonly pinned?: false;
+  /**
+   * The proposal it lands by, where it lands by one: the attempt is then
+   * prepared onto `head` and pushes `candidate` there, and the proposal is
+   * opened into `landingTarget` at `onto` and merged at `merged`, where it was.
+   */
+  readonly proposal?: { readonly head: string; readonly merged?: string };
 }
 
 /** The passed work the landings are copied from. */
@@ -150,9 +158,11 @@ export async function landingWrite(
     landing.accepted,
   );
   const prepared = { ...project, ticket: landing.ticket };
+  const onto = landing.proposal?.head ?? landingTarget;
   const attempt = await finalizerPrepare(rig, prepared, label, {
     target: landing.onto,
     candidate: landing.candidate,
+    targetRef: onto,
   });
   if (landing.pinned !== false)
     await rig.as(
@@ -172,7 +182,7 @@ export async function landingWrite(
       named,
       permit,
       landing.candidate,
-      landingTarget,
+      onto,
       landing.verdict ?? "Promoted",
     ],
   );
@@ -181,13 +191,88 @@ export async function landingWrite(
       WHERE tenant=$1 AND project=$2 AND permit=$3`,
     [tenant, named, permit],
   );
+  if (landing.proposal !== undefined)
+    await landingProposed(rig, project, permit, landing, landing.proposal);
 }
 
-/** A Stacked ticket whose work, accepted at `accepted`, passed and awaits its landing. */
+/** The proposal one landing opened from its head into `landingTarget`, merged where it says so. */
+async function landingProposed(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  permit: string,
+  landing: Landing,
+  proposal: NonNullable<Landing["proposal"]>,
+): Promise<void> {
+  const key = [project.partition.tenant, project.partition.project];
+  await rig.as(
+    `INSERT INTO finalization_change_proposal
+       (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+        base_ref,base_commit,title,body,attempts)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ticket: land it','land it',1)`,
+    [
+      ...key,
+      project.request,
+      permit,
+      finalizerDigest(),
+      proposal.head,
+      landing.candidate,
+      landingTarget,
+      landing.onto,
+    ],
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=$4::jsonb
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      ...key,
+      project.request,
+      JSON.stringify({ title: "ticket: land it", body: "land it" }),
+    ],
+  );
+  if (proposal.merged !== undefined)
+    await rig.as(
+      `UPDATE finalization_change_proposal
+          SET merge_attempts=1, merge='Merged', merge_commit=$4
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      [...key, project.request, proposal.merged],
+    );
+}
+
+/** A request of `ticket`'s own beside `project`'s, settled, which a landing by proposal is recorded under. */
+export async function landingRequest(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  ticket: number,
+  label: string,
+): Promise<FinalizerProject> {
+  const request = finalizerIdentity(`request-${label}`);
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, request_generation, kind, state, work_cycle,
+        finalization_generation)
+     VALUES ($1,$2,$3,$4,1,$5,$4,1,'RunFinalizer','Fulfilled',1,1)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      project.authorizingSeq,
+      ticket,
+    ],
+  );
+  return { ...project, request };
+}
+
+/**
+ * A Stacked ticket whose work, accepted at `accepted`, passed and awaits its
+ * landing: a push, or a proposal into the default from `proposing` where named.
+ */
 export async function stackedSubject(
   rig: FinalizerRig,
   label: string,
   accepted = finalizerCommit(),
+  proposing?: string,
 ) {
   const project = await finalizerProject(rig, label);
   await finalizerBriefLanding(
@@ -197,6 +282,13 @@ export async function stackedSubject(
     "Stacked",
     project.repository,
   );
+  if (proposing !== undefined)
+    await finalizerBriefProposal(
+      rig,
+      project.partition,
+      project.ticket,
+      proposing,
+    );
   const work = await finalizerPassedWork(rig, project, label, []);
   await finalizerDeclareSource(rig, project, work, "refs/heads/work", accepted);
   return { project, work };
