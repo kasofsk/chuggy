@@ -2799,3 +2799,60 @@ test("a target ref cannot forge a section", () => {
     "TextUnreadable",
   );
 });
+
+const targetPipelineCheck =
+  "git diff --name-only HEAD FETCH_HEAD -- .github/workflows/";
+
+test("a work task that cannot write pipelines merges its target only where the merge changes nothing under .github/workflows/", () => {
+  for (const parts of [
+    {},
+    { priorEvaluationReports: [".chug/tasks/ci.sh exited 1"] },
+    { failedLanding: conflictedLanding },
+  ]) {
+    for (const section of ["TargetMergeFirst", "TargetMergeLast"] as const) {
+      const text = (pipelinesWritable?: boolean): string =>
+        (
+          sectionLines(
+            viewOf({
+              ...parts,
+              targetRef: landingTargetRef,
+              ...(pipelinesWritable === undefined ? {} : { pipelinesWritable }),
+            }),
+            section,
+          ) ?? []
+        ).join("\n");
+      const unwritable = text(false);
+      assert.ok(
+        unwritable.includes(
+          `then \`${targetPipelineCheck}\`, and only where that lists nothing, \`${targetMerge}\``,
+        ),
+        section,
+      );
+      assert.ok(
+        unwritable.includes(
+          "Where that check lists anything, the merge would carry a change to .github/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report",
+        ),
+        section,
+      );
+      for (const writable of [text(true), text()]) {
+        assert.ok(writable.includes(targetMerge), section);
+        assert.ok(!writable.includes(".github/workflows/"), section);
+      }
+    }
+  }
+});
+
+test("a failed landing names the target's commit as where the workspace started, which a merge of the target leaves true", () => {
+  const text = (
+    sectionLines(
+      viewOf({ targetRef: landingTargetRef, failedLanding: conflictedLanding }),
+      "FailedLanding",
+    ) ?? []
+  ).join("\n");
+  assert.ok(
+    text.includes(
+      `This workspace started at the target's commit ${conflictedLanding.targetCommit}`,
+    ),
+  );
+  assert.ok(!text.includes("checked out at"));
+});

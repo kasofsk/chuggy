@@ -296,7 +296,7 @@ function briefingFailedLandingBaseLines(
 export function briefingFailedLandingLines(
   landing: FailedLanding,
 ): readonly string[] {
-  const workspace = `This workspace is checked out at the target's commit ${landing.targetCommit}, and does not hold that change.`;
+  const workspace = `This workspace started at the target's commit ${landing.targetCommit}, and does not hold that change.`;
   const opening = [
     "The change this ticket already made passed its evaluation and could not be landed on the target.",
     ...briefingFailedLandingReason(landing),
@@ -326,37 +326,62 @@ export function briefingFailedLandingLines(
   ];
 }
 
-/** The commands that fetch the ref a change lands on and merge its head into the workspace. */
-function briefingTargetMergeCommands(targetRef: string): string {
-  return `run \`git fetch origin ${targetRef}\`, then \`${briefingWorkerGit} merge --no-edit FETCH_HEAD\``;
+/** The command that lists what a merge of the fetched target would change under .github/workflows/. */
+const briefingTargetMergePipelineCheck =
+  "git diff --name-only HEAD FETCH_HEAD -- .github/workflows/";
+
+/**
+ * The commands that fetch the ref a change lands on and merge its head into
+ * the workspace, checking first, where pipelines are unwritable, that the
+ * merge would change nothing under .github/workflows/.
+ */
+function briefingTargetMergeCommands(
+  targetRef: string,
+  pipelinesWritable: boolean,
+): string {
+  const merge = `\`${briefingWorkerGit} merge --no-edit FETCH_HEAD\``;
+  return pipelinesWritable
+    ? `run \`git fetch origin ${targetRef}\`, then ${merge}`
+    : `run \`git fetch origin ${targetRef}\`, then \`${briefingTargetMergePipelineCheck}\`, and only where that lists nothing, ${merge}`;
 }
 
+/** What a work task that cannot write pipelines does with a target whose merge would change one. */
+const briefingTargetMergePipelineSkip =
+  "Where that check lists anything, the merge would carry a change to .github/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report that it holds a pipeline change this job cannot push.";
+
 /** How a merge of the target that conflicts is resolved, the target's own side never rewritten. */
-const briefingTargetMergeResolution: readonly string[] = [
-  `Where a merge stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree.`,
-  "Where both sides took the same next number or version, such as a migration's or a release's, move this change's own to the next free one, and leave what the target already holds exactly as it is.",
-];
+function briefingTargetMergeResolution(
+  pipelinesWritable: boolean,
+): readonly string[] {
+  return [
+    ...(pipelinesWritable ? [] : [briefingTargetMergePipelineSkip]),
+    `Where a merge stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree.`,
+    "Where both sides took the same next number or version, such as a migration's or a release's, move this change's own to the next free one, and leave what the target already holds exactly as it is.",
+  ];
+}
 
 /** What a work task does before anything else: merge the head of the ref its change lands on. */
 export function briefingTargetMergeFirstLines(
   targetRef: string,
+  pipelinesWritable: boolean,
 ): readonly string[] {
   return [
     `This change lands on ${targetRef}.`,
-    `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef)}.`,
+    `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
     "Where the workspace is already at that head, git says it is already up to date and nothing changes.",
-    ...briefingTargetMergeResolution,
+    ...briefingTargetMergeResolution(pipelinesWritable),
   ];
 }
 
 /** What a work task does as its last step: merge the target's head again, and verify the merged tree where that brought anything in. */
 export function briefingTargetMergeLastLines(
   targetRef: string,
+  pipelinesWritable: boolean,
 ): readonly string[] {
   return [
-    `As your last step before you report, bring ${targetRef} in again: ${briefingTargetMergeCommands(targetRef)}.`,
+    `As your last step before you report, bring ${targetRef} in again: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
     `Where that brought anything in, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree.`,
-    ...briefingTargetMergeResolution,
+    ...briefingTargetMergeResolution(pipelinesWritable),
   ];
 }
 

@@ -1049,6 +1049,7 @@ function briefingBodies(
   const briefed = carrier === "Agent";
   const target =
     briefed && view.purpose === "Work" ? view.targetRef : undefined;
+  const pipelinesWritable = view.pipelinesWritable !== false;
   return {
     Prompt: task.prompt === undefined ? [] : [task.prompt],
     RoleInstructions: task.framed
@@ -1067,7 +1068,9 @@ function briefingBodies(
       task.brief === undefined ? [] : briefingCriteriaLines(task.brief),
     DependencyDeliveries: briefed ? briefingDependencyDeliveryLines(view) : [],
     TargetMergeFirst:
-      target === undefined ? [] : briefingTargetMergeFirstLines(target),
+      target === undefined
+        ? []
+        : briefingTargetMergeFirstLines(target, pipelinesWritable),
     FailedLanding:
       briefed && view.purpose === "Work" && view.failedLanding !== undefined
         ? briefingFailedLandingLines(view.failedLanding)
@@ -1090,7 +1093,9 @@ function briefingBodies(
     ),
     RuntimeContext: briefingRuntimeLines(view),
     TargetMergeLast:
-      target === undefined ? [] : briefingTargetMergeLastLines(target),
+      target === undefined
+        ? []
+        : briefingTargetMergeLastLines(target, pipelinesWritable),
     RequiredResult: task.framed
       ? briefingRequiredResult(view.purpose, carrier)
       : [],
