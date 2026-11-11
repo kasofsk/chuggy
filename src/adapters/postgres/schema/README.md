@@ -482,7 +482,8 @@ deployment's: it is a single row, keyed `singleton` and held to it by a CHECK.
 It has no unfinished work: `session_lead_offering` reads it when asked, so a
 stored `Subsidized` reads `Own` while no row stands. The selector's settings
 read and the API's reach it, per project, through `session_lead_profile`, and
-`open_lead_inquiry` holds an inquiry admitted on the subsidy to its slot.
+`open_lead_inquiry` holds an inquiry admitted on the subsidy to its slot,
+and to a lead on its own system prompt.
 Both reach what a project's tenant and the deployment spent of it this month
 through `subsidized_lead_spend`, which sums the Lead and Inquiry turns on its
 slot by `session_turn_enqueued`.

@@ -24,7 +24,6 @@ import {
 import { threadEntryResponseSchema } from "../../src/contract/responses.ts";
 import {
   asSessionId,
-  asSessionTurnId,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
 import type { LeadOpening } from "../../src/interpreter/leadMailbox.ts";
@@ -38,14 +37,12 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { SelectorProjectOverrides } from "../../src/interpreter/selector.ts";
-import {
-  sessionRigAttempt,
-  sessionRigSession,
-  sessionRigTurn,
-} from "./sessionHarness.ts";
+import { sessionRigSession, sessionRigTurn } from "./sessionHarness.ts";
 import { sessionStoreDouble } from "./storeDouble.ts";
 import {
   threadRigApp,
+  threadRigFacts,
+  threadRigLeadTurn,
   threadRigMember,
   threadRigOpen,
   threadRigProject,
@@ -73,6 +70,7 @@ const leadOpened = {
   credentialSlot: "claude-code",
   systemPrompt: "the lead's objectives",
   autoCompactWindow: leadAutoCompactWindowTokensDefault,
+  systemPromptOwn: false,
 } as const;
 
 /** Opens the project's lead under `runtime`, as the selector opens one. */
@@ -91,15 +89,8 @@ async function leadOpenedUnder(
 }
 
 /** What a session's pod is told of it, through the plane's own authentication. */
-async function factsOf(
-  partition: Partition,
-  session: SessionId,
-  label: string,
-) {
-  const pod = await sessionRigAttempt(rig.sessions, partition, session, label);
-  const facts = await rig.sessions.plane.authenticate(pod.secret);
-  assert.ok(facts !== undefined, "the pod's bearer was not recognised");
-  return facts;
+function factsOf(partition: Partition, session: SessionId, label: string) {
+  return threadRigFacts(rig, partition, session, label);
 }
 
 /** What a thread's pod is told of it, once a member's turn waits on it. */
@@ -112,19 +103,8 @@ async function threadFactsOf(
   return factsOf(partition, thread, label);
 }
 
-/** A decision turn on the lead, which is what an attempt on it opens to take. */
-async function leadTurnOffered(partition: Partition): Promise<void> {
-  assert.equal(
-    (
-      await rig.mailbox.offer({
-        partition,
-        turn: asSessionTurnId(`turn-models-${randomUUID()}`),
-        input: "{}",
-        route: "InCluster",
-      })
-    ).offered,
-    "Enqueued",
-  );
+function leadTurnOffered(partition: Partition): Promise<void> {
+  return threadRigLeadTurn(rig, partition);
 }
 
 /** Writes the project's whole override set over `revision`, refusing anything but a written row. */

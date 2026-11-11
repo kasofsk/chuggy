@@ -58,6 +58,8 @@ export interface LeadSessionStanding {
   readonly effort?: SessionEffort;
   /** The named credential mount its pods speak through, which it was opened on. */
   readonly credentialSlot: string;
+  /** Whether it runs on its own system prompt with none of its project's settings, which it was opened under. */
+  readonly systemPromptOwn: boolean;
   /**
    * What the pod measured of the newest answered decision turn, absent where
    * there is none or it measured nothing. An inquiry's turns are not the lead's.
@@ -112,6 +114,7 @@ export interface LeadOpening {
   readonly autoCompactWindow: number;
   readonly model?: string;
   readonly effort?: SessionEffort;
+  readonly systemPromptOwn: boolean;
 }
 
 /** What opening found: a successor written, or the open lead that was already there. */

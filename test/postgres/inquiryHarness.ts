@@ -93,6 +93,7 @@ export interface InquiryRigRunOpening {
   readonly credentialSlot?: string;
   readonly model?: string;
   readonly effort?: string;
+  readonly systemPromptOwn?: boolean;
 }
 
 /**
@@ -119,6 +120,9 @@ export async function inquiryRigRun(
       : { credentialSlot: opening.credentialSlot }),
     ...(opening.model === undefined ? {} : { model: opening.model }),
     ...(opening.effort === undefined ? {} : { effort: opening.effort }),
+    ...(opening.systemPromptOwn === undefined
+      ? {}
+      : { systemPromptOwn: opening.systemPromptOwn }),
   });
   const turn = await sessionRigTurn(rig.sessions, partition, session, label);
   const attempt = await sessionRigAttempt(

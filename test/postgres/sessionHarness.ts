@@ -134,6 +134,8 @@ export interface SessionRigOpening {
   readonly model?: string;
   readonly effort?: string;
   readonly credentialSlot?: string;
+  /** Whether it runs on its own system prompt, written as `open_project_lead` writes it for a subsidized lead. */
+  readonly systemPromptOwn?: boolean;
 }
 
 /** Opens one session, refusing anything but the arm the case expected. */
@@ -167,6 +169,11 @@ export async function sessionRigSession(
     await rig.harness.query(
       `UPDATE agent_session SET model=$2,effort=$3 WHERE session=$1`,
       [session, opening.model ?? null, opening.effort ?? null],
+    );
+  if (opening.systemPromptOwn !== undefined)
+    await rig.harness.query(
+      `UPDATE agent_session SET system_prompt_own=$2 WHERE session=$1`,
+      [session, opening.systemPromptOwn],
     );
   return session;
 }
