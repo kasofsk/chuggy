@@ -19,9 +19,14 @@
  * execution larger than the room the terms name, which chooses among what
  * that allows as the order does rather than being a term of it. Its account
  * is its owner, and it passes over an attempt whose agent that account has
- * paused as a pool's claim does. It records on the attempt whether its runner
- * benches the credential it hands the job, which is what keeps the job's
- * usage limit off that account.
+ * paused as a pool's claim does, but for the runner: of an agent its newest
+ * poll named credentials of, the account is paused only while every one of
+ * them is, as `agent_account_named_pause` answers, so a credential at its
+ * threshold leaves the runner's others to take the job; of any other agent,
+ * `agent_account_pause` answers. Either way a press admits one claim and is
+ * spent by it. It records on the attempt whether its runner benches the
+ * credential it hands the job, which is what keeps the job's usage limit off
+ * that account.
  *
  * OF WHAT IT MAY TAKE, IT TAKES A STARTED TICKET'S FIRST, then a higher
  * project's, then the oldest ticket's: `execution_attempt_started`, the
@@ -51,7 +56,12 @@ import type pg from "pg";
 
 import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import { asProjectId, type ProjectId } from "../../interpreter/projectStore.ts";
-import type { WorkerPoolCredentialOutcome } from "../../contract/workerPool.ts";
+import {
+  workerRunnerCredentialAgents,
+  type WorkerPoolCredentialOutcome,
+  type WorkerPoolCredentialPause,
+  type WorkerRunnerCredentials,
+} from "../../contract/workerPool.ts";
 import type {
   PersonalRunnerIdentity,
   WorkerPoolClaimed,
@@ -80,6 +90,15 @@ async function personalExecutionClaimLocked(
   );
 }
 
+/** What a claim's statement returns of the attempt it took. */
+interface PersonalExecutionClaimedRow {
+  readonly requirement: unknown;
+  readonly runtime: string | null;
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
+  readonly project: string;
+}
+
 /** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, in the order the header states, serialized with every other claim and fence of their runners, and the project it is in. */
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
@@ -89,13 +108,7 @@ export async function personalExecutionClaimed(
 ): Promise<WorkerPoolPersonalClaimed | undefined> {
   const room = terms.memoryRoomMib ?? null;
   await personalExecutionClaimLocked(client, identity);
-  const found = await client.query<{
-    requirement: unknown;
-    runtime: string | null;
-    cpu_millis: number | null;
-    memory_mib: number | null;
-    project: string;
-  }>(
+  const found = await client.query<PersonalExecutionClaimedRow>(
     sql`WITH chosen AS (
         SELECT q.tenant,q.project,q.execution,q.attempt,q.agent,held.admitted_by_press
         FROM execution_attempt q
@@ -104,7 +117,11 @@ export async function personalExecutionClaimed(
         JOIN personal_runner r ON r.tenant=q.tenant
         JOIN personal_runner_project l
           ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
-        CROSS JOIN LATERAL agent_account_pause(r.owner,q.agent) held
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h
+            WHERE r.credentials_named->q.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(r.owner,q.agent,
+            ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->q.agent))) h
+            WHERE r.credentials_named->q.agent IS NOT NULL) held
         WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
           AND r.principal=${identity.principal}
           AND q.project=ANY(${[...claim.projects] as string[]}::text[])
@@ -174,7 +191,11 @@ export async function personalExecutionWaiting(
         JOIN personal_runner r ON r.tenant=q.tenant
         JOIN personal_runner_project l
           ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
-        CROSS JOIN LATERAL agent_account_pause(r.owner,q.agent) held
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h
+            WHERE r.credentials_named->q.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(r.owner,q.agent,
+            ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->q.agent))) h
+            WHERE r.credentials_named->q.agent IS NOT NULL) held
         WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
           AND r.principal=${identity.principal}
           AND q.project=ANY(${[...projects] as string[]}::text[])
@@ -232,6 +253,54 @@ export async function personalExecutionCredentialOutcomes(
         ORDER BY a.assignment`,
   );
   return found.rows.map(personalExecutionCredentialOutcome);
+}
+
+/**
+ * Each of `credentials` that is paused for the runner's owner now, by agent
+ * and name, and when that pause ends, in whole Unix seconds rounded up so a
+ * runner told it is never early.
+ */
+export async function personalExecutionCredentialPauses(
+  pool: pg.Pool,
+  identity: PersonalRunnerIdentity,
+  credentials: WorkerRunnerCredentials,
+): Promise<WorkerPoolCredentialPause[]> {
+  if (Object.keys(credentials).length === 0) return [];
+  const found = await pool.query<{
+    agent: string | null;
+    credential: string | null;
+    paused_until: string;
+  }>(
+    sql`SELECT n.agent,p.credential,
+          ceil(extract(epoch FROM p.paused_until))::bigint::text AS paused_until
+        FROM jsonb_each(${JSON.stringify(credentials)}::jsonb) n(agent,names)
+        CROSS JOIN LATERAL agent_account_named_credential_pauses(${identity.owner},n.agent,
+          ARRAY(SELECT jsonb_array_elements_text(n.names))) p
+        ORDER BY n.agent,p.credential`,
+  );
+  return found.rows.map(personalExecutionCredentialPause);
+}
+
+/** The pause one row of `personalExecutionCredentialPauses` names. */
+function personalExecutionCredentialPause(row: {
+  readonly agent: string | null;
+  readonly credential: string | null;
+  readonly paused_until: string;
+}): WorkerPoolCredentialPause {
+  if (row.credential === null)
+    throw new Error("a credential pause names no credential");
+  const agent = workerRunnerCredentialAgents.find(
+    (known) => known === row.agent,
+  );
+  if (agent === undefined)
+    throw new Error(
+      `no credential pause is read of agent ${String(row.agent)}`,
+    );
+  return {
+    agent,
+    credential: row.credential,
+    pausedUntil: Number(row.paused_until),
+  };
 }
 
 /** The outcome one row of `personalExecutionCredentialOutcomes` names. */

@@ -161,6 +161,7 @@ import { migration160 } from "./160-recheck-reason.ts";
 import { migration161 } from "./161-ticket-evaluation-stacks.ts";
 import { migration162 } from "./162-chat-host-idle-unbounded.ts";
 import { migration163 } from "./163-agent-account-credential.ts";
+import { migration164 } from "./164-personal-runner-credentials-named.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -327,4 +328,5 @@ export const migrations: readonly Migration[] = [
   migration161,
   migration162,
   migration163,
+  migration164,
 ];

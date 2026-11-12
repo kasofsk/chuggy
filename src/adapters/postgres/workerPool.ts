@@ -62,8 +62,8 @@
  * of `workerPoolCanAssign`: the model states no fairness, so a runner declining
  * an assignment it enables is a stutter, as a claim declining work larger than
  * its room is. The owner's fallback is unchanged, so a pool still defers to a
- * paused owner's live runner, and the owner's work waits for the owner's
- * account.
+ * paused owner's live runner, however many of the credentials that runner
+ * names are paused, and the owner's work waits for the owner's account.
  *
  * THE HELD COUNT IS THE DATABASE'S AND NOT THE POOL'S. It counts every attempt
  * under the pool's name that is still placing or running, so a pool that leaves
@@ -137,6 +137,7 @@ import {
 import {
   personalExecutionClaimed,
   personalExecutionCredentialOutcomes,
+  personalExecutionCredentialPauses,
   personalExecutionWaiting,
   personalExecutionsAllowlisted,
   personalExecutionsPolled,
@@ -366,11 +367,16 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
       capabilities,
       memoryCeilingMib,
       agentsAdvertised = false,
+      credentials = {},
     ) => {
       const named = runner?.package ?? null;
       const version = runner?.version ?? null;
       const advertised = capabilities === undefined ? null : [...capabilities];
       const ceiling = memoryCeilingMib ?? null;
+      const credentialsNamed =
+        Object.keys(credentials).length === 0
+          ? null
+          : JSON.stringify(credentials);
       switch (identity.kind) {
         case "Dedicated":
           await pool.query(sql`UPDATE worker_pool w
@@ -390,15 +396,16 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
             SET runner_package=${named},runner_version=${version},
                 capabilities=COALESCE(${advertised}::text[],r.capabilities),
                 memory_ceiling_mib=COALESCE(${ceiling}::bigint,r.memory_ceiling_mib),
-                agents_advertised=${agentsAdvertised}::boolean
+                agents_advertised=${agentsAdvertised}::boolean,
+                credentials_named=${credentialsNamed}::jsonb
             WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
               AND r.principal=${identity.principal}
               AND (r.runner_package,r.runner_version,r.capabilities,r.memory_ceiling_mib,
-                   r.agents_advertised)
+                   r.agents_advertised,r.credentials_named)
                 IS DISTINCT FROM (${named}::text,${version}::text,
                   COALESCE(${advertised}::text[],r.capabilities),
                   COALESCE(${ceiling}::bigint,r.memory_ceiling_mib),
-                  ${agentsAdvertised}::boolean)`);
+                  ${agentsAdvertised}::boolean,${credentialsNamed}::jsonb)`);
           return;
         case "ChatHost":
           await pool.query(sql`UPDATE chat_host h
@@ -898,6 +905,8 @@ export function postgresWorkerPoolAssignments(
     allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
     credentialOutcomes: (identity, assignments) =>
       personalExecutionCredentialOutcomes(pool, identity, assignments),
+    credentialPauses: (identity, credentials) =>
+      personalExecutionCredentialPauses(pool, identity, credentials),
     polled: (identity, executions) =>
       identity.kind === "Personal"
         ? personalExecutionsPolled(pool, identity, executions)

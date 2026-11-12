@@ -690,12 +690,12 @@ const poolPlaneColumns = [
   [
     "personal_runner",
     "SELECT",
-    "agents_advertised,capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
+    "agents_advertised,capabilities,credentials_named,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
   ],
   [
     "personal_runner",
     "UPDATE",
-    "agents_advertised,capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+    "agents_advertised,capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
   ],
   ["personal_runner_project", "SELECT", "owner,priority,project,tenant"],
   ["project", "SELECT", "lifecycle,project,tenant"],

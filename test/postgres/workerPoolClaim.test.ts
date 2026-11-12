@@ -53,7 +53,10 @@ import type {
   AccountAgent,
   PersonalRunnerPriority,
 } from "../../src/contract/rosters.ts";
-import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import type {
+  WorkerPoolAssignment,
+  WorkerRunnerCredentials,
+} from "../../src/contract/workerPool.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import {
@@ -66,7 +69,11 @@ import {
 } from "../../src/contract/http.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
-import { apiRole, poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  agentAccountNamedPauseFunction,
+  apiRole,
+  poolPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRunners,
@@ -118,6 +125,7 @@ import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts
 import {
   agentAccountHarnessCommitted,
   agentAccountHarnessPressed,
+  type AgentAccountHarnessLimit,
   type AgentAccountHarnessState,
 } from "./agentAccountHarness.ts";
 import {
@@ -2195,6 +2203,241 @@ for (const fallback of ["Preferred", "Strict"] as const)
       "the runner takes what waited for it",
     );
   });
+
+/** `runner`'s poll as it names `credentials`, its capabilities and its advertising as `capabilities` and `advertised` say, or left as they are where it names none. */
+async function credentialsNamed(
+  runner: PersonalPlaneIdentity,
+  credentials: WorkerRunnerCredentials,
+  capabilities?: readonly string[],
+  advertised = false,
+): Promise<void> {
+  await postgresWorkerPoolRunners(planePool).named(
+    runner,
+    undefined,
+    capabilities,
+    undefined,
+    advertised,
+    credentials,
+  );
+}
+
+/** The credentials `runner`'s row keeps, as its newest poll named them. */
+async function credentialsKept(
+  runner: PersonalPlaneIdentity,
+): Promise<unknown> {
+  const [row] = (await rig.harness.query(
+    `SELECT credentials_named FROM personal_runner WHERE principal=$1`,
+    [runner.principal],
+  )) as readonly { credentials_named: unknown }[];
+  return row?.credentials_named;
+}
+
+/** A project with one Claude attempt `member` owns, `Strict`, and their live runner of it naming `credentials` of Claude. */
+async function namingRunner(
+  label: string,
+  member: Principal,
+  credentials: WorkerRunnerCredentials,
+  attempts = 1,
+): Promise<{
+  readonly project: SchedulerProject;
+  readonly runner: PersonalPlaneIdentity;
+}> {
+  const project = await releasedUnder(label, pinned, attempts);
+  for (let attempt = 0; attempt < attempts; attempt++)
+    await opened(
+      project,
+      false,
+      { owner: member, fallback: "Strict" },
+      spending.Claude,
+    );
+  const runner = await ownedRunner(project, label, member);
+  await credentialsNamed(runner, credentials);
+  return { project, runner };
+}
+
+/** A limit of `credential` whose reset is `resetsSecs` ahead, arrived a minute ago. */
+function limitOf(
+  credential: string,
+  resetsSecs = 3600,
+): AgentAccountHarnessLimit {
+  return { observedSecs: -60, resetsSecs, credential };
+}
+
+/** Whether `member`'s press of Claude is still unspent. */
+async function pressUnspent(member: Principal): Promise<boolean> {
+  const [row] = (await rig.harness.query(
+    `SELECT spent_at IS NULL AS unspent FROM agent_account_press
+      WHERE principal=$1 AND agent='Claude'`,
+    [member],
+  )) as readonly { unspent: boolean }[];
+  return row?.unspent === true;
+}
+
+test("a runner naming two credentials takes a job while one is paused and the other is free, or never reported", async () => {
+  for (const [why, readings] of [
+    [
+      "the other reported under its threshold",
+      [
+        {
+          window: "five_hour",
+          utilization: 0.1,
+          resetsSecs: 1800,
+          observedSecs: -30,
+          credential: "home",
+        },
+      ],
+    ],
+    ["the other never reported", []],
+  ] as const) {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const { project, runner } = await namingRunner(
+      `claim-named-free-${readings.length}`,
+      member,
+      { Claude: ["work", "home"] },
+    );
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+      readings,
+      limits: [limitOf("work")],
+    });
+    assert.equal(await takes(runner, project.partition), true, why);
+  }
+});
+
+test("a runner whose every named credential is paused takes nothing, its probe and its owner's count agreeing, and the pause ends at the earliest with each reason once", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { project, runner } = await namingRunner("claim-named-held", member, {
+    Claude: ["work", "home", "spare"],
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.95,
+        resetsSecs: 7200,
+        observedSecs: -30,
+        credential: "spare",
+      },
+    ],
+    limits: [limitOf("work", 3600), limitOf("home", 5400)],
+  });
+  assert.equal(await takes(runner, project.partition), false);
+  await waitingCountedProbed(runner, project.partition);
+  const [answer] = await rig.harness.query(
+    `SELECT h.reasons,h.admitted_by_press,
+            h.paused_until=(SELECT min(l.resets_at) FROM agent_account_limit l
+                             WHERE l.principal=$1 AND l.agent='Claude') AS earliest
+       FROM ${agentAccountNamedPauseFunction}($1,'Claude',$2) h`,
+    [member, ["work", "home", "spare", "work"]],
+  );
+  assert.deepEqual(answer, {
+    reasons: ["five_hour", "limit"],
+    admitted_by_press: false,
+    earliest: true,
+  });
+});
+
+test("of named credentials one free and one held by a limit a press came after, the claim takes the job and spends no press, and with both held by limits the press lets one through", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { project, runner } = await namingRunner(
+    "claim-named-pressed",
+    member,
+    { Claude: ["work", "home"] },
+    2,
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work")],
+    press: { pressedSecs: 0 },
+  });
+  assert.equal(await takes(runner, project.partition), true);
+  assert.equal(await pressUnspent(member), true, "the free credential took it");
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work"), limitOf("home")],
+    press: { pressedSecs: 0 },
+  });
+  assert.equal(await takes(runner, project.partition), true);
+  assert.equal(await pressUnspent(member), false, "the press let it through");
+});
+
+test("a Preferred job's pool goes on deferring to its owner's live runner while every credential the runner names is paused", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const label = "claim-named-preferred";
+  const project = await releasedUnder(label, pinned, 1);
+  const pool = await pollingPool(project, label, pinned);
+  const runner = await advertisingRunner(project, label, member);
+  await credentialsNamed(
+    runner,
+    { Claude: ["work", "home"] },
+    [workerPoolPlatformToken(pinned), "Agent:Claude"],
+    true,
+  );
+  await opened(
+    project,
+    false,
+    { owner: member, fallback: "Preferred" },
+    spending.Claude,
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work"), limitOf("home")],
+  });
+  assert.equal(await takes(pool, project.partition), false, "the pool");
+  assert.equal(await takes(runner, project.partition), false, "the runner");
+});
+
+for (const [why, credentials] of [
+  ["a runner naming none", {}],
+  ["a runner naming credentials of another agent alone", { Codex: ["work"] }],
+] as readonly (readonly [string, WorkerRunnerCredentials])[])
+  test(`${why} claims a job of an agent as its account's pause reads it`, async () => {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const { project, runner } = await namingRunner(
+      `claim-named-none-${Object.keys(credentials).length}`,
+      member,
+      credentials,
+    );
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+      limits: [limitOf("other")],
+    });
+    assert.equal(await takes(runner, project.partition), false, "paused");
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {});
+    assert.equal(await takes(runner, project.partition), true, "unpaused");
+  });
+
+test("a poll naming credentials keeps them, and one naming none after clears them", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { runner } = await namingRunner("claim-named-cleared", member, {
+    Claude: ["work", "home"],
+    Codex: ["codex"],
+  });
+  assert.deepEqual(await credentialsKept(runner), {
+    Claude: ["work", "home"],
+    Codex: ["codex"],
+  });
+  await credentialsNamed(runner, {});
+  assert.equal(await credentialsKept(runner), null);
+});
+
+test("a runner is answered the pause of each credential it named that is paused, and of none it did not name", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const { runner } = await namingRunner("claim-named-answered", member, {});
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [limitOf("work"), limitOf("unnamed")],
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Codex", {
+    limits: [limitOf("codex", 5400)],
+  });
+  const [limit] = (await rig.harness.query(
+    `SELECT ceil(extract(epoch FROM resets_at))::bigint::text AS until
+       FROM agent_account_limit WHERE principal=$1 AND credential='work'`,
+    [member],
+  )) as readonly { until: string }[];
+  const pauses = await assignments.credentialPauses(runner, {
+    Claude: ["work", "home"],
+  });
+  assert.deepEqual(pauses, [
+    { agent: "Claude", credential: "work", pausedUntil: Number(limit?.until) },
+  ]);
+  assert.deepEqual(await assignments.credentialPauses(runner, {}), []);
+});
 
 /** How many claims a case asking for an order makes at most, past the attempts any of them opens. */
 const orderClaimsMax = 8;

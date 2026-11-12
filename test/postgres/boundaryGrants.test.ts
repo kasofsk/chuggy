@@ -10,6 +10,8 @@ import {
   agentAccountCredentialKeptFunction,
   agentAccountCredentialPauseFunction,
   agentAccountFunction,
+  agentAccountNamedCredentialPausesFunction,
+  agentAccountNamedPauseFunction,
   agentAccountPauseFunction,
   agentAccountPressFunction,
   agentAccountSessionPausedFunction,
@@ -810,6 +812,16 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${agentAccountPauseFunction}(text,text)`,
     [poolPlaneRole, apiRole, metricsPlaneRole],
     [],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountNamedPauseFunction}(text,text,text[])`,
+    [poolPlaneRole, apiRole],
+    [metricsPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountNamedCredentialPausesFunction}(text,text,text[])`,
+    [poolPlaneRole],
+    [apiRole, metricsPlaneRole],
   ),
   {
     signature: `${agentAccountCredentialPauseFunction}(text,text)`,

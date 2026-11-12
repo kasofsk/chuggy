@@ -174,6 +174,11 @@ export const agentAccountPauseFunction = "agent_account_pause";
 /** Each credential of an account's agent that is paused, until when and why, by the rule `agent_account_pause` answers the agent by. */
 export const agentAccountCredentialPauseFunction =
   "agent_account_credential_pause";
+/** Whether an account's agent is paused for a runner naming some of its credentials: only while every one named is, until the earliest of those ends. */
+export const agentAccountNamedPauseFunction = "agent_account_named_pause";
+/** Each of the credentials named of an account's agent that is paused, and until when. */
+export const agentAccountNamedCredentialPausesFunction =
+  "agent_account_named_credential_pauses";
 /** The credential a reading or a limit is kept under, its agent's default where the run named none, with room made for it among the credentials kept. */
 export const agentAccountCredentialKeptFunction =
   "agent_account_credential_kept";
