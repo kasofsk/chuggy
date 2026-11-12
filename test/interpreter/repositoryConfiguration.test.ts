@@ -181,28 +181,39 @@ test("every declaration this tree makes reevaluates its reviewers on change and 
     assert.equal(reevaluate, runner === "Agent" ? "OnChange" : undefined, at);
 });
 
-test("a ticket of the development catalog naming no finalization lands by a Stacked pull request merge", () => {
-  const path = `${repositoryConfigurationRoot}chuggy-development.json`;
+test("a ticket of every catalog this tree declares, naming no finalization, lands by a Stacked pull request merge", () => {
+  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
+    name.endsWith(".json"),
+  );
+  assert.ok(names.includes("basic-coding.json"));
+  assert.ok(names.includes("chuggy-development.json"));
   const found = repositoryConfigurationImportReadiness({
     repository,
     commit,
-    files: [{ path, kind: "File", content: readFileSync(path, "utf8") }],
+    files: names.map((name) => ({
+      path: `${repositoryConfigurationRoot}${name}`,
+      kind: "File",
+      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
+    })),
     referenced: treeReferenced(),
   });
-  assert.equal(found.readiness, "Ready", JSON.stringify(found));
-  if (found.readiness !== "Ready") return;
-  assert.deepEqual(
-    catalogSelectedFinalizer(found.declarations[0]?.configuration, undefined),
-    {
-      finalizer: {
-        finalization: {
-          kind: "GitMerge",
-          mode: "PullRequestMerge",
-          policy: "Stacked",
+  if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
+  assert.equal(found.declarations.length, names.length);
+  for (const { name, configuration } of found.declarations) {
+    assert.deepEqual(
+      catalogSelectedFinalizer(configuration, undefined),
+      {
+        finalizer: {
+          finalization: {
+            kind: "GitMerge",
+            mode: "PullRequestMerge",
+            policy: "Stacked",
+          },
         },
       },
-    },
-  );
+      name,
+    );
+  }
 });
 
 test("the development catalog's approved plan is its standard plan, then one stage a Developer approves, and standard stays the default", () => {
