@@ -48,6 +48,32 @@ export function isHeldCredentialVariable(variable: string): boolean {
   );
 }
 
+/**
+ * The variables a held credential's plain, non-secret value may be written
+ * under: a name the reserved prefixes do not begin, and that does not end
+ * `_FILE`, which names a file's path.
+ */
+export const heldCredentialValueVariablePattern = /^[A-Z][A-Z0-9_]*$/u;
+
+/** Whether `variable` is one a held credential's plain value may be written under. */
+export function isHeldCredentialValueVariable(variable: string): boolean {
+  return (
+    heldCredentialValueVariablePattern.test(variable) &&
+    !variable.endsWith("_FILE") &&
+    !heldCredentialVariablePrefixesReserved.some((prefix) =>
+      variable.startsWith(prefix),
+    )
+  );
+}
+
+/** The prefix reserved to the names of the credentials chuggy issues itself. */
+export const issuedCredentialPrefix = "chuggy.";
+
+/** Whether `credential` is a name in the prefix reserved to the credentials chuggy issues. */
+export function isIssuedCredential(credential: string): boolean {
+  return credential.startsWith(issuedCredentialPrefix);
+}
+
 /** The writable directory a pod does its work in. */
 export const workerWorkspaceVariable = "CHUG_WORKER_WORKSPACE";
 

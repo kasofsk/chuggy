@@ -23,6 +23,7 @@ import {
   runModelCharsMax,
   runTurnSeriesMax,
   runUsageInstantSchema,
+  textUtf8Bytes,
 } from "./http.ts";
 import {
   workerPlaneAnswersRefusingVersions,
@@ -44,7 +45,10 @@ import {
   artifactFailures,
   resultManifestRejections,
 } from "./workerDocuments.ts";
-import { isHeldCredentialVariable } from "./workerEnvironment.ts";
+import {
+  isHeldCredentialValueVariable,
+  isHeldCredentialVariable,
+} from "./workerEnvironment.ts";
 import { workerTaskAnswerSchema } from "./workerTask.ts";
 
 /** One route as the plane registers it, a trailing `*` standing for the rest of the path. */
@@ -285,11 +289,20 @@ export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema
 >;
 
-/** The most credentials one attempt asks the plane's held ones for. */
+/** The most credentials one attempt asks the plane's held ones for, and so the most one answer serves or names absent. */
 export const workerHeldCredentialsMax = 32;
 
 /** The longest held secret the plane serves. */
 export const heldCredentialSecretCharsMax = 4_096;
+
+/** The most files one served credential's bundle holds. */
+export const heldCredentialBundleFilesMax = 16;
+
+/** The most variables one served credential's bundle sets. */
+export const heldCredentialBundleVariablesMax = 16;
+
+/** The most bytes one file of a bundle holds, its text as `textUtf8Bytes` weighs it. */
+export const heldCredentialBundleFileBytesMax = 16_384;
 
 /** The credentials an attempt asks for by the names its grant gives them. */
 export const workerHeldCredentialsSchema = z.strictObject({
@@ -299,7 +312,8 @@ export const workerHeldCredentialsSchema = z.strictObject({
 /**
  * One credential the plane holds for the attempt's project, the variable its
  * file is named by in the job's environment, and when it stops working where
- * it is one that does.
+ * it is one that does. It remains only so that a plane can answer a worker
+ * from before `workerContractCredentialBundles`.
  */
 export const workerHeldCredentialSchema = z.object({
   credential: identitySchema,
@@ -308,11 +322,141 @@ export const workerHeldCredentialSchema = z.object({
   expiresAtMs: countSchema.optional(),
 });
 
-/** Each credential asked for that the plane serves, and none it does not. */
+/** The name a bundle's file is written under, inside a directory the worker chooses for the bundle. */
+export const heldCredentialFileNamePattern =
+  /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
+
+/** What a text or a variable's value holds where the worker is to write the path it wrote the bundle's file `file` at. */
+export function heldCredentialFilePlaceholder(file: string): string {
+  return `{{file:${file}}}`;
+}
+
+/** The files `text` names by a placeholder, in the order it names them. */
+export function heldCredentialFilesPlaced(text: string): readonly string[] {
+  return Array.from(text.matchAll(/\{\{file:([^{}]*)\}\}/gu), (placed) =>
+    String(placed[1]),
+  );
+}
+
+/** Whether `text` is within a bundle file's bound, which also bounds a variable's value. */
+function isHeldCredentialBundleText(text: string): boolean {
+  return textUtf8Bytes(text) <= heldCredentialBundleFileBytesMax;
+}
+
+/** A bundle's file: secret content written as it is, or generated text whose placeholders the worker fills first. */
+export const heldCredentialBundleFileSchema = z.object({
+  file: z.string().regex(heldCredentialFileNamePattern),
+  content: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("Secret"),
+      secret: z.string().min(1).refine(isHeldCredentialBundleText),
+    }),
+    z.object({
+      kind: z.literal("Text"),
+      text: z.string().refine(isHeldCredentialBundleText),
+    }),
+  ]),
+});
+
+/** A variable a bundle sets: the path of one of its files, or a plain value that is no secret, whose placeholders the worker fills. */
+export const heldCredentialBundleVariableSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("Path"),
+    variable: identitySchema.refine(isHeldCredentialVariable),
+    file: z.string().regex(heldCredentialFileNamePattern),
+  }),
+  z.object({
+    kind: z.literal("Value"),
+    variable: identitySchema.refine(isHeldCredentialValueVariable),
+    value: z.string().refine(isHeldCredentialBundleText),
+  }),
+]);
+export type HeldCredentialBundleVariable = z.infer<
+  typeof heldCredentialBundleVariableSchema
+>;
+
+/** The bundle files a variable names, by its path or by its value's placeholders. */
+function heldCredentialBundleVariableFiles(
+  variable: HeldCredentialBundleVariable,
+): readonly string[] {
+  return variable.kind === "Path"
+    ? [variable.file]
+    : heldCredentialFilesPlaced(variable.value);
+}
+
+/**
+ * One credential served as a bundle: the files the worker writes and the
+ * variables it sets, each file and each variable named once, every file a
+ * variable or a text names being one of the bundle's own, and when the bundle
+ * stops working where it is one the worker refreshes.
+ */
+export const workerHeldCredentialBundleSchema = z
+  .object({
+    credential: identitySchema,
+    files: z
+      .array(heldCredentialBundleFileSchema)
+      .max(heldCredentialBundleFilesMax),
+    variables: z
+      .array(heldCredentialBundleVariableSchema)
+      .min(1)
+      .max(heldCredentialBundleVariablesMax),
+    expiresAtMs: countSchema.optional(),
+  })
+  .refine((bundle) => {
+    const files = new Set(bundle.files.map((each) => each.file));
+    const variables = new Set(bundle.variables.map((each) => each.variable));
+    const named = [
+      ...bundle.files.flatMap((each) =>
+        each.content.kind === "Text"
+          ? heldCredentialFilesPlaced(each.content.text)
+          : [],
+      ),
+      ...bundle.variables.flatMap(heldCredentialBundleVariableFiles),
+    ];
+    return (
+      files.size === bundle.files.length &&
+      variables.size === bundle.variables.length &&
+      named.every((file) => files.has(file))
+    );
+  });
+export type WorkerHeldCredentialBundle = z.infer<
+  typeof workerHeldCredentialBundleSchema
+>;
+
+/**
+ * Why a credential asked for was not served: the attempt's grant does not
+ * allow its name, nothing here holds or issues it, it is not enabled for the
+ * attempt's project or repository, the outside system that issues it refused,
+ * or the worker's release is too old to read the shape it is served in.
+ */
+export const workerHeldCredentialAbsences = [
+  "NotGranted",
+  "NotHeld",
+  "NotEnabled",
+  "IssuerRefused",
+  "WorkerTooOld",
+] as const;
+
+/** One credential asked for and not served, and why. */
+export const workerHeldCredentialAbsentSchema = z.object({
+  credential: identitySchema,
+  reason: z.enum(workerHeldCredentialAbsences),
+});
+export type WorkerHeldCredentialAbsent = z.infer<
+  typeof workerHeldCredentialAbsentSchema
+>;
+
+/** Each credential asked for that the plane serves, and those it names absent; a plane before `workerContractCredentialBundles` names none absent. */
 export const workerHeldCredentialsAnswerSchema = z.object({
   credentials: z
-    .array(workerHeldCredentialSchema)
+    .array(
+      z.union([workerHeldCredentialBundleSchema, workerHeldCredentialSchema]),
+    )
     .max(workerHeldCredentialsMax),
+  absent: z
+    .array(workerHeldCredentialAbsentSchema)
+    .max(workerHeldCredentialsMax)
+    .optional(),
 });
 
 /** The refusals every write keeping a run's bytes answers with, whichever run object it keeps. */
