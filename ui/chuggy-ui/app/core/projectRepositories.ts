@@ -62,6 +62,21 @@ export function repositoryPage(repository: string): string | undefined {
     : parsed.href.replace(/\/$/u, "").replace(/\.git$/u, "");
 }
 
+/**
+ * Where a repository is hosted, as the meta line of its row names it: the
+ * host its address parses to, and nothing for one that does not parse to a
+ * host, such as an scp-style ssh address.
+ */
+export function repositoryHost(repository: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(repository);
+  } catch {
+    return undefined;
+  }
+  return parsed.host === "" ? undefined : parsed.host;
+}
+
 /** What one installation was read to grant, under the account it is on. */
 export interface InstallationGrant {
   readonly account: string;
@@ -361,6 +376,32 @@ export const repositoryAddHow: Copy = { id: "repositories-add-how" };
 export const repositoryOffersSteps = ["Connect", "InstallWorker"] as const;
 
 export type RepositoryOffersStep = (typeof repositoryOffersSteps)[number];
+
+/** The steps that bring a project its first repository, in the order the
+ * page numbers them: the two the line under Add can offer, then Add. */
+export const repositorySteps = [...repositoryOffersSteps, "Add"] as const;
+
+export type RepositoryStep = (typeof repositorySteps)[number];
+
+/** What a step is called where it is not the one to take now. */
+export const repositoryStepLabels: Readonly<Record<RepositoryStep, Copy>> = {
+  Connect: { id: "repositories-step-connect" },
+  InstallWorker: { id: "repositories-step-install-worker" },
+  Add: { id: "repositories-step-add" },
+};
+
+/**
+ * The step the numbered steps stand at: the one the line under Add offers,
+ * else Add where an empty roster leads with it, and nothing where neither is
+ * so, which draws no steps.
+ */
+export function repositoryStepCurrent(
+  line: RepositoryOffersLine | undefined,
+  addLeads: boolean,
+): RepositoryStep | undefined {
+  if (line?.step !== undefined) return line.step;
+  return addLeads ? "Add" : undefined;
+}
 
 /** The one line drawn under Add, and the step drawn under it where the page
  * offers one. */

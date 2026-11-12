@@ -1,0 +1,105 @@
+/* The repositories pages: the numbered steps to a first repository, the marks
+   a row draws in its foot, and in a narrow column every press, radio, link
+   and value a finger opens given a finger's height. Each page is its own container, so
+   it follows the column it is given, the chat pane open or not. */
+
+@layer page {
+  .repositories-page {
+    container-type: inline-size;
+  }
+
+  .repository-steps {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding-inline-start: var(--space-5);
+    list-style: decimal;
+    color: var(--ink-3);
+  }
+
+  .repository-step::marker {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repository-step[aria-current="step"] {
+    color: var(--ink-1);
+  }
+
+  .repository-step-body {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .repository-step-done {
+    font-size: var(--text-sm);
+  }
+
+  /* No bar heads the list here, so its first row draws the block's top edge,
+     rounded where the block is not edge to edge. */
+  .repositories-page .record-list-item:first-child .record-row {
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  @container not (max-width: 40em) {
+    .repositories-page .record-list-item:first-child .record-row {
+      border-start-start-radius: var(--radius-3);
+      border-start-end-radius: var(--radius-3);
+    }
+  }
+
+  .repositories-attention {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  @container (max-width: 40em) {
+    .repositories-page :is(.btn, a[href], [tabindex="0"]) {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+
+    /* A radio is a finger's height itself, its ring still 1em and drawn in
+       the middle of it, where the focus ring is drawn too. */
+    .repositories-page .radio-item {
+      position: relative;
+      width: var(--height-touch);
+      height: var(--height-touch);
+      background: transparent;
+      border: 0;
+    }
+
+    .repositories-page .radio-item::before {
+      content: "";
+      position: absolute;
+      inset: calc((var(--height-touch) - 1em) / 2);
+      background: var(--surface-1);
+      border: var(--hairline) solid var(--edge-control);
+      border-radius: var(--radius-circle);
+    }
+
+    .repositories-page .radio-item > * {
+      position: relative;
+    }
+
+    .repositories-page .radio-item:disabled::before {
+      border-color: var(--edge);
+    }
+
+    .repositories-page .radio-item:focus-visible {
+      box-shadow: none;
+    }
+
+    .repositories-page .radio-item:focus-visible::before {
+      box-shadow: var(--ring-focus);
+    }
+  }
+}
