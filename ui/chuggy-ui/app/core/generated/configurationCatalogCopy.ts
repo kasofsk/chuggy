@@ -13,6 +13,15 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-version-one": Record<never, never>;
   readonly "configuration-catalog-authored": Record<never, never>;
   readonly "configuration-catalog-imported": Record<never, never>;
+  readonly "configuration-catalog-picker-repository": Record<never, never>;
+  readonly "configuration-catalog-repository-back": {
+    readonly repository: unknown;
+  };
+  readonly "configuration-catalog-section-configurations": Record<never, never>;
+  readonly "configuration-catalog-section-fragments": Record<never, never>;
+  readonly "configuration-catalog-incomplete": Record<never, never>;
+  readonly "configuration-catalog-written-in": Record<never, never>;
+  readonly "configuration-catalog-held-by": Record<never, never>;
   readonly "configuration-catalog-compare-head": Record<never, never>;
   readonly "configuration-catalog-show-import": Record<never, never>;
   readonly "configuration-catalog-show-head": Record<never, never>;

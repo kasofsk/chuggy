@@ -1,4 +1,6 @@
-/* The catalog: the chooser, where the version came from and what the
+/* The catalog: the chosen repository under its name and commit, its configurations
+   and fragments as ruled cards; and for one configuration the chooser, where
+   the version came from and what the
    repository's head says of it, then the entries
    grouped by what each is, one card per group with its rows ruled. With an
    entry chosen the list and the entry sit side by side, the entry held in
@@ -37,6 +39,101 @@
     color: var(--ink-3);
     font-size: var(--text-sm);
     overflow-wrap: anywhere;
+  }
+
+  .catalog-back {
+    justify-self: start;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .catalog-repositories {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .catalog-repository {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .catalog-repository-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .catalog-repository-name {
+    margin: 0;
+    font-size: var(--text-lg);
+    overflow-wrap: anywhere;
+  }
+
+  .catalog-configuration,
+  .catalog-fragment {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .catalog-configuration-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-3);
+    min-width: 0;
+  }
+
+  .catalog-configuration-head .catalog-entry-name {
+    color: var(--ink-1);
+  }
+
+  .catalog-origin {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-2);
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .catalog-parts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-1) var(--space-3);
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  .catalog-parts > div {
+    display: contents;
+  }
+
+  .catalog-parts dt {
+    color: var(--ink-3);
+  }
+
+  .catalog-parts dd {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .catalog-part {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1);
   }
 
   .catalog-head {

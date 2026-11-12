@@ -12,6 +12,19 @@ configuration-catalog-version-one = Version 1 { -configuration }
 configuration-catalog-authored = Authored
 configuration-catalog-imported = Imported
 
+## A repository's configurations and the fragments they are made of.
+
+configuration-catalog-picker-repository = { -repository(case: "upper") }
+# The way back from one configuration to everything its repository declares.
+configuration-catalog-repository-back = All of { $repository }
+configuration-catalog-section-configurations = { -configuration(case: "upper", form: "plural") }
+configuration-catalog-section-fragments = Fragments
+configuration-catalog-incomplete = Incomplete
+# Before the file that holds a fragment written in no file of its own.
+configuration-catalog-written-in = Written in
+# Before the configurations that hold a fragment.
+configuration-catalog-held-by = In
+
 ## The repository's head beside an import.
 
 configuration-catalog-compare-head = Compare with the { -repository } head

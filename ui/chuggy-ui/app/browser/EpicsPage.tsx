@@ -1,19 +1,18 @@
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
- * address's so a link holds the view, and one row an epic with its status
- * and a bar of where its tickets stand, with what the bar says beside it. Each page of rows is
- * read under its own cursor, and "Show more" mounts the next, so a page
+ * address's so a link holds the view, and one row an epic with a bar of where
+ * its tickets stand and what the bar says beside it. Each page of rows is read
+ * under its own cursor, and "Show more" mounts the next, so a page
  * already read is not read again.
  */
 
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { EpicSummaryResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   epicSortChoices,
   epicVisibilityChoices,
@@ -25,52 +24,65 @@ import {
 import type { EpicsQuery } from "../core/epics.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
-import { EpicFormPanel } from "./EpicForm.tsx";
-import { EpicProgressRow, EpicStatusChip } from "./epic/EpicProgress.tsx";
-import { useProjectAbilities } from "./projectAbilities.tsx";
+import {
+  ListControls,
+  ListSearch,
+  listFilterGlyph,
+  listSortGlyph,
+} from "./ListControls.tsx";
+import { EpicProgressRow } from "./epic/EpicProgress.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
-import { Input } from "./ui/Input.tsx";
-import { Panel } from "./ui/Panel.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { Pill } from "./ui/Pill.tsx";
 
 import "./Epic.css";
+import "./ProjectTable.css";
 
+/** A row in the ticket list's own classes, so the two lists are drawn as one:
+ * the title over the number and the summary, and the bar where a ticket's row
+ * holds its state. */
 function EpicRow(props: {
   readonly partition: PartitionIdentity;
   readonly epic: EpicSummaryResponse;
 }): ReactNode {
   const text = useCopyText();
   const { epic } = props;
+  const params = { ...props.partition, epic: String(epic.number) };
   return (
-    <li className="epic-row" data-epic={epic.number}>
-      <div className="epic-row-main">
-        <div className="epic-row-head">
-          <h3 className="epic-row-title">
-            <Link
-              to="/$tenant/$project/epics/$epic"
-              params={{ ...props.partition, epic: String(epic.number) }}
-            >
+    <li className="ticket-list-item" data-epic={epic.number}>
+      <article className="ticket-list-row">
+        <div className="ticket-list-head">
+          <h3 className="ticket-list-title">
+            <Link to="/$tenant/$project/epics/$epic" params={params}>
               {epic.title}
             </Link>
           </h3>
-          <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
-          <EpicStatusChip status={epic.status} />
+          <div className="ticket-list-info">
+            <span className="ticket-list-number">
+              <Link to="/$tenant/$project/epics/$epic" params={params}>
+                {epic.number}
+              </Link>
+            </span>
+            {epic.summary === undefined ? null : (
+              <span className="ticket-list-meta">
+                <span title={epic.summary}>{epic.summary}</span>
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="ticket-list-foot">
+          <EpicProgressRow progress={epic.progress} />
           {epic.visibility === "Archived" ? (
-            <Pill tone="retired">
-              {text({ id: "epics-visibility-archived" })}
-            </Pill>
+            <span className="ticket-list-foot-standing">
+              <Pill tone="retired">
+                {text({ id: "epics-visibility-archived" })}
+              </Pill>
+            </span>
           ) : null}
         </div>
-        {epic.summary === undefined ? null : (
-          <p className="epic-row-summary" title={epic.summary}>
-            {epic.summary}
-          </p>
-        )}
-      </div>
-      <EpicProgressRow progress={epic.progress} />
+      </article>
     </li>
   );
 }
@@ -97,7 +109,7 @@ function EpicRowsPage(props: {
       {epics.length === 0 && props.first ? (
         <EmptyState label={text({ id: "epics-none" })} />
       ) : (
-        <ul className="epic-list" aria-label={text({ id: "epics-title" })}>
+        <ul className="ticket-list" aria-label={text({ id: "epics-title" })}>
           {epics.map((epic) => (
             <EpicRow
               key={epic.number}
@@ -169,26 +181,17 @@ function EpicsControls(props: {
   const { query, onQuery } = props;
   const [typed, setTyped] = useEpicsTyped(query, onQuery);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Input
+    <ListControls>
+      <ListSearch
         label={text({ id: "epics-search" })}
         placeholder={text({ id: "epics-search-placeholder" })}
-        value={typed}
-        onChange={setTyped}
-      />
-      <Picker
-        label={text({ id: "epics-visibility" })}
-        value={query.visibility ?? "Active"}
-        options={epicVisibilityChoices.map((choice) => ({
-          value: choice.value,
-          text: text(choice.text),
-        }))}
-        onChoose={(visibility) => {
-          onQuery(epicsQueryWith(query, { visibility }));
-        }}
+        search={typed}
+        onSearch={setTyped}
       />
       <Picker
         label={text({ id: "epics-sort" })}
+        iconOnly
+        glyph={listSortGlyph}
         value={query.sort ?? "newest"}
         options={epicSortChoices.map((choice) => ({
           value: choice.value,
@@ -197,30 +200,23 @@ function EpicsControls(props: {
         onChoose={(sort) => {
           onQuery(epicsQueryWith(query, { sort }));
         }}
+        align="end"
       />
-    </div>
-  );
-}
-
-function EpicCreation(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
-  const text = useCopyText();
-  const navigate = useNavigate();
-  return (
-    <Panel title={text({ id: "epics-new" })} collapsible={{ open: false }}>
-      <EpicFormPanel
-        partition={props.partition}
-        held={undefined}
-        submit={text({ id: "epics-create" })}
-        onSaved={(saved) => {
-          void navigate({
-            to: "/$tenant/$project/epics/$epic",
-            params: { ...props.partition, epic: String(saved.epic) },
-          });
+      <Picker
+        label={text({ id: "epics-visibility" })}
+        iconOnly
+        glyph={listFilterGlyph}
+        value={query.visibility ?? "Active"}
+        options={epicVisibilityChoices.map((choice) => ({
+          value: choice.value,
+          text: text(choice.text),
+        }))}
+        onChoose={(visibility) => {
+          onQuery(epicsQueryWith(query, { visibility }));
         }}
+        align="end"
       />
-    </Panel>
+    </ListControls>
   );
 }
 
@@ -230,19 +226,14 @@ export function EpicsPage(props: {
 }): ReactNode {
   const text = useCopyText();
   const partition = useParams({ from: "/$tenant/$project" });
-  const writing = !projectAbilityRefused(
-    useProjectAbilities(partition),
-    "writeEpic",
-  );
   return (
     <section
-      className="grid min-w-0 gap-3"
+      className="epic-list-page"
       aria-label={text({ id: "epics-title" })}
       data-fills-width
     >
       <ScreenTitle>{text({ id: "epics-title" })}</ScreenTitle>
       <EpicsControls query={props.query} onQuery={props.onQuery} />
-      {writing ? <EpicCreation partition={partition} /> : null}
       <EpicRowsPage
         key={JSON.stringify(props.query)}
         partition={partition}

@@ -58,7 +58,9 @@ export function CatalogLink(props: {
   );
 }
 
-function CatalogBadges(props: { readonly entry: CatalogEntry }): ReactNode {
+export function CatalogBadges(props: {
+  readonly entry: CatalogEntry;
+}): ReactNode {
   const text = useCopyText();
   if (props.entry.defaults.length === 0) return null;
   return (
