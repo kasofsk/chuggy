@@ -28,6 +28,7 @@ import {
   runUsageWindows,
   workerCredentialAbsentSchema,
   workerHeldCredentialsMax,
+  type WorkerHeldCredentialBundle,
   workerPlaneRoutes,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
@@ -2216,6 +2217,68 @@ test("a plane holding no roster serves an empty list to a granted attempt", asyn
     status: 200,
     body: JSON.stringify({ credentials: [] }),
   });
+  await app.close();
+});
+
+test("a bundle is served only to a release that reads one, and named absent as too old to any other, beside every credential served and absent", async () => {
+  const bundle: WorkerHeldCredentialBundle = {
+    credential: "chuggy.github",
+    files: [{ file: "token", content: { kind: "Secret", secret: heldSecret } }],
+    variables: [{ kind: "Path", variable: "GH_TOKEN_FILE", file: "token" }],
+  };
+  const entry = {
+    credential: "track-record",
+    variable: "TRACK_RECORD_TOKEN_FILE",
+    secret: heldSecret,
+  };
+  const unheld = { credential: "unheld", reason: "NotHeld" } as const;
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: {
+      ...inertTasks,
+      work: () => Promise.resolve(heldTask(["track-record"])),
+    },
+    heldCredentials: {
+      served: () =>
+        Promise.resolve({
+          answered: "Credentials",
+          credentials: [bundle, entry],
+          absent: [unheld],
+        }),
+    },
+  });
+  const ask = { credentials: ["track-record"] };
+  assert.deepEqual(
+    await heldAsked(app, ask, {
+      ...held,
+      [workerContractHeader]: workerContractRelease,
+    }),
+    {
+      status: 200,
+      body: JSON.stringify({ credentials: [bundle, entry], absent: [unheld] }),
+    },
+  );
+  for (const release of [undefined, "1.73.0"])
+    assert.deepEqual(
+      await heldAsked(
+        app,
+        ask,
+        release === undefined
+          ? held
+          : { ...held, [workerContractHeader]: release },
+      ),
+      {
+        status: 200,
+        body: JSON.stringify({
+          credentials: [entry],
+          absent: [
+            unheld,
+            { credential: "chuggy.github", reason: "WorkerTooOld" },
+          ],
+        }),
+      },
+      String(release),
+    );
   await app.close();
 });
 
