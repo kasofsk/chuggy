@@ -471,16 +471,13 @@ const themeSyntax = themeFixedRoles.filter((role) =>
 /**
  * The pairs `themeContrastFailures` reads: ink on the surfaces, the bubble and
  * the washes; inverse ink on the inverse surface and the fills; the accent's
- * ink on the accent; syntax on the code surfaces; and the control edge, the
- * accent and the inverse surface as marks on the page and a panel. A state's
- * tone is printed as its word on the page, a panel and its own wash, so it is
- * held as text there, and as a mark on the sunken surface.
- *
- * Left out: `edge` and `edge-strong` on any surface, and the inverse ink on the
- * retired fill and on the context's slots, because the console's own look
- * draws them below the minimum; and the inverse ink on a button's hover, a mix
- * of the inverse surface and a panel, because that mix is the console's and
- * not a ground the contract names.
+ * ink on the accent; syntax on the code surfaces; the control edge, the accent
+ * and the inverse surface as marks on the page and a panel; and a state's tone,
+ * printed as its word, as text on the page, a panel and its own wash and as a
+ * mark on the sunken surface. Left out are `edge` and `edge-strong` on any
+ * surface and the inverse ink on the retired fill and the context's slots,
+ * which the console's own look draws below the minimum, and the inverse ink on
+ * a button's hover, a mix the console owns rather than a ground named here.
  */
 export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ...themeContrastPairsOf(
