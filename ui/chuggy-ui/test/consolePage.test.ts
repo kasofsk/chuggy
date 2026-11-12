@@ -22,6 +22,7 @@ import {
 } from "../app/core/consolePage.ts";
 import { ticketCreationQueryOf } from "../app/core/ticketCreationQuery.ts";
 import { navMoved } from "../app/core/shellNav.ts";
+import { settingsNav } from "../app/core/settingsNav.ts";
 
 const partitionRouteId = "/$tenant/$project";
 
@@ -221,7 +222,7 @@ test("a page is named in the console's own words for it", () => {
     "Settings · Workspace · People",
     "Settings · Workspace · GitHub accounts",
     "Settings · Workspace · Permissions",
-    "Settings · Workspace · Personal runners",
+    "Settings · You · Personal runners",
     "Settings · Workspace · Usage",
     "Settings · Site · Workspaces",
     "Settings · Site · Permissions",
@@ -234,6 +235,27 @@ test("a page is named in the console's own words for it", () => {
       }),
     ),
   ).toBe("Repository acme/atlas");
+});
+
+test("a settings page is named by the group and the page the side navigation draws at its address", () => {
+  const drawnAt = new Map(
+    settingsNav({
+      tenant: "acme",
+      project: "atlas",
+      site: { workspaces: true, permissions: true },
+    }).flatMap((group) =>
+      group.entries.map((entry) => [
+        entry.to.replace("$tenant", "acme").replace("$project", "atlas"),
+        `Settings · ${copyTextEn(group.label)} · ${copyTextEn(entry.label)}`,
+      ]),
+    ),
+  );
+  for (const section of consolePageSettingsSections) {
+    const page: ConsolePage = { page: "Settings", section };
+    const href = consolePageHref({ tenant: "acme", project: "atlas" }, page);
+    expect(drawnAt.has(href), href).toBe(true);
+    expect(copyTextEn(consolePageLabel(page)), href).toBe(drawnAt.get(href));
+  }
 });
 
 /** The address a thread's `navigate` moves the console to is the page it

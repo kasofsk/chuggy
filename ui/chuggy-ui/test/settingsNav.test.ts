@@ -64,7 +64,7 @@ test("in a project the project's pages lead, then the workspace's, then the read
   ]);
 });
 
-test("outside a project the workspace's pages are the whole navigation", () => {
+test("outside a project the workspace's pages lead, then the reader's own", () => {
   const groups = settingsNav({
     tenant: "acme",
     project: undefined,

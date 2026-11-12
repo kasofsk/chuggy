@@ -233,7 +233,8 @@ const settingsGroupOrder: readonly SettingsGroupId[] = [
   "person",
 ];
 
-const settingsGroupLabels: Readonly<Record<SettingsGroupId, Copy>> = {
+/** Each group's word, the level the side navigation and a page's name draw. */
+export const settingsGroupLabels: Readonly<Record<SettingsGroupId, Copy>> = {
   project: { id: "settings-nav-project" },
   workspace: { id: "settings-nav-workspace" },
   site: { id: "settings-nav-site" },

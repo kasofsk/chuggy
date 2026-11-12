@@ -18,6 +18,8 @@ import type {
 } from "../../../../src/contract/consolePage.ts";
 import type { Copy } from "./copy.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
+import { settingsGroupLabels, settingsSection } from "./settingsNav.ts";
+import type { SettingsSectionId } from "./settingsNav.ts";
 import { ticketCreationQueryOf } from "./ticketCreationQuery.ts";
 
 /** The route a router matched, as plain data: its identity, the parameters
@@ -212,48 +214,20 @@ export function consolePageOf(
   return parsed.success ? parsed.data : undefined;
 }
 
-/** The settings section's words, as the settings' side navigation draws its
- * level and its page. */
-const consolePageSectionWords: Readonly<
-  Record<ConsolePageSettingsSection, readonly [Copy, Copy]>
+/** Each section of the contract's, by the settings roster's section it is. */
+const consolePageSectionIds: Readonly<
+  Record<ConsolePageSettingsSection, SettingsSectionId>
 > = {
-  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-lead" }],
-  ProjectPlacement: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-placement" },
-  ],
-  ProjectPermissions: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspacePeople: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-people" },
-  ],
-  WorkspaceAccounts: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-accounts" },
-  ],
-  WorkspacePermissions: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspaceRunners: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-personal-runners" },
-  ],
-  WorkspaceUsage: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-usage" },
-  ],
-  SiteWorkspaces: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-workspaces" },
-  ],
-  SitePermissions: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-permissions" },
-  ],
+  ProjectLead: "lead",
+  ProjectPlacement: "placement",
+  ProjectPermissions: "permissions",
+  WorkspacePeople: "people",
+  WorkspaceAccounts: "accounts",
+  WorkspacePermissions: "workspace-permissions",
+  WorkspaceRunners: "my-runner",
+  WorkspaceUsage: "usage",
+  SiteWorkspaces: "site-workspaces",
+  SitePermissions: "site-permissions",
 };
 
 const consolePageListWords: Readonly<
@@ -328,8 +302,14 @@ export function consolePageLabel(page: ConsolePage): Copy {
       };
     case "Settings": {
       if (page.section === undefined) return { id: "pages-settings" };
-      const [level, section] = consolePageSectionWords[page.section];
-      return { id: "pages-settings-section", args: { level, section } };
+      const section = settingsSection(consolePageSectionIds[page.section]);
+      return {
+        id: "pages-settings-section",
+        args: {
+          level: settingsGroupLabels[section.group],
+          section: section.label,
+        },
+      };
     }
   }
 }
