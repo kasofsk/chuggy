@@ -89,9 +89,11 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    gap: var(--space-2);
   }
 
   .conversation-send,
+  .conversation-stop,
   .conversation-attach {
     display: flex;
     flex: none;
@@ -114,24 +116,38 @@
     color: var(--ink-1);
   }
 
-  .conversation-send-mark {
+  .conversation-send-mark,
+  .conversation-stop-mark {
     display: flex;
     align-items: center;
     justify-content: center;
     width: var(--height-icon);
     height: var(--height-icon);
     border-radius: var(--radius-circle);
+  }
+
+  .conversation-send-mark {
     background: var(--surface-inverse);
     color: var(--ink-inverse);
   }
 
+  /* Stop is the same round mark drawn as a ring, so beside Send it is told
+   * apart by more than its glyph. */
+  .conversation-stop-mark {
+    border: 1px solid var(--edge-strong);
+    background: var(--surface-1);
+    color: var(--ink-1);
+  }
+
   .conversation-send:disabled,
-  .conversation-send[aria-disabled="true"] {
+  .conversation-stop:disabled,
+  .conversation-stop[aria-disabled="true"] {
     cursor: default;
   }
 
   .conversation-send:disabled > .conversation-send-mark,
-  .conversation-send[aria-disabled="true"] > .conversation-send-mark {
+  .conversation-stop:disabled > .conversation-stop-mark,
+  .conversation-stop[aria-disabled="true"] > .conversation-stop-mark {
     background: var(--surface-2);
     color: var(--ink-3);
   }

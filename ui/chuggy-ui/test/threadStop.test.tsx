@@ -1,6 +1,6 @@
 /**
  * One press of Stop on a member's own thread, a moment at a time: what the
- * button says and when, what is drawn at the press and after each thing the
+ * buttons say and when, what is drawn at the press and after each thing the
  * door, the stream, the store and the mailbox then say, and what a tab that
  * did not press is shown of the same turn.
  */
@@ -138,22 +138,22 @@ function wordInk(container: HTMLElement): string | undefined {
   return words.item(words.length - 1).className;
 }
 
-test("the button is Stop from the press and for as long as the turn is out, and Send again when it ends", async () => {
+test("Stop stands before Send from the press and for as long as the turn is out, and goes when it ends", async () => {
   const stage = stageMounted(threadBody({ turns: [before] }), [earlier]);
   await settled();
   expect(stageButton()).toBe("Send");
 
   await stageSent(asked);
-  expect(stageButton(), "the door has not answered yet").toBe("Stop");
+  expect(stageButton(), "the door has not answered yet").toBe("Stop+Send");
   const [sent] = stage.sends;
   const turn = sent?.turn ?? "";
   await stageAnswered(sent, { turn, ordinal: 2 }, 202);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
 
   for (const out of ["Queued", "Claimed"] as const) {
     stage.draw(threadBody({ turns: [before, stageTurn(2, turn, asked, out)] }));
     await settled();
-    expect(stageButton(), out).toBe("Stop");
+    expect(stageButton(), out).toBe("Stop+Send");
   }
 
   stage.batches.push([
@@ -218,10 +218,12 @@ test("a stop of a message the door then hands back asks the door nothing, the me
     `> ${asked}`,
     "",
   ]);
-  expect(stageButton(), "sent again, it is out and not stopped").toBe("Stop");
+  expect(stageButton(), "sent again, it is out and not stopped").toBe(
+    "Stop+Send",
+  );
 });
 
-test("Enter still sends while the button is Stop, Escape stops nothing, and one press ends the turn being answered and no other", async () => {
+test("Enter still sends while Stop is drawn, Escape stops nothing, and one press ends the turn being answered and no other", async () => {
   const stage = await turnOut("Claimed");
   await textHeard(stage);
 
@@ -231,7 +233,7 @@ test("Enter still sends while the button is Stop, Escape stops nothing, and one 
   fireEvent.keyDown(stageBox(), { key: "Escape" });
   await settled();
   expect(stage.stops).toStrictEqual([]);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
 
   await stageStopped();
   expect(stage.stops.map((stop) => stop.turn)).toStrictEqual(["turn-2"]);
@@ -242,7 +244,9 @@ test("Enter still sends while the button is Stop, Escape stops nothing, and one 
     "> and 42",
     "",
   ]);
-  expect(stageButton(), "the message sent after it is still out").toBe("Stop");
+  expect(stageButton(), "the message sent after it is still out").toBe(
+    "Stop+Send",
+  );
 });
 
 test("a press while the answer is being written stops the drawing at once, and what was heard stays through every read after it", async () => {
@@ -799,7 +803,7 @@ test.each([
     await stageAnswered(stage.stops[0], { error: { code: refusal } }, status);
     await stageColumnIs(stage.container, [...opened, `> ${asked}`, more]);
     expect(stage.server.liveSeen).toHaveLength(2);
-    expect(stageButton()).toBe("Stop");
+    expect(stageButton()).toBe("Stop+Send");
     expect(screen.getByText("Not stopped").className).toContain("notice");
     expect(stage.container.textContent).not.toContain(refusal);
     expect(stageAlarms(stage.container)).not.toContain("notice");
