@@ -12,13 +12,24 @@ configuration-catalog-version-one = Version 1 { -configuration }
 configuration-catalog-authored = Authored
 configuration-catalog-imported = Imported
 
-## The repository's head beside an import.
+## A repository's configurations and the fragments they are made of.
 
-configuration-catalog-compare-head = Compare with the { -repository } head
+configuration-catalog-picker-repository = { -repository(case: "upper") }
+# The way back from one configuration to everything its repository declares.
+configuration-catalog-repository-back = All of { $repository }
+configuration-catalog-section-configurations = { -configuration(case: "upper", form: "plural") }
+configuration-catalog-incomplete = Incomplete
+# Before the file that holds a fragment written in no file of its own.
+configuration-catalog-written-in = Written in
+# Before the configurations that hold a fragment.
+configuration-catalog-held-by = In
+# Under the configurations, where a read of one of them failed.
+configuration-catalog-fragments-partial = The parts of a { -configuration } that could not be read are not listed.
+
+## The repository's head, drawn in an import's place.
+
 configuration-catalog-show-import = Show the import
-configuration-catalog-show-head = Show the head
 configuration-catalog-head-matches = The { -repository }'s { $branch } at { $commit } declares { $name } as its newest import stored it.
-configuration-catalog-head-differs = The { -repository }'s { $branch } at { $commit } declares a { $name } its newest import does not hold.
 configuration-catalog-head-undeclared = The { -repository }'s { $branch } at { $commit } declares no { $name }.
 configuration-catalog-head-refused = An import of the { -repository }'s { $branch } at { $commit } would be refused.
 configuration-catalog-head-showing = Showing { $name } as the { -repository }'s { $branch } at { $commit } declares it.

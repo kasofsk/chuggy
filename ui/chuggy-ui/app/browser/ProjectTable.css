@@ -18,40 +18,6 @@
     min-width: 0;
   }
 
-  .ticket-list-controls {
-    --control-height: calc(var(--space-5) + var(--space-1));
-    min-width: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    margin-top: calc(-1 * var(--space-4));
-    margin-bottom: calc(var(--space-2) - var(--space-3));
-    box-sizing: border-box;
-    min-block-size: calc(var(--height-icon) + var(--space-2) + var(--hairline));
-    padding-block: var(--space-2) var(--space-1);
-    border-bottom: var(--hairline) solid var(--edge);
-    background: var(--surface-0);
-    transition:
-      transform var(--duration-2) var(--ease-out),
-      opacity var(--duration-2) var(--ease-out);
-  }
-
-  .ticket-list-controls[data-hidden] {
-    opacity: 0;
-    transform: translateY(-100%);
-    pointer-events: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ticket-list-controls {
-      transition: none;
-    }
-  }
-
   .ticket-list-counts {
     display: flex;
     flex: 1 1 0;
@@ -121,102 +87,6 @@
       0 0 0 calc(3 * var(--hairline)) var(--state-tone);
   }
 
-  .ticket-list-search {
-    display: flex;
-    flex: none;
-    align-items: center;
-    max-width: 100%;
-    min-width: 0;
-    overflow: hidden;
-    background: var(--surface-1);
-    border: var(--hairline) solid var(--edge-control);
-    border-radius: calc(var(--control-height) / 2);
-  }
-
-  .ticket-list-search:has(:focus-visible) {
-    box-shadow: var(--ring-focus);
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle {
-    flex: none;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle:focus-visible {
-    outline: none;
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle[data-active] {
-    color: var(--tone-live);
-  }
-
-  .ticket-list-search-field {
-    display: flex;
-    width: 0;
-    min-width: 0;
-    overflow: hidden;
-    transition: width var(--duration-2) var(--ease-out);
-  }
-
-  .ticket-list-search[data-expanded] .ticket-list-search-field {
-    width: var(--width-aside);
-  }
-
-  .ticket-list-search-field > .input {
-    flex: 1;
-    min-width: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .ticket-list-search-field .input-box:focus-visible {
-    outline: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .ticket-list-search-field {
-      transition: none;
-    }
-  }
-
-  .ticket-list-selects > * {
-    flex: none;
-    box-sizing: border-box;
-    height: var(--control-height);
-  }
-
-  .ticket-list-selects > button,
-  .ticket-list-search > .ticket-list-search-toggle {
-    justify-content: center;
-    width: var(--control-height);
-    min-width: var(--control-height);
-    padding: 0;
-    border-radius: var(--radius-circle);
-  }
-
-  .ticket-list-selects > button svg,
-  .ticket-list-search-toggle svg {
-    flex: none;
-    width: var(--space-4);
-    height: var(--space-4);
-  }
-
-  .ticket-list-search > .ticket-list-search-toggle {
-    height: 100%;
-  }
-
-  .ticket-list-selects {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-inline-start: auto;
-    max-width: 100%;
-    min-width: 0;
-  }
-
   .ticket-list-status {
     margin: 0;
     color: var(--ink-3);
@@ -231,6 +101,7 @@
   }
 
   .ticket-list-row {
+    --standing-height: calc(var(--space-6) + var(--space-2));
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--space-1);
@@ -282,11 +153,17 @@
     text-decoration: underline;
   }
 
+  /* As tall as a dependency's chip on every row, so a row that waits on
+     nothing is no shorter than one that does. */
   .ticket-list-info {
     display: flex;
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
+    min-height: calc(
+      var(--text-sm) * var(--leading-prose) + 2 * var(--space-1) + 2 *
+        var(--hairline)
+    );
     overflow: hidden;
   }
 
@@ -356,6 +233,7 @@
     justify-content: space-between;
     gap: var(--space-3);
     min-width: 0;
+    min-height: var(--standing-height);
   }
 
   .ticket-list-foot-creator {
@@ -385,14 +263,15 @@
 
   /* The row's state label sits at the end of a slot as wide and as tall on
      every row whatever it says, so the column lines up and the row keeps its
-     height; a ready row's slot is the button that dispatches it. */
+     height, which the foot holds where a row has no slot; a ready row's slot
+     is the button that dispatches it. */
   .ticket-list-standing {
     display: inline-flex;
     flex: none;
     align-items: center;
     justify-content: flex-end;
     width: calc(12ch + var(--space-6));
-    height: calc(var(--space-6) + var(--space-2));
+    height: var(--standing-height);
     margin-inline-start: auto;
     font-size: var(--text-md);
   }
@@ -542,11 +421,6 @@
       display: none;
     }
 
-    .ticket-list-controls {
-      margin-inline: calc(-1 * var(--space-4));
-      padding: var(--space-3) var(--space-4) var(--space-2);
-    }
-
     .ticket-list-row {
       border-inline: 0;
       padding: var(--space-3) max(var(--space-3), env(safe-area-inset-right))
@@ -562,7 +436,7 @@
       gap: var(--space-2);
     }
 
-    .ticket-list-controls:has([data-open]) .ticket-list-counts {
+    .list-controls:has([data-open]) .ticket-list-counts {
       display: none;
     }
 
@@ -574,28 +448,6 @@
 
     .ticket-list-counts > li {
       flex: none;
-    }
-
-    .ticket-list-selects:has([data-open]) {
-      width: 100%;
-    }
-
-    .ticket-list-selects > [data-open] {
-      flex: 1;
-    }
-
-    /* Important, because a picker's trigger states its display in a utility
-       that would otherwise win over this layer. */
-    .ticket-list-selects:has([data-open]) > :not([data-open]) {
-      display: none !important;
-    }
-
-    .ticket-list-search[data-expanded] .ticket-list-search-field {
-      width: 100cqi;
-    }
-
-    .ticket-list-search-field .input-box {
-      font-size: var(--text-unzoomed);
     }
   }
 }

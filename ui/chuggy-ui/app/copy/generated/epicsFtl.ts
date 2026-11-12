@@ -9,8 +9,6 @@ epics-title = { -epic(case: "upper", form: "plural") }
 epics-page-title = { -epic(case: "upper") }
 epics-none = No { -epic(form: "plural") }
 epics-not-found = No such { -epic }
-epics-new = New { -epic }
-epics-create = Create { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
 epics-show-more = Show more
@@ -49,8 +47,6 @@ epics-field-summary = Summary
 epics-field-summary-count = { $count } / { $most }
 epics-field-description = Description
 epics-field-description-format = Markdown
-epics-field-tickets = { -ticket(case: "upper", form: "plural") }
-epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
 epics-faults-label = Faults
 
 ## The page's header and its tabs.

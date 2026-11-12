@@ -1,5 +1,5 @@
 /**
- * The form an epic is made and revised through: its content as typed, the
+ * The form an epic is revised through: its content as typed, the
  * faults it has before it is sent, and the refusal the API answered.
  *
  * A revision is sent with the revision it was read at, so one made over
@@ -17,7 +17,6 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { Copy } from "../core/copy.ts";
 import {
-  epicFormEmpty,
   epicFormFaults,
   epicWrite,
   epicWriteFrom,
@@ -26,12 +25,9 @@ import {
 import type { EpicForm } from "../core/epics.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "./consoleWrite.tsx";
 import { Button } from "./ui/Button.tsx";
-import { Input } from "./ui/Input.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { Picker } from "./ui/Picker.tsx";
-import { Textarea } from "./ui/Textarea.tsx";
 
-/** The epic a form revises, at the revision it was read at; none where it makes one. */
+/** The epic a form revises, at the revision it was read at. */
 export interface EpicHeld {
   readonly epic: number;
   readonly revision: number;
@@ -54,67 +50,6 @@ function EpicFormFaults(props: {
         </li>
       ))}
     </ul>
-  );
-}
-
-export function EpicFormFields(props: {
-  readonly form: EpicForm;
-  readonly onChange: (form: EpicForm) => void;
-}): ReactNode {
-  const text = useCopyText();
-  const { form, onChange } = props;
-  return (
-    <div className="grid gap-3">
-      <Input
-        label={text({ id: "epics-field-title" })}
-        value={form.title}
-        onChange={(title) => {
-          onChange({ ...form, title });
-        }}
-      />
-      <Input
-        label={text({ id: "epics-field-summary" })}
-        value={form.summary}
-        onChange={(summary) => {
-          onChange({ ...form, summary });
-        }}
-      />
-      <Textarea
-        label={text({ id: "epics-field-description" })}
-        value={form.description}
-        onChange={(description) => {
-          onChange({ ...form, description });
-        }}
-      />
-      <Input
-        label={text({ id: "epics-field-tickets" })}
-        placeholder={text({ id: "epics-field-tickets-placeholder" })}
-        value={form.tickets}
-        onChange={(tickets) => {
-          onChange({ ...form, tickets });
-        }}
-      />
-      <div className="flex items-center gap-2 text-sm text-ink-2">
-        <span>{text({ id: "epics-visibility" })}</span>
-        <Picker
-          label={text({ id: "epics-visibility" })}
-          value={form.visibility}
-          options={[
-            { value: "Active", text: text({ id: "epics-visibility-active" }) },
-            {
-              value: "Archived",
-              text: text({ id: "epics-visibility-archived" }),
-            },
-          ]}
-          onChoose={(visibility) => {
-            onChange({
-              ...form,
-              visibility: visibility === "Archived" ? "Archived" : "Active",
-            });
-          }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -157,7 +92,7 @@ function EpicFormActions(props: {
   );
 }
 
-/** The fields a form is typed into: the list's own by default. */
+/** The fields a form is typed into. */
 export type EpicFormFieldsDrawn = (props: {
   readonly form: EpicForm;
   readonly onChange: (form: EpicForm) => void;
@@ -165,38 +100,33 @@ export type EpicFormFieldsDrawn = (props: {
 
 export function EpicFormPanel(props: {
   readonly partition: PartitionIdentity;
-  readonly held: EpicHeld | undefined;
+  readonly held: EpicHeld;
   readonly submit: string;
   readonly onSaved: (saved: {
     readonly epic: number;
     readonly revision: number;
   }) => void;
-  readonly fields?: EpicFormFieldsDrawn;
+  readonly fields: EpicFormFieldsDrawn;
   /** Leaves the form with nothing written, where it offers that. */
   readonly onCancel?: () => void;
 }): ReactNode {
   const { partition, held } = props;
   const client = useQueryClient();
-  const [form, setForm] = useState(held?.form ?? epicFormEmpty);
-  const [opened, setOpened] = useState(held?.revision);
+  const [form, setForm] = useState(held.form);
+  const [opened, setOpened] = useState(held.revision);
   const [reloading, setReloading] = useState(false);
   const writing = useConsoleWrite(epicWrite(partition), { drawn: true });
-  if (reloading && held?.revision !== opened) {
+  if (reloading && held.revision !== opened) {
     setReloading(false);
-    setOpened(held?.revision);
-    setForm(held?.form ?? epicFormEmpty);
+    setOpened(held.revision);
+    setForm(held.form);
     writing.reset();
   }
   const faults = epicFormFaults(form);
-  const request = epicWriteFrom(
-    form,
-    held === undefined || opened === undefined
-      ? undefined
-      : { epic: held.epic, revision: opened },
-  );
+  const request = epicWriteFrom(form, { epic: held.epic, revision: opened });
   const failure = writing.error?.failure;
   const refusedStale = failure?.outcome === "Conflict" && stale(failure.code);
-  const Fields = props.fields ?? EpicFormFields;
+  const Fields = props.fields;
   return (
     <form
       className="grid gap-3"
@@ -205,7 +135,7 @@ export function EpicFormPanel(props: {
         if (request === undefined || faults.length > 0) return;
         writing.mutate(request, {
           onSuccess: (saved) => {
-            if (held !== undefined) setOpened(saved.revision);
+            setOpened(saved.revision);
             props.onSaved(saved);
           },
         });

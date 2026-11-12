@@ -1,0 +1,166 @@
+/* The bar over a list: what the list counts at its start, and at its end the
+   search, a button that opens out to its box, and the pickers, each a round
+   glyph. It sticks to the top of the page it scrolls in, and the page that
+   draws it is the container its narrow layout is measured against, where it
+   runs edge to edge and an open search takes the row. */
+
+@layer page {
+  .list-controls {
+    --control-height: calc(var(--space-5) + var(--space-1));
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin-top: calc(-1 * var(--space-4));
+    margin-bottom: calc(var(--space-2) - var(--space-3));
+    box-sizing: border-box;
+    min-block-size: calc(var(--height-icon) + var(--space-2) + var(--hairline));
+    padding-block: var(--space-2) var(--space-1);
+    border-bottom: var(--hairline) solid var(--edge);
+    background: var(--surface-0);
+    transition:
+      transform var(--duration-2) var(--ease-out),
+      opacity var(--duration-2) var(--ease-out);
+  }
+
+  .list-controls[data-hidden] {
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-controls {
+      transition: none;
+    }
+  }
+
+  .list-search {
+    display: flex;
+    flex: none;
+    align-items: center;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: calc(var(--control-height) / 2);
+  }
+
+  .list-search:has(:focus-visible) {
+    box-shadow: var(--ring-focus);
+  }
+
+  .list-search > .list-search-toggle {
+    flex: none;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .list-search > .list-search-toggle:focus-visible {
+    outline: none;
+  }
+
+  .list-search > .list-search-toggle[data-active] {
+    color: var(--tone-live);
+  }
+
+  .list-search-field {
+    display: flex;
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    transition: width var(--duration-2) var(--ease-out);
+  }
+
+  .list-search[data-expanded] .list-search-field {
+    width: var(--width-aside);
+  }
+
+  .list-search-field > .input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .list-search-field .input-box:focus-visible {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-search-field {
+      transition: none;
+    }
+  }
+
+  .list-selects > * {
+    flex: none;
+    box-sizing: border-box;
+    height: var(--control-height);
+  }
+
+  .list-selects > button,
+  .list-search > .list-search-toggle {
+    justify-content: center;
+    width: var(--control-height);
+    min-width: var(--control-height);
+    padding: 0;
+    border-radius: var(--radius-circle);
+  }
+
+  .list-selects > button svg,
+  .list-search-toggle svg {
+    flex: none;
+    width: var(--space-4);
+    height: var(--space-4);
+  }
+
+  .list-search > .list-search-toggle {
+    height: 100%;
+  }
+
+  .list-selects {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  @container (max-width: 40em) {
+    .list-controls {
+      margin-inline: calc(-1 * var(--space-4));
+      padding: var(--space-3) var(--space-4) var(--space-2);
+    }
+
+    .list-selects:has([data-open]) {
+      width: 100%;
+    }
+
+    .list-selects > [data-open] {
+      flex: 1;
+    }
+
+    /* Important, because a picker's trigger states its display in a utility
+       that would otherwise win over this layer. */
+    .list-selects:has([data-open]) > :not([data-open]) {
+      display: none !important;
+    }
+
+    .list-search[data-expanded] .list-search-field {
+      width: 100cqi;
+    }
+
+    .list-search-field .input-box {
+      font-size: var(--text-unzoomed);
+    }
+  }
+}
