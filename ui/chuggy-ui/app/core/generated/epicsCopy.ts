@@ -51,8 +51,6 @@ export interface EpicsCopy {
   };
   readonly "epics-field-description": Record<never, never>;
   readonly "epics-field-description-format": Record<never, never>;
-  readonly "epics-field-tickets": Record<never, never>;
-  readonly "epics-field-tickets-placeholder": Record<never, never>;
   readonly "epics-faults-label": Record<never, never>;
   readonly "epics-tabs-label": Record<never, never>;
   readonly "epics-tab-overview": Record<never, never>;

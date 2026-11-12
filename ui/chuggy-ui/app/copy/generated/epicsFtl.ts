@@ -47,8 +47,6 @@ epics-field-summary = Summary
 epics-field-summary-count = { $count } / { $most }
 epics-field-description = Description
 epics-field-description-format = Markdown
-epics-field-tickets = { -ticket(case: "upper", form: "plural") }
-epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
 epics-faults-label = Faults
 
 ## The page's header and its tabs.
