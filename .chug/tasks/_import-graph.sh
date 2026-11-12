@@ -8,10 +8,12 @@
 # its path from the root, has `imports` and `importers`, each a list of paths;
 # `external`, each package or platform module it imports, as it names it;
 # `io`, whether it imports fs, child_process, worker_threads, module or vm,
-# the modules through which it can read a file no import names; and `tracked`,
-# whether git tracks it. `unresolved` lists each import that resolved to
-# nothing, or to a module the graph does not hold, as `<module> ->
-# <specifier>`. A package is not a module here, since
+# the modules through which it can read a file no import names; `opaque`,
+# whether its text loads a module by a specifier that is not a literal, or
+# takes a platform module from `process.getBuiltinModule`, neither of which
+# depcruise sees; and `tracked`, whether git tracks it. `unresolved` lists
+# each import that resolved to nothing, or to a module the graph does not
+# hold, as `<module> -> <specifier>`. A package is not a module here, since
 # its install is what a key holds.
 #
 # A GRAPH IS BELIEVED ONLY WHERE IT COULD NOT HAVE LOST WHAT IT IS ASKED.
@@ -24,11 +26,18 @@
 #
 # WHAT IT CANNOT SEE is a file a module reads by a path it builds, a module
 # loaded by a specifier that is not a literal, and a type a file declares into
-# every other's scope. The first two are why `io` is recorded.
+# every other's scope. The first two are why `io` and `opaque` are recorded.
+#
+# A SUITE IS CLOSED WHERE THE GRAPH IS THE WHOLE OF WHAT IT LOADS: the graph
+# holds it, git tracks every module it reaches, none of them is `io` or
+# `opaque` or has an import that resolved to nothing, and the graph holds an
+# import of it wherever its own text imports. `suites` answers that for each
+# suite, and refuses where a package resolved to nothing, as `reach` does.
 #
 # Usage: sh .chug/tasks/_import-graph.sh build <graph> <root>...
 #        sh .chug/tasks/_import-graph.sh reach <graph> <entry>...
 #        sh .chug/tasks/_import-graph.sh holds <graph> [--not | --untracked]
+#        sh .chug/tasks/_import-graph.sh suites <graph> <directory>
 #   build  write the graph of what the roots reach to <graph>
 #   reach  print each module the entries reach, entries included, a path a
 #          line; an entry is a module, a directory standing for each module
@@ -37,6 +46,10 @@
 #   holds  print each path read from stdin, a path a line, that is a module
 #          the graph holds; with --not, each that is not; with --untracked,
 #          each that is one git does not track
+#   suites for each suite read from stdin, a path a line, write to
+#          <directory>/verdicts `closed<TAB><suite>` or
+#          `open<TAB><suite><TAB><why>`, and for each closed one, to
+#          <directory>/reach/<suite>, each module it reaches, itself included
 # Run from the root.
 set -eu
 export LC_ALL=C
@@ -44,7 +57,7 @@ export LC_ALL=C
 command="${1:-}"
 graph="${2:-}"
 if [ "$#" -lt 2 ] || [ -z "$graph" ]; then
-	echo "_import-graph: usage: _import-graph.sh build|reach|holds <graph> ..." >&2
+	echo "_import-graph: usage: _import-graph.sh build|reach|holds|suites <graph> ..." >&2
 	exit 2
 fi
 shift 2
@@ -77,6 +90,15 @@ build)
 const fs = require("node:fs");
 const [cruisedPath, trackedPath, graphPath] = process.argv.slice(1);
 const reading = new Set(["fs", "child_process", "worker_threads", "module", "vm"]);
+const opaque =
+  /(?<![.\w$])(?:import|require)\s*\(\s*(?!(?:"[^"\\\n]*"|\x27[^\x27\\\n]*\x27|`[^`$\\]*`)\s*[,)])|\bgetBuiltinModule\b/u;
+const opaqueText = (path) => {
+  try {
+    return opaque.test(fs.readFileSync(path, "utf8"));
+  } catch {
+    return true;
+  }
+};
 let cruised;
 try {
   cruised = JSON.parse(fs.readFileSync(cruisedPath, "utf8"));
@@ -101,6 +123,7 @@ for (const cruisedModule of cruised.modules) {
     importers: [],
     external: [],
     io: false,
+    opaque: opaqueText(cruisedModule.source),
     tracked: tracked.has(cruisedModule.source),
   };
 }
@@ -126,7 +149,7 @@ for (const cruisedModule of cruised.modules) {
 fs.writeFileSync(graphPath, JSON.stringify({ modules, unresolved }));
 ' "$cruised" "$tracked" "$graph"
 	;;
-reach | holds)
+reach | holds | suites)
 	exec node -e '
 const fs = require("node:fs");
 const [command, graphPath, ...asked] = process.argv.slice(1);
@@ -154,6 +177,66 @@ const refuse = (why) => {
   console.error(`_import-graph: ${why}`);
   process.exit(1);
 };
+const importing = /\bfrom\s*["\x27]|^\s*import\s*["\x27]|\bimport\s*\(|\brequire\s*\(/mu;
+const importsUnseen = (path) => {
+  if (modules[path].imports.length + modules[path].external.length > 0) return false;
+  try {
+    return importing.test(fs.readFileSync(path, "utf8"));
+  } catch {
+    return true;
+  }
+};
+if (command === "suites") {
+  const [directory] = asked;
+  const dangling = new Map();
+  for (const each of graph.unresolved) {
+    const [from, specifier] = each.split(" -> ");
+    if (!/^[./]/u.test(specifier)) refuse(`an import resolved to nothing: ${each}`);
+    dangling.set(from, each);
+  }
+  const why = (path) => {
+    const held = modules[path];
+    if (held.io) return `it reaches ${path}, which imports fs, child_process, worker_threads, module or vm`;
+    if (held.opaque) return `it reaches ${path}, which loads a module by a specifier that is not a literal`;
+    if (!held.tracked) return `it reaches ${path}, which git does not track`;
+    if (dangling.has(path)) return `it reaches ${path}, where an import resolved to nothing: ${dangling.get(path)}`;
+    return "";
+  };
+  const verdicts = [];
+  const suites = fs.readFileSync(0, "utf8").split("\n").filter((path) => path !== "");
+  for (const suite of suites) {
+    if (!Object.hasOwn(modules, suite)) {
+      verdicts.push(`open\t${suite}\tthe graph does not hold it`);
+      continue;
+    }
+    if (importsUnseen(suite)) {
+      verdicts.push(`open\t${suite}\tit imports, and the graph holds no import of it`);
+      continue;
+    }
+    const reached = new Set([suite]);
+    const queue = [suite];
+    let opening = "";
+    while (queue.length > 0 && opening === "") {
+      const path = queue.pop();
+      opening = why(path);
+      for (const imported of modules[path].imports) {
+        if (reached.has(imported)) continue;
+        reached.add(imported);
+        queue.push(imported);
+      }
+    }
+    if (opening !== "") {
+      verdicts.push(`open\t${suite}\t${opening}`);
+      continue;
+    }
+    const kept = `${directory}/reach/${suite}`;
+    fs.mkdirSync(kept.slice(0, kept.lastIndexOf("/")), { recursive: true });
+    fs.writeFileSync(kept, [...reached].sort().map((path) => `${path}\n`).join(""));
+    verdicts.push(`closed\t${suite}`);
+  }
+  fs.writeFileSync(`${directory}/verdicts`, verdicts.map((line) => `${line}\n`).join(""));
+  process.exit(0);
+}
 if (graph.unresolved.length > 0)
   refuse(`an import resolved to nothing: ${graph.unresolved[0]}`);
 const entries = [];
@@ -183,17 +266,11 @@ for (const entry of asked) {
     entries.push(...within);
   }
 }
-const importing = /\bfrom\s*["\x27]|^\s*import\s*["\x27]|\bimport\s*\(|\brequire\s*\(/mu;
 for (const entry of entries) {
   if (!Object.hasOwn(modules, entry)) refuse(`${entry} is not in the graph`);
   if (modules[entry].imports.length + modules[entry].external.length > 0) continue;
-  let text = "";
-  try {
-    text = fs.readFileSync(entry, "utf8");
-  } catch {
-    refuse(`${entry} cannot be read`);
-  }
-  if (importing.test(text)) refuse(`${entry} imports, and the graph holds no import of it`);
+  if (!fs.existsSync(entry)) refuse(`${entry} cannot be read`);
+  if (importsUnseen(entry)) refuse(`${entry} imports, and the graph holds no import of it`);
 }
 const reached = new Set(entries);
 const queue = [...entries];
@@ -208,7 +285,7 @@ for (const path of [...reached].sort()) console.log(path);
 ' "$command" "$graph" "$@"
 	;;
 *)
-	echo "_import-graph: no command $command; build, reach or holds" >&2
+	echo "_import-graph: no command $command; build, reach, holds or suites" >&2
 	exit 2
 	;;
 esac

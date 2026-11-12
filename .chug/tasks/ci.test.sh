@@ -61,6 +61,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	cp "$INSTALLED" "$R/.chug/tasks/_installed-inputs.sh"
 	cp "$PROBED" "$R/.chug/tasks/_probed-inputs.sh"
 	cp "$IMPORT_GRAPH" "$R/.chug/tasks/_import-graph.sh"
+	cp "$HERE/_unit-suites.sh" "$R/.chug/tasks/_unit-suites.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -1229,17 +1230,18 @@ mkdir -p "$TRBIN"
 cat > "$TRBIN/track-record" <<'STUB'
 #!/bin/sh
 if [ "$1" = "--version" ]; then exit "${STUB_TR_VERSION_RC:-0}"; fi
-{
-	printf '%s|' "$@"
-	printf '\n'
-	printf 'env|FRESH=%s|URL=%s|NAMESPACE=%s|\n' "${TRACK_RECORD_FRESH-unset}" \
-		"${TRACK_RECORD_URL-unset}" "${TRACK_RECORD_NAMESPACE-unset}"
-} >>"$STUB_TR_LOG"
+# Many run at once, so each keeps its own scratch files and writes each of its
+# lines to the log whole.
+log() { stub_line="$(printf "$@")"; printf '%s\n' "$stub_line" >>"$STUB_TR_LOG"; }
+log '%s|' "$@"
+log 'env|FRESH=%s|URL=%s|NAMESPACE=%s|' "${TRACK_RECORD_FRESH-unset}" \
+	"${TRACK_RECORD_URL-unset}" "${TRACK_RECORD_NAMESPACE-unset}"
 name=""
 tools=""
 specs=""
 keyed=1
-material="$STUB_TR_LOG.material"
+scratch="$STUB_TR_LOG.$$"
+material="$scratch.material"
 : >"$material"
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -1249,13 +1251,13 @@ while [ "$#" -gt 0 ]; do
 "; shift 2 ;;
 	--tool)
 		if [ -n "${STUB_TR_DIGEST:-}${STUB_TR_STORE:-}" ]; then
-			if ! sh -c "$2" >"$STUB_TR_LOG.out" 2>"$STUB_TR_LOG.err"; then
-				printf 'toolfail|%s|%s\n' "$name" "$2" >>"$STUB_TR_LOG"
+			if ! sh -c "$2" >"$scratch.out" 2>"$scratch.err"; then
+				log 'toolfail|%s|%s' "$name" "$2"
 				keyed=0
 			fi
-			tools="$tools$(cksum <"$STUB_TR_LOG.out") $(cksum <"$STUB_TR_LOG.err")/"
+			tools="$tools$(cksum <"$scratch.out") $(cksum <"$scratch.err")/"
 			printf 'tool %s\n' "$2" >>"$material"
-			cat "$STUB_TR_LOG.out" "$STUB_TR_LOG.err" >>"$material"
+			cat "$scratch.out" "$scratch.err" >>"$material"
 		fi
 		shift 2
 		;;
@@ -1265,7 +1267,7 @@ while [ "$#" -gt 0 ]; do
 	*) shift ;;
 	esac
 done
-if [ -n "${STUB_TR_DIGEST:-}" ]; then printf 'digest|%s|%s\n' "$name" "$tools" >>"$STUB_TR_LOG"; fi
+if [ -n "${STUB_TR_DIGEST:-}" ]; then log 'digest|%s|%s' "$name" "$tools"; fi
 if [ "$name" = "${STUB_TR_KILL:-}" ]; then kill -KILL "$PPID"; exit 0; fi
 for listed in ${STUB_TR_REUSE:-}; do
 	if [ "$listed" = "$name" ]; then
@@ -1296,7 +1298,7 @@ printf '\n' >>"$material"
 ) >>"$material"
 if grep -q '^untracked ' "$material"; then keyed=0; fi
 key="$(cksum <"$material" | cut -d' ' -f1)"
-printf 'key|%s|%s|%s\n' "$name" "$key" "$keyed" >>"$STUB_TR_LOG"
+log 'key|%s|%s|%s' "$name" "$key" "$keyed"
 if [ "$keyed" = 1 ] && [ "${TRACK_RECORD_FRESH:-0}" != 1 ] && [ -e "$STUB_TR_STORE/$key" ]; then
 	echo "stub log replayed for $name"
 	echo "track-record: REUSED $name (recorded 2026-01-01T00:00:00Z by stub)" >&2
@@ -1598,9 +1600,11 @@ recorded_log
 pin_scope .chug/tasks/ci.test.sh "$record_tool_installed 'dependency-cruiser'" .chug/tasks/ci.test.sh \
 	.chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_import-graph.sh .chug/tasks/_ignored-inputs.sh \
 	.chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh .chug/tasks/_suite.sh \
-	.dependency-cruiser.cjs tsconfig.json justfile package.json
+	.chug/tasks/_unit-suites.sh .chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh \
+	scripts/unit-outcomes.ts .dependency-cruiser.cjs tsconfig.json justfile package.json
 pin_scope .chug/tasks/check-source.test.sh "$record_tool_install" .chug/tasks/check-source.test.sh \
-	.chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh tsconfig.json tsconfig.contract.json \
+	.chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh \
+	.chug/tasks/_unit-suites.sh scripts/unit-outcomes.ts tsconfig.json tsconfig.contract.json \
 	eslint.config.js .prettierrc.json .prettierignore package.json
 pin_scope .chug/tasks/check-boundaries.test.sh "$record_tool_install" \
 	.chug/tasks/check-boundaries.test.sh .chug/tasks/check-boundaries.sh .chug/tasks/_suite.sh \
@@ -2654,5 +2658,209 @@ graph_stored "a test no database suite imports" reused check-postgres
 printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
 graph_stored "a module a database suite imports a type from" ran check-postgres
 graph_stored "the tree that moved, again" reused check-postgres
+
+# THE UNIT STAGE SELECTS AND KEYS EACH CLOSED SUITE ON ITS OWN. The fixture is
+# the graph's, with the tree's own runner gate for the unit suites, and its
+# listing, cap and reporter, and
+# a unit suite of each kind: closed ones reaching a decider, a module only for
+# a type and a module under the console; open ones importing fs themselves and
+# through a module; and beside them the suites other gates own.
+unit_open="test/unit/reads.test.ts test/unit/relayed.test.ts"
+unit_closed="test/interpreter/taskBriefing.test.ts test/unit/shown.test.ts test/unit/typed.test.ts"
+unit_repo() {
+	graph_repo
+	cp "$ROOT/.chug/tasks/check-source.sh" "$R/.chug/tasks/check-source-unit.sh"
+	cp "$ROOT/.chug/tasks/_test-timeout.sh" "$R/.chug/tasks/"
+	printf '#!/bin/sh
+[ "$1" != --static ] || { echo stub check-source; exit 0; }
+exec sh "$(dirname "$0")/check-source-unit.sh" "$@"
+' \
+		> "$R/.chug/tasks/check-source.sh"
+	mkdir -p "$R/scripts" "$R/images/worker" "$R/.chug/configurations"
+	cp "$ROOT/scripts/unit-outcomes.ts" "$R/scripts/"
+	graph_module test/unit/typed.test.ts 'import type { Kind } from "../../src/kinds.ts";' \
+		'export const kind: Kind = "a";'
+	graph_module test/unit/shown.test.ts 'import { shown } from "../../ui/chuggy-ui/app/shown.ts";' \
+		'export const seen = shown;'
+	graph_module test/unit/reads.test.ts 'import { readFileSync } from "node:fs";' \
+		'export const read = readFileSync;'
+	graph_module test/unit/reader.ts 'import { readFileSync } from "node:fs";' \
+		'export const reader = readFileSync;'
+	graph_module test/unit/relayed.test.ts 'import { reader } from "./reader.ts";' \
+		'export const relayed = reader;'
+	graph_module ui/chuggy-ui/app/shown.test.ts 'import { shown } from "./shown.ts";' \
+		'export const own = shown;'
+	printf 'FROM node:0 AS base\n' > "$R/images/worker/Dockerfile"
+	printf '{}\n' > "$R/.chug/configurations/x.json"
+	printf '{}\n' > "$R/package-lock.json"
+	commit_all unit-baseline
+}
+# The suites the last run ran, exactly, and its unit stage's account of itself.
+unit_ran() { # <label> <suite>...
+	unit_label="$1"
+	shift
+	unit_want="$(printf '%s\n' "$@" | sed '/^$/d' | sort | tr '\n' ' ')"
+	unit_got="$(cd "$R/.git/chug-ci/unit/results" 2>/dev/null &&
+		find . -name '*.outcome' | sed 's|^\./||; s|\.outcome$||' | sort | tr '\n' ' ')" || true
+	printf 'unit ran: %s|\n' "$unit_got" >> "$OUT"
+	check "$unit_label runs exactly ${*:-no unit suite}" "${unit_rc:-0}" "$RC" "unit ran: $unit_want|"
+}
+# A change, committed, and the suites it must run.
+unit_change() { # <label> <suite>...
+	commit_all "$1"
+	graph_run
+	unit_ran "$@"
+}
+
+unit_repo
+graph_run CHUG_CI_BASE=no-such-base
+# shellcheck disable=SC2086 # a path a word, by construction
+unit_ran "a full run" $unit_open $unit_closed
+check "a full run's stage counts what it found and ran" 0 "$RC" \
+	"ci: unit suites 3 closed, 2 open; 5 selected, 0 reused, 5 ran"
+OUT="$WORK/.out"
+set +e
+(cd "$R" && ./.chug/tasks/check-source.sh --unit) >"$OUT" 2>&1
+RC=$?
+set -e
+check "the runner's own gate runs the same suites, given none" 0 "$RC" "unit ran 5 suite(s); 5 left to"
+
+# shellcheck disable=SC2086 # a path a word, by construction
+{
+	graph_module test/deep/nested/added.test.ts 'import { decide } from "../../../src/domain/deciders.ts";' \
+		'export const added = decide;'
+	unit_change "a suite added deep under the tests" test/deep/nested/added.test.ts $unit_open
+	printf 'export const kind2 = 2;\n' >> "$R/test/unit/typed.test.ts"
+	unit_change "an edit to a closed suite's own file" test/unit/typed.test.ts $unit_open
+	printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
+	unit_change "an edit to a module a suite imports a type from" test/unit/typed.test.ts $unit_open
+	printf 'export const decide2 = 2;\n' >> "$R/src/domain/deciders.ts"
+	unit_change "an edit to a module two suites import" test/interpreter/taskBriefing.test.ts \
+		test/deep/nested/added.test.ts $unit_open
+	printf 'export const shown2 = 2;\n' >> "$R/ui/chuggy-ui/app/shown.ts"
+	unit_change "an edit under the console" test/unit/shown.test.ts $unit_open
+	printf '# changed\n' >> "$R/images/worker/Dockerfile"
+	unit_change "an edit to the worker image" $unit_open
+	printf '{"changed": 1}\n' > "$R/.chug/configurations/x.json"
+	unit_change "an edit to a declared configuration" $unit_open
+	printf '# notes\n' > "$R/test/unit/NOTES.md"
+	unit_change "a page among the suites"
+	printf '{"compilerOptions": {}}\n' > "$R/tsconfig.json"
+	unit_change "an edit to the compiler's settings" test/deep/nested/added.test.ts $unit_open $unit_closed
+	printf '{"changed": 1}\n' > "$R/package-lock.json"
+	unit_change "an edit to the lock" test/deep/nested/added.test.ts $unit_open $unit_closed
+	printf '# changed\n' >> "$R/.chug/tasks/_test-timeout.sh"
+	unit_change "an edit to the cap every suite runs under" test/deep/nested/added.test.ts \
+		$unit_open $unit_closed
+}
+
+# A closed suite check-source runs in the worker image off Linux reads the
+# image's node pin too.
+unit_repo
+graph_module test/unit/kernel.linux.test.ts 'import { decide } from "../../src/domain/deciders.ts";' \
+	'export const kernel = decide;'
+commit_all "a closed suite for Linux"
+printf '# changed\n' >> "$R/images/worker/Dockerfile"
+# shellcheck disable=SC2086 # a path a word, by construction
+unit_change "an edit to the worker image beside a closed Linux suite" test/unit/kernel.linux.test.ts $unit_open
+check "which it reads as closed" 0 "$RC" "ci: unit suites 4 closed, 2 open;"
+
+# A suite that gains a read of the filesystem, or a module loaded by a name
+# that is not a literal, or an import that resolves to nothing, is open in the
+# change that brings it, directly or through a module it reaches.
+for case in \
+	"an import of fs in the suite|test/unit/typed.test.ts|import { readFileSync } from \"node:fs\"; export const r = readFileSync;" \
+	"an import of fs in a module it reaches|src/kinds.ts|import { readFileSync } from \"node:fs\"; export const r = readFileSync;" \
+	"a module loaded by a name that is not a literal|src/kinds.ts|const name = \"./shape.ts\"; export const loaded = await import(name);" \
+	"a platform module taken without an import|src/kinds.ts|export const got = process.getBuiltinModule(\"node:fs\");"; do
+	label="${case%%|*}"
+	rest="${case#*|}"
+	unit_repo
+	printf '%s\n' "${rest#*|}" >> "$R/${rest%%|*}"
+	commit_all "$label"
+	graph_run
+	check "$label opens the suite" 0 "$RC" "ci: unit suites 2 closed, 3 open;"
+	# shellcheck disable=SC2086 # a path a word, by construction
+	unit_ran "$label" $unit_open test/unit/typed.test.ts
+done
+unit_repo
+graph_module test/unit/shown.test.ts 'import { missing } from "./missing.ts";' 'export const seen = missing;'
+commit_all unresolved
+graph_run
+check "an import that resolves to nothing opens the suite that reaches it" 1 "$RC" \
+	"ci: unit suites 2 closed, 3 open;"
+
+# A graph that cannot be computed or believed selects every suite, as open.
+for case in "a depcruise that fails|STUB_DEPCRUISE=fail" "a graph with no edges|STUB_DEPCRUISE=edges"; do
+	label="${case%%|*}"
+	unit_repo
+	printf '# changed\n' >> "$R/images/worker/Dockerfile"
+	commit_all "$label"
+	graph_run "${case#*|}"
+	check "$label leaves every suite open" 0 "$RC" "ci: unit suites 0 closed, 5 open;"
+	# shellcheck disable=SC2086 # a path a word, by construction
+	unit_ran "$label" $unit_open $unit_closed
+done
+unit_repo
+graph_module test/unit/typed.test.ts 'import { z } from "zod";' 'export const kind = String(z);'
+commit_all unbelieved
+graph_run
+check "a package that does not resolve leaves every suite open" 1 "$RC" "ci: unit suites 0 closed, 5 open;"
+check "and says why" 1 "$RC" "ci: every unit suite is open, as the import graph cannot be believed"
+
+# A QUIET RUN NAMES THE RED SUITES AND NOTHING PER CLEAN ONE.
+unit_repo
+graph_module test/unit/typed.test.ts 'import { test } from "node:test";' \
+	'test("this closed one is meant to fail", () => { throw new Error("red by design"); });'
+commit_all red
+graph_run CHUG_CI_QUIET=1
+check "a red suite is named" 1 "$RC" "ci: FAILED — test/unit/typed.test.ts"
+check "with the end of its log" 1 "$RC" "red by design"
+check "and its stage is red" 1 "$RC" "ci: FAILED — check-source unit"
+for suite in $unit_open; do
+	refute "a quiet run prints nothing of the clean suite $suite" 1 "$RC" "$suite"
+done
+unit_rc=1
+# shellcheck disable=SC2086 # a path a word, by construction
+unit_ran "a red suite" test/unit/typed.test.ts $unit_open
+unit_rc=""
+
+# A CLOSED SUITE WHOSE INPUTS DID NOT CHANGE IS REUSED. Against the stub's
+# store, every suite selected by a base that does not resolve, a second run of
+# one tree reuses every entry, and a change to one closed suite's module runs
+# that suite and the open ones, keyed on the whole tree, and reuses the rest.
+unit_repo
+lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/node_modules/.package-lock.json"
+rm -rf "$WORK/unit-store"
+mkdir -p "$WORK/unit-store"
+unit_stored() { # <label> <suite>...
+	commit_any "$1"
+	graph_run PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" TRACK_RECORD_TOKEN=t \
+		STUB_TR_STORE="$WORK/unit-store" CHUG_CI_BASE=no-such-base
+	unit_ran "$@"
+}
+# shellcheck disable=SC2086 # a path a word, by construction
+{
+	unit_stored "a first run under a token" $unit_open $unit_closed
+	unit_stored "the same tree again"
+	check "which reuses every suite" 0 "$RC" "5 selected, 5 reused, 0 ran"
+	# Every wrapped stub gate and every unit suite, each open one counted
+	# though they are one entry.
+	check "and counts each reused suite in the run's total" 0 "$RC" "ci: all gates clean (23 reused)"
+	printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
+	unit_stored "a module one closed suite reaches" test/unit/typed.test.ts $unit_open
+	check "which reuses the other closed suites" 0 "$RC" "5 selected, 2 reused, 3 ran"
+}
+grep "^run|--name|source-unit:test/unit/typed.test.ts|" "$TRLOG" | tail -n 1 > "$WORK/.line" || true
+OUT="$WORK/.line"
+check "a closed suite's key holds what it reaches" 0 0 "|--inputs|src/kinds.ts|"
+check "and what every suite runs under" 0 0 "|--inputs|.chug/tasks/check-source.sh|"
+check "and the root's tools" 0 0 "|--inputs|package-lock.json|"
+check "and the setup program" 0 0 "|--env|CHUG_SETUP_PROGRAM|"
+check "and replays its own outcome" 0 0 "|--|./.chug/tasks/check-source.sh|--unit-outcome|test/unit/typed.test.ts|"
+refute "and not a suite it does not reach" 0 0 "src/domain/deciders.ts"
+grep "^run|--name|source-unit|" "$TRLOG" | tail -n 1 > "$WORK/.line" || true
+check "the open suites are keyed together on the whole tree" 0 0 \
+	"run|--name|source-unit|--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit-outcome|test/unit/reads.test.ts|test/unit/relayed.test.ts|"
 
 done_ "ci.test.sh"
