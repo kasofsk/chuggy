@@ -1,6 +1,6 @@
 /* The ask a runner's token is minted from and the steps it is handed over
-   in. Each is its own container, so in a narrow column every press, link and
-   value a finger opens in them is given a finger's height. */
+   in. Each is its own container, so in a narrow column every press, box, link
+   and value a finger opens in them is given a finger's height. */
 
 @layer page {
   .runner-mint {
@@ -15,6 +15,26 @@
 
     .runner-mint .input-box {
       min-height: var(--height-touch);
+    }
+
+    /* A box is a finger's height itself, its square still 1em: a clear
+       border holds the square in the middle and an inset line draws it. */
+    .runner-mint .checkbox {
+      width: var(--height-touch);
+      height: var(--height-touch);
+      border: calc((var(--height-touch) - 1em) / 2) solid transparent;
+      background-clip: padding-box;
+      box-shadow: inset 0 0 0 var(--hairline) var(--edge-control);
+    }
+
+    .runner-mint .checkbox[data-state="checked"] {
+      border-color: transparent;
+      box-shadow: inset 0 0 0 var(--hairline) var(--surface-inverse);
+    }
+
+    .runner-mint .checkbox:is(:disabled, [aria-disabled="true"]) {
+      border-color: transparent;
+      box-shadow: inset 0 0 0 var(--hairline) var(--edge);
     }
 
     .runner-mint :is(a[href], [tabindex="0"]) {

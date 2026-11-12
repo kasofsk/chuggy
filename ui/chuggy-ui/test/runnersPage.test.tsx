@@ -519,3 +519,22 @@ test("the ask and the steps each measure their own column, and narrow, every pre
     expect(sheetDeclared(wide, control, "min-height")).toBe("");
   }
 });
+
+test("narrow, the ask's box is a finger's height and its drawn square stays 1em", async () => {
+  await drawPage({});
+  const wide = sheetRules(runnerMintSheet, []);
+  const narrow = sheetRules(runnerMintSheet, [sheetNarrowCondition]);
+  await press("Add runner");
+  await press("Advanced");
+  const box = screen.getByRole("checkbox", {
+    name: "Runs without a container",
+  });
+  for (const side of ["width", "height"]) {
+    expect(sheetDeclared(narrow, box, side)).toBe("var(--height-touch)");
+    expect(sheetDeclared(wide, box, side)).toBe("");
+  }
+  expect(sheetDeclared(narrow, box, "border")).toBe(
+    "calc((var(--height-touch) - 1em) / 2) solid transparent",
+  );
+  expect(sheetDeclared(narrow, box, "background-clip")).toBe("padding-box");
+});
