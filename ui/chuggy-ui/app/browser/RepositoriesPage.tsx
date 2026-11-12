@@ -15,12 +15,12 @@
  * Each binding offers Unbind unless the abilities read refuses this reader
  * `administer`, which is the permit the retirement route asks.
  * The line under Add says why it is withheld, or that a connected account
- * lacks the worker app. The accounts are the tenant's, and
- * the step that line names is taken from here where this reader can take it:
- * Connect GitHub where the workspace holds no account, and the worker app's
- * install where one it holds lacks that app, each returning to this page. A
- * return from the forge that did not simply connect says so in one line above
- * it, until the person leaves.
+ * lacks the worker app. The accounts are the tenant's, and where the line
+ * names a step this reader can take here, it is drawn as one of the numbered
+ * steps to a first repository: Connect GitHub where the workspace holds no
+ * account, and the worker app's install where one it holds lacks that app,
+ * each returning to this page. A return from the forge that did not simply
+ * connect says so in one line above them, until the person leaves.
  *
  * THE PICKER HAS AN ADDRESS, this page's own at the anchor
  * `ui/chuggy-ui/app/core/projectRepositories.ts` names, and a grant made on
@@ -30,14 +30,15 @@
  * when a bind is accepted, so neither a reload nor Back opens the picker and
  * reads its roster again.
  *
- * ADD IS DRAWN A SECOND TIME UNDER AN EMPTY ROSTER'S LINE, where adding is the
- * one thing left to do, and opens the dialog the one in the head opens. The
- * line over it says how a repository comes to be listed there: made on GitHub
- * and granted to both apps. `ui/chuggy-ui/app/core/projectRepositories.ts`
- * decides when.
+ * ADD IS THE STEP BEING TAKEN UNDER AN EMPTY ROSTER, where adding is the one
+ * thing left to do, and opens the dialog the head's Add opens. The step says
+ * how a repository comes to be listed there: made on GitHub and granted to
+ * both apps. `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
+ * WHILE A STEP IS BEING TAKEN ITS PRESS IS THE PAGE'S ONE PRIMARY, and the
+ * head's Add is drawn as a secondary.
  */
 
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -60,12 +61,16 @@ import {
   repositoryAddHow,
   repositoryAddLeads,
   repositoryAddOpened,
+  repositoryHost,
   repositoryLabel,
   repositoryOffersLine,
+  repositoryStepCurrent,
+  repositoryStepLabels,
+  repositorySteps,
 } from "../core/projectRepositories.ts";
 import type {
   RepositoryOffersLine,
-  RepositoryOffersStep,
+  RepositoryStep,
 } from "../core/projectRepositories.ts";
 import {
   projectForgeAppsQuery,
@@ -95,15 +100,16 @@ import {
   useRepositoryUnbinding,
 } from "./repositories/UnbindRepository.tsx";
 import type { RepositoryUnbinding } from "./repositories/UnbindRepository.tsx";
-import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { Panel } from "./ui/Panel.tsx";
-import { Table } from "./ui/Table.tsx";
+import { PageHeader } from "./ui/PageHeader.tsx";
+import { RecordList, RecordRow } from "./ui/RecordList.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { useWorkRunner } from "./workRunner.tsx";
+
+import "./repositories/Repositories.css";
 
 /** This page's own address, which its parameters are read from. */
 const repositoriesRoutePath = "/$tenant/$project/repositories";
@@ -122,51 +128,62 @@ function BindingRow(props: {
    * that has not been read. */
   readonly workerReach: ProjectRepositoryWorkerReachResponse | undefined;
   readonly nowMs: number;
-  /** The listing's unbinding, where it has a column of them. */
+  /** The listing's unbinding, where its rows offer one. */
   readonly unbinding: RepositoryUnbinding | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const binding = props.binding;
   return (
-    <tr>
-      <th scope="row">
-        <span className="flex items-center gap-2">
+    <RecordRow
+      title={repositoryLabel(binding.repository)}
+      link={{
+        to: repositoryRoutePath,
+        params: { ...props.partition, repository: binding.repository },
+      }}
+      level={2}
+      meta={
+        <>
           <Tooltip text={binding.repository}>
-            <Link
-              to={repositoryRoutePath}
-              params={{ ...props.partition, repository: binding.repository }}
-            >
-              {repositoryLabel(binding.repository)}
-            </Link>
+            <span>
+              {repositoryHost(binding.repository) ?? binding.repository}
+            </span>
           </Tooltip>
-          {binding.configured ? null : (
-            <BindingConfigurations
-              partition={props.partition}
-              repository={binding.repository}
-            />
+          <span className="flex items-center gap-1">
+            {text({ id: "repositories-bound" })}
+            <Figure figure={instantFigure(binding.boundAt, props.nowMs)} />
+          </span>
+        </>
+      }
+      foot={
+        <>
+          <span className="repositories-attention">
+            {binding.configured ? null : (
+              <BindingConfigurations
+                partition={props.partition}
+                repository={binding.repository}
+              />
+            )}
+            {props.workerReach === undefined ? null : (
+              <BindingWorkerReach reach={props.workerReach} />
+            )}
+          </span>
+          {props.unbinding === undefined ? null : (
+            <span className="ms-auto">
+              <UnbindPress
+                repository={binding.repository}
+                unbinding={props.unbinding}
+              />
+            </span>
           )}
-          {props.workerReach === undefined ? null : (
-            <BindingWorkerReach reach={props.workerReach} />
-          )}
-        </span>
-      </th>
-      <td>
-        <Figure figure={instantFigure(binding.boundAt, props.nowMs)} />
-      </td>
-      {props.unbinding === undefined ? null : (
-        <td className="text-end">
-          <UnbindPress
-            repository={binding.repository}
-            unbinding={props.unbinding}
-          />
-        </td>
-      )}
-    </tr>
+        </>
+      }
+    />
   );
 }
 
 /**
- * The listing's unbinding, where it has a column of them: the abilities read
- * did not refuse this reader the permit it asks, and a binding is listed.
+ * The listing's unbinding, where its rows offer one: the abilities read did
+ * not refuse this reader the permit it asks, and a binding is listed.
  */
 function useBindingUnbinding(
   partition: PartitionIdentity,
@@ -180,13 +197,11 @@ function useBindingUnbinding(
   return refused ? undefined : unbinding;
 }
 
-/** The bindings, or the line that says there are none, with the one thing to
- * do about it under it where the page offers one. */
-function BindingTable(props: {
+/** The bindings, or the line that says there are none. */
+function BindingList(props: {
   readonly partition: PartitionIdentity;
   readonly bindings: readonly ProjectRepositoryListedResponse[];
   readonly reaches: BindingReaches | undefined;
-  readonly action: ReactNode;
 }): ReactNode {
   const text = useCopyText();
   const nowMs = useNowMs();
@@ -195,53 +210,33 @@ function BindingTable(props: {
     props.bindings.length > 0,
   );
   if (props.bindings.length === 0)
-    return props.action === undefined ? (
-      <EmptyState label={text({ id: "repositories-none" })} />
-    ) : (
-      <div className="grid justify-items-start gap-3">
-        <EmptyState label={text({ id: "repositories-none" })} />
-        <Notice tone="info" inline detail={text(repositoryAddHow)} />
-        {props.action}
-      </div>
-    );
+    return <EmptyState label={text({ id: "repositories-none" })} />;
   return (
     <>
-      <Table caption={text({ id: "repositories-bound-caption" })}>
-        <thead>
-          <tr>
-            <th scope="col">{text({ id: "repositories-col-repository" })}</th>
-            <th scope="col">{text({ id: "repositories-bound" })}</th>
-            {unbinding === undefined ? null : (
-              <th scope="col">
-                <span className="visually-hidden">
-                  {text({ id: "repositories-unbind" })}
-                </span>
-              </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {props.bindings.map((binding) => (
-            <BindingRow
-              key={binding.repository}
-              partition={props.partition}
-              binding={binding}
-              workerReach={props.reaches?.get(binding.repository)}
-              nowMs={nowMs}
-              unbinding={unbinding}
-            />
-          ))}
-        </tbody>
-      </Table>
+      <RecordList label={text({ id: "repositories-bound-caption" })}>
+        {props.bindings.map((binding) => (
+          <BindingRow
+            key={binding.repository}
+            partition={props.partition}
+            binding={binding}
+            workerReach={props.reaches?.get(binding.repository)}
+            nowMs={nowMs}
+            unbinding={unbinding}
+          />
+        ))}
+      </RecordList>
       {unbinding === undefined ? null : <UnbindAsked unbinding={unbinding} />}
     </>
   );
 }
 
-function OffersStep(props: {
+/** The one press the step being taken offers, drawn as the page's primary. */
+function RepositoryStepAction(props: {
   readonly tenant: string;
-  readonly step: RepositoryOffersStep;
+  readonly step: RepositoryStep;
+  readonly onAdd: () => void;
 }): ReactNode {
+  const text = useCopyText();
   switch (props.step) {
     case "Connect":
       return (
@@ -257,28 +252,87 @@ function OffersStep(props: {
           tenant={props.tenant}
           returnPath={currentPath()}
           app="worker"
+          variant="primary"
         />
+      );
+    case "Add":
+      return (
+        <Button size="sm" variant="primary" onClick={props.onAdd}>
+          {text({ id: "repositories-add" })}
+        </Button>
       );
   }
 }
 
-function OffersLine(props: {
+/**
+ * The steps to a first repository, numbered: those before the one being taken
+ * are done, it says what the line under Add says with its one press beside
+ * it, and those after it are named only.
+ */
+function RepositoryStepsDrawn(props: {
   readonly tenant: string;
+  readonly current: RepositoryStep;
   readonly line: RepositoryOffersLine | undefined;
+  readonly onAdd: () => void;
 }): ReactNode {
   const text = useCopyText();
-  const line = props.line;
-  if (line === undefined) return null;
+  const at = repositorySteps.indexOf(props.current);
   return (
-    <>
-      <Notice tone="parked" inline detail={text(line.status)} />
-      {line.step === undefined ? null : (
-        <div className="flex">
-          <OffersStep tenant={props.tenant} step={line.step} />
-        </div>
-      )}
-    </>
+    <ol
+      className="repository-steps"
+      aria-label={text({ id: "repositories-steps" })}
+    >
+      {repositorySteps.map((step, index) => (
+        <li
+          key={step}
+          className="repository-step"
+          aria-current={index === at ? "step" : undefined}
+        >
+          <span className="repository-step-body">
+            <span className="repository-step-said">
+              {index === at
+                ? text(props.line?.status ?? repositoryAddHow)
+                : text(repositoryStepLabels[step])}
+            </span>
+            {index < at ? (
+              <span className="repository-step-done">
+                {text({ id: "repositories-step-done" })}
+              </span>
+            ) : null}
+            {index === at ? (
+              <RepositoryStepAction
+                tenant={props.tenant}
+                step={step}
+                onAdd={props.onAdd}
+              />
+            ) : null}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
+}
+
+/** What the page says before its list: the numbered steps where one is to be
+ * taken, and otherwise the line under Add where there is one. */
+function RepositoryOffers(props: {
+  readonly tenant: string;
+  readonly line: RepositoryOffersLine | undefined;
+  readonly current: RepositoryStep | undefined;
+  readonly onAdd: () => void;
+}): ReactNode {
+  const text = useCopyText();
+  if (props.current !== undefined)
+    return (
+      <RepositoryStepsDrawn
+        tenant={props.tenant}
+        current={props.current}
+        line={props.line}
+        onAdd={props.onAdd}
+      />
+    );
+  if (props.line === undefined) return null;
+  return <Notice tone="parked" inline detail={text(props.line.status)} />;
 }
 
 /**
@@ -310,6 +364,8 @@ function usePicker(returned: ForgeReturnWord | undefined): {
   };
 }
 
+/** The page's head, holding Add, then the steps or the line under it, and
+ * the bindings. */
 function RepositoriesSection(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
@@ -325,58 +381,61 @@ function RepositoriesSection(props: {
     (binding) => binding.retiredAt === undefined,
   );
   const picker = usePicker(props.returned);
-  const leads = repositoryAddLeads({
-    bindings,
-    installations: props.installations,
-    line: props.line,
-  });
+  const portal = forgePortalInstallations(props.installations);
+  const current = repositoryStepCurrent(
+    props.line,
+    repositoryAddLeads({
+      bindings,
+      installations: props.installations,
+      line: props.line,
+    }),
+  );
+  const add = {
+    label: text({ id: "repositories-add" }),
+    onPress: () => {
+      picker.opened(true);
+    },
+    disabled: portal.length === 0,
+  };
   return (
-    <Panel
-      variant="section"
-      title={text({ id: "repositories-title" })}
-      about={text({ id: "repositories-about" })}
-      meta={
-        <AddRepository
-          partition={props.partition}
-          installations={forgePortalInstallations(props.installations)}
-          workers={forgeWorkerInstallations(props.installations)}
-          bound={bindings ?? []}
-          runner={props.runner}
-          open={picker.open}
-          onOpenChange={picker.opened}
-          onBound={picker.bound}
-        />
-      }
-    >
+    <>
+      <PageHeader
+        title={text({ id: "repositories-title" })}
+        description={text({ id: "repositories-about" })}
+        {...(current === undefined ? { primary: add } : { secondary: [add] })}
+      />
+      <AddRepository
+        partition={props.partition}
+        installations={portal}
+        workers={forgeWorkerInstallations(props.installations)}
+        bound={bindings ?? []}
+        runner={props.runner}
+        open={picker.open}
+        onOpenChange={picker.opened}
+        onBound={picker.bound}
+      />
       <ForgeReturned word={props.returned} />
-      <OffersLine tenant={props.partition.tenant} line={props.line} />
+      <RepositoryOffers
+        tenant={props.partition.tenant}
+        line={props.line}
+        current={current}
+        onAdd={() => {
+          picker.opened(true);
+        }}
+      />
       {props.unready}
       {bindings === undefined ? null : (
-        <BindingTable
+        <BindingList
           partition={props.partition}
           bindings={bindings}
           reaches={props.reaches}
-          action={
-            leads ? (
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => {
-                  picker.opened(true);
-                }}
-              >
-                {text({ id: "repositories-add" })}
-              </Button>
-            ) : undefined
-          }
         />
       )}
-    </Panel>
+    </>
   );
 }
 
 export function RepositoriesPage(): ReactNode {
-  const text = useCopyText();
   const params = useParams({ from: repositoriesRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -391,8 +450,10 @@ export function RepositoriesPage(): ReactNode {
   const returned = useForgeReturned(partition.tenant);
   const runner = useWorkRunner(partition, "Reader");
   return (
-    <div className="grid min-w-0 max-w-settings gap-4">
-      <ScreenTitle>{text({ id: "repositories-title" })}</ScreenTitle>
+    <div
+      className="repositories-page grid min-w-0 max-w-settings gap-4"
+      data-fills-width
+    >
       <RepositoriesSection
         partition={partition}
         installations={

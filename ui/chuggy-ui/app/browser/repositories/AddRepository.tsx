@@ -525,7 +525,7 @@ export function AddRepository(props: {
   readonly bound: readonly ProjectRepositoryResponse[];
   /** Whether the project's work has a runner to go to, which a bind's next step turns on. */
   readonly runner: WorkRunner;
-  /** The page's own state, because the page opens this from more than its trigger. */
+  /** The page's own state, because the page draws the presses that open it. */
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /** Told of a bind the route accepted, the picker staying open over what it came to. */
@@ -533,12 +533,9 @@ export function AddRepository(props: {
 }): ReactNode {
   const text = useCopyText();
   const offered = props.installations.length > 0;
-  const add = text({ id: "repositories-add" });
   return (
     <Dialog
-      title={add}
-      trigger={add}
-      triggerDisabled={!offered}
+      title={text({ id: "repositories-add" })}
       open={props.open && offered}
       onOpenChange={props.onOpenChange}
     >

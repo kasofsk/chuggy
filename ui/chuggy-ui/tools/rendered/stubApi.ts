@@ -25,6 +25,9 @@ import {
   agentAccountsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
+  configurationsResponseSchema,
+  forgeAppsResponseSchema,
+  forgeInstallationsResponseSchema,
   hostedRunsResponseSchema,
   executionPlacementResponseSchema,
   inboxResponseSchema,
@@ -168,6 +171,109 @@ const personalRunner = {
   ],
 };
 
+/** The repository whose name is the longest the stub binds, which a phone
+ * has to wrap. */
+export const stubApiRepositoryLong =
+  "https://github.com/kasofsk/chuggy-a-repository-whose-name-runs-past-a-phone.git";
+
+/** The project's repositories: one with a long name the worker app's
+ * installation does not select, and one the project holds no configuration
+ * for. */
+const projectRepositories = {
+  repositories: [
+    {
+      repository: stubApiRepositoryLong,
+      boundAt: "2026-10-01T00:00:00Z",
+      landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      pipelinesWritable: false,
+      configured: true,
+      lastImport: {
+        attemptedAt: "2026-11-01T00:00:00Z",
+        commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+        outcome: { result: "Imported" },
+      },
+      workerReach: {
+        reach: "Unselected",
+        installationId: "156786211",
+        settingsUrl:
+          "https://github.com/organizations/kasofsk/settings/installations/156786211",
+      },
+    },
+    {
+      repository: "https://github.com/kasofsk/chuggy.git",
+      boundAt: "2026-10-02T00:00:00Z",
+      landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      pipelinesWritable: false,
+      configured: false,
+    },
+  ],
+};
+
+/** What the long-named repository declares: one configuration ready to run,
+ * on a worker image whose name runs past a phone, and one not ready yet. */
+const repositoryConfigurations = {
+  configurations: ["coding", "nightly"].map((name, index) => {
+    const base = {
+      revision: `revision-${name}`,
+      digest: "a".repeat(64),
+      createdAt: "2026-11-01T00:00:00Z",
+      provenance: {
+        source: "Repository",
+        repository: stubApiRepositoryLong,
+        commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+        path: `.chug/configurations/${name}.json`,
+        name,
+      },
+      version: { name, number: 3 },
+    };
+    return index === 0
+      ? {
+          ...base,
+          readiness: "Ready",
+          image:
+            "ghcr.io/kasofsk/chuggy-worker-with-a-long-image-name:2026.11.01",
+          practices: [],
+          finalization: { approvalRequired: true },
+          evaluationStagesCount: 2,
+        }
+      : { ...base, readiness: "Incomplete" };
+  }),
+};
+
+/** The tenant's connected accounts: one holding both apps, and one lacking
+ * the worker app, whose install is the step the repositories page offers. */
+const forgeInstallations = {
+  truncated: false,
+  installations: [
+    ["portal", "kasofsk", "Organization", "11"],
+    ["worker", "kasofsk", "Organization", "12"],
+    ["portal", "gdoteof", "User", "13"],
+  ].map(([app, account, accountKind, installationId]) => ({
+    forge: "github",
+    app,
+    account,
+    accountKind,
+    installationId,
+    claimedAt: "2026-10-01T00:00:00Z",
+  })),
+};
+
+/** Both apps this deployment holds, and the client it authorizes with. */
+const forgeApps = {
+  apps: ["portal", "worker"].map((app, index) => ({
+    app,
+    id: String(index + 1),
+    slug: `chuggy-${app}`,
+    installUrl: `https://github.com/apps/chuggy-${app}/installations/new`,
+  })),
+  authorization: {
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+  },
+};
+
 /** The reads every case is answered, a route to a row. */
 export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
@@ -209,9 +315,18 @@ export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead(
     `${projectPath}/repositories`,
     projectRepositoriesResponseSchema,
-    {
-      repositories: [],
-    },
+    projectRepositories,
+  ),
+  stubApiRead(
+    `${tenantPath}/forge-installations`,
+    forgeInstallationsResponseSchema,
+    forgeInstallations,
+  ),
+  stubApiRead("/api/v1/forge/github", forgeAppsResponseSchema, forgeApps),
+  stubApiRead(
+    `${projectPath}/configurations`,
+    configurationsResponseSchema,
+    repositoryConfigurations,
   ),
   stubApiRead(`${projectPath}/landing-queues`, landingQueuesResponseSchema, {
     queues: [],

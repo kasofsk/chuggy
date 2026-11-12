@@ -3,9 +3,9 @@
  * listing before anything is sent, and the listing read again once the route
  * has retired the binding, the question standing busy until it is.
  *
- * THE QUESTION IS DRAWN UNDER THE TABLE AND NOT IN IT, because a table wider
- * than a phone scrolls itself, and a question inside the scroller is cut by
- * it. It names the repository, so it needs no row beside it to say which.
+ * THE QUESTION IS DRAWN UNDER THE LIST AND NOT IN A ROW, so a row keeps the
+ * height every row has and the question the width a row would cut. It names
+ * the repository, so it needs no row beside it to say which.
  *
  * A REFUSAL IS SAID UNDER THE QUESTION IT ANSWERED, which stays drawn until
  * the reader cancels it or presses again, and the binding's row is left as it
