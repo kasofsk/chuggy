@@ -95,6 +95,7 @@ npm run typecheck --prefix ui/chuggy-ui
 npm run lint      --prefix ui/chuggy-ui
 npm run test      --prefix ui/chuggy-ui
 npm run build     --prefix ui/chuggy-ui
+npm run render    --prefix ui/chuggy-ui
 ```
 
 `.chug/tasks/check-console-sheets.sh` reads the sheets beside those runs: its
@@ -119,6 +120,19 @@ and `test/scripts/consolePolicy.test.ts` holds that to every finding it names.
 Last, `ui/chuggy-ui/terminal/built.ts` starts the setup program where the build
 left it, under an empty home, and fails the build where the file is missing or
 does not print and exit as a first run does.
+
+## Rendered cases
+
+`npm run render` draws the build in the headless Chromium the lock's Playwright
+names, which the worker image ships: `ui/chuggy-ui/tools/rendered/served.ts`
+serves `dist` on a loopback port under the headers it reads from
+`images/chuggy-ui/nginx.conf`, with `/config.json`, an issuer and the API
+answered on the same origin. It exits 2 with its remedy where there is no build
+or no browser, and the gate then exits 2. A route's stubs are rows of
+`ui/chuggy-ui/tools/rendered/stubApi.ts`, one `stubApiRead` per read, each body
+parsed by the schema `src/contract/` gives that route; a case is a `test` in a
+`*.spec.ts` beside it, opening its route with `renderedOpen` and holding it to
+the helpers in `ui/chuggy-ui/tools/rendered/driver.ts`.
 
 ## Runtime configuration
 

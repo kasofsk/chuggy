@@ -697,6 +697,11 @@ printf '{ "private": true }\n' > "$R/test/rig/package.json"
 commit_all workspace
 run_last_commit
 refute "another workspace's manifest selects the console" 0 "$RC" "check-console: SKIPPED"
+mkdir -p "$R/images/chuggy-ui"
+printf 'server {}\n' > "$R/images/chuggy-ui/nginx.conf"
+commit_all served-headers
+run_last_commit
+refute "the image's served headers select the console, whose rendered cases read them" 0 "$RC" "check-console: SKIPPED"
 
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
 # on any change but a page's: a sheet outside the console is a kind none of
@@ -1510,8 +1515,8 @@ pin_scope check-random "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domai
 	test/conformance test/domain test/itf model .chug/tasks/check-random.sh ':(glob)**/package.json' \
 	-- src/node_modules src/package.json
 pin_scope check-console "$record_tool_install" ui src/contract test/fixtures/configurations \
-	.chug/configurations scripts/console-policy.ts scripts/check-console-policy.ts package-lock.json \
-	tsconfig.json .gitignore .prettierrc.json .prettierignore .chug/tasks/check-console.sh \
+	.chug/configurations scripts/console-policy.ts scripts/check-console-policy.ts \
+	images/chuggy-ui/nginx.conf package-lock.json tsconfig.json .gitignore .prettierrc.json .prettierignore .chug/tasks/check-console.sh \
 	':(glob)**/package.json' -- .browserslistrc browserslist .editorconfig .npmrc .prettierrc \
 	package.yaml lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*' \
 	src/node_modules src/package.json src/tsconfig.json
