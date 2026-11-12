@@ -1,0 +1,15 @@
+/* MoreMenu: the trigger is an icon button that a coarse pointer is given the
+   touch height of at any width, and a destructive item is the danger tone. */
+
+@layer ui {
+  @media (pointer: coarse) {
+    .more-menu-trigger {
+      width: var(--height-touch);
+      height: var(--height-touch);
+    }
+  }
+
+  .more-menu-destructive {
+    color: var(--tone-fail);
+  }
+}
