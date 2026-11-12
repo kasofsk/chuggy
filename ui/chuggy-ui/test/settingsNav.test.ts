@@ -223,3 +223,18 @@ test("Workspaces is drawn to a reader who may make one, Permissions to one who a
   expect(settingsNavSiteDrawn(none)).toStrictEqual(siteNone);
   expect(settingsNavSiteDrawn(undefined)).toStrictEqual(siteNone);
 });
+
+test("every section has a line of its own saying what is there, and its entry carries it in either frame", () => {
+  const lines = settingsSections.map((section) => copyTextEn(section.summary));
+  expect(new Set(lines).size).toBe(settingsSections.length);
+  for (const project of ["atlas", undefined])
+    for (const group of settingsNav({
+      tenant: "acme",
+      project,
+      site: siteEvery,
+    }))
+      for (const entry of group.entries)
+        expect(entry.summary).toStrictEqual(
+          settingsSections.find((section) => section.id === entry.id)?.summary,
+        );
+});

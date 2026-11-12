@@ -40,6 +40,8 @@ import {
   projectResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
+  selectorProjectSettingsResponseSchema,
+  selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
   threadsResponseSchema,
   workerPoolsResponseSchema,
@@ -275,6 +277,42 @@ const forgeApps = {
 };
 
 /** The reads every case is answered, a route to a row. */
+/** The lead's limits, each the installation's. */
+const selectorLimits = {
+  tokensPerDecision: 200_000,
+  millisecondsPerDecision: 900_000,
+  toolCallsPerDecision: 40,
+  dispatchesPerDecision: 3,
+  inputBytesPerDecision: 1_048_576,
+  candidatePagesPerDecision: 4,
+  autoCompactWindow: 400_000,
+  concurrentDecisions: 2,
+  selectionsPerMinute: 6,
+};
+
+/** The project's lead settings: nothing of its own, running on the
+ * installation's. */
+const selectorSettings = {
+  partition,
+  revision: 0,
+  overrides: {},
+  effective: {
+    revision: 1,
+    projectRevision: 0,
+    mode: "Running",
+    installationMode: "Running",
+    dispatchMode: "Automatic",
+    basePrompt: "choose the next ticket",
+    threadStandingRules: "- You act through your owner's own commands.",
+    modelAllowlist: [],
+    toolAllowlist: [],
+    limits: selectorLimits,
+    installationLimits: selectorLimits,
+    operationalContextMaxAgeMs: 60_000,
+    leadOffering: "Own",
+  },
+};
+
 export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
     projects: [partition],
@@ -312,6 +350,16 @@ export const stubApiReads: readonly StubApiRead[] = [
     more: false,
   }),
   stubApiRead(`${projectPath}/lead`, leadReadResponseSchema, { lead: "None" }),
+  stubApiRead(
+    `${projectPath}/selector-settings`,
+    selectorProjectSettingsResponseSchema,
+    selectorSettings,
+  ),
+  stubApiRead(
+    `${projectPath}/selector-settings/history`,
+    selectorSettingsHistoryResponseSchema,
+    { revisions: [] },
+  ),
   stubApiRead(
     `${projectPath}/repositories`,
     projectRepositoriesResponseSchema,
