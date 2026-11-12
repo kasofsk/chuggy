@@ -90,8 +90,11 @@ export function MoreMenu(props: {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="end">
-          {props.items.map((item) => (
-            <MoreMenuEntry key={item.label} item={item} />
+          {/* Keyed by position: an item may rename itself while the menu
+              stays open, and a key that followed its label would remount it
+              and drop the focus it holds. */}
+          {props.items.map((item, position) => (
+            <MoreMenuEntry key={position} item={item} />
           ))}
         </MenuContent>
       </DropdownMenu.Portal>

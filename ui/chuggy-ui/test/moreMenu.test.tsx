@@ -1,7 +1,8 @@
 /**
  * The ⋯ menu, mounted alone: a trigger named by its caller, items whose roles
  * are a menu's whatever kind each is, a destructive one told apart by more
- * than its colour, and Escape handing focus back to the trigger.
+ * than its colour, Escape handing focus back to the trigger, and an item that
+ * renames itself while open keeping the focus it holds.
  */
 
 import {
@@ -11,6 +12,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { MoreMenu } from "../app/browser/ui/MoreMenu.tsx";
@@ -95,6 +98,45 @@ test("Escape closes the menu and returns focus to the trigger", async () => {
     );
   });
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
+  await waitFor(() => {
+    expect(document.activeElement).toBe(trigger);
+  });
+});
+
+function CopyLinkMenu(): ReactNode {
+  const [copied, setCopied] = useState(false);
+  return (
+    <MoreMenu
+      label="More actions"
+      items={[
+        {
+          kind: "action",
+          label: copied ? "Copied" : "Copy link",
+          onSelect: (event) => {
+            event.preventDefault();
+            setCopied(true);
+          },
+        },
+        { kind: "destructive", label: "Delete", onSelect: () => undefined },
+      ]}
+    />
+  );
+}
+
+test("an item renamed while the menu stays open keeps its focus", async () => {
+  render(<CopyLinkMenu />);
+  const trigger = screen.getByRole("button", { name: "More actions" });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const copyLink = await screen.findByRole("menuitem", { name: "Copy link" });
+  await waitFor(() => {
+    expect(document.activeElement).toBe(copyLink);
+  });
+  fireEvent.keyDown(copyLink, { key: "Enter" });
+  const copied = await screen.findByRole("menuitem", { name: "Copied" });
+  expect(copied).toBe(copyLink);
+  expect(document.activeElement).toBe(copied);
+  fireEvent.keyDown(copied, { key: "Escape" });
   expect(screen.queryByRole("menu")).toBeNull();
   await waitFor(() => {
     expect(document.activeElement).toBe(trigger);
