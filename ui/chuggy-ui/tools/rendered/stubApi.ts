@@ -276,7 +276,6 @@ const forgeApps = {
   },
 };
 
-/** The reads every case is answered, a route to a row. */
 /** The lead's limits, each the installation's. */
 const selectorLimits = {
   tokensPerDecision: 200_000,
@@ -313,6 +312,7 @@ const selectorSettings = {
   },
 };
 
+/** The reads every case is answered, a route to a row. */
 export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
     projects: [partition],

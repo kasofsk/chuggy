@@ -74,6 +74,7 @@ test("on the phone a section is drawn alone, its heading within the first screen
   const box = await heading.boundingBox();
   expect(box, "the section's heading is drawn").not.toBeNull();
   expect(box?.y ?? Infinity).toBeLessThan(renderedViewports.phone.height);
+  await renderedNoOverflow(page);
   await back.click();
   await expect(
     page.getByRole("navigation", { name: "Settings" }),
