@@ -24,10 +24,12 @@ import { spendFigures } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import { runResultLineOf } from "../../core/runResult.ts";
+import { branchName } from "../../core/labels.ts";
 import {
   ticketLandingsHeld,
   ticketLandingsJoined,
 } from "../../core/ticketLandings.ts";
+import type { TicketLandingStack } from "../../core/ticketLandings.ts";
 import {
   cycleLabel,
   cycleStandingLabel,
@@ -54,7 +56,9 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { useRunReason } from "../RunEvidence.tsx";
 import { Chevron } from "../ui/Chevron.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
+import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
+import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
@@ -265,8 +269,57 @@ function TicketRunsRowDrawn(props: {
   );
 }
 
+/**
+ * What a cycle's evaluation was stacked over: each ticket beneath it, bottom
+ * first, with the commit the stack lands of it, and the reference and tip it
+ * was built on; or, where it was evaluated alone, why.
+ */
+function TicketRunsStackDrawn(props: {
+  readonly stack: TicketLandingStack;
+  readonly params: TicketRunsParams;
+}): ReactNode {
+  const { stack } = props;
+  const text = useCopyText();
+  const over = text({ id: "ticket-runs-stacked-over" });
+  if (stack.prepared === "Unstacked")
+    return (
+      <Fields>
+        <Field name={over}>
+          {text({
+            id: "ticket-runs-unstacked",
+            args: { reason: stack.reason },
+          })}
+        </Field>
+      </Fields>
+    );
+  return (
+    <Fields>
+      <Field name={over}>
+        <ol className="ticket-runs-stack-beneath">
+          {stack.beneath.map((member) => (
+            <li key={member.ticket}>
+              <Link
+                to="/$tenant/$project/tickets/$ticket"
+                params={{ ...props.params, ticket: String(member.ticket) }}
+              >
+                {`#${String(member.ticket)}`}
+              </Link>{" "}
+              <Identity label={member.commit} />
+            </li>
+          ))}
+        </ol>
+      </Field>
+      <Field name={text({ id: "ticket-runs-stack-built-on" })}>
+        <code title={stack.reference}>{branchName(stack.reference)}</code>{" "}
+        <Identity label={stack.tip} />
+      </Field>
+    </Fields>
+  );
+}
+
 function TicketRunsCycleDrawn(props: {
   readonly cycle: TicketRunsCycle;
+  readonly stack: TicketLandingStack | undefined;
   readonly params: TicketRunsParams;
   readonly nowMs: number;
 }): ReactNode {
@@ -303,6 +356,11 @@ function TicketRunsCycleDrawn(props: {
           />
         ))}
       </ul>
+      {props.stack === undefined ? null : (
+        <div className="ticket-runs-stack">
+          <TicketRunsStackDrawn stack={props.stack} params={props.params} />
+        </div>
+      )}
     </section>
   );
 }
@@ -334,6 +392,7 @@ function TicketRunsBody(props: {
         <TicketRunsCycleDrawn
           key={cycle.ordinal}
           cycle={cycle}
+          stack={held.reads.landingStacks.get(cycle.ordinal)}
           params={params}
           nowMs={held.nowMs}
         />

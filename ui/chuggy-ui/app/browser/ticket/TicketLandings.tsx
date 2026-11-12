@@ -20,13 +20,16 @@ import {
   ticketLandingFragment,
   ticketLandingFragmentSays,
   ticketLandingsRead,
+  ticketLandingStacksRead,
 } from "../../core/ticketLandings.ts";
 import type {
   TicketLanding,
   TicketLandingDetail,
   TicketLandingFragment,
   TicketLandingProposal,
+  TicketLandingRecheck,
   TicketLandingsState,
+  TicketLandingStacks,
 } from "../../core/ticketLandings.ts";
 import { usePanelState } from "../api.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
@@ -38,14 +41,45 @@ import { copyOrDataText } from "../../core/copy.ts";
 
 import "./ticket.css";
 
+/** One ticket's landings and its work cycles' stacks, both of one read. */
+export interface TicketLandingsHeld {
+  readonly landingsState: TicketLandingsState;
+  readonly landingStacks: TicketLandingStacks;
+}
+
 /** One ticket's landings, kept across a read that is out or failed. */
 export function useTicketLandings(
   partition: PartitionIdentity,
   ticket: number,
-): TicketLandingsState {
-  return ticketLandingsRead(
-    usePanelState(ticketLandingsQuery(partition, ticket)),
-    useCopyText(),
+): TicketLandingsHeld {
+  const state = usePanelState(ticketLandingsQuery(partition, ticket));
+  const text = useCopyText();
+  return {
+    landingsState: ticketLandingsRead(state, text),
+    landingStacks: ticketLandingStacksRead(state, text),
+  };
+}
+
+/**
+ * Why a landing was sent back to re-check, under the name both the record's
+ * detail and the landing's page give it, and the base it was checked against
+ * where it names one.
+ */
+export function LandingRecheckField(props: {
+  readonly recheck: TicketLandingRecheck | undefined;
+}): ReactNode {
+  const recheck = props.recheck;
+  const text = useCopyText();
+  if (recheck === undefined) return null;
+  return (
+    <Field name={text({ id: "ticket-landing-rechecked" })}>
+      {recheck.base === undefined
+        ? recheck.reason
+        : text({
+            id: "ticket-landing-recheck-against",
+            args: { reason: recheck.reason, base: recheck.base },
+          })}
+    </Field>
   );
 }
 
@@ -182,6 +216,7 @@ function LandingDetail(props: {
         {runCountLabel(detail.attempts)}
       </Field>
       <LandingConflicts detail={detail} />
+      <LandingRecheckField recheck={detail.recheck} />
       {detail.proposal === undefined ? null : (
         <LandingProposalFields proposal={detail.proposal} />
       )}

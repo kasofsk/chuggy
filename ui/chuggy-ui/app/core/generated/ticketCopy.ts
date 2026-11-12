@@ -260,6 +260,11 @@ export interface TicketCopy {
   readonly "ticket-runs-blocked-at": {
     readonly step: unknown;
   };
+  readonly "ticket-runs-stacked-over": Record<never, never>;
+  readonly "ticket-runs-stack-built-on": Record<never, never>;
+  readonly "ticket-runs-unstacked": {
+    readonly reason: unknown;
+  };
   readonly "ticket-landing-heading": Record<never, never>;
   readonly "ticket-landing-none": Record<never, never>;
   readonly "ticket-landing-not-reached": Record<never, never>;
@@ -289,6 +294,14 @@ export interface TicketCopy {
     readonly removal: unknown;
   };
   readonly "ticket-landing-attempts": Record<never, never>;
+  readonly "ticket-landing-rechecked": Record<never, never>;
+  readonly "ticket-landing-recheck-against": {
+    readonly reason: unknown;
+    readonly base: unknown;
+  };
+  readonly "ticket-landing-recheck-required": {
+    readonly reason: unknown;
+  };
   readonly "ticket-landing-removal-by": {
     readonly reason: unknown;
     readonly actor: unknown;

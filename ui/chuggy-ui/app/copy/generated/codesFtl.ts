@@ -99,6 +99,18 @@ codes-landing-failure-queue-checks = Merge queue checks failed
 # spells -brief-check: to re-check is to evaluate again
 codes-landing-failure-recheck = Target moved, re-check required
 
+## Why one landing attempt was sent back to re-check.
+
+codes-recheck-target-moved = The target moved past the commit it was evaluated on
+codes-recheck-stack-tree-differs = Its merge onto the target differs from the stack evaluated
+codes-recheck-merged-tree-differs = The { -pull-request } merged a tree other than the one evaluated
+
+## Why a cycle was evaluated without a stack beneath it.
+
+codes-unstacked-unchosen = No stack could be chosen beneath it
+codes-unstacked-conflicted = It conflicts with the { -ticket(form: "plural") } ahead of it in the queue
+codes-unstacked-unpublished = Its stack could not be built and published
+
 ## What a landing's pull request came to, and what the forge says of it.
 
 codes-creation-created = Opened

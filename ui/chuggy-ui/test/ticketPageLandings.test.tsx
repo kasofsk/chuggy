@@ -25,8 +25,11 @@ import {
   landingLanded,
   landingMergedElsewhere,
   landingPullRequest,
+  landingRechecked,
   landingRunning,
   landingsRead,
+  landingsStackedRead,
+  stackStacked,
   ticket68Shapes,
 } from "./ticketLandingsFixture.ts";
 import { ledgerPage, ticket21Program } from "./ticketLedgerFixture.ts";
@@ -86,7 +89,11 @@ interface Served {
   readonly program?: boolean;
   readonly shapes?: readonly ExecutionShape[];
   /** How the brief lands the work, its read's default where a case names none. */
-  readonly finalization?: { readonly kind: string };
+  readonly finalization?: {
+    readonly kind: string;
+    readonly mode?: string;
+    readonly policy?: string;
+  };
 }
 
 function ticketBody(served: Served): Record<string, unknown> {
@@ -584,4 +591,126 @@ test("the landing's page names the branches it lands from and into, never their 
   );
   expect(fieldOf(page, "From").textContent).toBe("chug/ticket-68");
   expect(fieldOf(page, "Into").textContent).toBe("main");
+});
+
+/** What a cycle on the Runs tab says its evaluation was stacked over, where it says. */
+function stackSaid(group: HTMLElement): string | null | undefined {
+  return group.querySelector(".ticket-runs-stack")?.textContent;
+}
+
+const stackedBrief = {
+  finalization: { kind: "GitMerge", mode: "Push", policy: "Stacked" },
+} as const;
+
+test("a landing sent back to re-check says why on its record and its page, and the base it was checked against where it names one", async () => {
+  const said = {
+    TargetMoved: "The target moved past the commit it was evaluated on",
+    StackTreeDiffers:
+      "Its merge onto the target differs from the stack evaluated",
+    MergedTreeDiffers:
+      "The pull request merged a tree other than the one evaluated",
+  } as const;
+  for (const reason of [
+    "TargetMoved",
+    "StackTreeDiffers",
+    "MergedTreeDiffers",
+  ] as const) {
+    for (const baseRef of [undefined, "refs/heads/main"]) {
+      const page = await landingPage(() =>
+        answer(landingsRead([landingRechecked(2, reason, baseRef)])),
+      );
+      const [row] = landingRows(page);
+      if (row === undefined) throw new Error("no Landing row drawn");
+      expect(rowSaid(row)).toEqual([
+        "Cycle 2",
+        "Failed",
+        `Re-check required · ${said[reason]}`,
+      ]);
+      const reasoned =
+        baseRef === undefined ? said[reason] : `${said[reason]} · against main`;
+      expect(fieldOf(page, "Re-checked").textContent).toBe(reasoned);
+      const detail = await detailOpened(row);
+      expect(fieldOf(detail, "Re-checked").textContent).toBe(reasoned);
+      cleanup();
+    }
+  }
+});
+
+test("a landing re-checked with no recorded reason draws as it did, with nothing re-checked named", async () => {
+  const page = await landingPage(() =>
+    answer(landingsRead([landingRechecked(2)])),
+  );
+  const [row] = landingRows(page);
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Cycle 2",
+    "Failed",
+    "Target moved, re-check required",
+  ]);
+  expect(within(page).queryByText("Re-checked")).toBeNull();
+  const detail = await detailOpened(row);
+  expect(within(detail).queryByText("Re-checked")).toBeNull();
+});
+
+test("a stacked cycle names the tickets beneath it bottom first with their commits, and the reference and tip it was built on", async () => {
+  const container = await drawn(
+    () =>
+      answer(landingsStackedRead([landingConflicted(2)], [stackStacked(2)])),
+    stackedBrief,
+  );
+  const stack = groupOf(container, 2).querySelector<HTMLElement>(
+    ".ticket-runs-stack",
+  );
+  if (stack === null) throw new Error("no stack drawn");
+  const beneath = [
+    ...stack.querySelectorAll(".ticket-runs-stack-beneath > li"),
+  ];
+  expect(beneath.map((member) => member.textContent)).toEqual([
+    "#12 a1b2c3d",
+    "#14 c3d4e5f",
+  ]);
+  expect(
+    beneath.map((member) => member.querySelector("a")?.textContent),
+  ).toEqual(["#12", "#14"]);
+  expect(fieldOf(stack, "Built on").textContent).toBe("main f6e5d4c");
+  expect(stackSaid(groupOf(container, 1))).toBeUndefined();
+  expect(stackSaid(groupOf(container, 3))).toBeUndefined();
+});
+
+test("a cycle evaluated unstacked says why, under the same name a stacked one is drawn by", async () => {
+  const container = await drawn(
+    () =>
+      answer(
+        landingsStackedRead(
+          [],
+          [{ cycle: 2, prepared: "Unstacked", reason: "Conflicted" }],
+        ),
+      ),
+    stackedBrief,
+  );
+  expect(stackSaid(groupOf(container, 2))).toBe(
+    "Stacked overNone · It conflicts with the tickets ahead of it in the queue",
+  );
+});
+
+test("a ticket that is not Stacked, and a cycle with no decision, draw nothing beyond what they drew", async () => {
+  const before = cyclesSaid(
+    await drawn(() => answer(landingsRead([landingConflicted(2)]))),
+  );
+  cleanup();
+  const serialized = await drawn(
+    () => answer(landingsRead([landingConflicted(2)])),
+    { finalization: { kind: "GitMerge", mode: "Push", policy: "Serialized" } },
+  );
+  expect(cyclesSaid(serialized)).toEqual(before);
+  expect(serialized.querySelector(".ticket-runs-stack")).toBeNull();
+  cleanup();
+  const undecided = await drawn(
+    () =>
+      answer(landingsStackedRead([landingConflicted(2)], [stackStacked(3)])),
+    stackedBrief,
+  );
+  const said = cyclesSaid(undecided);
+  expect(said.slice(1)).toEqual(before.slice(1));
+  expect(said[0]).not.toEqual(before[0]);
 });

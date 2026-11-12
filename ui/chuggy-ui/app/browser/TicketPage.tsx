@@ -443,7 +443,7 @@ function TicketPageOf(props: {
   const pageState = useTicketExecutions(partition, ticket);
   const leadState = useLead(partition);
   const deliveryState = useTicketDelivery(partition, ticket);
-  const landingsState = useTicketLandings(partition, ticket);
+  const { landingsState, landingStacks } = useTicketLandings(partition, ticket);
   const queues = useLandingQueues(partition);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
     return <TicketPageNotFound />;
@@ -457,6 +457,7 @@ function TicketPageOf(props: {
     leadState,
     deliveryState,
     landingsState,
+    landingStacks,
     queues,
   };
   if (unreleased !== undefined)
