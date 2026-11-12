@@ -102,7 +102,11 @@ function dialogFocusReturnedController(
  * what held it when the dialog opened, or what controls the popup that stood
  * in, once that has left the page. Where it recorded nothing, Radix's own
  * return to the trigger stands. */
-function useDialogFocusReturned(open: boolean): (event: Event) => void {
+function useDialogFocusReturned(props: {
+  readonly open: boolean;
+  readonly trigger?: ReactNode;
+}): (event: Event) => void {
+  const open = props.open && props.trigger === undefined;
   const opener = useRef<{
     readonly focused: HTMLElement;
     readonly controller: HTMLElement | undefined;
@@ -150,9 +154,7 @@ export function Dialog(props: {
   readonly children: ReactNode;
 }): ReactNode {
   const width = dialogSizeClassNames[props.size ?? "roster"];
-  const returned = useDialogFocusReturned(
-    props.open && props.trigger === undefined,
-  );
+  const returned = useDialogFocusReturned(props);
   const busy = props.busy === true;
   return (
     <RadixDialog.Root
