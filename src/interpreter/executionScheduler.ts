@@ -1161,7 +1161,12 @@ export interface ExecutionProfile {
 /** What one attempt is invoked with, as its worker is handed it. */
 export type WorkTaskInvocation = Pick<
   WorkTaskDocument,
-  "profile" | "briefing" | "authority" | "worker" | "targetRef"
+  | "profile"
+  | "briefing"
+  | "authority"
+  | "credentialsListed"
+  | "worker"
+  | "targetRef"
 >;
 
 /**
