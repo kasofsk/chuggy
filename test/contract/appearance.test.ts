@@ -2,7 +2,7 @@
  * The theme wire: what a theme document refuses, the WCAG ratio against pairs
  * whose ratio is known, every built-in passing the contrast rule in each scheme
  * it carries, and the console's own look and its state fills held to the
- * stylesheet they are taken from.
+ * stylesheet they are taken from, its fills and washes among them.
  */
 
 import assert from "node:assert/strict";
@@ -32,6 +32,9 @@ import {
   themeRoles,
   themeTextSizeRootPercents,
   themeTextSizes,
+  themeWashColour,
+  themeWashPercent,
+  themeWashes,
 } from "../../src/contract/appearance.ts";
 
 const chuggy = builtInThemes.chuggy;
@@ -236,6 +239,47 @@ test("a theme answers every pair it draws too faintly, a fixed tone on its surfa
   assert.ok(!named.includes("ink-1 on surface-0"));
 });
 
+test("a state's word is held as text on the page, so a tone that only clears the mark minimum fails", () => {
+  const light = {
+    ...chuggyLight(),
+    "surface-0": "#c4c4c4",
+    "ink-1": "#000000",
+    "ink-2": "#141414",
+    "ink-3": "#262626",
+    "edge-control": "#404040",
+  };
+  const failures = themeContrastFailures({
+    ...chuggy,
+    palette: { schemes: "Light", light },
+  });
+  assert.ok(failures.length > 0);
+  for (const failure of failures) {
+    assert.ok(failure.foreground.startsWith("tone-"), failure.foreground);
+    assert.equal(failure.background, "surface-0");
+    assert.equal(failure.ratioMin, themeContrastTextMin);
+    assert.ok(failure.ratio >= themeContrastMarkMin, failure.foreground);
+  }
+});
+
+test("a wash is mixed with the theme's own panel, and ink and its tone are held as text on it", () => {
+  const light = { ...chuggyLight(), "surface-1": "#3a3a3a" };
+  assert.equal(
+    themeWashColour("Light", light, "wash-live"),
+    themeColourMix(
+      themeFixedColours.Light["tone-live"],
+      "#3a3a3a",
+      themeWashPercent,
+    ),
+  );
+  const named = themeContrastFailures({
+    ...chuggy,
+    palette: { schemes: "Light", light },
+  }).map((failure) => `${failure.foreground} on ${failure.background}`);
+  assert.ok(named.includes("ink-1 on wash-fail"));
+  assert.ok(named.includes("tone-live on wash-live"));
+  assert.ok(!named.includes("tone-live on wash-pass"));
+});
+
 test("inverse ink a theme sets is held to every state fill it is drawn on", () => {
   const light = { ...chuggyLight(), "ink-inverse": "#c0c0c0" };
   const failures = themeContrastFailures({
@@ -349,5 +393,17 @@ test("the fills are the console's stylesheet: a tone in light, mixed with the pa
       "u",
     );
     assert.ok(pattern.test(tokensSheet), fill);
+  }
+});
+
+test("the washes are the console's stylesheet: a tone mixed with the panel", () => {
+  assert.ok(tokensSheet.includes(`--wash: ${themeWashPercent}%;`), "wash");
+  for (const wash of themeWashes) {
+    const tone = wash.replace(/^wash-/u, "tone-");
+    const pattern = new RegExp(
+      `--${wash}:\\s*color-mix\\(\\s*in srgb,\\s*var\\(--${tone}\\) var\\(--wash\\),\\s*var\\(--surface-1\\)\\s*\\)`,
+      "u",
+    );
+    assert.ok(pattern.test(tokensSheet), wash);
   }
 });

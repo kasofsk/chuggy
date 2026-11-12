@@ -406,7 +406,45 @@ export function themeFillColour(
   }
 }
 
-type ThemeContrastGround = ThemeRole | ThemeFill;
+/** The grounds a notice or a state's row is washed in, each named as the console token it defines. */
+export const themeWashes = [
+  "wash-pass",
+  "wash-fail",
+  "wash-live",
+  "wash-evaluation",
+  "wash-finalization",
+  "wash-parked",
+  "wash-queued",
+] as const;
+export type ThemeWash = (typeof themeWashes)[number];
+
+const themeWashTones: Readonly<Record<ThemeWash, ThemeFixedRole>> = {
+  "wash-pass": "tone-pass",
+  "wash-fail": "tone-fail",
+  "wash-live": "tone-live",
+  "wash-evaluation": "tone-evaluation",
+  "wash-finalization": "tone-finalization",
+  "wash-parked": "tone-parked",
+  "wash-queued": "tone-queued",
+};
+
+/** How much of its tone a wash keeps, the rest being the theme's `surface-1`. */
+export const themeWashPercent = 10;
+
+/** The colour a wash is in one scheme of a theme: its tone mixed with the theme's `surface-1`. */
+export function themeWashColour(
+  scheme: ThemeScheme,
+  colours: ThemeColours,
+  wash: ThemeWash,
+): string {
+  return themeColourMix(
+    themeFixedColours[scheme][themeWashTones[wash]],
+    colours["surface-1"],
+    themeWashPercent,
+  );
+}
+
+type ThemeContrastGround = ThemeRole | ThemeFill | ThemeWash;
 
 /** One colour drawn on one ground, and the least contrast it needs there. */
 export interface ThemeContrastPair {
@@ -434,11 +472,18 @@ const themeSyntax = themeFixedRoles.filter((role) =>
  * The pairs `themeContrastFailures` reads: every pair the console draws that a
  * theme can change, but the inverse ink on the retired fill and on the
  * context's slots, which the console's own look draws below the text minimum.
+ * A state's tone is printed as its word on the page, a panel and its own wash,
+ * so it is held as text there, and as a mark on the sunken surface.
  */
 export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ...themeContrastPairsOf(
     ["ink-1", "ink-2", "ink-3"],
     ["surface-0", "surface-1", "surface-2", "bubble"],
+    themeContrastTextMin,
+  ),
+  ...themeContrastPairsOf(
+    ["ink-1", "ink-2", "ink-3"],
+    themeWashes,
     themeContrastTextMin,
   ),
   ...themeContrastPairsOf(
@@ -459,9 +504,15 @@ export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ),
   ...themeContrastPairsOf(
     themeTones,
-    ["surface-0", "surface-1", "surface-2"],
-    themeContrastMarkMin,
+    ["surface-0", "surface-1"],
+    themeContrastTextMin,
   ),
+  ...themeContrastPairsOf(themeTones, ["surface-2"], themeContrastMarkMin),
+  ...themeWashes.map((wash) => ({
+    foreground: themeWashTones[wash],
+    background: wash,
+    ratioMin: themeContrastTextMin,
+  })),
 ];
 
 /** A pair a theme draws below the contrast it needs, in one scheme. */
@@ -498,7 +549,9 @@ export function themeContrastFailures(
         ? colours[role as ThemeRole]
         : role in themeFillTones
           ? themeFillColour(scheme, colours, role as ThemeFill)
-          : fixed[role as ThemeFixedRole];
+          : role in themeWashTones
+            ? themeWashColour(scheme, colours, role as ThemeWash)
+            : fixed[role as ThemeFixedRole];
     return themeContrastPairs.flatMap((pair) => {
       const ratio = contrastRatio(
         colourOf(pair.foreground),
