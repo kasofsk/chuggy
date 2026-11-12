@@ -207,6 +207,13 @@ test("the contrast rule reads every fixed colour and every ground a theme sets",
   }
 });
 
+test("the contrast rule leaves the hairline edges out, as its account says", () => {
+  for (const pair of themeContrastPairs) {
+    assert.notEqual(pair.foreground, "edge");
+    assert.notEqual(pair.foreground, "edge-strong");
+  }
+});
+
 test("every built-in carries both schemes and passes the contrast rule in each", () => {
   for (const id of builtInThemeIds) {
     const theme = builtInThemes[id];
