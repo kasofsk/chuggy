@@ -99,20 +99,23 @@
     }
   }
 
-  /* The header's icons spread across a phone's row, and sit together at the
-   * end where the viewport divides into columns (viewportTwoColumnEm), leaving the
-   * rest of the row to the title, which is cut short to fit. */
+  /* The header's controls sit together at the end of its row, leaving the
+   * rest to the title, which is cut short to fit. A coarse pointer is given
+   * the touch height at any width, and so is Back, the one control with a
+   * word on its face. */
   .chat-icons {
-    flex: 1;
-    justify-content: space-evenly;
+    gap: var(--space-1);
   }
 
-  @media (min-width: 60em) {
-    .chat-icons {
-      flex: none;
-      justify-content: flex-end;
-      gap: var(--space-1);
+  @media (pointer: coarse) {
+    .chat-icons .btn-icon {
+      width: var(--height-touch);
+      height: var(--height-touch);
     }
+  }
+
+  .chat-back > .btn {
+    min-height: var(--height-touch);
   }
 
   .chat-separator {
@@ -160,7 +163,8 @@
     border-radius: 0;
   }
 
-  .chat-history-row[data-state="checked"] {
+  .chat-history-row[data-state="checked"],
+  .chat-history-row[aria-current="true"] {
     outline: var(--hairline) solid var(--tone-live);
     outline-offset: calc(-1 * var(--hairline));
     animation: chat-history-held calc(2 * var(--duration-pulse)) ease-in-out

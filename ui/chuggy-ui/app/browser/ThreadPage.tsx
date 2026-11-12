@@ -54,7 +54,6 @@ export function ThreadPage(props: {
             home={threadHomeOf(props.partition)}
             thread={state.value}
             viewOnly={viewOnly}
-            at="Page"
           />
         </div>
         <ContextToggle open={context} onToggle={setContext} />

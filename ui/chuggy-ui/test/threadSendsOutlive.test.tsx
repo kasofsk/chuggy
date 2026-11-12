@@ -51,6 +51,7 @@ import {
 } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { chatPaneHistoryChosen } from "./chatPaneMenu.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -367,17 +368,7 @@ test("a first press whose open's answer was lost while its box was drawn, presse
 
 /** The thread `session` chosen out of the pane's history. */
 async function picked(session: string): Promise<void> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const row = await screen.findByRole("menuitemradio", {
-    name: new RegExp(`^${session}`, "u"),
-  });
-  await act(async () => {
-    fireEvent.click(row);
-    await Promise.resolve();
-  });
-  await settled();
+  await chatPaneHistoryChosen(new RegExp(`^${session}`, "u"));
 }
 
 test.each([

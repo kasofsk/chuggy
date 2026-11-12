@@ -1,7 +1,7 @@
 /**
- * The chat pane's history: which threads it offers, in what order, and what
+ * The history a thread's page offers: which threads, in what order, and what
  * choosing one hands back. And the menu of what is done to the thread the
- * pane holds: Open, Copy link, Rename and Close.
+ * page holds: Copy link, Rename and Close.
  *
  * It is the whole of what the Threads page used to be, so the cases that page
  * carried about ordering are here instead.
@@ -25,7 +25,6 @@ import {
   ChatPaneHistory,
   ChatPaneThreadActions,
 } from "../app/browser/shell/ChatPaneHistory.tsx";
-import type { ChatPaneThreadActionsAt } from "../app/browser/shell/ChatPaneHistory.tsx";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
 import { Routed } from "./routed.tsx";
@@ -276,7 +275,6 @@ test("the History trigger names itself again as a tooltip on focus", async () =>
 async function renderedActions(
   thread: Parameters<typeof threadEntry>[0],
   drawn: {
-    readonly at?: ChatPaneThreadActionsAt;
     readonly viewOnly?: boolean;
     readonly write?: CopyWrite;
   } = {},
@@ -290,7 +288,6 @@ async function renderedActions(
               home={threadHome}
               thread={threadEntry(thread)}
               viewOnly={drawn.viewOnly ?? false}
-              at={drawn.at ?? "Pane"}
             />
           </Routed>
         </CopyProvider>
@@ -300,8 +297,8 @@ async function renderedActions(
   await settled();
 }
 
-/** The thread's page as the router addresses it, which is what both its link
- * and its copied address are built from. */
+/** The thread's page as the router addresses it, which is what its copied
+ * address is built from. */
 function threadPageHref(session: string): string {
   return `/${threadPartition.tenant}/${threadPartition.project}/threads/${session}`;
 }
@@ -333,10 +330,9 @@ test("what is done to the thread is one control beside its title, named again on
   expect((await screen.findByRole("tooltip")).textContent).toBe("Chat actions");
 });
 
-test("the reader's own thread offers Open, Copy link, Rename and Close, and neither Hide nor Show", async () => {
+test("the reader's own thread offers Copy link, Rename and Close, and neither Hide nor Show", async () => {
   await renderedActions({ session: threadMineSession, mine: true });
   expect(await threadMenuOffers()).toStrictEqual([
-    "Open",
     "Copy link",
     "Rename",
     "Close",
@@ -345,11 +341,7 @@ test("the reader's own thread offers Open, Copy link, Rename and Close, and neit
 
 test("a stranger's thread offers no Rename", async () => {
   await renderedActions({ session: threadOtherSession, mine: false });
-  expect(await threadMenuOffers()).toStrictEqual([
-    "Open",
-    "Copy link",
-    "Close",
-  ]);
+  expect(await threadMenuOffers()).toStrictEqual(["Copy link", "Close"]);
 });
 
 /** Closing cannot be undone, so Close asks first and Cancel sends nothing. */
@@ -394,33 +386,19 @@ test("Rename puts the editor in the title's place, and leaving it abandons the r
   expect(screen.getByRole("button", { name: "Chat actions" })).toBeDefined();
 });
 
-/** A real anchor is what lets a reader open the page in a tab of its own,
- * or copy its address from the browser's own menu. */
-test("Open is a link to the thread's own page", async () => {
-  await renderedActions({ session: threadMineSession, mine: true });
-  const open = within(await threadMenuOpened()).getByRole("menuitem", {
-    name: "Open",
-  });
-  expect(open.tagName).toBe("A");
-  expect(open.getAttribute("href")).toBe(threadPageHref(threadMineSession));
-});
-
-/** The address is the router's own, so it is the one the link goes to,
- * written whole for a reader pasting it anywhere else; the menu stays open on
- * the item to say so. */
-test("Copy link writes the whole address of the page Open goes to, and says it did", async () => {
+/** The address is the router's own, written whole for a reader pasting it
+ * anywhere else; the menu stays open on the item to say so. */
+test("Copy link writes the whole address of the thread's page, and says it did", async () => {
   const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
   await renderedActions({ session: "thread a/b", mine: true }, { write });
   const menu = await threadMenuOpened();
-  const href =
-    within(menu).getByRole("menuitem", { name: "Open" }).getAttribute("href") ??
-    "";
   await act(async () => {
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
     await Promise.resolve();
   });
-  expect(href).toBe(threadPageHref(encodeURIComponent("thread a/b")));
-  expect(write).toHaveBeenCalledWith(`${location.origin}${href}`);
+  expect(write).toHaveBeenCalledWith(
+    `${location.origin}${threadPageHref(encodeURIComponent("thread a/b"))}`,
+  );
   expect(screen.getByRole("menu")).toBe(menu);
   expect(within(menu).getByRole("menuitem", { name: "Copied" })).toBeDefined();
   expect(screen.getByRole("status").textContent).toBe("Copied");
@@ -440,22 +418,23 @@ test("a write the browser refused claims nothing", async () => {
 });
 
 /** Reading a thread is not changing it, so a reader who may change nothing
- * still reaches its page and its address. */
-test("a reader who may change nothing is still offered Open and Copy link", async () => {
+ * still reaches its address. */
+test("a reader who may change nothing is still offered Copy link", async () => {
   await renderedActions(
     { session: threadMineSession, mine: true },
     { viewOnly: true },
   );
-  expect(await threadMenuOffers()).toStrictEqual(["Open", "Copy link"]);
+  expect(await threadMenuOffers()).toStrictEqual(["Copy link"]);
 });
 
 /** On the page itself the title is the page's, its standing is said beside
  * it, and a link to where the reader already is would go nowhere. */
 test("over the thread's own page the title heads the page, with its standing, and Open is not offered", async () => {
-  await renderedActions(
-    { session: threadOtherSession, title: "theirs", state: "Closed" },
-    { at: "Page" },
-  );
+  await renderedActions({
+    session: threadOtherSession,
+    title: "theirs",
+    state: "Closed",
+  });
   expect(
     screen.getByRole("heading", { level: 1, name: "theirs" }),
   ).toBeDefined();
