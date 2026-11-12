@@ -1,0 +1,72 @@
+/* CenteredPage: one column centred in the room it is given, falling back to
+   the top where the column is taller than the room, inside the page gutter or
+   the screen's safe area, whichever is wider. The column is its own container,
+   so the actions stack on the column's width rather than the viewport's. */
+
+@layer ui {
+  .centered-page {
+    box-sizing: border-box;
+    display: grid;
+    justify-items: center;
+    align-content: safe center;
+    min-height: 100%;
+    padding: max(var(--space-4), env(safe-area-inset-top))
+      max(var(--space-4), env(safe-area-inset-right))
+      max(var(--space-4), env(safe-area-inset-bottom))
+      max(var(--space-4), env(safe-area-inset-left));
+  }
+
+  .centered-page-landmark {
+    min-height: 100dvh;
+  }
+
+  .centered-page-column {
+    container-type: inline-size;
+    display: grid;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: var(--measure);
+    min-width: 0;
+  }
+
+  .centered-page-mark {
+    display: flex;
+  }
+
+  .centered-page-title {
+    margin: 0;
+    font-size: var(--text-xl);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+    color: var(--ink-1);
+    overflow-wrap: anywhere;
+  }
+
+  .centered-page-body {
+    display: grid;
+    gap: var(--space-3);
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+  }
+
+  .centered-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  @container (max-width: 40em) {
+    .centered-page-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .centered-page-actions > *,
+    .centered-page-actions .btn {
+      box-sizing: border-box;
+      width: 100%;
+      justify-content: center;
+    }
+  }
+}
