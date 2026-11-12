@@ -1574,6 +1574,48 @@ test("an authored block narrows the granted authority and never raises it", () =
   assert.equal(resolved.filesystem, "ReadWorkspace");
 });
 
+test("the credentials a configuration lists are kept beside the grant, and never widen it", () => {
+  const invocation = composed(
+    viewOf({
+      grant: { ...grant, credentials: ["forge", "workspace"] },
+      authority: { credentials: ["workspace", "absent", "forge"] },
+      block: {
+        instructions: [],
+        authority: { credentials: ["absent", "forge"] },
+      },
+    }),
+  );
+  assert.deepEqual(invocation.credentialsListed, ["absent", "forge"]);
+  assert.deepEqual(taskAuthorityGrant(invocation.authority).credentials, [
+    "forge",
+  ]);
+});
+
+test("a configuration that lists no credentials lists the granted ones", () => {
+  const invocation = composed(
+    viewOf({
+      grant: { ...grant, credentials: ["workspace", "forge", "workspace"] },
+      authority: { tools: ["editor"] },
+    }),
+  );
+  assert.deepEqual(invocation.credentialsListed, ["forge", "workspace"]);
+  assert.deepEqual(
+    invocation.credentialsListed,
+    taskAuthorityGrant(invocation.authority).credentials,
+  );
+});
+
+test("a configuration that lists credentials no block shares lists none", () => {
+  const invocation = composed(
+    viewOf({
+      authority: { credentials: ["workspace"] },
+      block: { instructions: [], authority: { credentials: ["absent"] } },
+    }),
+  );
+  assert.deepEqual(invocation.credentialsListed, []);
+  assert.deepEqual(taskAuthorityGrant(invocation.authority).credentials, []);
+});
+
 test("the retained provenance carries no line of the briefing it describes", () => {
   const invocation = composed(viewOf({ practices: [...allPracticeIds] }));
   const retained = JSON.stringify(invocation.provenance);

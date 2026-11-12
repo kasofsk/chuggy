@@ -512,6 +512,16 @@ const workTaskRosterCases: readonly WorkerPlaneCase[] = [
       invocation: { ...liveInvocation, targetRef: "refs/heads/main" },
     }),
   },
+  {
+    name: "a work task listing a credential its grant does not carry",
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: {
+        ...liveInvocation,
+        credentialsListed: [...liveInvocation.authority.credentials, "absent"],
+      },
+    }),
+  },
 ];
 
 /** The callers every route refuses before its own ports are reached. */
