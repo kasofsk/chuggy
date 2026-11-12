@@ -32,7 +32,10 @@ import type { ConfigurationOverrides } from "../../src/contract/configurationOve
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { ProjectCommand } from "../../src/interpreter/projectCommand.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import type { WorkTaskDocument } from "../../src/contract/workerTask.ts";
+import {
+  workTaskCredentialsListed,
+  type WorkTaskDocument,
+} from "../../src/contract/workerTask.ts";
 import {
   asCanonicalConfiguration,
   type CanonicalConfiguration,
@@ -318,6 +321,7 @@ test("a worker fetches the task its pod is launched with, less the plane", async
     profile: document.profile,
     briefing: document.briefing,
     authority: document.authority,
+    credentialsListed: document.credentialsListed,
     worker: document.worker,
     targetRef: document.targetRef,
   });
@@ -669,6 +673,37 @@ test("an invocation naming the ref its finalization lands on is recorded with it
     named.push((fetched.body as { readonly targetRef?: string }).targetRef);
   }
   assert.deepEqual(named, ["refs/heads/release", undefined, undefined]);
+});
+
+test("an invocation's listed credentials are recorded with it and fetched by every release, and one recorded without them lists its granted ones", async () => {
+  const granted: WorkTaskInvocation = {
+    ...schedulerInvocation,
+    authority: { ...schedulerInvocation.authority, credentials: ["forge"] },
+  };
+  const listing = await openedAttempt("task-credentials-listed");
+  const listed: WorkTaskInvocation = {
+    ...granted,
+    credentialsListed: ["absent", "forge"],
+  };
+  assert.equal(await rig.store.attemptInvoked(listing, listed), true);
+  assert.deepEqual(await storedInvocation(listing), listed);
+  const earlier = await openedAttempt("task-credentials-unlisted");
+  assert.equal(await rig.store.attemptInvoked(earlier, granted), true);
+  const read = [];
+  for (const attempt of [listing, earlier])
+    for (const release of [workerContractRelease, "1.33.0", undefined]) {
+      const fetched = await taskFetched(
+        plane,
+        attempt.capability.secret,
+        release,
+      );
+      assert.equal(fetched.status, 200);
+      read.push(workTaskCredentialsListed(fetched.body as WorkTaskDocument));
+    }
+  assert.deepEqual(read, [
+    ...Array.from({ length: 3 }, () => ["absent", "forge"]),
+    ...Array.from({ length: 3 }, () => ["forge"]),
+  ]);
 });
 
 test("an invocation offered under a stale generation writes nothing", async () => {

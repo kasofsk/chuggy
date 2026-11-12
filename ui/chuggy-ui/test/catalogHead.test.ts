@@ -75,3 +75,19 @@ test("a head that could not be read says why, and names no commit", () => {
     ),
   ).toStrictEqual({ standing: "Unread", why: "SnapshotRefused" });
 });
+
+test("a head drawn in the import's place says it matches, or that the page shows the head's own", () => {
+  const said = (digest: string) =>
+    copyTextEn(
+      catalogHeadText(
+        catalogHeadStandingOf(ready(digest), "work", "a"),
+        "work",
+      ),
+    );
+  expect(said("a")).toBe(
+    "The repository's main at eeeeeee declares work as its newest import stored it.",
+  );
+  expect(said("b")).toBe(
+    "Showing work as the repository's main at eeeeeee declares it.",
+  );
+});

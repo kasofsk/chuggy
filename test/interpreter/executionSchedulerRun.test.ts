@@ -1172,6 +1172,7 @@ test("an attempt's invocation is recorded before it is placed, as its placement 
       profile: runnable.profile,
       briefing: { templateVersion, purpose, text },
       authority: taskAuthorityGrant(placed.invocation.authority),
+      credentialsListed: placed.invocation.credentialsListed,
     },
   ]);
 });

@@ -194,6 +194,7 @@ const workerTaskInvocationSchema = workTaskDocumentSchema
     profile: true,
     briefing: true,
     authority: true,
+    credentialsListed: true,
     worker: true,
     targetRef: true,
   })
