@@ -1,7 +1,8 @@
 /**
  * An approval evaluator's run in the ledger, the Runs tab's reading of it and
- * the Overview's card: it reads as awaiting a person while open and as
- * approved or rejected once answered, never as queued or running, a stage
+ * the Overview's card: it reads as awaiting a person while open, as
+ * approved or rejected once answered and as withdrawn once no longer owed,
+ * never as queued or running, a stage
  * beside a running evaluator still reads as running, and a rejection's next
  * cycle reads as any rework does.
  */
@@ -14,6 +15,10 @@ import type {
   NativeActionResponse,
 } from "../../../src/contract/responses.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import {
+  approvalHappened,
+  approvalStandingOf,
+} from "../app/core/evaluationApprovals.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
 import type { RanStage } from "../app/core/ticketLedger.ts";
 import {
@@ -146,6 +151,27 @@ test("an answered approval reads as approved or rejected, and a run a worker jud
   expect(
     copyTextEn(ticketRunVerdictLabel(judged.verdict, judged.approval)),
   ).toBe("Passed");
+});
+
+test("a withdrawn approval reads as withdrawn when it ended, and never as waiting or answered", () => {
+  const withdrawn = approvalExecution({
+    execution: "a1",
+    task: 2,
+    identity: evalIdentity(1, 1, 1),
+    status: "Cancelled",
+    terminalAt: "2026-08-26T01:00:00Z",
+  });
+  expect(approvalStandingOf(withdrawn)).toBe("Withdrawn");
+  const happened = approvalHappened(withdrawn);
+  expect(happened.at).toBe("2026-08-26T01:00:00Z");
+  expect(copyTextEn(happened.happened)).toBe("Withdrawn");
+  const step = stepOf([workPassed, withdrawn], "a1");
+  expect(ticketRunLive(step.verdict)).toBe(false);
+  expect(
+    copyTextEn(ticketRunVerdictLabel(step.verdict, step.approval)),
+  ).not.toMatch(/Awaiting|Approved|Rejected/u);
+  expect(approvalStandingOf(awaiting)).toBe("Waiting");
+  expect(copyTextEn(approvalHappened(awaiting).happened)).toBe("Asked");
 });
 
 test("a stage holding an approval beside a running evaluator runs, and each row reads as its own", () => {

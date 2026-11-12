@@ -521,6 +521,23 @@ test("the Runs tab reads an approval waiting, approved and rejected, by whom, wi
   }
 });
 
+test("a withdrawn approval's row reads as withdrawn, and never as waiting or answered", async () => {
+  mounted({
+    actions: [],
+    executions: [
+      work,
+      approvalRun("e-gone", 2, 1, {
+        status: "Cancelled",
+        terminalAt: "2026-08-27T00:05:00Z",
+      }),
+    ],
+  });
+  await settled();
+  const withdrawn = runsRow("Stage 1");
+  expect(withdrawn.textContent).toContain("Withdrawn without an answer");
+  expect(withdrawn.textContent).not.toMatch(/Waiting|Answered|Asked/u);
+});
+
 test("an answered approval's page offers its Summary alone: who answered, when, and their feedback whole", async () => {
   mounted(answeredRows, undefined, <TicketRunPageAt task={4} />);
   await settled();

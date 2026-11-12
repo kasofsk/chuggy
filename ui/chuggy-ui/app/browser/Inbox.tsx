@@ -241,7 +241,7 @@ function InboxActions(props: {
     <div className="grid gap-2">
       <TicketApprovals
         partition={props.partition}
-        ticket={undefined}
+        ticket={props.entry.ticket.ticket}
         approvals={approvals}
         busy={inboxAnswerInFlight(props.answer?.step)}
         onAnswer={props.onAnswer}

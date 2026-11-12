@@ -227,13 +227,27 @@ export function ApprovalAnswers(props: {
   );
 }
 
-/** The work the approval judges, by the views its run's page already has. */
+/** The work the approval judges, by the views its run's page already has, or
+ * the ticket's Runs tab where the page holds none of its runs. */
 function ApprovalWork(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
-  readonly work: number;
+  readonly cycle: number;
+  readonly work: number | undefined;
 }): ReactNode {
   const text = useCopyText();
+  if (props.work === undefined)
+    return (
+      <Link
+        to="/$tenant/$project/tickets/$ticket/runs"
+        params={{ ...props.partition, ticket: String(props.ticket) }}
+      >
+        {text({
+          id: "ticket-approval-work-runs",
+          args: { cycle: String(props.cycle) },
+        })}
+      </Link>
+    );
   const params = {
     ...props.partition,
     ticket: String(props.ticket),
@@ -262,8 +276,8 @@ function ApprovalWork(props: {
 /** One open approval as its own group, named by the step it judges. */
 export function TicketApprovalQuestion(props: {
   readonly partition: PartitionIdentity;
-  /** The ticket whose work the links reach, absent where the page holds none of its runs. */
-  readonly ticket: number | undefined;
+  /** The ticket whose work the links reach. */
+  readonly ticket: number;
   readonly asked: ApprovalAsked;
   readonly busy: boolean;
   readonly onAnswer: (answer: TicketAction) => void;
@@ -290,15 +304,14 @@ export function TicketApprovalQuestion(props: {
               text({ id: "ticket-approval-no-instructions" })}
           </span>
         </Field>
-        {props.ticket === undefined || asked.work === undefined ? null : (
-          <Field name={text({ id: "ticket-steps-phase-work" })}>
-            <ApprovalWork
-              partition={props.partition}
-              ticket={props.ticket}
-              work={asked.work}
-            />
-          </Field>
-        )}
+        <Field name={text({ id: "ticket-steps-phase-work" })}>
+          <ApprovalWork
+            partition={props.partition}
+            ticket={props.ticket}
+            cycle={asked.cycle}
+            work={asked.work}
+          />
+        </Field>
       </Fields>
       {asked.answers.length === 0 ? null : (
         <ApprovalAnswers
@@ -314,7 +327,7 @@ export function TicketApprovalQuestion(props: {
 /** Every open approval the card holds, each its own question. */
 export function TicketApprovals(props: {
   readonly partition: PartitionIdentity;
-  readonly ticket: number | undefined;
+  readonly ticket: number;
   readonly approvals: readonly ApprovalAsked[];
   readonly busy: boolean;
   readonly onAnswer: (answer: TicketAction) => void;

@@ -13,6 +13,7 @@
 import type { ApprovalRole } from "../../../../src/contract/rosters.ts";
 import type {
   ExecutionResponse,
+  ExecutionSummary,
   NativeActionResponse,
 } from "../../../../src/contract/responses.ts";
 import { copyOrDataText } from "./copy.ts";
@@ -131,6 +132,51 @@ export function evaluationApprovalsAnswerable(
   asked: readonly ApprovalAsked[],
 ): boolean {
   return asked.some((approval) => approval.answers.length > 0);
+}
+
+/** Where an approval's run stands: waiting on a person, answered, or
+ * withdrawn unanswered because it was no longer owed. */
+export type ApprovalStanding = "Waiting" | "Answered" | "Withdrawn";
+
+/** An approval's standing, by its run's status: an answer ends it `Terminal`,
+ * and a revoke, an invalidation or its stage's end cancels it unanswered. */
+export function approvalStandingOf(
+  execution: Pick<ExecutionSummary, "status">,
+): ApprovalStanding {
+  switch (execution.status) {
+    case "Terminal":
+      return "Answered";
+    case "Cancelled":
+      return "Withdrawn";
+    case "Queued":
+    case "Admitted":
+    case "Launching":
+    case "Running":
+    case "Awaiting":
+      return "Waiting";
+  }
+}
+
+/** When an approval's run last moved, as its time names it: asked while it
+ * waits, and answered or withdrawn at its end. */
+export function approvalHappened(execution: ExecutionSummary): {
+  readonly at: string;
+  readonly happened: Copy;
+} {
+  const standing = approvalStandingOf(execution);
+  const endedAt = execution.terminalAt;
+  if (standing === "Waiting" || endedAt === undefined)
+    return {
+      at: execution.registeredAt,
+      happened: { id: "figures-happened-asked" },
+    };
+  return {
+    at: endedAt,
+    happened:
+      standing === "Answered"
+        ? { id: "figures-happened-answered" }
+        : { id: "figures-happened-withdrawn" },
+  };
 }
 
 /** Who answered an approval and how, as the line its row and its page lead

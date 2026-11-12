@@ -213,6 +213,7 @@ ticket-approval-instructions = What to look at
 ticket-approval-no-instructions = No instructions given
 ticket-approval-work-result = The { -work-stage }'s result
 ticket-approval-work-artifacts = Its { -artifact(form: "plural") }
+ticket-approval-work-runs = { -cycle(case: "upper") } { $cycle } in its { -run(form: "plural") }
 ticket-approval-note-label = Note
 ticket-approval-note-placeholder = Optional with an approve
 ticket-approval-reject-question = Send this { -work-stage } back?
@@ -221,6 +222,7 @@ ticket-approval-feedback-placeholder = What has to change
 ticket-approval-approved-by = Approved by
 ticket-approval-rejected-by = Rejected by
 ticket-approval-waiting = Waiting on a person
+ticket-approval-withdrawn = Withdrawn without an answer
 
 ## \`TicketStateChip.tsx\`: a dependency chip and the dispatch button it sits in.
 

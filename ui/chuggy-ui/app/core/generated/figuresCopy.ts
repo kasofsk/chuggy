@@ -29,6 +29,7 @@ export interface FiguresCopy {
   readonly "figures-happened-prepared": Record<never, never>;
   readonly "figures-happened-asked": Record<never, never>;
   readonly "figures-happened-answered": Record<never, never>;
+  readonly "figures-happened-withdrawn": Record<never, never>;
   readonly "figures-instant-in-year": {
     readonly month: unknown;
     readonly day: unknown;

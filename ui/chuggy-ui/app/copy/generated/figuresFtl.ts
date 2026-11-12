@@ -22,6 +22,7 @@ figures-happened-started = Started
 figures-happened-prepared = Prepared
 figures-happened-asked = Asked
 figures-happened-answered = Answered
+figures-happened-withdrawn = Withdrawn
 
 ## An instant within the year: its month, its day and its clock; and a span
 ## of two instants on different days.

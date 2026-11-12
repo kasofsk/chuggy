@@ -1,5 +1,6 @@
 /**
- * An evaluation approval answered from its inbox row: Approve sends at once,
+ * An evaluation approval answered from its inbox row, which reaches the runs
+ * of the cycle it judges: Approve sends at once,
  * Reject asks for feedback and cannot be sent blank, a reader it does not ask
  * reads what it awaits and from whom with nothing to press, and the bar's
  * badge counts the ticket it asks.
@@ -37,8 +38,15 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: {
     readonly children?: ReactNode;
     readonly "aria-label"?: string;
+    readonly to?: string;
+    readonly params?: { readonly ticket?: string };
   }) => (
-    <a href="/" aria-label={props["aria-label"]}>
+    <a
+      href="/"
+      aria-label={props["aria-label"]}
+      data-to={props.to}
+      data-ticket={props.params?.ticket}
+    >
       {props.children}
     </a>
   ),
@@ -125,12 +133,19 @@ function badge(): string | undefined {
   return count === "" ? undefined : count;
 }
 
-test("a row asking its reader shows what to look at, is counted, and approves in place", async () => {
+test("a row asking its reader shows what to look at, reaches the runs it judges, is counted, and approves in place", async () => {
   const { api } = mounted(() => [awaiting()]);
   await settled();
   expect(badge()).toBe("1");
   expect(screen.getByText("awaiting your evaluation approval")).toBeDefined();
   expect(question().textContent).toContain(instructions);
+  const work = within(question()).getByRole("link", {
+    name: "Cycle 2 in its runs",
+  });
+  expect(work.dataset).toMatchObject({
+    to: "/$tenant/$project/tickets/$ticket/runs",
+    ticket: "11",
+  });
   await turned(() => {
     within(question()).getByRole("button", { name: "Approve" }).click();
   });
