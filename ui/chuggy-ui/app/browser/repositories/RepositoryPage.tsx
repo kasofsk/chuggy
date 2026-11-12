@@ -1,8 +1,9 @@
 /**
  * One bound repository: how a finished ticket in it lands, whether its jobs
  * may change its workflow files, what runs after evaluation, what it declares
- * under `.chug/configurations`, and when that was last imported. A retired
- * binding, which the listing does not draw, says Unbound beside its name and
+ * under `.chug/configurations`, and when that was last imported. Its head
+ * names it by its label and says its whole address under that. A retired
+ * binding, which the listing does not draw, says Unbound under its name and
  * offers no import.
  *
  * Only what a reader can act on is drawn. A revision's digest, its parent, the
@@ -34,9 +35,8 @@ import { settingsRoutes } from "../../core/settingsNav.ts";
 import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
-import { TopBarSlot } from "../shell/slots.tsx";
-import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import {
@@ -47,6 +47,8 @@ import {
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
 import { RepositoryFinalizationSection } from "./RepositoryFinalizationSection.tsx";
 import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection.tsx";
+
+import "./Repositories.css";
 
 /** This page's own address, which its reads take their partition from. */
 export const repositoryRoutePath =
@@ -119,23 +121,24 @@ export function RepositoryPage(): ReactNode {
       ? projectRepositoryBound(bindings.value, repository)
       : undefined;
   return (
-    <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <Breadcrumb>
-          <BreadcrumbLink
-            to={settingsRoutes.project.repositories}
-            params={partition}
-          >
-            {text({ id: "repositories-title" })}
-          </BreadcrumbLink>
-        </Breadcrumb>
-        <h1 className="text-md font-strong text-ink-1 truncate">
-          {repositoryLabel(repository)}
-        </h1>
-        {binding?.retiredAt === undefined ? null : (
-          <Pill tone="retired">{text(repositoryUnbound)}</Pill>
-        )}
-      </TopBarSlot>
+    <div
+      className="repositories-page grid min-w-0 max-w-settings gap-4"
+      data-fills-width
+    >
+      <PageHeader
+        title={repositoryLabel(repository)}
+        back={{
+          label: text({ id: "repositories-title" }),
+          link: {
+            to: settingsRoutes.project.repositories,
+            params: partition,
+          },
+        }}
+        description={repository}
+        {...(binding?.retiredAt === undefined
+          ? {}
+          : { status: <Pill tone="retired">{text(repositoryUnbound)}</Pill> })}
+      />
       <PanelUnready state={bindings} />
       {bindings.state === "Ready" && binding === undefined ? (
         <EmptyState label={text({ id: "repositories-not-bound" })} />

@@ -99,29 +99,36 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 /** A link's path is filled from its params, so a link into the wrong project
  * is a wrong href rather than the same one. A navigation is kept as asked and
  * moves the address, so a page drawn after it is drawn where it left off. */
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: {
+vi.mock("@tanstack/react-router", () => {
+  interface Linked {
     readonly to?: string;
     readonly params?: Readonly<Record<string, string>>;
     readonly children?: ReactNode;
-  }) => (
-    <a
-      href={(props.to ?? "/").replace(
-        /\$(\w+)/gu,
-        (named: string, key: string) => props.params?.[key] ?? named,
-      )}
-    >
-      {props.children}
-    </a>
-  ),
-  useParams: () => ({ ...leadPartition }),
-  useNavigate: () => (to: { readonly href: string }) => {
-    held.navigations.push(to);
-    history.replaceState({}, "", to.href);
-    return Promise.resolve();
-  },
-}));
+  }
+  const filled = (props: Linked): string =>
+    (props.to ?? "/").replace(
+      /\$(\w+)/gu,
+      (named: string, key: string) => props.params?.[key] ?? named,
+    );
+  return {
+    createLink:
+      (
+        component: (props: {
+          readonly href: string;
+          readonly children?: ReactNode;
+        }) => ReactNode,
+      ) =>
+      (props: Linked) =>
+        component({ href: filled(props), children: props.children }),
+    Link: (props: Linked) => <a href={filled(props)}>{props.children}</a>,
+    useParams: () => ({ ...leadPartition }),
+    useNavigate: () => (to: { readonly href: string }) => {
+      held.navigations.push(to);
+      history.replaceState({}, "", to.href);
+      return Promise.resolve();
+    },
+  };
+});
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
@@ -359,8 +366,37 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   return sent;
 }
 
+/** The page's own column, the element its head is drawn in, which the
+ * picker's dialog is drawn outside of. */
 function sectionOf(title: string): HTMLElement {
-  return screen.getByRole("region", { name: new RegExp(`^${title}`) });
+  const column = screen
+    .getByRole("heading", { level: 1, name: title })
+    .closest("header")?.parentElement;
+  if (column === null || column === undefined)
+    throw new Error(`no page headed ${title}`);
+  return column;
+}
+
+/** The bindings' rows, in the order drawn, none where the list is not. */
+function bindingRows(): readonly HTMLElement[] {
+  const list = within(sectionOf("Repositories")).queryByRole("list", {
+    name: "Bound repositories",
+  });
+  return list === null ? [] : within(list).getAllByRole("listitem");
+}
+
+/** The row a binding is drawn on, by the name its heading reads. */
+function bindingRowOf(name: string): HTMLElement {
+  const row = within(sectionOf("Repositories"))
+    .getByRole("heading", { level: 2, name })
+    .closest("li");
+  if (row === null) throw new Error(`no row for ${name}`);
+  return row;
+}
+
+/** What a row says of its binding: its name, then what needs attention. */
+function bindingRowText(row: HTMLElement): string {
+  return `${row.querySelector("h2")?.textContent ?? ""}${row.querySelector(".repositories-attention")?.textContent ?? ""}`;
 }
 
 /** The picker opened and the one repository this project does not bind chosen. */
@@ -424,10 +460,7 @@ async function drawAtProjectListing(listing: () => Response): Promise<void> {
 
 test("the bindings are drawn by the account and name they are under", async () => {
   await drawPage();
-  const repositories = sectionOf("Repositories");
-  expect(
-    within(repositories).getByRole("rowheader", { name: "kasofsk/chuggy" }),
-  ).toBeTruthy();
+  expect(bindingRowOf("kasofsk/chuggy")).toBeTruthy();
 });
 
 /**
@@ -445,7 +478,7 @@ test("a retired binding is not listed, and a project with only retired ones read
     },
   });
   const section = sectionOf("Repositories");
-  expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
+  expect(bindingRows()).toStrictEqual([]);
   expect(within(section).getByText("No repository bound")).toBeDefined();
   expect(addButtons()).toHaveLength(2);
 });
@@ -473,9 +506,7 @@ test("a binding the worker app's installation does not select is marked on its r
       ],
     },
   });
-  const row = within(sectionOf("Repositories")).getByRole("rowheader", {
-    name: /^kasofsk\/chuggy/u,
-  });
+  const row = bindingRowOf("kasofsk/chuggy");
   expect(within(row).getByText("Worker app missing")).toBeDefined();
   expect(
     within(row)
@@ -512,11 +543,9 @@ const twoBound = {
   ],
 };
 
-/** The bindings' row headers in the order drawn, by the name each reads. */
+/** The bindings' rows in the order drawn, by what each says of its binding. */
 function rowsDrawn(): readonly string[] {
-  return within(sectionOf("Repositories"))
-    .getAllByRole("rowheader")
-    .map((row) => row.textContent);
+  return bindingRows().map(bindingRowText);
 }
 
 /**
@@ -531,14 +560,14 @@ test("the bindings are drawn while the worker app's reach is unread, and its mar
   expect(rowsDrawn()).toStrictEqual(["kasofsk/chuggy", "gdoteof/scratch"]);
   expect(within(section).queryByText("Worker app missing")).toBeNull();
   expect(within(section).queryByText(/^Loading/u)).toBeNull();
-  const drawnRows = within(section).getAllByRole("rowheader");
+  const drawnRows = bindingRows();
   reach.release(answer(twoBound));
   await settled();
   expect(rowsDrawn()).toStrictEqual([
     "kasofsk/chuggy",
     "gdoteof/scratchWorker app missingReview on GitHub",
   ]);
-  expect(within(section).getAllByRole("rowheader")).toStrictEqual(drawnRows);
+  expect(bindingRows()).toStrictEqual(drawnRows);
 });
 
 test("a reach read that fails leaves the bindings drawn and unmarked, with no failure in their place", async () => {
@@ -551,9 +580,7 @@ test("a reach read that fails leaves the bindings drawn and unmarked, with no fa
 
 test("a binding the worker app reaches carries no mark, and one GitHub said nothing of is unread", async () => {
   await drawPage();
-  const reached = within(sectionOf("Repositories")).getByRole("rowheader", {
-    name: "kasofsk/chuggy",
-  });
+  const reached = bindingRowOf("kasofsk/chuggy");
   expect(within(reached).queryByText("Worker app missing")).toBeNull();
   cleanup();
   await drawPage({
@@ -563,9 +590,7 @@ test("a binding the worker app reaches carries no mark, and one GitHub said noth
       ],
     },
   });
-  const unread = within(sectionOf("Repositories")).getByRole("rowheader", {
-    name: /^kasofsk\/chuggy/u,
-  });
+  const unread = bindingRowOf("kasofsk/chuggy");
   expect(within(unread).getByText("Worker app unread")).toBeDefined();
   expect(
     within(unread).queryByRole("link", { name: "Review on GitHub" }),
@@ -2067,9 +2092,7 @@ const unconfigured = {
 };
 
 function bindingRowsText(): readonly (string | null)[] {
-  return within(sectionOf("Repositories"))
-    .getAllByRole("rowheader")
-    .map((row) => row.textContent);
+  return bindingRows().map(bindingRowText);
 }
 
 /** The step asked for again from the one row that offers it. */
@@ -2200,9 +2223,14 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   expect(raised).toStrictEqual(bindingsKeys);
 });
 
-/** The line drawn under Add, which is none where nothing is missing. */
+/** The line drawn under Add, as the step being taken says it where one is,
+ * which is none where nothing is missing. */
 function offersLine(): string | null | undefined {
-  return sectionOf("Repositories").querySelector(".notice")?.textContent;
+  const page = sectionOf("Repositories");
+  return (
+    page.querySelector('[aria-current="step"] .repository-step-said') ??
+    page.querySelector(".notice")
+  )?.textContent;
 }
 
 function offered(name: string): boolean {
@@ -2313,7 +2341,7 @@ test("an account without the worker app is named under Add, with its install ret
   expect(offersLine()).toBe("Worker app missing · kasofsk");
   const { connect, install } = offersSteps();
   expect(connect).toBeNull();
-  expect(install?.classList.contains("btn-default")).toBe(true);
+  expect(install?.classList.contains("btn-primary")).toBe(true);
   expect(install?.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
     true,
   );
@@ -2346,9 +2374,11 @@ test("a deployment that offers no install still names the account without the wo
 
 /** Every line the section draws above its bindings, the return's word first. */
 function sectionLines(): readonly (string | null)[] {
-  return [...sectionOf("Repositories").querySelectorAll(".notice")].map(
-    (line) => line.textContent,
-  );
+  return [
+    ...sectionOf("Repositories").querySelectorAll(
+      '.notice, [aria-current="step"] .repository-step-said',
+    ),
+  ].map((line) => line.textContent);
 }
 
 /** A forge return held for this tenant, as the callback leaves it. */
@@ -2385,6 +2415,69 @@ test("a workspace whose accounts all hold both apps is offered Add, no line and 
   expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
   expect(offersLine()).toBeUndefined();
   expect(offersSteps()).toStrictEqual(noStep);
+});
+
+/** The page's press that opens the picker from its head. */
+function headAdd(): HTMLButtonElement | undefined {
+  return within(
+    screen.getByRole("heading", { level: 1 }).closest("header") ??
+      document.body,
+  ).queryAllByRole<HTMLButtonElement>("button", { name: "Add" })[0];
+}
+
+test("where no step is being taken the head's Add is the page's one primary, and no steps are drawn", async () => {
+  await drawAtProject(twoAccounts);
+  expect(headAdd()?.classList.contains("btn-primary")).toBe(true);
+  expect(
+    within(sectionOf("Repositories")).queryByRole("list", {
+      name: "Connecting a repository",
+    }),
+  ).toBeNull();
+});
+
+test("an account without the worker app makes its install the step being taken, Connect done before it, and the head's Add a secondary", async () => {
+  await drawAtProject(without("worker"));
+  expect(stepsDrawn()).toStrictEqual({
+    said: [
+      "Connect a GitHub accountDone",
+      "Worker app missing · kasofskInstall worker",
+      "Add a repository",
+    ],
+    current: "Worker app missing · kasofskInstall worker",
+  });
+  expect(headAdd()?.classList.contains("btn-default")).toBe(true);
+  expect(
+    sectionOf("Repositories").querySelectorAll(".btn-primary"),
+  ).toHaveLength(1);
+});
+
+test("with no account Connect is the first step and the one being taken, the two after it named only", async () => {
+  await drawAtProject(noAccount);
+  expect(stepsDrawn()).toStrictEqual({
+    said: [
+      "Connect a GitHub account firstConnect GitHub",
+      "Install the worker app",
+      "Add a repository",
+    ],
+    current: "Connect a GitHub account firstConnect GitHub",
+  });
+});
+
+/** The page is headed once, and each binding is a heading under it, so a
+ * reader moving by heading meets the page and then each repository. */
+test("the page has one h1, and each binding's name is an h2 with where it is hosted and when it was bound under it", async () => {
+  await drawPage({ bound: twoBound });
+  expect(
+    screen.getAllByRole("heading", { level: 1 }).map((one) => one.textContent),
+  ).toStrictEqual(["Repositories"]);
+  expect(
+    within(sectionOf("Repositories"))
+      .getAllByRole("heading", { level: 2 })
+      .map((one) => one.textContent),
+  ).toStrictEqual(["kasofsk/chuggy", "gdoteof/scratch"]);
+  const meta = bindingRowOf("kasofsk/chuggy").querySelector(".record-row-meta");
+  expect(meta?.firstElementChild?.textContent).toBe("forge.test");
+  expect(meta?.textContent?.startsWith("forge.testBound")).toBe(true);
 });
 
 test("a reader who may not administer reads that a binding deferred and is offered no Retry", async () => {
@@ -2516,13 +2609,30 @@ function pickerDrawn(): unknown {
   };
 }
 
+/** The numbered steps by what each says, and the one being taken. */
+function stepsDrawn(): {
+  readonly said: readonly (string | null)[];
+  readonly current: string | null | undefined;
+} {
+  const steps = within(sectionOf("Repositories")).getByRole("list", {
+    name: "Connecting a repository",
+  });
+  return {
+    said: within(steps)
+      .getAllByRole("listitem")
+      .map((step) => step.textContent),
+    current: steps.querySelector('[aria-current="step"]')?.textContent,
+  };
+}
+
 /**
  * A workspace that has connected GitHub and bound nothing has one thing left
- * to do here, so the roster's empty line carries the control that does it,
- * under the line saying where a repository Add lists comes from. It is the
- * head's own dialog it opens, and a row chosen there binds.
+ * to do here, so Add is the step being taken, numbered after the two already
+ * done and saying where a repository Add lists comes from. Its Add is the
+ * page's one primary, the head's drawn beside the title as a secondary, and it
+ * is the head's own dialog it opens, where a row chosen binds.
  */
-test("an empty roster carries Add under its line and how a repository comes to be listed, and it opens the dialog the head's Add opens", async () => {
+test("an empty roster takes Add as its step, saying how a repository comes to be listed, and it opens the dialog the head's Add opens", async () => {
   const sent = await drawPage({
     claimed: twoAccounts,
     bound: unbound,
@@ -2531,13 +2641,19 @@ test("an empty roster carries Add under its line and how a repository comes to b
   const [head, body, ...more] = addButtons();
   if (head === undefined || body === undefined) throw new Error("one Add");
   expect(more).toStrictEqual([]);
+  expect(head.classList.contains("btn-default")).toBe(true);
   expect(body.classList.contains("btn-primary")).toBe(true);
-  expect(body.previousElementSibling?.textContent).toBe(
-    copyTextEn(repositoryAddHow),
-  );
-  expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
-    "No repository bound",
-  );
+  expect(stepsDrawn()).toStrictEqual({
+    said: [
+      "Connect a GitHub accountDone",
+      "Install the worker appDone",
+      `${copyTextEn(repositoryAddHow)}Add`,
+    ],
+    current: `${copyTextEn(repositoryAddHow)}Add`,
+  });
+  expect(
+    within(sectionOf("Repositories")).getByText("No repository bound"),
+  ).toBeDefined();
 
   fireEvent.click(head);
   await settled();
@@ -2607,14 +2723,10 @@ const liveAndRetired = {
 
 /** Each binding's row by what its name cell draws, and whether it offers Unbind. */
 function unbindOffers(): readonly (readonly [string | null, boolean])[] {
-  return within(sectionOf("Repositories"))
-    .getAllByRole("row")
-    .flatMap((row) => {
-      const named = within(row).queryByRole("rowheader");
-      if (named === null) return [];
-      const offers = within(row).queryByRole("button", { name: "Unbind" });
-      return [[named.textContent, offers !== null] as const];
-    });
+  return bindingRows().map((row) => {
+    const offers = within(row).queryByRole("button", { name: "Unbind" });
+    return [row.querySelector("h2")?.textContent ?? null, offers !== null];
+  });
 }
 
 const unbindOffered = [["kasofsk/chuggy", true]];
@@ -2628,18 +2740,13 @@ test.each(abilitiesUnrefusing)(
 );
 
 /** A viewer is refused every door and a member every door but administering;
- * either is offered no Unbind, nor a column standing empty for it. */
+ * either is offered no Unbind. */
 test.each([
   ["may only view", abilitiesNone],
   ["may not administer", { ...abilitiesEvery, administer: false }],
 ])("a reader who %s is offered no Unbind", async (_who, abilities) => {
   await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
   expect(unbindOffers()).toStrictEqual([["kasofsk/chuggy", false]]);
-  expect(
-    within(sectionOf("Repositories"))
-      .getAllByRole("columnheader")
-      .map((head) => head.textContent),
-  ).toStrictEqual(["Repository", "Bound"]);
 });
 
 /** The question Unbind asks, which names the repository its press was on. */
@@ -2711,7 +2818,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
   ]);
   expect(unbindAsked()).toBeNull();
   const section = sectionOf("Repositories");
-  expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
+  expect(bindingRows()).toStrictEqual([]);
   expect(within(section).getByText("No repository bound")).toBeDefined();
 });
 
