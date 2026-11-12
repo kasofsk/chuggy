@@ -243,6 +243,9 @@ ticket-runs-running = Running { $step }
 ticket-runs-sent-back = Sent back by { $step }
 ticket-runs-failed-at = Failed at { $step }
 ticket-runs-blocked-at = Blocked at { $step }
+ticket-runs-stacked-over = Stacked over
+ticket-runs-stack-built-on = Built on
+ticket-runs-unstacked = None · { $reason }
 
 ## The ticket's landing, under the Runs tab: \`TicketLandingPage.tsx\`,
 ## \`TicketLandings.tsx\`.
@@ -275,6 +278,10 @@ ticket-landing-details-hide = Hide
 ticket-landing-queue-removal = Queue removal: { $removal }
 # spells -attempt: tries at the landing, not at a run
 ticket-landing-attempts = Attempts
+ticket-landing-rechecked = Re-checked
+ticket-landing-recheck-against = { $reason } · against { $base }
+# spells -brief-check: to re-check is to evaluate again
+ticket-landing-recheck-required = Re-check required · { $reason }
 ticket-landing-removal-by = { $reason } by { $actor }
 ticket-landing-hold-removal = { $hold }: { $removal }
 ticket-landing-held-for = Held { $age } · { $hold }

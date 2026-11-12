@@ -8,7 +8,10 @@ import type {
   TicketLandingResponse,
   TicketLandingsResponse,
 } from "../../../src/contract/responses.ts";
-import type { FinalizationUnavailableKind } from "../../../src/contract/rosters.ts";
+import type {
+  FinalizationUnavailableKind,
+  finalizationRecheckReasons,
+} from "../../../src/contract/rosters.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { evalIdentity, workIdentity } from "./ticketLedgerFixture.ts";
 
@@ -43,6 +46,33 @@ export function landingConflicted(cycle: number): TicketLandingResponse {
       failureKind: "MergeConflict",
     },
     conflict: { paths: [landingConflictPath], truncated: false },
+  };
+}
+
+/**
+ * A landing of `cycle` sent back to re-check for `reason` where it recorded
+ * one, against the base `baseRef` where it names one.
+ */
+export function landingRechecked(
+  cycle: number,
+  reason?: (typeof finalizationRecheckReasons)[number],
+  baseRef?: string,
+): TicketLandingResponse {
+  return {
+    cycle,
+    generation: 1,
+    attempts: 1,
+    state: "Failed",
+    attempt: {
+      ...landingAttempt,
+      outcome: "Failed",
+      failureKind: "RecheckRequired",
+      ...(reason === undefined
+        ? {}
+        : {
+            recheck: baseRef === undefined ? { reason } : { reason, baseRef },
+          }),
+    },
   };
 }
 
@@ -215,6 +245,40 @@ export function landingsRead(
   landings: readonly TicketLandingResponse[],
 ): TicketLandingsResponse {
   return { landings: [...landings], truncated: false };
+}
+
+export const stackBeneathCommits = [
+  `a1b2c3d4${"6".repeat(32)}`,
+  `c3d4e5f6${"7".repeat(32)}`,
+] as const;
+export const stackTipCommit = `f6e5d4c3${"8".repeat(32)}`;
+
+/** A cycle evaluated over tickets 12 then 14, bottom first, on `main`. */
+export function stackStacked(
+  cycle: number,
+): NonNullable<TicketLandingsResponse["stacks"]>["cycles"][number] {
+  return {
+    cycle,
+    prepared: "Stacked",
+    beneath: [
+      { ticket: 12, commit: stackBeneathCommits[0] },
+      { ticket: 14, commit: stackBeneathCommits[1] },
+    ],
+    reference: "refs/heads/main",
+    tip: stackTipCommit,
+  };
+}
+
+/** The read's answer over `landings` and the stacks of `stacks`, oldest first. */
+export function landingsStackedRead(
+  landings: readonly TicketLandingResponse[],
+  stacks: NonNullable<TicketLandingsResponse["stacks"]>["cycles"],
+): TicketLandingsResponse {
+  return {
+    landings: [...landings],
+    truncated: false,
+    stacks: { cycles: [...stacks], truncated: false },
+  };
 }
 
 /**

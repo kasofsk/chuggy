@@ -66,6 +66,12 @@ export interface CodesCopy {
   readonly "codes-landing-failure-preparation": Record<never, never>;
   readonly "codes-landing-failure-queue-checks": Record<never, never>;
   readonly "codes-landing-failure-recheck": Record<never, never>;
+  readonly "codes-recheck-target-moved": Record<never, never>;
+  readonly "codes-recheck-stack-tree-differs": Record<never, never>;
+  readonly "codes-recheck-merged-tree-differs": Record<never, never>;
+  readonly "codes-unstacked-unchosen": Record<never, never>;
+  readonly "codes-unstacked-conflicted": Record<never, never>;
+  readonly "codes-unstacked-unpublished": Record<never, never>;
   readonly "codes-creation-created": Record<never, never>;
   readonly "codes-creation-exists": Record<never, never>;
   readonly "codes-creation-contradictory": Record<never, never>;

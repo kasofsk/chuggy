@@ -928,6 +928,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .ticket-runs-stack {
+    padding: var(--space-2) var(--space-4);
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-runs-stack-beneath {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+  }
+
   .ticket-runs-row {
     display: grid;
     grid-template-columns:

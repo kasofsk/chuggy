@@ -19,7 +19,10 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import type { TicketDeliveryState } from "../../core/ticketDelivery.ts";
-import type { TicketLandingsState } from "../../core/ticketLandings.ts";
+import type {
+  TicketLandingsState,
+  TicketLandingStacks,
+} from "../../core/ticketLandings.ts";
 import type { TicketPageFacts } from "../../core/ticketPageFacts.ts";
 import type { TicketSlot as Slot } from "../../core/ticketSituation.ts";
 
@@ -35,6 +38,8 @@ export interface TicketReads {
   readonly leadState: PanelState<LeadReadResponse>;
   readonly deliveryState: TicketDeliveryState;
   readonly landingsState: TicketLandingsState;
+  /** Each work cycle's stack the landings read answers, by its cycle. */
+  readonly landingStacks: TicketLandingStacks;
   /** The project's landing queues, nothing while the read is out or failed. */
   readonly queues: LandingQueuesResponse | undefined;
 }
