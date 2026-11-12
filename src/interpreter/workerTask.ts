@@ -5,6 +5,7 @@
  */
 
 import type {
+  SessionBounds,
   SessionTaskAnswer,
   SessionTaskDocument,
   WorkTaskDocument,
@@ -115,6 +116,9 @@ export type SessionTask = Omit<
   SessionTaskDocument,
   "workerPlane" | "api" | "bounds"
 >;
+
+/** The bounds a site launches its sessions under, which name an idle limit where a launched document may name none. */
+export type SessionSiteBounds = Required<SessionBounds>;
 
 /** What a pool's harness is told of its site, which a pod is launched with beside its task instead. */
 export type SessionTaskLaunch = Required<

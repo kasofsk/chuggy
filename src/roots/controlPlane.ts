@@ -726,7 +726,6 @@ export function schedulerProcessRoot(
             authority: config.sessions.policy.grant,
             mirrors: config.sessions.policy.mirrors,
             placementBackoffSecs: config.sessions.config.placementBackoffSecs,
-            idleSecsMax: config.sessions.config.idleSecsMax,
             ...config.sessionLaunch,
           }),
           ...(config.additional ?? []),

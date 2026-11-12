@@ -46,6 +46,7 @@ import {
   type WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
 import {
+  workerPoolSessionBounds,
   workerPoolSessionIdleSecs,
   type SessionLaunchFacts,
   type WorkerPoolSessionCandidate,
@@ -648,15 +649,35 @@ test("a claimed session is opened with its invocation and launch and handed out 
   ]);
 });
 
-test("a chat host's declared idle bound is capped at the one the launch publishes, and none is read for a pool or a personal runner or under a launch publishing none", () => {
-  const capped = { ...launch, idleSecsMax: 60 };
-  assert.equal(workerPoolSessionIdleSecs(host, capped, 600), 60);
-  assert.equal(workerPoolSessionIdleSecs(host, capped, 30), 30);
-  assert.equal(workerPoolSessionIdleSecs(host, capped, undefined), undefined);
-  assert.equal(workerPoolSessionIdleSecs(host, launch, 30), undefined);
+test("a chat host's idle bound is the one it named, uncapped, and none is read where it names none or for a pool or a personal runner", () => {
+  assert.equal(workerPoolSessionIdleSecs(host, 86_400), 86_400);
+  assert.equal(workerPoolSessionIdleSecs(host, 30), 30);
+  assert.equal(workerPoolSessionIdleSecs(host, undefined), undefined);
   for (const other of [identity, runner])
-    assert.equal(workerPoolSessionIdleSecs(other, capped, 30), undefined);
-  assert.throws(() => workerPoolSessionIdleSecs(host, capped, 0), RangeError);
+    assert.equal(workerPoolSessionIdleSecs(other, 30), undefined);
+  assert.throws(() => workerPoolSessionIdleSecs(host, 0), RangeError);
+});
+
+test("a chat host's session is launched with its own idle bound or with none, and a pool's with the site's", () => {
+  const { idleMs, ...unbounded } = workerPoolSessionBounds(
+    host,
+    launch,
+    86_400,
+  );
+  assert.equal(idleMs, 86_400_000);
+  assert.deepEqual(unbounded, workerPoolSessionBounds(host, launch, undefined));
+  assert.equal(
+    "idleMs" in workerPoolSessionBounds(host, launch, undefined),
+    false,
+  );
+  assert.deepEqual(
+    workerPoolSessionBounds(identity, launch, 86_400),
+    launch.bounds,
+  );
+  assert.deepEqual(
+    workerPoolSessionBounds(identity, launch, undefined),
+    launch.bounds,
+  );
 });
 
 test("a chat host is claimed sessions alone, each in a project its owner may still read asked as its owner, and opened with its idle bound", async () => {
@@ -675,10 +696,7 @@ test("a chat host is claimed sessions alone, each in a project its owner may sti
         claimPersonal: () =>
           Promise.resolve((reached.push("claimPersonal"), undefined)),
       },
-      {
-        ...store,
-        launch: () => Promise.resolve({ ...launch, idleSecsMax: 60 }),
-      },
+      store,
       () => "assignment-host",
       {
         ...reading,
@@ -694,7 +712,7 @@ test("a chat host is claimed sessions alone, each in a project its owner may sti
     ),
     host,
     nothingHeld,
-    { wanted: 1, wantedSessions: 2, idleSecs: 600 },
+    { wanted: 1, wantedSessions: 2, idleSecs: 86_400 },
     settings,
   );
   assert.deepEqual(answered.assignments, []);
@@ -708,7 +726,7 @@ test("a chat host is claimed sessions alone, each in a project its owner may sti
       opening.idleSecs,
       opening.launch.bounds.idleMs,
     ]),
-    [[candidate.session, 60, 60_000]],
+    [[candidate.session, 86_400, 86_400_000]],
   );
 });
 

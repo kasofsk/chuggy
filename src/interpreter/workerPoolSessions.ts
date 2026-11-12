@@ -39,11 +39,13 @@
  * a project's read, and it is handed no repository, there being no binding to
  * read.
  *
- * A CHAT HOST'S SESSION MAY SIT IDLE AS LONG AS ITS HOST NAMED, up to the
- * bound the scheduler reaps idle attempts by: the claim records the capped
- * bound on the attempt, which the reaper ends it by, and launches it with that
- * bound as its own idle limit, so the host and the reaper read one figure. A
- * launch whose publisher named no bound honours none.
+ * A CHAT HOST'S SESSION SITS IDLE AS LONG AS ITS HOST NAMED, AND WITHOUT
+ * LIMIT WHERE IT NAMED NONE: the claim records the host's bound on the attempt,
+ * or that it has none, and the reaper ends it by what it records, and the
+ * session is launched with that bound as its own idle limit or with none, so
+ * the host and the reaper read one figure. A pool's claim records nothing and
+ * launches with the site's bounds, so its attempt is reaped at the
+ * scheduler's window as a placed one is.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
 import type { WorkerPoolSessionAssignment } from "../contract/workerPool.ts";
@@ -78,14 +80,18 @@ import type {
   PoolPlaneIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
-import { sessionTaskInvocation, type SessionTaskLaunch } from "./workerTask.ts";
+import {
+  sessionTaskInvocation,
+  type SessionSiteBounds,
+  type SessionTaskLaunch,
+} from "./workerTask.ts";
 
 /** What a site launches every session with, as its scheduler publishes it. */
 export interface SessionLaunchFacts {
   readonly image: string;
   readonly authority: PolicyAuthorityGrant;
   readonly mirrors: RepositoryMirrors;
-  readonly bounds: SessionBounds;
+  readonly bounds: SessionSiteBounds;
   readonly model: string;
   /** How long a runner lets one session's container run, which is the in-cluster pod's deadline. */
   readonly deadlineSecs: number;
@@ -96,8 +102,6 @@ export interface SessionLaunchFacts {
    * backoff.
    */
   readonly placementBackoffSecs: number;
-  /** How long an attempt may claim nothing before the scheduler reaps it, absent where its publisher named none. */
-  readonly idleSecsMax?: number;
 }
 
 /** One session a pool may claim, the project it is in, and what its invocation is built from. */
@@ -123,7 +127,7 @@ export interface WorkerPoolSessionOpening {
   readonly invocation: SessionTaskInvocation;
   readonly image: string;
   readonly launch: SessionTaskLaunch;
-  /** How long the attempt may sit idle, where its caller named a bound and the launch caps one. */
+  /** How long a chat host's attempt may sit idle, absent where its host named no bound; a pool's attempt is reaped at the scheduler's window whatever this says. */
   readonly idleSecs?: number;
 }
 
@@ -289,34 +293,31 @@ function workerPoolSessionMemberScoped(
   );
 }
 
-/** The idle bound a claim records: a chat host's own, capped at the launch's, and none for any other caller or where either names none. */
+/** The idle bound a claim records: a chat host's own as it named it, none where it named none, and none for any other caller. */
 export function workerPoolSessionIdleSecs(
   identity: PoolPlaneIdentity,
-  launch: SessionLaunchFacts,
   idleSecs: number | undefined,
 ): number | undefined {
-  if (
-    identity.kind !== "ChatHost" ||
-    idleSecs === undefined ||
-    launch.idleSecsMax === undefined
-  )
-    return undefined;
-  const capped = Math.min(idleSecs, launch.idleSecsMax);
-  if (!Number.isSafeInteger(capped) || capped < 1)
+  if (identity.kind !== "ChatHost" || idleSecs === undefined) return undefined;
+  if (!Number.isSafeInteger(idleSecs) || idleSecs < 1)
     throw new RangeError("a session's idle bound must be a positive integer");
-  return capped;
+  return idleSecs;
 }
 
 const millisecondsPerSecond = 1_000;
 
-/** The bounds a claimed session is launched under: the site's, its idle limit replaced where the claim records a bound of its own. */
-function workerPoolSessionBounds(
+/** The bounds a claimed session is launched under: the site's, and for a chat host's its idle limit the host's own bound or none. */
+export function workerPoolSessionBounds(
+  identity: PoolPlaneIdentity,
   launch: SessionLaunchFacts,
   idleSecs: number | undefined,
 ): SessionBounds {
-  return idleSecs === undefined
-    ? launch.bounds
-    : { ...launch.bounds, idleMs: idleSecs * millisecondsPerSecond };
+  if (identity.kind !== "ChatHost") return launch.bounds;
+  if (idleSecs !== undefined)
+    return { ...launch.bounds, idleMs: idleSecs * millisecondsPerSecond };
+  const { mailboxPollMs, resultDrainMs, loadTimeoutMs, turnsMax, budgetUsd } =
+    launch.bounds;
+  return { mailboxPollMs, resultDrainMs, loadTimeoutMs, turnsMax, budgetUsd };
 }
 
 /** Whether a poll may be handed its owner's own sessions: a chat host's alone, offering a release that runs one. */
@@ -350,7 +351,7 @@ export async function workerPoolSessionClaims(
   if (wanted <= 0) return [];
   const launch = await ports.store.launch();
   if (launch === undefined) return [];
-  const idleSecs = workerPoolSessionIdleSecs(identity, launch, asked.idleSecs);
+  const idleSecs = workerPoolSessionIdleSecs(identity, asked.idleSecs);
   const waiting = await ports.store.awaiting(
     identity,
     launch.placementBackoffSecs,
@@ -391,7 +392,7 @@ export async function workerPoolSessionClaims(
       image: launch.image,
       launch: {
         api: { url: terms.apiUrl },
-        bounds: workerPoolSessionBounds(launch, idleSecs),
+        bounds: workerPoolSessionBounds(identity, launch, idleSecs),
         model: launch.model,
       },
       ...(idleSecs === undefined ? {} : { idleSecs }),
