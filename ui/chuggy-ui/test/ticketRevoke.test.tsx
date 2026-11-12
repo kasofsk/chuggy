@@ -161,16 +161,20 @@ test("one press of Revoke sends nothing and asks what it ends", async () => {
   expect(header.contains(group)).toBe(false);
 });
 
-test("Cancel sends nothing and gives the actions back as they were", async () => {
+test("Cancel sends nothing, hands the focus back to the menu's trigger, and gives the actions back as they were", async () => {
   const { api, header } = await mounted();
   const group = await revokePressed();
 
   await turned(() => {
     within(group).getByRole("button", { name: "Cancel" }).click();
   });
+  await turned();
 
   expect(asked()).toBeNull();
   expect(api.submissions()).toBe(0);
+  expect(document.activeElement).toBe(
+    within(header).getByRole("button", { name: "More actions" }),
+  );
   expect((await revokeItem()).hasAttribute("data-disabled")).toBe(false);
   expect(
     within(header)

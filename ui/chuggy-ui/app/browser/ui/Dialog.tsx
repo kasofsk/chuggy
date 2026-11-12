@@ -4,9 +4,12 @@
  *
  * Radix's modal dialog: while it is open the focus is held inside it, the page
  * behind is hidden from assistive technology and takes no press, and closing
- * returns the focus to the trigger. Radix's own overlay is not drawn, because
- * its scroll lock appends a `<style>` element the served `style-src 'self'`
- * refuses; the scrim is drawn here, and the page behind it can still scroll.
+ * returns the focus to the trigger. A dialog the caller opens from elsewhere
+ * returns it to what held the focus when it opened, or, where that has left
+ * the page, to what controls the popup it stood in, as a menu's trigger does
+ * its items. Radix's own overlay is not drawn, because its scroll lock
+ * appends a `<style>` element the served `style-src 'self'` refuses; the scrim
+ * is drawn here, and the page behind it can still scroll.
  * The trigger is drawn as a button so a caller hands a label rather than a
  * control, or bare around what it holds, and the whole of what is open is the
  * caller's own state.
@@ -32,6 +35,7 @@
  */
 
 import { Dialog as RadixDialog } from "radix-ui";
+import { useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -73,6 +77,49 @@ function DialogFoot(props: {
   );
 }
 
+/** The element that controls the popup `element` stands in, such as a menu's
+ * trigger for one of its items. */
+function controller(element: HTMLElement): HTMLElement | undefined {
+  const controls = [...document.querySelectorAll("[aria-controls]")];
+  for (
+    let node: Element | null = element;
+    node !== null;
+    node = node.parentElement
+  ) {
+    const id = node.id;
+    if (id === "") continue;
+    const found = controls.find((control) =>
+      (control.getAttribute("aria-controls") ?? "").split(" ").includes(id),
+    );
+    if (found instanceof HTMLElement) return found;
+  }
+  return undefined;
+}
+
+/** Where a dialog with no trigger of its own hands the focus back: what held
+ * it when the dialog opened, or what controls the popup that stood in, once
+ * that has left the page. */
+function useOpener(open: boolean): () => HTMLElement | undefined {
+  const opener = useRef<{
+    readonly focused: HTMLElement;
+    readonly controller: HTMLElement | undefined;
+  }>(undefined);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const focused = document.activeElement;
+    opener.current =
+      focused instanceof HTMLElement && focused !== document.body
+        ? { focused, controller: controller(focused) }
+        : undefined;
+  }, [open]);
+  return () => {
+    const held = opener.current;
+    if (held === undefined) return undefined;
+    if (held.focused.isConnected) return held.focused;
+    return held.controller?.isConnected === true ? held.controller : undefined;
+  };
+}
+
 export function Dialog(props: {
   readonly title: string;
   /** The button that opens it; absent where the caller opens it from elsewhere. */
@@ -100,6 +147,7 @@ export function Dialog(props: {
 }): ReactNode {
   const width = dialogSizeClassNames[props.size ?? "roster"];
   const busy = props.busy === true;
+  const opener = useOpener(props.open && props.trigger === undefined);
   return (
     <RadixDialog.Root
       open={props.open}
@@ -131,6 +179,11 @@ export function Dialog(props: {
         <div className="pointer-events-none fixed inset-x-4 inset-y-6 z-[calc(var(--z-overlay)+30)]">
           <RadixDialog.Content
             aria-describedby={undefined}
+            onCloseAutoFocus={(event) => {
+              if (props.trigger !== undefined) return;
+              event.preventDefault();
+              opener()?.focus();
+            }}
             onInteractOutside={(event) => {
               if (busy || props.kept === true) event.preventDefault();
             }}
