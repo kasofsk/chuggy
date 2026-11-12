@@ -93,6 +93,13 @@ test("the page behind an open dialog is hidden and takes no press, and is given 
   styleless();
 });
 
+test("the page behind an open dialog is not locked, so it can still scroll", async () => {
+  await pageOpened();
+  expect(document.body.hasAttribute("data-scroll-locked")).toBe(false);
+  expect(document.body.style.overflow).toBe("");
+  styleless();
+});
+
 test("Escape closes the dialog and returns the focus to its trigger", async () => {
   const { trigger, dialog } = await pageOpened();
   await turned(() => {

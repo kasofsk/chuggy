@@ -79,7 +79,9 @@ function DialogFoot(props: {
 
 /** The element that controls the popup `element` stands in, such as a menu's
  * trigger for one of its items. */
-function controller(element: HTMLElement): HTMLElement | undefined {
+function dialogFocusReturnedController(
+  element: HTMLElement,
+): HTMLElement | undefined {
   const controls = [...document.querySelectorAll("[aria-controls]")];
   for (
     let node: Element | null = element;
@@ -100,7 +102,7 @@ function controller(element: HTMLElement): HTMLElement | undefined {
  * what held it when the dialog opened, or what controls the popup that stood
  * in, once that has left the page. Where it recorded nothing, Radix's own
  * return to the trigger stands. */
-function useFocusReturned(open: boolean): (event: Event) => void {
+function useDialogFocusReturned(open: boolean): (event: Event) => void {
   const opener = useRef<{
     readonly focused: HTMLElement;
     readonly controller: HTMLElement | undefined;
@@ -110,7 +112,7 @@ function useFocusReturned(open: boolean): (event: Event) => void {
     const focused = document.activeElement;
     opener.current =
       focused instanceof HTMLElement && focused !== document.body
-        ? { focused, controller: controller(focused) }
+        ? { focused, controller: dialogFocusReturnedController(focused) }
         : undefined;
   }, [open]);
   return (event) => {
@@ -148,7 +150,9 @@ export function Dialog(props: {
   readonly children: ReactNode;
 }): ReactNode {
   const width = dialogSizeClassNames[props.size ?? "roster"];
-  const returned = useFocusReturned(props.open && props.trigger === undefined);
+  const returned = useDialogFocusReturned(
+    props.open && props.trigger === undefined,
+  );
   const busy = props.busy === true;
   return (
     <RadixDialog.Root
