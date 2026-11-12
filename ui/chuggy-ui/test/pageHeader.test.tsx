@@ -144,7 +144,7 @@ test("secondaries alone draw no primary", () => {
   expect(pageHeaderPrimaries()).toBe(0);
 });
 
-test("a second primary is not a shape the header's props admit", () => {
+test("the actions the header draws are not a shape that admits a second primary", () => {
   const twoPrimaries: ComponentProps<typeof PageHeader> = {
     title: "Tickets",
     // @ts-expect-error -- the primary is one action, never a list of them.

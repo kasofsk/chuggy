@@ -7,8 +7,9 @@
  *
  * The actions are values rather than elements, so the header is what draws
  * them: `primary` is one action or none, and `secondary` are drawn in the
- * default variant whatever the caller wanted, so no shape of the props draws a
- * second primary. `overflow` is a slot for the page's own menu.
+ * default variant whatever the caller wanted, so of the actions the header
+ * draws, at most one is primary. `overflow`, `status` and `children` are
+ * slots, and what a page puts in them is its own.
  */
 
 import { useEffect, useRef, useState } from "react";
