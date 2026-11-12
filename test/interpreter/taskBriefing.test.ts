@@ -18,7 +18,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -1454,6 +1454,50 @@ test("a targeted variant of the development work differs from its base only in a
     readFileSync(path ?? "", "utf8"),
     /Do not run\s+`\.chug\/tasks\/ci\.sh`/u,
   );
+});
+
+/** Every workload authority this tree declares, by the file and workload it is in; a workload named by path is read at that path. */
+function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
+  const authorities = new Map<string, unknown>();
+  const parsed = (path: string): unknown =>
+    JSON.parse(readFileSync(path, "utf8"));
+  for (const name of readdirSync(".chug/configurations")) {
+    if (!name.endsWith(".json")) continue;
+    const path = `.chug/configurations/${name}`;
+    const declared = parsed(path) as {
+      readonly configuration: {
+        readonly workloads: Readonly<
+          Record<string, string | { authority?: unknown }>
+        >;
+      };
+    };
+    for (const [workload, declaration] of Object.entries(
+      declared.configuration.workloads,
+    ))
+      if (typeof declaration !== "string")
+        authorities.set(`${path} ${workload}`, declaration.authority);
+  }
+  for (const name of readdirSync(".chug/workloads")) {
+    if (!name.endsWith(".json")) continue;
+    const path = `.chug/workloads/${name}`;
+    authorities.set(path, (parsed(path) as { authority?: unknown }).authority);
+  }
+  return authorities;
+}
+
+test("this tree's workloads each list their credentials, and only ones its deployment delivers", () => {
+  const delivered = new Set(["claude-code", "track-record"]);
+  const authorities = treeWorkloadAuthorities();
+  assert.ok(authorities.has(".chug/workloads/ci.json"));
+  assert.ok(
+    authorities.has(".chug/configurations/chuggy-development.json build"),
+  );
+  for (const [where, authority] of authorities) {
+    const { credentials } = (authority ?? {}) as { credentials?: unknown };
+    assert.ok(Array.isArray(credentials), `${where} lists its credentials`);
+    for (const credential of credentials)
+      assert.ok(delivered.has(credential as string), `${where}: ${credential}`);
+  }
 });
 
 test("a fault in one role's block does not refuse the other role's briefing", () => {
