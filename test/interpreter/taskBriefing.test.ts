@@ -1456,7 +1456,7 @@ test("a targeted variant of the development work differs from its base only in a
   );
 });
 
-/** Every workload authority this tree declares, by the file and workload it is in; a workload named by path is read at that path. */
+/** Every workload authority this tree declares, by the file and workload it is in; a workload named by path is read at that path, and an Approval, which a person answers, runs nothing and has none. */
 function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
   const authorities = new Map<string, unknown>();
   const parsed = (path: string): unknown =>
@@ -1467,14 +1467,14 @@ function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
     const declared = parsed(path) as {
       readonly configuration: {
         readonly workloads: Readonly<
-          Record<string, string | { authority?: unknown }>
+          Record<string, string | { runner: string; authority?: unknown }>
         >;
       };
     };
     for (const [workload, declaration] of Object.entries(
       declared.configuration.workloads,
     ))
-      if (typeof declaration !== "string")
+      if (typeof declaration !== "string" && declaration.runner !== "Approval")
         authorities.set(`${path} ${workload}`, declaration.authority);
   }
   for (const name of readdirSync(".chug/workloads")) {
@@ -1572,6 +1572,48 @@ test("an authored block narrows the granted authority and never raises it", () =
   const resolved = taskAuthorityGrant(invocation.authority);
   assert.deepEqual(resolved.tools, ["editor"]);
   assert.equal(resolved.filesystem, "ReadWorkspace");
+});
+
+test("the credentials a configuration lists are kept beside the grant, and never widen it", () => {
+  const invocation = composed(
+    viewOf({
+      grant: { ...grant, credentials: ["forge", "workspace"] },
+      authority: { credentials: ["workspace", "absent", "forge"] },
+      block: {
+        instructions: [],
+        authority: { credentials: ["absent", "forge"] },
+      },
+    }),
+  );
+  assert.deepEqual(invocation.credentialsListed, ["absent", "forge"]);
+  assert.deepEqual(taskAuthorityGrant(invocation.authority).credentials, [
+    "forge",
+  ]);
+});
+
+test("a configuration that lists no credentials lists the granted ones", () => {
+  const invocation = composed(
+    viewOf({
+      grant: { ...grant, credentials: ["workspace", "forge", "workspace"] },
+      authority: { tools: ["editor"] },
+    }),
+  );
+  assert.deepEqual(invocation.credentialsListed, ["forge", "workspace"]);
+  assert.deepEqual(
+    invocation.credentialsListed,
+    taskAuthorityGrant(invocation.authority).credentials,
+  );
+});
+
+test("a configuration that lists credentials no block shares lists none", () => {
+  const invocation = composed(
+    viewOf({
+      authority: { credentials: ["workspace"] },
+      block: { instructions: [], authority: { credentials: ["absent"] } },
+    }),
+  );
+  assert.deepEqual(invocation.credentialsListed, []);
+  assert.deepEqual(taskAuthorityGrant(invocation.authority).credentials, []);
 });
 
 test("the retained provenance carries no line of the briefing it describes", () => {

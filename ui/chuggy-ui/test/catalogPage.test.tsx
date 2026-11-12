@@ -1,13 +1,16 @@
 /**
- * The Catalog page: which version it opens on, the entries it lists, what an
- * entry chosen in the address shows, a version 1 configuration drawn as a
- * ticket's page draws one, and the repository's head read only when asked.
+ * The Catalog page: one repository's configurations and the fragments they
+ * hold where the address names no configuration, the repository chosen in the
+ * address, the entries a configuration lists, what an entry chosen in the
+ * address shows, a version 1 configuration drawn as a ticket's page draws one,
+ * and the repository's head read only where the address asks for it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
+import { act } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -25,6 +28,8 @@ import {
   creationCatalogStagesNamedCanonical,
 } from "./ticketCreationFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+
+const navigated = vi.hoisted((): unknown[] => []);
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -54,14 +59,20 @@ vi.mock("@tanstack/react-router", () => ({
     </a>
   ),
   useParams: () => leadPartition,
-  useNavigate: () => () => Promise.resolve(),
+  useNavigate: () => (to: unknown) => {
+    navigated.push(to);
+    return Promise.resolve();
+  },
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  navigated.length = 0;
 });
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
 
 function listed(
   revision: string,
@@ -136,6 +147,7 @@ async function drawPage(
     listed("r2", "chuggy-development", 1, true),
   ],
   head: unknown = headDeclaring("2".repeat(64)),
+  failing: readonly string[] = [],
 ): Promise<readonly string[]> {
   const sent: string[] = [];
   vi.stubGlobal("fetch", (url: string) => {
@@ -143,6 +155,8 @@ async function drawPage(
     if (url.includes("/configurations/imports/head?"))
       return Promise.resolve(answer(head));
     const revision = /\/configurations\/([^/?]+)$/u.exec(url)?.[1];
+    if (revision !== undefined && failing.includes(revision))
+      return Promise.resolve(answer({ error: "Unavailable" }, 503));
     if (revision !== undefined)
       return Promise.resolve(
         answer({
@@ -169,9 +183,140 @@ async function drawPage(
   return sent;
 }
 
-test("the page opens on the newest catalog and lists its entries by what each is", async () => {
-  const sent = await drawPage({});
+/** A configuration imported from another repository, at another commit. */
+function listedElsewhere(revision: string, name: string): unknown {
+  return {
+    ...(listed(revision, name, 3, true) as Record<string, unknown>),
+    provenance: {
+      source: "Repository",
+      repository: "https://forge.test/kasofsk/elsewhere",
+      commit: "b".repeat(40),
+      path: `.chug/configurations/${name}.json`,
+      name,
+    },
+  };
+}
+
+const twoRepositories = [
+  listed("r5", "basic-coding", 3, false),
+  listed("r4", "chuggy-development", 2, true),
+  listedElsewhere("r6", "elsewhere-development"),
+];
+
+function drawnRepository(): string | null {
+  return screen.getByRole("heading", { level: 2 }).textContent;
+}
+
+test("with no configuration in the address, the page draws the repository imported last with its configurations and their fragments", async () => {
+  const sent = await drawPage({}, twoRepositories);
+  expect(drawnRepository()).toBe("kasofsk/chuggy");
   expect(sent.some((url) => url.endsWith("/configurations/r4"))).toBe(true);
+  expect(sent.some((url) => url.endsWith("/configurations/r6"))).toBe(false);
+  const declared = screen.getByRole("region", { name: "Configurations" });
+  expect(
+    within(declared)
+      .getAllByRole("link", { name: /^(basic|chuggy)/u })
+      .map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toStrictEqual([
+    ["basic-coding", "?configuration=r5"],
+    ["chuggy-development", "?configuration=r4"],
+  ]);
+  expect(within(declared).getByText("Version 1 configuration")).toBeTruthy();
+  expect(
+    screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual([
+    "Configurations 2",
+    "Workloads 4",
+    "Evaluation plans 2",
+    "Landings 2",
+    "Prompts 1",
+  ]);
+  const workloads = screen.getByRole("region", { name: "Workloads" });
+  expect(
+    within(workloads)
+      .getAllByRole("link", { name: "chuggy-development" })
+      .map((link) => link.getAttribute("href")),
+  ).toContain("?configuration=r4&entry=workloads%2Fbuild");
+  expect(screen.queryByRole("article")).toBeNull();
+});
+
+test("the repository the address names is the one drawn, and choosing another writes it into the address", async () => {
+  await drawPage(
+    { repository: "https://forge.test/kasofsk/elsewhere" },
+    twoRepositories,
+  );
+  expect(drawnRepository()).toBe("kasofsk/elsewhere");
+  const picker = screen.getByRole("button", { name: /^Repository/u });
+  act(() => {
+    fireEvent.keyDown(picker, { key: "ArrowDown" });
+  });
+  const menu = await screen.findByRole("menu");
+  act(() => {
+    within(menu).getByRole("menuitemradio", { name: "kasofsk/chuggy" }).click();
+  });
+  expect(navigated).toStrictEqual([
+    expect.objectContaining({ search: { repository: chuggy } }),
+  ]);
+});
+
+test("an address naming a repository the listing does not hold draws the one imported last", async () => {
+  await drawPage(
+    { repository: "https://forge.test/kasofsk/gone" },
+    twoRepositories,
+  );
+  expect(drawnRepository()).toBe("kasofsk/chuggy");
+});
+
+test("a configuration whose read fails says so in its row, and the fragments say they are of those read", async () => {
+  await drawPage(
+    {},
+    [
+      listed("r4", "chuggy-development", 2, true),
+      listed("r3", "chuggy-review", 1, true),
+    ],
+    undefined,
+    ["r3"],
+  );
+  const declared = screen.getByRole("region", { name: "Configurations" });
+  const failed = within(declared)
+    .getByRole("link", { name: "chuggy-review" })
+    .closest("li");
+  if (failed === null) throw new Error("the row is drawn");
+  expect(within(failed).getByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(
+    screen.getByText(
+      "The parts of a configuration that could not be read are not listed.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole("region", { name: "Workloads" })).queryByRole(
+      "link",
+      { name: "chuggy-review" },
+    ),
+  ).toBeNull();
+});
+
+test("an incomplete configuration is listed as one, and not read", async () => {
+  const sent = await drawPage({}, [
+    listed("r4", "chuggy-development", 2, true),
+    {
+      ...(listed("r3", "chuggy-review", 1, false) as Record<string, unknown>),
+      readiness: "Incomplete",
+    },
+  ]);
+  const incomplete = within(
+    screen.getByRole("region", { name: "Configurations" }),
+  )
+    .getByRole("link", { name: "chuggy-review" })
+    .closest("li");
+  expect(incomplete?.textContent).toContain("Incomplete");
+  expect(sent.some((url) => url.endsWith("/configurations/r3"))).toBe(false);
+});
+
+test("a configuration chosen in the address is drawn with its entries, and links back to its repository", async () => {
+  await drawPage({ configuration: "r4" });
   expect(
     screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
   ).toStrictEqual([
@@ -187,7 +332,11 @@ test("the page opens on the newest catalog and lists its entries by what each is
       .getAttribute("href"),
   ).toBe("?configuration=r4&entry=workloads%2Fbuild");
   expect(within(workloads).getByText("Default work")).toBeTruthy();
-  expect(screen.queryByRole("article")).toBeNull();
+  expect(
+    screen
+      .getByRole("link", { name: "All of kasofsk/chuggy" })
+      .getAttribute("href"),
+  ).toBe(`?${new URLSearchParams({ repository: chuggy }).toString()}`);
 });
 
 test("an entry the address names is shown beside the list, with what it uses and what uses it", async () => {
@@ -251,34 +400,20 @@ test("a project that imported nothing says so", async () => {
   expect(screen.getByText("No configuration imported")).toBeTruthy();
 });
 
-test("the repository's head is read only once a reader asks, and a head that matches says so", async () => {
+test("the repository's head is not read unless the address asks for it", async () => {
   const sent = await drawPage({ configuration: "r4" });
   expect(sent.some((url) => url.includes("/imports/head"))).toBe(false);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Compare with the repository head" }),
-  );
-  await settled();
-  expect(sent.find((url) => url.includes("/imports/head"))).toContain(
-    `repository=${encodeURIComponent("https://forge.test/kasofsk/chuggy")}`,
-  );
-  expect(screen.getByRole("status").textContent).toBe(
-    "The repository's main at eeeeeee declares chuggy-development as its newest import stored it. ",
-  );
+  expect(screen.queryByRole("status")).toBeNull();
 });
 
-test("a head that differs from the newest import offers to be drawn in its place", async () => {
-  await drawPage(
-    { configuration: "r4" },
-    undefined,
-    headDeclaring("f".repeat(64)),
+test("an address asking for a head that matches the newest import says so", async () => {
+  const sent = await drawPage({ configuration: "r4", source: "head" });
+  expect(sent.find((url) => url.includes("/imports/head"))).toContain(
+    `repository=${encodeURIComponent(chuggy)}`,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Compare with the repository head" }),
+  expect(screen.getByRole("status").textContent).toBe(
+    "The repository's main at eeeeeee declares chuggy-development as its newest import stored it. Show the import",
   );
-  await settled();
-  expect(
-    screen.getByRole("link", { name: "Show the head" }).getAttribute("href"),
-  ).toBe("?configuration=r4&source=head");
 });
 
 test("an address asking for the head draws the head's catalog, its links keeping the head", async () => {
@@ -300,8 +435,8 @@ test("an address asking for the head draws the head's catalog, its links keeping
   ).toBe("?configuration=r4&source=head&entry=workloads%2Fbuild");
 });
 
-test("a head an import would refuse lists why", async () => {
-  await drawPage({ configuration: "r4" }, undefined, {
+test("a head an import would refuse lists why, and draws the import", async () => {
+  await drawPage({ configuration: "r4", source: "head" }, undefined, {
     head: {
       state: "ConfigurationsRefused",
       branch: "main",
@@ -314,10 +449,6 @@ test("a head an import would refuse lists why", async () => {
       ],
     },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Compare with the repository head" }),
-  );
-  await settled();
   expect(screen.getByRole("status").textContent).toContain(
     "An import of the repository's main at eeeeeee would be refused.",
   );
@@ -357,7 +488,7 @@ test("a head is compared with the newest import from its own repository, not ano
     },
   };
   await drawPage(
-    { configuration: "r4" },
+    { configuration: "r4", source: "head" },
     [
       elsewhere,
       listed("r4", "chuggy-development", 2, true),
@@ -365,10 +496,6 @@ test("a head is compared with the newest import from its own repository, not ano
     ],
     headDeclaring("2".repeat(64)),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Compare with the repository head" }),
-  );
-  await settled();
   expect(screen.getByRole("status").textContent).toContain(
     "declares chuggy-development as its newest import stored it.",
   );

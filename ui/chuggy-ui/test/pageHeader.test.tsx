@@ -9,7 +9,7 @@
 
 import { act, cleanup, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps } from "react";
 
 import { PageHeader } from "../app/browser/ui/PageHeader.tsx";
 import type { PageHeaderAction } from "../app/browser/ui/PageHeader.tsx";
@@ -17,20 +17,7 @@ import { intersectionObserverStubbed } from "./intersectionObserver.ts";
 import { renderCopied } from "./copied.tsx";
 import { styleless } from "./styleless.ts";
 
-interface LinkStub {
-  readonly to?: string;
-  readonly href?: string | undefined;
-  readonly children?: ReactNode;
-}
-
-/** The router's link resolves its route to an address; the stub stands the
- * route in for it, so the anchor is a link to whoever reads its role. */
-vi.mock("@tanstack/react-router", () => ({
-  createLink:
-    (component: (props: LinkStub) => ReactNode) =>
-    (props: LinkStub): ReactNode =>
-      component({ ...props, href: props.to }),
-}));
+vi.mock("@tanstack/react-router", () => import("./routerLinkStubbed.tsx"));
 
 afterEach(() => {
   cleanup();
