@@ -120,12 +120,18 @@ function treeReferenced(): ReadonlyMap<
   );
 }
 
-test("every declaration this tree makes imports, each one releasable", () => {
-  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
+/** The name of every declaration this tree makes. */
+function treeDeclarationNames(): readonly string[] {
+  return readdirSync(repositoryConfigurationRoot).filter((name) =>
     name.endsWith(".json"),
   );
-  assert.ok(names.includes("basic-coding.json"));
-  const found = repositoryConfigurationImportReadiness({
+}
+
+/** An import of the named declarations of this tree, as a commit of it would be read. */
+function treeImported(
+  names: readonly string[],
+): ReturnType<typeof repositoryConfigurationImportReadiness> {
+  return repositoryConfigurationImportReadiness({
     repository,
     commit,
     files: names.map((name) => ({
@@ -135,25 +141,20 @@ test("every declaration this tree makes imports, each one releasable", () => {
     })),
     referenced: treeReferenced(),
   });
+}
+
+test("every declaration this tree makes imports, each one releasable", () => {
+  const names = treeDeclarationNames();
+  assert.ok(names.includes("basic-coding.json"));
+  const found = treeImported(names);
   assert.equal(found.readiness, "Ready", JSON.stringify(found));
   if (found.readiness !== "Ready") return;
   assert.equal(found.declarations.length, names.length);
 });
 
 test("every declaration this tree makes reevaluates its reviewers on change and reruns its commands on every tree", () => {
-  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
-    name.endsWith(".json"),
-  );
-  const found = repositoryConfigurationImportReadiness({
-    repository,
-    commit,
-    files: names.map((name) => ({
-      path: `${repositoryConfigurationRoot}${name}`,
-      kind: "File",
-      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
-    })),
-    referenced: treeReferenced(),
-  });
+  const names = treeDeclarationNames();
+  const found = treeImported(names);
   if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
   const evaluators = found.declarations.flatMap(({ name, configuration }) => {
     if (configuration.version === 1) return [];
@@ -182,21 +183,10 @@ test("every declaration this tree makes reevaluates its reviewers on change and 
 });
 
 test("a ticket of every catalog this tree declares, naming no finalization, lands by a Stacked pull request merge", () => {
-  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
-    name.endsWith(".json"),
-  );
+  const names = treeDeclarationNames();
   assert.ok(names.includes("basic-coding.json"));
   assert.ok(names.includes("chuggy-development.json"));
-  const found = repositoryConfigurationImportReadiness({
-    repository,
-    commit,
-    files: names.map((name) => ({
-      path: `${repositoryConfigurationRoot}${name}`,
-      kind: "File",
-      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
-    })),
-    referenced: treeReferenced(),
-  });
+  const found = treeImported(names);
   if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
   assert.equal(found.declarations.length, names.length);
   for (const { name, configuration } of found.declarations) {
