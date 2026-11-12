@@ -27,6 +27,9 @@ export interface TableColumn<Key extends string> {
   readonly numeric?: boolean;
   /** The column whose cell names its row. */
   readonly rowHeader?: boolean;
+  /** A column whose cells say what they are, like a press: its label is for
+   * assistive technology only, and a card draws none. */
+  readonly labelHidden?: boolean;
 }
 
 export interface TableRow<Key extends string> {
@@ -98,7 +101,11 @@ function TableStackedBody<Key extends string>(props: {
               role="columnheader"
               className={column.numeric === true ? "num" : undefined}
             >
-              {column.label}
+              {column.labelHidden === true ? (
+                <span className="visually-hidden">{column.label}</span>
+              ) : (
+                column.label
+              )}
             </th>
           ))}
         </tr>
@@ -127,9 +134,11 @@ function TableStackedCell<Key extends string>(props: {
   const className = props.column.numeric === true ? "num" : undefined;
   const content = (
     <>
-      <span className="tabular-label" aria-hidden="true">
-        {props.column.label}
-      </span>
+      {props.column.labelHidden === true ? null : (
+        <span className="tabular-label" aria-hidden="true">
+          {props.column.label}
+        </span>
+      )}
       <span className="tabular-value">{props.children}</span>
     </>
   );

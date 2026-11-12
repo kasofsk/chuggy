@@ -19,6 +19,7 @@ import { tenantPeopleTruncated } from "../../core/tenantPeople.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Table } from "../ui/Table.tsx";
+import type { TableColumn, TableRow } from "../ui/Table.tsx";
 
 import "./tenantPeople.css";
 
@@ -66,6 +67,23 @@ export function SettingsListingTable(props: {
   return (
     <div className={`people-table ${cardClassName}`}>
       <Table caption={props.caption}>{props.children}</Table>
+    </div>
+  );
+}
+
+/** The card a listing's stacked table is drawn in, each row a card of its own
+ * on a narrow container. */
+export function SettingsListingStacked<Key extends string>(props: {
+  readonly caption: string;
+  readonly columns: readonly TableColumn<Key>[];
+  readonly rows: readonly TableRow<Key>[];
+}): ReactNode {
+  return (
+    <div className={cardClassName}>
+      <Table
+        caption={props.caption}
+        stacked={{ columns: props.columns, rows: props.rows }}
+      />
     </div>
   );
 }

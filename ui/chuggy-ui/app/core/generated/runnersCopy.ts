@@ -8,7 +8,6 @@ export interface RunnersCopy {
   readonly "runners-none": Record<never, never>;
   readonly "runners-caption": Record<never, never>;
   readonly "runners-col-runner": Record<never, never>;
-  readonly "runners-col-platforms": Record<never, never>;
   readonly "runners-col-version": Record<never, never>;
   readonly "runners-col-registered": Record<never, never>;
   readonly "runners-col-last-polled": Record<never, never>;
