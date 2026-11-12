@@ -264,3 +264,33 @@ test("an overflowing scroller with no caption is a keyboard stop but no unnamed 
   expect(scroller?.tabIndex).toBe(0);
   expect(screen.queryByRole("region")).toBeNull();
 });
+
+test("a stacked column whose label is hidden names its head to assistive technology only, and its card value draws no label and takes the card's width", () => {
+  render(
+    <Table
+      caption="Runners"
+      stacked={{
+        columns: [
+          { key: "name", label: "Name", rowHeader: true },
+          { key: "remove", label: "Remove", labelHidden: true },
+        ],
+        rows: [
+          { key: "one", cells: { name: "one", remove: <button>Drop</button> } },
+        ],
+      }}
+    />,
+  );
+  const table = screen.getByRole("table", { name: "Runners" });
+  const head = within(table).getByRole("columnheader", { name: "Remove" });
+  expect(head.querySelector(".visually-hidden")?.textContent).toBe("Remove");
+  const cell = within(table).getByRole("cell");
+  expect(cell.querySelector(".tabular-label")).toBeNull();
+  const value = cell.querySelector(".tabular-value");
+  if (value === null) throw new Error("the cell drew no value");
+  const narrow = sheetRules(tableSheet, [sheetNarrowCondition]);
+  expect(sheetDeclared(narrow, value, "grid-column")).toBe("1 / -1");
+  const labelled = within(table).getByRole("rowheader");
+  const labelledValue = labelled.querySelector(".tabular-value");
+  if (labelledValue === null) throw new Error("the header drew no value");
+  expect(sheetDeclared(narrow, labelledValue, "grid-column")).toBe("");
+});

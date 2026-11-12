@@ -520,7 +520,26 @@ test("the ask and the steps each measure their own column, and narrow, every pre
   }
 });
 
-test("narrow, the ask's box is a finger's height and its drawn square stays 1em", async () => {
+/** What the narrow rules declare for a box's drawn square, its `::before`,
+ * where the box shows focus or does not. */
+function runnerMintSquareDeclared(
+  rules: readonly CSSStyleRule[],
+  box: Element,
+  property: string,
+  focused: boolean,
+): string {
+  const square = rules.filter((rule) => rule.selectorText.endsWith("::before"));
+  const unfocused = square.flatMap((rule) => {
+    const selector = rule.selectorText.slice(0, -"::before".length);
+    const held = focused ? selector.replace(":focus-visible", "") : selector;
+    return held.includes(":focus-visible")
+      ? []
+      : [{ selectorText: held, style: rule.style } as CSSStyleRule];
+  });
+  return sheetDeclared(unfocused, box, property);
+}
+
+test("narrow, the ask's box is a finger's height, its drawn square stays 1em and rounded, and focused it draws the ring", async () => {
   await drawPage({});
   const wide = sheetRules(runnerMintSheet, []);
   const narrow = sheetRules(runnerMintSheet, [sheetNarrowCondition]);
@@ -533,8 +552,15 @@ test("narrow, the ask's box is a finger's height and its drawn square stays 1em"
     expect(sheetDeclared(narrow, box, side)).toBe("var(--height-touch)");
     expect(sheetDeclared(wide, box, side)).toBe("");
   }
-  expect(sheetDeclared(narrow, box, "border")).toBe(
-    "calc((var(--height-touch) - 1em) / 2) solid transparent",
+  expect(runnerMintSquareDeclared(narrow, box, "inset", false)).toBe(
+    "calc((var(--height-touch) - 1em) / 2)",
   );
-  expect(sheetDeclared(narrow, box, "background-clip")).toBe("padding-box");
+  expect(runnerMintSquareDeclared(narrow, box, "border-radius", false)).toBe(
+    "var(--radius-2)",
+  );
+  expect(runnerMintSquareDeclared(narrow, box, "box-shadow", false)).toBe("");
+  expect(runnerMintSquareDeclared(narrow, box, "box-shadow", true)).toBe(
+    "var(--ring-focus)",
+  );
+  expect(sheetDeclared(narrow, box, "box-shadow")).toBe("");
 });

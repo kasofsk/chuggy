@@ -17,24 +17,44 @@
       min-height: var(--height-touch);
     }
 
-    /* A box is a finger's height itself, its square still 1em: a clear
-       border holds the square in the middle and an inset line draws it. */
+    /* A box is a finger's height itself, its square still 1em and drawn
+       round in the middle of it, where the focus ring is drawn too. */
     .runner-mint .checkbox {
       width: var(--height-touch);
       height: var(--height-touch);
-      border: calc((var(--height-touch) - 1em) / 2) solid transparent;
-      background-clip: padding-box;
-      box-shadow: inset 0 0 0 var(--hairline) var(--edge-control);
+      background: transparent;
+      border: 0;
     }
 
-    .runner-mint .checkbox[data-state="checked"] {
-      border-color: transparent;
-      box-shadow: inset 0 0 0 var(--hairline) var(--surface-inverse);
+    .runner-mint .checkbox::before {
+      content: "";
+      position: absolute;
+      inset: calc((var(--height-touch) - 1em) / 2);
+      background: var(--surface-1);
+      border: var(--hairline) solid var(--edge-control);
+      border-radius: var(--radius-2);
     }
 
-    .runner-mint .checkbox:is(:disabled, [aria-disabled="true"]) {
-      border-color: transparent;
-      box-shadow: inset 0 0 0 var(--hairline) var(--edge);
+    .runner-mint .checkbox > * {
+      position: relative;
+    }
+
+    .runner-mint .checkbox[data-state="checked"]::before {
+      background: var(--surface-inverse);
+      border-color: var(--surface-inverse);
+    }
+
+    .runner-mint .checkbox:is(:disabled, [aria-disabled="true"])::before {
+      background: transparent;
+      border-color: var(--edge);
+    }
+
+    .runner-mint .checkbox:focus-visible {
+      box-shadow: none;
+    }
+
+    .runner-mint .checkbox:focus-visible::before {
+      box-shadow: var(--ring-focus);
     }
 
     .runner-mint :is(a[href], [tabindex="0"]) {
