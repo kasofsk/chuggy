@@ -5,7 +5,9 @@
  * Total over a table with a caption and one without, each inside a scroller so
  * a wide table scrolls itself rather than the page. A scroller with more to
  * show says which side the more is on and is a stop for the keyboard; one that
- * holds its table whole is neither. The columns are the caller's own `thead`
+ * holds its table whole is neither. The fade is a mask, which cuts away
+ * whatever the scroller paints outside itself, so its focus ring is drawn by
+ * the frame around it. The columns are the caller's own `thead`
  * and `tbody`, because a typed column model would restate the wire in a second
  * place and the wire is where a column comes from.
  *
@@ -49,36 +51,38 @@ export function Table<Key extends string>(props: TableProps<Key>): ReactNode {
   const stacked = "stacked" in props ? props.stacked : undefined;
   const scrolls = more.start || more.end;
   return (
-    <div
-      ref={scroller}
-      className={
-        "tabular-scroll max-w-full overflow-x-auto" +
-        (stacked === undefined ? "" : " tabular-stacking")
-      }
-      data-more-start={more.start ? "" : undefined}
-      data-more-end={more.end ? "" : undefined}
-      tabIndex={scrolls ? 0 : undefined}
-      role={scrolls ? "region" : undefined}
-      aria-label={scrolls ? props.caption : undefined}
-    >
-      <table
+    <div className="tabular-frame">
+      <div
+        ref={scroller}
         className={
-          stacked === undefined ? "tabular" : "tabular tabular-stacked"
+          "tabular-scroll max-w-full overflow-x-auto" +
+          (stacked === undefined ? "" : " tabular-stacking")
         }
-        role={stacked === undefined ? undefined : "table"}
+        data-more-start={more.start ? "" : undefined}
+        data-more-end={more.end ? "" : undefined}
+        tabIndex={scrolls ? 0 : undefined}
+        role={scrolls && props.caption !== undefined ? "region" : undefined}
+        aria-label={scrolls ? props.caption : undefined}
       >
-        {props.caption === undefined ? null : (
-          <caption className="visually-hidden">{props.caption}</caption>
-        )}
-        {"children" in props ? (
-          props.children
-        ) : (
-          <TableStackedBody
-            columns={props.stacked.columns}
-            rows={props.stacked.rows}
-          />
-        )}
-      </table>
+        <table
+          className={
+            stacked === undefined ? "tabular" : "tabular tabular-stacked"
+          }
+          role={stacked === undefined ? undefined : "table"}
+        >
+          {props.caption === undefined ? null : (
+            <caption className="visually-hidden">{props.caption}</caption>
+          )}
+          {"children" in props ? (
+            props.children
+          ) : (
+            <TableStackedBody
+              columns={props.stacked.columns}
+              rows={props.stacked.rows}
+            />
+          )}
+        </table>
+      </div>
     </div>
   );
 }

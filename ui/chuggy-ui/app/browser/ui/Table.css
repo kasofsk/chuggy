@@ -83,6 +83,20 @@
     );
   }
 
+  /* The frame shrinks as its scroller would, so a flex or grid parent still
+     hands the scroller a width narrower than its table. */
+  .tabular-frame {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* The mask cuts away the scroller's own ring, which lies outside it, so the
+     frame draws the ring instead. */
+  .tabular-frame:has(> .tabular-scroll:focus-visible) {
+    box-shadow: var(--ring-focus);
+    border-radius: var(--radius-1);
+  }
+
   /* A stacked table measures the width it is given, which is what chooses
      between its columns and its cards. */
   .tabular-stacking {
