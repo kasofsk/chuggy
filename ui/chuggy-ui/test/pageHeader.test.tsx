@@ -12,8 +12,10 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ComponentProps, ReactNode } from "react";
 
 import { PageHeader } from "../app/browser/ui/PageHeader.tsx";
+import pageHeaderSheet from "../app/browser/ui/PageHeader.css?raw";
 import type { PageHeaderAction } from "../app/browser/ui/PageHeader.tsx";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { renderCopied } from "./copied.tsx";
 import { styleless } from "./styleless.ts";
 
@@ -134,6 +136,27 @@ test("the primary action is the one primary drawn, after the secondaries and bef
       .getByRole("link", { name: "Duplicate" })
       .classList.contains("btn-default"),
   ).toBe(true);
+});
+
+test("on a narrow container every action the header and its bar draw is a finger's height", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  renderCopied(
+    <PageHeader title="Lock the contract" primary={merge} secondary={[edit]} />,
+  );
+  const wide = sheetRules(pageHeaderSheet, []);
+  const narrow = sheetRules(pageHeaderSheet, [sheetNarrowCondition]);
+  const drawn = Array.from(document.querySelectorAll(".btn"));
+  expect(drawn).toHaveLength(3);
+  for (const action of drawn) {
+    expect(sheetDeclared(wide, action, "height")).toBe("var(--height-icon)");
+    expect(sheetDeclared(narrow, action, "height")).toBe("var(--height-touch)");
+  }
+  for (const container of document.querySelectorAll(
+    ".page-header, .page-header-sticky",
+  ))
+    expect(sheetDeclared(wide, container, "container-type")).toBe(
+      "inline-size",
+    );
 });
 
 test("secondaries alone draw no primary", () => {

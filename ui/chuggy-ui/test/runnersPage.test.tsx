@@ -30,7 +30,9 @@ import {
 import type { SentRequest } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
+import runnerMintSheet from "../app/browser/RunnerMint.css?raw";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -156,6 +158,19 @@ function add(): HTMLElement {
   return screen.getByRole("button", { name: "Add runner" });
 }
 
+/** Each registered runner's cells, by what each holds, its label aside. */
+function rosterValues(): readonly (readonly string[])[] {
+  return within(sectionOf("Registered runners"))
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) =>
+      Array.from(
+        row.children,
+        (cell) => cell.querySelector(".tabular-value")?.textContent ?? "",
+      ),
+    );
+}
+
 /** Opens the ask, fills it in as given, and mints. */
 async function addRunner(
   asked: {
@@ -189,15 +204,58 @@ async function addRunner(
 test("a reader who may choose nothing is offered no runner to add, and still reads the runners", async () => {
   await drawPage({ placement: { ...granted, choices: [] } });
   expect(screen.queryByRole("button", { name: "Add runner" })).toBeNull();
-  expect(
-    within(sectionOf("Runners")).getAllByRole("row")[1]?.textContent,
-  ).toMatch(/^shame/u);
+  expect(rosterValues()[0]?.[0]).toMatch(/^shame/u);
 });
 
-test("a registered pool is a row naming its platforms", async () => {
+test("the page is headed by one title, with what its runners are under it", async () => {
   await drawPage();
-  const rows = within(sectionOf("Runners")).getAllByRole("row");
-  expect(rows[1]?.textContent).toMatch(/^shameLinux Amd64/u);
+  const titles = screen.getAllByRole("heading", { level: 1 });
+  expect(titles.map((title) => title.textContent)).toStrictEqual(["Runners"]);
+  expect(titles[0]?.closest("header")?.textContent).toContain(
+    "Machines that run this project's agents.",
+  );
+});
+
+test("a registered pool is a card of its name and platforms, then its state, its version and when it last polled, each labelled", async () => {
+  await drawPage();
+  const table = screen.getByRole("table", { name: "Registered runners" });
+  const row = within(table).getAllByRole("row")[1];
+  expect(
+    Array.from(
+      row?.children ?? [],
+      (cell) => cell.querySelector(".tabular-label")?.textContent,
+    ),
+  ).toStrictEqual(["Runner", "Status", "Version", "Last polled"]);
+  expect(row?.firstElementChild?.getAttribute("role")).toBe("rowheader");
+  expect(rosterValues()).toStrictEqual([
+    ["shameLinux Amd64", "Offline", "—", "Never"],
+  ]);
+});
+
+test("a runner's state is a word beside a mark, Live where its poll is recent and Offline where it is not", async () => {
+  const pool = pools.pools[0];
+  await drawPage({
+    listed: {
+      truncated: false,
+      pools: [
+        { ...pool, pool: "up", live: true, polledAt: "2026-09-30T00:00:00Z" },
+        { ...pool, pool: "down" },
+      ],
+    },
+  });
+  const states = within(sectionOf("Registered runners"))
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => row.children[1]?.querySelector(".pill"));
+  expect(states.map((state) => state?.textContent)).toStrictEqual([
+    "Live",
+    "Offline",
+  ]);
+  for (const state of states)
+    expect(
+      state?.querySelector(".pill-mark")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+  expect(rosterValues()[0]?.[3]).not.toBe("Never");
 });
 
 test("a pool's version is drawn, Outdated where chuggy pins a later one, and a dash where none is known", async () => {
@@ -228,41 +286,55 @@ test("a pool's version is drawn, Outdated where chuggy pins a later one, and a d
       ],
     },
   });
-  const rows = within(sectionOf("Runners")).getAllByRole("row");
-  expect(rows[1]?.textContent).toMatch(/0\.9\.0Outdated/u);
-  expect(rows[2]?.textContent).toMatch(/0\.10\.0/u);
-  expect(rows[2]?.textContent).not.toMatch(/Outdated/u);
-  expect(rows[3]?.textContent).toMatch(/Linux Amd64—/u);
+  expect(rosterValues().map((cells) => cells[2])).toStrictEqual([
+    "0.9.0Outdated",
+    "0.10.0",
+    "—",
+  ]);
 });
 
 test("a roster holding more than one read answers says so under its rows", async () => {
   await drawPage({ listed: { ...pools, truncated: true } });
-  expect(within(sectionOf("Runners")).getByText("More not shown")).toBeTruthy();
+  expect(
+    within(sectionOf("Registered runners")).getByText("More not shown"),
+  ).toBeTruthy();
   cleanup();
   await drawPage();
   expect(screen.queryByText("More not shown")).toBeNull();
 });
 
-test("a project with a pool offers Add runner in the panel's head", async () => {
+test("a project with a pool offers Add runner as the page head's one primary action", async () => {
   await drawPage();
-  expect(add().closest("header")).not.toBeNull();
-  expect(add().className).toContain("btn-default");
+  expect(add().closest("header")?.className).toBe("page-header");
+  expect(add().className).toContain("btn-primary");
+  expect(
+    screen
+      .getAllByRole("button")
+      .filter((button) => button.className.includes("btn-primary")),
+  ).toStrictEqual([add()]);
 });
 
-test("a project with no pool says so, and Add runner is the one thing under the line", async () => {
-  await drawPage({ listed: none });
-  const line = within(sectionOf("Runners")).getByText("No runner registered");
+test("a project with no pool says so in one line, and Add runner, which leads to the steps, is the one thing beside it", async () => {
+  await drawPage({ listed: none, written: [minted()] });
+  const line = within(sectionOf("Registered runners")).getByText(
+    "No runner registered",
+  );
   expect(add().closest("header")).toBeNull();
-  expect(line.parentElement?.contains(add())).toBe(true);
+  expect(add().parentElement).toBe(line.parentElement);
+  expect(line.parentElement?.className).toContain("flex-wrap");
   expect(add().className).toContain("btn-primary");
+  await addRunner();
+  expect(steps()).toBeTruthy();
 });
 
 test("a project with no pool says so and no more to a reader who may not add", async () => {
   await drawPage({ listed: none, placement: { ...granted, choices: [] } });
   expect(
-    within(sectionOf("Runners")).getByText("No runner registered"),
+    within(sectionOf("Registered runners")).getByText("No runner registered"),
   ).toBeTruthy();
-  expect(within(sectionOf("Runners")).queryAllByRole("button")).toHaveLength(0);
+  expect(
+    within(sectionOf("Registered runners")).queryAllByRole("button"),
+  ).toHaveLength(0);
 });
 
 test("adding a runner mints a token for how long it stands and nothing more", async () => {
@@ -324,7 +396,7 @@ test("the ask and then the steps take the focus as they are drawn, since an empt
   expect(document.activeElement).toBe(steps());
   expect(screen.queryByRole("button", { name: "Add runner" })).toBeNull();
   expect(
-    within(sectionOf("Runners")).getByText("No runner registered"),
+    within(sectionOf("Registered runners")).getByText("No runner registered"),
   ).toBeTruthy();
 });
 
@@ -356,8 +428,12 @@ test("a mint the API refuses says so and draws no step", async () => {
     written: [answer({ error: { code: "Forbidden", message: "no" } }, 403)],
   });
   await addRunner();
-  expect(within(sectionOf("Runners")).getByText("Refused")).toBeDefined();
-  expect(sectionOf("Runners").textContent).not.toContain("Forbidden");
+  expect(
+    within(sectionOf("Registered runners")).getByText("Refused"),
+  ).toBeDefined();
+  expect(sectionOf("Registered runners").textContent).not.toContain(
+    "Forbidden",
+  );
   expect(screen.queryByRole("list", { name: "Add runner" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Setup guide" })).toBeNull();
   expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();
@@ -417,4 +493,29 @@ test("capabilities typed that are not ones are refused before anything is minted
       .getByRole("textbox", { name: "Capabilities" })
       .getAttribute("aria-invalid"),
   ).toBe("true");
+});
+
+test("the ask and the steps each measure their own column, and narrow, every press and link in them is a finger's height", async () => {
+  await drawPage({ written: [minted()] });
+  const wide = sheetRules(runnerMintSheet, []);
+  const narrow = sheetRules(runnerMintSheet, [sheetNarrowCondition]);
+  await press("Add runner");
+  const form = screen.getByRole("form", { name: "Runner" });
+  expect(sheetDeclared(wide, form, "container-type")).toBe("inline-size");
+  for (const button of within(form).getAllByRole("button"))
+    expect(sheetDeclared(narrow, button, "min-height")).toBe(
+      "var(--height-touch)",
+    );
+  await press("Create token");
+  const drawn = steps().parentElement ?? steps();
+  expect(sheetDeclared(wide, drawn, "container-type")).toBe("inline-size");
+  for (const control of [
+    ...within(drawn).getAllByRole("button"),
+    within(drawn).getByRole("link", { name: "Setup guide" }),
+  ]) {
+    expect(sheetDeclared(narrow, control, "min-height")).toBe(
+      "var(--height-touch)",
+    );
+    expect(sheetDeclared(wide, control, "min-height")).toBe("");
+  }
 });

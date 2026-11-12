@@ -116,6 +116,12 @@
       clip-path: inset(50%);
     }
 
+    /* The hidden head's cells stack inside its one pixel, rather than laying
+       out side by side past the card's edge. */
+    .tabular-stacked thead th {
+      display: block;
+    }
+
     .tabular-stacked tbody tr {
       padding: var(--space-3) var(--space-4);
       border-bottom: var(--hairline) solid var(--edge);
@@ -139,6 +145,15 @@
 
     .tabular-stacked .num {
       text-align: start;
+    }
+
+    /* A value a finger opens, like a figure's exact time, is given a
+       finger's height in a card. */
+    .tabular-stacked tbody .tabular-value [tabindex="0"] {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
     }
 
     .tabular-stacked .tabular-label {

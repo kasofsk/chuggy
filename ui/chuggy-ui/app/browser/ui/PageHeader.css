@@ -62,12 +62,16 @@
   }
 
   /* Narrow, the actions take a row of their own under the status, from its
-     start. */
+     start, each a finger's height. */
   @container (max-width: 40em) {
     .page-header-actions {
       flex-basis: 100%;
       justify-content: flex-start;
       margin-inline-start: 0;
+    }
+
+    .page-header-actions .btn {
+      height: var(--height-touch);
     }
   }
 
@@ -109,5 +113,17 @@
   .page-header-sticky-action {
     flex: none;
     margin-inline-start: auto;
+  }
+
+  /* The bar measures the column it stands over, so narrow, its action is a
+     finger's height as the header's are. */
+  .page-header-sticky {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 40em) {
+    .page-header-sticky-action .btn {
+      height: var(--height-touch);
+    }
   }
 }

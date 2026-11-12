@@ -42,6 +42,9 @@ const pages: Readonly<Record<string, string>> = {
   "inline.html": page('<p style="color: red">inline</p><button>ok</button>'),
   "wide.html": page('<div class="wide">wide</div><button>ok</button>'),
   "small.html": page('<button class="small">s</button><button>ok</button>'),
+  "scoped.html": page(
+    '<section><button class="small">s</button></section><aside><button>ok</button></aside>',
+  ),
 };
 
 let root = "";
@@ -137,6 +140,16 @@ test("a target smaller than the touch token fails", async ({ browser }) => {
   await expect(renderedTouchTargets(rendered.page)).rejects.toThrow(
     /smaller than 44px/u,
   );
+});
+
+test("a target smaller than the touch token fails only inside the scope it is held to", async ({
+  browser,
+}) => {
+  const rendered = await harnessOpen(browser, "/scoped.html");
+  await renderedTouchTargets(rendered.page, rendered.page.locator("aside"));
+  await expect(
+    renderedTouchTargets(rendered.page, rendered.page.locator("section")),
+  ).rejects.toThrow(/smaller than 44px/u);
 });
 
 test("a custom property set on the root re-themes what the sweep reads", async ({

@@ -18,6 +18,8 @@ import { Button } from "./ui/Button.tsx";
 import { CopyBox } from "./ui/CopyBox.tsx";
 import { Figure } from "./ui/Figure.tsx";
 
+import "./RunnerMint.css";
+
 function RunnerStep(props: {
   readonly title: string;
   readonly children: ReactNode;
@@ -64,7 +66,7 @@ export function RunnerSteps(props: {
   const offered = runnerPackages[props.ask.package];
   const expires = new Date(props.minted.expiresAtMs).toISOString();
   return (
-    <div className="border-edge grid min-w-0 gap-3 border-b pt-3 pb-4">
+    <div className="runner-mint border-edge grid min-w-0 gap-3 border-b pt-3 pb-4">
       <ol
         ref={steps}
         tabIndex={-1}

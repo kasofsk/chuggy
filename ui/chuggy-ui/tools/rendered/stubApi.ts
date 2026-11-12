@@ -20,6 +20,7 @@ import type { z } from "zod";
 import { accessProjectPeopleSchema } from "../../../../src/contract/accessPlane.ts";
 import {
   chatAbilitiesResponseSchema,
+  hostedRunsResponseSchema,
   executionPlacementResponseSchema,
   inboxResponseSchema,
   landingQueuesResponseSchema,
@@ -30,6 +31,9 @@ import {
   projectInventoryResponseSchema,
   projectResponseSchema,
   sessionPlacementResponseSchema,
+  threadsResponseSchema,
+  workerPoolsResponseSchema,
+  workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
 
 export const stubApiTenant = "tenant-rendered";
@@ -81,6 +85,36 @@ const ticket = {
   changedAt: "2026-11-02T00:00:00Z",
   revokedDependencies: [],
   openDependencies: [],
+};
+
+/** The project's runners: one live and current, one behind the version
+ * chuggy pins, and one that has never polled. */
+const workerPools = {
+  truncated: false,
+  pools: [
+    {
+      pool: "build-linux",
+      capabilities: ["Platform:Linux:Amd64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-11-02T00:00:00Z",
+      live: true,
+      runner: { package: "chuggy-linux", version: "0.10.0", pinned: "0.10.0" },
+    },
+    {
+      pool: "studio-mac",
+      capabilities: ["Platform:Darwin:Arm64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-10-20T00:00:00Z",
+      live: false,
+      runner: { package: "chuggy-darwin", version: "0.9.0", pinned: "0.10.0" },
+    },
+    {
+      pool: "spare",
+      capabilities: [],
+      registeredAt: "2026-10-01T00:00:00Z",
+      live: false,
+    },
+  ],
 };
 
 /** The reads every case is answered, a route to a row. */
@@ -152,6 +186,24 @@ export const stubApiReads: readonly StubApiRead[] = [
       choices: ["Pool"],
       runners: { mine: "Live", inquiry: "Live", project: "Live" },
     },
+  ),
+  stubApiRead(`${projectPath}/hosted-runs`, hostedRunsResponseSchema, {
+    granted: false,
+  }),
+  stubApiRead(`${projectPath}/threads`, threadsResponseSchema, { threads: [] }),
+  stubApiRead(
+    `${projectPath}/worker-pools`,
+    workerPoolsResponseSchema,
+    workerPools,
+  ),
+  stubApiRead(
+    `${projectPath}/worker-pool-registration-tokens`,
+    workerPoolTokenResponseSchema,
+    {
+      token: "stub-registration-token",
+      expiresAtMs: Date.parse("2030-01-01T00:00:00Z"),
+    },
+    "POST",
   ),
   stubApiRead(
     `${projectPath}/owner-fallback`,

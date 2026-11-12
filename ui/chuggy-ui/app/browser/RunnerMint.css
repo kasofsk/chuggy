@@ -1,0 +1,27 @@
+/* The ask a runner's token is minted from and the steps it is handed over
+   in. Each is its own container, so in a narrow column every press, link and
+   value a finger opens in them is given a finger's height. */
+
+@layer page {
+  .runner-mint {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 40em) {
+    .runner-mint :is(.btn, .copy-button) {
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+
+    .runner-mint .input-box {
+      min-height: var(--height-touch);
+    }
+
+    .runner-mint :is(a[href], [tabindex="0"]) {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+  }
+}
