@@ -4,7 +4,7 @@
   "worker": { "setup": ["npm ci"], "files": [] },
   "authority": {
     "tools": ["shell"],
-    "credentials": ["chuggy-github-worker", "track-record"],
+    "credentials": ["track-record"],
     "network": true,
     "filesystem": "WriteWorkspace",
     "mayCompleteTask": false

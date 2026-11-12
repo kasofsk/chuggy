@@ -14,7 +14,7 @@
   },
   "authority": {
     "tools": ["claude-code", "shell"],
-    "credentials": ["chuggy-github-worker", "claude-code", "track-record"],
+    "credentials": ["claude-code", "track-record"],
     "network": true,
     "filesystem": "WriteWorkspace",
     "mayCompleteTask": false
