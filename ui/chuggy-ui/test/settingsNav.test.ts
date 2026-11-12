@@ -1,7 +1,8 @@
 /**
- * The settings' navigation, derived: a group a level in the order the levels
- * nest, each entry the address its page has in the frame it is drawn in, and
- * of the site's pages only the ones the reader's abilities give them.
+ * The settings' navigation, derived from the roster of sections: a group a
+ * level in the order the levels nest and the reader's own last, each entry the
+ * address its page has in the frame it is drawn in, and of the sections only
+ * the ones the ability that shows each gives the reader.
  */
 
 import { expect, test } from "vitest";
@@ -12,6 +13,8 @@ import {
   settingsNav,
   settingsNavSiteDrawn,
   settingsRoutes,
+  settingsSectionShown,
+  settingsSections,
 } from "../app/core/settingsNav.ts";
 import type {
   SettingsNavGroup,
@@ -32,19 +35,32 @@ function drawn(
   ]);
 }
 
-test("in a project the project's pages lead, then the workspace's, each group under its level and its name", () => {
+test("in a project the project's pages lead, then the workspace's, then the reader's own, each group under its level and its name", () => {
   const groups = settingsNav({
     tenant: "acme",
     project: "atlas",
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
-    ["Project", "atlas", ["Lead", "Placement", "Permissions"]],
+    [
+      "Project",
+      "atlas",
+      [
+        "Lead",
+        "Lead session",
+        "Placement",
+        "Permissions",
+        "Repositories",
+        "Runners",
+        "Catalog",
+      ],
+    ],
     [
       "Workspace",
       "acme",
-      ["People", "GitHub accounts", "Permissions", "Personal runners", "Usage"],
+      ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
+    ["You", undefined, ["Personal runners"]],
   ]);
 });
 
@@ -58,8 +74,9 @@ test("outside a project the workspace's pages are the whole navigation", () => {
     [
       "Workspace",
       "acme",
-      ["People", "GitHub accounts", "Permissions", "Personal runners", "Usage"],
+      ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
+    ["You", undefined, ["Personal runners"]],
   ]);
 });
 
@@ -68,12 +85,15 @@ test.each([
   { site: { ...siteNone, workspaces: true }, pages: ["Workspaces"] },
   { site: { ...siteNone, permissions: true }, pages: ["Permissions"] },
 ])(
-  "the site's group is last, named by nothing, and holds $pages alone",
+  "the site's group comes before the reader's own, is named by nothing, and holds $pages alone",
   ({ site, pages }) => {
     for (const project of ["atlas", undefined])
       expect(
-        drawn(settingsNav({ tenant: "acme", project, site })).at(-1),
-      ).toStrictEqual(["Site", undefined, pages]);
+        drawn(settingsNav({ tenant: "acme", project, site })).slice(-2),
+      ).toStrictEqual([
+        ["Site", undefined, pages],
+        ["You", undefined, ["Personal runners"]],
+      ]);
   },
 );
 
@@ -107,6 +127,66 @@ test("every entry is its page's address in the frame it is drawn in, with that f
   );
   for (const entry of outside)
     expect(entry.params).toStrictEqual({ tenant: "acme" });
+});
+
+test.each([
+  { site: siteNone, shownBy: ["Member"] },
+  {
+    site: { ...siteNone, workspaces: true },
+    shownBy: ["Member", "SiteWorkspaces"],
+  },
+  {
+    site: { ...siteNone, permissions: true },
+    shownBy: ["Member", "SitePermissions"],
+  },
+  { site: siteEvery, shownBy: ["Member", "SiteWorkspaces", "SitePermissions"] },
+])(
+  "a section is drawn exactly where its ability is held: $shownBy",
+  ({ site, shownBy }) => {
+    for (const project of ["atlas", undefined]) {
+      const ids = settingsNav({ tenant: "acme", project, site })
+        .flatMap((group) => group.entries)
+        .map((entry) => entry.id);
+      expect(ids).toStrictEqual(
+        settingsSections
+          .filter((section) => shownBy.includes(section.shownBy))
+          .filter((section) =>
+            project === undefined ? section.workspace !== undefined : true,
+          )
+          .map((section) => section.id),
+      );
+    }
+  },
+);
+
+test("the site's sections alone are shown by an ability other than membership", () => {
+  expect(
+    settingsSections.map((section) => [section.id, section.shownBy]),
+  ).toStrictEqual([
+    ["lead", "Member"],
+    ["lead-session", "Member"],
+    ["placement", "Member"],
+    ["permissions", "Member"],
+    ["repositories", "Member"],
+    ["runners", "Member"],
+    ["catalog", "Member"],
+    ["people", "Member"],
+    ["accounts", "Member"],
+    ["workspace-permissions", "Member"],
+    ["usage", "Member"],
+    ["site-workspaces", "SiteWorkspaces"],
+    ["site-permissions", "SitePermissions"],
+    ["my-runner", "Member"],
+  ]);
+  for (const shownBy of [
+    "Member",
+    "SiteWorkspaces",
+    "SitePermissions",
+  ] as const)
+    expect(settingsSectionShown(shownBy, siteEvery)).toBe(true);
+  expect(settingsSectionShown("Member", siteNone)).toBe(true);
+  expect(settingsSectionShown("SiteWorkspaces", siteNone)).toBe(false);
+  expect(settingsSectionShown("SitePermissions", siteNone)).toBe(false);
 });
 
 test("entries are told apart by id though two pages share a label", () => {

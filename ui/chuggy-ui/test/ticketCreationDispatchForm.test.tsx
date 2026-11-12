@@ -198,7 +198,7 @@ function addRunner(): HTMLElement | null {
 test("a press with no runner to start work on draws the way to the project's Runners page after its line", () => {
   draw(answeringApi(ticketDispatching()).ports, "NoRunner");
   expect(addRunner()?.getAttribute("href")).toBe(
-    `/${creationPartition.tenant}/${creationPartition.project}/runners`,
+    `/${creationPartition.tenant}/${creationPartition.project}/settings/runners`,
   );
   expect(addRunner()?.parentElement?.textContent).toBe(
     "No runner · Add runner",

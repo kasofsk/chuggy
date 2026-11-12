@@ -14,12 +14,24 @@
  * in it checked against a route.
  */
 
-import { createRoute, redirect, useParams } from "@tanstack/react-router";
+import {
+  createRoute,
+  redirect,
+  useParams,
+  useSearch,
+} from "@tanstack/react-router";
 import type { AnyRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { catalogQueryOf } from "../../core/catalogConfigurations.ts";
+import type { CatalogQuery } from "../../core/catalogConfigurations.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
+import { CatalogPage } from "../catalog/CatalogPage.tsx";
+import { LeadPage } from "../LeadPage.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
+import { RepositoriesPage } from "../RepositoriesPage.tsx";
+import { RepositoryPage } from "../repositories/RepositoryPage.tsx";
+import { RunnersPage } from "../RunnersPage.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
@@ -32,10 +44,17 @@ import { TenantPeoplePage } from "./TenantPeoplePage.tsx";
 import { TenantPermissionsPage } from "./TenantPermissionsPage.tsx";
 import { UsageSettingsPage } from "./UsageSettingsPage.tsx";
 
+function SettingsCatalog(): ReactNode {
+  return (
+    <CatalogPage query={useSearch({ from: settingsRoutes.project.catalog })} />
+  );
+}
+
 function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
   const getParentRoute = (): TParent => parent;
   return [
     createRoute({ getParentRoute, path: "/lead", component: LeadSettingsPage }),
+    createRoute({ getParentRoute, path: "/lead-session", component: LeadPage }),
     createRoute({
       getParentRoute,
       path: "/placement",
@@ -45,6 +64,27 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/permissions",
       component: ProjectPermissionsPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/repositories",
+      component: RepositoriesPage,
+    }),
+    /** One binding's own page. The repository is an address, which the
+     * router encodes into the segment and decodes back out of it. */
+    createRoute({
+      getParentRoute,
+      path: "/repositories/$repository",
+      component: RepositoryPage,
+    }),
+    createRoute({ getParentRoute, path: "/runners", component: RunnersPage }),
+    createRoute({
+      getParentRoute,
+      path: "/catalog",
+      component: SettingsCatalog,
+      validateSearch: (
+        search: Readonly<Record<string, unknown>>,
+      ): CatalogQuery => catalogQueryOf(search),
     }),
   ] as const;
 }

@@ -1,7 +1,9 @@
 /**
- * The shell's navigation, derived: the project's screens, in the order the bar
- * above every page draws them, and the pages that set the project up, which
- * sit under the bar's gear because a reader visits them rarely.
+ * The shell's navigation, derived: the project's primary places, in the order
+ * the bar above every page draws them, and the settings sections the bar's
+ * gear names, which `settingsNav.ts`'s roster holds with every other page a
+ * reader visits rarely. A place is primary only where a reader goes in the
+ * ordinary course of work.
  *
  * Every entry is a route and none is an action, so the renderer is a loop
  * rather than a switch over what each entry means. What a reader has said and
@@ -11,22 +13,30 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { Copy } from "./copy.ts";
-import type { Tone } from "./tones.ts";
+import { settingsRoutes, settingsSection } from "./settingsNav.ts";
+import type { SettingsRoute, SettingsSectionId } from "./settingsNav.ts";
 
 export const navRoutes = {
   overview: "/$tenant/$project",
   inbox: "/$tenant/$project/inbox",
   epics: "/$tenant/$project/epics",
-  lead: "/$tenant/$project/lead",
-  catalog: "/$tenant/$project/catalog",
   settings: "/$tenant/$project/settings",
-  repositories: "/$tenant/$project/repositories",
-  runners: "/$tenant/$project/runners",
   ticketNew: "/$tenant/$project/tickets/new",
   thread: "/$tenant/$project/threads/$session",
 } as const;
 
 export type NavRoute = (typeof navRoutes)[keyof typeof navRoutes];
+
+/** Each address a page left for a settings section, and the section's: the
+ * old address redirects to the new, with whatever it carried. */
+export const navMoved = {
+  "/$tenant/$project/lead": settingsRoutes.project.leadSession,
+  "/$tenant/$project/catalog": settingsRoutes.project.catalog,
+  "/$tenant/$project/repositories": settingsRoutes.project.repositories,
+  "/$tenant/$project/repositories/$repository":
+    "/$tenant/$project/settings/repositories/$repository",
+  "/$tenant/$project/runners": settingsRoutes.project.runners,
+} as const;
 
 export interface NavParams {
   readonly tenant: string;
@@ -34,43 +44,25 @@ export interface NavParams {
   readonly session?: string | undefined;
 }
 
-/** One entry's standing, in its word and the hue it takes, so a dot is not
- * the only thing carrying it. */
-export interface NavStanding {
-  readonly word: Copy;
-  readonly tone: Tone;
-}
-
-/** Every entry the bar and its gear draw, and the inbox beside the gear, so
- * each is drawn with its own glyph. */
+/** Every entry the bar and its gear draw, so each is drawn with its own
+ * glyph. */
 export type NavEntryId =
-  | "overview"
-  | "inbox"
-  | "epics"
-  | "lead"
-  | "catalog"
-  | "settings"
-  | "repositories"
-  | "runners";
+  "overview" | "epics" | "inbox" | "settings" | "repositories" | "runners";
 
 export interface NavEntry {
   readonly id: NavEntryId;
   readonly label: Copy;
-  readonly to: NavRoute;
+  readonly to: NavRoute | SettingsRoute;
   readonly params: NavParams;
-  readonly standing?: NavStanding | undefined;
 }
 
-export interface ShellNavInput {
-  readonly partition: PartitionIdentity;
-  readonly leadStanding?: NavStanding | undefined;
+function navParamsOf(partition: PartitionIdentity): NavParams {
+  return { tenant: partition.tenant, project: partition.project };
 }
 
-export function shellNav(input: ShellNavInput): readonly NavEntry[] {
-  const params: NavParams = {
-    tenant: input.partition.tenant,
-    project: input.partition.project,
-  };
+/** The project's primary places, in order. */
+export function shellNav(partition: PartitionIdentity): readonly NavEntry[] {
+  const params = navParamsOf(partition);
   return [
     {
       id: "overview",
@@ -84,30 +76,22 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       to: navRoutes.epics,
       params,
     },
-    {
-      id: "lead",
-      label: { id: "shell-nav-lead" },
-      to: navRoutes.lead,
-      params,
-      standing: input.leadStanding,
-    },
-    {
-      id: "catalog",
-      label: { id: "shell-nav-catalog" },
-      to: navRoutes.catalog,
-      params,
-    },
+    { id: "inbox", label: { id: "shell-inbox" }, to: navRoutes.inbox, params },
   ];
 }
 
-/** The pages that set the project up, in the order the gear's menu lists them. */
+/** The settings sections the gear names beside the settings themselves. */
+const shellSetupSections = [
+  "repositories",
+  "runners",
+] as const satisfies readonly (SettingsSectionId & NavEntryId)[];
+
+/** The gear's places, in the order its menu lists them: the settings, then
+ * the sections it names, each its section's address. */
 export function shellSetupNav(
   partition: PartitionIdentity,
 ): readonly NavEntry[] {
-  const params: NavParams = {
-    tenant: partition.tenant,
-    project: partition.project,
-  };
+  const params = navParamsOf(partition);
   return [
     {
       id: "settings",
@@ -115,18 +99,10 @@ export function shellSetupNav(
       to: navRoutes.settings,
       params,
     },
-    {
-      id: "repositories",
-      label: { id: "shell-nav-repositories" },
-      to: navRoutes.repositories,
-      params,
-    },
-    {
-      id: "runners",
-      label: { id: "shell-nav-runners" },
-      to: navRoutes.runners,
-      params,
-    },
+    ...shellSetupSections.map((id) => {
+      const section = settingsSection(id);
+      return { id, label: section.label, to: section.project, params };
+    }),
   ];
 }
 

@@ -298,7 +298,7 @@ test("the page reads its own binding, and says what it lands as", async () => {
   expect(screen.getByRole("heading", { name: "kasofsk/chuggy" })).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "Repositories" }).getAttribute("href"),
-  ).toBe("/$tenant/$project/repositories");
+  ).toBe("/$tenant/$project/settings/repositories");
   expect(chosenFinalization()).toBe("Pull request");
   expect(
     within(finalization)

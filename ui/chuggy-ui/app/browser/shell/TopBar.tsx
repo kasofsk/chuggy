@@ -11,7 +11,8 @@
  * frame can give the chat pane their room: where the viewport does not divide,
  * a pane over the whole body takes them too, and the project's row stays.
  *
- * The frame's own controls and the project's setup pages sit behind the gear
+ * The project's primary places are the bar's, drawn from `shellNav.ts`; the
+ * frame's own controls and the gear's settings pages sit behind the gear
  * beside the project. A screen outside every project draws the same bar without what
  * only a project has — its screens, its setup and its page row — so signing
  * out and the theme are reachable before there is a project to open.
@@ -26,16 +27,11 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { inboxCountLabel } from "../../core/inboxList.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectLeadFound } from "../../core/projectLead.ts";
-import { leadSessionStateLabel } from "../../core/leadTranscript.ts";
 import type { ShellCrumb } from "../../core/shellCrumbs.ts";
 import { memberChatCrumbs, shellCrumbs } from "../../core/shellCrumbs.ts";
-import { navEntryCurrent, navRoutes, shellNav } from "../../core/shellNav.ts";
+import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
-import { sessionStateTone } from "../../core/tones.ts";
-import type { Tone } from "../../core/tones.ts";
 import { useInboxRows } from "../Inbox.tsx";
-import { useLead } from "../LeadPage.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { useChatPaneYields } from "./chatPaneHeld.ts";
@@ -44,20 +40,6 @@ import { NavIcon } from "./navIcons.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { SettingsMenu } from "./SettingsMenu.tsx";
 import { useShellSlotHolder, useShellSlotsFilled } from "./slots.tsx";
-
-/** The fill a standing's dot takes, total over the roster so a tone the wire
- * grows stops compiling rather than drawing nothing. */
-const navDotFills: Readonly<Record<Tone, string>> = {
-  pass: "bg-tone-pass",
-  fail: "bg-tone-fail",
-  live: "bg-tone-live",
-  evaluation: "bg-tone-evaluation",
-  finalization: "bg-tone-finalization",
-  queued: "bg-tone-queued",
-  parked: "bg-tone-parked",
-  retired: "bg-tone-retired",
-  neutral: "bg-ink-3",
-};
 
 /** One screen's entry, which also moves a pane that filled the body out of
  * the way, as `useChatPaneYields` says. */
@@ -79,39 +61,21 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
         className="topbar-entry"
       >
         <NavIcon id={entry.id} />
-        {entry.standing === undefined ? null : (
-          <>
-            <i
-              aria-hidden="true"
-              className={`block size-2 shrink-0 rounded-circle ${navDotFills[entry.standing.tone]}`}
-            />
-            <span className="visually-hidden">{text(entry.standing.word)}</span>
-          </>
-        )}
         <span className="topbar-entry-label">{text(entry.label)}</span>
       </Link>
     </li>
   );
 }
 
+/** The project's primary places but the inbox, which sits beside the gear. */
 function TopBarNav(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
-  const read = useLead(props.partition);
-  const lead =
-    read.state === "Ready" ? projectLeadFound(read.value) : undefined;
   const abilities = useProjectAbilities(props.partition);
   const text = useCopyText();
-  const entries = shellNav({
-    partition: props.partition,
-    leadStanding:
-      lead === undefined
-        ? undefined
-        : {
-            word: leadSessionStateLabel(lead.state),
-            tone: sessionStateTone(lead.state),
-          },
-  });
+  const entries = shellNav(props.partition).filter(
+    (entry) => entry.id !== "inbox",
+  );
   return (
     <nav aria-label={text({ id: "shell-nav" })} className="min-w-0">
       <ul className="topbar-nav">
@@ -135,21 +99,21 @@ function TopBarInbox(props: {
   const yields = useChatPaneYields();
   const text = useCopyText();
   const count = inboxCountLabel(useInboxRows(props.partition).rows);
+  const entry = shellNav(props.partition).find((place) => place.id === "inbox");
   const current = useRouterState({
     select: (router) =>
-      router.location.pathname.startsWith(
-        `/${encodeURIComponent(props.partition.tenant)}/${encodeURIComponent(props.partition.project)}/inbox`,
-      ),
+      entry !== undefined && navEntryCurrent(entry, router.location.pathname),
   });
+  if (entry === undefined) return null;
   return (
     <Link
-      to={navRoutes.inbox}
-      params={props.partition}
+      to={entry.to}
+      params={entry.params}
       onClick={yields}
       aria-current={current ? "page" : undefined}
       aria-label={text(
         count === undefined
-          ? { id: "shell-inbox" }
+          ? entry.label
           : { id: "shell-inbox-unread", args: { count } },
       )}
       className="topbar-inbox"

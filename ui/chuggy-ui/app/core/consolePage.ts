@@ -53,10 +53,10 @@ function consolePageTicketNew(match: ConsolePageMatch): unknown {
 const consolePagePlainPaths = {
   Tickets: "",
   Inbox: "inbox",
-  Lead: "lead",
-  Catalog: "catalog",
-  Repositories: "repositories",
-  Runners: "runners",
+  Lead: "settings/lead-session",
+  Catalog: "settings/catalog",
+  Repositories: "settings/repositories",
+  Runners: "settings/runners",
   Epics: "epics",
 } as const satisfies Readonly<Record<string, string>>;
 
@@ -116,7 +116,7 @@ const consolePageRoutes: ReadonlyMap<
     ([page, path]) => [consolePageRouteId(path), () => ({ page })] as const,
   ),
   [
-    "/$tenant/$project/repositories/$repository",
+    "/$tenant/$project/settings/repositories/$repository",
     (match) => ({ page: "Repository", repository: match.params["repository"] }),
   ],
   ["/$tenant/$project/tickets/new", consolePageTicketNew],
@@ -171,7 +171,7 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Epic":
       return `epics/${String(page.epic)}`;
     case "Repository":
-      return `repositories/${encodeURIComponent(page.repository)}`;
+      return `settings/repositories/${encodeURIComponent(page.repository)}`;
     case "Ticket":
       return `tickets/${String(page.ticket)}`;
     case "TicketEdit":

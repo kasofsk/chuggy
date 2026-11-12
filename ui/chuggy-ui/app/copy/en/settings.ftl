@@ -3,8 +3,12 @@
 settings-nav = Settings
 settings-nav-project = { -project(case: "upper") }
 settings-nav-lead = { -lead(case: "upper") }
+settings-nav-lead-session = { -lead(case: "upper") } session
 settings-nav-placement = { -placement(case: "upper") }
 settings-nav-permissions = Permissions
+settings-nav-repositories = { -repository(case: "upper", form: "plural") }
+settings-nav-runners = { -runner(case: "upper", form: "plural") }
+settings-nav-catalog = { -catalog(case: "upper") }
 settings-nav-workspace = { -workspace(case: "upper") }
 settings-nav-people = People
 settings-nav-accounts = { -github } accounts
@@ -12,6 +16,7 @@ settings-nav-personal-runners = { -personal-runner(case: "upper", form: "plural"
 settings-nav-usage = Usage
 settings-nav-site = { -site(case: "upper") }
 settings-nav-workspaces = { -workspace(case: "upper", form: "plural") }
+settings-nav-person = You
 
 settings-cancel = Cancel
 settings-done = Done

@@ -149,6 +149,7 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { Copy, CopyText } from "../core/copy.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 
 import "./TicketCreation.css";
 
@@ -1411,7 +1412,7 @@ export function CreationContextAbsent(props: {
       label={text(creationContextSentence(context))}
       action={
         context.context === "NoRepository" ? (
-          <Link to="/$tenant/$project/repositories" params={partition}>
+          <Link to={settingsRoutes.project.repositories} params={partition}>
             {text({ id: "ticket-authoring-repositories" })}
           </Link>
         ) : undefined

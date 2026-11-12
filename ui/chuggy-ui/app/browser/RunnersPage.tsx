@@ -33,6 +33,7 @@ import {
 import type { RunnerAsk } from "../core/runners.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import {
@@ -52,7 +53,7 @@ import { Panel } from "./ui/Panel.tsx";
 import { Table } from "./ui/Table.tsx";
 
 /** This page's own address, which its reads are from. */
-export const runnersRoutePath = "/$tenant/$project/runners";
+export const runnersRoutePath = settingsRoutes.project.runners;
 
 /** The registered runners, or the line that says there are none, with the one thing to do about it under it. */
 function RunnerRoster(props: {

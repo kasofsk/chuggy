@@ -21,6 +21,7 @@ import {
   consolePageOf,
 } from "../app/core/consolePage.ts";
 import { ticketCreationQueryOf } from "../app/core/ticketCreationQuery.ts";
+import { navMoved } from "../app/core/shellNav.ts";
 
 const partitionRouteId = "/$tenant/$project";
 
@@ -76,7 +77,7 @@ test("a route is the page the contract names for it, with what its address carri
   ).toEqual({ page: "TicketEdit", ticket: 41 });
   expect(
     consolePageOf(
-      matched("/$tenant/$project/repositories/$repository", {
+      matched("/$tenant/$project/settings/repositories/$repository", {
         repository: "github.com/acme/atlas",
       }),
     ),
@@ -156,7 +157,7 @@ test("an address the contract would refuse, or a route it does not know, is no p
   ).toBeUndefined();
   expect(
     consolePageOf(
-      matched("/$tenant/$project/repositories/$repository", {
+      matched("/$tenant/$project/settings/repositories/$repository", {
         repository: "acme\natlas",
       }),
     ),
@@ -168,7 +169,7 @@ test("an address the contract would refuse, or a route it does not know, is no p
   expect(consolePageOf(undefined)).toBeUndefined();
 });
 
-test("every route the console hangs under a project and draws the pane on is a page the contract names", () => {
+test("every route the console hangs under a project and draws the pane on, but one that only redirects, is a page the contract names", () => {
   const routeIds = Object.keys(consoleRouter.routesById).filter((routeId) =>
     routeId.startsWith(`${partitionRouteId}/`),
   );
@@ -178,7 +179,9 @@ test("every route the console hangs under a project and draws the pane on is a p
   expect(
     consolePageOf(matched(threadRouteId, { session: "0123" })),
   ).toBeUndefined();
-  const paned = routeIds.filter((routeId) => routeId !== threadRouteId);
+  const paned = routeIds.filter(
+    (routeId) => routeId !== threadRouteId && !(routeId in navMoved),
+  );
   expect(paned).not.toEqual([]);
   for (const routeId of paned) {
     const page = consolePageOf(

@@ -580,7 +580,7 @@ test("a binding's name is the link to its own page", async () => {
       .getByRole("link", { name: "kasofsk/chuggy" })
       .getAttribute("href"),
   ).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/repositories/${boundUrl}`,
+    `/${leadPartition.tenant}/${leadPartition.project}/settings/repositories/${boundUrl}`,
   );
 });
 
@@ -2418,7 +2418,7 @@ const bootstrapped = (): Response =>
 
 const configured = "Default configuration added";
 
-const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/runners`;
+const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/settings/runners`;
 
 /** The steps the open dialog offers, each by its words and where it goes. */
 function dialogSteps(): readonly (readonly [string | null, string | null])[] {

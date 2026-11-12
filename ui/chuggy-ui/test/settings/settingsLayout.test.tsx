@@ -209,8 +209,12 @@ const projectGroups = [
     "Project atlas-web",
     [
       "Lead /acme-co/atlas-web/settings/lead",
+      "Lead session /acme-co/atlas-web/settings/lead-session",
       "Placement /acme-co/atlas-web/settings/placement",
       "Permissions /acme-co/atlas-web/settings/permissions",
+      "Repositories /acme-co/atlas-web/settings/repositories",
+      "Runners /acme-co/atlas-web/settings/runners",
+      "Catalog /acme-co/atlas-web/settings/catalog",
     ],
   ],
   [
@@ -219,10 +223,14 @@ const projectGroups = [
       "People /acme-co/atlas-web/settings/workspace/people",
       "GitHub accounts /acme-co/atlas-web/settings/workspace/accounts",
       "Permissions /acme-co/atlas-web/settings/workspace/permissions",
-      "Personal runners /acme-co/atlas-web/settings/workspace/runner",
       "Usage /acme-co/atlas-web/settings/workspace/usage",
     ],
   ],
+];
+
+const projectPersonGroup = [
+  "You",
+  ["Personal runners /acme-co/atlas-web/settings/workspace/runner"],
 ];
 
 const workspaceGroups = [
@@ -232,10 +240,14 @@ const workspaceGroups = [
       "People /tenants/acme-co/settings/people",
       "GitHub accounts /tenants/acme-co/settings/accounts",
       "Permissions /tenants/acme-co/settings/permissions",
-      "Personal runners /tenants/acme-co/settings/runner",
       "Usage /tenants/acme-co/settings/usage",
     ],
   ],
+];
+
+const workspacePersonGroup = [
+  "You",
+  ["Personal runners /tenants/acme-co/settings/runner"],
 ];
 
 test.each([
@@ -261,14 +273,17 @@ test.each([
   },
 );
 
-test("in a project the navigation draws the project's group then the workspace's, every link at its address in the project", async () => {
+test("in a project the navigation draws the project's group, the workspace's, then the reader's own, every link at its address in the project", async () => {
   await drawnSettings("/acme-co/atlas-web/settings/permissions");
-  expect(groupsDrawn()).toStrictEqual(projectGroups);
+  expect(groupsDrawn()).toStrictEqual([...projectGroups, projectPersonGroup]);
 });
 
-test("outside a project the navigation draws the workspace's group alone, every link at the workspace's own address", async () => {
+test("outside a project the navigation draws the workspace's group and the reader's own, every link at the workspace's own address", async () => {
   await drawnSettings("/tenants/acme-co/settings/permissions");
-  expect(groupsDrawn()).toStrictEqual(workspaceGroups);
+  expect(groupsDrawn()).toStrictEqual([
+    ...workspaceGroups,
+    workspacePersonGroup,
+  ]);
 });
 
 test.each([
@@ -281,6 +296,20 @@ test.each([
     address: "/acme-co/atlas-web/settings/permissions",
     group: "Project atlas-web",
   },
+  {
+    address: "/acme-co/atlas-web/settings/repositories",
+    group: "Project atlas-web",
+  },
+  {
+    address: "/acme-co/atlas-web/settings/runners",
+    group: "Project atlas-web",
+  },
+  {
+    address: "/acme-co/atlas-web/settings/catalog",
+    group: "Project atlas-web",
+  },
+  { address: "/acme-co/atlas-web/settings/workspace/runner", group: "You" },
+  { address: "/tenants/acme-co/settings/runner", group: "You" },
   {
     address: "/acme-co/atlas-web/settings/workspace/people",
     group: "Workspace acme-co",
@@ -346,19 +375,21 @@ test.each([
     pages: ["Workspaces", "Permissions"],
   },
 ])(
-  "a reader whose site abilities say $held is drawn the site's group last with $pages alone, in either frame",
+  "a reader whose site abilities say $held is drawn the site's group before their own with $pages alone, in either frame",
   async ({ held, pages }) => {
     const answered = siteAbilitiesAnswered({ ...siteAbilitiesNone, ...held });
     await drawnSettings("/acme-co/atlas-web/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...projectGroups,
       siteGroup("/acme-co/atlas-web/settings", pages),
+      projectPersonGroup,
     ]);
     cleanup();
     await drawnSettings("/tenants/acme-co/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...workspaceGroups,
       siteGroup("/tenants/acme-co/settings", pages),
+      workspacePersonGroup,
     ]);
   },
 );
@@ -379,7 +410,7 @@ test.each([
         request.url === siteAbilitiesPath ? abilities() : undefined,
     );
     expect(readsOf(drawn, siteAbilitiesPath)).toBeGreaterThan(0);
-    expect(groupsDrawn()).toStrictEqual(projectGroups);
+    expect(groupsDrawn()).toStrictEqual([...projectGroups, projectPersonGroup]);
     expect(readFailedLines()).toStrictEqual([]);
   },
 );

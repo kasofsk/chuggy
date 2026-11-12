@@ -30,7 +30,7 @@ import {
   repositoryConfigurations,
   repositoryConfigurationsDirectory,
 } from "../../core/repositoryConfigurations.ts";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
@@ -49,7 +49,8 @@ import { RepositoryFinalizationSection } from "./RepositoryFinalizationSection.t
 import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection.tsx";
 
 /** This page's own address, which its reads take their partition from. */
-export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
+export const repositoryRoutePath =
+  "/$tenant/$project/settings/repositories/$repository";
 
 /** What this repository declares under `.chug/configurations`, and when it was last imported. */
 function RepositoryDeclared(props: {
@@ -121,7 +122,10 @@ export function RepositoryPage(): ReactNode {
     <div className="grid min-w-0 max-w-settings gap-4">
       <TopBarSlot>
         <Breadcrumb>
-          <BreadcrumbLink to={navRoutes.repositories} params={partition}>
+          <BreadcrumbLink
+            to={settingsRoutes.project.repositories}
+            params={partition}
+          >
             {text({ id: "repositories-title" })}
           </BreadcrumbLink>
         </Breadcrumb>

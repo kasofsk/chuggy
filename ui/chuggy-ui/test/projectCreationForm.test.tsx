@@ -148,7 +148,7 @@ test("a created project is opened at its repositories and remembered", async () 
   expect(posted.map((one) => one.body)).toEqual([partition]);
   expect(posted[0]?.key).toBeTruthy();
   expect(held.went).toEqual([
-    { to: "/$tenant/$project/repositories", params: partition },
+    { to: "/$tenant/$project/settings/repositories", params: partition },
   ]);
   expect(lastProjectRead(persistentStore)).toEqual(partition);
 });
@@ -168,7 +168,7 @@ test("a project created after its form was left is still opened at its repositor
   });
   await settled();
   expect(held.went).toEqual([
-    { to: "/$tenant/$project/repositories", params: partition },
+    { to: "/$tenant/$project/settings/repositories", params: partition },
   ]);
   expect(lastProjectRead(persistentStore)).toEqual(partition);
 });

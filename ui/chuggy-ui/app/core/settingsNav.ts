@@ -1,12 +1,15 @@
 /**
- * The settings' side navigation, derived: a group a level — the project's
- * where one is open, the workspace's, and the site's where the reader is drawn
- * a page of it — each the pages of that level in the order they are listed.
+ * The settings' sections, as one roster: each with the group it sits in — the
+ * project's, the workspace's, the site's, or the reader's own — its address
+ * under a project and, where it is not the project's, under the workspace
+ * alone, and the ability that shows it. The settings' side navigation is this
+ * roster drawn in the frame it is in, a group a level; the bar's gear names its
+ * pages by section from it, and the project's own places are `shellNav.ts`'s.
  *
- * A workspace's page and the site's each have two addresses: one under a
- * project, so a reader in one keeps its shell, and one naming the workspace
- * alone. An entry is the address in the frame the navigation is drawn in, so
- * no link it draws leaves that frame.
+ * A workspace's page, the site's and the reader's own each have two
+ * addresses: one under a project, so a reader in one keeps its shell, and one
+ * naming the workspace alone. An entry is the address in the frame the
+ * navigation is drawn in, so no link it draws leaves that frame.
  */
 
 import type { AccessSiteAbilities } from "../../../../src/contract/accessPlane.ts";
@@ -18,24 +21,28 @@ import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 export const settingsRoutes = {
   project: {
     lead: "/$tenant/$project/settings/lead",
+    leadSession: "/$tenant/$project/settings/lead-session",
     placement: "/$tenant/$project/settings/placement",
     permissions: "/$tenant/$project/settings/permissions",
+    repositories: "/$tenant/$project/settings/repositories",
+    runners: "/$tenant/$project/settings/runners",
+    catalog: "/$tenant/$project/settings/catalog",
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
     workspacePermissions: "/$tenant/$project/settings/workspace/permissions",
-    myRunner: "/$tenant/$project/settings/workspace/runner",
     usage: "/$tenant/$project/settings/workspace/usage",
     siteWorkspaces: "/$tenant/$project/settings/site/workspaces",
     sitePermissions: "/$tenant/$project/settings/site/permissions",
+    myRunner: "/$tenant/$project/settings/workspace/runner",
   },
   workspace: {
     people: "/tenants/$tenant/settings/people",
     accounts: "/tenants/$tenant/settings/accounts",
     workspacePermissions: "/tenants/$tenant/settings/permissions",
-    myRunner: "/tenants/$tenant/settings/runner",
     usage: "/tenants/$tenant/settings/usage",
     siteWorkspaces: "/tenants/$tenant/settings/site/workspaces",
     sitePermissions: "/tenants/$tenant/settings/site/permissions",
+    myRunner: "/tenants/$tenant/settings/runner",
   },
 } as const;
 
@@ -46,6 +53,119 @@ export type SettingsRoute =
   | SettingsProjectRoutes[keyof SettingsProjectRoutes]
   | SettingsWorkspaceRoutes[keyof SettingsWorkspaceRoutes];
 
+export type SettingsGroupId = "project" | "workspace" | "site" | "person";
+
+/** What shows a section: being a member of where it is drawn, or one of the
+ * site's abilities. */
+export type SettingsSectionShownBy =
+  "Member" | "SiteWorkspaces" | "SitePermissions";
+
+export type SettingsSectionId =
+  | "lead"
+  | "lead-session"
+  | "placement"
+  | "permissions"
+  | "repositories"
+  | "runners"
+  | "catalog"
+  | "people"
+  | "accounts"
+  | "workspace-permissions"
+  | "usage"
+  | "site-workspaces"
+  | "site-permissions"
+  | "my-runner";
+
+export interface SettingsSection {
+  readonly id: SettingsSectionId;
+  readonly group: SettingsGroupId;
+  readonly label: Copy;
+  readonly shownBy: SettingsSectionShownBy;
+  readonly project: SettingsProjectRoutes[keyof SettingsProjectRoutes];
+  /** Absent for a section of the project's, which has no page outside one. */
+  readonly workspace:
+    SettingsWorkspaceRoutes[keyof SettingsWorkspaceRoutes] | undefined;
+}
+
+/** Each section's word, by its id. */
+const settingsSectionLabels = {
+  lead: { id: "settings-nav-lead" },
+  "lead-session": { id: "settings-nav-lead-session" },
+  placement: { id: "settings-nav-placement" },
+  permissions: { id: "settings-nav-permissions" },
+  repositories: { id: "settings-nav-repositories" },
+  runners: { id: "settings-nav-runners" },
+  catalog: { id: "settings-nav-catalog" },
+  people: { id: "settings-nav-people" },
+  accounts: { id: "settings-nav-accounts" },
+  "workspace-permissions": { id: "settings-nav-permissions" },
+  usage: { id: "settings-nav-usage" },
+  "site-workspaces": { id: "settings-nav-workspaces" },
+  "site-permissions": { id: "settings-nav-permissions" },
+  "my-runner": { id: "settings-nav-personal-runners" },
+} as const satisfies Readonly<Record<SettingsSectionId, Copy>>;
+
+function settingsSectionOf(
+  id: SettingsSectionId,
+  group: SettingsGroupId,
+  key: keyof SettingsProjectRoutes,
+  shownBy: SettingsSectionShownBy = "Member",
+): SettingsSection {
+  const workspace: Readonly<Record<string, SettingsSection["workspace"]>> =
+    settingsRoutes.workspace;
+  const outside = workspace[key];
+  if (group !== "project" && outside === undefined)
+    throw new Error(`settings section ${id} has no address outside a project`);
+  return {
+    id,
+    group,
+    label: settingsSectionLabels[id],
+    shownBy,
+    project: settingsRoutes.project[key],
+    workspace: group === "project" ? undefined : outside,
+  };
+}
+
+/** Every section, a group at a time in the order the groups are drawn, and in
+ * each group in the order its pages are listed. */
+export const settingsSections: readonly SettingsSection[] = [
+  settingsSectionOf("lead", "project", "lead"),
+  settingsSectionOf("lead-session", "project", "leadSession"),
+  settingsSectionOf("placement", "project", "placement"),
+  settingsSectionOf("permissions", "project", "permissions"),
+  settingsSectionOf("repositories", "project", "repositories"),
+  settingsSectionOf("runners", "project", "runners"),
+  settingsSectionOf("catalog", "project", "catalog"),
+  settingsSectionOf("people", "workspace", "people"),
+  settingsSectionOf("accounts", "workspace", "accounts"),
+  settingsSectionOf(
+    "workspace-permissions",
+    "workspace",
+    "workspacePermissions",
+  ),
+  settingsSectionOf("usage", "workspace", "usage"),
+  settingsSectionOf(
+    "site-workspaces",
+    "site",
+    "siteWorkspaces",
+    "SiteWorkspaces",
+  ),
+  settingsSectionOf(
+    "site-permissions",
+    "site",
+    "sitePermissions",
+    "SitePermissions",
+  ),
+  settingsSectionOf("my-runner", "person", "myRunner"),
+];
+
+/** One section by its id. */
+export function settingsSection(id: SettingsSectionId): SettingsSection {
+  const section = settingsSections.find((candidate) => candidate.id === id);
+  if (section === undefined) throw new Error(`no settings section ${id}`);
+  return section;
+}
+
 /** The project is named only by an entry drawn in one. */
 export interface SettingsNavParams {
   readonly tenant: string;
@@ -53,7 +173,7 @@ export interface SettingsNavParams {
 }
 
 export interface SettingsNavEntry {
-  readonly id: string;
+  readonly id: SettingsSectionId;
   readonly label: Copy;
   readonly to: SettingsRoute;
   readonly params: SettingsNavParams;
@@ -61,7 +181,7 @@ export interface SettingsNavEntry {
 
 /** One level's pages under the level's word and, where it has one, its name. */
 export interface SettingsNavGroup {
-  readonly id: "project" | "workspace" | "site";
+  readonly id: SettingsGroupId;
   readonly label: Copy;
   readonly name: string | undefined;
   readonly entries: readonly SettingsNavEntry[];
@@ -91,70 +211,60 @@ export function settingsNavSiteDrawn(
   };
 }
 
-/** Each entry's word, by its id. */
-const settingsNavLabels = {
-  lead: { id: "settings-nav-lead" },
-  placement: { id: "settings-nav-placement" },
-  permissions: { id: "settings-nav-permissions" },
-  people: { id: "settings-nav-people" },
-  accounts: { id: "settings-nav-accounts" },
-  "workspace-permissions": { id: "settings-nav-permissions" },
-  "my-runner": { id: "settings-nav-personal-runners" },
-  usage: { id: "settings-nav-usage" },
-  "site-workspaces": { id: "settings-nav-workspaces" },
-  "site-permissions": { id: "settings-nav-permissions" },
-} as const satisfies Readonly<Record<string, Copy>>;
+/** Whether the reader's abilities show a section. */
+export function settingsSectionShown(
+  shownBy: SettingsSectionShownBy,
+  site: SettingsNavSite,
+): boolean {
+  switch (shownBy) {
+    case "Member":
+      return true;
+    case "SiteWorkspaces":
+      return site.workspaces;
+    case "SitePermissions":
+      return site.permissions;
+  }
+}
 
+const settingsGroupOrder: readonly SettingsGroupId[] = [
+  "project",
+  "workspace",
+  "site",
+  "person",
+];
+
+const settingsGroupLabels: Readonly<Record<SettingsGroupId, Copy>> = {
+  project: { id: "settings-nav-project" },
+  workspace: { id: "settings-nav-workspace" },
+  site: { id: "settings-nav-site" },
+  person: { id: "settings-nav-person" },
+};
+
+/** The roster drawn in one frame: the sections the frame has a page for and
+ * the reader's abilities show, a group a level, and no group left empty. */
 export function settingsNav(
   input: SettingsNavInput,
 ): readonly SettingsNavGroup[] {
   const { tenant, project } = input;
-  const frame =
-    project === undefined ? settingsRoutes.workspace : settingsRoutes.project;
   const params: SettingsNavParams =
     project === undefined ? { tenant } : { tenant, project };
-  const entry = (
-    id: keyof typeof settingsNavLabels,
-    to: SettingsRoute,
-  ): SettingsNavEntry => ({ id, label: settingsNavLabels[id], to, params });
-  const projectGroup: SettingsNavGroup = {
-    id: "project",
-    label: { id: "settings-nav-project" },
-    name: project,
-    entries: [
-      entry("lead", settingsRoutes.project.lead),
-      entry("placement", settingsRoutes.project.placement),
-      entry("permissions", settingsRoutes.project.permissions),
-    ],
+  const names: Readonly<Record<SettingsGroupId, string | undefined>> = {
+    project,
+    workspace: tenant,
+    site: undefined,
+    person: undefined,
   };
-  const workspaceGroup: SettingsNavGroup = {
-    id: "workspace",
-    label: { id: "settings-nav-workspace" },
-    name: tenant,
-    entries: [
-      entry("people", frame.people),
-      entry("accounts", frame.accounts),
-      entry("workspace-permissions", frame.workspacePermissions),
-      entry("my-runner", frame.myRunner),
-      entry("usage", frame.usage),
-    ],
-  };
-  const siteGroup: SettingsNavGroup = {
-    id: "site",
-    label: { id: "settings-nav-site" },
-    name: undefined,
-    entries: [
-      ...(input.site.workspaces
-        ? [entry("site-workspaces", frame.siteWorkspaces)]
-        : []),
-      ...(input.site.permissions
-        ? [entry("site-permissions", frame.sitePermissions)]
-        : []),
-    ],
-  };
-  return [
-    ...(project === undefined ? [] : [projectGroup]),
-    workspaceGroup,
-    ...(siteGroup.entries.length === 0 ? [] : [siteGroup]),
-  ];
+  return settingsGroupOrder
+    .map((group) => ({
+      id: group,
+      label: settingsGroupLabels[group],
+      name: names[group],
+      entries: settingsSections.flatMap((section) => {
+        const to = project === undefined ? section.workspace : section.project;
+        if (section.group !== group || to === undefined) return [];
+        if (!settingsSectionShown(section.shownBy, input.site)) return [];
+        return [{ id: section.id, label: section.label, to, params }];
+      }),
+    }))
+    .filter((group) => group.entries.length > 0);
 }

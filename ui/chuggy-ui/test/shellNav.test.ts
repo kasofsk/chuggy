@@ -1,16 +1,14 @@
 /**
- * The bar's entries, derived: every screen the project holds, each with the
- * route the router registered for it.
- *
- * The standing is what a read supplies, and an entry answers for none when it
- * has not: a bar that drew one would be saying something the console has not
- * been told.
+ * The bar's entries, derived: the project's primary places, each with the
+ * route the router registered for it, and the gear's places, each the
+ * address of the settings section it names.
  */
 
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { settingsSection } from "../app/core/settingsNav.ts";
 import {
   navEntryCurrent,
   navRoutes,
@@ -20,76 +18,67 @@ import {
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-test("every entry names a route of the partition and carries its params", () => {
-  const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
-  const routes = Object.values(navRoutes);
-  for (const entry of entries) {
-    expect(routes).toContain(entry.to);
-    expect(entry.params).toStrictEqual(atlas);
-  }
-  expect(entries.map((entry) => entry.id)).toStrictEqual([
+test("the primary places are Tickets, Epics and the Inbox, in that order, each a route of the partition", () => {
+  const places = shellNav(atlas);
+  expect(places.map((entry) => entry.id)).toStrictEqual([
     "overview",
     "epics",
-    "lead",
-    "catalog",
+    "inbox",
+  ]);
+  expect(places.map((entry) => entry.to)).toStrictEqual([
+    navRoutes.overview,
+    navRoutes.epics,
+    navRoutes.inbox,
+  ]);
+  expect(places.map((entry) => copyTextEn(entry.label))).toStrictEqual([
+    "Tickets",
+    "Epics",
+    "Inbox",
+  ]);
+  for (const entry of places) expect(entry.params).toStrictEqual(atlas);
+});
+
+test("each of the gear's places but the settings themselves is its settings section, by its address and its word", () => {
+  const entries = shellSetupNav(atlas);
+  expect(entries.map((entry) => entry.id)).toStrictEqual([
     "settings",
     "repositories",
     "runners",
   ]);
-});
-
-test("every entry is labelled by a catalog id, which reads as the screen's name", () => {
-  const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
-  expect(entries.map((entry) => entry.label)).toStrictEqual([
-    { id: "shell-nav-tickets" },
-    { id: "shell-nav-epics" },
-    { id: "shell-nav-lead" },
-    { id: "shell-nav-catalog" },
-    { id: "shell-nav-settings" },
-    { id: "shell-nav-repositories" },
-    { id: "shell-nav-runners" },
+  const sections = [
+    settingsSection("repositories"),
+    settingsSection("runners"),
+  ];
+  expect(entries.map((entry) => [entry.to, entry.label])).toStrictEqual([
+    [navRoutes.settings, { id: "shell-nav-settings" }],
+    ...sections.map((section) => [section.project, section.label]),
   ]);
   expect(entries.map((entry) => copyTextEn(entry.label))).toStrictEqual([
-    "Tickets",
-    "Epics",
-    "Lead",
-    "Catalog",
     "Project settings",
     "Repositories",
     "Runners",
   ]);
-});
-
-test("the lead's standing is drawn only where a read supplied it", () => {
-  const silent = shellNav({ partition: atlas });
-  expect(silent.find((entry) => entry.id === "lead")?.standing).toBeUndefined();
-  const told = shellNav({
-    partition: atlas,
-    leadStanding: { word: { id: "lead-session-open" }, tone: "live" },
-  });
-  expect(told.find((entry) => entry.id === "lead")?.standing).toStrictEqual({
-    word: { id: "lead-session-open" },
-    tone: "live",
-  });
+  for (const entry of entries) expect(entry.params).toStrictEqual(atlas);
 });
 
 function currentAt(pathname: string): readonly string[] {
-  return [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)]
+  return [...shellNav(atlas), ...shellSetupNav(atlas)]
     .filter((entry) => navEntryCurrent(entry, pathname))
     .map((entry) => entry.id);
 }
 
-test("each screen is current on its own address alone", () => {
+test("each place is current on its own address and what lies beneath it", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
-  expect(currentAt("/acme/atlas/inbox")).toStrictEqual([]);
+  expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
   expect(currentAt("/acme/atlas/epics")).toStrictEqual(["epics"]);
   expect(currentAt("/acme/atlas/epics/7")).toStrictEqual(["epics"]);
-  expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
-  expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
-  expect(currentAt("/acme/atlas/runners")).toStrictEqual(["runners"]);
-  expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);
-  expect(currentAt("/acme/atlas/repositories/a%2Fb")).toStrictEqual([
+  expect(currentAt("/acme/atlas/settings/runners")).toStrictEqual([
+    "settings",
+    "runners",
+  ]);
+  expect(currentAt("/acme/atlas/settings/repositories/a%2Fb")).toStrictEqual([
+    "settings",
     "repositories",
   ]);
 });
