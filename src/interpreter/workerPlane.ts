@@ -4,6 +4,7 @@ import {
   workerContractMemoryRoom,
   workerContractRelease,
   workerContractRunContext,
+  workerContractCredentialBundles,
   workerContractRunUsage,
   workerContractRunnerAgentsAdvertised,
   workerContractSessionContext,
@@ -151,6 +152,12 @@ export const workerContractThreadOffer: WorkerContractRange = {
 /** The versions in which a pod runs a session its facts mark `systemPromptOwn` as they say, where a pod of an earlier one drops the field and loads its project's settings. */
 export const workerContractSystemPromptsOwn: WorkerContractRange = {
   min: workerContractSystemPromptOwn,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which held credentials may be answered as bundles, a member a pod of an earlier one refuses its whole answer over. */
+export const workerContractCredentialBundlesServed: WorkerContractRange = {
+  min: workerContractCredentialBundles,
   max: workerContractAccepted.max,
 };
 

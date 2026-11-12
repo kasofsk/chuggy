@@ -22,7 +22,11 @@
 import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "../contract/http.ts";
-import { heldCredentialSecretCharsMax } from "../contract/workerPlane.ts";
+import {
+  heldCredentialSecretCharsMax,
+  type WorkerHeldCredentialAbsent,
+  type WorkerHeldCredentialBundle,
+} from "../contract/workerPlane.ts";
 import { isHeldCredentialVariable } from "../contract/workerEnvironment.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 
@@ -53,11 +57,14 @@ export type HeldCredentialRosterRead =
   | { readonly read: "Roster"; readonly held: readonly HeldCredential[] }
   | { readonly read: "Refused"; readonly why: string };
 
-/** What one attempt's ask came to, an unreadable file kept apart from a credential not served. */
+/** What one attempt's ask came to, an unreadable file kept apart from a credential not served, and those not served named where they are. */
 export type HeldCredentialsAnswered =
   | {
       readonly answered: "Credentials";
-      readonly credentials: readonly HeldCredentialServed[];
+      readonly credentials: readonly (
+        HeldCredentialServed | WorkerHeldCredentialBundle
+      )[];
+      readonly absent?: readonly WorkerHeldCredentialAbsent[];
     }
   | { readonly answered: "Unavailable" };
 

@@ -65,6 +65,7 @@ import {
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
   workerPlaneRoutes,
+  type WorkerHeldCredentialBundle,
   type WorkerPlaneAnswer,
   type WorkerPlaneRoute,
   type WorkerPlaneRouteName,
@@ -701,6 +702,21 @@ const heldAnswers: readonly HeldCredentialsAnswered[] = [
   { answered: "Unavailable" },
 ];
 
+/** A credential served as a bundle, with an expiry and without, and one named absent beside it. */
+const heldBundle: WorkerHeldCredentialBundle = {
+  credential: heldName,
+  files: [{ file: "token", content: { kind: "Secret", secret: "s" } }],
+  variables: [{ kind: "Path", variable: "GH_TOKEN_FILE", file: "token" }],
+};
+const heldBundleAnswers: readonly HeldCredentialsAnswered[] = [
+  { answered: "Credentials", credentials: [heldBundle] },
+  {
+    answered: "Credentials",
+    credentials: [{ ...heldBundle, expiresAtMs: 1 }],
+    absent: [{ credential: "unheld", reason: "NotHeld" }],
+  },
+];
+
 const heldCredentialCases: readonly WorkerPlaneCase[] = [
   workerContractStranger,
   { name: "no bearer", anonymous: true },
@@ -727,6 +743,23 @@ const heldCredentialCases: readonly WorkerPlaneCase[] = [
       heldCredentials: { served: () => Promise.resolve(answered) },
     },
   })),
+  ...heldBundleAnswers.flatMap((answered) => [
+    {
+      name: `the held credentials answering ${JSON.stringify(answered)} to a pod that reads a bundle`,
+      named: true as const,
+      service: {
+        ...workerPlaneTask(heldGrantedTask),
+        heldCredentials: { served: () => Promise.resolve(answered) },
+      },
+    },
+    {
+      name: `the held credentials answering ${JSON.stringify(answered)} to a pod naming no release`,
+      service: {
+        ...workerPlaneTask(heldGrantedTask),
+        heldCredentials: { served: () => Promise.resolve(answered) },
+      },
+    },
+  ]),
 ];
 
 const bothAnswers = [true, false] as const;

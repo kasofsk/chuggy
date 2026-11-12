@@ -153,9 +153,16 @@ test("a selected file is read as asked, trimmed, and an unreadable or blank one 
     ],
   });
   files.set(file, "second");
-  const second = await served.served(ask);
-  assert.ok(second.answered === "Credentials");
-  assert.equal(second.credentials[0]?.secret, "second");
+  assert.deepEqual(await served.served(ask), {
+    answered: "Credentials",
+    credentials: [
+      {
+        credential: "track-record",
+        variable: "TRACK_RECORD_TOKEN_FILE",
+        secret: "second",
+      },
+    ],
+  });
   for (const text of [undefined, "", " \n\t"]) {
     files.set(file, text);
     assert.deepEqual(await served.served(ask), { answered: "Unavailable" });

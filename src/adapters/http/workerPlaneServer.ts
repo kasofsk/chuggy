@@ -47,6 +47,7 @@ import {
 import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
 import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
+import type { workerHeldCredentialsAnswerSchema } from "../../contract/workerPlane.ts";
 import {
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
@@ -124,7 +125,10 @@ import type {
   WorkerPlaneCredentialMinting,
   WorkerPlaneCredentialUnreached,
 } from "../../interpreter/workerPlaneCredentials.ts";
-import type { WorkerPlaneHeldCredentials } from "../../interpreter/workerPlaneHeldCredentials.ts";
+import type {
+  HeldCredentialsAnswered,
+  WorkerPlaneHeldCredentials,
+} from "../../interpreter/workerPlaneHeldCredentials.ts";
 import {
   artifactPathRejection,
   asArtifactDigest,
@@ -137,6 +141,7 @@ import {
   contractVersionAccepted,
   contractVersionRefusal,
   workerContractAccepted,
+  workerContractCredentialBundlesServed,
   workerContractEvaluatedTrees,
   workerContractLiveStops,
   workerContractProjectReads,
@@ -1237,6 +1242,34 @@ function workerCredentialRoute(
 const workerHeldCredentialRetryAfterSeconds = 1;
 
 /**
+ * The answer to an attempt whose ask came to `served`, a bundle named absent
+ * as `WorkerTooOld` to a release that cannot read one, and `absent` left out
+ * where it names nothing.
+ */
+function workerHeldCredentialsAnswer(
+  served: Extract<HeldCredentialsAnswered, { answered: "Credentials" }>,
+  release: string | undefined,
+): z.infer<typeof workerHeldCredentialsAnswerSchema> {
+  const bundled = contractVersionAccepted(
+    workerContractCredentialBundlesServed,
+    release,
+  );
+  const credentials = served.credentials.filter(
+    (each) => bundled || !("files" in each),
+  );
+  const absent = [
+    ...(served.absent ?? []),
+    ...served.credentials
+      .filter((each) => !credentials.includes(each))
+      .map((each) => ({
+        credential: each.credential,
+        reason: "WorkerTooOld" as const,
+      })),
+  ];
+  return absent.length === 0 ? { credentials } : { credentials, absent };
+}
+
+/**
  * The credentials a deployment holds as files that one attempt is served: those
  * it asks for that the grant the scheduler recorded for it names and that are
  * held for its project. The grant and the project are what its own task read
@@ -1261,7 +1294,7 @@ function workerHeldCredentialsRoute(
       asked: offered.data.credentials,
     });
     return served.answered === "Credentials"
-      ? { credentials: served.credentials }
+      ? workerHeldCredentialsAnswer(served, workerContractOffered(request))
       : workerPlaneRefused(reply, {
           status: 503,
           body: { action: "retry" },
