@@ -1245,12 +1245,11 @@ function briefingAuthorityRequests(
 
 /**
  * The credentials the requests list: what their fold would grant were every
- * name granted, or the granted ones where no request lists any. It is a record
+ * name granted, which is none where no request lists any. It is a record
  * of what was asked for and never an authority, so it may name more than the
  * grant.
  */
 function briefingCredentialsListed(
-  grant: PolicyAuthorityGrant,
   requests: readonly AuthorityRequest[],
 ): readonly string[] {
   const listed = requests.reduce<readonly string[] | undefined>(
@@ -1262,7 +1261,7 @@ function briefingCredentialsListed(
           : held.filter((name) => credentials.includes(name)),
     undefined,
   );
-  return Object.freeze([...new Set(listed ?? grant.credentials)].sort());
+  return Object.freeze([...new Set(listed ?? [])].sort());
 }
 
 /**
@@ -1353,7 +1352,7 @@ export function composeTaskInvocation(
   const invocation: TaskInvocation = {
     briefing,
     authority: resolveTaskAuthority(view.grant, requests),
-    credentialsListed: briefingCredentialsListed(view.grant, requests),
+    credentialsListed: briefingCredentialsListed(requests),
     provenance: briefingProvenance(
       briefing,
       view.pin,
