@@ -10,9 +10,6 @@
  * once, by its newest revision, and every revision of it stays addressable.
  * The listing arrives newest first, so the names are in the order each was
  * last imported.
- *
- * THE PAGE OPENS ON A CATALOG: the newest version of the configuration
- * imported last among those that are one, and the newest of any where none is.
  */
 
 import type { ConfigurationSummary } from "../../../../src/contract/responses.ts";
@@ -55,20 +52,6 @@ export function catalogConfigurationsOf(
   }));
 }
 
-function catalogSummaryIsCatalog(summary: ConfigurationSummary): boolean {
-  return summary.readiness === "Ready" && summary.catalog !== undefined;
-}
-
-/** The revision the page draws where its address names none. */
-export function catalogConfigurationOpening(
-  configurations: readonly CatalogConfiguration[],
-): string | undefined {
-  const newest = configurations.flatMap((configuration) =>
-    configuration.versions.slice(0, 1),
-  );
-  return (newest.find(catalogSummaryIsCatalog) ?? newest[0])?.revision;
-}
-
 /** The configuration a revision is of, none where the read did not reach it. */
 export function catalogConfigurationHolding(
   configurations: readonly CatalogConfiguration[],
@@ -102,8 +85,9 @@ export function catalogConfigurationVersionOf(
   return configuration.versions.find((summary) => summary.digest === digest);
 }
 
-/** What the page's address says: the revision drawn, the entry shown, and whether the repository's head is drawn in the revision's place. */
+/** What the page's address says: the repository whose catalog is drawn where no revision is named, the revision drawn, the entry shown, and whether the repository's head is drawn in the revision's place. */
 export interface CatalogQuery {
+  readonly repository?: string;
   readonly configuration?: string;
   readonly entry?: string;
   readonly source?: "head";
@@ -126,9 +110,11 @@ function catalogQueryText(value: unknown): string | undefined {
 export function catalogQueryOf(
   search: Readonly<Record<string, unknown>>,
 ): CatalogQuery {
+  const repository = catalogQueryText(search["repository"]);
   const configuration = catalogQueryText(search["configuration"]);
   const entry = catalogQueryText(search["entry"]);
   return {
+    ...(repository === undefined ? {} : { repository }),
     ...(configuration === undefined ? {} : { configuration }),
     ...(entry === undefined ? {} : { entry }),
     ...(search["source"] === "head" ? { source: "head" } : {}),

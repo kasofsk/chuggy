@@ -1,14 +1,13 @@
 /**
- * The repository's head beside an imported configuration: a line saying
- * whether the head declares what the newest import stored, and the head's own
- * version drawn in the import's place where the address asks for it.
+ * The repository's head in an imported configuration's place, where the
+ * address asks for it: the head's own version drawn, and a line saying what
+ * the head declares against what the newest import stored.
  *
- * THE HEAD IS READ ONLY WHEN ASKED. A read fetches from the repository's
- * forge, so nothing reads it until a reader presses for it or the address
- * names it, and the answer is kept under the repository it was read from.
+ * THE HEAD IS READ ONLY WHEN THE ADDRESS NAMES IT. A read fetches from the
+ * repository's forge, so nothing reads it otherwise, and the answer is kept
+ * under the repository it was read from.
  */
 
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -20,7 +19,6 @@ import { catalogEntriesOf } from "../../core/catalogEntries.ts";
 import {
   catalogHeadDeclaration,
   catalogHeadFaultText,
-  catalogHeadShowingText,
   catalogHeadStandingOf,
   catalogHeadText,
 } from "../../core/catalogHead.ts";
@@ -30,50 +28,27 @@ import { usePanelState } from "../api.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ConfigurationBody } from "../TicketProvenance.tsx";
-import { Button } from "../ui/Button.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { CatalogLink, CatalogShown } from "./CatalogShown.tsx";
 
 function useCatalogHead(
   partition: PartitionIdentity,
   repository: string,
-  asked: boolean,
 ): PanelState<RepositoryConfigurationHeadResponse> {
-  const state = usePanelState({
-    ...configurationHeadQuery(partition, repository),
-    enabled: asked,
-  });
-  return asked ? state : { state: "Pending" };
+  return usePanelState(configurationHeadQuery(partition, repository));
 }
 
-/** The head against the newest import of one configuration, read once a reader asks. */
+/** What the head says of one configuration while the address draws the head's version in the import's place. */
 export function CatalogHeadLine(props: {
   readonly partition: PartitionIdentity;
   readonly repository: string;
   readonly name: string;
   readonly newestDigest: string;
-  /** The address the import is drawn under, which the head's link extends. */
+  /** The address the head is drawn under, which the way back to the import narrows. */
   readonly query: CatalogQuery;
 }): ReactNode {
   const text = useCopyText();
-  const showing = props.query.source === "head";
-  const [pressed, setPressed] = useState(false);
-  const asked = pressed || showing;
-  const state = useCatalogHead(props.partition, props.repository, asked);
-  if (!asked)
-    return (
-      <p className="catalog-head">
-        <Button
-          variant="quiet"
-          size="sm"
-          onClick={() => {
-            setPressed(true);
-          }}
-        >
-          {text({ id: "configuration-catalog-compare-head" })}
-        </Button>
-      </p>
-    );
+  const state = useCatalogHead(props.partition, props.repository);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const standing = catalogHeadStandingOf(
     state.value.head,
@@ -84,21 +59,10 @@ export function CatalogHeadLine(props: {
   return (
     <div className="catalog-head" role="status">
       <p>
-        {text(
-          showing &&
-            (standing.standing === "Matches" || standing.standing === "Differs")
-            ? catalogHeadShowingText(standing.at, props.name)
-            : catalogHeadText(standing, props.name),
-        )}{" "}
-        {showing ? (
-          <CatalogLink query={imported}>
-            {text({ id: "configuration-catalog-show-import" })}
-          </CatalogLink>
-        ) : standing.standing === "Differs" ? (
-          <CatalogLink query={{ ...imported, source: "head" }}>
-            {text({ id: "configuration-catalog-show-head" })}
-          </CatalogLink>
-        ) : null}
+        {text(catalogHeadText(standing, props.name))}{" "}
+        <CatalogLink query={imported}>
+          {text({ id: "configuration-catalog-show-import" })}
+        </CatalogLink>
       </p>
       {standing.standing === "Refused" ? (
         <ul className="catalog-head-faults">
@@ -125,7 +89,7 @@ export function CatalogHeadRevision(props: {
   readonly imported: ReactNode;
 }): ReactNode {
   const text = useCopyText();
-  const state = useCatalogHead(props.partition, props.repository, true);
+  const state = useCatalogHead(props.partition, props.repository);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const declaration = catalogHeadDeclaration(state.value.head, props.name);
   if (declaration === undefined) return props.imported;

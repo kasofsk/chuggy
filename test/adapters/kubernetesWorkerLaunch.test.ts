@@ -339,6 +339,7 @@ function expectedTask(): string {
       text: placement.invocation.briefing.text,
     },
     authority: { ...grant, mayCompleteTask: false },
+    credentialsListed: grant.credentials,
     workerPlane: {
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,

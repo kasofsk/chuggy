@@ -1,7 +1,8 @@
 /**
- * The project's catalog: the configurations its repositories declare, as
- * their imports stored them, and for one version of one of them every
- * workload, evaluation plan, finalizer and prompt file it holds.
+ * The project's catalog: each repository with the configurations it declares
+ * and the fragments they are made of, and, once the address names a
+ * configuration, every workload, evaluation plan, finalizer and prompt file
+ * one version of it holds, chosen among its own repository's.
  *
  * THE ADDRESS HOLDS THE CHOICE, the version drawn, the entry shown and
  * whether the repository's head is drawn in the version's place, so a reader
@@ -20,7 +21,6 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   catalogConfigurationHolding,
   catalogConfigurationNewestFrom,
-  catalogConfigurationOpening,
   catalogConfigurationsOf,
   catalogConfigurationVersionOf,
 } from "../../core/catalogConfigurations.ts";
@@ -29,6 +29,10 @@ import type {
   CatalogQuery,
 } from "../../core/catalogConfigurations.ts";
 import { catalogEntriesOf } from "../../core/catalogEntries.ts";
+import {
+  catalogRepositoriesOf,
+  catalogRepositoryHolding,
+} from "../../core/catalogRepositories.ts";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
 import {
   catalogConfigurationsQuery,
@@ -52,7 +56,12 @@ import { Panel } from "../ui/Panel.tsx";
 import { Picker } from "../ui/Picker.tsx";
 import { navRoutes } from "../../core/shellNav.ts";
 import { CatalogHeadLine, CatalogHeadRevision } from "./CatalogHead.tsx";
-import { CatalogShown, useCatalogPartition } from "./CatalogShown.tsx";
+import { CatalogRepositories } from "./CatalogRepositories.tsx";
+import {
+  CatalogLink,
+  CatalogShown,
+  useCatalogPartition,
+} from "./CatalogShown.tsx";
 
 import "./catalog.css";
 
@@ -96,7 +105,7 @@ function CatalogProvenance(props: {
   );
 }
 
-/** The repository's head against the configuration drawn, where an import from a repository drew it. */
+/** What the repository's head says of the configuration, where the address draws the head in the import's place. */
 function CatalogChosenHead(props: {
   readonly configurations: readonly CatalogConfiguration[];
   readonly revision: string;
@@ -110,7 +119,11 @@ function CatalogChosenHead(props: {
   const summary = holding?.revisions.find(
     (version) => version.revision === props.revision,
   );
-  if (holding === undefined || summary?.provenance.source !== "Repository")
+  if (
+    props.query.source !== "head" ||
+    holding === undefined ||
+    summary?.provenance.source !== "Repository"
+  )
     return null;
   return (
     <CatalogHeadLine
@@ -124,6 +137,26 @@ function CatalogChosenHead(props: {
       }
       query={{ ...props.query, configuration: props.revision }}
     />
+  );
+}
+
+/** The way back to everything the drawn configuration's repository declares. */
+function CatalogBack(props: {
+  readonly summary: ConfigurationSummary | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const provenance = props.summary?.provenance;
+  if (provenance?.source !== "Repository") return null;
+  return (
+    <CatalogLink
+      query={{ repository: provenance.repository }}
+      className="catalog-back"
+    >
+      {text({
+        id: "configuration-catalog-repository-back",
+        args: { repository: repositoryLabel(provenance.repository) },
+      })}
+    </CatalogLink>
   );
 }
 
@@ -157,6 +190,7 @@ function CatalogChooser(props: {
       : catalogConfigurationVersionOf(holding, props.revision);
   return (
     <div className="catalog-chooser">
+      <CatalogBack summary={summary} />
       <div className="catalog-chooser-pickers">
         <Picker
           label={text({ id: "configuration-catalog-picker-configuration" })}
@@ -282,40 +316,62 @@ export function CatalogPage(props: {
   const partition = useCatalogPartition();
   const state = usePanelState(catalogConfigurationsQuery(partition));
   const read = state.state === "Ready" ? state.value : undefined;
-  const configurations =
-    read === undefined ? [] : catalogConfigurationsOf(read.configurations);
-  const revision =
-    props.query.configuration ?? catalogConfigurationOpening(configurations);
+  const summaries = read?.configurations ?? [];
+  const repositories = catalogRepositoriesOf(summaries);
+  const revision = props.query.configuration;
+  const repository =
+    revision === undefined
+      ? undefined
+      : catalogRepositoryHolding(summaries, revision);
+  const configurations = catalogConfigurationsOf(
+    repository === undefined
+      ? summaries
+      : summaries.filter(
+          (summary) =>
+            summary.provenance.source === "Repository" &&
+            summary.provenance.repository === repository,
+        ),
+  );
   return (
     <div className="catalog-page" data-fills-width>
       <ScreenTitle>{text({ id: "configuration-catalog-title" })}</ScreenTitle>
       <PanelUnready state={state} />
-      {read === undefined ? null : revision === undefined ? (
-        <EmptyState
-          variant="page"
-          label={text({ id: "configuration-catalog-none" })}
-          detail={text({
-            id: "configuration-catalog-none-detail",
-            args: { directory: repositoryConfigurationsDirectory },
-          })}
-        />
-      ) : (
+      {read === undefined ? null : (
         <>
-          <CatalogChooser
-            configurations={configurations}
-            revision={revision}
-            query={props.query}
-          />
           {read.partial ? (
             <p className="catalog-none">{text(configurationsPartialLabel)}</p>
           ) : null}
-          <CatalogDrawn
-            key={revision}
-            partition={partition}
-            configurations={configurations}
-            revision={revision}
-            query={props.query}
-          />
+          {revision !== undefined ? (
+            <>
+              <CatalogChooser
+                configurations={configurations}
+                revision={revision}
+                query={props.query}
+              />
+              <CatalogDrawn
+                key={revision}
+                partition={partition}
+                configurations={configurations}
+                revision={revision}
+                query={props.query}
+              />
+            </>
+          ) : repositories.length === 0 ? (
+            <EmptyState
+              variant="page"
+              label={text({ id: "configuration-catalog-none" })}
+              detail={text({
+                id: "configuration-catalog-none-detail",
+                args: { directory: repositoryConfigurationsDirectory },
+              })}
+            />
+          ) : (
+            <CatalogRepositories
+              partition={partition}
+              repositories={repositories}
+              chosen={props.query.repository}
+            />
+          )}
         </>
       )}
     </div>

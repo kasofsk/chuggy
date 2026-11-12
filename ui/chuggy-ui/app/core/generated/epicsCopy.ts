@@ -7,8 +7,6 @@ export interface EpicsCopy {
   readonly "epics-page-title": Record<never, never>;
   readonly "epics-none": Record<never, never>;
   readonly "epics-not-found": Record<never, never>;
-  readonly "epics-new": Record<never, never>;
-  readonly "epics-create": Record<never, never>;
   readonly "epics-search": Record<never, never>;
   readonly "epics-search-placeholder": Record<never, never>;
   readonly "epics-show-more": Record<never, never>;
@@ -53,8 +51,6 @@ export interface EpicsCopy {
   };
   readonly "epics-field-description": Record<never, never>;
   readonly "epics-field-description-format": Record<never, never>;
-  readonly "epics-field-tickets": Record<never, never>;
-  readonly "epics-field-tickets-placeholder": Record<never, never>;
   readonly "epics-faults-label": Record<never, never>;
   readonly "epics-tabs-label": Record<never, never>;
   readonly "epics-tab-overview": Record<never, never>;

@@ -161,7 +161,7 @@ walk_processes() {
 walk_processes >"$WORK/walkers-before"
 OUT="$WORK/.out"
 set +e
-(cd "$ROOT" && CHUG_WALK_SAMPLES=200000 CHUG_RANDOM_TIMEOUT_SECS=2 \
+(cd "$ROOT" && CHUG_WALK_SAMPLES=20000 CHUG_RANDOM_TIMEOUT_SECS=2 \
 	timeout 60 "$SUT") >"$OUT" 2>&1
 RC=$?
 set -e

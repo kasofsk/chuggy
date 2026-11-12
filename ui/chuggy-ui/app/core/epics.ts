@@ -416,14 +416,6 @@ export interface EpicForm {
   readonly tickets: string;
 }
 
-export const epicFormEmpty: EpicForm = {
-  title: "",
-  summary: "",
-  description: "",
-  visibility: "Active",
-  tickets: "",
-};
-
 export function epicFormFrom(view: EpicViewResponse): EpicForm {
   return {
     title: view.title,
