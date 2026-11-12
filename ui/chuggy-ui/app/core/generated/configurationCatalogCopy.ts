@@ -18,19 +18,12 @@ export interface ConfigurationCatalogCopy {
     readonly repository: unknown;
   };
   readonly "configuration-catalog-section-configurations": Record<never, never>;
-  readonly "configuration-catalog-section-fragments": Record<never, never>;
   readonly "configuration-catalog-incomplete": Record<never, never>;
   readonly "configuration-catalog-written-in": Record<never, never>;
   readonly "configuration-catalog-held-by": Record<never, never>;
-  readonly "configuration-catalog-compare-head": Record<never, never>;
+  readonly "configuration-catalog-fragments-partial": Record<never, never>;
   readonly "configuration-catalog-show-import": Record<never, never>;
-  readonly "configuration-catalog-show-head": Record<never, never>;
   readonly "configuration-catalog-head-matches": {
-    readonly branch: unknown;
-    readonly commit: unknown;
-    readonly name: unknown;
-  };
-  readonly "configuration-catalog-head-differs": {
     readonly branch: unknown;
     readonly commit: unknown;
     readonly name: unknown;

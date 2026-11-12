@@ -5,7 +5,8 @@
  * is written in and the configurations holding it.
  *
  * Every configuration and fragment links to the configuration's own page,
- * which draws the entry in full.
+ * which draws the entry in full. A configuration whose read failed says so in
+ * its row, and the fragments are those of the configurations that were read.
  */
 
 import { useQueries } from "@tanstack/react-query";
@@ -221,20 +222,44 @@ function CatalogFragmentGroups(props: {
   );
 }
 
-function CatalogRepositorySection(props: {
-  readonly partition: PartitionIdentity;
+/** The repository's name, and the commit its newest import read and when. */
+function CatalogRepositoryHead(props: {
   readonly repository: CatalogRepository;
 }): ReactNode {
   const text = useCopyText();
   const nowMs = useNowMs();
   const { repository } = props;
+  const commit = commitLabel(repository.commit);
+  return (
+    <header className="catalog-repository-head">
+      <h2 className="catalog-repository-name" title={repository.repository}>
+        {repositoryLabel(repository.repository)}
+      </h2>
+      <p className="catalog-provenance">
+        <code title={commit.title}>{commit.text}</code>
+        <span>
+          {text({ id: "configuration-catalog-imported" })}{" "}
+          <Figure figure={instantFigure(repository.importedAt, nowMs)} />
+        </span>
+      </p>
+    </header>
+  );
+}
+
+function CatalogRepositorySection(props: {
+  readonly partition: PartitionIdentity;
+  readonly repository: CatalogRepository;
+}): ReactNode {
+  const text = useCopyText();
+  const { repository } = props;
   const options = usePanelQueryOptions();
   const states = useQueries({
-    queries: repository.declared.map((summary) =>
-      options(
+    queries: repository.declared.map((summary) => ({
+      ...options(
         configurationQuery(props.partition, summary.revision, "Streamed"),
       ),
-    ),
+      enabled: summary.readiness !== "Incomplete",
+    })),
     combine: (answers) => answers.map((answer) => panelQueryState(answer)),
   });
   const declared = repository.declared.flatMap((summary, index) => {
@@ -244,22 +269,15 @@ function CatalogRepositorySection(props: {
       : [];
   });
   const groups = catalogFragmentsOf(declared);
-  const label = repositoryLabel(repository.repository);
-  const commit = commitLabel(repository.commit);
+  const unread = states.some(
+    (state) => state.state === "Failed" || state.state === "Absent",
+  );
   return (
-    <section className="catalog-repository" aria-label={label}>
-      <header className="catalog-repository-head">
-        <h2 className="catalog-repository-name" title={repository.repository}>
-          {label}
-        </h2>
-        <p className="catalog-provenance">
-          <code title={commit.title}>{commit.text}</code>
-          <span>
-            {text({ id: "configuration-catalog-imported" })}{" "}
-            <Figure figure={instantFigure(repository.importedAt, nowMs)} />
-          </span>
-        </p>
-      </header>
+    <section
+      className="catalog-repository"
+      aria-label={repositoryLabel(repository.repository)}
+    >
+      <CatalogRepositoryHead repository={repository} />
       <section
         className="catalog-group"
         aria-label={text({
@@ -280,6 +298,11 @@ function CatalogRepositorySection(props: {
           ))}
         </ul>
       </section>
+      {unread ? (
+        <p className="catalog-none">
+          {text({ id: "configuration-catalog-fragments-partial" })}
+        </p>
+      ) : null}
       <CatalogFragmentGroups groups={groups} />
     </section>
   );

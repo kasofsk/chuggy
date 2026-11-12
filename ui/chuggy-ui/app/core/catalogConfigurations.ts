@@ -10,9 +10,6 @@
  * once, by its newest revision, and every revision of it stays addressable.
  * The listing arrives newest first, so the names are in the order each was
  * last imported.
- *
- * THE PAGE OPENS ON A CATALOG: the newest version of the configuration
- * imported last among those that are one, and the newest of any where none is.
  */
 
 import type { ConfigurationSummary } from "../../../../src/contract/responses.ts";
@@ -53,20 +50,6 @@ export function catalogConfigurationsOf(
     versions: catalogConfigurationsVersions(revisions),
     revisions,
   }));
-}
-
-function catalogSummaryIsCatalog(summary: ConfigurationSummary): boolean {
-  return summary.readiness === "Ready" && summary.catalog !== undefined;
-}
-
-/** The revision the page draws where its address names none. */
-export function catalogConfigurationOpening(
-  configurations: readonly CatalogConfiguration[],
-): string | undefined {
-  const newest = configurations.flatMap((configuration) =>
-    configuration.versions.slice(0, 1),
-  );
-  return (newest.find(catalogSummaryIsCatalog) ?? newest[0])?.revision;
 }
 
 /** The configuration a revision is of, none where the read did not reach it. */

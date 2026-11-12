@@ -2,8 +2,8 @@
  * A project's epics: a search, a visibility filter and a sort, each the
  * address's so a link holds the view, and one row an epic with a bar of where
  * its tickets stand and what the bar says beside it. Each page of rows is read
- * under its own cursor, and "Show more" mounts the next, so a page
- * already read is not read again.
+ * under its own cursor into the one list, and "Show more" adds the next, so a
+ * page already read is not read again.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -87,50 +87,65 @@ function EpicRow(props: {
   );
 }
 
-/** One page of the rows, and under it the next once it is asked for. */
+/** One page's rows, read under its own cursor; the list it stands in draws
+ * what a page not yet read says. */
 function EpicRowsPage(props: {
   readonly partition: PartitionIdentity;
   readonly query: EpicsQuery;
   readonly after: number | undefined;
-  readonly first: boolean;
 }): ReactNode {
-  const text = useCopyText();
-  const [more, setMore] = useState(false);
   const state = usePanelState(
     epicsQuery(props.partition, {
       ...epicsAskOf(props.query),
       after: props.after,
     }),
   );
-  if (state.state !== "Ready") return <PanelUnready state={state} />;
-  const { epics, nextAfter } = state.value;
+  if (state.state !== "Ready") return null;
+  return state.value.epics.map((epic) => (
+    <EpicRow key={epic.number} partition={props.partition} epic={epic} />
+  ));
+}
+
+/** Every page read so far as one list, and under it the newest page's
+ * standing: what it says while unread, or the way to the next. */
+function EpicRows(props: {
+  readonly partition: PartitionIdentity;
+  readonly query: EpicsQuery;
+}): ReactNode {
+  const text = useCopyText();
+  const [afters, setAfters] = useState<readonly (number | undefined)[]>([
+    undefined,
+  ]);
+  const newest = usePanelState(
+    epicsQuery(props.partition, {
+      ...epicsAskOf(props.query),
+      after: afters.at(-1),
+    }),
+  );
+  const first = afters.length === 1;
+  if (first && newest.state !== "Ready") return <PanelUnready state={newest} />;
+  if (first && newest.state === "Ready" && newest.value.epics.length === 0)
+    return <EmptyState label={text({ id: "epics-none" })} />;
+  const nextAfter =
+    newest.state === "Ready" ? newest.value.nextAfter : undefined;
   return (
     <>
-      {epics.length === 0 && props.first ? (
-        <EmptyState label={text({ id: "epics-none" })} />
-      ) : (
-        <ul className="ticket-list" aria-label={text({ id: "epics-title" })}>
-          {epics.map((epic) => (
-            <EpicRow
-              key={epic.number}
-              partition={props.partition}
-              epic={epic}
-            />
-          ))}
-        </ul>
-      )}
-      {nextAfter === undefined ? null : more ? (
-        <EpicRowsPage
-          partition={props.partition}
-          query={props.query}
-          after={nextAfter}
-          first={false}
-        />
-      ) : (
-        <div>
+      <ul className="ticket-list" aria-label={text({ id: "epics-title" })}>
+        {afters.map((after) => (
+          <EpicRowsPage
+            key={String(after)}
+            partition={props.partition}
+            query={props.query}
+            after={after}
+          />
+        ))}
+      </ul>
+      {newest.state === "Ready" ? null : <PanelUnready state={newest} />}
+      {nextAfter === undefined ? null : (
+        <div className="ticket-list-more">
           <Button
             onClick={() => {
-              setMore(true);
+              setAfters([...afters, nextAfter]);
             }}
           >
             {text({ id: "epics-show-more" })}
@@ -234,12 +249,10 @@ export function EpicsPage(props: {
     >
       <ScreenTitle>{text({ id: "epics-title" })}</ScreenTitle>
       <EpicsControls query={props.query} onQuery={props.onQuery} />
-      <EpicRowsPage
+      <EpicRows
         key={JSON.stringify(props.query)}
         partition={partition}
         query={props.query}
-        after={undefined}
-        first
       />
     </section>
   );

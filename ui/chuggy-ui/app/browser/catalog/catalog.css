@@ -1,12 +1,12 @@
-/* The catalog: the chosen repository under its name and commit, its configurations
-   and fragments as ruled cards; and for one configuration the chooser, where
-   the version came from and what the
-   repository's head says of it, then the entries
-   grouped by what each is, one card per group with its rows ruled. With an
-   entry chosen the list and the entry sit side by side, the entry held in
-   view and scrolling on its own while the list scrolls; where the page is
-   narrow they stack with the entry first, since it is what the reader just
-   asked for. */
+/* The catalog: the chosen repository under its name and commit, its
+   configurations and fragments as ruled cards, a configuration's parts in one
+   column where the page is narrow; and for one configuration the chooser,
+   where the version came from and what the repository's head says of it where
+   the head is drawn, then the entries grouped by what each is, one card per
+   group with its rows ruled. With an entry chosen the list and the entry sit
+   side by side, the entry held in view and scrolling on its own while the
+   list scrolls; where the page is narrow they stack with the entry first,
+   since it is what the reader just asked for. */
 
 @layer page {
   .catalog-page {
@@ -90,6 +90,11 @@
     min-width: 0;
   }
 
+  .catalog-configuration-head > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .catalog-configuration-head .catalog-entry-name {
     color: var(--ink-1);
   }
@@ -127,6 +132,17 @@
     gap: var(--space-1) var(--space-3);
     margin: 0;
     overflow-wrap: anywhere;
+  }
+
+  @container (max-width: 30em) {
+    .catalog-parts {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 0;
+    }
+
+    .catalog-parts > div + div dt {
+      margin-top: var(--space-1);
+    }
   }
 
   .catalog-part {

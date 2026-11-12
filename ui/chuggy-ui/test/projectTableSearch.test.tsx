@@ -270,6 +270,7 @@ test("the search is a button that opens out to a focused box and closes on Escap
   const toggle = screen.getByRole("button", { name: "Search tickets" });
   const box = screen.getByRole("textbox", { name: "Search tickets" });
   const field = box.closest(".list-search-field");
+  expect(field?.closest(".list-controls .list-selects")).not.toBeNull();
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(toggle.hasAttribute("data-active")).toBe(true);
   expect(field?.hasAttribute("inert")).toBe(true);

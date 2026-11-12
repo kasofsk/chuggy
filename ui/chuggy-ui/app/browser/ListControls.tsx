@@ -4,8 +4,8 @@
  * page and goes out of the way as `useHeadroom` says.
  */
 
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { buttonLookClassName } from "./ui/Button.tsx";
 import { Input } from "./ui/Input.tsx";
@@ -51,21 +51,20 @@ const listSearchGlyph = (
 /** How long the box takes to close, which the room it holds in the row outlasts. */
 const listSearchCloseMs = 260;
 
-/** The search, which is a button until it is asked for and then the button
- * opened out to the box; closed over a search it holds, the button is marked. */
-export function ListSearch(props: {
-  readonly label: string;
-  readonly placeholder: string;
-  readonly search: string;
-  readonly onSearch: (search: string) => void;
-}): ReactNode {
+/** Whether the search is open, and whether its box still holds its room in
+ * the row while it closes; opening focuses the box inside `field`. */
+function useListSearchOpen(field: RefObject<HTMLSpanElement | null>): {
+  readonly open: boolean;
+  readonly laidOut: boolean;
+  readonly show: () => void;
+  readonly close: () => void;
+} {
   const [open, setOpen] = useState(false);
-  const field = useRef<HTMLSpanElement>(null);
   const [laidOut, setLaidOut] = useState(false);
   const closing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (open) field.current?.querySelector("input")?.focus();
-  }, [open]);
+  }, [open, field]);
   useEffect(
     () => () => {
       clearTimeout(closing.current);
@@ -84,6 +83,20 @@ export function ListSearch(props: {
       setLaidOut(false);
     }, listSearchCloseMs);
   };
+  return { open, laidOut, show, close };
+}
+
+/** The search, which is a button until it is asked for and then the button
+ * opened out to the box; closed over a search it holds, the button is marked. */
+export function ListSearch(props: {
+  readonly label: string;
+  readonly placeholder: string;
+  readonly search: string;
+  readonly onSearch: (search: string) => void;
+}): ReactNode {
+  const field = useRef<HTMLSpanElement>(null);
+  const fieldId = useId();
+  const { open, laidOut, show, close } = useListSearchOpen(field);
   return (
     <span
       className="list-search"
@@ -101,6 +114,7 @@ export function ListSearch(props: {
         className={`${buttonLookClassName({ size: "sm" })} list-search-toggle`}
         aria-label={props.label}
         aria-expanded={open}
+        aria-controls={fieldId}
         title={props.label}
         data-active={props.search === "" ? undefined : ""}
         onClick={() => {
@@ -110,7 +124,12 @@ export function ListSearch(props: {
       >
         {listSearchGlyph}
       </button>
-      <span className="list-search-field" ref={field} inert={!open}>
+      <span
+        className="list-search-field"
+        id={fieldId}
+        ref={field}
+        inert={!open}
+      >
         <Input
           label={props.label}
           placeholder={props.placeholder}
