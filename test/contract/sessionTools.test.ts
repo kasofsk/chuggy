@@ -26,6 +26,7 @@ import {
   selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
   sessionEfforts,
+  sessionStoreBatchBytesMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import * as authoring from "../../src/contract/authoring.ts";
@@ -64,6 +65,7 @@ import {
   chuggyToolResponseBytesMax,
   chuggyToolServerName,
   chuggyToolRoutes,
+  chuggyToolTicketLandingBytesMax,
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
 } from "../../src/contract/sessionTools.ts";
@@ -400,6 +402,50 @@ test("a dispatch view page of the heaviest candidate is under the bound dispatch
   const bytes = Buffer.byteLength(page);
   assert.ok(bytes > nativeHttpBodyBytesMax);
   assert.ok(bytes <= chuggyToolDispatchViewResponseBytesMax);
+});
+
+/**
+ * What chuggy-common's session pod reserves in a transcript entry beside the
+ * copies of a tool answer it holds, `chuggyToolAnswerEnvelopeBytesMax` in its
+ * `chuggyTools.mjs`.
+ */
+const podAnswerEnvelopeBytesMax = 4_096;
+
+/** How many copies of a tool answer one transcript entry holds, `chuggyToolAnswerCopiesInEntry` there. */
+const podAnswerCopiesInEntry = 2;
+
+/**
+ * What one tool answer of the pod may weigh, so the entry it becomes is one
+ * line of one store batch: `chuggyToolAnswerBytesMax` there, derived as it is.
+ */
+const podAnswerBytesMax = Math.floor(
+  (sessionStoreBatchBytesMax - podAnswerEnvelopeBytesMax - 1) /
+    podAnswerCopiesInEntry,
+);
+
+/**
+ * A landing weighing the most one landing may, of backslashes as far as it can
+ * be, since every byte of a JSON text escapes to at most two and a backslash is
+ * one that does; the pod draws a landing whole or not at all, so one it cannot
+ * fit in an answer of its own is a landing it can never answer. The answer is a
+ * ticket's that answers no stacks, as no landing bound leaves room beside one
+ * for the heaviest stacks the pod would answer with it.
+ */
+test("the heaviest landing read_ticket_landings answers fits one pod tool answer whole beside no stacks, escaped as the pod escapes it", () => {
+  const landing = { state: "Held", cycle: 1, held: "", pad: "" };
+  const fixed = Buffer.byteLength(JSON.stringify(landing));
+  const held = Math.floor((chuggyToolTicketLandingBytesMax - fixed) / 2);
+  const heaviest = {
+    ...landing,
+    held: "\\".repeat(held),
+    pad: "a".repeat(chuggyToolTicketLandingBytesMax - fixed - 2 * held),
+  };
+  assert.equal(
+    Buffer.byteLength(JSON.stringify(heaviest)),
+    chuggyToolTicketLandingBytesMax,
+  );
+  const answer = JSON.stringify({ landings: [heaviest], truncated: true });
+  assert.ok(Buffer.byteLength(JSON.stringify(answer)) <= podAnswerBytesMax);
 });
 
 /**

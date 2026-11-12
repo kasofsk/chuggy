@@ -42,6 +42,7 @@ import {
   nativeHttpError,
   projectArtifactUploadBytesMax,
   proposalMergeStateCharsMax,
+  proposalQueueWordCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runTranscriptPageBatchesMax,
@@ -79,6 +80,7 @@ import {
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
   asProposalMergeState,
+  asProposalQueueWord,
 } from "../../src/interpreter/changeProposal.ts";
 import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
 import {
@@ -943,6 +945,11 @@ const landingCountHeaviest = Number.MAX_SAFE_INTEGER;
 /** A reference name of control characters at its bound, each of which JSON escapes to six bytes. */
 const landingRefHeaviest = "\u0001".repeat(ticketLandingRefCharsMax);
 
+/** A merge queue's word at its bound, of control characters. */
+const landingQueueWordHeaviest = asProposalQueueWord(
+  "\u0001".repeat(proposalQueueWordCharsMax),
+);
+
 /** A link a report could carry at its bound, of the visible character JSON escapes. */
 const landingLinkHeaviest = `https://h/${"\\".repeat(actionReportLinkCharsMax - "https://h/".length)}`;
 
@@ -991,6 +998,10 @@ function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
         kind: landingCodeHeaviest(finalizationUnavailableKinds),
         passes: landingCountHeaviest,
         since: landingInstant,
+        removal: {
+          reason: landingQueueWordHeaviest,
+          actor: landingQueueWordHeaviest,
+        },
       },
     },
     {
