@@ -28,6 +28,9 @@ import {
   workerRunnerCapabilitiesOf,
   workerRunnerCapabilitiesSchema,
   workerRunnerCountOf,
+  workerRunnerCredentialAgents,
+  workerRunnerCredentialsOf,
+  workerRunnerCredentialsPerAgentMax,
   workerRunnerOf,
   workerRunnerReleaseSchema,
   workerRunnerReleaseUrlCharsMax,
@@ -35,11 +38,16 @@ import {
   workerRunnerReportBytesMax,
   workerRunnerReportSchema,
 } from "../../src/contract/workerPool.ts";
-import { runUsageInstantSecsMax } from "../../src/contract/workerPlane.ts";
+import {
+  runUsageInstantSecsMax,
+  workerRunCredentialDefaults,
+} from "../../src/contract/workerPlane.ts";
+import { agentAccountCredentialsKeptMaxAt163 } from "../../src/adapters/postgres/schema/migrations/163-agent-account-credential.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
   workerContractRunnerCredentialOutcomes,
+  workerContractRunnerCredentialPauses,
   workerContractRunnerProjects,
   workerContractRunnerReleases,
 } from "../../src/interpreter/workerPlane.ts";
@@ -530,6 +538,103 @@ test("a poll's capabilities header naming a token outside the grammar, one twice
       .success,
     false,
   );
+});
+
+test("a poll names its credentials as agent and name separated by commas, each agent's apart, and an absent header names none", () => {
+  const longest = "a".repeat(64);
+  const most = Array.from(
+    { length: workerRunnerCredentialsPerAgentMax },
+    (_, index) => `c${String(index)}`,
+  );
+  for (const [header, named] of [
+    ["Claude:work", { Claude: ["work"] }],
+    [
+      " Claude:work ,\tCodex:codex\t, Claude:home",
+      { Claude: ["work", "home"], Codex: ["codex"] },
+    ],
+    ["Codex:codex, ,", { Codex: ["codex"] }],
+    [`Claude:${longest}`, { Claude: [longest] }],
+    [
+      [
+        ...most.map((name) => `Claude:${name}`),
+        ...most.map((name) => `Codex:${name}`),
+      ].join(","),
+      { Claude: most, Codex: most },
+    ],
+    ["Claude:work, Codex:work", { Claude: ["work"], Codex: ["work"] }],
+    ["", {}],
+  ] as const)
+    assert.deepEqual(
+      workerRunnerCredentialsOf(header),
+      named,
+      JSON.stringify(header).slice(0, 120),
+    );
+  assert.deepEqual(workerRunnerCredentialsOf(undefined), {});
+});
+
+test("a poll's credentials header naming an agent no default names, a name outside the pattern, one twice within an agent, or past the bound names none", () => {
+  assert.deepEqual(
+    [...workerRunnerCredentialAgents].sort(),
+    Object.keys(workerRunCredentialDefaults).sort(),
+  );
+  for (const header of [
+    "Gemini:work",
+    "claude:work",
+    "Claude",
+    "Claude:",
+    "Claude:work home",
+    "Claude:work/home",
+    `Claude:${"a".repeat(65)}`,
+    "Claude:work, Claude:work",
+    "Claude:work;Codex:codex",
+    Array.from(
+      { length: workerRunnerCredentialsPerAgentMax + 1 },
+      (_, index) => `Claude:c${String(index)}`,
+    ).join(","),
+  ])
+    assert.deepEqual(
+      workerRunnerCredentialsOf(header),
+      {},
+      JSON.stringify(header).slice(0, 120),
+    );
+});
+
+test("a poll names no more credentials of an agent than the plane keeps of one account's agent, so none it names reads free for having been evicted", () => {
+  assert.ok(
+    workerRunnerCredentialsPerAgentMax <= agentAccountCredentialsKeptMaxAt163,
+  );
+});
+
+test("a reconciliation may name a credential's pause by its agent, its name and its end, and a runner of a release before the pauses range refuses a whole answer naming one", async () => {
+  const answer = {
+    assignments: [],
+    sessions: [],
+    stop: [],
+    credentialPauses: [
+      { agent: "Claude", credential: "work", pausedUntil: 1_800_000_000 },
+    ],
+  };
+  assert.deepEqual(workerPoolReconciliationSchema.parse(answer), answer);
+  for (const pause of [
+    { agent: "Gemini", credential: "work", pausedUntil: 1_800_000_000 },
+    { agent: "Claude", credential: "work home", pausedUntil: 1_800_000_000 },
+    { agent: "Claude", credential: "work", pausedUntil: 0 },
+    { agent: "Claude", credential: "work" },
+    { agent: "Claude", credential: "work", pausedUntil: 1, reasons: [] },
+  ])
+    assert.equal(
+      workerPoolReconciliationSchema.safeParse({
+        ...answer,
+        credentialPauses: [pause],
+      }).success,
+      false,
+      JSON.stringify(pause),
+    );
+  const earlier = await workerContractReleasePool("1.77.0");
+  assert.ok(
+    !contractVersionAccepted(workerContractRunnerCredentialPauses, "1.77.0"),
+  );
+  assert.equal(earlier.reconciliation.safeParse(answer).success, false);
 });
 
 test("a poll's count header is a count as its query writes one, an absent header names none, and anything else is unread", () => {

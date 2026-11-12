@@ -14,18 +14,24 @@
  * opaque because a pool that could read an execution identity would learn the
  * tenant's ticket structure, and capability tokens are opaque because a pool
  * may translate one into a node selector, a scheduler constraint, or nothing.
- * A member's personal runner is told two things more: each job's project, in
- * the tenant its registration names, and how the agent credential of its
- * owner's own that it handed a job stopped that job. It is its owner's
+ * A member's personal runner is told three things more: each job's project,
+ * in the tenant its registration names, how the agent credential of its
+ * owner's own that it handed a job stopped that job, and which of the
+ * credentials its poll named are paused for its owner. It is its owner's
  * machine, where that job's own shells are told the project already, by the
- * core's `workerJobVariables`, and where that credential is kept. A project's
- * pool is told neither, since its registration names its project and it hands
- * a job no credential.
+ * core's `workerJobVariables`, and where those credentials are kept. A
+ * project's pool is told none of them, since its registration names its
+ * project and it hands a job no credential.
  */
 
 import { z } from "zod";
 
-import { nativeHttpRoutes, runUsageInstantSchema } from "./http.ts";
+import {
+  nativeHttpRoutes,
+  runUsageInstantSchema,
+  workerRunCredentialDefaults,
+  workerRunCredentialSchema,
+} from "./http.ts";
 import { sessionContainerEnds } from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
@@ -301,6 +307,66 @@ export function workerRunnerCapabilitiesOf(
     : { named: "Unread" };
 }
 
+/** An agent a runner holds credentials of, as `workerRunCredentialDefaults` names them. */
+export type WorkerRunCredentialAgent = keyof typeof workerRunCredentialDefaults;
+
+/** The agents a poll may name credentials of. */
+export const workerRunnerCredentialAgents = Object.keys(
+  workerRunCredentialDefaults,
+) as readonly WorkerRunCredentialAgent[];
+
+/** The most credentials a poll names of one agent. */
+export const workerRunnerCredentialsPerAgentMax = 16;
+
+/**
+ * The header a member's personal runner names in on its poll, per agent, the
+ * credentials it would run a job of that agent on now, as `<agent>:<name>`
+ * separated by commas with any spaces or tabs around each. A poll without it,
+ * or with one `workerRunnerCredentialsOf` does not read, names none and is
+ * served as one naming none, never refused, as a poll's runner is.
+ */
+export const workerRunnerCredentialsHeader = "chuggy-credentials";
+
+/** The credentials a poll names of one agent: at least one, none twice. */
+const workerRunnerCredentialsOfAgentSchema = z
+  .array(workerRunCredentialSchema)
+  .min(1)
+  .max(workerRunnerCredentialsPerAgentMax)
+  .refine((names) => new Set(names).size === names.length);
+
+/** The credentials a poll names, by agent, an agent it names none of left out. */
+export const workerRunnerCredentialsSchema = z.strictObject(
+  Object.fromEntries(
+    workerRunnerCredentialAgents.map((agent) => [
+      agent,
+      workerRunnerCredentialsOfAgentSchema.exactOptional(),
+    ]),
+  ) as {
+    [Agent in WorkerRunCredentialAgent]: z.ZodExactOptional<
+      typeof workerRunnerCredentialsOfAgentSchema
+    >;
+  },
+);
+
+/** The credentials `header` names, or none where it is absent or does not read. */
+export function workerRunnerCredentialsOf(
+  header: string | undefined,
+): WorkerRunnerCredentials {
+  if (header === undefined) return {};
+  const named: Record<string, string[]> = {};
+  for (const element of header.split(",")) {
+    const token = element.replace(/^[ \t]+|[ \t]+$/gu, "");
+    if (token === "") continue;
+    const at = token.indexOf(":");
+    if (at < 0) return {};
+    const agent = token.slice(0, at);
+    if (!Object.hasOwn(workerRunCredentialDefaults, agent)) return {};
+    (named[agent] ??= []).push(token.slice(at + 1));
+  }
+  const read = workerRunnerCredentialsSchema.safeParse(named);
+  return read.success ? read.data : {};
+}
+
 /**
  * The header a runner names, in MiB, the most memory it takes one job of in on
  * its poll, which replaces the ceiling its registration or an earlier poll
@@ -392,6 +458,13 @@ export const workerPoolCredentialOutcomeSchema = z.discriminatedUnion(
   ],
 );
 
+/** A credential a poll named that is paused for the runner's owner, and when that pause ends, in whole Unix seconds. */
+export const workerPoolCredentialPauseSchema = z.strictObject({
+  agent: z.enum(workerRunnerCredentialAgents),
+  credential: workerRunCredentialSchema,
+  pausedUntil: runUsageInstantSchema,
+});
+
 /** Whether each credential outcome names an assignment the same answer stops, and no assignment twice. */
 function workerPoolReconciliationOutcomesStopped(answer: {
   readonly stop: readonly string[];
@@ -453,6 +526,20 @@ export const workerPoolReconciliationSchema = z
      * reads it, and absent is the default: no job named an outcome.
      */
     credentialOutcomes: z.array(workerPoolCredentialOutcomeSchema).optional(),
+    /**
+     * Each credential the poll named that is paused for the runner's owner
+     * now, read as this answer is made and so gone from the next once the
+     * pause is, and none it did not name. It is named only to a member's
+     * personal runner whose poll's release reads it, and absent is the
+     * default: no credential it named is paused.
+     */
+    credentialPauses: z
+      .array(workerPoolCredentialPauseSchema)
+      .max(
+        workerRunnerCredentialAgents.length *
+          workerRunnerCredentialsPerAgentMax,
+      )
+      .optional(),
   })
   .refine(workerPoolReconciliationOutcomesStopped);
 
@@ -619,7 +706,13 @@ export type WorkerPoolReconciliation = z.infer<
 export type WorkerPoolCredentialOutcome = z.infer<
   typeof workerPoolCredentialOutcomeSchema
 >;
+export type WorkerPoolCredentialPause = z.infer<
+  typeof workerPoolCredentialPauseSchema
+>;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
+export type WorkerRunnerCredentials = z.infer<
+  typeof workerRunnerCredentialsSchema
+>;
 export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;
 export type WorkerRunnerReleasesPinned = z.infer<
   typeof workerRunnerReleasesPinnedSchema

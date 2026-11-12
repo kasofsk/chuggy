@@ -500,8 +500,10 @@ it.
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
 registered, last polled and last polled as one that could take an execution,
-the runner package and version its newest poll named, and whether that poll's
-release names among its capabilities exactly the agents it takes. Written by the API
+the runner package and version its newest poll named, whether that poll's
+release names among its capabilities exactly the agents it takes, and the
+credentials that poll named, per agent, which a poll naming none clears and
+its claims read. Written by the API
 role, which registers and removes it whole, and by the pool plane, which
 stamps its polls and what they name; the pool plane, the scheduler and the
 boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
@@ -657,6 +659,11 @@ runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call and `ticket_rate_limit_resumable` asks for the
 scheduler, reads it through that, as `agent_account_standing` does for the API.
+`agent_account_named_pause`, which the pool plane and the API may call, answers
+`agent_account_pause`'s columns for the credentials a personal runner named:
+paused only while every one of them is, until the earliest of those ends, a
+name that never reported being free. `agent_account_named_credential_pauses`
+answers the pool plane each of them that is paused, and until when.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived

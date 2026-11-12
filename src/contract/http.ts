@@ -1049,6 +1049,17 @@ export const runUsageInstantSchema = z
   .int()
   .positive()
   .max(runUsageInstantSecsMax);
+/** The name of the agent credential a run spent, as its runner holds it: never the secret. */
+export const workerRunCredentialSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/u);
+
+/** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
+export const workerRunCredentialDefaults = {
+  Claude: "claude",
+  Codex: "codex",
+} as const;
+
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
 /**

@@ -22,7 +22,9 @@
  * is the slot its claim counts. What waits in a project is the personal
  * claim's own predicate in `./personalExecutions.ts`, asked for any of the
  * member's runners, with the room a poll names and the slots its runner holds
- * left out, since neither is a fact of the project. That is a third copy of
+ * left out, since neither is a fact of the project. Its pause is asked per
+ * runner, by the credentials each one's newest poll named, so a job one runner
+ * could take on a free credential is counted waiting. That is a third copy of
  * the predicate, and `test/postgres/workerPoolClaim.test.ts` holds it to the
  * claim's answers as it holds the other two.
  */
@@ -355,21 +357,25 @@ async function personalRunnersWaiting(
         FROM execution_attempt q
         JOIN execution x
           ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
-        CROSS JOIN LATERAL agent_account_pause(l.owner,q.agent) held
         WHERE q.tenant=l.tenant AND q.project=l.project
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
           AND x.owner_fallback IS NOT NULL AND x.owner=l.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND EXISTS(SELECT 1 FROM personal_runner r
+            CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h
+                WHERE r.credentials_named->q.agent IS NULL
+              UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(r.owner,q.agent,
+                ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->q.agent))) h
+                WHERE r.credentials_named->q.agent IS NOT NULL) held
             WHERE r.tenant=l.tenant AND r.owner=l.owner
               AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
               AND worker_pool_agent_offered(q.agent,r.capabilities,r.agents_advertised)
               AND (r.memory_ceiling_mib IS NULL
-                   OR COALESCE(x.memory_mib,${memoryMibDefault}::bigint)<=r.memory_ceiling_mib))
+                   OR COALESCE(x.memory_mib,${memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+              AND (held.paused_until IS NULL OR held.admitted_by_press))
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
-          AND (held.paused_until IS NULL OR held.admitted_by_press)
         LIMIT ${personalRunnerWaitingCountedMax + 1}) w) AS waiting
       FROM personal_runner_project l
       WHERE l.tenant=${key.tenant} AND l.owner=${key.owner}

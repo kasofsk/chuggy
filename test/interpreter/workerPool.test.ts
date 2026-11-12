@@ -125,6 +125,7 @@ const idle: WorkerPoolAssignments = {
   waitingPersonal: () => Promise.resolve(false),
   allowlisted: () => Promise.resolve([]),
   credentialOutcomes: () => Promise.resolve([]),
+  credentialPauses: () => Promise.resolve([]),
   polled: () => Promise.resolve(),
   renew: () => Promise.resolve(true),
   refuse: () => Promise.resolve(false),
