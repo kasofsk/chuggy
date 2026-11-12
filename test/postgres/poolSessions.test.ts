@@ -1781,6 +1781,42 @@ test("a chat host is handed its member's sessions in every project of the tenant
   );
 });
 
+/** The one session `host` is claimed by a poll declaring `idleSecs`, or declaring none. */
+async function hostClaimedDeclaring(
+  host: PoolPlaneIdentity,
+  idleSecs?: number,
+): Promise<string> {
+  const answered = await workerPoolPoll(
+    ports,
+    host,
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 1,
+      ...(idleSecs === undefined ? {} : { idleSecs }),
+    },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`pool session suite: a poll answered ${answered.polled}`);
+  const [claimed, ...more] = answered.answer.sessions;
+  assert.deepEqual(more, []);
+  assert.ok(claimed !== undefined);
+  return claimed.assignment;
+}
+
+/** The idle bound an attempt records, whether it records none, and the idle limit it was launched with. */
+async function idleBoundOf(assignment: string): Promise<readonly unknown[]> {
+  const attempt = await attemptOf(assignment);
+  const bounds = documentOf(documentOf(attempt["launch"])["bounds"]);
+  return [
+    attempt["idle_secs"],
+    attempt["idle_unbounded"],
+    "idleMs" in bounds,
+    bounds["idleMs"],
+  ];
+}
+
 test("a chat host's declared idle bound is recorded on its claim as named, above the scheduler's window too, and launched as its idle limit, one naming none is launched with none and never idle-reaped, and a pool's attempt is reaped at the scheduler's window", async () => {
   const { partition, member, pool } = await routedProject("host-idle");
   const lead = await waiting(partition, "host-idle-lead", "Lead", member);
@@ -1794,44 +1830,20 @@ test("a chat host's declared idle bound is recorded on its claim as named, above
     lead.session,
   );
   const host = await chatHost(partition, member);
-  const declared = async (idleSecs?: number): Promise<string> => {
-    const answered = await workerPoolPoll(
-      ports,
-      host,
-      {
-        held: [],
-        wanted: 0,
-        wantedSessions: 1,
-        ...(idleSecs === undefined ? {} : { idleSecs }),
-      },
-      settings,
-    );
-    if (answered.polled !== "Answered")
-      throw new Error(`pool session suite: a poll answered ${answered.polled}`);
-    const [claimed, ...more] = answered.answer.sessions;
-    assert.deepEqual(more, []);
-    assert.ok(claimed !== undefined);
-    return claimed.assignment;
-  };
   const windowSecs = 300;
-  const short = await declared(600);
-  const long = await declared(7200);
-  const unbounded = await declared();
+  const short = await hostClaimedDeclaring(host, 600);
+  const long = await hostClaimedDeclaring(host, 7200);
+  const unbounded = await hostClaimedDeclaring(host);
   const pooled = (await claimedOne(pool)).assignment;
-  const bound = async (assignment: string): Promise<readonly unknown[]> => {
-    const attempt = await attemptOf(assignment);
-    const bounds = documentOf(documentOf(attempt["launch"])["bounds"]);
-    return [
-      attempt["idle_secs"],
-      attempt["idle_unbounded"],
-      "idleMs" in bounds,
-      bounds["idleMs"],
-    ];
-  };
-  assert.deepEqual(await bound(short), ["600", false, true, 600_000]);
-  assert.deepEqual(await bound(long), ["7200", false, true, 7_200_000]);
-  assert.deepEqual(await bound(unbounded), [null, true, false, undefined]);
-  assert.deepEqual(await bound(pooled), [
+  assert.deepEqual(await idleBoundOf(short), ["600", false, true, 600_000]);
+  assert.deepEqual(await idleBoundOf(long), ["7200", false, true, 7_200_000]);
+  assert.deepEqual(await idleBoundOf(unbounded), [
+    null,
+    true,
+    false,
+    undefined,
+  ]);
+  assert.deepEqual(await idleBoundOf(pooled), [
     null,
     false,
     true,
