@@ -51,7 +51,7 @@ export function workTaskInvocation(launch: {
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
 }): WorkTaskInvocation {
-  const { briefing, authority, worker } = launch.invocation;
+  const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
     profile: {
       profile: launch.profile.profile,
@@ -63,6 +63,7 @@ export function workTaskInvocation(launch: {
       text: briefing.text,
     },
     authority: taskAuthorityGrant(authority),
+    credentialsListed,
     ...(worker === undefined ? {} : { worker }),
     ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
   };
@@ -93,6 +94,9 @@ export function workTask(
     requirementDigest: identity.requirementDigest,
     briefing: invocation.briefing,
     authority: invocation.authority,
+    ...(invocation.credentialsListed === undefined
+      ? {}
+      : { credentialsListed: invocation.credentialsListed }),
     ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
     ...(invocation.targetRef === undefined
       ? {}
