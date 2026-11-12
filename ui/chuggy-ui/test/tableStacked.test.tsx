@@ -2,8 +2,8 @@
  * The table primitive's two answers to a narrow container: a stacked table,
  * whose rows become cards each cell of which carries its column's label and
  * which keeps a table's roles; and a table that stays one, whose scroller is
- * a keyboard stop with a fade on the side it has more on only while it has,
- * and whose focus ring the fade does not cut away.
+ * a keyboard stop with a fade on the side it has more on only while it has
+ * and is not focused, since the fade would cut its focus ring away.
  */
 
 import {
@@ -190,23 +190,34 @@ test("a scroller with more to show is a named keyboard stop that fades the side 
 
 /** Whether jsdom counts a focus as a keyboard's depends on what an earlier case
  * pressed, so the focus is named by an attribute the sheet is read with. */
-test("an overflowing scroller's focus ring is drawn by a frame the fade does not mask", () => {
+test("an overflowing scroller focused by keyboard drops the fade that would cut its ring away", () => {
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
   vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(900);
   const scroller = childrenDrawn();
-  const frame = scroller.parentElement;
-  if (frame === null) throw new Error("the scroller drew no frame");
   const focused = "data-keyboard-focused";
   const rules = sheetRules(
     tableSheet.replaceAll(":focus-visible", `[${focused}]`),
     [],
   );
-  expect(sheetDeclared(rules, frame, "box-shadow")).toBe("");
+  expect(sheetDeclared(rules, scroller, "mask-image")).toContain("to left");
   scroller.setAttribute(focused, "");
-  expect(sheetDeclared(rules, scroller, "mask-image")).not.toBe("");
-  expect(sheetDeclared(rules, frame, "mask-image")).toBe("");
-  expect(sheetDeclared(rules, frame, "box-shadow")).toBe("var(--ring-focus)");
-  expect(sheetDeclared(rules, frame, "min-width")).toBe("0px");
+  expect(sheetDeclared(rules, scroller, "mask-image")).toBe("none");
+});
+
+test("a table that has not opted in is drawn inside nothing but its scroller", () => {
+  const { container } = render(
+    <Table caption="Members">
+      <tbody>
+        <tr>
+          <td>ada</td>
+        </tr>
+      </tbody>
+    </Table>,
+  );
+  expect(container.children).toHaveLength(1);
+  const outermost = container.firstElementChild;
+  expect(outermost?.matches(".tabular-scroll")).toBe(true);
+  expect(outermost?.firstElementChild).toBe(screen.getByRole("table"));
 });
 
 test("an overflowing scroller with no caption is a keyboard stop but no unnamed region", () => {

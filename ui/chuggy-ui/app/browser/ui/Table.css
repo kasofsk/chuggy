@@ -83,18 +83,10 @@
     );
   }
 
-  /* The frame shrinks as its scroller would, so a flex or grid parent still
-     hands the scroller a width narrower than its table. */
-  .tabular-frame {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  /* The mask cuts away the scroller's own ring, which lies outside it, so the
-     frame draws the ring instead. */
-  .tabular-frame:has(> .tabular-scroll:focus-visible) {
-    box-shadow: var(--ring-focus);
-    border-radius: var(--radius-1);
+  /* A mask cuts away the focus ring, which lies outside the scroller, so a
+     scroller focused by keyboard drops its fade and keeps its bar as the cue. */
+  .tabular-scroll:focus-visible {
+    mask-image: none;
   }
 
   /* A stacked table measures the width it is given, which is what chooses
