@@ -1,14 +1,14 @@
 /**
- * Every thread the reader can reach, behind one control in the pane's header —
- * their own, then a divider, then everyone else's; and in the reader's own
- * chat, the threads projects keep of theirs, each a way to its project.
+ * Every thread the reader can reach — their own, then a divider, then
+ * everyone else's; and in the reader's own chat, the threads projects keep of
+ * theirs, each a way to its project. A thread's page offers it behind a
+ * control of its own, and the chat pane as a dialog its menu opens.
  *
  * This is the whole of what the Threads page used to be. The listing is a way
- * to choose which thread the pane holds rather than a screen of its own, and
- * the actions the page carried per thread are offered on the thread being read
+ * to choose which thread is held rather than a screen of its own, and the
+ * actions the page carried per thread are offered on the thread being read
  * instead of on every row: a control inside a menu row is a shape neither a
- * pointer nor a screen reader handles well. Among them is the way to the
- * thread's own page.
+ * pointer nor a screen reader handles well.
  */
 
 import { Link, useRouter } from "@tanstack/react-router";
@@ -26,7 +26,6 @@ import { memberChatRoutes } from "../../core/memberChat.ts";
 import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
-import { useChatPane } from "./chatPaneHeld.ts";
 import {
   threadLabel,
   threadsByStanding,
@@ -39,6 +38,7 @@ import { currentOrigin } from "../ports.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
+import { Dialog } from "../ui/Dialog.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -105,8 +105,34 @@ function chatPaneHistoryRowSpoken(
     : { id: "chat-history-row", args: { ...named, ago } };
 }
 
-/** One thread in the history: its standing, its title and how long ago it
- * last moved, each spoken in its name for a reader who does not see them. */
+/** What a row of the history draws: the thread's standing, its title and how
+ * long ago it last moved. */
+function ChatPaneHistoryFace(props: {
+  readonly thread: ThreadEntryResponse;
+  readonly ago: Copy | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const { thread, ago } = props;
+  return (
+    <>
+      <span className={`flex ${chatPaneStandingTones[thread.state]}`}>
+        <ChatPaneIcon
+          glyph={chatPaneStandingGlyphs[thread.state]}
+          label={text(threadStandingLabel(thread.state))}
+        />
+      </span>
+      <span className="max-w-[32ch] min-w-0 flex-1 truncate">
+        {copyOrDataText(text, threadLabel(thread))}
+      </span>
+      <span className="text-ink-3 ml-auto pl-3 text-xs">
+        {ago === undefined ? "" : text(ago)}
+      </span>
+    </>
+  );
+}
+
+/** One thread in the history menu, each part of its face spoken in its name
+ * for a reader who does not see them. */
 function ChatPaneHistoryRow(props: {
   readonly thread: ThreadEntryResponse;
   readonly nowMs: number;
@@ -120,18 +146,7 @@ function ChatPaneHistoryRow(props: {
       value={thread.session}
       aria-label={text(chatPaneHistoryRowSpoken(thread, ago))}
     >
-      <span className={`flex ${chatPaneStandingTones[thread.state]}`}>
-        <ChatPaneIcon
-          glyph={chatPaneStandingGlyphs[thread.state]}
-          label={text(threadStandingLabel(thread.state))}
-        />
-      </span>
-      <span className="max-w-[32ch] min-w-0 flex-1 truncate">
-        {copyOrDataText(text, threadLabel(thread))}
-      </span>
-      <span className="text-ink-3 ml-auto pl-3 text-xs">
-        {ago === undefined ? "" : text(ago)}
-      </span>
+      <ChatPaneHistoryFace thread={thread} ago={ago} />
     </DropdownMenu.RadioItem>
   );
 }
@@ -276,13 +291,108 @@ export function ChatPaneHistory(props: {
   );
 }
 
+/** One thread in the history dialog: a button that holds it, marked current
+ * where it is the one held. */
+function ChatPaneHistoryChoice(props: {
+  readonly thread: ThreadEntryResponse;
+  readonly nowMs: number;
+  readonly held: boolean;
+  readonly onChoose: () => void;
+}): ReactNode {
+  const text = useCopyText();
+  const thread = props.thread;
+  const ago = chatPaneActivityAgo(thread.lastActivityAt, props.nowMs);
+  return (
+    <li>
+      <button
+        type="button"
+        className={`${menuItemClassName} chat-history-row w-full text-left`}
+        aria-current={props.held ? "true" : undefined}
+        aria-label={text(chatPaneHistoryRowSpoken(thread, ago))}
+        onClick={props.onChoose}
+      >
+        <ChatPaneHistoryFace thread={thread} ago={ago} />
+      </button>
+    </li>
+  );
+}
+
+/** One part of the history dialog, headed under the dialog's title. */
+function ChatPaneHistoryPart(props: {
+  readonly heading: Copy;
+  readonly children: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <section className="grid gap-1">
+      <h3 className="text-ink-3 px-2 text-xs">{text(props.heading)}</h3>
+      <ul className="m-0 grid list-none gap-1 p-0">{props.children}</ul>
+    </section>
+  );
+}
+
+/** The history as the chat pane opens it from its menu: a dialog titled
+ * History, its parts headed under that, where choosing a thread holds it and
+ * closes the dialog. */
+export function ChatPaneHistoryDialog(props: {
+  /** Undefined while the listing is still being read. */
+  readonly threads: readonly ThreadEntryResponse[] | undefined;
+  readonly session: string | undefined;
+  readonly onChoose: (session: string) => void;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}): ReactNode {
+  const text = useCopyText();
+  const rows = chatPaneHistoryRows(props.threads ?? []);
+  const nowMs = useNowMs();
+  const drawn = (thread: ThreadEntryResponse): ReactNode => (
+    <ChatPaneHistoryChoice
+      key={thread.session}
+      thread={thread}
+      nowMs={nowMs}
+      held={thread.session === props.session}
+      onChoose={() => {
+        props.onChoose(thread.session);
+        props.onOpenChange(false);
+      }}
+    />
+  );
+  return (
+    <Dialog
+      title={text(chatPaneHistoryLabel)}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+    >
+      {rows.mine.length === 0 && rows.others.length === 0 ? (
+        <p className="text-ink-3 m-0 text-sm">
+          {text(
+            props.threads === undefined
+              ? { id: "chat-history-loading" }
+              : { id: "chat-history-none" },
+          )}
+        </p>
+      ) : null}
+      {rows.mine.length === 0 ? null : (
+        <ChatPaneHistoryPart heading={{ id: "chat-history-mine" }}>
+          {rows.mine.map(drawn)}
+        </ChatPaneHistoryPart>
+      )}
+      {rows.others.length === 0 ? null : (
+        <ChatPaneHistoryPart heading={{ id: "chat-history-others" }}>
+          {rows.others.map(drawn)}
+        </ChatPaneHistoryPart>
+      )}
+    </Dialog>
+  );
+}
+
 /**
  * What closing does, asked before it is done because it cannot be undone: the
  * server has no door back to open, and a turn still unanswered is abandoned
  * rather than left to finish. A thread that is not the reader's own is closed
  * for its owner too.
  */
-function ChatPaneCloseConfirm(props: {
+export function ChatPaneCloseConfirm(props: {
   readonly mine: boolean;
   readonly busy: boolean;
   readonly onConfirm: () => void;
@@ -308,22 +418,16 @@ function ChatPaneCloseConfirm(props: {
 
 /** What of a thread its actions read, which a listing's entry and the
  * thread's own read both carry. */
-type ChatPaneThreadNamed = Pick<
+export type ChatPaneThreadNamed = Pick<
   ThreadEntryResponse,
   "session" | "title" | "mine" | "state"
 >;
 
-/** Where the actions are drawn: the pane's header, or the bar over the
- * thread's own page, where the title is the page's and its standing is said
- * beside it. */
-export type ChatPaneThreadActionsAt = "Pane" | "Page";
-
+/** The thread's title as its own page's heading, its standing said beside it. */
 function ChatPaneThreadTitle(props: {
   readonly thread: ChatPaneThreadNamed;
-  readonly at: ChatPaneThreadActionsAt;
 }): ReactNode {
   const text = useCopyText();
-  if (props.at === "Pane") return null;
   return (
     <>
       <h1 className="text-ink-1 font-strong min-w-0 truncate text-md">
@@ -368,40 +472,11 @@ function ChatPaneThreadItemFace(props: {
   );
 }
 
-/** The thread's own page, as a real anchor, so a modified press opens it in a
- * tab of its own. */
-function ChatPaneThreadOpenItem(props: {
-  readonly home: ThreadHome;
-  readonly session: string;
-}): ReactNode {
-  const text = useCopyText();
-  const { home, session } = props;
-  const face = (
-    <ChatPaneThreadItemFace glyph="page" label={text({ id: "chat-open" })} />
-  );
-  return (
-    <DropdownMenu.Item
-      className={`${menuItemClassName} text-ink-1 no-underline`}
-      asChild
-    >
-      {home.scope === "Project" ? (
-        <Link to={navRoutes.thread} params={{ ...home.partition, session }}>
-          {face}
-        </Link>
-      ) : (
-        <Link
-          to={memberChatRoutes.thread}
-          params={{ tenant: home.tenant, session }}
-        >
-          {face}
-        </Link>
-      )}
-    </DropdownMenu.Item>
-  );
-}
-
 /** The address of the thread's own page, wherever the thread is kept. */
-function useThreadPageHref(home: ThreadHome, session: string): () => string {
+export function useThreadPageHref(
+  home: ThreadHome,
+  session: string,
+): () => string {
   const router = useRouter();
   return () =>
     (home.scope === "Project"
@@ -417,14 +492,13 @@ function useThreadPageHref(home: ThreadHome, session: string): () => string {
 }
 
 /**
- * What is done to the thread, behind one control beside its title: Open where
- * this is not the thread's own page; Copy link, which stays open to say it
- * copied; and Rename and Close where the reader may change the thread.
+ * What is done to the thread, behind one control beside its title: Copy link,
+ * which stays open to say it copied; and Rename and Close where the reader may
+ * change the thread.
  */
 function ChatPaneThreadMenu(props: {
   readonly home: ThreadHome;
   readonly session: string;
-  readonly at: ChatPaneThreadActionsAt;
   readonly actions: ThreadEntryActions;
   readonly changes: boolean;
   readonly onConfirming: () => void;
@@ -441,9 +515,6 @@ function ChatPaneThreadMenu(props: {
         <ChatPaneThreadMenuTrigger />
         <DropdownMenu.Portal>
           <MenuContent sideOffset={4} align="start">
-            {props.at === "Pane" ? (
-              <ChatPaneThreadOpenItem home={home} session={session} />
-            ) : null}
             {copy === undefined ? null : (
               <DropdownMenu.Item
                 className={menuItemClassName}
@@ -492,49 +563,9 @@ function ChatPaneThreadMenu(props: {
   );
 }
 
-/** The thread's title at the start of the header's row where the viewport
- * divides into columns; elsewhere it is kept for a reader who does not see it,
- * since the pane's header is icons alone. */
-export function ChatPaneTitle(props: {
-  readonly thread: ChatPaneThreadNamed | undefined;
-}): ReactNode {
-  const text = useCopyText();
-  const held = useChatPane();
-  if (props.thread === undefined) return null;
-  const shown = held.twoColumn;
-  return (
-    <h2
-      className={
-        shown
-          ? "text-ink-2 font-strong min-w-0 flex-1 truncate pl-3 text-sm"
-          : "visually-hidden"
-      }
-    >
-      {copyOrDataText(text, threadLabel(props.thread))}
-    </h2>
-  );
-}
-
-/** The menu where the pane holds no thread, so the control stays in place. */
-export function ChatPaneThreadActionsIdle(): ReactNode {
-  const text = useCopyText();
-  return (
-    <DropdownMenu.Root modal={false}>
-      <ChatPaneThreadMenuTrigger />
-      <DropdownMenu.Portal>
-        <MenuContent sideOffset={4} align="start">
-          <p className="text-ink-3 px-2 py-1 text-xs">
-            {text({ id: "chat-actions-none" })}
-          </p>
-        </MenuContent>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  );
-}
-
 /**
- * The thread the pane or its page holds, at the start of the header's one row:
- * its title, and beside it the menu of what is done to it. While a rename is
+ * The thread a page holds, at the start of the bar over it: its title, and
+ * beside it the menu of what is done to it. While a rename is
  * open the editor takes the title's place and the menu stands aside for it;
  * what closing asks and what either was refused for go under the row.
  */
@@ -543,15 +574,12 @@ export function ChatPaneThreadActions(props: {
   readonly thread: ChatPaneThreadNamed;
   /** The reader may change no thread, so Rename and Close are not offered. */
   readonly viewOnly?: boolean;
-  readonly at: ChatPaneThreadActionsAt;
 }): ReactNode {
   const actions = useThreadEntryActions(props.home, props.thread);
   const [confirming, setConfirming] = useState(false);
   return (
     <>
-      <div
-        className={`flex min-w-0 items-center ${props.at === "Pane" ? "" : "flex-1"}`}
-      >
+      <div className="flex min-w-0 flex-1 items-center">
         {actions.renaming ? (
           <ThreadEntryRename
             initial={props.thread.title ?? ""}
@@ -559,11 +587,10 @@ export function ChatPaneThreadActions(props: {
           />
         ) : (
           <>
-            <ChatPaneThreadTitle thread={props.thread} at={props.at} />
+            <ChatPaneThreadTitle thread={props.thread} />
             <ChatPaneThreadMenu
               home={props.home}
               session={props.thread.session}
-              at={props.at}
               actions={actions}
               changes={props.viewOnly !== true}
               onConfirming={() => {
