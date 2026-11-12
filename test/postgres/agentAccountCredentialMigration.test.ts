@@ -12,20 +12,19 @@ import { migration163 } from "../../src/adapters/postgres/schema/migrations/163-
 import { workerRunCredentialDefaults } from "../../src/contract/workerPlane.ts";
 import { migratedBefore, migrationDatabase } from "./migrationHarness.ts";
 
-/** Writes rows past their references, which a case about the kept rows has no use for. */
+/** Writes rows past their references in one transaction, which a case about the kept rows has no use for. */
 async function agentAccountCredentialPlanted(
   subject: pg.Pool,
   statements: readonly string[],
 ): Promise<void> {
-  const planting = await subject.connect();
-  try {
-    await planting.query("BEGIN");
-    await planting.query("SET LOCAL session_replication_role=replica");
-    for (const statement of statements) await planting.query(statement);
-    await planting.query("COMMIT");
-  } finally {
-    planting.release();
-  }
+  await subject.query(
+    [
+      "BEGIN",
+      "SET LOCAL session_replication_role=replica",
+      ...statements,
+      "COMMIT",
+    ].join(";\n"),
+  );
 }
 
 /** What the rule answers of each account's agent, read the same way on either side of the migration. */
