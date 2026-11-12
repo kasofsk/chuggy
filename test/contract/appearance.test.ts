@@ -1,8 +1,8 @@
 /**
  * The theme wire: what a theme document refuses, the WCAG ratio against pairs
  * whose ratio is known, every built-in passing the contrast rule in each scheme
- * it carries, and the console's own look held to the stylesheet it is taken
- * from.
+ * it carries, and the console's own look and its state fills held to the
+ * stylesheet they are taken from.
  */
 
 import assert from "node:assert/strict";
@@ -16,12 +16,16 @@ import {
   builtInThemes,
   contrastRatio,
   themeChoiceSchema,
+  themeColourMix,
   themeContrastFailures,
   themeContrastMarkMin,
   themeContrastPairs,
   themeContrastTextMin,
   themeDocumentSchema,
   themeFixedColours,
+  themeFillColour,
+  themeFillDarkPercent,
+  themeFills,
   themeFixedRoles,
   themeNameCharsMax,
   themePaletteSchemes,
@@ -187,6 +191,17 @@ test("the contrast rule reads every fixed colour and every ground a theme sets",
   ] as const) {
     assert.ok(backgrounds.has(role), role);
   }
+  for (const fill of themeFills) {
+    assert.ok(
+      themeContrastPairs.some(
+        (pair) =>
+          pair.foreground === "ink-inverse" &&
+          pair.background === fill &&
+          pair.ratioMin === themeContrastTextMin,
+      ),
+      fill,
+    );
+  }
 });
 
 test("every built-in carries both schemes and passes the contrast rule in each", () => {
@@ -219,6 +234,50 @@ test("a theme answers every pair it draws too faintly, a fixed tone on its surfa
   assert.ok(named.includes("tone-fail on surface-1"));
   assert.ok(named.includes("syntax-key on surface-1"));
   assert.ok(!named.includes("ink-1 on surface-0"));
+});
+
+test("inverse ink a theme sets is held to every state fill it is drawn on", () => {
+  const light = { ...chuggyLight(), "ink-inverse": "#c0c0c0" };
+  const failures = themeContrastFailures({
+    ...chuggy,
+    palette: { schemes: "Light", light },
+  });
+  const named = failures.map(
+    (failure) => `${failure.foreground} on ${failure.background}`,
+  );
+  assert.ok(named.includes("ink-inverse on fill-pass"));
+  assert.ok(!named.includes("ink-inverse on surface-inverse"));
+  for (const failure of failures) {
+    assert.equal(failure.foreground, "ink-inverse");
+    assert.equal(failure.ratioMin, themeContrastTextMin);
+  }
+});
+
+test("a dark fill is mixed with the theme's own page, so the page decides whether inverse ink reads on it", () => {
+  assert.equal(chuggy.palette.schemes, "Both");
+  const dark = { ...chuggy.palette.dark, "ink-inverse": "#2a2a2a" };
+  assert.equal(
+    themeFillColour("Light", dark, "fill-live"),
+    themeFixedColours.Light["tone-live"],
+  );
+  const failsOnLive = (page: string): boolean =>
+    themeContrastFailures({
+      ...chuggy,
+      palette: { schemes: "Dark", dark: { ...dark, "surface-0": page } },
+    }).some(
+      (failure) =>
+        failure.foreground === "ink-inverse" &&
+        failure.background === "fill-live",
+    );
+  assert.equal(failsOnLive(dark["surface-0"]), true);
+  assert.equal(failsOnLive("#ffffff"), false);
+});
+
+test("colours mix channel by channel in sRGB", () => {
+  assert.equal(themeColourMix("#ffffff", "#000000", 100), "#ffffff");
+  assert.equal(themeColourMix("#ffffff", "#000000", 0), "#000000");
+  assert.equal(themeColourMix("#ff0000", "#0000ff", 50), "#800080");
+  assert.equal(themeColourMix("#640000", "#000000", 78), "#4e0000");
 });
 
 test("a dark palette is held to the dark fixed colours", () => {
@@ -275,5 +334,20 @@ test("the chuggy accent is the inverse surface its primary button is drawn in to
   for (const colours of [chuggy.palette.light, chuggy.palette.dark]) {
     assert.equal(colours.accent, colours["surface-inverse"]);
     assert.equal(colours["ink-on-accent"], colours["ink-inverse"]);
+  }
+});
+
+test("the fills are the console's stylesheet: a tone in light, mixed with the page in dark", () => {
+  assert.ok(
+    tokensSheet.includes(`--fill-dark: ${themeFillDarkPercent}%;`),
+    "fill-dark",
+  );
+  for (const fill of themeFills) {
+    const tone = fill.replace(/^fill-/u, "tone-");
+    const pattern = new RegExp(
+      `--${fill}:\\s*light-dark\\(\\s*var\\(--${tone}\\),\\s*color-mix\\(\\s*in srgb,\\s*var\\(--${tone}\\) var\\(--fill-dark\\),\\s*var\\(--surface-0\\)\\s*\\)\\s*\\)`,
+      "u",
+    );
+    assert.ok(pattern.test(tokensSheet), fill);
   }
 });

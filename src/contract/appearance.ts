@@ -351,16 +351,73 @@ export function contrastRatio(first: string, second: string): number {
 
 type ThemeContrastRole = ThemeRole | ThemeFixedRole;
 
+/** The grounds a filled state label draws inverse ink on, each named as the console token it defines. */
+export const themeFills = [
+  "fill-pass",
+  "fill-live",
+  "fill-evaluation",
+  "fill-finalization",
+  "fill-parked",
+] as const;
+export type ThemeFill = (typeof themeFills)[number];
+
+const themeFillTones: Readonly<Record<ThemeFill, ThemeFixedRole>> = {
+  "fill-pass": "tone-pass",
+  "fill-live": "tone-live",
+  "fill-evaluation": "tone-evaluation",
+  "fill-finalization": "tone-finalization",
+  "fill-parked": "tone-parked",
+};
+
+/** How much of its tone a fill keeps in the dark scheme, the rest being the theme's `surface-0`. */
+export const themeFillDarkPercent = 78;
+
+/** Two colours mixed channel by channel in sRGB, as CSS `color-mix(in srgb, ...)` mixes them. */
+export function themeColourMix(
+  first: string,
+  second: string,
+  firstPercent: number,
+): string {
+  const [one, two] = [first, second].map((colour) =>
+    themeColourSchema.parse(colour),
+  ) as [string, string];
+  const channels = [1, 3, 5].map((start) => {
+    const [left, right] = [one, two].map((colour) =>
+      Number.parseInt(colour.slice(start, start + 2), 16),
+    ) as [number, number];
+    const mixed = (left * firstPercent + right * (100 - firstPercent)) / 100;
+    return Math.round(mixed).toString(16).padStart(2, "0");
+  });
+  return `#${channels.join("")}`;
+}
+
+/** The colour a fill is in one scheme of a theme: its tone in light, the tone mixed with the page in dark. */
+export function themeFillColour(
+  scheme: ThemeScheme,
+  colours: ThemeColours,
+  fill: ThemeFill,
+): string {
+  const tone = themeFixedColours[scheme][themeFillTones[fill]];
+  switch (scheme) {
+    case "Light":
+      return tone;
+    case "Dark":
+      return themeColourMix(tone, colours["surface-0"], themeFillDarkPercent);
+  }
+}
+
+type ThemeContrastGround = ThemeRole | ThemeFill;
+
 /** One colour drawn on one ground, and the least contrast it needs there. */
 export interface ThemeContrastPair {
   readonly foreground: ThemeContrastRole;
-  readonly background: ThemeRole;
+  readonly background: ThemeContrastGround;
   readonly ratioMin: number;
 }
 
 function themeContrastPairsOf(
   foregrounds: readonly ThemeContrastRole[],
-  backgrounds: readonly ThemeRole[],
+  backgrounds: readonly ThemeContrastGround[],
   ratioMin: number,
 ): ThemeContrastPair[] {
   return foregrounds.flatMap((foreground) =>
@@ -373,7 +430,11 @@ const themeSyntax = themeFixedRoles.filter((role) =>
   role.startsWith("syntax-"),
 );
 
-/** Every pair the console draws that a theme can change, which is every pair `themeContrastFailures` reads. */
+/**
+ * The pairs `themeContrastFailures` reads: every pair the console draws that a
+ * theme can change, but the inverse ink on the retired fill and on the
+ * context's slots, which the console's own look draws below the text minimum.
+ */
 export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ...themeContrastPairsOf(
     ["ink-1", "ink-2", "ink-3"],
@@ -382,7 +443,7 @@ export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ),
   ...themeContrastPairsOf(
     ["ink-inverse"],
-    ["surface-inverse"],
+    ["surface-inverse", ...themeFills],
     themeContrastTextMin,
   ),
   ...themeContrastPairsOf(["ink-on-accent"], ["accent"], themeContrastTextMin),
@@ -432,14 +493,16 @@ export function themeContrastFailures(
 ): readonly ThemeContrastFailure[] {
   return themePaletteSchemes(theme.palette).flatMap(([scheme, colours]) => {
     const fixed = themeFixedColours[scheme];
-    const colourOf = (role: ThemeContrastRole): string =>
+    const colourOf = (role: ThemeContrastRole | ThemeContrastGround): string =>
       role in colours
         ? colours[role as ThemeRole]
-        : fixed[role as ThemeFixedRole];
+        : role in themeFillTones
+          ? themeFillColour(scheme, colours, role as ThemeFill)
+          : fixed[role as ThemeFixedRole];
     return themeContrastPairs.flatMap((pair) => {
       const ratio = contrastRatio(
         colourOf(pair.foreground),
-        colours[pair.background],
+        colourOf(pair.background),
       );
       return ratio < pair.ratioMin ? [{ ...pair, scheme, ratio }] : [];
     });
