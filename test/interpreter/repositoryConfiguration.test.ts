@@ -173,6 +173,7 @@ test("every declaration this tree makes reevaluates its reviewers on change and 
   assert.deepEqual(evaluators.map(({ runner }) => runner).sort(), [
     "Agent",
     "Agent",
+    "Approval",
     "Commands",
     "Commands",
   ]);
@@ -202,6 +203,29 @@ test("a ticket of the development catalog naming no finalization lands by a Stac
       },
     },
   );
+});
+
+test("the development catalog's approved plan is its standard plan, then one stage a Developer approves, and standard stays the default", () => {
+  const path = `${repositoryConfigurationRoot}chuggy-development.json`;
+  const found = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [{ path, kind: "File", content: readFileSync(path, "utf8") }],
+    referenced: treeReferenced(),
+  });
+  if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
+  const configuration = found.declarations[0]?.configuration;
+  if (configuration === undefined || configuration.version === 1)
+    assert.fail("the development catalog is a catalog");
+  const { standard, approved } = configuration.plans;
+  assert.deepEqual(approved, [
+    ...(standard ?? []),
+    { name: "approval", evaluators: ["approval"] },
+  ]);
+  const approval = configuration.workloads["approval"];
+  assert.equal(approval?.runner, "Approval");
+  assert.ok(approval !== undefined && !("approvers" in approval));
+  assert.equal(configuration.defaults?.evaluation, "standard");
 });
 
 test("one bad declaration refuses the snapshot without partial output", () => {
