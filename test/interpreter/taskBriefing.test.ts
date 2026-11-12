@@ -1456,7 +1456,7 @@ test("a targeted variant of the development work differs from its base only in a
   );
 });
 
-/** Every workload authority this tree declares, by the file and workload it is in; a workload named by path is read at that path. */
+/** Every workload authority this tree declares, by the file and workload it is in; a workload named by path is read at that path, and an Approval, which a person answers, runs nothing and has none. */
 function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
   const authorities = new Map<string, unknown>();
   const parsed = (path: string): unknown =>
@@ -1467,14 +1467,14 @@ function treeWorkloadAuthorities(): ReadonlyMap<string, unknown> {
     const declared = parsed(path) as {
       readonly configuration: {
         readonly workloads: Readonly<
-          Record<string, string | { authority?: unknown }>
+          Record<string, string | { runner: string; authority?: unknown }>
         >;
       };
     };
     for (const [workload, declaration] of Object.entries(
       declared.configuration.workloads,
     ))
-      if (typeof declaration !== "string")
+      if (typeof declaration !== "string" && declaration.runner !== "Approval")
         authorities.set(`${path} ${workload}`, declaration.authority);
   }
   for (const name of readdirSync(".chug/workloads")) {
