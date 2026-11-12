@@ -425,12 +425,11 @@ const podAnswerBytesMax = Math.floor(
 
 /**
  * A landing weighing the most one landing may, of backslashes as far as it can
- * be: every byte of a JSON text escapes to at most two, and a backslash is one
- * that does. The pod draws a landing whole or not at all, so one it cannot fit
- * in an answer of its own is a landing it can never answer. The answer is a
- * ticket's that answers no stacks, so `stacks` is absent: the pod answers the
- * route's body with its landings cut, and no landing bound leaves room beside
- * one for the heaviest stacks.
+ * be, since every byte of a JSON text escapes to at most two and a backslash is
+ * one that does; the pod draws a landing whole or not at all, so one it cannot
+ * fit in an answer of its own is a landing it can never answer. The answer is a
+ * ticket's that answers no stacks, as no landing bound leaves room beside one
+ * for the heaviest stacks the pod would answer with it.
  */
 test("the heaviest landing read_ticket_landings answers fits one pod tool answer whole beside no stacks, escaped as the pod escapes it", () => {
   const landing = { state: "Held", cycle: 1, held: "", pad: "" };
