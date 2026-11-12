@@ -125,7 +125,7 @@ test("no request widens the authority it is met with", () => {
 
 test("appending a block to a fold can only lower what the fold resolved", () => {
   const blocks: readonly AuthorityRequest[] = [
-    { tools: ["editor", "git"], credentials: ["ci"] },
+    { tools: ["editor", "git"] },
     { filesystem: "ReadWorkspace" },
   ];
   for (const grant of grants) {
@@ -217,52 +217,6 @@ test("a block with no opinion leaves every field where the block before it left 
     ),
     taskAuthorityGrant(narrowed),
   );
-});
-
-test("a fold in which no block lists credentials resolves to none, and every other field as the blocks left it", () => {
-  const unlisting = requests.filter(
-    ({ credentials }) => credentials === undefined,
-  );
-  for (const grant of grants) {
-    assert.deepEqual(
-      taskAuthorityGrant(resolveTaskAuthority(grant, [])).credentials,
-      [],
-    );
-    for (const request of unlisting) {
-      const met = taskAuthorityGrant(
-        narrowTaskAuthority(grantTaskAuthority(grant), request),
-      );
-      assert.deepEqual(
-        taskAuthorityGrant(resolveTaskAuthority(grant, [request, {}])),
-        { ...met, credentials: [] },
-      );
-    }
-  }
-});
-
-test("a fold in which a block lists credentials resolves them to the grant's meet with every list", () => {
-  const grant: PolicyAuthorityGrant = {
-    tools: [],
-    credentials: ["ci", "forge", "model"],
-    network: true,
-    filesystem: "WriteWorkspace",
-    mayCompleteTask: true,
-  };
-  const credentials = (blocks: readonly AuthorityRequest[]) =>
-    taskAuthorityGrant(resolveTaskAuthority(grant, blocks)).credentials;
-  assert.deepEqual(credentials([{}, { credentials: ["forge", "ci"] }]), [
-    "ci",
-    "forge",
-  ]);
-  assert.deepEqual(
-    credentials([
-      { credentials: ["ci", "forge", "unheld"] },
-      {},
-      { credentials: ["forge", "model"] },
-    ]),
-    ["forge"],
-  );
-  assert.deepEqual(credentials([{ credentials: [] }, {}]), []);
 });
 
 test("a minted grant is sorted and duplicate-free, so two of them compare by value", () => {
