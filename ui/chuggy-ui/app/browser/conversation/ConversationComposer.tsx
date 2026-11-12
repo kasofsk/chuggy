@@ -20,32 +20,32 @@
  * removed and picked once more would attach nothing; two picks of one file are
  * two attachments, as two pastes of it are.
  *
- * WHILE A TURN CAN BE STOPPED THE BUTTON IS STOP, and Enter still sends, so a
- * message typed under an answer being written queues behind it. Escape stops
- * nothing: a stop is one press of the one control that says so.
+ * SEND IS ALWAYS THERE, AND WHILE A TURN CAN BE STOPPED STOP STANDS BESIDE
+ * IT. Send stays where it is and takes a message whatever is out, by a click as
+ * by Enter, so a message typed under an answer being written queues behind it.
+ * Escape stops nothing: a stop is one press of the one control that says so.
  *
  * THE BOX HOLDS THE TEXT ALONE, and its controls are a row beneath it: the
- * paperclip at the start and the button at the end.
+ * paperclip at the start, and Stop then Send at the end.
  *
  * WHAT THE PAGE SAYS OF A PRESS IS SAID OVER EVERYTHING ELSE. The composer is
  * held to the foot of its pane, so a line over it takes its room from the
  * column and the box and its controls stay where they are as it comes and goes.
  *
- * A PRESS THE SURFACE SAYS TO IGNORE DOES NOTHING, AND THE BUTTON SAYS SO.
- * The button is asked at each press, so one too close behind a press of Stop
- * neither stops the turn behind nor sends what is in the box, and one too
- * close behind a click that sent does not stop what it sent. For that long it
- * is drawn as a button that takes no press, and it stays one a press can
- * land on, so the pointer and the caret are where they were when it ends.
+ * A PRESS OF STOP THE SURFACE SAYS TO IGNORE DOES NOTHING, AND STOP SAYS SO.
+ * Stop is asked at each press, so one too close behind the last does not stop
+ * the turn behind. For that long it is drawn as a button that takes no press,
+ * and it stays one a press can land on, so the pointer and the caret are where
+ * they were when it ends.
  *
  * A `/` COMMAND IS THE PAGE'S, AND WHAT IT SAYS STANDS OVER THE BOX UNTIL IT
  * IS DISMISSED. The list offers what the page hands as `commands`, a pick is
  * handed up by name, and the page's answer is drawn as a line of this box
  * rather than as a turn: nothing of it was sent, and nothing of it is kept.
  *
- * A POINTER'S PRESS OF A CONTROL LEAVES THE CARET IN THE BOX. The button
- * turns into another or goes inert under the pointer, and focus it had taken
- * would fall to the page, where what a member types next goes nowhere.
+ * A POINTER'S PRESS OF A CONTROL LEAVES THE CARET IN THE BOX. Stop goes
+ * inert under the pointer or goes from under it, and focus it had taken would
+ * fall to the page, where what a member types next goes nowhere.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
@@ -87,9 +87,6 @@ export interface ConversationCommands {
   readonly said: ReactNode;
   readonly onDismiss: () => void;
 }
-
-/** What the composer's one button is at a press. */
-export type ConversationComposerButton = "Stop" | "Send";
 
 export interface ConversationComposerProps {
   /** Whether the door still takes messages, so a closed thread is not a box a
@@ -183,17 +180,15 @@ function ConversationAttachGlyph(): ReactNode {
   );
 }
 
-/** What the surface asks of the composer's button beyond what a page does. */
+/** What the surface asks of the composer's buttons beyond what a page does. */
 interface ConversationComposerSurface {
   readonly busy: boolean;
-  /** Whether a turn the page can stop is the thing moving. */
+  /** Whether a turn the page can stop is the thing moving, and Stop is drawn. */
   readonly stops: boolean;
-  /** Whether a press of the button now is one to do nothing for. */
-  readonly ignores: (button: ConversationComposerButton) => boolean;
-  /** Whether the button is drawn as one whose press does nothing. */
-  readonly rests: boolean;
-  /** Told of a click of Send that was taken. */
-  readonly onSendClick: () => void;
+  /** Whether a press of Stop now is one to do nothing for. */
+  readonly stopIgnores: () => boolean;
+  /** Whether Stop is drawn as one whose press does nothing. */
+  readonly stopRests: boolean;
 }
 
 /** What the surface holds of the images for the message being written. */
@@ -270,41 +265,42 @@ function conversationCaretKept(event: MouseEvent<HTMLButtonElement>): void {
   event.preventDefault();
 }
 
-/** The composer's one button: Stop while a turn can be stopped, and Send. */
-function ConversationComposerPressed(
-  props: ConversationComposerSurface,
-): ReactNode {
+/** Stop, which hands the page the turn that moves, or does nothing where the
+ * surface says to ignore the press. */
+function ConversationComposerStop(props: {
+  readonly ignores: () => boolean;
+  readonly rests: boolean;
+}): ReactNode {
   const text = useCopyText();
-  const pressed =
-    (button: ConversationComposerButton) =>
-    (event: MouseEvent<HTMLButtonElement>): void => {
-      if (props.ignores(button)) event.preventDefault();
-      else if (button === "Send") props.onSendClick();
-    };
-  const rests = props.rests ? true : undefined;
-  if (props.stops)
-    return (
-      <ComposerPrimitive.Cancel
-        className="conversation-send"
-        aria-disabled={rests}
-        onMouseDown={conversationCaretKept}
-        onClick={pressed("Stop")}
-      >
-        <span className="conversation-send-mark">
-          <ConversationStopGlyph />
-        </span>
-        <span className="visually-hidden">
-          {text({ id: "conversation-stop" })}
-        </span>
-      </ComposerPrimitive.Cancel>
-    );
+  return (
+    <ComposerPrimitive.Cancel
+      className="conversation-stop"
+      aria-disabled={props.rests ? true : undefined}
+      onMouseDown={conversationCaretKept}
+      onClick={(event) => {
+        if (props.ignores()) event.preventDefault();
+      }}
+    >
+      <span className="conversation-stop-mark">
+        <ConversationStopGlyph />
+      </span>
+      <span className="visually-hidden">
+        {text({ id: "conversation-stop" })}
+      </span>
+    </ComposerPrimitive.Cancel>
+  );
+}
+
+/** Send, at the end of the row whatever is out. */
+function ConversationComposerSend(props: {
+  readonly busy: boolean;
+}): ReactNode {
+  const text = useCopyText();
   return (
     <ComposerPrimitive.Send
       className="conversation-send"
       aria-busy={props.busy}
-      aria-disabled={rests}
       onMouseDown={conversationCaretKept}
-      onClick={pressed("Send")}
     >
       <span className="conversation-send-mark">
         <ConversationSendGlyph />
@@ -488,8 +484,8 @@ function conversationComposerTaken(
   };
 }
 
-/** The row under the box: the paperclip where the box takes images, and the
- * button. */
+/** The row under the box: the paperclip where the box takes images, Stop
+ * while a turn can be stopped, and Send. */
 function ConversationComposerControls(
   props: ConversationComposerSurface & {
     readonly attaches?: ConversationAttaches;
@@ -505,13 +501,13 @@ function ConversationComposerControls(
           onPick={props.onPick}
         />
       )}
-      <ConversationComposerPressed
-        busy={props.busy}
-        stops={props.stops}
-        ignores={props.ignores}
-        rests={props.rests}
-        onSendClick={props.onSendClick}
-      />
+      {props.stops ? (
+        <ConversationComposerStop
+          ignores={props.stopIgnores}
+          rests={props.stopRests}
+        />
+      ) : null}
+      <ConversationComposerSend busy={props.busy} />
     </div>
   );
 }

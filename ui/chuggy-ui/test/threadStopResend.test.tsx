@@ -195,7 +195,7 @@ describe("a turn stopped and a message sent after it, with the page open through
       const sent = columnAt(resend, "the second is queued");
       expect(stageColumn(stage.container), "at the press").toStrictEqual(sent);
       expect(stageAlarms(stage.container)).toStrictEqual(["engine"]);
-      expect(stageButton()).toBe("Stop");
+      expect(stageButton()).toBe("Stop+Send");
 
       const [second] = stage.sends;
       const turn = second?.turn ?? "";
