@@ -397,6 +397,11 @@ const workerPlaneRequests: Readonly<
       },
       { ...runTotalsBody, usage: { five_hour: usageReading } },
       { ...runTotalsBody, usage: { seven_day: usageReading } },
+      {
+        ...runTotalsBody,
+        usage: { five_hour: usageReading },
+        credential: "work",
+      },
     ],
   },
   runContext: {
@@ -437,6 +442,7 @@ const workerPlaneRequests: Readonly<
         limit: { window: "five_hour", resetsAt: usageReading.resetsAt },
       },
       { evidence: "RunRateLimited", limit: {} },
+      { evidence: "RunRateLimited", limit: { credential: "work" } },
     ],
   },
   credential: {
