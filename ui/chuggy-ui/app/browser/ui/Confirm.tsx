@@ -1,6 +1,7 @@
 /**
- * An end that cannot be undone, asked in place before it is done: one line
- * saying what it ends, then Cancel and the danger button that does it. Never
+ * An end to one row, asked in place before it is done: one line
+ * saying what it ends, then Cancel and the danger button that does it. An
+ * action that cannot be taken back is asked in `ConfirmDialog` instead. Never
  * the browser's own dialog, which halts the page, and anything driving it,
  * until it is answered. Busy is the end already sent: the danger button cannot
  * be pressed again, and there is nothing left for Cancel to take back. An end
@@ -13,7 +14,8 @@ import type { ReactNode } from "react";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "./Button.tsx";
 
-export function Confirm(props: {
+/** An end to one row that can be put back. */
+export interface ConfirmProps {
   /** What the group is named for a reader who does not see it. */
   readonly question: string;
   readonly confirm: string;
@@ -23,7 +25,9 @@ export function Confirm(props: {
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
   readonly children: ReactNode;
-}): ReactNode {
+}
+
+export function Confirm(props: ConfirmProps): ReactNode {
   const text = useCopyText();
   return (
     <div

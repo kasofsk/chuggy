@@ -161,16 +161,20 @@ test("one press of Revoke sends nothing and asks what it ends", async () => {
   expect(header.contains(group)).toBe(false);
 });
 
-test("Cancel sends nothing and gives the actions back as they were", async () => {
+test("Cancel sends nothing, hands the focus back to the menu's trigger, and gives the actions back as they were", async () => {
   const { api, header } = await mounted();
   const group = await revokePressed();
 
   await turned(() => {
     within(group).getByRole("button", { name: "Cancel" }).click();
   });
+  await turned();
 
   expect(asked()).toBeNull();
   expect(api.submissions()).toBe(0);
+  expect(document.activeElement).toBe(
+    within(header).getByRole("button", { name: "More actions" }),
+  );
   expect((await revokeItem()).hasAttribute("data-disabled")).toBe(false);
   expect(
     within(header)
@@ -210,17 +214,26 @@ test("every other action still sends on one press", async () => {
   expect(asked()).toBeNull();
 });
 
-test("an ask left for another button closes, and that button sends its own action alone", async () => {
+test("an open ask holds the focus from the header's other buttons, and once Cancel closes it another button sends its own action alone", async () => {
   const { api, header } = await mounted();
-  await revokePressed();
+  const group = await revokePressed();
 
-  const resume = within(header).getByRole("button", { name: "Resume" });
+  expect(within(header).queryByRole("button", { name: "Resume" })).toBeNull();
+  const resume = within(header).getByRole("button", {
+    name: "Resume",
+    hidden: true,
+  });
   await turned(() => {
     resume.focus();
   });
+  expect(asked()).toBe(group);
+  expect(group.contains(document.activeElement)).toBe(true);
+  await turned(() => {
+    within(group).getByRole("button", { name: "Cancel" }).click();
+  });
   expect(asked()).toBeNull();
   await turned(() => {
-    resume.click();
+    within(header).getByRole("button", { name: "Resume" }).click();
   });
 
   expect(api.submissions()).toBe(1);

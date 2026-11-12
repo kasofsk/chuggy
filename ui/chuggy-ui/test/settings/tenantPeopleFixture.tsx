@@ -242,7 +242,7 @@ export function linksReads(drawn: DrawnStrict): number {
 /** One person's row, in either table, found by what it draws them as. */
 export function personRow(name: string): HTMLElement {
   const row = screen
-    .getAllByRole("rowheader")
+    .getAllByRole("rowheader", { hidden: true })
     .find((header) => within(header).queryByText(name) !== null)
     ?.closest("tr");
   if (row === null || row === undefined)
@@ -267,7 +267,7 @@ export function namedIn(table: string): readonly string[] {
 /** The chips a row draws: what its person holds in the workspace. */
 export function heldIn(row: HTMLElement): readonly string[] {
   return within(row)
-    .queryAllByRole("listitem")
+    .queryAllByRole("listitem", { hidden: true })
     .map((chip) => chip.textContent);
 }
 

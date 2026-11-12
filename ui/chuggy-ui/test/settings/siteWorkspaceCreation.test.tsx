@@ -222,7 +222,9 @@ test.each([[201], [200]])(
         status,
       ),
     );
-    expect(screen.getByRole("heading", { name: "4 workspaces" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "4 workspaces", hidden: true }),
+    ).toBeTruthy();
     const read = workspaceListReads(drawn);
     await press("Create");
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -255,7 +257,7 @@ test("a creation's line stands until the dialog is opened again, which starts as
 
 test("a creation whose reread fails still leaves its line, over the list it held", async () => {
   await filled(listedAfterCreation(() => answer({}, 500)));
-  expect(screen.getByRole("table")).toBeTruthy();
+  expect(screen.getByRole("table", { hidden: true })).toBeTruthy();
   await press("Create");
   expect(screen.getByRole("status").textContent).toBe(createdLine);
   expect(screen.getByRole("table")).toBeTruthy();
@@ -420,7 +422,7 @@ test("a creation unanswered, no field, box or action takes a press and nothing c
     fireEvent.click(create());
     pressedOutside();
     fireEvent.keyDown(shown, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: opener }));
+    fireEvent.click(screen.getByRole("button", { name: opener, hidden: true }));
   });
   await settled();
   expect(dialog()).toBe(shown);
