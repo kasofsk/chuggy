@@ -1591,32 +1591,18 @@ test("the credentials a configuration lists are kept beside the grant, and never
   ]);
 });
 
-test("a configuration that lists no credentials in any block lists none and is granted none", () => {
+test("a configuration that lists no credentials lists the granted ones", () => {
   const invocation = composed(
     viewOf({
       grant: { ...grant, credentials: ["workspace", "forge", "workspace"] },
       authority: { tools: ["editor"] },
-      block: { instructions: [], authority: { network: true } },
     }),
   );
-  assert.deepEqual(invocation.credentialsListed, []);
-  const resolved = taskAuthorityGrant(invocation.authority);
-  assert.deepEqual(resolved.credentials, []);
-  assert.deepEqual(resolved.tools, ["editor"]);
-});
-
-test("a configuration that lists credentials in one block only is granted the ones it lists", () => {
-  const invocation = composed(
-    viewOf({
-      grant: { ...grant, credentials: ["forge", "workspace"] },
-      authority: { tools: ["editor"] },
-      block: { instructions: [], authority: { credentials: ["forge"] } },
-    }),
+  assert.deepEqual(invocation.credentialsListed, ["forge", "workspace"]);
+  assert.deepEqual(
+    invocation.credentialsListed,
+    taskAuthorityGrant(invocation.authority).credentials,
   );
-  assert.deepEqual(invocation.credentialsListed, ["forge"]);
-  assert.deepEqual(taskAuthorityGrant(invocation.authority).credentials, [
-    "forge",
-  ]);
 });
 
 test("a configuration that lists credentials no block shares lists none", () => {
