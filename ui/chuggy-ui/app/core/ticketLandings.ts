@@ -35,7 +35,9 @@ import {
   changeProposalMergeReasonLabel,
   changeProposalMergeWaitLabel,
   changeProposalStatusLabel,
+  evaluationUnstackedReasonLabel,
   finalizationFailureKindLabel,
+  finalizationRecheckReasonLabel,
   finalizationUnavailableKindLabel,
   ticketLandingStateLabel,
 } from "./codeLabels.ts";
@@ -43,7 +45,7 @@ import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { agoText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
 import { httpsUrl } from "./httpsUrl.ts";
-import { commitLabel } from "./labels.ts";
+import { branchName, commitLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { TicketDeliveryLink } from "./ticketDelivery.ts";
 import { ticketLandingTone } from "./tones.ts";
@@ -86,6 +88,15 @@ export interface TicketLandingProposal {
   readonly heads: TicketLandingHeads | undefined;
 }
 
+/**
+ * Why a landing's newest attempt was sent back to re-check, and the branch
+ * of the base it was checked against where it names one.
+ */
+export interface TicketLandingRecheck {
+  readonly reason: string;
+  readonly base: string | undefined;
+}
+
 /** What a landing's detail holds beyond its row. */
 export interface TicketLandingDetail {
   readonly targetRef: string | undefined;
@@ -96,6 +107,7 @@ export interface TicketLandingDetail {
   readonly conflicts: readonly string[];
   readonly conflictsCut: boolean;
   readonly proposal: TicketLandingProposal | undefined;
+  readonly recheck: TicketLandingRecheck | undefined;
   /** When the forge was last asked about a merge that waits on it. */
   readonly checkedAt: string | undefined;
 }
@@ -266,6 +278,43 @@ function ticketLandingHoldOf(
   };
 }
 
+function ticketLandingRecheckOf(
+  read: TicketLandingRead,
+  text: CopyText,
+): TicketLandingRecheck | undefined {
+  const recheck = read.attempt?.recheck;
+  return recheck === undefined
+    ? undefined
+    : {
+        reason: text(finalizationRecheckReasonLabel(recheck.reason)),
+        base:
+          recheck.baseRef === undefined
+            ? undefined
+            : branchName(recheck.baseRef),
+      };
+}
+
+/**
+ * Why a landing failed: a re-check by the reason it was sent back for where
+ * the attempt recorded one, and otherwise by its kind alone.
+ */
+function ticketLandingFailureOf(
+  read: TicketLandingRead,
+  text: CopyText,
+): string | undefined {
+  const attempt = read.attempt;
+  if (attempt?.failureKind === undefined) return undefined;
+  return attempt.failureKind === "RecheckRequired" &&
+    attempt.recheck !== undefined
+    ? text({
+        id: "ticket-landing-recheck-required",
+        args: {
+          reason: finalizationRecheckReasonLabel(attempt.recheck.reason),
+        },
+      })
+    : text(finalizationFailureKindLabel(attempt.failureKind));
+}
+
 function ticketLandingDetail(
   read: TicketLandingRead,
   text: CopyText,
@@ -284,6 +333,7 @@ function ticketLandingDetail(
     conflicts: read.conflict?.paths ?? [],
     conflictsCut: read.conflict?.truncated ?? false,
     proposal: ticketLandingProposal(read, text),
+    recheck: ticketLandingRecheckOf(read, text),
     checkedAt: read.state === "AwaitingMerge" ? read.wait.checkedAt : undefined,
   };
 }
@@ -294,7 +344,6 @@ export function ticketLandingOf(
   read: TicketLandingRead,
   text: CopyText,
 ): TicketLanding {
-  const failureKind = read.attempt?.failureKind;
   return {
     key: `${String(read.cycle)}/${String(read.generation)}`,
     cycle: read.cycle,
@@ -302,10 +351,7 @@ export function ticketLandingOf(
     word: text(ticketLandingStateLabel(read.state)),
     summary: text(ticketLandingSummaryLabel(read.state)),
     tone: ticketLandingTone(read.state),
-    failure:
-      failureKind === undefined
-        ? undefined
-        : text(finalizationFailureKindLabel(failureKind)),
+    failure: ticketLandingFailureOf(read, text),
     conflictCount: read.conflict?.paths.length ?? 0,
     hold: ticketLandingHoldOf(read, text),
     wait:
@@ -334,6 +380,70 @@ export function ticketLandingsRead(
         value: state.value.landings.map((read) => ticketLandingOf(read, text)),
       }
     : state;
+}
+
+type TicketLandingStackRead = NonNullable<
+  TicketLandingsResponse["stacks"]
+>["cycles"][number];
+
+/** A ticket beneath a stack, and the commit of its own the stack lands. */
+export interface TicketLandingStackBeneath {
+  readonly ticket: number;
+  readonly commit: Label;
+}
+
+/**
+ * What one work cycle's evaluation was prepared over: the tickets beneath it,
+ * bottom first, and the reference and tip they were stacked on; or why it was
+ * evaluated without them.
+ */
+export type TicketLandingStack =
+  | {
+      readonly prepared: "Stacked";
+      readonly beneath: readonly TicketLandingStackBeneath[];
+      readonly reference: string;
+      readonly tip: Label;
+    }
+  | { readonly prepared: "Unstacked"; readonly reason: string };
+
+/** Each work cycle's stack the read answers, by its cycle. */
+export type TicketLandingStacks = ReadonlyMap<number, TicketLandingStack>;
+
+function ticketLandingStackOf(
+  read: TicketLandingStackRead,
+  text: CopyText,
+): TicketLandingStack {
+  return read.prepared === "Stacked"
+    ? {
+        prepared: "Stacked",
+        beneath: read.beneath.map((member) => ({
+          ticket: member.ticket,
+          commit: commitLabel(member.commit),
+        })),
+        reference: read.reference,
+        tip: commitLabel(read.tip),
+      }
+    : {
+        prepared: "Unstacked",
+        reason: text(evaluationUnstackedReasonLabel(read.reason)),
+      };
+}
+
+/**
+ * The stacks of the read's answer by cycle, none while it has never answered
+ * or where it answers none, which a ticket that is not Stacked never does.
+ */
+export function ticketLandingStacksRead(
+  state: PanelState<TicketLandingsResponse>,
+  text: CopyText,
+): TicketLandingStacks {
+  const cycles = state.state === "Ready" ? state.value.stacks?.cycles : [];
+  return new Map(
+    (cycles ?? []).map((read) => [
+      read.cycle,
+      ticketLandingStackOf(read, text),
+    ]),
+  );
 }
 
 /** The landings to draw, which is none while the read has never answered. */

@@ -22,7 +22,9 @@ import {
   changeProposalMergeWaits,
   changeProposalMerges,
   escalationKinds,
+  evaluationUnstackedReasons,
   finalizationFailureKinds,
+  finalizationRecheckReasons,
   finalizationUnavailableKinds,
   gitEvidences,
   leadAbsencesUntimed,
@@ -51,7 +53,9 @@ import {
   escalationEvidenceLine,
   escalationKindLabel,
   escalationStep,
+  evaluationUnstackedReasonLabel,
   finalizationFailureKindLabel,
+  finalizationRecheckReasonLabel,
   finalizationUnavailableKindLabel,
   gitEvidenceLabel,
   finalizationKindEffect,
@@ -123,6 +127,12 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
     ),
     ...finalizationFailureKinds.map((each) =>
       copyTextEn(finalizationFailureKindLabel(each)),
+    ),
+    ...finalizationRecheckReasons.map((each) =>
+      copyTextEn(finalizationRecheckReasonLabel(each)),
+    ),
+    ...evaluationUnstackedReasons.map((each) =>
+      copyTextEn(evaluationUnstackedReasonLabel(each)),
     ),
     ...changeProposalCreations.map((each) =>
       copyTextEn(changeProposalCreationLabel(each)),
@@ -883,6 +893,16 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
   [
     "landing failures",
     finalizationFailureKinds.map(finalizationFailureKindLabel),
+    true,
+  ],
+  [
+    "re-check reasons",
+    finalizationRecheckReasons.map(finalizationRecheckReasonLabel),
+    true,
+  ],
+  [
+    "unstacked reasons",
+    evaluationUnstackedReasons.map(evaluationUnstackedReasonLabel),
     true,
   ],
   [

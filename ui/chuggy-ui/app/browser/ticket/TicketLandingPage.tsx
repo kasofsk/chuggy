@@ -27,7 +27,7 @@ import { Pill } from "../ui/Pill.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useTicketPageHeld } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
-import { LandingBlock } from "./TicketLandings.tsx";
+import { LandingBlock, LandingRecheckField } from "./TicketLandings.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { useTicketRuns } from "./TicketRuns.tsx";
 import { TicketRunsFrame } from "./TicketRunPage.tsx";
@@ -116,6 +116,7 @@ function TicketLandingFields(props: {
       <Field name={text({ id: "ticket-landing-attempts" })}>
         {landing.detail.attempts}
       </Field>
+      <LandingRecheckField recheck={landing.detail.recheck} />
     </Fields>
   );
 }

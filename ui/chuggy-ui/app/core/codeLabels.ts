@@ -26,7 +26,9 @@ import {
   type changeProposalMergeWaits,
   type changeProposalMerges,
   type changeProposalStatuses,
+  type evaluationUnstackedReasons,
   type finalizationFailureKinds,
+  type finalizationRecheckReasons,
   type BlockedReason,
   type BriefFinalizationKind,
   type BriefGitMergeMode,
@@ -257,6 +259,34 @@ export function finalizationFailureKindLabel(
       return { id: "codes-landing-failure-queue-checks" };
     case "RecheckRequired":
       return { id: "codes-landing-failure-recheck" };
+  }
+}
+
+/** Why one finalization attempt was sent back to re-check. */
+export function finalizationRecheckReasonLabel(
+  reason: (typeof finalizationRecheckReasons)[number],
+): Copy {
+  switch (reason) {
+    case "TargetMoved":
+      return { id: "codes-recheck-target-moved" };
+    case "StackTreeDiffers":
+      return { id: "codes-recheck-stack-tree-differs" };
+    case "MergedTreeDiffers":
+      return { id: "codes-recheck-merged-tree-differs" };
+  }
+}
+
+/** Why a work cycle was evaluated unstacked. */
+export function evaluationUnstackedReasonLabel(
+  reason: (typeof evaluationUnstackedReasons)[number],
+): Copy {
+  switch (reason) {
+    case "Unchosen":
+      return { id: "codes-unstacked-unchosen" };
+    case "Conflicted":
+      return { id: "codes-unstacked-conflicted" };
+    case "Unpublished":
+      return { id: "codes-unstacked-unpublished" };
   }
 }
 
