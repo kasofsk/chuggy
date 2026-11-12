@@ -212,20 +212,6 @@ seal
 check "a failed build leaves \`render\` unrun" 1 "$RC" "render not run, because a script before it failed"
 refute "so nothing it would print is shown" "drew-it"
 
-# --- The heap each script is given -----------------------------------------
-
-fixture
-console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
-	"typecheck": "true", "lint": "echo \"heap: $NODE_OPTIONS\"; exit 1",
-	"test": "true", "build": "true" } }'
-git -C "$R" add -A
-set +e
-(cd "$R" && NODE_OPTIONS=--no-deprecation "$SUT") >"$OUT" 2>&1
-RC=$?
-set -e
-check "a script runs with the heap a roomy machine gives" 1 "$RC" "--max-old-space-size="
-check "beside the caller's own options" 1 "$RC" "heap: --no-deprecation --max-old-space-size="
-
 # --- A finding ---------------------------------------------------------------
 
 fixture

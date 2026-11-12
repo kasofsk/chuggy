@@ -48,11 +48,6 @@
 # the console's own toolchain will ask a moment later. The walk up the
 # ancestors is the resolver's own, and is bounded.
 #
-# EACH SCRIPT RUNS WITH THE HEAP V8 GIVES A ROOMY MACHINE, kept beside any
-# `NODE_OPTIONS` the caller set, as `check-source.sh` gives its linter: in a
-# container V8 sizes the heap to a share of the container's, and a console's
-# typed lint outgrows that share.
-#
 # EACH SCRIPT THAT RUNS SAYS HOW LONG IT TOOK, in whole seconds, passed or
 # failed, so the time the gate costs can be laid at the script that spent it.
 #
@@ -229,8 +224,7 @@ for manifest in "$@"; do
 		fi
 		started="$(date +%s)"
 		status=0
-		(cd "$dir" && NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096" \
-			npm run --silent "$script") >"$work/out" 2>&1 || status=$?
+		(cd "$dir" && npm run --silent "$script") >"$work/out" 2>&1 || status=$?
 		if [ "$status" -eq 0 ]; then
 			outcome=ok
 		elif [ "$status" -eq 2 ] && [ "$script" = "$optional_last" ]; then
