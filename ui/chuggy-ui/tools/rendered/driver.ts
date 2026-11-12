@@ -30,7 +30,7 @@ export const renderedDist = join(
 );
 
 /** The widths a screen is held at: a phone, a tablet, and the desk the
- * vitest suites read at, `viewportDeskEm` in `test/viewportSizes.ts`. */
+ * vitest suites read at, `viewportDeskEm` in `ui/chuggy-ui/test/viewportSizes.ts`. */
 export const renderedViewports = {
   phone: { width: 360, height: 740 },
   tablet: { width: 768, height: 1024 },
