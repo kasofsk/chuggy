@@ -1,10 +1,12 @@
 /* CenteredPage: one column centred in the room it is given, falling back to
    the top where the column is taller than the room, inside the page gutter or
-   the screen's safe area, whichever is wider. The column is its own container,
-   so the actions stack on the column's width rather than the viewport's. */
+   the screen's safe area, whichever is wider. The page is the container rather
+   than the column: the column is capped at the measure, which is narrower than
+   the stacking condition, so only the room the page is given can ever be wide. */
 
 @layer ui {
   .centered-page {
+    container-type: inline-size;
     box-sizing: border-box;
     display: grid;
     justify-items: center;
@@ -21,7 +23,6 @@
   }
 
   .centered-page-column {
-    container-type: inline-size;
     display: grid;
     gap: var(--space-4);
     width: 100%;

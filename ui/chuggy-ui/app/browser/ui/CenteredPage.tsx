@@ -5,7 +5,7 @@
  * `landmark` draws the page as the document's `main`; a page drawn inside a
  * region that already is one passes `false` and is a plain block. The actions
  * are slots, and `primary` comes first in the document, so where a narrow
- * column stacks them it is the one on top.
+ * page stacks them it is the one on top.
  */
 
 import type { ReactNode } from "react";

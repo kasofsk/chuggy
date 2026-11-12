@@ -1,6 +1,6 @@
 /**
  * The centred page: one level-one title, a `main` only where it is asked for
- * one, and actions that stack primary first on a narrow column.
+ * one, and actions that stack primary first where the page is narrow.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -75,7 +75,7 @@ test("the primary action is first in the document, before the secondary", () => 
   ]);
 });
 
-test("a narrow column stacks the actions full-width, where a wide one rows them", () => {
+test("a narrow page stacks the actions full-width, measured on the page rather than the measure-capped column", () => {
   centeredPageDrawn(true);
   const wide = sheetRules(centeredPageSheet, []);
   const narrow = sheetRules(centeredPageSheet, [sheetNarrowCondition]);
@@ -88,11 +88,15 @@ test("a narrow column stacks the actions full-width, where a wide one rows them"
     expect(sheetDeclared(wide, button, "width")).toBe("");
     expect(sheetDeclared(narrow, button, "width")).toBe("100%");
   }
+  const page = document.querySelector(".centered-page");
   const column = document.querySelector(".centered-page-column");
+  expect(page).not.toBeNull();
   expect(column).not.toBeNull();
-  if (column === null) return;
-  expect(sheetDeclared(wide, column, "container-type")).toBe("inline-size");
+  if (page === null || column === null) return;
   expect(sheetDeclared(wide, column, "max-width")).toBe("var(--measure)");
+  expect(sheetDeclared(wide, column, "container-type")).toBe("");
+  expect(sheetDeclared(wide, page, "container-type")).toBe("inline-size");
+  expect(sheetDeclared(wide, page, "max-width")).toBe("");
 });
 
 test("a page with no actions draws no actions row", () => {
