@@ -1,0 +1,67 @@
+/* The ask a runner's token is minted from and the steps it is handed over
+   in. Each is its own container, so in a narrow column every press, box, link
+   and value a finger opens in them is given a finger's height. */
+
+@layer page {
+  .runner-mint {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 40em) {
+    .runner-mint :is(.btn, .copy-button) {
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+
+    .runner-mint .input-box {
+      min-height: var(--height-touch);
+    }
+
+    /* A box is a finger's height itself, its square still 1em and drawn
+       round in the middle of it, where the focus ring is drawn too. */
+    .runner-mint .checkbox {
+      width: var(--height-touch);
+      height: var(--height-touch);
+      background: transparent;
+      border: 0;
+    }
+
+    .runner-mint .checkbox::before {
+      content: "";
+      position: absolute;
+      inset: calc((var(--height-touch) - 1em) / 2);
+      background: var(--surface-1);
+      border: var(--hairline) solid var(--edge-control);
+      border-radius: var(--radius-2);
+    }
+
+    .runner-mint .checkbox > * {
+      position: relative;
+    }
+
+    .runner-mint .checkbox[data-state="checked"]::before {
+      background: var(--surface-inverse);
+      border-color: var(--surface-inverse);
+    }
+
+    .runner-mint .checkbox:is(:disabled, [aria-disabled="true"])::before {
+      background: transparent;
+      border-color: var(--edge);
+    }
+
+    .runner-mint .checkbox:focus-visible {
+      box-shadow: none;
+    }
+
+    .runner-mint .checkbox:focus-visible::before {
+      box-shadow: var(--ring-focus);
+    }
+
+    .runner-mint :is(a[href], [tabindex="0"]) {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+  }
+}

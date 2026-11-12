@@ -17,9 +17,15 @@
 
 import type { z } from "zod";
 
-import { accessProjectPeopleSchema } from "../../../../src/contract/accessPlane.ts";
 import {
+  accessProjectPeopleSchema,
+  accessSiteAbilitiesSchema,
+} from "../../../../src/contract/accessPlane.ts";
+import {
+  agentAccountsResponseSchema,
   chatAbilitiesResponseSchema,
+  chatHostResponseSchema,
+  hostedRunsResponseSchema,
   executionPlacementResponseSchema,
   inboxResponseSchema,
   landingQueuesResponseSchema,
@@ -29,7 +35,12 @@ import {
   projectRepositoriesResponseSchema,
   projectInventoryResponseSchema,
   projectResponseSchema,
+  personalRunnerPermitResponseSchema,
+  personalRunnerResponseSchema,
   sessionPlacementResponseSchema,
+  threadsResponseSchema,
+  workerPoolsResponseSchema,
+  workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
 
 export const stubApiTenant = "tenant-rendered";
@@ -81,6 +92,80 @@ const ticket = {
   changedAt: "2026-11-02T00:00:00Z",
   revokedDependencies: [],
   openDependencies: [],
+};
+
+/** The project's runners: one live and current, one behind the version
+ * chuggy pins, and one that has never polled. */
+const workerPools = {
+  truncated: false,
+  pools: [
+    {
+      pool: "build-linux",
+      capabilities: ["Platform:Linux:Amd64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-11-02T00:00:00Z",
+      live: true,
+      runner: { package: "chuggy-linux", version: "0.10.0", pinned: "0.10.0" },
+    },
+    {
+      pool: "studio-mac",
+      capabilities: ["Platform:Darwin:Arm64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-10-20T00:00:00Z",
+      live: false,
+      runner: { package: "chuggy-darwin", version: "0.9.0", pinned: "0.10.0" },
+    },
+    {
+      pool: "spare",
+      capabilities: [],
+      registeredAt: "2026-10-01T00:00:00Z",
+      live: false,
+    },
+  ],
+};
+
+const tenantPath = `/api/v1/tenants/${stubApiTenant}`;
+
+/** The member's own runners: one live, running the project's ticket, and one
+ * behind the version chuggy pins that has never polled. */
+const personalRunner = {
+  runners: [
+    {
+      id: "chuggy-personal-3f2a9c1e-0000-4000-8000-000000000000",
+      capabilities: ["Platform:Linux:Amd64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-11-02T00:00:00Z",
+      live: true,
+      executionsLive: true,
+      runner: { package: "chuggy-linux", version: "0.10.0", pinned: "0.10.0" },
+      held: [
+        {
+          project: stubApiProject,
+          ticket: 1,
+          identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+        },
+      ],
+      heldTruncated: false,
+    },
+    {
+      id: "chuggy-personal-a81c04d2-0000-4000-8000-000000000000",
+      capabilities: ["Platform:Darwin:Arm64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      live: false,
+      executionsLive: false,
+      runner: { package: "chuggy-darwin", version: "0.9.0", pinned: "0.10.0" },
+      held: [],
+      heldTruncated: false,
+    },
+  ],
+  projects: [
+    {
+      project: stubApiProject,
+      priority: "Normal",
+      waiting: 0,
+      waitingTruncated: false,
+    },
+  ],
 };
 
 /** The reads every case is answered, a route to a row. */
@@ -153,6 +238,56 @@ export const stubApiReads: readonly StubApiRead[] = [
       runners: { mine: "Live", inquiry: "Live", project: "Live" },
     },
   ),
+  stubApiRead(`${projectPath}/hosted-runs`, hostedRunsResponseSchema, {
+    granted: false,
+  }),
+  stubApiRead(`${projectPath}/threads`, threadsResponseSchema, { threads: [] }),
+  stubApiRead(
+    `${projectPath}/worker-pools`,
+    workerPoolsResponseSchema,
+    workerPools,
+  ),
+  stubApiRead(
+    `${projectPath}/worker-pool-registration-tokens`,
+    workerPoolTokenResponseSchema,
+    {
+      token: "stub-registration-token",
+      expiresAtMs: Date.parse("2030-01-01T00:00:00Z"),
+    },
+    "POST",
+  ),
+  stubApiRead(
+    `${tenantPath}/personal-runner-permit`,
+    personalRunnerPermitResponseSchema,
+    { granted: true },
+  ),
+  stubApiRead(
+    `${tenantPath}/personal-runner`,
+    personalRunnerResponseSchema,
+    personalRunner,
+  ),
+  stubApiRead(`${tenantPath}/chat-host`, chatHostResponseSchema, {
+    id: "chuggy-personal-5b7d2e90-0000-4000-8000-000000000000",
+    registeredAt: "2026-10-01T00:00:00Z",
+    live: false,
+  }),
+  stubApiRead("/api/v1/agent-accounts", agentAccountsResponseSchema, {
+    accounts: ["Claude", "Codex"].map((agent) => ({
+      agent,
+      settings: {
+        fiveHourPercent: 90,
+        sevenDayPercent: 90,
+        pausesThreads: false,
+      },
+      readings: [],
+    })),
+  }),
+  stubApiRead("/access/v1/site/abilities", accessSiteAbilitiesSchema, {
+    administer: false,
+    createAccount: false,
+    createTenant: false,
+    manageAuthorities: false,
+  }),
   stubApiRead(
     `${projectPath}/owner-fallback`,
     projectOwnerFallbackResponseSchema,

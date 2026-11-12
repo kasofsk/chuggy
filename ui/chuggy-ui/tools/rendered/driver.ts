@@ -207,14 +207,18 @@ const renderedInteractive = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-/** Every interactive element drawn on the page is at least `--height-touch`
- * on each side; one drawn with no box is not a target. */
-export async function renderedTouchTargets(page: Page): Promise<void> {
+/** Every interactive element drawn on the page, or under `scope` where it is
+ * given, is at least `--height-touch` on each side; one drawn with no box is
+ * not a target. */
+export async function renderedTouchTargets(
+  page: Page,
+  scope: Locator = page.locator("body"),
+): Promise<void> {
   const least = await renderedTokenPixels(page, "--height-touch");
   expect(least, "the root states no --height-touch").toBeGreaterThan(0);
-  const small = await page.evaluate(
-    ({ selector, pixels }) =>
-      [...document.querySelectorAll(selector)]
+  const small = await scope.evaluate(
+    (root, { selector, pixels }) =>
+      [...root.querySelectorAll(selector)]
         .map((element) => ({ element, box: element.getBoundingClientRect() }))
         .filter(({ box }) => box.width > 0 && box.height > 0)
         .filter(({ box }) => Math.min(box.width, box.height) < pixels - 0.5)
