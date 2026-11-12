@@ -48,7 +48,10 @@
  * scheduler's window as a placed one is.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
-import type { WorkerPoolSessionAssignment } from "../contract/workerPool.ts";
+import {
+  workerPoolPollIdleSecsMax,
+  type WorkerPoolSessionAssignment,
+} from "../contract/workerPool.ts";
 import type {
   SessionAttemptId,
   SessionBearerId,
@@ -299,8 +302,14 @@ export function workerPoolSessionIdleSecs(
   idleSecs: number | undefined,
 ): number | undefined {
   if (identity.kind !== "ChatHost" || idleSecs === undefined) return undefined;
-  if (!Number.isSafeInteger(idleSecs) || idleSecs < 1)
-    throw new RangeError("a session's idle bound must be a positive integer");
+  if (
+    !Number.isSafeInteger(idleSecs) ||
+    idleSecs < 1 ||
+    idleSecs > workerPoolPollIdleSecsMax
+  )
+    throw new RangeError(
+      "a session's idle bound must be a positive integer no longer than a poll admits",
+    );
   return idleSecs;
 }
 

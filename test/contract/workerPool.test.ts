@@ -15,6 +15,7 @@ import {
   workerPoolCredentialOutcomeSchema,
   workerPoolCapabilitiesMax,
   workerPoolIdentityCharsMax,
+  workerPoolPollIdleSecsMax,
   workerPoolPollQuerySchema,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
@@ -608,6 +609,27 @@ test("a poll's query is the held list as a query carries one, bounded by the pla
     { held: "a", wanted: "0", wantedSessions: ["1", "2"] },
   ])
     assert.equal(query.safeParse(invalid).success, false);
+});
+
+test("a poll's idle bound is a positive count no longer than the longest delay a timer holds", () => {
+  const query = workerPoolPollQuerySchema(2);
+  assert.equal(workerPoolPollIdleSecsMax * 1_000 <= 2 ** 31 - 1, true);
+  assert.equal((workerPoolPollIdleSecsMax + 1) * 1_000 > 2 ** 31 - 1, true);
+  assert.deepEqual(
+    query.parse({ wanted: "0", idleSecs: String(workerPoolPollIdleSecsMax) }),
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 0,
+      idleSecs: workerPoolPollIdleSecsMax,
+    },
+  );
+  for (const idleSecs of [
+    "0",
+    String(workerPoolPollIdleSecsMax + 1),
+    String(Number.MAX_SAFE_INTEGER),
+  ])
+    assert.equal(query.safeParse({ wanted: "0", idleSecs }).success, false);
 });
 
 test("each settlement route is the poll route, the assignment and the outcome", () => {

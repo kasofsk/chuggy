@@ -9,6 +9,8 @@
  * recorded", which the reaper reads as the scheduler's window, and every
  * attempt recorded before this is false and keeps the bound it was recorded
  * with. An unbounded attempt is a chat host's and names no bound of its own.
+ * A bound is held to what the poll admits, `workerPoolPollIdleSecsMax`, so
+ * the reaper's arithmetic on it stays inside what a timestamp holds.
  *
  * THE IDLE REAPER PASSES OVER AN UNBOUNDED ATTEMPT. Its lease, its own end, a
  * stop and its host's end still end it.
@@ -42,7 +44,9 @@ export const migration162: Migration = {
        ADD COLUMN idle_unbounded boolean NOT NULL DEFAULT false,
        ADD CONSTRAINT session_attempt_unbounded_is_a_chat_hosts
          CHECK (NOT idle_unbounded
-                OR (holder_kind='ChatHost' AND idle_secs IS NULL))`,
+                OR (holder_kind='ChatHost' AND idle_secs IS NULL)),
+       ADD CONSTRAINT session_attempt_idle_secs_admitted
+         CHECK (idle_secs<=2147483)`,
     `ALTER TABLE public.session_launch DROP COLUMN idle_secs_max`,
     `CREATE OR REPLACE FUNCTION ${idle} RETURNS bigint
     LANGUAGE plpgsql SECURITY DEFINER

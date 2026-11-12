@@ -50,9 +50,10 @@ import {
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
-import type {
-  WorkerPoolReconciliation,
-  WorkerPoolSessionAssignment,
+import {
+  workerPoolPollIdleSecsMax,
+  type WorkerPoolReconciliation,
+  type WorkerPoolSessionAssignment,
 } from "../../src/contract/workerPool.ts";
 import {
   asSessionBearerSecret,
@@ -1872,6 +1873,48 @@ test("a chat host's declared idle bound is recorded on its claim as named, above
     ["Lost", "SessionIdle"],
     ["Running", null],
   ]);
+});
+
+test("an attempt recorded with the longest idle bound a poll admits does not stop the reaper ending another past the scheduler's window, and an attempt cannot record a longer one", async () => {
+  const { partition, member, pool } = await routedProject("host-idle-max");
+  await waiting(partition, "host-idle-max-lead", "Lead", member);
+  await waiting(partition, "host-idle-max-thread", "Thread", member);
+  const host = await chatHost(partition, member);
+  const longest = await hostClaimedDeclaring(host, workerPoolPollIdleSecsMax);
+  const pooled = (await claimedOne(pool)).assignment;
+  assert.equal(
+    (await attemptOf(longest))["idle_secs"],
+    String(workerPoolPollIdleSecsMax),
+  );
+  const windowSecs = 300;
+  for (const assignment of [longest, pooled])
+    await backdated(assignment, "idle_since", windowSecs + 60);
+  assert.equal(
+    await rig.scheduler.reapIdleAttempts(
+      rig.epoch,
+      windowSecs,
+      sessionRigBoundless,
+    ),
+    1,
+  );
+  assert.deepEqual(await endingsOf([longest, pooled]), [
+    ["Running", null],
+    ["Lost", "SessionIdle"],
+  ]);
+
+  const lengthening = await rig.harness.begin();
+  await assert.rejects(
+    committedAfter(lengthening, async () => {
+      await lengthening.query(
+        `ALTER TABLE session_attempt DISABLE TRIGGER session_attempt_is_fenced`,
+      );
+      await lengthening.query(
+        `UPDATE session_attempt SET idle_secs=$2 WHERE assignment=$1`,
+        [longest, workerPoolPollIdleSecsMax + 1],
+      );
+    }),
+    { code: "23514" },
+  );
 });
 
 /** A limit on `member`'s Claude whose reset is ahead, under the threads option named. */

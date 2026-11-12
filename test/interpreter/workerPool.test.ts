@@ -26,6 +26,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
+  workerPoolPollIdleSecsMax,
   workerPoolReconciliationSchema,
   type WorkerPoolCredentialOutcome,
 } from "../../src/contract/workerPool.ts";
@@ -656,6 +657,17 @@ test("a chat host's idle bound is the one it named, uncapped, and none is read w
   for (const other of [identity, runner])
     assert.equal(workerPoolSessionIdleSecs(other, 30), undefined);
   assert.throws(() => workerPoolSessionIdleSecs(host, 0), RangeError);
+});
+
+test("a chat host's idle bound is refused longer than a poll admits", () => {
+  assert.equal(
+    workerPoolSessionIdleSecs(host, workerPoolPollIdleSecsMax),
+    workerPoolPollIdleSecsMax,
+  );
+  assert.throws(
+    () => workerPoolSessionIdleSecs(host, workerPoolPollIdleSecsMax + 1),
+    RangeError,
+  );
 });
 
 test("a chat host's session is launched with its own idle bound or with none, and a pool's with the site's", () => {
