@@ -5,6 +5,7 @@ import {
   workerContractRelease,
   workerContractRunContext,
   workerContractCredentialBundles,
+  workerContractRunCredential,
   workerContractRunUsage,
   workerContractRunnerAgentsAdvertised,
   workerContractSessionContext,
@@ -116,6 +117,12 @@ export const workerContractUnscopedChat: WorkerContractRange = {
 /** The versions in which a run's totals may carry its account's usage and its end the limit that stopped it, fields a plane of an earlier one refuses the whole body over. */
 export const workerContractRunUsages: WorkerContractRange = {
   min: workerContractRunUsage,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a run's usage and its limit may name the credential they were read of, a field a plane of an earlier one refuses the whole body over. */
+export const workerContractRunCredentials: WorkerContractRange = {
+  min: workerContractRunCredential,
   max: workerContractAccepted.max,
 };
 

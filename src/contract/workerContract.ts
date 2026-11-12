@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 /** The release of the worker contract, which versions the package `scripts/pack-worker-contract.ts` builds. */
-export const workerContractRelease = "1.76.0";
+export const workerContractRelease = "1.77.0";
 
 /** The header a pod or a pool names its release in, and a plane answers with its own. */
 export const workerContractHeader = "chuggy-worker-contract";
@@ -95,6 +95,12 @@ export const workerContractSystemPromptOwn: WorkerContractVersion = {
 export const workerContractCredentialBundles: WorkerContractVersion = {
   major: 1,
   minor: 74,
+};
+
+/** The first version whose job plane takes the credential a run's usage and its limit were read of: a runner names one only to a plane whose answers name this version or a later one. */
+export const workerContractRunCredential: WorkerContractVersion = {
+  major: 1,
+  minor: 77,
 };
 
 /** A release as the header carries it: major, minor and patch, each written without a leading zero. */
