@@ -171,6 +171,12 @@ export const workerRunUsageFunction = "record_worker_run_usage";
 export const workerRunLimitFunction = "record_worker_run_limit";
 /** Whether an account's agent is paused, until when and why, from its readings, its limit, its settings and its presses at the database's own time. */
 export const agentAccountPauseFunction = "agent_account_pause";
+/** Each credential of an account's agent that is paused, until when and why, by the rule `agent_account_pause` answers the agent by. */
+export const agentAccountCredentialPauseFunction =
+  "agent_account_credential_pause";
+/** The credential a reading or a limit is kept under, its agent's default where the run named none, with room made for it among the credentials kept. */
+export const agentAccountCredentialKeptFunction =
+  "agent_account_credential_kept";
 /** A person's thresholds and session options for one agent account, their defaults where they wrote none. */
 export const agentAccountSettingsFunction = "agent_account_settings";
 /** Whether an account's pause holds back a session of one kind: always a lead, and a thread or an inquiry as its owner's option says. */

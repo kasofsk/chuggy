@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   accessPlaneRole,
+  agentAccountCredentialKeptFunction,
+  agentAccountCredentialPauseFunction,
   agentAccountFunction,
   agentAccountPauseFunction,
   agentAccountPressFunction,
@@ -795,12 +797,12 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [workerPlaneRole, poolPlaneRole],
   },
   boundaryGrantsDoor(
-    `${workerRunUsageFunction}(text,bigint,jsonb)`,
+    `${workerRunUsageFunction}(text,bigint,jsonb,text)`,
     [workerPlaneRole],
     [poolPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${workerRunLimitFunction}(text,bigint,text,bigint)`,
+    `${workerRunLimitFunction}(text,bigint,text,bigint,text)`,
     [workerPlaneRole],
     [poolPlaneRole],
   ),
@@ -809,6 +811,18 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [poolPlaneRole, apiRole, metricsPlaneRole],
     [],
   ),
+  {
+    signature: `${agentAccountCredentialPauseFunction}(text,text)`,
+    definer: false,
+    callers: [],
+    strangers: [poolPlaneRole, apiRole, metricsPlaneRole],
+  },
+  {
+    signature: `${agentAccountCredentialKeptFunction}(text,text,text)`,
+    definer: false,
+    callers: [],
+    strangers: [workerPlaneRole, poolPlaneRole],
+  },
   {
     signature: `${agentAccountSessionPausedFunction}(text,text)`,
     definer: false,
@@ -987,6 +1001,11 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["agent_account_usage", "principal", "SELECT", metricsPlaneRole, true],
   ["agent_account_usage", "utilization", "SELECT", metricsPlaneRole, false],
   ["agent_account_limit", "agent", "SELECT", metricsPlaneRole, true],
+  ["agent_account_usage", "credential", "SELECT", metricsPlaneRole, false],
+  ["agent_account_limit", "credential", "SELECT", metricsPlaneRole, false],
+  ["agent_account_usage", null, "DELETE", boundaryOwnerRole, true],
+  ["agent_account_limit", null, "DELETE", boundaryOwnerRole, true],
+  ["agent_account_usage", null, "DELETE", workerPlaneRole, false],
   ["agent_account_setting", null, "SELECT", apiRole, false],
   ["agent_account_setting", null, "INSERT", boundaryOwnerRole, true],
   ["agent_account_press", null, "UPDATE", boundaryOwnerRole, true],

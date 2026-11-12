@@ -264,6 +264,119 @@ test("an account's other agent, an attempt spending no agent and an account no p
   assert.deepEqual(await pausedFor(state, null), unpaused, "no agent");
 });
 
+test("a limit on one credential still pauses after a reading of another, and stops after a reading of its own", async () => {
+  const limit = { observedSecs: -60, resetsSecs: 300, credential: "work" };
+  assert.deepEqual(
+    await pausedFor({
+      limit,
+      readings: [
+        { ...reading("five_hour", 0.1, 600, -30), credential: "home" },
+      ],
+    }),
+    { untilSecs: 300, reasons: ["limit"], admittedByPress: false },
+  );
+  assert.deepEqual(
+    await pausedFor({
+      limit,
+      readings: [
+        { ...reading("five_hour", 0.1, 600, -30), credential: "work" },
+      ],
+    }),
+    unpaused,
+  );
+});
+
+test("the agent is paused while any of its credentials is, until the latest ends, naming each reason once", async () => {
+  assert.deepEqual(
+    await pausedFor({
+      readings: [
+        { ...reading("five_hour", 0.95, 600), credential: "work" },
+        { ...reading("five_hour", 0.1, 600), credential: "home" },
+      ],
+    }),
+    { untilSecs: 600, reasons: ["five_hour"], admittedByPress: false },
+  );
+  assert.deepEqual(
+    await pausedFor({
+      readings: [
+        { ...reading("five_hour", 0.95, 600, -90), credential: "work" },
+        { ...reading("five_hour", 0.95, 900, -90), credential: "home" },
+      ],
+      limits: [
+        { observedSecs: -60, resetsSecs: 300, credential: "work" },
+        { observedSecs: -60, resetsSecs: 1200, credential: "spare" },
+      ],
+    }),
+    {
+      untilSecs: 1200,
+      reasons: ["five_hour", "limit"],
+      admittedByPress: false,
+    },
+  );
+});
+
+test("a press lets a claim through limits of several credentials only where it came after the newest of them", async () => {
+  const limits = [
+    { observedSecs: -120, resetsSecs: 300, credential: "work" },
+    { observedSecs: -60, resetsSecs: 600, credential: "home" },
+  ];
+  const held = { untilSecs: 600, reasons: ["limit"] };
+  assert.deepEqual(await pausedFor({ limits, press: { pressedSecs: -30 } }), {
+    ...held,
+    admittedByPress: true,
+  });
+  assert.deepEqual(
+    await pausedFor({ limits, press: { pressedSecs: -90 } }),
+    { ...held, admittedByPress: false },
+    "a press between the two limits",
+  );
+  assert.deepEqual(
+    await pausedFor({
+      limits: [
+        ...limits,
+        { observedSecs: -10, resetsSecs: 0, credential: "spare" },
+      ],
+      press: { pressedSecs: -30 },
+    }),
+    { ...held, admittedByPress: true },
+    "a newer limit that no longer holds",
+  );
+});
+
+test("each paused credential is answered on its own, with when its pause ends and its reasons", async () => {
+  const principal = `https://issuer.invalid#member-${randomUUID()}`;
+  const transaction = await harness.begin();
+  try {
+    await agentAccountHarnessPlanted(transaction, principal, "Claude", {
+      readings: [
+        { ...reading("seven_day", 0.95, 900, -90), credential: "work" },
+        { ...reading("five_hour", 0.1, 600, -90), credential: "home" },
+      ],
+      limits: [
+        { observedSecs: -60, resetsSecs: 300, credential: "work" },
+        { observedSecs: -60, resetsSecs: 450, credential: "spare" },
+      ],
+    });
+    assert.deepEqual(
+      await transaction.query(
+        `SELECT credential,extract(epoch FROM paused_until-now())::int AS until_secs,reasons
+           FROM agent_account_credential_pause($1,'Claude')`,
+        [principal],
+      ),
+      [
+        { credential: "spare", until_secs: 450, reasons: ["limit"] },
+        {
+          credential: "work",
+          until_secs: 900,
+          reasons: ["limit", "seven_day"],
+        },
+      ],
+    );
+  } finally {
+    await transaction.rollback();
+  }
+});
+
 test("the defaults are the person's settings while they wrote none", async () => {
   const [row] = await harness.query(
     `SELECT * FROM agent_account_settings($1,'Claude')`,
