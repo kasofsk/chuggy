@@ -210,17 +210,26 @@ test("every other action still sends on one press", async () => {
   expect(asked()).toBeNull();
 });
 
-test("an ask left for another button closes, and that button sends its own action alone", async () => {
+test("an open ask holds the focus from the header's other buttons, and once Cancel closes it another button sends its own action alone", async () => {
   const { api, header } = await mounted();
-  await revokePressed();
+  const group = await revokePressed();
 
-  const resume = within(header).getByRole("button", { name: "Resume" });
+  expect(within(header).queryByRole("button", { name: "Resume" })).toBeNull();
+  const resume = within(header).getByRole("button", {
+    name: "Resume",
+    hidden: true,
+  });
   await turned(() => {
     resume.focus();
   });
+  expect(asked()).toBe(group);
+  expect(group.contains(document.activeElement)).toBe(true);
+  await turned(() => {
+    within(group).getByRole("button", { name: "Cancel" }).click();
+  });
   expect(asked()).toBeNull();
   await turned(() => {
-    resume.click();
+    within(header).getByRole("button", { name: "Resume" }).click();
   });
 
   expect(api.submissions()).toBe(1);

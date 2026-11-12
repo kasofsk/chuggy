@@ -102,7 +102,10 @@ test("an image's dialog is as wide as what it holds, under a trigger drawn bare"
     expect.arrayContaining(["w-fit", "max-w-full"]),
   );
   expect(classesOf(dialog)).not.toContain("max-w-aside");
-  const trigger = screen.getByRole("button", { name: "Screenshot" });
+  const trigger = screen.getByRole("button", {
+    name: "Screenshot",
+    hidden: true,
+  });
   expect(classesOf(trigger)).toContain("dialog-trigger-bare");
   expect(classesOf(trigger)).not.toContain("btn");
   styleless();
@@ -183,7 +186,7 @@ test("a request unanswered, nothing closes the dialog, and the close after it re
   const drawn = renderCopied(<Held busy />);
   await turned();
   const dialog = screen.getByRole("dialog", { name: "Edit" });
-  const trigger = screen.getByRole("button", { name: "Edit" });
+  const trigger = screen.getByRole("button", { name: "Edit", hidden: true });
   await turned(() => {
     pressedOutside();
     fireEvent.keyDown(dialog, { key: "Escape" });

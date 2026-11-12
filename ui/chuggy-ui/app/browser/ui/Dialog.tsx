@@ -2,11 +2,14 @@
  * A short interruption over the page: a roster to pick from, a choice to make
  * before going on, a form or a grid to fill.
  *
- * Radix's dialog in its non-modal form, which is the one that mounts no
- * `<style>` element — the modal form's scroll lock appends one and the served
- * `style-src 'self'` refuses it. The trigger is drawn as a button so a caller
- * hands a label rather than a control, or bare around what it holds, and the
- * whole of what is open is the caller's own state.
+ * Radix's modal dialog: while it is open the focus is held inside it, the page
+ * behind is hidden from assistive technology and takes no press, and closing
+ * returns the focus to the trigger. Radix's own overlay is not drawn, because
+ * its scroll lock appends a `<style>` element the served `style-src 'self'`
+ * refuses; the scrim is drawn here, and the page behind it can still scroll.
+ * The trigger is drawn as a button so a caller hands a label rather than a
+ * control, or bare around what it holds, and the whole of what is open is the
+ * caller's own state.
  *
  * Total over a foot of its own and one the caller hands it, each at a roster's
  * width, a form's, or an image's own: as wide as what it holds and never wider
@@ -99,7 +102,6 @@ export function Dialog(props: {
   const busy = props.busy === true;
   return (
     <RadixDialog.Root
-      modal={false}
       open={props.open}
       onOpenChange={(open) => {
         if (open || !busy) props.onOpenChange(open);
