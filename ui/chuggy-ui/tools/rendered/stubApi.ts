@@ -70,7 +70,7 @@ const projectPath = `/api/v1/tenants/${stubApiTenant}/projects/${stubApiProject}
 const partition = { tenant: stubApiTenant, project: stubApiProject };
 const principal = "issuer member";
 
-/** The project's one ticket, created by the member and not yet released. */
+/** The project's one ticket, created by the member, released, and still Pending. */
 const ticket = {
   ticket: 1,
   creator: principal,
