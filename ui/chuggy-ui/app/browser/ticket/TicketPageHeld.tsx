@@ -58,6 +58,8 @@ export interface TicketPageHeld {
   readonly slot: Slot;
   /** What the card offers of the ticket's overrides, where it offers any. */
   readonly overrides: ReactNode;
+  /** The card's evaluation approvals, asked and answered, where it holds any. */
+  readonly approvals: ReactNode;
   /** The draft drawn in the ticket's place, where it was never released. */
   readonly draft: DraftResponse | undefined;
 }

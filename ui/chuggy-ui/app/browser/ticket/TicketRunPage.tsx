@@ -25,13 +25,14 @@ import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import type { RunResultOpened } from "../../core/runResult.ts";
 import { runTimeOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
-import { cycleLabel, setVerdictLabel } from "../../core/ticketLedger.ts";
+import { cycleLabel } from "../../core/ticketLedger.ts";
 import {
   ticketRunDetailsOf,
   ticketRunLive,
   ticketRunMarkOf,
   ticketRunsFind,
   ticketRunTaskOf,
+  ticketRunVerdictLabel,
   ticketRunViewShown,
   ticketRunViewsOffered,
 } from "../../core/ticketRuns.ts";
@@ -62,6 +63,10 @@ import {
 } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { RunResultOpenedBody, useRunResultOpened } from "./TicketResult.tsx";
+import {
+  TicketRunApprovalSummary,
+  TicketRunApprovalTime,
+} from "./TicketRunApproval.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunsRail, useTicketRuns } from "./TicketRuns.tsx";
 import type { TicketRunsRailCurrent } from "./TicketRuns.tsx";
@@ -142,6 +147,15 @@ function TicketRunMeta(props: {
   readonly nowMs: number;
 }): ReactNode {
   const carried = props.step.execution.carriedFrom;
+  if (props.step.approval)
+    return (
+      <p className="ticket-run-meta">
+        <TicketRunApprovalTime
+          execution={props.step.execution}
+          nowMs={props.nowMs}
+        />
+      </p>
+    );
   return carried === undefined ? (
     <TicketRunMetaRan step={props.step} nowMs={props.nowMs} />
   ) : (
@@ -203,7 +217,9 @@ function TicketRunHead(props: {
         <TicketRunMarkDrawn mark={ticketRunMarkOf(step.verdict)} tone={tone} />
         <h2>{step.name}</h2>
         <span className="ticket-run-cycle">{text(cycleLabel(step.cycle))}</span>
-        <Pill tone={tone}>{text(setVerdictLabel(step.verdict))}</Pill>
+        <Pill tone={tone}>
+          {text(ticketRunVerdictLabel(step.verdict, step.approval))}
+        </Pill>
       </div>
       <TicketRunMeta held={props.held} step={step} nowMs={props.nowMs} />
     </div>
@@ -214,8 +230,10 @@ function TicketRunHead(props: {
 function ticketRunViewsOfRead(
   opened: RunResultOpened | undefined,
   read: ExecutionResponse,
+  approval: boolean,
 ): readonly TicketRunView[] {
   return ticketRunViewsOffered({
+    approval,
     commands: opened?.opened === "Commands",
     agent: contextRunOffered(read),
     carried: read.carriedFrom !== undefined,
@@ -459,11 +477,20 @@ function TicketRunViewBody(props: {
   /** The tool call its transcript is opened at, where the address names one. */
   readonly step: string | undefined;
   readonly live: boolean;
+  readonly approval: boolean;
   readonly nowMs: number;
 }): ReactNode {
   switch (props.shown) {
     case "Summary":
-      return <TicketRunSummary {...props} />;
+      return props.approval ? (
+        <TicketRunApprovalSummary
+          partition={props.partition}
+          read={props.read}
+          nowMs={props.nowMs}
+        />
+      ) : (
+        <TicketRunSummary {...props} />
+      );
     case "Transcript":
       return (
         <TicketRunTranscript
@@ -514,7 +541,7 @@ function TicketRunRead(props: {
 }): ReactNode {
   const { held, step, read } = props;
   const opened = useRunResultOpened(held.partition, read.execution, read);
-  const offered = ticketRunViewsOfRead(opened, read);
+  const offered = ticketRunViewsOfRead(opened, read, step.approval);
   const live = ticketRunLive(step.verdict);
   const shown = ticketRunViewShown(props.asked.view, offered, live);
   return (
@@ -535,6 +562,7 @@ function TicketRunRead(props: {
           shown={shown}
           step={props.asked.step}
           live={live}
+          approval={step.approval}
           nowMs={held.nowMs}
         />
       </div>

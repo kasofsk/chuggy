@@ -83,6 +83,7 @@ test("a Pending ticket blocked by one revoked dependency needs you, and names it
     ),
   ).toEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Blocked by revoked dependency 3",
     where: undefined,
     run: undefined,
@@ -119,6 +120,7 @@ test("a parked ticket needs you: its wall, the step and cycle it stopped at by t
     ticketSlot(over21(ticket21Parked, reworkExhausted), copyTextEn),
   ).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Rework budget exhausted",
     where: "Failed at checks in cycle 3",
     run: { task: 7, execution: "execution-b8bdfdd4-7", step: "checks" },
@@ -177,6 +179,7 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
     ),
   ).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Nowhere to run this work",
     where: undefined,
     run: undefined,
@@ -208,6 +211,7 @@ test("a ticket the scheduler resumes once its usage pauses end says so under its
     );
   expect(parked({ until })).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Work failed",
     where: undefined,
     run: undefined,
@@ -249,6 +253,7 @@ test("a job lost on its runner says where, how often, and the attempt its worker
     );
   expect(parked(kept)).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Lost on runner-a",
     where: undefined,
     run: undefined,
@@ -302,6 +307,7 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
   } as const;
   expect(parkedAtStep(setup)).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Setup failed",
     where: undefined,
     run: undefined,
@@ -311,6 +317,7 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
   });
   expect(parkedAtStep(setup, false)).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Setup failed",
     where: undefined,
     run: undefined,
@@ -326,6 +333,7 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
     }),
   ).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Push failed",
     where: undefined,
     run: undefined,
@@ -348,6 +356,7 @@ test("a run its runner stopped for low disk says that runner needs room, to any 
     ),
   ).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Disk low",
     where: undefined,
     run: undefined,
@@ -385,6 +394,7 @@ test("a landing whose push was declined or would not read says what to change, a
     );
   expect(parked("PromotionWorkflowsRefused")).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Workflow files refused",
     where: undefined,
     run: undefined,
@@ -394,6 +404,7 @@ test("a landing whose push was declined or would not read says what to change, a
   });
   expect(parked("PromotionDeclined")).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Push declined",
     where: undefined,
     run: undefined,
@@ -403,6 +414,7 @@ test("a landing whose push was declined or would not read says what to change, a
   });
   expect(parked("ReconciliationUnreadable")).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Reconciliation unreadable",
     where: undefined,
     run: undefined,
@@ -450,6 +462,7 @@ test("an open approval needs you even while the ticket is running", () => {
   );
   expect(ticketSlot({ ...running, open: [approval] }, copyTextEn)).toEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Awaiting approval",
     where: undefined,
     run: undefined,
@@ -542,6 +555,7 @@ test("an escalation over a merge queue removal names the forge's reason and who 
     ),
   ).toStrictEqual({
     slot: "NeedsYou",
+    approvals: [],
     detail: "Removed from merge queue",
     where: undefined,
     run: undefined,
@@ -581,6 +595,7 @@ test("an escalation over a hold that names no removal, or whose newest landing i
   ])
     expect(parkedOver("ProposalMergesExhausted", landings)).toStrictEqual({
       slot: "NeedsYou",
+      approvals: [],
       detail: "Pull request merges exhausted",
       where: undefined,
       run: undefined,

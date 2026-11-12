@@ -16,6 +16,7 @@ import type { RunTimed } from "./runTotals.ts";
 import {
   cycleLabel,
   cycleLastSet,
+  executionIsApproval,
   stageEvaluatorsCurrent,
   stageLabel,
 } from "./ticketLedger.ts";
@@ -40,6 +41,7 @@ import {
   ticketRunLive,
   ticketRunMarkOf,
   ticketRunsCycleOutcome,
+  ticketRunVerdictLabel,
 } from "./ticketRuns.ts";
 import type { TicketRunMark } from "./ticketRuns.ts";
 import { verdictTone } from "./tones.ts";
@@ -162,7 +164,7 @@ function ticketStepsSideBySide(count: number): Copy {
 
 /** A run's box: its mark, how long it ran, and its page. A run an earlier
  * verdict settled says which cycle it was reused from, and leads to that
- * cycle's run. */
+ * cycle's run; an approval says how it was answered, or that it awaits one. */
 function ticketStepsRan(
   name: string,
   set: TaskSet,
@@ -177,6 +179,12 @@ function ticketStepsRan(
     tone: verdictTone(set.verdict),
   };
   const carried = last?.carriedFrom;
+  if (last !== undefined && set.executions.every(executionIsApproval))
+    return {
+      ...marked,
+      line: ticketStepsWords(text(ticketRunVerdictLabel(set.verdict, true))),
+      address: { to: "Run", task: last.task },
+    };
   if (carried !== undefined)
     return {
       ...marked,

@@ -839,6 +839,10 @@ export function ticketActionLabel(action: TicketActionName): Copy {
       return { id: "codes-action-approve" };
     case "Decline":
       return { id: "codes-action-decline" };
+    case "ApproveEvaluation":
+      return { id: "codes-action-approve" };
+    case "Reject":
+      return { id: "codes-action-reject" };
     case "Release":
       return { id: "codes-action-release" };
   }
@@ -865,6 +869,10 @@ export function ticketActionEffect(
       return offered({ id: "codes-action-approve-effect" });
     case "Decline":
       return offered({ id: "codes-action-decline-effect" });
+    case "ApproveEvaluation":
+      return offered({ id: "codes-action-approve-evaluation-effect" });
+    case "Reject":
+      return offered({ id: "codes-action-reject-effect" });
     case "Release":
       return offered({ id: "codes-action-release-effect" });
   }

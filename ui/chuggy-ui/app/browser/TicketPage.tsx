@@ -72,6 +72,7 @@ import type {
   TicketActing,
   TicketHeaderActionsProps,
 } from "./TicketActions.tsx";
+import { TicketApprovals } from "./ticket/TicketApprovals.tsx";
 import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
 import {
   TicketDraftBody,
@@ -205,6 +206,25 @@ function useParkedStanding(
   };
 }
 
+/** The card's evaluation approvals, answered through the ticket's one
+ * submission, and nothing where it holds none. */
+function ticketSlotApprovals(
+  slot: Slot,
+  props: StandingProps & { readonly acting: TicketActing },
+): ReactNode {
+  if (slot.slot !== "NeedsYou" && slot.slot !== "Awaiting") return null;
+  if (slot.approvals.length === 0) return null;
+  return (
+    <TicketApprovals
+      partition={props.partition}
+      ticket={props.ticket}
+      approvals={slot.approvals}
+      busy={props.acting.busy}
+      onAnswer={props.acting.submitting.submit}
+    />
+  );
+}
+
 /** What the header offers this reader, and the facts the tabs are handed. */
 function useTicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
@@ -243,6 +263,7 @@ function useTicketStanding(
     ...props,
     slot,
     overrides: parked.overrides,
+    approvals: ticketSlotApprovals(slot, props),
     draft: undefined,
   };
   return { actions, held };

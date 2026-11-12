@@ -10,8 +10,8 @@
  * Some names are not written where they are drawn. A page that draws a name
  * from the copy catalog is read for the message's id, and the catalog for the
  * words. A ticket's page draws
- * each action under the action's own name, so that name is read where the
- * action is made; the workspace's GitHub accounts page draws the connect button as
+ * each action under its label, so the page is read for drawing the label and
+ * the label is held to the word the program says; the workspace's GitHub accounts page draws the connect button as
  * the one component that writes it, so the page is read for the component;
  * and the Add picker draws the line for an app not granted a repository from
  * the roster the program's own sentence is made from, so the picker is read
@@ -27,6 +27,7 @@ import {
   repositoryWorkerLine,
 } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
+import { ticketActionLabel } from "../../ui/chuggy-ui/app/core/codeLabels.ts";
 import type { CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
 import { invitePageWords } from "../../ui/chuggy-ui/app/core/invitePage.ts";
 import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
@@ -142,11 +143,15 @@ test("the invite page draws, from the catalog, the card the program says a works
   assert.deepEqual(invitePageWords.create, setupPressed.workspaceCreate);
 });
 
-test("a ticket's page draws each action it offers as a button under the action's own name, and has a line of its own for a project with no runner", () => {
+test("a ticket's page draws each action it offers as a button under the action's label, Dispatch's being the program's word, and has a line of its own for a project with no runner", () => {
   const source = readFileSync(ticketPage, "utf8");
   assert.match(
     source,
-    /<OfferedAction\s+key=\{action\.action\}\s+action=\{action\.action\}/u,
+    /<OfferedAction\s+key=\{nativeActionAnswerKey\(action\)\}\s+action=\{text\(ticketActionLabel\(action\.action\)\)\}/u,
+  );
+  assert.equal(
+    copyTextEn(ticketActionLabel("Dispatch")),
+    copyTextEn(setupPressed.dispatch),
   );
   assert.match(source, /props\.noRunner \? <NoRunnerLine /u);
 });

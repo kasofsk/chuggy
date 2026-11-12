@@ -357,13 +357,28 @@ test("a run an earlier verdict settled counts as neither a run nor a wait, and r
 
 test("a run an earlier verdict settled offers its Summary and Details, and no transcript or context", () => {
   expect(
-    ticketRunViewsOffered({ commands: false, agent: true, carried: true }),
+    ticketRunViewsOffered({
+      approval: false,
+      commands: false,
+      agent: true,
+      carried: true,
+    }),
   ).toEqual(["Summary", "Details"]);
   expect(
-    ticketRunViewsOffered({ commands: false, agent: true, carried: false }),
+    ticketRunViewsOffered({
+      approval: false,
+      commands: false,
+      agent: true,
+      carried: false,
+    }),
   ).toEqual(["Summary", "Transcript", "Details", "Context"]);
   expect(
-    ticketRunViewsOffered({ commands: true, agent: false, carried: false }),
+    ticketRunViewsOffered({
+      approval: false,
+      commands: true,
+      agent: false,
+      carried: false,
+    }),
   ).toEqual(["Summary", "Transcript", "Details", "Output"]);
 });
 

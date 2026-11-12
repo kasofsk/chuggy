@@ -1,6 +1,7 @@
 /**
  * The one card the Overview leads with: the run going now, what the ticket is
- * waiting on a person for, or nothing. What answers it is the header's.
+ * waiting on a person for, or nothing. What answers it is the header's, but
+ * for an evaluation approval, which the card asks and answers itself.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -111,11 +112,35 @@ function NeedsYouRunLine(props: {
   );
 }
 
+/** The ticket waiting on an approval that does not ask this reader: what it
+ * awaits, and from whom. */
+function Awaiting(props: {
+  readonly slot: Extract<Slot, { slot: "Awaiting" }>;
+  readonly approvals: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <section
+      className="ticket-card"
+      data-tone="parked"
+      aria-label={text({ id: "ticket-awaiting-aria-label" })}
+      role="status"
+    >
+      <div className="ticket-card-head">
+        <TicketRunMarkDrawn mark="Alert" tone="parked" />
+        <strong className="ticket-card-title">{props.slot.detail}</strong>
+      </div>
+      {props.approvals}
+    </section>
+  );
+}
+
 function NeedsYou(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly slot: Extract<Slot, { slot: "NeedsYou" }>;
   readonly overrides: ReactNode;
+  readonly approvals: ReactNode;
 }): ReactNode {
   const { slot } = props;
   const text = useCopyText();
@@ -148,6 +173,7 @@ function NeedsYou(props: {
       {slot.more === undefined ? null : (
         <p className="ticket-card-more">{slot.more}</p>
       )}
+      {props.approvals}
       {props.overrides}
     </section>
   );
@@ -159,6 +185,8 @@ export function TicketSlot(props: {
   readonly slot: Slot;
   /** What the card offers of the ticket's overrides, where it offers any. */
   readonly overrides?: ReactNode;
+  /** The card's evaluation approvals, asked and answered, where it holds any. */
+  readonly approvals?: ReactNode;
   readonly nowMs: number;
 }): ReactNode {
   const slot = props.slot;
@@ -170,8 +198,11 @@ export function TicketSlot(props: {
           ticket={props.ticket}
           slot={slot}
           overrides={props.overrides}
+          approvals={props.approvals}
         />
       );
+    case "Awaiting":
+      return <Awaiting slot={slot} approvals={props.approvals} />;
     case "Now":
       return (
         <TicketNow

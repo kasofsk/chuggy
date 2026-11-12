@@ -4,6 +4,11 @@
  * NEEDS YOU COMES BEFORE NOW. A finalizing ticket can be running and waiting on
  * an approval at once, and the card that can answer the question is the one a
  * reader has to act on.
+ *
+ * AN EVALUATION APPROVAL NEEDS ONLY WHOM IT ASKS. For a reader none of the
+ * ticket's open approvals asks, the card says what the ticket awaits and from
+ * whom instead, and a run waiting on a person is never the Now card's, since
+ * nothing is running it.
  */
 
 import type {
@@ -25,6 +30,11 @@ import {
 import type { EscalationStep } from "./codeLabels.ts";
 import { copyOrDataText } from "./copy.ts";
 import type { CopyText } from "./copy.ts";
+import {
+  evaluationApprovalsAnswerable,
+  evaluationApprovalsAsked,
+} from "./evaluationApprovals.ts";
+import type { ApprovalAsked } from "./evaluationApprovals.ts";
 import { ticketLandingEscalatedRemoval } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 import type {
@@ -76,6 +86,14 @@ export type TicketSlot =
       readonly step: EscalationStep | undefined;
       readonly more: string | undefined;
       readonly reason: ReasonAttempt | undefined;
+      /** The open evaluation approvals, each answered on the card where it asks this reader. */
+      readonly approvals: readonly ApprovalAsked[];
+    }
+  | {
+      readonly slot: "Awaiting";
+      readonly detail: string;
+      /** The approvals the ticket awaits, none of which asks this reader. */
+      readonly approvals: readonly ApprovalAsked[];
     }
   | { readonly slot: "Now"; readonly running: RunningNow }
   | { readonly slot: "Nothing" };
@@ -134,7 +152,10 @@ function needsYouMore(
 }
 
 /** A card that names only what is asked, with nowhere it stopped. */
-function needsYouAsked(detail: string): TicketSlot {
+function needsYouAsked(
+  detail: string,
+  approvals: readonly ApprovalAsked[] = [],
+): TicketSlot {
   return {
     slot: "NeedsYou",
     detail,
@@ -143,6 +164,7 @@ function needsYouAsked(detail: string): TicketSlot {
     step: undefined,
     more: undefined,
     reason: undefined,
+    approvals,
   };
 }
 
@@ -245,11 +267,33 @@ function needsYou(
         said?.error === undefined
           ? undefined
           : { execution: said.execution, attempt: said.attempt },
+      approvals: [],
     };
   }
-  const question = reads.open?.[0];
+  return needsYouQuestion(reads, text);
+}
+
+/** What the ticket's open questions ask: this reader, or only someone else. */
+function needsYouQuestion(
+  reads: SituationReads,
+  text: CopyText,
+): TicketSlot | undefined {
+  const open = reads.open ?? [];
+  const question = open[0];
   if (question === undefined) return undefined;
-  return needsYouAsked(text(nativeActionKindLabel(question.kind)));
+  const approvals = evaluationApprovalsAsked(
+    open,
+    reads.ledger,
+    reads.names,
+    text,
+  );
+  const detail = text(nativeActionKindLabel(question.kind));
+  if (
+    approvals.length === open.length &&
+    !evaluationApprovalsAnswerable(approvals)
+  )
+    return { slot: "Awaiting", detail, approvals };
+  return needsYouAsked(detail, approvals);
 }
 
 function cycleExecutions(cycle: Cycle): readonly ExecutionSummary[] {
@@ -263,8 +307,13 @@ function cycleExecutions(cycle: Cycle): readonly ExecutionSummary[] {
   ];
 }
 
+/** Whether something is running the execution, which no runner is for one awaiting a person. */
 function executionLive(row: ExecutionSummary): boolean {
-  return row.status !== "Terminal" && row.status !== "Cancelled";
+  return (
+    row.status !== "Terminal" &&
+    row.status !== "Cancelled" &&
+    row.status !== "Awaiting"
+  );
 }
 
 /** The current cycle's newest live run, as the step it is. */

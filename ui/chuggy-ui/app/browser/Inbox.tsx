@@ -71,8 +71,18 @@ import {
   agenticRefusalStandingLabel,
   type AgenticRefusalStanding,
 } from "../core/leadTranscript.ts";
-import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
+import {
+  approvalApproversOf,
+  evaluationApprovalsAsked,
+} from "../core/evaluationApprovals.ts";
+import type { ApprovalAsked } from "../core/evaluationApprovals.ts";
+import {
+  nativeActionAnswerApproval,
+  nativeActionAnswerKey,
+  nativeActionsAnswers,
+} from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
+import type { ProjectAbilities } from "../core/projectAbilities.ts";
 import {
   operationAbandonFailure,
   operationAnswered,
@@ -114,6 +124,10 @@ import {
   TicketRowExecutionCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
+import {
+  ApprovalApproversDrawn,
+  TicketApprovals,
+} from "./ticket/TicketApprovals.tsx";
 import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
 import { Button } from "./ui/Button.tsx";
 import { useRunReason } from "./RunEvidence.tsx";
@@ -177,7 +191,34 @@ function inboxEntryActions(entry: InboxEntryResponse): readonly TicketAction[] {
   return phased === undefined ? [] : actionsFor(phased);
 }
 
-/** The answers a row offers, Revoke asking under them before it submits. */
+/** What a row offers: every answer its entry admits, the evaluation approvals
+ * asking this reader, and the other answers the reader's abilities leave. */
+function inboxRowAnswers(
+  entry: InboxEntryResponse,
+  abilities: ProjectAbilities,
+  text: CopyText,
+): {
+  readonly offered: readonly TicketAction[];
+  readonly approvals: readonly ApprovalAsked[];
+  readonly actions: readonly TicketAction[];
+} {
+  const offered = inboxEntryActions(entry);
+  return {
+    offered,
+    approvals: evaluationApprovalsAsked(
+      entry.actions,
+      undefined,
+      undefined,
+      text,
+    ).filter((asked) => asked.answers.length > 0),
+    actions: projectAbilityRefused(abilities, "mutate")
+      ? []
+      : offered.filter((action) => !nativeActionAnswerApproval(action.action)),
+  };
+}
+
+/** The answers a row offers, Revoke asking under them before it submits, and
+ * each evaluation approval asking this reader as a question of its own. */
 function InboxActions(props: {
   readonly partition: PartitionIdentity;
   readonly entry: InboxEntryResponse;
@@ -185,21 +226,30 @@ function InboxActions(props: {
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const text = useCopyText();
-  const actions = inboxEntryActions(props.entry);
   const revoke = useTicketRevokeAsk(props.answer);
-  const abilities = useProjectAbilities(props.partition);
+  const { offered, approvals, actions } = inboxRowAnswers(
+    props.entry,
+    useProjectAbilities(props.partition),
+    text,
+  );
   const revoking = actions.find((action) => action.action === "Revoke");
-  if (actions.length === 0)
+  if (offered.length === 0)
     return props.entry.proposals.length > 0 ? null : (
       <span className="text-ink-3">{text({ id: "inbox-no-action" })}</span>
     );
-  if (projectAbilityRefused(abilities, "mutate")) return null;
   return (
     <div className="grid gap-2">
+      <TicketApprovals
+        partition={props.partition}
+        ticket={props.entry.ticket.ticket}
+        approvals={approvals}
+        busy={inboxAnswerInFlight(props.answer?.step)}
+        onAnswer={props.onAnswer}
+      />
       <div className="flex gap-2 items-baseline">
         {actions.map((action) => (
           <Tooltip
-            key={action.action}
+            key={nativeActionAnswerKey(action)}
             text={ticketActionSentence(action.action, {
               kind: inboxEntryPhased(props.entry)?.escalation?.kind,
             })}
@@ -283,6 +333,31 @@ function InboxFailedWhy(props: {
   );
 }
 
+/** What one open action asks, and of whom where it does not ask this reader. */
+function InboxAsked(props: {
+  readonly partition: PartitionIdentity;
+  readonly action: InboxEntryResponse["actions"][number];
+}): ReactNode {
+  const text = useCopyText();
+  const { action } = props;
+  const asks = action.approval;
+  if (asks === undefined || action.answerable)
+    return (
+      <Pill tone="parked">{text(nativeActionKindSentence(action.kind))}</Pill>
+    );
+  return (
+    <span className="flex flex-wrap gap-2 items-baseline">
+      <Pill tone="parked">
+        {text({ id: "sentences-native-evaluation-approval-awaited" })}
+      </Pill>
+      <ApprovalApproversDrawn
+        partition={props.partition}
+        approvers={approvalApproversOf(asks.approvers)}
+      />
+    </span>
+  );
+}
+
 /** Why this ticket is here: its phase where that is what holds it, and what
  * its open actions ask where it is not. */
 function InboxWhy(props: {
@@ -298,9 +373,11 @@ function InboxWhy(props: {
     return (
       <div className="flex flex-wrap gap-2">
         {props.entry.actions.map((action) => (
-          <Pill key={action.action} tone="parked">
-            {text(nativeActionKindSentence(action.kind))}
-          </Pill>
+          <InboxAsked
+            key={action.action}
+            partition={props.partition}
+            action={action}
+          />
         ))}
       </div>
     );

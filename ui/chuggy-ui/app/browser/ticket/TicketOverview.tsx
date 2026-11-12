@@ -448,6 +448,7 @@ export function TicketOverviewTab(): ReactNode {
           slot={held.slot}
           nowMs={held.nowMs}
           overrides={held.overrides}
+          approvals={held.approvals}
         />
         <TicketUnreleased
           draft={readValue(held.reads.draftState)}

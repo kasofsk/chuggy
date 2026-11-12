@@ -14,6 +14,7 @@ import { escalationDetail, phaseLabel } from "./codeLabels.ts";
 import type { Copy, CopyText } from "./copy.ts";
 import { branchName } from "./labels.ts";
 import { ticketFilterStandings } from "./projectTableFilters.ts";
+import { nativeActionAnswerApproval } from "./nativeActionAnswers.ts";
 import type { RunTimed } from "./runTotals.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 import { ticketLandingPullLabel } from "./ticketLandings.ts";
@@ -180,6 +181,7 @@ function ticketHeaderMoving(slot: TicketSlot): TicketHeaderFragment {
         run: slot.running.execution,
       };
     case "NeedsYou":
+    case "Awaiting":
       return ticketHeaderWords(slot.detail);
     case "Nothing":
       return ticketHeaderNone;
@@ -272,17 +274,34 @@ export interface TicketHeaderActions {
 
 /** The main actions in the order the header draws them, the first leading. */
 const ticketHeaderMainOrder: readonly TicketActionName[] = [
+  "ApproveEvaluation",
+  "Reject",
   "Approve",
   "Decline",
   "Resume",
   "Dispatch",
 ];
 
+/** The evaluation approvals whose answers are offered, by the action each resolves. */
+function ticketHeaderApprovals(
+  actions: readonly TicketAction[],
+): ReadonlySet<string> {
+  return new Set(
+    actions.flatMap((action) =>
+      nativeActionAnswerApproval(action.action) &&
+      action.mutation.mutation === "ResolveNativeAction"
+        ? [action.mutation.action]
+        : [],
+    ),
+  );
+}
+
 /**
  * The offered actions as the header lays them out. `withheld` are offered
  * actions the page holds back for now, and `duplicates` is whether the reader
  * may start a ticket from this one; a finished ticket with nothing else to
- * offer leads with Duplicate.
+ * offer leads with Duplicate; an evaluation approval is answered here only
+ * where it is the one offered, since the card names several apart by step.
  */
 export function ticketHeaderActionsOf(
   offers: TicketOffers,
@@ -290,10 +309,14 @@ export function ticketHeaderActionsOf(
   withheld: readonly TicketActionName[],
   duplicates: boolean,
 ): TicketHeaderActions {
-  const actions =
+  const offered =
     offers.offers === "Actions"
       ? offers.actions.filter((action) => !withheld.includes(action.action))
       : [];
+  const approvals = ticketHeaderApprovals(offered).size;
+  const actions = offered.filter(
+    (action) => approvals <= 1 || !nativeActionAnswerApproval(action.action),
+  );
   const main = ticketHeaderMainOrder.flatMap((name) =>
     actions.filter((action) => action.action === name),
   );

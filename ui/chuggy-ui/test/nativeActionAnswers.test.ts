@@ -4,15 +4,14 @@
  * The rosters are walked rather than listed, so a kind or a resolution the wire
  * gains arrives here as a case with no expectation rather than as one nobody
  * looked at. The mapping is the pairing `src/contract/rosters.ts` publishes, so
- * an offer belonging to another kind is what these cases exist to catch. The
- * kinds walked are the ones the console answers.
+ * an offer belonging to another kind is what these cases exist to catch.
  */
 
 import { expect, test } from "vitest";
 
 import {
   nativeActionKindResolutions,
-  nativeActionKinds as allNativeActionKinds,
+  nativeActionKinds,
 } from "../../../src/contract/rosters.ts";
 import type {
   NativeActionKind,
@@ -20,19 +19,14 @@ import type {
 } from "../../../src/contract/rosters.ts";
 import type { NativeActionResponse } from "../../../src/contract/responses.ts";
 import {
-  nativeActionAnswered,
+  approvalAnswerSendable,
+  approvalAnswerWith,
+  nativeActionAnswerKey,
   nativeActionAnswerName,
   nativeActionAnswers,
   nativeActionsAnswers,
-  type NativeActionOffered,
 } from "../app/core/nativeActionAnswers.ts";
-
-const nativeActionKinds = allNativeActionKinds.filter(nativeActionAnswered);
-const nativeActionResolutions = [
-  ...new Set(
-    nativeActionKinds.flatMap((kind) => nativeActionKindResolutions[kind]),
-  ),
-];
+import type { TicketActionName } from "../app/core/ticketActions.ts";
 
 const fence = 42;
 
@@ -49,21 +43,41 @@ function openAction(
   };
 }
 
-const namedBy: Readonly<Record<NativeActionOffered, string>> = {
-  Resume: "Resume",
-  Revoke: "Revoke",
-  Approve: "Approve",
-  Decline: "Decline",
+type Pairing = {
+  readonly [Kind in NativeActionKind]: Readonly<
+    Record<(typeof nativeActionKindResolutions)[Kind][number], TicketActionName>
+  >;
 };
 
-test("every resolution on the roster has a word of its own", () => {
-  const named = nativeActionResolutions.map((resolution) =>
-    nativeActionAnswerName(resolution),
+const namedByKind: Pairing = {
+  TicketEscalation: { Resume: "Resume", Revoke: "Revoke" },
+  FinalizationApproval: { Approve: "Approve", Decline: "Decline" },
+  EvaluationApproval: { Approve: "ApproveEvaluation", Reject: "Reject" },
+};
+
+function namedBy(
+  kind: NativeActionKind,
+  resolution: NativeActionResolution,
+): TicketActionName | undefined {
+  return (namedByKind[kind] as Partial<Record<string, TicketActionName>>)[
+    resolution
+  ];
+}
+
+test("every answer a kind admits has a word of its own, an approval's by what it passes", () => {
+  const named = nativeActionKinds.flatMap((kind) =>
+    nativeActionKindResolutions[kind].map((resolution) =>
+      nativeActionAnswerName(kind, resolution),
+    ),
   );
   expect(named).toStrictEqual(
-    nativeActionResolutions.map((resolution) => namedBy[resolution]),
+    nativeActionKinds.flatMap((kind) =>
+      nativeActionKindResolutions[kind].map((resolution) =>
+        namedBy(kind, resolution),
+      ),
+    ),
   );
-  expect(new Set(named).size).toBe(nativeActionResolutions.length);
+  expect(new Set(named).size).toBe(named.length);
 });
 
 test("a kind offers its own answers and no other kind's", () => {
@@ -72,8 +86,8 @@ test("a kind offers its own answers and no other kind's", () => {
       (answer) => answer.action,
     );
     expect(offered).toStrictEqual(
-      nativeActionKindResolutions[kind].map(
-        (resolution) => namedBy[resolution],
+      nativeActionKindResolutions[kind].map((resolution) =>
+        namedBy(kind, resolution),
       ),
     );
     for (const other of nativeActionKinds) {
@@ -85,7 +99,7 @@ test("a kind offers its own answers and no other kind's", () => {
               (own) => own === resolution,
             ),
         )
-        .map((resolution) => namedBy[resolution]);
+        .map((resolution) => namedBy(other, resolution));
       for (const word of foreign) expect(offered).not.toContain(word);
     }
   }
@@ -107,7 +121,7 @@ test("every answer resolves the action it was built from, at its own fence", () 
         action: "action-one",
         authorizingSequence: fence,
         resolution: nativeActionKindResolutions[kind].find(
-          (resolution) => namedBy[resolution] === answer.action,
+          (resolution) => namedBy(kind, resolution) === answer.action,
         ),
       });
 });
@@ -121,7 +135,7 @@ test("an action admitting one answer offers exactly that one", () => {
         nativeActionAnswers(openAction(kind, [admitted])).map(
           (answer) => answer.action,
         ),
-      ).toStrictEqual([namedBy[admitted]]);
+      ).toStrictEqual([namedBy(kind, admitted)]);
 });
 
 test("the answers over a list are every action's, in the order it listed them", () => {
@@ -137,8 +151,55 @@ test("the answers over a list are every action's, in the order it listed them", 
   expect(nativeActionsAnswers([])).toStrictEqual([]);
 });
 
-test("an evaluation approval is offered no answer, having no field for a rejection's feedback", () => {
-  expect(nativeActionAnswers(openAction("EvaluationApproval"))).toStrictEqual(
-    [],
+test("an evaluation approval is offered approve before reject where its caller may answer it, and nothing where they may not", () => {
+  expect(
+    nativeActionAnswers(openAction("EvaluationApproval")).map(
+      (answer) => answer.action,
+    ),
+  ).toStrictEqual(["ApproveEvaluation", "Reject"]);
+  expect(
+    nativeActionAnswers({
+      ...openAction("EvaluationApproval"),
+      answerable: false,
+    }),
+  ).toStrictEqual([]);
+});
+
+test("the flag withholds no other kind's answers, which the abilities gate instead", () => {
+  for (const kind of ["TicketEscalation", "FinalizationApproval"] as const)
+    expect(
+      nativeActionAnswers({ ...openAction(kind), answerable: false }).length,
+    ).toBe(nativeActionKindResolutions[kind].length);
+});
+
+test("a rejection is sendable only with feedback the wire admits, and an approval with or without it", () => {
+  expect(approvalAnswerSendable("Reject", "")).toBe(false);
+  expect(approvalAnswerSendable("Reject", "   ")).toBe(false);
+  expect(approvalAnswerSendable("Reject", "tests missing")).toBe(true);
+  expect(approvalAnswerSendable("Reject", "a\u0007bell")).toBe(false);
+  expect(approvalAnswerSendable("ApproveEvaluation", "")).toBe(true);
+  expect(approvalAnswerSendable("ApproveEvaluation", "fine by me")).toBe(true);
+});
+
+test("an answer carries its feedback trimmed, and a blank note as none", () => {
+  const [approve, reject] = nativeActionAnswers(
+    openAction("EvaluationApproval"),
   );
+  if (approve === undefined || reject === undefined)
+    throw new Error("no answers");
+  expect(approvalAnswerWith(approve, "  ").mutation).toStrictEqual(
+    approve.mutation,
+  );
+  expect(approvalAnswerWith(reject, " redo the docs ").mutation).toStrictEqual({
+    ...reject.mutation,
+    feedback: "redo the docs",
+  });
+});
+
+test("two actions' answers in the same word are told apart by the action each resolves", () => {
+  const keys = nativeActionsAnswers([
+    openAction("EvaluationApproval"),
+    { ...openAction("EvaluationApproval"), action: "action-two" },
+  ]).map(nativeActionAnswerKey);
+  expect(new Set(keys).size).toBe(4);
 });
