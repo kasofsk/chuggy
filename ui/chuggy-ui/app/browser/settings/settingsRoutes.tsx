@@ -5,8 +5,8 @@
  *
  * A workspace's pages and the site's are the same routes in both places, so a
  * page reads its workspace from whichever address was matched. Each place's
- * bare address replaces itself with its first page: the settings have no page
- * of their own.
+ * bare address is the frame's to draw, which `SettingsLayout.tsx` says; the
+ * workspace's bare address in a project replaces itself with its first page.
  *
  * EVERY ROUTE IS MADE BEFORE IT IS HUNG. One made inside the list
  * `addChildren` is given loses its path's type and takes every address the
@@ -160,18 +160,7 @@ export function projectSettingsRoutes<TParent extends AnyRoute>(
     component: ProjectSettings,
   });
   const getParentRoute = (): typeof settings => settings;
-  const index = createRoute({
-    getParentRoute,
-    path: "/",
-    beforeLoad: ({ params }) => {
-      redirect({
-        to: settingsRoutes.project.lead,
-        params,
-        replace: true,
-        throw: true,
-      });
-    },
-  });
+  const index = createRoute({ getParentRoute, path: "/" });
   const workspace = createRoute({ getParentRoute, path: "/workspace" });
   const workspaceIndex = createRoute({
     getParentRoute: (): typeof workspace => workspace,
@@ -214,14 +203,6 @@ export function workspaceSettingsRoutes<TParent extends AnyRoute>(
   const index = createRoute({
     getParentRoute: (): typeof settings => settings,
     path: "/",
-    beforeLoad: ({ params }) => {
-      redirect({
-        to: settingsRoutes.workspace.people,
-        params: { tenant: params.tenant },
-        replace: true,
-        throw: true,
-      });
-    },
   });
   return settings.addChildren([
     index,
