@@ -388,5 +388,10 @@
     "release": "1.77.0",
     "wire": "0a8204855b42743a5d1ea724c301f6b1f62da1e25df0d562cb07a0ae69271767",
     "files": "ed4b7852a4bb38f6d905aebbada0b3f0931b5c8bcfe7437bebfe2796ce2b6e42"
+  },
+  {
+    "release": "1.78.0",
+    "wire": "f90b9664b57fe21707c3be10037c4a5be55d79dd1ab7d1a9d164595168a98d98",
+    "files": "f2bedb8b32f8ba2f5b8b789f34850d6aff89e2e2f121415d6097621694d560e1"
   }
 ]

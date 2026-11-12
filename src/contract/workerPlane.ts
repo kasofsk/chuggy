@@ -24,6 +24,7 @@ import {
   runTurnSeriesMax,
   runUsageInstantSchema,
   textUtf8Bytes,
+  workerRunCredentialSchema,
 } from "./http.ts";
 import {
   workerPlaneAnswersRefusingVersions,
@@ -165,16 +166,10 @@ export const workerRunUsageSchema = z.strictObject({
   seven_day: runUsageReadingSchema.exactOptional(),
 });
 
-/** The name of the agent credential a run spent, as its runner holds it: never the secret. */
-export const workerRunCredentialSchema = z
-  .string()
-  .regex(/^[A-Za-z0-9_-]{1,64}$/u);
-
-/** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
-export const workerRunCredentialDefaults = {
-  Claude: "claude",
-  Codex: "codex",
-} as const;
+export {
+  workerRunCredentialDefaults,
+  workerRunCredentialSchema,
+} from "./http.ts";
 
 /** A run's totals as a worker offers them, the same figures a reader is answered with, the usage of the account it spent, and the credential that usage was read of. */
 export const workerRunTotalsSchema = z.strictObject({

@@ -15,12 +15,19 @@ import {
   workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
 import {
+  workerPoolCapabilitiesMax,
   workerPoolEvidenceCharsMax,
   workerPoolPollQuery,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
+  workerPoolTokenCharsMax,
   workerRunnerCapabilitiesHeader,
+  workerRunnerCapabilitiesOf,
+  workerRunnerCredentialAgents,
+  workerRunnerCredentialsHeader,
+  workerRunnerCredentialsOf,
+  workerRunnerCredentialsPerAgentMax,
   workerRunnerHeader,
   workerRunnerMemoryCeilingHeader,
   workerRunnerMemoryRoomHeader,
@@ -647,6 +654,49 @@ test("a poll naming capabilities this side cannot read is refused whole, with no
     assert.equal(answered.body, "", String(capabilities));
     assert.deepEqual(recorded.named, [], String(capabilities));
     assert.deepEqual(made.made, [], String(capabilities));
+  }
+});
+
+test("a poll over a socket naming the most credentials the contract admits beside the most capabilities is answered", async () => {
+  const capabilities = Array.from(
+    { length: workerPoolCapabilitiesMax },
+    (_, index) =>
+      `T${String(index).padStart(workerPoolTokenCharsMax - 1, "0")}`,
+  ).join(",");
+  const credentials = workerRunnerCredentialAgents
+    .flatMap((agent) =>
+      Array.from(
+        { length: workerRunnerCredentialsPerAgentMax },
+        (_, index) => `${agent}:${String(index).padStart(64, "0")}`,
+      ),
+    )
+    .join(",");
+  assert.equal(workerRunnerCapabilitiesOf(capabilities).named, "Set");
+  assert.deepEqual(
+    Object.values(workerRunnerCredentialsOf(credentials)).map(
+      (names) => names.length,
+    ),
+    workerRunnerCredentialAgents.map(() => workerRunnerCredentialsPerAgentMax),
+  );
+  const app = createPoolPlaneApp(plane(calls().ports));
+  try {
+    const port = await planeListening(app);
+    const answered = await fetch(
+      `http://127.0.0.1:${String(port)}${polling([], 0)}`,
+      {
+        headers: {
+          ...runnerSpeaking,
+          [workerRunnerCapabilitiesHeader]: capabilities,
+          [workerRunnerCredentialsHeader]: credentials,
+        },
+      },
+    );
+    assert.equal(answered.status, 200);
+    assert.ok(
+      workerPoolReconciliationSchema.safeParse(await answered.json()).success,
+    );
+  } finally {
+    await app.close();
   }
 });
 
