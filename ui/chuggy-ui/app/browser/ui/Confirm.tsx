@@ -3,7 +3,9 @@
  * saying what it ends, then Cancel and the danger button that does it. Never
  * the browser's own dialog, which halts the page, and anything driving it,
  * until it is answered. Busy is the end already sent: the danger button cannot
- * be pressed again, and there is nothing left for Cancel to take back.
+ * be pressed again, and there is nothing left for Cancel to take back. An end
+ * that is not ready is one whose answer is still incomplete, which cannot be
+ * pressed until it is.
  */
 
 import type { ReactNode } from "react";
@@ -16,6 +18,8 @@ export function Confirm(props: {
   readonly question: string;
   readonly confirm: string;
   readonly busy: boolean;
+  /** Whether what it asks for is filled in, absent where it asks for nothing. */
+  readonly ready?: boolean;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
   readonly children: ReactNode;
@@ -38,7 +42,7 @@ export function Confirm(props: {
           variant="danger"
           size="sm"
           busy={props.busy}
-          disabled={props.busy}
+          disabled={props.busy || props.ready === false}
           onClick={props.onConfirm}
         >
           {props.confirm}

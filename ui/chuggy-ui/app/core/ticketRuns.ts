@@ -17,6 +17,10 @@
  *
  * A TICKET THAT LANDS NOTHING HAS NO LANDING TO REACH, so its Landing row says
  * so rather than waiting on one.
+ *
+ * AN APPROVAL'S RUN IS A PERSON'S ANSWER. It reads as awaiting, approved or
+ * rejected rather than as a run's verdict, and its page offers its Summary
+ * alone, having no transcript, no runner and nothing a worker recorded.
  */
 
 import type {
@@ -33,7 +37,13 @@ import { runTimeOf } from "./runTotals.ts";
 import type { RunSpend } from "./runTotals.ts";
 import { ticketLandingSummary } from "./ticketLandings.ts";
 import type { TicketLanding, TicketLandingsJoined } from "./ticketLandings.ts";
-import { cycleLastSet, setVerdict, stageLabel } from "./ticketLedger.ts";
+import {
+  cycleLastSet,
+  executionIsApproval,
+  setVerdict,
+  setVerdictLabel,
+  stageLabel,
+} from "./ticketLedger.ts";
 import type {
   Cycle,
   CycleStanding,
@@ -55,6 +65,8 @@ export interface TicketRunStep {
   readonly execution: ExecutionSummary;
   /** A generation an evaluator's resume replaced. */
   readonly superseded: boolean;
+  /** An approval's, which a person answers and no runner takes. */
+  readonly approval: boolean;
 }
 
 /** A stage of the plan with no run to show: not reached, or not on this page. */
@@ -109,7 +121,28 @@ function ticketRunsStep(
     verdict: setVerdict([execution]),
     execution,
     superseded,
+    approval: executionIsApproval(execution),
   };
+}
+
+/** A verdict as the one word its pill says, an approval's in a person's terms. */
+export function ticketRunVerdictLabel(
+  verdict: SetVerdict,
+  approval: boolean,
+): Copy {
+  if (!approval) return setVerdictLabel(verdict);
+  switch (verdict) {
+    case "Passed":
+      return { id: "ticket-verdict-approved" };
+    case "Failed":
+      return { id: "ticket-verdict-rejected" };
+    case "Awaiting":
+    case "Starting":
+    case "Running":
+    case "Cancelled":
+    case "Blocked":
+      return setVerdictLabel(verdict);
+  }
 }
 
 function ticketRunsEvaluatorSteps(
@@ -181,6 +214,8 @@ export function ticketRunsCycleOutcome(
       return text({ id: "ticket-runs-starting", args });
     case "Running":
       return text({ id: "ticket-runs-running", args });
+    case "Awaiting":
+      return text({ id: "ticket-runs-awaiting", args });
     case "Failed":
       return cycle.standing === "Superseded" && last.stage !== undefined
         ? text({ id: "ticket-runs-sent-back", args })
@@ -304,6 +339,8 @@ export function ticketRunQueryOf(
 
 /** What a run's page can offer beyond its Summary and Details. */
 export interface TicketRunOffers {
+  /** A person's answer to an approval, which nothing ran. */
+  readonly approval: boolean;
   /** A command stage's result that lists the commands it ran. */
   readonly commands: boolean;
   /** An agent carried the run out, so its context was recorded. */
@@ -313,11 +350,13 @@ export interface TicketRunOffers {
 }
 
 /** The sub-tabs a run offers: Output only where a command run wrote some,
- * Context only where an agent carried the run out, and for a run an earlier
- * verdict settled only its Summary and Details, since it has no transcript. */
+ * Context only where an agent carried the run out, for a run an earlier
+ * verdict settled only its Summary and Details, since it has no transcript,
+ * and for an approval its Summary alone. */
 export function ticketRunViewsOffered(
   offers: TicketRunOffers,
 ): readonly TicketRunView[] {
+  if (offers.approval) return ["Summary"];
   return ticketRunViews.filter((view) => {
     switch (view) {
       case "Summary":
@@ -467,6 +506,7 @@ export function ticketRunMarkOf(verdict: SetVerdict): TicketRunMark {
     case "Starting":
     case "Running":
       return "Spin";
+    case "Awaiting":
     case "Blocked":
       return "Alert";
     case "Cancelled":

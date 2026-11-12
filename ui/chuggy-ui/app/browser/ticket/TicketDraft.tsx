@@ -216,6 +216,7 @@ export function TicketDraftBody(props: {
     nowMs: props.nowMs,
     slot: { slot: "Nothing" },
     overrides: null,
+    approvals: null,
     draft: props.draft,
   };
   return (

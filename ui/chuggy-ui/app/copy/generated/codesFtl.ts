@@ -208,6 +208,7 @@ codes-action-resume = Resume
 codes-action-revoke = { -revoke(case: "upper") }
 codes-action-approve = Approve
 codes-action-decline = Decline
+codes-action-reject = Reject
 codes-action-release = { -release(case: "upper") }
 # spells -run: to re-run is a verb here
 # spells -work-stage: the work in general
@@ -226,6 +227,8 @@ codes-action-dispatch-effect = { -dispatch(case: "upper", form: "s") } the obser
 codes-action-revoke-effect = { -revoke(case: "upper", form: "ing") } blocks its { -dependent(form: "plural") }
 codes-action-approve-effect = Lets { -landing } proceed
 codes-action-decline-effect = Holds { -landing } back
+codes-action-approve-evaluation-effect = Passes this { -evaluator }
+codes-action-reject-effect = Sends the { -work-stage } back with your note
 codes-action-release-effect = Makes the { -draft } { -ticket(form: "a") }
 
 ## What the actor did with a submission, and why it declined one.

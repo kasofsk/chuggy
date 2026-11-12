@@ -72,6 +72,7 @@ import {
   ticketNativeActionsQuery,
   ticketQuery,
 } from "../core/ticketQueries.ts";
+import { nativeActionAnswerKey } from "../core/nativeActionAnswers.ts";
 import { manualDispatchAction } from "../core/ticketActions.ts";
 import type {
   TicketAction,
@@ -98,6 +99,7 @@ import type { TicketAttemptPress } from "./ticketAttempts.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import { TicketActionConfirm } from "./ticket/TicketActionConfirm.tsx";
+import { ApprovalRejectDialog } from "./ticket/TicketApprovals.tsx";
 import { TicketHeaderMenu } from "./ticket/TicketHeaderMenu.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
@@ -419,7 +421,8 @@ function ticketCancelWrite(
 }
 
 /** What the machine charges for, said before it is pressed, the first action
- * drawn being the primary one and Dispatch asking before it submits. A
+ * drawn being the primary one, Dispatch asking before it submits, and Reject
+ * asking for the feedback it is sent with. A
  * resume's effect names the exits it leaves, which are every action offered
  * and not only the ones drawn beside it. */
 function ActionButtons(props: {
@@ -434,14 +437,14 @@ function ActionButtons(props: {
   const text = useCopyText();
   return props.actions.map((action, index) => {
     const effect = ticketActionEffect(action.action, props.resume, props.exits);
-    const asks = action.action === "Dispatch";
+    const asks = action.action === "Dispatch" || action.action === "Reject";
     const chosen = (): void => {
       props.onChoose(action);
     };
     return (
       <OfferedAction
-        key={action.action}
-        action={action.action}
+        key={nativeActionAnswerKey(action)}
+        action={text(ticketActionLabel(action.action))}
         effect={text(effect.effect)}
         {...(effect.more === undefined ? {} : { more: text(effect.more) })}
         {...(effect.refusedBecause === undefined
@@ -458,7 +461,16 @@ function ActionButtons(props: {
             : chosen
         }
       >
-        {asks ? (
+        {action.action === "Reject" ? (
+          <ApprovalRejectDialog
+            offer={action}
+            open={asking === action.action}
+            onOpenChange={(open) => {
+              setAsking(open ? action.action : undefined);
+            }}
+            onReject={props.onChoose}
+          />
+        ) : asks ? (
           <TicketActionConfirm
             title={text({
               id: "ticket-dispatch-confirm-title",

@@ -15,7 +15,10 @@ import type { TicketNativeActionsResponse } from "../../../../src/contract/respo
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 
 import type { PanelState } from "./freshness.ts";
-import { nativeActionsAnswers } from "./nativeActionAnswers.ts";
+import {
+  nativeActionAnswerApproval,
+  nativeActionsAnswers,
+} from "./nativeActionAnswers.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import { actionsFor, ticketRevisable } from "./ticketActions.ts";
@@ -64,7 +67,9 @@ export function ticketOffers(
 }
 
 /** The offers the reader's abilities leave: Dispatch goes where they may not
- * dispatch, and every other action and the edit screen where they may not mutate. */
+ * dispatch, an evaluation approval's answers stay, their caller's own flag
+ * having offered them, and every other action and the edit screen go where
+ * they may not mutate. */
 export function ticketOffersAllowed(
   offers: TicketOffers,
   abilities: ProjectAbilities,
@@ -76,7 +81,9 @@ export function ticketOffersAllowed(
     offers: "Actions",
     editable: offers.editable && mutates,
     actions: offers.actions.filter((action) =>
-      action.action === "Dispatch" ? dispatches : mutates,
+      action.action === "Dispatch"
+        ? dispatches
+        : nativeActionAnswerApproval(action.action) || mutates,
     ),
   };
 }

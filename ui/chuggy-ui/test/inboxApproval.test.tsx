@@ -12,7 +12,6 @@
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -29,14 +28,10 @@ import type {
   ProjectTicket,
 } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
-import { Shell } from "../app/browser/Shell.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   answer,
-  apiDouble,
   openedStream,
-  operationAt,
   ScreenHarness,
   settled,
   turned,
@@ -44,6 +39,7 @@ import {
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
+import { inboxShellMounted } from "./inboxShellHarness.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -147,26 +143,8 @@ function openActions(actions: readonly unknown[]): string {
   });
 }
 
-function mounted(route: (url: string) => Response): {
-  readonly api: ReturnType<typeof apiDouble>;
-  readonly server: ReturnType<typeof openedStream>;
-} {
-  const api = apiDouble({ operation: operationAt("Pending"), route });
-  viewportAtEm(viewportDeskEm);
-  vi.stubGlobal("fetch", api.fetch);
-  const server = openedStream();
-  renderCopied(
-    <ScreenHarness
-      partition={atlas}
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-      transport={server.ports.fetch}
-    >
-      <Shell partition={atlas} />
-    </ScreenHarness>,
-  );
-  return { api, server };
+function mounted(route: (url: string) => Response) {
+  return inboxShellMounted(atlas, route);
 }
 
 test("an approval opening puts its ticket in the inbox and its answer takes it out", async () => {

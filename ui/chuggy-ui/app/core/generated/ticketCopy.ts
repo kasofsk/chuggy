@@ -9,6 +9,9 @@ export interface TicketCopy {
   readonly "ticket-verdict-running": Record<never, never>;
   readonly "ticket-verdict-cancelled": Record<never, never>;
   readonly "ticket-verdict-blocked": Record<never, never>;
+  readonly "ticket-verdict-awaiting": Record<never, never>;
+  readonly "ticket-verdict-approved": Record<never, never>;
+  readonly "ticket-verdict-rejected": Record<never, never>;
   readonly "ticket-verdict-killed": Record<never, never>;
   readonly "ticket-cycle-current": Record<never, never>;
   readonly "ticket-standing-ready": Record<never, never>;
@@ -90,6 +93,8 @@ export interface TicketCopy {
   readonly "ticket-actions-sentence-revoke": Record<never, never>;
   readonly "ticket-actions-sentence-approve": Record<never, never>;
   readonly "ticket-actions-sentence-decline": Record<never, never>;
+  readonly "ticket-actions-sentence-approve-evaluation": Record<never, never>;
+  readonly "ticket-actions-sentence-reject": Record<never, never>;
   readonly "ticket-actions-sentence-release": Record<never, never>;
   readonly "ticket-draft-not-released": Record<never, never>;
   readonly "ticket-draft-untitled": Record<never, never>;
@@ -172,6 +177,26 @@ export interface TicketCopy {
   };
   readonly "ticket-situation-step-runners": Record<never, never>;
   readonly "ticket-situation-step-repositories": Record<never, never>;
+  readonly "ticket-awaiting-aria-label": Record<never, never>;
+  readonly "ticket-approval-question": {
+    readonly step: unknown;
+    readonly cycle: unknown;
+  };
+  readonly "ticket-approval-approvers-developer": Record<never, never>;
+  readonly "ticket-approval-approvers-admin": Record<never, never>;
+  readonly "ticket-approval-who": Record<never, never>;
+  readonly "ticket-approval-instructions": Record<never, never>;
+  readonly "ticket-approval-no-instructions": Record<never, never>;
+  readonly "ticket-approval-work-result": Record<never, never>;
+  readonly "ticket-approval-work-artifacts": Record<never, never>;
+  readonly "ticket-approval-note-label": Record<never, never>;
+  readonly "ticket-approval-note-placeholder": Record<never, never>;
+  readonly "ticket-approval-reject-question": Record<never, never>;
+  readonly "ticket-approval-feedback-label": Record<never, never>;
+  readonly "ticket-approval-feedback-placeholder": Record<never, never>;
+  readonly "ticket-approval-approved-by": Record<never, never>;
+  readonly "ticket-approval-rejected-by": Record<never, never>;
+  readonly "ticket-approval-waiting": Record<never, never>;
   readonly "ticket-dispatch-aria-label": {
     readonly number: unknown;
   };
@@ -249,6 +274,9 @@ export interface TicketCopy {
     readonly step: unknown;
   };
   readonly "ticket-runs-running": {
+    readonly step: unknown;
+  };
+  readonly "ticket-runs-awaiting": {
     readonly step: unknown;
   };
   readonly "ticket-runs-sent-back": {

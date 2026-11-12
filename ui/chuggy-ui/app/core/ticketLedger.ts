@@ -74,9 +74,16 @@ import type { RunSpend } from "./runTotals.ts";
  */
 export type TicketProgram = NonNullable<TicketResponse["program"]>;
 
-/** How a fan-out set settled, once every task in it is accounted for, or that it has not. */
+/** How a fan-out set settled, once every task in it is accounted for, or
+ * that it has not: `Awaiting` is a set nothing moves but a person's answer. */
 export type SetVerdict =
-  "Passed" | "Failed" | "Starting" | "Running" | "Cancelled" | "Blocked";
+  | "Passed"
+  | "Failed"
+  | "Starting"
+  | "Running"
+  | "Awaiting"
+  | "Cancelled"
+  | "Blocked";
 
 /** Whether the ticket's current artifact is this cycle's, or a later one's. */
 export type CycleStanding = "Current" | "Superseded";
@@ -178,6 +185,16 @@ function executionStopped(row: SetVerdictRow): boolean {
   );
 }
 
+/** Whether an execution is an approval's, which a person answers and no
+ * runner takes: the one kind whose summary names no requirement. */
+export function executionIsApproval(
+  row: Pick<ExecutionSummary, "requirement" | "identity">,
+): boolean {
+  return (
+    row.identity.type === "EvaluationTask" && row.requirement === undefined
+  );
+}
+
 /**
  * Whether an execution still waits for its worker: queued, or open under an
  * agent that has recorded no run. A command list records its run only as it
@@ -195,17 +212,19 @@ export function executionStarting(row: SetVerdictRow): boolean {
 
 /**
  * A set settles only once no task can still move, and one still moving is
- * Starting while every task in it waits for its worker. A stopped task is a
- * wall of its own rather than a failure the unanimous rule gets to weigh, and
- * an execution read on its own is a set of one and settles like one.
+ * Starting while every task in it waits for its worker, and Awaiting while
+ * every task still open in it waits on a person. A stopped task is a wall of
+ * its own rather than a failure the unanimous rule gets to weigh, and an
+ * execution read on its own is a set of one and settles like one.
  */
 export function setVerdict(executions: readonly SetVerdictRow[]): SetVerdict {
-  if (
-    executions.some(
-      (row) => row.status !== "Terminal" && row.status !== "Cancelled",
-    )
-  )
+  const open = executions.filter(
+    (row) => row.status !== "Terminal" && row.status !== "Cancelled",
+  );
+  if (open.length > 0) {
+    if (open.every((row) => row.status === "Awaiting")) return "Awaiting";
     return executions.every(executionStarting) ? "Starting" : "Running";
+  }
   if (executions.every((row) => row.status === "Cancelled")) return "Cancelled";
   if (executions.some(executionStopped)) return "Blocked";
   return executions.every((row) => row.outcome === "Passed")
@@ -343,11 +362,12 @@ export function stageEvaluatorsCurrent(
   return stage.evaluators.filter((row) => row.standing === "Current");
 }
 
-/** Whether a set has settled, which a starting one has not any more than a running one. */
+/** Whether a set has settled, which a starting or an awaiting one has not any more than a running one. */
 export function setVerdictSettled(verdict: SetVerdict): boolean {
   switch (verdict) {
     case "Starting":
     case "Running":
+    case "Awaiting":
       return false;
     case "Passed":
     case "Failed":
@@ -536,6 +556,8 @@ export function setVerdictLabel(verdict: SetVerdict): Copy {
       return { id: "ticket-verdict-starting" };
     case "Running":
       return { id: "ticket-verdict-running" };
+    case "Awaiting":
+      return { id: "ticket-verdict-awaiting" };
     case "Cancelled":
       return { id: "ticket-verdict-cancelled" };
     case "Blocked":

@@ -21,6 +21,7 @@ export interface InboxCopy {
   readonly "inbox-action-revoke": Record<never, never>;
   readonly "inbox-action-approve": Record<never, never>;
   readonly "inbox-action-decline": Record<never, never>;
+  readonly "inbox-action-reject": Record<never, never>;
   readonly "inbox-action-release": Record<never, never>;
   readonly "inbox-step-submitting": Record<never, never>;
   readonly "inbox-step-busy": Record<never, never>;

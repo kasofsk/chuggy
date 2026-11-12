@@ -105,10 +105,11 @@ export function verdictTone(verdict: SetVerdict): Tone {
       return "queued";
     case "Running":
       return "live";
-    case "Cancelled":
-      return "retired";
+    case "Awaiting":
     case "Blocked":
       return "parked";
+    case "Cancelled":
+      return "retired";
   }
 }
 

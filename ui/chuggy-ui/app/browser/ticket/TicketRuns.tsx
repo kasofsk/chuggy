@@ -33,6 +33,7 @@ import type { TicketLandingStack } from "../../core/ticketLandings.ts";
 import {
   cycleLabel,
   cycleStandingLabel,
+  executionIsApproval,
   ticketLedger,
 } from "../../core/ticketLedger.ts";
 import type { CopyText } from "../../core/copy.ts";
@@ -61,6 +62,10 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import {
+  TicketRunApprovalLine,
+  TicketRunApprovalTime,
+} from "./TicketRunApproval.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { readValue } from "./TicketPageHeld.tsx";
@@ -141,13 +146,16 @@ function TicketRunReasonLine(props: {
   return useRunReason(props.partition, props.execution, props.attempt)?.line;
 }
 
-/** A run's one line: its worker's reason where it left one, the pool's where
- * one refused it, and otherwise the opening of its result's report. */
+/** A run's one line: an approval's answer, its worker's reason where it left
+ * one, the pool's where one refused it, and otherwise the opening of its
+ * result's report. */
 export function TicketRunLineOf(props: {
   readonly partition: PartitionIdentity;
   readonly read: ExecutionResponse;
 }): ReactNode {
   const read = props.read;
+  if (executionIsApproval(read))
+    return <TicketRunApprovalLine partition={props.partition} read={read} />;
   const reasoned = runReasonAttempt(read);
   if (reasoned !== undefined)
     return (
@@ -221,6 +229,20 @@ function TicketRunsRowLink(props: {
   return <span className={props.className}>{props.children}</span>;
 }
 
+/** A run's time: an approval's asking or answer, and any other run's time. */
+function TicketRunsRowTime(props: {
+  readonly row: TicketRunsRow;
+  readonly nowMs: number;
+}): ReactNode {
+  const row = props.row;
+  if (row.kind !== "Run") return null;
+  return row.approval ? (
+    <TicketRunApprovalTime execution={row.execution} nowMs={props.nowMs} />
+  ) : (
+    <TicketRunTime runs={[row.execution]} nowMs={props.nowMs} />
+  );
+}
+
 function TicketRunsRowDrawn(props: {
   readonly row: TicketRunsRow;
   readonly params: TicketRunsParams;
@@ -230,7 +252,9 @@ function TicketRunsRowDrawn(props: {
   const marked = ticketRunsRowMark(row);
   const text = useCopyText();
   const spend =
-    row.kind === "Run" && row.execution.carriedFrom === undefined
+    row.kind === "Run" &&
+    row.execution.carriedFrom === undefined &&
+    !row.approval
       ? spendFigures(
           row.execution.runTotals,
           row.execution.runTotals?.costBasis,
@@ -252,9 +276,7 @@ function TicketRunsRowDrawn(props: {
           )}
         </span>
         <span className="ticket-runs-time">
-          {row.kind === "Run" ? (
-            <TicketRunTime runs={[row.execution]} nowMs={props.nowMs} />
-          ) : null}
+          <TicketRunsRowTime row={row} nowMs={props.nowMs} />
         </span>
         <span className="ticket-runs-cost">
           {spend === undefined ? null : <Figure figure={spend.cost} />}
@@ -447,9 +469,7 @@ function TicketRailRow(props: {
         <TicketRunMarkDrawn mark={marked.mark} tone={marked.tone} />
         <span className="ticket-rail-name">{ticketRunsRowName(row)}</span>
         <span className="ticket-rail-time">
-          {row.kind === "Run" ? (
-            <TicketRunTime runs={[row.execution]} nowMs={props.nowMs} />
-          ) : null}
+          <TicketRunsRowTime row={row} nowMs={props.nowMs} />
         </span>
       </TicketRunsRowLink>
     </li>

@@ -17,6 +17,7 @@ sentences-escalation-landing-unavailable = { -landing(case: "upper") } could not
 sentences-native-escalation = { -escalation }
 sentences-native-approval = awaiting your { -approval }
 sentences-native-evaluation-approval = awaiting your { -evaluation } { -approval }
+sentences-native-evaluation-approval-awaited = awaiting { -evaluation } { -approval }
 
 ## What the actor did with a submission.
 

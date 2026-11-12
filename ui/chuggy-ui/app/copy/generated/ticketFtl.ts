@@ -11,6 +11,9 @@ ticket-verdict-starting = Starting
 ticket-verdict-running = Running
 ticket-verdict-cancelled = Cancelled
 ticket-verdict-blocked = Blocked
+ticket-verdict-awaiting = Awaiting { -approval }
+ticket-verdict-approved = Approved
+ticket-verdict-rejected = Rejected
 ticket-verdict-killed = Killed
 ticket-cycle-current = Current
 ticket-standing-ready = Ready
@@ -111,6 +114,8 @@ ticket-actions-sentence-resume-rework = { -rework } this { -ticket } with a fres
 ticket-actions-sentence-revoke = { -revoke } this { -ticket }
 ticket-actions-sentence-approve = let this { -ticket }'s { -landing } go ahead
 ticket-actions-sentence-decline = hold this { -ticket }'s { -landing } back
+ticket-actions-sentence-approve-evaluation = pass this { -evaluator } of this { -ticket }'s { -work-stage }
+ticket-actions-sentence-reject = send this { -ticket }'s { -work-stage } back with your note
 ticket-actions-sentence-release = { -release } this { -draft } as a { -ticket }
 
 ## A never-released draft, drawn in the ticket's place: \`TicketDraft.tsx\`.
@@ -196,6 +201,27 @@ ticket-situation-where = { $outcome } in { -cycle } { $cycle }
 ticket-situation-step-runners = { -runner(case: "upper", form: "plural") }
 ticket-situation-step-repositories = { -repository(case: "upper", form: "plural") }
 
+## An evaluation approval, asked on the card and answered there:
+## \`TicketApprovals.tsx\`, \`app/core/evaluationApprovals.ts\`.
+
+ticket-awaiting-aria-label = Awaiting { -approval }
+ticket-approval-question = { $step } · { -cycle(case: "upper") } { $cycle }
+ticket-approval-approvers-developer = Any { -role-developer } of this { -project }
+ticket-approval-approvers-admin = Any { -role-admin } of this { -project }
+ticket-approval-who = Who answers
+ticket-approval-instructions = What to look at
+ticket-approval-no-instructions = No instructions given
+ticket-approval-work-result = The { -work-stage }'s result
+ticket-approval-work-artifacts = Its { -artifact(form: "plural") }
+ticket-approval-note-label = Note
+ticket-approval-note-placeholder = Optional with an approve
+ticket-approval-reject-question = Send this { -work-stage } back?
+ticket-approval-feedback-label = Feedback
+ticket-approval-feedback-placeholder = What has to change
+ticket-approval-approved-by = Approved by
+ticket-approval-rejected-by = Rejected by
+ticket-approval-waiting = Waiting on a person
+
 ## \`TicketStateChip.tsx\`: a dependency chip and the dispatch button it sits in.
 
 ticket-dispatch-aria-label = { -dispatch(case: "upper") } { -ticket } #{ $number }
@@ -240,6 +266,7 @@ ticket-run-mode-capability = capability
 ticket-runs-work-not-on-page = { -work-stage(case: "upper") } not on this page
 ticket-runs-starting = Starting { $step }
 ticket-runs-running = Running { $step }
+ticket-runs-awaiting = Awaiting { -approval } at { $step }
 ticket-runs-sent-back = Sent back by { $step }
 ticket-runs-failed-at = Failed at { $step }
 ticket-runs-blocked-at = Blocked at { $step }
