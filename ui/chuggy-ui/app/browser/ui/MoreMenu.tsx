@@ -78,6 +78,8 @@ function MoreMenuEntry(props: { readonly item: MoreMenuItem }): ReactNode {
 export function MoreMenu(props: {
   /** The trigger's accessible name, since its glyph says nothing. */
   readonly label: string;
+  /** Keyed by position, so an item that renames itself while the menu stays
+   * open keeps the focus it holds rather than being drawn anew. */
   readonly items: readonly MoreMenuItem[];
 }): ReactNode {
   return (
@@ -90,9 +92,6 @@ export function MoreMenu(props: {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="end">
-          {/* Keyed by position: an item may rename itself while the menu
-              stays open, and a key that followed its label would remount it
-              and drop the focus it holds. */}
           {props.items.map((item, position) => (
             <MoreMenuEntry key={position} item={item} />
           ))}
