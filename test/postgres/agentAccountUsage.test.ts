@@ -9,15 +9,17 @@
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { agentAccountCredentialsKeptMaxAt163 } from "../../src/adapters/postgres/schema/migrations/163-agent-account-credential.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerRunEnded,
   postgresWorkerRunTotal,
 } from "../../src/adapters/postgres/workerPlane.ts";
+import { workerRunCredentialDefaults } from "../../src/contract/workerPlane.ts";
 import type {
   RunEndedEvidence,
   RunLimit,
@@ -647,4 +649,257 @@ test("the worker plane reaches the account relations through their doors alone",
       /permission denied/u,
       relation,
     );
+});
+
+/** Each credential kept of `principal`'s account, what it keeps and the attempt each came from. */
+async function credentialsOf(principal: string) {
+  return rig.harness.query(
+    `SELECT 'reading' AS kept,agent,credential,usage_window,utilization,attempt
+       FROM agent_account_usage WHERE principal=$1
+     UNION ALL
+     SELECT 'limit',agent,credential,usage_window,NULL,attempt
+       FROM agent_account_limit WHERE principal=$1
+     ORDER BY kept DESC,agent,credential,usage_window`,
+    [principal],
+  );
+}
+
+function totalsNamed(attempt: Attempt, usage: RunUsage, credential: string) {
+  return totals.record({
+    secret: attempt.capability.secret,
+    generation: attempt.generation,
+    totals: runTotals,
+    usage,
+    credential,
+  });
+}
+
+test("a reading under one credential replaces no other credential's reading, and a run naming none keeps its own under the agent's default", async () => {
+  const owner = `owner-${randomUUID()}`;
+  const claim = { by: "Personal", owner } as const;
+  const resetsAt = secondsFromNow(3_600);
+  const work = await spendingAttempt("credential-work", "Claude", claim);
+  const home = await spendingAttempt("credential-home", "Claude", claim);
+  const unnamed = await spendingAttempt("credential-none", "Claude", claim);
+  const codex = await spendingAttempt("credential-codex", "Codex", claim);
+  await totalsNamed(
+    work,
+    {
+      five_hour: {
+        utilization: 0.9,
+        resetsAt,
+        observedAt: secondsFromNow(-90),
+      },
+    },
+    "work",
+  );
+  await totalsNamed(
+    home,
+    {
+      five_hour: {
+        utilization: 0.1,
+        resetsAt,
+        observedAt: secondsFromNow(-60),
+      },
+    },
+    "home",
+  );
+  await totalsPosted(unnamed, {
+    five_hour: { utilization: 0.5, resetsAt, observedAt: secondsFromNow(-30) },
+  });
+  await totalsPosted(codex, {
+    five_hour: { utilization: 0.4, resetsAt, observedAt: secondsFromNow(-30) },
+  });
+  const kept = (
+    agent: "Claude" | "Codex",
+    credential: string,
+    utilization: number,
+    attempt: Attempt,
+  ) => ({
+    kept: "reading",
+    agent,
+    credential,
+    usage_window: "five_hour",
+    utilization,
+    attempt: attempt.attempt,
+  });
+  assert.deepEqual(await credentialsOf(owner), [
+    kept("Claude", workerRunCredentialDefaults.Claude, 0.5, unnamed),
+    kept("Claude", "home", 0.1, home),
+    kept("Claude", "work", 0.9, work),
+    kept("Codex", workerRunCredentialDefaults.Codex, 0.4, codex),
+  ]);
+});
+
+test("a limit is kept under the credential its run named, beside another credential's, and under the default where it named none", async () => {
+  const owner = `owner-${randomUUID()}`;
+  const claim = { by: "Personal", owner } as const;
+  const work = await spendingAttempt("limit-work", "Claude", claim);
+  const unnamed = await spendingAttempt("limit-none", "Claude", claim);
+  assert.equal(
+    await endPosted(work, "RunRateLimited", {
+      window: "five_hour",
+      credential: "work",
+    }),
+    true,
+  );
+  assert.equal(await endPosted(unnamed, "RunRateLimited"), true);
+  assert.deepEqual(await credentialsOf(owner), [
+    {
+      kept: "limit",
+      agent: "Claude",
+      credential: workerRunCredentialDefaults.Claude,
+      usage_window: null,
+      utilization: null,
+      attempt: unnamed.attempt,
+    },
+    {
+      kept: "limit",
+      agent: "Claude",
+      credential: "work",
+      usage_window: "five_hour",
+      utilization: null,
+      attempt: work.attempt,
+    },
+  ]);
+  const benching = `owner-${randomUUID()}`;
+  const benched = await spendingAttempt("limit-benched-named", "Claude", {
+    by: "Personal",
+    owner: benching,
+    benchesCredential: true,
+  });
+  assert.equal(
+    await endPosted(benched, "RunRateLimited", {
+      window: "five_hour",
+      credential: "work",
+    }),
+    true,
+  );
+  assert.deepEqual(await credentialsOf(benching), []);
+  assert.deepEqual(await attemptLimitOf(benched), [
+    { usage_window: "five_hour", resets_at: null },
+  ]);
+});
+
+test("a door called at the arity of the release before the credential lands under the agent's default", async () => {
+  const owner = `owner-${randomUUID()}`;
+  const claim = { by: "Personal", owner } as const;
+  const read = await spendingAttempt("old-arity-usage", "Claude", claim);
+  const ended = await spendingAttempt("old-arity-limit", "Codex", claim);
+  const digest = (attempt: Attempt) =>
+    createHash("sha256")
+      .update(attempt.capability.secret, "utf8")
+      .digest("hex");
+  const usage = {
+    seven_day: {
+      utilization: 0.2,
+      resetsAt: secondsFromNow(3_600),
+      observedAt: secondsFromNow(-10),
+    },
+  };
+  await workerPool.query(
+    "SELECT record_worker_run_usage($1,$2,$3::jsonb)::text",
+    [digest(read), read.generation, JSON.stringify(usage)],
+  );
+  const client = await workerPool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "SELECT withdraw_worker_attempt($1,$2,'RunRateLimited')",
+      [digest(ended), ended.generation],
+    );
+    await client.query("SELECT record_worker_run_limit($1,$2,$3,$4)::text", [
+      digest(ended),
+      ended.generation,
+      "seven_day",
+      null,
+    ]);
+    await client.query("COMMIT");
+  } finally {
+    client.release();
+  }
+  assert.deepEqual(await credentialsOf(owner), [
+    {
+      kept: "reading",
+      agent: "Claude",
+      credential: workerRunCredentialDefaults.Claude,
+      usage_window: "seven_day",
+      utilization: 0.2,
+      attempt: read.attempt,
+    },
+    {
+      kept: "limit",
+      agent: "Codex",
+      credential: workerRunCredentialDefaults.Codex,
+      usage_window: "seven_day",
+      utilization: null,
+      attempt: ended.attempt,
+    },
+  ]);
+});
+
+test("a credential arriving at the bound makes room by dropping the one observed least recently, and one already kept drops nothing", async () => {
+  const owner = `owner-${randomUUID()}`;
+  const claim = { by: "Personal", owner } as const;
+  const planting = await rig.harness.begin();
+  try {
+    await planting.query("SET LOCAL session_replication_role=replica");
+    for (let index = 0; index < agentAccountCredentialsKeptMaxAt163; index += 1)
+      await planting.query(
+        index % 2 === 0
+          ? `INSERT INTO agent_account_usage
+               (principal,agent,credential,usage_window,utilization,resets_at,observed_at,
+                tenant,project,execution,attempt)
+             VALUES($1,'Claude',$2,'five_hour',0.1,now()+interval '1 hour',
+                    now()-make_interval(secs=>$3),'tenant','project','execution','attempt')`
+          : `INSERT INTO agent_account_limit
+               (principal,agent,credential,observed_at,tenant,project,execution,attempt)
+             VALUES($1,'Claude',$2,now()-make_interval(secs=>$3),
+                    'tenant','project','execution','attempt')`,
+        [owner, `kept-${String(index)}`, 1_000 - index],
+      );
+    await planting.commit();
+  } catch (error) {
+    await planting.rollback();
+    throw error;
+  }
+  const held = async () =>
+    (await credentialsOf(owner)).map((row) => row["credential"]).sort();
+  const before = await held();
+  assert.equal(before.length, agentAccountCredentialsKeptMaxAt163);
+  const resetsAt = secondsFromNow(3_600);
+  const again = await spendingAttempt("bound-kept", "Claude", claim);
+  await totalsNamed(
+    again,
+    {
+      seven_day: { utilization: 0.3, resetsAt, observedAt: secondsFromNow(-5) },
+    },
+    "kept-0",
+  );
+  assert.deepEqual(
+    [...new Set(await held())].sort(),
+    [...new Set(before)].sort(),
+  );
+  const renamed = await spendingAttempt("bound-renamed", "Claude", claim);
+  await totalsNamed(
+    renamed,
+    {
+      five_hour: { utilization: 0.3, resetsAt, observedAt: secondsFromNow(-1) },
+    },
+    "renamed",
+  );
+  const after = new Set(await held());
+  assert.equal(after.size, agentAccountCredentialsKeptMaxAt163);
+  assert.ok(after.has("renamed"));
+  assert.ok(!after.has("kept-1"), "the credential observed least recently");
+  assert.ok(after.has("kept-0"), "refreshed, so no longer the stalest");
+  const limited = await spendingAttempt("bound-limit", "Claude", claim);
+  assert.equal(
+    await endPosted(limited, "RunRateLimited", { credential: "another" }),
+    true,
+  );
+  const last = new Set(await held());
+  assert.equal(last.size, agentAccountCredentialsKeptMaxAt163);
+  assert.ok(last.has("another"));
+  assert.ok(!last.has("kept-2"));
 });

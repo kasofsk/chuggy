@@ -46,6 +46,7 @@ import {
   workerContractAccepted,
   workerContractEvaluatedTrees,
   workerContractRunContexts,
+  workerContractRunCredentials,
   workerContractRunUsages,
   workerContractSessionContexts,
   workerContractTargetRefs,
@@ -233,6 +234,59 @@ test("a run sends its account's usage and its limit from the version a runner ho
         contractVersionAccepted(workerContractRunUsages, release),
         `${release} ${name}`,
       );
+});
+
+/** Whether the limit a release's run end takes may name the credential it stopped, read through the end because early releases export no limit schema of its own. */
+function workerRunLimitNamesCredential(schema: z.ZodType): boolean {
+  if (!(schema instanceof z.ZodObject)) return false;
+  const limit: unknown = schema.shape["limit"];
+  const held =
+    limit instanceof z.ZodOptional || limit instanceof z.ZodExactOptional
+      ? limit.unwrap()
+      : limit;
+  return held instanceof z.ZodObject && Object.hasOwn(held.shape, "credential");
+}
+
+test("a run names the credential of its usage and its limit from the version a runner holds a plane's release to, and no release below it takes either", async () => {
+  assert.ok(Object.hasOwn(workerRunTotalsSchema.shape, "credential"));
+  assert.ok(workerRunLimitNamesCredential(workerRunEndedSchema));
+  assert.ok(!Object.hasOwn(workerRunEndedSchema.shape, "credential"));
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunCredentials,
+      workerContractRelease,
+    ),
+  );
+  for (const release of workerContractReplayed("job")) {
+    const taken = contractVersionAccepted(
+      workerContractRunCredentials,
+      release,
+    );
+    const totalsSchema = await workerContractReleaseExport(
+      release,
+      "workerPlane",
+      "workerRunTotalsSchema",
+      workerContractReleaseSchema,
+    );
+    assert.equal(
+      totalsSchema instanceof z.ZodObject &&
+        Object.hasOwn(totalsSchema.shape, "credential"),
+      taken,
+      `${release} totals`,
+    );
+    assert.equal(
+      workerRunLimitNamesCredential(
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "workerRunEndedSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      taken,
+      `${release} limit`,
+    );
+  }
 });
 
 /** Whether a turn page's schema lets a turn name the subagent call it was made under. */

@@ -608,39 +608,46 @@ takes an advisory lock on the tenant, or for a workspace link on the site,
 drops that set's ended links past the most recently ended it keeps, and counts
 its open ones before it inserts. A link is not a ticket, and the wipe keeps it.
 
-`agent_account_usage` — the latest reading of each window of an agent account's
-usage: how much of the window was used, when it reopens, when it was observed,
-and the attempt whose run reported it. Owned by the boundary owner, which is
-what `record_worker_run_usage` runs as; the worker plane writes it through that
-door alone. The API reads one person's rows through `agent_account_standing`,
-and the metrics plane reads the key of every row and nothing else. Its key and
-identity are
-`(principal, agent, usage_window)`, the principal being the account an attempt
-spent as `execution_attempt_agent_account` derives it from the attempt's own
-claim and the agent the one its invocation names, so a window appears once per
-account and agent. It departs from #180's composite project key because one
-login serves every workspace its owner works in: a key carrying a tenant and a
-project would hold one account's readings apart, as `capacity_account` and
-`recovery_epoch` are keyed by what they are rather than by a project. It points
-at the attempt its reading came from. It is changed by that door alone, in the
-transaction that stores the run's totals or finds them already stored, and a
-reading replaces the one kept only where it was observed later. It has no
-unfinished work: a reading is kept with its totals or not at all, and the
-latest of each window is the row itself.
+`agent_account_usage` — the latest reading of each window of each credential
+of an agent account: how much of the window was used, when it reopens, when it
+was observed, and the attempt whose run reported it. Owned by the boundary
+owner, which is what `record_worker_run_usage` runs as; the worker plane writes
+it through that door alone. The API reads one person's rows through
+`agent_account_standing`, which answers each window's newest reading across the
+account's credentials, and the metrics plane reads the principal and agent of
+every row and nothing else. Its key and identity are
+`(principal, agent, credential, usage_window)`, the principal being the account
+an attempt spent as `execution_attempt_agent_account` derives it from the
+attempt's own claim, the agent the one its invocation names, and the credential
+the one the run named, or its agent's default name where it named none, so a
+window appears once per credential. It departs from #180's composite project
+key because one login serves every workspace its owner works in: a key carrying
+a tenant and a project would hold one account's readings apart, as
+`capacity_account` and `recovery_epoch` are keyed by what they are rather than
+by a project. It points at the attempt its reading came from. It is changed by
+that door alone, in the transaction that stores the run's totals or finds them
+already stored, and a reading replaces the one kept of its credential only where
+it was observed later. The credentials kept of one account's agent, across this
+relation and `agent_account_limit`, are bounded by
+`agentAccountCredentialsKeptMaxAt163`: one arriving at the bound drops every row
+of the credential observed least recently, through
+`agent_account_credential_kept`. It has no unfinished work: a reading is kept
+with its totals or not at all, and the latest of each window is the row itself.
 
-`agent_account_limit` — the latest hard limit a provider stopped an agent
-account at: the window and the instant it reopens where the run named them,
-when the plane received it, and the attempt it stopped. Owned by the boundary
-owner, which is what `record_worker_run_limit` runs as; the worker plane writes
-it through that door alone. The API reads one person's row through
-`agent_account_standing`, and the metrics plane reads the key of every row and
-nothing else. Its key and identity
-are `(principal, agent)`, derived as `agent_account_usage`'s are, and it departs
-from #180's composite project key for the same reason. It points at the attempt
-it stopped. It is changed by that door alone, in the transaction that withdraws
-that attempt `RunRateLimited`, and a limit replaces the one kept unless that one
-was received later. It has no unfinished work: the limit is kept with its
-attempt's ending or not at all.
+`agent_account_limit` — the latest hard limit a provider stopped each credential
+of an agent account at: the window and the instant it reopens where the run
+named them, when the plane received it, and the attempt it stopped. Owned by the
+boundary owner, which is what `record_worker_run_limit` runs as; the worker
+plane writes it through that door alone. The API reads one person's newest
+limit across the account's credentials through `agent_account_standing`, and
+the metrics plane reads the principal and agent of every row and nothing else.
+Its key and identity are `(principal, agent, credential)`, derived as
+`agent_account_usage`'s are and bounded with it, and it departs from #180's
+composite project key for the same reason. It points at the attempt it stopped.
+It is changed by that door alone, in the transaction that withdraws that attempt
+`RunRateLimited`, and a limit replaces the one kept of its credential unless
+that one was received later. It has no unfinished work: the limit is kept with
+its attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their

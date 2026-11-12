@@ -594,12 +594,13 @@ export interface WorkerPlaneServerService {
   readonly uploadBytesMax: number;
 }
 
-/** The offered totals as the durable port takes them, an absent label omitted, and the account usage offered beside them, which a reader of totals is never answered with. */
+/** The offered totals as the durable port takes them, an absent label omitted, and the account usage and its credential offered beside them, which a reader of totals is never answered with. */
 function workerRunTotals(offered: z.infer<typeof workerRunTotalsSchema>): {
   readonly totals: RunTotals;
   readonly usage?: RunUsage;
+  readonly credential?: string;
 } {
-  const { resultSubtype, stopReason, usage, ...rest } = offered;
+  const { resultSubtype, stopReason, usage, credential, ...rest } = offered;
   return {
     totals: {
       ...rest,
@@ -607,6 +608,7 @@ function workerRunTotals(offered: z.infer<typeof workerRunTotalsSchema>): {
       ...(stopReason === undefined ? {} : { stopReason }),
     },
     ...(usage === undefined ? {} : { usage }),
+    ...(credential === undefined ? {} : { credential }),
   };
 }
 
