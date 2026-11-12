@@ -704,7 +704,7 @@ const poolPlaneColumns = [
   [
     "session_launch",
     "SELECT",
-    "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton",
+    "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton",
   ],
   [
     "worker_pool",

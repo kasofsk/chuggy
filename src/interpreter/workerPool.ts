@@ -55,8 +55,8 @@
  *
  * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
  * row and its owner's permit. It claims sessions and never an execution, and
- * may name how long a session it claims may sit idle, which the plane caps at
- * the scheduler's own bound; no other caller's poll is read for one. Its
+ * may name how long a session it claims may sit idle, which is without limit
+ * where it names none; no other caller's poll is read for one. Its
  * sessions run in one container it starts before it holds any, so each answer
  * to it names the session image the scheduler publishes, and it may pull that
  * image while it holds nothing.

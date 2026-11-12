@@ -191,13 +191,17 @@ const workerPoolQueryCountSchema = z
   .transform(Number)
   .pipe(z.number().int().nonnegative().safe());
 
+/** The longest idle bound a chat host may name: the longest delay a timer holds, in whole seconds. */
+export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
+
 /**
  * The poll's query as the plane reads it: `held`, the assignments of either
  * kind the pool is still running, repeated or single or absent as a query
  * carries a list, `wanted`, how many more executions it has room for now, and
  * `wantedSessions`, how many more sessions, which is none where it is absent,
  * and `idleSecs`, how long a session a member's chat host claims may sit idle,
- * which the plane caps at its own bound and reads from no other caller.
+ * which is without limit where it is absent, is refused above
+ * `workerPoolPollIdleSecsMax`, and is read from no other caller.
  * The held list's length is the plane's own setting rather than a figure
  * written here, and a list longer than that is refused whole rather than cut,
  * because a cut list reads as a pool that let go of work it is still running;
@@ -218,7 +222,7 @@ export function workerPoolPollQuerySchema(heldMax: number) {
     [workerPoolPollQuery.wanted]: workerPoolQueryCountSchema,
     [workerPoolPollQuery.wantedSessions]: workerPoolQueryCountSchema.default(0),
     [workerPoolPollQuery.idleSecs]: workerPoolQueryCountSchema
-      .pipe(z.number().positive())
+      .pipe(z.number().positive().max(workerPoolPollIdleSecsMax))
       .optional(),
   });
 }

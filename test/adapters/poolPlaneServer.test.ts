@@ -2025,11 +2025,8 @@ test("a personal runner polling for an execution while its owner's read cannot b
   assert.equal(answered.body, "");
 });
 
-/** A session side whose launch caps idle at `idleSecsMax`, recording every opening it is asked for. */
-function idleCapped(
-  idleSecsMax: number | undefined,
-  offered: readonly string[] = ["thread-one"],
-): {
+/** A session side recording every opening it is asked for. */
+function openingsRecorded(offered: readonly string[] = ["thread-one"]): {
   readonly made: unknown[];
   readonly opened: WorkerPoolSessionOpening[];
   readonly store: WorkerPoolSessions;
@@ -2041,10 +2038,6 @@ function idleCapped(
     opened,
     store: {
       ...offering.store,
-      launch: () =>
-        Promise.resolve(
-          idleSecsMax === undefined ? launch : { ...launch, idleSecsMax },
-        ),
       open: (identity, opening) => {
         opened.push(opening);
         return offering.store.open(identity, opening);
@@ -2055,7 +2048,7 @@ function idleCapped(
 
 test("a chat host of this release is handed its sessions and never an execution, renewing none it names", async () => {
   const recorded = calls();
-  const sessions = idleCapped(undefined);
+  const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(recorded.ports, authority("Allow"), sessions.store),
   ).inject({
@@ -2073,7 +2066,7 @@ test("a chat host of this release is handed its sessions and never an execution,
 
 test("a chat host speaking a release before its own is refused at the poll and at every settlement, before any port", async () => {
   const recorded = calls();
-  const sessions = idleCapped(undefined);
+  const sessions = openingsRecorded();
   const app = createPoolPlaneApp(
     plane(recorded.ports, authority("Allow"), sessions.store),
   );
@@ -2101,14 +2094,9 @@ test("a chat host speaking a release before its own is refused at the poll and a
   assert.deepEqual(sessions.made, []);
 });
 
-test("a chat host's declared idle bound is capped at the launch's, recorded on its claim and launched as its idle limit", async () => {
-  for (const [declared, cap, recorded] of [
-    [600, 60, 60],
-    [30, 60, 30],
-    [undefined, 60, undefined],
-    [30, undefined, undefined],
-  ] as const) {
-    const sessions = idleCapped(cap);
+test("a chat host's declared idle bound is recorded on its claim as named and launched as its idle limit, and one naming none is launched with no idle limit", async () => {
+  for (const declared of [86_400, 30, undefined]) {
+    const sessions = openingsRecorded();
     const answered = await createPoolPlaneApp(
       plane(calls().ports, authority("Allow"), sessions.store),
     ).inject({
@@ -2116,20 +2104,25 @@ test("a chat host's declared idle bound is capped at the launch's, recorded on i
       url: `${polling([], 0, 1)}${declared === undefined ? "" : `&${workerPoolPollQuery.idleSecs}=${String(declared)}`}`,
       headers: hostSpeaking,
     });
-    const named = `${String(declared)} under ${String(cap)}`;
+    const named = String(declared);
     assert.equal(answered.statusCode, 200, named);
     const [opening] = sessions.opened;
-    assert.equal(opening?.idleSecs, recorded, named);
+    assert.equal(opening?.idleSecs, declared, named);
     assert.equal(
       opening?.launch.bounds.idleMs,
-      recorded === undefined ? launch.bounds.idleMs : recorded * 1_000,
+      declared === undefined ? undefined : declared * 1_000,
+      named,
+    );
+    assert.equal(
+      opening !== undefined && "idleMs" in opening.launch.bounds,
+      declared !== undefined,
       named,
     );
   }
 });
 
 test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {
-  const sessions = idleCapped(60);
+  const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), sessions.store),
   ).inject({
@@ -2142,7 +2135,7 @@ test("a pool's declared idle bound is not read, and a bound of no seconds is ref
   assert.equal(opening?.idleSecs, undefined);
   assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
   const refused = await createPoolPlaneApp(
-    plane(calls().ports, authority("Allow"), idleCapped(60).store),
+    plane(calls().ports, authority("Allow"), openingsRecorded().store),
   ).inject({
     method: "GET",
     url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=0`,
@@ -2153,7 +2146,7 @@ test("a pool's declared idle bound is not read, and a bound of no seconds is ref
 
 test("a chat host's session is opened only in a project its owner may still read, asked as its owner", async () => {
   const read: unknown[] = [];
-  const sessions = idleCapped(undefined);
+  const sessions = openingsRecorded();
   const refusing = readsRefused(read);
   const answered = await createPoolPlaneApp(
     plane(calls().ports, refusing, sessions.store),

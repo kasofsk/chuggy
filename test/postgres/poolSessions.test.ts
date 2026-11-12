@@ -50,9 +50,10 @@ import {
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
-import type {
-  WorkerPoolReconciliation,
-  WorkerPoolSessionAssignment,
+import {
+  workerPoolPollIdleSecsMax,
+  type WorkerPoolReconciliation,
+  type WorkerPoolSessionAssignment,
 } from "../../src/contract/workerPool.ts";
 import {
   asSessionBearerSecret,
@@ -196,7 +197,6 @@ const launch: SessionLaunchFacts = {
   model: "session-model",
   deadlineSecs: 900,
   placementBackoffSecs: 60,
-  idleSecsMax: 1800,
 };
 
 assert.deepEqual(
@@ -415,7 +415,7 @@ async function claimedOne(
 async function attemptOf(assignment: string): Promise<Record<string, unknown>> {
   const [row] = await rig.harness.query(
     `SELECT session,project,state,evidence,pool,holder_kind,idle_secs,
-            pool_principal::text AS pool_principal,pool_refusal,image,launch,
+            idle_unbounded,pool_principal::text AS pool_principal,pool_refusal,image,launch,
             lease_owner,idle_since IS NOT NULL AS idle,
             lease_expires_at::text AS lease
        FROM session_attempt WHERE assignment=$1`,
@@ -545,12 +545,19 @@ test("a runner is handed a session whose oldest queued turn was admitted for run
     pool: member,
     holder_kind: "ChatHost",
     idle_secs: null,
+    idle_unbounded: true,
     pool_principal: host.principal,
     pool_refusal: null,
     image: launch.image,
     launch: {
       api: { url: settings.sessionApiUrl },
-      bounds: launch.bounds,
+      bounds: {
+        mailboxPollMs: launch.bounds.mailboxPollMs,
+        resultDrainMs: launch.bounds.resultDrainMs,
+        loadTimeoutMs: launch.bounds.loadTimeoutMs,
+        turnsMax: launch.bounds.turnsMax,
+        budgetUsd: launch.bounds.budgetUsd,
+      },
       model: launch.model,
     },
     lease_owner: member,
@@ -1775,10 +1782,47 @@ test("a chat host is handed its member's sessions in every project of the tenant
   );
 });
 
-test("a chat host's declared idle bound is recorded on its claim capped at the scheduler's, launched as its idle limit, and is what the idle reaper ends its attempt by", async () => {
+/** The one session `host` is claimed by a poll declaring `idleSecs`, or declaring none. */
+async function hostClaimedDeclaring(
+  host: PoolPlaneIdentity,
+  idleSecs?: number,
+): Promise<string> {
+  const answered = await workerPoolPoll(
+    ports,
+    host,
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 1,
+      ...(idleSecs === undefined ? {} : { idleSecs }),
+    },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`pool session suite: a poll answered ${answered.polled}`);
+  const [claimed, ...more] = answered.answer.sessions;
+  assert.deepEqual(more, []);
+  assert.ok(claimed !== undefined);
+  return claimed.assignment;
+}
+
+/** The idle bound an attempt records, whether it records none, and the idle limit it was launched with. */
+async function idleBoundOf(assignment: string): Promise<readonly unknown[]> {
+  const attempt = await attemptOf(assignment);
+  const bounds = documentOf(documentOf(attempt["launch"])["bounds"]);
+  return [
+    attempt["idle_secs"],
+    attempt["idle_unbounded"],
+    "idleMs" in bounds,
+    bounds["idleMs"],
+  ];
+}
+
+test("a chat host's declared idle bound is recorded on its claim as named, above the scheduler's window too, and launched as its idle limit, one naming none is launched with none and never idle-reaped, and a pool's attempt is reaped at the scheduler's window", async () => {
   const { partition, member, pool } = await routedProject("host-idle");
   const lead = await waiting(partition, "host-idle-lead", "Lead", member);
   await waiting(partition, "host-idle-thread", "Thread", member);
+  await waiting(partition, "host-idle-unbounded", "Thread", member);
   await waiting(
     partition,
     "host-idle-inquiry",
@@ -1787,43 +1831,90 @@ test("a chat host's declared idle bound is recorded on its claim capped at the s
     lead.session,
   );
   const host = await chatHost(partition, member);
-  const declared = async (idleSecs: number): Promise<string> => {
-    const answered = await workerPoolPoll(
-      ports,
-      host,
-      { held: [], wanted: 0, wantedSessions: 1, idleSecs },
-      settings,
-    );
-    if (answered.polled !== "Answered")
-      throw new Error(`pool session suite: a poll answered ${answered.polled}`);
-    const [claimed, ...more] = answered.answer.sessions;
-    assert.deepEqual(more, []);
-    assert.ok(claimed !== undefined);
-    return claimed.assignment;
-  };
-  const short = await declared(600);
-  const long = await declared(7200);
+  const windowSecs = 300;
+  const short = await hostClaimedDeclaring(host, 600);
+  const long = await hostClaimedDeclaring(host, 7200);
+  const unbounded = await hostClaimedDeclaring(host);
   const pooled = (await claimedOne(pool)).assignment;
-  const bound = async (assignment: string): Promise<readonly unknown[]> => {
-    const attempt = await attemptOf(assignment);
-    const launched = documentOf(attempt["launch"]);
-    return [attempt["idle_secs"], documentOf(launched["bounds"])["idleMs"]];
-  };
-  assert.deepEqual(await bound(short), ["600", 600_000]);
-  assert.deepEqual(await bound(long), ["1800", 1_800_000]);
-  assert.deepEqual(await bound(pooled), [null, launch.bounds.idleMs]);
+  assert.deepEqual(await idleBoundOf(short), ["600", false, true, 600_000]);
+  assert.deepEqual(await idleBoundOf(long), ["7200", false, true, 7_200_000]);
+  assert.deepEqual(await idleBoundOf(unbounded), [
+    null,
+    true,
+    false,
+    undefined,
+  ]);
+  assert.deepEqual(await idleBoundOf(pooled), [
+    null,
+    false,
+    true,
+    launch.bounds.idleMs,
+  ]);
 
-  for (const assignment of [short, long, pooled])
+  const reaped = (): Promise<number> =>
+    rig.scheduler.reapIdleAttempts(rig.epoch, windowSecs, sessionRigBoundless);
+  for (const assignment of [short, long, unbounded, pooled])
+    await backdated(assignment, "idle_since", windowSecs - 60);
+  assert.equal(await reaped(), 0);
+  for (const assignment of [short, long, unbounded, pooled])
     await backdated(assignment, "idle_since", 700);
-  assert.equal(
-    await rig.scheduler.reapIdleAttempts(rig.epoch, 3600, sessionRigBoundless),
-    1,
-  );
-  assert.deepEqual(await endingsOf([short, long, pooled]), [
+  assert.equal(await reaped(), 2);
+  assert.deepEqual(await endingsOf([short, long, unbounded, pooled]), [
     ["Lost", "SessionIdle"],
     ["Running", null],
     ["Running", null],
+    ["Lost", "SessionIdle"],
   ]);
+  const yearSecs = 365 * 24 * 3600;
+  for (const assignment of [long, unbounded])
+    await backdated(assignment, "idle_since", 10 * yearSecs);
+  assert.equal(await reaped(), 1);
+  assert.deepEqual(await endingsOf([long, unbounded]), [
+    ["Lost", "SessionIdle"],
+    ["Running", null],
+  ]);
+});
+
+test("an attempt recorded with the longest idle bound a poll admits does not stop the reaper ending another past the scheduler's window, and an attempt cannot record a longer one", async () => {
+  const { partition, member, pool } = await routedProject("host-idle-max");
+  await waiting(partition, "host-idle-max-lead", "Lead", member);
+  await waiting(partition, "host-idle-max-thread", "Thread", member);
+  const host = await chatHost(partition, member);
+  const longest = await hostClaimedDeclaring(host, workerPoolPollIdleSecsMax);
+  const pooled = (await claimedOne(pool)).assignment;
+  assert.equal(
+    (await attemptOf(longest))["idle_secs"],
+    String(workerPoolPollIdleSecsMax),
+  );
+  const windowSecs = 300;
+  for (const assignment of [longest, pooled])
+    await backdated(assignment, "idle_since", windowSecs + 60);
+  assert.equal(
+    await rig.scheduler.reapIdleAttempts(
+      rig.epoch,
+      windowSecs,
+      sessionRigBoundless,
+    ),
+    1,
+  );
+  assert.deepEqual(await endingsOf([longest, pooled]), [
+    ["Running", null],
+    ["Lost", "SessionIdle"],
+  ]);
+
+  const lengthening = await rig.harness.begin();
+  await assert.rejects(
+    committedAfter(lengthening, async () => {
+      await lengthening.query(
+        `ALTER TABLE session_attempt DISABLE TRIGGER session_attempt_is_fenced`,
+      );
+      await lengthening.query(
+        `UPDATE session_attempt SET idle_secs=$2 WHERE assignment=$1`,
+        [longest, workerPoolPollIdleSecsMax + 1],
+      );
+    }),
+    { code: "23514" },
+  );
 });
 
 /** A limit on `member`'s Claude whose reset is ahead, under the threads option named. */
