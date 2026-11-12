@@ -208,13 +208,18 @@ const configuration: PinnedTaskConfiguration = {
   review: { instructions: ["Walk the call paths the change reaches."] },
 };
 
+/** The invocation a configuration listing every credential of this grant composes to. */
 function taskInvocation(
   authorityGrant: PolicyAuthorityGrant = grant,
 ): AttemptPlacement["invocation"] {
+  const listing: PinnedTaskConfiguration = {
+    ...configuration,
+    authority: { credentials: authorityGrant.credentials },
+  };
   const composed = composeTaskInvocation(blessedPracticeCatalog, {
     purpose: "Work",
-    pin: configuration,
-    configuration,
+    pin: listing,
+    configuration: listing,
     runtime: { changedFiles: [], handoff: [] },
     readOnlyRepositories: [],
     dependencyDeliveries: [],
@@ -1339,6 +1344,7 @@ function maximalConfiguration(): PinnedTaskConfiguration {
     practices: [...allPracticeIds],
     work: { instructions: list },
     review: { instructions: list },
+    authority: { credentials: grant.credentials },
   };
 }
 
