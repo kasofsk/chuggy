@@ -560,7 +560,7 @@ export const ticketLandingsAnsweredMax = 8;
  * strings they are sent as. A manifest can hold far more than a response body
  * carries, so a landing answers the paths that fit and says the list was cut.
  */
-export const ticketLandingConflictBytesMax = 2_048;
+export const ticketLandingConflictBytesMax = 1_536;
 
 /** How many of a ticket's work cycles the landings read answers the stack of, the newest of them, oldest first. */
 export const ticketLandingStacksAnsweredMax = 8;
