@@ -15,6 +15,12 @@ import type { Browser, Locator, Page } from "@playwright/test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { sessionRefreshTokenKey } from "../../app/core/sessionHolder.ts";
+import {
+  viewportDeskEm,
+  viewportEmPixels,
+  viewportHeightEmDefault,
+} from "../../test/viewportSizes.ts";
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
 
@@ -24,17 +30,17 @@ export const renderedDist = join(
 );
 
 /** The widths a screen is held at: a phone, a tablet, and the desk the
- * console's sheets call `viewportDeskEm`. */
+ * vitest suites read at, `viewportDeskEm` in `test/viewportSizes.ts`. */
 export const renderedViewports = {
   phone: { width: 360, height: 740 },
   tablet: { width: 768, height: 1024 },
-  desk: { width: 1280, height: 800 },
+  desk: {
+    width: viewportDeskEm * viewportEmPixels,
+    height: viewportHeightEmDefault * viewportEmPixels,
+  },
 } as const;
 
 export type RenderedViewport = keyof typeof renderedViewports;
-
-/** The key the console keeps its refresh token under, `sessionRefreshTokenKey`. */
-const renderedRefreshTokenKey = "chuggy.refreshToken";
 
 export interface RenderedViolation {
   readonly directive: string;
@@ -113,7 +119,7 @@ export async function renderedOpen(
             {
               origin,
               localStorage: [
-                { name: renderedRefreshTokenKey, value: "stub-refresh-token" },
+                { name: sessionRefreshTokenKey, value: "stub-refresh-token" },
               ],
             },
           ]
