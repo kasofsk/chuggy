@@ -21,6 +21,7 @@
     list-style: none;
   }
 
+  /* jscpd:ignore-start — the ticket list's row, lifted rule for rule so adopting this draws it unchanged */
   .record-row {
     --record-row-foot-height: calc(var(--space-6) + var(--space-2));
     display: grid;
@@ -73,6 +74,8 @@
   .record-row-title a:hover {
     text-decoration: underline;
   }
+
+  /* jscpd:ignore-end — the lifted row ends here */
 
   /* As tall as a chip on every row, so a row whose line is empty is no
      shorter than one whose line holds one. */

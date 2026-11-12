@@ -4,8 +4,7 @@
  * list reads are rows of the one list with "show more" after it, and a
  * skeleton row has a row's parts and is hidden from a reader.
  *
- * The router is stubbed, as the page header's suite stubs it, so the links are
- * drawn with no provider around them.
+ * The router is stubbed, so the links are drawn with no provider around them.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -19,18 +18,7 @@ import {
 } from "../app/browser/ui/RecordList.tsx";
 import { styleless } from "./styleless.ts";
 
-interface LinkStub {
-  readonly to?: string;
-  readonly href?: string | undefined;
-  readonly children?: ReactNode;
-}
-
-vi.mock("@tanstack/react-router", () => ({
-  createLink:
-    (component: (props: LinkStub) => ReactNode) =>
-    (props: LinkStub): ReactNode =>
-      component({ ...props, href: props.to }),
-}));
+vi.mock("@tanstack/react-router", () => import("./routerLinkStubbed.tsx"));
 
 afterEach(cleanup);
 
