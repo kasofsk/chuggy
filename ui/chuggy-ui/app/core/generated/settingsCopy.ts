@@ -6,8 +6,12 @@ export interface SettingsCopy {
   readonly "settings-nav": Record<never, never>;
   readonly "settings-nav-project": Record<never, never>;
   readonly "settings-nav-lead": Record<never, never>;
+  readonly "settings-nav-lead-session": Record<never, never>;
   readonly "settings-nav-placement": Record<never, never>;
   readonly "settings-nav-permissions": Record<never, never>;
+  readonly "settings-nav-repositories": Record<never, never>;
+  readonly "settings-nav-runners": Record<never, never>;
+  readonly "settings-nav-catalog": Record<never, never>;
   readonly "settings-nav-workspace": Record<never, never>;
   readonly "settings-nav-people": Record<never, never>;
   readonly "settings-nav-accounts": Record<never, never>;
@@ -15,6 +19,7 @@ export interface SettingsCopy {
   readonly "settings-nav-usage": Record<never, never>;
   readonly "settings-nav-site": Record<never, never>;
   readonly "settings-nav-workspaces": Record<never, never>;
+  readonly "settings-nav-person": Record<never, never>;
   readonly "settings-cancel": Record<never, never>;
   readonly "settings-done": Record<never, never>;
   readonly "settings-edit": Record<never, never>;

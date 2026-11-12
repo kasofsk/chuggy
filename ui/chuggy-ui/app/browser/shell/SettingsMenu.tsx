@@ -1,6 +1,6 @@
 /**
- * Everything a reader reaches rarely, behind one gear in the bar: the pages
- * that set the open project up, how the console looks, the wording it is
+ * Everything a reader reaches rarely, behind one gear in the bar: the open
+ * project's settings and the sections of them it names, how the console looks, the wording it is
  * drawn in for a site administrator, where the chat pane sits where the frame
  * divides and has one, and signing out.
  *
@@ -206,8 +206,10 @@ function SettingsChatPlacement(): ReactNode {
   );
 }
 
-/** The project's setup pages, each a link that also moves a pane that filled
- * the body out of the way, as a screen's entry in the bar does. */
+/** The project's settings and the sections the gear names, each a link that
+ * also moves a pane that filled the body out of the way, as a screen's entry
+ * in the bar does. Every section lies beneath the settings, so the one current
+ * is the last whose address the page is at. */
 function SettingsSetup(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -216,9 +218,11 @@ function SettingsSetup(props: {
   const pathname = useRouterState({
     select: (router) => router.location.pathname,
   });
+  const entries = shellSetupNav(props.partition);
+  const current = entries.findLast((entry) => navEntryCurrent(entry, pathname));
   return (
     <>
-      {shellSetupNav(props.partition).map((entry) => (
+      {entries.map((entry) => (
         <DropdownMenu.Item
           key={entry.id}
           className={`${menuItemClassName} text-ink-1 no-underline`}
@@ -228,7 +232,7 @@ function SettingsSetup(props: {
             to={entry.to}
             params={entry.params}
             onClick={yields}
-            aria-current={navEntryCurrent(entry, pathname) ? "page" : undefined}
+            aria-current={entry === current ? "page" : undefined}
           >
             <span className="picker-gutter">
               <NavIcon id={entry.id} />

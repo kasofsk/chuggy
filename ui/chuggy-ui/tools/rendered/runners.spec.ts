@@ -33,7 +33,7 @@ for (const viewport of runnersViewports)
     served,
   }) => {
     const rendered = await renderedOpen(browser, served.origin, {
-      route: `/${stubApiTenant}/${stubApiProject}/runners`,
+      route: `/${stubApiTenant}/${stubApiProject}/settings/runners`,
       viewport,
       signedIn: true,
       ready: (page) => page.getByRole("rowheader", { name: /^build-linux/u }),

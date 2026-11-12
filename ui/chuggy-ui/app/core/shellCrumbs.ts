@@ -22,11 +22,7 @@ export interface ShellCrumb {
 /** The screens that sit directly under a project, by their address segment. */
 const screenRoutes: Readonly<Record<string, NavRoute>> = {
   inbox: navRoutes.inbox,
-  lead: navRoutes.lead,
-  catalog: navRoutes.catalog,
   settings: navRoutes.settings,
-  repositories: navRoutes.repositories,
-  runners: navRoutes.runners,
 };
 
 /** The overview's segment, which the overview's own address leaves out. */

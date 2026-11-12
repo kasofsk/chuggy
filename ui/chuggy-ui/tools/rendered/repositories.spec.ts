@@ -37,7 +37,7 @@ const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 
 const repositoriesViewports: readonly RenderedViewport[] = ["phone", "desk"];
 
-const repositoriesPath = `/${stubApiTenant}/${stubApiProject}/repositories`;
+const repositoriesPath = `/${stubApiTenant}/${stubApiProject}/settings/repositories`;
 
 /** The site, answering this reader as one who administers the project. */
 async function repositoriesServed(): Promise<Served> {

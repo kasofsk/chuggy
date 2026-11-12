@@ -40,7 +40,6 @@ import {
   hostedRunsQuery,
   sessionPlacementQuery,
 } from "../app/core/projectQueries.ts";
-import { leadBody } from "./leadFixture.ts";
 import {
   abilitiesEvery,
   abilitiesFetch,
@@ -57,13 +56,7 @@ import {
 } from "./threadFixture.ts";
 import { sheetConditioned, sheetDeclared, sheetRules } from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import {
-  answer,
-  apiDouble,
-  operationAt,
-  settled,
-  turned,
-} from "./screenHarness.tsx";
+import { answer, settled, turned } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import {
   chatDrawn,
@@ -2405,28 +2398,17 @@ test("a message to a held thread the hosted grant refuses stays in the box, read
   styleless();
 });
 
-/** The shell over a server answering the lead route with `lead`. */
-function leadServed(lead: unknown): typeof fetch {
-  return apiDouble({
-    operation: operationAt("Pending"),
-    route: (url) => (url.endsWith("/lead") ? answer(lead) : shellRoute(url)),
-  }).fetch;
-}
-
-/** A project with no lead is answered rather than refused, so the bar draws the
- * entry with nothing beside it, and one with a lead draws where it stands. */
-test("the bar's Lead entry stands only where the project has a lead", async () => {
-  await mounted(viewportDeskEm, leadServed({ lead: "None" }));
-  const bar = (): HTMLElement => navDrawn() ?? document.body;
-  const unled = within(bar()).getByRole("link", { name: "Lead" });
+/** The bar draws the project's primary places and nothing a reader visits
+ * rarely: those are settings sections, reached from the gear. */
+test("the bar's places are Tickets and Epics, with the Inbox beside the gear", async () => {
+  await mounted(viewportDeskEm);
+  const bar = navDrawn() ?? document.body;
   expect(
-    unled.querySelector("i[aria-hidden]"),
-    "a dot with no lead",
-  ).toBeNull();
-  cleanup();
-  await mounted(viewportDeskEm, leadServed(leadBody(1, 1)));
-  const led = within(bar()).getByRole("link", { name: "OpenLead" });
-  expect(led.querySelector("i[aria-hidden]")).not.toBeNull();
+    within(bar)
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toStrictEqual(["Tickets", "Epics"]);
+  expect(screen.getByRole("link", { name: "Inbox" })).toBeTruthy();
   styleless();
 });
 

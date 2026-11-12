@@ -3,11 +3,7 @@
 shell-nav = Console
 shell-nav-tickets = { -ticket(case: "upper", form: "plural") }
 shell-nav-epics = { -epic(case: "upper", form: "plural") }
-shell-nav-lead = { -lead(case: "upper") }
-shell-nav-catalog = { -catalog(case: "upper") }
 shell-nav-settings = { -project(case: "upper") } settings
-shell-nav-repositories = { -repository(case: "upper", form: "plural") }
-shell-nav-runners = { -runner(case: "upper", form: "plural") }
 shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread

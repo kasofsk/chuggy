@@ -31,7 +31,7 @@ import {
   repositoryConfigurations,
   repositoryConfigurationsDirectory,
 } from "../../core/repositoryConfigurations.ts";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
@@ -51,7 +51,8 @@ import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection
 import "./Repositories.css";
 
 /** This page's own address, which its reads take their partition from. */
-export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
+export const repositoryRoutePath =
+  "/$tenant/$project/settings/repositories/$repository";
 
 /** What this repository declares under `.chug/configurations`, and when it was last imported. */
 function RepositoryDeclared(props: {
@@ -128,7 +129,10 @@ export function RepositoryPage(): ReactNode {
         title={repositoryLabel(repository)}
         back={{
           label: text({ id: "repositories-title" }),
-          link: { to: navRoutes.repositories, params: partition },
+          link: {
+            to: settingsRoutes.project.repositories,
+            params: partition,
+          },
         }}
         description={repository}
         {...(binding?.retiredAt === undefined

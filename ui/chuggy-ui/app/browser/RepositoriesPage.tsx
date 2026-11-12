@@ -79,6 +79,7 @@ import {
 } from "../core/projectQueries.ts";
 import { forgeInstallationsQuery } from "../core/tenantQueries.ts";
 import type { WorkRunner } from "../core/workRunner.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -112,7 +113,7 @@ import { useWorkRunner } from "./workRunner.tsx";
 import "./repositories/Repositories.css";
 
 /** This page's own address, which its parameters are read from. */
-const repositoriesRoutePath = "/$tenant/$project/repositories";
+const repositoriesRoutePath = settingsRoutes.project.repositories;
 
 /** What the worker app reaches of each binding, by its repository, where the
  * read that asks has answered; a binding it reaches maps to nothing. */
