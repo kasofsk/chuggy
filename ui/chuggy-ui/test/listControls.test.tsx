@@ -2,7 +2,8 @@
  * The bar over a list, which the tickets list and the epics list both draw:
  * what it is handed for its start before its search and pickers, and a search
  * that is a button naming the box it opens out to, focused, until Escape or
- * leaving it closes it again.
+ * leaving it closes it again; and a bar scrolled out of the way that is inert
+ * while focus is outside it.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -10,7 +11,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test } from "vitest";
 
-import { ListControls, ListSearch } from "../app/browser/ListControls.tsx";
+import { ListControls, ListSearch } from "../app/browser/ui/ListControls.tsx";
 
 afterEach(cleanup);
 
@@ -74,4 +75,42 @@ test("focus leaving the search closes it, and a closed search holding words is m
     relatedTarget: screen.getByRole("button", { name: "Sort" }),
   });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
+});
+
+function listControlsScrolledTo(top: number): void {
+  Object.defineProperty(window, "scrollY", { configurable: true, value: top });
+  fireEvent.scroll(window);
+}
+
+afterEach(() => {
+  listControlsScrolledTo(0);
+});
+
+test("scrolled out of the way the bar is inert, unless focus is inside it", () => {
+  render(
+    <>
+      <Searched />
+      <button type="button">Elsewhere</button>
+    </>,
+  );
+  const bar = barOf();
+  listControlsScrolledTo(600);
+  expect(bar.hasAttribute("data-hidden")).toBe(true);
+  expect(bar.hasAttribute("inert")).toBe(true);
+  listControlsScrolledTo(0);
+  expect(bar.hasAttribute("inert")).toBe(false);
+  const sort = screen.getByRole("button", { name: "Sort" });
+  fireEvent.focus(sort);
+  listControlsScrolledTo(600);
+  expect(bar.hasAttribute("data-hidden")).toBe(false);
+  expect(bar.hasAttribute("inert")).toBe(false);
+  fireEvent.blur(sort, {
+    relatedTarget: screen.getByRole("button", { name: "Search rows" }),
+  });
+  expect(bar.hasAttribute("inert")).toBe(false);
+  fireEvent.blur(sort, {
+    relatedTarget: screen.getByRole("button", { name: "Elsewhere" }),
+  });
+  expect(bar.hasAttribute("data-hidden")).toBe(true);
+  expect(bar.hasAttribute("inert")).toBe(true);
 });
