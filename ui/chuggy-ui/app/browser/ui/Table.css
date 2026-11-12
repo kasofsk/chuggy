@@ -50,4 +50,96 @@
     border-radius: var(--radius-2);
     background: var(--edge-strong);
   }
+
+  /* A scroller that holds more than it shows keeps its scrolling to itself,
+     and fades the side the more is on. */
+  .tabular-scroll:is([data-more-start], [data-more-end]) {
+    overscroll-behavior-x: contain;
+  }
+
+  .tabular-scroll[data-more-end] {
+    mask-image: linear-gradient(
+      to left,
+      transparent,
+      var(--ink-1) var(--space-6)
+    );
+  }
+
+  .tabular-scroll[data-more-start] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      var(--ink-1) var(--space-6)
+    );
+  }
+
+  .tabular-scroll[data-more-start][data-more-end] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      var(--ink-1) var(--space-6),
+      var(--ink-1) calc(100% - var(--space-6)),
+      transparent
+    );
+  }
+
+  /* A stacked table measures the width it is given, which is what chooses
+     between its columns and its cards. */
+  .tabular-stacking {
+    container-type: inline-size;
+  }
+
+  /* A cell's label is its column's head, and a word of its own only where the
+     row is a card. */
+  .tabular-stacked .tabular-label {
+    display: none;
+  }
+
+  @container (max-width: 40em) {
+    .tabular-stacked,
+    .tabular-stacked tbody,
+    .tabular-stacked tr {
+      display: block;
+    }
+
+    .tabular-stacked thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .tabular-stacked tbody tr {
+      padding: var(--space-3) var(--space-4);
+      border-bottom: var(--hairline) solid var(--edge);
+    }
+
+    .tabular-stacked tbody tr:last-child {
+      border-bottom: 0;
+    }
+
+    .tabular-stacked tbody :is(th, td) {
+      display: grid;
+      grid-template-columns: minmax(0, var(--col-field-label)) minmax(0, 1fr);
+      column-gap: var(--space-3);
+      align-items: baseline;
+      padding: var(--space-1) 0;
+      border: 0;
+      text-align: start;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .tabular-stacked .num {
+      text-align: start;
+    }
+
+    .tabular-stacked .tabular-label {
+      display: block;
+      font-size: var(--text-sm);
+      font-weight: var(--weight-medium);
+      color: var(--ink-3);
+    }
+  }
 }
