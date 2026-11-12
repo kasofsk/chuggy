@@ -96,10 +96,11 @@ function controller(element: HTMLElement): HTMLElement | undefined {
   return undefined;
 }
 
-/** Where a dialog with no trigger of its own hands the focus back: what held
- * it when the dialog opened, or what controls the popup that stood in, once
- * that has left the page. */
-function useOpener(open: boolean): () => HTMLElement | undefined {
+/** Where a dialog with no trigger of its own hands the focus back on close:
+ * what held it when the dialog opened, or what controls the popup that stood
+ * in, once that has left the page. Where it recorded nothing, Radix's own
+ * return to the trigger stands. */
+function useFocusReturned(open: boolean): (event: Event) => void {
   const opener = useRef<{
     readonly focused: HTMLElement;
     readonly controller: HTMLElement | undefined;
@@ -112,11 +113,12 @@ function useOpener(open: boolean): () => HTMLElement | undefined {
         ? { focused, controller: controller(focused) }
         : undefined;
   }, [open]);
-  return () => {
+  return (event) => {
     const held = opener.current;
-    if (held === undefined) return undefined;
-    if (held.focused.isConnected) return held.focused;
-    return held.controller?.isConnected === true ? held.controller : undefined;
+    if (held === undefined) return;
+    event.preventDefault();
+    if (held.focused.isConnected) held.focused.focus();
+    else if (held.controller?.isConnected === true) held.controller.focus();
   };
 }
 
@@ -146,8 +148,8 @@ export function Dialog(props: {
   readonly children: ReactNode;
 }): ReactNode {
   const width = dialogSizeClassNames[props.size ?? "roster"];
+  const returned = useFocusReturned(props.open && props.trigger === undefined);
   const busy = props.busy === true;
-  const opener = useOpener(props.open && props.trigger === undefined);
   return (
     <RadixDialog.Root
       open={props.open}
@@ -179,11 +181,7 @@ export function Dialog(props: {
         <div className="pointer-events-none fixed inset-x-4 inset-y-6 z-[calc(var(--z-overlay)+30)]">
           <RadixDialog.Content
             aria-describedby={undefined}
-            onCloseAutoFocus={(event) => {
-              if (props.trigger !== undefined) return;
-              event.preventDefault();
-              opener()?.focus();
-            }}
+            onCloseAutoFocus={returned}
             onInteractOutside={(event) => {
               if (busy || props.kept === true) event.preventDefault();
             }}
