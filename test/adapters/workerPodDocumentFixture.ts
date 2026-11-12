@@ -38,6 +38,7 @@ const pinnedConfiguration: PinnedTaskConfiguration = {
   practices: ["AcceptanceCriteria"],
   work: { instructions: ["Render the document and submit nothing beside it."] },
   review: { instructions: ["Read the document, not the renderer."] },
+  authority: { credentials: ["forge", "workspace"] },
 };
 
 function goldenInvocation(): AttemptPlacement["invocation"] {
