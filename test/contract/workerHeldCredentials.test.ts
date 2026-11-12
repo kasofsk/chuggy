@@ -97,7 +97,7 @@ test("a placeholder names the file it was made for, each in the order the text n
   assert.deepEqual(heldCredentialFilesPlaced("{file:a} {{ file }}"), []);
 });
 
-test("a bundle naming a file it does not hold, or one file or variable twice, is refused", () => {
+test("a bundle naming a file it does not hold, or one file or variable twice in any case, is refused", () => {
   const refused = [
     {
       ...bundle,
@@ -127,6 +127,13 @@ test("a bundle naming a file it does not hold, or one file or variable twice, is
       ],
     },
     { ...bundle, files: [...bundle.files, bundle.files[0]] },
+    {
+      ...bundle,
+      files: [
+        ...bundle.files,
+        { file: "Token", content: { kind: "Secret", secret: "s" } },
+      ],
+    },
     { ...bundle, variables: [...bundle.variables, bundle.variables[0]] },
     { ...bundle, variables: [] },
   ];
@@ -137,16 +144,26 @@ test("a bundle naming a file it does not hold, or one file or variable twice, is
     );
 });
 
-test("a bundle's file is named inside its directory, and never by a path", () => {
-  for (const file of ["../token", "a/b", ".hidden", "", "x".repeat(65)])
-    assert.ok(
-      !workerHeldCredentialBundleSchema.safeParse({
-        ...bundle,
-        files: [{ file, content: { kind: "Secret", secret: "s" } }],
-        variables: [{ kind: "Path", variable: "A_FILE", file }],
-      }).success,
-      file,
-    );
+test("a bundle's file is named inside its directory in lower case, never by a path, and never ending in a dot", () => {
+  const named = (file: string) =>
+    workerHeldCredentialBundleSchema.safeParse({
+      ...bundle,
+      files: [{ file, content: { kind: "Secret", secret: "s" } }],
+      variables: [{ kind: "Path", variable: "A_FILE", file }],
+    }).success;
+  for (const file of ["a", "9", "hosts.yml", "a_b-c.d0", "x".repeat(64)])
+    assert.ok(named(file), file);
+  for (const file of [
+    "../token",
+    "a/b",
+    ".hidden",
+    "",
+    "x".repeat(65),
+    "Token",
+    "token.",
+    "token-",
+  ])
+    assert.ok(!named(file), file);
 });
 
 test("a bundle is held to its bounds on files, variables and the bytes of each file and value", () => {

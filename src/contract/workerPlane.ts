@@ -322,9 +322,13 @@ export const workerHeldCredentialSchema = z.object({
   expiresAtMs: countSchema.optional(),
 });
 
-/** The name a bundle's file is written under, inside a directory the worker chooses for the bundle. */
+/**
+ * The name a bundle's file is written under, inside a directory the worker
+ * chooses for the bundle: lower case, and ending in a letter or digit, so that
+ * no two names are one file where a filesystem ignores case or a trailing dot.
+ */
 export const heldCredentialFileNamePattern =
-  /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
+  /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/u;
 
 /** What a text or a variable's value holds where the worker is to write the path it wrote the bundle's file `file` at. */
 export function heldCredentialFilePlaceholder(file: string): string {
