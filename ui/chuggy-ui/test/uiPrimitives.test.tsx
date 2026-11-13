@@ -11,7 +11,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Field, Fields, fieldsVariants } from "../app/browser/ui/Fields.tsx";
-import { EmptyState, emptyVariants } from "../app/browser/ui/EmptyState.tsx";
+import {
+  EmptyState,
+  emptyHeadingLevels,
+  emptyVariants,
+} from "../app/browser/ui/EmptyState.tsx";
 import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
 import { Table } from "../app/browser/ui/Table.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -68,7 +72,7 @@ test("fields are a definition list in both variants, and an absence says so", ()
   }
 });
 
-test("an empty state is a line inside a panel and a centred heading on a page", () => {
+test("an empty state is a line inside a panel and a centred title on a page, which is no heading", () => {
   for (const variant of emptyVariants) {
     const { container } = render(
       <EmptyState
@@ -79,8 +83,9 @@ test("an empty state is a line inside a panel and a centred heading on a page", 
       />,
     );
     expect(screen.getByText("Nothing has run")).toBeDefined();
+    expect(screen.queryByRole("heading")).toBeNull();
     expect(
-      screen.queryByRole("heading", { name: "Nothing has run" }) !== null,
+      screen.getByText("Nothing has run").classList.contains("empty-title"),
     ).toBe(variant === "page");
     expect(
       container
@@ -93,6 +98,18 @@ test("an empty state is a line inside a panel and a centred heading on a page", 
     expect(container.querySelector(".empty-page")).toBeNull();
     expect(container.querySelector(".empty-action")).toBeNull();
     styleless();
+    cleanup();
+  }
+});
+
+test("an empty page's title is a heading at the level its caller gives, and at no other", () => {
+  for (const level of emptyHeadingLevels) {
+    render(<EmptyState label="Nothing has run" variant="page" level={level} />);
+    const headings = screen.getAllByRole("heading");
+    expect(headings).toHaveLength(1);
+    expect(headings[0]?.tagName).toBe(`H${String(level)}`);
+    expect(headings[0]?.textContent).toBe("Nothing has run");
+    expect(headings[0]?.classList.contains("empty-title")).toBe(true);
     cleanup();
   }
 });
