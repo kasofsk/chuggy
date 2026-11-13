@@ -155,9 +155,11 @@
       var(--tone-parked),
       color-mix(in srgb, var(--tone-parked) var(--fill-dark), var(--surface-0))
     );
+    /* the faintest tone, so less of the page goes into it than into the
+       others' fills, for the inverse ink to read on it */
     --fill-retired: light-dark(
       var(--tone-retired),
-      color-mix(in srgb, var(--tone-retired) var(--fill-dark), var(--surface-0))
+      color-mix(in srgb, var(--tone-retired) 84%, var(--surface-0))
     );
 
     /* the page dimmed behind a drawer, which is the one colour that is not a

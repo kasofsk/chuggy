@@ -117,6 +117,7 @@ const tokenContrastFills = [
   "fill-evaluation",
   "fill-finalization",
   "fill-parked",
+  "fill-retired",
 ];
 
 interface TokenContrastPair {
@@ -207,11 +208,13 @@ test("a token edited below the contrast it needs is named, in the scheme it fail
       strong.slice(strong.indexOf("(") + 1, strong.indexOf(",")),
       "#9ea89f",
     )
-    .replace(pass, "light-dark(#287740, #79c68f)");
+    .replace(pass, "light-dark(#287740, #79c68f)")
+    .replace("var(--tone-retired) 84%", "var(--tone-retired) var(--fill-dark)");
   expect(tokenContrastFailures(faint)).toEqual([
     "Light: tone-pass on surface-2",
     "Light: edge-strong on surface-0",
     "Light: edge-strong on surface-1",
+    "Dark: ink-inverse on fill-retired",
   ]);
 });
 
