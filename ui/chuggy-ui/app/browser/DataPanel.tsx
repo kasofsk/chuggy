@@ -21,6 +21,7 @@ import { Freshness } from "./Freshness.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
+import { Skeleton, type SkeletonShape } from "./ui/Skeleton.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 /** Retry for a failed read, or nothing when the read carries no retry. */
@@ -66,19 +67,26 @@ export function ReadFailed(props: {
 }
 
 /**
- * A read that is not ready, as the one line it is drawn as. Said here once
+ * A read that is not ready, as the one line it is drawn as, or while pending
+ * as the `skeleton` of what it will be where one is given. Said here once
  * because a panel is not the only place a read is waited on: a part of a ready
  * panel may be waiting on a read of its own, and it says so in these words.
  */
 export function PanelUnready<T>(props: {
   readonly state: PanelState<T>;
+  readonly skeleton?: SkeletonShape;
 }): ReactNode {
   const text = useCopyText();
   const state = props.state;
   switch (state.state) {
     case "Pending":
-      return (
+      return props.skeleton === undefined ? (
         <Notice tone="info" inline detail={text({ id: "panel-loading" })} />
+      ) : (
+        <Skeleton
+          shape={props.skeleton}
+          label={text({ id: "panel-loading" })}
+        />
       );
     case "Absent":
       return <ReadFailed failure={{ outcome: "Absent" }} />;

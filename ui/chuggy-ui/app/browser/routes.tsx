@@ -119,6 +119,7 @@ export function Landing(): ReactNode {
             lead={
               <EmptyState
                 variant="page"
+                level={1}
                 label={text({ id: "shell-projects-none" })}
                 detail={text({ id: "shell-projects-none-detail" })}
               />
@@ -573,6 +574,7 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
   return (
     <EmptyState
       variant="page"
+      level={1}
       label={text({ id: "shell-page-failed" })}
       action={
         <Button
@@ -591,7 +593,11 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
 function RouteNotFound(): ReactNode {
   const text = useCopyText();
   return (
-    <EmptyState variant="page" label={text({ id: "shell-page-absent" })} />
+    <EmptyState
+      variant="page"
+      level={1}
+      label={text({ id: "shell-page-absent" })}
+    />
   );
 }
 

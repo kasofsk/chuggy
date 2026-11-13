@@ -353,6 +353,7 @@ export function ProjectCreation(props: {
     return (
       <EmptyState
         variant="page"
+        level={1}
         label={text(offer.label)}
         detail={text(offer.detail)}
       />
