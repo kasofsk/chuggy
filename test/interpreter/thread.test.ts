@@ -106,15 +106,21 @@ test("the wake roster holds exactly the reasons the wake runtime joins", () => {
 /**
  * The two copies being identical says nothing about what they say, so the acts
  * a wake alone may not start are written out here, beside the instruction that
- * lets one start them. `originate` is the one that matters most: this slice
- * gives every thread `DraftOriginate` by default.
+ * lets one start them. `originate` is the one that matters most: every thread
+ * holds `DraftOriginate` by default.
  */
 test("the default standing lets a woken thread act only as far as its owner's instruction reaches", () => {
-  for (const act of ["originate", "revise", "release", "dispatch", "run"])
-    assert.ok(threadStandingRulesDefault.includes(` ${act}`), act);
+  assert.match(
+    threadStandingRulesDefault,
+    /Otherwise originate, revise, release, dispatch or run nothing because of it\./u,
+  );
   assert.match(
     threadStandingRulesDefault,
     /A wake is a notice: say what happened, and act on it only as far as an instruction your owner already gave reaches/u,
+  );
+  assert.match(
+    threadStandingRulesDefault,
+    /A ticket the lead refused is reported, never dispatched because of a wake\./u,
   );
   assert.match(
     threadStandingRulesDefault,
@@ -323,20 +329,30 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
 test("the purpose lets a thread dispatch or revoke a ticket on its owner's word and on nothing else", () => {
   assert.match(
     threadPurposeStanding,
-    /You dispatch or revoke a ticket only on your owner's word: their instruction, which can reach tickets not yet ready, as when they ask you to carry an epic through, or their yes to one line from you naming the tickets\./u,
+    /You dispatch or revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
+  );
+});
+
+/**
+ * A wake reaches only the thread a ticket was filed from, so an instruction to
+ * carry work through is heard of only for those tickets.
+ */
+test("the purpose lets an instruction to dispatch reach tickets not yet ready, and says which a thread hears of", () => {
+  assert.match(
+    threadPurposeStanding,
+    /An instruction to dispatch can reach tickets not yet ready, as when they ask you to carry an epic through, but you are woken only for tickets filed from this thread, so say so when it reaches others\./u,
   );
 });
 
 /**
  * A paused selector keeps its lead session, so a thread told the lead dispatches
- * what is released waits on a dispatch that never comes. The purpose says the
- * lead dispatches only where it is, and where to read whether it is.
+ * what is released waits on a dispatch that never comes; a project whose lead
+ * has not opened yet is one a lead will dispatch.
  */
-test("the purpose says releasing starts nothing and a lead dispatches only where read_lead shows one", () => {
-  assert.match(threadPurposeStanding, /Releasing starts nothing/u);
+test("the purpose says releasing starts nothing, and which read_lead answers mean no lead will dispatch", () => {
   assert.match(
     threadPurposeStanding,
-    /by the project's lead where read_lead shows one dispatching and otherwise only on someone's word/u,
+    /Releasing starts nothing: a released ticket runs once it is dispatched, by the project's lead unless read_lead answers a lead standing `paused`, or no lead for a reason other than `NotNeeded` or `AwaitingSelector`, and there only on someone's word, so say so when you release there\./u,
   );
 });
 
