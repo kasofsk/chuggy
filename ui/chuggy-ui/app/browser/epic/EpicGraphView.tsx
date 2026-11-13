@@ -7,7 +7,11 @@
  * foot; and the side panel.
  *
  * The ticket in focus, a preview over the selection, keeps everything up and
- * down its chain as it is and dims the rest. Escape clears the selection, and
+ * down its chain as it is and dims the rest, and its lines are drawn under
+ * the cards; at rest the longest chain's are. A pointer previews a card once
+ * it has rested on it a moment, and its preview ends a moment after it leaves,
+ * so moving from one card onto the next passes through no rest. Only a card
+ * whose drawing changes is written. Escape clears the selection, and
  * so does pressing the selected card again. Selecting a ticket turns the
  * longest chain off, and clearing it turns the chain back on.
  *
@@ -15,7 +19,7 @@
  * the sheet's, and the spine's fill is an SVG's own geometry.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -32,6 +36,8 @@ import {
   epicGraphTitledOf,
 } from "../../core/epicGraphLayers.ts";
 import type { EpicGraphLayered } from "../../core/epicGraphLayers.ts";
+import { epicGraphPortLit } from "../../core/epicGraphLines.ts";
+import type { EpicGraphLook } from "../../core/epicGraphLines.ts";
 import { epicGraphTicketsOf } from "../../core/epics.ts";
 import { landingQueuePlaceOf } from "../../core/landingQueues.ts";
 import { projectTableRow } from "../../core/projectTableRows.ts";
@@ -43,6 +49,8 @@ import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { EpicGraphCard } from "./EpicGraphCard.tsx";
+import type { EpicGraphPreviewed } from "./EpicGraphCard.tsx";
+import { EpicGraphLines } from "./EpicGraphLines.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicGraphSide, EpicGraphSideSummary } from "./EpicGraphSide.tsx";
 
@@ -52,6 +60,8 @@ import "./epicGraph.css";
 interface EpicGraphCardsHeld {
   readonly layered: EpicGraphLayered;
   readonly selected: number | undefined;
+  /** The ticket selected, or the one previewed over it. */
+  readonly focus: number | undefined;
   /** The tickets kept as they are, around the ticket in focus. */
   readonly kept: ReadonlySet<number> | undefined;
   /** Each ticket's step on the longest chain, where that is drawn. */
@@ -59,7 +69,7 @@ interface EpicGraphCardsHeld {
   readonly kickersHidden: ReadonlySet<string>;
   readonly queues: LandingQueuesResponse | undefined;
   readonly onSelect: (ticket: number) => void;
-  readonly onPreview: (ticket: number | undefined) => void;
+  readonly onPreview: EpicGraphPreviewed;
 }
 
 function EpicGraphCardHeld(props: {
@@ -75,6 +85,7 @@ function EpicGraphCardHeld(props: {
       ports={(held.layered.dependsOn.get(node.ticket) ?? []).map((ticket) => ({
         ticket,
         met: held.layered.tickets.get(ticket)?.standing === "Done",
+        lit: epicGraphPortLit(held.focus, node.ticket, ticket),
       }))}
       drawn={{
         selected: held.selected === node.ticket,
@@ -286,6 +297,44 @@ function useEpicGraphEscape(
   }, [selected, onTicket]);
 }
 
+/** How long a pointer rests on a card before it is previewed, and how long
+ * after it leaves the preview ends. */
+const epicGraphPreviewStartMs = 110;
+const epicGraphPreviewEndMs = 240;
+
+/** The ticket previewed: by the keyboard's focus at once, and by a pointer
+ * after it has rested, a later pointing replacing one still waiting. */
+function useEpicGraphPreview(): readonly [
+  number | undefined,
+  EpicGraphPreviewed,
+] {
+  const [preview, setPreview] = useState<number | undefined>(undefined);
+  const waiting = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(
+    () => () => {
+      clearTimeout(waiting.current);
+    },
+    [],
+  );
+  const onPreview = useCallback<EpicGraphPreviewed>((ticket, previewed, by) => {
+    const settled = (shown: number | undefined) =>
+      previewed ? ticket : shown === ticket ? undefined : shown;
+    if (by === "focus") {
+      if (previewed) clearTimeout(waiting.current);
+      setPreview(settled);
+      return;
+    }
+    clearTimeout(waiting.current);
+    waiting.current = setTimeout(
+      () => {
+        setPreview(previewed ? ticket : undefined);
+      },
+      previewed ? epicGraphPreviewStartMs : epicGraphPreviewEndMs,
+    );
+  }, []);
+  return [preview, onPreview];
+}
+
 /** What the cards are drawn against: the ticket in focus, a preview over the
  * selection, and what it keeps; the chain's steps while the chain is drawn
  * and nothing is selected; and the kickers too common to show. Pressing the
@@ -297,7 +346,7 @@ function useEpicGraphCardsHeld(
   queues: LandingQueuesResponse | undefined,
   onTicket: (ticket: number | undefined) => void,
 ): EpicGraphCardsHeld {
-  const [preview, setPreview] = useState<number | undefined>(undefined);
+  const [preview, onPreview] = useEpicGraphPreview();
   const focus = [preview, selected].find(
     (ticket) => ticket !== undefined && layered.layerOf.has(ticket),
   );
@@ -318,6 +367,7 @@ function useEpicGraphCardsHeld(
   return {
     layered,
     selected,
+    focus,
     kept,
     steps:
       chainShown && selected === undefined
@@ -328,8 +378,41 @@ function useEpicGraphCardsHeld(
     onSelect: (ticket) => {
       onTicket(ticket === selected ? undefined : ticket);
     },
-    onPreview: setPreview,
+    onPreview,
   };
+}
+
+/** The layers, and the lines under their cards for the ticket in focus, or
+ * for the longest chain while it is stepped. */
+function EpicGraphDrawing(props: {
+  readonly layered: EpicGraphLayered;
+  readonly held: EpicGraphCardsHeld;
+}): ReactNode {
+  const text = useCopyText();
+  const { layered, held } = props;
+  const [drawing, setDrawing] = useState<HTMLDivElement | null>(null);
+  const look: EpicGraphLook = {
+    focus: held.focus,
+    chain: held.focus === undefined && held.steps.size > 0,
+  };
+  return (
+    <div className="epic-graph-drawing" ref={setDrawing}>
+      <EpicGraphLines drawing={drawing} layered={layered} look={look} />
+      <ol
+        className="epic-graph-layers"
+        aria-label={text({ id: "epics-graph-label" })}
+      >
+        {layered.layers.map((tickets, at) => (
+          <EpicGraphLayer
+            key={at}
+            layer={at + 1}
+            tickets={tickets}
+            held={held}
+          />
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 /** The graph in layers beside the ticket selected. */
@@ -343,7 +426,6 @@ function EpicGraphViewLayered(props: {
   readonly outsideShown: boolean;
   readonly onOutsideShown: (shown: boolean) => void;
 }): ReactNode {
-  const text = useCopyText();
   const { held, graph, layered, onTicket } = props;
   const selected = epicGraphSelectedOf(layered.tickets, props.ticket);
   const [chainShown, setChainShown] = useEpicGraphChainShown(selected);
@@ -381,19 +463,7 @@ function EpicGraphViewLayered(props: {
           outsideShown={props.outsideShown}
           onOutsideShown={props.onOutsideShown}
         />
-        <ol
-          className="epic-graph-layers"
-          aria-label={text({ id: "epics-graph-label" })}
-        >
-          {layered.layers.map((tickets, at) => (
-            <EpicGraphLayer
-              key={at}
-              layer={at + 1}
-              tickets={tickets}
-              held={cardsHeld}
-            />
-          ))}
-        </ol>
+        <EpicGraphDrawing layered={layered} held={cardsHeld} />
       </div>
     </div>
   );
