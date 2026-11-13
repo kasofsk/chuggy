@@ -393,6 +393,10 @@ export interface TicketAuthoringCopy {
   };
   readonly "ticket-authoring-yaml-workloads-shape": Record<never, never>;
   readonly "ticket-authoring-yaml-workload-key": Record<never, never>;
+  readonly "ticket-authoring-yaml-plans-shape": Record<never, never>;
+  readonly "ticket-authoring-yaml-plan-unknown": {
+    readonly name: unknown;
+  };
   readonly "ticket-authoring-yaml-no-key": {
     readonly key: unknown;
   };
@@ -433,6 +437,7 @@ export interface TicketAuthoringCopy {
     readonly latest: unknown;
   };
   readonly "ticket-authoring-hint-workloads": Record<never, never>;
+  readonly "ticket-authoring-hint-plans": Record<never, never>;
   readonly "ticket-authoring-hint-selection-work": Record<never, never>;
   readonly "ticket-authoring-hint-selection-evaluation": Record<never, never>;
   readonly "ticket-authoring-hint-selection-landing": Record<never, never>;

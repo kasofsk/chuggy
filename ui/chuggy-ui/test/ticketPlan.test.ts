@@ -138,3 +138,21 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
     landing: undefined,
   });
 });
+
+test("a plan the ticket's overrides add names its stages, each evaluator the workload they add or the catalog's", () => {
+  const plan = ticketPlanOf(
+    catalog,
+    ticket({
+      selection: { evaluation: "gate" },
+      overrides: {
+        workloads: { approval: { runner: "Approval" } },
+        plans: { gate: [{ name: "sign-off", evaluators: ["ci", "approval"] }] },
+      },
+    }),
+    copyTextEn,
+  );
+  expect(plan.names).toEqual(["sign-off"]);
+  expect(
+    plan.stages.map((stage) => stage.evaluators.map((entry) => entry.name)),
+  ).toEqual([["ci", "approval"]]);
+});

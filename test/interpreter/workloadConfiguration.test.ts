@@ -281,7 +281,7 @@ test("a selection is resolved against the catalog, each absent name the default,
     );
 });
 
-test("a catalog takes overrides of its workloads alone, and a document takes no selection and no workload overrides", () => {
+test("a catalog takes overrides of its workloads and plans alone, and a document takes no selection and no workload or plan overrides", () => {
   assert.deepEqual(
     draftReleaseReadiness(canonical, brief, undefined, {
       work: { instructions: ["Something else."] },
@@ -315,12 +315,14 @@ test("a catalog takes overrides of its workloads alone, and a document takes no 
       { readiness: "Incomplete", fault: "SelectionUnsupported" },
       configuration,
     );
-  assert.deepEqual(
-    draftReleaseReadiness(document, brief, undefined, {
-      workloads: { build: { practices: [] } },
-    }),
-    { readiness: "Incomplete", fault: "OverridesUnsupported" },
-  );
+  for (const overrides of [
+    { workloads: { build: { practices: [] } } },
+    { plans: { standard: [{ name: "review", evaluators: ["review"] }] } },
+  ])
+    assert.deepEqual(
+      draftReleaseReadiness(document, brief, undefined, overrides),
+      { readiness: "Incomplete", fault: "OverridesUnsupported" },
+    );
   assert.equal(
     draftReleaseReadiness(document, brief, undefined, undefined, {}).readiness,
     "Ready",
@@ -346,7 +348,7 @@ test("a catalog ticket runs the workload its overrides make, each field in place
   );
 });
 
-test("overrides naming a workload or a prompt file the catalog does not hold are refused under their own code", () => {
+test("overrides naming a workload no plan names or a prompt file the catalog does not hold are refused under their own code", () => {
   for (const workloads of [
     { absent: { practices: [] } },
     { build: { prompt: { path: ".chug/configurations/basic-coding.json" } } },

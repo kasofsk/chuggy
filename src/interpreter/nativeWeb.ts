@@ -106,7 +106,7 @@ import {
   ticketCommandedCheckStage,
   ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
-  ticketProgramShort,
+  ticketRunsLessThanPlanned,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
@@ -1420,6 +1420,7 @@ async function nativeDraftBriefLanded(
     readonly configurationRevision: ConfigurationRevisionId;
     readonly brief: DraftBrief;
     readonly selection?: ConfigurationSelection;
+    readonly overrides?: ConfigurationOverrides;
   },
 ): Promise<NativeDraftBriefLanded> {
   if (input.brief.finalization !== undefined)
@@ -1434,6 +1435,7 @@ async function nativeDraftBriefLanded(
       : catalogSelectedFinalizer(
           JSON.parse(configuration.canonical),
           input.selection,
+          input.overrides,
         )?.finalizer?.finalization;
   return finalization === undefined
     ? { brief: input.brief }
@@ -1581,7 +1583,13 @@ async function nativeSubmitRunsLessThanPlan(
   );
   return (
     readiness.readiness === "Ready" &&
-    ticketProgramShort(readiness.ticket, revision.program)
+    ticketRunsLessThanPlanned(
+      revision.canonical,
+      revision.overrides,
+      revision.selection,
+      readiness.ticket,
+      revision.program,
+    )
   );
 }
 

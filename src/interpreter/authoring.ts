@@ -10,6 +10,7 @@ import {
 import { releaseConfigurationVersion } from "../contract/configurationDocument.ts";
 import {
   configurationWithOverrides,
+  overridesPlanShort,
   type ConfigurationOverrides,
 } from "../contract/configurationOverrides.ts";
 import {
@@ -328,7 +329,7 @@ function releaseDocumentTicketReadiness(
 ): TicketConfigurationReadiness {
   if (!configurationSelectionEmpty(selection))
     return { readiness: "Incomplete", fault: "SelectionUnsupported" };
-  if (overrides?.workloads !== undefined)
+  if (overrides?.workloads !== undefined || overrides?.plans !== undefined)
     return { readiness: "Incomplete", fault: "OverridesUnsupported" };
   const readiness = releaseDocumentReadiness(
     configurationWithOverrides(value, overrides),
@@ -342,10 +343,16 @@ function releaseDocumentTicketReadiness(
       };
 }
 
-/** Whether a catalog ticket's overrides name a workload, or a prompt file, its catalog does not hold. */
+/**
+ * Whether a catalog ticket's overrides name what neither the catalog nor they
+ * hold: a prompt file the catalog's import did not read, a workload one of
+ * their plans names, or a workload they add that no plan names, which is what
+ * a misspelt override of a held one reads as.
+ */
 function workloadTicketOverridesUnknown(
   catalog: WorkloadConfiguration,
   workloads: NonNullable<ConfigurationOverrides["workloads"]>,
+  plans: NonNullable<ConfigurationOverrides["plans"]>,
 ): boolean {
   const prompts = new Set(
     Object.values(catalog.workloads).flatMap((workload) =>
@@ -354,25 +361,43 @@ function workloadTicketOverridesUnknown(
         : [],
     ),
   );
-  return Object.entries(workloads).some(
-    ([name, override]) =>
-      !Object.hasOwn(catalog.workloads, name) ||
-      (override.prompt !== undefined &&
-        "path" in override.prompt &&
-        !prompts.has(override.prompt.path)),
+  const named = new Set(
+    Object.values({ ...catalog.plans, ...plans }).flatMap((stages) =>
+      stages.flatMap((stage) => stage.evaluators),
+    ),
+  );
+  return (
+    Object.entries(workloads).some(
+      ([name, override]) =>
+        (!Object.hasOwn(catalog.workloads, name) && !named.has(name)) ||
+        (override.prompt !== undefined &&
+          "path" in override.prompt &&
+          !prompts.has(override.prompt.path)),
+    ) ||
+    Object.values(plans).some((stages) =>
+      stages.some((stage) =>
+        stage.evaluators.some(
+          (name) =>
+            !Object.hasOwn(catalog.workloads, name) &&
+            !Object.hasOwn(workloads, name),
+        ),
+      ),
+    )
   );
 }
 
 /**
- * Whether a catalog ticket's overrides make a workload an approval or one no
- * longer: an approval is answered by a person and every other runner by a
- * machine, so no field of either carries over to the other.
+ * Whether a catalog ticket's overrides make a workload the catalog holds an
+ * approval or one no longer: an approval is answered by a person and every
+ * other runner by a machine, so no field of either carries over to the other.
+ * A workload they add is written whole, and carries nothing over.
  */
 function workloadTicketOverridesChangeApproval(
   catalog: WorkloadConfiguration,
   workloads: NonNullable<ConfigurationOverrides["workloads"]>,
 ): boolean {
   return Object.entries(workloads).some(([name, override]) => {
+    if (!Object.hasOwn(catalog.workloads, name)) return false;
     const runner = catalog.workloads[name]?.runner;
     return (
       override.runner !== undefined &&
@@ -383,10 +408,11 @@ function workloadTicketOverridesChangeApproval(
 }
 
 /**
- * A version 2 ticket: the catalog with the ticket's workload overrides
- * applied, and the entries the ticket selected from it. A catalog ticket
- * overrides workloads alone, since every other field it could name is one a
- * catalog does not have.
+ * A version 2 ticket: the catalog with the ticket's workload and plan
+ * overrides applied, and the entries the ticket selected from it, its work
+ * from the catalog's own workloads, so a workload the ticket adds is only ever
+ * an evaluator. A catalog ticket overrides workloads and plans alone, since
+ * every other field it could name is one a catalog does not have.
  */
 function workloadTicketReadiness(
   value: unknown,
@@ -394,14 +420,18 @@ function workloadTicketReadiness(
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
 ): TicketConfigurationReadiness {
-  const { workloads, ...unsupported } = overrides ?? {};
+  const { workloads, plans, ...unsupported } = overrides ?? {};
   if (Object.values(unsupported).some((field) => field !== undefined))
     return { readiness: "Incomplete", fault: "OverridesUnsupported" };
   const pinned = workloadConfigurationReadiness(value);
   if (pinned.readiness === "Incomplete") return pinned;
   if (
-    workloads !== undefined &&
-    workloadTicketOverridesUnknown(pinned.configuration, workloads)
+    (workloads !== undefined || plans !== undefined) &&
+    workloadTicketOverridesUnknown(
+      pinned.configuration,
+      workloads ?? {},
+      plans ?? {},
+    )
   )
     return { readiness: "Incomplete", fault: "OverridesUnknown" };
   if (
@@ -409,11 +439,16 @@ function workloadTicketReadiness(
     workloadTicketOverridesChangeApproval(pinned.configuration, workloads)
   )
     return { readiness: "Incomplete", fault: "OverridesChangeApprovalRunner" };
+  if (
+    selection?.work !== undefined &&
+    !Object.hasOwn(pinned.configuration.workloads, selection.work)
+  )
+    return { readiness: "Incomplete", fault: "SelectionUnknown" };
   const readiness =
-    workloads === undefined
+    workloads === undefined && plans === undefined
       ? pinned
       : workloadConfigurationReadiness(
-          configurationWithOverrides(value, { workloads }),
+          configurationWithOverrides(value, { workloads, plans }),
         );
   if (readiness.readiness === "Incomplete") return readiness;
   const selected = selectedCatalogEntries(readiness.configuration, selection);
@@ -519,6 +554,45 @@ export function ticketProgramShort(
       (_entry, position) =>
         !ticketProgramRuns(program, index + 1, position + 1),
     ),
+  );
+}
+
+/**
+ * Whether a ticket runs less than its configuration plans: a program short of
+ * the plan its ticket selected, by `ticketProgramShort`, or one running less
+ * than the plan it would select without its overrides, by
+ * `overridesPlanShort`, which is the catalog's plan its selection names or the
+ * catalog's default where the catalog names none. Only plans an override
+ * replaces or adds can make the two plans differ.
+ */
+export function ticketRunsLessThanPlanned(
+  configuration: CanonicalConfiguration,
+  overrides: ConfigurationOverrides | undefined,
+  selection: ConfigurationSelection | undefined,
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticketProgramShort(ticket, program)) return true;
+  if (ticket.version === 1 || overrides?.plans === undefined) return false;
+  const pinned = workloadConfigurationReadiness(JSON.parse(configuration));
+  if (pinned.readiness === "Incomplete")
+    throw new RangeError(
+      "ticket plan: a ticket resolved from a catalog that is not ready",
+    );
+  const { plans, defaults } = pinned.configuration;
+  const named = selection?.evaluation;
+  const planned =
+    named !== undefined && Object.hasOwn(plans, named)
+      ? plans[named]
+      : plans[defaults.evaluation];
+  if (planned === undefined)
+    throw new RangeError("ticket plan: the catalog's default plan is absent");
+  return overridesPlanShort(
+    planned.map((stage) => stage.evaluators),
+    ticket.selection.plan.stages.map((stage) =>
+      stage.evaluators.map((evaluator) => evaluator.name),
+    ),
+    program,
   );
 }
 
