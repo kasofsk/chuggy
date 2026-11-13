@@ -1,10 +1,13 @@
 /**
  * The console's tokens held to the contract's contrast rule in both schemes:
- * every ink and tone as text on the grounds it is drawn on, and every mark a
- * reader must see as a mark on the page and a panel, each colour read out of
- * `tokens.css` itself, `light-dark()` pairs and mixes alike. Then the rest of
- * what a theme leans on there: the root size a text-size step sets, the
- * lengths that stay in px, and a control's height under a coarse pointer.
+ * the inks and tones as text on the surfaces, washes and fills
+ * `tokenContrastPairs` names, and the marks as marks on the page and a panel,
+ * each colour read out of `tokens.css` itself, `light-dark()` pairs and mixes
+ * alike. Left out are the inverse ink on the context's slots, which the light
+ * scheme draws below the text minimum, and on a primary button's hover, a mix
+ * `Button.css` makes rather than a token. Then the rest of what a theme leans
+ * on there: the root size a text-size step sets, the lengths that stay in px,
+ * and a control's height under a coarse pointer.
  */
 
 import { expect, test } from "vitest";

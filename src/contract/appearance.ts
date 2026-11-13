@@ -475,10 +475,12 @@ const themeSyntax = themeFixedRoles.filter((role) =>
  * and the inverse surface as marks on the page and a panel; and a state's tone,
  * printed as its word, as text on the page, a panel and its own wash and as a
  * mark on the sunken surface. Left out are `edge` and `edge-strong` on any
- * surface, which built-in themes draw below the minimum, the inverse ink on the
- * retired fill and the context's slots, which the console's own look draws
- * below it, and the inverse ink on a button's hover, a mix the console owns
- * rather than a ground named here.
+ * surface, which built-in themes draw below the minimum; the inverse ink on the
+ * context's slots, which the console's own look draws below it; the inverse ink
+ * on the retired fill, whose tone is the theme's `ink-3` rather than a fixed
+ * tone and which the console mixes at its own share, not `themeFillDarkPercent`;
+ * and the inverse ink on a button's hover, a mix the console owns rather than a
+ * ground named here.
  */
 export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ...themeContrastPairsOf(
