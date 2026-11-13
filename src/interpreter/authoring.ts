@@ -511,6 +511,16 @@ function ticketProgramFits(
   );
 }
 
+/**
+ * Whether each stage of a program is keyed by its place in it, counted from
+ * one, which is the key the stage is released under and so the only one a
+ * released plan admits. A program keeping a later stage of its plan and
+ * leaving out an earlier one is not, whatever it runs.
+ */
+function ticketProgramPositional(program: ReleaseAuthoringProgram): boolean {
+  return program.every((stage, index) => stage.key === index + 1);
+}
+
 /** Whether a program runs one task: the stage keyed `stage`, and in it the evaluator keyed `evaluator` where one is named. */
 function ticketProgramRuns(
   program: ReleaseAuthoringProgram,
@@ -630,6 +640,8 @@ export function draftReleaseReadiness(
   if (readiness.readiness === "Incomplete") return readiness;
   if (program !== undefined && !ticketProgramFits(readiness.ticket, program))
     return { readiness: "Incomplete", fault: "ProgramExceedsPlan" };
+  if (program !== undefined && !ticketProgramPositional(program))
+    return { readiness: "Incomplete", fault: "ProgramStageOutOfPosition" };
   if (
     program !== undefined &&
     brief !== undefined &&

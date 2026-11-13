@@ -3060,6 +3060,15 @@ const agentAccountCredentialSchema = z.strictObject({
   pause: agentPauseSchema.optional(),
 });
 
+/** The pause an agent of the caller's account comes to, and the names of the credentials holding it, in the order `credentials` lists them; optional for the deployment window. */
+const agentAccountPauseSchema = agentPauseSchema.extend({
+  credentials: z
+    .array(workerRunCredentialSchema)
+    .min(1)
+    .max(agentAccountCredentialsMax)
+    .optional(),
+});
+
 /**
  * One agent of the caller's own account: their settings, each window's newest
  * reading across its credentials, the newest limit a provider stopped it at
@@ -3080,7 +3089,7 @@ const agentAccountSchema = z.strictObject({
       observedAt: instantSchema,
     })
     .optional(),
-  pause: agentPauseSchema.optional(),
+  pause: agentAccountPauseSchema.optional(),
   credentials: z
     .array(agentAccountCredentialSchema)
     .max(agentAccountCredentialsMax)
@@ -3096,6 +3105,14 @@ export const agentAccountsResponseSchema = z.strictObject({
   accounts: z.array(agentAccountSchema).length(accountAgents.length),
 });
 export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
+
+/**
+ * What retiring a credential of the caller's own account is refused with while
+ * a live runner of theirs still names it, whose next run would report it
+ * again. It is named once because a console tells the member so in words of
+ * its own.
+ */
+export const agentAccountCredentialInUseCode = "CredentialInUse";
 
 /**
  * What redeeming a chat host's token answers, once: a runner's file with no

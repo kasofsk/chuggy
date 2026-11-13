@@ -206,10 +206,12 @@ import type {
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
+  AgentAccountRetired,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
   AgentAccountsResponse,
+  AgentPause,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -223,6 +225,7 @@ import type {
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
+import { agentAccountCredentialInUseCode } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
@@ -461,7 +464,7 @@ export function submissionResponse(
         403,
         nativeHttpError(
           programSkipsPlannedEvaluationsCode,
-          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has, or a plan its overrides replace or add runs some workload at fewer positions than the catalog's plan for its selection. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+          "The draft's program runs less than its configuration plans: it leaves out the plan's last stages, or an evaluator of a stage it keeps, or a plan its overrides replace or add runs some workload at fewer positions than the catalog's plan for its selection. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it. A program keeping a later stage of the plan and leaving out an earlier one is refused whoever releases it, as ProgramStageOutOfPosition.",
         ),
       );
     case "AnswerRefused":
@@ -1527,13 +1530,28 @@ export function ownerFallbackBody(
   };
 }
 
-/** A pause's copy, or no field where none holds. */
+/** A credential's pause's copy, or no field where none holds. */
 function agentAccountsResponsePause(
+  pause: AgentAccountView["credentials"][number]["pause"],
+): { pause?: AgentPause } {
+  return pause === undefined
+    ? {}
+    : { pause: { ...pause, reasons: [...pause.reasons] } };
+}
+
+/** The agent's pause's copy with the credentials holding it, or no field where none holds. */
+function agentAccountsResponseHeldPause(
   pause: AgentAccountView["pause"],
 ): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
   return pause === undefined
     ? {}
-    : { pause: { ...pause, reasons: [...pause.reasons] } };
+    : {
+        pause: {
+          ...pause,
+          reasons: [...pause.reasons],
+          credentials: [...pause.credentials],
+        },
+      };
 }
 
 /** Every agent of the caller's own account. */
@@ -1546,7 +1564,7 @@ export function agentAccountsResponse(
       settings: { ...account.settings },
       readings: account.readings.map((reading) => ({ ...reading })),
       ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
-      ...agentAccountsResponsePause(account.pause),
+      ...agentAccountsResponseHeldPause(account.pause),
       credentials: account.credentials.map((credential) => ({
         name: credential.name,
         readings: credential.readings.map((reading) => ({ ...reading })),
@@ -1569,6 +1587,28 @@ export function agentAccountPressedResponse(
         nativeHttpError(
           "NotHardPaused",
           "No limit holds this agent of the account paused.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential retired, none held under its name, or refused because a live runner of the account still names it. */
+export function agentAccountRetiredResponse(
+  result: AgentAccountRetired,
+): NativeHttpResponse {
+  switch (result) {
+    case "Retired":
+      return noContent();
+    case "NotHeld":
+      return notFound();
+    case "CredentialInUse":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialInUseCode,
+          "A live runner of the account still names this credential.",
         ),
       );
     default:

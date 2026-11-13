@@ -1,8 +1,8 @@
 /**
  * PostgreSQL side of a person's own agent accounts: the read of each agent of
  * one account and of each credential it holds, in one snapshot, and the doors
- * its settings and its press are written through, all four granted to the API
- * and each handed the one principal it serves.
+ * its settings, its press and a credential's retirement are written through,
+ * all five granted to the API and each handed the one principal it serves.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -17,9 +17,11 @@ import {
 } from "../../contract/rosters.ts";
 import type {
   AgentAccountCredential,
+  AgentAccountHeldPause,
   AgentAccountLimit,
   AgentAccountPause,
   AgentAccountReading,
+  AgentAccountRetired,
   AgentAccountService,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
@@ -41,6 +43,7 @@ interface AgentAccountRow {
   readonly paused_until: Date | null;
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
+  readonly pause_credentials: string[] | null;
 }
 
 interface AgentAccountCredentialRow {
@@ -171,13 +174,44 @@ function agentAccountCredentialsOf(
   return credentials;
 }
 
+/**
+ * The agent's pause with the names the read gave of the credentials holding
+ * it, held to name some, each a credential the agent's own are listed with,
+ * in their order.
+ */
+function agentAccountHeldPause(
+  row: AgentAccountRow,
+  credentials: readonly AgentAccountCredential[],
+): AgentAccountHeldPause | undefined {
+  const pause = agentAccountPause(row);
+  if (pause === undefined) return undefined;
+  const holding = agentAccountRequired(
+    row.pause_credentials,
+    "credentials holding the pause",
+  );
+  const listed = credentials.map((credential) => credential.name);
+  const positions = holding.map((name) => listed.indexOf(name));
+  if (
+    holding.length === 0 ||
+    positions.some(
+      (position, index) =>
+        position < 0 || (index > 0 && position <= (positions[index - 1] ?? 0)),
+    )
+  )
+    throw new Error(
+      "agent account: a pause held by no credential listed in order",
+    );
+  return { ...pause, credentials: holding };
+}
+
 function agentAccountView(
   row: AgentAccountRow,
-  credentials: readonly AgentAccountCredentialRow[],
+  credentialRows: readonly AgentAccountCredentialRow[],
 ): AgentAccountView {
   const limit = agentAccountLimit(row);
-  const pause = agentAccountPause(row);
   const agent = agentAccountKnown(row.agent, accountAgents, "agent");
+  const credentials = agentAccountCredentialsOf(credentialRows, agent);
+  const pause = agentAccountHeldPause(row, credentials);
   return {
     agent,
     settings: {
@@ -194,7 +228,7 @@ function agentAccountView(
     readings: agentAccountReadings(row),
     ...(limit === undefined ? {} : { limit }),
     ...(pause === undefined ? {} : { pause }),
-    credentials: agentAccountCredentialsOf(credentials, agent),
+    credentials,
   };
 }
 
@@ -212,7 +246,7 @@ async function agentAccountSnapshot(
                  s.five_hour_utilization,s.five_hour_resets_at,s.five_hour_observed_at,
                  s.seven_day_utilization,s.seven_day_resets_at,s.seven_day_observed_at,
                  s.limit_window,s.limit_resets_at,s.limit_observed_at,
-                 s.paused_until,s.reasons,s.admitted_by_press
+                 s.paused_until,s.reasons,s.admitted_by_press,s.pause_credentials
             FROM agent_account_standing(${principal}) s`,
     );
     const held = await client.query<AgentAccountCredentialRow>(
@@ -241,7 +275,13 @@ async function agentAccountSnapshot(
   }
 }
 
-/** The API's read of one person's agent accounts and the doors their settings and press are written through. */
+const agentAccountRetirements: readonly AgentAccountRetired[] = [
+  "Retired",
+  "NotHeld",
+  "CredentialInUse",
+];
+
+/** The API's read of one person's agent accounts and the doors their settings, press and retirements are written through. */
 export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
   return {
     accounts: async (principal) => {
@@ -262,6 +302,16 @@ export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
         sql`SELECT press_agent_account(${principal},${agent})::boolean AS pressed`,
       );
       return found.rows[0]?.pressed === true ? "Pressed" : "NotHardPaused";
+    },
+    retire: async (principal, agent, credential) => {
+      const found = await pool.query<{ retired: string | null }>(
+        sql`SELECT retire_agent_account_credential(${principal},${agent},${credential})::text AS retired`,
+      );
+      return agentAccountKnown(
+        found.rows[0]?.retired ?? null,
+        agentAccountRetirements,
+        "retirement",
+      );
     },
   };
 }

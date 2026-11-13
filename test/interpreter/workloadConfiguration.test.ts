@@ -14,6 +14,7 @@ import {
   configurationRevisionSummary,
   draftInitializationPolicy,
   draftReleaseReadiness,
+  draftReleaseRefusalCode,
   releaseConfigurationReadiness,
   ticketCommandedCheckStage,
   ticketConfigurationReadiness,
@@ -30,6 +31,7 @@ import {
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { releasedTicketBounded } from "../../src/domain/config.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
 import {
@@ -419,6 +421,73 @@ function programOf(stages: readonly (readonly number[])[]) {
     evaluators: evaluators.map((key) => ({ key })),
   }));
 }
+
+test("a program whose stages are not keyed by their place in it is refused under its own fault, which a trailing stage left out is not", () => {
+  const fault = (program: Parameters<typeof draftReleaseReadiness>[5]) => {
+    const readiness = draftReleaseReadiness(
+      canonical,
+      brief,
+      undefined,
+      undefined,
+      { evaluation: "thorough" },
+      program,
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  assert.equal(
+    fault([{ key: 2, evaluators: [{ key: 1 }] }]),
+    "ProgramStageOutOfPosition",
+    "a later stage kept and an earlier one left out",
+  );
+  assert.equal(
+    fault([
+      { key: 2, evaluators: [{ key: 1 }] },
+      { key: 1, evaluators: [{ key: 1 }] },
+    ]),
+    "ProgramStageOutOfPosition",
+    "the plan's stages out of order",
+  );
+  assert.equal(fault([{ key: 1, evaluators: [{ key: 2 }] }]), "Ready");
+  assert.equal(
+    draftReleaseRefusalCode("ProgramStageOutOfPosition"),
+    "ProgramStageOutOfPosition",
+    "a revision of the draft mends it, so it is not the configuration's",
+  );
+});
+
+test("every program a catalog release readies releases a plan the machine takes", () => {
+  const config = { ...refinementInstance, maxStages: 4, nTasks: 4 };
+  const stageKeys = [[1], [2], [1, 2], [2, 1], [3], [1, 3]] as const;
+  let readied = 0;
+  for (const keys of stageKeys) {
+    const authoring: ReleaseAuthoring = {
+      deps: new Set(),
+      prog: keys.map((key) => ({ key, evaluators: [{ key: 1 }] })),
+    };
+    const readiness = draftReleaseReadiness(
+      canonical,
+      brief,
+      undefined,
+      undefined,
+      { evaluation: "thorough" },
+      authoring.prog,
+    );
+    if (readiness.readiness !== "Ready") continue;
+    readied += 1;
+    const material = ticketDefinitionMaterial({
+      authoring,
+      ticket: readiness.ticket,
+    });
+    assert.ok(
+      releasedTicketBounded(
+        config,
+        releasedTicketDefinition(asTicketId(1), authoring, material),
+      ),
+      `program ${JSON.stringify(keys)} readied a plan outside the machine's bounds`,
+    );
+  }
+  assert.equal(readied, 2, "[1] and [1, 2] ready");
+});
 
 test("a program runs less than its selected plan where it leaves out a stage, or an evaluator of a stage, each alone", () => {
   const short = (stages: readonly (readonly number[])[]) =>

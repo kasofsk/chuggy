@@ -264,6 +264,7 @@ codes-refusal-selection-unknown = Selection names no { -catalog } entry
 codes-refusal-selection-unsupported = { -configuration(case: "upper") } cannot take this selection
 codes-refusal-program-exceeds-plan = Program exceeds the { -evaluation-plan }
 codes-refusal-program-skips-checks = Program skips the { -brief }'s { -brief-check(form: "plural") }
+codes-refusal-program-stage-misplaced = Program { -stage } out of position
 codes-refusal-overrides-unsupported = { -configuration(case: "upper") } cannot take these { -override(form: "plural") }
 codes-refusal-overrides-unknown = { -override(case: "upper", form: "plural") } name no { -catalog } { -workload }
 codes-refusal-capacity-reached = { -ticket(case: "upper") } capacity reached

@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountNamedCredentialPausesFunction,
   agentAccountNamedPauseFunction,
@@ -1081,12 +1082,13 @@ test("only the scheduler finds and resumes a job a usage limit stopped on its ru
   );
 });
 
-test("only the API reads, sets and presses a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
+test("only the API reads, sets, presses and retires a credential of a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
   for (const signature of [
     `${agentAccountStandingFunction}(text)`,
     `${agentAccountCredentialStandingFunction}(text)`,
     `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     `${agentAccountPressFunction}(text,text)`,
+    `${agentAccountCredentialRetireFunction}(text,text,text)`,
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
   ])
     assert.deepEqual(await changeLogExecutors(signature), [apiRole], signature);
@@ -1117,6 +1119,8 @@ test("only the API reads, sets and presses a person's own agent account and read
       "INSERT INTO agent_account_press(principal,agent,pressed_at) VALUES('p','Claude',now())",
       "agent_account_press",
     ],
+    ["DELETE FROM agent_account_usage", "agent_account_usage"],
+    ["DELETE FROM agent_account_limit", "agent_account_limit"],
   ] as const)
     assert.match(
       (await harness.attemptAs(apiRole, statement)) ?? "",

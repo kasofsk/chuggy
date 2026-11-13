@@ -82,6 +82,7 @@ export const sessionBearerRouteClasses = {
   agentAccounts: { GET: "Refused" },
   agentAccountSettings: { PUT: "Refused" },
   agentAccountPresses: { POST: "Refused" },
+  agentAccountCredential: { DELETE: "Refused" },
   chatHostRegistrationTokens: { POST: "Refused" },
   chatHost: { GET: "Member", DELETE: "Refused" },
   chatAbilities: memberRead,
