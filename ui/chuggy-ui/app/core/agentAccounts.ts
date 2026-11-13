@@ -18,7 +18,6 @@ import { agentAccountSettingsSchema } from "../../../../src/contract/requests.ts
 import type {
   AgentAccount,
   AgentAccountCredential,
-  AgentAccountsResponse,
   AgentPause,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -71,16 +70,6 @@ export function agentPauseHard(pause: AgentPause): boolean {
 /** Whether a press is offered: a limit holds the agent and no press is unspent. */
 export function agentPausePressable(pause: AgentPause | undefined): boolean {
   return pause !== undefined && agentPauseHard(pause) && !pause.pressed;
-}
-
-/** The agents of the reader's account a pause holds, in roster order. */
-export function agentAccountsPaused(
-  read: AgentAccountsResponse,
-): readonly (AgentAccount & { readonly pause: AgentPause })[] {
-  return read.accounts.filter(
-    (account): account is AgentAccount & { readonly pause: AgentPause } =>
-      account.pause !== undefined,
-  );
 }
 
 /** One window's reading of an agent, or of one credential of it. */
