@@ -429,11 +429,12 @@ export function LeadPage(): ReactNode {
       <>
         <LeadSelectorStrip partition={partition} />
         {absence === undefined ? (
-          <EmptyState label={label} variant="page" action={action} />
+          <EmptyState label={label} variant="page" level={1} action={action} />
         ) : (
           <EmptyState
             label={label}
             variant="page"
+            level={1}
             detail={absence}
             action={action}
           />
