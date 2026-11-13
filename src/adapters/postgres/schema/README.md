@@ -503,7 +503,8 @@ registered, last polled and last polled as one that could take an execution,
 the runner package and version its newest poll named, whether that poll's
 release names among its capabilities exactly the agents it takes, and the
 credentials that poll named, per agent, which a poll naming none clears and
-its claims read. Written by the API
+its claims and the scheduler's resume of a job a usage limit stopped read.
+Written by the API
 role, which registers and removes it whole, and by the pool plane, which
 stamps its polls and what they name; the pool plane, the scheduler and the
 boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
@@ -657,13 +658,17 @@ threads and inquiries pause with it; the lead of a pool they registered always
 does. The API writes one person's row whole through `write_agent_account_setting`, and no
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
-and the metrics plane may call and `ticket_rate_limit_resumable` asks for the
-scheduler, reads it through that, as `agent_account_standing` does for the API.
+and the metrics plane may call, reads it through that, as
+`agent_account_standing` does for the API.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
-`agent_account_pause`'s columns for the credentials a personal runner named:
+`agent_account_pause`'s columns for the credentials a runner or a pool named:
 paused only while every one of them is, until the earliest of those ends, a
 name that never reported being free. `agent_account_named_credential_pauses`
 answers the pool plane each of them that is paused, and until when.
+`ticket_rate_limit_resumable` asks for the scheduler, and `ticket_usage_resume`
+for the API, `agent_account_pause` of the agent a limited task spent, and
+`agent_account_named_pause` of the credentials each runner of that account
+names, so the task is free where either would let that runner's claim through.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived

@@ -97,7 +97,7 @@ export const workerContractRunnerCredentialOutcomes: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** The versions in which a personal runner's poll may name the credentials it would run each agent's job on, and be answered with those of them that are paused, a field a pool of an earlier one refuses its whole answer over. */
+/** The versions in which a pool's or a personal runner's poll may name the credentials it would run each agent's job on, and be answered with those of them that are paused, a field an earlier one refuses its whole answer over. */
 export const workerContractRunnerCredentialPauses: WorkerContractRange = {
   min: workerContractCredentialPauses,
   max: workerContractAccepted.max,
