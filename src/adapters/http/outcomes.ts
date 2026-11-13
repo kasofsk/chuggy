@@ -210,6 +210,7 @@ import type {
 } from "../../interpreter/agentAccount.ts";
 import type {
   AgentAccountsResponse,
+  AgentPause,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -1527,13 +1528,28 @@ export function ownerFallbackBody(
   };
 }
 
-/** A pause's copy, or no field where none holds. */
+/** A credential's pause's copy, or no field where none holds. */
 function agentAccountsResponsePause(
+  pause: AgentAccountView["credentials"][number]["pause"],
+): { pause?: AgentPause } {
+  return pause === undefined
+    ? {}
+    : { pause: { ...pause, reasons: [...pause.reasons] } };
+}
+
+/** The agent's pause's copy with the credentials holding it, or no field where none holds. */
+function agentAccountsResponseHeldPause(
   pause: AgentAccountView["pause"],
 ): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
   return pause === undefined
     ? {}
-    : { pause: { ...pause, reasons: [...pause.reasons] } };
+    : {
+        pause: {
+          ...pause,
+          reasons: [...pause.reasons],
+          credentials: [...pause.credentials],
+        },
+      };
 }
 
 /** Every agent of the caller's own account. */
@@ -1546,7 +1562,7 @@ export function agentAccountsResponse(
       settings: { ...account.settings },
       readings: account.readings.map((reading) => ({ ...reading })),
       ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
-      ...agentAccountsResponsePause(account.pause),
+      ...agentAccountsResponseHeldPause(account.pause),
       credentials: account.credentials.map((credential) => ({
         name: credential.name,
         readings: credential.readings.map((reading) => ({ ...reading })),

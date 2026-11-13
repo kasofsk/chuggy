@@ -2,9 +2,10 @@
  * The reader's own agent accounts, which are theirs in every workspace: for
  * each agent, each window's newest reading and the share it pauses at, and
  * whether their threads pause with it, edited behind one Edit; and the pause
- * holding it, with the press that tries it once past a provider's limit. An
- * agent holding several credentials reads each current one's reading and
- * pause under its name instead, and its press stays one.
+ * holding it, named by the credentials holding it, with the press that tries
+ * it once past a provider's limit. An agent holding several credentials reads
+ * each current one's reading under its name instead, and the pause of each
+ * one holding the agent's, and its press stays one.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -123,12 +124,14 @@ function UsageSettingsNotice(props: {
   );
 }
 
-/** One pause as its line, named where it is a credential's, saying so where a
- * press lets one claim through it. */
+/** One pause as its line, named where it is a credential's, saying which
+ * credentials hold it where it is the agent's and the read names them, and
+ * saying so where a press lets one claim through it. */
 function UsageSettingsPauseLine(props: {
   readonly pause: AgentPauseValue;
   readonly nowMs: number;
   readonly named?: string;
+  readonly heldBy?: readonly string[];
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -137,6 +140,14 @@ function UsageSettingsPauseLine(props: {
       nowMs={props.nowMs}
       {...(props.named === undefined ? {} : { named: props.named })}
     >
+      {props.heldBy === undefined ? null : (
+        <LinePart>
+          {text({
+            id: "usage-held-by",
+            args: { credentials: props.heldBy.join(", ") },
+          })}
+        </LinePart>
+      )}
       {props.pause.pressed ? (
         <LinePart>{text(agentPausePressedLine)}</LinePart>
       ) : null}
@@ -145,11 +156,12 @@ function UsageSettingsPauseLine(props: {
 }
 
 /** The pause holding the agent, or each one holding a credential it is drawn
- * by, and the press that tries the agent once past a limit where no press is
- * already waiting to. */
+ * by among those the agent's pause names where it names them, and the press
+ * that tries the agent once past a limit where no press is already waiting
+ * to. */
 function UsageSettingsPause(props: {
   readonly agent: AccountAgent;
-  readonly pause: AgentPauseValue;
+  readonly pause: NonNullable<AgentAccount["pause"]>;
   readonly credentials: readonly AgentAccountCredential[] | undefined;
   readonly nowMs: number;
 }): ReactNode {
@@ -158,15 +170,21 @@ function UsageSettingsPause(props: {
     drawn: true,
   });
   const pressable = agentPausePressable(props.pause);
+  const holding = props.pause.credentials;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         {props.credentials === undefined ? (
-          <UsageSettingsPauseLine pause={props.pause} nowMs={props.nowMs} />
+          <UsageSettingsPauseLine
+            pause={props.pause}
+            nowMs={props.nowMs}
+            {...(holding === undefined ? {} : { heldBy: holding })}
+          />
         ) : (
           <div className="grid justify-items-start gap-1">
             {props.credentials.map((credential) =>
-              credential.pause === undefined ? null : (
+              credential.pause === undefined ||
+              holding?.includes(credential.name) === false ? null : (
                 <UsageSettingsPauseLine
                   key={credential.name}
                   pause={credential.pause}

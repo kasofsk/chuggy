@@ -51,6 +51,11 @@ export interface AgentAccountPause {
   readonly pressed: boolean;
 }
 
+/** The pause an agent comes to, and the names of the credentials holding it, in the order the agent's credentials are listed. */
+export interface AgentAccountHeldPause extends AgentAccountPause {
+  readonly credentials: readonly string[];
+}
+
 /** One credential an agent holds a reading or a limit of, by its name: each window's reading of it and the pause holding it alone. */
 export interface AgentAccountCredential {
   readonly name: string;
@@ -63,7 +68,7 @@ export interface AgentAccountView {
   readonly settings: AgentAccountSettings;
   readonly readings: readonly AgentAccountReading[];
   readonly limit?: AgentAccountLimit;
-  readonly pause?: AgentAccountPause;
+  readonly pause?: AgentAccountHeldPause;
   /** In name order. */
   readonly credentials: readonly AgentAccountCredential[];
 }

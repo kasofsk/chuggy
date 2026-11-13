@@ -16,6 +16,7 @@ usage-window-five-hour = Five-hour window
 usage-window-seven-day = Weekly window
 usage-provider-limit = Provider limit
 usage-until = until
+usage-held-by = held by { $credentials }
 usage-try-again = Try again now
 usage-try-again-named = Try { $agent } again now
 usage-press-unheld = No limit holds it
