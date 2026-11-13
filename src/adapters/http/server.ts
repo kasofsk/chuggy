@@ -1744,18 +1744,21 @@ function registerAgentAccounts(
       nativeHttpSend(reply, agentAccountWrittenResponse());
     },
   );
-  app.delete(nativeHttpRoutes.agentAccountCredential, async (request, reply) => {
-    const agent = accountAgentOf(request);
-    const credential = agentAccountCredentialOf(request);
-    nativeHttpSend(
-      reply,
-      agent === undefined || credential === undefined
-        ? notFound()
-        : agentAccountRetiredResponse(
-            await accounts.retire(principalOf(request), agent, credential),
-          ),
-    );
-  });
+  app.delete(
+    nativeHttpRoutes.agentAccountCredential,
+    async (request, reply) => {
+      const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
+      nativeHttpSend(
+        reply,
+        agent === undefined || credential === undefined
+          ? notFound()
+          : agentAccountRetiredResponse(
+              await accounts.retire(principalOf(request), agent, credential),
+            ),
+      );
+    },
+  );
   registerBodylessRoutes(app, (scope) => {
     scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
       const agent = accountAgentOf(request);

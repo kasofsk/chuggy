@@ -244,8 +244,7 @@ test("the caller retires a credential of their own agent, one a live runner name
     agent: string,
     name: string,
     headers: Record<string, string> = bearer,
-  ) =>
-    app.inject({ method: "DELETE", url: credential(agent, name), headers });
+  ) => app.inject({ method: "DELETE", url: credential(agent, name), headers });
   assert.equal((await retire("Claude", "home")).statusCode, 204);
   const refused = await retire("Codex", "work");
   assert.equal(refused.statusCode, 409);
