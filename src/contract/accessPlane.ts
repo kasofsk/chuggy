@@ -29,6 +29,9 @@
  * whether they administer it. It names nobody else, so there is nobody it is
  * hidden from, and a caller written into none is answered an empty list.
  *
+ * THE CALLER'S OWN ACCOUNT IS ANSWERED THE SAME WAY: their subject, their
+ * principal, and who the directory says they are, as a people list names them.
+ *
  * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
  * no workspace: whoever presents it signed in names the workspace they will
  * administer, at the route every invite link is redeemed at.
@@ -273,6 +276,7 @@ export const accessPlaneRoutes = {
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
   callerTenants: { method: "GET", path: `${accessPlaneBasePath}/workspaces` },
+  callerAccount: { method: "GET", path: `${accessPlaneBasePath}/account` },
   siteWorkspaceLinkCreation: {
     method: "POST",
     path: `${accessSitePath}/workspace-links`,
@@ -697,6 +701,13 @@ export const accessCallerTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** What the caller's own account answers: their subject, their principal encoded as a ticket's `creator` is, and the directory's fields. */
+export const accessCallerAccountSchema = z.strictObject({
+  subject: z.string().min(1),
+  principal: identitySchema,
+  ...accessAccountFields,
+});
+
 /** How long an invite link stands once made. */
 export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
@@ -916,6 +927,7 @@ export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
 export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
 export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
+export type AccessCallerAccount = z.infer<typeof accessCallerAccountSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema
