@@ -190,10 +190,13 @@ test("a refusal for no live runner is drawn only until the placement has said wh
 });
 
 /** A lead that has not opened only because nothing has needed one yet, or the
- * selector's next pass has not come, is one that will dispatch; every other
- * reason, or none given, leaves it to a press. */
+ * selector's next pass has not come, is one that will dispatch, as is one that
+ * stands unless its selector is paused; every other reason, or none given,
+ * leaves it to a press. */
 test("a lead dispatches where one stands or will open, and not otherwise", () => {
   expect(projectLeadDispatches(ready(lead))).toBe(true);
+  expect(projectLeadDispatches(ready({ ...lead, paused: false }))).toBe(true);
+  expect(projectLeadDispatches(ready({ ...lead, paused: true }))).toBe(false);
   for (const reason of ["NotNeeded", "AwaitingSelector"] as const)
     expect(
       projectLeadDispatches(ready({ lead: "None", absence: { reason } })),

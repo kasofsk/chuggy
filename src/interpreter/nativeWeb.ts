@@ -2168,16 +2168,22 @@ async function nativeLeadRefusalStanding(
   return ports.leads.leadRefusal(partition);
 }
 
-/** The refusal a lead holding a session is drawn with: the one kept, where nothing outranks it. */
-async function nativeLeadSessionRefusal(
+/**
+ * What a lead holding a session is drawn with from the same standing a project
+ * holding none answers its absence from: whether its selector is paused, where
+ * that project would answer `Paused`, and the refusal kept, where nothing
+ * outranks it.
+ */
+async function nativeLeadSessionSelectorStanding(
   access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
-): Promise<{ readonly refusal?: LeadRefused }> {
+): Promise<{ readonly paused: boolean; readonly refusal?: LeadRefused }> {
   const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  return standing !== undefined && "since" in standing
-    ? { refusal: standing }
-    : {};
+  if (standing === undefined) return { paused: false };
+  return "since" in standing
+    ? { paused: false, refusal: standing }
+    : { paused: standing.reason === "Paused" };
 }
 
 /** A subsidized lead's tenant's spend this month and its cap, and nothing for a lead run as its own. */
@@ -2240,7 +2246,7 @@ function nativeLeadSessionMethods(
           standing.session,
           sessionStoreStreamsAnswered,
         ),
-        ...(await nativeLeadSessionRefusal(access, ports, partition)),
+        ...(await nativeLeadSessionSelectorStanding(access, ports, partition)),
         ...(await nativeLeadSubsidy(ports, partition)),
       };
     },

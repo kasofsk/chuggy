@@ -196,8 +196,9 @@ export interface HandoffNotePreview {
 }
 
 /**
- * A lead that holds a session carries the refusal the selector keeps for it,
- * where one stands, and a subsidized one its tenant's spend this month.
+ * A lead that holds a session carries whether its selector is paused, where a
+ * project holding none would answer `Paused`, the refusal the selector keeps
+ * for it, where one stands, and a subsidized one its tenant's spend this month.
  */
 export type LeadRead =
   | { readonly result: "NotFound" }
@@ -206,6 +207,7 @@ export type LeadRead =
       readonly result: "Found";
       readonly lead: LeadStanding;
       readonly streams: readonly SessionStoreStreamRow[];
+      readonly paused: boolean;
       readonly refusal?: LeadRefused;
       readonly subsidy?: LeadSubsidy;
     };

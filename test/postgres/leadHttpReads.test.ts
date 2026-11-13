@@ -23,6 +23,7 @@ import {
 } from "../../src/contract/http.ts";
 import {
   agenticRefusalsResponseSchema,
+  leadFoundResponseSchema,
   leadNoneResponseSchema,
   leadResponseSchema,
   leadTranscriptResponseSchema,
@@ -705,6 +706,50 @@ test("a project holding a lead answers it over the refusal kept beside it", asyn
   assert.equal(found.statusCode, 200);
   assert.equal(Object.hasOwn(found.json(), "absence"), false);
   assert.equal(leadResponseSchema.safeParse(found.json()).success, true);
+});
+
+/** Whether the lead route says the selector of one project holding a lead is paused. */
+async function leadPaused(
+  label: string,
+  partition: Partition,
+): Promise<boolean | undefined> {
+  await using app = leadApp(label);
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  return leadFoundResponseSchema.parse(found.json()).paused;
+}
+
+/**
+ * A lead opened before its selector was paused still stands and dispatches
+ * nothing, so its read says the selector is paused while the project's own
+ * override holds, read over the API's own credential as the selector resolves
+ * it, and says it is not once the selector runs again.
+ */
+test("a project holding a lead answers paused while its selector is paused, and not while it runs", async () => {
+  const partition = await readableProject("http-paused-lead");
+  await sessionRigSession(rig.sessions, partition, "http-paused-lead", {
+    kind: "Lead",
+  });
+  assert.equal(await leadPaused("http-paused-lead", partition), false);
+  const administrator = {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("selector-admin"),
+  };
+  const project = postgresSelectorProjectSettings(rig.apiPool);
+  assert.equal(
+    (await project.write(partition, 0, { mode: "Paused" }, administrator))
+      .written,
+    "Settings",
+  );
+  assert.equal(await leadPaused("http-paused-lead", partition), true);
+  assert.equal(
+    (await project.write(partition, 1, {}, administrator)).written,
+    "Settings",
+  );
+  assert.equal(await leadPaused("http-paused-lead", partition), false);
 });
 
 /**

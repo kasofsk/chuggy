@@ -8,7 +8,8 @@
  * (`NotNeeded`, until a released ticket waits on a decision, and
  * `AwaitingSelector` while one waits for the selector's next pass) or why none
  * can, and while none can the project's tickets run where somebody presses
- * Dispatch. A server that gives no reason says only that there is no lead. The
+ * Dispatch, as they do where a lead stands and the read says its selector is
+ * paused. A server that gives no reason says only that there is no lead. The
  * selector's settings say how a lead would dispatch, not whether this project
  * has one.
  */
@@ -95,14 +96,15 @@ export function projectLeadPanelState(
 
 /**
  * Whether a lead dispatches the project's tickets, or will open to: unknown
- * until a read has said, and false only where none stands and the read says
- * why none can open, or gives no reason at all.
+ * until a read has said, and false only where one stands and the read says its
+ * selector is paused, or none stands and the read says why none can open, or
+ * gives no reason at all.
  */
 export function projectLeadDispatches(
   state: PanelState<LeadReadResponse>,
 ): boolean | undefined {
   if (state.state !== "Ready") return undefined;
-  if ("session" in state.value) return true;
+  if ("session" in state.value) return state.value.paused !== true;
   const reason = state.value.absence?.reason;
   return reason === "NotNeeded" || reason === "AwaitingSelector";
 }

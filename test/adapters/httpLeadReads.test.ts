@@ -21,7 +21,7 @@ import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import {
   agenticRefusalsResponseSchema,
-  leadResponseSchema,
+  leadFoundResponseSchema,
   leadTranscriptResponseSchema,
   sessionContextResponseSchema,
   selectorHistoryResponseSchema,
@@ -488,7 +488,7 @@ test("the lead read carries its standing, its mailbox tail and its streams", asy
     headers: authorized,
   });
   assert.equal(found.statusCode, 200);
-  const body = leadResponseSchema.parse(found.json());
+  const body = leadFoundResponseSchema.parse(found.json());
   assert.deepEqual(nativeHttpEndpoints.lead.response.parse(found.json()), body);
   assert.equal(body.session, "lead-atlas");
   assert.equal(body.attention, "Monitoring");
@@ -602,8 +602,8 @@ test("a lead refused for usage names when the pause ends, with a session and wit
 /**
  * A subsidized lead's read says what its tenant spent of the subsidy this
  * month against its cap, and never the deployment's spend or cap; a lead run
- * as its own says neither, and both bodies are the lead endpoint's and the
- * Session event's shape.
+ * as its own says neither, and both bodies are the lead endpoint's and, less
+ * the pause, the Session event's shape.
  */
 test("a subsidized lead answers its tenant's spend this month and its cap, and an own lead answers neither", async () => {
   await using subsidized = appOf({
@@ -627,9 +627,11 @@ test("a subsidized lead answers its tenant's spend this month and its cap, and a
     nativeHttpEndpoints.lead.response.parse(found.json()),
     found.json(),
   );
+  const { paused, ...session } = found.json<Record<string, unknown>>();
+  assert.equal(paused, false);
   assert.deepEqual(
     projectChangeRepresentationSchemas.Session.parse(found.json()),
-    found.json(),
+    session,
   );
   await using own = appOf({});
   const ownFound = await own.inject({
@@ -675,6 +677,42 @@ test("a project whose selector is paused answers Paused over any refusal kept, a
     });
     assert.equal(Object.hasOwn(found.json(), "absence"), false);
     assert.equal(Object.hasOwn(found.json(), "refusal"), false);
+  }
+});
+
+/**
+ * A lead opened before its selector was paused still stands, and dispatches
+ * nothing until the selector runs again, so its read says it is paused exactly
+ * where a project holding none would answer `Paused`: by the project's own
+ * pause, and by the installation's whatever the project asked for.
+ */
+test("a lead that stands answers paused while its selector is paused, by the project or the installation, and not while it runs", async () => {
+  for (const [shape, paused] of [
+    [{ projectMode: "Paused" }, true],
+    [{ installationMode: "Paused" }, true],
+    [{ installationMode: "Paused", projectMode: "Running" }, true],
+    [{}, false],
+    [{ projectMode: "Running" }, false],
+  ] as const) {
+    await using app = appOf(shape);
+    const found = await app.inject({
+      url: `${root}/lead`,
+      headers: authorized,
+    });
+    assert.equal(found.statusCode, 200);
+    const lead = nativeHttpEndpoints.lead.response.parse(found.json());
+    assert.ok("session" in lead);
+    assert.equal(lead.paused, paused, JSON.stringify(shape));
+    await using absent = appOf({ ...shape, standing: undefined });
+    const none = await absent.inject({
+      url: `${root}/lead`,
+      headers: authorized,
+    });
+    assert.equal(
+      none.json<{ absence: { reason: string } }>().absence.reason === "Paused",
+      paused,
+      JSON.stringify(shape),
+    );
   }
 });
 

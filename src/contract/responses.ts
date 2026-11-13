@@ -1873,9 +1873,21 @@ export const leadNoneResponseSchema = z.object({
 });
 export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
 
+/**
+ * A project the reader may read that holds a lead session: the session, and
+ * `paused`, true where its selector is paused, by the project or the whole
+ * installation, so the lead dispatches no ticket until it runs again. The pause
+ * is a settings fact no `Session` frame carries, so it is the read's alone, and
+ * it is absent from a server that predates it.
+ */
+export const leadFoundResponseSchema = leadResponseSchema.extend({
+  paused: z.boolean().optional(),
+});
+export type LeadFoundResponse = z.infer<typeof leadFoundResponseSchema>;
+
 /** What the lead route answers: the project's lead, or that it has none. */
 export const leadReadResponseSchema = z.union([
-  leadResponseSchema,
+  leadFoundResponseSchema,
   leadNoneResponseSchema,
 ]);
 export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
