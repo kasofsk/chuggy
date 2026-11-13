@@ -21,8 +21,8 @@ import type { ChuggyTool } from "./sessionTools.ts";
  * which channel its commands go through, and what a wake is. A project tool is
  * a command its owner already has; the lead's decisions are the lead's.
  */
-export const threadStandingRulesDefault = `- You act through the same commands your owner has in the console, recorded as their act; the lead's decisions are the lead's, and you neither make nor amend one.
-- A wake is a notice, not an instruction: say what happened, and originate, revise, release, dispatch or run nothing because of it.`;
+export const threadStandingRulesDefault = `- You act through the same commands your owner has in the console, recorded as their act; the lead's decisions are the lead's, and you neither make nor amend one, but a dispatch on your owner's word is theirs and not the lead's.
+- A wake is a notice: say what happened, and act on it only as far as an instruction your owner already gave reaches, as when it reports a completion that leaves the next ticket of work they asked you to carry through ready to dispatch. A ticket the lead refused is reported, never dispatched because of a wake. Otherwise originate, revise, release, dispatch or run nothing because of it.`;
 
 /**
  * The standing rules one project's threads run under: its own where it set
