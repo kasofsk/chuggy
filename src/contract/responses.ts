@@ -204,6 +204,7 @@ import {
   forgeApps,
   leadAbsencesUntimed,
   leadAdmissionRefusals,
+  leadHolds,
   projectRepositoryConfigurationDeferrals,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
@@ -1916,9 +1917,22 @@ export const leadNoneResponseSchema = z.object({
 });
 export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
 
+/**
+ * A project the reader may read that holds a lead session: the session, and
+ * `held`, where the lead stands but dispatches no ticket, the reason a project
+ * holding none would answer as its absence: `Paused` while its selector is
+ * paused, by the project or the whole installation, then `SelectorNotGranted`
+ * while the site's selector may not read the project. No `Session` frame
+ * carries it, and a server that predates it never answers it.
+ */
+export const leadFoundResponseSchema = leadResponseSchema.extend({
+  held: z.object({ reason: z.enum(leadHolds) }).optional(),
+});
+export type LeadFoundResponse = z.infer<typeof leadFoundResponseSchema>;
+
 /** What the lead route answers: the project's lead, or that it has none. */
 export const leadReadResponseSchema = z.union([
-  leadResponseSchema,
+  leadFoundResponseSchema,
   leadNoneResponseSchema,
 ]);
 export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
