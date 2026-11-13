@@ -706,7 +706,7 @@ test("a poll over a socket naming the most credentials the contract admits besid
   }
 });
 
-test("a personal runner's poll has the credentials it named kept, one unread or absent keeping none, and a pool's or a chat host's are never kept", async () => {
+test("a personal runner's or a pool's poll has the credentials it named kept, one unread or absent keeping none, and a chat host's are never kept", async () => {
   for (const [why, headers, kept] of [
     [
       "a runner naming two agents' credentials",
@@ -729,8 +729,9 @@ test("a personal runner's poll has the credentials it named kept, one unread or 
     [
       "a pool naming some",
       { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      ["Dedicated", {}],
+      ["Dedicated", { Claude: ["work"] }],
     ],
+    ["a pool naming none", speaking, ["Dedicated", {}]],
     [
       "a chat host naming some",
       { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
@@ -746,43 +747,65 @@ test("a personal runner's poll has the credentials it named kept, one unread or 
   }
 });
 
-test("a personal runner's answer names the pauses of the credentials its poll named only where its release reads them, and a pool's never", async () => {
-  const pause = {
-    agent: "Claude",
-    credential: "work",
-    pausedUntil: 1_800_000_000,
-  } as const;
-  for (const [why, headers, asked, pauses] of [
-    [
-      "a runner of this release",
-      { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      [{ Claude: ["work"] }],
-      [pause],
-    ],
-    [
-      "a runner of this release none of whose named credentials is paused",
-      { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
-      [{ Codex: ["codex"] }],
-      undefined,
-    ],
-    [
-      "a runner of the release before",
-      {
-        ...runnerSpeaking,
-        [workerContractHeader]: "1.77.0",
-        [workerRunnerCredentialsHeader]: "Claude:work",
-      },
-      [],
-      undefined,
-    ],
-    ["a runner naming none", runnerSpeaking, [], undefined],
-    [
-      "a pool",
-      { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      [],
-      undefined,
-    ],
-  ] as const) {
+/** The pause the port answers of a poll naming Claude's `work`. */
+const credentialPauseAnswered = {
+  agent: "Claude",
+  credential: "work",
+  pausedUntil: 1_800_000_000,
+} as const;
+
+/** Each poll the pauses case makes: why, its headers, the credentials the port is asked of, and the pauses its answer names. */
+const credentialPausesPolled = [
+  [
+    "a runner of this release",
+    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a runner of this release none of whose named credentials is paused",
+    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
+    [{ Codex: ["codex"] }],
+    undefined,
+  ],
+  [
+    "a runner of a release before them",
+    {
+      ...runnerSpeaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
+    [],
+    undefined,
+  ],
+  ["a runner naming none", runnerSpeaking, [], undefined],
+  [
+    "a pool of this release",
+    { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a pool of a release before them",
+    {
+      ...speaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
+    [],
+    undefined,
+  ],
+  [
+    "a chat host naming some",
+    { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [],
+    undefined,
+  ],
+] as const;
+
+test("a personal runner's or a pool's answer names the pauses of the credentials its poll named only where its release reads them, and a chat host's never", async () => {
+  const pause = credentialPauseAnswered;
+  for (const [why, headers, asked, pauses] of credentialPausesPolled) {
     const made: unknown[] = [];
     const answered = await createPoolPlaneApp(
       plane({
@@ -1449,9 +1472,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
           ...(older.memoryRoomHeader === undefined || room === undefined
             ? {}
             : { [older.memoryRoomHeader]: room }),
-          ...(token === runnerToken
-            ? { [workerRunnerCredentialsHeader]: "Claude:work" }
-            : {}),
+          [workerRunnerCredentialsHeader]: "Claude:work",
         },
       });
       assert.equal(answered.statusCode, 200, what);
