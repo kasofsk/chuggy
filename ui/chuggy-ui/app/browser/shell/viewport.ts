@@ -7,8 +7,10 @@
  * is read here rather than left to a sheet.
  *
  * The details ask the column and not the viewport, since the reader drags the
- * chat pane's edge and the column is what is left. Both widths are in the `em`
- * the console's breakpoints are stated in, which is the root's.
+ * chat pane's edge and the column is what is left. A media query's `em` is the
+ * browser's own size, while an element is measured in the root's, which a
+ * theme's text-size step scales with the `rem` the page and the aside are
+ * drawn in.
  */
 
 import {
@@ -58,10 +60,9 @@ function useViewportMatches(query: string): boolean {
   );
 }
 
-/** The root's `em` in pixels, which is the one a media query's `em` is. */
-function elementAtLeastEmPixels(element: Element): number {
-  const root = element.ownerDocument.documentElement;
-  return Number.parseFloat(getComputedStyle(root).fontSize);
+/** The root's `em` in pixels, which every `rem` is. */
+function viewportRootEmPixels(page: Document): number {
+  return Number.parseFloat(getComputedStyle(page.documentElement).fontSize);
 }
 
 /**
@@ -77,7 +78,7 @@ export function useElementAtLeastEm(
   const [atLeast, measured] = useState<boolean>();
   useLayoutEffect(() => {
     if (element === null) return undefined;
-    const pixels = elementAtLeastEmPixels(element);
+    const pixels = viewportRootEmPixels(element.ownerDocument);
     const widthRead = (width: number): void => {
       measured(pixels > 0 && width >= em * pixels);
     };
