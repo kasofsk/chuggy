@@ -836,7 +836,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [workerPlaneRole, poolPlaneRole],
   },
   {
-    signature: `${agentAccountSessionPausedFunction}(text,text)`,
+    signature: `${agentAccountSessionPausedFunction}(text,text,text[])`,
     definer: false,
     callers: [],
     strangers: [poolPlaneRole],
@@ -1011,6 +1011,8 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["worker_pool", "credentials_named", "UPDATE", boundaryOwnerRole, false],
   ["personal_runner", "credentials_named", "SELECT", boundaryOwnerRole, true],
   ["personal_runner", "credentials_named", "UPDATE", boundaryOwnerRole, false],
+  ["chat_host", "credentials_named", "SELECT", boundaryOwnerRole, true],
+  ["chat_host", "credentials_named", "UPDATE", boundaryOwnerRole, false],
   ["agent_account_press", "spent_at", "UPDATE", poolPlaneRole, true],
   ["agent_account_press", "pressed_at", "UPDATE", poolPlaneRole, false],
   ["agent_account_setting", null, "SELECT", poolPlaneRole, false],

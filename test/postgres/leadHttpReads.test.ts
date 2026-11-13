@@ -62,10 +62,14 @@ import {
   postgresHarnessRolePool,
 } from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
-import { agentAccountHarnessCommitted } from "./agentAccountHarness.ts";
+import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessCredentialsOver,
+} from "./agentAccountHarness.ts";
 import {
   leadRigDecision,
   leadRigOpen,
+  leadRigNamed,
   leadRigPooled,
   leadRigProject,
   type LeadRig,
@@ -753,6 +757,31 @@ test("a lead refused for usage answers when the pause ends, and never whose acco
   const carried = found.json<{ refusal: object }>().refusal;
   assert.deepEqual(Object.keys(carried).sort(), ["reason", "since", "until"]);
   assert.ok(!found.body.includes(owner), "the read names the owner");
+});
+
+/** A pool that named credentials is paused until the earliest of its own ends, not the whole agent's latest nor a credential it did not name. */
+test("a lead refused for usage on a pool that named credentials answers the earliest end among the pauses of those it named", async () => {
+  const partition = await readableProject("http-usage-named");
+  const owner = oidcPrincipal(issuer, `owner-${randomUUID()}`);
+  const pool = await leadRigPooled(rig, partition, owner);
+  await leadRigNamed(rig, partition, pool, ["work", "home"]);
+  await agentAccountHarnessCommitted(
+    rig.sessions.harness,
+    owner,
+    "Claude",
+    agentAccountHarnessCredentialsOver({ work: 7200, home: 3600, spare: 1800 }),
+  );
+  await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+    partition,
+    "UsagePaused",
+  );
+  const [reset] = await rig.sessions.harness.query(
+    `SELECT resets_at FROM agent_account_usage WHERE principal=$1 AND credential='home'`,
+    [owner],
+  );
+  const absence = await leadAbsence("http-usage-named", partition);
+  assert.ok(absence?.reason === "UsagePaused");
+  assert.equal(absence.until, (reset?.["resets_at"] as Date).toISOString());
 });
 
 /** A project whose lead runs in cluster as `offering`, its lead opened on `slot` with one answered turn of `costMicros`. */

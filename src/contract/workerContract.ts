@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 /** The release of the worker contract, which versions the package `scripts/pack-worker-contract.ts` builds. */
-export const workerContractRelease = "1.80.0";
+export const workerContractRelease = "1.81.0";
 
 /** The header a pod or a pool names its release in, and a plane answers with its own. */
 export const workerContractHeader = "chuggy-worker-contract";
@@ -79,7 +79,7 @@ export const workerContractCredentialOutcome: WorkerContractVersion = {
   minor: 49,
 };
 
-/** The first version whose pool plane reads the credentials a runner's or a pool's poll names, and may answer it with those of them that are paused, which a plane names only to a poll whose release names this version or a later one. */
+/** The first version whose pool plane reads the credentials a runner's or a pool's poll names, as a later one reads a chat host's too, and may answer each with those of them that are paused, which a plane names only to a poll whose release names this version or a later one. */
 export const workerContractCredentialPauses: WorkerContractVersion = {
   major: 1,
   minor: 78,
