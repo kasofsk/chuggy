@@ -595,8 +595,10 @@ async function workerPoolClaimed(
 /**
  * Whether `workerPoolClaimed` on the same terms would take an attempt now: its
  * choice of attempt, with no lock, no order and nothing taken. The predicate
- * is written twice, here and there, and `test/postgres/workerPoolClaim.test.ts`
- * holds the two to one answer over every case it asks the claim.
+ * is written twice, here and there, its deferral to an owner's runners a third
+ * time in `./operationalReads.ts`'s answer of what a run waits on of them, and
+ * `test/postgres/workerPoolClaim.test.ts` holds them to one answer over every
+ * case it asks the claim.
  */
 async function workerPoolWaiting(
   pool: pg.Pool,

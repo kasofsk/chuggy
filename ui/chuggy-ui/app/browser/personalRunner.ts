@@ -1,7 +1,4 @@
-/**
- * The reader's own runners in a tenant, as every screen that says so reads
- * them: the personal runners page, and a run of theirs waiting on them.
- */
+/** The reader's own runners in a tenant, as the personal runners page reads them. */
 
 import type { QueryClient } from "@tanstack/react-query";
 
