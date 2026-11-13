@@ -1,7 +1,7 @@
 /**
- * One pause of the reader's own agent as a line: the status, each reason and
- * the instant it ends in the reader's own zone, then whatever its caller
- * offers beside it, each a `LinePart`.
+ * One pause of the reader's own agent, or of one credential of it, as a line:
+ * the status, each reason and the instant it ends in the reader's own zone,
+ * then whatever its caller offers beside it, each a `LinePart`.
  */
 
 import type { ReactNode } from "react";
@@ -17,7 +17,7 @@ import { Notice } from "./ui/Notice.tsx";
 export function AgentPause(props: {
   readonly pause: AgentPauseValue;
   readonly nowMs: number;
-  /** Who is paused, named in front where the line is not under their name. */
+  /** What is paused, an agent or a credential, named in front where the line is not under its name. */
   readonly named?: string;
   readonly children?: ReactNode;
 }): ReactNode {

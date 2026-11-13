@@ -160,6 +160,11 @@ export interface EpicsCopy {
   readonly "epics-side-none": Record<never, never>;
   readonly "epics-side-open": Record<never, never>;
   readonly "epics-side-dispatch": Record<never, never>;
+  readonly "epics-sheet-ticket": {
+    readonly ticket: unknown;
+    readonly title: unknown;
+    readonly state: unknown;
+  };
   readonly "epics-show-older": Record<never, never>;
   readonly "epics-revisions-label": Record<never, never>;
   readonly "epics-revision": {

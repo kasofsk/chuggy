@@ -1054,6 +1054,9 @@ export const workerRunCredentialSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/u);
 
+/** The most credentials of one agent an account read names. */
+export const agentAccountCredentialsMax = 16;
+
 /** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
 export const workerRunCredentialDefaults = {
   Claude: "claude",

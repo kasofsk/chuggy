@@ -51,8 +51,27 @@ const accounts: readonly AgentAccountView[] = [
       reasons: ["five_hour", "limit"],
       pressed: false,
     },
+    credentials: [
+      {
+        name: "home",
+        readings: [
+          {
+            window: "five_hour",
+            utilization: 0.82,
+            resetsAt: "2026-11-03T15:00:00.000Z",
+            observedAt: "2026-11-03T12:00:00.000Z",
+          },
+        ],
+        pause: {
+          until: "2026-11-03T15:00:00.000Z",
+          reasons: ["five_hour", "limit"],
+          pressed: true,
+        },
+      },
+      { name: "work", readings: [] },
+    ],
   },
-  { agent: "Codex", settings: defaults, readings: [] },
+  { agent: "Codex", settings: defaults, readings: [], credentials: [] },
 ];
 
 /** A service answering every caller the same accounts, recording what it was asked and as whom. */
@@ -100,6 +119,26 @@ test("the caller reads their own accounts as the response schema has them, and a
     headers: bearer,
   });
   assert.equal(named.statusCode, 200);
+  assert.deepEqual(
+    read
+      .json<{
+        accounts: { credentials: { name: string; pause?: unknown }[] }[];
+      }>()
+      .accounts.map((account) =>
+        account.credentials.map((credential) => [
+          credential.name,
+          credential.pause !== undefined,
+        ]),
+      ),
+    [
+      [
+        ["home", true],
+        ["work", false],
+      ],
+      [],
+    ],
+    "each credential is sent by its name, in the service's order, its pause only where one holds it",
+  );
   assert.equal(
     (
       await app.inject({

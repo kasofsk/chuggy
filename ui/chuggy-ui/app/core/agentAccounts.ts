@@ -1,17 +1,23 @@
 /**
  * The reader's own agent accounts as the console draws them, derived: the
- * words for a window and a pause, whether a reading still counts, a draft of
- * one agent's settings read by the wire's own schema, and what a press's
- * refusal says.
+ * words for a window and a pause, whether a reading still counts, which of an
+ * agent's credentials are drawn by name, a draft of one agent's settings read
+ * by the wire's own schema, and what a press's refusal says.
  *
  * A READING IS STALE ONCE ITS WINDOW HAS RESET. The pause rule counts a reading
  * only while its reset is ahead, so a stale one pauses nothing until the next
  * reading arrives, and the mark is how a reader sees that.
+ *
+ * AN AGENT HOLDING SEVERAL CREDENTIALS IS DRAWN BY EACH CURRENT ONE: a reading
+ * and a pause of each by its name, since the agent's own are the newest
+ * reading across them and a pause holding while any credential's does. One
+ * holding a single credential or none is drawn by the agent's own.
  */
 
 import { agentAccountSettingsSchema } from "../../../../src/contract/requests.ts";
 import type {
   AgentAccount,
+  AgentAccountCredential,
   AgentAccountsResponse,
   AgentPause,
 } from "../../../../src/contract/responses.ts";
@@ -77,11 +83,12 @@ export function agentAccountsPaused(
   );
 }
 
+/** One window's reading of an agent, or of one credential of it. */
 export function agentAccountReading(
-  account: AgentAccount,
+  held: Pick<AgentAccount, "readings">,
   window: RunUsageWindow,
 ): AgentAccountReading | undefined {
-  return account.readings.find((reading) => reading.window === window);
+  return held.readings.find((reading) => reading.window === window);
 }
 
 export const agentAccountReadingStaleWord: Copy = { id: "usage-stale" };
@@ -96,6 +103,33 @@ export function agentAccountReadingStale(
 ): boolean {
   const resetsAtMs = Date.parse(reading.resetsAt);
   return !Number.isFinite(resetsAtMs) || resetsAtMs <= nowMs;
+}
+
+/** A credential a run still reports: a reading of it whose window is ahead, or a pause holding it. */
+export function agentAccountCredentialCurrent(
+  credential: AgentAccountCredential,
+  nowMs: number,
+): boolean {
+  return (
+    credential.pause !== undefined ||
+    credential.readings.some(
+      (reading) => !agentAccountReadingStale(reading, nowMs),
+    )
+  );
+}
+
+/** Each current credential an agent holding several is drawn by, in the
+ * wire's order, or `undefined` for one holding one or none, which is drawn by
+ * its own. */
+export function agentAccountCredentialsDrawn(
+  account: AgentAccount,
+  nowMs: number,
+): readonly AgentAccountCredential[] | undefined {
+  const credentials = account.credentials ?? [];
+  if (credentials.length <= 1) return undefined;
+  return credentials.filter((credential) =>
+    agentAccountCredentialCurrent(credential, nowMs),
+  );
 }
 
 /** One agent's settings as typed: each threshold as the digits in its box. */

@@ -227,6 +227,7 @@
     --duration-word: 2000ms;
     --duration-epic-graph-in: 700ms; /* an epic graph's lines for a new look */
     --duration-epic-graph-out: 250ms; /* the lines that look replaced */
+    --duration-epic-graph-sheet: 360ms; /* an epic graph's sheet rising on a phone */
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
     /* late, for what comes in unhurried */
     --ease-in: cubic-bezier(0.7, 0, 1, 1);
@@ -268,6 +269,7 @@
     --width-epic-history-revision: 8rem; /* epic: a history row's revision, before what changed */
     --size-progress-swatch: 0.5rem; /* epic: a group's key under the bar */
     --width-epic-graph-side: 17rem; /* epic: the selected ticket beside its graph */
+    --width-epic-graph-sheet-heading: 6.5rem; /* epic: a row's heading in the phone's sheet */
     --width-epic-graph-card: 12rem; /* epic: a card on the graph, before its layer wraps */
     --width-epic-graph-card-least: 10rem; /* epic: the narrowest that card is drawn */
     --width-epic-graph-goal: 38rem; /* epic: the goal, across the foot of the graph */
@@ -297,6 +299,7 @@
       --duration-chug: 0ms;
       --duration-epic-graph-in: 0ms;
       --duration-epic-graph-out: 0ms;
+      --duration-epic-graph-sheet: 0ms;
     }
   }
 }
