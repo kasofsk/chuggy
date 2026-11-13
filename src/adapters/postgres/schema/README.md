@@ -619,8 +619,9 @@ was observed, and the attempt whose run reported it. Owned by the boundary
 owner, which is what `record_worker_run_usage` runs as; the worker plane writes
 it through that door alone. The API reads one person's rows through
 `agent_account_standing`, which answers each window's newest reading across the
-account's credentials, and the metrics plane reads the principal and agent of
-every row and nothing else. Its key and identity are
+account's credentials, and `agent_account_credential_standing`, which answers
+each credential's own by its name, and the metrics plane reads the principal
+and agent of every row and nothing else. Its key and identity are
 `(principal, agent, credential, usage_window)`, the principal being the account
 an attempt spent as `execution_attempt_agent_account` derives it from the
 attempt's own claim, the agent the one its invocation names, and the credential
@@ -645,6 +646,7 @@ named them, when the plane received it, and the attempt it stopped. Owned by the
 boundary owner, which is what `record_worker_run_limit` runs as; the worker
 plane writes it through that door alone. The API reads one person's newest
 limit across the account's credentials through `agent_account_standing`, and
+which credentials hold one through `agent_account_credential_standing`, and
 the metrics plane reads the principal and agent of every row and nothing else.
 Its key and identity are `(principal, agent, credential)`, derived as
 `agent_account_usage`'s are and bounded with it, and it departs from #180's
@@ -661,7 +663,9 @@ does. The API writes one person's row whole through `write_agent_account_setting
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call, reads it through that, as
-`agent_account_standing` does for the API.
+`agent_account_standing` does for the API;
+`agent_account_credential_standing` answers the API each credential's own
+pause, `agent_account_named_pause` of its one name.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
 `agent_account_pause`'s columns for the credentials a runner, a pool or a chat
 host named:

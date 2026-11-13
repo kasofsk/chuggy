@@ -1500,6 +1500,14 @@ export function ownerFallbackBody(
 }
 
 /** Every agent of the caller's own account. */
+function agentAccountsResponsePause(
+  pause: AgentAccountView["pause"],
+): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
+  return pause === undefined
+    ? {}
+    : { pause: { ...pause, reasons: [...pause.reasons] } };
+}
+
 export function agentAccountsResponse(
   accounts: readonly AgentAccountView[],
 ): NativeHttpResponse {
@@ -1509,11 +1517,12 @@ export function agentAccountsResponse(
       settings: { ...account.settings },
       readings: account.readings.map((reading) => ({ ...reading })),
       ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
-      ...(account.pause === undefined
-        ? {}
-        : {
-            pause: { ...account.pause, reasons: [...account.pause.reasons] },
-          }),
+      ...agentAccountsResponsePause(account.pause),
+      credentials: account.credentials.map((credential) => ({
+        name: credential.name,
+        readings: credential.readings.map((reading) => ({ ...reading })),
+        ...agentAccountsResponsePause(credential.pause),
+      })),
     })),
   } satisfies AgentAccountsResponse);
 }

@@ -25,6 +25,7 @@ import {
 import { z } from "zod";
 
 import {
+  agentAccountCredentialsMax,
   imageMediaTypes,
   projectArtifactEncoding,
   sessionEfforts,
@@ -97,6 +98,7 @@ import {
   ticketLandingStacksAnsweredMax,
   ticketNumberSchema,
   landingQueueTicketsAnsweredMax,
+  workerRunCredentialSchema,
 } from "./http.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
@@ -2970,7 +2972,7 @@ export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
 >;
 
-/** One window's newest reading: how much of it was used, the whole window being one, when it reopens and when it was read. */
+/** One window's reading, of one credential or the newest across an agent's: how much of it was used, the whole window being one, when it reopens and when it was read. */
 const agentAccountReadingSchema = z.strictObject({
   window: z.enum(runUsageWindows),
   utilization: z.number().nonnegative(),
@@ -2978,11 +2980,21 @@ const agentAccountReadingSchema = z.strictObject({
   observedAt: instantSchema,
 });
 
+/** One credential of an agent of the caller's account by its name: each window's reading of it, and the pause holding it alone, absent where none holds. */
+const agentAccountCredentialSchema = z.strictObject({
+  name: workerRunCredentialSchema,
+  readings: z.array(agentAccountReadingSchema).max(runUsageWindows.length),
+  pause: agentPauseSchema.optional(),
+});
+
 /**
  * One agent of the caller's own account: their settings, each window's newest
- * reading, the newest limit a provider stopped it at with the window and the
- * reopening where the run named them, and the pause they come to, absent
- * where none holds.
+ * reading across its credentials, the newest limit a provider stopped it at
+ * across them with the window and the reopening where the run named them, the
+ * pause they come to, absent where none holds and holding while any
+ * credential's does, and each credential it holds a reading or a limit of, by
+ * name. `credentials` is optional for the deployment window, and absent reads
+ * as none.
  */
 const agentAccountSchema = z.strictObject({
   agent: z.enum(accountAgents),
@@ -2996,8 +3008,15 @@ const agentAccountSchema = z.strictObject({
     })
     .optional(),
   pause: agentPauseSchema.optional(),
+  credentials: z
+    .array(agentAccountCredentialSchema)
+    .max(agentAccountCredentialsMax)
+    .optional(),
 });
 export type AgentAccount = z.infer<typeof agentAccountSchema>;
+export type AgentAccountCredential = z.infer<
+  typeof agentAccountCredentialSchema
+>;
 
 /** Every agent of the caller's own account, in roster order. */
 export const agentAccountsResponseSchema = z.strictObject({
