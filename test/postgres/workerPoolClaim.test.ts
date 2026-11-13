@@ -67,6 +67,7 @@ import {
   personalRunnerHeldAnsweredMax,
   personalRunnerWaitingCountedMax,
 } from "../../src/contract/http.ts";
+import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import {
@@ -107,8 +108,11 @@ import {
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
 import {
+  workerPoolAgentOffered,
   workerPoolCanAssign,
   workerPoolDemandRouted,
+  workerPoolIsLive,
+  workerPoolOwnerPools,
   workerPoolPlatformToken,
   workerPoolPolicyRegistered,
   type WorkerPoolDemand,
@@ -195,6 +199,9 @@ const personalRunners = postgresPersonalRunnerRegistry(
   apiPool,
   memoryMibDefault,
 );
+
+/** The owner's read of a run, which says what it waits on of their runners as the API answers it. */
+const operationalReads = postgresOperationalReads(apiPool, memoryMibDefault);
 
 /** How many attempts the owner's read counts waiting in each of `projects`, every project read. */
 async function waitingCounted(
@@ -975,6 +982,73 @@ async function waitingCountedProbed(
   );
 }
 
+/** Whether a pool's claim of the case's run defers to a live runner of its owner's offered its agent, by the model's terms and a poll `polledSecsAgo` before now. */
+function deferredToLive(c: RunnerCase, polledSecsAgo: number): boolean {
+  const { placement } = c;
+  const registry = [{ pool: c.pool, session: c.session }, ...c.others];
+  return (
+    placement.route === "Pool" &&
+    placement.status === "Launching" &&
+    placement.phase === "Waiting" &&
+    polledSecsAgo < sessionRunnerPolledSecsMax &&
+    workerPoolOwnerPools(placement, registry).some(
+      (owner) =>
+        workerPoolIsLive(owner) &&
+        workerPoolAgentOffered(placement, owner.pool),
+    )
+  );
+}
+
+/**
+ * That the owner's read of the case's run says it waits on their live runners
+ * exactly where a pool's claim defers to one offered its agent. An owner the
+ * case revokes is what the claim is told, not what their own read knows, and
+ * a runner's row keeps no poll made under a principal registered over.
+ */
+async function runnerWaitDeferred(
+  c: RunnerCase,
+  named: Planted,
+  execution: string,
+  polledSecsAgo: number,
+): Promise<void> {
+  const owner = c.placement.demand.ownerOf;
+  if (owner === undefined) return;
+  const registry = [{ pool: c.pool, session: c.session }, ...c.others];
+  if (
+    registry.some(
+      ({ pool, session }) =>
+        pool.revoked ||
+        (runnerOwned(pool) &&
+          session !== undefined &&
+          session.principal !== pool.principal),
+    )
+  )
+    return;
+  const read = await operationalReads.execution(
+    named.project.partition,
+    asExecutionId(execution),
+    named.principal(owner),
+  );
+  assert.equal(
+    read?.personalRunnerWait === "Live",
+    deferredToLive(c, polledSecsAgo),
+    "the owner's run waits on their live runners where a pool's claim defers to one",
+  );
+}
+
+/** The owner's reads of the case's run, each held to what the claim answers. */
+async function ownerReadsProbed(
+  c: RunnerCase,
+  named: Planted,
+  pools: PlantedPools,
+  execution: string,
+  polledSecsAgo: number,
+): Promise<void> {
+  await runnerWaitDeferred(c, named, execution, polledSecsAgo);
+  if (pools.pool.kind === "Personal")
+    await waitingCountedProbed(pools.pool, named.project.partition);
+}
+
 /** Whether the case's claim took its execution's attempt, from the rows the case planted, a live runner's last poll `polledSecsAgo` before now. */
 async function claimTook(
   c: RunnerCase,
@@ -1003,6 +1077,7 @@ async function claimTook(
       true,
     );
   const home = named.project.partition;
+  await ownerReadsProbed(c, named, pools, target.execution, polledSecsAgo);
   const identity = sessionIdentity(c, named, pools);
   const asked = await waiting(
     identity,
@@ -1010,8 +1085,6 @@ async function claimTook(
     home,
     pools.ownersRevoked,
   );
-  if (pools.pool.kind === "Personal")
-    await waitingCountedProbed(pools.pool, home);
   const claimed = await claimAsked(
     identity,
     session.heldMax,

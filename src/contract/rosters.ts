@@ -962,6 +962,14 @@ export const ownerFallbacks = ["Strict", "Preferred"] as const;
 export type OwnerFallback = (typeof ownerFallbacks)[number];
 
 /**
+ * What an owner's execution waits on of their own runners able to run it: one
+ * offered its agent and `Live`, under `Strict` one offered it and `Offline`,
+ * or under `Strict` runners none of which is offered it, `Unable`.
+ */
+export const personalRunnerWaits = ["Live", "Offline", "Unable"] as const;
+export type PersonalRunnerWait = (typeof personalRunnerWaits)[number];
+
+/**
  * Where a project stands among the others its member's personal runners
  * serve, first to last: of what one could start now, a higher project's goes
  * first, and work already started goes before any of them.
