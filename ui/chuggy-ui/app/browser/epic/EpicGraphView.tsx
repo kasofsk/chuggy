@@ -22,10 +22,12 @@ import type {
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { Copy } from "../../core/copy.ts";
 import {
+  epicGraphDrawnAtRoot,
   epicGraphEdgeKeyOf,
   epicGraphEdgePath,
   epicGraphMemberHeight,
   epicGraphMemberWidth,
+  epicGraphRootScaleOf,
   epicGraphScaleOf,
   epicGraphScrollOf,
   epicGraphSelectedOf,
@@ -42,6 +44,7 @@ import { projectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
+import { viewportRootEmPixels } from "../shell/viewport.ts";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
@@ -289,6 +292,7 @@ function EpicGraphDrawing(props: {
 function EpicGraphUnconnected(props: {
   readonly drawn: EpicGraphDrawn;
   readonly held: EpicGraphCardsHeld;
+  readonly rootScale: number;
 }): ReactNode {
   const text = useCopyText();
   if (props.drawn.unconnected.length === 0) return null;
@@ -301,12 +305,12 @@ function EpicGraphUnconnected(props: {
         <li key={ticket.node.ticket}>
           <svg
             className="epic-graph-unconnected-card"
-            width={epicGraphMemberWidth}
-            height={epicGraphMemberHeight}
+            width={epicGraphMemberWidth * props.rootScale}
+            height={epicGraphMemberHeight * props.rootScale}
           >
             <foreignObject
-              width={epicGraphMemberWidth}
-              height={epicGraphMemberHeight}
+              width={epicGraphMemberWidth * props.rootScale}
+              height={epicGraphMemberHeight * props.rootScale}
             >
               <EpicGraphCardHeld ticket={ticket} held={props.held} />
             </foreignObject>
@@ -330,7 +334,12 @@ function EpicGraphViewDrawn(props: {
   readonly outsideShown: boolean;
   readonly onOutsideShown: (shown: boolean) => void;
 }): ReactNode {
-  const { held, graph, drawn, traced } = props;
+  const { held, graph, traced } = props;
+  const rootScale = epicGraphRootScaleOf(viewportRootEmPixels(document));
+  const drawn = useMemo(
+    () => epicGraphDrawnAtRoot(props.drawn, rootScale),
+    [props.drawn, rootScale],
+  );
   const trace = useMemo(
     () =>
       traced === undefined || !drawn.tickets.has(traced)
@@ -370,7 +379,11 @@ function EpicGraphViewDrawn(props: {
         {drawn.cards.length === 0 ? null : (
           <EpicGraphDrawing drawn={drawn} held={cardsHeld} />
         )}
-        <EpicGraphUnconnected drawn={drawn} held={cardsHeld} />
+        <EpicGraphUnconnected
+          drawn={drawn}
+          held={cardsHeld}
+          rootScale={rootScale}
+        />
       </div>
     </div>
   );

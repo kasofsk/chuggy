@@ -19,6 +19,7 @@
 @layer tokens {
   :root {
     color-scheme: light dark;
+    font-size: var(--text-root);
 
     /* surfaces — levels, not shadows */
     --surface-0: light-dark(#edf0ea, #0e1210); /* the page */
@@ -36,17 +37,22 @@
     /* edges */
     --edge: light-dark(#cdd4ca, #262d28); /* hairlines: panels, rows */
     --edge-strong: light-dark(
-      #9ea89f,
-      #3d463f
+      #848c85,
+      #5f6761
     ); /* a divider a reader must see */
     --edge-control: light-dark(#6f7a72, #66716a); /* the border of a control */
 
+    /* accent — the colour that says "this project", the inverse surface until a
+       theme sets it */
+    --accent: light-dark(#151a17, #eef2ee);
+    --ink-on-accent: light-dark(#f7f8f5, #0e1210);
+
     /* tones — the machine's states, and nothing else */
-    --tone-pass: light-dark(#287740, #79c68f);
+    --tone-pass: light-dark(#27743f, #79c68f);
     --tone-fail: light-dark(#b3342c, #f08880);
     --tone-live: light-dark(#1b65a0, #74b7f0);
     --tone-evaluation: light-dark(#7550ac, #b9a0ee);
-    --tone-finalization: light-dark(#167566, #68cbb6);
+    --tone-finalization: light-dark(#167365, #68cbb6);
     --tone-parked: light-dark(#885600, #efb85b);
     --tone-queued: light-dark(#59665e, #a4aca6);
     --tone-retired: var(--ink-3);
@@ -71,7 +77,8 @@
     --slot-subagent: light-dark(#d9581f, #f29a66); /* a subagent's own calls */
     /* used, where nothing split it */
     --slot-used: light-dark(#59625c, #8a948c);
-    --slot-free: light-dark(#e2e6de, #1d2420); /* the room left */
+    /* the room left: a hairline halfway to the panel */
+    --slot-free: color-mix(in srgb, var(--edge) 50%, var(--surface-1));
     /* under the context's line */
     --slot-area: color-mix(in srgb, var(--slot-5) 14%, transparent);
 
@@ -113,6 +120,9 @@
       var(--tone-queued) var(--wash),
       var(--surface-1)
     );
+    /* fainter than a tone's, since an accent may be as dark or as light as the
+       inverse surface, and the faintest ink still reads on it */
+    --wash-accent: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
 
     /* fills — a tone as the ground under inverse ink, mixed with the page in
        the dark theme so its edge is not harsh */
@@ -163,6 +173,9 @@
     --font-mono:
       ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo,
       Consolas, "Liberation Mono", monospace;
+    /* the root's size, which a theme's text-size step sets and every rem
+       scales with; a length in px does not */
+    --text-root: 100%;
     --mono-optical: 0.93em; /* mono set inside prose, matched by x-height */
     --text-xs: 0.6875rem; /* meta, eyebrows, freshness */
     --text-sm: 0.75rem; /* pills, table heads, notes */
@@ -201,6 +214,8 @@
     --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
     --height-image-opened: 70dvh; /* an image opened over the page, under its title */
     --height-touch: 44px; /* the least a finger is given to press */
+    /* a control's height, at least the touch height under a coarse pointer */
+    --height-control: var(--height-icon);
     --height-icon: 2rem; /* a control that is only its glyph */
     --height-chat-strip: 2.5rem; /* the chat pane collapsed to its strip */
     --height-state: 1.875rem; /* a ticket's state label on its page */
@@ -275,6 +290,12 @@
 
   :root[data-theme="dark"] {
     color-scheme: dark;
+  }
+
+  @media (pointer: coarse) {
+    :root {
+      --height-control: max(var(--height-touch), var(--height-icon));
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

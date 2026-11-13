@@ -73,8 +73,8 @@ test("an element is measured when it is drawn and again whenever it resizes", ()
   expect(screen.getByText("wide")).toBeDefined();
 });
 
-/** A breakpoint's `em` is the root's, as a media query's is, so a reader who
- * set a larger root size needs a wider element for the same answer. */
+/** An element's `em` is the root's, which a theme's text-size step scales,
+ * so a larger root needs a wider element for the same answer. */
 test("the width is read in the root's em", () => {
   document.documentElement.style.fontSize = "20px";
   observerHeld();

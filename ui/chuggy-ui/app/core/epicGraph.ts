@@ -22,6 +22,9 @@ export const epicGraphRankGap = 34;
 export const epicGraphMargin = 6;
 /** The least the graph is scaled down to fit its panel; narrower, it scrolls. */
 export const epicGraphScaleLeast = 0.78;
+/** The root size in px the sizes above are stated at, since a card holds text
+ * set in `rem`. */
+export const epicGraphRootPixels = 16;
 
 /** A ticket of the graph and the state its card is drawn in. */
 export interface EpicGraphTicket {
@@ -63,6 +66,39 @@ export interface EpicGraphDrawn {
   readonly unconnected: readonly EpicGraphTicket[];
   readonly width: number;
   readonly height: number;
+}
+
+/** How many times the root size the graph's sizes are stated at a root this
+ * many px is; a root whose size reads as none draws the graph as stated. */
+export function epicGraphRootScaleOf(rootPixels: number): number {
+  return rootPixels > 0 ? rootPixels / epicGraphRootPixels : 1;
+}
+
+/** The graph as laid out, magnified by a root's scale, so its cards grow with
+ * the text they hold. */
+export function epicGraphDrawnAtRoot(
+  drawn: EpicGraphDrawn,
+  rootScale: number,
+): EpicGraphDrawn {
+  const at = (point: EpicGraphPoint): EpicGraphPoint => ({
+    x: point.x * rootScale,
+    y: point.y * rootScale,
+  });
+  return {
+    ...drawn,
+    cards: drawn.cards.map((card) => ({
+      ...card,
+      ...at(card),
+      width: card.width * rootScale,
+      height: card.height * rootScale,
+    })),
+    edges: drawn.edges.map((edge) => ({
+      ...edge,
+      points: edge.points.map(at),
+    })),
+    width: drawn.width * rootScale,
+    height: drawn.height * rootScale,
+  };
 }
 
 /** The key an edge between two tickets is known by. */

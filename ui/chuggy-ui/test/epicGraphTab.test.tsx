@@ -20,6 +20,11 @@ import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EpicGraphTab } from "../app/browser/epic/EpicGraphTab.tsx";
+import {
+  epicGraphMemberHeight,
+  epicGraphMemberWidth,
+  epicGraphRootPixels,
+} from "../app/core/epicGraph.ts";
 import { epicGraphQuery } from "../app/core/epics.ts";
 import { landingQueuesQuery } from "../app/core/ticketQueries.ts";
 import {
@@ -41,6 +46,7 @@ vi.mock(
 
 afterEach(() => {
   cleanup();
+  document.documentElement.style.fontSize = "";
   vi.unstubAllGlobals();
   epicServingReset();
   onlineManager.setOnline(true);
@@ -216,6 +222,28 @@ test("a member with no edge either way is drawn in the row under the graph, not 
   expect(
     drawing.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+});
+
+test("under a root larger than the graph is stated at, every card grows with the text it holds", async () => {
+  document.documentElement.style.fontSize = `${String(epicGraphRootPixels * 1.25)}px`;
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  const placedOf = (ticket: number) =>
+    [
+      ...document.querySelectorAll<SVGForeignObjectElement>("foreignObject"),
+    ].find((each) => each.contains(card(ticket)));
+  const placed = placedOf(5);
+  expect(Number(placed?.getAttribute("width"))).toBe(
+    epicGraphMemberWidth * 1.25,
+  );
+  expect(Number(placed?.getAttribute("height"))).toBe(
+    epicGraphMemberHeight * 1.25,
+  );
+  const unlinked = placedOf(9);
+  expect(Number(unlinked?.getAttribute("width"))).toBe(
+    epicGraphMemberWidth * 1.25,
+  );
 });
 
 test("an edge out of a Done ticket is drawn met, and the rest are not", async () => {

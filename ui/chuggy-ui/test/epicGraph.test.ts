@@ -2,13 +2,15 @@
  * An epic's graph as its Graph tab lays it out: top to bottom, each edge's
  * dependent under its dependency, the members with no edge in a row of their
  * own, an edge out of a Done ticket met, the chain a card traces, the ticket
- * selected where the address names none, and the scale it is drawn at.
+ * selected where the address names none, the scale it is drawn at, and its
+ * magnification with the root's size.
  */
 
 import { expect, test } from "vitest";
 
 import type { EpicGraphResponse } from "../../../src/contract/responses.ts";
 import {
+  epicGraphDrawnAtRoot,
   epicGraphEdgeKeyOf,
   epicGraphEdgePath,
   epicGraphMemberHeight,
@@ -16,6 +18,8 @@ import {
   epicGraphNeighboursOf,
   epicGraphOutsideHeight,
   epicGraphOutsideWidth,
+  epicGraphRootPixels,
+  epicGraphRootScaleOf,
   epicGraphScaleLeast,
   epicGraphScaleOf,
   epicGraphScrollOf,
@@ -296,4 +300,36 @@ test("a pending ticket the list holds no row of is ready once every dependency t
   expect(epicGraphStandingOf({ ticket: 7, member: true }, graph)).toBe(
     undefined,
   );
+});
+
+test("a root at the size the graph is stated at draws it as laid out, and any other magnifies it by the ratio", () => {
+  expect(epicGraphRootScaleOf(epicGraphRootPixels)).toBe(1);
+  expect(epicGraphRootScaleOf(epicGraphRootPixels * 1.25)).toBe(1.25);
+  expect(epicGraphRootScaleOf(0)).toBe(1);
+  expect(epicGraphRootScaleOf(Number.NaN)).toBe(1);
+});
+
+test("a graph magnified by a root's scale grows every card, point and bound by it and keeps the rest", () => {
+  const drawn = epicGraphDrawn(graph, noRows, true);
+  const larger = epicGraphDrawnAtRoot(drawn, 1.25);
+  expect(larger.width).toBe(drawn.width * 1.25);
+  expect(larger.height).toBe(drawn.height * 1.25);
+  expect(larger.cards.map((card) => card.node.ticket)).toStrictEqual(
+    drawn.cards.map((card) => card.node.ticket),
+  );
+  for (const [index, card] of larger.cards.entries()) {
+    const laid = drawn.cards[index];
+    if (laid === undefined) throw new Error("the card is laid out");
+    expect([card.x, card.y, card.width, card.height]).toStrictEqual(
+      [laid.x, laid.y, laid.width, laid.height].map((each) => each * 1.25),
+    );
+  }
+  expect(larger.edges.flatMap((edge) => edge.points)).toStrictEqual(
+    drawn.edges
+      .flatMap((edge) => edge.points)
+      .map((point) => ({ x: point.x * 1.25, y: point.y * 1.25 })),
+  );
+  expect(larger.unconnected).toBe(drawn.unconnected);
+  expect(larger.tickets).toBe(drawn.tickets);
+  expect(epicGraphDrawnAtRoot(drawn, 1)).toStrictEqual(drawn);
 });

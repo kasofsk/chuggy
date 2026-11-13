@@ -366,9 +366,7 @@ function tokensSheetPair(token: string): readonly [string, string] {
 test("the chuggy theme and the fixed colours are the console's stylesheet", () => {
   assert.equal(chuggy.palette.schemes, "Both");
   const { light, dark } = chuggy.palette;
-  for (const role of themeRoles.filter(
-    (role) => role !== "accent" && role !== "ink-on-accent",
-  )) {
+  for (const role of themeRoles) {
     assert.deepEqual([light[role], dark[role]], tokensSheetPair(role), role);
   }
   for (const role of themeFixedRoles) {

@@ -134,11 +134,11 @@ export const themeFixedColours: Readonly<
   Record<ThemeScheme, Readonly<Record<ThemeFixedRole, string>>>
 > = {
   Light: {
-    "tone-pass": "#287740",
+    "tone-pass": "#27743f",
     "tone-fail": "#b3342c",
     "tone-live": "#1b65a0",
     "tone-evaluation": "#7550ac",
-    "tone-finalization": "#167566",
+    "tone-finalization": "#167365",
     "tone-parked": "#885600",
     "tone-queued": "#59665e",
     "syntax-key": "#3658c7",
@@ -175,7 +175,7 @@ export const builtInThemes: Readonly<Record<BuiltInThemeId, ThemeDocument>> = {
         "ink-3": "#5b665f",
         "ink-inverse": "#f7f8f5",
         edge: "#cdd4ca",
-        "edge-strong": "#9ea89f",
+        "edge-strong": "#848c85",
         "edge-control": "#6f7a72",
         accent: "#151a17",
         "ink-on-accent": "#f7f8f5",
@@ -191,7 +191,7 @@ export const builtInThemes: Readonly<Record<BuiltInThemeId, ThemeDocument>> = {
         "ink-3": "#8a948c",
         "ink-inverse": "#0e1210",
         edge: "#262d28",
-        "edge-strong": "#3d463f",
+        "edge-strong": "#5f6761",
         "edge-control": "#66716a",
         accent: "#eef2ee",
         "ink-on-accent": "#0e1210",
@@ -475,9 +475,10 @@ const themeSyntax = themeFixedRoles.filter((role) =>
  * and the inverse surface as marks on the page and a panel; and a state's tone,
  * printed as its word, as text on the page, a panel and its own wash and as a
  * mark on the sunken surface. Left out are `edge` and `edge-strong` on any
- * surface and the inverse ink on the retired fill and the context's slots,
- * which the console's own look draws below the minimum, and the inverse ink on
- * a button's hover, a mix the console owns rather than a ground named here.
+ * surface, which built-in themes draw below the minimum, the inverse ink on the
+ * retired fill and the context's slots, which the console's own look draws
+ * below it, and the inverse ink on a button's hover, a mix the console owns
+ * rather than a ground named here.
  */
 export const themeContrastPairs: readonly ThemeContrastPair[] = [
   ...themeContrastPairsOf(
