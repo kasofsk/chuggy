@@ -1,8 +1,8 @@
 /**
- * An epic's graph as its Graph tab draws it, once `epicGraphLayout.ts` has
- * laid it out: the sizes and gaps it is laid out by, the curve each edge takes
- * from a dependency to what waits on it, the chain a card traces, which ticket
- * is selected, and how far the graph is scaled to the panel it sits in.
+ * An epic's graph: its tickets and the edges between those shown, the chain a
+ * ticket traces, which ticket is selected, and what a ticket waits on and
+ * what waits on it. The sizes and gaps are the ones `epicGraphLayout.ts` lays
+ * the Overview's small graph out by.
  */
 
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
@@ -20,8 +20,6 @@ export const epicGraphNodeGap = 22;
 export const epicGraphRankGap = 34;
 /** Around the graph, so a card's focus ring is not cut at its edge. */
 export const epicGraphMargin = 6;
-/** The least the graph is scaled down to fit its panel; narrower, it scrolls. */
-export const epicGraphScaleLeast = 0.78;
 
 /** A ticket of the graph and the state its card is drawn in. */
 export interface EpicGraphTicket {
@@ -70,41 +68,32 @@ export function epicGraphEdgeKey(from: number, to: number): string {
   return `${String(from)}-${String(to)}`;
 }
 
-function epicGraphNumber(value: number): string {
-  return String(Math.round(value * 100) / 100);
+/** An edge between two tickets shown, from a dependency to what waits on it. */
+export interface EpicGraphEdgeShown {
+  readonly from: number;
+  readonly to: number;
 }
 
-/**
- * The edge as a smooth SVG path through its points: the uniform B-spline d3
- * calls `curveBasis`, which starts at the first point and ends at the last,
- * and a straight line where there are only two.
- */
-export function epicGraphEdgePath(points: readonly EpicGraphPoint[]): string {
-  const at = (x: number, y: number) =>
-    `${epicGraphNumber(x)} ${epicGraphNumber(y)}`;
-  const [first, second] = points;
-  if (first === undefined) return "";
-  if (second === undefined) return `M ${at(first.x, first.y)}`;
-  const steps = [`M ${at(first.x, first.y)}`];
-  let before = first;
-  let here = second;
-  const curved = (next: EpicGraphPoint) => {
-    steps.push(
-      `C ${at((2 * before.x + here.x) / 3, (2 * before.y + here.y) / 3)} ${at((before.x + 2 * here.x) / 3, (before.y + 2 * here.y) / 3)} ${at((before.x + 4 * here.x + next.x) / 6, (before.y + 4 * here.y + next.y) / 6)}`,
-    );
-    before = here;
-    here = next;
-  };
-  for (const [index, next] of points.slice(2).entries()) {
-    if (index === 0)
-      steps.push(
-        `L ${at((5 * before.x + here.x) / 6, (5 * before.y + here.y) / 6)}`,
-      );
-    curved(next);
-  }
-  if (points.length > 2) curved(here);
-  steps.push(`L ${at(here.x, here.y)}`);
-  return steps.join(" ");
+/** The edges between tickets shown, each once, none from a ticket to itself. */
+export function epicGraphEdgesShown(
+  graph: EpicGraphResponse,
+  shown: ReadonlySet<number>,
+): readonly EpicGraphEdgeShown[] {
+  const seen = new Set<string>();
+  return graph.edges
+    .filter((edge) => {
+      const key = epicGraphEdgeKey(edge.from, edge.to);
+      if (
+        seen.has(key) ||
+        edge.from === edge.to ||
+        !shown.has(edge.from) ||
+        !shown.has(edge.to)
+      )
+        return false;
+      seen.add(key);
+      return true;
+    })
+    .map((edge) => ({ from: edge.from, to: edge.to }));
 }
 
 /** What a card traces: itself, everything it waits on and everything waiting
@@ -114,22 +103,29 @@ export interface EpicGraphTrace {
   readonly edges: ReadonlySet<string>;
 }
 
-/** Every ticket reached from one along the edges in one direction, the ticket
- * itself included; each is taken once, so the walk is bounded by the edges
- * given, a cycle included. */
-function epicGraphTraceReached(
-  ticket: number,
-  edges: readonly { readonly from: number; readonly to: number }[],
-  onward: (edge: {
-    readonly from: number;
-    readonly to: number;
-  }) => readonly [number, number],
-): ReadonlySet<number> {
+/** Each ticket and the tickets one step on from it, along the edges given in
+ * the direction `onward` reads them. */
+export function epicGraphAdjacency(
+  edges: readonly EpicGraphEdgeShown[],
+  onward: (edge: EpicGraphEdgeShown) => readonly [number, number],
+): ReadonlyMap<number, readonly number[]> {
   const next = new Map<number, number[]>();
   for (const edge of edges) {
     const [here, there] = onward(edge);
-    next.set(here, [...(next.get(here) ?? []), there]);
+    const held = next.get(here);
+    if (held === undefined) next.set(here, [there]);
+    else held.push(there);
   }
+  return next;
+}
+
+/** Every ticket reached from one along an adjacency, the ticket itself
+ * included; each is taken once, so the walk is bounded by the tickets the
+ * adjacency names, a cycle included. */
+export function epicGraphReached(
+  ticket: number,
+  next: ReadonlyMap<number, readonly number[]>,
+): ReadonlySet<number> {
   const reached = new Set([ticket]);
   const waiting = [ticket];
   for (let at = 0; at < waiting.length; at += 1)
@@ -143,16 +139,16 @@ function epicGraphTraceReached(
 
 export function epicGraphTraced(
   ticket: number,
-  edges: readonly EpicGraphEdge[],
+  edges: readonly EpicGraphEdgeShown[],
 ): EpicGraphTrace {
-  const above = epicGraphTraceReached(ticket, edges, (edge) => [
-    edge.to,
-    edge.from,
-  ]);
-  const below = epicGraphTraceReached(ticket, edges, (edge) => [
-    edge.from,
-    edge.to,
-  ]);
+  const above = epicGraphReached(
+    ticket,
+    epicGraphAdjacency(edges, (edge) => [edge.to, edge.from]),
+  );
+  const below = epicGraphReached(
+    ticket,
+    epicGraphAdjacency(edges, (edge) => [edge.from, edge.to]),
+  );
   return {
     tickets: new Set([...above, ...below]),
     edges: new Set(
@@ -167,42 +163,13 @@ export function epicGraphTraced(
   };
 }
 
-/** The key an edge is traced by. */
-export function epicGraphEdgeKeyOf(edge: EpicGraphEdge): string {
-  return epicGraphEdgeKey(edge.from, edge.to);
-}
-
-function epicGraphRunning(standing: TicketStateStanding): boolean {
-  return (
-    standing === "Work" ||
-    standing === "Evaluation" ||
-    standing === "Finalization"
-  );
-}
-
-/**
- * The ticket selected: the one the address names where the graph holds it;
- * otherwise the first running member, top to bottom and then left to right,
- * else the first Ready one, else the topmost card, the unconnected row after
- * the graph. None where nothing is drawn.
- */
+/** The ticket selected: the one the address names, where the graph holds
+ * it; none otherwise. */
 export function epicGraphSelectedOf(
-  drawn: EpicGraphDrawn,
+  tickets: ReadonlyMap<number, EpicGraphTicket>,
   named: number | undefined,
 ): number | undefined {
-  if (named !== undefined && drawn.tickets.has(named)) return named;
-  const read = [
-    ...[...drawn.cards].sort(
-      (left, right) => left.y - right.y || left.x - right.x,
-    ),
-    ...drawn.unconnected,
-  ];
-  const members = read.filter((ticket) => ticket.node.member);
-  return (
-    members.find((ticket) => epicGraphRunning(ticket.standing)) ??
-    members.find((ticket) => ticket.standing === "Ready") ??
-    read[0]
-  )?.node.ticket;
+  return named !== undefined && tickets.has(named) ? named : undefined;
 }
 
 /** What a ticket waits on and what waits on it, each lowest number first. */
@@ -225,24 +192,4 @@ export function epicGraphNeighboursOf(
       graph.edges.filter((edge) => edge.from === ticket).map((edge) => edge.to),
     ),
   };
-}
-
-/** How far the graph is scaled to fit its panel: never past its own size,
- * and never under the least, past which the panel scrolls instead. */
-export function epicGraphScaleOf(width: number, panelWidth: number): number {
-  if (width <= 0 || panelWidth <= 0) return 1;
-  return Math.min(1, Math.max(epicGraphScaleLeast, panelWidth / width));
-}
-
-/** Where the panel opens scrolled to, so the selected card stands in its
- * middle where the scaled graph is wider than it. */
-export function epicGraphScrollOf(
-  centre: number,
-  scaledWidth: number,
-  panelWidth: number,
-): number {
-  return Math.min(
-    Math.max(0, scaledWidth - panelWidth),
-    Math.max(0, centre - panelWidth / 2),
-  );
 }

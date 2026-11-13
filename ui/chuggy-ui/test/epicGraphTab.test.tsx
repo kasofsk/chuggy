@@ -1,9 +1,10 @@
 /**
- * An epic's graph on its Graph tab: each card and what it says, the row of
- * members with no edge, the edges met and not, the chain a card traces, the
- * ticket selected and the side panel showing it, its dispatch, the key, the
- * toggle for the tickets outside the epic, the states before and without a
- * graph, and the reads that draw it again.
+ * An epic's graph on its Graph tab: its layers and the cards in each, what a
+ * card says and its ports, the goal, the ticket in focus and what it dims,
+ * the longest chain and its toggle, the ticket selected and how it is
+ * cleared, the side panel with a ticket and without one, its dispatch, the
+ * key, the toggle for the tickets outside the epic, the states before and
+ * without a graph, and the reads that draw it again.
  */
 
 import { onlineManager } from "@tanstack/react-query";
@@ -50,7 +51,7 @@ afterEach(() => {
  * where a selection asks, as the route writes its search. */
 function EpicGraphTabAddressed(props: {
   readonly ticket?: number;
-  readonly written?: number[];
+  readonly written?: (number | undefined)[];
 }): ReactNode {
   const [ticket, setTicket] = useState(props.ticket);
   return (
@@ -64,10 +65,10 @@ function EpicGraphTabAddressed(props: {
   );
 }
 
-async function graphic(): Promise<SVGSVGElement> {
-  return (await screen.findByRole("group", {
+async function graphic(): Promise<HTMLElement> {
+  return screen.findByRole("list", {
     name: "Tickets of the epic and what they wait on",
-  })) as unknown as SVGSVGElement;
+  });
 }
 
 function card(ticket: number): HTMLElement {
@@ -84,26 +85,37 @@ function cardButton(ticket: number): HTMLButtonElement {
   return found;
 }
 
-function lit(): readonly number[] {
-  return [
-    ...document.querySelectorAll<HTMLElement>('.epic-card[data-trace="lit"]'),
-  ]
+function dimmed(): readonly number[] {
+  return [...document.querySelectorAll<HTMLElement>(".epic-card[data-dim]")]
     .map((each) => Number(each.dataset["ticket"]))
     .sort((left, right) => left - right);
 }
 
-function litEdges(): readonly string[] {
-  return [
-    ...document.querySelectorAll<SVGPathElement>(
-      'path.epic-graph-edge[data-trace="lit"]',
-    ),
-  ]
-    .map((edge) => `${edge.dataset["from"] ?? ""}-${edge.dataset["to"] ?? ""}`)
-    .sort();
+function stepped(): readonly (readonly [number, number])[] {
+  return [...document.querySelectorAll<HTMLElement>(".epic-card[data-step]")]
+    .map(
+      (each) =>
+        [Number(each.dataset["ticket"]), Number(each.dataset["step"])] as const,
+    )
+    .sort((left, right) => left[1] - right[1]);
 }
 
 function side(): HTMLElement {
   return screen.getByRole("complementary", { name: "Selected ticket" });
+}
+
+function summary(): HTMLElement {
+  return screen.getByRole("complementary", { name: "Epic at a glance" });
+}
+
+function chainToggle(): HTMLElement {
+  return screen.getByRole("button", { name: /^Longest chain/u });
+}
+
+function listed(within_: HTMLElement, name: string): readonly string[] {
+  return within(within(within_).getByRole("list", { name }))
+    .getAllByRole("button")
+    .map((button) => button.textContent);
 }
 
 function pressed(): readonly number[] {
@@ -111,6 +123,18 @@ function pressed(): readonly number[] {
     ...document.querySelectorAll('.epic-card button[aria-pressed="true"]'),
   ].map((button) =>
     Number(button.closest<HTMLElement>(".epic-card")?.dataset["ticket"]),
+  );
+}
+
+/** Each layer's cards, top to bottom, by the name each list is read by. */
+function layers(): readonly (readonly [string, readonly number[]])[] {
+  return [...document.querySelectorAll<HTMLElement>(".epic-graph-cards")].map(
+    (list) => [
+      list.getAttribute("aria-label") ?? "",
+      [...list.querySelectorAll<HTMLElement>(".epic-card")].map((each) =>
+        Number(each.dataset["ticket"]),
+      ),
+    ],
   );
 }
 
@@ -159,7 +183,7 @@ function chainServed(): void {
   epicServing.rows = chainedRows;
 }
 
-test("a card is a button holding its state's mark, its number, its state's word and its title, and no dispatch nor run", async () => {
+test("a card is a button holding its state's mark and its number, then its title, and no dispatch nor run", async () => {
   chainServed();
   await epicPageDrawn(abilitiesEvery, { tab: <EpicGraphTabAddressed /> });
   await graphic();
@@ -167,20 +191,30 @@ test("a card is a button holding its state's mark, its number, its state's word 
   const head = running.querySelector(".epic-card-head");
   expect(
     [...(head?.children ?? [])].map((child) => child.className),
-  ).toStrictEqual(["epic-card-mark", "epic-card-number", "epic-card-word"]);
+  ).toStrictEqual(["epic-card-mark", "epic-card-number"]);
   expect(
     head?.querySelector(".epic-card-mark svg.ticket-state-mark"),
   ).not.toBeNull();
-  expect(running.querySelector(".epic-card-number")?.textContent).toBe("#5");
+  expect(running.querySelector(".epic-card-number")?.textContent).toBe("5");
   expect(running.querySelector(".epic-card-title")?.textContent).toBe("Refund");
   expect(running.dataset["standing"]).toBe("Work");
   expect(running.dataset["tone"]).toBe("live");
   expect(card(4).dataset["standing"]).toBe("Done");
   expect(card(6).dataset["standing"]).toBe("Blocked");
   expect(card(2).dataset["standing"]).toBe("Work");
-  expect(cardButton(2).getAttribute("aria-label")).toMatch(
-    /^#2 Schema: .+, outside the epic$/u,
+  expect(cardButton(5).getAttribute("aria-label")).toMatch(
+    /^#5 Refund: .+, 1 of 2 dependencies done$/u,
   );
+  expect(cardButton(6).getAttribute("aria-label")).toMatch(
+    /^#6 Ledger: .+, 0 of 1 dependency done$/u,
+  );
+  expect(cardButton(2).getAttribute("aria-label")).toMatch(
+    /^#2 Schema: [^,]+, outside the epic$/u,
+  );
+  expect(card(2).querySelector(".epic-card-outside")?.textContent).toBe(
+    "outside",
+  );
+  expect(card(5).querySelector(".epic-card-outside")).toBeNull();
   for (const each of document.querySelectorAll(".epic-card"))
     expect(each.querySelectorAll("button")).toHaveLength(1);
   expect(document.querySelector(".epic-card a")).toBeNull();
@@ -199,126 +233,187 @@ test("a draft takes its state from the graph, and an untitled card says Untitled
   expect(card(6).querySelector(".epic-card-title")?.textContent).toBe(
     "Untitled",
   );
-  expect(card(6).querySelector(".epic-card-word")?.textContent).toBe("Draft");
 });
 
-test("a member with no edge either way is drawn in the row under the graph, not in it", async () => {
-  chainServed();
-  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
-  const drawing = await graphic();
-  expect(drawing.querySelector('.epic-card[data-ticket="9"]')).toBeNull();
-  const row = screen.getByRole("list", { name: "Unlinked tickets" });
-  expect(
-    [...row.querySelectorAll<HTMLElement>(".epic-card")].map(
-      (each) => each.dataset["ticket"],
-    ),
-  ).toStrictEqual(["9"]);
-  expect(
-    drawing.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-});
-
-test("an edge out of a Done ticket is drawn met, and the rest are not", async () => {
-  chainServed();
-  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
-  const drawing = await graphic();
-  const met = [
-    ...drawing.querySelectorAll<SVGPathElement>("path.epic-graph-edge"),
-  ]
-    .filter((edge) => edge.hasAttribute("data-met"))
-    .map((edge) => `${edge.dataset["from"] ?? ""}-${edge.dataset["to"] ?? ""}`);
-  expect(met).toStrictEqual(["4-5"]);
-  expect(drawing.querySelectorAll("path.epic-graph-edge")).toHaveLength(5);
-});
-
-test("hovering and focusing a card trace the same chain, all the way along, and dim the rest", async () => {
+test("each layer is a list of its cards by standing then number, read with its done count, and a ticket with no edge is in the first", async () => {
   chainServed();
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
-  expect(lit()).toStrictEqual([]);
-  expect(document.querySelector("[data-trace]")).toBeNull();
-  fireEvent.mouseEnter(cardButton(6));
-  const hovered = { cards: lit(), edges: litEdges() };
-  expect(hovered).toStrictEqual({
-    cards: [2, 4, 5, 6, 7],
-    edges: ["2-5", "4-5", "5-6", "6-7"],
-  });
-  expect(card(8).dataset["trace"]).toBe("dim");
-  expect(card(9).dataset["trace"]).toBe("dim");
-  expect(
-    document
-      .querySelector('path[data-from="5"][data-to="8"]')
-      ?.getAttribute("data-trace"),
-  ).toBe("dim");
-  fireEvent.mouseLeave(cardButton(6));
-  expect(document.querySelector("[data-trace]")).toBeNull();
-  fireEvent.focus(cardButton(6));
-  expect({ cards: lit(), edges: litEdges() }).toStrictEqual(hovered);
-  fireEvent.blur(cardButton(6));
-  expect(document.querySelector("[data-trace]")).toBeNull();
-});
-
-test("with none named, the first running member is selected, and the side panel shows it", async () => {
-  chainServed();
-  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
-  await graphic();
-  expect(pressed()).toStrictEqual([5]);
-  const panel = side();
-  expect(panel.dataset["ticket"]).toBe("5");
-  expect(within(panel).getByRole("heading", { level: 3 }).textContent).toBe(
-    "Refund",
+  expect(layers()).toStrictEqual([
+    ["Layer 1: 1 of 3 done", [4, 2, 9]],
+    ["Layer 2: 0 of 1 done", [5]],
+    ["Layer 3: 0 of 2 done", [6, 8]],
+    ["Layer 4: 0 of 1 done", [7]],
+  ]);
+  const gutter = document.querySelector('.epic-graph-layer[data-layer="1"]');
+  expect(gutter?.querySelector(".epic-graph-layer-number")?.textContent).toBe(
+    "1",
   );
-  expect(panel.querySelector(".epic-graph-side-number")?.textContent).toBe(
-    "#5",
+  expect(gutter?.querySelector(".epic-graph-layer-done")?.textContent).toBe(
+    "1/3",
   );
   expect(
-    within(panel)
-      .getByRole("list", { name: "Depends on" })
-      .querySelectorAll("button").length,
-  ).toBe(2);
-  expect(
-    within(within(panel).getByRole("list", { name: "Blocks" }))
-      .getAllByRole("button")
-      .map((button) => button.textContent),
-  ).toStrictEqual(["#6 Ledger", "#8 Export"]);
-  expect(
-    within(panel)
-      .getByRole("link", { name: "Open ticket" })
-      .getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+    gutter?.querySelector(".epic-graph-spine-fill")?.getAttribute("height"),
+  ).toBe(String(100 / 3));
+  expect(screen.queryByRole("list", { name: "Unlinked tickets" })).toBeNull();
+  expect(document.querySelector("svg.epic-graph-canvas")).toBeNull();
+  expect(document.querySelector("[data-goal]")).toBeNull();
 });
 
-test("with nothing running the first Ready member is selected, and with nothing Ready the topmost", async () => {
-  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
-  const first = await epicPageDrawn(abilitiesNone, {
-    tab: <EpicGraphTabAddressed />,
-  });
+test("a card's ports are a dot per dependency in placed order, filled where it is Done", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
-  expect(pressed()).toStrictEqual([5]);
-  cleanup();
-  epicServing.rows = [];
+  const ports = (ticket: number) =>
+    [...card(ticket).querySelectorAll(".epic-card-port")].map((port) =>
+      port.hasAttribute("data-met"),
+    );
+  expect(ports(5)).toStrictEqual([true, false]);
+  expect(ports(6)).toStrictEqual([false]);
+  expect(card(4).querySelector(".epic-card-ports")).toBeNull();
+});
+
+test("the goal, alone on the last layer and waiting on every other member, is one card across the foot that counts what it waits on done", async () => {
+  epicServing.graph = {
+    nodes: [
+      { ticket: 4, title: "Charge", phase: "Done", member: true },
+      { ticket: 5, title: "Refund", phase: "Pending", member: true },
+      { ticket: 6, title: "Ledger", phase: "Done", member: true },
+      { ticket: 7, title: "Ship", phase: "Pending", member: true },
+    ],
+    edges: [
+      { from: 4, to: 5 },
+      { from: 5, to: 7 },
+      { from: 6, to: 7 },
+      { from: 4, to: 7 },
+    ],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  expect(card(7).hasAttribute("data-goal")).toBe(true);
+  expect(card(7).closest(".epic-graph-cards")?.hasAttribute("data-goal")).toBe(
+    true,
+  );
+  expect(card(7).querySelector(".epic-card-goal")?.textContent).toBe(
+    "2 of 3 done",
+  );
+  expect(document.querySelectorAll(".epic-card[data-goal]")).toHaveLength(1);
+});
+
+test("a title's label is a kicker, unless more than half the cards carry the same one", async () => {
+  epicServing.graph = {
+    nodes: [
+      { ticket: 4, title: "API: Charge", phase: "Done", member: true },
+      { ticket: 5, title: "Gate: Refund", phase: "Pending", member: true },
+      { ticket: 6, title: "API: Ledger", phase: "Pending", member: true },
+    ],
+    edges: [{ from: 4, to: 5 }],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  const said = (ticket: number) => [
+    card(ticket).querySelector(".epic-card-kicker")?.textContent,
+    card(ticket).querySelector(".epic-card-title")?.textContent,
+  ];
+  expect(said(4)).toStrictEqual([undefined, "Charge"]);
+  expect(said(5)).toStrictEqual(["Gate", "Refund"]);
+  expect(cardButton(4).getAttribute("aria-label")).toMatch(/^#4 API: Charge:/u);
+});
+
+test("hovering and focusing a card keep its chain up and down as it is and dim the rest, a preview over the selection", async () => {
+  chainServed();
   await epicPageDrawn(abilitiesNone, {
-    tab: <EpicGraphTabAddressed />,
-    client: first.client,
+    tab: <EpicGraphTabAddressed ticket={8} />,
   });
   await graphic();
-  const cards = [
-    ...document.querySelectorAll<SVGForeignObjectElement>("foreignObject"),
-  ]
-    .map((each) => ({
-      ticket: Number(
-        each.querySelector<HTMLElement>(".epic-card")?.dataset["ticket"],
-      ),
-      y: Number(each.getAttribute("y")),
-      x: Number(each.getAttribute("x")),
-    }))
-    .sort((left, right) => left.y - right.y || left.x - right.x);
-  expect(pressed()).toStrictEqual([cards[0]?.ticket]);
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+  fireEvent.mouseEnter(cardButton(6));
+  expect(dimmed()).toStrictEqual([8, 9]);
+  fireEvent.mouseLeave(cardButton(6));
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+  fireEvent.focus(cardButton(6));
+  expect(dimmed()).toStrictEqual([8, 9]);
+  fireEvent.blur(cardButton(6));
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+});
+
+test("with none named nothing is selected, nothing is dimmed, and the longest chain is pressed and stepped", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  expect(pressed()).toStrictEqual([]);
+  expect(dimmed()).toStrictEqual([]);
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(chainToggle().textContent).toBe("Longest chain 4");
+  expect(stepped()).toStrictEqual([
+    [2, 1],
+    [5, 2],
+    [6, 3],
+    [7, 4],
+  ]);
+  expect(card(2).querySelector(".epic-card-step")?.textContent).toBe("1");
+  fireEvent.click(chainToggle());
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  expect(stepped()).toStrictEqual([]);
+});
+
+test("with nothing selected the side panel lists the longest chain, what is running, and what is Ready, each selecting its ticket", async () => {
+  chainServed();
+  const written: (number | undefined)[] = [];
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed written={written} />,
+  });
+  await graphic();
+  const panel = summary();
+  expect(
+    [...panel.querySelectorAll(".epic-graph-side-heading")].map(
+      (heading) => heading.textContent,
+    ),
+  ).toStrictEqual(["Longest chain4", "Running2", "Ready1"]);
+  expect(listed(panel, "Longest chain")).toStrictEqual([
+    "#2 Schema",
+    "#5 Refund",
+    "#6 Ledger",
+    "#7 Report",
+  ]);
+  expect(listed(panel, "Running")).toStrictEqual(["#2 Schema", "#5 Refund"]);
+  expect(listed(panel, "Ready")).toStrictEqual(["#9 Audit"]);
+  fireEvent.click(within(panel).getByRole("button", { name: "#9 Audit" }));
+  expect(side().dataset["ticket"]).toBe("9");
+  expect(written).toStrictEqual([9]);
+});
+
+test("with nothing running the summary leaves Running out, and with nothing Ready it says None", async () => {
+  epicServing.graph = {
+    nodes: [
+      { ticket: 4, title: "Charge", phase: "Done", member: true },
+      { ticket: 5, title: "Refund", phase: "Pending", member: true },
+      { ticket: 6, title: "Ledger", phase: "Pending", member: true },
+    ],
+    edges: [
+      { from: 4, to: 5 },
+      { from: 6, to: 5 },
+    ],
+  };
+  epicServing.rows = [];
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  expect(within(summary()).queryByRole("list", { name: "Running" })).toBeNull();
+  expect(listed(summary(), "Ready")).toStrictEqual(["#6 Ledger"]);
+  cleanup();
+  epicServing.graph = {
+    nodes: [{ ticket: 4, title: "Charge", phase: "Done", member: true }],
+    edges: [],
+  };
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  expect(within(summary()).getAllByText("None")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: /^Longest chain/u })).toBeNull();
 });
 
 test("a click, an Enter and the address each select a card, which the address is written with", async () => {
   chainServed();
-  const written: number[] = [];
+  const written: (number | undefined)[] = [];
   await epicPageDrawn(abilitiesNone, {
     tab: <EpicGraphTabAddressed ticket={7} written={written} />,
   });
@@ -335,9 +430,84 @@ test("a click, an Enter and the address each select a card, which the address is
   expect(written).toStrictEqual([4, 8]);
 });
 
+test("pressing the selected card again and Escape each clear the selection, and the chain toggle follows it", async () => {
+  chainServed();
+  const written: (number | undefined)[] = [];
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed written={written} />,
+  });
+  await graphic();
+  fireEvent.click(cardButton(6));
+  expect(pressed()).toStrictEqual([6]);
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  expect(stepped()).toStrictEqual([]);
+  fireEvent.click(cardButton(6));
+  expect(pressed()).toStrictEqual([]);
+  expect(summary()).toBeTruthy();
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(stepped()).toHaveLength(4);
+  fireEvent.click(cardButton(8));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(pressed()).toStrictEqual([]);
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(written).toStrictEqual([6, undefined, 8, undefined]);
+});
+
+test("the chain toggle turned off with nothing selected comes back on when a selection is made and cleared", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  fireEvent.click(chainToggle());
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(cardButton(6));
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(pressed()).toStrictEqual([]);
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(stepped()).toHaveLength(4);
+  fireEvent.click(chainToggle());
+  fireEvent.click(cardButton(6));
+  fireEvent.click(cardButton(6));
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(stepped()).toHaveLength(4);
+});
+
+test("the selected ticket's panel says its layer and step, and how many it depends on are done", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed ticket={5} />,
+  });
+  await graphic();
+  const panel = side();
+  expect(within(panel).getByRole("heading", { level: 3 }).textContent).toBe(
+    "Refund",
+  );
+  expect(panel.querySelector(".epic-graph-side-number")?.textContent).toBe(
+    "#5",
+  );
+  expect(panel.querySelector(".epic-graph-side-place")?.textContent).toBe(
+    "Layer 2 of 4 · Step 2 of 4",
+  );
+  expect(
+    [...panel.querySelectorAll(".epic-graph-side-heading")].map(
+      (heading) => heading.textContent,
+    ),
+  ).toStrictEqual(["Depends on1 of 2 done", "Blocks"]);
+  expect(listed(panel, "Blocks")).toStrictEqual(["#6 Ledger", "#8 Export"]);
+  expect(
+    within(panel)
+      .getByRole("link", { name: "Open ticket" })
+      .getAttribute("href"),
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+  fireEvent.click(cardButton(8));
+  expect(side().querySelector(".epic-graph-side-place")?.textContent).toBe(
+    "Layer 3 of 4",
+  );
+});
+
 test("a ticket the side panel lists selects that ticket when pressed", async () => {
   chainServed();
-  const written: number[] = [];
+  const written: (number | undefined)[] = [];
   await epicPageDrawn(abilitiesNone, {
     tab: <EpicGraphTabAddressed ticket={6} written={written} />,
   });
@@ -385,17 +555,17 @@ test("dispatch is offered for a Ready ticket to a reader who may dispatch, and n
   expect(within(side()).queryByRole("button", { name: "Dispatch" })).toBeNull();
 });
 
-test("the key holds Done, Running, Ready and Blocked, and Escalated where a member is", async () => {
+test("the key counts the members Done, Running, Ready and Blocked, and Escalated where a member is", async () => {
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
   const key = () =>
     within(screen.getByRole("list", { name: "Key" }))
       .getAllByRole("listitem")
       .map((item) => item.textContent);
-  expect(key()).toStrictEqual(["Done", "Running", "Ready", "Blocked"]);
+  expect(key()).toStrictEqual(["Done 1", "Running 0", "Ready 0", "Blocked 1"]);
   expect(
-    screen.getByText("Arrows run from a ticket to what waits on it"),
-  ).toBeTruthy();
+    screen.queryByText("Arrows run from a ticket to what waits on it"),
+  ).toBeNull();
   cleanup();
   epicServing.graph = {
     ...epicGraph,
@@ -406,32 +576,27 @@ test("the key holds Done, Running, Ready and Blocked, and Escalated where a memb
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
   expect(key()).toStrictEqual([
-    "Done",
-    "Running",
-    "Ready",
-    "Blocked",
-    "Escalated",
+    "Done 1",
+    "Running 0",
+    "Ready 0",
+    "Blocked 0",
+    "Escalated 1",
   ]);
 });
 
-test("the tickets outside the epic are smaller dashed cards with dashed edges, and the toggle leaves them out", async () => {
+test("the tickets outside the epic are dashed tagged cards, and the toggle leaves them and their ports out", async () => {
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
-  const drawing = await graphic();
-  const outside = drawing.querySelector(".epic-card[data-outside]");
+  await graphic();
+  const outside = document.querySelector(".epic-card[data-outside]");
   expect(outside?.getAttribute("data-ticket")).toBe("2");
-  const box = (ticket: number) =>
-    card(ticket).parentElement?.getAttribute("width");
-  expect(Number(box(2))).toBeLessThan(Number(box(4)));
-  expect(
-    drawing.querySelectorAll("path.epic-graph-edge[data-outside]"),
-  ).toHaveLength(1);
+  expect(card(5).querySelectorAll(".epic-card-port")).toHaveLength(2);
   const toggle = screen.getByRole("checkbox", {
     name: "Show tickets outside the epic (1)",
   });
   fireEvent.click(toggle);
   await settled();
   expect(document.querySelectorAll(".epic-card[data-outside]")).toHaveLength(0);
-  expect(document.querySelectorAll("path.epic-graph-edge")).toHaveLength(1);
+  expect(card(5).querySelectorAll(".epic-card-port")).toHaveLength(1);
 });
 
 test("a graph with no tickets outside the epic offers no toggle", async () => {
@@ -492,19 +657,9 @@ test("the rendered graph carries no style attribute", async () => {
   await epicPageDrawn(abilitiesEvery, { tab: <EpicGraphTabAddressed /> });
   await graphic();
   fireEvent.mouseEnter(cardButton(6));
-  const drawn = [
-    document.querySelector(".epic-graph-scroll"),
-    screen.getByRole("list", { name: "Unlinked tickets" }),
-    side(),
-  ];
-  expect(
-    drawn.reduce(
-      (count, part) =>
-        count + (part?.querySelectorAll(".epic-card").length ?? 0),
-      0,
-    ),
-  ).toBe(7);
-  for (const part of drawn) {
+  const drawn = document.querySelector(".epic-graph-layers");
+  expect(drawn?.querySelectorAll(".epic-card")).toHaveLength(7);
+  for (const part of [drawn, summary()]) {
     expect(part?.hasAttribute("style")).toBe(false);
     expect(
       [...(part?.querySelectorAll("[style]") ?? [])].map(
@@ -519,7 +674,7 @@ test("an epic with no tickets draws no graph and says there is nothing to draw",
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   expect(screen.getByText("This epic has no tickets to draw")).toBeTruthy();
   expect(
-    screen.queryByRole("group", { name: /^Tickets of the epic/u }),
+    screen.queryByRole("list", { name: /^Tickets of the epic/u }),
   ).toBeNull();
 });
 
