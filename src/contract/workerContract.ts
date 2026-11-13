@@ -79,7 +79,7 @@ export const workerContractCredentialOutcome: WorkerContractVersion = {
   minor: 49,
 };
 
-/** The first version whose pool plane reads the credentials a runner's or a pool's poll names, and may answer it with those of them that are paused, which a plane names only to a poll whose release names this version or a later one. */
+/** The first version whose pool plane reads the credentials a runner's or a pool's poll names, as a later one reads a chat host's too, and may answer each with those of them that are paused, which a plane names only to a poll whose release names this version or a later one. */
 export const workerContractCredentialPauses: WorkerContractVersion = {
   major: 1,
   minor: 78,

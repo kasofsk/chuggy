@@ -1,12 +1,14 @@
 /**
  * PostgreSQL side of a person's own agent accounts: the read of each agent of
- * one account, and the doors its settings and its press are written through,
- * all three granted to the API and each handed the one principal it serves.
+ * one account and of each credential it holds, in one snapshot, and the doors
+ * its settings and its press are written through, all four granted to the API
+ * and each handed the one principal it serves.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { agentAccountCredentialsMax } from "../../contract/http.ts";
 import {
   accountAgents,
   agentPauseReasons,
@@ -14,6 +16,7 @@ import {
   type AccountAgent,
 } from "../../contract/rosters.ts";
 import type {
+  AgentAccountCredential,
   AgentAccountLimit,
   AgentAccountPause,
   AgentAccountReading,
@@ -39,6 +42,23 @@ interface AgentAccountRow {
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
 }
+
+interface AgentAccountCredentialRow {
+  readonly agent: string | null;
+  readonly credential: string | null;
+  readonly five_hour_utilization: number | null;
+  readonly five_hour_resets_at: Date | null;
+  readonly five_hour_observed_at: Date | null;
+  readonly seven_day_utilization: number | null;
+  readonly seven_day_resets_at: Date | null;
+  readonly seven_day_observed_at: Date | null;
+  readonly paused_until: Date | null;
+  readonly reasons: string[] | null;
+  readonly admitted_by_press: boolean | null;
+}
+
+/** The columns a reading of each window and a pause are read from, as both rows hold them. */
+type AgentAccountHeld = Omit<AgentAccountCredentialRow, "agent" | "credential">;
 
 function agentAccountKnown<Value extends string>(
   value: string | null,
@@ -96,7 +116,7 @@ function agentAccountLimit(
 }
 
 function agentAccountPause(
-  row: AgentAccountRow,
+  row: AgentAccountHeld,
 ): AgentAccountPause | undefined {
   if (row.paused_until === null) return undefined;
   return {
@@ -108,11 +128,58 @@ function agentAccountPause(
   };
 }
 
-function agentAccountView(row: AgentAccountRow): AgentAccountView {
-  const limit = agentAccountLimit(row);
+function agentAccountReadings(
+  row: AgentAccountHeld,
+): readonly AgentAccountReading[] {
+  return [
+    ...agentAccountReading(
+      "five_hour",
+      row.five_hour_utilization,
+      row.five_hour_resets_at,
+      row.five_hour_observed_at,
+    ),
+    ...agentAccountReading(
+      "seven_day",
+      row.seven_day_utilization,
+      row.seven_day_resets_at,
+      row.seven_day_observed_at,
+    ),
+  ];
+}
+
+function agentAccountCredential(
+  row: AgentAccountCredentialRow,
+): AgentAccountCredential {
   const pause = agentAccountPause(row);
   return {
-    agent: agentAccountKnown(row.agent, accountAgents, "agent"),
+    name: agentAccountRequired(row.credential, "credential"),
+    readings: agentAccountReadings(row),
+    ...(pause === undefined ? {} : { pause }),
+  };
+}
+
+/** Each agent's credentials, in the read's own order, held to the bound the wire names. */
+function agentAccountCredentialsOf(
+  rows: readonly AgentAccountCredentialRow[],
+  agent: AccountAgent,
+): readonly AgentAccountCredential[] {
+  const credentials = rows
+    .filter((row) => row.agent === agent)
+    .map(agentAccountCredential);
+  if (credentials.length > agentAccountCredentialsMax)
+    throw new Error("agent account: more credentials than the wire names");
+  return credentials;
+}
+
+function agentAccountView(
+  row: AgentAccountRow,
+  credentials: readonly AgentAccountCredentialRow[],
+): AgentAccountView {
+  const limit = agentAccountLimit(row);
+  const pause = agentAccountPause(row);
+  const agent = agentAccountKnown(row.agent, accountAgents, "agent");
+  return {
+    agent,
     settings: {
       fiveHourPercent: agentAccountRequired(
         row.five_hour_percent,
@@ -124,39 +191,61 @@ function agentAccountView(row: AgentAccountRow): AgentAccountView {
       ),
       pausesThreads: agentAccountRequired(row.pauses_threads, "thread option"),
     },
-    readings: [
-      ...agentAccountReading(
-        "five_hour",
-        row.five_hour_utilization,
-        row.five_hour_resets_at,
-        row.five_hour_observed_at,
-      ),
-      ...agentAccountReading(
-        "seven_day",
-        row.seven_day_utilization,
-        row.seven_day_resets_at,
-        row.seven_day_observed_at,
-      ),
-    ],
+    readings: agentAccountReadings(row),
     ...(limit === undefined ? {} : { limit }),
     ...(pause === undefined ? {} : { pause }),
+    credentials: agentAccountCredentialsOf(credentials, agent),
   };
+}
+
+/** Both reads in one snapshot, so a credential's pause and its agent's are taken at one instant. */
+async function agentAccountSnapshot(
+  pool: pg.Pool,
+  principal: string,
+): Promise<readonly AgentAccountView[]> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const found = await client.query<AgentAccountRow>(
+      sql`SELECT s.agent,s.five_hour_percent,s.seven_day_percent,
+                 s.pauses_threads,
+                 s.five_hour_utilization,s.five_hour_resets_at,s.five_hour_observed_at,
+                 s.seven_day_utilization,s.seven_day_resets_at,s.seven_day_observed_at,
+                 s.limit_window,s.limit_resets_at,s.limit_observed_at,
+                 s.paused_until,s.reasons,s.admitted_by_press
+            FROM agent_account_standing(${principal}) s`,
+    );
+    const held = await client.query<AgentAccountCredentialRow>(
+      sql`SELECT c.agent,c.credential,
+                 c.five_hour_utilization,c.five_hour_resets_at,c.five_hour_observed_at,
+                 c.seven_day_utilization,c.seven_day_resets_at,c.seven_day_observed_at,
+                 c.paused_until,c.reasons,c.admitted_by_press
+            FROM agent_account_credential_standing(${principal}) c`,
+    );
+    await client.query("COMMIT");
+    const accounts = found.rows.map((row) => agentAccountView(row, held.rows));
+    const named = accounts.reduce(
+      (count, account) => count + account.credentials.length,
+      0,
+    );
+    if (named !== held.rows.length)
+      throw new Error(
+        "agent account: a credential of no agent the read answered",
+      );
+    return accounts;
+  } catch (cause) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw cause;
+  } finally {
+    client.release();
+  }
 }
 
 /** The API's read of one person's agent accounts and the doors their settings and press are written through. */
 export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
   return {
     accounts: async (principal) => {
-      const found = await pool.query<AgentAccountRow>(
-        sql`SELECT s.agent,s.five_hour_percent,s.seven_day_percent,
-                   s.pauses_threads,
-                   s.five_hour_utilization,s.five_hour_resets_at,s.five_hour_observed_at,
-                   s.seven_day_utilization,s.seven_day_resets_at,s.seven_day_observed_at,
-                   s.limit_window,s.limit_resets_at,s.limit_observed_at,
-                   s.paused_until,s.reasons,s.admitted_by_press
-              FROM agent_account_standing(${principal}) s`,
-      );
-      const accounts = found.rows.map(agentAccountView);
+      const accounts = await agentAccountSnapshot(pool, principal);
       if (accounts.length !== accountAgents.length)
         throw new Error("agent account: the read did not answer every agent");
       return accounts;

@@ -160,6 +160,52 @@ test("a chat host is read live only while its newest poll is inside the window, 
   );
 });
 
+test("a chat host's poll keeps the credentials it named, the same again writing nothing and one naming none clearing them, and its row keeps them only as an object", async () => {
+  const tenant = await tenantOf("host-credentials");
+  const key = { tenant, owner: member };
+  const registered = registration(key, `${tenant}-1`);
+  await postgresChatHostRegistry(api).register(registered);
+  const identity = {
+    kind: "ChatHost",
+    ...key,
+    principal: registered.principal,
+  } as const;
+  const kept = async () =>
+    (
+      await harness.query(
+        `SELECT credentials_named,xmin::text AS written FROM chat_host WHERE tenant=$1`,
+        [tenant],
+      )
+    )[0];
+  const named = (credentials: { Claude?: string[] }) =>
+    postgresWorkerPoolRunners(plane).named(
+      identity,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      credentials,
+    );
+  await named({ Claude: ["work", "home"] });
+  const first = await kept();
+  assert.deepEqual(first?.["credentials_named"], { Claude: ["work", "home"] });
+  await named({ Claude: ["work", "home"] });
+  assert.equal(
+    (await kept())?.["written"],
+    first?.["written"],
+    "the same credentials again write nothing",
+  );
+  await named({});
+  assert.equal((await kept())?.["credentials_named"], null);
+  await assert.rejects(
+    plane.query(
+      `UPDATE chat_host SET credentials_named='["work"]'::jsonb WHERE tenant=$1`,
+      [tenant],
+    ),
+    /chat_host_credentials_named_is_an_object/u,
+  );
+});
+
 test("the pool plane reads a chat host and stamps its poll and runner, and changes nothing else", async () => {
   assert.equal(
     await harness.attemptAs(

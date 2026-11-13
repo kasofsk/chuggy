@@ -139,6 +139,7 @@ epics-side-blocks = Blocks
 epics-side-none = None
 epics-side-open = Open { -ticket }
 epics-side-dispatch = { -dispatch(case: "upper") }
+epics-sheet-ticket = #{ $ticket } { $title }: { $state }
 
 ## The History tab.
 

@@ -61,6 +61,11 @@ import {
 } from "./agentAccountHarness.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
+  personalRunnerHarnessPlatform,
+  personalRunnerHarnessPolled,
+  type PersonalRunnerHarnessPolled,
+} from "./personalRunnerHarness.ts";
+import {
   schedulerClaimFor,
   schedulerInCluster,
   schedulerInvocation,
@@ -94,7 +99,7 @@ const fallbacks = postgresProjectOwnerFallback(apiPool);
 const leaseSecs = 300;
 /** The size a claim reads an execution naming no memory as. */
 const memoryMibDefault = 4_096;
-const platform = "Platform:Linux:Amd64";
+const platform = personalRunnerHarnessPlatform;
 
 type Runner = PersonalRunnerIdentity & { readonly kind: "Personal" };
 
@@ -337,44 +342,14 @@ const spendingClaude: WorkTaskInvocation = {
   },
 };
 
-/** What a runner's newest poll left it as: live for executions or not, offered Claude unless `offered` is false, with `capabilities` where a case names its own, and naming `credentials` of Claude where it names any. */
-interface RunnerPolled {
-  readonly live: boolean;
-  readonly offered?: boolean;
-  readonly capabilities?: readonly string[];
-  readonly credentials?: readonly string[];
-}
-
-/** Writes onto `runner`'s row what a poll of `polled` writes, advertising its agents. */
-async function runnerPolled(
-  runner: Runner,
-  polled: RunnerPolled,
-): Promise<void> {
-  const offered =
-    polled.offered === false ? [] : [workerPoolAgentToken("Claude")];
-  await rig.harness.query(
-    `UPDATE personal_runner SET executions_polled_at=CASE WHEN $2::boolean THEN now() END,
-       agents_advertised=true,capabilities=$3::text[],credentials_named=$4::jsonb
-     WHERE principal=$1`,
-    [
-      runner.principal,
-      polled.live,
-      polled.capabilities ?? [platform, ...offered],
-      polled.credentials === undefined
-        ? null
-        : JSON.stringify({ Claude: polled.credentials }),
-    ],
-  );
-}
-
 /** One more of `member`'s runners in `project`'s tenant, serving it, as `polled` left it. */
 async function runnerPolledOf(
   project: SchedulerProject,
   member: Principal,
-  polled: RunnerPolled,
+  polled: PersonalRunnerHarnessPolled,
 ): Promise<Runner> {
   const runner = await runnerOf(project.partition, member);
-  await runnerPolled(runner, polled);
+  await personalRunnerHarnessPolled(rig.harness, runner.principal, polled);
   return runner;
 }
 
@@ -472,7 +447,9 @@ test("a run none of whose owner's runners is live waits on them offline under St
       (await listedAs(project, member))?.personalRunnerWait,
       fallback === "Strict" ? "Offline" : undefined,
     );
-    await runnerPolled(runner, { live: true });
+    await personalRunnerHarnessPolled(rig.harness, runner.principal, {
+      live: true,
+    });
     assert.equal((await listedAs(project, member))?.personalRunnerWait, "Live");
   }
 });
@@ -512,7 +489,9 @@ test("a runner that does not match the run's requirement, or whose owner lists a
     const runner = await runnerOf(listing.partition, elsewhere, [
       other.partition,
     ]);
-    await runnerPolled(runner, { live: true });
+    await personalRunnerHarnessPolled(rig.harness, runner.principal, {
+      live: true,
+    });
     assert.equal(
       (await listedAs(listing, elsewhere))?.personalRunnerWait,
       undefined,
@@ -588,7 +567,10 @@ test("a live runner's pause is answered only while every credential it named is 
   );
   await limited(["first", 7_200], ["second", 3_600]);
   assert.equal(pauseMinutes((await listedAs(project, member))?.paused), 60);
-  await runnerPolled(runner, { live: true, credentials: ["first"] });
+  await personalRunnerHarnessPolled(rig.harness, runner.principal, {
+    live: true,
+    credentials: ["first"],
+  });
   await runnerPolledOf(project, member, { live: true, credentials: ["third"] });
   assert.equal(
     (await listedAs(project, member))?.paused,

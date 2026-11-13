@@ -128,6 +128,16 @@ const runnersOwned: PersonalRunnerOwnerView = {
       waitingTruncated: true,
     },
   ],
+  pauses: [
+    {
+      agent: "Codex",
+      pause: {
+        until: "2026-10-09T17:00:00.000Z",
+        reasons: ["seven_day", "limit"],
+        pressed: true,
+      },
+    },
+  ],
 };
 
 /** The caller's runners as the tenant a case names answers them: two in one, none elsewhere. */
@@ -421,7 +431,7 @@ test("a member reads their chat host and takes it off, as themselves, and a tena
   ]);
 });
 
-test("a member reads their own runners, each by its id with what it holds, beside the projects they serve with what waits in each, and a tenant they have none in is not found", async () => {
+test("a member reads their own runners, each by its id with what it holds, beside the projects they serve with what waits in each and the agents they are paused for, and a tenant they have none in is not found", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
   const found = await app.inject({ url: runner("acme"), headers: bearer });

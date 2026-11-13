@@ -26,7 +26,7 @@ import { Tooltip } from "../ui/Tooltip.tsx";
 
 import "./epicGraph.css";
 
-function EpicGraphSideMark(props: {
+export function EpicGraphSideMark(props: {
   readonly standing: TicketStateStanding;
 }): ReactNode {
   return (
@@ -127,7 +127,7 @@ function EpicGraphSideDispatch(props: {
 
 /** Where the ticket stands in the layers, and on the longest chain where it
  * is on it; nothing for a ticket not placed. */
-function EpicGraphSidePlace(props: {
+export function EpicGraphSidePlace(props: {
   readonly ticket: number;
   readonly layered: EpicGraphLayered;
 }): ReactNode {
@@ -151,6 +151,31 @@ function EpicGraphSidePlace(props: {
         ]),
   ];
   return <p className="epic-graph-side-place">{placed.join(" · ")}</p>;
+}
+
+/** A link to the ticket's page, and dispatch for a Ready ticket where the
+ * ticket list would offer it. */
+export function EpicGraphSideActions(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: EpicGraphTicket;
+  readonly row: ProjectTableRow | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const { node, standing } = props.ticket;
+  return (
+    <div className="epic-graph-side-actions">
+      <Link
+        to="/$tenant/$project/tickets/$ticket"
+        params={{ ...props.partition, ticket: String(node.ticket) }}
+        className={buttonLookClassName({ size: "sm" })}
+      >
+        {text({ id: "epics-side-open" })}
+      </Link>
+      {standing === "Ready" && props.row !== undefined ? (
+        <EpicGraphSideDispatch partition={props.partition} row={props.row} />
+      ) : null}
+    </div>
+  );
 }
 
 export function EpicGraphSide(props: {
@@ -204,18 +229,11 @@ export function EpicGraphSide(props: {
         held={held}
         onTicket={props.onTicket}
       />
-      <div className="epic-graph-side-actions">
-        <Link
-          to="/$tenant/$project/tickets/$ticket"
-          params={{ ...props.partition, ticket: String(node.ticket) }}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "epics-side-open" })}
-        </Link>
-        {standing === "Ready" && props.row !== undefined ? (
-          <EpicGraphSideDispatch partition={props.partition} row={props.row} />
-        ) : null}
-      </div>
+      <EpicGraphSideActions
+        partition={props.partition}
+        ticket={props.ticket}
+        row={props.row}
+      />
     </aside>
   );
 }

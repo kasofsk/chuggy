@@ -119,8 +119,6 @@ interface Drawing {
   removal?: number;
   /** The chat host every read answers; absent where the reader has none. */
   host?: unknown;
-  /** The reader's agent accounts; none paused where absent. */
-  accounts?: unknown;
 }
 
 /** A chat host of the reader's whose id ends in `tail`, never polled. */
@@ -129,22 +127,6 @@ function hostListed(tail: string): unknown {
     id: `chuggy-personal-${tail}-0000-4000-8000-000000000000`,
     registeredAt: "2026-10-01T00:00:00Z",
     live: false,
-  };
-}
-
-/** Both agents of the reader's account, Codex held by `pause` where one is given. */
-function agentAccounts(pause: unknown): unknown {
-  return {
-    accounts: ["Claude", "Codex"].map((agent) => ({
-      agent,
-      settings: {
-        fiveHourPercent: 90,
-        sevenDayPercent: 90,
-        pausesThreads: false,
-      },
-      readings: [],
-      ...(agent === "Codex" && pause !== undefined ? { pause } : {}),
-    })),
   };
 }
 
@@ -178,8 +160,6 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
         ? answer(undefined, 204)
         : answer({ error: { code: "NotFound" } }, drawing.removal);
     if (path === `${nativeHttpBasePath}/projects`) return answer(inventory);
-    if (path === `${nativeHttpBasePath}/agent-accounts`)
-      return answer(drawing.accounts ?? agentAccounts(undefined));
     if (path === `${tenantPath}/chat-host`) {
       if (request.method !== "GET") return answer(undefined, 204);
       return drawing.host === undefined
@@ -560,27 +540,51 @@ test("a chat host is drawn though its owner may no longer register one, and taki
   expect(screen.getByText("No chat host yet")).toBeTruthy();
 });
 
-test("each agent of the reader's account a pause holds is said above their runners, with where it is set, and none is said where none is paused", async () => {
-  drawing = { granted: true, runner: runnerHeld };
-  await drawMyRunner();
-  expect(screen.queryByRole("group", { name: "Paused agents" })).toBeNull();
-  cleanup();
+test("no agent is said paused above a member's runners where their read answers none paused, or answers no pauses at all", async () => {
+  for (const runner of [runnerHeld, { ...runnerHeld, pauses: [] }]) {
+    drawing = { granted: true, runner };
+    await drawMyRunner();
+    expect(screen.queryByRole("group", { name: "Paused agents" })).toBeNull();
+    cleanup();
+  }
+});
+
+test("each agent the read of a member's runners answers paused is said above them, by its agent, with where it is set", async () => {
   drawing = {
     granted: true,
-    runner: runnerHeld,
-    accounts: agentAccounts({
-      until: "2026-10-01T05:00:00Z",
-      reasons: ["seven_day", "limit"],
-      pressed: false,
-    }),
+    runner: {
+      ...runnerHeld,
+      pauses: [
+        {
+          agent: "Claude",
+          pause: {
+            until: "2026-10-01T03:00:00Z",
+            reasons: ["five_hour"],
+            pressed: false,
+          },
+        },
+        {
+          agent: "Codex",
+          pause: {
+            until: "2026-10-01T05:00:00Z",
+            reasons: ["seven_day", "limit"],
+            pressed: false,
+          },
+        },
+      ],
+    },
   };
   await drawMyRunner();
   const paused = screen.getByRole("group", { name: "Paused agents" });
   expect(paused.textContent).toContain(
+    "Claude · Paused · Five-hour window · until ",
+  );
+  expect(paused.textContent).toContain(
     "Codex · Paused · Weekly window · Provider limit · until ",
   );
-  expect(paused.textContent).not.toContain("Claude");
-  expect(within(paused).getByRole("link", { name: "Usage" })).toBeTruthy();
+  expect(within(paused).getAllByRole("link", { name: "Usage" })).toHaveLength(
+    2,
+  );
 });
 
 test("the page is headed by its one h1, drawn by the page head", async () => {

@@ -37,6 +37,13 @@ export function useViewportAtLeastEm(em: number): boolean {
   return useViewportMatches(`(min-width: ${String(em)}em)`);
 }
 
+/** Whether the viewport is at most this wide, which is what a sheet's
+ * `max-width` query asks: at exactly the width both this and
+ * `useViewportAtLeastEm` answer yes. */
+export function useViewportAtMostEm(em: number): boolean {
+  return useViewportMatches(`(max-width: ${String(em)}em)`);
+}
+
 /** Whether the reader has asked for no less motion than the console makes,
  * which the sheets ask with the same query. */
 export function useViewportMotion(): boolean {

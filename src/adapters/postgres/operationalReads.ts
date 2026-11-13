@@ -542,9 +542,9 @@ interface ExecutionRunnerWait {
  * listing its project, matching its requirement and fitting its memory, sized
  * at `memoryMibDefault` where it names none), with whether that runner polled
  * for executions within the deferral's window, whether it is offered the
- * attempt's agent, and its pause by the credentials it named. This fourth
- * copy of the claim's predicate is held to the claim's answers in
- * `test/postgres/workerPoolClaim.test.ts`.
+ * attempt's agent, and its pause by the credentials it named. This fourth of
+ * the five copies of the claim's predicate `./personalRunner.ts` counts is
+ * held to the claim's answers in `test/postgres/workerPoolClaim.test.ts`.
  */
 async function executionsRunnerRows(
   pool: pg.Pool,
@@ -589,8 +589,11 @@ async function executionsRunnerRows(
 }
 
 /** A runner's pause as its function answered it, or nothing where it is free. */
-function executionRunnerPause(
-  row: ExecutionRunnerRow,
+export function executionRunnerPause(
+  row: Pick<
+    ExecutionRunnerRow,
+    "paused_until" | "reasons" | "admitted_by_press"
+  >,
 ): AgentAccountPause | undefined {
   if (row.paused_until === null) return undefined;
   return {
@@ -600,6 +603,15 @@ function executionRunnerPause(
     ),
     pressed: row.admitted_by_press === true,
   };
+}
+
+/** The pause of `pauses` that ends first where every one is held, and nothing where any is free or there are none. */
+export function executionRunnerPausedEvery(
+  pauses: readonly (AgentAccountPause | undefined)[],
+): AgentAccountPause | undefined {
+  const held = pauses.filter((pause) => pause !== undefined);
+  if (held.length !== pauses.length) return undefined;
+  return held.toSorted((one, other) => one.until.localeCompare(other.until))[0];
 }
 
 /**
@@ -614,12 +626,7 @@ function executionRunnerWaitOf(
   if (first === undefined) return undefined;
   const live = rows.filter((row) => row.live === true && row.offered === true);
   if (live.length > 0) {
-    const pauses = live.map(executionRunnerPause);
-    const held = pauses.filter((pause) => pause !== undefined);
-    const paused =
-      held.length === pauses.length
-        ? held.toSorted((one, other) => one.until.localeCompare(other.until))[0]
-        : undefined;
+    const paused = executionRunnerPausedEvery(live.map(executionRunnerPause));
     return { wait: "Live", ...(paused === undefined ? {} : { paused }) };
   }
   if (asWorkerPoolOwnerFallback(first.owner_fallback) !== "Strict")
