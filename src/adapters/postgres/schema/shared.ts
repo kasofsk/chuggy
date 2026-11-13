@@ -323,13 +323,13 @@ export const ticketRunnerLossFunction = "ticket_runner_loss";
 export const runnerLostTicketsFunction = "runner_lost_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
-/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again. */
+/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again: a limited one where its account's agent, or a credential a runner of that account names, would let a claim through. */
 export const ticketRateLimitResumableFunction = "ticket_rate_limit_resumable";
-/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts. */
+/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts, as a runner of each would claim it. */
 export const rateLimitedTicketsFunction = "rate_limited_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const rateLimitResumeFunction = "submit_rate_limit_resume";
-/** When the latest usage pause ends that holds an escalation the scheduler will resume by itself once none does. */
+/** When an escalation the scheduler will resume by itself is free: the latest, across its limited tasks, of the earliest end among the pauses holding each. */
 export const ticketUsageResumeFunction = "ticket_usage_resume";
 /** The Pending tickets the importer may move onto a repository head's revision. */
 export const configurationFollowingCandidatesFunction =

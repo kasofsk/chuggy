@@ -1,14 +1,16 @@
 /**
  * A job a usage limit stopped on the runner that claimed it, against a real
  * PostgreSQL and the real writer: the scheduler resumes the ticket's
- * escalation as a person would once the account the run spent is no longer
- * paused, until the job has been stopped so at its place as many times as its
- * bound allows.
+ * escalation as a person would once a runner of the account the run spent
+ * would claim it, the agent as a whole or the credentials that runner names
+ * being free, until the job has been stopped so at its place as many times as
+ * its bound allows.
  *
  * A PASS IS INSTALLATION-WIDE and the cases share one database, so each reads
  * back only its own project's rows, and counts only the answers the scheduler
- * submitted there. Each pool is registered by a member of its own, so no two
- * cases share an account.
+ * submitted there. Each pool is registered by a member of its own, and each
+ * personal runner is of a pool's member or of one of its own, so no two cases
+ * share an account.
  */
 
 import assert from "node:assert/strict";
@@ -16,10 +18,12 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerRunEnded } from "../../src/adapters/postgres/workerPlane.ts";
 import {
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
+  postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
   asAttemptCapabilitySecret,
@@ -33,7 +37,11 @@ import {
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import type { RunEndedEvidence } from "../../src/interpreter/runEvidence.ts";
-import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
+import type {
+  PersonalRunnerIdentity,
+  WorkerPoolIdentity,
+} from "../../src/interpreter/workerPool.ts";
+import type { WorkerRunnerCredentials } from "../../src/contract/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   agentAccountHarnessCommitted,
@@ -149,14 +157,15 @@ async function claimedWaiting(runner: Runner): Promise<string> {
   return bearer;
 }
 
-/** The run under `bearer` ends itself as `evidence`, naming a limit that resets `resetsSecs` from now where it is rate-limited, and a pass concludes it. */
+/** The run under `bearer` ends itself as `evidence`, naming a limit of `credential` that resets `resetsSecs` from now where it is rate-limited, and a pass concludes it. */
 async function ended(
   routed: Routed,
   bearer: string,
   evidence: RunEndedEvidence,
   resetsSecs?: number,
+  credential?: string,
 ): Promise<void> {
-  await endedUndecided(routed, bearer, evidence, resetsSecs);
+  await endedUndecided(routed, bearer, evidence, resetsSecs, credential);
   await steps.drained(routed);
 }
 
@@ -166,6 +175,7 @@ async function endedUndecided(
   bearer: string,
   evidence: RunEndedEvidence,
   resetsSecs?: number,
+  credential?: string,
 ): Promise<void> {
   assert.equal(
     await postgresWorkerRunEnded(resume.workerPool).end({
@@ -178,6 +188,7 @@ async function endedUndecided(
             limit: {
               window: "five_hour",
               resetsAt: Math.floor(Date.now() / 1_000) + resetsSecs,
+              ...(credential === undefined ? {} : { credential }),
             },
           }),
     }),
@@ -186,13 +197,14 @@ async function endedUndecided(
   await executionSchedulerLaunch(service, routed.project.epoch);
 }
 
-/** The usage limit stops the run under `bearer`, resetting an hour from now unless `resetsSecs` says otherwise. */
+/** The usage limit stops the run under `bearer`, resetting an hour from now unless `resetsSecs` says otherwise, on `credential` where one is named. */
 function rateLimited(
   routed: Routed,
   bearer: string,
   resetsSecs = 3_600,
+  credential?: string,
 ): Promise<void> {
-  return ended(routed, bearer, "RunRateLimited", resetsSecs);
+  return ended(routed, bearer, "RunRateLimited", resetsSecs, credential);
 }
 
 /** The run under `bearer` fails on its runner, which is a loss there. */
@@ -577,5 +589,297 @@ test("work a usage limit stopped in a project that is not Active is never said t
     [partition.tenant, partition.project],
   );
   assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+});
+
+/** A runner of a member's account that names credentials: its account, how it claims the job waiting for it, and how its poll names credentials. */
+interface Claimant {
+  readonly account: Principal;
+  readonly claimed: (routed: Routed, execution: ExecutionId) => Promise<string>;
+  readonly named: (credentials: WorkerRunnerCredentials) => Promise<void>;
+}
+
+/** The claimant a pool `runnerOf` registered is. */
+function poolClaimant(runner: Runner): Claimant {
+  const { account } = runner;
+  assert.ok(account !== undefined);
+  return {
+    account,
+    claimed: async (routed, execution) =>
+      (await claimed(routed, execution, runner)).bearer,
+    named: (credentials) =>
+      postgresWorkerPoolRunners(resume.planePool).named(
+        { ...runner.pool, kind: "Dedicated" },
+        undefined,
+        undefined,
+        undefined,
+        false,
+        credentials,
+      ),
+  };
+}
+
+/** Registers a personal runner of `owner`, listing the ticket's project unless `listed` is false. */
+async function personalOf(
+  routed: Routed,
+  owner: Principal,
+  listed = true,
+): Promise<Claimant> {
+  const { partition } = routed.project;
+  const identity: PersonalRunnerIdentity = {
+    tenant: partition.tenant,
+    owner,
+    principal: asPrincipal(`https://issuer.invalid#personal-${randomUUID()}`),
+  };
+  const personal = postgresPersonalRunnerRegistry(resume.apiPool);
+  assert.equal(
+    await personal.register({
+      tenant: identity.tenant,
+      owner,
+      capabilities: ["Platform:Linux:Amd64"],
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal: identity.principal,
+    }),
+    "Registered",
+  );
+  if (listed)
+    assert.equal(
+      await personal.allow(
+        { tenant: identity.tenant, owner },
+        partition.project,
+      ),
+      "Allowed",
+    );
+  return {
+    account: owner,
+    claimed: async (claiming, execution) => {
+      await ownedBy(claiming, execution, owner);
+      await schedulerResumeInvoked(
+        resume,
+        claiming,
+        execution,
+        claudeInvocation,
+      );
+      const bearer = `bearer-${randomUUID()}`;
+      assert.notEqual(
+        await resume.assignments.claimPersonal(
+          identity,
+          {
+            leaseSecs: service.config.attemptLeaseSecs,
+            heldMax: 1,
+            memoryMibDefault: service.poolMemoryMib,
+          },
+          `assignment-${randomUUID()}`,
+          bearer,
+          [partition.project],
+        ),
+        undefined,
+      );
+      return bearer;
+    },
+    named: (credentials) =>
+      postgresWorkerPoolRunners(resume.planePool).named(
+        { ...identity, kind: "Personal" },
+        undefined,
+        undefined,
+        undefined,
+        false,
+        credentials,
+      ),
+  };
+}
+
+/** Makes `owner` the execution's owner, naming an owner fallback, as a member's own ticket is. */
+async function ownedBy(
+  routed: Routed,
+  execution: ExecutionId,
+  owner: Principal,
+): Promise<void> {
+  const { partition } = routed.project;
+  await rig.harness.query(
+    `UPDATE execution SET owner=$4, owner_fallback='Strict'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [partition.tenant, partition.project, execution, owner],
+  );
+}
+
+/** Each of `credentials` of the account's Claude at its five-hour threshold until its reset, `resetsSecs` from now, replacing whatever the account held. */
+function overThreshold(
+  account: Principal,
+  credentials: readonly (readonly [string, number])[],
+): Promise<void> {
+  return agentAccountHarnessCommitted(rig.harness, account, "Claude", {
+    readings: credentials.map(([credential, resetsSecs]) => ({
+      window: "five_hour",
+      utilization: 0.95,
+      resetsSecs,
+      observedSecs: 0,
+      credential,
+    })),
+  });
+}
+
+/**
+ * A runner naming two credentials has a job limited on one, which is then
+ * over its threshold: resumed at the next pass while the other is free; its
+ * next job limited on the other, both paused, waits for the earlier end and is
+ * resumed once that ends.
+ */
+async function namedCredentialResumes(
+  routed: Routed,
+  execution: ExecutionId,
+  claimant: Claimant,
+): Promise<void> {
+  await claimant.named({ Claude: ["first", "second"] });
+  await rateLimited(
+    routed,
+    await claimant.claimed(routed, execution),
+    3_600,
+    "first",
+  );
+  await overThreshold(claimant.account, [["first", 3_600]]);
+  assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+  const next = await claimant.claimed(routed, await newestOne(routed));
+  await rateLimited(routed, next, 3_600, "second");
+  await overThreshold(claimant.account, [
+    ["first", 3_600],
+    ["second", 1_800],
+  ]);
+  assert.deepEqual(await steps.standing(routed), workEscalated);
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 30 });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  await overThreshold(claimant.account, [["first", 3_600]]);
+  assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+  assert.equal((await steps.standing(routed))?.["phase"], "Work");
+}
+
+test("a personal runner naming two credentials frees a ticket limited on one while the other is free, and waits for the earlier end while both are paused", async () => {
+  const { routed, execution } = await steps.routedTicket(
+    "limit-named-personal",
+  );
+  const owner = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  await namedCredentialResumes(
+    routed,
+    execution,
+    await personalOf(routed, owner),
+  );
+});
+
+test("a pool naming two credentials frees a ticket limited on one while the other is free, and waits for the earlier end while both are paused", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-named-pool");
+  await namedCredentialResumes(
+    routed,
+    execution,
+    poolClaimant(await runnerOf(routed)),
+  );
+});
+
+test("a press after the limits holding every credential a runner names frees the ticket, though a credential it does not name is at its threshold", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-named-press");
+  const claimant = poolClaimant(await runnerOf(routed));
+  await claimant.named({ Claude: ["first", "second"] });
+  await rateLimited(
+    routed,
+    await claimant.claimed(routed, execution),
+    3_600,
+    "first",
+  );
+  await agentAccountHarnessCommitted(rig.harness, claimant.account, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.95,
+        resetsSecs: 3_600,
+        observedSecs: 0,
+        credential: "third",
+      },
+    ],
+    limits: [
+      { observedSecs: -10, resetsSecs: 3_600, credential: "first" },
+      { observedSecs: -10, resetsSecs: 3_600, credential: "second" },
+    ],
+  });
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  await agentAccountHarnessPressed(rig.harness, claimant.account, "Claude");
+  assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+  assert.equal((await steps.standing(routed))?.["phase"], "Work");
+});
+
+/** A pool naming one credential has a job limited on it, which is then over its threshold, so that runner alone would leave the ticket waiting; the job is its account's own unless `ownedByAnother`. */
+async function limitedOnNamedPool(label: string, ownedByAnother = false) {
+  const { routed, execution } = await steps.routedTicket(label);
+  const claimant = poolClaimant(await runnerOf(routed));
+  const { account } = claimant;
+  await ownedBy(
+    routed,
+    execution,
+    ownedByAnother
+      ? asPrincipal(`https://issuer.invalid#member-${randomUUID()}`)
+      : account,
+  );
+  await claimant.named({ Claude: ["first"] });
+  await rateLimited(
+    routed,
+    await claimant.claimed(routed, execution),
+    3_600,
+    "first",
+  );
+  await overThreshold(account, [["first", 3_600]]);
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  return { routed, account };
+}
+
+test("a second runner of the member naming a free credential frees a ticket the first runner's task was limited on", async () => {
+  const { routed, account } = await limitedOnNamedPool("limit-named-second");
+  await (await personalOf(routed, account)).named({ Claude: ["second"] });
+  assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+  assert.equal((await steps.standing(routed))?.["phase"], "Work");
+});
+
+test("a personal runner frees nothing until it lists the project", async () => {
+  const { routed, account } = await limitedOnNamedPool("limit-named-unlisted");
+  await (
+    await personalOf(routed, account, false)
+  ).named({
+    Claude: ["second"],
+  });
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  const { partition } = routed.project;
+  assert.equal(
+    await postgresPersonalRunnerRegistry(resume.apiPool).allow(
+      { tenant: partition.tenant, owner: account },
+      partition.project,
+    ),
+    "Allowed",
+  );
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+});
+
+test("a personal runner frees nothing of a task whose execution is another member's", async () => {
+  const { routed, account } = await limitedOnNamedPool(
+    "limit-named-another",
+    true,
+  );
+  await (await personalOf(routed, account)).named({ Claude: ["second"] });
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+});
+
+test("a runner naming no credential of the agent leaves the ticket waiting for the whole agent", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-named-other");
+  const runner = await runnerOf(routed);
+  const claimant = poolClaimant(runner);
+  await claimant.named({ Codex: ["first"] });
+  await rateLimited(routed, await claimant.claimed(routed, execution));
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  await limitReset(runner);
   assert.equal(await steps.resumedByScheduler(routed), 1);
 });
