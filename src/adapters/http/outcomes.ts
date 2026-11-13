@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import type { TicketId } from "../../domain/ids.ts";
 import type {
   ConfigurationPage,
   ConfigurationRevisionResource,
@@ -22,6 +23,7 @@ import type {
   ProjectInventoryPage,
   ProjectRead,
   TicketNativeAction,
+  TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
@@ -160,6 +162,7 @@ import {
   encodeInventoryCursor,
   encodeLatestExecutionCursor,
   encodeNativeActionCursor,
+  encodeNativeActionHistoryCursor,
   encodeTicketActivityCursor,
   encodeTicketNumberCursor,
 } from "./contract.ts";
@@ -602,6 +605,27 @@ export function nativeActionsResponse(
                 partition,
                 result.value.nextAfter,
               ),
+            }),
+      });
+}
+
+/** A ticket nobody may read and a ticket that does not exist answer alike, as the ticket's open actions do. */
+export function ticketNativeActionHistoryResponse(
+  partition: Partition,
+  ticket: TicketId,
+  page: TicketNativeActionHistoryPage | undefined,
+): NativeHttpResponse {
+  return page === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        actions: page.actions,
+        ...(page.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeNativeActionHistoryCursor(partition, {
+                ticket,
+                ...page.nextAfter,
+              }),
             }),
       });
 }

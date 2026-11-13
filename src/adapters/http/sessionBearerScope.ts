@@ -100,6 +100,7 @@ export const sessionBearerRouteClasses = {
   tickets: partitionRead,
   ticket: partitionRead,
   ticketNativeActions: partitionRead,
+  ticketNativeActionHistory: partitionRead,
   ticketAgenticRefusals: partitionRead,
   ticketActionReach: partitionRead,
   configurationHead: partitionRead,

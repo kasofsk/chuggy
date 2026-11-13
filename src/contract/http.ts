@@ -640,6 +640,7 @@ export const nativeHttpRoutes = {
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
+  ticketNativeActionHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-action-history`,
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,

@@ -15,14 +15,19 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresPriorEvaluationReports } from "../../src/adapters/postgres/evaluationReports.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import {
   approvalFeedbackCharsMax,
   principalCharsMax,
   resultReportCharsMax,
 } from "../../src/contract/http.ts";
-import { executionResponseSchema } from "../../src/contract/responses.ts";
+import {
+  executionResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
+} from "../../src/contract/responses.ts";
 import type { Config } from "../../src/domain/config.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import {
   executionSchedulerDefaults,
   type ExecutionId,
@@ -338,6 +343,28 @@ test("who answered, when, how and with what feedback are read back from the exec
   assert.equal(result.approval.feedback, "Looks right to me.");
   assert.equal(result.approval.action, asked.action);
   executionResponseSchema.parse(resource);
+});
+
+test("a ticket's action history names an answered approval's answer, its execution, and who answered it when", async () => {
+  const at = await evaluating("answer-history", "signOff");
+  const asked = await openApproval(at);
+  await answered(at, asked, "Approve");
+  const history = await postgresNativeReads(ingress).ticketNativeActionHistory(
+    at.project.partition,
+    asTicketId(at.project.ticket),
+    { limit: 10 },
+  );
+  const [approval] = (history?.actions ?? []).filter(
+    (action) => action.action === asked.action,
+  );
+  assert.ok(approval?.state === "Resolved", "the approval reads resolved");
+  assert.equal(approval.kind, "EvaluationApproval");
+  assert.equal(approval.resolution, "Approve");
+  assert.equal(approval.execution, asked.execution);
+  assert.equal(approval.attempt, undefined);
+  assert.equal(approval.answeredBy, approver);
+  assert.ok(approval.answeredAt !== undefined, "the answer is dated");
+  ticketNativeActionHistoryResponseSchema.parse(history);
 });
 
 test("Reject with feedback fails the stage, and the rework's briefing reads the feedback behind the approver's name", async () => {

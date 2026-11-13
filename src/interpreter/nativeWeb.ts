@@ -43,6 +43,7 @@ import type {
   NativeActionAnswerRefusalCode,
   ResumePoint,
 } from "../contract/rosters.ts";
+import type { FinalizationAttemptId } from "./finalizer.ts";
 import {
   nativeActionAnswerer,
   nativeActionCallerOf,
@@ -570,6 +571,34 @@ export interface NativeActionPage {
   readonly nextAfter?: NativeActionPosition;
 }
 
+/**
+ * One action a ticket has had, open or settled. A resolution is what an
+ * answered action carries alone, and who answered it and when is recorded of
+ * an answered evaluation approval alone; the finalization attempt or execution
+ * is the one the action asked about, where its kind names one.
+ */
+export type TicketNativeActionRecord = {
+  readonly action: string;
+  readonly kind: NativeActionKind;
+  readonly authorizingSequence: number;
+  readonly attempt?: FinalizationAttemptId;
+  readonly execution?: ExecutionId;
+} & (
+  | { readonly state: "Open" | "Withdrawn" }
+  | {
+      readonly state: "Resolved";
+      readonly resolution: NativeActionResolution;
+      readonly answeredBy?: Principal;
+      readonly answeredAt?: PublicInstant;
+    }
+);
+
+/** One page of a ticket's actions, oldest fence first, and where the next one resumes. */
+export interface TicketNativeActionHistoryPage {
+  readonly actions: readonly TicketNativeActionRecord[];
+  readonly nextAfter?: NativeActionPosition;
+}
+
 export const nativeActionPageLimitMax = 100;
 
 export function checkedNativeActionPageQuery(
@@ -754,6 +783,12 @@ export interface NativeReadStore {
     partition: Partition,
     query: NativeActionPageQuery,
   ): Promise<NativeActionAskedPage>;
+  /** A page of every action the ticket has had, or nothing where the project holds no such ticket. */
+  ticketNativeActionHistory(
+    partition: Partition,
+    ticket: TicketId,
+    query: NativeActionPageQuery,
+  ): Promise<TicketNativeActionHistoryPage | undefined>;
   /** What one action asks of whoever answers it, open or not, or nothing where the project holds no such action. */
   nativeActionAsked(
     partition: Partition,
@@ -844,6 +879,12 @@ export interface NativeWeb extends NativeEpics {
     query: NativeActionPageQuery,
     viaSession?: SessionId,
   ): Promise<AuthorizedResult<NativeActionPage>>;
+  ticketNativeActionHistory(
+    principal: Principal,
+    partition: Partition,
+    ticket: TicketId,
+    query: NativeActionPageQuery,
+  ): Promise<TicketNativeActionHistoryPage | undefined>;
   operationalStatus(
     principal: Principal,
     partition: Partition,
@@ -1941,11 +1982,25 @@ function nativeTicketMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
   agents: NativeActionAgents,
-): Pick<NativeWeb, "ticket" | "ticketNativeActions" | "nativeActions"> {
+): Pick<
+  NativeWeb,
+  | "ticket"
+  | "ticketNativeActions"
+  | "nativeActions"
+  | "ticketNativeActionHistory"
+> {
   return {
     ticket: authorizedProjectRead(access, (partition, ticket) =>
       reads.ticket(partition, ticket),
     ),
+    ticketNativeActionHistory: async (principal, partition, ticket, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads.ticketNativeActionHistory(
+            partition,
+            ticket,
+            checkedNativeActionPageQuery(query),
+          ),
     ticketNativeActions: async (principal, partition, ticket, viaSession) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return undefined;
@@ -3085,7 +3140,12 @@ function nativeProjectionMethods(
   operationalReads?: OperationalReadStore,
 ): Pick<
   NativeWeb,
-  "operation" | "project" | "ticket" | "ticketNativeActions" | "nativeActions"
+  | "operation"
+  | "project"
+  | "ticket"
+  | "ticketNativeActions"
+  | "nativeActions"
+  | "ticketNativeActionHistory"
 > {
   return {
     operation: authorizedProjectRead(access, (partition, operation) =>

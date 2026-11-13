@@ -911,7 +911,7 @@ test("the function a migration grants execute on is the boundary owner's and is 
   );
 });
 
-test("the API reads a ticket's open questions and who answered an approval, and no more of the desk", async () => {
+test("the API reads a ticket's questions, how each was answered and by whom, and no more of the desk", async () => {
   assert.equal(
     await harness.attemptAs(
       apiRole,
@@ -922,9 +922,15 @@ test("the API reads a ticket's open questions and who answered an approval, and 
     ),
     undefined,
   );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT action,state,resolution,attempt,execution,answered_by,answered_at
+         FROM native_action WHERE ticket=1`,
+    ),
+    undefined,
+  );
   for (const column of [
-    "attempt",
-    "resolution",
     "effect_position",
     "action_version",
     "required_capability",
@@ -952,7 +958,7 @@ test("the API reads a ticket's open questions and who answered an approval, and 
         table_name: "native_action",
         privilege_type: "SELECT",
         columns:
-          "action,answered_at,answered_by,authorizing_seq,execution,feedback,kind,project,state,tenant,ticket",
+          "action,answered_at,answered_by,attempt,authorizing_seq,execution,feedback,kind,project,resolution,state,tenant,ticket",
       },
       {
         table_name: "native_action_resolution",

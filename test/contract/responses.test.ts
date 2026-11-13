@@ -105,6 +105,7 @@ import {
   ticketAgenticRefusalsResponseSchema,
   ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
   ticketResponseSchema,
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
@@ -591,6 +592,47 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
       ],
     }),
   );
+});
+
+test("a ticket's action history carries an answer on a resolved action alone, of its kind, with its answerer whole", () => {
+  const answered = {
+    action: "approval",
+    kind: "EvaluationApproval",
+    authorizingSequence: 4,
+    state: "Resolved",
+    resolution: "Approve",
+    execution: "execution",
+    answeredBy: "person",
+    answeredAt: "2026-01-01T00:00:00.000000Z",
+  } as const;
+  assert.deepEqual(
+    ticketNativeActionHistoryResponseSchema
+      .parse({
+        actions: [
+          answered,
+          {
+            action: "withdrawn",
+            kind: "TicketEscalation",
+            authorizingSequence: 5,
+            state: "Withdrawn",
+          },
+        ],
+      })
+      .actions.map(({ action }) => action),
+    ["approval", "withdrawn"],
+  );
+  const unanswered = { ...answered, resolution: undefined };
+  const undated = { ...answered, answeredAt: undefined };
+  for (const refused of [
+    unanswered,
+    undated,
+    { ...answered, resolution: "Resume" },
+    { ...answered, state: "Withdrawn" },
+    { ...answered, state: "Open", resolution: undefined },
+  ])
+    assert.throws(() =>
+      ticketNativeActionHistoryResponseSchema.parse({ actions: [refused] }),
+    );
 });
 
 test("a project's selector settings parse as its overrides beside what they resolve to", () => {

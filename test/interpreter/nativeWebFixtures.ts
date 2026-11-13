@@ -19,6 +19,7 @@ const reads = {
   ticketNativeActions: () => Promise.resolve(undefined),
   nativeActions: () => Promise.resolve({ actions: [] }),
   nativeActionAsked: () => Promise.resolve(undefined),
+  ticketNativeActionHistory: () => Promise.resolve(undefined),
 } satisfies NativeReadStore;
 
 const inbox = {

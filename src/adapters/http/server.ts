@@ -114,6 +114,7 @@ import {
   parseLatestExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
+  parseNativeActionHistoryCursor,
   parseTicketActivityCursor,
   parseTicketNumberCursor,
   parseForgeAuthorization,
@@ -187,6 +188,7 @@ import {
   projectResponse,
   projectEntryResponse,
   ticketNativeActionsResponse,
+  ticketNativeActionHistoryResponse,
   ticketResponse,
   executionResponse,
   executionsResponse,
@@ -347,6 +349,7 @@ type InitialNativeWeb = Pick<
   | "submit"
   | "ticket"
   | "ticketNativeActions"
+  | "ticketNativeActionHistory"
   | "nativeActions"
   | "execution"
   | "executions"
@@ -1194,6 +1197,7 @@ function registerNativeActions(
     );
     nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
+  registerNativeActionHistory(app, web);
   app.get(`${root}/native-actions`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
     const partition = partitionOf(request);
@@ -1215,6 +1219,52 @@ function registerNativeActions(
     );
     nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
+}
+
+/** Every action a ticket has had, behind a cursor that names the ticket it pages. */
+function registerNativeActionHistory(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketNativeActionHistory,
+    async (request, principal, partition) => {
+      const ticket = asTicketIdField(record(request.params), "ticket");
+      const query = nativeHttpEndpoints.ticketNativeActionHistory.query.parse(
+        request.query,
+      );
+      const after =
+        query.cursor === undefined
+          ? undefined
+          : parseNativeActionHistoryCursor(query.cursor, partition);
+      if (after !== undefined && after.ticket !== ticket)
+        throw new RangeError(
+          "native action history cursor belongs to another ticket",
+        );
+      return {
+        ticket,
+        page: await web.ticketNativeActionHistory(
+          principal,
+          partition,
+          ticket,
+          {
+            ...(after === undefined
+              ? {}
+              : {
+                  after: {
+                    authorizingSequence: after.authorizingSequence,
+                    action: after.action,
+                  },
+                }),
+            limit: query.limit,
+          },
+        ),
+      };
+    },
+    ({ ticket, page }, partition) =>
+      ticketNativeActionHistoryResponse(partition, ticket, page),
+  );
 }
 
 function registerOperationalRoutes(

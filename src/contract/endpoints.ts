@@ -62,6 +62,7 @@ import {
   selectorProposalReviewResponseSchema,
   inboxResponseSchema,
   ticketLandingsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
   landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
 } from "./responses.ts";
@@ -387,6 +388,18 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.selectorProposalReview,
     body: selectorProposalReviewSchema,
     response: selectorProposalReviewResponseSchema,
+  },
+  ticketNativeActionHistory: {
+    method: "GET",
+    path: nativeHttpRoutes.ticketNativeActionHistory,
+    query: endpointQuery({
+      cursor: z
+        .unknown()
+        .transform((value) => textField({ cursor: value }, "cursor"))
+        .optional(),
+      limit: endpointInteger("limit", nativeHttpPageItemsDefault),
+    }),
+    response: ticketNativeActionHistoryResponseSchema,
   },
   ticketActionReach: {
     method: "GET",
