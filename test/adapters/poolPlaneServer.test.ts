@@ -706,7 +706,7 @@ test("a poll over a socket naming the most credentials the contract admits besid
   }
 });
 
-test("a personal runner's poll has the credentials it named kept, one unread or absent keeping none, and a pool's or a chat host's are never kept", async () => {
+test("a personal runner's or a pool's poll has the credentials it named kept, one unread or absent keeping none, and a chat host's are never kept", async () => {
   for (const [why, headers, kept] of [
     [
       "a runner naming two agents' credentials",
@@ -729,8 +729,9 @@ test("a personal runner's poll has the credentials it named kept, one unread or 
     [
       "a pool naming some",
       { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      ["Dedicated", {}],
+      ["Dedicated", { Claude: ["work"] }],
     ],
+    ["a pool naming none", speaking, ["Dedicated", {}]],
     [
       "a chat host naming some",
       { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
@@ -746,7 +747,7 @@ test("a personal runner's poll has the credentials it named kept, one unread or 
   }
 });
 
-test("a personal runner's answer names the pauses of the credentials its poll named only where its release reads them, and a pool's never", async () => {
+test("a personal runner's or a pool's answer names the pauses of the credentials its poll named only where its release reads them, and a chat host's never", async () => {
   const pause = {
     agent: "Claude",
     credential: "work",
@@ -766,7 +767,7 @@ test("a personal runner's answer names the pauses of the credentials its poll na
       undefined,
     ],
     [
-      "a runner of the release before",
+      "a runner of a release before them",
       {
         ...runnerSpeaking,
         [workerContractHeader]: "1.77.0",
@@ -777,8 +778,24 @@ test("a personal runner's answer names the pauses of the credentials its poll na
     ],
     ["a runner naming none", runnerSpeaking, [], undefined],
     [
-      "a pool",
+      "a pool of this release",
       { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+      [{ Claude: ["work"] }],
+      [pause],
+    ],
+    [
+      "a pool of a release before them",
+      {
+        ...speaking,
+        [workerContractHeader]: "1.77.0",
+        [workerRunnerCredentialsHeader]: "Claude:work",
+      },
+      [],
+      undefined,
+    ],
+    [
+      "a chat host naming some",
+      { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
       [],
       undefined,
     ],
@@ -1449,9 +1466,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
           ...(older.memoryRoomHeader === undefined || room === undefined
             ? {}
             : { [older.memoryRoomHeader]: room }),
-          ...(token === runnerToken
-            ? { [workerRunnerCredentialsHeader]: "Claude:work" }
-            : {}),
+          [workerRunnerCredentialsHeader]: "Claude:work",
         },
       });
       assert.equal(answered.statusCode, 200, what);
