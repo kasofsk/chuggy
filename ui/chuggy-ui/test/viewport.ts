@@ -22,7 +22,7 @@ import { viewportEmPixels, viewportHeightEmDefault } from "./viewportSizes.ts";
 
 export { viewportDeskEm } from "./viewportSizes.ts";
 
-const viewportAsked = /min-width:\s*([0-9.]+)em/u;
+const viewportAsked = /(min|max)-width:\s*([0-9.]+)em/u;
 
 export interface ViewportFrame {
   readonly columnEm?: number;
@@ -43,7 +43,9 @@ function viewportMatches(
   if (query.includes("prefers-reduced-motion: reduce"))
     return frame?.motion === false;
   const asked = viewportAsked.exec(query);
-  return asked !== null && em >= Number(asked[1]);
+  if (asked === null) return false;
+  const width = Number(asked[2]);
+  return asked[1] === "min" ? em >= width : em <= width;
 }
 
 export function viewportAtEm(em: number, frame?: ViewportFrame): void {

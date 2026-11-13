@@ -538,8 +538,10 @@ it paid for was lost. It has no unfinished work: an unredeemed token expires,
 and the minter's next mint removes it.
 
 `chat_host` — a member's chat host in one tenant: its principal, the issuer
-client it is removed by, when it registered and last polled, and the runner
-package and version its newest poll named. Written by the API role, which
+client it is removed by, when it registered and last polled, the runner
+package and version its newest poll named, and the credentials that poll
+named, per agent, which a poll naming none clears and its session claims read.
+Written by the API role, which
 registers and removes it whole, and by the pool plane, which stamps its polls
 and what they name; the pool plane and the boundary owner read it. Its key and
 identity are `(tenant, owner)`, so a member holds one in a tenant, and it names
@@ -617,8 +619,9 @@ was observed, and the attempt whose run reported it. Owned by the boundary
 owner, which is what `record_worker_run_usage` runs as; the worker plane writes
 it through that door alone. The API reads one person's rows through
 `agent_account_standing`, which answers each window's newest reading across the
-account's credentials, and the metrics plane reads the principal and agent of
-every row and nothing else. Its key and identity are
+account's credentials, and `agent_account_credential_standing`, which answers
+each credential's own by its name, and the metrics plane reads the principal
+and agent of every row and nothing else. Its key and identity are
 `(principal, agent, credential, usage_window)`, the principal being the account
 an attempt spent as `execution_attempt_agent_account` derives it from the
 attempt's own claim, the agent the one its invocation names, and the credential
@@ -643,6 +646,7 @@ named them, when the plane received it, and the attempt it stopped. Owned by the
 boundary owner, which is what `record_worker_run_limit` runs as; the worker
 plane writes it through that door alone. The API reads one person's newest
 limit across the account's credentials through `agent_account_standing`, and
+which credentials hold one through `agent_account_credential_standing`, and
 the metrics plane reads the principal and agent of every row and nothing else.
 Its key and identity are `(principal, agent, credential)`, derived as
 `agent_account_usage`'s are and bounded with it, and it departs from #180's
@@ -659,9 +663,12 @@ does. The API writes one person's row whole through `write_agent_account_setting
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call, reads it through that, as
-`agent_account_standing` does for the API.
+`agent_account_standing` does for the API;
+`agent_account_credential_standing` answers the API each credential's own
+pause, `agent_account_named_pause` of its one name.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
-`agent_account_pause`'s columns for the credentials a runner or a pool named:
+`agent_account_pause`'s columns for the credentials a runner, a pool or a chat
+host named:
 paused only while every one of them is, until the earliest of those ends, a
 name that never reported being free. `agent_account_named_credential_pauses`
 answers the pool plane each of them that is paused, and until when.
@@ -669,6 +676,10 @@ answers the pool plane each of them that is paused, and until when.
 for the API, `agent_account_pause` of the agent a limited task spent, and
 `agent_account_named_pause` of the credentials each runner of that account
 names, so the task is free where either would let that runner's claim through.
+`agent_account_session_paused`, which no role may call, answers the session
+claims of a pool and a chat host, and `lead_runner_standing`, whether a session
+waits on its account: `agent_account_named_pause` of the Claude credentials the
+caller's runner named, and `agent_account_pause` where it named none.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived
@@ -685,6 +696,25 @@ its being unspent, so two claims cannot spend one. Its key and identity are
 `(principal, agent)`, as `agent_account_setting`'s are. It points at nothing. A
 press lets a claim through only a limit received before it. It has no
 unfinished work: a press is spent or it is not.
+
+`owned_theme` — a theme document one person made for the console. Owned by the
+boundary owner, which its doors run as; the API reads one person's through
+`owned_themes` and writes them through `create_owned_theme`,
+`write_owned_theme` and `delete_owned_theme` alone, and no other role reaches
+it. Its key and identity are `theme`, a number never given twice, and
+`(principal, theme)` is unique so a choice can point at a person's own; it
+departs from #180's composite project key as `agent_account_setting` does,
+because a person's appearance follows them into every workspace. It points at
+nothing. A creation locks the person's principal and is refused at the bound
+the API hands it. It has no unfinished work.
+
+`theme_choice` — the one theme a person chose for every console they sign in
+to: a built-in by its id or a theme of their own, never both. Owned by the
+boundary owner; the API reads it through `read_theme_choice` and writes or
+clears it through `write_theme_choice` alone, which refuses a theme of
+another person's. Its key and identity are `principal`, and it points at
+`owned_theme` by `(principal, owned)`, so deleting the theme deletes the choice
+and the person reads none. It has no unfinished work.
 
 `epic` — a project's epic as it stands: its number, its revision and its
 content. Owned by the boundary owner, which `save_epic` runs as and which is the

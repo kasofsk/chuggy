@@ -1,14 +1,17 @@
 /**
  * A person's own agent accounts: how each agent of one pauses, each window's
- * newest reading and the newest limit a provider stopped it at, the pause they
- * come to, and the press that tries it again after that limit.
+ * newest reading and the newest limit a provider stopped it at across its
+ * credentials, the pause they come to, each credential's own readings and
+ * pause by its name, and the press that tries the agent again after a limit.
  *
  * EVERY CALL IS THE CALLER'S OWN. Each is handed the principal its request
  * authenticated as and names no other, so no person reads or writes another's
  * settings, readings or pause, or presses for them.
  *
- * THE PAUSE IS `agent_account_pause`'S ANSWER AT THE READ, never derived here:
- * the rule is stated once, over the database's own clock.
+ * THE PAUSE IS `agent_account_pause`'S ANSWER AT THE READ, holding while any
+ * credential's does, and a credential's is `agent_account_named_pause`'s of
+ * its one name, never derived here: the rule is stated once, over the
+ * database's own clock.
  */
 
 import type {
@@ -25,7 +28,7 @@ export interface AgentAccountSettings {
   readonly pausesThreads: boolean;
 }
 
-/** One window's newest reading, its utilization a share of the window where the whole is one. */
+/** One window's reading, of one credential or the newest across an agent's, its utilization a share of the window where the whole is one. */
 export interface AgentAccountReading {
   readonly window: RunUsageWindow;
   readonly utilization: number;
@@ -47,12 +50,21 @@ export interface AgentAccountPause {
   readonly pressed: boolean;
 }
 
+/** One credential an agent holds a reading or a limit of, by its name: each window's reading of it and the pause holding it alone. */
+export interface AgentAccountCredential {
+  readonly name: string;
+  readonly readings: readonly AgentAccountReading[];
+  readonly pause?: AgentAccountPause;
+}
+
 export interface AgentAccountView {
   readonly agent: AccountAgent;
   readonly settings: AgentAccountSettings;
   readonly readings: readonly AgentAccountReading[];
   readonly limit?: AgentAccountLimit;
   readonly pause?: AgentAccountPause;
+  /** In name order. */
+  readonly credentials: readonly AgentAccountCredential[];
 }
 
 /** A press recorded, or none because no limit holds the agent paused. */

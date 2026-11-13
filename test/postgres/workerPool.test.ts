@@ -663,9 +663,13 @@ const poolPlaneColumns = [
   [
     "chat_host",
     "SELECT",
-    "owner,principal,runner_package,runner_version,tenant",
+    "credentials_named,owner,principal,runner_package,runner_version,tenant",
   ],
-  ["chat_host", "UPDATE", "last_polled_at,runner_package,runner_version"],
+  [
+    "chat_host",
+    "UPDATE",
+    "credentials_named,last_polled_at,runner_package,runner_version",
+  ],
   [
     "execution",
     "SELECT",
@@ -725,8 +729,8 @@ const poolPlaneColumns = [
  * client are none of them. A session's launch is read whole, and a pool's
  * liveness and the runner, capabilities, memory ceiling and credentials its
  * poll named, and whether a personal runner's capabilities advertise its
- * agents, are all of its row the plane writes, as a chat host's liveness and
- * runner are of its, while a pool's registrant is the account its claims spend and a press
+ * agents, are all of its row the plane writes, as a chat host's liveness,
+ * runner and credentials are of its, while a pool's registrant is the account its claims spend and a press
  * is read and spent by the claim it lets through, as a personal runner's
  * claim records whether it benches its credential, whose outcome is read off
  * its attempt's ending and limit.

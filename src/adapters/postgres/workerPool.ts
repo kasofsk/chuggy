@@ -130,7 +130,6 @@ import {
   type WorkerPoolClaimTerms,
   type WorkerPoolDirectory,
   type WorkerPoolExecutionHolds,
-  type WorkerPoolExecutionPoller,
   type WorkerPoolIdentity,
   type WorkerPoolRegistration,
   type WorkerPoolRegistry,
@@ -362,8 +361,8 @@ function workerPoolCeilingRead(kept: string | null): number | undefined {
 
 /**
  * The runner, capabilities and memory ceiling each caller's newest poll named,
- * whether a personal runner's advertises its agents, and the credentials a
- * pool's or a personal runner's named, on its own row and under its current
+ * whether a personal runner's advertises its agents, and the credentials it
+ * named, on its own row and under its current
  * registration, written as one statement and only where it differs from what
  * is kept, so a poll that names what it named before writes nothing;
  * capabilities or a ceiling named as none keep what is recorded, and
@@ -422,11 +421,13 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
           return;
         case "ChatHost":
           await pool.query(sql`UPDATE chat_host h
-            SET runner_package=${named},runner_version=${version}
+            SET runner_package=${named},runner_version=${version},
+                credentials_named=${credentialsNamed}::jsonb
             WHERE h.tenant=${identity.tenant} AND h.owner=${identity.owner}
               AND h.principal=${identity.principal}
-              AND (h.runner_package,h.runner_version)
-                IS DISTINCT FROM (${named}::text,${version}::text)`);
+              AND (h.runner_package,h.runner_version,h.credentials_named)
+                IS DISTINCT FROM (${named}::text,${version}::text,
+                  ${credentialsNamed}::jsonb)`);
           return;
       }
     },
@@ -891,18 +892,18 @@ async function workerPoolExecutionsPolled(
 }
 
 /**
- * Each of `credentials` that is paused for the account a pool's or a runner's
- * work spends: a personal runner's owner, or the member who registered a pool,
- * where one did. A pool an operator registered names no account, and none of
- * its credentials is paused.
+ * Each of `credentials` that is paused for the account a caller's work spends:
+ * a personal runner's or a chat host's owner, or the member who registered a
+ * pool, where one did. A pool an operator registered names no account, and
+ * none of its credentials is paused.
  */
 async function workerPoolCredentialPauses(
   pool: pg.Pool,
-  identity: WorkerPoolExecutionPoller,
+  identity: PoolPlaneIdentity,
   credentials: WorkerRunnerCredentials,
 ): Promise<WorkerPoolCredentialPause[]> {
   if (Object.keys(credentials).length === 0) return [];
-  if (identity.kind === "Personal")
+  if (identity.kind !== "Dedicated")
     return workerPoolCredentialPausesOf(pool, identity.owner, credentials);
   const found = await pool.query<{ registered_by: string | null }>(
     sql`SELECT w.registered_by FROM worker_pool w

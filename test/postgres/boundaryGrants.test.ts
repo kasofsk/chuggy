@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   accessPlaneRole,
   agentAccountCredentialKeptFunction,
+  agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
   agentAccountFunction,
   agentAccountNamedCredentialPausesFunction,
@@ -21,6 +22,12 @@ import {
   apiRole,
   boundaryOwnerRole,
   configurationFollowingCandidatesFunction,
+  ownedThemeCreateFunction,
+  ownedThemeDeleteFunction,
+  ownedThemesFunction,
+  ownedThemeWriteFunction,
+  themeChoiceReadFunction,
+  themeChoiceWriteFunction,
   configurationFollowingMoveFunction,
   configurationImporterRole,
   draftCreateFunction,
@@ -836,7 +843,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [workerPlaneRole, poolPlaneRole],
   },
   {
-    signature: `${agentAccountSessionPausedFunction}(text,text)`,
+    signature: `${agentAccountSessionPausedFunction}(text,text,text[])`,
     definer: false,
     callers: [],
     strangers: [poolPlaneRole],
@@ -869,6 +876,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [metricsPlaneRole],
   ),
   boundaryGrantsDoor(
+    `${agentAccountCredentialStandingFunction}(text)`,
+    [apiRole],
+    [metricsPlaneRole],
+  ),
+  boundaryGrantsDoor(
     `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     [apiRole],
     [metricsPlaneRole],
@@ -887,6 +899,20 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     "update_draft_fenced(text,text,bigint,bigint,text,text,boolean)",
     [ticketServiceRole],
     [apiRole],
+  ),
+  ...[
+    `${ownedThemesFunction}(text)`,
+    `${ownedThemeCreateFunction}(text,jsonb,bigint)`,
+    `${ownedThemeWriteFunction}(text,bigint,jsonb)`,
+    `${ownedThemeDeleteFunction}(text,bigint)`,
+    `${themeChoiceReadFunction}(text)`,
+    `${themeChoiceWriteFunction}(text,text,bigint)`,
+  ].map((signature) =>
+    boundaryGrantsDoor(
+      signature,
+      [apiRole],
+      [ticketServiceRole, metricsPlaneRole],
+    ),
   ),
 ];
 
@@ -1011,6 +1037,8 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["worker_pool", "credentials_named", "UPDATE", boundaryOwnerRole, false],
   ["personal_runner", "credentials_named", "SELECT", boundaryOwnerRole, true],
   ["personal_runner", "credentials_named", "UPDATE", boundaryOwnerRole, false],
+  ["chat_host", "credentials_named", "SELECT", boundaryOwnerRole, true],
+  ["chat_host", "credentials_named", "UPDATE", boundaryOwnerRole, false],
   ["agent_account_press", "spent_at", "UPDATE", poolPlaneRole, true],
   ["agent_account_press", "pressed_at", "UPDATE", poolPlaneRole, false],
   ["agent_account_setting", null, "SELECT", poolPlaneRole, false],
@@ -1031,6 +1059,12 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["execution", "ticket", "SELECT", poolPlaneRole, true],
   ["execution", "registered_at", "SELECT", poolPlaneRole, true],
   ["execution_attempt", "claimed_at", "SELECT", poolPlaneRole, true],
+  ["owned_theme", null, "SELECT", apiRole, false],
+  ["owned_theme", null, "INSERT", boundaryOwnerRole, true],
+  ["owned_theme", null, "DELETE", boundaryOwnerRole, true],
+  ["theme_choice", null, "SELECT", apiRole, false],
+  ["theme_choice", null, "UPDATE", boundaryOwnerRole, true],
+  ["theme_choice", null, "DELETE", boundaryOwnerRole, true],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {

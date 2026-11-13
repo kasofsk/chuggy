@@ -18,6 +18,9 @@ import { isBoundedText } from "./http.ts";
 
 export const themeNameCharsMax = 80;
 
+/** The most themes one person may own at once. */
+export const themesOwnedMax = 24;
+
 /** The colours a theme sets, each named as the console token it defines. */
 export const themeRoles = [
   "surface-0",
@@ -111,6 +114,9 @@ export const builtInThemeIds = [
 ] as const;
 export type BuiltInThemeId = (typeof builtInThemeIds)[number];
 
+/** The number a theme a person owns is known by, never given to another. */
+export const themeNumberSchema = z.number().int().min(1).safe();
+
 /** A theme a person or a project chooses: a built-in by its id, or a document a person owns by its number. */
 export const themeChoiceSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -119,7 +125,7 @@ export const themeChoiceSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("Owned"),
-    theme: z.number().int().min(1).safe(),
+    theme: themeNumberSchema,
   }),
 ]);
 export type ThemeChoice = z.infer<typeof themeChoiceSchema>;

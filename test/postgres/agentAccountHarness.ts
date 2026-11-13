@@ -46,6 +46,21 @@ export interface AgentAccountHarnessState {
   };
 }
 
+/** A weekly reading over the default threshold of each credential `ends` names, each resetting that many seconds from now. */
+export function agentAccountHarnessCredentialsOver(
+  ends: Readonly<Record<string, number>>,
+): AgentAccountHarnessState {
+  return {
+    readings: Object.entries(ends).map(([credential, resetsSecs]) => ({
+      window: "seven_day",
+      utilization: 0.95,
+      resetsSecs,
+      observedSecs: -60,
+      credential,
+    })),
+  };
+}
+
 /** What the person chose of the account: their settings and their press. */
 async function agentAccountHarnessChosen(
   transaction: PostgresTransaction,

@@ -109,7 +109,10 @@ import {
   inertSessionPlane,
   inertWorkerPlane,
 } from "../adapters/workerPlaneFixtures.ts";
-import { agentAccountHarnessCommitted } from "./agentAccountHarness.ts";
+import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessCredentialsOver,
+} from "./agentAccountHarness.ts";
 import {
   postgresHarnessNewEpoch,
   postgresHarnessProject,
@@ -2010,6 +2013,98 @@ test("a chat host claims its owner's threads and inquiries while their Claude is
     new Set([thread.session, inquiry.session]),
     "a session spends Claude, so Codex paused holds none back",
   );
+});
+
+/** One case of a session's claim under named credentials: why, the Claude credentials its runner named, those of them or others paused, its owner's threads option, and whether the session is taken. */
+type SessionNamedCase = readonly [
+  string,
+  readonly string[] | undefined,
+  readonly string[],
+  boolean,
+  boolean,
+];
+
+/**
+ * Whether a session of `kind`, its claimant's member's own, is taken once its
+ * claimant has named `named` of Claude and `paused` of that member's Claude
+ * credentials are each over a threshold: both the waiting read and the
+ * opening one are asked, and refused where they disagree.
+ */
+async function sessionNamedTaken(
+  kind: "Lead" | "Thread",
+  [why, named, paused, pausesThreads]: SessionNamedCase,
+): Promise<boolean> {
+  const label = `named-${kind}-${randomUUID()}`;
+  const partition = await sessionRigProject(rig, label);
+  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  const member = principal(`member-${label}`);
+  const claimant =
+    kind === "Lead"
+      ? await runner(partition, member)
+      : await chatHost(partition, member);
+  if (claimant.kind === "ChatHost") await hostPolled(claimant);
+  const { session } = await waiting(partition, label, kind, member);
+  const candidate = (await candidatesRead([claimant]))(session);
+  await ports.runners.named(
+    claimant,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    named === undefined ? {} : { Claude: [...named] },
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    ...agentAccountHarnessCredentialsOver(
+      Object.fromEntries(paused.map((credential) => [credential, 3600])),
+    ),
+    setting: { fiveHourPercent: 80, sevenDayPercent: 90, pausesThreads },
+  });
+  const read = (await awaitingOf(claimant)).has(session);
+  assert.equal(
+    (await openedFor(claimant, candidate)) === "Opened",
+    read,
+    `${why}: the opening agrees with the waiting read`,
+  );
+  return read;
+}
+
+test("a pool takes its lead while any Claude credential it named is free, and none while every one is, or while any is where it named none", async () => {
+  for (const named of [
+    ["one of two named paused", ["work", "home"], ["work"], false, true],
+    [
+      "one of two named paused beside one not named",
+      ["work", "home"],
+      ["work", "spare"],
+      false,
+      true,
+    ],
+    ["both named paused", ["work", "home"], ["work", "home"], false, false],
+    ["none named and one paused", undefined, ["work"], false, false],
+  ] as const satisfies readonly SessionNamedCase[])
+    assert.equal(await sessionNamedTaken("Lead", named), named[4], named[0]);
+});
+
+test("a chat host takes its owner's thread while any Claude credential it named is free where threads pause, and always where they do not", async () => {
+  for (const named of [
+    ["one of two named paused", ["work", "home"], ["work"], true, true],
+    ["both named paused", ["work", "home"], ["work", "home"], true, false],
+    ["none named and one paused", undefined, ["work"], true, false],
+    [
+      "both named paused, threads not pausing",
+      ["work", "home"],
+      ["work", "home"],
+      false,
+      true,
+    ],
+    [
+      "none named and one paused, threads not pausing",
+      undefined,
+      ["work"],
+      false,
+      true,
+    ],
+  ] as const satisfies readonly SessionNamedCase[])
+    assert.equal(await sessionNamedTaken("Thread", named), named[4], named[0]);
 });
 
 test("an attempt a pool claimed under an epoch since restored away is no longer held, renewed or pulled for", async () => {

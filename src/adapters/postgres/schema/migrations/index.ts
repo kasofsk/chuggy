@@ -164,6 +164,9 @@ import { migration163 } from "./163-agent-account-credential.ts";
 import { migration164 } from "./164-personal-runner-credentials-named.ts";
 import { migration165 } from "./165-worker-pool-credentials-named.ts";
 import { migration166 } from "./166-rate-limit-resume-named-credentials.ts";
+import { migration167 } from "./167-session-pause-named-credentials.ts";
+import { migration168 } from "./168-agent-account-credential-standing.ts";
+import { migration169 } from "./169-owned-themes.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -333,4 +336,7 @@ export const migrations: readonly Migration[] = [
   migration164,
   migration165,
   migration166,
+  migration167,
+  migration168,
+  migration169,
 ];

@@ -53,15 +53,15 @@
  * that was a usage limit or credits run out. A job claimed by an earlier
  * release, a pool's, and the cluster's pause the account as they always did.
  *
- * A POOL'S OR A PERSONAL RUNNER'S POLL MAY NAME THE CREDENTIALS IT WOULD RUN
- * EACH AGENT'S JOB ON, which are kept for its claims, a poll naming none
- * clearing them, so that its claim of a job of an agent it named waits only
- * while every one of them is paused for the account its work spends: a
- * runner's owner, or the member who registered a pool, where one did. Its
- * answer names each of them that is paused and when that ends, to a poll
+ * A POOL'S, A PERSONAL RUNNER'S OR A CHAT HOST'S POLL MAY NAME THE
+ * CREDENTIALS IT WOULD RUN EACH AGENT'S WORK ON, which are kept for its
+ * claims, a poll naming none clearing them, so that its claim of a job of an
+ * agent it named, or of a session where it named Claude's, waits only while
+ * every one of them is paused for the account its work spends: a runner's or
+ * a chat host's owner, or the member who registered a pool, where one did.
+ * Its answer names each of them that is paused and when that ends, to a poll
  * whose release reads it, read as the answer is made and kept nowhere.
- * Neither moves what it advertises, nor a pool's deferring to a runner. A chat
- * host's names are kept nowhere and answered none.
+ * Neither moves what it advertises, nor a pool's deferring to a runner.
  *
  * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
  * row and its owner's permit. It claims sessions and never an execution, and
@@ -450,9 +450,9 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     bearer: string,
     projects: readonly ProjectId[],
   ): Promise<WorkerPoolPersonalClaimed | undefined>;
-  /** Each of `credentials` that is paused now for the account a pool's or a runner's work spends, and when that pause ends, at most once each. */
+  /** Each of `credentials` that is paused now for the account a pool's, a runner's or a chat host's work spends, and when that pause ends, at most once each. */
   credentialPauses(
-    identity: WorkerPoolExecutionPoller,
+    identity: PoolPlaneIdentity,
     credentials: WorkerRunnerCredentials,
   ): Promise<readonly WorkerPoolCredentialPause[]>;
   /** How the run of each of `assignments` this registration claimed benching its credential ended, where it ended under an outcome, one for each such assignment. */
@@ -509,8 +509,7 @@ export interface WorkerPoolPollSettings {
  * naming none leaves as they were recorded; for a personal runner, whether
  * those capabilities name exactly the agents it takes, which every poll writes
  * afresh from its release, so a runner moved back to an earlier one is read as
- * that one; and, for a pool or a personal runner, the credentials it named,
- * which a poll naming none clears.
+ * that one; and the credentials it named, which a poll naming none clears.
  */
 export interface WorkerPoolRunners {
   named(
@@ -881,9 +880,9 @@ async function workerPoolCredentialOutcomesNamed(
 }
 
 /**
- * Each credential a pool's or a personal runner's poll named that is paused
- * for the account its work spends, named only to a poll whose release reads
- * it, read as the answer is made and kept nowhere, and absent where none is.
+ * Each credential a caller's poll named that is paused for the account its
+ * work spends, named only to a poll whose release reads it, read as the answer
+ * is made and kept nowhere, and absent where none is.
  */
 async function workerPoolCredentialPausesNamed(
   ports: WorkerPoolPorts,
@@ -892,7 +891,6 @@ async function workerPoolCredentialPausesNamed(
 ): Promise<Pick<WorkerPoolReconciliation, "credentialPauses">> {
   const credentials = asked.credentials ?? {};
   if (
-    identity.kind === "ChatHost" ||
     Object.keys(credentials).length === 0 ||
     !contractVersionAccepted(
       workerContractRunnerCredentialPauses,
@@ -1014,8 +1012,8 @@ async function workerPoolHoldingRead(
 /**
  * Records the runner this poll named, and the capabilities it has and the
  * memory ceiling it takes jobs under where it named them, whether a personal
- * runner's release advertises its agents among them, the credentials a pool
- * or a personal runner named, which its claims read, and the poll as the
+ * runner's release advertises its agents among them, the credentials it
+ * named, which its claims read, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -1040,7 +1038,7 @@ async function workerPoolPollRecorded(
     asked.memoryCeilingMib,
     identity.kind === "Personal" &&
       contractVersionAccepted(workerContractRunnerAgents, asked.contract),
-    identity.kind === "ChatHost" ? {} : (asked.credentials ?? {}),
+    asked.credentials ?? {},
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (

@@ -184,10 +184,13 @@ export const agentAccountCredentialKeptFunction =
   "agent_account_credential_kept";
 /** A person's thresholds and session options for one agent account, their defaults where they wrote none. */
 export const agentAccountSettingsFunction = "agent_account_settings";
-/** Whether an account's pause holds back a session of one kind: always a lead, and a thread or an inquiry as its owner's option says. */
+/** Whether an account's pause holds back a session of one kind, for a runner that gave Claude the names it is handed: always a lead, and a thread or an inquiry as its owner's option says. */
 export const agentAccountSessionPausedFunction = "agent_account_session_paused";
-/** Each agent of one person's account: their settings, each window's newest reading, the newest limit and the pause they come to. */
+/** Each agent of one person's account: their settings, each window's newest reading across its credentials, the newest limit across them and the pause they come to, which holds while any credential's does. */
 export const agentAccountStandingFunction = "agent_account_standing";
+/** Each credential of one person's account an agent holds a reading or a limit of: its readings and the pause holding that credential alone. */
+export const agentAccountCredentialStandingFunction =
+  "agent_account_credential_standing";
 /** One person's settings for one agent of their account, written whole. */
 export const agentAccountSettingWriteFunction = "write_agent_account_setting";
 /** One person's press to try an agent of their account again, recorded only while a limit holds it paused. */
@@ -387,3 +390,16 @@ export const epicSaveFunction = "save_epic";
 
 /** The door a draft is created into an epic through. */
 export const draftInEpicFunction = "create_draft_in_epic";
+
+/** Every theme one person owns, by number. */
+export const ownedThemesFunction = "owned_themes";
+/** One theme created for one person, refused past the bound they are held to. */
+export const ownedThemeCreateFunction = "create_owned_theme";
+/** One theme of one person's written whole. */
+export const ownedThemeWriteFunction = "write_owned_theme";
+/** One theme of one person's deleted, with the choice that names it. */
+export const ownedThemeDeleteFunction = "delete_owned_theme";
+/** One person's global theme choice, none where they hold none. */
+export const themeChoiceReadFunction = "read_theme_choice";
+/** One person's global theme choice written whole, or cleared. */
+export const themeChoiceWriteFunction = "write_theme_choice";

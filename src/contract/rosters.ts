@@ -927,7 +927,8 @@ export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
  * hosted route the tenant grants the lead's principal no hosted runs, or a
  * subsidized lead's tenant or the whole deployment has spent its month's
  * subsidy, and on a runner route none of the project's runners is live, or
- * every live one's owner has their Claude account paused.
+ * every live one is paused for its owner's Claude account, on every credential
+ * it named or, where it named none, on the whole agent.
  */
 export const leadAdmissionRefusals = [
   "HostedRunsNotGranted",
