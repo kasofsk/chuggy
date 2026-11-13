@@ -403,5 +403,10 @@
     "release": "1.80.0",
     "wire": "5fcf85ebd6f30b641ca8650e22f6f27de6bd9a5a47b8c29a28954a01cc1fc3eb",
     "files": "393e155bb5f6b46a16e31ae749502757f470235e066e4226aea9bc8d53b18355"
+  },
+  {
+    "release": "1.81.0",
+    "wire": "2550ab9188ee97dc8f6b033e24f72c6d851ff10978262b9bb71fab4d50c5f2ea",
+    "files": "7433b9aadc7292e71e1d0ec196ad663fbb1a8937ffc2d7a65d8561ecaaf6a417"
   }
 ]
