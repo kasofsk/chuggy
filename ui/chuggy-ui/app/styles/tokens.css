@@ -225,6 +225,8 @@
     --duration-chug: 800ms; /* one full cycle of the locomotive's sprite */
     /* a word for waiting coming in: a fade, which reduced motion keeps */
     --duration-word: 2000ms;
+    --duration-epic-graph-in: 700ms; /* an epic graph's lines for a new look */
+    --duration-epic-graph-out: 250ms; /* the lines that look replaced */
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
     /* late, for what comes in unhurried */
     --ease-in: cubic-bezier(0.7, 0, 1, 1);
@@ -272,6 +274,7 @@
     --width-epic-graph-gutter: 2.5rem; /* epic: a layer's number and count, beside its cards */
     --size-epic-graph-port: 0.375rem; /* epic: a dependency's dot along a card's top */
     --size-epic-graph-step: 1.25rem; /* epic: a card's step on the longest chain */
+    --width-epic-graph-line: 1.5px; /* epic: a strong line under the cards */
     --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
   }
 
@@ -292,6 +295,8 @@
       --duration-travel: 0ms;
       --duration-waiting-travel: 0ms;
       --duration-chug: 0ms;
+      --duration-epic-graph-in: 0ms;
+      --duration-epic-graph-out: 0ms;
     }
   }
 }
