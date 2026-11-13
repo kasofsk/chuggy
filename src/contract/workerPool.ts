@@ -14,14 +14,14 @@
  * opaque because a pool that could read an execution identity would learn the
  * tenant's ticket structure, and capability tokens are opaque because a pool
  * may translate one into a node selector, a scheduler constraint, or nothing.
- * A member's personal runner is told three things more: each job's project,
- * in the tenant its registration names, how the agent credential of its
- * owner's own that it handed a job stopped that job, and which of the
- * credentials its poll named are paused for its owner. It is its owner's
+ * A member's personal runner is told two things more: each job's project, in
+ * the tenant its registration names, and how the agent credential of its
+ * owner's own that it handed a job stopped that job. It is its owner's
  * machine, where that job's own shells are told the project already, by the
  * core's `workerJobVariables`, and where those credentials are kept. A
- * project's pool is told none of them, since its registration names its
- * project and it hands a job no credential.
+ * project's pool is told neither, since its registration names its project.
+ * A runner or a pool that names the credentials it holds is told which of them
+ * are paused for the member whose account its work spends.
  */
 
 import { z } from "zod";
@@ -319,8 +319,8 @@ export const workerRunnerCredentialAgents = Object.keys(
 export const workerRunnerCredentialsPerAgentMax = 16;
 
 /**
- * The header a member's personal runner names in on its poll, per agent, the
- * credentials it would run a job of that agent on now, as `<agent>:<name>`
+ * The header a member's personal runner or a project's pool names in on its
+ * poll, per agent, the credentials it would run a job of that agent on now, as `<agent>:<name>`
  * separated by commas with any spaces or tabs around each. A poll without it,
  * or with one `workerRunnerCredentialsOf` does not read, names none and is
  * served as one naming none, never refused, as a poll's runner is.
@@ -527,11 +527,11 @@ export const workerPoolReconciliationSchema = z
      */
     credentialOutcomes: z.array(workerPoolCredentialOutcomeSchema).optional(),
     /**
-     * Each credential the poll named that is paused for the runner's owner
-     * now, read as this answer is made and so gone from the next once the
-     * pause is, and none it did not name. It is named only to a member's
-     * personal runner whose poll's release reads it, and absent is the
-     * default: no credential it named is paused.
+     * Each credential the poll named that is paused for the member whose
+     * account its work spends, read as this answer is made and so gone from
+     * the next once the pause is, and none it did not name. It is named only to
+     * a personal runner or a pool whose poll's release reads it, and absent is
+     * the default: no credential it named is paused.
      */
     credentialPauses: z
       .array(workerPoolCredentialPauseSchema)

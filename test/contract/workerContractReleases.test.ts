@@ -305,7 +305,7 @@ function workerRunTurnNamesParent(schema: z.ZodType): boolean {
   );
 }
 
-test("a personal runner names its credentials and is answered their pauses from the version a runner holds a pool plane's release to, and no release below it names the header or reads the key", async () => {
+test("a runner or a pool names its credentials and is answered their pauses from the version whose plane reads them, and no release below it names the header or reads the key", async () => {
   const pausesRead = (schema: z.ZodType) =>
     schema instanceof z.ZodObject &&
     Object.hasOwn(schema.shape, "credentialPauses");
