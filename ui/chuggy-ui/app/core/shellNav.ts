@@ -13,14 +13,18 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { Copy } from "./copy.ts";
-import { settingsRoutes, settingsSection } from "./settingsNav.ts";
+import {
+  settingsRootRoutes,
+  settingsRoutes,
+  settingsSection,
+} from "./settingsNav.ts";
 import type { SettingsRoute, SettingsSectionId } from "./settingsNav.ts";
 
 export const navRoutes = {
   overview: "/$tenant/$project",
   inbox: "/$tenant/$project/inbox",
   epics: "/$tenant/$project/epics",
-  settings: "/$tenant/$project/settings",
+  settings: settingsRootRoutes.project,
   ticketNew: "/$tenant/$project/tickets/new",
   thread: "/$tenant/$project/threads/$session",
 } as const;

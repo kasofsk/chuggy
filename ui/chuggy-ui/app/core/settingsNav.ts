@@ -17,6 +17,16 @@ import type { AccessSiteAbilities } from "../../../../src/contract/accessPlane.t
 import type { Copy } from "./copy.ts";
 import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 
+/** The settings' own address in each frame: the index of its sections where
+ * the frame is narrow, and its first section where it is wide. */
+export const settingsRootRoutes = {
+  project: "/$tenant/$project/settings",
+  workspace: "/tenants/$tenant/settings",
+} as const;
+
+export type SettingsRootRoute =
+  (typeof settingsRootRoutes)[keyof typeof settingsRootRoutes];
+
 /** Every settings page's address, in a project and under the workspace alone. */
 export const settingsRoutes = {
   project: {
@@ -80,6 +90,8 @@ export interface SettingsSection {
   readonly id: SettingsSectionId;
   readonly group: SettingsGroupId;
   readonly label: Copy;
+  /** One line saying what the section holds. */
+  readonly summary: Copy;
   readonly shownBy: SettingsSectionShownBy;
   readonly project: SettingsProjectRoutes[keyof SettingsProjectRoutes];
   /** Absent for a section of the project's, which has no page outside one. */
@@ -105,6 +117,26 @@ const settingsSectionLabels = {
   "my-runner": { id: "settings-nav-personal-runners" },
 } as const satisfies Readonly<Record<SettingsSectionId, Copy>>;
 
+/** Each section's line, by its id. */
+const settingsSectionSummaries = {
+  lead: { id: "settings-nav-lead-summary" },
+  "lead-session": { id: "settings-nav-lead-session-summary" },
+  placement: { id: "settings-nav-placement-summary" },
+  permissions: { id: "settings-nav-permissions-summary" },
+  repositories: { id: "settings-nav-repositories-summary" },
+  runners: { id: "settings-nav-runners-summary" },
+  catalog: { id: "settings-nav-catalog-summary" },
+  people: { id: "settings-nav-people-summary" },
+  accounts: { id: "settings-nav-accounts-summary" },
+  "workspace-permissions": {
+    id: "settings-nav-workspace-permissions-summary",
+  },
+  usage: { id: "settings-nav-usage-summary" },
+  "site-workspaces": { id: "settings-nav-site-workspaces-summary" },
+  "site-permissions": { id: "settings-nav-site-permissions-summary" },
+  "my-runner": { id: "settings-nav-personal-runners-summary" },
+} as const satisfies Readonly<Record<SettingsSectionId, Copy>>;
+
 function settingsSectionOf(
   id: SettingsSectionId,
   group: SettingsGroupId,
@@ -120,6 +152,7 @@ function settingsSectionOf(
     id,
     group,
     label: settingsSectionLabels[id],
+    summary: settingsSectionSummaries[id],
     shownBy,
     project: settingsRoutes.project[key],
     workspace: group === "project" ? undefined : outside,
@@ -175,6 +208,7 @@ export interface SettingsNavParams {
 export interface SettingsNavEntry {
   readonly id: SettingsSectionId;
   readonly label: Copy;
+  readonly summary: Copy;
   readonly to: SettingsRoute;
   readonly params: SettingsNavParams;
 }
@@ -264,7 +298,15 @@ export function settingsNav(
         const to = project === undefined ? section.workspace : section.project;
         if (section.group !== group || to === undefined) return [];
         if (!settingsSectionShown(section.shownBy, input.site)) return [];
-        return [{ id: section.id, label: section.label, to, params }];
+        return [
+          {
+            id: section.id,
+            label: section.label,
+            summary: section.summary,
+            to,
+            params,
+          },
+        ];
       }),
     }))
     .filter((group) => group.entries.length > 0);
