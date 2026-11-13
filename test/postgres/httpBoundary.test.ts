@@ -789,13 +789,20 @@ const ingressCheckedConfiguration = canonicalConfigurationOf({
   evaluations: [{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }],
 });
 
-/** Files one draft through the real door running `stages` stages, its brief carrying `checks`. */
+/** Files one draft through the real door running `stages` stages, or `program` where one is named, its brief carrying `checks`. */
 async function ingressProgrammed(
   root: string,
   revision: string,
   repository: string,
   stages: number,
   checks: readonly string[],
+  program: readonly {
+    readonly key: number;
+    readonly evaluators: readonly { readonly key: number }[];
+  }[] = Array.from({ length: stages }, (_, at) => ({
+    key: at + 1,
+    evaluators: [{ key: 1 }],
+  })),
 ): Promise<DraftResponse> {
   const fence = await ingressFence(root, revision);
   const filed = await fetch(`${root}/drafts`, {
@@ -805,13 +812,7 @@ async function ingressProgrammed(
       configurationRevision: revision,
       configurationDigest: fence.configurationDigest,
       expectedProjectSequence: fence.projectSequence,
-      authoring: {
-        dependencies: [],
-        program: Array.from({ length: stages }, (_, at) => ({
-          key: at + 1,
-          evaluators: [{ key: 1 }],
-        })),
-      },
+      authoring: { dependencies: [], program },
       brief: { intent: "Check it.", links: [], repository, checks },
     }),
   });
@@ -912,6 +913,68 @@ test("real HTTP ingress refuses a short program without SkipPlannedEvaluations, 
     assert.equal(
       skipped.state === "Refused" ? skipped.code : skipped.state,
       "ProgramSkipsBriefChecks",
+    );
+  } finally {
+    await app.close();
+    await pool.end();
+    await harness.close();
+  }
+});
+
+test("real HTTP ingress settles a release whose program keeps a later stage and leaves out an earlier one under ProgramStageOutOfPosition", async () => {
+  const harness = await postgresHarnessOpen();
+  const partition = await postgresHarnessProject(harness.store, "http-place");
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate", "SkipPlannedEvaluations"] as const),
+  });
+  const repository = await postgresHarnessBinding(harness, partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const configured = await harness.authoring.createConfiguration({
+    partition,
+    authority: postgresHarnessSubmission(partition, "http-place").authority,
+    revision,
+    canonical: canonicalConfigurationOf({
+      ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
+      evaluations: [
+        { purpose: "Review", instructions: ["Review it."], practices: [] },
+        { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
+      ],
+    }),
+  });
+  assert.equal(configured.created, "Created");
+  const { pool, app } = composedIngress(harness.access);
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}`;
+  try {
+    const writer = postgresHarnessWriter(harness);
+    const memory = await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(harness.store, partition, "http-place"),
+    );
+    const later = await ingressProgrammed(
+      root,
+      revision,
+      repository,
+      1,
+      [],
+      [{ key: 2, evaluators: [{ key: 1 }] }],
+    );
+    assert.equal(
+      (await ingressReleasing(root, later, "later-only")).status,
+      202,
+    );
+    const input = await harness.discovery.next(partition, 300);
+    assert.ok(input !== undefined);
+    await projectWriterDecide(writer, memory, input);
+    const read = await fetch(`${root}/operations/later-only`, {
+      headers: ingressHeaders,
+    });
+    const settled = operationResponseSchema.parse(await read.json());
+    assert.equal(
+      settled.state === "Refused" ? settled.code : settled.state,
+      "ProgramStageOutOfPosition",
     );
   } finally {
     await app.close();
