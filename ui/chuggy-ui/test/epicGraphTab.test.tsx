@@ -453,6 +453,25 @@ test("pressing the selected card again and Escape each clear the selection, and 
   expect(written).toStrictEqual([6, undefined, 8, undefined]);
 });
 
+test("the chain toggle turned off with nothing selected comes back on when a selection is made and cleared", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  fireEvent.click(chainToggle());
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(cardButton(6));
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(pressed()).toStrictEqual([]);
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(stepped()).toHaveLength(4);
+  fireEvent.click(chainToggle());
+  fireEvent.click(cardButton(6));
+  fireEvent.click(cardButton(6));
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(stepped()).toHaveLength(4);
+});
+
 test("the selected ticket's panel says its layer and step, and how many it depends on are done", async () => {
   chainServed();
   await epicPageDrawn(abilitiesNone, {

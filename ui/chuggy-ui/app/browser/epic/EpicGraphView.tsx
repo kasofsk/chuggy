@@ -248,9 +248,8 @@ function EpicGraphLayer(props: {
   );
 }
 
-/** Whether the longest chain is drawn: as the reader last set it while the
- * selection stood where it stands, and otherwise only while nothing is
- * selected. */
+/** Whether the longest chain is drawn: as the reader last set it, until the
+ * selection changes, which draws it exactly when nothing is selected. */
 function useEpicGraphChainShown(
   selected: number | undefined,
 ): readonly [boolean, (shown: boolean) => void] {
@@ -258,8 +257,9 @@ function useEpicGraphChainShown(
     readonly shown: boolean;
     readonly selected: number | undefined;
   }>({ shown: selected === undefined, selected });
-  const shown =
-    chain.selected === selected ? chain.shown : selected === undefined;
+  const changed = chain.selected !== selected;
+  if (changed) setChain({ shown: selected === undefined, selected });
+  const shown = changed ? selected === undefined : chain.shown;
   return [
     shown,
     (next: boolean) => {
