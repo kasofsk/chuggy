@@ -8,8 +8,8 @@
  * (`NotNeeded`, until a released ticket waits on a decision, and
  * `AwaitingSelector` while one waits for the selector's next pass) or why none
  * can, and while none can the project's tickets run where somebody presses
- * Dispatch, as they do where a lead stands and the read says its selector is
- * paused. A server that gives no reason says only that there is no lead. The
+ * Dispatch, as they do where a lead stands and the read says what holds it or
+ * carries a kept refusal. A server that gives no reason says only that there is no lead. The
  * selector's settings say how a lead would dispatch, not whether this project
  * has one.
  */

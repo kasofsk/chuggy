@@ -604,8 +604,8 @@ test("a lead refused for usage names when the pause ends, with a session and wit
 /**
  * A subsidized lead's read says what its tenant spent of the subsidy this
  * month against its cap, and never the deployment's spend or cap; a lead run
- * as its own says neither, and both bodies are the lead endpoint's and, less
- * the pause, the Session event's shape.
+ * as its own says neither, and both bodies are the lead endpoint's and the
+ * Session event's shape.
  */
 test("a subsidized lead answers its tenant's spend this month and its cap, and an own lead answers neither", async () => {
   await using subsidized = appOf({
