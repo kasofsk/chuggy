@@ -375,6 +375,7 @@ export const operationBoundaryRefusalCodes = [
   "SelectionUnsupported",
   "ProgramExceedsPlan",
   "ProgramSkipsBriefChecks",
+  "ProgramStageOutOfPosition",
   "OverridesUnsupported",
   "OverridesUnknown",
   "TicketCapacityReached",
@@ -394,7 +395,8 @@ export type OperationBoundaryRefusalCode =
  * stage contradicts a brief that appends check lines to it, a brief naming no
  * repository has nothing to pair with, a configuration imported from a
  * repository contradicts a brief working in a different one, a program
- * leaving out the task a brief's check lines join would never run them, an
+ * stage keyed other than by its place has no place in a released plan, a
+ * program leaving out the task a brief's check lines join would never run them, an
  * approval selected as the work has no change to make, and an override may not
  * make a workload an approval or one no longer. A revision of the draft mends
  * each, so each is refused under its own code rather than as the
@@ -408,6 +410,7 @@ export const releasePairingFaults = [
   "SelectionUnsupported",
   "ProgramExceedsPlan",
   "ProgramSkipsBriefChecks",
+  "ProgramStageOutOfPosition",
   "OverridesUnsupported",
   "OverridesUnknown",
   "ApprovalAsWork",
