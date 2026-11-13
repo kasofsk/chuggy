@@ -2,11 +2,12 @@
  * A person's own agent accounts: how each agent of one pauses, each window's
  * newest reading and the newest limit a provider stopped it at across its
  * credentials, the pause they come to, each credential's own readings and
- * pause by its name, and the press that tries the agent again after a limit.
+ * pause by its name, the press that tries the agent again after a limit, and
+ * a credential retired from it.
  *
  * EVERY CALL IS THE CALLER'S OWN. Each is handed the principal its request
  * authenticated as and names no other, so no person reads or writes another's
- * settings, readings or pause, or presses for them.
+ * settings, readings or pause, presses for them, or retires their credentials.
  *
  * THE PAUSE IS `agent_account_pause`'S ANSWER AT THE READ, holding only while
  * every credential the account's live runners name is paused, or while any is
@@ -71,10 +72,14 @@ export interface AgentAccountView {
 /** A press recorded, or none because no limit holds the agent paused. */
 export type AgentAccountPressed = "Pressed" | "NotHardPaused";
 
+/** A credential's readings and limit dropped, none held under that name, or refused because a live runner of the account still names it. */
+export type AgentAccountRetired = "Retired" | "NotHeld" | "CredentialInUse";
+
 /**
  * The caller's own accounts: every agent of theirs read in roster order, one
- * agent's settings written whole, and a press of one agent, which is recorded
- * only while a limit holds it paused.
+ * agent's settings written whole, a press of one agent, which is recorded
+ * only while a limit holds it paused, and one credential of an agent retired,
+ * which a credential reporting again is kept again after.
  */
 export interface AgentAccountService {
   accounts(principal: Principal): Promise<readonly AgentAccountView[]>;
@@ -87,4 +92,9 @@ export interface AgentAccountService {
     principal: Principal,
     agent: AccountAgent,
   ): Promise<AgentAccountPressed>;
+  retire(
+    principal: Principal,
+    agent: AccountAgent,
+    credential: string,
+  ): Promise<AgentAccountRetired>;
 }

@@ -34,4 +34,16 @@ export interface UsageCopy {
   readonly "usage-threads-keep-running": Record<never, never>;
   readonly "usage-writing": Record<never, never>;
   readonly "usage-written": Record<never, never>;
+  readonly "usage-credentials": Record<never, never>;
+  readonly "usage-retire": Record<never, never>;
+  readonly "usage-retire-named": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retire-question": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retirement": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retire-in-use": Record<never, never>;
 }

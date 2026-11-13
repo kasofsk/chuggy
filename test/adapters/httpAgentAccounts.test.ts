@@ -2,7 +2,8 @@
  * A person's own agent accounts as their routes answer them: what each outcome
  * of the service is sent as, that every route hands the service the caller's
  * own principal and no other, that a threshold outside a whole percentage from
- * 1 to 100 never reaches it, and that an agent no account lends is not found.
+ * 1 to 100 never reaches it, that a credential is retired only by a name a
+ * credential is written in, and that an agent no account lends is not found.
  */
 
 import assert from "node:assert/strict";
@@ -14,6 +15,7 @@ import {
 } from "../../src/contract/http.ts";
 import { agentAccountsResponseSchema } from "../../src/contract/responses.ts";
 import type {
+  AgentAccountRetired,
   AgentAccountService,
   AgentAccountView,
 } from "../../src/interpreter/agentAccount.ts";
@@ -74,6 +76,11 @@ const accounts: readonly AgentAccountView[] = [
   { agent: "Codex", settings: defaults, readings: [], credentials: [] },
 ];
 
+const retirements: Readonly<Record<string, AgentAccountRetired>> = {
+  home: "Retired",
+  work: "CredentialInUse",
+};
+
 /** A service answering every caller the same accounts, recording what it was asked and as whom. */
 function fakeAccounts(calls: string[]): AgentAccountService {
   return {
@@ -89,6 +96,10 @@ function fakeAccounts(calls: string[]): AgentAccountService {
       calls.push(`press:${principal}:${agent}`);
       return Promise.resolve(agent === "Claude" ? "Pressed" : "NotHardPaused");
     },
+    retire: (principal, agent, credential) => {
+      calls.push(`retire:${principal}:${agent}:${credential}`);
+      return Promise.resolve(retirements[credential] ?? "NotHeld");
+    },
   };
 }
 
@@ -100,6 +111,10 @@ const settings = (agent: string) =>
   nativeHttpRoutes.agentAccountSettings.replace(":agent", agent);
 const presses = (agent: string) =>
   nativeHttpRoutes.agentAccountPresses.replace(":agent", agent);
+const credential = (agent: string, name: string) =>
+  nativeHttpRoutes.agentAccountCredential
+    .replace(":agent", agent)
+    .replace(":credential", name);
 
 test("the caller reads their own accounts as the response schema has them, and an unauthenticated read is refused", async () => {
   const calls: string[] = [];
@@ -222,15 +237,44 @@ test("the caller presses their own agent, a press no limit lets through is a con
   ]);
 });
 
-test("no account route names a principal in its path, so no caller can reach another's", () => {
-  for (const route of [
-    nativeHttpRoutes.agentAccounts,
-    nativeHttpRoutes.agentAccountSettings,
-    nativeHttpRoutes.agentAccountPresses,
-  ])
-    assert.deepEqual(
-      route.match(/:[a-z]+/gu) ?? [],
-      route === nativeHttpRoutes.agentAccounts ? [] : [":agent"],
-      route,
+test("the caller retires a credential of their own agent, one a live runner names is a conflict, and a name no credential is written in is not found", async () => {
+  const calls: string[] = [];
+  await using app = accountsApp(calls);
+  const retire = (
+    agent: string,
+    name: string,
+    headers: Record<string, string> = bearer,
+  ) =>
+    app.inject({ method: "DELETE", url: credential(agent, name), headers });
+  assert.equal((await retire("Claude", "home")).statusCode, 204);
+  const refused = await retire("Codex", "work");
+  assert.equal(refused.statusCode, 409);
+  assert.equal(
+    refused.json<{ error: { code: string } }>().error.code,
+    "CredentialInUse",
+  );
+  assert.equal((await retire("Claude", "gone")).statusCode, 404);
+  for (const unnamed of ["has.dot", "x".repeat(65), "%20"])
+    assert.equal(
+      (await retire("Claude", unnamed)).statusCode,
+      404,
+      `${unnamed} never reaches the service`,
     );
+  assert.equal((await retire("Gemini", "home")).statusCode, 404);
+  assert.equal((await retire("Claude", "home", {})).statusCode, 401);
+  assert.deepEqual(calls, [
+    `retire:${caller}:Claude:home`,
+    `retire:${caller}:Codex:work`,
+    `retire:${caller}:Claude:gone`,
+  ]);
+});
+
+test("no account route names a principal in its path, so no caller can reach another's", () => {
+  for (const [route, named] of [
+    [nativeHttpRoutes.agentAccounts, []],
+    [nativeHttpRoutes.agentAccountSettings, [":agent"]],
+    [nativeHttpRoutes.agentAccountPresses, [":agent"]],
+    [nativeHttpRoutes.agentAccountCredential, [":agent", ":credential"]],
+  ] as const)
+    assert.deepEqual(route.match(/:[a-z]+/gu) ?? [], named, route);
 });

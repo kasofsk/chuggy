@@ -4,7 +4,8 @@
  * whether their threads pause with it, edited behind one Edit; and the pause
  * holding it, with the press that tries it once past a provider's limit. An
  * agent holding several credentials reads each current one's reading and
- * pause under its name instead, and its press stays one.
+ * pause under its name instead, and its press stays one, with each of those
+ * credentials retired from the account once its reader confirms it.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -30,6 +31,7 @@ import {
   agentAccountReadingStale,
   agentAccountReadingStaleLine,
   agentAccountReadingStaleWord,
+  agentAccountRetireRefusal,
   agentPausePressable,
   agentPausePressedLine,
   runUsageWindowLabel,
@@ -41,6 +43,7 @@ import type {
 } from "../../core/agentAccounts.ts";
 import {
   apiPressAgentAccount,
+  apiRetireAgentAccountCredential,
   apiWriteAgentAccountSettings,
 } from "../../core/apiRoutes.ts";
 import type { ApiResult } from "../../core/apiRequest.ts";
@@ -59,6 +62,7 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
+import { Confirm } from "../ui/Confirm.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Input } from "../ui/Input.tsx";
@@ -101,6 +105,21 @@ function usageSettingsPressWrite(
     write: (ports, _pressed, client) =>
       usageSettingsWritten(client, apiPressAgentAccount(ports, agent)),
     refusal: agentAccountPressRefusal,
+  };
+}
+
+function usageSettingsRetireWrite(
+  agent: AccountAgent,
+  credential: string,
+): ConsoleWrite<undefined, undefined> {
+  return {
+    mutationKey: consoleWriteKey("agent-account-retire", agent, credential),
+    write: (ports, _retired, client) =>
+      usageSettingsWritten(
+        client,
+        apiRetireAgentAccountCredential(ports, agent, credential),
+      ),
+    refusal: agentAccountRetireRefusal,
   };
 }
 
@@ -272,6 +291,64 @@ function UsageSettingsReadings(props: {
   );
 }
 
+/** One credential the agent is drawn by, under its name, and its Retire,
+ * which asks before it forgets the credential's readings and limit. */
+function UsageSettingsCredential(props: {
+  readonly agent: AccountAgent;
+  readonly credential: string;
+}): ReactNode {
+  const text = useCopyText();
+  const [asking, setAsking] = useState(false);
+  const retiring = useConsoleWrite(
+    usageSettingsRetireWrite(props.agent, props.credential),
+    { drawn: true },
+  );
+  const named = { credential: props.credential };
+  return (
+    <span className="grid justify-items-start gap-1">
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span className="font-medium">{props.credential}</span>
+        {asking ? null : (
+          <Button
+            size="sm"
+            variant="quiet"
+            busy={retiring.isPending}
+            disabled={retiring.isPending}
+            named={text({ id: "usage-retire-named", args: named })}
+            onClick={() => {
+              retiring.reset();
+              setAsking(true);
+            }}
+          >
+            {text({ id: "usage-retire" })}
+          </Button>
+        )}
+      </span>
+      {asking ? (
+        <Confirm
+          question={text({ id: "usage-retire-question", args: named })}
+          confirm={text({ id: "usage-retire" })}
+          busy={false}
+          onConfirm={() => {
+            setAsking(false);
+            retiring.mutate(undefined);
+          }}
+          onCancel={() => {
+            setAsking(false);
+          }}
+        >
+          {text({ id: "usage-retirement", args: named })}
+        </Confirm>
+      ) : null}
+      {retiring.error === null ? null : (
+        <Notice tone="danger" inline>
+          <ConsoleWriteRefusedWords refused={retiring.error} />
+        </Notice>
+      )}
+    </span>
+  );
+}
+
 /** Each window's reading and the share it pauses at, and both options, as read. */
 function UsageSettingsRead(props: {
   readonly account: AgentAccount;
@@ -313,6 +390,20 @@ function UsageSettingsRead(props: {
       <Field name={text(usageSettingsThreadsLabel)}>
         {text(options(settings.pausesThreads))}
       </Field>
+      {props.credentials === undefined ||
+      props.credentials.length === 0 ? null : (
+        <Field name={text({ id: "usage-credentials" })}>
+          <span className="grid justify-items-start gap-2">
+            {props.credentials.map((credential) => (
+              <UsageSettingsCredential
+                key={credential.name}
+                agent={props.account.agent}
+                credential={credential.name}
+              />
+            ))}
+          </span>
+        </Field>
+      )}
     </Fields>
   );
 }

@@ -47,6 +47,7 @@ import {
   apiOwnerFallback,
   apiPersonalRunnerPermit,
   apiPressAgentAccount,
+  apiRetireAgentAccountCredential,
   apiPersonalRunnerServes,
   apiProject,
   apiProjectAbilities,
@@ -780,7 +781,7 @@ test("a member's runners and a project's fallback are each asked at their own ad
 
 /** The reader's agent accounts hang from no tenant and no principal: every
  * one of them is the caller's own. */
-test("the reader's agent accounts are read, set and pressed at their own addresses, each agent one segment", async () => {
+test("the reader's agent accounts are read, set, pressed and retired from at their own addresses, each agent and credential one segment", async () => {
   const held = recordingRequests((url) =>
     url.endsWith("/agent-accounts")
       ? {
@@ -803,6 +804,7 @@ test("the reader's agent accounts are read, set and pressed at their own address
     pausesThreads: true,
   });
   await apiPressAgentAccount(held.ports, "Claude");
+  await apiRetireAgentAccountCredential(held.ports, "Codex", "old-work");
   expect(read.outcome).toBe("Ok");
   expect(
     held.requests.map(
@@ -813,6 +815,7 @@ test("the reader's agent accounts are read, set and pressed at their own address
     `GET ${nativeHttpBasePath}/agent-accounts undefined`,
     `PUT ${nativeHttpBasePath}/agent-accounts/Codex/settings {"fiveHourPercent":70,"sevenDayPercent":95,"pausesThreads":true}`,
     `POST ${nativeHttpBasePath}/agent-accounts/Claude/presses undefined`,
+    `DELETE ${nativeHttpBasePath}/agent-accounts/Codex/credentials/old-work undefined`,
   ]);
 });
 

@@ -100,6 +100,7 @@ import {
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
+  workerRunCredentialSchema,
 } from "../../contract/http.ts";
 import {
   workerRunnerReleasesPinnedRoute,
@@ -244,6 +245,7 @@ import {
   workerPoolsResponse,
   personalRunnerAllowedResponse,
   agentAccountPressedResponse,
+  agentAccountRetiredResponse,
   agentAccountsResponse,
   agentAccountWrittenResponse,
   personalRunnerDeregisteredResponse,
@@ -1704,10 +1706,19 @@ function accountAgentOf(request: FastifyRequest): AccountAgent | undefined {
   return parseAccountAgent(textField(record(request.params), "agent"));
 }
 
+/** The credential a route names, or none where its name is not one a credential is written in. */
+function agentAccountCredentialOf(request: FastifyRequest): string | undefined {
+  const named = workerRunCredentialSchema.safeParse(
+    record(request.params)["credential"],
+  );
+  return named.success ? named.data : undefined;
+}
+
 /**
  * The caller's own agent accounts: read whole, one agent's settings written
- * whole, and a press of one agent. Each is handed the request's own principal,
- * and no route names another, so no caller reaches anyone else's.
+ * whole, a press of one agent, and one credential of an agent retired. Each is
+ * handed the request's own principal, and no route names another, so no caller
+ * reaches anyone else's.
  */
 function registerAgentAccounts(
   app: FastifyInstance,
@@ -1733,6 +1744,18 @@ function registerAgentAccounts(
       nativeHttpSend(reply, agentAccountWrittenResponse());
     },
   );
+  app.delete(nativeHttpRoutes.agentAccountCredential, async (request, reply) => {
+    const agent = accountAgentOf(request);
+    const credential = agentAccountCredentialOf(request);
+    nativeHttpSend(
+      reply,
+      agent === undefined || credential === undefined
+        ? notFound()
+        : agentAccountRetiredResponse(
+            await accounts.retire(principalOf(request), agent, credential),
+          ),
+    );
+  });
   registerBodylessRoutes(app, (scope) => {
     scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
       const agent = accountAgentOf(request);

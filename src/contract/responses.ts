@@ -3098,6 +3098,14 @@ export const agentAccountsResponseSchema = z.strictObject({
 export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
 
 /**
+ * What retiring a credential of the caller's own account is refused with while
+ * a live runner of theirs still names it, whose next run would report it
+ * again. It is named once because a console tells the member so in words of
+ * its own.
+ */
+export const agentAccountCredentialInUseCode = "CredentialInUse";
+
+/**
  * What redeeming a chat host's token answers, once: a runner's file with no
  * capabilities, since a chat host takes sessions alone, and `kind` telling it
  * apart from a runner's.

@@ -35,3 +35,12 @@ usage-threads-pause-with = Pause with it
 usage-threads-keep-running = Keep running
 usage-writing = Writing
 usage-written = Written
+
+## Retiring a credential the account no longer spends.
+
+usage-credentials = Credentials
+usage-retire = Retire
+usage-retire-named = Retire credential { $credential }
+usage-retire-question = Retire credential { $credential }?
+usage-retirement = Its readings and its limit are forgotten. { -runner(case: "upper", form: "a") } that reports { $credential } again brings it back.
+usage-retire-in-use = A live { -runner } still names it

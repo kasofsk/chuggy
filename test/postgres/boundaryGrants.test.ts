@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   accessPlaneRole,
   agentAccountCredentialKeptFunction,
+  agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
   agentAccountFunction,
@@ -883,6 +884,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${agentAccountPressFunction}(text,text)`,
     [apiRole],
     [metricsPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountCredentialRetireFunction}(text,text,text)`,
+    [apiRole],
+    [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
