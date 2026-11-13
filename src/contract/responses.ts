@@ -3064,9 +3064,9 @@ const agentAccountCredentialSchema = z.strictObject({
  * One agent of the caller's own account: their settings, each window's newest
  * reading across its credentials, the newest limit a provider stopped it at
  * across them with the window and the reopening where the run named them, the
- * pause they come to, absent where none holds and holding while any
- * credential's does, and each credential it holds a reading or a limit of, by
- * name. `credentials` is optional for the deployment window, and absent reads
+ * pause they come to, absent where none holds and holding only while every
+ * credential its live runners name is paused, or while any is where they name
+ * none, and each credential it holds a reading or a limit of, by name. `credentials` is optional for the deployment window, and absent reads
  * as none.
  */
 const agentAccountSchema = z.strictObject({
