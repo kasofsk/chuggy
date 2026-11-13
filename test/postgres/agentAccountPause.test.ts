@@ -5,25 +5,42 @@
  *
  * EACH CASE PLANTS AND ASKS IN ONE TRANSACTION, so `now()` is one instant
  * across both and an edge stated as an offset from it is the edge asked.
- * Nothing a case plants is kept.
+ * Nothing a case plants is kept, but for the one asking the API and the
+ * metrics plane too, which commits under an account of its own.
  */
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
-import { poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
+import { postgresAgentAccounts } from "../../src/adapters/postgres/agentAccount.ts";
+import { postgresMetricsPlaneReads } from "../../src/adapters/postgres/metricsPlane.ts";
 import {
+  apiRole,
+  metricsPlaneRole,
+  poolPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
+import { agentAccountRunnerPolledSecsMaxAt170 } from "../../src/adapters/postgres/schema/migrations/170-agent-account-pause-live-credentials.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
+import {
+  agentAccountHarnessCommitted,
   agentAccountHarnessPlanted,
   type AgentAccountHarnessAgent,
   type AgentAccountHarnessReading,
+  type AgentAccountHarnessRunner,
   type AgentAccountHarnessState,
 } from "./agentAccountHarness.ts";
-import { postgresHarnessOpen } from "./harness.ts";
+import { postgresHarnessOpen, postgresHarnessRolePool } from "./harness.ts";
 
 const harness = await postgresHarnessOpen();
+const apiPool = postgresHarnessRolePool(apiRole);
+const metricsPool = postgresHarnessRolePool(metricsPlaneRole);
 
-after(() => harness.close());
+after(async () => {
+  await Promise.all([apiPool.end(), metricsPool.end()]);
+  await harness.close();
+});
 
 /** What the rule answers: how long from now the pause lasts, or none, each reason, and whether a press lets a claim through. */
 interface Paused {
@@ -387,4 +404,144 @@ test("the defaults are the person's settings while they wrote none", async () =>
     seven_day_percent: 90,
     pauses_threads: false,
   });
+});
+
+/** A weekly reading of `credential` at `utilization`, resetting `resetsSecs` from now. */
+function weekly(
+  credential: string,
+  utilization: number,
+  resetsSecs = 600_000,
+): AgentAccountHarnessReading {
+  return { ...reading("seven_day", utilization, resetsSecs), credential };
+}
+
+/** A runner of `kind` naming `credentials` of Claude, last polling `polledSecs` from now. */
+function runner(
+  credentials: readonly string[],
+  kind: AgentAccountHarnessRunner["kind"] = "Personal",
+  polledSecs = -10,
+): AgentAccountHarnessRunner {
+  return { kind, polledSecs, named: { Claude: credentials } };
+}
+
+const runnerKinds: readonly AgentAccountHarnessRunner["kind"][] = [
+  "Personal",
+  "Pool",
+  "ChatHost",
+];
+
+test("a runner counts toward its account's pause for as long as its plane reads it live", () => {
+  assert.equal(
+    agentAccountRunnerPolledSecsMaxAt170,
+    sessionRunnerPolledSecsMax,
+  );
+});
+
+test("a credential no live runner names pauses neither the agent, nor the account the API reads, nor the metrics plane's series", async () => {
+  const owner = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    readings: [
+      weekly("claude", 0.05),
+      weekly("max-1", 0.98),
+      weekly("max-2", 0.12),
+    ],
+    runners: [runner(["claude", "max-2"]), runner(["max-2"], "Pool")],
+  });
+  const [row] = await harness.query(
+    "SELECT paused_until,reasons,admitted_by_press FROM agent_account_pause($1,'Claude')",
+    [owner],
+  );
+  assert.deepEqual(row, {
+    paused_until: null,
+    reasons: [],
+    admitted_by_press: false,
+  });
+  const claude = (await postgresAgentAccounts(apiPool).accounts(owner)).find(
+    (account) => account.agent === "Claude",
+  );
+  assert.equal(claude?.pause, undefined);
+  assert.deepEqual(
+    claude?.credentials?.map((credential) => [
+      credential.name,
+      credential.pause?.reasons,
+    ]),
+    [
+      ["claude", undefined],
+      ["max-1", ["seven_day"]],
+      ["max-2", undefined],
+    ],
+    "the unnamed credential's own pause is still read",
+  );
+  const read = await postgresMetricsPlaneReads(metricsPool, 10_000).read({
+    seriesMax: 1_000,
+    owner: (principal) => principal,
+  });
+  assert.equal(read.read, "Read");
+  assert.deepEqual(
+    read.read === "Read"
+      ? read.rows.agentPauses.filter((series) => series.owner === owner)
+      : [],
+    [
+      { owner, agent: "Claude", trigger: "hard", paused: 0 },
+      { owner, agent: "Claude", trigger: "soft", paused: 0 },
+    ],
+  );
+});
+
+test("where every credential a live runner names is paused, the agent is paused until the earliest of those ends", async () => {
+  for (const kind of runnerKinds)
+    assert.deepEqual(
+      await pausedFor({
+        readings: [
+          weekly("work", 0.95, 900),
+          weekly("home", 0.95, 600),
+          weekly("spare", 0.95, 3000),
+        ],
+        limits: [{ observedSecs: -60, resetsSecs: 1200, credential: "home" }],
+        runners: [runner(["work"], kind), runner(["home"])],
+      }),
+      {
+        untilSecs: 900,
+        reasons: ["limit", "seven_day"],
+        admittedByPress: false,
+      },
+      kind,
+    );
+});
+
+test("where no live runner names a credential of the agent, it is paused while any kept credential is", async () => {
+  assert.deepEqual(
+    await pausedFor({
+      readings: [weekly("work", 0.95, 900), weekly("home", 0.1, 600)],
+      runners: [
+        runner([]),
+        { kind: "Pool", polledSecs: -10, named: { Codex: ["home"] } },
+        runner(["home"], "ChatHost", -agentAccountRunnerPolledSecsMaxAt170 - 1),
+      ],
+    }),
+    { untilSecs: 900, reasons: ["seven_day"], admittedByPress: false },
+  );
+});
+
+test("a runner that has stopped polling past its bound no longer counts the credentials it named", async () => {
+  const bound = agentAccountRunnerPolledSecsMaxAt170;
+  assert.deepEqual(
+    await pausedFor({
+      readings: [weekly("max-1", 0.98), weekly("max-2", 0.12)],
+      runners: [runner(["max-1"], "Personal", -bound - 1), runner(["max-2"])],
+    }),
+    unpaused,
+  );
+  for (const kind of runnerKinds) {
+    const state = (polledSecs: number): AgentAccountHarnessState => ({
+      readings: [weekly("max-1", 0.98, 900), weekly("max-2", 0.12)],
+      runners: [runner(["max-2"], kind, polledSecs), runner(["max-1"])],
+    });
+    assert.deepEqual(await pausedFor(state(1 - bound)), unpaused, kind);
+    assert.deepEqual(
+      await pausedFor(state(-bound - 1)),
+      { untilSecs: 900, reasons: ["seven_day"], admittedByPress: false },
+      kind,
+    );
+  }
 });
