@@ -2,6 +2,9 @@
  * The pressable things: an action, a disclosure, a toggle, the button a form
  * is submitted by, and the same look over a route link.
  *
+ * `danger` is a destructive action's entry point and `danger-filled` the step
+ * that confirms it.
+ *
  * Total over `buttonVariants` × `buttonSizes`, and over the states an
  * attribute carries — pressed, busy, disabled. Those are attributes rather
  * than classes because the attribute is what a reader's assistive technology
@@ -20,6 +23,7 @@ export const buttonVariants = [
   "default",
   "primary",
   "danger",
+  "danger-filled",
   "quiet",
 ] as const;
 

@@ -1,7 +1,8 @@
 /* Menu: the panel a Radix dropdown draws its choices in, and the items
    inside it. The panel's edge is its own and does not come and go with focus,
    which Radix moves between the panel and its items as the pointer moves; the
-   item under the pointer or the keys is told by its background alone. */
+   item under the pointer or the keys is told by its background alone. Under a
+   coarse pointer an item is a control's height. */
 
 @layer ui {
   .menu {
@@ -34,6 +35,12 @@
     cursor: pointer;
     outline: none;
     overflow-wrap: anywhere;
+  }
+
+  @media (pointer: coarse) {
+    .menu-item {
+      min-height: var(--height-control);
+    }
   }
 
   .menu-item[data-highlighted],
