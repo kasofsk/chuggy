@@ -5,12 +5,14 @@
  * where it is outside the epic, and its place in a landing queue where it has
  * one; then the rest of its title in two lines, and on the goal how many of
  * what it waits on are Done. The card is a button that
- * selects the ticket, or clears it where it is the one selected; hovering or
- * focusing it previews it. A ticket outside the epic is a dashed card with a
- * tag, so which tickets the epic holds does not rest on hue alone.
+ * selects the ticket, or clears it where it is the one selected; pointing at
+ * it, but never by touch, or focusing it from the keyboard previews it. A port
+ * a strong line lands on is lit. A ticket outside the epic is a dashed card
+ * with a tag, so which tickets the epic holds does not rest on hue alone.
  */
 
-import type { KeyboardEvent, ReactNode } from "react";
+import { useRef } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { EpicGraphTicket } from "../../core/epicGraph.ts";
@@ -26,7 +28,20 @@ import "./epicGraph.css";
 export interface EpicGraphPort {
   readonly ticket: number;
   readonly met: boolean;
+  /** A strong line lands on it. */
+  readonly lit: boolean;
 }
+
+/** How a preview of a card starts or ends: by a pointer resting on it, or by
+ * the keyboard's focus. */
+export type EpicGraphPreviewBy = "pointer" | "focus";
+
+/** A card's ticket previewed, or no longer. */
+export type EpicGraphPreviewed = (
+  ticket: number,
+  previewed: boolean,
+  by: EpicGraphPreviewBy,
+) => void;
 
 /** How a card is drawn against the rest of its graph. */
 export interface EpicGraphCardDrawn {
@@ -51,7 +66,9 @@ function EpicGraphCardPorts(props: {
         <span
           key={port.ticket}
           className="epic-card-port"
+          data-ticket={port.ticket}
           data-met={port.met ? "" : undefined}
+          data-lit={port.lit ? "" : undefined}
         />
       ))}
     </span>
@@ -85,12 +102,18 @@ function EpicGraphCardHead(props: {
   );
 }
 
-/** What a card's button does when pressed, entered, hovered and focused. */
-function epicGraphCardHandlers(
+/** What a card's button does when pressed, pointed at and focused. A focus
+ * a pointer's press brought is no keyboard's, so it previews nothing. */
+function useEpicGraphCardHandlers(
   ticket: number,
   onSelect: (ticket: number) => void,
-  onPreview: (ticket: number | undefined) => void,
+  onPreview: EpicGraphPreviewed,
 ) {
+  const pressed = useRef(false);
+  const pointed = (previewed: boolean) => (event: PointerEvent) => {
+    if (event.pointerType === "touch") return;
+    onPreview(ticket, previewed, "pointer");
+  };
   return {
     onClick: () => {
       onSelect(ticket);
@@ -100,19 +123,48 @@ function epicGraphCardHandlers(
       event.preventDefault();
       onSelect(ticket);
     },
-    onMouseEnter: () => {
-      onPreview(ticket);
+    onPointerEnter: pointed(true),
+    onPointerLeave: pointed(false),
+    onPointerDown: () => {
+      pressed.current = true;
     },
-    onMouseLeave: () => {
-      onPreview(undefined);
+    onPointerUp: () => {
+      pressed.current = false;
     },
     onFocus: () => {
-      onPreview(ticket);
+      if (pressed.current) pressed.current = false;
+      else onPreview(ticket, true, "focus");
     },
     onBlur: () => {
-      onPreview(undefined);
+      pressed.current = false;
+      onPreview(ticket, false, "focus");
     },
   };
+}
+
+/** On the goal, how many of what it waits on are Done; on the longest chain,
+ * its step. */
+function EpicGraphCardFoot(props: {
+  readonly drawn: EpicGraphCardDrawn;
+  readonly done: number;
+  readonly count: number;
+}): ReactNode {
+  const text = useCopyText();
+  const { drawn, done, count } = props;
+  return (
+    <>
+      {drawn.goal ? (
+        <span className="epic-card-goal">
+          {text({ id: "epics-graph-done", args: { done, count } })}
+        </span>
+      ) : null}
+      {drawn.step === undefined ? null : (
+        <span className="epic-card-step" aria-hidden="true">
+          {drawn.step}
+        </span>
+      )}
+    </>
+  );
 }
 
 export function EpicGraphCard(props: {
@@ -121,9 +173,14 @@ export function EpicGraphCard(props: {
   readonly drawn: EpicGraphCardDrawn;
   readonly place: LandingQueuePlace | undefined;
   readonly onSelect: (ticket: number) => void;
-  readonly onPreview: (ticket: number | undefined) => void;
+  readonly onPreview: EpicGraphPreviewed;
 }): ReactNode {
   const text = useCopyText();
+  const handlers = useEpicGraphCardHandlers(
+    props.ticket.node.ticket,
+    props.onSelect,
+    props.onPreview,
+  );
   const { node, standing } = props.ticket;
   const { drawn } = props;
   const label = ticketStateLabelOf(standing);
@@ -159,7 +216,7 @@ export function EpicGraphCard(props: {
           },
         })}
         title={title}
-        {...epicGraphCardHandlers(node.ticket, props.onSelect, props.onPreview)}
+        {...handlers}
       >
         <EpicGraphCardPorts ports={props.ports} />
         <EpicGraphCardHead
@@ -168,19 +225,11 @@ export function EpicGraphCard(props: {
           place={props.place}
         />
         <span className="epic-card-title">{titled.rest}</span>
-        {drawn.goal ? (
-          <span className="epic-card-goal">
-            {text({
-              id: "epics-graph-done",
-              args: { done: met, count: props.ports.length },
-            })}
-          </span>
-        ) : null}
-        {drawn.step === undefined ? null : (
-          <span className="epic-card-step" aria-hidden="true">
-            {drawn.step}
-          </span>
-        )}
+        <EpicGraphCardFoot
+          drawn={drawn}
+          done={met}
+          count={props.ports.length}
+        />
       </button>
     </div>
   );

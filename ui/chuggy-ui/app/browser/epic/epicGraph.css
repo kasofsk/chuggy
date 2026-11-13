@@ -1,7 +1,7 @@
 /* The epic page's Graph tab: the graph in layers beside the side panel, its
-   cards, their ports and the key. A card outside the epic is dashed and
-   tagged, and a blocked card is dashed, so what a card is does not rest on
-   hue alone. */
+   cards, their ports, the lines under them and the key. A card outside the
+   epic is dashed and tagged, and a blocked card is dashed, so what a card is
+   does not rest on hue alone. */
 
 @layer page {
   .epic-graph-section {
@@ -127,8 +127,68 @@
     margin-inline-start: auto;
   }
 
+  /* The lines lie under the layers, whose cards are opaque and hide what
+     passes behind them. A new look's layer of lines fades in over the last
+     one's, which fades out under it. */
+  .epic-graph-drawing {
+    position: relative;
+  }
+
+  .epic-graph-lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .epic-graph-lines-look {
+    opacity: 0;
+    transition: opacity var(--duration-epic-graph-out) var(--ease-out);
+  }
+
+  .epic-graph-lines-look[data-shown] {
+    opacity: 1;
+    animation: epic-graph-lines-in var(--duration-epic-graph-in) var(--ease-out);
+  }
+
+  @keyframes epic-graph-lines-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .epic-graph-line {
+    fill: none;
+    stroke-width: var(--width-epic-graph-line);
+  }
+
+  .epic-graph-line[data-kind="faint"] {
+    stroke: var(--edge-strong);
+    stroke-width: var(--hairline);
+  }
+
+  .epic-graph-line[data-kind="strong"] {
+    stroke: var(--ink-2);
+  }
+
+  .epic-graph-line[data-kind="met"] {
+    stroke: var(--tone-pass);
+  }
+
+  .epic-graph-line[data-kind="chain"] {
+    stroke: var(--ink-1);
+  }
+
+  .epic-graph-line[data-kind="knots"] {
+    fill: var(--ink-2);
+    stroke: none;
+  }
+
   /* Each layer a row: its gutter, then its cards wrapping in a centred flow. */
   .epic-graph-layers {
+    position: relative;
     display: grid;
     gap: var(--space-5);
     margin: 0;
@@ -221,8 +281,7 @@
     transition:
       border-color var(--duration-1) var(--ease-out),
       background-color var(--duration-1) var(--ease-out),
-      color var(--duration-1) var(--ease-out),
-      box-shadow var(--duration-1) var(--ease-out);
+      color var(--duration-1) var(--ease-out);
   }
 
   .epic-card-button:hover {
@@ -255,10 +314,6 @@
 
   .epic-card:is([data-standing="Blocked"], [data-outside]) .epic-card-button {
     border-style: dashed;
-  }
-
-  .epic-card[data-outside] .epic-card-button {
-    background: transparent;
   }
 
   /* The longest chain, outlined and stepped, while nothing is selected. */
@@ -333,6 +388,13 @@
   .epic-card-port[data-met] {
     border-color: var(--tone-pass);
     background: var(--tone-pass);
+  }
+
+  /* A port a strong line lands on. */
+  .epic-card-port[data-lit] {
+    outline: var(--hairline) solid var(--ink-1);
+    outline-offset: var(--hairline);
+    transform: scale(1.4);
   }
 
   .epic-card-head {
