@@ -14,7 +14,6 @@ usage-window-five-hour = Five-hour window
 # spells -window: an account's usage window, not a context's
 usage-window-seven-day = Weekly window
 usage-provider-limit = Provider limit
-usage-joined = { $lead } · { $rest }
 usage-until = until
 usage-try-again = Try again now
 usage-try-again-named = Try { $agent } again now

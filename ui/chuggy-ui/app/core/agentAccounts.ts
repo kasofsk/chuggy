@@ -53,14 +53,8 @@ export function agentPauseReasonLabel(reason: AgentPauseReason): Copy {
 }
 
 /** The status and every reason holding the agent, in the wire's order. */
-export function agentPauseLine(pause: AgentPause): Copy {
-  return pause.reasons.reduce<Copy>(
-    (lead, reason) => ({
-      id: "usage-joined",
-      args: { lead, rest: agentPauseReasonLabel(reason) },
-    }),
-    agentPausedWord,
-  );
+export function agentPauseParts(pause: AgentPause): readonly Copy[] {
+  return [agentPausedWord, ...pause.reasons.map(agentPauseReasonLabel)];
 }
 
 /** A pause a provider's limit holds, which only a press tries past. */
