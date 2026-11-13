@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   accessPlaneRole,
   agentAccountCredentialKeptFunction,
+  agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
   agentAccountFunction,
@@ -891,6 +892,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [metricsPlaneRole],
   ),
   boundaryGrantsDoor(
+    `${agentAccountCredentialRetireFunction}(text,text,text)`,
+    [apiRole],
+    [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
     [apiRole],
     [metricsPlaneRole],
@@ -1035,6 +1041,8 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["worker_pool", "registered_by", "SELECT", poolPlaneRole, true],
   ["worker_pool", "credentials_named", "SELECT", boundaryOwnerRole, true],
   ["worker_pool", "credentials_named", "UPDATE", boundaryOwnerRole, false],
+  ["worker_pool", "executions_polled_at", "SELECT", boundaryOwnerRole, true],
+  ["worker_pool", "executions_polled_at", "UPDATE", boundaryOwnerRole, false],
   ["personal_runner", "credentials_named", "SELECT", boundaryOwnerRole, true],
   ["personal_runner", "credentials_named", "UPDATE", boundaryOwnerRole, false],
   ["chat_host", "credentials_named", "SELECT", boundaryOwnerRole, true],

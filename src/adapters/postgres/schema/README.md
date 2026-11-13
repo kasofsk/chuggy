@@ -630,14 +630,17 @@ window appears once per credential. It departs from #180's composite project
 key because one login serves every workspace its owner works in: a key carrying
 a tenant and a project would hold one account's readings apart, as
 `capacity_account` and `recovery_epoch` are keyed by what they are rather than
-by a project. It points at the attempt its reading came from. It is changed by
+by a project. It points at the attempt its reading came from. It is written by
 that door alone, in the transaction that stores the run's totals or finds them
 already stored, and a reading replaces the one kept of its credential only where
 it was observed later. The credentials kept of one account's agent, across this
 relation and `agent_account_limit`, are bounded by
 `agentAccountCredentialsKeptMaxAt163`: one arriving at the bound drops every row
 of the credential observed least recently, through
-`agent_account_credential_kept`. It has no unfinished work: a reading is kept
+`agent_account_credential_kept`. The API drops one person's rows of one
+credential through `retire_agent_account_credential`, under the same lock,
+refused while a live runner of theirs names it, and the credential is kept
+again where a run reports it after. It has no unfinished work: a reading is kept
 with its totals or not at all, and the latest of each window is the row itself.
 
 `agent_account_limit` — the latest hard limit a provider stopped each credential
@@ -651,10 +654,11 @@ the metrics plane reads the principal and agent of every row and nothing else.
 Its key and identity are `(principal, agent, credential)`, derived as
 `agent_account_usage`'s are and bounded with it, and it departs from #180's
 composite project key for the same reason. It points at the attempt it stopped.
-It is changed by that door alone, in the transaction that withdraws that attempt
+It is written by that door alone, in the transaction that withdraws that attempt
 `RunRateLimited`, and a limit replaces the one kept of its credential unless
-that one was received later. It has no unfinished work: the limit is kept with
-its attempt's ending or not at all.
+that one was received later; it is dropped with its credential's readings
+through `retire_agent_account_credential`. It has no unfinished work: the limit
+is kept with its attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their
@@ -663,7 +667,9 @@ does. The API writes one person's row whole through `write_agent_account_setting
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call, reads it through that, as
-`agent_account_standing` does for the API;
+`agent_account_standing` does for the API: `agent_account_named_pause` of the
+credentials the account's live runners name of the agent, and paused while any
+credential is where they name none;
 `agent_account_credential_standing` answers the API each credential's own
 pause, `agent_account_named_pause` of its one name.
 `agent_account_named_pause`, which the pool plane and the API may call, answers

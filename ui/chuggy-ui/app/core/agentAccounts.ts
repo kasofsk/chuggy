@@ -2,7 +2,7 @@
  * The reader's own agent accounts as the console draws them, derived: the
  * words for a window and a pause, whether a reading still counts, which of an
  * agent's credentials are drawn by name, a draft of one agent's settings read
- * by the wire's own schema, and what a press's refusal says.
+ * by the wire's own schema, and what a press's or a retirement's refusal says.
  *
  * A READING IS STALE ONCE ITS WINDOW HAS RESET. The pause rule counts a reading
  * only while its reset is ahead, so a stale one pauses nothing until the next
@@ -15,10 +15,11 @@
  */
 
 import { agentAccountSettingsSchema } from "../../../../src/contract/requests.ts";
-import type {
-  AgentAccount,
-  AgentAccountCredential,
-  AgentPause,
+import {
+  agentAccountCredentialInUseCode,
+  type AgentAccount,
+  type AgentAccountCredential,
+  type AgentPause,
 } from "../../../../src/contract/responses.ts";
 import type {
   AgentPauseReason,
@@ -207,5 +208,13 @@ export function agentAccountDraftSame(
 export function agentAccountPressRefusal(failure: ApiFailure): Copy {
   return failure.outcome === "Conflict" && failure.code === "NotHardPaused"
     ? { id: "usage-press-unheld" }
+    : failureWords(failure).word;
+}
+
+/** A retirement refused because a live runner still names the credential says so. */
+export function agentAccountRetireRefusal(failure: ApiFailure): Copy {
+  return failure.outcome === "Conflict" &&
+    failure.code === agentAccountCredentialInUseCode
+    ? { id: "usage-retire-in-use" }
     : failureWords(failure).word;
 }

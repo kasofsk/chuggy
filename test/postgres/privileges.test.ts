@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountNamedCredentialPausesFunction,
   agentAccountNamedPauseFunction,
@@ -911,7 +912,7 @@ test("the function a migration grants execute on is the boundary owner's and is 
   );
 });
 
-test("the API reads a ticket's open questions and who answered an approval, and no more of the desk", async () => {
+test("the API reads a ticket's questions, how each was answered and by whom, and no more of the desk", async () => {
   assert.equal(
     await harness.attemptAs(
       apiRole,
@@ -922,9 +923,15 @@ test("the API reads a ticket's open questions and who answered an approval, and 
     ),
     undefined,
   );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT action,state,resolution,attempt,execution,answered_by,answered_at
+         FROM native_action WHERE ticket=1`,
+    ),
+    undefined,
+  );
   for (const column of [
-    "attempt",
-    "resolution",
     "effect_position",
     "action_version",
     "required_capability",
@@ -952,7 +959,7 @@ test("the API reads a ticket's open questions and who answered an approval, and 
         table_name: "native_action",
         privilege_type: "SELECT",
         columns:
-          "action,answered_at,answered_by,authorizing_seq,execution,feedback,kind,project,state,tenant,ticket",
+          "action,answered_at,answered_by,attempt,authorizing_seq,execution,feedback,kind,project,resolution,state,tenant,ticket",
       },
       {
         table_name: "native_action_resolution",
@@ -1075,12 +1082,13 @@ test("only the scheduler finds and resumes a job a usage limit stopped on its ru
   );
 });
 
-test("only the API reads, sets and presses a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
+test("only the API reads, sets, presses and retires a credential of a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
   for (const signature of [
     `${agentAccountStandingFunction}(text)`,
     `${agentAccountCredentialStandingFunction}(text)`,
     `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     `${agentAccountPressFunction}(text,text)`,
+    `${agentAccountCredentialRetireFunction}(text,text,text)`,
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
   ])
     assert.deepEqual(await changeLogExecutors(signature), [apiRole], signature);
@@ -1111,6 +1119,8 @@ test("only the API reads, sets and presses a person's own agent account and read
       "INSERT INTO agent_account_press(principal,agent,pressed_at) VALUES('p','Claude',now())",
       "agent_account_press",
     ],
+    ["DELETE FROM agent_account_usage", "agent_account_usage"],
+    ["DELETE FROM agent_account_limit", "agent_account_limit"],
   ] as const)
     assert.match(
       (await harness.attemptAs(apiRole, statement)) ?? "",

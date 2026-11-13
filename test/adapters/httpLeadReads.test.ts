@@ -19,9 +19,10 @@ import test from "node:test";
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
+import { leadHolds } from "../../src/contract/rosters.ts";
 import {
   agenticRefusalsResponseSchema,
-  leadResponseSchema,
+  leadFoundResponseSchema,
   leadTranscriptResponseSchema,
   sessionContextResponseSchema,
   selectorHistoryResponseSchema,
@@ -281,6 +282,7 @@ function readStore(
     ticketNativeActions: () => Promise.resolve([]),
     nativeActions: () => Promise.resolve({ actions: [] }),
     nativeActionAsked: () => Promise.resolve(undefined),
+    ticketNativeActionHistory: () => Promise.resolve(undefined),
   };
 }
 
@@ -488,7 +490,7 @@ test("the lead read carries its standing, its mailbox tail and its streams", asy
     headers: authorized,
   });
   assert.equal(found.statusCode, 200);
-  const body = leadResponseSchema.parse(found.json());
+  const body = leadFoundResponseSchema.parse(found.json());
   assert.deepEqual(nativeHttpEndpoints.lead.response.parse(found.json()), body);
   assert.equal(body.session, "lead-atlas");
   assert.equal(body.attention, "Monitoring");
@@ -675,6 +677,66 @@ test("a project whose selector is paused answers Paused over any refusal kept, a
     });
     assert.equal(Object.hasOwn(found.json(), "absence"), false);
     assert.equal(Object.hasOwn(found.json(), "refusal"), false);
+  }
+});
+
+/**
+ * A lead opened before its selector was paused, or before the site's selector
+ * lost its grant, still stands and dispatches nothing until that changes, so
+ * its read says what holds it exactly where a project holding none would answer
+ * that reason: `Paused`, by the project's own pause or by the installation's
+ * whatever the project asked for, over `SelectorNotGranted`, and either over a
+ * kept refusal. What holds it is no part of the `Session` frame.
+ */
+test("a lead that stands answers what holds it from dispatching, as a project holding none answers it, and nothing while its selector runs", async () => {
+  const refused: LeadRefused = {
+    reason: "RunnerOffline",
+    since: "2026-09-02T00:00:00.000Z",
+  };
+  for (const [shape, held] of [
+    [{ projectMode: "Paused" }, "Paused"],
+    [{ installationMode: "Paused" }, "Paused"],
+    [{ installationMode: "Paused", projectMode: "Running" }, "Paused"],
+    [{ projectMode: "Paused", refused }, "Paused"],
+    [{ projectMode: "Paused", selectorReads: false }, "Paused"],
+    [{ selectorReads: false }, "SelectorNotGranted"],
+    [{ selectorReads: false, refused }, "SelectorNotGranted"],
+    [{}, undefined],
+    [{ projectMode: "Running" }, undefined],
+    [{ selectorReads: true }, undefined],
+    [{ refused }, undefined],
+  ] as const) {
+    await using app = appOf(shape);
+    const found = await app.inject({
+      url: `${root}/lead`,
+      headers: authorized,
+    });
+    assert.equal(found.statusCode, 200);
+    const lead = nativeHttpEndpoints.lead.response.parse(found.json());
+    assert.ok("session" in lead);
+    assert.deepEqual(
+      lead.held,
+      held === undefined ? undefined : { reason: held },
+      JSON.stringify(shape),
+    );
+    const { held: answered, ...session } =
+      found.json<Record<string, unknown>>();
+    assert.deepEqual(answered, lead.held);
+    assert.deepEqual(
+      projectChangeRepresentationSchemas.Session.parse(found.json()),
+      session,
+    );
+    await using absent = appOf({ ...shape, standing: undefined });
+    const none = await absent.inject({
+      url: `${root}/lead`,
+      headers: authorized,
+    });
+    const reason = none.json<{ absence: { reason: string } }>().absence.reason;
+    assert.equal(
+      leadHolds.find((hold) => hold === reason),
+      held,
+      JSON.stringify(shape),
+    );
   }
 });
 

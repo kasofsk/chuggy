@@ -375,6 +375,7 @@ export const operationBoundaryRefusalCodes = [
   "SelectionUnsupported",
   "ProgramExceedsPlan",
   "ProgramSkipsBriefChecks",
+  "ProgramStageOutOfPosition",
   "OverridesUnsupported",
   "OverridesUnknown",
   "TicketCapacityReached",
@@ -394,7 +395,8 @@ export type OperationBoundaryRefusalCode =
  * stage contradicts a brief that appends check lines to it, a brief naming no
  * repository has nothing to pair with, a configuration imported from a
  * repository contradicts a brief working in a different one, a program
- * leaving out the task a brief's check lines join would never run them, an
+ * stage keyed other than by its place has no place in a released plan, a
+ * program leaving out the task a brief's check lines join would never run them, an
  * approval selected as the work has no change to make, and an override may not
  * make a workload an approval or one no longer. A revision of the draft mends
  * each, so each is refused under its own code rather than as the
@@ -408,6 +410,7 @@ export const releasePairingFaults = [
   "SelectionUnsupported",
   "ProgramExceedsPlan",
   "ProgramSkipsBriefChecks",
+  "ProgramStageOutOfPosition",
   "OverridesUnsupported",
   "OverridesUnknown",
   "ApprovalAsWork",
@@ -769,6 +772,10 @@ export const nativeActionKindResolutions = {
   EvaluationApproval: ["Approve", "Reject"],
 } as const;
 
+/** Where a native action stands: still asked, answered, or settled without an answer. */
+export const nativeActionStates = ["Open", "Resolved", "Withdrawn"] as const;
+export type NativeActionState = (typeof nativeActionStates)[number];
+
 /** Every resolution the wire names, each once, in the order the kinds first name them. */
 export const nativeActionResolutions = [
   "Resume",
@@ -953,6 +960,17 @@ export const leadAbsencesUntimed = [
   "SelectorUnnamed",
 ] as const;
 export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
+
+/**
+ * What holds a lead that stands from dispatching where no refusal dates it, the
+ * untimed absences that outrank a kept refusal: its selector is paused, or the
+ * site's selector may not read the project.
+ */
+export const leadHolds = [
+  "Paused",
+  "SelectorNotGranted",
+] as const satisfies readonly LeadAbsenceUntimed[];
+export type LeadHold = (typeof leadHolds)[number];
 
 /**
  * When a pool other than its owner's personal runner may take an owned

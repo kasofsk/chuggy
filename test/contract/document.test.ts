@@ -34,6 +34,7 @@ const document = golden as {
 const documentRouteNames = [
   "abilities",
   "actionReports",
+  "agentAccountCredential",
   "agentAccountPresses",
   "agentAccountSettings",
   "agentAccounts",
@@ -139,6 +140,7 @@ const documentRouteNames = [
   "ticketActionReach",
   "ticketAgenticRefusals",
   "ticketLandings",
+  "ticketNativeActionHistory",
   "ticketNativeActions",
   "tickets",
   "workerPoolRegistrationTokens",

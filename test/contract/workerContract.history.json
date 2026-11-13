@@ -422,6 +422,36 @@
   {
     "release": "1.84.0",
     "wire": "81d192b72a9849995aa5378279481a1d4042680defb3c1f2237389933f076531",
-    "files": "94dcc1757c0275615e2a97b785a201ce97f451b19f3b022cb788d3471d3fc601"
+    "files": "d729bb23ba4d8a6dffac51e0737dfb941c982e747dfddbf8050262f8b42624db"
+  },
+  {
+    "release": "1.85.0",
+    "wire": "400a34cfd428dc8a401014a03efc09d9b2ec378491395b9626938d56186f1737",
+    "files": "8bf3f006845af474b1996a8d6413248b14ee8a75904726797f924dcd11511915"
+  },
+  {
+    "release": "1.86.0",
+    "wire": "d95fc35620c9787298e13e5c008069d68ed5f347a31b280bc560bfd94f1350cc",
+    "files": "1638d6de473dd601f6996034b38a787f1a6389454edde7db9a170a09ce304a03"
+  },
+  {
+    "release": "1.87.0",
+    "wire": "be22e9dbe8292877fadecf4086e55e5d5d992fc7cf231557fb12598356ef4758",
+    "files": "ea61853a0c2859a91ef05658d8805eec620fa589174de8274fe3ece622f24da3"
+  },
+  {
+    "release": "1.88.0",
+    "wire": "a8b055a1a6c3f2350de33dc53a18a00beecafaaf72227b4e09f630a41cd86669",
+    "files": "03fd296a4f8a47d8e81866d4d0fdfeb4d2ed943b89a0bbd083e1672ec1f68d21"
+  },
+  {
+    "release": "1.89.0",
+    "wire": "011b1fcbdbb3edcfacad527634c8a9390e5ab1bf166bb97baf9e09293f820c68",
+    "files": "72e260ef954ba7798cc609adc886a5e87c8577b413525d9dafc2521d881fac6c"
+  },
+  {
+    "release": "1.90.0",
+    "wire": "f6caa71e6d35016c0b5cd2a40d973fa5fe18f6546ecd3f41a0fd1084075e2761",
+    "files": "dd68c053e4e294c8eba5098ceb36f36d48a3c1f1f73b9c3221e788aeb003211f"
   }
 ]

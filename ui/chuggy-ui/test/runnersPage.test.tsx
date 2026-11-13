@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 
 import { RunnersPage } from "../app/browser/RunnersPage.tsx";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
+import { runnerPackages } from "../app/core/runners.ts";
 import {
   answer,
   openedStream,
@@ -84,8 +85,7 @@ const pools = {
 
 const none = { truncated: false, pools: [] };
 
-const install =
-  "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz";
+const install = runnerPackages.linux.installCommand;
 
 const register =
   "chuggy-linux register --api https://chuggy.test --token=tok-1";
@@ -454,7 +454,7 @@ test("a Mac asked to run work on itself and to declare capabilities mints a toke
   });
   expect(step("Install").textContent).toContain("macOS · Node 24 · Colima");
   expect(step("Install").querySelector("code")?.textContent).toBe(
-    "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+    runnerPackages.darwin.installCommand,
   );
   expect(step("Register").querySelector("code")?.textContent).toBe(
     "chuggy-darwin register --api https://chuggy.test --token=tok-1 --host --capability Agent:Claude --capability Tool:Xcode",

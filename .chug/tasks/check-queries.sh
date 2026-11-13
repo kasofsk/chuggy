@@ -11,6 +11,12 @@
 # `eslint .` under check-source never needs a server or the SQL parser this
 # run does.
 #
+# A JSON OR JSONB COLUMN IS CHECKED LIKE ANY OTHER. SafeQL reads one as `any`
+# by default, which agrees with every declared type, so `eslint.config.js` maps
+# both to `unknown`: a row declaring text for one is a finding unless the query
+# casts it to text. `test/postgres/queryRowTypes.test.ts` holds the
+# configuration to that against a migrated schema.
+#
 # A ROUTINE A QUERY NAMES MUST EXIST IN THE MIGRATED SCHEMA. Function names
 # are written literally at call sites and checked here against the database
 # the migrations just built, so a routine renamed in `schema.ts` and missed at

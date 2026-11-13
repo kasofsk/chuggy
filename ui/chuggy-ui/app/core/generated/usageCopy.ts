@@ -12,6 +12,9 @@ export interface UsageCopy {
   readonly "usage-window-seven-day": Record<never, never>;
   readonly "usage-provider-limit": Record<never, never>;
   readonly "usage-until": Record<never, never>;
+  readonly "usage-held-by": {
+    readonly credentials: unknown;
+  };
   readonly "usage-try-again": Record<never, never>;
   readonly "usage-try-again-named": {
     readonly agent: unknown;
@@ -34,4 +37,16 @@ export interface UsageCopy {
   readonly "usage-threads-keep-running": Record<never, never>;
   readonly "usage-writing": Record<never, never>;
   readonly "usage-written": Record<never, never>;
+  readonly "usage-credentials": Record<never, never>;
+  readonly "usage-retire": Record<never, never>;
+  readonly "usage-retire-named": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retire-question": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retirement": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retire-in-use": Record<never, never>;
 }

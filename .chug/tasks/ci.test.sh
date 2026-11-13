@@ -2546,19 +2546,20 @@ OUT="$GRAPH_CALLS"
 printf 'calls %s\n' "$(grep -c . "$GRAPH_CALLS")" >> "$GRAPH_CALLS"
 check "depcruise ran once a run, and not for a page" 0 0 "calls 11"
 
-# A file that declares into every scope selects the typed tool wherever it is,
-# when it starts to, when it stops, and as a declaration file of any name; no
-# server suite reads it.
+# A file that declares into every scope selects each gate that runs the typed
+# tool wherever it is, when it starts to, when it stops, and as a declaration
+# file of any name: the query check, and the database suites that lint through
+# it; no other server suite reads it.
 graph_repo
 graph_module test/interpreter/ambient.ts 'export const ambient = 1;' \
 	'import "./taskBriefing.test.ts";'
 commit_all ambient-baseline
 printf 'declare global {\n  interface Ambient { readonly seen: true }\n}\n' >> "$R/test/interpreter/ambient.ts"
-graph_change "a test that starts declaring into every scope" check-queries
+graph_change "a test that starts declaring into every scope" check-postgres check-queries
 graph_module test/interpreter/ambient.ts 'export const ambient = 1;' 'import "./taskBriefing.test.ts";'
-graph_change "a test that stops declaring into every scope" check-queries
+graph_change "a test that stops declaring into every scope" check-postgres check-queries
 printf 'declare module "shown" {}\n' > "$R/ui/chuggy-ui/app/shown.d.ts"
-graph_change "a declaration file under the console" check-queries
+graph_change "a declaration file under the console" check-postgres check-queries
 
 # What each declaration names by hand selects its gate: the files its suites
 # and scripts read by a path, and the processes they run by one.
@@ -2569,8 +2570,8 @@ for case in \
 	".chug/tasks/_postgres.sh|check-postgres|check-queries|check-keto" ".chug/tasks/_keto.sh|check-keto" \
 	".chug/tasks/_test-timeout.sh|check-postgres|check-keto" \
 	".chug/tasks/postgres-databases.ts|check-postgres|check-queries|check-keto" \
-	"package.json|check-postgres|check-queries|check-keto" "tsconfig.json|check-queries" \
-	"eslint.config.js|check-queries" ".dependency-cruiser.cjs|check-postgres|check-keto" \
+	"package.json|check-postgres|check-queries|check-keto" "tsconfig.json|check-postgres|check-queries" \
+	"eslint.config.js|check-postgres|check-queries" ".dependency-cruiser.cjs|check-postgres|check-keto" \
 	"src/roots/migrate.ts|check-postgres|check-queries" "src/roots/nativeHttp.ts|check-postgres" \
 	"src/roots/controlPlane.ts|check-postgres" "src/roots/provisionAgentSession.ts|check-postgres|check-keto" \
 	"src/roots/provisionProjectAccess.ts|check-postgres|check-keto" \
@@ -2712,8 +2713,9 @@ graph_pin check-postgres "$record_tool_install" "$graph_own .chug/tasks/postgres
 	src/roots/provisionAgentSession.ts src/roots/provisionProjectAccess.ts $graph_unheld \
 	test/postgres/harness.ts test/postgres/schedulerRootPorts.ts test/postgres/store.test.ts \
 	deploy/rig/wipe-tickets.sql src/roots/runnerReleases.json test/fixtures/fluxDeliveries package.json \
-	.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh \
-	.chug/tasks/_test-timeout.sh" "src test" "$graph_server_looks"
+	tsconfig.json eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
+	.chug/tasks/check-postgres.sh .chug/tasks/_test-timeout.sh" "src test" \
+	":(glob)eslint.config.* .eslintignore .eslintcache eslint-suppressions.json $graph_server_looks"
 graph_pin check-queries "$record_tool_install" "$graph_own .chug/tasks/postgres-databases.ts \
 	src/adapters/postgres/pool.ts src/contract/configurationDocument.ts src/roots/migrate.ts \
 	$graph_unheld package.json tsconfig.json eslint.config.js .chug/tasks/_postgres.sh \

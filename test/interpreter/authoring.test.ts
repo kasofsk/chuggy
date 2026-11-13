@@ -519,6 +519,21 @@ test("a document's program runs less than it plans where it runs no stage under 
   );
 });
 
+test("a document's program whose stages are not keyed by their place in it is refused under its own fault", () => {
+  const readiness = draftReleaseReadiness(
+    reviewedThenChecked,
+    { checks: [], repository: firstRepository },
+    undefined,
+    undefined,
+    undefined,
+    [{ key: 2, evaluators: [{ key: 1 }] }],
+  );
+  assert.deepEqual(readiness, {
+    readiness: "Incomplete",
+    fault: "ProgramStageOutOfPosition",
+  });
+});
+
 test("a document's program leaving out the stage a brief's checks join is refused under its own fault", () => {
   const checked = {
     checks: [asBriefCheckLine("npm test", 0)],

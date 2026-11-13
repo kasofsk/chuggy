@@ -154,6 +154,8 @@ async function ticketReadPlanOf(
     };
   });
   try {
+    const jit = await pool.query<{ jit: string }>("SHOW jit");
+    assert.equal(jit.rows[0]?.jit, "on", "the read plans with JIT on");
     await planned.read(postgresNativeReads(pool), partition);
   } finally {
     await pool.end();

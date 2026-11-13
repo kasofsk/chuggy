@@ -298,14 +298,14 @@ test("a write refused for the hosted grant is told apart from any other refusal"
   );
 });
 
-test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {
+test("setup offers the Linux package: what it needs, the command that installs its pinned release, and its guide", () => {
   expect(runnerPackageOffered).toBe(runnerPackages.linux);
   expect(runnerPackageOffered).toStrictEqual({
     label: { id: "runners-package-linux" },
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.51.0/chuggy-linux-0.51.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
   });
   expect(copyTextEn(runnerPackageOffered.label)).toBe("Linux");
@@ -320,7 +320,7 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.21.0/chuggy-darwin-0.21.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
   });
   expect(copyTextEn(runnerPackages.darwin.label)).toBe("Mac");

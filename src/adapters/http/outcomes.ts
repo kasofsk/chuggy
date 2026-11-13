@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import type { TicketId } from "../../domain/ids.ts";
 import type {
   ConfigurationPage,
   ConfigurationRevisionResource,
@@ -22,6 +23,7 @@ import type {
   ProjectInventoryPage,
   ProjectRead,
   TicketNativeAction,
+  TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
@@ -160,6 +162,7 @@ import {
   encodeInventoryCursor,
   encodeLatestExecutionCursor,
   encodeNativeActionCursor,
+  encodeNativeActionHistoryCursor,
   encodeTicketActivityCursor,
   encodeTicketNumberCursor,
 } from "./contract.ts";
@@ -203,6 +206,7 @@ import type {
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
+  AgentAccountRetired,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
@@ -216,6 +220,7 @@ import type {
 import type { ThemeChoice } from "../../contract/appearance.ts";
 import type {
   AgentAccountsResponse,
+  AgentPause,
   OwnedThemeResponse,
   OwnedThemesResponse,
   ThemeChoiceResponse,
@@ -232,6 +237,7 @@ import type {
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
+import { agentAccountCredentialInUseCode } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
@@ -470,7 +476,7 @@ export function submissionResponse(
         403,
         nativeHttpError(
           programSkipsPlannedEvaluationsCode,
-          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+          "The draft's program runs less than its configuration plans: it leaves out the plan's last stages, or an evaluator of a stage it keeps. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it. A program keeping a later stage of the plan and leaving out an earlier one is refused whoever releases it, as ProgramStageOutOfPosition.",
         ),
       );
     case "AnswerRefused":
@@ -614,6 +620,27 @@ export function nativeActionsResponse(
                 partition,
                 result.value.nextAfter,
               ),
+            }),
+      });
+}
+
+/** A ticket nobody may read and a ticket that does not exist answer alike, as the ticket's open actions do. */
+export function ticketNativeActionHistoryResponse(
+  partition: Partition,
+  ticket: TicketId,
+  page: TicketNativeActionHistoryPage | undefined,
+): NativeHttpResponse {
+  return page === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        actions: page.actions,
+        ...(page.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeNativeActionHistoryCursor(partition, {
+                ticket,
+                ...page.nextAfter,
+              }),
             }),
       });
 }
@@ -1515,13 +1542,28 @@ export function ownerFallbackBody(
   };
 }
 
-/** A pause's copy, or no field where none holds. */
+/** A credential's pause's copy, or no field where none holds. */
 function agentAccountsResponsePause(
+  pause: AgentAccountView["credentials"][number]["pause"],
+): { pause?: AgentPause } {
+  return pause === undefined
+    ? {}
+    : { pause: { ...pause, reasons: [...pause.reasons] } };
+}
+
+/** The agent's pause's copy with the credentials holding it, or no field where none holds. */
+function agentAccountsResponseHeldPause(
   pause: AgentAccountView["pause"],
 ): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
   return pause === undefined
     ? {}
-    : { pause: { ...pause, reasons: [...pause.reasons] } };
+    : {
+        pause: {
+          ...pause,
+          reasons: [...pause.reasons],
+          credentials: [...pause.credentials],
+        },
+      };
 }
 
 /** Every agent of the caller's own account. */
@@ -1534,7 +1576,7 @@ export function agentAccountsResponse(
       settings: { ...account.settings },
       readings: account.readings.map((reading) => ({ ...reading })),
       ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
-      ...agentAccountsResponsePause(account.pause),
+      ...agentAccountsResponseHeldPause(account.pause),
       credentials: account.credentials.map((credential) => ({
         name: credential.name,
         readings: credential.readings.map((reading) => ({ ...reading })),
@@ -1557,6 +1599,28 @@ export function agentAccountPressedResponse(
         nativeHttpError(
           "NotHardPaused",
           "No limit holds this agent of the account paused.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential retired, none held under its name, or refused because a live runner of the account still names it. */
+export function agentAccountRetiredResponse(
+  result: AgentAccountRetired,
+): NativeHttpResponse {
+  switch (result) {
+    case "Retired":
+      return noContent();
+    case "NotHeld":
+      return notFound();
+    case "CredentialInUse":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialInUseCode,
+          "A live runner of the account still names this credential.",
         ),
       );
     default:
@@ -2726,6 +2790,9 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         handoffNote: handoffNotePreview(result.lead.handoffNote),
         turns: result.lead.turns.map(leadTurnBody),
         streams: result.streams,
+        ...(result.held === undefined
+          ? {}
+          : { held: { reason: result.held.reason } }),
         ...(result.refusal === undefined
           ? {}
           : { refusal: leadRefusalBody(result.refusal) }),

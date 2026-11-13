@@ -1,9 +1,10 @@
 /**
  * The Usage page, mounted: each agent of the reader's own account drawn with
  * each window's newest reading and how long ago it was read, a stale one marked
- * so, the pause holding it and the press that tries it once past a limit; and
- * its thresholds and options written whole, a threshold outside the wire's
- * bounds refused in its own box before anything is sent.
+ * so, the pause holding it and the press that tries it once past a limit; each
+ * credential it is drawn by retired once the reader confirms it; and its
+ * thresholds and options written whole, a threshold outside the wire's bounds
+ * refused in its own box before anything is sent.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -94,6 +95,8 @@ interface Drawing {
   claude?: object;
   /** Where set, the status a press is answered with. */
   pressStatus?: number;
+  /** Where set, the status a retirement is answered with. */
+  retireStatus?: number;
 }
 
 let drawing: Drawing = { pressed: false };
@@ -121,6 +124,13 @@ async function drawUsage(): Promise<readonly SentRequest[]> {
             drawing.pressStatus,
           );
     if (path.endsWith("/settings")) return answer(undefined, 204);
+    if (path.includes("/credentials/"))
+      return drawing.retireStatus === undefined
+        ? answer(undefined, 204)
+        : answer(
+            { error: { code: "CredentialInUse", message: "In use" } },
+            drawing.retireStatus,
+          );
     return answer({}, 404);
   });
   await settled();
@@ -311,6 +321,31 @@ test("an agent holding several credentials reads each current one's reading in e
   ).toBeNull();
 });
 
+test("an agent's pause names the one credential holding it, and of several drawn, only those it names draw a line", async () => {
+  drawing.claude = {
+    pause: {
+      until: limitUntil,
+      reasons: ["limit"],
+      pressed: false,
+      credentials: ["home"],
+    },
+  };
+  await drawUsage();
+  expect(sectionOf("Claude").textContent).toContain("Paused · Provider limit");
+  expect(sectionOf("Claude").textContent).toContain("held by home");
+  cleanup();
+  const [home, old, work] = twoCredentials.credentials;
+  drawing.claude = {
+    ...twoCredentials,
+    pause: { ...twoCredentials.pause, credentials: ["work"] },
+    credentials: [{ ...home, pause: { ...twoCredentials.pause } }, old, work],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).toContain("work · Paused · Five-hour window");
+  expect(claude).not.toContain("home · Paused");
+});
+
 test("an agent whose credentials are none of them current reads each window as never read", async () => {
   const old = twoCredentials.credentials[1];
   drawing.claude = {
@@ -365,6 +400,55 @@ test("credentials each stopped at a limit draw a line each, the one a press lets
   );
   expect(
     screen.queryByRole("button", { name: "Try Claude again now" }),
+  ).toBeNull();
+});
+
+test("each credential an agent is drawn by is retired only once the reader confirms it, and the account is read again", async () => {
+  drawing.claude = twoCredentials;
+  const sent = await drawUsage();
+  const claude = within(sectionOf("Claude"));
+  expect(
+    claude
+      .getAllByRole("button", { name: /^Retire credential / })
+      .map((button) => button.getAttribute("aria-label")),
+  ).toStrictEqual(["Retire credential home", "Retire credential work"]);
+  await press("Retire credential work");
+  const asked = claude.getByRole("group", {
+    name: "Retire credential work?",
+  });
+  expect(asked.textContent).toContain(
+    "Its readings and its limit are forgotten. A runner that reports work again brings it back.",
+  );
+  expect(written(sent)).toStrictEqual([]);
+  await press("Cancel");
+  expect(claude.queryByRole("group")).toBeNull();
+  expect(written(sent)).toStrictEqual([]);
+  const before = reads(sent);
+  await press("Retire credential work");
+  await press("Retire");
+  expect(written(sent)).toStrictEqual([
+    ["DELETE /Claude/credentials/work", undefined],
+  ]);
+  expect(reads(sent)).toBeGreaterThan(before);
+});
+
+test("a retirement refused because a live runner still names the credential says so", async () => {
+  drawing.claude = twoCredentials;
+  drawing.retireStatus = 409;
+  await drawUsage();
+  await press("Retire credential home");
+  await press("Retire");
+  expect(sectionOf("Claude").textContent).toContain(
+    "A live runner still names it",
+  );
+});
+
+test("an agent drawn by its own readings offers no credential to retire", async () => {
+  await drawUsage();
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", {
+      name: /^Retire credential /,
+    }),
   ).toBeNull();
 });
 
