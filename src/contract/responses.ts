@@ -1802,8 +1802,9 @@ export const leadStoreStreamResponseSchema = z.object({
 /**
  * The admission refusal the last cycle that needed a lead met, which has been
  * the answer since `since`. A `UsagePaused` refusal names in `until` the
- * earliest instant one of the paused runner owners stops being paused, as the
- * pause stands at the read, and never whose account it is or why, and a
+ * earliest instant one of the live pools stops being paused, each on the
+ * Claude credentials it named or, where it named none, on the whole agent, as
+ * the pause stands at the read, and never whose account it is or why, and a
  * `SubsidyExhausted` one the first instant of the next calendar month in UTC.
  */
 export const leadRefusalResponseSchema = z.object({

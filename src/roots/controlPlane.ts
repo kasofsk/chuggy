@@ -244,7 +244,7 @@ const selectorProcessAdmissionWhy: Readonly<
   RunnerOffline:
     "its lead runs on the project's runners and none has polled lately, so its lead does not run",
   UsagePaused:
-    "its lead runs on the project's runners and every live one's owner has their Claude account paused, so its lead does not run",
+    "its lead runs on the project's runners and every live one is paused for its owner's Claude account, so its lead does not run",
   SubsidyExhausted:
     "its lead is subsidized and its tenant or the deployment has spent this month's subsidy, so its lead does not run until the month turns",
   AdmissionUndecided:

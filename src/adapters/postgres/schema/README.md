@@ -538,8 +538,10 @@ it paid for was lost. It has no unfinished work: an unredeemed token expires,
 and the minter's next mint removes it.
 
 `chat_host` — a member's chat host in one tenant: its principal, the issuer
-client it is removed by, when it registered and last polled, and the runner
-package and version its newest poll named. Written by the API role, which
+client it is removed by, when it registered and last polled, the runner
+package and version its newest poll named, and the credentials that poll
+named, per agent, which a poll naming none clears and its session claims read.
+Written by the API role, which
 registers and removes it whole, and by the pool plane, which stamps its polls
 and what they name; the pool plane and the boundary owner read it. Its key and
 identity are `(tenant, owner)`, so a member holds one in a tenant, and it names
@@ -661,7 +663,8 @@ where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call, reads it through that, as
 `agent_account_standing` does for the API.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
-`agent_account_pause`'s columns for the credentials a runner or a pool named:
+`agent_account_pause`'s columns for the credentials a runner, a pool or a chat
+host named:
 paused only while every one of them is, until the earliest of those ends, a
 name that never reported being free. `agent_account_named_credential_pauses`
 answers the pool plane each of them that is paused, and until when.
@@ -669,6 +672,10 @@ answers the pool plane each of them that is paused, and until when.
 for the API, `agent_account_pause` of the agent a limited task spent, and
 `agent_account_named_pause` of the credentials each runner of that account
 names, so the task is free where either would let that runner's claim through.
+`agent_account_session_paused`, which no role may call, answers the session
+claims of a pool and a chat host, and `lead_runner_standing`, whether a session
+waits on its account: `agent_account_named_pause` of the Claude credentials the
+caller's runner named, and `agent_account_pause` where it named none.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived

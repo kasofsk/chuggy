@@ -95,8 +95,9 @@ export function sessionRunnersServing(
 
 /**
  * Whether a live runner of the project could take its lead now: `Paused`
- * where every live one's owner has their Claude account paused, and `Offline`
- * where none is live.
+ * where every live one is paused for its owner's Claude account, on every
+ * credential it named or, where it named none, on the whole agent, and
+ * `Offline` where none is live.
  */
 export const leadRunnerStandings = ["Live", "Paused", "Offline"] as const;
 export type LeadRunnerStanding = (typeof leadRunnerStandings)[number];
