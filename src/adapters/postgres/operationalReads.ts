@@ -1,7 +1,10 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { agentPauseReasons } from "../../contract/rosters.ts";
+import {
+  agentPauseReasons,
+  type PersonalRunnerWait,
+} from "../../contract/rosters.ts";
 import type { AgentAccountPause } from "../../interpreter/agentAccount.ts";
 import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
@@ -52,6 +55,8 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Principal } from "../../interpreter/principal.ts";
 import { asWorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
+import { workerPoolMemoryMibDefault } from "../../interpreter/workerPool.ts";
 import {
   asAttemptId,
   asClusterId,
@@ -496,62 +501,158 @@ async function executionPage(
   partition: Partition,
   query: ExecutionListQuery,
   reader: Principal,
+  memoryMibDefault: number,
 ): Promise<ExecutionPage> {
   const rows = await executionRows(pool, partition, query, reader);
   const summaries = rows.slice(0, query.limit).map(executionSummary);
   const next = rows.length > query.limit ? summaries.at(-1) : undefined;
   return {
-    executions: await executionPageAnswered(pool, partition, reader, summaries),
+    executions: await executionPageAnswered(
+      pool,
+      partition,
+      reader,
+      summaries,
+      memoryMibDefault,
+    ),
     ...(next === undefined
       ? {}
       : { nextAfter: { ticket: next.ticket, task: next.task } }),
   };
 }
 
-interface ExecutionPausedRow {
+interface ExecutionRunnerRow {
   readonly execution: string;
+  readonly owner_fallback: string;
+  readonly live: boolean | null;
+  readonly offered: boolean | null;
   readonly paused_until: string | null;
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
 }
 
+/** What one execution waits on of its owner's runners, and the pause holding them where one holds every one. */
+interface ExecutionRunnerWait {
+  readonly wait: PersonalRunnerWait;
+  readonly paused?: AgentAccountPause;
+}
+
 /**
- * The pause the reader's own account holds on the agent each of `executions`
- * the reader owns waits to spend, by execution, for those whose attempt waits
- * unclaimed and whose agent is paused. Another's execution reads none.
+ * Each of `executions` the reader owns whose attempt waits unclaimed, beside
+ * every runner of theirs a pool's claim of it defers to under `Strict` (one
+ * listing its project, matching its requirement and fitting its memory, sized
+ * at `memoryMibDefault` where it names none), with whether that runner polled
+ * for executions within the deferral's window, whether it is offered the
+ * attempt's agent, and its pause by the credentials it named. This fourth
+ * copy of the claim's predicate is held to the claim's answers in
+ * `test/postgres/workerPoolClaim.test.ts`.
  */
-async function executionsPaused(
+async function executionsRunnerRows(
   pool: pg.Pool,
   partition: Partition,
   reader: Principal,
   executions: readonly string[],
-): Promise<ReadonlyMap<string, AgentAccountPause>> {
-  if (executions.length === 0) return new Map();
-  const found = await pool.query<ExecutionPausedRow>(
-    sql`SELECT a.execution,
-               to_char(h.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
-               h.reasons,h.admitted_by_press
+  memoryMibDefault: number,
+): Promise<readonly ExecutionRunnerRow[]> {
+  if (executions.length === 0) return [];
+  const found = await pool.query<ExecutionRunnerRow>(
+    sql`SELECT e.execution,e.owner_fallback,
+               r.executions_polled_at
+                 > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
+               worker_pool_agent_offered(a.agent,r.capabilities,r.agents_advertised)::boolean AS offered,
+               to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+               held.reasons,held.admitted_by_press
           FROM execution e
           JOIN execution_attempt a
             ON a.tenant=e.tenant AND a.project=e.project AND a.execution=e.execution
-         CROSS JOIN LATERAL agent_account_pause(e.owner,a.agent) h
+          JOIN personal_runner_project l
+            ON l.tenant=e.tenant AND l.owner=e.owner AND l.project=e.project
+          JOIN personal_runner r ON r.tenant=l.tenant AND r.owner=l.owner
+         CROSS JOIN LATERAL (SELECT h.paused_until,h.reasons,h.admitted_by_press FROM agent_account_pause(r.owner,a.agent) h
+             WHERE r.credentials_named->a.agent IS NULL
+           UNION ALL SELECT h.paused_until,h.reasons,h.admitted_by_press FROM agent_account_named_pause(r.owner,a.agent,
+             ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->a.agent))) h
+             WHERE r.credentials_named->a.agent IS NOT NULL) held
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution=ANY(${[...executions]}::text[]) AND e.owner=${reader}
-           AND a.state='Placing' AND a.claimed_at IS NULL
-           AND h.paused_until IS NOT NULL`,
+           AND a.state='Placing' AND a.pool IS NULL AND a.invoked
+           AND e.placement='Pool' AND e.status='Launching'
+           AND e.owner_fallback IS NOT NULL
+           AND a.recovery_epoch=(SELECT p.epoch FROM recovery_epoch p ORDER BY p.ordinal DESC LIMIT 1)
+           AND EXISTS(SELECT 1 FROM project p
+             WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active')
+           AND worker_pool_inventory_matches(e.requirement_value,r.capabilities)
+           AND (r.memory_ceiling_mib IS NULL
+                OR COALESCE(e.memory_mib,${memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+         ORDER BY e.execution,r.client_id`,
   );
-  return new Map(
-    found.rows.map((row) => [
-      row.execution,
-      {
-        until: projectRowInstant(row.paused_until, "pause end"),
-        reasons: (row.reasons ?? []).map((reason) =>
-          known(reason, agentPauseReasons, "pause reason"),
-        ),
-        pressed: row.admitted_by_press === true,
-      },
-    ]),
+  return found.rows;
+}
+
+/** A runner's pause as its function answered it, or nothing where it is free. */
+function executionRunnerPause(
+  row: ExecutionRunnerRow,
+): AgentAccountPause | undefined {
+  if (row.paused_until === null) return undefined;
+  return {
+    until: projectRowInstant(row.paused_until, "pause end"),
+    reasons: (row.reasons ?? []).map((reason) =>
+      known(reason, agentPauseReasons, "pause reason"),
+    ),
+    pressed: row.admitted_by_press === true,
+  };
+}
+
+/**
+ * What an execution waits on of the runners `rows` names: a live one offered
+ * its agent, and the pause ending first where every such one is held; or else
+ * under `Strict` an offline one offered it, or runners none of which is.
+ */
+function executionRunnerWaitOf(
+  rows: readonly ExecutionRunnerRow[],
+): ExecutionRunnerWait | undefined {
+  const [first] = rows;
+  if (first === undefined) return undefined;
+  const live = rows.filter((row) => row.live === true && row.offered === true);
+  if (live.length > 0) {
+    const pauses = live.map(executionRunnerPause);
+    const held = pauses.filter((pause) => pause !== undefined);
+    const paused =
+      held.length === pauses.length
+        ? held.toSorted((one, other) => one.until.localeCompare(other.until))[0]
+        : undefined;
+    return { wait: "Live", ...(paused === undefined ? {} : { paused }) };
+  }
+  if (asWorkerPoolOwnerFallback(first.owner_fallback) !== "Strict")
+    return undefined;
+  return {
+    wait: rows.some((row) => row.offered === true) ? "Offline" : "Unable",
+  };
+}
+
+/** What each of `executions` the reader owns waits on of their own runners, by execution, for those it waits on any. */
+async function executionsRunnerWaits(
+  pool: pg.Pool,
+  partition: Partition,
+  reader: Principal,
+  executions: readonly string[],
+  memoryMibDefault: number,
+): Promise<ReadonlyMap<string, ExecutionRunnerWait>> {
+  const rows = await executionsRunnerRows(
+    pool,
+    partition,
+    reader,
+    executions,
+    memoryMibDefault,
   );
+  const waits = new Map<string, ExecutionRunnerWait>();
+  for (const [execution, runners] of Map.groupBy(
+    rows,
+    (row) => row.execution,
+  )) {
+    const wait = executionRunnerWaitOf(runners);
+    if (wait !== undefined) waits.set(execution, wait);
+  }
+  return waits;
 }
 
 interface ExecutionTakenRow {
@@ -638,12 +739,13 @@ async function executionsCarried(
   );
 }
 
-/** A page's summaries with their workers labelled, their runs totalled, when each was taken, the reader's own pause on those waiting, and the run each carried one was carried from. */
+/** A page's summaries with their workers labelled, their runs totalled, when each was taken, what those of the reader's waiting wait on of their runners, and the run each carried one was carried from. */
 async function executionPageAnswered(
   pool: pg.Pool,
   partition: Partition,
   reader: Principal,
   summaries: readonly ExecutionSummary[],
+  memoryMibDefault: number,
 ): Promise<readonly ExecutionSummary[]> {
   const executions = summaries.map((summary) => summary.execution);
   const workers = await postgresWorkerCatalog(
@@ -652,7 +754,13 @@ async function executionPageAnswered(
   );
   const totals = await postgresExecutionRunTotals(pool, partition, executions);
   const taken = await executionsTaken(pool, partition, executions);
-  const paused = await executionsPaused(pool, partition, reader, executions);
+  const waits = await executionsRunnerWaits(
+    pool,
+    partition,
+    reader,
+    executions,
+    memoryMibDefault,
+  );
   const carried = await executionsCarried(pool, partition, executions);
   return summaries.map((summary) => {
     const answered = executionSummaryTotalled(
@@ -660,12 +768,13 @@ async function executionPageAnswered(
       totals,
     );
     const takenAt = taken.get(summary.execution);
-    const pause = paused.get(summary.execution);
+    const wait = waits.get(summary.execution);
     const carriedFrom = carried.get(summary.execution);
     return {
       ...answered,
       ...(takenAt === undefined ? {} : { takenAt }),
-      ...(pause === undefined ? {} : { paused: pause }),
+      ...(wait === undefined ? {} : { personalRunnerWait: wait.wait }),
+      ...(wait?.paused === undefined ? {} : { paused: wait.paused }),
       ...(carriedFrom === undefined ? {} : { carriedFrom }),
     };
   });
@@ -699,6 +808,7 @@ async function latestExecutionPage(
   partition: Partition,
   query: LatestExecutionListQuery,
   reader: Principal,
+  memoryMibDefault: number,
 ): Promise<LatestExecutionPage> {
   const positions = await latestExecutionPositions(pool, partition, query);
   const page = positions.slice(0, query.limit);
@@ -715,7 +825,13 @@ async function latestExecutionPage(
         );
   const summaries = rows.map(executionSummary).toReversed();
   return {
-    executions: await executionPageAnswered(pool, partition, reader, summaries),
+    executions: await executionPageAnswered(
+      pool,
+      partition,
+      reader,
+      summaries,
+      memoryMibDefault,
+    ),
     ...(next === undefined ? {} : { nextAfter: next.ticket }),
   };
 }
@@ -921,10 +1037,15 @@ async function executionSummaryResource(
   partition: Partition,
   reader: Principal,
   row: ExecutionViewRow,
+  memoryMibDefault: number,
 ): Promise<ExecutionSummary> {
-  const [summary] = await executionPageAnswered(pool, partition, reader, [
-    executionSummary(row),
-  ]);
+  const [summary] = await executionPageAnswered(
+    pool,
+    partition,
+    reader,
+    [executionSummary(row)],
+    memoryMibDefault,
+  );
   if (summary === undefined)
     throw new Error("operational read: execution summary is absent");
   return summary;
@@ -936,6 +1057,7 @@ async function executionResource(
   partition: Partition,
   execution: ExecutionId,
   reader: Principal,
+  memoryMibDefault: number,
 ): Promise<ExecutionResource | undefined> {
   const row = await oneExecution(pool, partition, execution, reader);
   if (row === undefined) return undefined;
@@ -951,13 +1073,23 @@ async function executionResource(
   if (row.result_manifest !== null && result === undefined)
     throw new Error("operational read: execution result is absent");
   return {
-    ...(await executionSummaryResource(pool, partition, reader, row)),
+    ...(await executionSummaryResource(
+      pool,
+      partition,
+      reader,
+      row,
+      memoryMibDefault,
+    )),
     attempts: await attempts(pool, partition, execution),
     ...(result === undefined ? {} : { result }),
   } satisfies ExecutionResource;
 }
 
-export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
+/** The reads over the API's pool, an execution naming no memory sized at `memoryMibDefault` as the pool plane sizes it. */
+export function postgresOperationalReads(
+  pool: pg.Pool,
+  memoryMibDefault = workerPoolMemoryMibDefault,
+): OperationalReadStore {
   return {
     status: async (partition) => {
       const found = await pool.query<StatusViewRow>(
@@ -995,18 +1127,24 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
       };
     },
     executions: (partition, query, reader) =>
-      executionPage(pool, partition, query, reader),
+      executionPage(pool, partition, query, reader, memoryMibDefault),
     latestExecutions: (partition, query, reader) =>
-      latestExecutionPage(pool, partition, query, reader),
+      latestExecutionPage(pool, partition, query, reader, memoryMibDefault),
     ticketLatestExecutions: (partition, tickets, reader) =>
       ticketLatestExecutions(pool, partition, tickets, reader),
     execution: (partition, execution, reader) =>
-      executionResource(pool, partition, execution, reader),
+      executionResource(pool, partition, execution, reader, memoryMibDefault),
     executionSummary: async (partition, execution, reader) => {
       const row = await oneExecution(pool, partition, execution, reader);
       return row === undefined
         ? undefined
-        : executionSummaryResource(pool, partition, reader, row);
+        : executionSummaryResource(
+            pool,
+            partition,
+            reader,
+            row,
+            memoryMibDefault,
+          );
     },
   };
 }

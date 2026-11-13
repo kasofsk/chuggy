@@ -162,6 +162,7 @@ import {
   outputContentEncodings,
   outputRenderers,
   ownerFallbacks,
+  personalRunnerWaits,
   personalRunnerPriorities,
   phaseRoster,
   placementRouteSources,
@@ -1004,9 +1005,15 @@ export const executionSummarySchema = z.object({
    */
   mine: z.boolean().optional(),
   /**
-   * The pause the reader's own account holds on the agent this execution's
-   * waiting attempt spends, present only on the reader's own execution while
-   * it waits unclaimed and that agent is paused.
+   * What the reader's own execution, its attempt waiting unclaimed, waits on of
+   * their runners, absent where nothing of theirs holds it. Optional for the
+   * deployment window.
+   */
+  personalRunnerWait: z.enum(personalRunnerWaits).optional(),
+  /**
+   * The pause that ends first of those holding every `Live` runner it waits
+   * on, each runner's by the credentials it named, present only where every
+   * one of them is held.
    */
   paused: agentPauseSchema.optional(),
   /**

@@ -2,8 +2,8 @@
  * What a member's own runners are drawn as, derived: the words for a project's
  * fallback, how a runner is told from another, what it is running and how
  * many wait in a project it serves, whether one more may be
- * registered, the projects they may be given, whether a run of the reader's is
- * waiting on them and on a pause of their own account, and what taking a
+ * registered, the projects they may be given, what the server says a run of
+ * the reader's waits on of them and the pause holding them, and what taking a
  * member's runners off came to.
  *
  * WHETHER A RUN IS THE READER'S IS THE SERVER'S ANSWER. Nothing here decodes a
@@ -26,6 +26,7 @@ import {
 import type {
   OwnerFallback,
   PersonalRunnerPriority,
+  PersonalRunnerWait,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
@@ -174,41 +175,31 @@ export function myRunnerAddable(
     .sort();
 }
 
-/** A run of the reader's held for their runners: one online and about to take it, or all offline while no other may. */
-export type RunnerWait = "Waiting" | "Offline";
+/** What a run of the reader's waits on of their runners, as the server answers it. */
+export type RunnerWait = PersonalRunnerWait;
 
 /**
- * Whether a run of the reader's, admitted but not begun, waits on their own
- * runners serving its project: under either fallback while any of them polls
- * for executions, which is the liveness a pool's claim defers to, and under
- * Strict while none does, since then no pool takes it either. A queued run
- * waits on capacity rather than on a runner.
+ * What a run of the reader's, admitted but not begun, waits on of their own
+ * runners, by the server's answer, which states the claims' terms. A queued
+ * run waits on capacity rather than on a runner.
  */
 export function runnerWait(
   execution: ExecutionSummary,
-  runner: PersonalRunnerResponse | undefined,
-  project: string,
 ): RunnerWait | undefined {
   if (execution.mine !== true || execution.ownerFallback === undefined)
     return undefined;
   if (execution.status === "Queued" || !executionStarting(execution))
     return undefined;
-  if (
-    runner === undefined ||
-    !runner.projects.some((each) => each.project === project)
-  )
-    return undefined;
-  if (runner.runners.some((each) => each.executionsLive)) return "Waiting";
-  return execution.ownerFallback === "Strict" ? "Offline" : undefined;
+  return execution.personalRunnerWait;
 }
 
-/** The pause the reader's own account holds on a run of theirs, said only
- * where the run waits on their own runners. */
+/** The pause the server answered holding every live runner of the reader's
+ * a run waits on, said only where it waits on live ones. */
 export function runnerWaitPause(
   execution: ExecutionSummary,
   wait: RunnerWait | undefined,
 ): AgentPause | undefined {
-  return wait === undefined ? undefined : execution.paused;
+  return wait === "Live" ? execution.paused : undefined;
 }
 
 /**
@@ -224,9 +215,11 @@ export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
 
 export function runnerWaitWord(wait: RunnerWait): Copy {
   switch (wait) {
-    case "Waiting":
+    case "Live":
       return { id: "runners-wait-waiting" };
     case "Offline":
       return { id: "runners-wait-offline" };
+    case "Unable":
+      return { id: "runners-wait-unable" };
   }
 }
