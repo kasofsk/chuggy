@@ -17,17 +17,22 @@
  * AN ALLOWLIST IS BOUNDED, so two additions racing under the lock cannot both
  * see room for one, and a project is added only while it is active.
  *
- * THE READ ANSWERS WHAT EACH RUNNER HOLDS AND WHAT WAITS FOR THEM. A runner
- * holds what its registration claimed and is still placing or running, which
- * is the slot its claim counts. What waits in a project is the personal
- * claim's own predicate in `./personalExecutions.ts`, asked for any of the
- * member's runners, with the room a poll names and the slots its runner holds
- * left out, since neither is a fact of the project. Its pause is asked per
- * runner, by the credentials each one's newest poll named, so a job one runner
- * could take on a free credential is counted waiting. That is a third copy of
- * the predicate, `./operationalReads.ts`'s answer of what an owner's run waits
- * on of their runners is a fourth, and `test/postgres/workerPoolClaim.test.ts`
- * holds each of them to the claim's answers.
+ * THE READ ANSWERS WHAT EACH RUNNER HOLDS, WHAT WAITS FOR THEM AND WHAT
+ * PAUSES THEM. A runner holds what its registration claimed and is still
+ * placing or running, which is the slot its claim counts. What waits in a
+ * project is the personal claim's own predicate in `./personalExecutions.ts`,
+ * asked for any of the member's runners, with the room a poll names and the
+ * slots its runner holds left out, since neither is a fact of the project. Its
+ * pause is asked per runner, by the credentials each one's newest poll named,
+ * so a job one runner could take on a free credential is counted waiting. That
+ * is a third copy of the predicate, `./operationalReads.ts`'s answer of what an
+ * owner's run waits on of their runners is a fourth, and
+ * `test/postgres/workerPoolClaim.test.ts` holds each of them to the claim's
+ * answers. What pauses them is a fifth copy of its offer and pause terms
+ * alone, asked per agent: paused where every runner offered the agent is, of
+ * those polling for executions where any is, as the fourth asks of a run's
+ * live runners, and `test/postgres/personalRunner.test.ts` holds it to the
+ * cases those terms decide.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -39,6 +44,7 @@ import {
   personalRunnerWaitingCountedMax,
 } from "../../contract/http.ts";
 import {
+  accountAgents,
   personalRunnerPriorities,
   type PersonalRunnerPriority,
 } from "../../contract/rosters.ts";
@@ -49,6 +55,7 @@ import {
   type PersonalRunnerHeldView,
   type PersonalRunnerKey,
   type PersonalRunnerOwnerView,
+  type PersonalRunnerPauseView,
   type PersonalRunnerRegistration,
   type PersonalRunnerRegistrationTokens,
   type PersonalRunnerRegistry,
@@ -69,7 +76,11 @@ import {
   type PersonalRunnerPlaneRegistry,
 } from "../../interpreter/workerPool.ts";
 import type { WorkerPoolTokenWritten } from "../../interpreter/workerPoolRegistrationToken.ts";
-import { executionIdentity } from "./operationalReads.ts";
+import {
+  executionIdentity,
+  executionRunnerPause,
+  executionRunnerPausedEvery,
+} from "./operationalReads.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import { workerPoolRunnerKept } from "./workerPool.ts";
@@ -328,6 +339,7 @@ async function personalRunnersRead(
   );
   return {
     runners,
+    pauses: await personalRunnersPaused(pool, key),
     projects: allowed.rows.map((row) => {
       const counted = waiting.get(row.project) ?? 0;
       return {
@@ -338,6 +350,50 @@ async function personalRunnersRead(
       };
     }),
   };
+}
+
+/**
+ * Each agent of the roster, in roster order, that the member's runners offered
+ * it are all paused for, with the pause of theirs that ends first. A runner's
+ * pause is the claim's own, by the credentials its newest poll named that
+ * agent; the runners asked are those polling for executions now where any
+ * offered it is, and every one offered it where none is.
+ */
+async function personalRunnersPaused(
+  pool: pg.Pool,
+  key: PersonalRunnerKey,
+): Promise<readonly PersonalRunnerPauseView[]> {
+  const found = await pool.query<{
+    agent: string | null;
+    live: boolean | null;
+    paused_until: string | null;
+    reasons: string[] | null;
+    admitted_by_press: boolean | null;
+  }>(
+    sql`SELECT g.agent,
+          r.executions_polled_at
+            > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
+          to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+          held.reasons,held.admitted_by_press
+        FROM personal_runner r
+        CROSS JOIN unnest(${[...accountAgents]}::text[]) g(agent)
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.reasons,h.admitted_by_press FROM agent_account_pause(r.owner,g.agent) h
+            WHERE r.credentials_named->g.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.reasons,h.admitted_by_press FROM agent_account_named_pause(r.owner,g.agent,
+            ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->g.agent))) h
+            WHERE r.credentials_named->g.agent IS NOT NULL) held
+        WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}
+          AND worker_pool_agent_offered(g.agent,r.capabilities,r.agents_advertised)
+        ORDER BY g.agent,r.client_id
+        LIMIT ${personalRunnersMax * accountAgents.length}`,
+  );
+  return accountAgents.flatMap((agent) => {
+    const offered = found.rows.filter((row) => row.agent === agent);
+    const live = offered.filter((row) => row.live === true);
+    const asked = live.length > 0 ? live : offered;
+    const pause = executionRunnerPausedEvery(asked.map(executionRunnerPause));
+    return pause === undefined ? [] : [{ agent, pause }];
+  });
 }
 
 /**

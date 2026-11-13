@@ -440,9 +440,10 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
- * Until when an account's agent is paused and each reason holding it, which is
- * what `agent_account_pause` answers at the read; `pressed` is whether a press
- * of the account's owner still lets one claim through the limit.
+ * Until when an agent is paused and each reason holding it, as
+ * `agent_account_pause` answers it of an account, or `agent_account_named_pause`
+ * of the credentials a runner named; `pressed` is whether a press of the
+ * account's owner still lets one claim through the limit.
  */
 export const agentPauseSchema = z.strictObject({
   until: instantSchema,
@@ -2967,6 +2968,21 @@ export const personalRunnerResponseSchema = z.strictObject({
       }),
     )
     .max(personalRunnerProjectsMax),
+  /**
+   * Each agent, in roster order, that every runner offered it is paused for by
+   * the credentials it named, of those polling for executions where any is,
+   * with the pause that ends first. Optional for the deployment window, and
+   * absent reads as none.
+   */
+  pauses: z
+    .array(
+      z.strictObject({
+        agent: z.enum(accountAgents),
+        pause: agentPauseSchema,
+      }),
+    )
+    .max(accountAgents.length)
+    .optional(),
 });
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema

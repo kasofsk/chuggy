@@ -1474,6 +1474,10 @@ export function personalRunnerResponse(
             waitingTruncated,
           }),
         ),
+        pauses: result.value.pauses.map(({ agent, pause }) => ({
+          agent,
+          pause: { ...pause, reasons: [...pause.reasons] },
+        })),
       } satisfies PersonalRunnerResponse);
     default:
       return assertNever(result);

@@ -1,8 +1,7 @@
 /**
  * The reader's own agent accounts, derived: a pause in words and whether a
- * press is offered, which agents a pause holds, whether a reading still counts,
- * a reading's share, and a draft of one agent's settings held to the bounds
- * the wire takes.
+ * press is offered, whether a reading still counts, a reading's share, and a
+ * draft of one agent's settings held to the bounds the wire takes.
  */
 
 import { expect, test } from "vitest";
@@ -19,7 +18,6 @@ import {
   agentAccountPressRefusal,
   agentAccountReading,
   agentAccountReadingStale,
-  agentAccountsPaused,
   agentPauseParts,
   agentPausePressable,
   agentPauseReasonLabel,
@@ -72,21 +70,6 @@ test("a press is offered only where a provider's limit holds the agent and no pr
     agentPausePressable({ until, reasons: ["five_hour"], pressed: false }),
   ).toBe(false);
   expect(agentPausePressable(undefined)).toBe(false);
-});
-
-test("only the agents a pause holds are said, in roster order", () => {
-  const pause = {
-    until: "2026-10-03T14:00:00Z",
-    reasons: ["limit" as const],
-    pressed: false,
-  };
-  const codex: AgentAccount = { ...claude, agent: "Codex", pause };
-  expect(
-    agentAccountsPaused({ accounts: [claude, codex] }).map(
-      (account) => account.agent,
-    ),
-  ).toStrictEqual(["Codex"]);
-  expect(agentAccountsPaused({ accounts: [claude, claude] })).toStrictEqual([]);
 });
 
 /** The pause rule counts a reading only while its reset is ahead. */

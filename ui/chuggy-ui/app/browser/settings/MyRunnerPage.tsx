@@ -5,8 +5,8 @@
  * each at the priority the reader gives it and with how many attempts wait
  * there; the command that registers one
  * more, where the workspace lets them and they hold fewer than a member may;
- * their chat host; and each agent of their own account a pause holds, which
- * none of their runners takes work for until it ends.
+ * their chat host; and each agent their runners are paused for, which none of
+ * them takes work for until the pause ends.
  *
  * A PROJECT IS OFFERED ONLY WHERE THE READER READS IT. The list it is chosen
  * from is the reader's own inventory narrowed to this workspace, which is the
@@ -33,7 +33,6 @@ import type {
 import { personalRunnerPriorities } from "../../../../../src/contract/rosters.ts";
 import type { PersonalRunnerPriority } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-import { agentAccountsPaused } from "../../core/agentAccounts.ts";
 import { accountAgentLabel } from "../../core/codeLabels.ts";
 import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import {
@@ -77,7 +76,6 @@ import {
 import { runnerStandingTone } from "../../core/tones.ts";
 import { AgentPause } from "../AgentPause.tsx";
 import { LinePart } from "../ui/LinePart.tsx";
-import { useAgentAccounts } from "../agentAccounts.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
@@ -778,13 +776,13 @@ function MyRunnerUsageLink(props: { readonly tenant: string }): ReactNode {
   );
 }
 
-/** Each agent of the reader's own account a pause holds, and nothing where none does. */
+/** Each agent the reader's runners are paused for, as the read of them answers it, and nothing where none is. */
 function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
   const text = useCopyText();
-  const accounts = useAgentAccounts();
+  const runner = usePersonalRunner(props.tenant);
   const nowMs = useNowMs();
-  if (accounts.state !== "Ready") return null;
-  const paused = agentAccountsPaused(accounts.value);
+  if (runner.state !== "Ready") return null;
+  const paused = runner.value.pauses ?? [];
   if (paused.length === 0) return null;
   return (
     <div
@@ -792,12 +790,12 @@ function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
       aria-label={text({ id: "runners-personal-paused" })}
       role="group"
     >
-      {paused.map((account) => (
+      {paused.map(({ agent, pause }) => (
         <AgentPause
-          key={account.agent}
-          pause={account.pause}
+          key={agent}
+          pause={pause}
           nowMs={nowMs}
-          named={text(accountAgentLabel(account.agent))}
+          named={text(accountAgentLabel(agent))}
         >
           <LinePart>
             <MyRunnerUsageLink tenant={props.tenant} />
