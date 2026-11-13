@@ -1,8 +1,7 @@
 /**
  * An epic's graph: its tickets and the edges between those shown, the chain a
  * ticket traces, which ticket is selected, and what a ticket waits on and
- * what waits on it. The sizes and gaps are the ones `epicGraphLayout.ts` lays
- * the Overview's small graph out by.
+ * what waits on it.
  */
 
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
@@ -10,57 +9,10 @@ import type { TicketStateStanding } from "./ticketHeader.ts";
 
 type EpicGraphNode = EpicGraphResponse["nodes"][number];
 
-export const epicGraphMemberWidth = 216;
-export const epicGraphMemberHeight = 74;
-export const epicGraphOutsideWidth = 168;
-export const epicGraphOutsideHeight = 52;
-/** Between two cards of one rank. */
-export const epicGraphNodeGap = 22;
-/** Between one rank and the next. */
-export const epicGraphRankGap = 34;
-/** Around the graph, so a card's focus ring is not cut at its edge. */
-export const epicGraphMargin = 6;
-
 /** A ticket of the graph and the state its card is drawn in. */
 export interface EpicGraphTicket {
   readonly node: EpicGraphNode;
   readonly standing: TicketStateStanding;
-}
-
-/** One card as it is placed, by its top left corner. */
-export interface EpicGraphCard extends EpicGraphTicket {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-export interface EpicGraphPoint {
-  readonly x: number;
-  readonly y: number;
-}
-
-/** An edge from a dependency to its dependent, through the points the layout
- * routed it by. */
-export interface EpicGraphEdge {
-  readonly from: number;
-  readonly to: number;
-  /** Either end is outside the epic, which draws it dashed. */
-  readonly outside: boolean;
-  /** The dependency is Done, so what it held is met. */
-  readonly met: boolean;
-  readonly points: readonly EpicGraphPoint[];
-}
-
-export interface EpicGraphDrawn {
-  /** Every ticket the graph names, drawn or left out. */
-  readonly tickets: ReadonlyMap<number, EpicGraphTicket>;
-  readonly cards: readonly EpicGraphCard[];
-  readonly edges: readonly EpicGraphEdge[];
-  /** The members with no edge either way, lowest number first. */
-  readonly unconnected: readonly EpicGraphTicket[];
-  readonly width: number;
-  readonly height: number;
 }
 
 /** The key an edge between two tickets is known by. */
