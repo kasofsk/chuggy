@@ -364,7 +364,9 @@ export default tseslint.config(
                     targets: [
                       {
                         wrapper: { regex: "(client|pool)\\.query" },
-                        transform: [["(?<=: )null \\| unknown(?=;| })", "unknown"]],
+                        transform: [
+                          ["(?<=: )null \\| unknown(?=;| })", "unknown"],
+                        ],
                       },
                     ],
                     overrides: { types: { json: "unknown", jsonb: "unknown" } },
