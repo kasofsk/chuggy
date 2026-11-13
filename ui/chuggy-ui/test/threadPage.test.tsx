@@ -47,6 +47,7 @@ import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type { ViewportFrame } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { contextSessionBody } from "./contextFixture.ts";
+import { chatPaneHistoryChosen, chatPaneMenuChosen } from "./chatPaneMenu.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -317,31 +318,14 @@ test("Open goes to the thread's page, and back draws the pane holding what it he
     `/${threadPartition.tenant}/${threadPartition.project}`,
   );
   expect(paneHolds()).toBe("mine");
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const theirs = await screen.findByRole("menuitemradio", { name: /^theirs,/ });
-  await turned(() => {
-    fireEvent.click(theirs);
-  });
-  await settled();
+  await chatPaneHistoryChosen(/^theirs,/);
   expect(paneHolds()).toBe("theirs");
-  fireEvent.keyDown(
-    within(chatDrawn() ?? document.body).getByRole("button", {
-      name: "Chat actions",
-    }),
-    { key: "ArrowDown" },
-  );
-  const menu = await screen.findByRole("menu");
-  await turned(() => {
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
-  });
-  await settled();
+  await chatPaneMenuChosen("Open");
   expect(router.state.location.pathname).toBe(threadPath(threadOtherSession));
   expect(chatDrawn()).toBeNull();
   expect(
-    screen.getByRole("heading", { level: 1, name: "theirs" }),
-  ).toBeDefined();
+    screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent),
+  ).toStrictEqual(["theirs"]);
   await turned(() => {
     router.history.back();
   });

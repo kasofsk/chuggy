@@ -37,7 +37,7 @@ import { instantFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { commitLabel } from "../../core/labels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import { panelQueryState, usePanelQueryOptions } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
@@ -333,7 +333,7 @@ export function CatalogRepositories(props: {
           }))}
           onChoose={(chosen) => {
             void navigate({
-              to: navRoutes.catalog,
+              to: settingsRoutes.project.catalog,
               params: props.partition,
               search: { repository: chosen },
             });

@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { EscalationStep } from "../../core/codeLabels.ts";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import type {
   NeedsYouRun,
   ReasonAttempt,
@@ -46,7 +46,9 @@ function NeedsYouStep(props: {
     <span className="ticket-card-where">
       <Link
         to={
-          props.step === "Runners" ? navRoutes.runners : navRoutes.repositories
+          props.step === "Runners"
+            ? settingsRoutes.project.runners
+            : settingsRoutes.project.repositories
         }
         params={props.partition}
       >

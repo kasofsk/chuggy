@@ -5,8 +5,8 @@
  *
  * A workspace's pages and the site's are the same routes in both places, so a
  * page reads its workspace from whichever address was matched. Each place's
- * bare address replaces itself with its first page: the settings have no page
- * of their own.
+ * bare address is the frame's to draw, which `SettingsLayout.tsx` says; the
+ * workspace's bare address in a project replaces itself with its first page.
  *
  * EVERY ROUTE IS MADE BEFORE IT IS HUNG. One made inside the list
  * `addChildren` is given loses its path's type and takes every address the
@@ -14,12 +14,24 @@
  * in it checked against a route.
  */
 
-import { createRoute, redirect, useParams } from "@tanstack/react-router";
+import {
+  createRoute,
+  redirect,
+  useParams,
+  useSearch,
+} from "@tanstack/react-router";
 import type { AnyRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { catalogQueryOf } from "../../core/catalogConfigurations.ts";
+import type { CatalogQuery } from "../../core/catalogConfigurations.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
+import { CatalogPage } from "../catalog/CatalogPage.tsx";
+import { LeadPage } from "../LeadPage.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
+import { RepositoriesPage } from "../RepositoriesPage.tsx";
+import { RepositoryPage } from "../repositories/RepositoryPage.tsx";
+import { RunnersPage } from "../RunnersPage.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
@@ -32,10 +44,17 @@ import { TenantPeoplePage } from "./TenantPeoplePage.tsx";
 import { TenantPermissionsPage } from "./TenantPermissionsPage.tsx";
 import { UsageSettingsPage } from "./UsageSettingsPage.tsx";
 
+function SettingsCatalog(): ReactNode {
+  return (
+    <CatalogPage query={useSearch({ from: settingsRoutes.project.catalog })} />
+  );
+}
+
 function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
   const getParentRoute = (): TParent => parent;
   return [
     createRoute({ getParentRoute, path: "/lead", component: LeadSettingsPage }),
+    createRoute({ getParentRoute, path: "/lead-session", component: LeadPage }),
     createRoute({
       getParentRoute,
       path: "/placement",
@@ -45,6 +64,27 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/permissions",
       component: ProjectPermissionsPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/repositories",
+      component: RepositoriesPage,
+    }),
+    /** One binding's own page. The repository is an address, which the
+     * router encodes into the segment and decodes back out of it. */
+    createRoute({
+      getParentRoute,
+      path: "/repositories/$repository",
+      component: RepositoryPage,
+    }),
+    createRoute({ getParentRoute, path: "/runners", component: RunnersPage }),
+    createRoute({
+      getParentRoute,
+      path: "/catalog",
+      component: SettingsCatalog,
+      validateSearch: (
+        search: Readonly<Record<string, unknown>>,
+      ): CatalogQuery => catalogQueryOf(search),
     }),
   ] as const;
 }
@@ -120,18 +160,7 @@ export function projectSettingsRoutes<TParent extends AnyRoute>(
     component: ProjectSettings,
   });
   const getParentRoute = (): typeof settings => settings;
-  const index = createRoute({
-    getParentRoute,
-    path: "/",
-    beforeLoad: ({ params }) => {
-      redirect({
-        to: settingsRoutes.project.lead,
-        params,
-        replace: true,
-        throw: true,
-      });
-    },
-  });
+  const index = createRoute({ getParentRoute, path: "/" });
   const workspace = createRoute({ getParentRoute, path: "/workspace" });
   const workspaceIndex = createRoute({
     getParentRoute: (): typeof workspace => workspace,
@@ -174,14 +203,6 @@ export function workspaceSettingsRoutes<TParent extends AnyRoute>(
   const index = createRoute({
     getParentRoute: (): typeof settings => settings,
     path: "/",
-    beforeLoad: ({ params }) => {
-      redirect({
-        to: settingsRoutes.workspace.people,
-        params: { tenant: params.tenant },
-        replace: true,
-        throw: true,
-      });
-    },
   });
   return settings.addChildren([
     index,

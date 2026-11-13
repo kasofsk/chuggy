@@ -25,18 +25,6 @@ const navIconPaths: Readonly<Record<NavEntryId, ReactNode>> = {
       <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
     </>
   ),
-  lead: (
-    <>
-      <rect width="16" height="12" x="4" y="8" rx="2" />
-      <path d="M12 8V4H8M2 14h2M20 14h2M15 13v2M9 13v2" />
-    </>
-  ),
-  catalog: (
-    <>
-      <rect width="8" height="18" x="3" y="3" rx="1" />
-      <path d="M7 3v18M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z" />
-    </>
-  ),
   settings: (
     <path d="M10 5H3M12 19H3M14 3v4M16 17v4M21 12h-9M21 19h-5M21 5h-7M8 10v4M8 12H3" />
   ),

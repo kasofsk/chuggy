@@ -18,6 +18,8 @@ import type {
 } from "../../../../src/contract/consolePage.ts";
 import type { Copy } from "./copy.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
+import { settingsGroupLabels, settingsSection } from "./settingsNav.ts";
+import type { SettingsSectionId } from "./settingsNav.ts";
 import { ticketCreationQueryOf } from "./ticketCreationQuery.ts";
 
 /** The route a router matched, as plain data: its identity, the parameters
@@ -53,10 +55,10 @@ function consolePageTicketNew(match: ConsolePageMatch): unknown {
 const consolePagePlainPaths = {
   Tickets: "",
   Inbox: "inbox",
-  Lead: "lead",
-  Catalog: "catalog",
-  Repositories: "repositories",
-  Runners: "runners",
+  Lead: "settings/lead-session",
+  Catalog: "settings/catalog",
+  Repositories: "settings/repositories",
+  Runners: "settings/runners",
   Epics: "epics",
 } as const satisfies Readonly<Record<string, string>>;
 
@@ -116,7 +118,7 @@ const consolePageRoutes: ReadonlyMap<
     ([page, path]) => [consolePageRouteId(path), () => ({ page })] as const,
   ),
   [
-    "/$tenant/$project/repositories/$repository",
+    "/$tenant/$project/settings/repositories/$repository",
     (match) => ({ page: "Repository", repository: match.params["repository"] }),
   ],
   ["/$tenant/$project/tickets/new", consolePageTicketNew],
@@ -171,7 +173,7 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Epic":
       return `epics/${String(page.epic)}`;
     case "Repository":
-      return `repositories/${encodeURIComponent(page.repository)}`;
+      return `settings/repositories/${encodeURIComponent(page.repository)}`;
     case "Ticket":
       return `tickets/${String(page.ticket)}`;
     case "TicketEdit":
@@ -212,48 +214,20 @@ export function consolePageOf(
   return parsed.success ? parsed.data : undefined;
 }
 
-/** The settings section's words, as the settings' side navigation draws its
- * level and its page. */
-const consolePageSectionWords: Readonly<
-  Record<ConsolePageSettingsSection, readonly [Copy, Copy]>
+/** Each section of the contract's, by the settings roster's section it is. */
+const consolePageSectionIds: Readonly<
+  Record<ConsolePageSettingsSection, SettingsSectionId>
 > = {
-  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-lead" }],
-  ProjectPlacement: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-placement" },
-  ],
-  ProjectPermissions: [
-    { id: "settings-nav-project" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspacePeople: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-people" },
-  ],
-  WorkspaceAccounts: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-accounts" },
-  ],
-  WorkspacePermissions: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-permissions" },
-  ],
-  WorkspaceRunners: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-personal-runners" },
-  ],
-  WorkspaceUsage: [
-    { id: "settings-nav-workspace" },
-    { id: "settings-nav-usage" },
-  ],
-  SiteWorkspaces: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-workspaces" },
-  ],
-  SitePermissions: [
-    { id: "settings-nav-site" },
-    { id: "settings-nav-permissions" },
-  ],
+  ProjectLead: "lead",
+  ProjectPlacement: "placement",
+  ProjectPermissions: "permissions",
+  WorkspacePeople: "people",
+  WorkspaceAccounts: "accounts",
+  WorkspacePermissions: "workspace-permissions",
+  WorkspaceRunners: "my-runner",
+  WorkspaceUsage: "usage",
+  SiteWorkspaces: "site-workspaces",
+  SitePermissions: "site-permissions",
 };
 
 const consolePageListWords: Readonly<
@@ -328,8 +302,14 @@ export function consolePageLabel(page: ConsolePage): Copy {
       };
     case "Settings": {
       if (page.section === undefined) return { id: "pages-settings" };
-      const [level, section] = consolePageSectionWords[page.section];
-      return { id: "pages-settings-section", args: { level, section } };
+      const section = settingsSection(consolePageSectionIds[page.section]);
+      return {
+        id: "pages-settings-section",
+        args: {
+          level: settingsGroupLabels[section.group],
+          section: section.label,
+        },
+      };
     }
   }
 }

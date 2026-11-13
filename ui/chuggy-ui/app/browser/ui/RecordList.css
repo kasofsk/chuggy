@@ -1,0 +1,209 @@
+/* RecordList: the rows joined into one column under the bar that heads them,
+   its bottom corners rounded, then "show more". A row is its head — the
+   title, then the meta line with its trailing slot — over its foot; the meta
+   line and the foot hold their height empty, so the rows are one height.
+   Where the list is wide the foot moves beside the head and the title keeps
+   to one line; on a phone the rows run edge to edge. The list's frame is the
+   container its layout is measured against. */
+
+@layer ui {
+  .record-list-frame {
+    container-type: inline-size;
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .record-list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* jscpd:ignore-start — the ticket list's row, lifted rule for rule so adopting this draws it unchanged */
+  .record-row {
+    --record-row-foot-height: calc(var(--space-6) + var(--space-2));
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: var(--space-1);
+    min-height: 0;
+    padding: var(--space-3);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-bottom: 0;
+  }
+
+  .record-list-item:first-child .record-row {
+    border-top: 0;
+  }
+
+  .record-list-item:last-child .record-row {
+    border-bottom: var(--hairline) solid var(--edge);
+    border-end-start-radius: var(--radius-3);
+    border-end-end-radius: var(--radius-3);
+  }
+
+  .record-row-head {
+    display: grid;
+    grid-template-rows: auto auto;
+    align-content: center;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .record-row-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    margin: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    color: var(--ink-1);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+  }
+
+  .record-row-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .record-row-title a:hover {
+    text-decoration: underline;
+  }
+
+  /* jscpd:ignore-end — the lifted row ends here */
+
+  /* As tall as a chip on every row, so a row whose line is empty is no
+     shorter than one whose line holds one. */
+  .record-row-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    min-height: calc(
+      var(--text-sm) * var(--leading-prose) + 2 * var(--space-1) + 2 *
+        var(--hairline)
+    );
+    overflow: hidden;
+  }
+
+  .record-row-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+
+  .record-row-meta > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .record-row-trailing {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 45%;
+    min-width: 0;
+    overflow-x: auto;
+    font-size: var(--text-sm);
+  }
+
+  .record-row-trailing > * {
+    flex: none;
+  }
+
+  .record-row-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-width: 0;
+    min-height: var(--record-row-foot-height);
+  }
+
+  /* A bone is one line of the type it stands in for, so a skeleton row is
+     the height of the row it is read into. */
+  .record-row[data-skeleton] .record-row-title {
+    display: block;
+  }
+
+  .record-row-bone {
+    display: block;
+    width: 60%;
+    height: 1lh;
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    animation: record-row-bone-pulse var(--duration-pulse) var(--ease-out)
+      infinite alternate;
+  }
+
+  .record-row-meta > .record-row-bone {
+    width: 40cqi;
+  }
+
+  @keyframes record-row-bone-pulse {
+    to {
+      opacity: 0.55;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .record-row-bone {
+      animation: none;
+    }
+  }
+
+  .record-list-more {
+    display: flex;
+    justify-content: center;
+    padding-top: var(--space-2);
+  }
+
+  @container (min-width: 53em) {
+    .record-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: minmax(0, 1fr);
+      gap: var(--space-5);
+      min-height: 0;
+    }
+
+    .record-row-title {
+      -webkit-line-clamp: 1;
+    }
+
+    .record-row-foot {
+      gap: var(--space-5);
+    }
+  }
+
+  @container (max-width: 40em) {
+    .record-list {
+      margin-inline: calc(-1 * var(--space-4));
+    }
+
+    .record-row {
+      border-inline: 0;
+      padding: var(--space-3) max(var(--space-3), env(safe-area-inset-right))
+        var(--space-3) max(var(--space-3), env(safe-area-inset-left));
+    }
+
+    .record-list-item:first-child .record-row,
+    .record-list-item:last-child .record-row {
+      border-radius: 0;
+    }
+
+    .record-row-foot {
+      gap: var(--space-2);
+    }
+  }
+}
