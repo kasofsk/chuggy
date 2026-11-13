@@ -69,10 +69,10 @@ test("the epic is drawn with its figures, its graph and its history", async () =
   });
   expect(screen.getAllByText("In progress").length).toBeGreaterThan(0);
   expect(screen.getByRole("progressbar", { name: "1 of 2 done" })).toBeTruthy();
-  const graphic = await screen.findByRole("group", {
+  const graphic = await screen.findByRole("list", {
     name: "Tickets of the epic and what they wait on",
   });
-  expect(graphic.querySelectorAll("path.epic-graph-edge")).toHaveLength(2);
+  expect(graphic.querySelectorAll(".epic-card-port")).toHaveLength(2);
   expect(
     graphic.querySelector("[data-outside] button")?.getAttribute("aria-label"),
   ).toMatch(/^#2 Schema: .+, outside the epic$/u);

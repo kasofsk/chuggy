@@ -1,14 +1,15 @@
 /**
- * An epic's graph laid out top to bottom by dagre: where each card stands,
- * and the points each edge is routed through. It is the only module of the
- * console that reaches dagre, and it reaches nothing of the console but
+ * An epic's graph laid out top to bottom by dagre for the Overview's small
+ * graph: where each card stands, and the points each edge is routed through.
+ * It is the only module of the console that reaches dagre, and it reaches nothing of the console but
  * `epicGraph.ts`, so the graph's lazily loaded chunk carries dagre and
  * nothing the page's own bundle does not already hold.
  *
- * A ticket outside the epic is a smaller card, and the reader may leave those
- * out, which lays the graph out again without them. A member with no edge
- * either way stands in a row under the graph rather than in it, so tickets
- * unrelated to the rest do not make one rank many cards wide.
+ * A ticket outside the epic is a smaller card, and may be left out, which
+ * lays the graph out again without it. A member with no edge either way is
+ * left out of the layout and named among the unconnected, which the Overview
+ * places in rows of its own, so tickets unrelated to the rest do not make one
+ * rank many cards wide.
  */
 
 import { Graph, layout } from "@dagrejs/dagre";
@@ -16,7 +17,7 @@ import type { EdgeLabel, GraphLabel, NodeLabel } from "@dagrejs/dagre";
 
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
 import {
-  epicGraphEdgeKey,
+  epicGraphEdgesShown,
   epicGraphMargin,
   epicGraphMemberHeight,
   epicGraphMemberWidth,
@@ -33,26 +34,6 @@ import type {
 } from "./epicGraph.ts";
 
 type EpicGraphNode = EpicGraphResponse["nodes"][number];
-
-/** The edges between tickets drawn, each once, none from a ticket to itself. */
-function epicGraphDrawnEdges(
-  graph: EpicGraphResponse,
-  drawn: ReadonlySet<number>,
-): readonly { readonly from: number; readonly to: number }[] {
-  const seen = new Set<string>();
-  return graph.edges.filter((edge) => {
-    const key = epicGraphEdgeKey(edge.from, edge.to);
-    if (
-      seen.has(key) ||
-      edge.from === edge.to ||
-      !drawn.has(edge.from) ||
-      !drawn.has(edge.to)
-    )
-      return false;
-    seen.add(key);
-    return true;
-  });
-}
 
 function epicGraphCardSize(node: EpicGraphNode): {
   readonly width: number;
@@ -76,7 +57,7 @@ export function epicGraphDrawn(
   const shown = [...tickets.values()]
     .filter((ticket) => outsideShown || ticket.node.member)
     .sort((left, right) => left.node.ticket - right.node.ticket);
-  const edges = epicGraphDrawnEdges(
+  const edges = epicGraphEdgesShown(
     graph,
     new Set(shown.map((ticket) => ticket.node.ticket)),
   );

@@ -1,6 +1,7 @@
-/* The epic page's Graph tab: the graph beside the selected ticket, its cards,
-   edges and key. A card outside the epic is dashed and its edges too, and a
-   blocked card is dashed, so what a card is does not rest on hue alone. */
+/* The epic page's Graph tab: the graph in layers beside the side panel, its
+   cards, their ports and the key. A card outside the epic is dashed and
+   tagged, and a blocked card is dashed, so what a card is does not rest on
+   hue alone. */
 
 @layer page {
   .epic-graph-section {
@@ -81,7 +82,7 @@
     color: var(--epic-tone);
   }
 
-  /* The bar over the graph: the key, the line on the arrows, the toggle. */
+  /* The bar over the graph: the key with its counts, and the toggles. */
   .epic-graph-bar {
     display: flex;
     flex-wrap: wrap;
@@ -108,97 +109,108 @@
     gap: var(--space-1);
   }
 
-  .epic-graph-arrows {
-    margin: 0 0 0 auto;
-    color: var(--ink-3);
+  .epic-graph-key-count {
+    color: var(--ink-1);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 
-  .epic-graph-outside {
-    flex-basis: 100%;
+  .epic-graph-toggles .epic-graph-key-count {
+    color: inherit;
   }
 
-  /* The graph scrolls sideways where it is wider than its least scale lets
-     it fit; the page scrolls down as any page does. */
-  .epic-graph-scroll {
-    overflow-x: auto;
-  }
-
-  .epic-graph-canvas {
-    display: block;
-    margin: var(--space-3) auto;
-  }
-
-  .epic-graph-edge {
-    fill: none;
-    stroke: var(--edge-strong);
-    stroke-width: 1.5;
-    transition: opacity var(--duration-1) var(--ease-out);
-  }
-
-  .epic-graph-edge[data-met] {
-    stroke: color-mix(in srgb, var(--tone-pass) 55%, var(--surface-1));
-  }
-
-  .epic-graph-edge[data-outside] {
-    stroke-dasharray: 4 3;
-  }
-
-  .epic-graph-edge[data-trace="lit"] {
-    stroke: var(--ink-1);
-    stroke-width: 2;
-  }
-
-  .epic-graph-edge[data-trace="dim"] {
-    opacity: 0.2;
-  }
-
-  .epic-graph-arrow {
-    fill: var(--edge-strong);
-  }
-
-  .epic-graph-arrow[data-kind="met"] {
-    fill: color-mix(in srgb, var(--tone-pass) 55%, var(--surface-1));
-  }
-
-  .epic-graph-arrow[data-kind="lit"] {
-    fill: var(--ink-1);
-  }
-
-  .epic-graph-unconnected {
+  .epic-graph-toggles {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-3);
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    margin-inline-start: auto;
+  }
+
+  /* Each layer a row: its gutter, then its cards wrapping in a centred flow. */
+  .epic-graph-layers {
+    display: grid;
+    gap: var(--space-5);
     margin: 0;
-    padding: var(--space-3);
-    border-top: var(--hairline) solid var(--edge);
+    padding: var(--space-4) var(--space-3);
     list-style: none;
   }
 
-  .epic-graph-unconnected-card {
-    display: block;
+  .epic-graph-layer {
+    display: grid;
+    grid-template-columns: var(--width-epic-graph-gutter) minmax(0, 1fr);
+    gap: var(--space-3);
   }
 
-  /* A card fills the box the layout gave it. */
+  .epic-graph-gutter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .epic-graph-layer-number {
+    color: var(--ink-1);
+    font-size: var(--text-md);
+  }
+
+  /* Its height is what the layer's cards leave it, never its own drawing's. */
+  .epic-graph-spine {
+    flex: 1 1 0;
+    width: var(--rail);
+    height: 0;
+    min-height: var(--space-5);
+    margin-top: var(--space-1);
+  }
+
+  .epic-graph-spine-track {
+    fill: var(--edge);
+  }
+
+  .epic-graph-spine-fill {
+    fill: var(--tone-pass);
+  }
+
+  .epic-graph-cards {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: flex-start;
+    gap: var(--space-4) var(--space-3);
+    margin: 0;
+    padding: var(--space-1) 0 0;
+    list-style: none;
+  }
+
+  .epic-graph-cards > li {
+    display: flex;
+    flex: 0 1 var(--width-epic-graph-card);
+    min-width: min(var(--width-epic-graph-card-least), 100%);
+  }
+
+  .epic-graph-cards[data-goal] > li {
+    flex: 1 1 100%;
+    max-width: var(--width-epic-graph-goal);
+  }
+
   .epic-card {
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-    padding: var(--space-1);
-    transition: opacity var(--duration-1) var(--ease-out);
-  }
-
-  .epic-card[data-trace="dim"] {
-    opacity: 0.35;
+    display: flex;
+    flex: 1;
+    min-width: 0;
   }
 
   .epic-card-button {
+    position: relative;
     display: flex;
+    flex: 1;
     flex-direction: column;
     gap: var(--space-1);
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
-    padding: var(--space-1) var(--space-3);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
     border: var(--hairline) solid var(--edge-strong);
     border-radius: var(--radius-2);
     background: var(--surface-1);
@@ -208,6 +220,8 @@
     cursor: pointer;
     transition:
       border-color var(--duration-1) var(--ease-out),
+      background-color var(--duration-1) var(--ease-out),
+      color var(--duration-1) var(--ease-out),
       box-shadow var(--duration-1) var(--ease-out);
   }
 
@@ -221,7 +235,8 @@
   }
 
   .epic-card[data-standing="Done"] .epic-card-button {
-    background: var(--epic-wash);
+    border-color: color-mix(in srgb, var(--tone-pass) 35%, var(--edge));
+    background: var(--wash-pass);
   }
 
   .epic-card:is(
@@ -230,8 +245,12 @@
       [data-standing="Finalization"]
     )
     .epic-card-button {
-    border-color: var(--epic-tone);
-    background: var(--epic-wash);
+    border-color: var(--tone-live);
+    background: var(--wash-live);
+  }
+
+  .epic-card[data-standing="Ready"] .epic-card-button {
+    border-color: var(--tone-pass);
   }
 
   .epic-card:is([data-standing="Blocked"], [data-outside]) .epic-card-button {
@@ -239,20 +258,85 @@
   }
 
   .epic-card[data-outside] .epic-card-button {
-    padding-inline: var(--space-2);
     background: transparent;
-    color: var(--ink-2);
   }
 
-  .epic-card-button[aria-pressed="true"] {
+  /* The longest chain, outlined and stepped, while nothing is selected. */
+  .epic-card[data-step] .epic-card-button {
+    border-style: solid;
+    border-color: var(--ink-1);
+  }
+
+  .epic-card-step {
+    position: absolute;
+    top: calc(-1 * var(--space-2));
+    right: var(--space-2);
+    display: grid;
+    place-items: center;
+    min-width: var(--size-epic-graph-step);
+    height: var(--size-epic-graph-step);
+    padding-inline: var(--space-1);
+    border: var(--hairline) solid var(--ink-1);
+    border-radius: var(--radius-3);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1;
+  }
+
+  .epic-card .epic-card-button[aria-pressed="true"] {
     border-style: solid;
     border-color: var(--ink-1);
     box-shadow: 0 0 0 var(--hairline) var(--ink-1);
   }
 
+  /* Out of the chain of the ticket in focus. */
+  .epic-card[data-dim] .epic-card-button {
+    border-color: var(--edge);
+    background: var(--surface-1);
+    color: var(--ink-3);
+  }
+
+  .epic-card[data-dim] :is(.epic-card-mark, .epic-card-number) {
+    color: var(--ink-3);
+  }
+
+  .epic-card[data-dim] .epic-card-ports {
+    opacity: 0.4;
+  }
+
+  /* One dot per dependency along the top edge, shrinking where there are
+     many to fit. */
+  .epic-card-ports {
+    position: absolute;
+    top: 0;
+    inset-inline: var(--space-3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--hairline);
+    transform: translateY(-50%);
+    transition: opacity var(--duration-1) var(--ease-out);
+  }
+
+  .epic-card-port {
+    flex: 0 1 var(--size-epic-graph-port);
+    box-sizing: border-box;
+    min-width: 0;
+    aspect-ratio: 1;
+    border: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-circle);
+    background: var(--surface-1);
+  }
+
+  .epic-card-port[data-met] {
+    border-color: var(--tone-pass);
+    background: var(--tone-pass);
+  }
+
   .epic-card-head {
     display: flex;
-    flex: none;
     align-items: center;
     gap: var(--space-1);
     min-width: 0;
@@ -265,23 +349,36 @@
 
   .epic-card-mark {
     display: inline-flex;
+    flex: none;
     color: var(--epic-tone);
   }
 
   .epic-card-number {
-    color: var(--ink-3);
+    flex: none;
+    color: var(--ink-2);
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
 
-  .epic-card-word {
-    margin-inline-start: auto;
-    color: var(--epic-tone);
+  .epic-card-kicker {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-3);
+    text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .epic-card-outside {
+    flex: none;
+    padding-inline: var(--space-1);
+    border: var(--hairline) dashed var(--edge-strong);
+    border-radius: var(--radius-2);
+    color: var(--ink-3);
   }
 
   .epic-card-title {
     display: -webkit-box;
-    margin-block: auto;
+    min-height: 2lh;
     overflow: hidden;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -290,8 +387,9 @@
     overflow-wrap: anywhere;
   }
 
-  .epic-card[data-outside] .epic-card-title {
-    -webkit-line-clamp: 1;
+  .epic-card-goal {
+    color: var(--ink-2);
+    font-size: var(--text-xs);
   }
 
   /* The selected ticket, beside the graph. */
@@ -330,12 +428,27 @@
     line-height: var(--leading-tight);
   }
 
+  .epic-graph-side-place {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  .epic-graph-side-count {
+    font-weight: var(--weight-regular);
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
   .epic-graph-side-section {
     display: grid;
     gap: var(--space-1);
   }
 
   .epic-graph-side-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
     margin: 0;
     color: var(--ink-3);
     font-size: var(--text-xs);
@@ -399,7 +512,8 @@
     display: none;
   }
 
-  /* At phone width the selected ticket stands above the graph. */
+  /* At phone width the side panel stands above the graph, and a layer's
+     cards stand two to a row. */
   @media (max-width: 40em) {
     .epic-graph {
       grid-template-columns: minmax(0, 1fr);
@@ -408,9 +522,29 @@
         "graph";
     }
 
-    .epic-graph-arrows {
-      flex-basis: 100%;
+    .epic-graph-toggles .epic-graph-key-count {
+    color: inherit;
+  }
+
+  .epic-graph-toggles {
       margin-inline-start: 0;
+    }
+
+    .epic-graph-layers {
+      padding-inline: var(--space-2);
+    }
+
+    .epic-graph-cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .epic-graph-cards[data-goal] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .epic-graph-cards > li {
+      min-width: 0;
     }
   }
 }

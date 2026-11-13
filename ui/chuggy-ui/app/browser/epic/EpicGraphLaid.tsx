@@ -1,5 +1,5 @@
 /**
- * An epic's graph laid out, handed to what draws it. It is the Graph tab's
+ * An epic's graph laid out, handed to what draws it. It is the Overview's
  * lazily loaded chunk, and holds the layout and nothing that draws, so the
  * chunk carries dagre and none of the page's own modules.
  */
