@@ -38,7 +38,7 @@ interface ButtonLook {
 }
 
 const buttonPillClassName =
-  "btn inline-flex items-center gap-2 rounded-3 font-prose font-medium" +
+  "btn inline-flex items-center gap-2 rounded-3 font-prose" +
   " leading-dense whitespace-nowrap no-underline";
 
 const buttonSizeClassNames: Record<ButtonSize, string> = {

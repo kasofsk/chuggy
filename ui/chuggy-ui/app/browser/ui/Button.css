@@ -1,6 +1,7 @@
 /* Button and ButtonLink: the paint of five variants over one pill. The pill's
-   shape, type and padding are utilities on the class string, so nothing here
-   states a property the utilities layer would win back. A control that is only
+   shape, face and padding are utilities on the class string, so nothing here
+   states a property the utilities layer would win back; its weight is here,
+   where a pressed toggle's can override it. A control that is only
    its glyph is a square instead, which on a narrow screen is the least a
    finger is given. A pressed toggle is a wash and a heavier word rather than
    a fill, so it is never read as the primary action; the quiet danger is a
@@ -11,6 +12,7 @@
   .btn {
     background: var(--surface-1);
     color: var(--ink-1);
+    font-weight: var(--weight-medium);
     border: var(--hairline) solid var(--edge-control);
     cursor: pointer;
     transition:

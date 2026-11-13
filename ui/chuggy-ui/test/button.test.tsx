@@ -146,6 +146,14 @@ function buttonDeclared(
   );
 }
 
+/** The weight utilities on an element's class string. The utilities layer
+ * follows `ui`, so one of these would win over any weight the sheet declares. */
+function weightUtilities(element: Element): readonly string[] {
+  return Array.from(element.classList).filter((name) =>
+    /^font-(regular|medium|strong)$/.test(name),
+  );
+}
+
 test("a pressed toggle is told from the primary by its attribute and its weight, not by colour alone", () => {
   render(
     <Button pressed onClick={() => undefined}>
@@ -155,6 +163,7 @@ test("a pressed toggle is told from the primary by its attribute and its weight,
   const pressed = screen.getByRole("button");
   expect(pressed.getAttribute("aria-pressed")).toBe("true");
   expect(pressed.classList.contains("btn-primary")).toBe(false);
+  expect(weightUtilities(pressed)).toEqual([]);
   expect(buttonDeclared("font-weight")).toBe("var(--weight-strong)");
   expect(buttonDeclared("background")).toBe("var(--wash-accent)");
   expect(buttonDeclared("border-color")).toBe("var(--accent)");
@@ -165,7 +174,7 @@ test("a pressed toggle is told from the primary by its attribute and its weight,
     </Button>,
   );
   expect(screen.getByRole("button").hasAttribute("aria-pressed")).toBe(false);
-  expect(buttonDeclared("font-weight")).toBe("");
+  expect(buttonDeclared("font-weight")).toBe("var(--weight-medium)");
   expect(buttonDeclared("background")).toBe("var(--accent)");
   expect(buttonDeclared("color")).toBe("var(--ink-on-accent)");
   styleless();
