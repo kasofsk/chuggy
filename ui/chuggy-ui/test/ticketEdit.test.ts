@@ -91,6 +91,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
     overrides: {},
     selection: {},
     workloads: {},
+    plans: {},
     epic: "",
   });
   const commanding = [creationOffer(undefined, { commandedCheckStage: 1 })];

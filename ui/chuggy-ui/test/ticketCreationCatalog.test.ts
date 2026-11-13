@@ -364,3 +364,94 @@ test("an edit keeps the revision the draft follows", () => {
     configuration: "Pinned",
   });
 });
+
+/** A one-stage plan of the form's own, holding an approval the form adds. */
+const approvalGate = {
+  workloads: { approval: { runner: "Approval" as const } },
+  plans: { gate: [{ name: "approval", evaluators: ["approval"] }] },
+};
+
+test("a plan and an evaluator the form adds are written, read back, drawn as the program and sent as overrides", () => {
+  const text = `title: Ship it\nintent: ship it\nrepository: ${repository}\nselection:\n  evaluation: gate\nplans:\n  gate:\n    - name: approval\n      evaluators:\n        - approval\nworkloads:\n  approval:\n    runner: Approval\n`;
+  const context: TicketYamlContext = {
+    base: catalogForm(),
+    offers,
+    repositories: bound,
+    images: [],
+  };
+  const read = ticketYamlReadWorded(text, context);
+  expect(read.problems).toStrictEqual([]);
+  const form = read.form;
+  if (form === undefined) return;
+  expect(form.plans).toStrictEqual(approvalGate.plans);
+  expect(form.workloads).toStrictEqual(approvalGate.workloads);
+  expect(form.program.map((stage) => stage.evaluators.length)).toStrictEqual([
+    1,
+  ]);
+  expect(
+    ticketYamlReadWorded(ticketYamlOf(form, context, copyTextEn), context).form,
+  ).toStrictEqual(form);
+  const body = creationBodyFrom(offers, form, bound);
+  expect(body.assembled === "Body" ? body.body.overrides : undefined).toEqual(
+    approvalGate,
+  );
+  expect(
+    ticketYamlVocabulary(form, context, copyTextEn)
+      .find((key) => key.key === "evaluation")
+      ?.values.map((value) => value.label),
+  ).toContain("gate");
+});
+
+test("a plan naming a workload neither the catalog nor the text holds, and an added workload no plan names, are refused at their keys", () => {
+  const context: TicketYamlContext = {
+    base: catalogForm(),
+    offers,
+    repositories: bound,
+    images: [],
+  };
+  const head = "title: t\nintent: i\n";
+  const plan = ticketYamlReadWorded(
+    `${head}plans:\n  gate:\n    - name: a\n      evaluators:\n        - nowhere\n`,
+    context,
+  );
+  expect(plan.problems[0]?.message).toContain("no workload `nowhere`");
+  const added = ticketYamlReadWorded(
+    `${head}workloads:\n  approval:\n    runner: Approval\n`,
+    context,
+  );
+  expect(added.problems[0]?.message).toContain("no plan under `plans`");
+});
+
+test("a reader who may not skip planned evaluations is refused a plan of the form's running less than the catalog's for its selection", () => {
+  const form = creationSelectionChosen(
+    { ...catalogForm(), workloads: approvalGate.workloads },
+    offers,
+    { evaluation: "gate" },
+    bound,
+    approvalGate.plans,
+  );
+  const refused = creationBodyFrom(offers, form, bound, {
+    mayOverride: true,
+    maySkipPlanned: false,
+  });
+  expect(
+    refused.assembled === "Faults"
+      ? refused.faults.map((fault) => fault.field)
+      : [],
+  ).toStrictEqual(["authoring"]);
+  expect(
+    creationBodyFrom(offers, form, bound, {
+      mayOverride: true,
+      maySkipPlanned: true,
+    }).assembled,
+  ).toBe("Body");
+  const replaced = creationSelectionChosen(catalogForm(), offers, {}, bound, {
+    review: [{ name: "both", evaluators: ["gates", "review"] }],
+  });
+  expect(
+    creationBodyFrom(offers, replaced, bound, {
+      mayOverride: true,
+      maySkipPlanned: false,
+    }).assembled,
+  ).toBe("Body");
+});

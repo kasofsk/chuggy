@@ -485,10 +485,7 @@ function catalogDocumentsOf(
   canonical: string,
   overrides: ConfigurationOverrides | undefined,
 ): CatalogDocuments | undefined {
-  const effective = workloadsEffectiveCanonicalOf(
-    canonical,
-    overrides?.workloads,
-  );
+  const effective = workloadsEffectiveCanonicalOf(canonical, overrides);
   const catalog = configurationCatalogOf(effective);
   if (catalog === undefined) return undefined;
   return {

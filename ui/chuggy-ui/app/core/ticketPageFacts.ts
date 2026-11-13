@@ -135,6 +135,7 @@ export function ticketDraftPageFacts(
         selection: draft.selection,
         brief: draft.brief,
         program: draft.authoring.program,
+        overrides: draft.overrides,
       },
       text,
     ),

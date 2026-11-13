@@ -299,9 +299,13 @@ ticket-authoring-yaml-plain-key = a key is a plain word
 ticket-authoring-yaml-override-refused = { -ticket(form: "a") } may not override \`{ $path }\`; it may override { $fields }
 ticket-authoring-yaml-workloads-shape = write the { -workload(form: "plural") } as a map, each under the name its { -catalog } holds it under
 ticket-authoring-yaml-workload-key = { -workload(form: "a") } is named by a plain word
+# spells -evaluator: the key a stage writes
+ticket-authoring-yaml-plans-shape = write the { -evaluation-plan(form: "plural") } as a map, each under its name and holding its { -stage(form: "plural") } whole, each { -stage } a \`name\` and its \`evaluators\`
+# spells -workload: the key the text writes
+ticket-authoring-yaml-plan-unknown = no { -workload } \`{ $name }\` is in the { -catalog } or under \`workloads\`
 ticket-authoring-yaml-no-key = this form has no \`{ $key }\`
 ticket-authoring-yaml-keys = write the { -ticket } as keys, one \`{ $shape }\` a line
-ticket-authoring-workload-unknown = the { -catalog } holds no { -workload } \`{ $name }\`
+ticket-authoring-workload-unknown = the { -catalog } holds no { -workload } \`{ $name }\`, and no plan under \`plans\` names it
 ticket-authoring-workload-unmapped = write the { -workload } as a map of its fields
 # spells -run: the verb
 ticket-authoring-workload-unplaced = { -workload(form: "a") } runs in an image or under { -run(form: "a") } requirement; name one
@@ -322,6 +326,8 @@ ticket-authoring-hint-overrides = what this { -ticket } replaces of its { -confi
 ticket-authoring-hint-selection = what this { -ticket } runs from its { -catalog }: each of { $work }, { $evaluation } and { $finalization } a name the { -catalog } holds, { $configuration } { $pinned } or { $latest }, and each its default where left out
 # spells -run: the verb
 ticket-authoring-hint-workloads = each { -workload } this { -ticket } runs, as its { -catalog } holds it; a field changed here is this { -ticket }'s own, and a commented skeleton is a field to fill in
+# spells -workload: the key the text writes
+ticket-authoring-hint-plans = each { -evaluation-plan } this { -ticket } adds, or replaces whole under the name its { -catalog } holds it under, its { -evaluator(form: "plural") } named from the { -catalog } or \`workloads\`; one running less than the { -catalog }'s plan for this selection needs the permit to skip planned { -evaluation }
 # spells -work-stage: the work in general, not the stage
 ticket-authoring-hint-selection-work = the { -workload } that does the work
 # spells -work-stage: the work in general, not the stage

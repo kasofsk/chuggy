@@ -2924,6 +2924,32 @@ test("a reworked ticket's gather hands back the source its latest passed work de
   assert.deepEqual(accepted.handoff.manifests, [latest.manifest]);
 });
 
+test("the gather hands back the overrides the ticket's selection resolves under beside the selection", async () => {
+  const project = await finalizerProject(rig, "overridden");
+  await finalizerPassedWork(rig, project, "one", []);
+  const selection = { evaluation: "gate" };
+  const overrides = {
+    plans: { gate: [{ name: "approval", evaluators: ["approval"] }] },
+  };
+  await rig.harness.query(
+    `UPDATE ticket_definition SET selection = $4, overrides = $5
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.ticket,
+      JSON.stringify(selection),
+      JSON.stringify(overrides),
+    ],
+  );
+
+  const claim = await finalizerClaim(rig, project, "owner-overridden");
+  const gathering = await postgresFinalizer(rig.pool).handoffGathering(claim);
+
+  assert.deepEqual(gathering.selection, selection);
+  assert.deepEqual(gathering.overrides, overrides);
+});
+
 test("the work draw orders a ticket's spawns by the task number and not by its text", async () => {
   const project = await finalizerProject(rig, "ordered", undefined, 1);
   await finalizerSpawnTasks(rig, project, [5, 7, 10]);

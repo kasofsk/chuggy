@@ -30,7 +30,10 @@ import {
 } from "../../../../src/contract/brief.ts";
 import { imageMediaTypes } from "../../../../src/contract/http.ts";
 import type { ImageMediaType } from "../../../../src/contract/http.ts";
-import type { WorkloadOverride } from "../../../../src/contract/configurationOverrides.ts";
+import type {
+  ConfigurationOverrides,
+  WorkloadOverride,
+} from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
@@ -69,7 +72,11 @@ import type {
   ProjectAbilities,
   ProjectAbilityRead,
 } from "./projectAbilities.ts";
-import { programPlanned, programShort } from "./programPlan.ts";
+import {
+  programPlanned,
+  programShort,
+  programShortOfCatalog,
+} from "./programPlan.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConfigurations } from "./repositoryConfigurations.ts";
 import { sessionRunnerShortWord } from "./sessionRunners.ts";
@@ -125,6 +132,9 @@ export interface TicketCreationForm extends CreationAuthoring {
    * catalog holds it under; sent only under a catalog, and cleared with the
    * selection. */
   readonly workloads: Readonly<Record<string, WorkloadOverride>>;
+  /** The evaluation plans this ticket replaces or adds, by name, each whole;
+   * sent only under a catalog, and cleared with the selection. */
+  readonly plans: NonNullable<ConfigurationOverrides["plans"]>;
   /** The epic this ticket joins as it is made, by number, empty where it joins none. */
   readonly epic: string;
 }
@@ -393,10 +403,16 @@ export function creationCatalogOf(
     : configurationCatalogOf(offer.initialization.configuration.canonical);
 }
 
-/** The offer a form is drawn under, with its initialization as it reads under the form's selection. */
+/** What a form is drawn by: the configuration it names, and what it selects from and overrides of a catalog. */
+type CreationDrawing = Pick<
+  TicketCreationForm,
+  "configuration" | "selection" | "workloads" | "plans"
+>;
+
+/** The offer a form is drawn under, with its initialization as it reads under the form's selection and the catalog it overrides. */
 export function creationOfferDrawn(
   offers: readonly CreationOffer[],
-  form: Pick<TicketCreationForm, "configuration" | "selection">,
+  form: CreationDrawing,
 ): CreationOffer | undefined {
   const offer = creationOfferOf(offers, form.configuration);
   return offer === undefined
@@ -406,6 +422,7 @@ export function creationOfferDrawn(
         initialization: configurationCatalogInitialization(
           offer.initialization,
           form.selection,
+          { workloads: form.workloads, plans: form.plans },
         ),
       };
 }
@@ -580,6 +597,7 @@ export function creationFormFrom(
     overrides: {},
     selection: {},
     workloads: {},
+    plans: {},
     epic: "",
   };
 }
@@ -678,15 +696,16 @@ function creationProgramWidths(program: readonly CreationStage[]): string {
 function creationDrawnChosen(
   form: TicketCreationForm,
   offers: readonly CreationOffer[],
-  drawn: Pick<TicketCreationForm, "configuration" | "selection">,
+  drawn: Partial<CreationDrawing> &
+    Pick<CreationDrawing, "configuration" | "selection">,
   repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
   const seeded =
     creationOfferDrawn(offers, form)?.initialization.defaults ??
     creationAuthoringUndrawn;
   const chosen =
-    creationOfferDrawn(offers, drawn)?.initialization.defaults ??
-    creationAuthoringUndrawn;
+    creationOfferDrawn(offers, { ...form, ...drawn })?.initialization
+      .defaults ?? creationAuthoringUndrawn;
   const unmoved =
     creationProgramWidths(form.program) ===
     creationProgramWidths(seeded.program);
@@ -705,28 +724,30 @@ export function creationConfigurationChosen(
   name: string,
   repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  return {
-    ...creationDrawnChosen(
-      form,
-      offers,
-      { configuration: name, selection: {} },
-      repositories,
-    ),
-    workloads: {},
-  };
+  return creationDrawnChosen(
+    form,
+    offers,
+    { configuration: name, selection: {}, workloads: {}, plans: {} },
+    repositories,
+  );
 }
 
-/** The form with another selection from the catalog it is drawn under. */
+/** The form with another selection from the catalog it is drawn under, and the plans it overrides where it names them. */
 export function creationSelectionChosen(
   form: TicketCreationForm,
   offers: readonly CreationOffer[],
   selection: ConfigurationSelection,
   repositories: readonly ProjectRepositoryResponse[],
+  plans?: TicketCreationForm["plans"],
 ): TicketCreationForm {
   return creationDrawnChosen(
     form,
     offers,
-    { configuration: form.configuration, selection },
+    {
+      configuration: form.configuration,
+      selection,
+      ...(plans === undefined ? {} : { plans }),
+    },
     repositories,
   );
 }
@@ -1233,23 +1254,28 @@ function creationUndrawnFaults(
 }
 
 /**
- * What a form sends of its configuration's own choices: the selection and the
- * workloads it overrides under a catalog, and the overrides under any other
- * configuration, each with no key at all where it holds none.
+ * What a form sends of its configuration's own choices: the selection, and the
+ * workloads and plans it overrides, under a catalog, and the overrides under
+ * any other configuration, each with no key at all where it holds none.
  */
 function creationChoicesOf(
   form: TicketCreationForm,
   offer: CreationOffer | undefined,
 ): { readonly overrides?: unknown; readonly selection?: unknown } {
-  if (creationCatalogOf(offer) !== undefined)
+  if (creationCatalogOf(offer) !== undefined) {
+    const overrides = {
+      ...(Object.keys(form.workloads).length === 0
+        ? {}
+        : { workloads: form.workloads }),
+      ...(Object.keys(form.plans).length === 0 ? {} : { plans: form.plans }),
+    };
     return {
       ...(Object.keys(form.selection).length === 0
         ? {}
         : { selection: form.selection }),
-      ...(Object.keys(form.workloads).length === 0
-        ? {}
-        : { overrides: { workloads: form.workloads } }),
+      ...(Object.keys(overrides).length === 0 ? {} : { overrides }),
     };
+  }
   const overrides = overridesNestedOf(form.overrides);
   return overrides === undefined ? {} : { overrides };
 }
@@ -1298,15 +1324,21 @@ function creationOverridesFaults(
 
 const programShortReason: Copy = { id: "ticket-authoring-program-short" };
 
-/** The fault of a program running less than its plan, for a reader who may not release one. */
+/** The fault of a program running less than its plan, or than its catalog's where the form overrides plans, for a reader who may not release one. */
 function creationProgramFaults(
   drawn: DraftInitializationResponse,
-  program: TicketCreationForm["program"],
+  form: TicketCreationForm,
   standing: AuthoringStanding | undefined,
 ): readonly CreationFault[] {
   if (
     standing?.maySkipPlanned !== false ||
-    !programShort(programPlanned(drawn), program)
+    (!programShort(programPlanned(drawn), form.program) &&
+      !programShortOfCatalog(
+        drawn.configuration.canonical,
+        { workloads: form.workloads, plans: form.plans },
+        form.selection,
+        form.program,
+      ))
   )
     return [];
   return [{ field: "authoring", reason: programShortReason }];
@@ -1352,7 +1384,7 @@ export function creationBodyFrom(
       parsed.success ? parsed.data.overrides : undefined,
       standing,
     ),
-    ...creationProgramFaults(drawn, form.program, standing),
+    ...creationProgramFaults(drawn, form, standing),
   ];
   if (parsed.success && stated.length === 0 && refused.length === 0)
     return { assembled: "Body", body: parsed.data };

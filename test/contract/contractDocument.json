@@ -877,7 +877,53 @@
                     },
                     "additionalProperties": false,
                     "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
-                  }
+                  },
+                  "description": "A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most 64 entries."
+                },
+                "plans": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                  },
+                  "additionalProperties": {
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "allOf": [
+                            {
+                              "pattern": "^(?:\\S(?:[\\s\\S]*\\S)?)?$"
+                            },
+                            {
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]*$"
+                            }
+                          ],
+                          "description": "The importer also holds that it is at most 64 UTF-16 code units."
+                        },
+                        "evaluators": {
+                          "minItems": 1,
+                          "maxItems": 100,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                          }
+                        }
+                      },
+                      "required": ["name", "evaluators"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "description": "A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most 64 entries."
                 }
               },
               "additionalProperties": false
@@ -1838,7 +1884,53 @@
                 },
                 "additionalProperties": false,
                 "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
-              }
+              },
+              "description": "A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most 64 entries."
+            },
+            "plans": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "minItems": 1,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "allOf": [
+                        {
+                          "pattern": "^(?:\\S(?:[\\s\\S]*\\S)?)?$"
+                        },
+                        {
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]*$"
+                        }
+                      ],
+                      "description": "The importer also holds that it is at most 64 UTF-16 code units."
+                    },
+                    "evaluators": {
+                      "minItems": 1,
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                      }
+                    }
+                  },
+                  "required": ["name", "evaluators"],
+                  "additionalProperties": false
+                }
+              },
+              "description": "A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most 64 entries."
             }
           },
           "additionalProperties": false
@@ -2688,7 +2780,53 @@
                 },
                 "additionalProperties": false,
                 "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
-              }
+              },
+              "description": "A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most 64 entries."
+            },
+            "plans": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "minItems": 1,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "allOf": [
+                        {
+                          "pattern": "^(?:\\S(?:[\\s\\S]*\\S)?)?$"
+                        },
+                        {
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]*$"
+                        }
+                      ],
+                      "description": "The importer also holds that it is at most 64 UTF-16 code units."
+                    },
+                    "evaluators": {
+                      "minItems": 1,
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                      }
+                    }
+                  },
+                  "required": ["name", "evaluators"],
+                  "additionalProperties": false
+                }
+              },
+              "description": "A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most 64 entries."
             }
           },
           "additionalProperties": false

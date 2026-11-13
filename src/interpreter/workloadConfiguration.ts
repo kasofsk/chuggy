@@ -47,6 +47,10 @@ import {
   workloadConfigurationSchema,
   workloadConfigurationVersion,
 } from "../contract/configurationDocument.ts";
+import {
+  type ConfigurationOverrides,
+  configurationWithOverrides,
+} from "../contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 
 type WorkloadReadonly<Value> = Value extends object
@@ -414,14 +418,22 @@ export function catalogPlansCommanded(
 
 /**
  * The finalizer a ticket's selection lands it with, read out of the stored
- * catalog: none where the selection and the defaults name none, and undefined
- * where the catalog or the selection cannot be read.
+ * catalog with the ticket's workload and plan overrides applied, since its
+ * selection may name a plan only they define: none where the selection and the
+ * defaults name none, and undefined where the catalog or the selection cannot
+ * be read.
  */
 export function catalogSelectedFinalizer(
   value: unknown,
   selection: ConfigurationSelection | undefined,
+  overrides?: ConfigurationOverrides,
 ): { readonly finalizer?: Finalizer } | undefined {
-  const ready = workloadConfigurationReadiness(value);
+  const ready = workloadConfigurationReadiness(
+    configurationWithOverrides(value, {
+      workloads: overrides?.workloads,
+      plans: overrides?.plans,
+    }),
+  );
   if (ready.readiness !== "Ready") return undefined;
   const selected = selectedCatalogEntries(ready.configuration, selection);
   if (selected.selected !== "Selected") return undefined;
