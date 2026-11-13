@@ -49,8 +49,8 @@ function owned(signature: string): readonly string[] {
   ];
 }
 
-export const migration173: Migration = {
-  version: 173,
+export const migration174: Migration = {
+  version: 174,
   name: "a person keeps themes of their own and one global choice of theme",
   statements: [
     `CREATE TABLE public.owned_theme (

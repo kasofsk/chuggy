@@ -246,7 +246,7 @@ test("a ticket's overrides may not change a workload's runner to or from Approva
 test("a release whose program draws an approval evaluator is ready, as one leaving it out is", () => {
   for (const program of [
     gatedProgram,
-    [{ key: 2, evaluators: [{ key: 1 }] }],
+    [{ key: 1, evaluators: [{ key: 2 }] }],
     [{ key: 1, evaluators: [{ key: 1 }] }],
   ])
     assert.equal(
