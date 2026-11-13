@@ -461,7 +461,7 @@ export function submissionResponse(
         403,
         nativeHttpError(
           programSkipsPlannedEvaluationsCode,
-          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has, or a plan its overrides replace or add runs some workload at fewer positions than the catalog's plan for its selection. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
         ),
       );
     case "AnswerRefused":

@@ -98,7 +98,10 @@ export function catalogNamedWorkloadTask(
   position: WorkloadTaskPosition,
 ): NamedWorkloadTask | undefined {
   const ready = workloadConfigurationReadiness(
-    configurationWithOverrides(value, { workloads: overrides?.workloads }),
+    configurationWithOverrides(value, {
+      workloads: overrides?.workloads,
+      plans: overrides?.plans,
+    }),
   );
   if (ready.readiness !== "Ready") return undefined;
   const selected = selectedCatalogEntries(ready.configuration, selection);

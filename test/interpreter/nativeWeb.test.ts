@@ -1502,6 +1502,40 @@ test("a release or an update whose program leaves out a stage or an evaluator of
     }
 });
 
+test("a release whose overrides select a plan running less than the catalog's for its selection asks SkipPlannedEvaluations, and one running as much does not", async () => {
+  const approval = { runner: "Approval" } as const;
+  const short = releasing(["Mutate"], {
+    canonical: plannedCatalog,
+    overrides: {
+      workloads: { approval },
+      plans: { gate: [{ name: "approval", evaluators: ["approval"] }] },
+    },
+    selection: { evaluation: "gate" },
+    program: programOf([[1]]),
+  });
+  assert.deepEqual(
+    await short.web.submit(principal, submissionOf(releaseOf())),
+    { result: "ProgramSkipsPlannedEvaluations" },
+  );
+  const whole = releasing(["Mutate"], {
+    canonical: plannedCatalog,
+    overrides: {
+      workloads: { approval },
+      plans: {
+        thorough: [
+          { name: "all", evaluators: ["build", "tests", "build", "approval"] },
+        ],
+      },
+    },
+    program: programOf([[1, 2, 3, 4]]),
+  });
+  assert.deepEqual(
+    await whole.web.submit(principal, submissionOf(releaseOf())),
+    { result: "Authorized", acceptance: { accepted: "IdempotencyConflict" } },
+  );
+  assert.deepEqual(whole.calls, ["authorize:Mutate", revisionRead, "accept"]);
+});
+
 test("a release running its whole plan asks what a release asks and nothing more", async () => {
   for (const command of ["ReleaseDraft", "UpdateTicket"] as const) {
     const { web, calls } = releasing(["Mutate"], {

@@ -22,6 +22,23 @@
  * text the catalog's import stored beside that path, so nothing reads a
  * repository after import.
  *
+ * A CATALOG TICKET MAY ADD EVALUATORS AND PLANS. A name under `workloads` the
+ * catalog lacks adds that workload, written whole, and a name under `plans`
+ * replaces the catalog's plan whole or adds one. A catalog names its plans, so
+ * replacing one changes what a key means in that plan alone, and a program's
+ * keys stay positions in the plan selected. An added workload is only ever an
+ * evaluator, since the work is selected from the catalog's own workloads.
+ *
+ * AN OVERRIDE RUNS NO LESS THAN THE CATALOG PLANS without the
+ * `skip_planned_evaluations` permit. The plan a ticket would run without its
+ * overrides is the one its selection names in the catalog, or the catalog's
+ * default where the catalog names no such plan; `overridesPlanShort` holds
+ * that for each workload name, the program runs it at as many positions of the
+ * selected plan as that plan has. A workload is the same evaluator under its
+ * name however a ticket overrides its fields, as it was before a plan could
+ * be replaced, so moving evaluators between stages is no less, and dropping
+ * one, or one of several runs of it, is.
+ *
  * THE EFFECTIVE CONFIGURATION IS STILL A CONFIGURATION, and it is judged by
  * whatever judges a pinned one: this module checks shape, never readiness.
  *
@@ -37,6 +54,7 @@ import { z } from "zod";
 import {
   configurationCatalogEntriesMax,
   configurationCatalogNameSchema,
+  evaluationPlanSchema,
   workloadOverrideSchema,
 } from "./configurationDocument.ts";
 import { codexReasoningEfforts } from "./workerTask.ts";
@@ -85,6 +103,18 @@ export const configurationOverridesSchema = z.strictObject({
     .refine(
       (workloads) =>
         Object.keys(workloads).length <= configurationCatalogEntriesMax,
+    )
+    .describe(
+      `A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most ${String(configurationCatalogEntriesMax)} entries.`,
+    )
+    .optional(),
+  plans: z
+    .record(configurationCatalogNameSchema, evaluationPlanSchema)
+    .refine(
+      (plans) => Object.keys(plans).length <= configurationCatalogEntriesMax,
+    )
+    .describe(
+      `A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most ${String(configurationCatalogEntriesMax)} entries.`,
     )
     .optional(),
 });
@@ -199,7 +229,7 @@ function configurationOverridesWorkload(
   };
 }
 
-/** A catalog's workloads with each one an override names replaced; a name the catalog lacks is its reader's to refuse. */
+/** A catalog's workloads with each one an override names replaced, and each it lacks added as the override writes it. */
 function configurationOverridesWorkloads(
   workloads: unknown,
   overrides: Readonly<Record<string, WorkloadOverride>> | undefined,
@@ -210,18 +240,52 @@ function configurationOverridesWorkloads(
   return {
     ...workloads,
     ...Object.fromEntries(
-      Object.entries(overrides)
-        .filter(([name]) => Object.hasOwn(workloads, name))
-        .map(([name, override]) => [
-          name,
-          configurationOverridesWorkload(
-            workloads[name],
-            override,
-            promptTexts,
-          ),
-        ]),
+      Object.entries(overrides).map(([name, override]) => [
+        name,
+        configurationOverridesWorkload(
+          Object.hasOwn(workloads, name) ? workloads[name] : {},
+          override,
+          promptTexts,
+        ),
+      ]),
     ),
   };
+}
+
+/** How many times each workload name stands in a list of names. */
+function overridesPlanRuns(
+  names: readonly string[],
+): ReadonlyMap<string, number> {
+  const runs = new Map<string, number>();
+  for (const name of names) runs.set(name, (runs.get(name) ?? 0) + 1);
+  return runs;
+}
+
+/**
+ * Whether a program over the plan a ticket selected runs less than the plan
+ * it would run without its overrides: some workload name `planned` lists at
+ * more positions than the program runs it at. Each plan is its stages'
+ * evaluator names in position order, and the program's keys count from one.
+ */
+export function overridesPlanShort(
+  planned: readonly (readonly string[])[],
+  selected: readonly (readonly string[])[],
+  program: readonly {
+    readonly key: number;
+    readonly evaluators: readonly { readonly key: number }[];
+  }[],
+): boolean {
+  const ran = overridesPlanRuns(
+    program.flatMap((stage) =>
+      stage.evaluators.flatMap((evaluator) => {
+        const name = selected[stage.key - 1]?.[evaluator.key - 1];
+        return name === undefined ? [] : [name];
+      }),
+    ),
+  );
+  return [...overridesPlanRuns(planned.flat())].some(
+    ([name, runs]) => (ran.get(name) ?? 0) < runs,
+  );
 }
 
 /**
@@ -254,5 +318,8 @@ export function configurationWithOverrides(
       document["workloads"],
       overrides.workloads,
     );
+  const plans = document["plans"];
+  if (overrides.plans !== undefined && configurationOverridesIsRecord(plans))
+    effective["plans"] = { ...plans, ...overrides.plans };
   return effective;
 }

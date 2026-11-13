@@ -106,7 +106,7 @@ import {
   ticketCommandedCheckStage,
   ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
-  ticketProgramShort,
+  ticketRunsLessThanPlanned,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
@@ -1581,7 +1581,13 @@ async function nativeSubmitRunsLessThanPlan(
   );
   return (
     readiness.readiness === "Ready" &&
-    ticketProgramShort(readiness.ticket, revision.program)
+    ticketRunsLessThanPlanned(
+      revision.canonical,
+      revision.overrides,
+      revision.selection,
+      readiness.ticket,
+      revision.program,
+    )
   );
 }
 

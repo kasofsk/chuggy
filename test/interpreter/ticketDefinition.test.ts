@@ -337,7 +337,12 @@ const overridableFields = Object.entries(
 
 test("what the contract offers a parked ticket leaves every repository configuration's definition where it was", () => {
   assert.deepEqual(
-    [...parkedTicketOverrideFields, "work.instructions", "workloads"].sort(),
+    [
+      ...parkedTicketOverrideFields,
+      "work.instructions",
+      "workloads",
+      "plans",
+    ].sort(),
     [...overridableFields].sort(),
   );
   const directory = new URL("../fixtures/configurations/", import.meta.url);
@@ -381,6 +386,13 @@ test("what the contract offers a parked ticket leaves every repository configura
     assert.deepEqual(
       parkedOverridesVerdict(ticket, undefined, {
         workloads: { build: { prompt: { text: "Do the other work." } } },
+      }),
+      { verdict: "Refused", code: "OverridesUnsupported" },
+      name,
+    );
+    assert.deepEqual(
+      parkedOverridesVerdict(ticket, undefined, {
+        plans: { gate: [{ name: "gate", evaluators: ["build"] }] },
       }),
       { verdict: "Refused", code: "OverridesUnsupported" },
       name,
@@ -430,6 +442,11 @@ test("an override of a workload a parked catalog ticket runs moves its definitio
       },
     },
     { workloads: { tests: { commands: ["npm test", "npm run lint"] } } },
+    { plans: { standard: [{ name: "checks", evaluators: ["build"] }] } },
+    {
+      workloads: { approval: { runner: "Approval" } },
+      plans: { standard: [{ name: "checks", evaluators: ["approval"] }] },
+    },
   ];
   for (const offered of offers) {
     assert.deepEqual(
