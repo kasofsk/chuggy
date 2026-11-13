@@ -268,6 +268,21 @@ test("a state's word is held as text on the page, so a tone that only clears the
   }
 });
 
+test("a state's word on a hovered row is held as text, so a tone that only clears the mark minimum on the sunken surface fails", () => {
+  const light = { ...chuggyLight(), "surface-2": "#c8ccc6" };
+  const failures = themeContrastFailures({
+    ...chuggy,
+    palette: { schemes: "Light", light },
+  }).filter((failure) => failure.background === "surface-2");
+  assert.ok(failures.some((failure) => failure.foreground.startsWith("tone-")));
+  for (const failure of failures.filter((each) =>
+    each.foreground.startsWith("tone-"),
+  )) {
+    assert.equal(failure.ratioMin, themeContrastTextMin);
+    assert.ok(failure.ratio >= themeContrastMarkMin, failure.foreground);
+  }
+});
+
 test("a wash is mixed with the theme's own panel, and ink and its tone are held as text on it", () => {
   const light = { ...chuggyLight(), "surface-1": "#3a3a3a" };
   assert.equal(
