@@ -31,8 +31,6 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  Outlet: () => null,
-  useNavigate: () => () => undefined,
   useParams: () => ({ tenant: "acme" }),
 }));
 
