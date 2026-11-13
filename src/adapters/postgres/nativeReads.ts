@@ -713,7 +713,8 @@ async function evaluationApprovalsAsked(
   const found = await client.query<EvaluationApprovalRow>(
     sql`SELECT a.action,e.execution,k.cycle::text AS cycle,k.stage::text AS stage,
                k.generation::text AS generation,k.evaluator::text AS evaluator,
-               c.canonical,d.overrides,d.selection
+               c.canonical,d.overrides::text AS overrides,
+               d.selection::text AS selection
           FROM native_action a
           JOIN execution e
             ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
