@@ -218,6 +218,8 @@ export async function epicPageDrawn(
     readonly written?: (request: SentRequest) => Response;
     readonly client?: QueryClient;
     readonly tab?: ReactNode;
+    /** The viewport's width, a desk's where a case states none. */
+    readonly em?: number;
   } = {},
 ): Promise<{
   readonly sent: readonly SentRequest[];
@@ -229,7 +231,7 @@ export async function epicPageDrawn(
     epicServed(options.written ?? (() => answer({}, 503))),
   );
   vi.stubGlobal("fetch", abilitiesFetch(abilities, scripted.fetch));
-  viewportAtEm(viewportDeskEm);
+  viewportAtEm(options.em ?? viewportDeskEm);
   const drawn = renderCopied(
     <EpicPageHarness client={client}>{options.tab}</EpicPageHarness>,
   );

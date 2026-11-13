@@ -26,7 +26,7 @@ import { Tooltip } from "../ui/Tooltip.tsx";
 
 import "./epicGraph.css";
 
-function EpicGraphSideMark(props: {
+export function EpicGraphSideMark(props: {
   readonly standing: TicketStateStanding;
 }): ReactNode {
   return (
@@ -92,7 +92,7 @@ function EpicGraphSideList(props: {
 }
 
 /** Dispatch, offered as the ticket list offers it on a Ready row. */
-function EpicGraphSideDispatch(props: {
+export function EpicGraphSideDispatch(props: {
   readonly partition: PartitionIdentity;
   readonly row: ProjectTableRow;
 }): ReactNode {
@@ -127,7 +127,7 @@ function EpicGraphSideDispatch(props: {
 
 /** Where the ticket stands in the layers, and on the longest chain where it
  * is on it; nothing for a ticket not placed. */
-function EpicGraphSidePlace(props: {
+export function EpicGraphSidePlace(props: {
   readonly ticket: number;
   readonly layered: EpicGraphLayered;
 }): ReactNode {

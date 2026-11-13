@@ -574,14 +574,131 @@
     display: none;
   }
 
-  /* At phone width the side panel stands above the graph, and a layer's
-     cards stand two to a row. */
+  /* The selected ticket on a phone, in a sheet fixed to the foot of the
+     screen, and the room it leaves under the graph. */
+  .epic-graph-sheet-room {
+    display: block;
+  }
+
+  .epic-graph-sheet {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 1;
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4) max(var(--space-4), env(safe-area-inset-right))
+      max(var(--space-4), env(safe-area-inset-bottom))
+      max(var(--space-4), env(safe-area-inset-left));
+    border-top: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
+    background: var(--surface-1);
+    animation: epic-graph-sheet-in var(--duration-epic-graph-sheet)
+      var(--ease-out);
+  }
+
+  @keyframes epic-graph-sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  .epic-graph-sheet-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+  }
+
+  .epic-graph-sheet-number {
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .epic-graph-sheet-word {
+    flex: 1;
+    color: var(--epic-tone);
+  }
+
+  .epic-graph-sheet-close {
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: var(--width-epic-graph-line);
+  }
+
+  .epic-graph-sheet-title {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+    overflow-wrap: anywhere;
+  }
+
+  .epic-graph-sheet-row {
+    display: grid;
+    grid-template-columns: var(--width-epic-graph-sheet-heading) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .epic-graph-sheet-pills {
+    display: flex;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-1) 0;
+    overflow-x: auto;
+    list-style: none;
+    scrollbar-width: none;
+  }
+
+  .epic-graph-sheet-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    border: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-3);
+    background: var(--surface-0);
+    color: var(--ink-1);
+    font: inherit;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .epic-graph-sheet-pill:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  .epic-graph-sheet-pill .epic-graph-mark {
+    color: var(--epic-tone);
+  }
+
+  .epic-graph-sheet-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  /* At phone width the graph takes the screen, the selected ticket rising
+     in the sheet, and a layer's cards stand two to a row. */
   @media (max-width: 40em) {
     .epic-graph {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas:
-        "side"
-        "graph";
+      grid-template-areas: "graph";
     }
 
     .epic-graph-toggles .epic-graph-key-count {

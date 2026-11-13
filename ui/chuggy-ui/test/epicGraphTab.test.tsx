@@ -5,7 +5,8 @@
  * lines and the ports they light, when the cards are measured and which are
  * written, the longest chain and its toggle, the ticket selected and how it is
  * cleared, the side panel with a ticket and without one, its dispatch, the
- * key, the toggle for the tickets outside the epic, the states before and
+ * sheet in its place on a phone with its pills, the room it leaves and the
+ * scroll a pill makes, the key, the toggle for the tickets outside the epic, the states before and
  * without a graph, and the reads that draw it again.
  */
 
@@ -696,6 +697,7 @@ test("a click, an Enter and the address each select a card, which the address is
   expect(side().dataset["ticket"]).toBe("4");
   fireEvent.keyDown(cardButton(8), { key: "Enter" });
   expect(pressed()).toStrictEqual([8]);
+  expect(document.querySelector(".epic-graph-sheet")).toBeNull();
   expect(written).toStrictEqual([4, 8]);
 });
 
@@ -822,6 +824,207 @@ test("dispatch is offered for a Ready ticket to a reader who may dispatch, and n
   await graphic();
   expect(side().dataset["ticket"]).toBe("5");
   expect(within(side()).queryByRole("button", { name: "Dispatch" })).toBeNull();
+});
+
+/** A phone's viewport, narrower than the console's narrow breakpoint. */
+const phoneEm = 24;
+
+function sheet(): HTMLElement {
+  const found = document.querySelector<HTMLElement>(".epic-graph-sheet");
+  if (found === null) throw new Error("the sheet is drawn");
+  return found;
+}
+
+function pill(row: string, name: RegExp): HTMLElement {
+  return within(within(sheet()).getByRole("list", { name: row })).getByRole(
+    "button",
+    { name },
+  );
+}
+
+test("on a phone the graph takes the screen at rest, and a tapped card rises in a sheet with its head, title, rows of pills and foot", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed />,
+    em: phoneEm,
+  });
+  await graphic();
+  expect(screen.queryByRole("complementary")).toBeNull();
+  expect(document.querySelector(".epic-graph-sheet-room")).toBeNull();
+  fireEvent.click(cardButton(5));
+  expect(screen.getAllByRole("complementary")).toStrictEqual([sheet()]);
+  expect(sheet().getAttribute("aria-label")).toBe("Selected ticket");
+  expect(sheet().dataset["ticket"]).toBe("5");
+  expect(sheet().querySelector(".epic-graph-sheet-head")?.textContent).toBe(
+    "#5Working",
+  );
+  expect(within(sheet()).getByRole("button", { name: "Close" })).toBeTruthy();
+  expect(within(sheet()).getByRole("heading", { level: 3 }).textContent).toBe(
+    "Refund",
+  );
+  const pills = (name: string) =>
+    within(within(sheet()).getByRole("list", { name }))
+      .getAllByRole("button")
+      .map((button) => [button.textContent, button.getAttribute("aria-label")]);
+  expect(pills("Depends on")).toStrictEqual([
+    ["2", "#2 Schema: Working"],
+    ["4", "#4 Charge: Done"],
+  ]);
+  expect(pills("Blocks")).toStrictEqual([
+    ["6", "#6 Ledger: Blocked"],
+    ["8", "#8 Export: Blocked"],
+  ]);
+  expect(sheet().querySelector(".epic-graph-side-place")?.textContent).toBe(
+    "Layer 2 of 4 · Step 2 of 4",
+  );
+  expect(
+    within(sheet())
+      .getByRole("link", { name: "Open ticket" })
+      .getAttribute("href"),
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+  expect(sheet().hasAttribute("style")).toBe(false);
+  expect(sheet().querySelectorAll("[style]")).toHaveLength(0);
+});
+
+test("a pill in the sheet selects its ticket, and Close and Escape each clear the selection and bring the chain back", async () => {
+  chainServed();
+  const written: (number | undefined)[] = [];
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed ticket={6} written={written} />,
+    em: phoneEm,
+  });
+  await graphic();
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(pill("Depends on", /^#5 /u));
+  expect(sheet().dataset["ticket"]).toBe("5");
+  expect(pressed()).toStrictEqual([5]);
+  fireEvent.click(within(sheet()).getByRole("button", { name: "Close" }));
+  expect(document.querySelector(".epic-graph-sheet")).toBeNull();
+  expect(pressed()).toStrictEqual([]);
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(stepped()).toHaveLength(4);
+  fireEvent.click(cardButton(8));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(document.querySelector(".epic-graph-sheet")).toBeNull();
+  expect(chainToggle().getAttribute("aria-pressed")).toBe("true");
+  expect(written).toStrictEqual([5, undefined, 8, undefined]);
+});
+
+test("dispatch is offered in the sheet where the side panel offers it", async () => {
+  epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
+  await epicPageDrawn(abilitiesEvery, {
+    tab: <EpicGraphTabAddressed ticket={5} />,
+    em: phoneEm,
+  });
+  await graphic();
+  expect(
+    await within(sheet()).findByRole("button", { name: "Dispatch" }),
+  ).toBeTruthy();
+  fireEvent.click(cardButton(4));
+  await settled();
+  expect(
+    within(sheet()).queryByRole("button", { name: "Dispatch" }),
+  ).toBeNull();
+});
+
+/** Observers that hear only what a case says: the sheet's size, as a browser
+ * reports it once the sheet is drawn and again when it resizes. */
+function sheetObserved(): (height: number) => void {
+  const held: { callback: ResizeObserverCallback; targets: Element[] }[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      readonly entry: (typeof held)[number];
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = { callback, targets: [] };
+        held.push(this.entry);
+      }
+      observe(target: Element): void {
+        this.entry.targets.push(target);
+      }
+      disconnect(): void {
+        this.entry.targets = [];
+      }
+    },
+  );
+  return (height) => {
+    for (const { callback, targets } of held)
+      for (const target of targets.filter((each) =>
+        each.classList.contains("epic-graph-sheet"),
+      ))
+        act(() => {
+          callback(
+            [
+              {
+                target,
+                borderBoxSize: [{ blockSize: height, inlineSize: 390 }],
+                contentRect: new DOMRect(0, 0, 390, height),
+              } as unknown as ResizeObserverEntry,
+            ],
+            {} as ResizeObserver,
+          );
+        });
+  };
+}
+
+test("while the sheet is open the page gains room its height under the graph, and loses it when the sheet closes", async () => {
+  chainServed();
+  const resized = sheetObserved();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed />,
+    em: phoneEm,
+  });
+  await graphic();
+  fireEvent.click(cardButton(5));
+  const room = () =>
+    document.querySelector(".epic-graph-sheet-room")?.getAttribute("height");
+  resized(240);
+  expect(room()).toBe("240");
+  resized(212);
+  expect(room()).toBe("212");
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(room()).toBeUndefined();
+});
+
+test("a ticket selected from the sheet has its card scrolled to the middle of the room above the sheet, unless it is in view there", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed />,
+    em: phoneEm,
+  });
+  await graphic();
+  const boxes = new Map<number, readonly [number, number]>([
+    [4, [900, 980]],
+    [5, [100, 180]],
+    [6, [-300, -220]],
+  ]);
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element): DOMRect {
+      if (this.classList.contains("epic-graph-sheet"))
+        return new DOMRect(0, 600, 390, 244);
+      const at = boxes.get(
+        Number((this as HTMLElement).dataset["ticket"] ?? Number.NaN),
+      );
+      return at === undefined
+        ? new DOMRect(0, 0, 0, 0)
+        : new DOMRect(0, at[0], 180, at[1] - at[0]);
+    },
+  );
+  const scrolled = vi
+    .spyOn(window, "scrollBy")
+    .mockImplementation(() => undefined);
+  fireEvent.click(cardButton(5));
+  expect(scrolled).not.toHaveBeenCalled();
+  fireEvent.click(pill("Depends on", /^#4 /u));
+  expect(sheet().dataset["ticket"]).toBe("4");
+  expect(scrolled.mock.calls).toStrictEqual([[{ top: 640, behavior: "auto" }]]);
+  fireEvent.click(pill("Blocks", /^#5 /u));
+  expect(sheet().dataset["ticket"]).toBe("5");
+  fireEvent.click(pill("Blocks", /^#6 /u));
+  expect(scrolled.mock.calls).toStrictEqual([
+    [{ top: 640, behavior: "auto" }],
+    [{ top: -560, behavior: "auto" }],
+  ]);
 });
 
 test("the key counts the members Done, Running, Ready and Blocked, and Escalated where a member is", async () => {
