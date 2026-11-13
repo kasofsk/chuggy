@@ -54,9 +54,12 @@
  * attempt's own opening breaks a tie.
  *
  * A CLAIM PASSES OVER AN ATTEMPT WHOSE AGENT ITS ACCOUNT HAS PAUSED, the
- * account being the member who registered the pool, and asks
- * `agent_account_pause` whether it has: that function is the rule, and nothing
- * here restates it. A press that lets one claim through is spent by that
+ * account being the member who registered the pool, as a personal runner's
+ * claim does for its owner: of an agent the pool's newest poll named
+ * credentials of, it asks `agent_account_named_pause` of those names, and of
+ * any other agent `agent_account_pause`. Those functions are the rule, and
+ * nothing here restates it. A pool an operator registered names no account,
+ * and nothing pauses it. A press that lets one claim through is spent by that
  * claim's own statement, conditionally on its row, so of two claims of one
  * account the second waits on it and finds it spent. The pause is not a term
  * of `workerPoolCanAssign`: the model states no fairness, so a runner declining
@@ -108,7 +111,12 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { personalRunnersMax } from "../../contract/http.ts";
-import type { WorkerRunner } from "../../contract/workerPool.ts";
+import {
+  workerRunnerCredentialAgents,
+  type WorkerPoolCredentialPause,
+  type WorkerRunner,
+  type WorkerRunnerCredentials,
+} from "../../contract/workerPool.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asProjectId, type Partition } from "../../interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
@@ -122,6 +130,7 @@ import {
   type WorkerPoolClaimTerms,
   type WorkerPoolDirectory,
   type WorkerPoolExecutionHolds,
+  type WorkerPoolExecutionPoller,
   type WorkerPoolIdentity,
   type WorkerPoolRegistration,
   type WorkerPoolRegistry,
@@ -137,7 +146,6 @@ import {
 import {
   personalExecutionClaimed,
   personalExecutionCredentialOutcomes,
-  personalExecutionCredentialPauses,
   personalExecutionWaiting,
   personalExecutionsAllowlisted,
   personalExecutionsPolled,
@@ -354,10 +362,12 @@ function workerPoolCeilingRead(kept: string | null): number | undefined {
 
 /**
  * The runner, capabilities and memory ceiling each caller's newest poll named,
- * and whether a personal runner's advertises its agents, on its own row and
- * under its current registration, written as one statement and only where it
- * differs from what is kept, so a poll that names what it named before writes
- * nothing; capabilities or a ceiling named as none keep what is recorded.
+ * whether a personal runner's advertises its agents, and the credentials a
+ * pool's or a personal runner's named, on its own row and under its current
+ * registration, written as one statement and only where it differs from what
+ * is kept, so a poll that names what it named before writes nothing;
+ * capabilities or a ceiling named as none keep what is recorded, and
+ * credentials named as none clear what is.
  */
 export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
   return {
@@ -382,14 +392,17 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
           await pool.query(sql`UPDATE worker_pool w
             SET runner_package=${named},runner_version=${version},
                 capabilities=COALESCE(${advertised}::text[],w.capabilities),
-                memory_ceiling_mib=COALESCE(${ceiling}::bigint,w.memory_ceiling_mib)
+                memory_ceiling_mib=COALESCE(${ceiling}::bigint,w.memory_ceiling_mib),
+                credentials_named=${credentialsNamed}::jsonb
             WHERE w.tenant=${identity.partition.tenant}
               AND w.project=${identity.partition.project}
               AND w.pool=${identity.pool} AND w.principal=${identity.principal}
-              AND (w.runner_package,w.runner_version,w.capabilities,w.memory_ceiling_mib)
+              AND (w.runner_package,w.runner_version,w.capabilities,w.memory_ceiling_mib,
+                   w.credentials_named)
                 IS DISTINCT FROM (${named}::text,${version}::text,
                   COALESCE(${advertised}::text[],w.capabilities),
-                  COALESCE(${ceiling}::bigint,w.memory_ceiling_mib))`);
+                  COALESCE(${ceiling}::bigint,w.memory_ceiling_mib),
+                  ${credentialsNamed}::jsonb)`);
           return;
         case "Personal":
           await pool.query(sql`UPDATE personal_runner r
@@ -490,6 +503,14 @@ async function workerPoolClaimLocked(
   );
 }
 
+/** What a pool's claim's statement returns of the attempt it took. */
+interface WorkerPoolClaimedRead {
+  readonly requirement: unknown;
+  readonly runtime: string | null;
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
+}
+
 /**
  * One opened-but-unplaced attempt whose invocation is recorded, taken for this
  * pool where `workerPoolCanAssign` would take it, in the order the header
@@ -511,18 +532,17 @@ async function workerPoolClaimed(
 ): Promise<WorkerPoolClaimed | undefined> {
   const room = terms.memoryRoomMib ?? null;
   await workerPoolClaimLocked(client, identity);
-  const found = await client.query<{
-    requirement: unknown;
-    runtime: string | null;
-    cpu_millis: number | null;
-    memory_mib: number | null;
-  }>(
+  const found = await client.query<WorkerPoolClaimedRead>(
     sql`WITH chosen AS (
         SELECT q.tenant,q.project,q.execution,q.attempt,q.agent,w.registered_by AS account,held.admitted_by_press
         FROM execution_attempt q
         JOIN execution x ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
         JOIN worker_pool w ON w.tenant=q.tenant AND w.project=q.project
-        CROSS JOIN LATERAL agent_account_pause(w.registered_by,q.agent) held
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(w.registered_by,q.agent) h
+            WHERE w.credentials_named->q.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(w.registered_by,q.agent,
+            ARRAY(SELECT jsonb_array_elements_text(w.credentials_named->q.agent))) h
+            WHERE w.credentials_named->q.agent IS NOT NULL) held
         WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
           AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
@@ -594,7 +614,11 @@ async function workerPoolWaiting(
           ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
         JOIN worker_pool w
           ON w.tenant=q.tenant AND w.project=q.project
-        CROSS JOIN LATERAL agent_account_pause(w.registered_by,q.agent) held
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(w.registered_by,q.agent) h
+            WHERE w.credentials_named->q.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(w.registered_by,q.agent,
+            ARRAY(SELECT jsonb_array_elements_text(w.credentials_named->q.agent))) h
+            WHERE w.credentials_named->q.agent IS NOT NULL) held
         WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
           AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
@@ -864,6 +888,79 @@ async function workerPoolExecutionsPolled(
   );
 }
 
+/**
+ * Each of `credentials` that is paused for the account a pool's or a runner's
+ * work spends: a personal runner's owner, or the member who registered a pool,
+ * where one did. A pool an operator registered names no account, and none of
+ * its credentials is paused.
+ */
+async function workerPoolCredentialPauses(
+  pool: pg.Pool,
+  identity: WorkerPoolExecutionPoller,
+  credentials: WorkerRunnerCredentials,
+): Promise<WorkerPoolCredentialPause[]> {
+  if (Object.keys(credentials).length === 0) return [];
+  if (identity.kind === "Personal")
+    return workerPoolCredentialPausesOf(pool, identity.owner, credentials);
+  const found = await pool.query<{ registered_by: string | null }>(
+    sql`SELECT w.registered_by FROM worker_pool w
+        WHERE w.tenant=${identity.partition.tenant}
+          AND w.project=${identity.partition.project}
+          AND w.pool=${identity.pool} AND w.principal=${identity.principal}`,
+  );
+  const account = found.rows[0]?.registered_by ?? null;
+  return account === null
+    ? []
+    : workerPoolCredentialPausesOf(pool, asPrincipal(account), credentials);
+}
+
+/**
+ * Each of `credentials` that is paused for `account` now, by agent and name,
+ * and when that pause ends, in whole Unix seconds rounded up so a runner told
+ * it is never early.
+ */
+async function workerPoolCredentialPausesOf(
+  pool: pg.Pool,
+  account: Principal,
+  credentials: WorkerRunnerCredentials,
+): Promise<WorkerPoolCredentialPause[]> {
+  const found = await pool.query<{
+    agent: string | null;
+    credential: string | null;
+    paused_until: string;
+  }>(
+    sql`SELECT n.agent,p.credential,
+          ceil(extract(epoch FROM p.paused_until))::bigint::text AS paused_until
+        FROM jsonb_each(${JSON.stringify(credentials)}::jsonb) n(agent,names)
+        CROSS JOIN LATERAL agent_account_named_credential_pauses(${account},n.agent,
+          ARRAY(SELECT jsonb_array_elements_text(n.names))) p
+        ORDER BY n.agent,p.credential`,
+  );
+  return found.rows.map(workerPoolCredentialPauseRow);
+}
+
+/** The pause one row of `workerPoolCredentialPausesOf` names. */
+function workerPoolCredentialPauseRow(row: {
+  readonly agent: string | null;
+  readonly credential: string | null;
+  readonly paused_until: string;
+}): WorkerPoolCredentialPause {
+  if (row.credential === null)
+    throw new Error("a credential pause names no credential");
+  const agent = workerRunnerCredentialAgents.find(
+    (known) => known === row.agent,
+  );
+  if (agent === undefined)
+    throw new Error(
+      `no credential pause is read of agent ${String(row.agent)}`,
+    );
+  return {
+    agent,
+    credential: row.credential,
+    pausedUntil: Number(row.paused_until),
+  };
+}
+
 /** Both callers' assignments behind one port, each call routed by who is asking. */
 export function postgresWorkerPoolAssignments(
   pool: pg.Pool,
@@ -906,7 +1003,7 @@ export function postgresWorkerPoolAssignments(
     credentialOutcomes: (identity, assignments) =>
       personalExecutionCredentialOutcomes(pool, identity, assignments),
     credentialPauses: (identity, credentials) =>
-      personalExecutionCredentialPauses(pool, identity, credentials),
+      workerPoolCredentialPauses(pool, identity, credentials),
     polled: (identity, executions) =>
       identity.kind === "Personal"
         ? personalExecutionsPolled(pool, identity, executions)
