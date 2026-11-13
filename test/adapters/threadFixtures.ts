@@ -109,6 +109,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   ticket: unserved("ticket"),
   ticketNativeActions: unserved("ticket native actions"),
   nativeActions: unserved("native actions"),
+  ticketNativeActionHistory: unserved("ticket native action history"),
   execution: unserved("execution"),
   executions: unserved("executions"),
   latestExecutions: unserved("latest executions"),

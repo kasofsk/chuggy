@@ -154,6 +154,7 @@ import {
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
+  nativeActionStates,
   notificationKinds,
   type NativeActionKind,
   type NativeActionResolution,
@@ -743,6 +744,48 @@ export const projectNativeActionsResponseSchema = z.object({
 });
 export type ProjectNativeActionsResponse = z.infer<
   typeof projectNativeActionsResponseSchema
+>;
+
+/**
+ * One action a ticket has had, in whatever state it stands: its resolution
+ * where it was answered, the finalization attempt or execution it asked about
+ * where it names one, and who answered it and when where that is recorded,
+ * which is on an answered EvaluationApproval alone.
+ */
+export const nativeActionRecordResponseSchema = z
+  .strictObject({
+    action: identitySchema,
+    kind: z.enum(nativeActionKinds),
+    authorizingSequence: countSchema,
+    state: z.enum(nativeActionStates),
+    resolution: z.enum(nativeActionResolutions).optional(),
+    attempt: identitySchema.optional(),
+    execution: identitySchema.optional(),
+    answeredBy: z.string().min(1).max(principalCharsMax).optional(),
+    answeredAt: instantSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      (value.state === "Resolved") === (value.resolution !== undefined) &&
+      (value.resolution === undefined ||
+        nativeActionKindResolutions[value.kind].some(
+          (resolution) => resolution === value.resolution,
+        )) &&
+      (value.answeredBy === undefined) === (value.answeredAt === undefined) &&
+      (value.answeredBy === undefined || value.state === "Resolved"),
+    "a native action's resolution, or who answered it, disagrees with its state or its kind",
+  );
+export type NativeActionRecordResponse = z.infer<
+  typeof nativeActionRecordResponseSchema
+>;
+
+/** Every action a ticket has had, open and settled, oldest fence first, one bounded page at a time. */
+export const ticketNativeActionHistoryResponseSchema = z.object({
+  actions: page(nativeActionRecordResponseSchema),
+  nextCursor: cursorSchema.optional(),
+});
+export type TicketNativeActionHistoryResponse = z.infer<
+  typeof ticketNativeActionHistoryResponseSchema
 >;
 
 export const operationalStatusResponseSchema = z.object({

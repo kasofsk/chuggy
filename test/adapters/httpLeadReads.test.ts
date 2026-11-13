@@ -281,6 +281,7 @@ function readStore(
     ticketNativeActions: () => Promise.resolve([]),
     nativeActions: () => Promise.resolve({ actions: [] }),
     nativeActionAsked: () => Promise.resolve(undefined),
+    ticketNativeActionHistory: () => Promise.resolve(undefined),
   };
 }
 

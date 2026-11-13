@@ -115,6 +115,7 @@ function servedWeb(
     configurations: notFound,
     ticketNativeActions: () => Promise.resolve(actions()),
     nativeActions: notFound,
+    ticketNativeActionHistory: () => Promise.resolve(undefined),
     importRepositoryConfigurations: notFound,
     repositoryConfigurationHead: notFound,
     createDraft: notFound,

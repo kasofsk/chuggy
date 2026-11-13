@@ -25,6 +25,7 @@ import {
   asPublicInstant,
   type EvaluationApprovalAsked,
   type NativeActionAskedPage,
+  type NativeActionPageQuery,
   type NativeReadStore,
   type OperationResource,
   type ProjectRead,
@@ -34,6 +35,8 @@ import {
   type RunnerLossResource,
   type RunStepFailureResource,
   type TicketNativeActionAsked,
+  type TicketNativeActionHistoryPage,
+  type TicketNativeActionRecord,
   type TicketDependencyResource,
   type TicketPhaseFilter,
   type TicketResource,
@@ -80,7 +83,10 @@ import {
   configurationFollowingRead,
   type ConfigurationFollowingTicket,
 } from "../../interpreter/configurationFollowing.ts";
-import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asFinalizationAttemptId,
+  asRepositoryId,
+} from "../../interpreter/finalizer.ts";
 import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
 import type { NativeActionAsked } from "../../interpreter/nativeActionAnswer.ts";
 import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
@@ -207,6 +213,19 @@ interface ProjectNativeActionRow {
   readonly kind: string;
   readonly authorizing_seq: string;
   readonly resolutions: string[] | null;
+}
+
+/** One action a ticket has had, or a ticket with none after the cursor: every column is then null. */
+interface NativeActionHistoryRow {
+  readonly action: string | null;
+  readonly kind: string | null;
+  readonly authorizing_seq: string | null;
+  readonly state: string | null;
+  readonly resolution: string | null;
+  readonly attempt: string | null;
+  readonly execution: string | null;
+  readonly answered_by: string | null;
+  readonly answered_at: string | null;
 }
 
 /** What one evaluation approval stands for: its execution, that execution's place, and the configuration it was released under. */
@@ -1368,14 +1387,122 @@ async function nativeReadsActionAsked(
   return { kind, approvers: approval.approvers };
 }
 
-/** The desk reads: the open native actions a ticket and a project carry, and what one action asks of whoever answers it. */
+/**
+ * One stored action as its history answers it. A resolution its kind does not
+ * ask for, one on an action not resolved, and an answerer on one no answer
+ * settled are this layer and the database disagreeing, so each raises.
+ */
+function nativeActionRecord(
+  row: NativeActionHistoryRow,
+): TicketNativeActionRecord {
+  if (
+    row.action === null ||
+    row.kind === null ||
+    row.authorizing_seq === null ||
+    row.state === null
+  )
+    throw new Error("native read: a ticket's action is missing its fence");
+  const kind = nativeActionKind(row.kind);
+  const named = {
+    action: row.action,
+    kind,
+    authorizingSequence: projectRowCounter(
+      row.authorizing_seq,
+      "native action authorizing sequence",
+    ),
+    ...(row.attempt === null
+      ? {}
+      : { attempt: asFinalizationAttemptId(row.attempt) }),
+    ...(row.execution === null
+      ? {}
+      : { execution: asExecutionId(row.execution) }),
+  };
+  if (row.state === "Open" || row.state === "Withdrawn") {
+    if (row.resolution !== null || row.answered_by !== null)
+      throw new Error(`native read: a ${row.state} action records an answer`);
+    return { ...named, state: row.state };
+  }
+  if (row.state !== "Resolved")
+    throw new Error(`native read: ${row.state} is not a native action state`);
+  const resolution = nativeActionResolutions[kind].find(
+    (each) => each === row.resolution,
+  );
+  if (resolution === undefined)
+    throw new Error(
+      `native read: a resolved ${kind} names an answer it cannot ask for`,
+    );
+  return {
+    ...named,
+    state: "Resolved",
+    resolution,
+    ...(row.answered_by === null
+      ? {}
+      : {
+          answeredBy: asPrincipal(row.answered_by),
+          answeredAt: projectRowInstant(row.answered_at, "answering time"),
+        }),
+  };
+}
+
+/**
+ * A page of every action a ticket has had, oldest fence first, read one past
+ * the page so a further page is known without a count. The ticket's own row
+ * is the outer side, so a ticket with nothing after the cursor answers an
+ * empty page and one the project does not hold answers nothing.
+ */
+async function nativeReadsActionHistory(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: TicketId,
+  query: NativeActionPageQuery,
+): Promise<TicketNativeActionHistoryPage | undefined> {
+  const found = await pool.query<NativeActionHistoryRow>(
+    sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
+               a.state,a.resolution,a.attempt,a.execution,a.answered_by,
+               to_char(a.answered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS answered_at
+          FROM ticket_projection t
+          LEFT JOIN native_action a
+            ON a.tenant=t.tenant AND a.project=t.project AND a.ticket=t.ticket
+           AND (${query.after?.authorizingSequence ?? null}::bigint IS NULL
+             OR (a.authorizing_seq,a.action) >
+                (${query.after?.authorizingSequence ?? null},${query.after?.action ?? null}))
+         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+           AND t.ticket=${ticket}
+         ORDER BY a.authorizing_seq,a.action
+         LIMIT ${query.limit + 1}`,
+  );
+  if (found.rows.length === 0) return undefined;
+  const actions = found.rows
+    .filter((row) => row.action !== null)
+    .map(nativeActionRecord);
+  const listed = actions.slice(0, query.limit);
+  const next = actions.length > query.limit ? listed.at(-1) : undefined;
+  return {
+    actions: listed,
+    ...(next === undefined
+      ? {}
+      : {
+          nextAfter: {
+            authorizingSequence: next.authorizingSequence,
+            action: next.action,
+          },
+        }),
+  };
+}
+
+/** The desk reads: the open native actions a ticket and a project carry, every action a ticket has had, and what one action asks of whoever answers it. */
 function nativeReadsActions(
   pool: pg.Pool,
 ): Pick<
   NativeReadStore,
-  "ticketNativeActions" | "nativeActions" | "nativeActionAsked"
+  | "ticketNativeActions"
+  | "nativeActions"
+  | "nativeActionAsked"
+  | "ticketNativeActionHistory"
 > {
   return {
+    ticketNativeActionHistory: (partition, ticket, query) =>
+      nativeReadsActionHistory(pool, partition, ticket, query),
     nativeActionAsked: (partition, action) =>
       nativeReadsActionAsked(pool, partition, action),
     ticketNativeActions: async (partition, ticket) => {
