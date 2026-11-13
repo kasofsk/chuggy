@@ -28,15 +28,25 @@
 # platform is an entry stating an `os`, a `cpu` or a `libc`; what the key holds
 # of it is the package that names it among its optional dependencies.
 #
+# AN INSTALL IS THE LOCK'S WHERE EACH PLACE HOLDS WHAT THE LOCK PUTS THERE,
+# asked with `--matches <lock>`, which exits 1 naming each place the two
+# differ. `npm ci` puts every copy where the lock does, so places are
+# compared, and the flags npm derives are not. A build for one platform is
+# left out as above, and a package the lock marks optional may be absent,
+# since npm skips one it cannot install on this machine; one present is still
+# compared.
+#
 # A RECORD THAT CANNOT BE READ, OR THAT HOLDS NO NAMED PACKAGE, FAILS, since a
 # tool that fails leaves the gate unrecorded and a closure printed empty would
 # read as one that installed nothing.
 #
 # Usage: sh .chug/tasks/_installed-inputs.sh [--lock <file>] <package>...
 #        sh .chug/tasks/_installed-inputs.sh [--lock <file>] --whole
-#   --lock   the record to read, default node_modules/.package-lock.json; a
-#            package-lock.json reads the same way
-#   --whole  the whole record, less each build for one platform
+#        sh .chug/tasks/_installed-inputs.sh [--lock <file>] --matches <lock>
+#   --lock     the record to read, default node_modules/.package-lock.json; a
+#              package-lock.json reads the same way
+#   --whole    the whole record, less each build for one platform
+#   --matches  whether the record is the install the lock names
 # Run from the root.
 set -eu
 export LC_ALL=C
@@ -46,9 +56,16 @@ if [ "${1:-}" = "--lock" ]; then
 	lock="${2:?--lock names a file}"
 	shift 2
 fi
-whole=0
-if [ "${1:-}" = "--whole" ]; then
-	whole=1
+mode=0
+if [ "${1:-}" = "--matches" ]; then
+	mode=matches
+	shift
+	if [ "$#" -ne 1 ]; then
+		echo "_installed-inputs: --matches names one lock" >&2
+		exit 2
+	fi
+elif [ "${1:-}" = "--whole" ]; then
+	mode=1
 	shift
 	if [ "$#" -ne 0 ]; then
 		echo "_installed-inputs: nothing follows --whole" >&2
@@ -63,23 +80,51 @@ exec node -e '
 const fs = require("node:fs");
 const [lockPath, mode, ...named] = process.argv.slice(1);
 const whole = mode === "1";
-let record;
-try {
-  record = JSON.parse(fs.readFileSync(lockPath, "utf8"));
-} catch (error) {
-  console.error(`_installed-inputs: ${lockPath} cannot be read: ${error.message}`);
-  process.exit(1);
+function read(path) {
+  let record;
+  try {
+    record = JSON.parse(fs.readFileSync(path, "utf8"));
+  } catch (error) {
+    console.error(`_installed-inputs: ${path} cannot be read: ${error.message}`);
+    process.exit(1);
+  }
+  if (!record || !record.packages || typeof record.packages !== "object") {
+    console.error(`_installed-inputs: ${path} holds no packages`);
+    process.exit(1);
+  }
+  return record;
 }
-const packages = record && record.packages;
-if (!packages || typeof packages !== "object") {
-  console.error(`_installed-inputs: ${lockPath} holds no packages`);
-  process.exit(1);
+const record = read(lockPath);
+const packages = record.packages;
+const platformBuild = (entry) => Boolean(entry && (entry.os || entry.cpu || entry.libc));
+if (mode === "matches") {
+  const lock = read(named[0]).packages;
+  const what = (entry) =>
+    entry === undefined
+      ? "nothing"
+      : entry.link
+        ? `a link to ${entry.resolved}`
+        : `${entry.version ?? ""} ${entry.integrity ?? entry.resolved ?? ""}`;
+  const differ = [];
+  for (const location of new Set([...Object.keys(lock), ...Object.keys(packages)])) {
+    const want = lock[location];
+    const got = packages[location];
+    if (location === "" || platformBuild(want) || platformBuild(got)) continue;
+    if (got === undefined && want.optional) continue;
+    if (what(want) !== what(got))
+      differ.push(`${location}: the lock names ${what(want)}, the install holds ${what(got)}`);
+  }
+  if (differ.length > 0) {
+    process.stdout.write(differ.sort().join("\n") + "\n");
+    process.exit(1);
+  }
+  process.exit(0);
 }
 // `--whole` names nothing, so no closure is walked: the record is printed
 // instead, less each build for one platform.
 if (whole)
   for (const [location, entry] of Object.entries(packages))
-    if (entry && (entry.os || entry.cpu || entry.libc)) delete packages[location];
+    if (platformBuild(entry)) delete packages[location];
 // The directories node searches for a name asked for from one location,
 // nearest first: each ancestor that is not itself a node_modules.
 function candidates(from, name) {
@@ -148,4 +193,4 @@ while (pending.length > 0) {
 process.stdout.write(
   whole ? `${JSON.stringify(record, null, 2)}\n` : [...lines].sort().join("\n") + "\n",
 );
-' "$lock" "$whole" "$@"
+' "$lock" "$mode" "$@"

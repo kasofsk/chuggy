@@ -19,17 +19,19 @@ import type { ConsoleQueryKept } from "./consoleQuery.ts";
 import { projectListFolded } from "./projectQueryKeys.ts";
 import { ticketExecutionsFolded } from "./ticketExecutions.ts";
 
+/** One execution, read again every `polledMs` as well where a caller names one, since a frame says nothing of what it waits on. */
 export function executionQuery(
   partition: PartitionIdentity,
   execution: string,
   kept: ConsoleQueryKept = "Read",
+  polledMs?: number,
 ) {
   return consoleProjectQuery(
     partition,
     "Execution",
     execution,
     (ports) => apiExecution(ports, partition, execution),
-    undefined,
+    polledMs,
     kept,
   );
 }

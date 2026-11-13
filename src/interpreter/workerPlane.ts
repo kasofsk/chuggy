@@ -1,10 +1,12 @@
 import {
   workerContractCredentialOutcome,
+  workerContractCredentialPauses,
   workerContractEvaluatedTree,
   workerContractMemoryRoom,
   workerContractRelease,
   workerContractRunContext,
   workerContractCredentialBundles,
+  workerContractRunCredential,
   workerContractRunUsage,
   workerContractRunnerAgentsAdvertised,
   workerContractSessionContext,
@@ -95,6 +97,12 @@ export const workerContractRunnerCredentialOutcomes: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a pool's or a personal runner's poll may name the credentials it would run each agent's job on, and be answered with those of them that are paused, a field an earlier one refuses its whole answer over. */
+export const workerContractRunnerCredentialPauses: WorkerContractRange = {
+  min: workerContractCredentialPauses,
+  max: workerContractAccepted.max,
+};
+
 /** The versions in which a personal runner's poll advertises exactly the agents it takes now, so its claim takes a job only of an agent it names or of none. */
 export const workerContractRunnerAgents: WorkerContractRange = {
   min: workerContractRunnerAgentsAdvertised,
@@ -116,6 +124,12 @@ export const workerContractUnscopedChat: WorkerContractRange = {
 /** The versions in which a run's totals may carry its account's usage and its end the limit that stopped it, fields a plane of an earlier one refuses the whole body over. */
 export const workerContractRunUsages: WorkerContractRange = {
   min: workerContractRunUsage,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a run's usage and its limit may name the credential they were read of, a field a plane of an earlier one refuses the whole body over. */
+export const workerContractRunCredentials: WorkerContractRange = {
+  min: workerContractRunCredential,
   max: workerContractAccepted.max,
 };
 

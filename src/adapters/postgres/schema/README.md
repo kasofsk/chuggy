@@ -500,8 +500,11 @@ it.
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
 registered, last polled and last polled as one that could take an execution,
-the runner package and version its newest poll named, and whether that poll's
-release names among its capabilities exactly the agents it takes. Written by the API
+the runner package and version its newest poll named, whether that poll's
+release names among its capabilities exactly the agents it takes, and the
+credentials that poll named, per agent, which a poll naming none clears and
+its claims and the scheduler's resume of a job a usage limit stopped read.
+Written by the API
 role, which registers and removes it whole, and by the pool plane, which
 stamps its polls and what they name; the pool plane, the scheduler and the
 boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
@@ -608,39 +611,46 @@ takes an advisory lock on the tenant, or for a workspace link on the site,
 drops that set's ended links past the most recently ended it keeps, and counts
 its open ones before it inserts. A link is not a ticket, and the wipe keeps it.
 
-`agent_account_usage` — the latest reading of each window of an agent account's
-usage: how much of the window was used, when it reopens, when it was observed,
-and the attempt whose run reported it. Owned by the boundary owner, which is
-what `record_worker_run_usage` runs as; the worker plane writes it through that
-door alone. The API reads one person's rows through `agent_account_standing`,
-and the metrics plane reads the key of every row and nothing else. Its key and
-identity are
-`(principal, agent, usage_window)`, the principal being the account an attempt
-spent as `execution_attempt_agent_account` derives it from the attempt's own
-claim and the agent the one its invocation names, so a window appears once per
-account and agent. It departs from #180's composite project key because one
-login serves every workspace its owner works in: a key carrying a tenant and a
-project would hold one account's readings apart, as `capacity_account` and
-`recovery_epoch` are keyed by what they are rather than by a project. It points
-at the attempt its reading came from. It is changed by that door alone, in the
-transaction that stores the run's totals or finds them already stored, and a
-reading replaces the one kept only where it was observed later. It has no
-unfinished work: a reading is kept with its totals or not at all, and the
-latest of each window is the row itself.
+`agent_account_usage` — the latest reading of each window of each credential
+of an agent account: how much of the window was used, when it reopens, when it
+was observed, and the attempt whose run reported it. Owned by the boundary
+owner, which is what `record_worker_run_usage` runs as; the worker plane writes
+it through that door alone. The API reads one person's rows through
+`agent_account_standing`, which answers each window's newest reading across the
+account's credentials, and the metrics plane reads the principal and agent of
+every row and nothing else. Its key and identity are
+`(principal, agent, credential, usage_window)`, the principal being the account
+an attempt spent as `execution_attempt_agent_account` derives it from the
+attempt's own claim, the agent the one its invocation names, and the credential
+the one the run named, or its agent's default name where it named none, so a
+window appears once per credential. It departs from #180's composite project
+key because one login serves every workspace its owner works in: a key carrying
+a tenant and a project would hold one account's readings apart, as
+`capacity_account` and `recovery_epoch` are keyed by what they are rather than
+by a project. It points at the attempt its reading came from. It is changed by
+that door alone, in the transaction that stores the run's totals or finds them
+already stored, and a reading replaces the one kept of its credential only where
+it was observed later. The credentials kept of one account's agent, across this
+relation and `agent_account_limit`, are bounded by
+`agentAccountCredentialsKeptMaxAt163`: one arriving at the bound drops every row
+of the credential observed least recently, through
+`agent_account_credential_kept`. It has no unfinished work: a reading is kept
+with its totals or not at all, and the latest of each window is the row itself.
 
-`agent_account_limit` — the latest hard limit a provider stopped an agent
-account at: the window and the instant it reopens where the run named them,
-when the plane received it, and the attempt it stopped. Owned by the boundary
-owner, which is what `record_worker_run_limit` runs as; the worker plane writes
-it through that door alone. The API reads one person's row through
-`agent_account_standing`, and the metrics plane reads the key of every row and
-nothing else. Its key and identity
-are `(principal, agent)`, derived as `agent_account_usage`'s are, and it departs
-from #180's composite project key for the same reason. It points at the attempt
-it stopped. It is changed by that door alone, in the transaction that withdraws
-that attempt `RunRateLimited`, and a limit replaces the one kept unless that one
-was received later. It has no unfinished work: the limit is kept with its
-attempt's ending or not at all.
+`agent_account_limit` — the latest hard limit a provider stopped each credential
+of an agent account at: the window and the instant it reopens where the run
+named them, when the plane received it, and the attempt it stopped. Owned by the
+boundary owner, which is what `record_worker_run_limit` runs as; the worker
+plane writes it through that door alone. The API reads one person's newest
+limit across the account's credentials through `agent_account_standing`, and
+the metrics plane reads the principal and agent of every row and nothing else.
+Its key and identity are `(principal, agent, credential)`, derived as
+`agent_account_usage`'s are and bounded with it, and it departs from #180's
+composite project key for the same reason. It points at the attempt it stopped.
+It is changed by that door alone, in the transaction that withdraws that attempt
+`RunRateLimited`, and a limit replaces the one kept of its credential unless
+that one was received later. It has no unfinished work: the limit is kept with
+its attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their
@@ -648,8 +658,17 @@ threads and inquiries pause with it; the lead of a pool they registered always
 does. The API writes one person's row whole through `write_agent_account_setting`, and no
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
-and the metrics plane may call and `ticket_rate_limit_resumable` asks for the
-scheduler, reads it through that, as `agent_account_standing` does for the API.
+and the metrics plane may call, reads it through that, as
+`agent_account_standing` does for the API.
+`agent_account_named_pause`, which the pool plane and the API may call, answers
+`agent_account_pause`'s columns for the credentials a runner or a pool named:
+paused only while every one of them is, until the earliest of those ends, a
+name that never reported being free. `agent_account_named_credential_pauses`
+answers the pool plane each of them that is paused, and until when.
+`ticket_rate_limit_resumable` asks for the scheduler, and `ticket_usage_resume`
+for the API, `agent_account_pause` of the agent a limited task spent, and
+`agent_account_named_pause` of the credentials each runner of that account
+names, so the task is free where either would let that runner's claim through.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived

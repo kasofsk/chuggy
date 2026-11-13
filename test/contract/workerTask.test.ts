@@ -269,6 +269,27 @@ test("a pool-held session's answer names its site's API, bounds and model togeth
   }
 });
 
+test("a pool-held session's bounds may name no idle limit, and any other bound they leave out is refused", () => {
+  for (const { poolHeld } of sessionAnswers()) {
+    const { bounds } = z
+      .object({ bounds: z.record(z.string(), z.number()) })
+      .parse(poolHeld);
+    const unbounded = { ...poolHeld, bounds: without(bounds, ["idleMs"]) };
+    assert.deepEqual(workerTaskAnswerSchema.parse(unbounded), unbounded);
+    for (const missing of Object.keys(bounds).filter(
+      (bound) => bound !== "idleMs",
+    ))
+      assert.equal(
+        workerTaskAnswerSchema.safeParse({
+          ...poolHeld,
+          bounds: without(bounds, [missing]),
+        }).success,
+        false,
+        missing,
+      );
+  }
+});
+
 for (const release of workerContractReplayed("session")) {
   const launches = contractVersionAccepted(
     workerContractRunnerSessions,

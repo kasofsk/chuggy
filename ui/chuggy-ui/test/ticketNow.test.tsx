@@ -1,5 +1,5 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { act, cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -20,6 +20,8 @@ import type { RunPageServed } from "./runPageFixture.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { sessionPlacementPolledMs } from "../app/core/sessionRunners.ts";
+import { settled } from "./screenHarness.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 import { ticketHeader } from "./ticketPageEveryTab.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
@@ -36,8 +38,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
+    <a href={props.to ?? "/"}>{props.children}</a>
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
@@ -131,6 +133,27 @@ const transcribed = runEvidenceOf(8, { configuration: runConfigurationRef });
 
 function nowCard(): HTMLElement {
   return screen.getByRole("region", { name: "Now" });
+}
+
+/**
+ * The parts of the card's notice line that each wrap whole, after asserting
+ * nothing but a space stands between them: a line can then break only before
+ * a part, and every part but the first opens with its dot.
+ */
+function nowLineParts(): readonly string[] {
+  const line = nowCard().querySelector(".notice-inline");
+  const parts = [...(line?.querySelectorAll(".whitespace-nowrap") ?? [])]
+    .filter(
+      (part) => part.parentElement?.closest(".whitespace-nowrap") === null,
+    )
+    .map((part) => part.textContent);
+  expect(line?.textContent).toBe(parts.join(" "));
+  return parts;
+}
+
+/** How many times the execution's own read was asked. */
+function executionReads(reads: readonly string[]): number {
+  return reads.filter((url) => url.endsWith("/executions/e1")).length;
 }
 
 test("the card names the step running and its cycle, the call it waits on, and links to watch it", async () => {
@@ -247,141 +270,146 @@ test("a step whose run nothing has taken says it waits, and for how long", async
   ).toEqual(["Waiting", "25m"]);
 });
 
-/** The reader's own run, routed to runners under Strict, its worker not begun. */
-function ownRunStarting(
-  personalRunner: Record<string, unknown> | undefined,
-): RunPageServed {
-  const starting = runSummary({
+/** The reader's own run, routed to runners under Strict, its worker not begun, carrying what the server answers it waits on of their runners. */
+function ownRunSummary(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return runSummary({
     status: "Launching",
     outcome: undefined,
     runTotals: undefined,
     carrier: "Agent",
     mine: true,
     ownerFallback: "Strict",
+    ...over,
   });
+}
+
+/** The reader's own run starting, its own read answering as `read` does at the moment it is asked. */
+function ownRunStarting(
+  read: () => Record<string, unknown>,
+  over: Record<string, unknown> = {},
+): RunPageServed {
   return {
     ticket: runningTicket,
-    executions: [starting],
-    execution: { ...starting, attempts: [] },
+    executions: [ownRunSummary(over)],
+    execution: () => ({ ...read(), attempts: [] }),
     transcripts: [],
-    ...(personalRunner === undefined ? {} : { personalRunner }),
   };
 }
 
-const ownRunner = {
-  runners: [
-    {
-      id: "chuggy-personal-1",
-      capabilities: ["Platform:Linux:Amd64"],
-      registeredAt: "2026-08-27T00:00:00Z",
-      live: false,
-      executionsLive: false,
-      held: [],
-      heldTruncated: false,
-    },
-  ],
-  projects: [
-    {
-      project: "atlas",
-      priority: "Normal",
-      waiting: 0,
-      waitingTruncated: false,
-    },
-  ],
-};
+/** The reader's own run starting, read the same every time it is asked. */
+function ownRunAnswered(over: Record<string, unknown>): RunPageServed {
+  return ownRunStarting(() => ownRunSummary(over), over);
+}
 
-test("the reader's own run that their offline runner holds says it waits on it, and where it is managed", async () => {
-  await runPageDrawn(atlas, ownRunStarting(ownRunner));
-  const card = nowCard();
-  expect(card.textContent).toContain(
-    "Waiting on your personal runners · offline",
-  );
-  expect(
-    within(card).getByRole("link", { name: "Personal runners" }),
-  ).toBeTruthy();
+test.each([
+  ["Offline", ["· offline"]],
+  ["Unable", ["· none can run it"]],
+  ["Live", []],
+] as const)(
+  "the reader's own run the server says waits on their runners as %s says so once, as the link to where they are managed, with its state after it",
+  async (wait, state) => {
+    await runPageDrawn(atlas, ownRunAnswered({ personalRunnerWait: wait }));
+    const sentence = "Waiting on your personal runners";
+    expect(nowLineParts()).toStrictEqual([sentence, ...state]);
+    const links = within(nowCard()).getAllByRole("link");
+    const runners = links.filter((link) =>
+      link.getAttribute("href")?.endsWith("/settings/workspace/runner"),
+    );
+    expect(runners.map((link) => link.textContent)).toStrictEqual([sentence]);
+  },
+);
+
+test("the reader's own run the server answers no wait for says nothing of a runner", async () => {
+  await runPageDrawn(atlas, ownRunAnswered({}));
+  expect(nowCard().textContent).not.toContain("Waiting on your");
 });
 
-test("the reader's own run waits on their runners, not offline, while any one of them is live", async () => {
-  const [offline] = ownRunner.runners;
-  await runPageDrawn(
-    atlas,
-    ownRunStarting({
-      ...ownRunner,
-      runners: [
-        offline,
-        {
-          ...offline,
-          id: "chuggy-personal-2",
-          live: true,
-          executionsLive: true,
-        },
-      ],
-    }),
-  );
-  const card = nowCard();
-  expect(card.textContent).toContain("Waiting on your personal runners");
-  expect(card.textContent).not.toContain("offline");
+/** No frame says a runner polled, so the run is read again on the clock while it has not begun. */
+test("the reader's own run that has not begun is read again on the clock, and says what the server answers now", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    let wait = "Offline";
+    const drawn = await runPageDrawn(
+      atlas,
+      ownRunStarting(() => ownRunSummary({ personalRunnerWait: wait })),
+    );
+    expect(nowCard().textContent).toContain("· offline");
+    const reads = executionReads(drawn.reads);
+    wait = "Live";
+    await act(() => vi.advanceTimersByTimeAsync(sessionPlacementPolledMs));
+    await settled();
+    expect(executionReads(drawn.reads)).toBeGreaterThan(reads);
+    expect(nowCard().textContent).toContain("Waiting on your personal runners");
+    expect(nowCard().textContent).not.toContain("offline");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
-test("the reader's own run says nothing of a runner they do not have", async () => {
-  await runPageDrawn(atlas, ownRunStarting(undefined));
-  expect(nowCard().textContent).not.toContain("Waiting on your runner");
+test("a run that has begun is not read again on the clock", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const drawn = await runPageDrawn(
+      atlas,
+      runningRun(transcribed, {
+        executions: [{ ...running, mine: true, ownerFallback: "Strict" }],
+      }),
+    );
+    const reads = executionReads(drawn.reads);
+    await act(() => vi.advanceTimersByTimeAsync(sessionPlacementPolledMs));
+    await settled();
+    expect(executionReads(drawn.reads)).toBe(reads);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 const pausedUntil = "2026-08-27T14:05:00Z";
 
-/** The reader's own run waiting on their live runner, whose account the server
- * says has the run's agent paused, or another member's run carrying the same. */
-function pausedRun(mine: boolean): RunPageServed {
-  const starting = runSummary({
-    status: "Launching",
-    outcome: undefined,
-    runTotals: undefined,
-    carrier: "Agent",
-    mine,
-    ownerFallback: "Strict",
-    paused: { until: pausedUntil, reasons: ["five_hour"], pressed: false },
-  });
-  const [offline] = ownRunner.runners;
-  return {
-    ticket: runningTicket,
-    executions: [starting],
-    execution: { ...starting, attempts: [] },
-    transcripts: [],
-    personalRunner: {
-      ...ownRunner,
-      runners: [{ ...offline, live: true, executionsLive: true }],
-    },
-  };
-}
+const pause = {
+  until: pausedUntil,
+  reasons: ["five_hour"],
+  pressed: false,
+};
 
-test("the reader's own waiting run whose agent their account has paused says so, why, until when, and where it is set", async () => {
-  await runPageDrawn(atlas, pausedRun(true));
+test("the reader's own run waiting on live runners their account holds paused says so, why, until when, and where it is set", async () => {
+  await runPageDrawn(
+    atlas,
+    ownRunAnswered({ personalRunnerWait: "Live", paused: pause }),
+  );
   const card = nowCard();
-  expect(card.textContent).toContain("Paused · Five-hour window · until ");
+  const [status, reason, until, usage, ...rest] = nowLineParts();
+  expect([status, reason, usage, rest]).toStrictEqual([
+    "Paused",
+    "· Five-hour window",
+    "· Usage",
+    [],
+  ]);
+  expect(until).toMatch(/^· until \S/);
   expect(card.textContent).not.toContain("Waiting on your personal runners");
   expect(within(card).getByRole("link", { name: "Usage" })).toBeTruthy();
 });
 
 test("another member's waiting run says nothing of a pause", async () => {
-  await runPageDrawn(atlas, pausedRun(false));
+  await runPageDrawn(
+    atlas,
+    ownRunAnswered({ mine: false, personalRunnerWait: "Live", paused: pause }),
+  );
   const card = nowCard();
   expect(card.textContent).not.toContain("Paused");
   expect(within(card).queryByRole("link", { name: "Usage" })).toBeNull();
 });
 
-test("the reader's own run waiting on no runner of theirs keeps its line and says nothing of a pause", async () => {
-  const served = pausedRun(true);
-  await runPageDrawn(atlas, {
-    ...served,
-    personalRunner: {
-      ...ownRunner,
-      projects: [{ project: "borealis", priority: "Normal" }],
-    },
-  });
+test("the reader's own run waiting on offline runners says so and nothing of a pause", async () => {
+  await runPageDrawn(
+    atlas,
+    ownRunAnswered({ personalRunnerWait: "Offline", paused: pause }),
+  );
   const card = nowCard();
   expect(card.textContent).not.toContain("Paused");
-  expect(card.textContent).not.toContain("Waiting on your runner");
+  expect(card.textContent).toContain("· offline");
 });
 
 function stillRunning(batch: number): string {

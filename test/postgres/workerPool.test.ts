@@ -690,12 +690,12 @@ const poolPlaneColumns = [
   [
     "personal_runner",
     "SELECT",
-    "agents_advertised,capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
+    "agents_advertised,capabilities,credentials_named,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
   ],
   [
     "personal_runner",
     "UPDATE",
-    "agents_advertised,capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+    "agents_advertised,capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
   ],
   ["personal_runner_project", "SELECT", "owner,priority,project,tenant"],
   ["project", "SELECT", "lifecycle,project,tenant"],
@@ -704,17 +704,17 @@ const poolPlaneColumns = [
   [
     "session_launch",
     "SELECT",
-    "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton",
+    "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton",
   ],
   [
     "worker_pool",
     "SELECT",
-    "capabilities,class,memory_ceiling_mib,pool,principal,project,registered_by,runner_package,runner_version,tenant",
+    "capabilities,class,credentials_named,memory_ceiling_mib,pool,principal,project,registered_by,runner_package,runner_version,tenant",
   ],
   [
     "worker_pool",
     "UPDATE",
-    "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+    "capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
   ],
 ];
 
@@ -723,10 +723,10 @@ const poolPlaneColumns = [
  * plane reads to do it; this is every other column the plane may touch, so an
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
- * liveness and the runner, capabilities and memory ceiling its poll named,
- * and whether a personal runner's capabilities advertise its agents, are all
- * of its row the plane writes, as a chat host's liveness and runner are of
- * its, while a pool's registrant is the account its claims spend and a press
+ * liveness and the runner, capabilities, memory ceiling and credentials its
+ * poll named, and whether a personal runner's capabilities advertise its
+ * agents, are all of its row the plane writes, as a chat host's liveness and
+ * runner are of its, while a pool's registrant is the account its claims spend and a press
  * is read and spent by the claim it lets through, as a personal runner's
  * claim records whether it benches its credential, whose outcome is read off
  * its attempt's ending and limit.
@@ -892,6 +892,45 @@ test("a pool's row keeps a runner only whole, and only in the header's grammar",
       refusal,
       `${String(runnerPackage)}/${String(version)}`,
     );
+});
+
+test("a pool's poll naming the credentials it kept writes nothing, and its row keeps credentials only as an object", async () => {
+  const project = await poolProject("credentials-named");
+  const { partition } = project;
+  const pool = "credentials-named";
+  const identity = await registered(partition, pool, [platform]);
+  const runners = postgresWorkerPoolRunners(planePool);
+  const credentials = { Claude: ["work", "home"] };
+  await runners.named(
+    identity,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    credentials,
+  );
+  const named = await poolRunnerRow(partition, pool);
+  await runners.named(
+    identity,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    credentials,
+  );
+  assert.equal(
+    (await poolRunnerRow(partition, pool)).written,
+    named.written,
+    "the same credentials again write nothing",
+  );
+  await assert.rejects(
+    planePool.query(
+      `UPDATE worker_pool SET credentials_named='["work"]'::jsonb
+        WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [partition.tenant, partition.project, pool],
+    ),
+    /worker_pool_credentials_named_is_an_object/u,
+  );
 });
 
 /** The capabilities a pool's row keeps, and the row version any write to it moves. */

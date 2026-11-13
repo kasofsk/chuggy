@@ -1,8 +1,9 @@
 /**
- * What one press of the composer's button does, and what the page does with
- * the press after it: a second press of Stop too close behind the first stops
- * nothing, a send the door refuses puts the member's words back, and a refusal
- * is said once, in one line, for as long as it is about something.
+ * What one press of Stop or of Send does, and what the page does with the
+ * press after it: a second press of Stop too close behind the first stops
+ * nothing, Send beside it takes its press whenever it comes, a send the door
+ * refuses puts the member's words back, and a refusal is said once, in one
+ * line, for as long as it is about something.
  */
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";
@@ -90,16 +91,16 @@ function stopped(stage: Stage): readonly string[] {
   return stage.stops.map((stop) => stop.turn);
 }
 
-/** The button as a press finds it: saying Stop, and one a press can land on. */
+/** Stop as a press finds it: drawn before Send, and one a press can land on. */
 function buttonTakesStop(): void {
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
   const button = screen.getByRole<HTMLButtonElement>("button", {
     name: "Stop",
   });
   expect(button.disabled).toBe(false);
 }
 
-test("two presses of Stop a frame apart stop one turn, and the button is Stop throughout and one a press can land on", async () => {
+test("two presses of Stop a frame apart stop one turn, and Stop is drawn throughout and one a press can land on", async () => {
   const stage = await answering("Queued");
   await stageStopped();
   buttonTakesStop();
@@ -139,54 +140,35 @@ test("a stop the door refuses is answered too: after the beat the next press is 
   expect(stopped(stage)).toStrictEqual(["turn-2", "turn-2"]);
 });
 
-test("a press of the button that has turned to Send within the beat sends nothing and keeps the words, and Enter sends them", async () => {
+test("a click of Send within Stop's beat sends the words, since it is no second press of Stop", async () => {
   const stage = await answering();
   fireEvent.change(stageBox(), { target: { value: "and 42" } });
   await settled();
   await stageStopped();
-  expect(stageButton()).toBe("Send");
-
-  const send = (): void => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  };
-  send();
-  await settled();
-  expect(stage.sends).toHaveLength(0);
-  expect(stageBox().value).toBe("and 42");
-
-  clock.ms += conversationStopBeatMs;
-  send();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await settled();
   expect(stage.sends.map((sent) => sent.message)).toStrictEqual(["and 42"]);
+  expect(stopped(stage)).toStrictEqual(["turn-2"]);
 });
 
-test("two clicks of Send a frame apart send once and stop nothing, and a click after the beat stops what was sent", async () => {
+test("two clicks of Send a frame apart send once, and Stop takes its first press at once, ending what was sent", async () => {
   const stage = stageMounted(threadBody({ turns: [before] }), [earlier]);
   await settled();
   fireEvent.change(stageBox(), { target: { value: asked } });
   await settled();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await settled();
-  buttonTakesStop();
-  await stageStopped();
   buttonTakesStop();
 
   const [sent] = stage.sends;
   await stageAnswered(sent, { turn: sent?.turn, ordinal: 2 }, 202);
   expect(stage.sends.map((post) => post.message)).toStrictEqual([asked]);
-  expect(stopped(stage)).toStrictEqual([]);
-  expect(stageColumn(stage.container)).toStrictEqual([
-    ...opened,
-    `> ${asked}`,
-    "",
-  ]);
-
-  clock.ms += conversationStopBeatMs;
   await stageStopped();
   expect(stopped(stage)).toStrictEqual([sent?.turn]);
 });
 
-test("Enter sends within the beat, since a key is no second press of the button", async () => {
+test("Enter sends within Stop's beat, since a key is no second press of Stop", async () => {
   const stage = await answering();
   await stageStopped();
   await stageSent("and 42");

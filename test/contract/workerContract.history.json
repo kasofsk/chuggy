@@ -378,5 +378,35 @@
     "release": "1.75.0",
     "wire": "6677efae904d05bf7a4e89c6ac69dc60b0e8fa12c0a47504adc80a9779261f4f",
     "files": "bb57ae44c1f2aad1b644eccbc9b9f1c795ea8b4317d25fa8d587e3835c00dd87"
+  },
+  {
+    "release": "1.76.0",
+    "wire": "0abe26855e376ea9d07b40e7ba5b1332dd6c1d02f93a2917b5bd2616039e13ca",
+    "files": "d6afe2f9731b628e1ec2ae122af71c56c43584100314c4c37e067a9a4e975993"
+  },
+  {
+    "release": "1.77.0",
+    "wire": "0a8204855b42743a5d1ea724c301f6b1f62da1e25df0d562cb07a0ae69271767",
+    "files": "ed4b7852a4bb38f6d905aebbada0b3f0931b5c8bcfe7437bebfe2796ce2b6e42"
+  },
+  {
+    "release": "1.78.0",
+    "wire": "f90b9664b57fe21707c3be10037c4a5be55d79dd1ab7d1a9d164595168a98d98",
+    "files": "f2bedb8b32f8ba2f5b8b789f34850d6aff89e2e2f121415d6097621694d560e1"
+  },
+  {
+    "release": "1.79.0",
+    "wire": "c9effc27a317d83c10cdc94fc556fcf3fa6358e6031e48d4db2d8ac25e846194",
+    "files": "18b641815a2ca670f1d4e31a85f033b3daeb42abe8c0bccc48915874f84931d8"
+  },
+  {
+    "release": "1.80.0",
+    "wire": "5fcf85ebd6f30b641ca8650e22f6f27de6bd9a5a47b8c29a28954a01cc1fc3eb",
+    "files": "393e155bb5f6b46a16e31ae749502757f470235e066e4226aea9bc8d53b18355"
+  },
+  {
+    "release": "1.81.0",
+    "wire": "2550ab9188ee97dc8f6b033e24f72c6d851ff10978262b9bb71fab4d50c5f2ea",
+    "files": "7433b9aadc7292e71e1d0ec196ad663fbb1a8937ffc2d7a65d8561ecaaf6a417"
   }
 ]

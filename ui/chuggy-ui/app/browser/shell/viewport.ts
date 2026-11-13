@@ -61,7 +61,7 @@ function useViewportMatches(query: string): boolean {
 }
 
 /** The root's `em` in pixels, which every `rem` is. */
-export function viewportRootEmPixels(page: Document): number {
+function viewportRootEmPixels(page: Document): number {
   return Number.parseFloat(getComputedStyle(page.documentElement).fontSize);
 }
 

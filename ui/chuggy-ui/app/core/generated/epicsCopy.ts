@@ -119,20 +119,42 @@ export interface EpicsCopy {
   readonly "epics-graph-key-ready": Record<never, never>;
   readonly "epics-graph-key-blocked": Record<never, never>;
   readonly "epics-graph-key-escalated": Record<never, never>;
-  readonly "epics-graph-arrows": Record<never, never>;
-  readonly "epics-graph-unconnected": Record<never, never>;
+  readonly "epics-graph-chain": Record<never, never>;
+  readonly "epics-graph-layer": {
+    readonly layer: unknown;
+    readonly done: unknown;
+    readonly count: unknown;
+  };
+  readonly "epics-graph-done": {
+    readonly done: unknown;
+    readonly count: unknown;
+  };
   readonly "epics-card-untitled": Record<never, never>;
+  readonly "epics-card-outside-tag": Record<never, never>;
   readonly "epics-card": {
     readonly ticket: unknown;
     readonly title: unknown;
     readonly state: unknown;
+    readonly count: unknown;
+    readonly done: unknown;
   };
   readonly "epics-card-outside": {
     readonly ticket: unknown;
     readonly title: unknown;
     readonly state: unknown;
+    readonly count: unknown;
+    readonly done: unknown;
   };
   readonly "epics-side-label": Record<never, never>;
+  readonly "epics-side-summary": Record<never, never>;
+  readonly "epics-side-layer": {
+    readonly layer: unknown;
+    readonly layers: unknown;
+  };
+  readonly "epics-side-step": {
+    readonly step: unknown;
+    readonly steps: unknown;
+  };
   readonly "epics-side-depends-on": Record<never, never>;
   readonly "epics-side-blocks": Record<never, never>;
   readonly "epics-side-none": Record<never, never>;

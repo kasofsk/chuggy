@@ -150,6 +150,7 @@ export interface ChatCopy {
     readonly ticket: unknown;
     readonly phase: unknown;
   };
+  readonly "chat-offer-waiting": Record<never, never>;
   readonly "chat-offer-unsent": {
     readonly settled: unknown;
   };

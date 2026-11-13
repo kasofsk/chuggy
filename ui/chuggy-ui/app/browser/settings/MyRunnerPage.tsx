@@ -76,6 +76,7 @@ import {
 } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
 import { AgentPause } from "../AgentPause.tsx";
+import { LinePart } from "../ui/LinePart.tsx";
 import { useAgentAccounts } from "../agentAccounts.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
@@ -787,8 +788,9 @@ function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
           nowMs={nowMs}
           named={text(accountAgentLabel(account.agent))}
         >
-          {" · "}
-          <MyRunnerUsageLink tenant={props.tenant} />
+          <LinePart>
+            <MyRunnerUsageLink tenant={props.tenant} />
+          </LinePart>
         </AgentPause>
       ))}
     </div>

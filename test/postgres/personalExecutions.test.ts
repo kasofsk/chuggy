@@ -47,6 +47,8 @@ import {
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { RunLimit } from "../../src/interpreter/runEvidence.ts";
+import type { ExecutionSummary } from "../../src/interpreter/operationsView.ts";
+import { workerPoolAgentToken } from "../../src/interpreter/workerPoolAssignment.ts";
 import {
   workerPoolReconcile,
   type PersonalRunnerIdentity,
@@ -325,62 +327,288 @@ test("the API reads an execution's fallback only where its owner's runner may ta
   assert.equal(stranger?.mine, false, "another reader does not own it");
 });
 
-test("the API reads its owner's pause on the agent a waiting execution spends, to its owner alone and only while it waits", async () => {
+/** An invocation whose worker spends Claude, which is what an account's limit pauses and a runner is offered or not. */
+const spendingClaude: WorkTaskInvocation = {
+  ...schedulerInvocation,
+  worker: {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  },
+};
+
+/** What a runner's newest poll left it as: live for executions or not, offered Claude unless `offered` is false, with `capabilities` where a case names its own, and naming `credentials` of Claude where it names any. */
+interface RunnerPolled {
+  readonly live: boolean;
+  readonly offered?: boolean;
+  readonly capabilities?: readonly string[];
+  readonly credentials?: readonly string[];
+}
+
+/** Writes onto `runner`'s row what a poll of `polled` writes, advertising its agents. */
+async function runnerPolled(
+  runner: Runner,
+  polled: RunnerPolled,
+): Promise<void> {
+  const offered =
+    polled.offered === false ? [] : [workerPoolAgentToken("Claude")];
+  await rig.harness.query(
+    `UPDATE personal_runner SET executions_polled_at=CASE WHEN $2::boolean THEN now() END,
+       agents_advertised=true,capabilities=$3::text[],credentials_named=$4::jsonb
+     WHERE principal=$1`,
+    [
+      runner.principal,
+      polled.live,
+      polled.capabilities ?? [platform, ...offered],
+      polled.credentials === undefined
+        ? null
+        : JSON.stringify({ Claude: polled.credentials }),
+    ],
+  );
+}
+
+/** One more of `member`'s runners in `project`'s tenant, serving it, as `polled` left it. */
+async function runnerPolledOf(
+  project: SchedulerProject,
+  member: Principal,
+  polled: RunnerPolled,
+): Promise<Runner> {
+  const runner = await runnerOf(project.partition, member);
+  await runnerPolled(runner, polled);
+  return runner;
+}
+
+/** A project of `member`'s under `fallback`, its one execution opened as an attempt spending Claude and waiting unclaimed. */
+async function waitingProject(
+  label: string,
+  member: Principal,
+  fallback: WorkerPoolOwnerFallback,
+): Promise<SchedulerProject> {
+  const project = await ownedProject(label, member, fallback, 1);
+  await opened(project, spendingClaude);
+  return project;
+}
+
+const operationalReads = postgresOperationalReads(apiPool, memoryMibDefault);
+
+/** The project's one execution as `reader` reads it in the list. */
+async function listedAs(
+  project: SchedulerProject,
+  reader: Principal,
+): Promise<ExecutionSummary | undefined> {
+  return (
+    await operationalReads.executions(project.partition, { limit: 10 }, reader)
+  ).executions[0];
+}
+
+/** Minutes from now until `pause` ends, to the nearest. */
+function pauseMinutes(pause: { readonly until: string } | undefined): number {
+  assert.ok(pause !== undefined, "a pause is answered");
+  return Math.round((Date.parse(pause.until) - Date.now()) / 60_000);
+}
+
+const fallbacksBoth: readonly WorkerPoolOwnerFallback[] = [
+  "Strict",
+  "Preferred",
+];
+
+test("an owner's waiting run waits on a live runner of theirs offered its agent, to its owner alone, and on nothing where they hold none", async () => {
+  const member = principal("member");
+  const project = await waitingProject("wait-live", member, "Preferred");
+  assert.equal(
+    (await listedAs(project, member))?.personalRunnerWait,
+    undefined,
+  );
+  await runnerPolledOf(project, member, { live: true });
+  const listed = await listedAs(project, member);
+  assert.equal(listed?.personalRunnerWait, "Live");
+  assert.equal(listed.paused, undefined, "nothing pauses it");
+  assert.ok(listed !== undefined);
+  for (const reader of [member, principal("stranger")])
+    assert.equal(
+      (
+        await operationalReads.execution(
+          project.partition,
+          listed.execution,
+          reader,
+        )
+      )?.personalRunnerWait,
+      reader === member ? "Live" : undefined,
+      "another member's run answers nothing of the owner's runners",
+    );
+});
+
+test("a live runner not offered the run's agent leaves it to a pool under Preferred and under Strict holds it on runners none of which can run it, and an offline one offered it beside that holds it offline", async () => {
+  for (const fallback of fallbacksBoth) {
+    const member = principal("member");
+    const project = await waitingProject(
+      `wait-unoffered-${fallback}`,
+      member,
+      fallback,
+    );
+    await runnerPolledOf(project, member, { live: true, offered: false });
+    assert.equal(
+      (await listedAs(project, member))?.personalRunnerWait,
+      fallback === "Strict" ? "Unable" : undefined,
+    );
+    await runnerPolledOf(project, member, { live: false });
+    assert.equal(
+      (await listedAs(project, member))?.personalRunnerWait,
+      fallback === "Strict" ? "Offline" : undefined,
+    );
+  }
+});
+
+test("a run none of whose owner's runners is live waits on them offline under Strict and on nothing under Preferred", async () => {
+  for (const fallback of fallbacksBoth) {
+    const member = principal("member");
+    const project = await waitingProject(
+      `wait-offline-${fallback}`,
+      member,
+      fallback,
+    );
+    const runner = await runnerPolledOf(project, member, { live: false });
+    assert.equal(
+      (await listedAs(project, member))?.personalRunnerWait,
+      fallback === "Strict" ? "Offline" : undefined,
+    );
+    await runnerPolled(runner, { live: true });
+    assert.equal((await listedAs(project, member))?.personalRunnerWait, "Live");
+  }
+});
+
+test("a runner that does not match the run's requirement, or whose owner lists another project, counts for nothing under either fallback", async () => {
+  for (const fallback of fallbacksBoth) {
+    const member = principal("member");
+    const project = await waitingProject(
+      `wait-unmatched-${fallback}`,
+      member,
+      fallback,
+    );
+    await runnerPolledOf(project, member, {
+      live: true,
+      capabilities: ["Platform:Windows:Amd64", workerPoolAgentToken("Claude")],
+    });
+    assert.equal(
+      (await listedAs(project, member))?.personalRunnerWait,
+      undefined,
+    );
+    const elsewhere = principal("elsewhere");
+    const listing = await waitingProject(
+      `wait-listing-${fallback}`,
+      elsewhere,
+      fallback,
+    );
+    const other = await ownedProject(
+      `wait-other-${fallback}`,
+      elsewhere,
+      fallback,
+      1,
+      {
+        tenant: listing.partition.tenant,
+        project: asProjectId(`wait-other-${randomUUID()}`),
+      },
+    );
+    const runner = await runnerOf(listing.partition, elsewhere, [
+      other.partition,
+    ]);
+    await runnerPolled(runner, { live: true });
+    assert.equal(
+      (await listedAs(listing, elsewhere))?.personalRunnerWait,
+      undefined,
+    );
+  }
+});
+
+test("the API reads its owner's pause on a waiting execution's live runners to its owner alone, and only while it waits", async () => {
   const member = principal("member");
   const stranger = principal("stranger");
-  const project = await ownedProject("owned-paused", member, "Strict", 1);
-  await opened(project, {
-    ...schedulerInvocation,
-    worker: {
-      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-      setup: [],
-      files: [],
-    },
-  });
-  const reads = postgresOperationalReads(apiPool);
-  const listed = async (reader: Principal) =>
-    (await reads.executions(project.partition, { limit: 10 }, reader))
-      .executions[0];
-  assert.equal((await listed(member))?.paused, undefined, "nothing pauses it");
+  const project = await waitingProject("owned-paused", member, "Strict");
+  const runner = await runnerPolledOf(project, member, { live: true });
   const limit = { limit: { observedSecs: -60, resetsSecs: 3_600 } };
   await agentAccountHarnessCommitted(rig.harness, stranger, "Claude", limit);
   assert.equal(
-    (await listed(member))?.paused,
+    (await listedAs(project, member))?.paused,
     undefined,
     "another person's pause is not the owner's",
   );
   await agentAccountHarnessCommitted(rig.harness, member, "Codex", limit);
   assert.equal(
-    (await listed(member))?.paused,
+    (await listedAs(project, member))?.paused,
     undefined,
     "the other agent of the owner's account does not hold it",
   );
   await agentAccountHarnessCommitted(rig.harness, member, "Claude", limit);
-  const paused = (await listed(member))?.paused;
+  const paused = (await listedAs(project, member))?.paused;
   assert.deepEqual(paused?.reasons, ["limit"]);
   assert.equal(paused.pressed, false);
   assert.equal(
-    Math.round((Date.parse(paused.until) - Date.now()) / 60_000),
+    pauseMinutes(paused),
     60,
+    "a runner naming no credential is held by the whole agent's",
   );
-  const execution = (await listed(member))?.execution;
+  const execution = (await listedAs(project, member))?.execution;
   assert.ok(execution !== undefined);
   for (const reader of [stranger, principal("reader")])
     assert.equal(
-      (await reads.execution(project.partition, execution, reader))?.paused,
+      (await operationalReads.execution(project.partition, execution, reader))
+        ?.paused,
       undefined,
       "no reader but its owner is told the owner's pause",
     );
-  const runner = await runnerOf(project.partition, member);
   assert.equal(await claimed(runner, [project.partition]), undefined);
   await agentAccountHarnessPressed(rig.harness, member, "Claude");
-  assert.equal((await listed(member))?.paused?.pressed, true);
+  assert.equal((await listedAs(project, member))?.paused?.pressed, true);
   assert.notEqual(await claimed(runner, [project.partition]), undefined);
+  const taken = await listedAs(project, member);
+  assert.equal(taken?.paused, undefined, "a claimed attempt waits on nothing");
+  assert.equal(taken?.personalRunnerWait, undefined);
+});
+
+test("a live runner's pause is answered only while every credential it named is paused, the earliest end of them, and only while every live runner is held", async () => {
+  const member = principal("member");
+  const project = await waitingProject("named-paused", member, "Strict");
+  const runner = await runnerPolledOf(project, member, {
+    live: true,
+    credentials: ["first", "second"],
+  });
+  const limited = (...ends: readonly (readonly [string, number])[]) =>
+    agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+      limits: ends.map(([credential, resetsSecs]) => ({
+        credential,
+        observedSecs: -60,
+        resetsSecs,
+      })),
+    });
+  await limited(["first", 3_600]);
   assert.equal(
-    (await listed(member))?.paused,
+    (await listedAs(project, member))?.paused,
     undefined,
-    "a claimed attempt waits on nothing",
+    "a runner with a credential free is held by nothing",
   );
+  await limited(["first", 7_200], ["second", 3_600]);
+  assert.equal(pauseMinutes((await listedAs(project, member))?.paused), 60);
+  await runnerPolled(runner, { live: true, credentials: ["first"] });
+  await runnerPolledOf(project, member, { live: true, credentials: ["third"] });
+  assert.equal(
+    (await listedAs(project, member))?.paused,
+    undefined,
+    "a second live runner on a free credential holds nothing back",
+  );
+  await limited(["first", 7_200], ["third", 1_800]);
+  assert.equal(pauseMinutes((await listedAs(project, member))?.paused), 30);
+});
+
+test("a run waiting on offline runners says so and no pause", async () => {
+  const member = principal("member");
+  const project = await waitingProject("offline-paused", member, "Strict");
+  await runnerPolledOf(project, member, { live: false });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limit: { observedSecs: -60, resetsSecs: 3_600 },
+  });
+  const listed = await listedAs(project, member);
+  assert.equal(listed?.personalRunnerWait, "Offline");
+  assert.equal(listed.paused, undefined);
 });
 
 test("an execution whose ticket was first drafted under another kind of authority is owned by nobody", async () => {
@@ -947,16 +1175,6 @@ test("a project taken off a runner's allowlist stops what it holds there alone, 
   assert.equal(await assignments.held(runner, inKept), true);
   assert.equal(await assignments.refuse(runner, inKept, "no node"), true);
 });
-
-/** An invocation whose worker spends Claude, which is what an account's limit pauses. */
-const spendingClaude: WorkTaskInvocation = {
-  ...schedulerInvocation,
-  worker: {
-    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-    setup: [],
-    files: [],
-  },
-};
 
 /** The pool plane's settings for a runner holding up to two jobs, one claimed per poll. */
 const benchSettings: WorkerPoolPollSettings = {

@@ -397,6 +397,11 @@ const workerPlaneRequests: Readonly<
       },
       { ...runTotalsBody, usage: { five_hour: usageReading } },
       { ...runTotalsBody, usage: { seven_day: usageReading } },
+      {
+        ...runTotalsBody,
+        usage: { five_hour: usageReading },
+        credential: "work",
+      },
     ],
   },
   runContext: {
@@ -437,6 +442,7 @@ const workerPlaneRequests: Readonly<
         limit: { window: "five_hour", resetsAt: usageReading.resetsAt },
       },
       { evidence: "RunRateLimited", limit: {} },
+      { evidence: "RunRateLimited", limit: { credential: "work" } },
     ],
   },
   credential: {
@@ -871,6 +877,15 @@ function sessionTaskPorts(
   };
 }
 
+/**
+ * The releases a session with no idle limit is launched by: only a chat host
+ * that names no idle bound is, and every host before this release names one.
+ */
+const workerContractIdleUnbounded: WorkerContractRange = {
+  min: { major: 1, minor: 76 },
+  max: workerContractAccepted.max,
+};
+
 /** A pool-held session's task, asked by a release whose runners launch a session and so are told what it is launched with. */
 function poolHeldSessionTaskCase(): WorkerPlaneCase {
   return {
@@ -885,6 +900,28 @@ function poolHeldSessionTaskCase(): WorkerPlaneCase {
         agentReference: "runtime-session",
         authority: liveInvocation.authority,
         repository: { reference: "github.com/owner/name" },
+      },
+    }),
+  };
+}
+
+/** A chat host's session's task, launched with no idle limit because its host named none. */
+function idleUnboundedSessionTaskCase(): WorkerPlaneCase {
+  return {
+    name: "a chat host's session's task, launched with no idle limit",
+    release: workerContractRelease,
+    sent: workerContractIdleUnbounded,
+    service: sessionTaskPorts({
+      ...liveSessionTask,
+      launch: {
+        ...poolSessionLaunch,
+        bounds: {
+          mailboxPollMs: poolSessionLaunch.bounds.mailboxPollMs,
+          resultDrainMs: poolSessionLaunch.bounds.resultDrainMs,
+          loadTimeoutMs: poolSessionLaunch.bounds.loadTimeoutMs,
+          turnsMax: poolSessionLaunch.bounds.turnsMax,
+          budgetUsd: poolSessionLaunch.bounds.budgetUsd,
+        },
       },
     }),
   };
@@ -925,6 +962,7 @@ function sessionTaskCases(): readonly WorkerPlaneCase[] {
       service: sessionTaskPorts(liveSessionTask),
     },
     poolHeldSessionTaskCase(),
+    idleUnboundedSessionTaskCase(),
     ...allSessionKinds.map((kind) => ({
       name: `a ${kind} session's task holding every capability`,
       service: sessionTaskPorts({

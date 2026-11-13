@@ -69,6 +69,11 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	done
 	printf '#!/bin/sh\necho stub doc-lint\nexit %s\n' "$1" > "$R/.chug/tasks/doc-lint.sh"
 	chmod +x "$R/.chug/tasks/doc-lint.sh"
+	# npm's record of the install is the lock, whatever lock a case writes, so
+	# the install is the lock's unless a case replaces the record.
+	mkdir -p "$R/node_modules"
+	ln -s ../package-lock.json "$R/node_modules/.package-lock.json"
+	printf 'node_modules/\n' >> "$R/.git/info/exclude"
 	git -C "$R" add -A
 }
 
@@ -837,9 +842,9 @@ printf '{}\n' > "$R/tsconfig.contract.json"
 printf '{}\n' > "$R/.jscpd.json"
 printf 'check:\n    ./.chug/tasks/ci.sh\n' > "$R/justfile"
 printf 'export default [];\n' > "$R/eslint.config.js"
-printf '{}\n' > "$R/package-lock.json"
+printf '{ "packages": {} }\n' > "$R/package-lock.json"
 commit_all baseline
-printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
+printf '{ "lockfileVersion": 3, "packages": {} }\n' > "$R/package-lock.json"
 commit_all parser
 run_last_commit 1
 check "the toolchain selects the suite that runs its parser" 0 "$RC" "  - .chug/tasks/check-comments.test.sh"
@@ -947,8 +952,8 @@ check "a setting the console's tools read is no input of the model's gate" 0 "$R
 # THE MODEL'S GATE FOLLOWS QUINT AND THE TICKET PACKAGE: a lock that moves no
 # package in their closure leaves it out, and one that moves either or a package
 # quint depends on brings it in, read past any colour or diff program git is configured with. A
-# lock that cannot be read at either end, or compared at all, brings it in
-# too. The manifest is not one of its inputs.
+# lock that cannot be compared at all brings it in too, as does a lock the base holds that cannot be read. The manifest is not
+# one of its inputs.
 stub_repo 0
 lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
 printf '{ "devDependencies": { "left-pad": "1.0.0" } }\n' > "$R/package.json"
@@ -1005,8 +1010,10 @@ run_last_commit
 refute "a lock that moves the ticket package selects Quint" 0 "$RC" "check-model: SKIPPED"
 printf 'not a lock\n' > "$R/package-lock.json"
 commit_all unreadable
+lock_json 0.33.0 1.1.0 4.0.0 1.0.2 > "$R/package-lock.json"
+commit_all readable
 run_last_commit
-refute "a lock that cannot be read selects Quint" 0 "$RC" "check-model: SKIPPED"
+refute "a lock the base holds that cannot be read selects Quint" 0 "$RC" "check-model: SKIPPED"
 stub_repo 0
 commit_all baseline
 lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
@@ -1675,6 +1682,95 @@ check "a REUSED line on an exit of 2 is still a could-not-run" 2 "$RC" \
 run_recorded TRACK_RECORD_TOKEN=t STUB_TR_KILL=check-paths
 check "a wrapped gate whose exit was lost could not run" 2 "$RC" "ci: LINTER ERROR (2) — check-paths could not run"
 
+# AN INSTALL THAT IS NOT THE LOCK'S IS A COULD-NOT-RUN. The record below is
+# one npm writes on a plain `npm ci` of the lock beside it: no entry for the
+# root, flags it derives dropped, only this machine's build of a package built
+# for each platform, and an optional package it could not install absent. That
+# runs the gates. A lock moved after it, by a version or an integrity, a
+# package arriving or leaving, or one that cannot be read, and no install at
+# all, each run none and exit 2 naming `npm ci`, with a token, under `--only`
+# and on a gate that reads no package alike.
+install_lock() { # <b's version> <b's integrity> [extra]
+	printf '{ "lockfileVersion": 3, "packages": {\n'
+	printf '  "": { "devDependencies": { "a": "1.0.0" } },\n'
+	printf '  "node_modules/a": { "version": "1.0.0", "integrity": "sha512-a", "dev": true,\n'
+	printf '    "dependencies": { "b": "^%s" }, "optionalDependencies": { "a-x64": "1.0.0", "a-arm64": "1.0.0", "c": "1.0.0" } },\n' "$1"
+	printf '  "node_modules/a-x64": { "version": "1.0.0", "integrity": "sha512-ax", "optional": true, "os": ["linux"], "cpu": ["x64"] },\n'
+	printf '  "node_modules/a-arm64": { "version": "1.0.0", "integrity": "sha512-aa", "optional": true, "os": ["linux"], "cpu": ["arm64"] },\n'
+	printf '  "node_modules/c": { "version": "1.0.0", "integrity": "sha512-c", "optional": true },\n'
+	[ -z "${3:-}" ] || printf '  "node_modules/%s": { "version": "1.0.0", "integrity": "sha512-%s" },\n' "$3" "$3"
+	printf '  "node_modules/w": { "resolved": "ws/w", "link": true },\n'
+	printf '  "ws/w": { "version": "0.1.0" },\n'
+	printf '  "node_modules/b": { "version": "%s", "integrity": "%s", "dev": true }\n' "$1" "$2"
+	printf '} }\n'
+}
+install_record() { # <b's version> <b's integrity> [extra]
+	printf '{ "name": "fixture", "lockfileVersion": 3, "requires": true, "packages": {\n'
+	[ -z "${3:-}" ] || printf '  "node_modules/%s": { "version": "1.0.0", "integrity": "sha512-%s" },\n' "$3" "$3"
+	printf '  "node_modules/a": { "version": "1.0.0", "integrity": "sha512-a",\n'
+	printf '    "dependencies": { "b": "^%s" }, "optionalDependencies": { "a-x64": "1.0.0", "a-arm64": "1.0.0", "c": "1.0.0" } },\n' "$1"
+	printf '  "node_modules/a-arm64": { "version": "1.0.0", "integrity": "sha512-aa", "optional": true, "os": ["linux"], "cpu": ["arm64"] },\n'
+	printf '  "node_modules/w": { "resolved": "ws/w", "link": true },\n'
+	printf '  "ws/w": { "version": "0.1.0" },\n'
+	printf '  "node_modules/b": { "version": "%s", "integrity": "%s" }\n' "$1" "$2"
+	printf '} }\n'
+}
+install_case() { # <b's version in the lock> <its integrity> [lock-only package] [install-only one]
+	stub_repo 0
+	install_lock "$1" "$2" "${3:-}" > "$R/package-lock.json"
+	rm "$R/node_modules/.package-lock.json"
+	install_record 1.0.0 sha512-b1 "${4:-}" > "$R/node_modules/.package-lock.json"
+	commit_all baseline
+}
+# Every gate selected, so a gate that runs prints its stub's line.
+install_run() { # [ci.sh argument...]
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_FULL=1 CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh "$@") >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+install_refused() { # <name> <must-contain>
+	check "$1 is a could-not-run" 2 "$RC" "$2"
+	check "$1 names npm ci" 2 "$RC" "run npm ci, then run again; this is not a pass"
+	refute "$1 runs no gate" 2 "$RC" "stub "
+}
+install_case 1.0.0 sha512-b1
+install_run
+check "the install npm ci writes of the lock runs the gates" 0 "$RC" "stub check-figures"
+check "and ends clean" 0 "$RC" "all gates clean"
+install_case 1.0.1 sha512-b2
+install_run
+install_refused "a lock moved after the install" \
+	"node_modules/b: the lock names 1.0.1 sha512-b2, the install holds 1.0.0 sha512-b1"
+install_case 1.0.0 sha512-other
+install_run
+install_refused "a lock naming another integrity" "node_modules/b: the lock names 1.0.0 sha512-other"
+install_case 1.0.0 sha512-b1 d
+install_run
+install_refused "a lock naming a package the install does not hold" \
+	"node_modules/d: the lock names 1.0.0 sha512-d, the install holds nothing"
+install_case 1.0.1 sha512-b2
+run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_FULL=1
+install_refused "a moved lock with a token" "node_modules/b: the lock names 1.0.1"
+recorded_log
+check "and is recorded under no key" 0 0 "calls 0"
+install_run --only check-figures
+install_refused "a moved lock under --only on a gate that reads no package" "node_modules/b: the lock names 1.0.1"
+install_case 1.0.0 sha512-b1 "" e
+install_run
+install_refused "an install holding a package the lock does not name" \
+	"node_modules/e: the lock names nothing, the install holds 1.0.0 sha512-e"
+install_case 1.0.0 sha512-b1
+rm "$R/node_modules/.package-lock.json"
+install_run
+install_refused "a lock with no install" "ci: LINTER ERROR — there is no install of package-lock.json"
+install_case 1.0.0 sha512-b1
+printf 'not a lock\n' > "$R/package-lock.json"
+commit_all unreadable
+install_run
+install_refused "a lock that cannot be read" "package-lock.json cannot be read"
+
 # THE KEY SEES THE INSTALL AND THE IGNORED FILES. The stub digests what each
 # call's tools print, which is what track-record keys on. npm's record of the
 # install moves it, and so does an ignored entry in scope: a file by its name
@@ -1687,6 +1783,7 @@ stub_repo 0
 printf 'node_modules\ndist/\n.claude/worktrees/*\n' > "$R/.gitignore"
 printf '**/.claude/worktrees/\n*.gen\n.claude/*.lock\n' >> "$R/.git/info/exclude"
 mkdir -p "$R/node_modules" "$R/src" "$R/.claude"
+rm "$R/node_modules/.package-lock.json"
 printf '{"packages":{"node_modules/a":{"version":"1.0.0"}}}\n' > "$R/node_modules/.package-lock.json"
 printf '{}\n' > "$R/.claude/settings.json"
 git -C "$R" add -A
@@ -1836,6 +1933,7 @@ stored_repo() {
 	printf 'export {}\n' > "$R/ui/chuggy-ui/a.ts"
 	printf 'export {}\n' > "$R/src/a.ts"
 	printf 'node_modules\n*.log\n' > "$R/.gitignore"
+	rm "$R/node_modules/.package-lock.json"
 	lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/node_modules/.package-lock.json"
 	commit_all baseline
 }
@@ -2697,7 +2795,7 @@ exec sh "$(dirname "$0")/check-source-unit.sh" "$@"
 		'export const own = shown;'
 	printf 'FROM node:0 AS base\n' > "$R/images/worker/Dockerfile"
 	printf '{}\n' > "$R/.chug/configurations/x.json"
-	printf '{}\n' > "$R/package-lock.json"
+	printf '{ "packages": {} }\n' > "$R/package-lock.json"
 	commit_all unit-baseline
 }
 # The suites the last run ran, exactly, and its unit stage's account of itself.
@@ -2752,7 +2850,7 @@ check "the runner's own gate runs the same suites, given none" 0 "$RC" "unit ran
 	unit_change "a page among the suites"
 	printf '{"compilerOptions": {}}\n' > "$R/tsconfig.json"
 	unit_change "an edit to the compiler's settings" test/deep/nested/added.test.ts $unit_open $unit_closed
-	printf '{"changed": 1}\n' > "$R/package-lock.json"
+	printf '{"changed": 1, "packages": {}}\n' > "$R/package-lock.json"
 	unit_change "an edit to the lock" test/deep/nested/added.test.ts $unit_open $unit_closed
 	printf '# changed\n' >> "$R/.chug/tasks/_test-timeout.sh"
 	unit_change "an edit to the cap every suite runs under" test/deep/nested/added.test.ts \

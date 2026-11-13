@@ -433,7 +433,7 @@ test("a first message answered while the pane is collapsed under StrictMode is d
   expect(site.opens).toHaveLength(1);
 });
 
-test("a send out when the pane collapsed is Stop once expanded, and its stop reaches that thread once the send has answered", async () => {
+test("a send out when the pane collapsed offers Stop once expanded, and its stop reaches that thread once the send has answered", async () => {
   const site = siteStubbed([held]);
   await drawn("Pane");
   await stageSent(words);
@@ -442,7 +442,7 @@ test("a send out when the pane collapsed is Stop once expanded, and its stop rea
   await collapsed();
   await expanded();
   expect(stageColumn(document.body)).toContain(`> ${words}`);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
   await pressed("Stop");
   expect(site.stops, "the door knows no such turn yet").toStrictEqual([]);
 
@@ -461,7 +461,7 @@ test("a press in the pane is drawn on the same thread's own page, with its Stop"
 
   await tab.to("Page");
   expect(stageColumn(document.body)).toContain(`> ${words}`);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
 });
 
 test("a first message the hosted grant refused while the pane was collapsed is back in its box, read-only, on expanding with the grant still refused", async () => {
