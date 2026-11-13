@@ -12,7 +12,7 @@ import { afterEach, expect, test } from "vitest";
 
 import { RadioGroup } from "../app/browser/ui/RadioGroup.tsx";
 import radioSheet from "../app/browser/ui/RadioGroup.css?raw";
-import { sheetDeclared, sheetRules } from "./sheet.ts";
+import { sheetDeclared, sheetDeclaredAfter, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 const roles = [
@@ -157,27 +157,6 @@ test("a disabled option is drawn and checked where it is the value, and takes no
   styleless();
 });
 
-/** What a sheet's rules declare for an element's `::after`. */
-function radioGroupOver(
-  rules: readonly CSSStyleRule[],
-  element: Element,
-  property: string,
-): string {
-  const after = "::after";
-  let declared = "";
-  for (const rule of rules) {
-    const value = rule.style.getPropertyValue(property);
-    const over = rule.selectorText
-      .split(",")
-      .map((selector) => selector.trim())
-      .filter((selector) => selector.endsWith(after))
-      .map((selector) => selector.slice(0, -after.length));
-    if (value !== "" && over.some((selector) => element.matches(selector)))
-      declared = value;
-  }
-  return declared.replace(/\s+/gu, " ");
-}
-
 test("under a coarse pointer a ring keeps its size and takes a press over a control's height", () => {
   render(
     <RadioGroup
@@ -195,10 +174,10 @@ test("under a coarse pointer a ring keeps its size and takes a press over a cont
     expect(sheetDeclared(rules, ring, "height")).toBe("1em");
   }
   expect(sheetDeclared(coarse, ring, "position")).toBe("relative");
-  expect(radioGroupOver(coarse, ring, "position")).toBe("absolute");
-  expect(radioGroupOver(coarse, ring, "inset")).toBe(
+  expect(sheetDeclaredAfter(coarse, ring, "position")).toBe("absolute");
+  expect(sheetDeclaredAfter(coarse, ring, "inset")).toBe(
     "min(0px, calc((100% - var(--height-control)) / 2))",
   );
   expect(sheetDeclared(fine, ring, "position")).toBe("");
-  expect(radioGroupOver(fine, ring, "inset")).toBe("");
+  expect(sheetDeclaredAfter(fine, ring, "inset")).toBe("");
 });

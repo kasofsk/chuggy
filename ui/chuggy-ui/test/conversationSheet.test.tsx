@@ -23,6 +23,7 @@ import { elementScrollToStubbed } from "./scrolling.ts";
 import {
   sheetConditioned,
   sheetDeclared,
+  sheetDeclaredAfter,
   sheetNarrowCondition,
   sheetRules,
 } from "./sheet.ts";
@@ -157,19 +158,7 @@ test("the way back to the foot is the least a finger is given on a narrow screen
 /** What the narrow sheet lays over an element for a press: what its rules
  * declare for the element's `::after`. */
 function narrowOver(element: Element, property: string): string {
-  const after = "::after";
-  let declared = "";
-  for (const rule of rulesNarrow) {
-    const value = rule.style.getPropertyValue(property);
-    const over = rule.selectorText
-      .split(",")
-      .map((selector) => selector.trim())
-      .filter((selector) => selector.endsWith(after))
-      .map((selector) => selector.slice(0, -after.length));
-    if (value !== "" && over.some((selector) => element.matches(selector)))
-      declared = value;
-  }
-  return declared.replace(/\s+/gu, " ");
+  return sheetDeclaredAfter(rulesNarrow, element, property);
 }
 
 const called: ConversationExchange = {

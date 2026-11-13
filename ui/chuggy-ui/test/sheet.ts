@@ -72,3 +72,25 @@ export function sheetDeclared(
   }
   return declared;
 }
+
+/** What rules declare for an element's `::after`, by the same cascade as
+ * `sheetDeclared`, its whitespace folded to single spaces. */
+export function sheetDeclaredAfter(
+  rules: readonly CSSStyleRule[],
+  element: Element,
+  property: string,
+): string {
+  const after = "::after";
+  let declared = "";
+  for (const rule of rules) {
+    const value = rule.style.getPropertyValue(property);
+    const over = rule.selectorText
+      .split(",")
+      .map((selector) => selector.trim())
+      .filter((selector) => selector.endsWith(after))
+      .map((selector) => selector.slice(0, -after.length));
+    if (value !== "" && over.some((selector) => element.matches(selector)))
+      declared = value;
+  }
+  return declared.replace(/\s+/gu, " ");
+}
