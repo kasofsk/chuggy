@@ -26,6 +26,7 @@ import { copyOrDataText } from "../../core/copy.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
 import {
   runnerWait,
+  runnerWaitLine,
   runnerWaitPause,
   runnerWaitWord,
 } from "../../core/myRunner.ts";
@@ -46,6 +47,7 @@ import { AgentPause } from "../AgentPause.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useRunTranscript } from "../RunTranscript.tsx";
 import { ButtonLink } from "../ui/Button.tsx";
+import { LinePart } from "../ui/LinePart.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
@@ -125,8 +127,8 @@ function TicketNowLine(props: {
   );
 }
 
-/** A run of the reader's held for their own runners, with where they are
- * managed; or, where their own account holds the live ones paused, the pause
+/** A run of the reader's held for their own runners, the line itself a link to
+ * where they are managed; or, where their own account holds the live ones paused, the pause
  * and where it is set. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
@@ -149,20 +151,22 @@ function TicketNowRunnerWait(props: {
   if (paused !== undefined)
     return (
       <AgentPause pause={paused} nowMs={props.nowMs}>
-        {" · "}
-        <Link to={settingsRoutes.project.usage} params={props.partition}>
-          {text({ id: "ticket-tab-usage" })}
-        </Link>
+        <LinePart>
+          <Link to={settingsRoutes.project.usage} params={props.partition}>
+            {text({ id: "ticket-tab-usage" })}
+          </Link>
+        </LinePart>
       </AgentPause>
     );
+  const word = runnerWaitWord(wait);
   return (
-    <Notice tone="parked" inline detail={text(runnerWaitWord(wait))}>
-      <span className="text-ink-3">
-        {" · "}
+    <Notice tone="parked" inline>
+      <LinePart first>
         <Link to={settingsRoutes.project.myRunner} params={props.partition}>
-          {text({ id: "ticket-now-personal-runners" })}
+          {text(runnerWaitLine)}
         </Link>
-      </span>
+      </LinePart>
+      {word === undefined ? null : <LinePart>{text(word)}</LinePart>}
     </Notice>
   );
 }

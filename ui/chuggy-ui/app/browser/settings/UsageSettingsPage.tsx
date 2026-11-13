@@ -47,6 +47,7 @@ import type { Copy } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import { agoFigure, countFigure, shareFigure } from "../../core/figures.ts";
 import { AgentPause } from "../AgentPause.tsx";
+import { LinePart } from "../ui/LinePart.tsx";
 import { agentAccountsReread, useAgentAccounts } from "../agentAccounts.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
@@ -134,7 +135,9 @@ function UsageSettingsPause(props: {
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <AgentPause pause={props.pause} nowMs={props.nowMs}>
-          {props.pause.pressed ? ` · ${text(agentPausePressedLine)}` : null}
+          {props.pause.pressed ? (
+            <LinePart>{text(agentPausePressedLine)}</LinePart>
+          ) : null}
         </AgentPause>
         {pressable ? (
           <Button

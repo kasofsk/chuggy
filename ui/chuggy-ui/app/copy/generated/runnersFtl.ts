@@ -155,9 +155,9 @@ runners-member-none = No { -personal-runner } you may remove
 ## Whether a run of the reader's waits on their personal runners.
 
 runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
-runners-wait-offline = Waiting on your { -personal-runner(form: "plural") } · offline
+runners-wait-offline = offline
 # spells -run: to run is a verb here
-runners-wait-unable = Waiting on your { -personal-runner(form: "plural") } · none can run it
+runners-wait-unable = none can run it
 
 ## Whether personal runners take a member's work in a project.
 

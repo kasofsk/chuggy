@@ -213,10 +213,14 @@ export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
   return failureWords(result).word;
 }
 
-export function runnerWaitWord(wait: RunnerWait): Copy {
+/** What a run of the reader's waits on: their personal runners. */
+export const runnerWaitLine: Copy = { id: "runners-wait-waiting" };
+
+/** The state of the runners a run waits on, where it has one beside waiting. */
+export function runnerWaitWord(wait: RunnerWait): Copy | undefined {
   switch (wait) {
     case "Live":
-      return { id: "runners-wait-waiting" };
+      return undefined;
     case "Offline":
       return { id: "runners-wait-offline" };
     case "Unable":
