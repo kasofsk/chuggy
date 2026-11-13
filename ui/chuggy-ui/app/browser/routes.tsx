@@ -251,8 +251,11 @@ const epicTicketsRoute = createRoute({
 function EpicGraphRoute(): ReactNode {
   const navigate = useNavigate({ from: epicGraphRoute.fullPath });
   const onTicket = useCallback(
-    (ticket: number) => {
-      void navigate({ search: { ticket }, replace: true });
+    (ticket: number | undefined) => {
+      void navigate({
+        search: ticket === undefined ? {} : { ticket },
+        replace: true,
+      });
     },
     [navigate],
   );
