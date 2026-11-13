@@ -1,7 +1,9 @@
 /**
  * An epic's graph on its Graph tab: its layers and the cards in each, what a
  * card says and its ports, the goal, the ticket in focus and what it dims,
- * the longest chain and its toggle, the ticket selected and how it is
+ * when a pointer or the keyboard previews one and when touch does not, the
+ * lines and the ports they light, when the cards are measured and which are
+ * written, the longest chain and its toggle, the ticket selected and how it is
  * cleared, the side panel with a ticket and without one, its dispatch, the
  * key, the toggle for the tickets outside the epic, the states before and
  * without a graph, and the reads that draw it again.
@@ -41,6 +43,8 @@ vi.mock(
 );
 
 afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   cleanup();
   vi.unstubAllGlobals();
   epicServingReset();
@@ -320,21 +324,286 @@ test("a title's label is a kicker, unless more than half the cards carry the sam
   expect(cardButton(4).getAttribute("aria-label")).toMatch(/^#4 API: Charge:/u);
 });
 
-test("hovering and focusing a card keep its chain up and down as it is and dim the rest, a preview over the selection", async () => {
+/** A pointer of the kind given coming onto a card's button, or leaving it. */
+function pointed(ticket: number, onto: boolean, pointerType = "mouse"): void {
+  (onto ? fireEvent.pointerEnter : fireEvent.pointerLeave)(cardButton(ticket), {
+    pointerType,
+  });
+}
+
+/** The clock moved on by a span, with what it brings drawn. */
+function waited(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+test("a pointer previews a card once it has rested on it, keeping its chain as it is and dimming the rest, and the preview ends after it leaves", async () => {
   chainServed();
   await epicPageDrawn(abilitiesNone, {
     tab: <EpicGraphTabAddressed ticket={8} />,
   });
   await graphic();
+  vi.useFakeTimers();
   expect(dimmed()).toStrictEqual([6, 7, 9]);
-  fireEvent.mouseEnter(cardButton(6));
+  pointed(6, true);
+  waited(100);
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+  waited(10);
   expect(dimmed()).toStrictEqual([8, 9]);
-  fireEvent.mouseLeave(cardButton(6));
+  pointed(6, false);
+  waited(230);
+  expect(dimmed()).toStrictEqual([8, 9]);
+  waited(10);
   expect(dimmed()).toStrictEqual([6, 7, 9]);
+});
+
+test("a pointer moving from one card straight onto the next switches the preview without passing through rest", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  vi.useFakeTimers();
+  pointed(6, true);
+  waited(110);
+  expect(dimmed()).toStrictEqual([8, 9]);
+  pointed(6, false);
+  pointed(8, true);
+  for (let at = 0; at < 10; at += 1) {
+    waited(10);
+    expect(dimmed()).toStrictEqual([8, 9]);
+  }
+  waited(10);
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+  waited(500);
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+});
+
+test("the keyboard's focus previews a card at once and its blur ends it, but a focus a pointer's press brings does not", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed ticket={8} />,
+  });
+  await graphic();
   fireEvent.focus(cardButton(6));
   expect(dimmed()).toStrictEqual([8, 9]);
   fireEvent.blur(cardButton(6));
   expect(dimmed()).toStrictEqual([6, 7, 9]);
+  fireEvent.pointerDown(cardButton(6), { pointerType: "mouse" });
+  fireEvent.focus(cardButton(6));
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+});
+
+test("touch never previews, and a tap selects", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  vi.useFakeTimers();
+  pointed(6, true, "touch");
+  waited(500);
+  expect(dimmed()).toStrictEqual([]);
+  fireEvent.pointerDown(cardButton(6), { pointerType: "touch" });
+  fireEvent.focus(cardButton(6));
+  fireEvent.pointerUp(cardButton(6), { pointerType: "touch" });
+  fireEvent.click(cardButton(6));
+  pointed(6, false, "touch");
+  expect(pressed()).toStrictEqual([6]);
+  fireEvent.click(cardButton(6));
+  waited(500);
+  expect(pressed()).toStrictEqual([]);
+  expect(dimmed()).toStrictEqual([]);
+});
+
+/** The kinds of line each layer of lines draws, behind first, and which
+ * layer is shown. */
+function lined(): readonly (readonly [boolean, readonly string[]])[] {
+  return [...document.querySelectorAll(".epic-graph-lines-look")].map(
+    (layer) => [
+      layer.hasAttribute("data-shown"),
+      [...layer.querySelectorAll("path")].map(
+        (path) => path.getAttribute("data-kind") ?? "",
+      ),
+    ],
+  );
+}
+
+function lit(): readonly string[] {
+  return [
+    ...document.querySelectorAll<HTMLElement>(".epic-card-port[data-lit]"),
+  ]
+    .map(
+      (port) =>
+        `${port.dataset["ticket"] ?? ""}>${port.closest<HTMLElement>(".epic-card")?.dataset["ticket"] ?? ""}`,
+    )
+    .sort();
+}
+
+test("at rest the longest chain is drawn, and a ticket in focus draws its lines in a new layer over the last, lighting the ports they land on", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  const lines = document.querySelector(".epic-graph-lines");
+  expect(lines?.getAttribute("aria-hidden")).toBe("true");
+  expect(lines?.nextElementSibling).toBe(await graphic());
+  expect(lined()).toStrictEqual([
+    [false, []],
+    [true, ["chain"]],
+  ]);
+  expect(lit()).toStrictEqual([]);
+  fireEvent.click(cardButton(5));
+  expect(lined()).toStrictEqual([
+    [false, ["chain"]],
+    [true, ["faint", "strong", "met", "knots"]],
+  ]);
+  expect(lit()).toStrictEqual(["2>5", "4>5", "5>6", "5>8"]);
+  fireEvent.focus(cardButton(5));
+  expect(lined()).toStrictEqual([
+    [false, ["chain"]],
+    [true, ["faint", "strong", "met", "knots"]],
+  ]);
+  fireEvent.focus(cardButton(9));
+  expect(lined()).toStrictEqual([
+    [false, ["faint", "strong", "met", "knots"]],
+    [true, []],
+  ]);
+  expect(lit()).toStrictEqual([]);
+});
+
+const largeFirst = 520;
+const largeMembers = 61;
+
+/** An epic shaped like a large one: members whose numbers rise along every
+ * edge, and a goal that waits on every other member. */
+function largeServed(): number {
+  const goal = largeFirst + largeMembers - 1;
+  const tickets = Array.from(
+    { length: largeMembers },
+    (_, at) => largeFirst + at,
+  );
+  const edges = tickets
+    .filter((ticket) => ticket !== goal)
+    .flatMap((ticket) => [
+      { from: ticket, to: goal },
+      ...[7, 13]
+        .map((stride) => ticket + stride)
+        .filter((to) => to < goal)
+        .map((to) => ({ from: ticket, to })),
+    ]);
+  epicServing.view = { ...epicView, tickets };
+  epicServing.graph = {
+    nodes: tickets.map((ticket, at) => ({
+      ticket,
+      title: `Part ${String(at)}`,
+      phase: at < 12 ? "Done" : "Pending",
+      member: true,
+    })),
+    edges,
+  };
+  epicServing.rows = [];
+  return goal;
+}
+
+test("pointing at the goal of a large epic reads no layout and draws a handful of paths", async () => {
+  const goal = largeServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  expect(card(goal).hasAttribute("data-goal")).toBe(true);
+  vi.useFakeTimers();
+  const read = vi.spyOn(Element.prototype, "getBoundingClientRect");
+  pointed(goal, true);
+  waited(110);
+  expect(card(goal).querySelectorAll(".epic-card-port[data-lit]")).toHaveLength(
+    largeMembers - 1,
+  );
+  expect(read).not.toHaveBeenCalled();
+  expect(
+    document.querySelectorAll(".epic-graph-lines path").length,
+  ).toBeLessThanOrEqual(6);
+  pointed(goal, false);
+  waited(240);
+  expect(read).not.toHaveBeenCalled();
+});
+
+test("only the cards whose drawing changes are written when a ticket is previewed", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
+  await graphic();
+  const written = new Set<string>();
+  const watch = new MutationObserver((records) => {
+    for (const record of records) {
+      const target =
+        record.target instanceof Element
+          ? record.target
+          : record.target.parentElement;
+      const at = target?.closest<HTMLElement>(".epic-card")?.dataset["ticket"];
+      if (at !== undefined) written.add(at);
+    }
+  });
+  watch.observe(await graphic(), {
+    attributes: true,
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  fireEvent.focus(cardButton(8));
+  await Promise.resolve();
+  watch.disconnect();
+  expect([...written].sort()).toStrictEqual(["6", "7", "8", "9"]);
+  expect(dimmed()).toStrictEqual([6, 7, 9]);
+});
+
+test("the cards are measured again when the drawing changes size, which redraws the shown layer's lines without a new one", async () => {
+  const observed: ResizeObserverCallback[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      readonly callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe(target: Element): void {
+        if (target.classList.contains("epic-graph-drawing"))
+          observed.push(this.callback);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  );
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed ticket={5} />,
+  });
+  await graphic();
+  const shown = document.querySelector(".epic-graph-lines-look[data-shown]");
+  const before = shown
+    ?.querySelector('[data-kind="strong"]')
+    ?.getAttribute("d");
+  const read = vi
+    .spyOn(Element.prototype, "getBoundingClientRect")
+    .mockImplementation(function placed(this: Element) {
+      const ticket = Number(
+        this.closest<HTMLElement>(".epic-card")?.dataset["ticket"] ?? 0,
+      );
+      return new DOMRect(ticket * 10, ticket * 20, 100, 50);
+    });
+  const resized = (width: number) => {
+    act(() => {
+      for (const callback of observed)
+        callback(
+          [{ contentRect: new DOMRect(0, 0, width, 0) } as ResizeObserverEntry],
+          {} as ResizeObserver,
+        );
+    });
+  };
+  resized(0);
+  expect(read).not.toHaveBeenCalled();
+  resized(800);
+  expect(read).toHaveBeenCalled();
+  const after = document.querySelector(".epic-graph-lines-look[data-shown]");
+  expect(after).toBe(shown);
+  expect(
+    after?.querySelector('[data-kind="strong"]')?.getAttribute("d"),
+  ).not.toBe(before);
+  expect(lined().filter(([isShown]) => isShown)).toHaveLength(1);
 });
 
 test("with none named nothing is selected, nothing is dimmed, and the longest chain is pressed and stepped", async () => {
@@ -656,7 +925,7 @@ test("the rendered graph carries no style attribute", async () => {
   };
   await epicPageDrawn(abilitiesEvery, { tab: <EpicGraphTabAddressed /> });
   await graphic();
-  fireEvent.mouseEnter(cardButton(6));
+  fireEvent.focus(cardButton(6));
   const drawn = document.querySelector(".epic-graph-layers");
   expect(drawn?.querySelectorAll(".epic-card")).toHaveLength(7);
   for (const part of [drawn, summary()]) {
