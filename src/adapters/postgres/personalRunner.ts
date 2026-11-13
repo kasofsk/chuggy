@@ -25,8 +25,9 @@
  * left out, since neither is a fact of the project. Its pause is asked per
  * runner, by the credentials each one's newest poll named, so a job one runner
  * could take on a free credential is counted waiting. That is a third copy of
- * the predicate, and `test/postgres/workerPoolClaim.test.ts` holds it to the
- * claim's answers as it holds the other two.
+ * the predicate, `./operationalReads.ts`'s answer of what an owner's run waits
+ * on of their runners is a fourth, and `test/postgres/workerPoolClaim.test.ts`
+ * holds each of them to the claim's answers.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";

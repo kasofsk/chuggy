@@ -2,7 +2,7 @@
  * A member's own runners, derived: the words for a project's fallback, how one
  * runner is told from another, what it is running and how many wait in a
  * project, whether one more may be registered, the
- * projects they may be given, when a run waits on the reader's runners, what
+ * projects they may be given, what a run says it waits on of the reader's runners, what
  * taking a member's runners off came to, and where a session's missing runner
  * is added.
  */
@@ -58,21 +58,6 @@ const runner: PersonalRunnerResponse = {
     },
   ],
 };
-
-/** The reader's runners, each live for threads and for executions as named. */
-function runnersLive(
-  ...live: readonly (readonly [boolean, boolean])[]
-): PersonalRunnerResponse {
-  return {
-    ...runner,
-    runners: live.map(([threads, executions], index) => ({
-      ...held,
-      id: `chuggy-personal-${String(index + 1)}`,
-      live: threads,
-      executionsLive: executions,
-    })),
-  };
-}
 
 /** A run of the reader's, routed to runners under `Strict`, whose worker has not begun. */
 const waiting = {
@@ -155,109 +140,60 @@ test("a member's runners are counted, and one more may be registered only below 
   expect(myRunnerRoom(holding(personalRunnersMax))).toBe(false);
 });
 
-test("a run of the reader's that has not begun waits on their runner while it is live", () => {
-  expect(runnerWait(waiting, runner, "atlas")).toBe("Waiting");
-  expect(
-    runnerWait({ ...waiting, ownerFallback: "Preferred" }, runner, "atlas"),
-  ).toBe("Waiting");
-  expect(copyTextEn(runnerWaitWord("Waiting"))).toBe(
-    "Waiting on your personal runners",
-  );
-});
-
-/** Under Preferred a pool takes it while the runner is down, so it waits on nothing of the reader's. */
-test("an offline runner holds a run under Strict alone", () => {
-  const offline = runnersLive([false, false]);
-  expect(runnerWait(waiting, offline, "atlas")).toBe("Offline");
-  expect(
-    runnerWait(waiting, runnersLive([false, false], [false, false]), "atlas"),
-  ).toBe("Offline");
-  expect(
-    runnerWait({ ...waiting, ownerFallback: "Preferred" }, offline, "atlas"),
-  ).toBeUndefined();
-  expect(copyTextEn(runnerWaitWord("Offline"))).toBe(
-    "Waiting on your personal runners · offline",
-  );
-});
-
-/** A pool's claim defers under Preferred only to a runner polling for
- * executions, so one polling for its threads alone holds nothing back. */
-test("a runner live for its threads alone holds a run under Strict, and under Preferred leaves it to a pool", () => {
-  const threadsOnly = runnersLive([true, false]);
-  expect(runnerWait(waiting, threadsOnly, "atlas")).toBe("Offline");
-  expect(
-    runnerWait(
-      { ...waiting, ownerFallback: "Preferred" },
-      threadsOnly,
-      "atlas",
-    ),
-  ).toBeUndefined();
-});
-
-test("a run waits on the reader's runners while any one of them polls for executions", () => {
-  const either = runnersLive([false, false], [true, true]);
-  expect(
-    runnerWait({ ...waiting, ownerFallback: "Preferred" }, either, "atlas"),
-  ).toBe("Waiting");
-});
-
 test.each([
-  ["another member's", { ...waiting, mine: false }, runner, "atlas"],
-  [
-    "a read that predates ownership",
-    { ...waiting, mine: undefined },
-    runner,
-    "atlas",
-  ],
-  [
-    "one no personal runner may take",
-    { ...waiting, ownerFallback: undefined },
-    runner,
-    "atlas",
-  ],
-  [
-    "one still queued",
-    { ...waiting, status: "Queued" as const },
-    runner,
-    "atlas",
-  ],
-  [
-    "one whose worker began",
-    { ...waiting, runStartedAt: "2026-10-01T00:02:00Z" },
-    runner,
-    "atlas",
-  ],
-  ["one where the reader has no runner", waiting, undefined, "atlas"],
-  ["one in a project their runner does not serve", waiting, runner, "borealis"],
-])(
-  "%s run waits on no runner of the reader's",
-  (_case, execution, held, project) => {
-    expect(runnerWait(execution, held, project)).toBeUndefined();
+  ["Live", "Waiting on your personal runners"],
+  ["Offline", "Waiting on your personal runners · offline"],
+  ["Unable", "Waiting on your personal runners · none can run it"],
+] as const)(
+  "a run of the reader's that has not begun says the server's answer %s in its own words",
+  (wait, words) => {
+    const answered = { ...waiting, personalRunnerWait: wait };
+    expect(runnerWait(answered)).toBe(wait);
+    expect(copyTextEn(runnerWaitWord(wait))).toBe(words);
   },
 );
 
-/** The server sends a pause only on the reader's own execution, and the
- * console says it only where the run waits on the reader's own runners. */
-test("a run of the reader's waiting on their runners says the pause their account holds, and one waiting on nothing of theirs says none", () => {
+test.each([
+  ["another member's", { ...waiting, mine: false }],
+  ["a read that predates ownership", { ...waiting, mine: undefined }],
+  ["one no personal runner may take", { ...waiting, ownerFallback: undefined }],
+  ["one still queued", { ...waiting, status: "Queued" as const }],
+  [
+    "one whose worker began",
+    { ...waiting, runStartedAt: "2026-10-01T00:02:00Z" },
+  ],
+])("%s run waits on no runner of the reader's", (_case, execution) => {
+  expect(
+    runnerWait({ ...execution, personalRunnerWait: "Live" }),
+  ).toBeUndefined();
+});
+
+/** A run admitted with no attempt opened, or one a runner has claimed, the server answers nothing of. */
+test("a run the server answers no wait for says nothing of a runner", () => {
+  expect(runnerWait(waiting)).toBeUndefined();
+});
+
+/** The server sends a pause only where every live runner a run waits on is held, and the console says it only there. */
+test("a run of the reader's waiting on their live runners says the pause the server answered, and one waiting on offline runners says none", () => {
   const pause = {
     until: "2026-10-01T05:00:00Z",
     reasons: ["five_hour" as const],
     pressed: false,
   };
-  const paused = { ...waiting, paused: pause };
-  expect(
-    runnerWaitPause(paused, runnerWait(paused, runner, "atlas")),
-  ).toStrictEqual(pause);
-  expect(
-    runnerWaitPause(waiting, runnerWait(waiting, runner, "atlas")),
-  ).toBeUndefined();
+  const paused = {
+    ...waiting,
+    personalRunnerWait: "Live" as const,
+    paused: pause,
+  };
+  expect(runnerWaitPause(paused, runnerWait(paused))).toStrictEqual(pause);
+  const live = { ...waiting, personalRunnerWait: "Live" as const };
+  expect(runnerWaitPause(live, runnerWait(live))).toBeUndefined();
+  for (const wait of ["Offline", "Unable"] as const) {
+    const held = { ...paused, personalRunnerWait: wait };
+    expect(runnerWaitPause(held, runnerWait(held))).toBeUndefined();
+  }
   const elsewhere = { ...paused, mine: false };
-  expect(
-    runnerWaitPause(elsewhere, runnerWait(elsewhere, runner, "atlas")),
-  ).toBeUndefined();
-  expect(
-    runnerWaitPause(paused, runnerWait(paused, runner, "borealis")),
-  ).toBeUndefined();
+  expect(runnerWaitPause(elsewhere, runnerWait(elsewhere))).toBeUndefined();
 });
 
 test("taking a member's runners off says whether there were any it could take", () => {
