@@ -171,6 +171,17 @@ export const workerRunUsageFunction = "record_worker_run_usage";
 export const workerRunLimitFunction = "record_worker_run_limit";
 /** Whether an account's agent is paused, until when and why, from its readings, its limit, its settings and its presses at the database's own time. */
 export const agentAccountPauseFunction = "agent_account_pause";
+/** Each credential of an account's agent that is paused, until when and why, by the rule `agent_account_pause` answers the agent by. */
+export const agentAccountCredentialPauseFunction =
+  "agent_account_credential_pause";
+/** Whether an account's agent is paused for a runner naming some of its credentials: only while every one named is, until the earliest of those ends. */
+export const agentAccountNamedPauseFunction = "agent_account_named_pause";
+/** Each of the credentials named of an account's agent that is paused, and until when. */
+export const agentAccountNamedCredentialPausesFunction =
+  "agent_account_named_credential_pauses";
+/** The credential a reading or a limit is kept under, its agent's default where the run named none, with room made for it among the credentials kept. */
+export const agentAccountCredentialKeptFunction =
+  "agent_account_credential_kept";
 /** A person's thresholds and session options for one agent account, their defaults where they wrote none. */
 export const agentAccountSettingsFunction = "agent_account_settings";
 /** Whether an account's pause holds back a session of one kind: always a lead, and a thread or an inquiry as its owner's option says. */
@@ -312,13 +323,13 @@ export const ticketRunnerLossFunction = "ticket_runner_loss";
 export const runnerLostTicketsFunction = "runner_lost_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
-/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again. */
+/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again: a limited one where its account's agent, or a credential a runner of that account names, would let a claim through. */
 export const ticketRateLimitResumableFunction = "ticket_rate_limit_resumable";
-/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts. */
+/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts, as a runner of each would claim it. */
 export const rateLimitedTicketsFunction = "rate_limited_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const rateLimitResumeFunction = "submit_rate_limit_resume";
-/** When the latest usage pause ends that holds an escalation the scheduler will resume by itself once none does. */
+/** When an escalation the scheduler will resume by itself is free: the latest, across its limited tasks, of the earliest end among the pauses holding each. */
 export const ticketUsageResumeFunction = "ticket_usage_resume";
 /** The Pending tickets the importer may move onto a repository head's revision. */
 export const configurationFollowingCandidatesFunction =

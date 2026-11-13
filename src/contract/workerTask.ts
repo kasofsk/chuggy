@@ -117,10 +117,10 @@ export const workTaskAnswerSchema = workTaskDocumentSchema
   .omit({ workerPlane: true })
   .extend({ kind: z.literal("Work") });
 
-/** Every bound a session pod runs under, each one the deployment named. */
+/** Every bound a session pod runs under, each one the deployment named; `idleMs` is absent where the session has no idle limit. */
 const sessionBoundsSchema = z.object({
   mailboxPollMs: z.number(),
-  idleMs: z.number(),
+  idleMs: z.number().exactOptional(),
   resultDrainMs: z.number(),
   loadTimeoutMs: z.number(),
   turnsMax: z.number(),

@@ -466,9 +466,9 @@ export function postgresWorkerRunContext(pool: pg.Pool): WorkerRunContextPort {
 
 /**
  * A run's totals, and in the same transaction the account usage they arrived
- * with wherever the totals are stored or already were, so a repeated post
- * offers its readings again and the boundary keeps whichever was observed
- * later.
+ * with, under the credential the run named, wherever the totals are stored or
+ * already were, so a repeated post offers its readings again and the boundary
+ * keeps whichever was observed later.
  */
 export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
   return {
@@ -493,7 +493,8 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
         )
           await client.query<{ recorded: string | null }>(
             sql`SELECT record_worker_run_usage(${digest},${input.generation},
-              ${JSON.stringify(input.usage)}::jsonb)::text AS recorded`,
+              ${JSON.stringify(input.usage)}::jsonb,
+              ${input.credential ?? null})::text AS recorded`,
           );
         return stored;
       }),
@@ -544,7 +545,8 @@ async function postgresWorkerRunEndedWithdrawn(
   if (withdrawn && input.evidence === "RunRateLimited")
     await client.query<{ recorded: string | null }>(
       sql`SELECT record_worker_run_limit(${digest},${input.generation},
-        ${input.limit?.window ?? null},${input.limit?.resetsAt ?? null})::text AS recorded`,
+        ${input.limit?.window ?? null},${input.limit?.resetsAt ?? null},
+        ${input.limit?.credential ?? null})::text AS recorded`,
     );
   return withdrawn;
 }

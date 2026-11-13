@@ -15,12 +15,19 @@ import {
   workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
 import {
+  workerPoolCapabilitiesMax,
   workerPoolEvidenceCharsMax,
   workerPoolPollQuery,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
+  workerPoolTokenCharsMax,
   workerRunnerCapabilitiesHeader,
+  workerRunnerCapabilitiesOf,
+  workerRunnerCredentialAgents,
+  workerRunnerCredentialsHeader,
+  workerRunnerCredentialsOf,
+  workerRunnerCredentialsPerAgentMax,
   workerRunnerHeader,
   workerRunnerMemoryCeilingHeader,
   workerRunnerMemoryRoomHeader,
@@ -190,6 +197,7 @@ function calls(pinning: readonly string[] = []): {
       waitingPersonal: () => Promise.resolve(false),
       allowlisted: () => Promise.resolve([]),
       credentialOutcomes: () => Promise.resolve([]),
+      credentialPauses: () => Promise.resolve([]),
       polled: () => Promise.resolve(),
       renew: (_identity, assignment) =>
         Promise.resolve(
@@ -342,17 +350,20 @@ function runnerCalls(): {
   readonly advertised: unknown[];
   readonly ceilings: unknown[];
   readonly agents: unknown[];
+  readonly credentials: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
   const advertised: unknown[] = [];
   const ceilings: unknown[] = [];
   const agents: unknown[] = [];
+  const credentials: unknown[] = [];
   return {
     named,
     advertised,
     ceilings,
     agents,
+    credentials,
     runners: {
       named: (
         caller: PoolPlaneIdentity,
@@ -360,11 +371,13 @@ function runnerCalls(): {
         capabilities,
         ceiling,
         agentsAdvertised,
+        credentialsNamed,
       ) => {
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
         ceilings.push([caller.kind, ceiling]);
         agents.push([caller.kind, agentsAdvertised]);
+        credentials.push([caller.kind, credentialsNamed]);
         return Promise.resolve();
       },
     },
@@ -647,6 +660,169 @@ test("a poll naming capabilities this side cannot read is refused whole, with no
     assert.equal(answered.body, "", String(capabilities));
     assert.deepEqual(recorded.named, [], String(capabilities));
     assert.deepEqual(made.made, [], String(capabilities));
+  }
+});
+
+test("a poll over a socket naming the most credentials the contract admits beside the most capabilities is answered", async () => {
+  const capabilities = Array.from(
+    { length: workerPoolCapabilitiesMax },
+    (_, index) =>
+      `T${String(index).padStart(workerPoolTokenCharsMax - 1, "0")}`,
+  ).join(",");
+  const credentials = workerRunnerCredentialAgents
+    .flatMap((agent) =>
+      Array.from(
+        { length: workerRunnerCredentialsPerAgentMax },
+        (_, index) => `${agent}:${String(index).padStart(64, "0")}`,
+      ),
+    )
+    .join(",");
+  assert.equal(workerRunnerCapabilitiesOf(capabilities).named, "Set");
+  assert.deepEqual(
+    Object.values(workerRunnerCredentialsOf(credentials)).map(
+      (names) => names.length,
+    ),
+    workerRunnerCredentialAgents.map(() => workerRunnerCredentialsPerAgentMax),
+  );
+  const app = createPoolPlaneApp(plane(calls().ports));
+  try {
+    const port = await planeListening(app);
+    const answered = await fetch(
+      `http://127.0.0.1:${String(port)}${polling([], 0)}`,
+      {
+        headers: {
+          ...runnerSpeaking,
+          [workerRunnerCapabilitiesHeader]: capabilities,
+          [workerRunnerCredentialsHeader]: credentials,
+        },
+      },
+    );
+    assert.equal(answered.status, 200);
+    assert.ok(
+      workerPoolReconciliationSchema.safeParse(await answered.json()).success,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
+test("a personal runner's or a pool's poll has the credentials it named kept, one unread or absent keeping none, and a chat host's are never kept", async () => {
+  for (const [why, headers, kept] of [
+    [
+      "a runner naming two agents' credentials",
+      {
+        ...runnerSpeaking,
+        [workerRunnerCredentialsHeader]:
+          "Claude:work, Codex:codex, Claude:home",
+      },
+      ["Personal", { Claude: ["work", "home"], Codex: ["codex"] }],
+    ],
+    [
+      "a runner naming one twice",
+      {
+        ...runnerSpeaking,
+        [workerRunnerCredentialsHeader]: "Claude:work, Claude:work",
+      },
+      ["Personal", {}],
+    ],
+    ["a runner naming none", runnerSpeaking, ["Personal", {}]],
+    [
+      "a pool naming some",
+      { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+      ["Dedicated", { Claude: ["work"] }],
+    ],
+    ["a pool naming none", speaking, ["Dedicated", {}]],
+    [
+      "a chat host naming some",
+      { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+      ["ChatHost", {}],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(recorded.credentials, [kept], why);
+  }
+});
+
+/** The pause the port answers of a poll naming Claude's `work`. */
+const credentialPauseAnswered = {
+  agent: "Claude",
+  credential: "work",
+  pausedUntil: 1_800_000_000,
+} as const;
+
+/** Each poll the pauses case makes: why, its headers, the credentials the port is asked of, and the pauses its answer names. */
+const credentialPausesPolled = [
+  [
+    "a runner of this release",
+    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a runner of this release none of whose named credentials is paused",
+    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
+    [{ Codex: ["codex"] }],
+    undefined,
+  ],
+  [
+    "a runner of a release before them",
+    {
+      ...runnerSpeaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
+    [],
+    undefined,
+  ],
+  ["a runner naming none", runnerSpeaking, [], undefined],
+  [
+    "a pool of this release",
+    { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a pool of a release before them",
+    {
+      ...speaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
+    [],
+    undefined,
+  ],
+  [
+    "a chat host naming some",
+    { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [],
+    undefined,
+  ],
+] as const;
+
+test("a personal runner's or a pool's answer names the pauses of the credentials its poll named only where its release reads them, and a chat host's never", async () => {
+  const pause = credentialPauseAnswered;
+  for (const [why, headers, asked, pauses] of credentialPausesPolled) {
+    const made: unknown[] = [];
+    const answered = await createPoolPlaneApp(
+      plane({
+        ...calls().ports,
+        credentialPauses: (_caller, credentials) =>
+          Promise.resolve(
+            (made.push(credentials), credentials.Claude === undefined)
+              ? []
+              : [pause],
+          ),
+      }),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    const body = answered.json<Record<string, unknown>>();
+    assert.deepEqual(workerPoolReconciliationSchema.parse(body), body, why);
+    assert.deepEqual(body["credentialPauses"], pauses, why);
+    assert.deepEqual(made, asked, why);
   }
 });
 
@@ -1240,6 +1416,14 @@ function poolReplayPorts(
           ? [{ assignment: "benched", outcome: "CreditsExhausted" }]
           : [],
       ),
+    credentialPauses: (_caller, credentials) =>
+      Promise.resolve(
+        (credentials.Claude ?? []).map((credential) => ({
+          agent: "Claude" as const,
+          credential,
+          pausedUntil: 1_800_000_000,
+        })),
+      ),
   };
 }
 
@@ -1288,6 +1472,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
           ...(older.memoryRoomHeader === undefined || room === undefined
             ? {}
             : { [older.memoryRoomHeader]: room }),
+          [workerRunnerCredentialsHeader]: "Claude:work",
         },
       });
       assert.equal(answered.statusCode, 200, what);
@@ -2025,11 +2210,8 @@ test("a personal runner polling for an execution while its owner's read cannot b
   assert.equal(answered.body, "");
 });
 
-/** A session side whose launch caps idle at `idleSecsMax`, recording every opening it is asked for. */
-function idleCapped(
-  idleSecsMax: number | undefined,
-  offered: readonly string[] = ["thread-one"],
-): {
+/** A session side recording every opening it is asked for. */
+function openingsRecorded(offered: readonly string[] = ["thread-one"]): {
   readonly made: unknown[];
   readonly opened: WorkerPoolSessionOpening[];
   readonly store: WorkerPoolSessions;
@@ -2041,10 +2223,6 @@ function idleCapped(
     opened,
     store: {
       ...offering.store,
-      launch: () =>
-        Promise.resolve(
-          idleSecsMax === undefined ? launch : { ...launch, idleSecsMax },
-        ),
       open: (identity, opening) => {
         opened.push(opening);
         return offering.store.open(identity, opening);
@@ -2055,7 +2233,7 @@ function idleCapped(
 
 test("a chat host of this release is handed its sessions and never an execution, renewing none it names", async () => {
   const recorded = calls();
-  const sessions = idleCapped(undefined);
+  const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(recorded.ports, authority("Allow"), sessions.store),
   ).inject({
@@ -2073,7 +2251,7 @@ test("a chat host of this release is handed its sessions and never an execution,
 
 test("a chat host speaking a release before its own is refused at the poll and at every settlement, before any port", async () => {
   const recorded = calls();
-  const sessions = idleCapped(undefined);
+  const sessions = openingsRecorded();
   const app = createPoolPlaneApp(
     plane(recorded.ports, authority("Allow"), sessions.store),
   );
@@ -2101,14 +2279,9 @@ test("a chat host speaking a release before its own is refused at the poll and a
   assert.deepEqual(sessions.made, []);
 });
 
-test("a chat host's declared idle bound is capped at the launch's, recorded on its claim and launched as its idle limit", async () => {
-  for (const [declared, cap, recorded] of [
-    [600, 60, 60],
-    [30, 60, 30],
-    [undefined, 60, undefined],
-    [30, undefined, undefined],
-  ] as const) {
-    const sessions = idleCapped(cap);
+test("a chat host's declared idle bound is recorded on its claim as named and launched as its idle limit, and one naming none is launched with no idle limit", async () => {
+  for (const declared of [86_400, 30, undefined]) {
+    const sessions = openingsRecorded();
     const answered = await createPoolPlaneApp(
       plane(calls().ports, authority("Allow"), sessions.store),
     ).inject({
@@ -2116,20 +2289,25 @@ test("a chat host's declared idle bound is capped at the launch's, recorded on i
       url: `${polling([], 0, 1)}${declared === undefined ? "" : `&${workerPoolPollQuery.idleSecs}=${String(declared)}`}`,
       headers: hostSpeaking,
     });
-    const named = `${String(declared)} under ${String(cap)}`;
+    const named = String(declared);
     assert.equal(answered.statusCode, 200, named);
     const [opening] = sessions.opened;
-    assert.equal(opening?.idleSecs, recorded, named);
+    assert.equal(opening?.idleSecs, declared, named);
     assert.equal(
       opening?.launch.bounds.idleMs,
-      recorded === undefined ? launch.bounds.idleMs : recorded * 1_000,
+      declared === undefined ? undefined : declared * 1_000,
+      named,
+    );
+    assert.equal(
+      opening !== undefined && "idleMs" in opening.launch.bounds,
+      declared !== undefined,
       named,
     );
   }
 });
 
 test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {
-  const sessions = idleCapped(60);
+  const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), sessions.store),
   ).inject({
@@ -2142,7 +2320,7 @@ test("a pool's declared idle bound is not read, and a bound of no seconds is ref
   assert.equal(opening?.idleSecs, undefined);
   assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
   const refused = await createPoolPlaneApp(
-    plane(calls().ports, authority("Allow"), idleCapped(60).store),
+    plane(calls().ports, authority("Allow"), openingsRecorded().store),
   ).inject({
     method: "GET",
     url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=0`,
@@ -2153,7 +2331,7 @@ test("a pool's declared idle bound is not read, and a bound of no seconds is ref
 
 test("a chat host's session is opened only in a project its owner may still read, asked as its owner", async () => {
   const read: unknown[] = [];
-  const sessions = idleCapped(undefined);
+  const sessions = openingsRecorded();
   const refusing = readsRefused(read);
   const answered = await createPoolPlaneApp(
     plane(calls().ports, refusing, sessions.store),

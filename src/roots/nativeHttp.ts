@@ -252,7 +252,8 @@ const poolRegistryHostVariable = "CHUG_API_POOL_REGISTRY_HOST";
 /**
  * The pool plane's size for an execution naming none, read under the plane's
  * own name as the scheduler reads it, so the count of what waits for a
- * member's runners sizes an execution as their claim does.
+ * member's runners, and what a run of theirs waits on of them, size an
+ * execution as their claim does.
  */
 const poolPlaneMemoryVariable = "CHUG_POOL_PLANE_MEMORY_MIB";
 /**
@@ -433,10 +434,7 @@ function nativePersonalRunners(
     ports: {
       registry: postgresPersonalRunnerRegistry(
         pool,
-        positiveEnvironment(
-          poolPlaneMemoryVariable,
-          workerPoolMemoryMibDefault,
-        ),
+        nativePoolPlaneMemoryMibDefault(),
       ),
       chatHosts: postgresChatHostRegistry(pool),
       clients: nativeRunnerClients(),
@@ -525,6 +523,14 @@ function positiveOptionalEnvironment(name: string): number | undefined {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${name} is too large`);
   return parsed;
+}
+
+/** The pool plane's size for an execution naming none, as this process reads it. */
+function nativePoolPlaneMemoryMibDefault(): number {
+  return positiveEnvironment(
+    poolPlaneMemoryVariable,
+    workerPoolMemoryMibDefault,
+  );
 }
 
 function positiveEnvironment(name: string, fallback: number): number {
@@ -1561,6 +1567,7 @@ function nativeComposedWeb(
     ports.leads,
     ports.threads,
     ports.usageResume,
+    nativePoolPlaneMemoryMibDefault(),
   );
 }
 

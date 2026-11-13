@@ -50,6 +50,7 @@ import type { ThreadOfferReply } from "../../../../src/contract/threadOffers.ts"
 import { operationRefusalLabel, phaseLabel } from "./codeLabels.ts";
 import type { ConversationExchange, ConversationStep } from "./conversation.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
+import type { PanelState } from "./freshness.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
 import { ticketRevocable } from "./ticketActions.ts";
@@ -159,19 +160,38 @@ export function threadOfferAnswerOf(
 
 /**
  * Where one unanswered card stands against its subject: moved past the
- * version it was offered at, no longer one the action applies to, or open to
- * a confirmation.
+ * version it was offered at, no longer one the action applies to, waiting on
+ * dependencies still drafts to be released first, held on a dependency the
+ * console has not read yet, or open to a confirmation.
  */
 export type ThreadOfferStanding =
   | { readonly standing: "Superseded" }
   | { readonly standing: "Closed"; readonly why: Copy }
+  | { readonly standing: "Waiting"; readonly tickets: readonly number[] }
+  | {
+      readonly standing: "Unread";
+      readonly read: Extract<
+        PanelState<DraftResponse>,
+        { readonly state: "Pending" | "Failed" }
+      >;
+    }
   | { readonly standing: "Open" };
 
-/** A release offer against the draft as the project's cache holds it. */
+/**
+ * A release offer against the draft as the project's cache holds it, and
+ * each of its dependencies as the same cache holds that one's draft, in the
+ * order the draft names them. A dependency whose draft is still a draft holds
+ * the card waiting; one released, deleted or never a draft does not, its
+ * phase and a revocation being the server's to judge; one not read yet holds
+ * the card unread before any holds it waiting.
+ */
 export function threadOfferReleaseStanding(
   offer: Extract<ThreadOfferCall, { readonly offer: "Release" }>,
   draft: DraftResponse,
+  dependencies: readonly PanelState<DraftResponse>[],
 ): ThreadOfferStanding {
+  if (dependencies.length !== draft.authoring.dependencies.length)
+    throw new RangeError("a release reads each dependency its draft names");
   if (draft.state !== "Draft")
     return {
       standing: "Closed",
@@ -183,9 +203,18 @@ export function threadOfferReleaseStanding(
         args: { ticket: String(draft.ticket) },
       },
     };
-  return draft.authoringVersion === offer.authoringVersion
+  if (draft.authoringVersion !== offer.authoringVersion)
+    return { standing: "Superseded" };
+  for (const read of dependencies)
+    if (read.state === "Pending" || read.state === "Failed")
+      return { standing: "Unread", read };
+  const tickets = draft.authoring.dependencies.filter((_, index) => {
+    const read = dependencies[index];
+    return read?.state === "Ready" && read.value.state === "Draft";
+  });
+  return tickets.length === 0
     ? { standing: "Open" }
-    : { standing: "Superseded" };
+    : { standing: "Waiting", tickets };
 }
 
 /** A revoke offer against the ticket as the project's cache holds it. */
@@ -334,6 +363,9 @@ export const threadOfferSupersededSentence: Copy = {
 };
 
 export const threadOfferUnreadSentence: Copy = { id: "chat-offer-unread" };
+
+/** What a card waiting on its dependencies says before naming them. */
+export const threadOfferWaitingSentence: Copy = { id: "chat-offer-waiting" };
 
 /** Whether two pages are the same page. */
 function threadNavigatePagesAgree(a: ConsolePage, b: ConsolePage): boolean {

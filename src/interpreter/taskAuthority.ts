@@ -22,7 +22,8 @@
  * EARLIER ONE NARROWED" REDUCES TO. Set intersection, conjunction and a minimum
  * over a total order are each commutative, associative and idempotent, so the
  * fold over a list of requests is the meet of all of them: permuting the blocks
- * produces the same authority, and appending one can only lower it. That is a
+ * produces the same authority, and appending one can only lower it, save the
+ * credentials the paragraph below withholds from a fold listing none. That is a
  * stronger statement than the prohibition, and it is the one the suite proves.
  *
  * NOTHING HERE READS PROSE. A request is structured data — identifiers, a flag
@@ -34,6 +35,15 @@
  * AN OMITTED FIELD ASKS FOR NOTHING. It is the identity of the meet rather than
  * a default, so a block that has no opinion about the filesystem leaves the
  * filesystem exactly where the block before it left it.
+ *
+ * CREDENTIALS DEFAULT TO NONE, WHERE EVERY OTHER FIELD DEFAULTS TO THE GRANT.
+ * Within the fold an omitted list is still the identity, so the credentials
+ * resolved are the grant's meet with every list a block gives; but a fold in
+ * which no block lists any resolves to none. A credential is a secret handed to
+ * the job, so the default is what the configuration names rather than
+ * everything the deployment holds: a tool, the network or a reach withheld by
+ * mistake fails where it is used, while a secret granted by mistake fails
+ * nowhere.
  *
  * A REACH NO ORDER NAMES IS NOT A POINT ON IT, and every operation here says so
  * rather than comparing positions and getting a position back. The mint refuses
@@ -212,7 +222,8 @@ export function taskAuthorityIncludes(
 }
 
 /**
- * Folds every block's request into the granted ceiling. The postcondition is
+ * Folds every block's request into the granted ceiling, and withholds every
+ * credential where no block lists one. The postcondition is
  * house rule 10's: a resolved authority the grant does not include is a broken
  * meet, and nothing downstream is in a position to notice.
  */
@@ -220,10 +231,13 @@ export function resolveTaskAuthority(
   grant: PolicyAuthorityGrant,
   requests: readonly AuthorityRequest[],
 ): TaskAuthority {
-  const resolved = requests.reduce(
+  const folded = requests.reduce(
     (held, request) => narrowTaskAuthority(held, request),
     grantTaskAuthority(grant),
   );
+  const resolved = requests.some(({ credentials }) => credentials !== undefined)
+    ? folded
+    : narrowTaskAuthority(folded, { credentials: [] });
   if (!taskAuthorityIncludes(grant, taskAuthorityGrant(resolved))) {
     throw new RangeError(
       "task authority: a narrowing produced an authority the policy grant does not include",

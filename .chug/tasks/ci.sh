@@ -68,6 +68,12 @@
 # record runs in one runner, and the stage reports what it found, selected,
 # reused and ran, and each red suite by name.
 #
+# AN INSTALL THAT IS NOT THE LOCK'S IS A COULD-NOT-RUN. Where the tree holds a
+# package-lock.json, a run whose node_modules holds no install of it, or one
+# npm's record says is not the install it names, runs no gate and exits 2,
+# `--only` included: a verdict and the pass a key records would be about
+# packages the tree does not name. `npm ci` is the remedy.
+#
 # `--only <gate>...` runs those gates and nothing else, under the key a full
 # run gives each, so a pass it records is one a later run reuses.
 #
@@ -186,6 +192,27 @@ if [ "${1:-}" = "--only" ]; then
 elif [ "$#" -gt 0 ]; then
 	echo "ci: LINTER ERROR — ci.sh takes no arguments but --only <gate>...; this is not a pass"
 	exit 2
+fi
+
+if [ -f package-lock.json ]; then
+	install_shown_max=5
+	if [ ! -f node_modules/.package-lock.json ]; then
+		echo "ci: LINTER ERROR — there is no install of package-lock.json; run npm ci, then run again; this is not a pass"
+		exit 2
+	fi
+	set +e
+	install_differ="$(sh .chug/tasks/_installed-inputs.sh --matches package-lock.json 2>&1)"
+	install_rc=$?
+	set -e
+	if [ "$install_rc" != 0 ]; then
+		echo "ci: LINTER ERROR — node_modules is not the install package-lock.json names; run npm ci, then run again; this is not a pass:"
+		printf '%s\n' "$install_differ" | head -n "$install_shown_max" | cut -c 1-240 | sed 's/^/ci:   /'
+		install_count="$(printf '%s\n' "$install_differ" | grep -c '')"
+		if [ "$install_count" -gt "$install_shown_max" ]; then
+			echo "ci:   and $((install_count - install_shown_max)) more"
+		fi
+		exit 2
+	fi
 fi
 
 . ./.chug/tasks/_ci-select.sh

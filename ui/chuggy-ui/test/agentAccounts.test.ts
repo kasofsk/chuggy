@@ -19,7 +19,7 @@ import {
   agentAccountReading,
   agentAccountReadingStale,
   agentAccountsPaused,
-  agentPauseLine,
+  agentPauseParts,
   agentPausePressable,
   agentPauseReasonLabel,
 } from "../app/core/agentAccounts.ts";
@@ -51,14 +51,12 @@ test("every reason a pause gives is a noun, and a pause reads as its status and 
     ),
   ).toStrictEqual(["Five-hour window", "Weekly window", "Provider limit"]);
   expect(
-    copyTextEn(
-      agentPauseLine({
-        until: "2026-10-03T14:00:00Z",
-        reasons: ["seven_day", "limit"],
-        pressed: false,
-      }),
-    ),
-  ).toBe("Paused · Weekly window · Provider limit");
+    agentPauseParts({
+      until: "2026-10-03T14:00:00Z",
+      reasons: ["seven_day", "limit"],
+      pressed: false,
+    }).map(copyTextEn),
+  ).toStrictEqual(["Paused", "Weekly window", "Provider limit"]);
 });
 
 test("a press is offered only where a provider's limit holds the agent and no press is waiting to try it", () => {

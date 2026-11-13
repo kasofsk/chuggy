@@ -24,6 +24,7 @@ import {
   runTurnSeriesMax,
   runUsageInstantSchema,
   textUtf8Bytes,
+  workerRunCredentialSchema,
 } from "./http.ts";
 import {
   workerPlaneAnswersRefusingVersions,
@@ -165,19 +166,26 @@ export const workerRunUsageSchema = z.strictObject({
   seven_day: runUsageReadingSchema.exactOptional(),
 });
 
-/** A run's totals as a worker offers them, the same figures a reader is answered with, and the usage of the account it spent. */
+export {
+  workerRunCredentialDefaults,
+  workerRunCredentialSchema,
+} from "./http.ts";
+
+/** A run's totals as a worker offers them, the same figures a reader is answered with, the usage of the account it spent, and the credential that usage was read of. */
 export const workerRunTotalsSchema = z.strictObject({
   ...runTotalsSchema.shape,
   models: z
     .array(z.strictObject(runModelUsageSchema.shape))
     .max(nativeHttpPageItemsMax),
   usage: workerRunUsageSchema.exactOptional(),
+  credential: workerRunCredentialSchema.exactOptional(),
 });
 
-/** The limit a provider stopped a run at: which window, and when it reopens, each where the provider said. */
+/** The limit a provider stopped a run at: which window, when it reopens, each where the provider said, and the credential it stopped. */
 export const workerRunLimitSchema = z.strictObject({
   window: z.enum(runUsageWindows).exactOptional(),
   resetsAt: runUsageInstantSchema.exactOptional(),
+  credential: workerRunCredentialSchema.exactOptional(),
 });
 
 /** The label a run ended itself under, and the limit that stopped it, which is kept only beside `RunRateLimited`. */

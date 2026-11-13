@@ -3,10 +3,14 @@
  * its owner's settings and their press, each instant written as seconds from
  * the planting transaction's own `now()`, so a case states an edge exactly.
  *
+ * A READING AND A LIMIT ARE KEPT UNDER A CREDENTIAL, their agent's default
+ * where a case names none, as a run naming none is.
+ *
  * A READING AND A LIMIT POINT AT THE ATTEMPT THEY CAME FROM, and a case here is
  * about the account rather than the attempt, so the transaction that plants
  * them stands the foreign keys down for itself alone.
  */
+import { workerRunCredentialDefaults } from "../../src/contract/workerPlane.ts";
 import type { PostgresHarness, PostgresTransaction } from "./harness.ts";
 
 export type AgentAccountHarnessAgent = "Claude" | "Codex";
@@ -16,15 +20,21 @@ export interface AgentAccountHarnessReading {
   readonly utilization: number;
   readonly resetsSecs: number;
   readonly observedSecs: number;
+  readonly credential?: string;
+}
+
+/** A limit whose reset is unknown where `resetsSecs` is absent. */
+export interface AgentAccountHarnessLimit {
+  readonly observedSecs: number;
+  readonly resetsSecs?: number;
+  readonly credential?: string;
 }
 
 export interface AgentAccountHarnessState {
   readonly readings?: readonly AgentAccountHarnessReading[];
-  /** A limit whose reset is unknown where `resetsSecs` is absent. */
-  readonly limit?: {
-    readonly observedSecs: number;
-    readonly resetsSecs?: number;
-  };
+  readonly limit?: AgentAccountHarnessLimit;
+  /** Limits beside `limit`, each of a credential of its own. */
+  readonly limits?: readonly AgentAccountHarnessLimit[];
   readonly setting?: {
     readonly fiveHourPercent: number;
     readonly sevenDayPercent: number;
@@ -90,30 +100,35 @@ export async function agentAccountHarnessPlanted(
   for (const reading of state.readings ?? [])
     await transaction.query(
       `INSERT INTO agent_account_usage
-         (principal,agent,usage_window,utilization,resets_at,observed_at,
+         (principal,agent,credential,usage_window,utilization,resets_at,observed_at,
           tenant,project,execution,attempt)
-       VALUES($1,$2,$3,$4,now()+make_interval(secs=>$5),now()+make_interval(secs=>$6),
+       VALUES($1,$2,$3,$4,$5,now()+make_interval(secs=>$6),now()+make_interval(secs=>$7),
               'tenant','project','execution','attempt')`,
       [
         principal,
         agent,
+        reading.credential ?? workerRunCredentialDefaults[agent],
         reading.window,
         reading.utilization,
         reading.resetsSecs,
         reading.observedSecs,
       ],
     );
-  if (state.limit !== undefined)
+  for (const limit of [
+    ...(state.limit === undefined ? [] : [state.limit]),
+    ...(state.limits ?? []),
+  ])
     await transaction.query(
       `INSERT INTO agent_account_limit
-         (principal,agent,resets_at,observed_at,tenant,project,execution,attempt)
-       VALUES($1,$2,now()+make_interval(secs=>$3),now()+make_interval(secs=>$4),
+         (principal,agent,credential,resets_at,observed_at,tenant,project,execution,attempt)
+       VALUES($1,$2,$3,now()+make_interval(secs=>$4),now()+make_interval(secs=>$5),
               'tenant','project','execution','attempt')`,
       [
         principal,
         agent,
-        state.limit.resetsSecs ?? null,
-        state.limit.observedSecs,
+        limit.credential ?? workerRunCredentialDefaults[agent],
+        limit.resetsSecs ?? null,
+        limit.observedSecs,
       ],
     );
   await agentAccountHarnessChosen(transaction, principal, agent, state);

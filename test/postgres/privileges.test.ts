@@ -3,6 +3,8 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agentAccountNamedCredentialPausesFunction,
+  agentAccountNamedPauseFunction,
   agentAccountPauseFunction,
   agentAccountPressFunction,
   agentAccountSettingWriteFunction,
@@ -72,7 +74,7 @@ const executionRoutingColumns =
 const sessionRoutingColumns =
   "lead_route,project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
-  "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton";
+  "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
 /** The relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",
@@ -1084,6 +1086,20 @@ test("only the API reads, sets and presses a person's own agent account and read
     await changeLogExecutors(`${agentAccountPauseFunction}(text,text)`),
     [apiRole],
     "the API asks the rule of a waiting attempt's agent",
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${agentAccountNamedPauseFunction}(text,text,text[])`,
+    ),
+    [apiRole],
+    "the API asks the rule of a waiting attempt's agent for the credentials a runner named",
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${agentAccountNamedCredentialPausesFunction}(text,text,text[])`,
+    ),
+    [],
+    "only the pool plane is answered which named credentials are paused",
   );
   for (const [statement, relation] of [
     ["SELECT * FROM agent_account_usage", "agent_account_usage"],

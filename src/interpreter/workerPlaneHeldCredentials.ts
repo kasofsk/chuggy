@@ -5,7 +5,8 @@
  * A HELD CREDENTIAL IS CONFIGURATION. A deployment names each one in a roster:
  * the name a grant gives it, the project it is held for, the variable a job's
  * environment names its file by, and the file it is in. One credential is held
- * at most once for a project, and several entries may name one file.
+ * at most once for a project, and several entries may name one file. No name
+ * is in the prefix chuggy issues its own under, so no file stands in for one.
  *
  * AN ATTEMPT IS ANSWERED ONLY WHAT IT ASKED, WAS GRANTED AND IS HELD FOR. The
  * pod contributes only the names it asks for. The grant is the one the
@@ -27,7 +28,12 @@ import {
   type WorkerHeldCredentialAbsent,
   type WorkerHeldCredentialBundle,
 } from "../contract/workerPlane.ts";
-import { isHeldCredentialVariable } from "../contract/workerEnvironment.ts";
+import {
+  isHeldCredentialVariable,
+  isIssuedCredential,
+  issuedCredentialPrefix,
+} from "../contract/workerEnvironment.ts";
+import type { CredentialIssuer } from "./credentialIssuers.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 
 /** The most credentials one deployment holds. */
@@ -124,6 +130,10 @@ export function heldCredentialRoster(
   const keys = new Set<string>();
   const held: HeldCredential[] = [];
   for (const entry of parsed.data) {
+    if (isIssuedCredential(entry.credential))
+      return heldCredentialRosterRefused(
+        `names ${entry.credential}, which is in the prefix ${issuedCredentialPrefix} reserved to the credentials chuggy issues`,
+      );
     if (!isHeldCredentialVariable(entry.variable))
       return heldCredentialRosterRefused(
         `names ${entry.variable}, which is not a variable ending _FILE outside CHUG_, CLAUDE_ and GIT_`,
@@ -178,6 +188,63 @@ export function heldCredentialSecret(
     : secret;
 }
 
+/** The secret `entry`'s file holds, read through `read` now, or nothing where it holds none. */
+async function heldCredentialFileSecret(
+  entry: HeldCredential,
+  read: HeldCredentialFileRead,
+): Promise<string | undefined> {
+  return heldCredentialSecret(await read(entry.file).catch(() => undefined));
+}
+
+/** The name a held credential's file is written under in the bundle it is served as. */
+export const heldCredentialBundleFile = "secret";
+
+/**
+ * Issues each credential `held` holds for the requester's project as a bundle
+ * of its one file, read through `read` as it is asked, the variable naming
+ * that file's path; a name not held for the project is not this issuer's.
+ */
+export function heldCredentialIssuer(
+  held: readonly HeldCredential[],
+  read: HeldCredentialFileRead,
+): CredentialIssuer {
+  const keyed = new Map(
+    held.map((entry) => [
+      heldCredentialKey(entry.credential, entry.partition),
+      entry,
+    ]),
+  );
+  return {
+    issue: async (requester, credential) => {
+      const entry = keyed.get(
+        heldCredentialKey(credential, requester.partition),
+      );
+      if (entry === undefined) return { issued: "NotServed" };
+      const secret = await heldCredentialFileSecret(entry, read);
+      if (secret === undefined) return { issued: "Unavailable" };
+      return {
+        issued: "Bundle",
+        bundle: {
+          credential,
+          files: [
+            {
+              file: heldCredentialBundleFile,
+              content: { kind: "Secret", secret },
+            },
+          ],
+          variables: [
+            {
+              kind: "Path",
+              variable: entry.variable,
+              file: heldCredentialBundleFile,
+            },
+          ],
+        },
+      };
+    },
+  };
+}
+
 /** Answers an attempt from `held`, reading each selected credential's file through `read` as it is asked. */
 export function workerPlaneHeldCredentials(
   held: readonly HeldCredential[],
@@ -187,9 +254,7 @@ export function workerPlaneHeldCredentials(
     served: async (ask) => {
       const credentials: HeldCredentialServed[] = [];
       for (const entry of heldCredentialsSelected(held, ask)) {
-        const secret = heldCredentialSecret(
-          await read(entry.file).catch(() => undefined),
-        );
+        const secret = await heldCredentialFileSecret(entry, read);
         if (secret === undefined) return { answered: "Unavailable" };
         credentials.push({
           credential: entry.credential,

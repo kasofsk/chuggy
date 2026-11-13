@@ -133,6 +133,55 @@ test("each window's newest reading and the limit read with the pause they come t
   );
 });
 
+test("an account kept under several credentials reads one row per agent, with each window's newest reading and the newest limit across them", async () => {
+  const owner = member();
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.2,
+        resetsSecs: 3_600,
+        observedSecs: -60,
+        credential: "work",
+      },
+      {
+        window: "five_hour",
+        utilization: 0.3,
+        resetsSecs: 7_200,
+        observedSecs: -120,
+        credential: "home",
+      },
+      {
+        window: "seven_day",
+        utilization: 0.4,
+        resetsSecs: 86_400,
+        observedSecs: -180,
+        credential: "home",
+      },
+    ],
+    limits: [
+      { observedSecs: -240, resetsSecs: 600, credential: "work" },
+      { observedSecs: -30, resetsSecs: 1_800, credential: "spare" },
+    ],
+  });
+  const claude = await agentOf(owner, "Claude");
+  assert.deepEqual(
+    claude.readings.map((reading) => [
+      reading.window,
+      reading.utilization,
+      minutesTo(reading.observedAt),
+    ]),
+    [
+      ["five_hour", 0.2, -1],
+      ["seven_day", 0.4, -3],
+    ],
+  );
+  assert.equal(minutesTo(claude.limit?.resetsAt), 30);
+  assert.deepEqual(claude.pause?.reasons, ["limit"]);
+  assert.equal(minutesTo(claude.pause?.until), 30);
+  assert.equal((await accounts.accounts(owner)).length, 2);
+});
+
 test("settings are written whole for one agent, and the pause follows them at the next read", async () => {
   const owner = member();
   await agentAccountHarnessCommitted(harness, owner, "Claude", softly);
