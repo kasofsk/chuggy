@@ -60,7 +60,7 @@ test("in a project the project's pages lead, then the workspace's, then the read
       "acme",
       ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
-    ["You", undefined, ["Personal runners"]],
+    ["You", undefined, ["Personal runners", "Preferences"]],
   ]);
 });
 
@@ -76,7 +76,7 @@ test("outside a project the workspace's pages lead, then the reader's own", () =
       "acme",
       ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
-    ["You", undefined, ["Personal runners"]],
+    ["You", undefined, ["Personal runners", "Preferences"]],
   ]);
 });
 
@@ -92,7 +92,7 @@ test.each([
         drawn(settingsNav({ tenant: "acme", project, site })).slice(-2),
       ).toStrictEqual([
         ["Site", undefined, pages],
-        ["You", undefined, ["Personal runners"]],
+        ["You", undefined, ["Personal runners", "Preferences"]],
       ]);
   },
 );
@@ -177,6 +177,7 @@ test("the site's sections alone are shown by an ability other than membership", 
     ["site-workspaces", "SiteWorkspaces"],
     ["site-permissions", "SitePermissions"],
     ["my-runner", "Member"],
+    ["preferences", "Member"],
   ]);
   for (const shownBy of [
     "Member",
