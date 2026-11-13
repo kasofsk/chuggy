@@ -1499,7 +1499,7 @@ export function ownerFallbackBody(
   };
 }
 
-/** Every agent of the caller's own account. */
+/** A pause's copy, or no field where none holds. */
 function agentAccountsResponsePause(
   pause: AgentAccountView["pause"],
 ): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
@@ -1508,6 +1508,7 @@ function agentAccountsResponsePause(
     : { pause: { ...pause, reasons: [...pause.reasons] } };
 }
 
+/** Every agent of the caller's own account. */
 export function agentAccountsResponse(
   accounts: readonly AgentAccountView[],
 ): NativeHttpResponse {
