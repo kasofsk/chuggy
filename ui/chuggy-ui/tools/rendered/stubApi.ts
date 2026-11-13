@@ -18,6 +18,7 @@
 import type { z } from "zod";
 
 import {
+  accessCallerAccountSchema,
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
 } from "../../../../src/contract/accessPlane.ts";
@@ -444,6 +445,12 @@ export const stubApiReads: readonly StubApiRead[] = [
       },
       readings: [],
     })),
+  }),
+  stubApiRead("/access/v1/account", accessCallerAccountSchema, {
+    subject: "member",
+    principal,
+    githubLogin: "rendered-member",
+    email: "member@rendered.invalid",
   }),
   stubApiRead("/access/v1/site/abilities", accessSiteAbilitiesSchema, {
     administer: false,

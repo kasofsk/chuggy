@@ -1,17 +1,24 @@
 /**
  * The wording: the pseudo wording over the base language, what is stored, and
- * the control in the shell that sets it for a site administrator alone.
+ * the control on the Preferences page that sets it for a site administrator
+ * alone.
  *
- * The control lives behind the bar's gear, and choosing closes the menu, so a
- * second reading mounts the provider again, which is also what a reload does.
+ * A second reading mounts the provider and the page again, which is also what
+ * a reload does.
  */
 
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { AccessSiteAbilities } from "../../../src/contract/accessPlane.ts";
-import { SettingsMenu } from "../app/browser/shell/SettingsMenu.tsx";
+import { PreferencesPage } from "../app/browser/settings/PreferencesPage.tsx";
 import {
   WordingProvider,
   wordingRead,
@@ -37,8 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   Outlet: () => null,
   useNavigate: () => () => undefined,
-  useParams: () => ({}),
-  useRouterState: () => "/",
+  useParams: () => ({ tenant: "acme" }),
 }));
 
 /** A vernacular that calls a ticket a job, and nothing else. */
@@ -87,7 +93,10 @@ test("pseudo alters every word of a catalogued message and leaves its variables 
   expect(said.replace("37", "")).not.toMatch(/[A-Za-z]/u);
   expect(said.length).toBeGreaterThan(plain.length + 2);
   expect(
-    pseudo({ id: "shell-settings-wording-vernacular", args: { name: "Jobs" } }),
+    pseudo({
+      id: "settings-preferences-wording-vernacular",
+      args: { name: "Jobs" },
+    }),
   ).toBe("[Jobs]");
 });
 
@@ -111,7 +120,7 @@ function WordingSample(): ReactNode {
   return <p data-testid="sample">{text({ id: "shell-nav-tickets" })}</p>;
 }
 
-async function wordingMenuOpened(
+async function preferencesDrawn(
   store: KeyValuePort,
   abilities: AccessSiteAbilities,
 ): Promise<void> {
@@ -124,30 +133,31 @@ async function wordingMenuOpened(
       vernaculars={jobs}
     >
       <WordingSample />
-      <SettingsMenu partition={undefined} tenant="acme" />
+      <PreferencesPage />
     </WordingProvider>,
     (request) =>
       request.url === siteAbilitiesPath ? answer(abilities) : answer({}, 404),
   );
-  fireEvent.keyDown(screen.getByRole("button"), { key: "ArrowDown" });
-  await screen.findAllByRole("menuitemradio");
+  await screen.findAllByRole("radio");
   await settled();
 }
 
 function wordingOffered(): readonly string[] {
-  const label = screen.queryByText(/Wording/u);
-  if (label === null) return [];
-  return screen
-    .getAllByRole("menuitemradio")
-    .map((item) => item.textContent)
-    .filter((name) => !["System", "Light", "Dark"].includes(name));
+  const group = screen.queryByRole("radiogroup", { name: "Wording" });
+  if (group === null) return [];
+  expect(
+    screen.getByRole("heading", { level: 2, name: "Wording" }),
+  ).toBeDefined();
+  return within(group)
+    .getAllByRole("radio")
+    .map((item) => item.closest("span")?.textContent ?? "");
 }
 
 test("the wording is offered to a site administrator and to nobody else", async () => {
-  await wordingMenuOpened(storeDouble({}), siteAbilitiesNone);
+  await preferencesDrawn(storeDouble({}), siteAbilitiesNone);
   expect(wordingOffered()).toStrictEqual([]);
 
-  await wordingMenuOpened(storeDouble({}), {
+  await preferencesDrawn(storeDouble({}), {
     ...siteAbilitiesNone,
     administer: true,
   });
@@ -157,33 +167,29 @@ test("the wording is offered to a site administrator and to nobody else", async 
 test("a wording chosen is drawn at once, says the document's language, and survives a reload", async () => {
   const held: Record<string, string> = {};
   const administrator = { ...siteAbilitiesNone, administer: true };
-  await wordingMenuOpened(storeDouble(held), administrator);
+  await preferencesDrawn(storeDouble(held), administrator);
   expect(screen.getByTestId("sample").textContent).toBe("Tickets");
 
   act(() => {
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Jobs" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Jobs" }));
   });
   expect(screen.getByTestId("sample").textContent).toBe("Jobs");
   expect(document.documentElement.getAttribute("lang")).toBe("en-x-jobs");
   expect(held[wordingStoreKey]).toBe("en-x-jobs");
 
-  await wordingMenuOpened(storeDouble(held), administrator);
+  await preferencesDrawn(storeDouble(held), administrator);
   expect(screen.getByTestId("sample").textContent).toBe("Jobs");
   expect(
-    screen
-      .getByRole("menuitemradio", { name: "Jobs" })
-      .getAttribute("aria-checked"),
+    screen.getByRole("radio", { name: "Jobs" }).getAttribute("aria-checked"),
   ).toBe("true");
 
   act(() => {
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Pseudo" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Pseudo" }));
   });
   expect(screen.getByTestId("sample").textContent).toBe("[Ŧīīƈķḗḗŧş]");
-  await wordingMenuOpened(storeDouble(held), administrator);
+  await preferencesDrawn(storeDouble(held), administrator);
   act(() => {
-    fireEvent.click(
-      screen.getByRole("menuitemradio", { name: "[Şŧȧȧƞḓȧȧřḓ]" }),
-    );
+    fireEvent.click(screen.getByRole("radio", { name: "[Şŧȧȧƞḓȧȧřḓ]" }));
   });
   expect(screen.getByTestId("sample").textContent).toBe("Tickets");
   expect(wordingStoreKey in held).toBe(false);

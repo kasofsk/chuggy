@@ -1,0 +1,33 @@
+/* The preferences page: in a narrow column each radio is a finger's height,
+   its ring still 1em and drawn in the middle of it, where the focus ring is
+   drawn too. The page is its own container, so it follows the column it is
+   given, the chat pane open or not. */
+
+@layer page {
+  .preferences {
+    container-type: inline-size;
+  }
+
+  @container (max-width: 40em) {
+    .preferences .radio-item {
+      position: relative;
+      width: var(--height-touch);
+      height: var(--height-touch);
+      border-color: transparent;
+      background: transparent;
+    }
+
+    .preferences .radio-item::before {
+      content: "";
+      position: absolute;
+      inset: calc((var(--height-touch) - 1em) / 2);
+      border: var(--hairline) solid var(--edge-control);
+      border-radius: var(--radius-circle);
+      background: var(--surface-1);
+    }
+
+    .preferences .radio-mark {
+      position: relative;
+    }
+  }
+}

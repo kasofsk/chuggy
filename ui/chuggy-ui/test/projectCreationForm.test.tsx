@@ -9,7 +9,7 @@
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -87,22 +87,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("a reader with no project meets the form, under a bar that signs out and sets the theme", async () => {
+test("a reader with no project meets the form, under a bar that signs out", async () => {
   served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
   expect(screen.getByText("No projects")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
-  fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Account menu" }), {
     key: "ArrowDown",
   });
+  const menu = await screen.findByRole("menu");
   expect(
-    await screen.findByRole("menuitemradio", { name: "Dark" }),
-  ).toBeDefined();
-  expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeDefined();
-  expect(screen.queryByText("Chat position")).toBeNull();
-  expect(screen.queryByRole("menuitem", { name: "Runners" })).toBeNull();
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toStrictEqual(["Sign out"]);
 });
 
 test("the rule both names are held to stands under each field before anything is typed", async () => {

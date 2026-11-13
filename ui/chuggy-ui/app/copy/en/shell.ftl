@@ -1,27 +1,15 @@
-## The bar above every page, its gear and its project switcher.
+## The bar above every page, its account menu and its project switcher.
 
 shell-nav = Console
 shell-nav-tickets = { -ticket(case: "upper", form: "plural") }
 shell-nav-epics = { -epic(case: "upper", form: "plural") }
-shell-nav-settings = { -project(case: "upper") } settings
 shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread
 shell-crumbs = Breadcrumb
 shell-details = Details
-shell-settings = Settings
-shell-settings-theme = Theme
-shell-settings-theme-system = System
-shell-settings-theme-light = Light
-shell-settings-theme-dark = Dark
-shell-settings-wording = Wording
-shell-settings-wording-standard = Standard
-shell-settings-wording-pseudo = Pseudo
-shell-settings-wording-vernacular = { $name }
-shell-settings-chat = { -thread(case: "upper") } position
-shell-settings-chat-right = Right
-shell-settings-chat-left = Left
-shell-settings-chat-bottom = Bottom
+shell-account = Account menu
+shell-account-settings = Settings
 shell-sign-out = Sign out
 shell-project = { -project(case: "upper") }
 shell-projects-unavailable = { -project(case: "upper", form: "plural") } unavailable

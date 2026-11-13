@@ -1,9 +1,9 @@
 /**
  * The shell's navigation, derived: the project's primary places, in the order
- * the bar above every page draws them, and the settings sections the bar's
- * gear names, which `settingsNav.ts`'s roster holds with every other page a
- * reader visits rarely. A place is primary only where a reader goes in the
- * ordinary course of work.
+ * the bar above every page draws them, and the account menu's two places, the
+ * settings and the reader's preferences among them, which `settingsNav.ts`'s
+ * roster holds with every other page a reader visits rarely. A place is
+ * primary only where a reader goes in the ordinary course of work.
  *
  * Every entry is a route and none is an action, so the renderer is a loop
  * rather than a switch over what each entry means. What a reader has said and
@@ -18,7 +18,11 @@ import {
   settingsRoutes,
   settingsSection,
 } from "./settingsNav.ts";
-import type { SettingsRoute, SettingsSectionId } from "./settingsNav.ts";
+import type {
+  SettingsNavParams,
+  SettingsRootRoute,
+  SettingsRoute,
+} from "./settingsNav.ts";
 
 export const navRoutes = {
   overview: "/$tenant/$project",
@@ -48,15 +52,13 @@ export interface NavParams {
   readonly session?: string | undefined;
 }
 
-/** Every entry the bar and its gear draw, so each is drawn with its own
- * glyph. */
-export type NavEntryId =
-  "overview" | "epics" | "inbox" | "settings" | "repositories" | "runners";
+/** Every entry the bar draws, so each is drawn with its own glyph. */
+export type NavEntryId = "overview" | "epics" | "inbox";
 
 export interface NavEntry {
   readonly id: NavEntryId;
   readonly label: Copy;
-  readonly to: NavRoute | SettingsRoute;
+  readonly to: NavRoute;
   readonly params: NavParams;
 }
 
@@ -84,29 +86,35 @@ export function shellNav(partition: PartitionIdentity): readonly NavEntry[] {
   ];
 }
 
-/** The settings sections the gear names beside the settings themselves. */
-const shellSetupSections = [
-  "repositories",
-  "runners",
-] as const satisfies readonly (SettingsSectionId & NavEntryId)[];
+export interface AccountNavEntry {
+  readonly id: "settings" | "preferences";
+  readonly label: Copy;
+  readonly to: SettingsRootRoute | SettingsRoute;
+  readonly params: SettingsNavParams;
+}
 
-/** The gear's places, in the order its menu lists them: the settings, then
- * the sections it names, each its section's address. */
-export function shellSetupNav(
-  partition: PartitionIdentity,
-): readonly NavEntry[] {
-  const params = navParamsOf(partition);
+/** The account menu's places, in the order it lists them, each at its address
+ * in the frame the menu is drawn in: under the project where `params` names
+ * one, and under the workspace alone where it does not. */
+export function shellAccountNav(
+  params: SettingsNavParams,
+): readonly AccountNavEntry[] {
+  const inProject = params.project !== undefined;
   return [
     {
       id: "settings",
-      label: { id: "shell-nav-settings" },
-      to: navRoutes.settings,
+      label: { id: "shell-account-settings" },
+      to: inProject ? settingsRootRoutes.project : settingsRootRoutes.workspace,
       params,
     },
-    ...shellSetupSections.map((id) => {
-      const section = settingsSection(id);
-      return { id, label: section.label, to: section.project, params };
-    }),
+    {
+      id: "preferences",
+      label: settingsSection("preferences").label,
+      to: inProject
+        ? settingsRoutes.project.preferences
+        : settingsRoutes.workspace.preferences,
+      params,
+    },
   ];
 }
 

@@ -370,12 +370,14 @@ export function ProjectCreation(props: {
 /** A screen outside every project: the bar, the page under it, and the footer
  * at the foot of the viewport, with the clipboard a copy control under it asks for. */
 export function ProjectlessFrame(props: {
+  /** The workspace the screen is of, where it is one. */
+  readonly workspace?: string | undefined;
   readonly children: ReactNode;
 }): ReactNode {
   return (
     <CopyProvider write={clipboardWritten}>
       <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)_auto]">
-        <TopBar partition={undefined} />
+        <TopBar partition={undefined} workspace={props.workspace} />
         <main className="grid content-start gap-4 p-4">{props.children}</main>
         <div className="px-4 pb-4">
           <Footer />
@@ -390,7 +392,7 @@ export function ProjectCreationPage(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <ProjectlessFrame>
+    <ProjectlessFrame workspace={props.workspace}>
       <ProjectCreation
         workspace={props.workspace}
         lead={

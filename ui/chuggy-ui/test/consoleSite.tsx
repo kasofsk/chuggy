@@ -34,6 +34,7 @@ import type { z } from "zod";
 
 import { ticketActionReachResponseSchema } from "../../../src/contract/actionReach.ts";
 import {
+  accessCallerAccountSchema,
   accessCallerTenantsSchema,
   accessInviteLinksSchema,
   accessSiteTenantsSchema,
@@ -641,6 +642,16 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt("/access/v1/site/workspace-links"),
     schema: accessWorkspaceLinksSchema,
     body: () => workspaceLinksListed,
+  },
+  {
+    path: consoleReadAt("/access/v1/account"),
+    schema: accessCallerAccountSchema,
+    body: () => ({
+      subject: "member",
+      principal: "issuer member",
+      githubLogin: "mona-lisa",
+      email: "mona@example.com",
+    }),
   },
   {
     path: consoleReadAt("/access/v1/workspaces"),

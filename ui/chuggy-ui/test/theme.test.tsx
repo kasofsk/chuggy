@@ -1,22 +1,23 @@
 /**
- * The theme: what is stored, what is put on the document, and the control in
- * the shell that sets both.
+ * The theme: what is stored, what is put on the document, and the control on
+ * the Preferences page that sets both.
  *
  * `System` is the absence of the attribute rather than a third value, so the
  * cases read the attribute itself; a stored word this console does not know is
  * read as `System` rather than trusted.
  */
 
-import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { renderCopied } from "./copied.tsx";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
-import { SettingsMenu } from "../app/browser/shell/SettingsMenu.tsx";
-import { SessionProvider } from "../app/browser/session.tsx";
-import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
-import { holderDouble } from "./screenHarness.tsx";
+import { PreferencesPage } from "../app/browser/settings/PreferencesPage.tsx";
+import { answer, drawnStrict } from "./screenHarness.tsx";
+import {
+  siteAbilitiesNone,
+  siteAbilitiesPath,
+} from "./settings/permissionsFixture.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   themeChoiceApply,
@@ -32,6 +33,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   Outlet: () => null,
   useNavigate: () => () => undefined,
+  useParams: () => ({ tenant: "acme" }),
 }));
 
 function storeDouble(held: Record<string, string>): KeyValuePort {
@@ -80,42 +82,43 @@ test("the attribute carries the choice, and System takes it off", () => {
   expect(root.hasAttribute("data-theme")).toBe(false);
 });
 
-/** The choice lives behind the bar's gear, and choosing closes the menu — so a
- * second reading mounts the bar again, which is also what a reload does. */
-async function themeMenuOpened(): Promise<void> {
+/** The choice is on the Preferences page, and a second reading mounts the
+ * page again, which is also what a reload does. */
+async function preferencesDrawn(): Promise<void> {
   cleanup();
   viewportAtEm(viewportDeskEm);
-  renderCopied(
-    <SessionProvider holder={holderDouble()}>
-      <ConsoleStoreBareProvided>
-        <SettingsMenu partition={undefined} tenant={undefined} />
-      </ConsoleStoreBareProvided>
-    </SessionProvider>,
+  await drawnStrict(<PreferencesPage />, (request) =>
+    request.url === siteAbilitiesPath
+      ? answer(siteAbilitiesNone)
+      : answer({}, 404),
   );
-  fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menuitemradio", { name: "Dark" });
+  await screen.findByRole("radiogroup", { name: "Light or dark" });
 }
 
 function themeChecked(name: string): string | null {
-  return screen
-    .getByRole("menuitemradio", { name })
-    .getAttribute("aria-checked");
+  return screen.getByRole("radio", { name }).getAttribute("aria-checked");
 }
 
-test("the control checks one choice at a time and writes what it applied", async () => {
-  await themeMenuOpened();
+test("the page's Appearance holds the choice, which checks one at a time and writes what it applied", async () => {
+  await preferencesDrawn();
+  expect(
+    screen.getByRole("heading", { level: 2, name: "Appearance" }),
+  ).toBeDefined();
   expect(themeChecked("System")).toBe("true");
   expect(themeChecked("Dark")).toBe("false");
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Dark" }));
+  act(() => {
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+  });
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   expect(localStorage.getItem(themeStoreKey)).toBe("Dark");
+  expect(themeChecked("Dark")).toBe("true");
 
-  await themeMenuOpened();
+  await preferencesDrawn();
   expect(themeChecked("Dark")).toBe("true");
   expect(themeChecked("System")).toBe("false");
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "System" }));
+  act(() => {
+    fireEvent.click(screen.getByRole("radio", { name: "System" }));
+  });
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   expect(localStorage.getItem(themeStoreKey)).toBeNull();
 });

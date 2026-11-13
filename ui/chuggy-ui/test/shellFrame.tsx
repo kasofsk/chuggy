@@ -14,6 +14,7 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { PreferencesChatPosition } from "../app/browser/settings/PreferencesPage.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
 import { chatPaneSizeStrip } from "../app/core/chatPane.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -67,7 +68,9 @@ export function shellRoute(url: string): Response {
   return answer({ projects: [atlas] });
 }
 
-/** The frame mounted, and drawn again where a case has moved the route. */
+/** The frame mounted, and drawn again where a case has moved the route, with
+ * the Preferences page's Chat position beside it, which is where a reader
+ * places the pane from. */
 export async function mounted(
   em: number,
   served?: typeof fetch,
@@ -90,6 +93,7 @@ export async function mounted(
       transport={server.ports.fetch}
     >
       <Shell partition={atlas} />
+      <PreferencesChatPosition />
     </ScreenHarness>
   );
   const view = renderCopied(drawn());
@@ -209,21 +213,27 @@ export async function edgePulled(
 export const frameTallEm = 50;
 export const frameShortEm = frameTallEm / 5;
 
-/** The gear's menu, opened. */
-export async function settingsOpened(): Promise<HTMLElement> {
+/** The account menu, opened. */
+export async function accountOpened(): Promise<HTMLElement> {
   await turned(() => {
-    fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
+    fireEvent.keyDown(screen.getByRole("button", { name: "Account menu" }), {
       key: "ArrowDown",
     });
   });
   return screen.findByRole("menu");
 }
 
-/** The pane placed from the gear. */
+/** The Preferences page's Chat position, where it is offered. */
+export function chatPositionDrawn(): HTMLElement | null {
+  return screen.queryByRole("radiogroup", { name: "Chat position" });
+}
+
+/** The pane placed from the Preferences page. */
 export async function panePlaced(placement: string): Promise<void> {
-  const menu = await settingsOpened();
+  const group = chatPositionDrawn();
+  if (group === null) throw new Error("no Chat position is offered");
   await turned(() => {
-    within(menu).getByRole("menuitemradio", { name: placement }).click();
+    within(group).getByRole("radio", { name: placement }).click();
   });
   await settled();
 }

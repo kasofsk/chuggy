@@ -89,6 +89,9 @@ test("a route is the page the contract names for it, with what its address carri
   expect(
     consolePageOf(matched("/$tenant/$project/settings/workspace/runner")),
   ).toEqual({ page: "Settings", section: "WorkspaceRunners" });
+  expect(
+    consolePageOf(matched("/$tenant/$project/settings/preferences")),
+  ).toEqual({ page: "Settings" });
 });
 
 const ticketNew = "/$tenant/$project/tickets/new";

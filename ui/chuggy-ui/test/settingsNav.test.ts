@@ -13,6 +13,7 @@ import {
   settingsNav,
   settingsNavSiteDrawn,
   settingsRoutes,
+  settingsSection,
   settingsSectionShown,
   settingsSections,
 } from "../app/core/settingsNav.ts";
@@ -60,7 +61,7 @@ test("in a project the project's pages lead, then the workspace's, then the read
       "acme",
       ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
-    ["You", undefined, ["Personal runners"]],
+    ["You", undefined, ["Personal runners", "Preferences"]],
   ]);
 });
 
@@ -76,7 +77,7 @@ test("outside a project the workspace's pages lead, then the reader's own", () =
       "acme",
       ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
-    ["You", undefined, ["Personal runners"]],
+    ["You", undefined, ["Personal runners", "Preferences"]],
   ]);
 });
 
@@ -92,10 +93,19 @@ test.each([
         drawn(settingsNav({ tenant: "acme", project, site })).slice(-2),
       ).toStrictEqual([
         ["Site", undefined, pages],
-        ["You", undefined, ["Personal runners"]],
+        ["You", undefined, ["Personal runners", "Preferences"]],
       ]);
   },
 );
+
+test("the preferences are the reader's own, at the same segment under a project's settings and a workspace's", () => {
+  const preferences = settingsSection("preferences");
+  expect(preferences.group).toBe("person");
+  expect(preferences.shownBy).toBe("Member");
+  expect(copyTextEn(preferences.label)).toBe("Preferences");
+  expect(preferences.project).toBe("/$tenant/$project/settings/preferences");
+  expect(preferences.workspace).toBe("/tenants/$tenant/settings/preferences");
+});
 
 test("a reader drawn none of the site's pages is drawn no group for it", () => {
   for (const project of ["atlas", undefined])
@@ -177,6 +187,7 @@ test("the site's sections alone are shown by an ability other than membership", 
     ["site-workspaces", "SiteWorkspaces"],
     ["site-permissions", "SitePermissions"],
     ["my-runner", "Member"],
+    ["preferences", "Member"],
   ]);
   for (const shownBy of [
     "Member",

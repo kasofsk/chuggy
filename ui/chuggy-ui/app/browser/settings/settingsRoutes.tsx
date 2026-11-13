@@ -35,6 +35,7 @@ import { RunnersPage } from "../RunnersPage.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
+import { PreferencesPage } from "./PreferencesPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
 import { SitePermissionsPage } from "./SitePermissionsPage.tsx";
@@ -136,6 +137,19 @@ function sitePageRoutes<TParent extends AnyRoute>(parent: TParent) {
   ] as const;
 }
 
+/** The reader's own pages that belong to no workspace, so stand at the same
+ * segment under a project's settings and a workspace's. */
+function personPageRoutes<TParent extends AnyRoute>(parent: TParent) {
+  const getParentRoute = (): TParent => parent;
+  return [
+    createRoute({
+      getParentRoute,
+      path: "/preferences",
+      component: PreferencesPage,
+    }),
+  ] as const;
+}
+
 function ProjectSettings(): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
   return <SettingsLayout tenant={params.tenant} project={params.project} />;
@@ -144,7 +158,7 @@ function ProjectSettings(): ReactNode {
 function WorkspaceSettings(): ReactNode {
   const params = useParams({ from: "/tenants/$tenant/settings" });
   return (
-    <ProjectlessFrame>
+    <ProjectlessFrame workspace={params.tenant}>
       <SettingsLayout tenant={params.tenant} project={undefined} />
     </ProjectlessFrame>
   );
@@ -183,6 +197,7 @@ export function projectSettingsRoutes<TParent extends AnyRoute>(
     ...projectPageRoutes(settings),
     workspacePages,
     ...sitePageRoutes(settings),
+    ...personPageRoutes(settings),
   ]);
 }
 
@@ -208,5 +223,6 @@ export function workspaceSettingsRoutes<TParent extends AnyRoute>(
     index,
     ...workspacePageRoutes(settings),
     ...sitePageRoutes(settings),
+    ...personPageRoutes(settings),
   ]);
 }

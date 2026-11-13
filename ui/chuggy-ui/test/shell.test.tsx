@@ -73,7 +73,8 @@ import {
   navDrawn,
   panePlaced,
   pressed,
-  settingsOpened,
+  accountOpened,
+  chatPositionDrawn,
   shareOf,
   shellFrameEachCase,
   shellRoute,
@@ -446,7 +447,7 @@ test("the pane is drawn in a container, so its sheets lay out at the pane's widt
   styleless();
 });
 
-/** The edge is named for the pane it sizes, as the gear names where it sits,
+/** The edge is named for the pane it sizes, as Chat position names where it sits,
  * and says the pane's own share wherever the pane sits. */
 test("the edge is named for the pane it sizes, and says the pane's share", async () => {
   await mounted(viewportDeskEm, undefined, undefined, {
@@ -877,7 +878,7 @@ test("on a phone the pane opens as the strip under the page, expanded keeps the 
   expect(frameDivided()).toBe("down chat-bottom");
   expect(chatDrawn()).not.toBeNull();
   expect(navDrawn()).toBeNull();
-  expect(screen.queryByRole("button", { name: "Settings" })).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Account menu" })).not.toBeNull();
   expect(document.querySelector(".shell-banner")).not.toBeNull();
   expect(screen.queryByText("the screen")).toBeNull();
   await turned(() => {
@@ -911,7 +912,7 @@ test("below two columns an open pane takes the nav's row and the page's, and the
   expect(navDrawn()).toBeNull();
   expect(screen.queryByText("ticket 44")).toBeNull();
   expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Account menu" })).toBeDefined();
   expect(chatDrawn()?.closest(".shell-under")).not.toBeNull();
   await pressed("Back");
   expect(navDrawn()).not.toBeNull();
@@ -1054,20 +1055,26 @@ test("a pane given the whole frame is marked as one to read, and beside the page
   styleless();
 });
 
-/** Where the pane sits is set once, so it lives behind the bar's gear rather
+/** Where the pane sits is set once, so it lives on the Preferences page rather
  * than in the pane's own header. */
 test("repositioning the pane divides the frame the other way and is remembered", async () => {
   await mounted(viewportDeskEm);
-  await turned(() => {
-    fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
-      key: "ArrowDown",
-    });
-  });
-  await screen.findByRole("menu");
-  await turned(() => {
-    screen.getByRole("menuitemradio", { name: "Left" }).click();
-  });
-  await settled();
+  const position = chatPositionDrawn();
+  expect(
+    position === null
+      ? null
+      : within(position)
+          .getAllByRole("radio")
+          .map((radio) => [
+            radio.closest("span")?.textContent,
+            radio.getAttribute("aria-checked"),
+          ]),
+  ).toStrictEqual([
+    ["Right", "true"],
+    ["Left", "false"],
+    ["Bottom", "false"],
+  ]);
+  await panePlaced("Left");
   expect(frameDivided()).toBe("across chat-left | pages");
   expect(edgeShare()).toBeCloseTo(25);
   expect(localStorage.getItem(chatPaneStoreKey)).toContain("Left");
@@ -1461,9 +1468,10 @@ test.each([
   },
 );
 
-/** The bar carries the project's screens and one gear; the setup pages, the
- * theme and signing out are rarer moves, so they sit behind it. */
-test("the bar draws the screens and a gear, and the gear holds setup, the theme and signing out", async () => {
+/** The bar carries the project's screens and one account menu; the settings,
+ * the preferences and signing out are rarer moves, so they sit behind it, and
+ * none of the preferences is in the menu itself. */
+test("the bar draws the screens and an account menu, which holds the settings, the preferences and signing out", async () => {
   await mounted(viewportDeskEm);
   const nav = navDrawn();
   expect(
@@ -1471,20 +1479,13 @@ test("the bar draws the screens and a gear, and the gear holds setup, the theme 
   ).not.toContain("Runners");
   expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
   expect(screen.queryByRole("link", { name: "chuggy" })).toBeNull();
-  await turned(() => {
-    fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
-      key: "ArrowDown",
-    });
-  });
-  const menu = await screen.findByRole("menu");
+  const menu = await accountOpened();
   expect(
     within(menu)
       .getAllByRole("menuitem")
       .map((item) => item.textContent),
-  ).toStrictEqual(["Project settings", "Repositories", "Runners", "Sign out"]);
-  expect(
-    within(menu).getByRole("menuitemradio", { name: "Dark" }),
-  ).toBeDefined();
+  ).toStrictEqual(["Settings", "Preferences", "Sign out"]);
+  expect(within(menu).queryAllByRole("menuitemradio")).toStrictEqual([]);
   styleless();
 });
 
@@ -1511,34 +1512,28 @@ test.each(["Docked", "Collapsed", "Full"] as const)(
   },
 );
 
-/** Where the pane sits is a choice about a pane, and the page has none. */
-test("the gear offers where the pane sits on every page but a thread's own", async () => {
+/** Where the pane sits is a choice about a pane, and a thread's own page has
+ * none. */
+test("the Preferences page offers where the pane sits on every page but a thread's own", async () => {
   await mounted(viewportDeskEm);
+  expect(chatPositionDrawn()).not.toBeNull();
   expect(
-    within(await settingsOpened()).getByText("Chat position"),
+    screen.getByRole("heading", { level: 2, name: "Chat position" }),
   ).toBeDefined();
   cleanup();
   routeParams = { ...atlas, session: threadMineSession };
   await mounted(viewportDeskEm);
-  const menu = await settingsOpened();
-  expect(within(menu).getByText("Theme")).toBeDefined();
-  expect(within(menu).queryByText("Chat position")).toBeNull();
-  expect(
-    within(menu).queryByRole("menuitemradio", { name: "Left" }),
-  ).toBeNull();
+  expect(chatPositionDrawn()).toBeNull();
+  expect(screen.queryByText("Chat position")).toBeNull();
   styleless();
 });
 
 /** Below two columns the pane is the whole body or the strip under the pages
- * wherever it sits, so the gear offers no placement there. */
-test("below two columns the gear offers no placement", async () => {
+ * wherever it sits, so the page offers no placement there. */
+test("below two columns the Preferences page offers no placement", async () => {
   await mounted(viewportNarrowEm - 1);
-  const menu = await settingsOpened();
-  expect(within(menu).getByText("Theme")).toBeDefined();
-  expect(within(menu).queryByText("Chat position")).toBeNull();
-  expect(
-    within(menu).queryByRole("menuitemradio", { name: "Left" }),
-  ).toBeNull();
+  expect(chatPositionDrawn()).toBeNull();
+  expect(screen.queryByRole("radio", { name: "Left" })).toBeNull();
   styleless();
 });
 
@@ -2404,8 +2399,8 @@ test("a message to a held thread the hosted grant refuses stays in the box, read
 });
 
 /** The bar draws the project's primary places and nothing a reader visits
- * rarely: those are settings sections, reached from the gear. */
-test("the bar's places are Tickets and Epics, with the Inbox beside the gear", async () => {
+ * rarely: those are settings sections, reached from the account menu. */
+test("the bar's places are Tickets and Epics, with the Inbox beside the account menu", async () => {
   await mounted(viewportDeskEm);
   const bar = navDrawn() ?? document.body;
   expect(

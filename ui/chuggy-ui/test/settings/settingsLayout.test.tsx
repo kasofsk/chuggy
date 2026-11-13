@@ -77,6 +77,7 @@ import {
 } from "./tenantPeopleFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { viewportAtEm } from "../viewport.ts";
 import { viewportDeskEm, viewportEmPixels } from "../viewportSizes.ts";
 import { copyTextEn } from "../../app/copy/catalog.ts";
 import { settingsNav } from "../../app/core/settingsNav.ts";
@@ -116,10 +117,12 @@ function settingsFrameAtEm(em: number): void {
 }
 
 /** The router restores a scroll position on every load, and jsdom scrolls
- * nothing. A case is at the desk unless it says otherwise. */
+ * nothing. A case is at the desk unless it says otherwise, and the viewport
+ * is the desk's too, which the Preferences page asks where the pane sits. */
 beforeEach(() => {
   vi.stubGlobal("scrollTo", () => undefined);
   resizeObserverStubbed();
+  viewportAtEm(viewportDeskEm);
   settingsFrameAtEm(viewportDeskEm);
 });
 
@@ -267,7 +270,10 @@ const projectGroups = [
 
 const projectPersonGroup = [
   "You",
-  ["Personal runners /acme-co/atlas-web/settings/workspace/runner"],
+  [
+    "Personal runners /acme-co/atlas-web/settings/workspace/runner",
+    "Preferences /acme-co/atlas-web/settings/preferences",
+  ],
 ];
 
 const workspaceGroups = [
@@ -284,7 +290,10 @@ const workspaceGroups = [
 
 const workspacePersonGroup = [
   "You",
-  ["Personal runners /tenants/acme-co/settings/runner"],
+  [
+    "Personal runners /tenants/acme-co/settings/runner",
+    "Preferences /tenants/acme-co/settings/preferences",
+  ],
 ];
 
 const settingsRoots = [
@@ -437,6 +446,8 @@ test.each([
   },
   { address: "/acme-co/atlas-web/settings/workspace/runner", group: "You" },
   { address: "/tenants/acme-co/settings/runner", group: "You" },
+  { address: "/acme-co/atlas-web/settings/preferences", group: "You" },
+  { address: "/tenants/acme-co/settings/preferences", group: "You" },
   {
     address: "/acme-co/atlas-web/settings/workspace/people",
     group: "Workspace acme-co",

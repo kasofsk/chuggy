@@ -384,9 +384,37 @@
     }
   }
 
-  /* The gear's menu leads its setup pages with their glyphs, so its gutter
-     is a glyph wide for the radio marks under them too. */
-  .settings-menu .picker-gutter {
-    width: var(--space-4);
+  /* The account menu's trigger is the reader's initials in a ring the
+     height of a glyph, and its head is who they are, a line each. On a phone
+     the trigger and every item are a finger's height. */
+  .account-initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--space-5);
+    height: var(--space-5);
+    border-radius: var(--radius-circle);
+    background: var(--surface-2);
+    color: var(--ink-1);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-strong);
+  }
+
+  .account-name {
+    display: grid;
+    min-width: 0;
+    padding: var(--space-1) var(--space-3);
+  }
+
+  @media (max-width: 40em) {
+    .account-trigger {
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+      justify-content: center;
+    }
+
+    .account-menu .menu-item {
+      min-height: var(--height-touch);
+    }
   }
 }

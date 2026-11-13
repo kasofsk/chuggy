@@ -8,6 +8,7 @@
 import type { QueryClient } from "@tanstack/query-core";
 
 import {
+  apiCallerAccount,
   apiCallerTenants,
   apiSiteAbilities,
   apiSiteAuthorities,
@@ -49,6 +50,13 @@ export function projectsInventoryQuery() {
 export function callerTenantsQuery() {
   return consoleCallerQuery("access-workspaces", (ports) =>
     apiCallerTenants(ports),
+  );
+}
+
+/** Who the reader is signed in as, which the account menu names. */
+export function callerAccountQuery() {
+  return consoleCallerQuery("access-account", (ports) =>
+    apiCallerAccount(ports),
   );
 }
 

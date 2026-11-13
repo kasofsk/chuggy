@@ -12,10 +12,11 @@
  * a pane over the whole body takes them too, and the project's row stays.
  *
  * The project's primary places are the bar's, drawn from `shellNav.ts`; the
- * frame's own controls and the gear's settings pages sit behind the gear
- * beside the project. A screen outside every project draws the same bar without what
- * only a project has — its screens, its setup and its page row — so signing
- * out and the theme are reachable before there is a project to open.
+ * settings, the reader's preferences and signing out sit behind the account
+ * menu beside the project. A screen outside every project draws the same bar
+ * without what only a project has — its screens and its page row — so signing
+ * out is reachable before there is a project to open, and the settings and
+ * the preferences wherever the screen names a workspace.
  */
 
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -31,14 +32,15 @@ import type { ShellCrumb } from "../../core/shellCrumbs.ts";
 import { memberChatCrumbs, shellCrumbs } from "../../core/shellCrumbs.ts";
 import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
+import type { SettingsNavParams } from "../../core/settingsNav.ts";
 import { useInboxRows } from "../Inbox.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { AccountMenu } from "./AccountMenu.tsx";
 import { useChatPaneYields } from "./chatPaneHeld.ts";
 import { DetailsToggle } from "./DetailsPane.tsx";
 import { NavIcon } from "./navIcons.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
-import { SettingsMenu } from "./SettingsMenu.tsx";
 import { useShellSlotHolder, useShellSlotsFilled } from "./slots.tsx";
 
 /** One screen's entry, which also moves a pane that filled the body out of
@@ -67,7 +69,8 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
   );
 }
 
-/** The project's primary places but the inbox, which sits beside the gear. */
+/** The project's primary places but the inbox, which sits beside the account
+ * menu. */
 function TopBarNav(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -92,7 +95,7 @@ function TopBarNav(props: {
   );
 }
 
-/** The inbox beside the gear, with a badge for what waits in it. */
+/** The inbox beside the account menu, with a badge for what waits in it. */
 function TopBarInbox(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -212,11 +215,24 @@ export function TopBarRows(props: {
   );
 }
 
+/** Where the account menu's settings are: the project's, or else the
+ * workspace's the screen names, or none. */
+function topBarSettingsParams(
+  partition: PartitionIdentity | undefined,
+  workspace: string | undefined,
+): SettingsNavParams | undefined {
+  if (partition !== undefined)
+    return { tenant: partition.tenant, project: partition.project };
+  return workspace === undefined ? undefined : { tenant: workspace };
+}
+
 /** The bar's first row: where the reader is, and the frame's controls. */
 export function TopBar(props: {
   readonly partition: PartitionIdentity | undefined;
   /** The tenant whose chat outside every project the page is, where it is. */
   readonly chat?: string;
+  /** The workspace a screen outside every project is of, where it is one. */
+  readonly workspace?: string | undefined;
 }): ReactNode {
   const partition = props.partition;
   return (
@@ -243,9 +259,11 @@ export function TopBar(props: {
             {partition === undefined ? null : (
               <TopBarInbox partition={partition} />
             )}
-            <SettingsMenu
-              partition={partition}
-              tenant={partition?.tenant ?? props.chat}
+            <AccountMenu
+              params={topBarSettingsParams(
+                partition,
+                props.chat ?? props.workspace,
+              )}
             />
           </div>
         </div>
