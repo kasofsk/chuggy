@@ -8,8 +8,9 @@
  * authenticated as and names no other, so no person reads or writes another's
  * settings, readings or pause, or presses for them.
  *
- * THE PAUSE IS `agent_account_pause`'S ANSWER AT THE READ, holding while any
- * credential's does, and a credential's is `agent_account_named_pause`'s of
+ * THE PAUSE IS `agent_account_pause`'S ANSWER AT THE READ, holding only while
+ * every credential the account's live runners name is paused, or while any is
+ * where they name none, and a credential's is `agent_account_named_pause`'s of
  * its one name, never derived here: the rule is stated once, over the
  * database's own clock.
  */
