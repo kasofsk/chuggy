@@ -50,7 +50,7 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
     },
     vacated: async (partition) => {
       const found = await pool.query<{ vacated: boolean | null }>(
-        sql`SELECT project_vacated(${partition.tenant},${partition.project}) AS vacated`,
+        sql`SELECT project_vacated(${partition.tenant},${partition.project})::boolean AS vacated`,
       );
       return found.rows[0]?.vacated === true;
     },

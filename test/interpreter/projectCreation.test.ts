@@ -21,6 +21,7 @@ import {
   projectCreationGrants,
   projectCreationNameFault,
   type ProjectCreationAnswer,
+  type ProjectCreationAuthority,
   type ProjectCreationOutcome,
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
@@ -71,6 +72,43 @@ function creationAccess(unpermitted: boolean) {
   return { access, siteAsked, asking };
 }
 
+type CreationStep = "Erased" | "Filled" | "Written";
+
+/** The authority's write side, recording each list it takes, each object it erases and the order of both in `steps`. */
+function creationAuthority(
+  steps: CreationStep[],
+  writer: { failing: boolean },
+  erasureFails: boolean,
+) {
+  const grants: ProjectGrant[] = [];
+  const lists: (readonly ProjectGrant[])[] = [];
+  const erased: Partition[] = [];
+  const authority: ProjectCreationAuthority = {
+    grants: {
+      write: () => Promise.reject(new Error("creation writes one list")),
+      writeAll: (named) => {
+        if (writer.failing)
+          return Promise.reject(new ProjectAccessUnavailable("keto down"));
+        lists.push(named);
+        grants.push(...named);
+        steps.push("Written");
+        return Promise.resolve();
+      },
+      remove: () => Promise.reject(new Error("creation removes no grant")),
+    },
+    erasure: {
+      projectErased: (named) => {
+        if (erasureFails)
+          return Promise.reject(new ProjectAccessUnavailable("keto down"));
+        erased.push(named);
+        steps.push("Erased");
+        return Promise.resolve();
+      },
+    },
+  };
+  return { authority, grants, lists, erased };
+}
+
 /**
  * A creation over ports that record what they were asked and answer as
  * scripted, its creator permitted `CreateTenant` unless `unpermitted`.
@@ -90,11 +128,13 @@ function creationWith(
     options.unpermitted === true,
   );
   const writes: ProjectCreationWrite[] = [];
-  const grants: ProjectGrant[] = [];
-  const lists: (readonly ProjectGrant[])[] = [];
   const writer = { failing: options.grantFails === true };
-  const erased: Partition[] = [];
-  const steps: ("Erased" | "Filled" | "Written")[] = [];
+  const steps: CreationStep[] = [];
+  const { authority, grants, lists, erased } = creationAuthority(
+    steps,
+    writer,
+    options.erasureFails === true,
+  );
   const recorded: OperationId[] = [];
   const asked: TenantId[] = [];
   const claims = {
@@ -124,29 +164,7 @@ function creationWith(
         return Promise.resolve();
       },
     },
-    authority: {
-      grants: {
-        write: () => Promise.reject(new Error("creation writes one list")),
-        writeAll: (named) => {
-          if (writer.failing)
-            return Promise.reject(new ProjectAccessUnavailable("keto down"));
-          lists.push(named);
-          grants.push(...named);
-          steps.push("Written");
-          return Promise.resolve();
-        },
-        remove: () => Promise.reject(new Error("creation removes no grant")),
-      },
-      erasure: {
-        projectErased: (named) => {
-          if (options.erasureFails === true)
-            return Promise.reject(new ProjectAccessUnavailable("keto down"));
-          erased.push(named);
-          steps.push("Erased");
-          return Promise.resolve();
-        },
-      },
-    },
+    authority,
     ...(options.selector === undefined ? {} : { selector: options.selector }),
   });
   return {
