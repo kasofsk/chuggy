@@ -1942,6 +1942,35 @@ test("a created draft answers the landing its brief was stored with and who name
   }
 });
 
+test("a draft selecting a plan only its overrides define lands with its catalog's default finalizer", async () => {
+  const created = await landingBoundary(catalogConfiguration).createDraft(
+    principal,
+    {
+      partition,
+      configurationRevision: asConfigurationRevisionId("revision"),
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 0,
+      authoring: noAuthoring,
+      brief: asDraftBrief({
+        intent: "Land it.",
+        links: [],
+        repository: landingRepository,
+        branch: landingBranch,
+      }),
+      overrides: {
+        plans: { gate: [{ name: "review", evaluators: ["build"] }] },
+      },
+      selection: { evaluation: "gate" },
+    },
+  );
+  assert.deepEqual(
+    created.result === "Authorized" && created.value.created === "Created"
+      ? created.value.landing
+      : created,
+    landingCases[1].landing,
+  );
+});
+
 test("a revised draft answers its landing the same way, the brief's own or the repository's", async () => {
   const web = landingBoundary(readyConfiguration);
   const revise = async (finalization?: { readonly mode: string }) => {

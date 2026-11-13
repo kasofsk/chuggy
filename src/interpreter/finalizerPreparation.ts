@@ -81,6 +81,7 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
+import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import {
   catalogSelectedFinalizer,
@@ -191,6 +192,8 @@ export interface HandoffGathering {
   readonly sources: readonly HandoffSource[];
   /** The catalog entries the ticket was released selecting, which a version 1 ticket holds none of. */
   readonly selection?: ConfigurationSelection;
+  /** The overrides the ticket was released with, under which its selection resolves. */
+  readonly overrides?: ConfigurationOverrides;
 }
 
 /** The passed work one finalization promotes, and the revision that work ran under. */
@@ -258,11 +261,13 @@ export type HandoffAccepted =
 /**
  * Whether the pinned revision asks a person to approve one candidate, or says
  * nothing this module reads. A catalog asks it of the finalizer the ticket's
- * selection lands with, and one that selects none asks for no approval.
+ * selection lands with, under its overrides, and one that selects none asks for
+ * no approval.
  */
 export function handoffApprovalRequired(
   canonical: CanonicalConfiguration,
   selection?: ConfigurationSelection,
+  overrides?: ConfigurationOverrides,
 ): boolean | undefined {
   let parsed: unknown;
   try {
@@ -274,7 +279,7 @@ export function handoffApprovalRequired(
     return undefined;
   }
   if (declaredConfigurationIsCatalog(parsed)) {
-    const selected = catalogSelectedFinalizer(parsed, selection);
+    const selected = catalogSelectedFinalizer(parsed, selection, overrides);
     return selected === undefined
       ? undefined
       : (selected.finalizer?.approvalRequired ?? false);
@@ -392,6 +397,7 @@ export function handoffAccepted(gathering: HandoffGathering): HandoffAccepted {
   const approvalRequired = handoffApprovalRequired(
     first.canonical,
     gathering.selection,
+    gathering.overrides,
   );
   if (approvalRequired === undefined) {
     return {

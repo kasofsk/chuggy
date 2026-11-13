@@ -1420,6 +1420,7 @@ async function nativeDraftBriefLanded(
     readonly configurationRevision: ConfigurationRevisionId;
     readonly brief: DraftBrief;
     readonly selection?: ConfigurationSelection;
+    readonly overrides?: ConfigurationOverrides;
   },
 ): Promise<NativeDraftBriefLanded> {
   if (input.brief.finalization !== undefined)
@@ -1434,6 +1435,7 @@ async function nativeDraftBriefLanded(
       : catalogSelectedFinalizer(
           JSON.parse(configuration.canonical),
           input.selection,
+          input.overrides,
         )?.finalizer?.finalization;
   return finalization === undefined
     ? { brief: input.brief }

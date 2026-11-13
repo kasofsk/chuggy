@@ -19,6 +19,8 @@ import {
   ticketRunsLessThanPlanned,
 } from "../../src/interpreter/authoring.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import { handoffApprovalRequired } from "../../src/interpreter/finalizerPreparation.ts";
+import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
 import { catalogNamedWorkloadTask } from "../../src/interpreter/workloadTask.ts";
 
 const claude = {
@@ -328,5 +330,46 @@ test("a program over a plan an override replaces or adds is keyed by position, s
   assert.equal(
     release([{ key: 2, evaluators: [{ key: 1 }] }]),
     "ProgramStageOutOfPosition",
+  );
+});
+
+test("a selection naming a plan only its overrides define lands with the finalizer, and asks the approval, the catalog's default does", () => {
+  const finalizing = {
+    ...catalog,
+    finalizers: {
+      gated: { approvalRequired: true },
+      open: { approvalRequired: false },
+    },
+    defaults: { ...catalog.defaults, finalization: "gated" },
+  };
+  const gated = canonicalConfigurationOf(finalizing);
+  for (const overrides of [
+    approvalOnly,
+    {
+      workloads: { "sign-off": signOff },
+      plans: { gate: [{ name: "approval", evaluators: ["sign-off"] }] },
+    },
+  ]) {
+    assert.deepEqual(
+      catalogSelectedFinalizer(finalizing, { evaluation: "gate" }, overrides),
+      catalogSelectedFinalizer(finalizing, undefined),
+    );
+    assert.equal(
+      handoffApprovalRequired(gated, { evaluation: "gate" }, overrides),
+      true,
+    );
+    assert.equal(
+      handoffApprovalRequired(
+        gated,
+        { evaluation: "gate", finalization: "open" },
+        overrides,
+      ),
+      false,
+    );
+  }
+  assert.equal(
+    handoffApprovalRequired(gated, { evaluation: "gate" }),
+    undefined,
+    "without its overrides the plan is one the catalog does not hold",
   );
 });
