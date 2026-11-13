@@ -9,11 +9,12 @@
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type * as RouterModule from "@tanstack/react-router";
 
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
 import { PreferencesPage } from "../app/browser/settings/PreferencesPage.tsx";
 import { answer, drawnStrict } from "./screenHarness.tsx";
+import { atlas } from "./shellRouter.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   themeChoiceApply,
@@ -22,15 +23,12 @@ import {
   themeStoreKey,
 } from "../app/browser/theme.ts";
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+vi.mock("@tanstack/react-router", async (importOriginal) =>
+  (await import("./shellRouter.tsx")).routerDouble(
+    await importOriginal<typeof RouterModule>(),
+    { outlet: () => null, params: () => atlas },
   ),
-  Outlet: () => null,
-  useNavigate: () => () => undefined,
-  useParams: () => ({ tenant: "acme" }),
-}));
+);
 
 function storeDouble(held: Record<string, string>): KeyValuePort {
   return {
