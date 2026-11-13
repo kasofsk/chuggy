@@ -15,8 +15,10 @@
  * drafts and epics, its bound repositories, the operations that bound them and
  * the configurations imported from them, its settings and placements, its
  * readiness, its change log, the operations accepted for it, the record of its
- * creation and its capacity account. A member's runner serving it stops serving
- * it; the runner stays the member's.
+ * creation and its capacity account. Every invite link naming it goes too,
+ * open or used, since a used link can be given back and a redeemed one would
+ * grant a role on whichever project next takes the name. A member's runner
+ * serving it stops serving it; the runner stays the member's.
  *
  * THE DOOR MOVES THE PROJECT TO `Deleting` FIRST, under its row lock, and the
  * triggers that hold a binding, a bind operation, an epic's revision and a
@@ -269,6 +271,8 @@ export const migration174: Migration = {
              SELECT o.operation FROM public.project_creation_operation o
               WHERE o.tenant=in_tenant AND o.project=in_project);
            ${projectDeletionRelationsAt174.map(projectRowsDeleted).join("\n           ")}
+           DELETE FROM public.invite_link l WHERE l.tenant=in_tenant
+              AND l.projects @> jsonb_build_array(jsonb_build_object('project', in_project));
            DELETE FROM public.project p WHERE p.tenant=in_tenant AND p.project=in_project;
            DELETE FROM public.capacity_account c
             WHERE c.account=public.project_capacity_account(in_tenant, in_project);

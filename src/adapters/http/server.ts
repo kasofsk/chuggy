@@ -2672,7 +2672,6 @@ function registerLandingQueues(
   );
 }
 
-/** Where a project's work is landing: each ticket's landings, and the project's queues. */
 /** A project made, and one that never ran work deleted. */
 function registerProjectLifecycle(
   app: FastifyInstance,
@@ -2693,6 +2692,7 @@ function registerActions(
   if (reach !== undefined) registerActionReach(app, reach);
 }
 
+/** Where a project's work is landing: each ticket's landings, and the project's queues. */
 function registerLandingReads(
   app: FastifyInstance,
   landings: TicketLandingReads | undefined,

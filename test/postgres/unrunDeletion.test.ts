@@ -6,7 +6,7 @@
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { postgresForgeInstallationRecording } from "../../src/adapters/postgres/forgeInstallation.ts";
@@ -253,6 +253,49 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
   assert.equal(await capacityAccounts(partition), 0);
   assert.equal(await store.holds(partition), undefined);
   assert.deepEqual(await store.delete(partition), { outcome: "NotFound" });
+});
+
+test("a project's deletion takes every invite link naming it, open or used, and keeps the tenant's others", async () => {
+  const partition = freshPartition("invited");
+  assert.equal(await created(partition, "Unclaimed"), "Created:true");
+  const named = (project: string) =>
+    JSON.stringify([{ project, roles: ["Viewer"] }]);
+  const digest = (label: string) =>
+    createHash("sha256").update(`${partition.tenant}:${label}`).digest("hex");
+  for (const [label, projects, used] of [
+    ["c", named(partition.project), false],
+    [
+      "d",
+      JSON.stringify([
+        { project: "project-other", roles: ["Viewer"] },
+        { project: partition.project, roles: ["Viewer"] },
+      ]),
+      true,
+    ],
+    ["e", named("project-other"), false],
+  ] as const)
+    await harness.query(
+      `INSERT INTO invite_link(tenant,token_digest,role,projects,new_accounts,minted_by,expires_at,used_by,used_at)
+       VALUES($1,$2,'Member',$3::jsonb,false,'alice',now()+interval '1 day',$4,$5)`,
+      [
+        partition.tenant,
+        digest(label),
+        projects,
+        used ? "bob" : null,
+        used ? new Date() : null,
+      ],
+    );
+  assert.deepEqual(await postgresProjectDeletion(apiPool).delete(partition), {
+    outcome: "Deleted",
+  });
+  const kept = await harness.query(
+    "SELECT token_digest FROM invite_link WHERE tenant=$1 ORDER BY token_digest",
+    [partition.tenant],
+  );
+  assert.deepEqual(
+    kept.map((row) => row["token_digest"]),
+    [digest("e")],
+  );
 });
 
 test("a project that released a ticket is refused and named as holding one, and nothing is deleted", async () => {

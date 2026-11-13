@@ -605,8 +605,9 @@ nothing.
 to a link, each keeping the digest of its token and never the token. The
 access plane's role holds what its routes need on it and nothing else in the
 schema: it inserts and deletes rows, and updates only `used_by`, `used_at`,
-`revoked_at` and `workspace`. `delete_unrun_tenant` deletes a tenant's links and
-the workspace link that made it. Its key is `link`, a text the insert draws, and
+`revoked_at` and `workspace`. `delete_unrun_project` deletes every link naming
+its project, and `delete_unrun_tenant` a tenant's links and the workspace link
+that made it. Its key is `link`, a text the insert draws, and
 `tenant` points at no row, because a tenant the plane makes has none until its
 first project. A workspace link names no tenant, role or projects, and keeps
 whether its workspace's administrators may make accounts and its maker's note;
