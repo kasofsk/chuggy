@@ -186,7 +186,7 @@ export const agentAccountCredentialKeptFunction =
 export const agentAccountSettingsFunction = "agent_account_settings";
 /** Whether an account's pause holds back a session of one kind, for a runner that gave Claude the names it is handed: always a lead, and a thread or an inquiry as its owner's option says. */
 export const agentAccountSessionPausedFunction = "agent_account_session_paused";
-/** Each agent of one person's account: their settings, each window's newest reading across its credentials, the newest limit across them and the pause they come to, which holds while any credential's does. */
+/** Each agent of one person's account: their settings, each window's newest reading across its credentials, the newest limit across them and the pause they come to, `agent_account_pause`'s. */
 export const agentAccountStandingFunction = "agent_account_standing";
 /** Each credential of one person's account an agent holds a reading or a limit of: its readings and the pause holding that credential alone. */
 export const agentAccountCredentialStandingFunction =
