@@ -4516,6 +4516,33 @@ test("a serialized pull request into the default branch from an unpushed head is
   assert.equal(store.attempts[0]?.recheckBaseRef, "refs/heads/main");
 });
 
+test("a pull request into another branch from an unpushed head is promoted on the pass after its preparation, wherever the default stands", async () => {
+  const prepared = sourcedStore();
+  const git = gitUnpushedHead("b", "e", "b");
+  await passOver(proposingSerialized(prepared, git, landingBranch));
+  const recorded = prepared.attempts[0];
+  assert.equal(recorded?.outcome, "Prepared");
+  const store = recordingStore([
+    {
+      ...preparableView("request-one"),
+      attempt: {
+        ...attemptOf("request-one"),
+        target: recorded.target,
+        candidate: recorded.candidate ?? asGitObjectId(commitOf("c")),
+      },
+      attemptsMade: 1,
+    },
+  ]);
+
+  await passOver(proposingSerialized(store, git, landingBranch));
+
+  assert.deepEqual(store.attempts, [], "nothing is prepared again");
+  assert.deepEqual(
+    git.promotions.map((each) => each.target),
+    [{ ref: briefBranch, commit: commitOf("b"), baseRef: landingBranch }],
+  );
+});
+
 /** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
 async function stackedMergeConcluding(
   stack: EvaluationStack | undefined,
