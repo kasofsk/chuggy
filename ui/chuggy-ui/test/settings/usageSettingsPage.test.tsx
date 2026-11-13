@@ -321,6 +321,31 @@ test("an agent holding several credentials reads each current one's reading in e
   ).toBeNull();
 });
 
+test("an agent's pause names the one credential holding it, and of several drawn, only those it names draw a line", async () => {
+  drawing.claude = {
+    pause: {
+      until: limitUntil,
+      reasons: ["limit"],
+      pressed: false,
+      credentials: ["home"],
+    },
+  };
+  await drawUsage();
+  expect(sectionOf("Claude").textContent).toContain("Paused · Provider limit");
+  expect(sectionOf("Claude").textContent).toContain("held by home");
+  cleanup();
+  const [home, old, work] = twoCredentials.credentials;
+  drawing.claude = {
+    ...twoCredentials,
+    pause: { ...twoCredentials.pause, credentials: ["work"] },
+    credentials: [{ ...home, pause: { ...twoCredentials.pause } }, old, work],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).toContain("work · Paused · Five-hour window");
+  expect(claude).not.toContain("home · Paused");
+});
+
 test("an agent whose credentials are none of them current reads each window as never read", async () => {
   const old = twoCredentials.credentials[1];
   drawing.claude = {
