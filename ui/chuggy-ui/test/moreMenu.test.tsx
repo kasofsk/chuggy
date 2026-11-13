@@ -18,7 +18,9 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { MoreMenu } from "../app/browser/ui/MoreMenu.tsx";
 import type { MoreMenuItem } from "../app/browser/ui/MoreMenu.tsx";
+import menuSheet from "../app/browser/ui/Menu.css?raw";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
@@ -141,4 +143,17 @@ test("an item renamed while the menu stays open keeps its focus", async () => {
   await waitFor(() => {
     expect(document.activeElement).toBe(trigger);
   });
+});
+
+test("an item is a control's height under a coarse pointer, and its own height otherwise", () => {
+  const item = document.createElement("div");
+  item.className = "menu-item";
+  expect(
+    sheetDeclared(
+      sheetRules(menuSheet, ["(pointer: coarse)"]),
+      item,
+      "min-height",
+    ),
+  ).toBe("var(--height-control)");
+  expect(sheetDeclared(sheetRules(menuSheet, []), item, "min-height")).toBe("");
 });

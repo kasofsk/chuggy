@@ -5,9 +5,10 @@
  * each colour read out of `tokens.css` itself, `light-dark()` pairs and mixes
  * alike. Left out are the inverse ink on the context's slots, which the light
  * scheme draws below the text minimum, and on a primary button's hover, a mix
- * `Button.css` makes rather than a token. Then the rest of what a theme leans
- * on there: the root size a text-size step sets, the lengths that stay in px,
- * and a control's height under a coarse pointer.
+ * `Button.css` makes rather than a token. Then a disabled control's word and
+ * edge as marks, and the rest of what a theme leans on there: the root size a
+ * text-size step sets, the lengths that stay in px, and a control's height
+ * under a coarse pointer.
  */
 
 import { expect, test } from "vitest";
@@ -21,6 +22,8 @@ import {
   themeFillDarkPercent,
   themeWashPercent,
 } from "../../../src/contract/appearance.ts";
+import buttonSheet from "../app/browser/ui/Button.css?raw";
+import radioSheet from "../app/browser/ui/RadioGroup.css?raw";
 import tokenSheet from "../app/styles/tokens.css?raw";
 import { sheetDeclared, sheetRules } from "./sheet.ts";
 
@@ -284,4 +287,38 @@ test("a control is today's height, and at least the touch height under a coarse 
       "--height-control",
     )?.replace(/\s/gu, ""),
   ).toBe("max(var(--height-touch),var(--height-icon))");
+});
+
+test("a disabled control's word and edge clear the mark minimum on the page and a panel, in both schemes", () => {
+  const declared = tokenContrastDeclarations(tokenSheet);
+  const button = document.createElement("button");
+  button.className = "btn btn-default";
+  button.disabled = true;
+  const radio = document.createElement("button");
+  radio.className = "radio-item";
+  radio.disabled = true;
+  const mark = document.createElement("span");
+  mark.className = "radio-mark";
+  radio.append(mark);
+  const drawn = [
+    [buttonSheet, button, "color"],
+    [buttonSheet, button, "border-color"],
+    [radioSheet, radio, "border-color"],
+    [radioSheet, mark, "background"],
+  ] as const;
+  const failures = drawn.flatMap(([sheet, element, property]) => {
+    const value = sheetDeclared(sheetRules(sheet, []), element, property);
+    expect(value).toMatch(/^var\(--[a-z0-9-]+\)$/u);
+    return (["Light", "Dark"] as const).flatMap((scheme) =>
+      ["surface-0", "surface-1"].flatMap((ground) =>
+        contrastRatio(
+          tokenContrastValue(declared, scheme, value),
+          tokenContrastColour(declared, scheme, ground),
+        ) < themeContrastMarkMin
+          ? [`${scheme}: ${element.className} ${property} on ${ground}`]
+          : [],
+      ),
+    );
+  });
+  expect(failures).toEqual([]);
 });

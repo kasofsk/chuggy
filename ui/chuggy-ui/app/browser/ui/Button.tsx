@@ -2,6 +2,11 @@
  * The pressable things: an action, a disclosure, a toggle, the button a form
  * is submitted by, and the same look over a route link.
  *
+ * A destructive action is entered by `danger`, which is quiet until it is
+ * reached, and confirmed by `danger-filled`. A pressed toggle is a wash and a
+ * heavier word rather than `primary`'s fill, so the one main action of a view
+ * is not mistaken for something switched on.
+ *
  * Total over `buttonVariants` × `buttonSizes`, and over the states an
  * attribute carries — pressed, busy, disabled. Those are attributes rather
  * than classes because the attribute is what a reader's assistive technology
@@ -20,6 +25,7 @@ export const buttonVariants = [
   "default",
   "primary",
   "danger",
+  "danger-filled",
   "quiet",
 ] as const;
 
@@ -35,7 +41,8 @@ interface ButtonLook {
 
 const buttonPillClassName =
   "btn inline-flex items-center gap-2 rounded-3 font-prose font-medium" +
-  " leading-dense whitespace-nowrap no-underline";
+  " aria-pressed:font-strong aria-checked:font-strong leading-dense" +
+  " whitespace-nowrap no-underline";
 
 const buttonSizeClassNames: Record<ButtonSize, string> = {
   md: "px-4 py-2 text-md",

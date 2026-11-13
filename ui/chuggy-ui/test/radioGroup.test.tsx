@@ -11,6 +11,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { RadioGroup } from "../app/browser/ui/RadioGroup.tsx";
+import radioSheet from "../app/browser/ui/RadioGroup.css?raw";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 const roles = [
@@ -153,4 +155,50 @@ test("a disabled option is drawn and checked where it is the value, and takes no
   fireEvent.click(screen.getByRole("radio", { name: "Runners" }));
   expect(chosen).toStrictEqual(["Pool"]);
   styleless();
+});
+
+/** What a sheet's rules declare for an element's `::after`. */
+function radioGroupOver(
+  rules: readonly CSSStyleRule[],
+  element: Element,
+  property: string,
+): string {
+  const after = "::after";
+  let declared = "";
+  for (const rule of rules) {
+    const value = rule.style.getPropertyValue(property);
+    const over = rule.selectorText
+      .split(",")
+      .map((selector) => selector.trim())
+      .filter((selector) => selector.endsWith(after))
+      .map((selector) => selector.slice(0, -after.length));
+    if (value !== "" && over.some((selector) => element.matches(selector)))
+      declared = value;
+  }
+  return declared.replace(/\s+/gu, " ");
+}
+
+test("under a coarse pointer a ring keeps its size and takes a press over a control's height", () => {
+  render(
+    <RadioGroup
+      label="Role"
+      value="Admin"
+      options={roles}
+      onChoose={() => undefined}
+    />,
+  );
+  const ring = screen.getByRole("radio", { name: "Admin" });
+  const coarse = sheetRules(radioSheet, ["(pointer: coarse)"]);
+  const fine = sheetRules(radioSheet, []);
+  for (const rules of [coarse, fine]) {
+    expect(sheetDeclared(rules, ring, "width")).toBe("1em");
+    expect(sheetDeclared(rules, ring, "height")).toBe("1em");
+  }
+  expect(sheetDeclared(coarse, ring, "position")).toBe("relative");
+  expect(radioGroupOver(coarse, ring, "position")).toBe("absolute");
+  expect(radioGroupOver(coarse, ring, "inset")).toBe(
+    "min(0px, calc((100% - var(--height-control)) / 2))",
+  );
+  expect(sheetDeclared(fine, ring, "position")).toBe("");
+  expect(radioGroupOver(fine, ring, "inset")).toBe("");
 });

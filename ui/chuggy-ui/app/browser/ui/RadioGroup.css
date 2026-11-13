@@ -1,5 +1,7 @@
 /* RadioGroup: the ring an option is chosen in, the mark that fills it, an
-   option drawn but not choosable, and the described option's two rows. */
+   option drawn but not choosable, and the described option's two rows. Under a
+   coarse pointer the ring keeps its size and takes a press over a control's
+   height around it. */
 
 @layer ui {
   .radio-option {
@@ -26,7 +28,7 @@
   }
 
   .radio-item:disabled {
-    border-color: var(--edge);
+    border-color: var(--edge-strong);
     cursor: not-allowed;
   }
 
@@ -40,5 +42,17 @@
     height: 0.5em;
     border-radius: var(--radius-circle);
     background: var(--ink-1);
+  }
+
+  @media (pointer: coarse) {
+    .radio-item {
+      position: relative;
+    }
+
+    .radio-item::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--height-control)) / 2));
+    }
   }
 }

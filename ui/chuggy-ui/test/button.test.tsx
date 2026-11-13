@@ -2,6 +2,10 @@
  * The button over its two rosters, and the three states it carries as
  * attributes rather than as classes.
  *
+ * The paint is read from `Button.css` rule by rule, so a pressed toggle, the
+ * primary action and the two dangers are told apart by what the sheet and the
+ * class string say rather than by a colour a suite cannot see.
+ *
  * The attributes are what the assertions read, because they are what a reader's
  * assistive technology is told; the router is stubbed so the link variant is
  * drawn with no provider around it.
@@ -17,7 +21,11 @@ import {
   buttonSizes,
   buttonVariants,
 } from "../app/browser/ui/Button.tsx";
+import buttonSheet from "../app/browser/ui/Button.css?raw";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
+
+const buttonCoarseCondition = "(pointer: coarse)";
 
 interface LinkStub {
   readonly className?: string;
@@ -126,4 +134,84 @@ test("a link is drawn with the button's own look, and no style attribute", () =>
   expect(drawn?.classList.contains("btn-default")).toBe(true);
   expect(view.container.querySelector("[style]")).toBeNull();
   styleless();
+});
+
+test("a pressed toggle is a wash and a heavier word, and the primary action a fill of the accent", () => {
+  render(
+    <>
+      <Button variant="primary" onClick={() => undefined}>
+        Create
+      </Button>
+      <Button pressed onClick={() => undefined}>
+        Dark
+      </Button>
+    </>,
+  );
+  const rules = sheetRules(buttonSheet, []);
+  const primary = screen.getByRole("button", { name: "Create" });
+  const toggle = screen.getByRole("button", { name: "Dark" });
+  expect(sheetDeclared(rules, primary, "background")).toBe("var(--accent)");
+  expect(sheetDeclared(rules, primary, "color")).toBe("var(--ink-on-accent)");
+  expect(primary.hasAttribute("aria-pressed")).toBe(false);
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(toggle.classList.contains("aria-pressed:font-strong")).toBe(true);
+  expect(sheetDeclared(rules, toggle, "background")).toBe("var(--wash-accent)");
+  expect(sheetDeclared(rules, toggle, "color")).toBe("var(--ink-1)");
+  styleless();
+});
+
+test("a destructive entry is quiet until it is reached, and its confirmation is filled", () => {
+  render(
+    <>
+      <Button variant="danger" onClick={() => undefined}>
+        Delete
+      </Button>
+      <Button variant="danger-filled" onClick={() => undefined}>
+        Delete ticket
+      </Button>
+    </>,
+  );
+  const rules = sheetRules(buttonSheet, []);
+  const entry = screen.getByRole("button", { name: "Delete" });
+  const confirmation = screen.getByRole("button", { name: "Delete ticket" });
+  expect(entry.classList.contains("btn-danger")).toBe(true);
+  expect(entry.classList.contains("btn-danger-filled")).toBe(false);
+  expect(confirmation.classList.contains("btn-danger-filled")).toBe(true);
+  expect(confirmation.classList.contains("btn-danger")).toBe(false);
+  expect(sheetDeclared(rules, entry, "background")).toBe("transparent");
+  expect(sheetDeclared(rules, confirmation, "background")).toBe(
+    "var(--tone-fail)",
+  );
+  expect(sheetDeclared(rules, confirmation, "color")).toBe(
+    "var(--tone-on-danger)",
+  );
+  styleless();
+});
+
+test("every size is a control's height under a coarse pointer, and its own height otherwise", () => {
+  const coarse = sheetRules(buttonSheet, [buttonCoarseCondition]);
+  const fine = sheetRules(buttonSheet, []);
+  for (const size of buttonSizes) {
+    render(
+      <Button size={size} onClick={() => undefined}>
+        {size}
+      </Button>,
+    );
+    const drawn = screen.getByRole("button");
+    expect(sheetDeclared(coarse, drawn, "min-height")).toBe(
+      "var(--height-control)",
+    );
+    expect(sheetDeclared(fine, drawn, "min-height")).toBe("");
+    cleanup();
+  }
+  render(
+    <Button size="icon" onClick={() => undefined}>
+      +
+    </Button>,
+  );
+  const icon = screen.getByRole("button");
+  expect(sheetDeclared(coarse, icon, "min-width")).toBe(
+    "var(--height-control)",
+  );
+  expect(sheetDeclared(fine, icon, "min-width")).toBe("");
 });
