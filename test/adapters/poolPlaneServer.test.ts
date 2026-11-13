@@ -747,59 +747,65 @@ test("a personal runner's or a pool's poll has the credentials it named kept, on
   }
 });
 
+/** The pause the port answers of a poll naming Claude's `work`. */
+const credentialPauseAnswered = {
+  agent: "Claude",
+  credential: "work",
+  pausedUntil: 1_800_000_000,
+} as const;
+
+/** Each poll the pauses case makes: why, its headers, the credentials the port is asked of, and the pauses its answer names. */
+const credentialPausesPolled = [
+  [
+    "a runner of this release",
+    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a runner of this release none of whose named credentials is paused",
+    { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
+    [{ Codex: ["codex"] }],
+    undefined,
+  ],
+  [
+    "a runner of a release before them",
+    {
+      ...runnerSpeaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
+    [],
+    undefined,
+  ],
+  ["a runner naming none", runnerSpeaking, [], undefined],
+  [
+    "a pool of this release",
+    { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a pool of a release before them",
+    {
+      ...speaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
+    [],
+    undefined,
+  ],
+  [
+    "a chat host naming some",
+    { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [],
+    undefined,
+  ],
+] as const;
+
 test("a personal runner's or a pool's answer names the pauses of the credentials its poll named only where its release reads them, and a chat host's never", async () => {
-  const pause = {
-    agent: "Claude",
-    credential: "work",
-    pausedUntil: 1_800_000_000,
-  } as const;
-  for (const [why, headers, asked, pauses] of [
-    [
-      "a runner of this release",
-      { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      [{ Claude: ["work"] }],
-      [pause],
-    ],
-    [
-      "a runner of this release none of whose named credentials is paused",
-      { ...runnerSpeaking, [workerRunnerCredentialsHeader]: "Codex:codex" },
-      [{ Codex: ["codex"] }],
-      undefined,
-    ],
-    [
-      "a runner of a release before them",
-      {
-        ...runnerSpeaking,
-        [workerContractHeader]: "1.77.0",
-        [workerRunnerCredentialsHeader]: "Claude:work",
-      },
-      [],
-      undefined,
-    ],
-    ["a runner naming none", runnerSpeaking, [], undefined],
-    [
-      "a pool of this release",
-      { ...speaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      [{ Claude: ["work"] }],
-      [pause],
-    ],
-    [
-      "a pool of a release before them",
-      {
-        ...speaking,
-        [workerContractHeader]: "1.77.0",
-        [workerRunnerCredentialsHeader]: "Claude:work",
-      },
-      [],
-      undefined,
-    ],
-    [
-      "a chat host naming some",
-      { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      [],
-      undefined,
-    ],
-  ] as const) {
+  const pause = credentialPauseAnswered;
+  for (const [why, headers, asked, pauses] of credentialPausesPolled) {
     const made: unknown[] = [];
     const answered = await createPoolPlaneApp(
       plane({
