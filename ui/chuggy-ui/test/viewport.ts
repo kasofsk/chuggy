@@ -18,16 +18,11 @@
 
 import { vi } from "vitest";
 
+import { viewportEmPixels, viewportHeightEmDefault } from "./viewportSizes.ts";
+
+export { viewportDeskEm } from "./viewportSizes.ts";
+
 const viewportAsked = /(min|max)-width:\s*([0-9.]+)em/u;
-
-/** A desk's viewport, wider than any of the console's breakpoints. */
-export const viewportDeskEm = 80;
-
-/** The root's `em` in pixels, which the stated frame is measured in. */
-const viewportEmPixels = 16;
-
-/** The frame's height where a case does not state one. */
-const viewportHeightEmDefault = 50;
 
 export interface ViewportFrame {
   readonly columnEm?: number;

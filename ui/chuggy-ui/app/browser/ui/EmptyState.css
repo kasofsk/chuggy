@@ -4,4 +4,11 @@
   .empty {
     color: var(--ink-3);
   }
+
+  .empty-title {
+    color: var(--ink-1);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+  }
 }

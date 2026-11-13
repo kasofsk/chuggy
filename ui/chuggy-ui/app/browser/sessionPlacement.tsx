@@ -12,7 +12,6 @@ import type { SessionPlacementResponse } from "../../../../src/contract/response
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { PanelState } from "../core/freshness.ts";
 import { sessionPlacementQuery } from "../core/projectQueries.ts";
-import { navRoutes } from "../core/shellNav.ts";
 import {
   sessionPlacementShort,
   sessionRunnerAdded,
@@ -77,7 +76,7 @@ function SessionRunnerAddLink(props: {
       );
     case "Runners":
       return (
-        <Link to={navRoutes.runners} params={props.partition}>
+        <Link to={settingsRoutes.project.runners} params={props.partition}>
           {text({ id: "runners-title" })}
         </Link>
       );

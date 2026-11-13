@@ -210,6 +210,12 @@ import {
   repositoryConfigurationImportResults,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
+import {
+  themeChoiceSchema,
+  themeDocumentSchema,
+  themeNumberSchema,
+  themesOwnedMax,
+} from "./appearance.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
@@ -3105,6 +3111,25 @@ export const agentAccountsResponseSchema = z.strictObject({
   accounts: z.array(agentAccountSchema).length(accountAgents.length),
 });
 export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
+
+/** One theme of the caller's own: the number it is known by and its document. */
+export const ownedThemeSchema = z.strictObject({
+  theme: themeNumberSchema,
+  document: themeDocumentSchema,
+});
+export type OwnedThemeResponse = z.infer<typeof ownedThemeSchema>;
+
+/** Every theme of the caller's own, by number ascending. */
+export const ownedThemesResponseSchema = z.strictObject({
+  themes: z.array(ownedThemeSchema).max(themesOwnedMax),
+});
+export type OwnedThemesResponse = z.infer<typeof ownedThemesResponseSchema>;
+
+/** The caller's own global theme choice, absent where they hold none. */
+export const themeChoiceResponseSchema = z.strictObject({
+  choice: themeChoiceSchema.optional(),
+});
+export type ThemeChoiceResponse = z.infer<typeof themeChoiceResponseSchema>;
 
 /**
  * What retiring a credential of the caller's own account is refused with while

@@ -46,7 +46,7 @@ async function drawn(
         }),
         createRoute({
           getParentRoute: () => partition,
-          path: "/repositories",
+          path: "/settings/repositories",
         }),
       ]),
     ]),
@@ -62,7 +62,7 @@ test("a project binding no repository says so and links to Repositories", async 
   expect(screen.getByText("No repository bound")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "Repositories" }).getAttribute("href"),
-  ).toBe("/acme-co/atlas-web/repositories");
+  ).toBe("/acme-co/atlas-web/settings/repositories");
 });
 
 test("a bound repository with no ready revision says no configuration and links nowhere", async () => {

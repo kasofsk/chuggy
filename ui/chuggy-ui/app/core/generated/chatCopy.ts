@@ -10,6 +10,8 @@ export interface ChatCopy {
   readonly "chat-fill": Record<never, never>;
   readonly "chat-restore": Record<never, never>;
   readonly "chat-collapse": Record<never, never>;
+  readonly "chat-back": Record<never, never>;
+  readonly "chat-more": Record<never, never>;
   readonly "chat-expand": Record<never, never>;
   readonly "chat-strip": Record<never, never>;
   readonly "chat-heading": Record<never, never>;
@@ -43,7 +45,6 @@ export interface ChatCopy {
     readonly standing: unknown;
   };
   readonly "chat-actions": Record<never, never>;
-  readonly "chat-actions-none": Record<never, never>;
   readonly "chat-open": Record<never, never>;
   readonly "chat-copy-link": Record<never, never>;
   readonly "chat-copied": Record<never, never>;

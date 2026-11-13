@@ -22,6 +22,10 @@
   --color-edge-strong: var(--edge-strong);
   --color-edge-control: var(--edge-control);
 
+  --color-accent: var(--accent);
+  --color-ink-on-accent: var(--ink-on-accent);
+  --color-wash-accent: var(--wash-accent);
+
   --color-tone-pass: var(--tone-pass);
   --color-tone-fail: var(--tone-fail);
   --color-tone-live: var(--tone-live);

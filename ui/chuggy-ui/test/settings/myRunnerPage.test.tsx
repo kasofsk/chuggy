@@ -39,6 +39,9 @@ import {
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "../sheet.ts";
+import myRunnerSheet from "../../app/browser/settings/MyRunnerPage.css?raw";
+import listingSheet from "../../app/browser/settings/tenantPeople.css?raw";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -582,4 +585,70 @@ test("each agent the read of a member's runners answers paused is said above the
   expect(within(paused).getAllByRole("link", { name: "Usage" })).toHaveLength(
     2,
   );
+});
+
+test("the page is headed by its one h1, drawn by the page head", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  const titles = screen.getAllByRole("heading", { level: 1 });
+  expect(titles).toHaveLength(1);
+  expect(titles[0]?.textContent).toBe(
+    copyTextEn({ id: "runners-personal-title" }),
+  );
+  expect(titles[0]?.closest("header.page-header")).not.toBeNull();
+});
+
+test("each runner is a stacked row: its name first, then its status, version and last poll, each labelled, and its removal unlabelled", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  const table = screen.getByRole("table", { name: "Runners" });
+  expect(table.classList.contains("tabular-stacked")).toBe(true);
+  const row = within(table).getAllByRole("row")[1];
+  const cells = Array.from(row?.children ?? []);
+  expect(
+    cells.map((cell) => cell.querySelector(".tabular-label")?.textContent),
+  ).toStrictEqual([
+    "Runner",
+    "Status",
+    "Version",
+    "Last polled",
+    "Running",
+    "Registered",
+    undefined,
+  ]);
+  expect(cells[0]?.textContent).toContain("3f2a9c1e");
+  expect(cells[1]?.textContent).toContain("Live");
+  expect(
+    within(table).getByRole("columnheader", { name: "Remove" }),
+  ).toBeTruthy();
+});
+
+test("the question a runner's removal waits on stands under the roster, outside the table", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  await press("Remove runner a81c04d2");
+  const asked = screen.getByRole("group", { name: "Remove runner a81c04d2?" });
+  expect(asked.closest("table")).toBeNull();
+  expect(screen.getByRole("table", { name: "Runners" })).toBeTruthy();
+});
+
+test("narrow, a listing table's hidden head stacks its cells, and every press, menu and link on the page is a finger's height", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  const narrow = sheetRules(listingSheet, [sheetNarrowCondition]);
+  const projects = screen.getByRole("table", { name: "Projects" });
+  for (const head of within(projects).getAllByRole("columnheader"))
+    expect(sheetDeclared(narrow, head, "display")).toBe("block");
+  const touch = sheetRules(myRunnerSheet, [sheetNarrowCondition]);
+  const wide = sheetRules(myRunnerSheet, []);
+  for (const control of [
+    screen.getByRole("button", { name: "Remove runner 3f2a9c1e" }),
+    screen.getByRole("button", { name: "Register runner" }),
+    screen.getByRole("button", { name: /^Priority of atlas/u }),
+  ]) {
+    expect(sheetDeclared(touch, control, "min-height")).toBe(
+      "var(--height-touch)",
+    );
+    expect(sheetDeclared(wide, control, "min-height")).toBe("");
+  }
 });

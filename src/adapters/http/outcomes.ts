@@ -210,8 +210,20 @@ import type {
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
+  OwnedTheme,
+  OwnedThemeCreated,
+  OwnedThemeDeleted,
+  OwnedThemeWritten,
+  ThemeChosen,
+  ThemeContrastRefused,
+} from "../../interpreter/appearance.ts";
+import type { ThemeChoice } from "../../contract/appearance.ts";
+import type {
   AgentAccountsResponse,
   AgentPause,
+  OwnedThemeResponse,
+  OwnedThemesResponse,
+  ThemeChoiceResponse,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -1619,6 +1631,130 @@ export function agentAccountRetiredResponse(
 /** One agent's settings written whole. */
 export function agentAccountWrittenResponse(): NativeHttpResponse {
   return noContent();
+}
+
+/** The most pairs a contrast refusal's message names, the rest counted. */
+const themeContrastRefusalPairsMax = 6;
+
+/** A document the contrast rule refuses, its message naming the pairs it draws too faintly. */
+function themeContrastRefusedResponse(
+  refused: ThemeContrastRefused,
+): NativeHttpResponse {
+  const named = refused.failures
+    .slice(0, themeContrastRefusalPairsMax)
+    .map(
+      (failure) =>
+        `${failure.foreground} on ${failure.background} in ${failure.scheme} is ${failure.ratio.toFixed(2)}, under ${String(failure.ratioMin)}`,
+    );
+  const unnamed = refused.failures.length - named.length;
+  return response(
+    422,
+    nativeHttpError(
+      "ThemeContrastInsufficient",
+      `The theme draws ${String(refused.failures.length)} pairs below the contrast they need: ${named.join("; ")}${unnamed > 0 ? `; and ${String(unnamed)} more` : ""}.`,
+    ),
+  );
+}
+
+function ownedThemeBody(theme: OwnedTheme): OwnedThemeResponse {
+  return { theme: theme.theme, document: theme.document };
+}
+
+/** Every theme of the caller's own. */
+export function ownedThemesResponse(
+  themes: readonly OwnedTheme[],
+): NativeHttpResponse {
+  return response(200, {
+    themes: themes.map(ownedThemeBody),
+  } satisfies OwnedThemesResponse);
+}
+
+/** One theme of the caller's own, or none of theirs by that number. */
+export function ownedThemeResponse(
+  theme: OwnedTheme | undefined,
+): NativeHttpResponse {
+  return theme === undefined
+    ? notFound()
+    : response(200, ownedThemeBody(theme));
+}
+
+/** A theme created, or refused at the caller's bound or by the contrast rule. */
+export function ownedThemeCreatedResponse(
+  result: OwnedThemeCreated,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Created":
+      return response(201, ownedThemeBody(result.theme));
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "ThemeLimitReached",
+          "The caller already owns their bound of themes.",
+        ),
+      );
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A theme written whole, or none of the caller's by that number, or refused by the contrast rule. */
+export function ownedThemeWrittenResponse(
+  result: OwnedThemeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Written":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A theme deleted, or none of the caller's by that number. */
+export function ownedThemeDeletedResponse(
+  result: OwnedThemeDeleted,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
+/** The caller's own global choice, absent where they hold none. */
+export function themeChoiceResponse(
+  choice: ThemeChoice | undefined,
+): NativeHttpResponse {
+  return response(200, {
+    ...(choice === undefined ? {} : { choice: { ...choice } }),
+  } satisfies ThemeChoiceResponse);
+}
+
+/** A choice written or cleared, or refused because the theme it names is none of the caller's. */
+export function themeChosenResponse(result: ThemeChosen): NativeHttpResponse {
+  switch (result) {
+    case "Chosen":
+      return noContent();
+    case "ThemeNotFound":
+      return response(
+        422,
+        nativeHttpError(
+          "ThemeNotFound",
+          "The choice names no theme the caller owns.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */

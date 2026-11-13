@@ -26,13 +26,13 @@ import type {
 } from "../../core/catalogEntries.ts";
 import type { Copy } from "../../core/copy.ts";
 import { copyOrDataText } from "../../core/copy.ts";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 export function useCatalogPartition(): PartitionIdentity {
-  const params = useParams({ from: navRoutes.catalog });
+  const params = useParams({ from: settingsRoutes.project.catalog });
   return { tenant: params.tenant, project: params.project };
 }
 
@@ -46,7 +46,7 @@ export function CatalogLink(props: {
   const partition = useCatalogPartition();
   return (
     <Link
-      to={navRoutes.catalog}
+      to={settingsRoutes.project.catalog}
       params={partition}
       search={props.query}
       resetScroll={false}

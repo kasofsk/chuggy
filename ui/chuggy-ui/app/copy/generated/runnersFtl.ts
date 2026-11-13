@@ -9,7 +9,6 @@ runners-about = Machines that run this { -project }'s { -agent(form: "plural") }
 runners-none = No { -runner } registered
 runners-caption = Registered { -runner(form: "plural") }
 runners-col-runner = { -runner(case: "upper") }
-runners-col-platforms = Platforms
 runners-col-version = Version
 runners-col-registered = Registered
 runners-col-last-polled = Last polled

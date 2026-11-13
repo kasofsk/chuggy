@@ -4,7 +4,7 @@
    draws it is the container its narrow layout is measured against, where it
    runs edge to edge and an open search takes the row. */
 
-@layer page {
+@layer ui {
   .list-controls {
     --control-height: calc(var(--space-5) + var(--space-1));
     min-width: 0;
@@ -55,7 +55,7 @@
     box-shadow: var(--ring-focus);
   }
 
-  .list-search > .list-search-toggle {
+  .list-search > .btn.list-search-toggle {
     flex: none;
     border: 0;
     border-radius: 0;
@@ -107,7 +107,7 @@
   }
 
   .list-selects > button,
-  .list-search > .list-search-toggle {
+  .list-search > .btn.list-search-toggle {
     justify-content: center;
     width: var(--control-height);
     min-width: var(--control-height);
@@ -122,7 +122,7 @@
     height: var(--space-4);
   }
 
-  .list-search > .list-search-toggle {
+  .list-search > .btn.list-search-toggle {
     height: 100%;
   }
 

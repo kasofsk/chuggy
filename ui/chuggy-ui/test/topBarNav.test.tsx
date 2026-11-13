@@ -34,7 +34,7 @@ function Bar(): ReactNode {
     <ConsoleStoreBareProvided>
       <nav aria-label="Console">
         <ul>
-          {shellNav({ partition: atlas }).map((entry) => (
+          {shellNav(atlas).map((entry) => (
             <TopBarNavEntry key={entry.id} entry={entry} />
           ))}
         </ul>
@@ -59,10 +59,9 @@ async function drawnAt(path: string): Promise<readonly string[]> {
       partition.addChildren([
         leaf("/"),
         leaf("/inbox"),
-        leaf("/lead"),
+        leaf("/epics"),
         leaf("/settings"),
-        leaf("/repositories"),
-        leaf("/runners"),
+        leaf("/settings/runners"),
         leaf("/tickets/new"),
         leaf("/tickets/$ticket"),
         leaf("/tickets/$ticket/edit"),
@@ -78,12 +77,12 @@ async function drawnAt(path: string): Promise<readonly string[]> {
     .map((link) => link.textContent);
 }
 
-test("the Inbox page, which sits beside the gear, leaves no screen current", async () => {
-  expect(await drawnAt("/acme/atlas/inbox")).toStrictEqual([]);
+test("the Inbox page is the Inbox alone", async () => {
+  expect(await drawnAt("/acme/atlas/inbox")).toStrictEqual(["Inbox"]);
 });
 
-test("a setup page, which the gear holds, leaves no screen current", async () => {
-  expect(await drawnAt("/acme/atlas/runners")).toStrictEqual([]);
+test("a settings section, which no primary place holds, leaves no place current", async () => {
+  expect(await drawnAt("/acme/atlas/settings/runners")).toStrictEqual([]);
 });
 
 test("the overview is Tickets alone", async () => {

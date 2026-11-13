@@ -40,7 +40,6 @@ import {
   hostedRunsQuery,
   sessionPlacementQuery,
 } from "../app/core/projectQueries.ts";
-import { leadBody } from "./leadFixture.ts";
 import {
   abilitiesEvery,
   abilitiesFetch,
@@ -57,13 +56,7 @@ import {
 } from "./threadFixture.ts";
 import { sheetConditioned, sheetDeclared, sheetRules } from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import {
-  answer,
-  apiDouble,
-  operationAt,
-  settled,
-  turned,
-} from "./screenHarness.tsx";
+import { answer, settled, turned } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import {
   chatDrawn,
@@ -87,6 +80,12 @@ import {
   stripShare,
   styleless,
 } from "./shellFrame.tsx";
+import {
+  chatPaneHistoryChosen,
+  chatPaneHistoryOpened,
+  chatPaneMenuChosen,
+  chatPaneMenuOffers,
+} from "./chatPaneMenu.tsx";
 import { atlas } from "./shellRouter.tsx";
 import { walkHeightMostEm, walkReplayed, walkRouted } from "./shellWalk.tsx";
 import type * as ChatPaneModule from "../app/browser/shell/ChatPane.tsx";
@@ -199,9 +198,9 @@ test("under that width it starts as the strip under the pages, and expanding it 
   expect(document.querySelector("[data-chat]")?.getAttribute("data-chat")).toBe(
     "full",
   );
-  expect(screen.queryByRole("button", { name: "Full screen" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Exit full screen" })).toBeNull();
-  await pressed("Collapse");
+  expect(screen.queryByRole("button", { name: "Collapse" })).toBeNull();
+  expect(await chatPaneMenuOffers()).toStrictEqual(["History"]);
+  await pressed("Back");
   expect(frameDivided()).toBe("down pages | chat-bottom");
   expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   styleless();
@@ -217,7 +216,7 @@ test("under that width a stored pane opens as the strip whatever it is, and wide
     const frame = await mounted(viewportTwoColumnEm - 1);
     expect(frameDivided(), presentation).toBe("down pages | chat-bottom");
     await pressed("Expand chat");
-    await pressed("Collapse");
+    await pressed("Back");
     expect(localStorage.getItem(chatPaneStoreKey), presentation).toBe(stored);
     viewportAtEm(viewportDeskEm);
     await frame.redrawn();
@@ -260,15 +259,13 @@ test("under that width the strip draws a vertical glyph, and is named Chat", asy
 });
 
 /** Each icon control's hidden name is also what a pointer or a keyboard focus
- * reveals, so a reader who does not use a screen reader learns what New, Full
- * screen, Exit full screen and Collapse do before pressing them. */
+ * reveals, so a reader who does not use a screen reader learns what New,
+ * Collapse and the menu do before pressing them. */
 test("the pane's icon controls name themselves again on focus", async () => {
   await mounted(viewportDeskEm);
   await tooltipNamed("New");
-  await tooltipNamed("Full screen");
   await tooltipNamed("Collapse");
-  await pressed("Full screen");
-  await tooltipNamed("Exit full screen");
+  await tooltipNamed("Chat menu");
   styleless();
 });
 
@@ -291,12 +288,12 @@ test("collapsing leaves a strip whose own control expands it again", async () =>
  * through both, so every screen is one press away from a filled chat. */
 test("full screen takes the body under the bar, and exiting puts the pages back", async () => {
   await mounted(viewportDeskEm);
-  await pressed("Full screen");
+  await chatPaneMenuChosen("Full screen");
   expect(chatDrawn()).not.toBeNull();
   expect(navDrawn()).not.toBeNull();
   expect(frameDivided()).toBe("across chat-right");
   styleless();
-  await pressed("Exit full screen");
+  await chatPaneMenuChosen("Exit full screen");
   expect(navDrawn()).not.toBeNull();
   expect(frameDivided()).toBe("across pages | chat-right");
   styleless();
@@ -306,9 +303,9 @@ test("a collapsed pane goes straight to full screen and back to its column", asy
   await mounted(viewportDeskEm);
   await pressed("Collapse");
   await pressed("Expand chat");
-  await pressed("Full screen");
+  await chatPaneMenuChosen("Full screen");
   expect(frameDivided()).toBe("across chat-right");
-  await pressed("Exit full screen");
+  await chatPaneMenuChosen("Exit full screen");
   expect(frameDivided()).toBe("across pages | chat-right");
   expect(edgeShare()).toBeCloseTo(75);
   styleless();
@@ -786,9 +783,9 @@ test("filling the frame and leaving it keeps the pane and what is typed in it", 
   await mounted(viewportDeskEm);
   const pane = chatDrawn();
   fireEvent.change(composerDrawn(), { target: { value: "half a thought" } });
-  await pressed("Full screen");
+  await chatPaneMenuChosen("Full screen");
   expect(chatDrawn()).toBe(pane);
-  await pressed("Exit full screen");
+  await chatPaneMenuChosen("Exit full screen");
   expect(chatDrawn()).toBe(pane);
   expect(composerDrawn().value).toBe("half a thought");
   styleless();
@@ -835,7 +832,7 @@ test("the details read the column the pane leaves, not the viewport", async () =
  * the whole body would answer by drawing the chat again. */
 test("pressing a screen puts a filled pane back beside the pages", async () => {
   await mounted(viewportDeskEm);
-  await pressed("Full screen");
+  await chatPaneMenuChosen("Full screen");
   expect(frameDivided()).toBe("across chat-right");
   await turned(() => {
     screen.getByRole("link", { name: /Inbox/u }).click();
@@ -916,12 +913,12 @@ test("below two columns an open pane takes the nav's row and the page's, and the
   expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeDefined();
   expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
   expect(chatDrawn()?.closest(".shell-under")).not.toBeNull();
-  await pressed("Collapse");
+  await pressed("Back");
   expect(navDrawn()).not.toBeNull();
   expect(screen.getByText("ticket 44")).toBeDefined();
   viewportAtEm(viewportDeskEm);
   await frame.redrawn();
-  await pressed("Full screen");
+  await chatPaneMenuChosen("Full screen");
   expect(navDrawn()).not.toBeNull();
   await pressed("Collapse");
   expect(navDrawn()).not.toBeNull();
@@ -972,7 +969,7 @@ test("below two columns the pane slides up from the strip over the page and the 
   expect(slideDrawn()).toBeNull();
   expect(frameDivided()).toBe("down chat-bottom");
   expect(navDrawn()).toBeNull();
-  await pressed("Collapse");
+  await pressed("Back");
   expect(slideDrawn()).toBe("closing");
   expect(frameDivided()).toBe("down pages | chat-bottom");
   expect(chatDrawn()).not.toBeNull();
@@ -992,12 +989,14 @@ test("a reader who takes less motion gets the open pane and the strip at once, a
   expect(slideDrawn()).toBeNull();
   expect(frameDivided()).toBe("down chat-bottom");
   expect(navDrawn()).toBeNull();
-  await pressed("Collapse");
+  await pressed("Back");
   expect(slideDrawn()).toBeNull();
   expect(chatDrawn()).toBeNull();
   viewportAtEm(viewportDeskEm, { motion: true });
   await frame.redrawn();
-  for (const press of ["Full screen", "Collapse", "Expand chat"]) {
+  await chatPaneMenuChosen("Full screen");
+  expect(slideDrawn(), "Full screen").toBeNull();
+  for (const press of ["Collapse", "Expand chat"]) {
     await pressed(press);
     expect(slideDrawn(), press).toBeNull();
   }
@@ -1048,9 +1047,9 @@ test("the sheet slides the pane from the strip's height, and only for a reader w
 test("a pane given the whole frame is marked as one to read, and beside the pages it is not", async () => {
   await mounted(viewportDeskEm);
   expect(chatDrawn()?.classList.contains("chat-reading")).toBe(false);
-  await pressed("Full screen");
+  await chatPaneMenuChosen("Full screen");
   expect(chatDrawn()?.classList.contains("chat-reading")).toBe(true);
-  await pressed("Exit full screen");
+  await chatPaneMenuChosen("Exit full screen");
   expect(chatDrawn()?.classList.contains("chat-reading")).toBe(false);
   styleless();
 });
@@ -1586,14 +1585,7 @@ test("a thread picked in History is held again after a trip to a thread's own pa
   const held = (): string | undefined =>
     chatDrawn()?.querySelector("header h2")?.textContent ?? undefined;
   expect(held()).toBe("mine");
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const theirs = await screen.findByRole("menuitemradio", { name: /^theirs,/ });
-  await turned(() => {
-    fireEvent.click(theirs);
-  });
-  await settled();
+  await chatPaneHistoryChosen(/^theirs,/);
   expect(held()).toBe("theirs");
   routeParams = { ...atlas, session: threadOtherSession };
   await frame.redrawn();
@@ -1601,13 +1593,10 @@ test("a thread picked in History is held again after a trip to a thread's own pa
   routeParams = atlas;
   await frame.redrawn();
   expect(held()).toBe("theirs");
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
   expect(
-    (
-      await screen.findByRole("menuitemradio", { name: /^theirs,/ })
-    ).getAttribute("aria-checked"),
+    within(await chatPaneHistoryOpened())
+      .getByRole("button", { name: /^theirs,/ })
+      .getAttribute("aria-current"),
   ).toBe("true");
   styleless();
 });
@@ -1709,10 +1698,10 @@ function headerItem(element: HTMLElement): Element | null {
   return item;
 }
 
-/** The header is one row: the thread's title with what is done to that thread
- * beside it, then the pane's own controls, each an item of the same row, and
- * the title the one item that gives way where the row is short. How tall that
- * row is drawn is a browser's to say. */
+/** The header is one row in a region named for the pane: the thread's title,
+ * then New, Collapse and the menu, each an item of the same row, and the title
+ * the one item that gives way where the row is short. How tall that row is
+ * drawn is a browser's to say. */
 test("the pane's title and every control of it stand in the header's one row", async () => {
   await mounted(
     viewportDeskEm,
@@ -1727,23 +1716,32 @@ test("the pane's title and every control of it stand in the header's one row", a
   );
   const header = chatDrawn()?.querySelector("header");
   expect(header?.classList.contains("flex")).toBe(true);
+  const region = screen.getByRole("region", { name: "Chat" });
+  expect(region.contains(header ?? null)).toBe(true);
+  expect(region.querySelector("h1")).toBeNull();
+  expect(
+    within(region).getByRole("heading", { level: 2, name: "held" }),
+  ).toBeDefined();
   const title = headerItem(screen.getByRole("heading", { name: "held" }));
   expect(title).not.toBeNull();
   expect(title?.classList.contains("flex-1")).toBe(true);
   expect(title?.classList.contains("min-w-0")).toBe(true);
   const controls = headerItem(screen.getByRole("button", { name: "New" }));
   expect(controls?.classList.contains("chat-icons")).toBe(true);
-  for (const name of [
-    "New",
-    "History",
-    "Chat actions",
-    "Full screen",
-    "Collapse",
-  ])
+  expect(
+    within(header ?? document.body)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent),
+  ).toStrictEqual(["New", "Collapse", "Chat menu"]);
+  for (const name of ["New", "Collapse", "Chat menu"])
     expect(controls?.contains(screen.getByRole("button", { name })), name).toBe(
       true,
     );
-  expect([...(header?.children ?? [])]).toStrictEqual([title, controls]);
+  expect(
+    [...(header?.children ?? [])].filter(
+      (item) => item.getAttribute("role") !== "status",
+    ),
+  ).toStrictEqual([title, controls]);
   styleless();
 });
 
@@ -2405,28 +2403,17 @@ test("a message to a held thread the hosted grant refuses stays in the box, read
   styleless();
 });
 
-/** The shell over a server answering the lead route with `lead`. */
-function leadServed(lead: unknown): typeof fetch {
-  return apiDouble({
-    operation: operationAt("Pending"),
-    route: (url) => (url.endsWith("/lead") ? answer(lead) : shellRoute(url)),
-  }).fetch;
-}
-
-/** A project with no lead is answered rather than refused, so the bar draws the
- * entry with nothing beside it, and one with a lead draws where it stands. */
-test("the bar's Lead entry stands only where the project has a lead", async () => {
-  await mounted(viewportDeskEm, leadServed({ lead: "None" }));
-  const bar = (): HTMLElement => navDrawn() ?? document.body;
-  const unled = within(bar()).getByRole("link", { name: "Lead" });
+/** The bar draws the project's primary places and nothing a reader visits
+ * rarely: those are settings sections, reached from the gear. */
+test("the bar's places are Tickets and Epics, with the Inbox beside the gear", async () => {
+  await mounted(viewportDeskEm);
+  const bar = navDrawn() ?? document.body;
   expect(
-    unled.querySelector("i[aria-hidden]"),
-    "a dot with no lead",
-  ).toBeNull();
-  cleanup();
-  await mounted(viewportDeskEm, leadServed(leadBody(1, 1)));
-  const led = within(bar()).getByRole("link", { name: "OpenLead" });
-  expect(led.querySelector("i[aria-hidden]")).not.toBeNull();
+    within(bar)
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toStrictEqual(["Tickets", "Epics"]);
+  expect(screen.getByRole("link", { name: "Inbox" })).toBeTruthy();
   styleless();
 });
 
@@ -3120,15 +3107,7 @@ test("another member's queued turn reads Queued whatever the reader's runner", a
       { thread: "Pool", mine: "Offline" },
     ),
   );
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const row = (await screen.findAllByRole("menuitemradio"))[0];
-  if (row === undefined) throw new Error("no thread in the history");
-  await turned(() => {
-    fireEvent.click(row);
-  });
-  await settled();
+  await chatPaneHistoryChosen(/^New chat,/);
   expect(await waitedWord()).toBe("Queued");
   expect(screen.queryByText("Waiting")).toBeNull();
   styleless();
@@ -3324,8 +3303,8 @@ const heldOwn = threadEntry({
   title: "held",
 });
 
-/** What the frame offers a reader to change: the pane's New, what a held
- * thread's menu offers to do to it, and the box. */
+/** What the frame offers a reader to change: the pane's New, what its menu
+ * offers to do to a held thread, and the box. */
 async function offeredToChange(): Promise<Record<string, boolean>> {
   const named = (role: string, name: string): boolean =>
     screen.queryByRole(role, { name }) !== null;
@@ -3333,12 +3312,7 @@ async function offeredToChange(): Promise<Record<string, boolean>> {
     new: named("button", "New"),
     box: named("textbox", "Message"),
   };
-  const menu = screen.queryByRole("button", { name: "Chat actions" });
-  if (menu === null) return { ...offered, rename: false, close: false };
-  fireEvent.keyDown(menu, { key: "ArrowDown" });
-  const items = within(await screen.findByRole("menu"))
-    .queryAllByRole("menuitem")
-    .map((item) => item.textContent);
+  const items = await chatPaneMenuOffers();
   return {
     ...offered,
     rename: items.includes("Rename"),
@@ -3383,8 +3357,13 @@ test("a reader who may not mutate keeps a held thread's title and transcript, wi
     box: false,
   });
   expect(viewOnlySaid(conversationRegion())).toBe(1);
-  for (const kept of ["History", "Full screen", "Collapse"])
-    expect(screen.getByRole("button", { name: kept })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Collapse" })).toBeDefined();
+  expect(await chatPaneMenuOffers()).toStrictEqual([
+    "History",
+    "Open",
+    "Copy link",
+    "Full screen",
+  ]);
   styleless();
 });
 

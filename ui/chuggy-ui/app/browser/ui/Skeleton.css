@@ -1,0 +1,41 @@
+/* Skeleton: the shape of a value not yet read, on the surface tokens. Its pulse
+   runs on a duration token, which reduced motion sets to zero, so there it is
+   still. */
+
+@layer ui {
+  .skeleton-shape,
+  .skeleton-card {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .skeleton-card {
+    padding: var(--space-4);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-3);
+  }
+
+  .skeleton-block {
+    display: block;
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+    animation: skeleton-pulse var(--duration-pulse) var(--ease-out) infinite
+      alternate;
+  }
+
+  .skeleton-line {
+    height: var(--text-md);
+    max-width: var(--measure);
+  }
+
+  .skeleton-row {
+    height: var(--height-touch);
+  }
+
+  @keyframes skeleton-pulse {
+    to {
+      background: var(--surface-0);
+    }
+  }
+}

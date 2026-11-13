@@ -46,13 +46,16 @@ test("a ticket's page and its edit are under tickets, which links to the overvie
 });
 
 test("a screen links to its own page, and what it holds is named decoded", () => {
-  expect(shellCrumbs(atlas, "/acme/atlas/runners")).toStrictEqual([
+  expect(shellCrumbs(atlas, "/acme/atlas/inbox")).toStrictEqual([
     ...head,
-    { label: "runners", link: { to: navRoutes.runners, params } },
+    { label: "inbox", link: { to: navRoutes.inbox, params } },
   ]);
-  expect(shellCrumbs(atlas, "/acme/atlas/repositories/a%2Fb")).toStrictEqual([
+  expect(
+    shellCrumbs(atlas, "/acme/atlas/settings/repositories/a%2Fb"),
+  ).toStrictEqual([
     ...head,
-    { label: "repositories", link: { to: navRoutes.repositories, params } },
+    { label: "settings", link: { to: navRoutes.settings, params } },
+    { label: "repositories" },
     { label: "a/b" },
   ]);
 });

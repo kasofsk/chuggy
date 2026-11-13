@@ -4,7 +4,7 @@
  * holds them, said as not sent, when it is next drawn.
  */
 
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -26,6 +26,7 @@ import {
   stageSent,
 } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
+import { chatPaneHistoryChosen } from "./chatPaneMenu.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -93,14 +94,7 @@ async function paneOpened(): Promise<Pane> {
 
 /** The thread titled `title` chosen out of the history, and drawn. */
 async function chose(title: "first" | "second"): Promise<void> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menu");
-  fireEvent.click(
-    screen.getByRole("menuitemradio", { name: new RegExp(`^${title},`, "u") }),
-  );
-  await settled();
+  await chatPaneHistoryChosen(new RegExp(`^${title},`, "u"));
 }
 
 test("a send refused while another thread is drawn is in its own thread's box, said as not sent, when the reader comes back, and the other box is untouched", async () => {

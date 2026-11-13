@@ -1,14 +1,15 @@
 /**
  * The bar over a list: what the list counts at its start, and at its end its
  * search and its pickers, each drawn as a glyph. It sticks to the top of the
- * page and goes out of the way as `useHeadroom` says.
+ * page and goes out of the way as `useHeadroom` says, and while it is out of
+ * the way nothing in it can be reached; while focus is inside it, it stays.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
-import { buttonLookClassName } from "./ui/Button.tsx";
-import { Input } from "./ui/Input.tsx";
+import { buttonLookClassName } from "./Button.tsx";
+import { Input } from "./Input.tsx";
 import { useHeadroom } from "./useHeadroom.ts";
 
 import "./ListControls.css";
@@ -147,13 +148,21 @@ export function ListControls(props: {
   readonly children: ReactNode;
 }): ReactNode {
   const bar = useRef<HTMLDivElement>(null);
-  const hidden = useHeadroom(bar);
+  const [focused, setFocused] = useState(false);
+  const hidden = useHeadroom(bar) && !focused;
   return (
     <div
       className="list-controls"
       ref={bar}
       data-hidden={hidden || undefined}
       inert={hidden}
+      onFocus={() => {
+        setFocused(true);
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setFocused(false);
+      }}
     >
       {props.start}
       <div className="list-selects">{props.children}</div>

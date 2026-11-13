@@ -54,7 +54,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Picker } from "../ui/Picker.tsx";
-import { navRoutes } from "../../core/shellNav.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import { CatalogHeadLine, CatalogHeadRevision } from "./CatalogHead.tsx";
 import { CatalogRepositories } from "./CatalogRepositories.tsx";
 import {
@@ -175,7 +175,7 @@ function CatalogChooser(props: {
   );
   const choose = (configuration: string, entry?: string): void => {
     void navigate({
-      to: navRoutes.catalog,
+      to: settingsRoutes.project.catalog,
       params: partition,
       search:
         entry === undefined ? { configuration } : { configuration, entry },

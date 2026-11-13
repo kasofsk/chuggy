@@ -197,7 +197,7 @@ function setupGithubMend(
   lack: Extract<SetupLack, { readonly lacks: "Account" | "App" | "Grant" }>,
   at: SetupAt,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
+  const page = setupPage(at, settingsRoutes.project.repositories);
   const connected: Copy = { id: "setup-mend-github-when" };
   if (lack.lacks === "Grant") return setupGrantMend(lack, page);
   if (lack.lacks === "Account")
@@ -235,7 +235,7 @@ function setupRepositoryMend(
   at: SetupAt,
   mine: string | undefined,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
+  const page = setupPage(at, settingsRoutes.project.repositories);
   if (lack.lacks === "Binding")
     return setupHand(
       {
@@ -435,7 +435,7 @@ function setupRunnerMend(
     return setupChatMend(lack, at, here);
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
-  const page = setupPage(at, navRoutes.runners);
+  const page = setupPage(at, settingsRoutes.project.runners);
   const add = setupPressed.runner;
   const elsewhere: Copy = {
     id: "setup-mend-runner-elsewhere",

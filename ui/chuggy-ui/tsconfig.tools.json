@@ -23,5 +23,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["vite.config.ts", "vite.terminal.config.ts", "tools/**/*.ts"]
+  "include": ["vite.config.ts", "vite.terminal.config.ts", "tools/**/*.ts"],
+  "exclude": ["tools/rendered/**"]
 }

@@ -1,7 +1,9 @@
 /**
  * The settings' frame over the routes the console registers for it: each
- * bare address replaced by its first page, a group a level with every link in
- * the frame it is drawn in, the page's own link the current one, the site's
+ * bare address the index of its sections where the frame is narrow and
+ * replaced by its first page where it is wide, a section under a link back to
+ * that index, a group a level and a headed list, with every link in the frame
+ * it is drawn in, the page's own link the current one, the site's
  * group holding only the pages the reader's site abilities give them, and a
  * workspace's page reading the workspace its address names in either frame.
  * The frame outside a project hands a page the clipboard, as the shell does
@@ -74,6 +76,10 @@ import {
   peoplePath,
 } from "./tenantPeopleFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
+import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { viewportDeskEm, viewportEmPixels } from "../viewportSizes.ts";
+import { copyTextEn } from "../../app/copy/catalog.ts";
+import { settingsNav } from "../../app/core/settingsNav.ts";
 
 const copied = vi.hoisted((): string[] => []);
 
@@ -86,9 +92,35 @@ vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   },
 }));
 
-/** The router restores a scroll position on every load, and jsdom scrolls nothing. */
+/** A phone's width, narrower than the settings' two columns. */
+const settingsPhoneEm = 22.5;
+
+/** The settings' frame as wide as `em`, which is what the element that fills
+ * the width measures; jsdom lays out nothing, so every other measures none. */
+function settingsFrameAtEm(em: number): void {
+  document.documentElement.style.fontSize = `${String(viewportEmPixels)}px`;
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element): DOMRect {
+      const width = this.hasAttribute("data-fills-width")
+        ? em * viewportEmPixels
+        : 0;
+      const box = { x: 0, y: 0, left: 0, top: 0, width, height: 0 };
+      return {
+        ...box,
+        right: width,
+        bottom: 0,
+        toJSON: () => box,
+      };
+    },
+  );
+}
+
+/** The router restores a scroll position on every load, and jsdom scrolls
+ * nothing. A case is at the desk unless it says otherwise. */
 beforeEach(() => {
   vi.stubGlobal("scrollTo", () => undefined);
+  resizeObserverStubbed();
+  settingsFrameAtEm(viewportDeskEm);
 });
 
 afterEach(() => {
@@ -148,9 +180,12 @@ function settingsRouter(visited: readonly string[]) {
 
 /** Every read is absent but the ones a case answers and the bar's own of the projects, which is what a reader with no standing is answered. */
 async function drawnSettings(
-  address: string,
+  address: string | readonly string[],
   answered: (request: SentRequest) => Response | undefined = () => undefined,
-): Promise<{ readonly sent: readonly SentRequest[] }> {
+): Promise<{
+  readonly sent: readonly SentRequest[];
+  readonly router: ReturnType<typeof settingsRouter>;
+}> {
   const scripted = scriptedFetch(
     (request) =>
       answered(request) ??
@@ -159,7 +194,9 @@ async function drawnSettings(
         : answer({}, 404)),
   );
   vi.stubGlobal("fetch", scripted.fetch);
-  const router = settingsRouter([address]);
+  const router = settingsRouter(
+    typeof address === "string" ? [address] : address,
+  );
   await router.load();
   renderCopied(
     <SessionProvider holder={holderDouble()}>
@@ -175,7 +212,7 @@ async function drawnSettings(
     </SessionProvider>,
   );
   await settled();
-  return { sent: scripted.sent };
+  return { sent: scripted.sent, router };
 }
 
 function siteAbilitiesAnswered(
@@ -209,8 +246,12 @@ const projectGroups = [
     "Project atlas-web",
     [
       "Lead /acme-co/atlas-web/settings/lead",
+      "Lead session /acme-co/atlas-web/settings/lead-session",
       "Placement /acme-co/atlas-web/settings/placement",
       "Permissions /acme-co/atlas-web/settings/permissions",
+      "Repositories /acme-co/atlas-web/settings/repositories",
+      "Runners /acme-co/atlas-web/settings/runners",
+      "Catalog /acme-co/atlas-web/settings/catalog",
     ],
   ],
   [
@@ -219,10 +260,14 @@ const projectGroups = [
       "People /acme-co/atlas-web/settings/workspace/people",
       "GitHub accounts /acme-co/atlas-web/settings/workspace/accounts",
       "Permissions /acme-co/atlas-web/settings/workspace/permissions",
-      "Personal runners /acme-co/atlas-web/settings/workspace/runner",
       "Usage /acme-co/atlas-web/settings/workspace/usage",
     ],
   ],
+];
+
+const projectPersonGroup = [
+  "You",
+  ["Personal runners /acme-co/atlas-web/settings/workspace/runner"],
 ];
 
 const workspaceGroups = [
@@ -232,43 +277,140 @@ const workspaceGroups = [
       "People /tenants/acme-co/settings/people",
       "GitHub accounts /tenants/acme-co/settings/accounts",
       "Permissions /tenants/acme-co/settings/permissions",
-      "Personal runners /tenants/acme-co/settings/runner",
       "Usage /tenants/acme-co/settings/usage",
     ],
   ],
 ];
 
-test.each([
+const workspacePersonGroup = [
+  "You",
+  ["Personal runners /tenants/acme-co/settings/runner"],
+];
+
+const settingsRoots = [
   {
     bare: "/acme-co/atlas-web/settings",
     first: "/acme-co/atlas-web/settings/lead",
+    project: "atlas-web",
   },
   {
     bare: "/tenants/acme-co/settings",
     first: "/tenants/acme-co/settings/people",
+    project: undefined,
   },
-  {
-    bare: "/acme-co/atlas-web/settings/workspace",
-    first: "/acme-co/atlas-web/settings/workspace/people",
-  },
-])(
-  "$bare is replaced by $first, so going back leaves the settings",
+] as const;
+
+test.each(settingsRoots)(
+  "in a wide frame $bare is replaced by $first, so going back leaves the settings",
   async ({ bare, first }) => {
-    const router = settingsRouter(["/elsewhere", bare]);
-    await router.load();
+    const { router } = await drawnSettings(["/elsewhere", bare]);
     expect(router.state.location.pathname).toBe(first);
     expect(router.history.length).toBe(2);
   },
 );
 
-test("in a project the navigation draws the project's group then the workspace's, every link at its address in the project", async () => {
-  await drawnSettings("/acme-co/atlas-web/settings/permissions");
-  expect(groupsDrawn()).toStrictEqual(projectGroups);
+test("in a project the workspace's bare address is replaced by its first page, at any width", async () => {
+  settingsFrameAtEm(settingsPhoneEm);
+  const router = settingsRouter([
+    "/elsewhere",
+    "/acme-co/atlas-web/settings/workspace",
+  ]);
+  await router.load();
+  expect(router.state.location.pathname).toBe(
+    "/acme-co/atlas-web/settings/workspace/people",
+  );
+  expect(router.history.length).toBe(2);
 });
 
-test("outside a project the navigation draws the workspace's group alone, every link at the workspace's own address", async () => {
+/** Each list the navigation draws, by the heading that names it, and each of
+ * its rows as its link's name and the line that describes it. */
+function indexDrawn(): readonly (readonly [string, readonly string[]])[] {
+  return within(navigation())
+    .getAllByRole("list")
+    .map((list) => {
+      const heading = document.getElementById(
+        list.getAttribute("aria-labelledby") ?? "",
+      );
+      expect(heading?.tagName).toBe("H2");
+      return [
+        heading?.textContent ?? "",
+        within(list)
+          .getAllByRole("link")
+          .map(
+            (link) =>
+              `${link.textContent ?? ""}: ${document.getElementById(link.getAttribute("aria-describedby") ?? "")?.textContent ?? ""}`,
+          ),
+      ];
+    });
+}
+
+test.each(settingsRoots)(
+  "in a narrow frame $bare stays, the index of every section the navigation model gives, under its group's heading with its line, and no section beside it",
+  async ({ bare, project }) => {
+    settingsFrameAtEm(settingsPhoneEm);
+    const { router } = await drawnSettings(["/elsewhere", bare]);
+    expect(router.state.location.pathname).toBe(bare);
+    const model = settingsNav({
+      tenant: "acme-co",
+      project,
+      site: { workspaces: false, permissions: false },
+    });
+    expect(indexDrawn()).toStrictEqual(
+      model.map((group) => [
+        `${copyTextEn(group.label)}${group.name === undefined ? "" : ` ${group.name}`}`,
+        group.entries.map(
+          (entry) => `${copyTextEn(entry.label)}: ${copyTextEn(entry.summary)}`,
+        ),
+      ]),
+    );
+    expect(
+      within(navigation())
+        .getAllByRole("link")
+        .filter((link) => link.hasAttribute("aria-current")),
+    ).toStrictEqual([]);
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.queryByRole("link", { name: "All settings" })).toBeNull();
+  },
+);
+
+test.each([
+  {
+    address: "/acme-co/atlas-web/settings/workspace/usage",
+    root: "/acme-co/atlas-web/settings",
+  },
+  {
+    address: "/tenants/acme-co/settings/site/workspaces",
+    root: "/tenants/acme-co/settings",
+  },
+])(
+  "the section at $address is drawn under a link back to the index at $root, before its title",
+  async ({ address, root }) => {
+    settingsFrameAtEm(settingsPhoneEm);
+    await drawnSettings(
+      address,
+      siteAbilitiesAnswered({ ...siteAbilitiesNone, createTenant: true }),
+    );
+    const back = screen.getByRole("link", { name: "All settings" });
+    expect(back.getAttribute("href")).toBe(root);
+    expect(navigation().contains(back)).toBe(false);
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(
+      back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  },
+);
+
+test("in a project the navigation draws the project's group, the workspace's, then the reader's own, every link at its address in the project", async () => {
+  await drawnSettings("/acme-co/atlas-web/settings/permissions");
+  expect(groupsDrawn()).toStrictEqual([...projectGroups, projectPersonGroup]);
+});
+
+test("outside a project the navigation draws the workspace's group and the reader's own, every link at the workspace's own address", async () => {
   await drawnSettings("/tenants/acme-co/settings/permissions");
-  expect(groupsDrawn()).toStrictEqual(workspaceGroups);
+  expect(groupsDrawn()).toStrictEqual([
+    ...workspaceGroups,
+    workspacePersonGroup,
+  ]);
 });
 
 test.each([
@@ -281,6 +423,20 @@ test.each([
     address: "/acme-co/atlas-web/settings/permissions",
     group: "Project atlas-web",
   },
+  {
+    address: "/acme-co/atlas-web/settings/repositories",
+    group: "Project atlas-web",
+  },
+  {
+    address: "/acme-co/atlas-web/settings/runners",
+    group: "Project atlas-web",
+  },
+  {
+    address: "/acme-co/atlas-web/settings/catalog",
+    group: "Project atlas-web",
+  },
+  { address: "/acme-co/atlas-web/settings/workspace/runner", group: "You" },
+  { address: "/tenants/acme-co/settings/runner", group: "You" },
   {
     address: "/acme-co/atlas-web/settings/workspace/people",
     group: "Workspace acme-co",
@@ -346,19 +502,21 @@ test.each([
     pages: ["Workspaces", "Permissions"],
   },
 ])(
-  "a reader whose site abilities say $held is drawn the site's group last with $pages alone, in either frame",
+  "a reader whose site abilities say $held is drawn the site's group before their own with $pages alone, in either frame",
   async ({ held, pages }) => {
     const answered = siteAbilitiesAnswered({ ...siteAbilitiesNone, ...held });
     await drawnSettings("/acme-co/atlas-web/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...projectGroups,
       siteGroup("/acme-co/atlas-web/settings", pages),
+      projectPersonGroup,
     ]);
     cleanup();
     await drawnSettings("/tenants/acme-co/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...workspaceGroups,
       siteGroup("/tenants/acme-co/settings", pages),
+      workspacePersonGroup,
     ]);
   },
 );
@@ -379,7 +537,7 @@ test.each([
         request.url === siteAbilitiesPath ? abilities() : undefined,
     );
     expect(readsOf(drawn, siteAbilitiesPath)).toBeGreaterThan(0);
-    expect(groupsDrawn()).toStrictEqual(projectGroups);
+    expect(groupsDrawn()).toStrictEqual([...projectGroups, projectPersonGroup]);
     expect(readFailedLines()).toStrictEqual([]);
   },
 );

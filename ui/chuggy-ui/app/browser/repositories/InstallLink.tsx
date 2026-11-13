@@ -27,6 +27,7 @@ import { forgeAppsQuery } from "../../core/tenantQueries.ts";
 import { usePanelState } from "../api.ts";
 import { drawBytes, transientStore } from "../ports.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
+import type { ButtonVariant } from "../ui/Button.tsx";
 
 export function InstallLink(props: {
   readonly tenant: string;
@@ -34,6 +35,7 @@ export function InstallLink(props: {
   readonly app: ForgeAppName;
   /** What the link says in place of the app's install label. */
   readonly label?: Copy;
+  readonly variant?: ButtonVariant;
 }): ReactNode {
   const text = useCopyText();
   const tenant = props.tenant;
@@ -47,7 +49,7 @@ export function InstallLink(props: {
   return (
     <a
       href={forgeInstallUrl(held.installUrl, installState)}
-      className={buttonLookClassName({ size: "sm" })}
+      className={buttonLookClassName({ size: "sm", variant: props.variant })}
       onClick={() => {
         forgeInstallBegin(transientStore, {
           state: installState,
