@@ -103,19 +103,29 @@ export interface EpicGraphTrace {
   readonly edges: ReadonlySet<string>;
 }
 
-/** Every ticket reached from one along the edges in one direction, the ticket
- * itself included; each is taken once, so the walk is bounded by the edges
- * given, a cycle included. */
-function epicGraphTraceReached(
-  ticket: number,
+/** Each ticket and the tickets one step on from it, along the edges given in
+ * the direction `onward` reads them. */
+export function epicGraphAdjacency(
   edges: readonly EpicGraphEdgeShown[],
   onward: (edge: EpicGraphEdgeShown) => readonly [number, number],
-): ReadonlySet<number> {
+): ReadonlyMap<number, readonly number[]> {
   const next = new Map<number, number[]>();
   for (const edge of edges) {
     const [here, there] = onward(edge);
-    next.set(here, [...(next.get(here) ?? []), there]);
+    const held = next.get(here);
+    if (held === undefined) next.set(here, [there]);
+    else held.push(there);
   }
+  return next;
+}
+
+/** Every ticket reached from one along an adjacency, the ticket itself
+ * included; each is taken once, so the walk is bounded by the tickets the
+ * adjacency names, a cycle included. */
+export function epicGraphReached(
+  ticket: number,
+  next: ReadonlyMap<number, readonly number[]>,
+): ReadonlySet<number> {
   const reached = new Set([ticket]);
   const waiting = [ticket];
   for (let at = 0; at < waiting.length; at += 1)
@@ -131,14 +141,14 @@ export function epicGraphTraced(
   ticket: number,
   edges: readonly EpicGraphEdgeShown[],
 ): EpicGraphTrace {
-  const above = epicGraphTraceReached(ticket, edges, (edge) => [
-    edge.to,
-    edge.from,
-  ]);
-  const below = epicGraphTraceReached(ticket, edges, (edge) => [
-    edge.from,
-    edge.to,
-  ]);
+  const above = epicGraphReached(
+    ticket,
+    epicGraphAdjacency(edges, (edge) => [edge.to, edge.from]),
+  );
+  const below = epicGraphReached(
+    ticket,
+    epicGraphAdjacency(edges, (edge) => [edge.from, edge.to]),
+  );
   return {
     tickets: new Set([...above, ...below]),
     edges: new Set(

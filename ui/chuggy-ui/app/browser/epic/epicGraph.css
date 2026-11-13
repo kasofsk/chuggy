@@ -523,10 +523,10 @@
     }
 
     .epic-graph-toggles .epic-graph-key-count {
-    color: inherit;
-  }
+      color: inherit;
+    }
 
-  .epic-graph-toggles {
+    .epic-graph-toggles {
       margin-inline-start: 0;
     }
 

@@ -11,7 +11,11 @@
  */
 
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
-import { epicGraphEdgesShown } from "./epicGraph.ts";
+import {
+  epicGraphAdjacency,
+  epicGraphEdgesShown,
+  epicGraphReached,
+} from "./epicGraph.ts";
 import type { EpicGraphEdgeShown, EpicGraphTicket } from "./epicGraph.ts";
 import type { TicketStateStanding } from "./ticketHeader.ts";
 
@@ -60,20 +64,6 @@ export function epicGraphLayersStandingRank(
 
 function epicGraphLayersFinished(standing: TicketStateStanding): boolean {
   return standing === "Done" || standing === "Revoked";
-}
-
-function epicGraphLayersAdjacency(
-  edges: readonly EpicGraphEdgeShown[],
-  onward: (edge: EpicGraphEdgeShown) => readonly [number, number],
-): ReadonlyMap<number, readonly number[]> {
-  const next = new Map<number, number[]>();
-  for (const edge of edges) {
-    const [here, there] = onward(edge);
-    const held = next.get(here);
-    if (held === undefined) next.set(here, [there]);
-    else held.push(there);
-  }
-  return next;
 }
 
 /** Each ticket's layer: one past the deepest of what it waits on, a
@@ -151,23 +141,6 @@ function epicGraphLayersChainOf(
   return longest;
 }
 
-/** Every ticket reached from one along the adjacency given, itself included,
- * each once. */
-function epicGraphLayersReached(
-  ticket: number,
-  next: ReadonlyMap<number, readonly number[]>,
-): ReadonlySet<number> {
-  const reached = new Set([ticket]);
-  const waiting = [ticket];
-  for (let at = 0; at < waiting.length; at += 1)
-    for (const there of next.get(waiting[at] ?? ticket) ?? [])
-      if (!reached.has(there)) {
-        reached.add(there);
-        waiting.push(there);
-      }
-  return reached;
-}
-
 /** The edges with each dropped that the edges still kept join another way,
  * weighed one at a time against what is kept, so a cycle stays joined. */
 export function epicGraphLayersReducedOf(
@@ -176,9 +149,9 @@ export function epicGraphLayersReducedOf(
   const kept = new Set(edges);
   for (const edge of edges) {
     kept.delete(edge);
-    const reached = epicGraphLayersReached(
+    const reached = epicGraphReached(
       edge.from,
-      epicGraphLayersAdjacency([...kept], (each) => [each.from, each.to]),
+      epicGraphAdjacency([...kept], (each) => [each.from, each.to]),
     );
     if (!reached.has(edge.to)) kept.add(edge);
   }
@@ -196,7 +169,7 @@ function epicGraphLayersGoalOf(
   if (layers.length < 2 || goal === undefined || beside !== undefined)
     return undefined;
   if (!goal.node.member) return undefined;
-  const reached = epicGraphLayersReached(goal.node.ticket, waitsOn);
+  const reached = epicGraphReached(goal.node.ticket, waitsOn);
   return layers.every((layer) =>
     layer.every(
       (ticket) => !ticket.node.member || reached.has(ticket.node.ticket),
@@ -245,14 +218,8 @@ export function epicGraphLayeredOf(
     .sort((left, right) => left.node.ticket - right.node.ticket);
   const shown = shownTickets.map((ticket) => ticket.node.ticket);
   const edges = epicGraphEdgesShown(graph, new Set(shown));
-  const waitsOn = epicGraphLayersAdjacency(edges, (edge) => [
-    edge.to,
-    edge.from,
-  ]);
-  const waitedOnBy = epicGraphLayersAdjacency(edges, (edge) => [
-    edge.from,
-    edge.to,
-  ]);
+  const waitsOn = epicGraphAdjacency(edges, (edge) => [edge.to, edge.from]);
+  const waitedOnBy = epicGraphAdjacency(edges, (edge) => [edge.from, edge.to]);
   const layerOf = epicGraphLayersDepthOf(shown, waitsOn);
   const layers: EpicGraphTicket[][] = [];
   for (const ticket of shownTickets) {
