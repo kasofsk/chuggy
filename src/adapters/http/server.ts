@@ -249,6 +249,8 @@ import {
   agentAccountsResponse,
   agentAccountWrittenResponse,
   personalRunnerDeregisteredResponse,
+  unrunDeletedResponse,
+  unrunDeletionStandingResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -283,6 +285,10 @@ import type { ProjectOwnerFallbackAdministration } from "../../interpreter/proje
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
+import type {
+  ProjectDeletion,
+  TenantDeletion,
+} from "../../interpreter/unrunDeletion.ts";
 import {
   sessionBearerAdmission,
   type SessionBearerConfinement,
@@ -1999,6 +2005,64 @@ function tenantOf(request: FastifyRequest): TenantId {
   return asTenantId(textField(record(request.params), "tenant"));
 }
 
+/** The deletions of a project that never ran work and of a workspace that holds no project. */
+export interface UnrunDeletions {
+  readonly projects: ProjectDeletion;
+  readonly tenants: TenantDeletion;
+}
+
+/**
+ * Each deletion's standing, which is what holds the project or the workspace,
+ * and the deletion itself, a project's by its tenant's administrator and a
+ * workspace's by the site's.
+ */
+function registerUnrunDeletions(
+  app: FastifyInstance,
+  deletions: UnrunDeletions,
+): void {
+  app.get(nativeHttpRoutes.projectDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletionStandingResponse(
+        await deletions.projects.standing(
+          principalOf(request),
+          partitionOf(request),
+        ),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.projectDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletedResponse(
+        await deletions.projects.delete(
+          principalOf(request),
+          partitionOf(request),
+        ),
+      ),
+    );
+  });
+  app.get(nativeHttpRoutes.tenantDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletionStandingResponse(
+        await deletions.tenants.standing(
+          principalOf(request),
+          tenantOf(request),
+        ),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.tenantDeletion, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      unrunDeletedResponse(
+        await deletions.tenants.delete(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+}
+
 function installationIdOf(request: FastifyRequest): ForgeInstallationId {
   return parseForgeInstallationId(
     textField(record(request.params), "installationId"),
@@ -2609,6 +2673,26 @@ function registerLandingQueues(
 }
 
 /** Where a project's work is landing: each ticket's landings, and the project's queues. */
+/** A project made, and one that never ran work deleted. */
+function registerProjectLifecycle(
+  app: FastifyInstance,
+  creation: ProjectCreation | undefined,
+  deletions: UnrunDeletions | undefined,
+): void {
+  if (creation !== undefined) registerProjectCreation(app, creation);
+  if (deletions !== undefined) registerUnrunDeletions(app, deletions);
+}
+
+/** What an action reports it did, and what a ticket's actions may reach. */
+function registerActions(
+  app: FastifyInstance,
+  reports: ActionReports | undefined,
+  reach: TicketActionReaches | undefined,
+): void {
+  if (reports !== undefined) registerActionReports(app, reports);
+  if (reach !== undefined) registerActionReach(app, reach);
+}
+
 function registerLandingReads(
   app: FastifyInstance,
   landings: TicketLandingReads | undefined,
@@ -3388,6 +3472,7 @@ export function createNativeHttpApp(
   agentAccounts?: AgentAccountService,
   runnerReleases?: WorkerRunnerReleases,
   landingQueues?: LandingQueueReads,
+  deletions?: UnrunDeletions,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -3395,7 +3480,7 @@ export function createNativeHttpApp(
   registerAuthentication(app, authentication, chat);
   registerPublic(app, readiness, authority, runnerReleases);
   registerInventory(app, web);
-  if (creation !== undefined) registerProjectCreation(app, creation);
+  registerProjectLifecycle(app, creation, deletions);
   registerProject(app, web);
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
@@ -3424,8 +3509,7 @@ export function createNativeHttpApp(
   registerProjectViews(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
-  if (actionReports !== undefined) registerActionReports(app, actionReports);
-  if (actionReach !== undefined) registerActionReach(app, actionReach);
+  registerActions(app, actionReports, actionReach);
   registerLandingReads(app, landings, landingQueues);
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
   registerFailures(app);

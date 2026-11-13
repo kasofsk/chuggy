@@ -44,6 +44,10 @@ import {
   projectChangeSweepFunction,
   projectCreateFunction,
   projectCreationGrantsFunction,
+  projectDeleteFunction,
+  projectDeletionHoldsFunction,
+  tenantDeleteFunction,
+  tenantDeletionHoldsFunction,
   rateLimitedTicketsFunction,
   rateLimitResumeFunction,
   repositoryBindingListFunction,
@@ -663,6 +667,26 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${projectCreationGrantsFunction}(text)`,
     [apiRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectDeletionHoldsFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectDeleteFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${tenantDeletionHoldsFunction}(text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${tenantDeleteFunction}(text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
   ),
   boundaryGrantsDoor(
     `${forgeInstallationRecordFunction}(text,text,text,text,text,text,text,text)`,

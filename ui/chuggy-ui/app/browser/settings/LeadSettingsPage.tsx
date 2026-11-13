@@ -71,6 +71,7 @@ import type { SelectorRowsChrome } from "./lead/SelectorRowsSection.tsx";
 import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
 import { SelectorTextSection } from "./lead/SelectorTextSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
+import { ProjectDeletion } from "./UnrunDeletion.tsx";
 
 /** Which part of the page the last write belongs to, so its answer is drawn
  * where it was asked for and nowhere else. */
@@ -299,6 +300,7 @@ export function LeadSettingsPage(): ReactNode {
       {state.state === "Ready" ? (
         <SelectorSettingsForm partition={partition} settings={state.value} />
       ) : null}
+      <ProjectDeletion partition={partition} />
     </SettingsPage>
   );
 }

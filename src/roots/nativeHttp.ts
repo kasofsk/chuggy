@@ -13,6 +13,7 @@ import {
   createNativeHttpApp,
   nativeHttpLimitsDefault,
   type PrincipalAuthentication,
+  type UnrunDeletions,
 } from "../adapters/http/server.ts";
 import {
   projectResourceReader,
@@ -58,6 +59,7 @@ import {
   composeThreadLimits,
   composeMemberChat,
   composeProjectCreation,
+  composeUnrunDeletions,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
   composeSelectorProposalReviews,
@@ -172,6 +174,7 @@ import {
 } from "../interpreter/workerPool.ts";
 import { runnerReleasesPinned } from "./runnerReleases.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
+import { ketoAccessErasure } from "../adapters/keto/accessErasure.ts";
 import {
   checkedProjectGrantSettings,
   type ProjectGrantWriter,
@@ -506,6 +509,24 @@ function nativeProjectGrants(): ProjectGrantWriter | undefined {
   const writeUrl = process.env[ketoWriteUrlVariable];
   if (writeUrl === undefined) return undefined;
   return ketoProjectGrants(checkedProjectGrantSettings({ writeUrl }));
+}
+
+/** Deleting what never ran, or nothing where this deployment names no write port to erase its tuples through. */
+function nativeUnrunDeletions(
+  pool: pg.Pool,
+  access: ProjectAccess,
+  accessSettings: ProjectAccessSettings,
+): UnrunDeletions | undefined {
+  const writeUrl = process.env[ketoWriteUrlVariable];
+  if (writeUrl === undefined) return undefined;
+  return composeUnrunDeletions(
+    pool,
+    access,
+    ketoAccessErasure(
+      accessSettings,
+      checkedProjectGrantSettings({ writeUrl }),
+    ),
+  );
 }
 
 function requiredEnvironment(name: string): string {
@@ -1658,6 +1679,7 @@ async function main(): Promise<void> {
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),
+    nativeUnrunDeletions(pool, access, accessSettings),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

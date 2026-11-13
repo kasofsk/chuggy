@@ -188,4 +188,44 @@ export interface SettingsCopy {
   readonly "settings-accounts-missing": Record<never, never>;
   readonly "settings-accounts-update-pending": Record<never, never>;
   readonly "settings-accounts-review": Record<never, never>;
+  readonly "settings-delete-project-title": Record<never, never>;
+  readonly "settings-delete-project-about": Record<never, never>;
+  readonly "settings-delete-project": Record<never, never>;
+  readonly "settings-delete-project-question": {
+    readonly project: unknown;
+  };
+  readonly "settings-delete-project-line": {
+    readonly project: unknown;
+  };
+  readonly "settings-delete-project-done": {
+    readonly project: unknown;
+  };
+  readonly "settings-delete-workspace-title": Record<never, never>;
+  readonly "settings-delete-workspace-about": Record<never, never>;
+  readonly "settings-delete-workspace": Record<never, never>;
+  readonly "settings-delete-workspace-question": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-delete-workspace-line": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-delete-workspace-done": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-delete-back": Record<never, never>;
+  readonly "settings-delete-held": {
+    readonly held: unknown;
+  };
+  readonly "settings-delete-held-released-ticket": Record<never, never>;
+  readonly "settings-delete-held-execution": Record<never, never>;
+  readonly "settings-delete-held-session": Record<never, never>;
+  readonly "settings-delete-held-worker-pool": Record<never, never>;
+  readonly "settings-delete-held-action-observation": Record<never, never>;
+  readonly "settings-delete-held-project": Record<never, never>;
+  readonly "settings-delete-held-personal-runner": Record<never, never>;
+  readonly "settings-delete-held-chat-host": Record<never, never>;
+  readonly "settings-delete-held-joined": {
+    readonly lead: unknown;
+    readonly rest: unknown;
+  };
 }

@@ -30,6 +30,7 @@ import {
   apiPersonalRunner,
   apiPersonalRunnerPermit,
   apiProjectInventoryAll,
+  apiTenantDeletion,
 } from "./apiRoutes.ts";
 import {
   consoleCallerQuery,
@@ -66,6 +67,13 @@ export function agentAccountsQuery() {
     "agent-accounts",
     (ports) => apiAgentAccounts(ports),
     sessionPlacementPolledMs,
+  );
+}
+
+/** What holds the workspace from deletion, absent to a reader who may not delete it. */
+export function tenantDeletionQuery(tenant: string) {
+  return consoleTenantQuery(tenant, "deletion", (ports) =>
+    apiTenantDeletion(ports, tenant),
   );
 }
 

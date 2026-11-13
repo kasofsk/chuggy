@@ -395,3 +395,15 @@ export const epicSaveFunction = "save_epic";
 
 /** The door a draft is created into an epic through. */
 export const draftInEpicFunction = "create_draft_in_epic";
+
+/** What a project holds that keeps it from deletion, read by the API. */
+export const projectDeletionHoldsFunction = "project_deletion_holds";
+
+/** The door a project that never ran work is deleted through. */
+export const projectDeleteFunction = "delete_unrun_project";
+
+/** What a tenant holds that keeps it from deletion, read by the API. */
+export const tenantDeletionHoldsFunction = "tenant_deletion_holds";
+
+/** The door a tenant that holds no project is deleted through. */
+export const tenantDeleteFunction = "delete_unrun_tenant";

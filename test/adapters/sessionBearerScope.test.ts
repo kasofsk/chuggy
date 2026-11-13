@@ -162,6 +162,10 @@ function scopedApp(
     recorded(reached, "agentAccounts"),
     undefined,
     recorded(reached, "landingQueues"),
+    {
+      projects: recorded(reached, "projectDeletion"),
+      tenants: recorded(reached, "tenantDeletion"),
+    },
   );
 }
 

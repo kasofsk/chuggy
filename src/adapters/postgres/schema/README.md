@@ -23,7 +23,9 @@ and journal entry carries.
 `tenant` — one row per tenant name, which is what makes a name first-come.
 Owned by the boundary owner, which `create_project` runs as, and the control
 plane for insertion. Its key and identity are the tenant name, it is the parent
-`project` points at, and `tenant_is_immutable` refuses every change and delete.
+`project` points at, and `tenant_is_immutable` refuses every change and the
+delete of a tenant any project names, so `delete_unrun_tenant` is its only
+deletion.
 It has no unfinished work.
 
 `project` — one authoritative lifecycle and ownership row per partition.
@@ -35,7 +37,10 @@ at; a project identity never begins `@`, which names a member's own partition
 in the relations that hold one. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
 the same transaction as the entry it counts. Unfinished work is found by selecting
-active projects whose lease has expired by database time.
+active projects whose lease has expired by database time. It is deleted by
+`delete_unrun_project` alone, with every relation keyed by it, under its row
+lock and after moving it to `Deleting`, and only while it holds no journal
+entry and no execution, session, pool or action observation.
 
 `journal_entry` — the append-only decision log, partitioned by the composite
 key it carries into its own primary key `(tenant, project, seq)`. The
@@ -395,7 +400,8 @@ was made under and whether it made the tenant; the tenant's creator is read
 here, and at most one row per tenant says it made it. Owned by the boundary
 owner, and the API role reaches it only through `create_project`. Its key and
 identity are the operation, it is written by that door alone, and
-`project_creation_operation_is_immutable` refuses every change and delete. It
+`project_creation_operation_is_immutable` refuses every change and every
+delete but of a project standing `Deleting`. It
 has no unfinished work: a refusal writes no row, so a retry is decided again.
 
 `project_creation_grant` — that an accepted creation's grants were written to
@@ -403,7 +409,7 @@ the authority, so a replay stops re-asserting them. Owned by the boundary
 owner, and the API role reaches it through `create_project`, which reads it,
 and `record_project_creation_grants`, which inserts it once. Its key and
 identity are the operation, and `project_creation_grant_is_immutable` refuses
-every change and delete. Its unfinished work is an operation row with no row
+every change and every delete but of a project standing `Deleting`. Its unfinished work is an operation row with no row
 here, which the creator's next request for that tenant and project finishes
 under any identity.
 
@@ -418,7 +424,9 @@ holds its own row and no tenant's claim excludes another's. It is changed by
 that door alone, which moves a standing claim onto a new installation identity
 when an app is removed and installed again, and
 `forge_installation_keeps_its_claim` refuses
-every delete and every change to the forge, the app, the account or the tenant.
+every change to the forge, the app, the account or the tenant, and the delete
+of a claim whose tenant any project names, so a claim is released only with its
+tenant, by `delete_unrun_tenant`.
 It has no unfinished work: a claim is committed or it was rolled back, and a
 repository whose owner carries no row has no credential rather than a partial
 one.
@@ -597,7 +605,8 @@ nothing.
 to a link, each keeping the digest of its token and never the token. The
 access plane's role holds what its routes need on it and nothing else in the
 schema: it inserts and deletes rows, and updates only `used_by`, `used_at`,
-`revoked_at` and `workspace`. Its key is `link`, a text the insert draws, and
+`revoked_at` and `workspace`. `delete_unrun_tenant` deletes a tenant's links and
+the workspace link that made it. Its key is `link`, a text the insert draws, and
 `tenant` points at no row, because a tenant the plane makes has none until its
 first project. A workspace link names no tenant, role or projects, and keeps
 whether its workspace's administrators may make accounts and its maker's note;
@@ -726,7 +735,7 @@ unfinished work.
 `epic_change` — every revision an epic has had, with the whole content it
 saved, which is what history is read from. Owned by the boundary owner, granted
 INSERT and SELECT, read by the API, and `epic_change_is_immutable` refuses every change and
-delete. Its identity is `(tenant, project, epic, revision)` and it points at
+every delete but of a project standing `Deleting`. Its identity is `(tenant, project, epic, revision)` and it points at
 `project`. Its newest row per epic is the content `epic` holds, which is why a
 save writes both in one transaction. It has no unfinished work.
 

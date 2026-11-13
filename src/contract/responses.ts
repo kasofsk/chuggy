@@ -2696,6 +2696,42 @@ export type ProjectOwnerFallbackResponse = z.infer<
   typeof projectOwnerFallbackResponseSchema
 >;
 
+/** What keeps a project from deletion: a released ticket, or work run in it. */
+export const projectDeletionHoldings = [
+  "ReleasedTicket",
+  "Execution",
+  "Session",
+  "WorkerPool",
+  "ActionObservation",
+] as const;
+
+/** What keeps a workspace from deletion: a project, or a member's runner, chat host or session in it. */
+export const tenantDeletionHoldings = [
+  "Project",
+  "PersonalRunner",
+  "ChatHost",
+  "Session",
+] as const;
+
+/** The code a deletion refused because of what it holds is answered under, beside `held`. */
+export const deletionHeldCode = "DeletionHeld";
+
+/** What holds a project its tenant's administrator asks to delete, nothing where it may be deleted now; a refused deletion answers the same. */
+export const projectDeletionResponseSchema = z.strictObject({
+  held: z.array(z.enum(projectDeletionHoldings)),
+});
+export type ProjectDeletionResponse = z.infer<
+  typeof projectDeletionResponseSchema
+>;
+
+/** What holds a workspace the site's administrator asks to delete, nothing where it may be deleted now; a refused deletion answers the same. */
+export const tenantDeletionResponseSchema = z.strictObject({
+  held: z.array(z.enum(tenantDeletionHoldings)),
+});
+export type TenantDeletionResponse = z.infer<
+  typeof tenantDeletionResponseSchema
+>;
+
 /** How many threads one member may hold open in the project, and whether this caller may change it. */
 export const threadLimitResponseSchema = z.strictObject({
   threadsMax: z.number().int().min(1),

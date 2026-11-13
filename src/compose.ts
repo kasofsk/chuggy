@@ -100,6 +100,16 @@ import {
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import {
+  postgresProjectDeletion,
+  postgresTenantDeletion,
+} from "./adapters/postgres/unrunDeletion.ts";
+import type { UnrunDeletions } from "./adapters/http/server.ts";
+import {
+  projectDeletion,
+  tenantDeletion,
+  type AccessErasure,
+} from "./interpreter/unrunDeletion.ts";
 import { postgresThreadLimits } from "./adapters/postgres/threadLimit.ts";
 import {
   threadLimitAdministration,
@@ -312,6 +322,19 @@ export function composeProjectCreation(
     ...(grants === undefined ? {} : { grants }),
     ...(selector === undefined ? {} : { selector }),
   });
+}
+
+/** Deleting a project that never ran work and a workspace that holds no project, over the API role's doors and the authority they erase. */
+export function composeUnrunDeletions(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  erasure: AccessErasure,
+): UnrunDeletions {
+  const ports = { access, erasure };
+  return {
+    projects: projectDeletion(ports, postgresProjectDeletion(apiPool)),
+    tenants: tenantDeletion(ports, postgresTenantDeletion(apiPool)),
+  };
 }
 
 /** Wires where a project's sessions run to API-role credentials and the access that gates choosing it. */
