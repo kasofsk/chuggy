@@ -75,21 +75,26 @@ function creationCase(
           return Promise.resolve(answer);
         },
         recordGrants: () => Promise.resolve(),
+        vacated: () => Promise.resolve(false),
+        fillVacancy: () => Promise.resolve(),
       },
       ...(options.configured === false
         ? {}
         : {
-            grants: {
-              write: () => Promise.reject(new Error("never written alone")),
-              writeAll: (named) => {
-                if (options.grantFails === true)
-                  return Promise.reject(
-                    new ProjectAccessUnavailable("the write port refused"),
-                  );
-                grants.push(...named);
-                return Promise.resolve();
+            authority: {
+              grants: {
+                write: () => Promise.reject(new Error("never written alone")),
+                writeAll: (named) => {
+                  if (options.grantFails === true)
+                    return Promise.reject(
+                      new ProjectAccessUnavailable("the write port refused"),
+                    );
+                  grants.push(...named);
+                  return Promise.resolve();
+                },
+                remove: () => Promise.reject(new Error("never removed")),
               },
-              remove: () => Promise.reject(new Error("never removed")),
+              erasure: { projectErased: () => Promise.resolve() },
             },
           }),
     }),

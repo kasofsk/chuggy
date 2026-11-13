@@ -136,9 +136,9 @@ import { postgresProjectCreation } from "./adapters/postgres/projectCreation.ts"
 import {
   projectCreation,
   type ProjectCreation,
+  type ProjectCreationAuthority,
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
-import type { ProjectGrantWriter } from "./interpreter/projectGrant.ts";
 import type { Principal } from "./interpreter/principal.ts";
 import {
   postgresSelectorProjectSettings,
@@ -307,19 +307,19 @@ export interface SelectorLeadRuntime {
   readonly controlDeadlineMs: number;
 }
 
-/** Project creation over the API role's door, answering `NotConfigured` where no grant writer is composed. */
+/** Project creation over the API role's door, answering `NotConfigured` where no authority to write to is composed. */
 export function composeProjectCreation(
   apiPool: pg.Pool,
   access: ProjectAccess,
   claims: TenantClaims,
-  grants: ProjectGrantWriter | undefined,
+  authority: ProjectCreationAuthority | undefined,
   selector?: Principal,
 ): ProjectCreation {
   return projectCreation({
     access,
     claims,
     store: postgresProjectCreation(apiPool),
-    ...(grants === undefined ? {} : { grants }),
+    ...(authority === undefined ? {} : { authority }),
     ...(selector === undefined ? {} : { selector }),
   });
 }

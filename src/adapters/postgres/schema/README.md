@@ -42,6 +42,16 @@ active projects whose lease has expired by database time. It is deleted by
 lock and after moving it to `Deleting`, and only while it holds no journal
 entry and no execution, session, pool or action observation.
 
+`project_vacancy` — one row per name a deleted project vacated, so a project
+later made under it is not granted on before the authority's tuples left on the
+object are erased. Owned by the boundary owner, and the API role reaches it
+through `delete_unrun_project`, which inserts it, `project_vacated`, which
+reads it, and `fill_project_vacancy`, which deletes it only while a project
+stands under the name. Its key and identity are `(tenant, project)`, and it
+points at no row, because it outlives the project and its tenant. Its
+unfinished work is a row whose project stands, which the creator's next
+request for that tenant and project finishes before it writes the grants.
+
 `journal_entry` — the append-only decision log, partitioned by the composite
 key it carries into its own primary key `(tenant, project, seq)`. The
 ticket-service role is granted INSERT and SELECT and deliberately not UPDATE or

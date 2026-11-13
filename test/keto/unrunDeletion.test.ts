@@ -9,10 +9,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
-import { ketoAccessErasure } from "../../src/adapters/keto/accessErasure.ts";
 import { accessOwnerInvitationGrants } from "../../src/interpreter/accessOwnerInvitation.ts";
 import {
-  checkedProjectAccessSettings,
   projectAccessNamespace,
   projectAccessObject,
   projectAccessSiteNamespace,
@@ -21,7 +19,6 @@ import {
   projectAccessTenantObject,
 } from "../../src/interpreter/projectAccess.ts";
 import { projectCreationGrants } from "../../src/interpreter/projectCreation.ts";
-import { checkedProjectGrantSettings } from "../../src/interpreter/projectGrant.ts";
 import {
   asProjectId,
   type Partition,
@@ -29,22 +26,16 @@ import {
 import type { AccessTupleQuery } from "../../src/interpreter/accessPlane.ts";
 import {
   ketoHarnessClaims,
+  ketoHarnessErasure,
   ketoHarnessGrants,
   ketoHarnessIssuer,
   ketoHarnessPartition,
   ketoHarnessReadUrl,
   ketoHarnessSomeone,
   ketoHarnessTuples,
-  ketoHarnessWriteUrl,
 } from "./harness.ts";
 
-const erasure = ketoAccessErasure(
-  checkedProjectAccessSettings({
-    readUrl: ketoHarnessReadUrl(),
-    requestTimeoutMs: 2_000,
-  }),
-  checkedProjectGrantSettings({ writeUrl: ketoHarnessWriteUrl() }),
-);
+const erasure = ketoHarnessErasure();
 const grants = ketoHarnessGrants();
 const tuples = ketoHarnessTuples();
 

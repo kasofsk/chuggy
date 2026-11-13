@@ -2,7 +2,8 @@
  * The deletion doors against a real server: a project that never ran work is
  * deleted with everything it is, a project that did is refused with what holds
  * it, a tenant holding no project is deleted with its claims and links and its
- * name made again, and only the API reaches either door.
+ * name made again, a deleted project leaves its name vacant until a project
+ * standing under it fills the vacancy, and only the API reaches either door.
  */
 
 import assert from "node:assert/strict";
@@ -10,6 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { postgresForgeInstallationRecording } from "../../src/adapters/postgres/forgeInstallation.ts";
+import { postgresProjectCreation } from "../../src/adapters/postgres/projectCreation.ts";
 import {
   postgresProjectDeletion,
   postgresTenantDeletion,
@@ -17,6 +19,8 @@ import {
 import {
   apiRole,
   projectDeleteFunction,
+  projectVacancyFillFunction,
+  projectVacatedFunction,
   schedulerRole,
   tenantDeleteFunction,
   ticketServiceRole,
@@ -110,6 +114,7 @@ const unrunDeletionBeneath: Readonly<Record<string, string>> = {
   worker_pool: "WorkerPool",
   action_observation: "ActionObservation",
   project: "the project row, deleted last",
+  project_vacancy: "the name a deletion vacates, which outlives the project",
   selector_inventory_state:
     "the selector's cursor, a position and no row of the project's",
 };
@@ -249,7 +254,7 @@ test("a project that released nothing is deleted with its drafts, bindings, conf
   assert.equal(await capacityAccounts(partition), 1);
 
   assert.deepEqual(await store.delete(partition), { outcome: "Deleted" });
-  assert.deepEqual(await rowsNaming(partition), {});
+  assert.deepEqual(await rowsNaming(partition), { project_vacancy: 1 });
   assert.equal(await capacityAccounts(partition), 0);
   assert.equal(await store.holds(partition), undefined);
   assert.deepEqual(await store.delete(partition), { outcome: "NotFound" });
@@ -443,19 +448,48 @@ test("a tenant a member's runner is registered in is refused and named as holdin
   assert.equal(await tenantRows(partition.tenant), 1);
 });
 
-test("only the API executes the deletion doors", async () => {
+test("a deleted project leaves its name vacant, past its tenant, until a project standing under it fills the vacancy", async () => {
+  const partition = freshPartition("vacant");
+  const creation = postgresProjectCreation(apiPool);
+  assert.equal(await creation.vacated(partition), false);
+  assert.equal(await created(partition, "Unclaimed"), "Created:true");
+  assert.deepEqual(await postgresProjectDeletion(apiPool).delete(partition), {
+    outcome: "Deleted",
+  });
+  assert.equal(await creation.vacated(partition), true);
+  assert.deepEqual(
+    await postgresTenantDeletion(apiPool).delete(partition.tenant),
+    { outcome: "Deleted" },
+  );
+  await creation.fillVacancy(partition);
+  assert.equal(
+    await creation.vacated(partition),
+    true,
+    "a vacancy no project stands in stays",
+  );
+  assert.equal(await created(partition, "Unclaimed", "bob"), "Created:true");
+  assert.equal(await creation.vacated(partition), true);
+  await creation.fillVacancy(partition);
+  assert.equal(await creation.vacated(partition), false);
+  await creation.fillVacancy(partition);
+  assert.equal(await creation.vacated(partition), false);
+});
+
+test("only the API executes the deletion doors and the vacancy's", async () => {
+  const doors = [
+    [`SELECT * FROM ${projectDeleteFunction}('t','p')`, projectDeleteFunction],
+    [`SELECT * FROM ${tenantDeleteFunction}('t')`, tenantDeleteFunction],
+    [`SELECT ${projectVacatedFunction}('t','p')`, projectVacatedFunction],
+    [
+      `SELECT ${projectVacancyFillFunction}('t','p')`,
+      projectVacancyFillFunction,
+    ],
+  ] as const;
   for (const role of [schedulerRole, ticketServiceRole])
-    for (const call of [
-      `SELECT * FROM ${projectDeleteFunction}('t','p')`,
-      `SELECT * FROM ${tenantDeleteFunction}('t')`,
-    ])
+    for (const [call, door] of doors)
       assert.match(
         (await harness.attemptAs(role, call)) ?? "",
-        postgresHarnessDenial(
-          call.includes(projectDeleteFunction)
-            ? projectDeleteFunction
-            : tenantDeleteFunction,
-        ),
+        postgresHarnessDenial(door),
         `${role}: ${call}`,
       );
 });

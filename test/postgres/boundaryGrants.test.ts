@@ -45,6 +45,8 @@ import {
   projectCreateFunction,
   projectCreationGrantsFunction,
   projectDeleteFunction,
+  projectVacancyFillFunction,
+  projectVacatedFunction,
   projectDeletionHoldsFunction,
   tenantDeleteFunction,
   tenantDeletionHoldsFunction,
@@ -675,6 +677,16 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${projectDeleteFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectVacatedFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectVacancyFillFunction}(text,text)`,
     [apiRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
   ),

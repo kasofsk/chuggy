@@ -175,6 +175,7 @@ import {
 import { runnerReleasesPinned } from "./runnerReleases.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import { ketoAccessErasure } from "../adapters/keto/accessErasure.ts";
+import type { AccessErasure } from "../interpreter/unrunDeletion.ts";
 import {
   checkedProjectGrantSettings,
   type ProjectGrantWriter,
@@ -511,22 +512,27 @@ function nativeProjectGrants(): ProjectGrantWriter | undefined {
   return ketoProjectGrants(checkedProjectGrantSettings({ writeUrl }));
 }
 
+/** What erases the authority's tuples, or nothing where this deployment names no write port. */
+function nativeAccessErasure(
+  accessSettings: ProjectAccessSettings,
+): AccessErasure | undefined {
+  const writeUrl = process.env[ketoWriteUrlVariable];
+  if (writeUrl === undefined) return undefined;
+  return ketoAccessErasure(
+    accessSettings,
+    checkedProjectGrantSettings({ writeUrl }),
+  );
+}
+
 /** Deleting what never ran, or nothing where this deployment names no write port to erase its tuples through. */
 function nativeUnrunDeletions(
   pool: pg.Pool,
   access: ProjectAccess,
-  accessSettings: ProjectAccessSettings,
+  erasure: AccessErasure | undefined,
 ): UnrunDeletions | undefined {
-  const writeUrl = process.env[ketoWriteUrlVariable];
-  if (writeUrl === undefined) return undefined;
-  return composeUnrunDeletions(
-    pool,
-    access,
-    ketoAccessErasure(
-      accessSettings,
-      checkedProjectGrantSettings({ writeUrl }),
-    ),
-  );
+  return erasure === undefined
+    ? undefined
+    : composeUnrunDeletions(pool, access, erasure);
 }
 
 function requiredEnvironment(name: string): string {
@@ -1631,6 +1637,7 @@ async function main(): Promise<void> {
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
   const grants = nativeProjectGrants();
+  const erasure = nativeAccessErasure(accessSettings);
   const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
   const threads = nativeThreadPorts(pools, artifacts);
@@ -1661,7 +1668,9 @@ async function main(): Promise<void> {
       pool,
       access,
       ketoTenantClaims(accessSettings),
-      grants,
+      grants === undefined || erasure === undefined
+        ? undefined
+        : { grants, erasure },
       nativeSelectorPrincipal(authenticationConfig.issuer),
     ),
     composeExecutionPlacement(pool, access),
@@ -1679,7 +1688,7 @@ async function main(): Promise<void> {
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),
-    nativeUnrunDeletions(pool, access, accessSettings),
+    nativeUnrunDeletions(pool, access, erasure),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

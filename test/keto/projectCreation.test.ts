@@ -5,7 +5,8 @@
  * alone, a tenant tuples hold is nobody else's to make, a tenant no tuple holds
  * is made only by a principal the site permits `CreateTenant`, and a repeat by
  * the creator writes the grants only until the door records them, so restores
- * no default removed after that.
+ * no default removed after that, and a project made under a deleted one's name
+ * holds nothing written for its predecessor.
  */
 
 import assert from "node:assert/strict";
@@ -13,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { postgresProjectCreation } from "../../src/adapters/postgres/projectCreation.ts";
+import { postgresProjectDeletion } from "../../src/adapters/postgres/unrunDeletion.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import {
@@ -27,9 +29,11 @@ import {
   projectCreationGrants,
   type TenantStanding,
 } from "../../src/interpreter/projectCreation.ts";
+import { projectDeletion } from "../../src/interpreter/unrunDeletion.ts";
 import {
   projectAuthorityDefaults,
   projectPrincipalGrant,
+  projectRelationGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
   tenantAuthorityDefaults,
@@ -49,6 +53,7 @@ import {
   ketoHarnessAsTenantCreator,
   ketoHarnessAuthorityHeld,
   ketoHarnessClaims,
+  ketoHarnessErasure,
   ketoHarnessGrants,
   ketoHarnessHeldNothing,
   ketoHarnessIssuer,
@@ -64,12 +69,17 @@ const grants = ketoHarnessGrants();
 const apiPool = postgresHarnessRolePool(apiRole);
 after(() => apiPool.end());
 const store = postgresProjectCreation(apiPool);
+const erasure = ketoHarnessErasure();
 const service = projectCreation({
   access,
   claims: ketoHarnessClaims(),
   store,
-  grants,
+  authority: { grants, erasure },
 });
+const deletion = projectDeletion(
+  { access, erasure },
+  postgresProjectDeletion(apiPool),
+);
 
 /** A creation by a principal the site permits `CreateTenant` while it is asked. */
 function permittedCreate(
@@ -467,4 +477,41 @@ test("a principal holding the site's tenant creators directly is permitted `Crea
   await ketoHarnessWithSiteAdministrator(async (siteAdministrator) => {
     assert.equal(await permitted(siteAdministrator), true);
   });
+});
+
+test("a project made under a deleted one's name holds no grant that landed on its predecessor after the deletion", async () => {
+  const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
+  const invitee = oidcPrincipal(ketoHarnessIssuer, `invitee-${randomUUID()}`);
+  const request = namedCreation("vacated");
+  assert.equal((await permittedCreate(creator, request)).result, "Created");
+  assert.deepEqual(await deletion.delete(creator, request), {
+    result: "Deleted",
+  });
+  await grants.writeAll([projectRelationGrant(invitee, request, "developers")]);
+  assert.notDeepEqual(await held(invitee, request), []);
+  const again = {
+    ...request,
+    operation: asOperationId(`operation-${randomUUID()}`),
+  };
+  assert.equal((await service.create(creator, again)).result, "Created");
+  assert.deepEqual(await held(invitee, request), []);
+  assert.deepEqual(await held(creator, request), allProjectAccessKinds);
+  assert.equal(await store.vacated(request), false);
+});
+
+test("a project granted on before it was ever made keeps that grant when it is made", async () => {
+  const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
+  const invitee = oidcPrincipal(ketoHarnessIssuer, `invitee-${randomUUID()}`);
+  const first = namedCreation("advance");
+  assert.equal((await permittedCreate(creator, first)).result, "Created");
+  const second = {
+    ...namedCreation("advance"),
+    tenant: first.tenant,
+    project: asProjectId("provisioned"),
+  };
+  await grants.writeAll([projectRelationGrant(invitee, second, "developers")]);
+  const before = await held(invitee, second);
+  assert.notDeepEqual(before, []);
+  assert.equal((await service.create(creator, second)).result, "Created");
+  assert.deepEqual(await held(invitee, second), before);
 });

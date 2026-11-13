@@ -20,6 +20,14 @@
  * grant a role on whichever project next takes the name. A member's runner
  * serving it stops serving it; the runner stays the member's.
  *
+ * A DELETED PROJECT LEAVES ITS NAME VACANT, a `project_vacancy` row that names
+ * no row and outlives its tenant. A grant can still land on the project's
+ * object after its erasure, from a redemption spent before the deletion or an
+ * erasure lost, and a project later made under the name would inherit it. The
+ * API asks `project_vacated` before it grants on a new project, erases the
+ * object where the name is vacant, and only then calls `fill_project_vacancy`,
+ * which removes the row only while the project stands.
+ *
  * THE DOOR MOVES THE PROJECT TO `Deleting` FIRST, under its row lock, and the
  * triggers that hold a binding, a bind operation, an epic's revision and a
  * creation record immutable let a row go only while its project stands there.
@@ -41,6 +49,8 @@ import {
   boundaryOwnerRole,
   projectDeleteFunction,
   projectDeletionHoldsFunction,
+  projectVacancyFillFunction,
+  projectVacatedFunction,
   tenantDeleteFunction,
   tenantDeletionHoldsFunction,
   type Migration,
@@ -48,6 +58,8 @@ import {
 
 const projectHolds = `public.${projectDeletionHoldsFunction}(in_tenant text, in_project text)`;
 const projectDelete = `public.${projectDeleteFunction}(in_tenant text, in_project text)`;
+const projectVacated = `public.${projectVacatedFunction}(in_tenant text, in_project text)`;
+const projectVacancyFill = `public.${projectVacancyFillFunction}(in_tenant text, in_project text)`;
 const tenantHolds = `public.${tenantDeletionHoldsFunction}(in_tenant text)`;
 const tenantDelete = `public.${tenantDeleteFunction}(in_tenant text)`;
 
@@ -238,6 +250,11 @@ export const migration174: Migration = {
              USING ERRCODE='integrity_constraint_violation';
          END IF;
          RETURN NEW; END $$`,
+    `CREATE TABLE public.project_vacancy (
+       tenant text NOT NULL,
+       project text NOT NULL,
+       PRIMARY KEY (tenant,project))`,
+    `GRANT SELECT, INSERT, DELETE ON public.project_vacancy TO ${boundaryOwnerRole}`,
     `CREATE FUNCTION ${projectHolds} RETURNS text[]
        LANGUAGE sql STABLE SECURITY DEFINER
        SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -274,11 +291,32 @@ export const migration174: Migration = {
            DELETE FROM public.invite_link l WHERE l.tenant=in_tenant
               AND l.projects @> jsonb_build_array(jsonb_build_object('project', in_project));
            DELETE FROM public.project p WHERE p.tenant=in_tenant AND p.project=in_project;
+           INSERT INTO public.project_vacancy(tenant,project) VALUES(in_tenant,in_project)
+             ON CONFLICT DO NOTHING;
            DELETE FROM public.capacity_account c
             WHERE c.account=public.project_capacity_account(in_tenant, in_project);
            RETURN QUERY SELECT 'Deleted'::text, ARRAY[]::text[];
          END $$`,
     ...owned(projectDelete),
+    `CREATE FUNCTION ${projectVacated} RETURNS boolean
+       LANGUAGE sql STABLE SECURITY DEFINER
+       SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+       AS $$
+         SELECT EXISTS(SELECT 1 FROM public.project_vacancy v
+                        WHERE v.tenant=in_tenant AND v.project=in_project)
+       $$`,
+    ...owned(projectVacated),
+    `CREATE FUNCTION ${projectVacancyFill} RETURNS void
+       LANGUAGE sql VOLATILE SECURITY DEFINER
+       SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+       AS $$
+         DELETE FROM public.project_vacancy v
+          WHERE v.tenant=in_tenant AND v.project=in_project
+            AND EXISTS(SELECT 1 FROM public.project p
+                        WHERE p.tenant=in_tenant AND p.project=in_project
+                          AND p.lifecycle<>'Deleting')
+       $$`,
+    ...owned(projectVacancyFill),
     `CREATE FUNCTION ${tenantHolds} RETURNS text[]
        LANGUAGE sql STABLE SECURITY DEFINER
        SET search_path TO 'pg_catalog', 'public', 'pg_temp'

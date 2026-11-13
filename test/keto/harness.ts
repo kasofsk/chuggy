@@ -29,6 +29,8 @@ import {
   ketoTenantClaims,
 } from "../../src/adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../../src/adapters/keto/projectGrants.ts";
+import { ketoAccessErasure } from "../../src/adapters/keto/accessErasure.ts";
+import type { AccessErasure } from "../../src/interpreter/unrunDeletion.ts";
 import { ketoAccessTuples } from "../../src/adapters/keto/accessTuples.ts";
 import type { AccessTupleReader } from "../../src/interpreter/accessPlane.ts";
 import {
@@ -125,6 +127,17 @@ export function ketoHarnessReadinessAt(readUrl: string): {
 /** The writer as the provisioning command composes it, over the same authority. */
 export function ketoHarnessGrants(): ProjectGrantWriter {
   return ketoProjectGrants(
+    checkedProjectGrantSettings({ writeUrl: ketoHarnessWriteUrl() }),
+  );
+}
+
+/** The erasure deletion composes, over the same authority. */
+export function ketoHarnessErasure(): AccessErasure {
+  return ketoAccessErasure(
+    checkedProjectAccessSettings({
+      readUrl: ketoHarnessReadUrl(),
+      requestTimeoutMs: 2_000,
+    }),
     checkedProjectGrantSettings({ writeUrl: ketoHarnessWriteUrl() }),
   );
 }

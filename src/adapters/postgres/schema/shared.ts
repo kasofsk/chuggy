@@ -402,6 +402,12 @@ export const projectDeletionHoldsFunction = "project_deletion_holds";
 /** The door a project that never ran work is deleted through. */
 export const projectDeleteFunction = "delete_unrun_project";
 
+/** Whether a deleted project's name is vacant, read by the API before it grants on a project made under it. */
+export const projectVacatedFunction = "project_vacated";
+
+/** The door a vacancy is filled through, once a project made under the name has its predecessor's tuples erased. */
+export const projectVacancyFillFunction = "fill_project_vacancy";
+
 /** What a tenant holds that keeps it from deletion, read by the API. */
 export const tenantDeletionHoldsFunction = "tenant_deletion_holds";
 
