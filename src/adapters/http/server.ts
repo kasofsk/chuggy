@@ -1804,6 +1804,16 @@ function registerThemeChoice(
   });
 }
 
+/** What a declared action reported, and how far each ticket's landing has reached through the actions. */
+function registerActions(
+  app: FastifyInstance,
+  actionReports: ActionReports | undefined,
+  actionReach: TicketActionReaches | undefined,
+): void {
+  if (actionReports !== undefined) registerActionReports(app, actionReports);
+  if (actionReach !== undefined) registerActionReach(app, actionReach);
+}
+
 /** What a person keeps of their own in no workspace: their agent accounts and their appearance. */
 function registerOwnSettings(
   app: FastifyInstance,
@@ -3465,8 +3475,7 @@ export function createNativeHttpApp(
   registerProjectViews(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
-  if (actionReports !== undefined) registerActionReports(app, actionReports);
-  if (actionReach !== undefined) registerActionReach(app, actionReach);
+  registerActions(app, actionReports, actionReach);
   registerLandingReads(app, landings, landingQueues);
   registerOwnSettings(app, agentAccounts, appearance);
   registerFailures(app);

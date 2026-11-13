@@ -78,13 +78,13 @@ export function postgresAppearance(pool: pg.Pool): AppearanceStore {
     write: async (principal, theme, document) => {
       const found = await pool.query<{ written: boolean | null }>(
         sql`SELECT write_owned_theme(${principal},${theme}::bigint,
-              ${JSON.stringify(document)}::jsonb) AS written`,
+              ${JSON.stringify(document)}::jsonb)::boolean AS written`,
       );
       return found.rows[0]?.written === true;
     },
     delete: async (principal, theme) => {
       const found = await pool.query<{ deleted: boolean | null }>(
-        sql`SELECT delete_owned_theme(${principal},${theme}::bigint) AS deleted`,
+        sql`SELECT delete_owned_theme(${principal},${theme}::bigint)::boolean AS deleted`,
       );
       return found.rows[0]?.deleted === true;
     },
@@ -99,7 +99,7 @@ export function postgresAppearance(pool: pg.Pool): AppearanceStore {
       const owned = choice?.kind === "Owned" ? choice.theme : null;
       const found = await pool.query<{ chosen: boolean | null }>(
         sql`SELECT write_theme_choice(${principal},${builtIn}::text,
-              ${owned}::bigint) AS chosen`,
+              ${owned}::bigint)::boolean AS chosen`,
       );
       return found.rows[0]?.chosen === true;
     },

@@ -407,6 +407,11 @@
   {
     "release": "1.81.0",
     "wire": "2550ab9188ee97dc8f6b033e24f72c6d851ff10978262b9bb71fab4d50c5f2ea",
-    "files": "7433b9aadc7292e71e1d0ec196ad663fbb1a8937ffc2d7a65d8561ecaaf6a417"
+    "files": "97fca05802de1b14af41fd6fb93d9a08bed609c5218aa59df8c979e6201af36c"
+  },
+  {
+    "release": "1.83.0",
+    "wire": "833fe310780633bad1349625a79792a6d34cd109af1aed459cdc51d9eae015e9",
+    "files": "c51c868d602d0be55a6fbd1f42f81a52fc67507b7a1fd5a5a700eef95f6a1fce"
   }
 ]
