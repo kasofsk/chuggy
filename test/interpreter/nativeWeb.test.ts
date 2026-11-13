@@ -274,6 +274,12 @@ function readStore(calls: string[]): NativeReadStore {
       calls.push(`read:nativeActions:page:${String(query.limit)}`);
       return Promise.resolve({ actions: [] });
     },
+    ticketNativeActionHistory: (_partition, ticket, query) => {
+      calls.push(
+        `read:nativeActionHistory:${String(ticket)}:${String(query.limit)}`,
+      );
+      return Promise.resolve({ actions: [] });
+    },
     nativeActionAsked: () => {
       calls.push("read:nativeActionAsked");
       return Promise.resolve({ kind: "TicketEscalation" as const });
@@ -709,6 +715,36 @@ test("a project's open actions authorize and enforce their page bound", async ()
   await assert.rejects(
     () =>
       allowed.web.nativeActions(principal, partition, {
+        limit: nativeActionPageLimitMax + 1,
+      }),
+    RangeError,
+  );
+});
+
+test("a ticket's action history conceals a ticket its caller may not read, and enforces its page bound", async () => {
+  const denied = boundary(false);
+  assert.equal(
+    await denied.web.ticketNativeActionHistory(principal, partition, id(1), {
+      limit: 10,
+    }),
+    undefined,
+  );
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.ticketNativeActionHistory(principal, partition, id(1), {
+      limit: 10,
+    }),
+    { actions: [] },
+  );
+  assert.deepEqual(allowed.calls, [
+    "authorize:Read",
+    "read:nativeActionHistory:1:10",
+  ]);
+  await assert.rejects(
+    () =>
+      allowed.web.ticketNativeActionHistory(principal, partition, id(1), {
         limit: nativeActionPageLimitMax + 1,
       }),
     RangeError,

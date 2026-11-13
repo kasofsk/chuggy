@@ -136,6 +136,7 @@ const documentRouteNames = [
   "ticketActionReach",
   "ticketAgenticRefusals",
   "ticketLandings",
+  "ticketNativeActionHistory",
   "ticketNativeActions",
   "tickets",
   "workerPoolRegistrationTokens",

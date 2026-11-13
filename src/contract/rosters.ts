@@ -769,6 +769,10 @@ export const nativeActionKindResolutions = {
   EvaluationApproval: ["Approve", "Reject"],
 } as const;
 
+/** Where a native action stands: still asked, answered, or settled without an answer. */
+export const nativeActionStates = ["Open", "Resolved", "Withdrawn"] as const;
+export type NativeActionState = (typeof nativeActionStates)[number];
+
 /** Every resolution the wire names, each once, in the order the kinds first name them. */
 export const nativeActionResolutions = [
   "Resume",

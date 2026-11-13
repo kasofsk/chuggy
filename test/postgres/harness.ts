@@ -22,6 +22,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
+import type { ConfigurationSelection } from "../../src/contract/configurationSelection.ts";
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
@@ -804,6 +805,7 @@ export async function postgresHarnessReleaseSubmission(
   authoring: ReleaseAuthoring = plainAuthoring,
   canonical: CanonicalConfiguration = postgresHarnessConfiguration,
   overrides?: ConfigurationOverrides,
+  selection?: ConfigurationSelection,
 ): Promise<Submission> {
   const revision = asConfigurationRevisionId(`config-${label}-${randomUUID()}`);
   const base = postgresHarnessSubmission(partition, label);
@@ -832,6 +834,7 @@ export async function postgresHarnessReleaseSubmission(
       await postgresHarnessBinding(harness, partition),
     ),
     ...(overrides === undefined ? {} : { overrides }),
+    ...(selection === undefined ? {} : { selection }),
   });
   if (created.created !== "Created")
     throw new Error("postgres harness: release draft was not created");
@@ -890,6 +893,7 @@ export function postgresHarnessAccepted(
   authoring: ReleaseAuthoring = plainAuthoring,
   canonical: CanonicalConfiguration = postgresHarnessConfiguration,
   overrides?: ConfigurationOverrides,
+  selection?: ConfigurationSelection,
 ): Promise<DecisionInput> {
   return (async () => {
     const submission =
@@ -901,6 +905,7 @@ export function postgresHarnessAccepted(
             authoring,
             canonical,
             overrides,
+            selection,
           )
         : postgresHarnessDecisionSubmission(partition, label, index);
     const accepted = await harness.inbox.accept(submission);
@@ -1056,6 +1061,7 @@ export async function postgresHarnessHistory(
   canonical: CanonicalConfiguration = postgresHarnessConfiguration,
   overrides?: ConfigurationOverrides,
   config: Config = refinementInstance,
+  selection?: ConfigurationSelection,
 ): Promise<ProjectMemory> {
   const writer = postgresHarnessWriter(harness, config);
   let memory = await projectWriterLoad(
@@ -1071,6 +1077,7 @@ export async function postgresHarnessHistory(
       authoring,
       canonical,
       overrides,
+      selection,
     );
     const step = await projectWriterDecide(writer, memory, item);
     if (step.decided.decided !== "Committed") {
