@@ -2722,3 +2722,28 @@ test("a lead route's no-lead answer parses without its reason and with fields it
     false,
   );
 });
+
+/** A server that predates `held`, or a lead nothing holds, answers a lead without it, and a console reads that body rather than refusing it. */
+test("a lead route's lead answer parses with what holds it and without it", () => {
+  const lead = {
+    session: "lead-atlas",
+    state: "Open",
+    attention: "Monitoring",
+    notificationCursor: 4,
+    handoffNote: { bytes: 2, preview: "{}", truncated: false },
+    turns: [],
+    streams: [],
+  };
+  assert.deepEqual(leadReadResponseSchema.parse(lead), lead);
+  for (const reason of ["Paused", "SelectorNotGranted"] as const)
+    assert.deepEqual(
+      leadReadResponseSchema.parse({ ...lead, held: { reason } }),
+      { ...lead, held: { reason } },
+    );
+  for (const held of [{ reason: "NotNeeded" }, "Paused", true])
+    assert.equal(
+      leadReadResponseSchema.safeParse({ ...lead, held }).success,
+      false,
+      JSON.stringify(held),
+    );
+});
