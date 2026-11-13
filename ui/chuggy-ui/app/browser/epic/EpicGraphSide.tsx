@@ -92,7 +92,7 @@ function EpicGraphSideList(props: {
 }
 
 /** Dispatch, offered as the ticket list offers it on a Ready row. */
-export function EpicGraphSideDispatch(props: {
+function EpicGraphSideDispatch(props: {
   readonly partition: PartitionIdentity;
   readonly row: ProjectTableRow;
 }): ReactNode {
@@ -153,6 +153,31 @@ export function EpicGraphSidePlace(props: {
   return <p className="epic-graph-side-place">{placed.join(" · ")}</p>;
 }
 
+/** A link to the ticket's page, and dispatch for a Ready ticket where the
+ * ticket list would offer it. */
+export function EpicGraphSideActions(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: EpicGraphTicket;
+  readonly row: ProjectTableRow | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  const { node, standing } = props.ticket;
+  return (
+    <div className="epic-graph-side-actions">
+      <Link
+        to="/$tenant/$project/tickets/$ticket"
+        params={{ ...props.partition, ticket: String(node.ticket) }}
+        className={buttonLookClassName({ size: "sm" })}
+      >
+        {text({ id: "epics-side-open" })}
+      </Link>
+      {standing === "Ready" && props.row !== undefined ? (
+        <EpicGraphSideDispatch partition={props.partition} row={props.row} />
+      ) : null}
+    </div>
+  );
+}
+
 export function EpicGraphSide(props: {
   readonly partition: PartitionIdentity;
   readonly graph: EpicGraphResponse;
@@ -204,18 +229,11 @@ export function EpicGraphSide(props: {
         held={held}
         onTicket={props.onTicket}
       />
-      <div className="epic-graph-side-actions">
-        <Link
-          to="/$tenant/$project/tickets/$ticket"
-          params={{ ...props.partition, ticket: String(node.ticket) }}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "epics-side-open" })}
-        </Link>
-        {standing === "Ready" && props.row !== undefined ? (
-          <EpicGraphSideDispatch partition={props.partition} row={props.row} />
-        ) : null}
-      </div>
+      <EpicGraphSideActions
+        partition={props.partition}
+        ticket={props.ticket}
+        row={props.row}
+      />
     </aside>
   );
 }

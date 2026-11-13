@@ -12,7 +12,6 @@
  * `style`.
  */
 
-import { Link } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -26,9 +25,9 @@ import { epicGraphSheetScrollOf } from "../../core/epicGraphSheet.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import { useViewportMotion } from "../shell/viewport.ts";
-import { Button, buttonLookClassName } from "../ui/Button.tsx";
+import { Button } from "../ui/Button.tsx";
 import {
-  EpicGraphSideDispatch,
+  EpicGraphSideActions,
   EpicGraphSideMark,
   EpicGraphSidePlace,
 } from "./EpicGraphSide.tsx";
@@ -179,9 +178,13 @@ function EpicGraphSheetHead(props: {
         onClick={props.onClose}
       >
         <svg
-          className="epic-graph-sheet-close"
-          viewBox="0 0 16 16"
           aria-hidden="true"
+          className="size-4"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
         >
           <path d="M4 4l8 8M12 4l-8 8" />
         </svg>
@@ -198,23 +201,17 @@ function EpicGraphSheetFoot(props: {
   readonly layered: EpicGraphLayered;
   readonly row: ProjectTableRow | undefined;
 }): ReactNode {
-  const text = useCopyText();
-  const { node, standing } = props.ticket;
   return (
     <div className="epic-graph-sheet-foot">
-      <EpicGraphSidePlace ticket={node.ticket} layered={props.layered} />
-      <div className="epic-graph-side-actions">
-        <Link
-          to="/$tenant/$project/tickets/$ticket"
-          params={{ ...props.partition, ticket: String(node.ticket) }}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "epics-side-open" })}
-        </Link>
-        {standing === "Ready" && props.row !== undefined ? (
-          <EpicGraphSideDispatch partition={props.partition} row={props.row} />
-        ) : null}
-      </div>
+      <EpicGraphSidePlace
+        ticket={props.ticket.node.ticket}
+        layered={props.layered}
+      />
+      <EpicGraphSideActions
+        partition={props.partition}
+        ticket={props.ticket}
+        row={props.row}
+      />
     </div>
   );
 }

@@ -621,15 +621,6 @@
     color: var(--epic-tone);
   }
 
-  .epic-graph-sheet-close {
-    width: 1rem;
-    height: 1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-width: var(--width-epic-graph-line);
-  }
-
   .epic-graph-sheet-title {
     display: -webkit-box;
     margin: 0;
