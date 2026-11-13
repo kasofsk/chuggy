@@ -266,6 +266,12 @@
     --width-epic-history-revision: 8rem; /* epic: a history row's revision, before what changed */
     --size-progress-swatch: 0.5rem; /* epic: a group's key under the bar */
     --width-epic-graph-side: 17rem; /* epic: the selected ticket beside its graph */
+    --width-epic-graph-card: 12rem; /* epic: a card on the graph, before its layer wraps */
+    --width-epic-graph-card-least: 10rem; /* epic: the narrowest that card is drawn */
+    --width-epic-graph-goal: 38rem; /* epic: the goal, across the foot of the graph */
+    --width-epic-graph-gutter: 2.5rem; /* epic: a layer's number and count, beside its cards */
+    --size-epic-graph-port: 0.375rem; /* epic: a dependency's dot along a card's top */
+    --size-epic-graph-step: 1.25rem; /* epic: a card's step on the longest chain */
     --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
   }
 

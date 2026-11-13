@@ -133,6 +133,7 @@ chat-offer-unread = Not open here · Its reply would be older than the { -turn(f
 chat-offer-draft-released = { -draft(case: "upper") } { $ticket } is { -release(form: "ed") }
 chat-offer-draft-deleted = { -draft(case: "upper") } { $ticket } is deleted
 chat-offer-ticket-phase = #{ $ticket } is { $phase }
+chat-offer-waiting = Waits on these to be { -release(form: "ed") } first
 chat-offer-unsent = { $settled } · Reply not sent
 chat-offer-resend = Send reply
 chat-offer-confirm = Confirm
