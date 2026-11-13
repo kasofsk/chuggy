@@ -1182,7 +1182,29 @@ async function finalizerLandable(
     candidate,
     tally,
   );
-  return landing === undefined ? undefined : { target, landing };
+  return landing === undefined
+    ? undefined
+    : { target: finalizerLandableOnBase(subject, target, landing), landing };
+}
+
+/**
+ * The target a proposal whose head the remote does not hold yet is integrated
+ * against: that head at the base the proposal opens into, where the target
+ * pinned for it was read from another ref. Otherwise the target as it is.
+ */
+function finalizerLandableOnBase(
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  landing: ObservedTarget | "Unheld",
+): ObservedTarget {
+  if (
+    landing === "Unheld" ||
+    !briefFinalizationOpensProposal(subject.view.finalization) ||
+    target.baseRef === undefined ||
+    target.baseRef === landing.ref
+  )
+    return target;
+  return { ref: target.ref, commit: landing.commit, baseRef: landing.ref };
 }
 
 /** Re-observes and integrates one candidate, however that candidate was prepared. */

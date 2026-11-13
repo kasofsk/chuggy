@@ -4406,6 +4406,116 @@ test("a serialized landing by pull request sent back to re-check records why, an
   assert.notEqual(store.attempts[0]?.target.ref, landingBranch);
 });
 
+/**
+ * A remote that does not hold the proposal's head, holds the landing branch at
+ * `landing` and its default at `main`, and proves an accepted commit holds
+ * only the tip `held`.
+ */
+function gitUnpushedHead(
+  landing: string,
+  main: string,
+  held: string,
+): GitRecorder {
+  const git = recordingGit();
+  git.observeTarget = (repository) => {
+    git.observations.push(repository);
+    const ref = repository.targetRef ?? "refs/heads/main";
+    return Promise.resolve<TargetObserved>(
+      ref === briefBranch
+        ? { observed: "Unreadable", evidence: "RefUnreadable" }
+        : {
+            observed: "Target",
+            target: {
+              ref: asGitRefName(ref),
+              commit: asGitObjectId(
+                commitOf(ref === landingBranch ? landing : main),
+              ),
+            },
+          },
+    );
+  };
+  git.proveTargetContained = (question) => {
+    git.containedQuestions.push(question);
+    return Promise.resolve(
+      question.target.commit === commitOf(held) ? "Contained" : "Uncontained",
+    );
+  };
+  return git;
+}
+
+/** A serialized ticket whose brief opens a pull request from its own branch into `target`, the remote's default where it names none. */
+function proposingSerialized(
+  store: FinalizerRecorder,
+  git: GitPromotionPort,
+  target: string | undefined,
+): FinalizerService {
+  return {
+    ...serviceOf(store, git),
+    forges: forgesOf(recordingForge(store)),
+    ticketBriefs: briefsOf(
+      briefBranch,
+      target,
+      "PullRequestMerge",
+      "Serialized",
+    ),
+  };
+}
+
+test("a serialized pull request into another branch from an unpushed head is proved against that branch, so the default moving sends nothing back", async () => {
+  const store = sourcedStore();
+  const git = gitUnpushedHead("b", "e", "b");
+
+  const report = await passOver(proposingSerialized(store, git, landingBranch));
+
+  assert.equal(report.holds, 0);
+  assert.deepEqual(
+    git.containedQuestions.map((each) => each.target),
+    [{ ref: briefBranch, commit: commitOf("b"), baseRef: landingBranch }],
+  );
+  assert.equal(store.attempts.length, 1);
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+  assert.equal(store.attempts[0]?.candidate, commitOf("c"));
+  assert.deepEqual(store.attempts[0]?.target, {
+    ref: briefBranch,
+    commit: commitOf("b"),
+    baseRef: landingBranch,
+  });
+});
+
+test("a serialized pull request into another branch from an unpushed head is sent back TargetMoved with that base where that branch moved", async () => {
+  const store = sourcedStore();
+  const git = gitUnpushedHead("b", "e", "e");
+
+  const report = await passOver(proposingSerialized(store, git, landingBranch));
+
+  assert.equal(report.holds, 0);
+  assert.deepEqual(git.integrations, []);
+  assert.equal(store.attempts.length, 1);
+  const sent = store.attempts[0];
+  assert.equal(sent?.failureKind, "RecheckRequired");
+  assert.equal(sent?.recheckReason, "TargetMoved");
+  assert.equal(sent?.recheckBaseRef, landingBranch);
+  assert.equal(
+    sent?.target.commit,
+    commitOf("b"),
+    "the rework starts at the base, and none of the default's commits is brought into it",
+  );
+});
+
+test("a serialized pull request into the default branch from an unpushed head is proved against the target pinned over that default", async () => {
+  const store = sourcedStore();
+  const git = gitUnpushedHead("b", "a", "e");
+
+  await passOver(proposingSerialized(store, git, undefined));
+
+  assert.deepEqual(
+    git.containedQuestions.map((each) => each.target),
+    [{ ref: briefBranch, commit: commitOf("a"), baseRef: "refs/heads/main" }],
+  );
+  assert.equal(store.attempts[0]?.recheckReason, "TargetMoved");
+  assert.equal(store.attempts[0]?.recheckBaseRef, "refs/heads/main");
+});
+
 /** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
 async function stackedMergeConcluding(
   stack: EvaluationStack | undefined,
