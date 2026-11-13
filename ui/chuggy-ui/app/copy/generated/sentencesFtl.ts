@@ -67,6 +67,7 @@ sentences-refusal-selection-unknown = { -workload(case: "upper") }, plan or { -l
 sentences-refusal-selection-unsupported = Selection needs a version 2 { -configuration }
 sentences-refusal-program-exceeds-plan = Program goes past the plan's { -stage(form: "plural") }
 sentences-refusal-program-skips-checks = Program skips the { -brief }'s { -brief-check(form: "plural") } · Restore them
+sentences-refusal-program-stage-out-of-position = Program keeps a later { -stage } of the plan without an earlier one · Keep the earlier ones too
 sentences-refusal-overrides-unsupported = { -override(case: "upper", form: "plural") } do not fit this { -configuration }
 sentences-refusal-overrides-unknown = { -override(case: "upper", form: "plural") } name an unknown { -workload } or prompt
 sentences-refusal-capacity-reached = { -project(case: "upper") } full · Finish or { -revoke } { -ticket(form: "a") }

@@ -168,6 +168,7 @@ import { migration167 } from "./167-session-pause-named-credentials.ts";
 import { migration168 } from "./168-agent-account-credential-standing.ts";
 import { migration169 } from "./169-native-action-history.ts";
 import { migration170 } from "./170-agent-account-pause-live-credentials.ts";
+import { migration171 } from "./171-program-stage-out-of-position.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -341,4 +342,5 @@ export const migrations: readonly Migration[] = [
   migration168,
   migration169,
   migration170,
+  migration171,
 ];
