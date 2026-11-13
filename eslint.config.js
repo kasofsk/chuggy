@@ -355,7 +355,18 @@ export default tseslint.config(
                 connections: [
                   {
                     databaseUrl: process.env.CHUG_SAFEQL_DATABASE_URL,
-                    targets: [{ wrapper: { regex: "(client|pool)\\.query" } }],
+                    // A json or jsonb column is `unknown` rather than the
+                    // default `any`, which matches every declared type. The
+                    // checker reads a declared `unknown | null` as `unknown`,
+                    // which already holds null, so a nullable one is compared
+                    // the same way.
+                    targets: [
+                      {
+                        wrapper: { regex: "(client|pool)\\.query" },
+                        transform: [["\\bnull \\| unknown\\b", "unknown"]],
+                      },
+                    ],
+                    overrides: { types: { json: "unknown", jsonb: "unknown" } },
                   },
                 ],
               },
