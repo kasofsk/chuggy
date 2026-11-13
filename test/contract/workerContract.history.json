@@ -433,5 +433,10 @@
     "release": "1.86.0",
     "wire": "d95fc35620c9787298e13e5c008069d68ed5f347a31b280bc560bfd94f1350cc",
     "files": "1638d6de473dd601f6996034b38a787f1a6389454edde7db9a170a09ce304a03"
+  },
+  {
+    "release": "1.87.0",
+    "wire": "be22e9dbe8292877fadecf4086e55e5d5d992fc7cf231557fb12598356ef4758",
+    "files": "6716d31df2a90faa29191957dd8721f16e6bd2c6d1d368b3cbb942a85c8b7ab2"
   }
 ]
