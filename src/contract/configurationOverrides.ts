@@ -33,10 +33,10 @@
  * `skip_planned_evaluations` permit. The plan a ticket would run without its
  * overrides is the one its selection names in the catalog, or the catalog's
  * default where the catalog names no such plan; `overridesPlanShort` holds
- * that for each workload name, the program runs it at as many positions of the
- * selected plan as that plan has. A workload is the same evaluator under its
- * name however a ticket overrides its fields, as it was before a plan could
- * be replaced, so moving evaluators between stages is no less, and dropping
+ * that for each workload name, the program runs it at no fewer positions of
+ * the selected plan than the plan without the overrides holds it at. A
+ * workload is the same evaluator under its name however a ticket overrides
+ * its fields, so moving evaluators between stages is no less, and dropping
  * one, or one of several runs of it, is.
  *
  * THE EFFECTIVE CONFIGURATION IS STILL A CONFIGURATION, and it is judged by
