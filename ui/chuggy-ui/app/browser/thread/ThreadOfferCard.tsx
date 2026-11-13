@@ -17,6 +17,12 @@
  * also fenced to the revision offered, so a ticket that moves after the card
  * was drawn is refused rather than revoked.
  *
+ * A RELEASE WAITS ON ITS DRAFT DEPENDENCIES. Each dependency the draft names
+ * is read from the same stream as a draft, and while any is still one the card
+ * names them and draws Decline without Confirm, a release of it being refused
+ * until they are released; one not read yet draws the card as its unread
+ * subject would be.
+ *
  * A REPLY THE MAILBOX REFUSED IS SENT AGAIN, NOT LOST. The reply is kept in
  * this browser until the mailbox takes it, and a card holding one draws it
  * with Send reply whatever its subject now says.
@@ -27,12 +33,16 @@
  * another, is the one already in the mailbox.
  */
 
+import { useQueries } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { PublicMutation } from "../../../../../src/contract/requests.ts";
-import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
+import type {
+  DraftResponse,
+  ThreadResponse,
+} from "../../../../../src/contract/responses.ts";
 import type { ThreadOfferReply } from "../../../../../src/contract/threadOffers.ts";
 import { apiReplyThreadOffer } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
@@ -65,19 +75,25 @@ import {
   threadOfferUnsentKept,
   threadOfferUnsentLetGo,
   threadOfferUnsentOf,
+  threadOfferWaitingSentence,
 } from "../../core/threadOffers.ts";
 import type {
   ThreadOfferAnswer,
   ThreadOfferCall,
   ThreadOfferStanding,
 } from "../../core/threadOffers.ts";
-import { usePanelState } from "../api.ts";
+import {
+  panelQueryState,
+  usePanelQueryOptions,
+  usePanelState,
+} from "../api.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes, persistentStore } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { TicketReference } from "../ui/TicketReference.tsx";
 import {
   ThreadOfferDraftSubject,
   ThreadOfferTicketSubject,
@@ -228,8 +244,42 @@ function ThreadOfferResend(props: {
   );
 }
 
+/** The dependencies a waiting card names, in one line. */
+function ThreadOfferWaiting(props: {
+  readonly tickets: readonly number[];
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <p className="text-ink-3 flex flex-wrap items-center gap-1 text-sm">
+      {text(threadOfferWaitingSentence)}
+      {props.tickets.map((ticket) => (
+        <TicketReference key={ticket} ticket={ticket} />
+      ))}
+    </p>
+  );
+}
+
+function ThreadOfferDecline(props: {
+  readonly writing: ThreadOfferWriting;
+}): ReactNode {
+  const text = useCopyText();
+  const { writing } = props;
+  return (
+    <Button
+      size="sm"
+      disabled={writing.isPending}
+      onClick={() => {
+        writing.mutate({ decision: "Declined" });
+      }}
+    >
+      {text({ id: "chat-offer-decline" })}
+    </Button>
+  );
+}
+
 /** What a card offers once its subject is read: the presses where it is
- * open, and why there are none where it is not. */
+ * open, Decline alone where it waits on its dependencies, and why there are
+ * none where it is neither. */
 function ThreadOfferOpen(props: {
   readonly writing: ThreadOfferWriting;
   readonly standing: ThreadOfferStanding;
@@ -245,6 +295,18 @@ function ThreadOfferOpen(props: {
     );
   if (standing.standing === "Closed")
     return <p className="text-ink-3 text-sm">{text(standing.why)}</p>;
+  if (standing.standing === "Unread")
+    return <PanelUnready state={standing.read} />;
+  if (standing.standing === "Waiting")
+    return (
+      <>
+        <ThreadOfferWaiting tickets={standing.tickets} />
+        <div className="flex flex-wrap gap-2">
+          <ThreadOfferDecline writing={writing} />
+        </div>
+        <ThreadOfferRefused writing={writing} />
+      </>
+    );
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -264,18 +326,35 @@ function ThreadOfferOpen(props: {
         >
           {text({ id: "chat-offer-confirm" })}
         </Button>
-        <Button
-          size="sm"
-          disabled={writing.isPending}
-          onClick={() => {
-            writing.mutate({ decision: "Declined" });
-          }}
-        >
-          {text({ id: "chat-offer-decline" })}
-        </Button>
+        <ThreadOfferDecline writing={writing} />
       </div>
       <ThreadOfferRefused writing={writing} />
     </>
+  );
+}
+
+/** What an unsettled release card offers, against its draft and each
+ * dependency that draft names, read as a draft. */
+function ThreadOfferReleaseOpen(props: {
+  readonly partition: PartitionIdentity;
+  readonly offer: Extract<ThreadOfferCall, { readonly offer: "Release" }>;
+  readonly draft: DraftResponse;
+  readonly writing: ThreadOfferWriting;
+}): ReactNode {
+  const { partition, offer, draft } = props;
+  const options = usePanelQueryOptions();
+  const dependencies = useQueries({
+    queries: draft.authoring.dependencies.map((dependency) =>
+      options(draftQuery(partition, dependency, "Streamed")),
+    ),
+    combine: (answers) => answers.map((answer) => panelQueryState(answer)),
+  });
+  return (
+    <ThreadOfferOpen
+      writing={props.writing}
+      standing={threadOfferReleaseStanding(offer, draft, dependencies)}
+      mutation={threadOfferReleaseMutation(offer, draft)}
+    />
   );
 }
 
@@ -295,10 +374,11 @@ function ThreadOfferRelease(props: {
     <>
       <ThreadOfferDraftSubject partition={partition} draft={state.value} />
       {props.settled ?? (
-        <ThreadOfferOpen
+        <ThreadOfferReleaseOpen
+          partition={partition}
+          offer={offer}
+          draft={state.value}
           writing={props.writing}
-          standing={threadOfferReleaseStanding(offer, state.value)}
-          mutation={threadOfferReleaseMutation(offer, state.value)}
         />
       )}
     </>
