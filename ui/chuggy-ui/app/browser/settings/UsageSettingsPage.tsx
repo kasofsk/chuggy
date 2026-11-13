@@ -2,7 +2,9 @@
  * The reader's own agent accounts, which are theirs in every workspace: for
  * each agent, each window's newest reading and the share it pauses at, and
  * whether their threads pause with it, edited behind one Edit; and the pause
- * holding it, with the press that tries it once past a provider's limit.
+ * holding it, with the press that tries it once past a provider's limit. An
+ * agent holding several credentials reads each current one's reading and
+ * pause under its name instead, and its press stays one.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -11,11 +13,13 @@ import type { ReactNode } from "react";
 
 import type {
   AgentAccount,
+  AgentAccountCredential,
   AgentPause as AgentPauseValue,
 } from "../../../../../src/contract/responses.ts";
 import type { AccountAgent } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
+  agentAccountCredentialsDrawn,
   agentAccountDraftOf,
   agentAccountDraftRead,
   agentAccountDraftSame,
@@ -119,11 +123,34 @@ function UsageSettingsNotice(props: {
   );
 }
 
-/** The pause holding the agent, and the press that tries it once past a limit
- * where no press is already waiting to. */
+/** One pause as its line, named where it is a credential's, saying so where a
+ * press lets one claim through it. */
+function UsageSettingsPauseLine(props: {
+  readonly pause: AgentPauseValue;
+  readonly nowMs: number;
+  readonly named?: string;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <AgentPause
+      pause={props.pause}
+      nowMs={props.nowMs}
+      {...(props.named === undefined ? {} : { named: props.named })}
+    >
+      {props.pause.pressed ? (
+        <LinePart>{text(agentPausePressedLine)}</LinePart>
+      ) : null}
+    </AgentPause>
+  );
+}
+
+/** The pause holding the agent, or each one holding a credential it is drawn
+ * by, and the press that tries the agent once past a limit where no press is
+ * already waiting to. */
 function UsageSettingsPause(props: {
   readonly agent: AccountAgent;
   readonly pause: AgentPauseValue;
+  readonly credentials: readonly AgentAccountCredential[] | undefined;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
@@ -134,11 +161,22 @@ function UsageSettingsPause(props: {
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <AgentPause pause={props.pause} nowMs={props.nowMs}>
-          {props.pause.pressed ? (
-            <LinePart>{text(agentPausePressedLine)}</LinePart>
-          ) : null}
-        </AgentPause>
+        {props.credentials === undefined ? (
+          <UsageSettingsPauseLine pause={props.pause} nowMs={props.nowMs} />
+        ) : (
+          <div className="grid justify-items-start gap-1">
+            {props.credentials.map((credential) =>
+              credential.pause === undefined ? null : (
+                <UsageSettingsPauseLine
+                  key={credential.name}
+                  pause={credential.pause}
+                  nowMs={props.nowMs}
+                  named={credential.name}
+                />
+              ),
+            )}
+          </div>
+        )}
         {pressable ? (
           <Button
             size="sm"
@@ -165,16 +203,16 @@ function UsageSettingsPause(props: {
   );
 }
 
-/** One window's newest reading: its share, how long ago it was read, and a
- * mark where its window has reset since. */
+/** One window's reading of the agent or of one credential: its share, how
+ * long ago it was read, and a mark where its window has reset since. */
 function UsageSettingsReading(props: {
-  readonly account: AgentAccount;
+  readonly held: Pick<AgentAccount, "readings">;
   readonly name: AgentAccountPercentName;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
   const reading = agentAccountReading(
-    props.account,
+    props.held,
     agentAccountPercentWindows[props.name],
   );
   if (reading === undefined)
@@ -197,9 +235,47 @@ function UsageSettingsReading(props: {
   );
 }
 
+/** One window's reading of each credential the agent is drawn by, under its
+ * name, or the agent's own where it is drawn by none. */
+function UsageSettingsReadings(props: {
+  readonly account: AgentAccount;
+  readonly credentials: readonly AgentAccountCredential[] | undefined;
+  readonly name: AgentAccountPercentName;
+  readonly nowMs: number;
+}): ReactNode {
+  if (props.credentials === undefined || props.credentials.length === 0)
+    return (
+      <UsageSettingsReading
+        held={
+          props.credentials === undefined ? props.account : { readings: [] }
+        }
+        name={props.name}
+        nowMs={props.nowMs}
+      />
+    );
+  return (
+    <span className="grid gap-1">
+      {props.credentials.map((credential) => (
+        <span
+          key={credential.name}
+          className="inline-flex flex-wrap items-center gap-2"
+        >
+          <span className="font-medium">{credential.name}</span>
+          <UsageSettingsReading
+            held={credential}
+            name={props.name}
+            nowMs={props.nowMs}
+          />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Each window's reading and the share it pauses at, and both options, as read. */
 function UsageSettingsRead(props: {
   readonly account: AgentAccount;
+  readonly credentials: readonly AgentAccountCredential[] | undefined;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
@@ -208,13 +284,18 @@ function UsageSettingsRead(props: {
     pauses
       ? { id: "usage-threads-pause-with" }
       : { id: "usage-threads-keep-running" };
+  const layout =
+    props.credentials === undefined || props.credentials.length === 0
+      ? "inline-flex flex-wrap items-center gap-2"
+      : "grid justify-items-start gap-1";
   return (
     <Fields>
       {usageSettingsPercentNames.map((name) => (
         <Field key={name} name={text(usageSettingsPercentLabel(name))}>
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <UsageSettingsReading
+          <span className={layout}>
+            <UsageSettingsReadings
               account={props.account}
+              credentials={props.credentials}
               name={name}
               nowMs={props.nowMs}
             />
@@ -306,6 +387,7 @@ function UsageSettingsAgent(props: {
   });
   const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   const read = draft === undefined ? undefined : agentAccountDraftRead(draft);
+  const credentials = agentAccountCredentialsDrawn(account, nowMs);
   return (
     <SettingsSection
       title={text(accountAgentLabel(account.agent))}
@@ -338,11 +420,16 @@ function UsageSettingsAgent(props: {
         <UsageSettingsPause
           agent={account.agent}
           pause={account.pause}
+          credentials={credentials}
           nowMs={nowMs}
         />
       )}
       {draft === undefined ? (
-        <UsageSettingsRead account={account} nowMs={nowMs} />
+        <UsageSettingsRead
+          account={account}
+          credentials={credentials}
+          nowMs={nowMs}
+        />
       ) : (
         <UsageSettingsEditing draft={draft} onDraft={setDraft} />
       )}

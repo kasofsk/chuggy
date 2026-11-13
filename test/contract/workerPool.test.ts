@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { agentAccountCredentialsMax } from "../../src/contract/http.ts";
 import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import {
@@ -603,6 +604,10 @@ test("a poll names no more credentials of an agent than the plane keeps of one a
   assert.ok(
     workerRunnerCredentialsPerAgentMax <= agentAccountCredentialsKeptMaxAt163,
   );
+});
+
+test("an account read may name every credential the plane keeps of one account's agent, so none kept is dropped from the wire", () => {
+  assert.equal(agentAccountCredentialsMax, agentAccountCredentialsKeptMaxAt163);
 });
 
 test("a reconciliation may name a credential's pause by its agent, its name and its end, and a runner of a release before the pauses range refuses a whole answer naming one", async () => {

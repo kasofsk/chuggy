@@ -88,8 +88,8 @@ const softly: AgentAccountHarnessState = {
 
 test("an account no reading, limit or setting names reads every agent at the defaults and unpaused", async () => {
   assert.deepEqual(await accounts.accounts(member()), [
-    { agent: "Claude", settings: defaults, readings: [] },
-    { agent: "Codex", settings: defaults, readings: [] },
+    { agent: "Claude", settings: defaults, readings: [], credentials: [] },
+    { agent: "Codex", settings: defaults, readings: [], credentials: [] },
   ]);
 });
 
@@ -122,12 +122,13 @@ test("each window's newest reading and the limit read with the pause they come t
     agent: "Codex",
     settings: defaults,
     readings: [],
+    credentials: [],
   });
   assert.deepEqual(
     await accounts.accounts(member()),
     [
-      { agent: "Claude", settings: defaults, readings: [] },
-      { agent: "Codex", settings: defaults, readings: [] },
+      { agent: "Claude", settings: defaults, readings: [], credentials: [] },
+      { agent: "Codex", settings: defaults, readings: [], credentials: [] },
     ],
     "another person reads nothing of this account",
   );
@@ -180,6 +181,101 @@ test("an account kept under several credentials reads one row per agent, with ea
   assert.deepEqual(claude.pause?.reasons, ["limit"]);
   assert.equal(minutesTo(claude.pause?.until), 30);
   assert.equal((await accounts.accounts(owner)).length, 2);
+});
+
+test("each credential an agent holds is read by its name, in name order, with its own readings and the pause holding it alone, beside the agent's own", async () => {
+  const owner = member();
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.9,
+        resetsSecs: 3_600,
+        observedSecs: -60,
+        credential: "work",
+      },
+      {
+        window: "five_hour",
+        utilization: 0.3,
+        resetsSecs: 7_200,
+        observedSecs: -120,
+        credential: "home",
+      },
+      {
+        window: "seven_day",
+        utilization: 0.4,
+        resetsSecs: 86_400,
+        observedSecs: -180,
+        credential: "home",
+      },
+    ],
+  });
+  const claude = await agentOf(owner, "Claude");
+  assert.deepEqual(
+    claude.credentials.map((credential) => [
+      credential.name,
+      credential.readings.map((reading) => [
+        reading.window,
+        reading.utilization,
+        minutesTo(reading.resetsAt),
+        minutesTo(reading.observedAt),
+      ]),
+      credential.pause?.reasons,
+      minutesTo(credential.pause?.until),
+      credential.pause?.pressed,
+    ]),
+    [
+      [
+        "home",
+        [
+          ["five_hour", 0.3, 120, -2],
+          ["seven_day", 0.4, 1_440, -3],
+        ],
+        undefined,
+        undefined,
+        undefined,
+      ],
+      ["work", [["five_hour", 0.9, 60, -1]], ["five_hour"], 60, false],
+    ],
+  );
+  assert.deepEqual(
+    claude.readings.map((reading) => [reading.window, reading.utilization]),
+    [
+      ["five_hour", 0.9],
+      ["seven_day", 0.4],
+    ],
+    "the agent's own readings are still the newest across its credentials",
+  );
+  assert.deepEqual(claude.pause?.reasons, ["five_hour"]);
+  assert.equal(minutesTo(claude.pause?.until), 60);
+  assert.deepEqual((await agentOf(owner, "Codex")).credentials, []);
+});
+
+test("a credential stopped at a limit alone reads its own limit's pause, pressed once the agent is pressed", async () => {
+  const owner = member();
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    limits: [
+      { observedSecs: -60, resetsSecs: 1_800, credential: "spare" },
+      { observedSecs: -120, resetsSecs: 3_600, credential: "work" },
+    ],
+  });
+  assert.equal(await accounts.press(owner, "Claude"), "Pressed");
+  const claude = await agentOf(owner, "Claude");
+  assert.deepEqual(
+    claude.credentials.map((credential) => [
+      credential.name,
+      credential.readings,
+      credential.pause?.reasons,
+      minutesTo(credential.pause?.until),
+      credential.pause?.pressed,
+    ]),
+    [
+      ["spare", [], ["limit"], 30, true],
+      ["work", [], ["limit"], 60, true],
+    ],
+  );
+  assert.equal(minutesTo(claude.pause?.until), 60);
+  assert.equal(claude.pause?.pressed, true);
 });
 
 test("settings are written whole for one agent, and the pause follows them at the next read", async () => {

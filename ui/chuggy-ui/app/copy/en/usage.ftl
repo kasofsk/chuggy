@@ -1,5 +1,6 @@
-## The reader's own agent accounts and their pauses: the Usage settings page,
-## `app/core/agentAccounts.ts`, `UsageSettingsPage.tsx`, `AgentPause.tsx`.
+## The reader's own agent accounts and their pauses, each credential's under
+## its own name: the Usage settings page, `app/core/agentAccounts.ts`,
+## `UsageSettingsPage.tsx`, `AgentPause.tsx`.
 
 usage-title = Usage
 usage-about = Your own { -agent } accounts, the same in every { -workspace }.
