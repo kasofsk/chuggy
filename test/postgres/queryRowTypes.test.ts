@@ -6,7 +6,7 @@
  * `ticket_definition.overrides` and `.selection` are nullable jsonb, which pg
  * hands back parsed. A row declaring either as text is a reader that parses an
  * object, so the checker has to refuse it, and has to accept the same column
- * cast to text, or declared `unknown`.
+ * cast to text, or declared `unknown`. A nullable jsonb array keeps its null.
  */
 
 import assert from "node:assert/strict";
@@ -75,6 +75,26 @@ test("a nullable jsonb column read bare agrees with an unknown row type", async 
   const findings = await queryRowTypesFindings(
     "{ overrides: unknown; selection: unknown }",
     "d.overrides,d.selection",
+  );
+  assert.deepEqual(findings, []);
+});
+
+const nullableJsonbArray =
+  "CASE WHEN d.overrides IS NULL THEN NULL ELSE ARRAY['{}'::jsonb] END AS overrides";
+
+test("a nullable jsonb array read into a non-null array row type is a finding", async () => {
+  const findings = await queryRowTypesFindings(
+    "{ overrides: unknown[] }",
+    nullableJsonbArray,
+  );
+  assert.equal(findings.length, 1, findings.join("\n"));
+  assert.match(findings[0] ?? "", /incorrect type annotation/u);
+});
+
+test("a nullable jsonb array agrees with a nullable array row type", async () => {
+  const findings = await queryRowTypesFindings(
+    "{ overrides: unknown[] | null }",
+    nullableJsonbArray,
   );
   assert.deepEqual(findings, []);
 });

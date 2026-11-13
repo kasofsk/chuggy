@@ -358,12 +358,13 @@ export default tseslint.config(
                     // A json or jsonb column is `unknown` rather than the
                     // default `any`, which matches every declared type. The
                     // checker reads a declared `unknown | null` as `unknown`,
-                    // which already holds null, so a nullable one is compared
-                    // the same way.
+                    // which already holds null, so a member whose whole value
+                    // is `null | unknown` is compared the same way. Anything
+                    // else beside the null, such as `unknown[]`, keeps it.
                     targets: [
                       {
                         wrapper: { regex: "(client|pool)\\.query" },
-                        transform: [["\\bnull \\| unknown\\b", "unknown"]],
+                        transform: [["(?<=: )null \\| unknown(?=;| })", "unknown"]],
                       },
                     ],
                     overrides: { types: { json: "unknown", jsonb: "unknown" } },
