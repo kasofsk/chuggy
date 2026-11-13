@@ -3060,6 +3060,15 @@ const agentAccountCredentialSchema = z.strictObject({
   pause: agentPauseSchema.optional(),
 });
 
+/** The pause an agent of the caller's account comes to, and the names of the credentials holding it, in the order `credentials` lists them; optional for the deployment window. */
+const agentAccountPauseSchema = agentPauseSchema.extend({
+  credentials: z
+    .array(workerRunCredentialSchema)
+    .min(1)
+    .max(agentAccountCredentialsMax)
+    .optional(),
+});
+
 /**
  * One agent of the caller's own account: their settings, each window's newest
  * reading across its credentials, the newest limit a provider stopped it at
@@ -3080,7 +3089,7 @@ const agentAccountSchema = z.strictObject({
       observedAt: instantSchema,
     })
     .optional(),
-  pause: agentPauseSchema.optional(),
+  pause: agentAccountPauseSchema.optional(),
   credentials: z
     .array(agentAccountCredentialSchema)
     .max(agentAccountCredentialsMax)

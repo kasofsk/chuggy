@@ -171,6 +171,8 @@ export const workerRunUsageFunction = "record_worker_run_usage";
 export const workerRunLimitFunction = "record_worker_run_limit";
 /** Whether an account's agent is paused, until when and why, from its readings, its limit, its settings and its presses at the database's own time. */
 export const agentAccountPauseFunction = "agent_account_pause";
+/** `agent_account_pause`'s answer and the names of the credentials holding it, in the order `agent_account_credential_standing` lists them. */
+export const agentAccountPauseHoldingFunction = "agent_account_pause_holding";
 /** Each credential of an account's agent that is paused, until when and why, by the rule `agent_account_pause` answers the agent by. */
 export const agentAccountCredentialPauseFunction =
   "agent_account_credential_pause";
@@ -186,7 +188,7 @@ export const agentAccountCredentialKeptFunction =
 export const agentAccountSettingsFunction = "agent_account_settings";
 /** Whether an account's pause holds back a session of one kind, for a runner that gave Claude the names it is handed: always a lead, and a thread or an inquiry as its owner's option says. */
 export const agentAccountSessionPausedFunction = "agent_account_session_paused";
-/** Each agent of one person's account: their settings, each window's newest reading across its credentials, the newest limit across them and the pause they come to, `agent_account_pause`'s. */
+/** Each agent of one person's account: their settings, each window's newest reading across its credentials, the newest limit across them and the pause they come to, `agent_account_pause`'s, with the credentials holding it. */
 export const agentAccountStandingFunction = "agent_account_standing";
 /** Each credential of one person's account an agent holds a reading or a limit of: its readings and the pause holding that credential alone. */
 export const agentAccountCredentialStandingFunction =

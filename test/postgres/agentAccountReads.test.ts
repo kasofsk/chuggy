@@ -251,6 +251,47 @@ test("each credential an agent holds is read by its name, in name order, with it
   assert.deepEqual((await agentOf(owner, "Codex")).credentials, []);
 });
 
+test("an agent's pause held by one of its credentials names exactly that one, a live runner's names count alone, and both held name both in the order they are listed", async () => {
+  const owner = member();
+  const work = {
+    window: "five_hour",
+    utilization: 0.9,
+    resetsSecs: 3_600,
+    observedSecs: -60,
+    credential: "work",
+  } as const;
+  const home = { ...work, utilization: 0.3, credential: "home" } as const;
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    readings: [home, work],
+  });
+  const one = await agentOf(owner, "Claude");
+  assert.deepEqual(
+    one.credentials.map((credential) => credential.name),
+    ["home", "work"],
+  );
+  assert.deepEqual(one.pause?.credentials, ["work"]);
+  const both = [{ ...home, utilization: 0.95 }, work];
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    readings: both,
+    runners: [
+      { kind: "Personal", polledSecs: -5, named: { Claude: ["work"] } },
+    ],
+  });
+  assert.deepEqual(
+    (await agentOf(owner, "Claude")).pause?.credentials,
+    ["work"],
+    "a paused credential no live runner names holds nothing of the agent's pause",
+  );
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    readings: both,
+    runners: [],
+  });
+  assert.deepEqual((await agentOf(owner, "Claude")).pause?.credentials, [
+    "home",
+    "work",
+  ]);
+});
+
 test("a credential stopped at a limit alone reads its own limit's pause, pressed once the agent is pressed", async () => {
   const owner = member();
   await agentAccountHarnessCommitted(harness, owner, "Claude", {

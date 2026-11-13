@@ -52,6 +52,7 @@ const accounts: readonly AgentAccountView[] = [
       until: "2026-11-03T15:00:00.000Z",
       reasons: ["five_hour", "limit"],
       pressed: false,
+      credentials: ["home"],
     },
     credentials: [
       {
