@@ -17,6 +17,12 @@
 
 import type { z } from "zod";
 
+import { ticketActionReachResponseSchema } from "../../../../src/contract/actionReach.ts";
+import {
+  dispatchViewSchemaVersion,
+  errorEnvelopeSchema,
+} from "../../../../src/contract/http.ts";
+
 import {
   accessCallerAccountSchema,
   accessProjectPeopleSchema,
@@ -27,6 +33,8 @@ import {
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
   configurationsResponseSchema,
+  dispatchViewResponseSchema,
+  executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeInstallationsResponseSchema,
   hostedRunsResponseSchema,
@@ -45,6 +53,9 @@ import {
   selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
   threadsResponseSchema,
+  ticketLandingsResponseSchema,
+  ticketNativeActionsResponseSchema,
+  ticketResponseSchema,
   workerPoolsResponseSchema,
   workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -80,6 +91,13 @@ export function stubApiRead(
       `the stub for ${method} ${path} is refused by its schema: ${parsed.error.message}`,
     );
   return { kind: "Json", method, path, status: 200, body };
+}
+
+/** A route answered as the server answers a resource it does not hold. */
+export function stubApiNotFound(path: string): StubApiRead {
+  const body = { error: { code: "NotFound", message: "Resource not found." } };
+  errorEnvelopeSchema.parse(body);
+  return { kind: "Json", method: "GET", path, status: 404, body };
 }
 
 /** A stream that opens and stays open, so the console reads itself live. */
@@ -317,6 +335,45 @@ const selectorSettings = {
   },
 };
 
+const ticketPath = `${projectPath}/tickets/${String(ticket.ticket)}`;
+
+/** What the ticket's own page reads: the ticket, whose draft its release
+ * closed, and nothing it has run, been asked or landed. */
+const ticketPageReads: readonly StubApiRead[] = [
+  stubApiRead(ticketPath, ticketResponseSchema, ticket),
+  stubApiNotFound(`${projectPath}/drafts/${String(ticket.ticket)}`),
+  stubApiRead(
+    `${ticketPath}/native-actions`,
+    ticketNativeActionsResponseSchema,
+    { actions: [] },
+  ),
+  stubApiRead(`${ticketPath}/action-reach`, ticketActionReachResponseSchema, {
+    repository: null,
+    commit: null,
+    actions: [],
+  }),
+  stubApiRead(`${ticketPath}/landings`, ticketLandingsResponseSchema, {
+    landings: [],
+    truncated: false,
+  }),
+  stubApiRead(`${projectPath}/executions`, executionsResponseSchema, {
+    executions: [],
+  }),
+  stubApiRead(`${projectPath}/dispatch-view`, dispatchViewResponseSchema, {
+    result: "Page",
+    token: {
+      tenant: stubApiTenant,
+      project: stubApiProject,
+      recoveryEpoch: "epoch-rendered",
+      schemaVersion: dispatchViewSchemaVersion,
+      watermark: 1,
+      digest: "0".repeat(64),
+    },
+    candidates: [],
+    notificationCursor: 0,
+  }),
+];
+
 /** The reads every case is answered, a route to a row. */
 export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
@@ -328,6 +385,7 @@ export const stubApiReads: readonly StubApiRead[] = [
     tickets: [ticket],
   }),
   stubApiStream(`${projectPath}/events`),
+  ...ticketPageReads,
   stubApiRead(`${projectPath}/abilities`, projectAbilitiesResponseSchema, {
     principal,
     mutate: true,

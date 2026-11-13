@@ -1,8 +1,9 @@
-## The bar above every page, its account menu and its project switcher.
+## The bar above every page, the bar along a phone's foot, its account menu and its project switcher.
 
 shell-nav = Console
 shell-nav-tickets = { -ticket(case: "upper", form: "plural") }
 shell-nav-epics = { -epic(case: "upper", form: "plural") }
+shell-nav-more = More
 shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread
