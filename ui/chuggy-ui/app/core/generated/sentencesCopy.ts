@@ -99,7 +99,7 @@ export interface SentencesCopy {
   readonly "sentences-refusal-selection-unsupported": Record<never, never>;
   readonly "sentences-refusal-program-exceeds-plan": Record<never, never>;
   readonly "sentences-refusal-program-skips-checks": Record<never, never>;
-  readonly "sentences-refusal-program-stage-out-of-position": Record<never, never>;
+  readonly "sentences-refusal-program-stage-misplaced": Record<never, never>;
   readonly "sentences-refusal-overrides-unsupported": Record<never, never>;
   readonly "sentences-refusal-overrides-unknown": Record<never, never>;
   readonly "sentences-refusal-capacity-reached": Record<never, never>;

@@ -218,7 +218,7 @@ export interface CodesCopy {
   readonly "codes-refusal-selection-unsupported": Record<never, never>;
   readonly "codes-refusal-program-exceeds-plan": Record<never, never>;
   readonly "codes-refusal-program-skips-checks": Record<never, never>;
-  readonly "codes-refusal-program-stage-out-of-position": Record<never, never>;
+  readonly "codes-refusal-program-stage-misplaced": Record<never, never>;
   readonly "codes-refusal-overrides-unsupported": Record<never, never>;
   readonly "codes-refusal-overrides-unknown": Record<never, never>;
   readonly "codes-refusal-capacity-reached": Record<never, never>;

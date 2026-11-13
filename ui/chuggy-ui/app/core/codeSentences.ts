@@ -297,7 +297,7 @@ export function operationRefusalSentence(refused: OperationRefusal): Copy {
     case "ProgramSkipsBriefChecks":
       return { id: "sentences-refusal-program-skips-checks" };
     case "ProgramStageOutOfPosition":
-      return { id: "sentences-refusal-program-stage-out-of-position" };
+      return { id: "sentences-refusal-program-stage-misplaced" };
     case "OverridesUnsupported":
       return { id: "sentences-refusal-overrides-unsupported" };
     case "OverridesUnknown":
