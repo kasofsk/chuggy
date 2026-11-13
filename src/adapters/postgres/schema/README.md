@@ -660,7 +660,7 @@ where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call and `ticket_rate_limit_resumable` asks for the
 scheduler, reads it through that, as `agent_account_standing` does for the API.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
-`agent_account_pause`'s columns for the credentials a personal runner named:
+`agent_account_pause`'s columns for the credentials a runner or a pool named:
 paused only while every one of them is, until the earliest of those ends, a
 name that never reported being free. `agent_account_named_credential_pauses`
 answers the pool plane each of them that is paused, and until when.
