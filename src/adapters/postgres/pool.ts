@@ -88,21 +88,36 @@ export const postgresIdleFailureDefault: PostgresIdleFailure = (failure) => {
  * session it hands out, and JIT off: the statements this adapter issues are
  * short reads and writes, and one whose estimate passes `jit_above_cost`
  * spends more compiling than running.
+ *
+ * JIT is set as each session connects rather than as a startup option,
+ * because `pg` lets a URL's own `options`, which a deployment URL carries to
+ * set its role, replace the pool's.
  */
 export function postgresPool(
   url: string,
   limits: PostgresLimits = postgresLimitsDefault,
   onIdleFailure: PostgresIdleFailure = postgresIdleFailureDefault,
 ): pg.Pool {
-  const pool = new pg.Pool({
+  const config: PostgresPoolConfig = {
     connectionString: url,
     max: limits.connectionsMax,
     connectionTimeoutMillis: limits.connectionWaitMs,
     statement_timeout: limits.statementTimeoutMs,
-    options: "-c jit=off",
-  });
+    onConnect: postgresPoolSessionOpened,
+  };
+  const pool = new pg.Pool(config);
   pool.on("error", onIdleFailure);
   return pool;
+}
+
+/** The pool's configuration with `onConnect` as pg-pool calls it: awaited before a new session is handed out, where @types/pg declares its return void. */
+type PostgresPoolConfig = Omit<pg.PoolConfig, "onConnect"> & {
+  readonly onConnect: (client: pg.ClientBase) => Promise<void>;
+};
+
+/** Takes JIT off before the pool hands a new session out; a session it cannot set is ended and its caller refused. */
+async function postgresPoolSessionOpened(client: pg.ClientBase): Promise<void> {
+  await client.query(sql`SET jit = off`);
 }
 
 /**
