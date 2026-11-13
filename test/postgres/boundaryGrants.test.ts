@@ -21,6 +21,12 @@ import {
   apiRole,
   boundaryOwnerRole,
   configurationFollowingCandidatesFunction,
+  ownedThemeCreateFunction,
+  ownedThemeDeleteFunction,
+  ownedThemesFunction,
+  ownedThemeWriteFunction,
+  themeChoiceReadFunction,
+  themeChoiceWriteFunction,
   configurationFollowingMoveFunction,
   configurationImporterRole,
   draftCreateFunction,
@@ -888,6 +894,20 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [ticketServiceRole],
     [apiRole],
   ),
+  ...[
+    `${ownedThemesFunction}(text)`,
+    `${ownedThemeCreateFunction}(text,jsonb,bigint)`,
+    `${ownedThemeWriteFunction}(text,bigint,jsonb)`,
+    `${ownedThemeDeleteFunction}(text,bigint)`,
+    `${themeChoiceReadFunction}(text)`,
+    `${themeChoiceWriteFunction}(text,text,bigint)`,
+  ].map((signature) =>
+    boundaryGrantsDoor(
+      signature,
+      [apiRole],
+      [ticketServiceRole, metricsPlaneRole],
+    ),
+  ),
 ];
 
 /** How one function is declared, its path where it runs as its owner, and whether each role named may execute it, `public` among them. */
@@ -1031,6 +1051,12 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["execution", "ticket", "SELECT", poolPlaneRole, true],
   ["execution", "registered_at", "SELECT", poolPlaneRole, true],
   ["execution_attempt", "claimed_at", "SELECT", poolPlaneRole, true],
+  ["owned_theme", null, "SELECT", apiRole, false],
+  ["owned_theme", null, "INSERT", boundaryOwnerRole, true],
+  ["owned_theme", null, "DELETE", boundaryOwnerRole, true],
+  ["theme_choice", null, "SELECT", apiRole, false],
+  ["theme_choice", null, "UPDATE", boundaryOwnerRole, true],
+  ["theme_choice", null, "DELETE", boundaryOwnerRole, true],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {

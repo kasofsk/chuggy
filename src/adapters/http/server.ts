@@ -244,6 +244,13 @@ import {
   agentAccountPressedResponse,
   agentAccountsResponse,
   agentAccountWrittenResponse,
+  ownedThemeCreatedResponse,
+  ownedThemeDeletedResponse,
+  ownedThemeResponse,
+  ownedThemesResponse,
+  ownedThemeWrittenResponse,
+  themeChoiceResponse,
+  themeChosenResponse,
   personalRunnerDeregisteredResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
@@ -273,6 +280,8 @@ import type { LandingQueueReads } from "../../interpreter/landingQueues.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
+import type { AppearanceService } from "../../interpreter/appearance.ts";
+import { themeNumberSchema } from "../../contract/appearance.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
@@ -1696,6 +1705,113 @@ function registerAgentAccounts(
       );
     });
   });
+}
+
+/** The number a route names of one of the caller's own themes. */
+function ownThemeOf(request: FastifyRequest): number {
+  return themeNumberSchema.parse(integerField(record(request.params), "theme"));
+}
+
+/**
+ * The caller's own themes, created, read, written whole and deleted, and
+ * their one global choice among the built-ins and those themes. Each is
+ * handed the request's own principal, and no route names another.
+ */
+function registerAppearance(
+  app: FastifyInstance,
+  appearance: AppearanceService,
+): void {
+  const versioned = { preValidation: requireVersionedJson };
+  app.get(nativeHttpRoutes.ownThemes, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemesResponse(await appearance.themes(principalOf(request))),
+    );
+  });
+  app.post(nativeHttpRoutes.ownThemes, versioned, async (request, reply) => {
+    const document = nativeHttpEndpoints.createOwnTheme.body.parse(
+      request.body,
+    );
+    nativeHttpSend(
+      reply,
+      ownedThemeCreatedResponse(
+        await appearance.create(principalOf(request), document),
+      ),
+    );
+  });
+  app.get(nativeHttpRoutes.ownTheme, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemeResponse(
+        await appearance.theme(principalOf(request), ownThemeOf(request)),
+      ),
+    );
+  });
+  app.put(nativeHttpRoutes.ownTheme, versioned, async (request, reply) => {
+    const theme = ownThemeOf(request);
+    const document = nativeHttpEndpoints.writeOwnTheme.body.parse(request.body);
+    nativeHttpSend(
+      reply,
+      ownedThemeWrittenResponse(
+        await appearance.write(principalOf(request), theme, document),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.ownTheme, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemeDeletedResponse(
+        await appearance.delete(principalOf(request), ownThemeOf(request)),
+      ),
+    );
+  });
+  registerThemeChoice(app, appearance);
+}
+
+/** The caller's own global theme choice: read, written whole, and cleared. */
+function registerThemeChoice(
+  app: FastifyInstance,
+  appearance: AppearanceService,
+): void {
+  app.get(nativeHttpRoutes.themeChoice, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      themeChoiceResponse(await appearance.choice(principalOf(request))),
+    );
+  });
+  app.put(
+    nativeHttpRoutes.themeChoice,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const choice = nativeHttpEndpoints.writeThemeChoice.body.parse(
+        request.body,
+      );
+      nativeHttpSend(
+        reply,
+        themeChosenResponse(
+          await appearance.choose(principalOf(request), choice),
+        ),
+      );
+    },
+  );
+  app.delete(nativeHttpRoutes.themeChoice, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      themeChosenResponse(
+        await appearance.choose(principalOf(request), undefined),
+      ),
+    );
+  });
+}
+
+/** What a person keeps of their own in no workspace: their agent accounts and their appearance. */
+function registerOwnSettings(
+  app: FastifyInstance,
+  agentAccounts: AgentAccountService | undefined,
+  appearance: AppearanceService | undefined,
+): void {
+  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  if (appearance !== undefined) registerAppearance(app, appearance);
 }
 
 /**
@@ -3312,6 +3428,7 @@ export function createNativeHttpApp(
   agentAccounts?: AgentAccountService,
   runnerReleases?: WorkerRunnerReleases,
   landingQueues?: LandingQueueReads,
+  appearance?: AppearanceService,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -3351,7 +3468,7 @@ export function createNativeHttpApp(
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
   registerLandingReads(app, landings, landingQueues);
-  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  registerOwnSettings(app, agentAccounts, appearance);
   registerFailures(app);
   return app;
 }

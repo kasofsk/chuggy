@@ -686,6 +686,25 @@ its being unspent, so two claims cannot spend one. Its key and identity are
 press lets a claim through only a limit received before it. It has no
 unfinished work: a press is spent or it is not.
 
+`owned_theme` — a theme document one person made for the console. Owned by the
+boundary owner, which its doors run as; the API reads one person's through
+`owned_themes` and writes them through `create_owned_theme`,
+`write_owned_theme` and `delete_owned_theme` alone, and no other role reaches
+it. Its key and identity are `theme`, a number never given twice, and
+`(principal, theme)` is unique so a choice can point at a person's own; it
+departs from #180's composite project key as `agent_account_setting` does,
+because a person's appearance follows them into every workspace. It points at
+nothing. A creation locks the person's principal and is refused at the bound
+the API hands it. It has no unfinished work.
+
+`theme_choice` — the one theme a person chose for every console they sign in
+to: a built-in by its id or a theme of their own, never both. Owned by the
+boundary owner; the API reads it through `read_theme_choice` and writes or
+clears it through `write_theme_choice` alone, which refuses a theme of
+another person's. Its key and identity are `principal`, and it points at
+`owned_theme` by `(principal, owned)`, so deleting the theme deletes the choice
+and the person reads none. It has no unfinished work.
+
 `epic` — a project's epic as it stands: its number, its revision and its
 content. Owned by the boundary owner, which `save_epic` runs as and which is the
 only role that may write it; the API role is granted SELECT and EXECUTE on that

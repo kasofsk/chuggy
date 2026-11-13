@@ -7,6 +7,7 @@
 import type { z } from "zod";
 import { nativeHttpEndpoints } from "./endpoints.ts";
 
+import { themesOwnedMax } from "./appearance.ts";
 import {
   inboxPhases,
   nativeHttpBasePath,
@@ -101,9 +102,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.openThread.body,
     ),
     threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
-    agentAccountSettings: nativeHttpContractDocumentInput(
-      agentAccountSettingsSchema,
-    ),
+    ...nativeHttpContractDocumentSchemasPerson(),
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
@@ -121,6 +120,21 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.hideThread.body,
     ),
     ...nativeHttpContractDocumentSchemasMachine(),
+  };
+}
+
+/** The request bodies a person sends of what is theirs alone, in no workspace. */
+function nativeHttpContractDocumentSchemasPerson(): Record<string, unknown> {
+  return {
+    agentAccountSettings: nativeHttpContractDocumentInput(
+      agentAccountSettingsSchema,
+    ),
+    themeDocument: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.createOwnTheme.body,
+    ),
+    themeChoice: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.writeThemeChoice.body,
+    ),
   };
 }
 
@@ -255,6 +269,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
     ...runnerNotes,
+    appearance: `a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most ${String(themesOwnedMax)}, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice`,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
     ...ticketSubReadNotes,
