@@ -19,6 +19,7 @@ import test from "node:test";
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
+import { leadHolds } from "../../src/contract/rosters.ts";
 import {
   agenticRefusalsResponseSchema,
   leadFoundResponseSchema,
@@ -627,11 +628,9 @@ test("a subsidized lead answers its tenant's spend this month and its cap, and a
     nativeHttpEndpoints.lead.response.parse(found.json()),
     found.json(),
   );
-  const { paused, ...session } = found.json<Record<string, unknown>>();
-  assert.equal(paused, false);
   assert.deepEqual(
     projectChangeRepresentationSchemas.Session.parse(found.json()),
-    session,
+    found.json(),
   );
   await using own = appOf({});
   const ownFound = await own.inject({
@@ -681,18 +680,30 @@ test("a project whose selector is paused answers Paused over any refusal kept, a
 });
 
 /**
- * A lead opened before its selector was paused still stands, and dispatches
- * nothing until the selector runs again, so its read says it is paused exactly
- * where a project holding none would answer `Paused`: by the project's own
- * pause, and by the installation's whatever the project asked for.
+ * A lead opened before its selector was paused, or before the site's selector
+ * lost its grant, still stands and dispatches nothing until that changes, so
+ * its read says what holds it exactly where a project holding none would answer
+ * that reason: `Paused`, by the project's own pause or by the installation's
+ * whatever the project asked for, over `SelectorNotGranted`, and either over a
+ * kept refusal. What holds it is no part of the `Session` frame.
  */
-test("a lead that stands answers paused while its selector is paused, by the project or the installation, and not while it runs", async () => {
-  for (const [shape, paused] of [
-    [{ projectMode: "Paused" }, true],
-    [{ installationMode: "Paused" }, true],
-    [{ installationMode: "Paused", projectMode: "Running" }, true],
-    [{}, false],
-    [{ projectMode: "Running" }, false],
+test("a lead that stands answers what holds it from dispatching, as a project holding none answers it, and nothing while its selector runs", async () => {
+  const refused: LeadRefused = {
+    reason: "RunnerOffline",
+    since: "2026-09-02T00:00:00.000Z",
+  };
+  for (const [shape, held] of [
+    [{ projectMode: "Paused" }, "Paused"],
+    [{ installationMode: "Paused" }, "Paused"],
+    [{ installationMode: "Paused", projectMode: "Running" }, "Paused"],
+    [{ projectMode: "Paused", refused }, "Paused"],
+    [{ projectMode: "Paused", selectorReads: false }, "Paused"],
+    [{ selectorReads: false }, "SelectorNotGranted"],
+    [{ selectorReads: false, refused }, "SelectorNotGranted"],
+    [{}, undefined],
+    [{ projectMode: "Running" }, undefined],
+    [{ selectorReads: true }, undefined],
+    [{ refused }, undefined],
   ] as const) {
     await using app = appOf(shape);
     const found = await app.inject({
@@ -702,15 +713,27 @@ test("a lead that stands answers paused while its selector is paused, by the pro
     assert.equal(found.statusCode, 200);
     const lead = nativeHttpEndpoints.lead.response.parse(found.json());
     assert.ok("session" in lead);
-    assert.equal(lead.paused, paused, JSON.stringify(shape));
+    assert.deepEqual(
+      lead.held,
+      held === undefined ? undefined : { reason: held },
+      JSON.stringify(shape),
+    );
+    const { held: answered, ...session } =
+      found.json<Record<string, unknown>>();
+    assert.deepEqual(answered, lead.held);
+    assert.deepEqual(
+      projectChangeRepresentationSchemas.Session.parse(found.json()),
+      session,
+    );
     await using absent = appOf({ ...shape, standing: undefined });
     const none = await absent.inject({
       url: `${root}/lead`,
       headers: authorized,
     });
+    const reason = none.json<{ absence: { reason: string } }>().absence.reason;
     assert.equal(
-      none.json<{ absence: { reason: string } }>().absence.reason === "Paused",
-      paused,
+      leadHolds.find((hold) => hold === reason),
+      held,
       JSON.stringify(shape),
     );
   }

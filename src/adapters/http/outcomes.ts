@@ -2590,7 +2590,9 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         handoffNote: handoffNotePreview(result.lead.handoffNote),
         turns: result.lead.turns.map(leadTurnBody),
         streams: result.streams,
-        paused: result.paused,
+        ...(result.held === undefined
+          ? {}
+          : { held: { reason: result.held.reason } }),
         ...(result.refusal === undefined
           ? {}
           : { refusal: leadRefusalBody(result.refusal) }),

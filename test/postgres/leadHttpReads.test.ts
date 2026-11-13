@@ -708,32 +708,32 @@ test("a project holding a lead answers it over the refusal kept beside it", asyn
   assert.equal(leadResponseSchema.safeParse(found.json()).success, true);
 });
 
-/** Whether the lead route says the selector of one project holding a lead is paused. */
-async function leadPaused(
+/** What the lead route says holds one project's standing lead from dispatching. */
+async function leadHeld(
   label: string,
   partition: Partition,
-): Promise<boolean | undefined> {
+): Promise<string | undefined> {
   await using app = leadApp(label);
   const found = await app.inject({
     url: `${pathOf(partition)}/lead`,
     headers: authorized,
   });
   assert.equal(found.statusCode, 200);
-  return leadFoundResponseSchema.parse(found.json()).paused;
+  return leadFoundResponseSchema.parse(found.json()).held?.reason;
 }
 
 /**
  * A lead opened before its selector was paused still stands and dispatches
- * nothing, so its read says the selector is paused while the project's own
- * override holds, read over the API's own credential as the selector resolves
- * it, and says it is not once the selector runs again.
+ * nothing, so its read says the pause holds it while the project's own override
+ * stands, read over the API's own credential as the selector resolves it, and
+ * says nothing holds it once the selector runs again.
  */
-test("a project holding a lead answers paused while its selector is paused, and not while it runs", async () => {
+test("a project holding a lead answers Paused as what holds it while its selector is paused, and nothing while it runs", async () => {
   const partition = await readableProject("http-paused-lead");
   await sessionRigSession(rig.sessions, partition, "http-paused-lead", {
     kind: "Lead",
   });
-  assert.equal(await leadPaused("http-paused-lead", partition), false);
+  assert.equal(await leadHeld("http-paused-lead", partition), undefined);
   const administrator = {
     kind: asAuthorityKind("User"),
     subject: asAuthoritySubject("selector-admin"),
@@ -744,12 +744,12 @@ test("a project holding a lead answers paused while its selector is paused, and 
       .written,
     "Settings",
   );
-  assert.equal(await leadPaused("http-paused-lead", partition), true);
+  assert.equal(await leadHeld("http-paused-lead", partition), "Paused");
   assert.equal(
     (await project.write(partition, 1, {}, administrator)).written,
     "Settings",
   );
-  assert.equal(await leadPaused("http-paused-lead", partition), false);
+  assert.equal(await leadHeld("http-paused-lead", partition), undefined);
 });
 
 /**

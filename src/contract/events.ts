@@ -81,8 +81,9 @@ const versionSchema = z.literal(projectStreamVersion);
 
 /**
  * The body each kind's GET route answers with. `Project` is the entry
- * `GET /api/v1/projects` lists and `Execution` the row the executions list
- * answers, each less than the route that reads the one resource returns.
+ * `GET /api/v1/projects` lists, `Execution` the row the executions list
+ * answers, and `Session` the lead route's lead less `paused`, each less than
+ * the route that reads the one resource returns.
  */
 export const projectChangeRepresentationSchemas = {
   Operation: operationResponseSchema,

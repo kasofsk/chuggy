@@ -955,6 +955,17 @@ export const leadAbsencesUntimed = [
 export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
 
 /**
+ * What holds a lead that stands from dispatching where no refusal dates it, the
+ * untimed absences that outrank a kept refusal: its selector is paused, or the
+ * site's selector may not read the project.
+ */
+export const leadHolds = [
+  "Paused",
+  "SelectorNotGranted",
+] as const satisfies readonly LeadAbsenceUntimed[];
+export type LeadHold = (typeof leadHolds)[number];
+
+/**
  * When a pool other than its owner's personal runner may take an owned
  * execution, in a project that lets personal runners serve their owners:
  * never while the owner has one for it, or only while that runner is not live.

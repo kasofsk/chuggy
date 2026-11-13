@@ -96,15 +96,16 @@ export function projectLeadPanelState(
 
 /**
  * Whether a lead dispatches the project's tickets, or will open to: unknown
- * until a read has said, and false only where one stands and the read says its
- * selector is paused, or none stands and the read says why none can open, or
- * gives no reason at all.
+ * until a read has said, and false only where one stands and the read says what
+ * holds it or carries the refusal the selector keeps, or none stands and the
+ * read says why none can open, or gives no reason at all.
  */
 export function projectLeadDispatches(
   state: PanelState<LeadReadResponse>,
 ): boolean | undefined {
   if (state.state !== "Ready") return undefined;
-  if ("session" in state.value) return state.value.paused !== true;
+  if ("session" in state.value)
+    return state.value.held === undefined && state.value.refusal === undefined;
   const reason = state.value.absence?.reason;
   return reason === "NotNeeded" || reason === "AwaitingSelector";
 }
