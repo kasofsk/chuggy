@@ -1,0 +1,101 @@
+/* StatusBadge: a state's word and mark in its tone, on its tone's wash, inside
+   a hairline of the same tone. A tone with no wash stands on the sunken
+   surface. The mark is drawn in the word's colour, so it reads wherever the
+   word does. */
+
+@layer ui {
+  .status-badge {
+    --status-badge-ink: var(--ink-2);
+    --status-badge-ground: var(--surface-2);
+
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border: var(--hairline) solid var(--status-badge-ink);
+    border-radius: var(--radius-3);
+    background: var(--status-badge-ground);
+    color: var(--status-badge-ink);
+    font: var(--weight-medium) var(--text-sm) / var(--leading-dense)
+      var(--font-prose);
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+
+  .status-badge[data-size="small"] {
+    padding: 0 var(--space-1);
+    font-size: var(--text-xs);
+  }
+
+  .status-badge[data-compact] {
+    padding: var(--space-1);
+  }
+
+  .status-badge[data-tone="pass"] {
+    --status-badge-ink: var(--tone-pass);
+    --status-badge-ground: var(--wash-pass);
+  }
+
+  .status-badge[data-tone="fail"] {
+    --status-badge-ink: var(--tone-fail);
+    --status-badge-ground: var(--wash-fail);
+  }
+
+  .status-badge[data-tone="live"] {
+    --status-badge-ink: var(--tone-live);
+    --status-badge-ground: var(--wash-live);
+  }
+
+  .status-badge[data-tone="evaluation"] {
+    --status-badge-ink: var(--tone-evaluation);
+    --status-badge-ground: var(--wash-evaluation);
+  }
+
+  .status-badge[data-tone="finalization"] {
+    --status-badge-ink: var(--tone-finalization);
+    --status-badge-ground: var(--wash-finalization);
+  }
+
+  .status-badge[data-tone="queued"] {
+    --status-badge-ink: var(--tone-queued);
+    --status-badge-ground: var(--wash-queued);
+  }
+
+  .status-badge[data-tone="parked"] {
+    --status-badge-ink: var(--tone-parked);
+    --status-badge-ground: var(--wash-parked);
+  }
+
+  .status-badge[data-tone="retired"] {
+    --status-badge-ink: var(--tone-retired);
+    --status-badge-ground: var(--surface-2);
+  }
+
+  .status-badge[data-tone="neutral"] {
+    --status-badge-ink: var(--ink-2);
+    --status-badge-ground: var(--surface-2);
+  }
+
+  .status-badge-mark {
+    width: 1em;
+    height: 1em;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .status-badge-filled {
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .status-badge-word {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
