@@ -201,6 +201,7 @@ import {
   sessionHeldWalk,
   sessionHeldWalkAsks,
   type LeadAbsence,
+  type LeadHeld,
   type LeadRead,
   type LeadReadStore,
   type LeadRefused,
@@ -2212,7 +2213,7 @@ async function nativeLeadRefusalStanding(
   access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
-): Promise<LeadAbsence | undefined> {
+): Promise<LeadHeld | LeadRefused | undefined> {
   if ((await ports.settings.projectSettings(partition)).mode === "Paused")
     return leadPaused;
   if (
@@ -2223,16 +2224,19 @@ async function nativeLeadRefusalStanding(
   return ports.leads.leadRefusal(partition);
 }
 
-/** The refusal a lead holding a session is drawn with: the one kept, where nothing outranks it. */
-async function nativeLeadSessionRefusal(
+/**
+ * What a lead holding a session is drawn with from the same standing a project
+ * holding none answers its absence from: what holds it, where that project
+ * would answer `Paused` or `SelectorNotGranted`, or else the refusal kept.
+ */
+async function nativeLeadSessionSelectorStanding(
   access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
-): Promise<{ readonly refusal?: LeadRefused }> {
+): Promise<{ readonly held?: LeadHeld; readonly refusal?: LeadRefused }> {
   const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  return standing !== undefined && "since" in standing
-    ? { refusal: standing }
-    : {};
+  if (standing === undefined) return {};
+  return "since" in standing ? { refusal: standing } : { held: standing };
 }
 
 /** A subsidized lead's tenant's spend this month and its cap, and nothing for a lead run as its own. */
@@ -2295,7 +2299,7 @@ function nativeLeadSessionMethods(
           standing.session,
           sessionStoreStreamsAnswered,
         ),
-        ...(await nativeLeadSessionRefusal(access, ports, partition)),
+        ...(await nativeLeadSessionSelectorStanding(access, ports, partition)),
         ...(await nativeLeadSubsidy(ports, partition)),
       };
     },
