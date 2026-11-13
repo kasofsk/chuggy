@@ -115,14 +115,19 @@
 
   .btn-icon {
     flex: none;
-    width: var(--height-control);
-    height: var(--height-control);
+    width: var(--height-icon);
+    height: var(--height-icon);
     padding: 0;
   }
 
   @media (pointer: coarse) {
     .btn {
       min-height: var(--height-control);
+    }
+
+    .btn-icon {
+      width: var(--height-control);
+      height: var(--height-control);
     }
   }
 

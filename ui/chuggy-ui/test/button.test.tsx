@@ -227,10 +227,13 @@ test("every size is a control's height under a coarse pointer, and unchanged oth
     expect(buttonDeclared("min-height", buttonCoarse)).toBe(
       "var(--height-control)",
     );
-    if (size === "icon") {
-      expect(buttonDeclared("height")).toBe("var(--height-control)");
-      expect(buttonDeclared("width")).toBe("var(--height-control)");
-    }
+    if (size === "icon")
+      for (const side of ["width", "height"]) {
+        expect(buttonDeclared(side)).toBe("var(--height-icon)");
+        expect(buttonDeclared(side, buttonCoarse)).toBe(
+          "var(--height-control)",
+        );
+      }
     cleanup();
   }
 });
