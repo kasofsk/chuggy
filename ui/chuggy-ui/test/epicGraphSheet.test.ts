@@ -27,7 +27,9 @@ test("a card under the sheet or above the room is scrolled until its middle is t
 });
 
 test("an extent whose top is below its bottom is refused", () => {
-  expect(() => epicGraphSheetScrollOf({ top: 10, bottom: 0 }, room)).toThrow();
+  expect(() => epicGraphSheetScrollOf({ top: 10, bottom: 0 }, room)).toThrow(
+    "top is below its bottom",
+  );
   expect(() =>
     epicGraphSheetScrollOf({ top: 0, bottom: 10 }, { top: 5, bottom: 0 }),
   ).toThrow();

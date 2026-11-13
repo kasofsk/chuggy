@@ -24,6 +24,7 @@ import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EpicGraphTab } from "../app/browser/epic/EpicGraphTab.tsx";
+import { viewportNarrowEm } from "../app/browser/shell/viewport.ts";
 import { epicGraphQuery } from "../app/core/epics.ts";
 import { landingQueuesQuery } from "../app/core/ticketQueries.ts";
 import {
@@ -884,6 +885,31 @@ test("on a phone the graph takes the screen at rest, and a tapped card rises in 
   ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
   expect(sheet().hasAttribute("style")).toBe(false);
   expect(sheet().querySelectorAll("[style]")).toHaveLength(0);
+});
+
+test("at exactly the narrow breakpoint, where the sheet's layout already holds, a tapped card rises in the sheet", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed />,
+    em: viewportNarrowEm,
+  });
+  await graphic();
+  expect(screen.queryByRole("complementary")).toBeNull();
+  fireEvent.click(cardButton(5));
+  expect(screen.getAllByRole("complementary")).toStrictEqual([sheet()]);
+});
+
+test("just above the narrow breakpoint a selected ticket is in the side panel and no sheet", async () => {
+  chainServed();
+  await epicPageDrawn(abilitiesNone, {
+    tab: <EpicGraphTabAddressed />,
+    em: viewportNarrowEm + 1 / 16,
+  });
+  await graphic();
+  expect(document.querySelector(".epic-graph-sheet")).toBeNull();
+  fireEvent.click(cardButton(5));
+  expect(side().dataset["ticket"]).toBe("5");
+  expect(document.querySelector(".epic-graph-sheet")).toBeNull();
 });
 
 test("a pill in the sheet selects its ticket, and Close and Escape each clear the selection and bring the chain back", async () => {

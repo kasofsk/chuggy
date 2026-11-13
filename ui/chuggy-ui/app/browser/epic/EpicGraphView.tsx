@@ -45,7 +45,7 @@ import { projectTableRow } from "../../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
-import { useViewportAtLeastEm, viewportNarrowEm } from "../shell/viewport.ts";
+import { useViewportAtMostEm, viewportNarrowEm } from "../shell/viewport.ts";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -442,7 +442,7 @@ function EpicGraphViewLayered(props: {
   );
   const chosen =
     selected === undefined ? undefined : layered.tickets.get(selected);
-  const narrow = !useViewportAtLeastEm(viewportNarrowEm);
+  const narrow = useViewportAtMostEm(viewportNarrowEm);
   return (
     <div className="epic-graph">
       {narrow ? null : chosen === undefined ? (

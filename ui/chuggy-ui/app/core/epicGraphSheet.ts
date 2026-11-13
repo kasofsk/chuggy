@@ -15,7 +15,7 @@ export function epicGraphSheetScrollOf(
   room: EpicGraphSheetExtent,
 ): number | undefined {
   if (card.top > card.bottom || room.top > room.bottom)
-    throw new Error("an extent's top is above its bottom");
+    throw new Error("an extent's top is below its bottom");
   if (card.top >= room.top && card.bottom <= room.bottom) return undefined;
   return (card.top + card.bottom) / 2 - (room.top + room.bottom) / 2;
 }
