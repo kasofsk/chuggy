@@ -195,6 +195,9 @@ export const agentAccountCredentialStandingFunction =
 export const agentAccountSettingWriteFunction = "write_agent_account_setting";
 /** One person's press to try an agent of their account again, recorded only while a limit holds it paused. */
 export const agentAccountPressFunction = "press_agent_account";
+/** One person's credential of an agent of their account retired: its readings and its limit dropped, refused while a live runner of theirs names it. */
+export const agentAccountCredentialRetireFunction =
+  "retire_agent_account_credential";
 export const runEvidenceImmutableFunction =
   "execution_run_evidence_is_immutable";
 export const runConfigurationImmutableFunction =

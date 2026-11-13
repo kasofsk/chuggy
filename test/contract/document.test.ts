@@ -34,6 +34,7 @@ const document = golden as {
 const documentRouteNames = [
   "abilities",
   "actionReports",
+  "agentAccountCredential",
   "agentAccountPresses",
   "agentAccountSettings",
   "agentAccounts",

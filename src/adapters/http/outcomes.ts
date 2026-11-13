@@ -206,6 +206,7 @@ import type {
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
+  AgentAccountRetired,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
@@ -223,6 +224,7 @@ import type {
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
+import { agentAccountCredentialInUseCode } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
@@ -1569,6 +1571,28 @@ export function agentAccountPressedResponse(
         nativeHttpError(
           "NotHardPaused",
           "No limit holds this agent of the account paused.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential retired, none held under its name, or refused because a live runner of the account still names it. */
+export function agentAccountRetiredResponse(
+  result: AgentAccountRetired,
+): NativeHttpResponse {
+  switch (result) {
+    case "Retired":
+      return noContent();
+    case "NotHeld":
+      return notFound();
+    case "CredentialInUse":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialInUseCode,
+          "A live runner of the account still names this credential.",
         ),
       );
     default:

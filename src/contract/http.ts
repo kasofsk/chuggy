@@ -701,6 +701,7 @@ export const nativeHttpRoutes = {
   agentAccounts: `${nativeHttpBasePath}/agent-accounts`,
   agentAccountSettings: `${nativeHttpBasePath}/agent-accounts/:agent/settings`,
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,
+  agentAccountCredential: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential`,
   chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
   chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
   chatAbilities: `${nativeHttpBasePath}/tenants/:tenant/chat/abilities`,
