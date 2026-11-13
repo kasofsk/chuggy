@@ -38,8 +38,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
+    <a href={props.to ?? "/"}>{props.children}</a>
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
@@ -133,6 +133,22 @@ const transcribed = runEvidenceOf(8, { configuration: runConfigurationRef });
 
 function nowCard(): HTMLElement {
   return screen.getByRole("region", { name: "Now" });
+}
+
+/**
+ * The parts of the card's notice line that each wrap whole, after asserting
+ * nothing but a space stands between them: a line can then break only before
+ * a part, and every part but the first opens with its dot.
+ */
+function nowLineParts(): readonly string[] {
+  const line = nowCard().querySelector(".notice-inline");
+  const parts = [...(line?.querySelectorAll(".whitespace-nowrap") ?? [])]
+    .filter(
+      (part) => part.parentElement?.closest(".whitespace-nowrap") === null,
+    )
+    .map((part) => part.textContent);
+  expect(line?.textContent).toBe(parts.join(" "));
+  return parts;
 }
 
 /** How many times the execution's own read was asked. */
@@ -288,20 +304,20 @@ function ownRunAnswered(over: Record<string, unknown>): RunPageServed {
 }
 
 test.each([
-  ["Offline", "Waiting on your personal runners · offline"],
-  ["Unable", "Waiting on your personal runners · none can run it"],
-  ["Live", "Waiting on your personal runners"],
+  ["Offline", ["· offline"]],
+  ["Unable", ["· none can run it"]],
+  ["Live", []],
 ] as const)(
-  "the reader's own run the server says waits on their runners as %s says so, and where they are managed",
-  async (wait, words) => {
+  "the reader's own run the server says waits on their runners as %s says so once, as the link to where they are managed, with its state after it",
+  async (wait, state) => {
     await runPageDrawn(atlas, ownRunAnswered({ personalRunnerWait: wait }));
-    const card = nowCard();
-    expect(card.textContent).toContain(words);
-    for (const other of ["· offline", "· none can run it"])
-      if (!words.endsWith(other)) expect(card.textContent).not.toContain(other);
-    expect(
-      within(card).getByRole("link", { name: "Personal runners" }),
-    ).toBeTruthy();
+    const sentence = "Waiting on your personal runners";
+    expect(nowLineParts()).toStrictEqual([sentence, ...state]);
+    const links = within(nowCard()).getAllByRole("link");
+    const runners = links.filter((link) =>
+      link.getAttribute("href")?.endsWith("/settings/workspace/runner"),
+    );
+    expect(runners.map((link) => link.textContent)).toStrictEqual([sentence]);
   },
 );
 
@@ -364,7 +380,14 @@ test("the reader's own run waiting on live runners their account holds paused sa
     ownRunAnswered({ personalRunnerWait: "Live", paused: pause }),
   );
   const card = nowCard();
-  expect(card.textContent).toContain("Paused · Five-hour window · until ");
+  const [status, reason, until, usage, ...rest] = nowLineParts();
+  expect([status, reason, usage, rest]).toStrictEqual([
+    "Paused",
+    "· Five-hour window",
+    "· Usage",
+    [],
+  ]);
+  expect(until).toMatch(/^· until \S/);
   expect(card.textContent).not.toContain("Waiting on your personal runners");
   expect(within(card).getByRole("link", { name: "Usage" })).toBeTruthy();
 });

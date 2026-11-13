@@ -187,7 +187,6 @@ ticket-now-watch = Watch
 ticket-now-title = { $status } { $step }
 ticket-now-prefix = Now: { $doing }
 ticket-now-aria-label = Now
-ticket-now-personal-runners = { -personal-runner(case: "upper", form: "plural") }
 ticket-run-time-running = running
 ticket-needs-you-aria-label = Needs you
 ticket-situation-read-the = Read the { $step }

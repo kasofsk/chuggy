@@ -29,6 +29,7 @@ import {
   ownerFallbackValue,
   runnerWait,
   runnerWaitPause,
+  runnerWaitLine,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
 import {
@@ -141,15 +142,17 @@ test("a member's runners are counted, and one more may be registered only below 
 });
 
 test.each([
-  ["Live", "Waiting on your personal runners"],
-  ["Offline", "Waiting on your personal runners · offline"],
-  ["Unable", "Waiting on your personal runners · none can run it"],
+  ["Live", undefined],
+  ["Offline", "offline"],
+  ["Unable", "none can run it"],
 ] as const)(
-  "a run of the reader's that has not begun says the server's answer %s in its own words",
-  (wait, words) => {
+  "a run of the reader's that has not begun says the server's answer %s as one line and the state's own word",
+  (wait, word) => {
     const answered = { ...waiting, personalRunnerWait: wait };
     expect(runnerWait(answered)).toBe(wait);
-    expect(copyTextEn(runnerWaitWord(wait))).toBe(words);
+    expect(copyTextEn(runnerWaitLine)).toBe("Waiting on your personal runners");
+    const said = runnerWaitWord(wait);
+    expect(said === undefined ? undefined : copyTextEn(said)).toBe(word);
   },
 );
 
