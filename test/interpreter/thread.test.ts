@@ -105,16 +105,24 @@ test("the wake roster holds exactly the reasons the wake runtime joins", () => {
 
 /**
  * The two copies being identical says nothing about what they say, so the acts
- * the sentence forbids are written out here. `originate` is the one that
- * matters most: this slice gives every thread `DraftOriginate` by default.
+ * a wake alone may not start are written out here, beside the instruction that
+ * lets one start them. `originate` is the one that matters most: this slice
+ * gives every thread `DraftOriginate` by default.
  */
-test("the default standing names each act a woken thread may not take", () => {
+test("the default standing lets a woken thread act only as far as its owner's instruction reaches", () => {
   for (const act of ["originate", "revise", "release", "dispatch", "run"])
     assert.ok(threadStandingRulesDefault.includes(` ${act}`), act);
-  assert.match(threadStandingRulesDefault, /notice, not an instruction/u);
+  assert.match(
+    threadStandingRulesDefault,
+    /A wake is a notice: say what happened, and act on it only as far as an instruction your owner already gave reaches/u,
+  );
   assert.match(
     threadStandingRulesDefault,
     /the lead's decisions are the lead's/u,
+  );
+  assert.match(
+    threadStandingRulesDefault,
+    /a dispatch on your owner's word is theirs and not the lead's/u,
   );
 });
 
@@ -315,7 +323,20 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
 test("the purpose lets a thread dispatch or revoke a ticket on its owner's word and on nothing else", () => {
   assert.match(
     threadPurposeStanding,
-    /You dispatch or revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
+    /You dispatch or revoke a ticket only on your owner's word: their instruction, which can reach tickets not yet ready, as when they ask you to carry an epic through, or their yes to one line from you naming the tickets\./u,
+  );
+});
+
+/**
+ * A paused selector keeps its lead session, so a thread told the lead dispatches
+ * what is released waits on a dispatch that never comes. The purpose says the
+ * lead dispatches only where it is, and where to read whether it is.
+ */
+test("the purpose says releasing starts nothing and a lead dispatches only where read_lead shows one", () => {
+  assert.match(threadPurposeStanding, /Releasing starts nothing/u);
+  assert.match(
+    threadPurposeStanding,
+    /by the project's lead where read_lead shows one dispatching and otherwise only on someone's word/u,
   );
 });
 
