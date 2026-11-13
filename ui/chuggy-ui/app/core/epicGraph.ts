@@ -15,6 +15,11 @@ export interface EpicGraphTicket {
   readonly standing: TicketStateStanding;
 }
 
+export interface EpicGraphPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
 /** The key an edge between two tickets is known by. */
 export function epicGraphEdgeKey(from: number, to: number): string {
   return `${String(from)}-${String(to)}`;

@@ -5,6 +5,7 @@
  * bar that fills as what it waits on is done.
  */
 
+import type { EpicGraphPoint } from "./epicGraph.ts";
 import type { EpicGraphLayered } from "./epicGraphLayers.ts";
 import { epicTicketsGroupOf } from "./epicTickets.ts";
 import type { EpicTicketsGroup, EpicTicketsMember } from "./epicTickets.ts";
@@ -62,11 +63,6 @@ export const epicOverviewGraphSizeLeast = { size: 14, gap: 4 } as const;
 /** The size at which a tile carries its number. */
 export const epicOverviewGraphNumbered = 28;
 
-export interface EpicOverviewPoint {
-  readonly x: number;
-  readonly y: number;
-}
-
 export interface EpicOverviewTile {
   readonly ticket: number;
   readonly group: EpicTicketsGroup;
@@ -98,8 +94,8 @@ export interface EpicOverviewGoal {
 
 /** One step of the longest chain to the next, bottom centre to top centre. */
 export interface EpicOverviewLink {
-  readonly from: EpicOverviewPoint;
-  readonly to: EpicOverviewPoint;
+  readonly from: EpicGraphPoint;
+  readonly to: EpicGraphPoint;
 }
 
 export interface EpicOverviewGraph {
