@@ -267,7 +267,10 @@ const projectGroups = [
 
 const projectPersonGroup = [
   "You",
-  ["Personal runners /acme-co/atlas-web/settings/workspace/runner"],
+  [
+    "Personal runners /acme-co/atlas-web/settings/workspace/runner",
+    "Preferences /acme-co/atlas-web/settings/preferences",
+  ],
 ];
 
 const workspaceGroups = [
@@ -284,7 +287,10 @@ const workspaceGroups = [
 
 const workspacePersonGroup = [
   "You",
-  ["Personal runners /tenants/acme-co/settings/runner"],
+  [
+    "Personal runners /tenants/acme-co/settings/runner",
+    "Preferences /tenants/acme-co/settings/preferences",
+  ],
 ];
 
 const settingsRoots = [

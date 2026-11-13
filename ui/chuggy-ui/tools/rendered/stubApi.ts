@@ -18,6 +18,7 @@
 import type { z } from "zod";
 
 import {
+  accessCallerAccountSchema,
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
 } from "../../../../src/contract/accessPlane.ts";
@@ -50,6 +51,10 @@ import {
 
 export const stubApiTenant = "tenant-rendered";
 export const stubApiProject = "project-rendered";
+
+/** Who the member is signed in as, as the directory names them. */
+export const stubApiLogin = "member-rendered";
+export const stubApiEmail = "member@rendered.example";
 
 /** A JSON answer, or a server-sent stream held open with no frame on it. */
 export type StubApiRead =
@@ -444,6 +449,12 @@ export const stubApiReads: readonly StubApiRead[] = [
       },
       readings: [],
     })),
+  }),
+  stubApiRead("/access/v1/account", accessCallerAccountSchema, {
+    subject: "member",
+    principal,
+    githubLogin: stubApiLogin,
+    email: stubApiEmail,
   }),
   stubApiRead("/access/v1/site/abilities", accessSiteAbilitiesSchema, {
     administer: false,
