@@ -303,3 +303,30 @@ test("a plan runs less than another where some workload stands at more of the ot
     false,
   );
 });
+
+test("a program over a plan an override replaces or adds is keyed by position, so the keys overridesPlanShort reads are positions", () => {
+  const overrides: ConfigurationOverrides = {
+    plans: {
+      gate: [
+        { name: "checks", evaluators: ["tests"] },
+        { name: "approval", evaluators: ["approval"] },
+      ],
+    },
+  };
+  const release = (program: ReturnType<typeof programOf>) => {
+    const readiness = draftReleaseReadiness(
+      canonical,
+      brief,
+      undefined,
+      overrides,
+      { evaluation: "gate" },
+      program,
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  assert.equal(release(programOf([[1], [1]])), "Ready");
+  assert.equal(
+    release([{ key: 2, evaluators: [{ key: 1 }] }]),
+    "ProgramStageOutOfPosition",
+  );
+});
