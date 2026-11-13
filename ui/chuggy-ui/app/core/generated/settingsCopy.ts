@@ -20,6 +20,7 @@ export interface SettingsCopy {
   readonly "settings-nav-site": Record<never, never>;
   readonly "settings-nav-workspaces": Record<never, never>;
   readonly "settings-nav-person": Record<never, never>;
+  readonly "settings-nav-preferences": Record<never, never>;
   readonly "settings-nav-index": Record<never, never>;
   readonly "settings-nav-lead-summary": Record<never, never>;
   readonly "settings-nav-lead-session-summary": Record<never, never>;
@@ -35,6 +36,22 @@ export interface SettingsCopy {
   readonly "settings-nav-site-workspaces-summary": Record<never, never>;
   readonly "settings-nav-site-permissions-summary": Record<never, never>;
   readonly "settings-nav-personal-runners-summary": Record<never, never>;
+  readonly "settings-nav-preferences-summary": Record<never, never>;
+  readonly "settings-preferences-appearance": Record<never, never>;
+  readonly "settings-preferences-scheme": Record<never, never>;
+  readonly "settings-preferences-scheme-system": Record<never, never>;
+  readonly "settings-preferences-scheme-light": Record<never, never>;
+  readonly "settings-preferences-scheme-dark": Record<never, never>;
+  readonly "settings-preferences-wording": Record<never, never>;
+  readonly "settings-preferences-wording-standard": Record<never, never>;
+  readonly "settings-preferences-wording-pseudo": Record<never, never>;
+  readonly "settings-preferences-wording-vernacular": {
+    readonly name: unknown;
+  };
+  readonly "settings-preferences-chat": Record<never, never>;
+  readonly "settings-preferences-chat-right": Record<never, never>;
+  readonly "settings-preferences-chat-left": Record<never, never>;
+  readonly "settings-preferences-chat-bottom": Record<never, never>;
   readonly "settings-cancel": Record<never, never>;
   readonly "settings-done": Record<never, never>;
   readonly "settings-edit": Record<never, never>;

@@ -3,10 +3,11 @@
  * they stay inside its shell, and under a workspace alone, in the frame a
  * screen outside every project is drawn in.
  *
- * A workspace's pages and the site's are the same routes in both places, so a
- * page reads its workspace from whichever address was matched. Each place's
- * bare address is the frame's to draw, which `SettingsLayout.tsx` says; the
- * workspace's bare address in a project replaces itself with its first page.
+ * A workspace's pages, the site's and the reader's preferences are the same
+ * routes in both places, so a page reads its workspace from whichever address
+ * was matched. Each place's bare address is the frame's to draw, which
+ * `SettingsLayout.tsx` says; the workspace's bare address in a project
+ * replaces itself with its first page.
  *
  * EVERY ROUTE IS MADE BEFORE IT IS HUNG. One made inside the list
  * `addChildren` is given loses its path's type and takes every address the
@@ -35,6 +36,7 @@ import { RunnersPage } from "../RunnersPage.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
+import { PreferencesPage } from "./PreferencesPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
 import { SitePermissionsPage } from "./SitePermissionsPage.tsx";
@@ -136,6 +138,17 @@ function sitePageRoutes<TParent extends AnyRoute>(parent: TParent) {
   ] as const;
 }
 
+function personPageRoutes<TParent extends AnyRoute>(parent: TParent) {
+  const getParentRoute = (): TParent => parent;
+  return [
+    createRoute({
+      getParentRoute,
+      path: "/preferences",
+      component: PreferencesPage,
+    }),
+  ] as const;
+}
+
 function ProjectSettings(): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
   return <SettingsLayout tenant={params.tenant} project={params.project} />;
@@ -183,6 +196,7 @@ export function projectSettingsRoutes<TParent extends AnyRoute>(
     ...projectPageRoutes(settings),
     workspacePages,
     ...sitePageRoutes(settings),
+    ...personPageRoutes(settings),
   ]);
 }
 
@@ -208,5 +222,6 @@ export function workspaceSettingsRoutes<TParent extends AnyRoute>(
     index,
     ...workspacePageRoutes(settings),
     ...sitePageRoutes(settings),
+    ...personPageRoutes(settings),
   ]);
 }

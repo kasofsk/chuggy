@@ -1,19 +1,23 @@
 /**
  * The bar's entries, derived: the project's primary places, each with the
- * route the router registered for it, and the gear's places, each the
- * address of the settings section it names.
+ * route the router registered for it, and the account menu's places, the
+ * settings and the reader's preferences, each at its address in the frame the
+ * menu is drawn in.
  */
 
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { settingsSection } from "../app/core/settingsNav.ts";
+import {
+  settingsRootRoutes,
+  settingsSection,
+} from "../app/core/settingsNav.ts";
 import {
   navEntryCurrent,
   navRoutes,
+  shellAccountNav,
   shellNav,
-  shellSetupNav,
 } from "../app/core/shellNav.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -38,31 +42,46 @@ test("the primary places are Tickets, Epics and the Inbox, in that order, each a
   for (const entry of places) expect(entry.params).toStrictEqual(atlas);
 });
 
-test("each of the gear's places but the settings themselves is its settings section, by its address and its word", () => {
-  const entries = shellSetupNav(atlas);
-  expect(entries.map((entry) => entry.id)).toStrictEqual([
-    "settings",
-    "repositories",
-    "runners",
-  ]);
-  const sections = [
-    settingsSection("repositories"),
-    settingsSection("runners"),
-  ];
-  expect(entries.map((entry) => [entry.to, entry.label])).toStrictEqual([
-    [navRoutes.settings, { id: "shell-nav-settings" }],
-    ...sections.map((section) => [section.project, section.label]),
+test("in a project the account menu names the project's settings, then the reader's preferences section there", () => {
+  const entries = shellAccountNav(atlas);
+  expect(entries.map((entry) => [entry.id, entry.to])).toStrictEqual([
+    ["settings", settingsRootRoutes.project],
+    ["preferences", settingsSection("preferences").project],
   ]);
   expect(entries.map((entry) => copyTextEn(entry.label))).toStrictEqual([
-    "Project settings",
-    "Repositories",
-    "Runners",
+    "Settings",
+    "Preferences",
   ]);
+  expect(entries[1]?.label).toStrictEqual(settingsSection("preferences").label);
   for (const entry of entries) expect(entry.params).toStrictEqual(atlas);
 });
 
+test("in a workspace outside every project the account menu names the workspace's settings and the preferences there", () => {
+  const entries = shellAccountNav({ tenant: "acme", project: undefined });
+  expect(entries.map((entry) => [entry.id, entry.to])).toStrictEqual([
+    ["settings", settingsRootRoutes.workspace],
+    ["preferences", settingsSection("preferences").workspace],
+  ]);
+  for (const entry of entries)
+    expect(entry.params).toStrictEqual({ tenant: "acme" });
+});
+
+test("where no workspace is named the account menu names no place", () => {
+  expect(
+    shellAccountNav({ tenant: undefined, project: undefined }),
+  ).toStrictEqual([]);
+});
+
+test("the preferences are a section of the reader's own group, at an address under each frame's settings", () => {
+  const preferences = settingsSection("preferences");
+  expect(preferences.group).toBe("person");
+  expect(preferences.shownBy).toBe("Member");
+  expect(preferences.project).toBe("/$tenant/$project/settings/preferences");
+  expect(preferences.workspace).toBe("/tenants/$tenant/settings/preferences");
+});
+
 function currentAt(pathname: string): readonly string[] {
-  return [...shellNav(atlas), ...shellSetupNav(atlas)]
+  return shellNav(atlas)
     .filter((entry) => navEntryCurrent(entry, pathname))
     .map((entry) => entry.id);
 }
@@ -72,15 +91,7 @@ test("each place is current on its own address and what lies beneath it", () => 
   expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
   expect(currentAt("/acme/atlas/epics")).toStrictEqual(["epics"]);
   expect(currentAt("/acme/atlas/epics/7")).toStrictEqual(["epics"]);
-  expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
-  expect(currentAt("/acme/atlas/settings/runners")).toStrictEqual([
-    "settings",
-    "runners",
-  ]);
-  expect(currentAt("/acme/atlas/settings/repositories/a%2Fb")).toStrictEqual([
-    "settings",
-    "repositories",
-  ]);
+  expect(currentAt("/acme/atlas/settings")).toStrictEqual([]);
 });
 
 test("a ticket's page and its edit belong to Tickets, and a new one to none", () => {

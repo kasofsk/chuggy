@@ -3,8 +3,9 @@
  * project's, the workspace's, the site's, or the reader's own — its address
  * under a project and, where it is not the project's, under the workspace
  * alone, and the ability that shows it. The settings' side navigation is this
- * roster drawn in the frame it is in, a group a level; the bar's gear names its
- * pages by section from it, and the project's own places are `shellNav.ts`'s.
+ * roster drawn in the frame it is in, a group a level; the account menu names
+ * the reader's preferences from it, and the project's own places are
+ * `shellNav.ts`'s.
  *
  * A workspace's page, the site's and the reader's own each have two
  * addresses: one under a project, so a reader in one keeps its shell, and one
@@ -44,6 +45,7 @@ export const settingsRoutes = {
     siteWorkspaces: "/$tenant/$project/settings/site/workspaces",
     sitePermissions: "/$tenant/$project/settings/site/permissions",
     myRunner: "/$tenant/$project/settings/workspace/runner",
+    preferences: "/$tenant/$project/settings/preferences",
   },
   workspace: {
     people: "/tenants/$tenant/settings/people",
@@ -53,6 +55,7 @@ export const settingsRoutes = {
     siteWorkspaces: "/tenants/$tenant/settings/site/workspaces",
     sitePermissions: "/tenants/$tenant/settings/site/permissions",
     myRunner: "/tenants/$tenant/settings/runner",
+    preferences: "/tenants/$tenant/settings/preferences",
   },
 } as const;
 
@@ -84,7 +87,8 @@ export type SettingsSectionId =
   | "usage"
   | "site-workspaces"
   | "site-permissions"
-  | "my-runner";
+  | "my-runner"
+  | "preferences";
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -115,6 +119,7 @@ const settingsSectionLabels = {
   "site-workspaces": { id: "settings-nav-workspaces" },
   "site-permissions": { id: "settings-nav-permissions" },
   "my-runner": { id: "settings-nav-personal-runners" },
+  preferences: { id: "settings-nav-preferences" },
 } as const satisfies Readonly<Record<SettingsSectionId, Copy>>;
 
 /** Each section's line, by its id. */
@@ -135,6 +140,7 @@ const settingsSectionSummaries = {
   "site-workspaces": { id: "settings-nav-site-workspaces-summary" },
   "site-permissions": { id: "settings-nav-site-permissions-summary" },
   "my-runner": { id: "settings-nav-personal-runners-summary" },
+  preferences: { id: "settings-nav-preferences-summary" },
 } as const satisfies Readonly<Record<SettingsSectionId, Copy>>;
 
 function settingsSectionOf(
@@ -190,6 +196,7 @@ export const settingsSections: readonly SettingsSection[] = [
     "SitePermissions",
   ),
   settingsSectionOf("my-runner", "person", "myRunner"),
+  settingsSectionOf("preferences", "person", "preferences"),
 ];
 
 /** One section by its id. */

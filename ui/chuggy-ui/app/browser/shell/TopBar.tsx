@@ -12,10 +12,10 @@
  * a pane over the whole body takes them too, and the project's row stays.
  *
  * The project's primary places are the bar's, drawn from `shellNav.ts`; the
- * frame's own controls and the gear's settings pages sit behind the gear
- * beside the project. A screen outside every project draws the same bar without what
- * only a project has — its screens, its setup and its page row — so signing
- * out and the theme are reachable before there is a project to open.
+ * settings, the reader's preferences and signing out sit behind the account
+ * menu beside the project. A screen outside every project draws the same bar
+ * without what only a project has — its screens and its page row — so
+ * signing out is reachable before there is a project to open.
  */
 
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -38,7 +38,7 @@ import { useChatPaneYields } from "./chatPaneHeld.ts";
 import { DetailsToggle } from "./DetailsPane.tsx";
 import { NavIcon } from "./navIcons.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
-import { SettingsMenu } from "./SettingsMenu.tsx";
+import { AccountMenu } from "./AccountMenu.tsx";
 import { useShellSlotHolder, useShellSlotsFilled } from "./slots.tsx";
 
 /** One screen's entry, which also moves a pane that filled the body out of
@@ -67,7 +67,8 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
   );
 }
 
-/** The project's primary places but the inbox, which sits beside the gear. */
+/** The project's primary places but the inbox, which sits beside the account
+ * menu. */
 function TopBarNav(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -92,7 +93,7 @@ function TopBarNav(props: {
   );
 }
 
-/** The inbox beside the gear, with a badge for what waits in it. */
+/** The inbox beside the account menu, with a badge for what waits in it. */
 function TopBarInbox(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -243,8 +244,8 @@ export function TopBar(props: {
             {partition === undefined ? null : (
               <TopBarInbox partition={partition} />
             )}
-            <SettingsMenu
-              partition={partition}
+            <AccountMenu
+              project={partition?.project}
               tenant={partition?.tenant ?? props.chat}
             />
           </div>

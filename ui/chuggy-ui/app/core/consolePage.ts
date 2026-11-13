@@ -109,7 +109,8 @@ function consolePageRouteId(path: string): string {
 }
 
 /** Each route under a project, by the identity the router gives it, and the
- * page it is. A settings address that only redirects names no section. */
+ * page it is. A settings address that only redirects names no section, and
+ * nor do the reader's preferences, which the contract names none for. */
 const consolePageRoutes: ReadonlyMap<
   string,
   (match: ConsolePageMatch) => unknown
@@ -150,6 +151,7 @@ const consolePageRoutes: ReadonlyMap<
   ["/$tenant/$project/settings/", consolePageSettings()],
   ["/$tenant/$project/settings/workspace", consolePageSettings()],
   ["/$tenant/$project/settings/workspace/", consolePageSettings()],
+  ["/$tenant/$project/settings/preferences", consolePageSettings()],
   ...Object.entries(consolePageSettingsPaths).map(
     ([section, path]) =>
       [

@@ -13,14 +13,14 @@
    reader. A drag held into the strip gives the open pane the strip's width
    before the pane becomes the strip, and the pane draws nothing in it.
 
-   The bar is two rows at every width: the project and the gear, then the
+   The bar is two rows at every width: the project and the account menu, then the
    screens, which a frame too narrow to divide gives to a pane it opens. A
    screen's entry is its glyph and its name, and the screen the reader is on is
    marked three ways at once — its ink, a wash, and a bar along the header's
    foot — so it reads from across the room. On a phone the entry
    is its glyph alone, its name kept for a reader who does not see it, and the
    entries spread across the row; the project's name gives way, cut short,
-   before the gear does. */
+   before the account menu does. */
 
 @layer page {
   .chat-reading {
@@ -384,9 +384,27 @@
     }
   }
 
-  /* The gear's menu leads its setup pages with their glyphs, so its gutter
-     is a glyph wide for the radio marks under them too. */
-  .settings-menu .picker-gutter {
-    width: var(--space-4);
+  /* The account menu: who the reader is, set in as far as its items are,
+     and on a phone every item a finger's height. */
+  .account-menu-who {
+    display: grid;
+    padding: var(--space-1) var(--space-3);
+    overflow-wrap: anywhere;
+  }
+
+  .account-menu-login {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .account-menu-email {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  @media (max-width: 40em) {
+    .account-menu .menu-item {
+      min-height: var(--height-touch);
+    }
   }
 }
