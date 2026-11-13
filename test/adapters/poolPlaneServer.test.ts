@@ -706,7 +706,7 @@ test("a poll over a socket naming the most credentials the contract admits besid
   }
 });
 
-test("a personal runner's or a pool's poll has the credentials it named kept, one unread or absent keeping none, and a chat host's are never kept", async () => {
+test("a personal runner's, a pool's or a chat host's poll has the credentials it named kept, one unread or absent keeping none", async () => {
   for (const [why, headers, kept] of [
     [
       "a runner naming two agents' credentials",
@@ -735,8 +735,9 @@ test("a personal runner's or a pool's poll has the credentials it named kept, on
     [
       "a chat host naming some",
       { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
-      ["ChatHost", {}],
+      ["ChatHost", { Claude: ["work"] }],
     ],
+    ["a chat host naming none", hostSpeaking, ["ChatHost", {}]],
   ] as const) {
     const recorded = runnerCalls();
     const answered = await createPoolPlaneApp(
@@ -796,14 +797,24 @@ const credentialPausesPolled = [
     undefined,
   ],
   [
-    "a chat host naming some",
+    "a chat host of this release",
     { ...hostSpeaking, [workerRunnerCredentialsHeader]: "Claude:work" },
+    [{ Claude: ["work"] }],
+    [credentialPauseAnswered],
+  ],
+  [
+    "a chat host of a release before them",
+    {
+      ...hostSpeaking,
+      [workerContractHeader]: "1.77.0",
+      [workerRunnerCredentialsHeader]: "Claude:work",
+    },
     [],
     undefined,
   ],
 ] as const;
 
-test("a personal runner's or a pool's answer names the pauses of the credentials its poll named only where its release reads them, and a chat host's never", async () => {
+test("a personal runner's, a pool's or a chat host's answer names the pauses of the credentials its poll named only where its release reads them", async () => {
   const pause = credentialPauseAnswered;
   for (const [why, headers, asked, pauses] of credentialPausesPolled) {
     const made: unknown[] = [];
@@ -1429,7 +1440,8 @@ function poolReplayPorts(
 
 /**
  * Every poll a pool built with `older` makes, through the names its own
- * release exports, read by its own reconciliation schema. That schema is
+ * release exports, read by its own reconciliation schema, each naming a
+ * credential unless it names its runner. That schema is
  * strict, so an answer naming a field it does not is one such a pool refuses
  * whole.
  */
@@ -1472,7 +1484,9 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
           ...(older.memoryRoomHeader === undefined || room === undefined
             ? {}
             : { [older.memoryRoomHeader]: room }),
-          [workerRunnerCredentialsHeader]: "Claude:work",
+          ...(named === undefined
+            ? { [workerRunnerCredentialsHeader]: "Claude:work" }
+            : {}),
         },
       });
       assert.equal(answered.statusCode, 200, what);
