@@ -618,6 +618,24 @@ async function finalizerGatherProposalBase(
 }
 
 /**
+ * The binding a branch the remote does not hold yet is read over: for a
+ * proposing brief the base it opens into, which is what its head is promoted
+ * onto and what its landing is proved against, and otherwise the binding.
+ */
+function finalizerGatherFallbackBinding(
+  binding: RepositoryBinding,
+  branches: FinalizerBranches,
+): RepositoryBinding {
+  const finalization = branches.brief?.finalization;
+  return briefFinalizationOpensProposal(finalization)
+    ? finalizerProposalBaseBinding(
+        binding,
+        briefFinalizationTarget(finalization),
+      )
+    : binding;
+}
+
+/**
  * What one gathering came to: the view a decision is made from, or the reason
  * one could not be made from what was read. A request nothing durable answers
  * for at all is neither, and is left to the sweep that reopens it.
@@ -666,7 +684,7 @@ async function finalizerGatherLanding(
   const base = await finalizerGatherProposalBase(service, binding, branches);
   const observed = await repositoryTargetObserved(
     service.git,
-    binding,
+    finalizerGatherFallbackBinding(binding, branches),
     branches.target,
   );
   const view: FinalizationView = {
