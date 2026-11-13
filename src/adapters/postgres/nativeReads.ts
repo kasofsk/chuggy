@@ -560,9 +560,10 @@ function ticketUsageResumeTicket(ticket: string | null): string {
 
 /**
  * What `ticket_usage_resume` reads of each of `rows` under the scheduler's
- * `bounds`, by ticket: the instant the latest pause holding its escalation
- * ends, or none where none holds any longer, and nothing for a ticket the
- * scheduler does not resume so.
+ * `bounds`, by ticket: the instant the last of its limited tasks is free,
+ * each free at the earliest end among its account's pauses as its runners
+ * would claim it, or none where each is free already, and nothing for a
+ * ticket the scheduler does not resume so.
  */
 async function ticketUsageResumes(
   client: pg.Pool | pg.PoolClient,
