@@ -17,13 +17,14 @@ import {
   postgresLimitsDefault,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
+import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import {
   ticketRunStepFailureFunction,
   ticketRunnerLossFunction,
   ticketUpdatedDependenciesFunction,
   ticketUsageResumeFunction,
 } from "../../src/adapters/postgres/schema/shared.ts";
-import { postgresHarnessUrl } from "./harness.ts";
+import { postgresHarnessRolePool, postgresHarnessUrl } from "./harness.ts";
 
 let admin: pg.Pool;
 
@@ -77,6 +78,18 @@ test("the pool bounds the wait for a connection as well as the wait for an answe
 test("a pooled connection plans with JIT off", async () => {
   const jit = await admin.query<{ jit: string }>("SHOW jit");
   assert.equal(jit.rows[0]?.jit, "off");
+});
+
+test("a URL carrying its own options keeps them and still plans with JIT off", async () => {
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const session = await asApi.query<{ role: string; jit: string }>(
+      "SELECT current_user AS role, current_setting('jit') AS jit",
+    );
+    assert.deepEqual(session.rows[0], { role: apiRole, jit: "off" });
+  } finally {
+    await asApi.end();
+  }
 });
 
 test("the functions a ticket read joins per ticket are planned at one row each", async () => {
