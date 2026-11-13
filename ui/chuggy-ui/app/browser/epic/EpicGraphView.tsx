@@ -4,7 +4,8 @@
  * tickets outside the epic; then each layer `core/epicGraphLayers.ts` places
  * as a row, its number, its done count and a spine filled to the share done
  * beside its cards, which wrap; then the goal, where there is one, across the
- * foot; and the side panel.
+ * foot; and the side panel, or on a phone a sheet while a ticket is selected
+ * and nothing while none is.
  *
  * The ticket in focus, a preview over the selection, keeps everything up and
  * down its chain as it is and dims the rest, and its lines are drawn under
@@ -44,6 +45,7 @@ import { projectTableRow } from "../../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
+import { useViewportAtMostEm, viewportNarrowEm } from "../shell/viewport.ts";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -52,6 +54,7 @@ import { EpicGraphCard } from "./EpicGraphCard.tsx";
 import type { EpicGraphPreviewed } from "./EpicGraphCard.tsx";
 import { EpicGraphLines } from "./EpicGraphLines.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
+import { EpicGraphSheet } from "./EpicGraphSheet.tsx";
 import { EpicGraphSide, EpicGraphSideSummary } from "./EpicGraphSide.tsx";
 
 import "./epicGraph.css";
@@ -439,9 +442,10 @@ function EpicGraphViewLayered(props: {
   );
   const chosen =
     selected === undefined ? undefined : layered.tickets.get(selected);
+  const narrow = useViewportAtMostEm(viewportNarrowEm);
   return (
     <div className="epic-graph">
-      {chosen === undefined ? (
+      {narrow ? null : chosen === undefined ? (
         <EpicGraphSideSummary layered={layered} onTicket={onTicket} />
       ) : (
         <EpicGraphSide
@@ -465,6 +469,16 @@ function EpicGraphViewLayered(props: {
         />
         <EpicGraphDrawing layered={layered} held={cardsHeld} />
       </div>
+      {narrow && chosen !== undefined ? (
+        <EpicGraphSheet
+          partition={held.partition}
+          graph={graph}
+          ticket={chosen}
+          layered={layered}
+          row={props.rows.get(chosen.node.ticket)}
+          onTicket={onTicket}
+        />
+      ) : null}
     </div>
   );
 }
