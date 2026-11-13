@@ -6,10 +6,13 @@
  * A READING AND A LIMIT ARE KEPT UNDER A CREDENTIAL, their agent's default
  * where a case names none, as a run naming none is.
  *
- * A READING AND A LIMIT POINT AT THE ATTEMPT THEY CAME FROM, and a case here is
- * about the account rather than the attempt, so the transaction that plants
- * them stands the foreign keys down for itself alone.
+ * A READING AND A LIMIT POINT AT THE ATTEMPT THEY CAME FROM, and a runner at
+ * its workspace, and a case here is about the account rather than either, so
+ * the transaction that plants them stands the foreign keys down for itself
+ * alone.
  */
+import { randomUUID } from "node:crypto";
+
 import { workerRunCredentialDefaults } from "../../src/contract/workerPlane.ts";
 import type { PostgresHarness, PostgresTransaction } from "./harness.ts";
 
@@ -30,6 +33,15 @@ export interface AgentAccountHarnessLimit {
   readonly credential?: string;
 }
 
+/** A runner of the account, last polling `polledSecs` from now and naming each agent's credentials as `named` does. */
+export interface AgentAccountHarnessRunner {
+  readonly kind: "Personal" | "Pool" | "ChatHost";
+  readonly polledSecs: number;
+  readonly named: Readonly<
+    Partial<Record<AgentAccountHarnessAgent, readonly string[]>>
+  >;
+}
+
 export interface AgentAccountHarnessState {
   readonly readings?: readonly AgentAccountHarnessReading[];
   readonly limit?: AgentAccountHarnessLimit;
@@ -44,6 +56,8 @@ export interface AgentAccountHarnessState {
     readonly pressedSecs: number;
     readonly spentSecs?: number;
   };
+  /** The account's runners, replacing every one it held, and left as they are where absent. */
+  readonly runners?: readonly AgentAccountHarnessRunner[];
 }
 
 /** A weekly reading over the default threshold of each credential `ends` names, each resetting that many seconds from now. */
@@ -92,6 +106,53 @@ async function agentAccountHarnessChosen(
         state.press.spentSecs ?? null,
       ],
     );
+}
+
+/** The account's runners, each its own personal runner, pool it registered or chat host, replacing every one it held. */
+async function agentAccountHarnessRunners(
+  transaction: PostgresTransaction,
+  principal: string,
+  runners: readonly AgentAccountHarnessRunner[],
+): Promise<void> {
+  await transaction.query("DELETE FROM personal_runner WHERE owner=$1", [
+    principal,
+  ]);
+  await transaction.query("DELETE FROM worker_pool WHERE registered_by=$1", [
+    principal,
+  ]);
+  await transaction.query("DELETE FROM chat_host WHERE owner=$1", [principal]);
+  for (const runner of runners) {
+    const named = JSON.stringify(runner.named);
+    const polled = runner.polledSecs;
+    const tenant = `tenant-${randomUUID()}`;
+    switch (runner.kind) {
+      case "Personal":
+        await transaction.query(
+          `INSERT INTO personal_runner
+             (tenant,owner,capabilities,principal,client_id,last_polled_at,credentials_named)
+           VALUES($1,$2,'{}',$3,$3,now()+make_interval(secs=>$4),$5::jsonb)`,
+          [tenant, principal, randomUUID(), polled, named],
+        );
+        break;
+      case "Pool":
+        await transaction.query(
+          `INSERT INTO worker_pool
+             (tenant,project,pool,principal,client_id,class,registered_by,
+              executions_polled_at,credentials_named)
+           VALUES($1,'project',$2,$2,$2,'Dedicated',$3,now()+make_interval(secs=>$4),$5::jsonb)`,
+          [tenant, randomUUID(), principal, polled, named],
+        );
+        break;
+      case "ChatHost":
+        await transaction.query(
+          `INSERT INTO chat_host
+             (tenant,owner,principal,client_id,last_polled_at,credentials_named)
+           VALUES($1,$2,$3,$3,now()+make_interval(secs=>$4),$5::jsonb)`,
+          [tenant, principal, randomUUID(), polled, named],
+        );
+        break;
+    }
+  }
 }
 
 /** Writes `state` for one account's agent through `transaction`, replacing whatever it held. */
@@ -147,6 +208,8 @@ export async function agentAccountHarnessPlanted(
       ],
     );
   await agentAccountHarnessChosen(transaction, principal, agent, state);
+  if (state.runners !== undefined)
+    await agentAccountHarnessRunners(transaction, principal, state.runners);
 }
 
 /** Plants `state` and commits it, for a case whose claims run on connections of their own. */

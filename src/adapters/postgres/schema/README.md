@@ -663,7 +663,9 @@ does. The API writes one person's row whole through `write_agent_account_setting
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call, reads it through that, as
-`agent_account_standing` does for the API;
+`agent_account_standing` does for the API: `agent_account_named_pause` of the
+credentials the account's live runners name of the agent, and paused while any
+credential is where they name none;
 `agent_account_credential_standing` answers the API each credential's own
 pause, `agent_account_named_pause` of its one name.
 `agent_account_named_pause`, which the pool plane and the API may call, answers
