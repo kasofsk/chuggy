@@ -1,7 +1,7 @@
 /**
  * The documents a pod is launched with, held against what the launchers build
  * and against the interpreter's grant, worker configuration and execution
- * profile they restate, and read by each older release a plane still serves.
+ * profile they restate, and read by each release replayed on a plane.
  */
 
 import assert from "node:assert/strict";

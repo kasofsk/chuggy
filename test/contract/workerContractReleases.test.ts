@@ -1,5 +1,5 @@
 /**
- * The older releases this server still serves, held to what this tree
+ * The releases replayed against this server, held to what this tree
  * installs: each is an alias of the asset its tag was published with, holding
  * the files its history entry records, and nothing else is installed. What each
  * is replayed against is the server's own suites: the planes' answers and
@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
@@ -62,16 +63,16 @@ import {
   workerContractAlias,
   workerContractAliases,
   workerContractAsset,
+  workerContractBaselines,
   workerContractInstalled,
   workerContractPlanes,
   workerContractReleaseExport,
   workerContractReleaseSchema,
-  workerContractReleasesBelow,
   workerContractReplayed,
   type WorkerContractPlane,
 } from "./workerContractReleases.ts";
 
-/** Every release some plane serves below this tree's own. */
+/** Every release replayed on some plane. */
 const replayed = [
   ...new Set(
     Object.keys(workerContractPlanes).flatMap((plane) =>
@@ -80,7 +81,7 @@ const replayed = [
   ),
 ];
 
-test("every release some plane serves below this tree's own is installed from its asset, and no other is", () => {
+test("every release replayed on some plane is installed from its asset, and no other is", () => {
   const aliases = workerContractAliases();
   assert.deepEqual(
     [...aliases.keys()].sort(),
@@ -120,31 +121,52 @@ test("each installed release holds the files its history entry records", () => {
     );
 });
 
-test("a plane replays each release below the served one its floor accepts, so raising the floor drops one and a new release adds one", () => {
-  const history = ["1.0.0", "1.0.1", "1.1.0", "1.2.0"].map((release) => ({
-    release,
-  }));
+test("a plane replays the release at each feature's first version and the last below it where its range accepts them, and a field release whatever its range", () => {
+  const history = ["1.0.0", "1.1.0", "1.1.1", "1.2.0", "1.3.0", "1.4.0"].map(
+    (release) => ({ release }),
+  );
   const range = (minor: number) => ({
     min: { major: 1, minor },
-    max: { major: 1, minor: 2 },
+    max: { major: 1, minor: 9 },
   });
-  assert.deepEqual(workerContractReleasesBelow(history, range(0), "1.2.0"), [
-    "1.0.0",
-    "1.0.1",
-    "1.1.0",
+  const first = [{ major: 1, minor: 3 }];
+  assert.deepEqual(workerContractBaselines(history, first, range(0), []), [
+    "1.2.0",
+    "1.3.0",
   ]);
-  assert.deepEqual(workerContractReleasesBelow(history, range(1), "1.2.0"), [
-    "1.1.0",
+  assert.deepEqual(workerContractBaselines(history, first, range(3), []), [
+    "1.3.0",
   ]);
-  assert.deepEqual(workerContractReleasesBelow(history, range(2), "1.2.0"), []);
   assert.deepEqual(
-    workerContractReleasesBelow(
-      [...history, { release: "1.3.0" }],
-      range(2),
-      "1.3.0",
-    ),
-    ["1.2.0"],
+    workerContractBaselines(history, [{ major: 1, minor: 2 }], range(0), [
+      "1.0.0",
+    ]),
+    ["1.0.0", "1.1.1", "1.2.0"],
   );
+  assert.deepEqual(
+    workerContractBaselines(history, first, range(4), ["1.0.0", "7.8.9"]),
+    ["1.0.0", "7.8.9"],
+  );
+  assert.deepEqual(
+    workerContractBaselines(history, [{ major: 1, minor: 0 }], range(0), []),
+    ["1.0.0"],
+  );
+});
+
+test("the release the worker image's core locks is replayed", () => {
+  const { contractRelease } = z
+    .object({ contractRelease: z.string() })
+    .parse(
+      JSON.parse(
+        readFileSync(
+          fileURLToPath(
+            new URL("../../images/worker/core.json", import.meta.url),
+          ),
+          "utf8",
+        ),
+      ),
+    );
+  assert.ok(replayed.includes(contractRelease), contractRelease);
 });
 
 test("each installed release names its release in the header this server reads", async () => {

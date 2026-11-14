@@ -1,7 +1,8 @@
 /**
- * The releases of the worker contract this server still serves below its own,
- * and how a suite reads one. A plane serves every history entry its accepted
- * range holds; each older one is installed as a devDependency named for its
+ * The releases of the worker contract a suite replays against this server, and
+ * how it reads one. They are the releases on either side of each feature's
+ * first version, which a plane's accepted range holds, and the releases a
+ * deployed harness locks. Each is installed as a devDependency named for its
  * release, from the asset its tag was published with, and is read through its
  * own emitted modules rather than this tree's sources. A body one of its schemas
  * builds is walked through every roster value that schema names.
@@ -17,11 +18,14 @@ import { workspaceManifest } from "../../scripts/pack-worker-contract.ts";
 import { workerContractTag } from "../../scripts/publish-worker-contract.ts";
 import {
   workerContractHistory,
-  workerContractHistoryLater,
   type WorkerContractHistory,
 } from "../../scripts/worker-contract-wire.ts";
 import type { WorkerPlaneAnswer } from "../../src/contract/planeAnswers.ts";
-import { workerContractRelease } from "../../src/contract/workerContract.ts";
+import {
+  workerContractFeatures,
+  workerContractVersionOf,
+  type WorkerContractVersion,
+} from "../../src/contract/workerContract.ts";
 import type { WorkerPlaneRoute } from "../../src/contract/workerPlane.ts";
 import {
   contractVersionAccepted,
@@ -41,29 +45,76 @@ export const workerContractPlanes = {
 } as const satisfies Readonly<Record<string, WorkerContractRange>>;
 export type WorkerContractPlane = keyof typeof workerContractPlanes;
 
-/** The releases in `history` below `served` that `range` accepts, in the history's order. */
-export function workerContractReleasesBelow(
-  history: readonly Pick<WorkerContractHistory[number], "release">[],
-  range: WorkerContractRange,
-  served: string,
-): readonly string[] {
-  return history
-    .map(({ release }) => release)
-    .filter(
-      (release) =>
-        workerContractHistoryLater(release, served) &&
-        contractVersionAccepted(range, release),
-    );
+/**
+ * The releases a harness in the field locks: the one the worker image's core
+ * locks, the one each published runner package locks, the one each held before
+ * its last pin, and the one the worker's main locks now. A pin moves this list.
+ */
+export const workerContractFieldReleases: readonly string[] = [
+  "1.77.0",
+  "1.78.0",
+  "1.94.0",
+  "1.102.0",
+];
+
+/** Where the version `release` speaks sits against `version`: below it, at it, or past it. */
+function workerContractReleaseAgainst(
+  release: string,
+  version: WorkerContractVersion,
+): number {
+  const spoken = workerContractVersionOf(release);
+  if (spoken === undefined) throw new Error(`${release} is not a release`);
+  return spoken.major === version.major
+    ? Math.sign(spoken.minor - version.minor)
+    : Math.sign(spoken.major - version.major);
 }
 
-/** The releases below this tree's own that `plane` still serves. */
+/**
+ * The releases replayed: for each version in `features`, the first of `history`
+ * at it and the last below it, where `range` accepts them, and every one of
+ * `field` whatever `range` says, since a later package's label says nothing of
+ * the version its wire speaks. They come in the history's order, then any the
+ * history does not record.
+ */
+export function workerContractBaselines(
+  history: readonly Pick<WorkerContractHistory[number], "release">[],
+  features: readonly WorkerContractVersion[],
+  range: WorkerContractRange,
+  field: readonly string[],
+): readonly string[] {
+  const releases = history.map(({ release }) => release);
+  const boundaries = features.flatMap((first) => [
+    releases.find(
+      (release) => workerContractReleaseAgainst(release, first) === 0,
+    ),
+    releases.findLast(
+      (release) => workerContractReleaseAgainst(release, first) < 0,
+    ),
+  ]);
+  const replayed = new Set([
+    ...boundaries.filter(
+      (release) =>
+        release !== undefined && contractVersionAccepted(range, release),
+    ),
+    ...field,
+  ]);
+  return [
+    ...releases.filter((release) => replayed.has(release)),
+    ...field.filter((release) => !releases.includes(release)),
+  ];
+}
+
+/** The releases replayed on `plane`. */
 export function workerContractReplayed(
   plane: WorkerContractPlane,
 ): readonly string[] {
-  return workerContractReleasesBelow(
+  const versions: readonly (WorkerContractVersion | undefined)[] =
+    Object.values(workerContractFeatures);
+  return workerContractBaselines(
     workerContractHistory(),
+    versions.filter((version) => version !== undefined),
     workerContractPlanes[plane],
-    workerContractRelease,
+    workerContractFieldReleases,
   );
 }
 

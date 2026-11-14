@@ -1066,16 +1066,3 @@ export async function workerContractWireAt(directory: string): Promise<string> {
 export async function workerContractWire(): Promise<string> {
   return workerContractWireAt(join(root, "src/contract"));
 }
-
-/** Whether `later` is a later release than `earlier`, each read as its three numbers. */
-export function workerContractHistoryLater(
-  earlier: string,
-  later: string,
-): boolean {
-  const right = later.split(".").map(Number);
-  for (const [index, part] of earlier.split(".").map(Number).entries()) {
-    const other = right[index] ?? 0;
-    if (part !== other) return part < other;
-  }
-  return false;
-}
