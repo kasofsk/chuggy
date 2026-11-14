@@ -74,8 +74,11 @@ function principal(label: string): Principal {
   return asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`);
 }
 
-/** A project whose threads run on runners, its member, and a thread of theirs that member's chat host holds. */
-async function chatHostThread(label: string): Promise<{
+/** A project whose sessions run on runners, its member, and a thread of theirs, or an inquiry forked from one, that member's chat host holds. */
+async function chatHostThread(
+  label: string,
+  kind: "Thread" | "Inquiry" = "Thread",
+): Promise<{
   readonly partition: Partition;
   readonly member: Principal;
   readonly session: SessionId;
@@ -99,10 +102,18 @@ async function chatHostThread(label: string): Promise<{
     owner: member,
     principal: registered,
   };
-  const session = await sessionRigSession(rig, partition, label, {
+  const thread = await sessionRigSession(rig, partition, label, {
     kind: "Thread",
     principal: member,
   });
+  const session =
+    kind === "Thread"
+      ? thread
+      : await sessionRigSession(rig, partition, `${label}-inquiry`, {
+          kind,
+          principal: member,
+          parent: thread,
+        });
   await sessionRigTurn(rig, partition, session, label);
   const answered = await workerPoolPoll(
     ports,
@@ -190,6 +201,22 @@ test("an attempt that is not a thread's on a chat host is refused a wake at the 
     );
     assert.deepEqual(await wakeTurns(session), [], kind);
   }
+});
+
+test("an inquiry a chat host holds is refused a wake at the view and at the door", async () => {
+  const { session, held } = await chatHostThread("job-wake-inquiry", "Inquiry");
+  const bearer = bearerOf(held);
+  assert.equal(await wakes.wakeView(bearer), "NotChatHostThread");
+  assert.equal(
+    await wakes.wakeThread({
+      ...bearer,
+      turn: threadJobWakeTurn(session, "e"),
+      input: "{}",
+      route: "Pool",
+    }),
+    "NotChatHostThread",
+  );
+  assert.deepEqual(await wakeTurns(session), []);
 });
 
 test("an ended attempt's bearer is fenced at the view and at the door, and wakes nothing", async () => {
