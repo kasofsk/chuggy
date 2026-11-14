@@ -147,8 +147,7 @@ export interface RunnersCopy {
   readonly "runners-chat-host-removal": {
     readonly short: unknown;
   };
-  readonly "runners-chat-host-token-about": Record<never, never>;
-  readonly "runners-chat-host-copy-token": Record<never, never>;
+  readonly "runners-chat-host-claude-code-about": Record<never, never>;
   readonly "runners-chat-host-replaces": {
     readonly short: unknown;
   };
