@@ -1,41 +1,49 @@
 /**
- * Where a session bearer may act: in its own session's partition, and nowhere
- * else. Its principal may be authorized far more widely than the session is —
- * a lead's is the site's one selector identity, a developer on every project
- * with a lead — and whoever holds the bearer holds that principal, so the
- * bearer is confined to the partition its session row names.
+ * Where a session bearer may act: in its own session's partition, under its
+ * own session's capabilities, and nowhere else. Its principal may be
+ * authorized far more widely than the session is — a lead's is the site's one
+ * selector identity, a developer on every project with a lead — and whoever
+ * holds the bearer holds that principal, so the bearer is confined to the
+ * partition its session row names and to what that row's capabilities admit.
  *
  * EVERY AUTHENTICATED ROUTE IS CLASSIFIED HERE, by name and method. A
- * `Partition` route admits a project's session bearer only where its `:tenant`
- * and `:project` are the session's, and answers any other as an unauthorized
- * read is answered, so a session learns nothing of a project it cannot reach.
- * A `Member` route admits a member's own session bearer only where its
- * `:tenant` is the session's and the session's partition is the one reserved
- * for its own principal there: what it reads is its owner's, at their tenant,
- * and never a project's door. Each class refuses the other scope's bearer
+ * `Partition` method admits a project's session bearer only where its
+ * `:tenant` and `:project` are the session's, and answers any other as an
+ * unauthorized read is answered, so a session learns nothing of a project it
+ * cannot reach. A `Member` method admits a member's own session bearer only
+ * where its `:tenant` is the session's and the session's partition is the one
+ * reserved for its own principal there: what it reads is its owner's, at their
+ * tenant, and never a project's door. Each refuses the other scope's bearer
  * outright, so a member's own session reaches no project route and a project's
- * reaches no member route. A `Refused` route never admits one: everything else
- * not addressed to one partition, and inside one the registration-token mint,
- * because enrolling a machine is provisioning rather than work, as deleting the
- * project is — which is also
- * why every personal runner write is refused, its allowlist among them, and why
- * a member's thread limit is read but never set, a session widening the cap on
- * sessions — and the answer to a lead's held proposal, because the hold is
- * there for a person to answer and the lead's session holds a bearer, as is a
- * reply to a thread's offer, the member's word on what their thread offered
- * them, which the thread's own session holds a bearer under. Every
- * write of a member's own chat is refused too, because its session reads and
- * its owner writes. A `Public` route is one the authentication hook passes
- * over, so no session bearer is read on it; what such a route is presented, it
- * verifies itself.
+ * reaches no member route. A `Refused` method never admits one. A `Public`
+ * route is one the authentication hook passes over, so no session bearer is
+ * read on it; what such a route is presented, it verifies itself.
+ *
+ * EVERY ADMITTED METHOD REQUIRES A CAPABILITY, one of `requires`, and a session
+ * holding none of them is answered as an unauthorized read is. A read of the
+ * session's own project requires `ProjectRead`, and of its owner's own
+ * `MemberRead`; a read a chuggy tool makes is admitted under that tool's
+ * capability too, and a write is admitted under exactly the capabilities whose
+ * tools make it, so a write no session's tool makes is `Refused`. So is
+ * everything addressed to no partition, and inside one the registration-token
+ * mint, because enrolling a machine is provisioning rather than work, as
+ * deleting the project is; every write of a personal runner, its allowlist
+ * among them;
+ * the answer to a lead's held proposal and a reply to a thread's offer, each a
+ * person's word on what a session put to them; and every write of a thread or
+ * a member's own chat, which is its owner's. The confinement is by route and
+ * method, so a route two capabilities' tools write admits either's whole body:
+ * a session holding `DraftAuthor` alone may still post a draft no parent bears.
  *
  * THE TABLE IS EXHAUSTIVE OVER THE ROUTE TABLE, so a route named there without
- * a class is a compile error, and a method or path served without an entry
- * here is refused at run time. The partition compared is the one the session
- * authority answered, never one the request carries.
+ * a class, or an admitted method without a requirement, is a compile error,
+ * and a method or path served without an entry here is refused at run time.
+ * The partition and capabilities compared are the ones the session authority
+ * answered, never ones the request carries.
  */
 
 import { nativeHttpRoutes, type NativeHttpRoute } from "../../contract/http.ts";
+import type { SessionCapability } from "../../contract/rosters.ts";
 import {
   memberScopePartition,
   type SessionBearerIdentity,
@@ -47,16 +55,40 @@ export type SessionBearerRouteScope = "Partition" | "Member" | "Refused";
 /** The methods a route is served under, `HEAD` being served wherever `GET` is. */
 export type SessionBearerMethod = "GET" | "POST" | "PUT" | "DELETE";
 
-/** One route's class: public, or a scope for each method it is served under. */
+/** The capabilities a session must hold one of to be admitted, never none. */
+export type SessionBearerRequirement = readonly [
+  SessionCapability,
+  ...SessionCapability[],
+];
+
+/** What one served method admits a session bearer to: nothing, or its scope's routes under the capabilities it requires. */
+export type SessionBearerMethodClass =
+  | "Refused"
+  | {
+      readonly scope: "Partition" | "Member";
+      readonly requires: SessionBearerRequirement;
+    };
+
+/** One route's class: public, or a class for each method it is served under. */
 export type SessionBearerRouteClass =
   | "Public"
-  | Readonly<Partial<Record<SessionBearerMethod, SessionBearerRouteScope>>>;
+  | Readonly<Partial<Record<SessionBearerMethod, SessionBearerMethodClass>>>;
 
-const partitionRead = { GET: "Partition" } as const;
-const partitionWrite = { POST: "Partition" } as const;
-const partitionReplace = { PUT: "Partition" } as const;
-const memberRead = { GET: "Member" } as const;
-const memberWrite = { POST: "Refused" } as const;
+/** A method admitted in the session's own partition to a session holding one of `requires`. */
+function sessionBearerPartition(
+  ...requires: SessionBearerRequirement
+): SessionBearerMethodClass {
+  return { scope: "Partition", requires };
+}
+
+const partitionRead = { GET: sessionBearerPartition("ProjectRead") } as const;
+const memberRead = {
+  GET: { scope: "Member", requires: ["MemberRead"] },
+} as const satisfies SessionBearerRouteClass;
+const refusedWrite = { POST: "Refused" } as const;
+const refusedReplace = { PUT: "Refused" } as const;
+const readRefusedWrite = { GET: partitionRead.GET, POST: "Refused" } as const;
+const readRefusedReplace = { GET: partitionRead.GET, PUT: "Refused" } as const;
 
 /** Every route in the route table, and what each admits a session bearer to. */
 export const sessionBearerRouteClasses = {
@@ -78,7 +110,7 @@ export const sessionBearerRouteClasses = {
   workerPoolRegistrationTokens: { POST: "Refused" },
   personalRunnerRegistrationTokens: { POST: "Refused" },
   personalRunnerPermit: { GET: "Refused" },
-  personalRunner: { GET: "Member", DELETE: "Refused" },
+  personalRunner: { GET: memberRead.GET, DELETE: "Refused" },
   personalRunnerProject: { PUT: "Refused", DELETE: "Refused" },
   personalRunnerRunner: { DELETE: "Refused" },
   personalRunnerMember: { DELETE: "Refused" },
@@ -87,19 +119,19 @@ export const sessionBearerRouteClasses = {
   agentAccountPresses: { POST: "Refused" },
   agentAccountCredential: { DELETE: "Refused" },
   chatHostRegistrationTokens: { POST: "Refused" },
-  chatHost: { GET: "Member", DELETE: "Refused" },
+  chatHost: { GET: memberRead.GET, DELETE: "Refused" },
   chatAbilities: memberRead,
   chatProjects: memberRead,
-  chatThreads: { GET: "Member", POST: "Refused" },
+  chatThreads: { GET: memberRead.GET, POST: "Refused" },
   chatThread: memberRead,
   chatThreadTranscript: memberRead,
   chatThreadContext: memberRead,
-  chatThreadMessages: memberWrite,
-  chatThreadClose: memberWrite,
-  chatThreadRename: memberWrite,
-  chatThreadHide: memberWrite,
+  chatThreadMessages: refusedWrite,
+  chatThreadClose: refusedWrite,
+  chatThreadRename: refusedWrite,
+  chatThreadHide: refusedWrite,
   chatThreadLive: memberRead,
-  chatThreadTurnStop: memberWrite,
+  chatThreadTurnStop: refusedWrite,
   project: partitionRead,
   tickets: partitionRead,
   ticket: partitionRead,
@@ -115,91 +147,129 @@ export const sessionBearerRouteClasses = {
   inbox: partitionRead,
   operationalStatus: partitionRead,
   selectorContext: partitionRead,
-  selectorSettings: { GET: "Partition", PUT: "Partition" },
+  selectorSettings: readRefusedReplace,
   selectorSettingsHistory: partitionRead,
   selectorHistory: partitionRead,
   selectorProposals: partitionRead,
-  selectorProposalReview: { POST: "Refused" },
+  selectorProposalReview: refusedWrite,
   lead: partitionRead,
   leadTranscript: partitionRead,
   leadContext: partitionRead,
-  leadInquiries: { GET: "Partition", POST: "Partition" },
+  leadInquiries: readRefusedWrite,
   leadInquiry: partitionRead,
   executions: partitionRead,
   execution: partitionRead,
   outputContent: partitionRead,
-  projectArtifacts: partitionWrite,
+  projectArtifacts: refusedWrite,
   projectArtifact: partitionRead,
   runTurns: partitionRead,
   runContext: partitionRead,
   runTranscript: partitionRead,
   runConfiguration: partitionRead,
   runError: partitionRead,
-  operations: partitionWrite,
-  operation: { GET: "Partition", DELETE: "Partition" },
+  operations: {
+    POST: sessionBearerPartition(
+      "DraftAuthor",
+      "DraftOriginate",
+      "TicketDispatch",
+    ),
+  },
+  operation: { GET: partitionRead.GET, DELETE: "Refused" },
   notifications: partitionRead,
   events: partitionRead,
   configurations: partitionRead,
-  configurationImports: partitionWrite,
+  configurationImports: refusedWrite,
   configuration: partitionRead,
-  forgeCredentials: partitionWrite,
-  projectRepositories: { GET: "Partition", POST: "Partition" },
-  projectRepositoryLanding: partitionReplace,
-  projectRepositoryRetirement: partitionReplace,
-  projectRepositoryConfigurations: partitionReplace,
-  executionPlacement: { GET: "Partition", PUT: "Partition" },
-  sessionPlacement: { GET: "Partition", PUT: "Partition" },
-  ownerFallback: { GET: "Partition", PUT: "Partition" },
+  forgeCredentials: refusedWrite,
+  projectRepositories: readRefusedWrite,
+  projectRepositoryLanding: refusedReplace,
+  projectRepositoryRetirement: refusedReplace,
+  projectRepositoryConfigurations: refusedReplace,
+  executionPlacement: readRefusedReplace,
+  sessionPlacement: readRefusedReplace,
+  ownerFallback: readRefusedReplace,
   hostedRuns: partitionRead,
   abilities: partitionRead,
   workerPools: partitionRead,
-  drafts: { GET: "Partition", POST: "Partition" },
-  draftInitialization: partitionRead,
-  draft: { GET: "Partition", PUT: "Partition", DELETE: "Partition" },
-  dispatchView: partitionRead,
-  epics: { GET: "Partition", POST: "Partition" },
-  epic: partitionRead,
+  drafts: {
+    GET: partitionRead.GET,
+    POST: sessionBearerPartition("DraftAuthor", "DraftOriginate"),
+  },
+  draftInitialization: {
+    GET: sessionBearerPartition("ProjectRead", "DraftAuthor"),
+  },
+  draft: {
+    GET: partitionRead.GET,
+    PUT: sessionBearerPartition("DraftAuthor"),
+    DELETE: sessionBearerPartition("DraftAuthor"),
+  },
+  dispatchView: {
+    GET: sessionBearerPartition("ProjectRead", "TicketDispatch"),
+  },
+  epics: {
+    GET: partitionRead.GET,
+    POST: sessionBearerPartition("DraftOriginate"),
+  },
+  epic: { GET: sessionBearerPartition("ProjectRead", "DraftOriginate") },
   epicHistory: partitionRead,
   epicGraph: partitionRead,
-  threads: { GET: "Partition", POST: "Partition" },
-  threadLimit: { GET: "Partition", PUT: "Refused" },
+  threads: readRefusedWrite,
+  threadLimit: readRefusedReplace,
   thread: partitionRead,
   threadTranscript: partitionRead,
   threadContext: partitionRead,
-  threadMessages: partitionWrite,
-  threadTurnStop: partitionWrite,
-  threadOfferReplies: { POST: "Refused" },
-  threadClose: partitionWrite,
-  threadRename: partitionWrite,
-  threadHide: partitionWrite,
+  threadMessages: refusedWrite,
+  threadTurnStop: refusedWrite,
+  threadOfferReplies: refusedWrite,
+  threadClose: refusedWrite,
+  threadRename: refusedWrite,
+  threadHide: refusedWrite,
   threadLive: partitionRead,
 } as const satisfies Readonly<Record<NativeHttpRoute, SessionBearerRouteClass>>;
 
-/** The scope of each served method and path, keyed as `METHOD /path` with every public route left out. */
-export const sessionBearerRouteScopes: ReadonlyMap<
+/** Each served method and path, keyed as `METHOD /path`, and its class, with every public route left out. */
+export const sessionBearerMethodClasses: ReadonlyMap<
   string,
-  SessionBearerRouteScope
+  SessionBearerMethodClass
 > = new Map(
   Object.entries(sessionBearerRouteClasses).flatMap(([name, classed]) =>
     classed === "Public"
       ? []
-      : Object.entries(classed).map(
-          ([method, scope]) =>
+      : Object.entries(
+          classed as Readonly<Record<string, SessionBearerMethodClass>>,
+        ).map(
+          ([method, admitted]) =>
             [
               `${method} ${nativeHttpRoutes[name as NativeHttpRoute]}`,
-              scope,
+              admitted,
             ] as const,
         ),
   ),
 );
 
-/** What the authentication hook does with one session bearer on one route. */
-export type SessionBearerAdmission = "Admitted" | "OtherPartition" | "Refused";
+/** The scope of each served method and path, keyed as `sessionBearerMethodClasses` is. */
+export const sessionBearerRouteScopes: ReadonlyMap<
+  string,
+  SessionBearerRouteScope
+> = new Map(
+  [...sessionBearerMethodClasses].map(
+    ([route, admitted]) =>
+      [route, admitted === "Refused" ? admitted : admitted.scope] as const,
+  ),
+);
 
-/** What a session bearer is confined by: its session's partition, whose that partition is, and to whom. */
+/**
+ * What the authentication hook does with one session bearer on one route.
+ * `Unheld` is a route in the session's own scope that requires a capability
+ * the session does not hold.
+ */
+export type SessionBearerAdmission =
+  "Admitted" | "OtherPartition" | "Unheld" | "Refused";
+
+/** What a session bearer is confined by: its session's partition, whose that partition is, to whom, and what it may do there. */
 export type SessionBearerConfinement = Pick<
   SessionBearerIdentity,
-  "partition" | "scope" | "principal"
+  "partition" | "scope" | "principal" | "capabilities"
 >;
 
 /**
@@ -215,30 +285,34 @@ export function sessionBearerAdmission(
 ): SessionBearerAdmission {
   if (url === undefined) return "Refused";
   const served = method === "HEAD" ? "GET" : method;
-  const scope = sessionBearerRouteScopes.get(`${served} ${url}`);
+  const admitted = sessionBearerMethodClasses.get(`${served} ${url}`);
   if (
-    scope === undefined ||
-    scope === "Refused" ||
-    scope !== sessionBearerAdmissionScope[session.scope] ||
+    admitted === undefined ||
+    admitted === "Refused" ||
+    admitted.scope !== sessionBearerAdmissionScope[session.scope] ||
     typeof params !== "object" ||
     params === null
   )
     return "Refused";
   const named = params as Readonly<Record<string, unknown>>;
   if (typeof named["tenant"] !== "string") return "Refused";
-  if (scope === "Member")
-    return named["tenant"] === session.partition.tenant &&
-      sessionBearerAdmissionOwn(session)
-      ? "Admitted"
-      : "OtherPartition";
-  if (typeof named["project"] !== "string") return "Refused";
-  return named["tenant"] === session.partition.tenant &&
-    named["project"] === session.partition.project
+  if (admitted.scope === "Partition" && typeof named["project"] !== "string")
+    return "Refused";
+  const own =
+    admitted.scope === "Member"
+      ? named["tenant"] === session.partition.tenant &&
+        sessionBearerAdmissionOwn(session)
+      : named["tenant"] === session.partition.tenant &&
+        named["project"] === session.partition.project;
+  if (!own) return "OtherPartition";
+  return admitted.requires.some((capability) =>
+    session.capabilities.includes(capability),
+  )
     ? "Admitted"
-    : "OtherPartition";
+    : "Unheld";
 }
 
-/** The one route class each session scope may reach. */
+/** The one route scope each session scope may reach. */
 const sessionBearerAdmissionScope = {
   Project: "Partition",
   Member: "Member",

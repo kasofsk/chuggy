@@ -13,7 +13,8 @@
  * authorizes it through the project membership exactly as it authorizes a
  * human's, and the operation row records which session issued it. The API
  * also confines that bearer to its own session's tenant and project, answering
- * another project's routes 404 and a tenant's or the site's 403. A decision
+ * another project's routes 404 and a tenant's or the site's 403, and to the
+ * routes its session's capabilities admit, answering one they do not 404. A decision
  * tool writes nothing at all: it accumulates in the pod and becomes the turn's
  * answer, which the selector runtime still reads and acts on under its own
  * fence, so the runtime remains the single writer of a lead's dispatch and of
@@ -21,15 +22,18 @@
  * either: its call stands in the thread's transcript like any other, and what
  * it offers is done by the member, as the member, or not at all.
  *
- * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
- * by the agent runtime inside the pod, and the pod is the thing being
- * controlled. Two controls that are not the pod's are the membership,
- * enforced by the database when it authorizes a project access, and the
- * decision controls the selector applies to a finished turn — and the second is
- * post-hoc: the tool has already run and its command has already landed, and
- * what the selector refuses is the decision that used it. A third is the API's
- * confinement of a session bearer to its own session's tenant and project. A
- * control described as stronger than it is, is worse than none.
+ * A ROSTER IS A CONTROL WHERE THE API HOLDS IT. The agent runtime enforces a
+ * roster inside the pod, and the pod is the thing being controlled; what makes
+ * the chuggy tools' half of it a control is that the API admits a session
+ * bearer only to the routes its session row's capabilities admit, so a call
+ * made around a tool the roster lacks is refused as the tool's absence would
+ * be. The runtime's own tools reach no route, and what a roster grants them is
+ * the pod's alone. Beside it stand the membership, enforced by the database
+ * when it authorizes a project access, and the decision controls the selector
+ * applies to a finished turn — and the last is post-hoc: the tool has already
+ * run and its command has already landed, and what the selector refuses is the
+ * decision that used it. A control described as stronger than it is, is worse
+ * than none.
  *
  * DERIVED WORK IS A FACT ABOUT THE MAP. `DraftAuthor` carries no bare create: a
  * dependent is filed against a parent that already exists, and a roster holding

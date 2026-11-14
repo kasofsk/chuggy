@@ -2134,7 +2134,7 @@ async function polledOffering(
   return answered.answer.sessions;
 }
 
-test("a member's own thread is handed to their chat host alone, on a contract that runs one, with no repository, and its bearer answers its member's scope", async () => {
+test("a member's own thread is handed to their chat host alone, on a contract that runs one, with no repository, and its bearer answers its member's scope and capabilities", async () => {
   const { partition, member, pool } = await routedProject("host-own");
   const runs = await personal(partition, member);
   const host = await chatHost(partition, member);
@@ -2168,6 +2168,7 @@ test("a member's own thread is handed to their chat host alone, on a contract th
       kind: "Thread",
       principal: member,
       scope: "Member",
+      capabilities: ["MemberRead"],
     },
   );
 });

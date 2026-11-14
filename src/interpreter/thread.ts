@@ -11,10 +11,14 @@
  * owner's with. So a thread CANNOT EXCEED ITS OWNER — a member holding only
  * read access has a thread that takes no turn at all, because every door and
  * every wake that starts one asks to change the project, and a thread does no
- * more than its owner may whatever roster it carries, because the roster is
- * enforced inside the pod and the membership is enforced by the database. A ROSTER IS NOT A CONTROL, and saying so is the
- * point: the roster below is the weaker of the two, and a control described as
- * stronger than it is, is worse than none.
+ * more than its owner may whatever roster it carries, because the membership
+ * is enforced by the database. THE ROSTER NARROWS THAT FURTHER, AND THE API
+ * ENFORCES IT: a thread's bearer reaches only the routes the capabilities on
+ * its session row admit (`../adapters/http/sessionBearerScope.ts`), so a call
+ * made around a chuggy tool its roster lacks is refused as the tool's absence
+ * would be. What a roster grants the agent runtime's own tools — reading,
+ * writing and running in the checkout — reaches no route, and is enforced
+ * inside the pod alone.
  *
  * THE DRAFT IS THE THREAD'S WORK, AND THE TREE IS READ, NOT CHANGED. The
  * runtime a thread runs on presents it as a coding agent, in a checkout where
@@ -69,7 +73,8 @@ import type { Partition } from "./projectStore.ts";
  * because a thread exists to find out what is going on — reading the tree,
  * running what it takes to read it, authoring the drafts its owner asks for,
  * and offering its owner a page to look at or an action to confirm. It is
- * generous against the pod alone, for the reason the header gives.
+ * generous because a thread still does no more than its owner may, for the
+ * reason the header gives.
  */
 export const threadCapabilitiesDefault = [
   "RepositoryRead",
