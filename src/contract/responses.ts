@@ -3322,11 +3322,13 @@ export type TicketLandingResponse = z.infer<typeof ticketLandingSchema>;
  * What the finalizer prepared one work cycle's evaluation over: a stack, with
  * the tickets beneath it bottom first, each with the commit it must land, the
  * reference it was built on and that reference's tip; or the decision to
- * evaluate it unstacked, with why.
+ * evaluate it unstacked, with why. `restacked` marks a cycle whose previous
+ * cycle was sent back to re-stack over the queue ahead of it.
  */
 export const ticketLandingStackSchema = z.discriminatedUnion("prepared", [
   z.strictObject({
     cycle: ticketNumberSchema,
+    restacked: z.literal(true).optional(),
     prepared: z.literal("Stacked"),
     beneath: z
       .array(
@@ -3342,6 +3344,7 @@ export const ticketLandingStackSchema = z.discriminatedUnion("prepared", [
   }),
   z.strictObject({
     cycle: ticketNumberSchema,
+    restacked: z.literal(true).optional(),
     prepared: z.literal("Unstacked"),
     reason: z.enum(evaluationUnstackedReasons),
   }),

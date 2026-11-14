@@ -642,6 +642,7 @@ export const finalizationFailureKinds = [
   "PreparationFailed",
   "QueueChecksFailed",
   "RecheckRequired",
+  "Restack",
 ] as const;
 
 /** Why one finalization attempt was sent back to re-check, restating the interpreter's `allFinalizationRecheckReasons`. */

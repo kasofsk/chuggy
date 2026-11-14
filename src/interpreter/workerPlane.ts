@@ -123,7 +123,7 @@ export const workerContractUnscopedChat: WorkerContractRange = {
 
 /** The versions in which a chat host's poll may be answered the threads it last ran that have since closed, a field a host of an earlier one refuses its whole answer over. */
 export const workerContractChatThreadsClosed: WorkerContractRange = {
-  min: { major: 1, minor: 92 },
+  min: { major: 1, minor: 93 },
   max: workerContractAccepted.max,
 };
 

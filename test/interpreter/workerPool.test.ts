@@ -1470,7 +1470,7 @@ test("only a chat host's poll on a release that reads them is answered the threa
   };
   assert.deepEqual(await threadsClosedOf(host, workerContractRelease), closed);
   assert.deepEqual(asks, [workerPoolThreadsClosedMax]);
-  for (const contract of ["1.91.0", undefined])
+  for (const contract of ["1.92.0", undefined])
     assert.equal(
       await threadsClosedOf(host, contract),
       undefined,

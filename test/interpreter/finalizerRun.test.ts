@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 
-import { asTicketId } from "../../src/domain/ids.ts";
+import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { EvaluationStack } from "../../src/interpreter/evaluationStack.ts";
 import type {
   BriefFinalizationMode,
@@ -155,6 +155,11 @@ import {
   finalizerPass,
   type FinalizerService,
 } from "../../src/interpreter/finalizerRun.ts";
+import {
+  stackFailuresMax,
+  type StackEntry,
+  type StackMember,
+} from "../../src/interpreter/stackChoice.ts";
 import {
   finalizerLandingBaseRef,
   finalizerRemoteDefaultRef,
@@ -329,6 +334,10 @@ interface FinalizerRecorder
   unstorable?: boolean;
   /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
   dropResults?: boolean;
+  /** The requests waiting on the holder of their reference, which only a re-stack's claim draws. */
+  waiting: FinalizationView[];
+  /** Every ticket a re-stack asked to claim the waiting request of, in order. */
+  readonly unattemptedClaims: TicketId[];
   /** Whether every attempt is refused, which is what the pass sees of a claim a takeover retired. */
   dropAttempts?: boolean;
 }
@@ -925,6 +934,43 @@ function recordingHolds(
   };
 }
 
+/**
+ * The requests waiting on the holder of their reference: a re-stack claims
+ * one only while no attempt answers it, and every request, drawn or waiting,
+ * reads back as its view.
+ */
+function recordingWaiting(
+  views: readonly FinalizationView[],
+  store: () => FinalizerRecorder,
+): Pick<
+  FinalizerRecorder,
+  "waiting" | "unattemptedClaims" | "claimUnattempted" | "durableView"
+> {
+  return {
+    waiting: [],
+    unattemptedClaims: [],
+    claimUnattempted: (_owner, _epoch, _partition, ticket) => {
+      const own = store();
+      own.unattemptedClaims.push(ticket);
+      return Promise.resolve(
+        own.waiting.find(
+          (view) =>
+            view.claim.ticket === ticket &&
+            !own.attempts.some(
+              (attempt) => attempt.claim.request === view.claim.request,
+            ),
+        )?.claim,
+      );
+    },
+    durableView: (claim) =>
+      Promise.resolve(
+        [...views, ...store().waiting].find(
+          (view) => view.claim.request === claim.request,
+        ),
+      ),
+  };
+}
+
 /** A store that answers from the views a case hands it and records every move. */
 function recordingStore(
   views: readonly FinalizationView[],
@@ -950,11 +996,8 @@ function recordingStore(
       return Promise.resolve(own.asked);
     },
     claimRequests: () => Promise.resolve(views.map((view) => view.claim)),
+    ...recordingWaiting(views, () => own),
     extendClaim: () => Promise.resolve(true),
-    durableView: (claim) =>
-      Promise.resolve(
-        views.find((view) => view.claim.request === claim.request),
-      ),
     grantPermit: (request): Promise<PermitGranted> => {
       own.grants.push(request);
       return Promise.resolve(
@@ -5360,6 +5403,7 @@ function stacksDue(
     stackFailures: () => Promise.resolve(0),
     evaluating: () => Promise.resolve([]),
     invalidate: () => Promise.resolve("Submitted"),
+    restackable: () => Promise.resolve([]),
     removable: () =>
       Promise.resolve(
         cycles.map((cycle) => ({
@@ -5627,4 +5671,181 @@ test("a queue that cannot be read leaves the stacks over it for the next pass", 
     },
   });
   assert.deepEqual(stacks.offered, []);
+});
+
+/** A queue entry of B's reference: ticket 9 ranked first, the case's own ticket 1 behind it. */
+function restackEntry(
+  ticket: number,
+  policy: "Serialized" | "Stacked",
+  phase: "Work" | "Ready" | "Evaluation" | "Pending",
+  rank: number,
+  marker: string,
+): StackEntry {
+  return {
+    ticket: asTicketId(ticket),
+    policy,
+    phase,
+    rank,
+    commit: asGitObjectId(commitOf(marker)),
+    stack: undefined,
+  };
+}
+
+/** A store of stacks naming ticket 1 pending unstacked over `queue`, with what its stacked failures and last re-stack were. */
+function stacksRestackable(
+  queue: readonly StackEntry[],
+  over: {
+    readonly stackFailures?: number;
+    readonly restackedOver?: readonly StackMember[];
+  } = {},
+): NonNullable<FinalizerService["stacks"]> {
+  return {
+    ...stacksDue([]),
+    queue: () => Promise.resolve(queue),
+    stackFailures: () => Promise.resolve(over.stackFailures ?? 0),
+    restackable: () =>
+      Promise.resolve([
+        {
+          partition,
+          ticket: asTicketId(1),
+          cycle: 1,
+          repository: "repository-run",
+          target: undefined,
+          restackedOver: over.restackedOver,
+        },
+      ]),
+  };
+}
+
+/** Ticket 1's request waiting on the holder, which no ordinary claim draws. */
+function restackCase(stacks: NonNullable<FinalizerService["stacks"]>) {
+  const store = recordingStore([]);
+  store.waiting = [preparableView("request-waiting")];
+  const service: FinalizerService = {
+    ...serviceOf(store, recordingGit()),
+    ticketBriefs: stackedBriefs(),
+    stacks,
+  };
+  return { store, service };
+}
+
+const restackHolder = restackEntry(9, "Serialized", "Pending", 1, "a");
+const restackPending = restackEntry(1, "Stacked", "Pending", 2, "c");
+
+test("a Stacked ticket pending unstacked behind a pending holder is sent back to re-stack, naming its accepted commit and the line ahead", async () => {
+  const { store, service } = restackCase(
+    stacksRestackable([restackHolder, restackPending]),
+  );
+
+  const report = await passOver(service);
+
+  assert.deepEqual(store.unattemptedClaims, [asTicketId(1)]);
+  assert.equal(store.attempts.length, 1);
+  const recorded = store.attempts[0];
+  assert.equal(recorded?.claim.request, "request-waiting");
+  assert.equal(recorded?.outcome, "Failed");
+  assert.equal(recorded?.failureKind, "Restack");
+  assert.equal(recorded?.recheckCommit, commitOf("c"));
+  assert.equal(recorded?.recheckReason, undefined);
+  assert.deepEqual(recorded?.restackBeneath, [
+    { ticket: asTicketId(9), commit: commitOf("a") },
+  ]);
+  assert.equal(recorded?.candidate, undefined);
+  assert.deepEqual(
+    store.concluded,
+    [],
+    "the request's next claim concludes it",
+  );
+  assert.deepEqual(store.holds, [], "a re-stack records no hold");
+  assert.equal(report.holds, 0);
+});
+
+test("a re-stack's failure concludes as needing work, the one priced send-back the model has", async () => {
+  const store = recordingStore([
+    {
+      ...preparableView("request-one"),
+      attempt: attemptFailedOf("request-one", "Restack"),
+      attemptsMade: 1,
+    },
+  ]);
+  await passOver(landingService(store, recordingGit(), "Stacked"));
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationNeedsWork", kind: "Restack" },
+  ]);
+});
+
+test("a pending unstacked ticket is not sent back behind a holder in Work, a non-holder evaluating, or a Serialized barrier, nor at its failure cap", async () => {
+  const unsent: readonly (readonly [
+    string,
+    NonNullable<FinalizerService["stacks"]>,
+  ])[] = [
+    [
+      "a holder in Work",
+      stacksRestackable([
+        restackEntry(9, "Serialized", "Work", 1, "a"),
+        restackPending,
+      ]),
+    ],
+    [
+      "a non-holder evaluating",
+      stacksRestackable([
+        restackHolder,
+        restackEntry(8, "Stacked", "Evaluation", 2, "b"),
+        { ...restackPending, rank: 3 },
+      ]),
+    ],
+    [
+      "a Serialized barrier",
+      stacksRestackable([
+        restackHolder,
+        restackEntry(8, "Serialized", "Pending", 2, "b"),
+        { ...restackPending, rank: 3 },
+      ]),
+    ],
+    [
+      "its failure cap",
+      stacksRestackable([restackHolder, restackPending], {
+        stackFailures: stackFailuresMax,
+      }),
+    ],
+  ];
+  for (const [label, stacks] of unsent) {
+    const { store, service } = restackCase(stacks);
+    await passOver(service);
+    assert.deepEqual(store.unattemptedClaims, [], label);
+    assert.deepEqual(store.attempts, [], label);
+  }
+});
+
+test("a re-stack that ended unstacked is not sent back again over the same line, and is once the line ahead differs", async () => {
+  const same = restackCase(
+    stacksRestackable([restackHolder, restackPending], {
+      restackedOver: [
+        { ticket: asTicketId(9), commit: asGitObjectId(commitOf("a")) },
+      ],
+    }),
+  );
+  await passOver(same.service);
+  assert.deepEqual(same.store.unattemptedClaims, []);
+  assert.deepEqual(same.store.attempts, []);
+
+  const moved = restackCase(
+    stacksRestackable([restackHolder, restackPending], {
+      restackedOver: [
+        { ticket: asTicketId(9), commit: asGitObjectId(commitOf("e")) },
+      ],
+    }),
+  );
+  await passOver(moved.service);
+  assert.equal(moved.store.attempts[0]?.failureKind, "Restack");
+});
+
+test("a waiting request someone else claimed first is left for the next pass", async () => {
+  const { store, service } = restackCase(
+    stacksRestackable([restackHolder, restackPending]),
+  );
+  store.waiting = [];
+  await passOver(service);
+  assert.deepEqual(store.unattemptedClaims, [asTicketId(1)]);
+  assert.deepEqual(store.attempts, []);
 });

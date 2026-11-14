@@ -259,6 +259,8 @@ export function finalizationFailureKindLabel(
       return { id: "codes-landing-failure-queue-checks" };
     case "RecheckRequired":
       return { id: "codes-landing-failure-recheck" };
+    case "Restack":
+      return { id: "codes-landing-failure-restack" };
   }
 }
 

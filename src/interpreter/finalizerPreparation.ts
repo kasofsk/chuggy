@@ -81,6 +81,7 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
+import type { StackMember } from "./stackChoice.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import {
@@ -520,12 +521,14 @@ export interface AttemptRecord {
   readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
   /** The commit a merge queue built and whose checks failed. */
   readonly groupCommit?: GitObjectId;
-  /** The accepted commit a `RecheckRequired` failure sends back to be re-reported on the moved target. */
+  /** The accepted commit a `RecheckRequired` or `Restack` failure sends back to be re-reported. */
   readonly recheckCommit?: GitObjectId;
   /** Why a `RecheckRequired` failure was sent back, absent on every other attempt. */
   readonly recheckReason?: FinalizationRecheckReason;
   /** The base a proposing ticket's re-check read where it lands, which the target — the proposal's head — cannot say. */
   readonly recheckBaseRef?: GitRefName;
+  /** The tickets ahead, bottom first, a `Restack` failure was sent back to stack over, absent on every other attempt. */
+  readonly restackBeneath?: readonly StackMember[];
   readonly attemptDigest: string;
 }
 
@@ -637,8 +640,8 @@ export function canonicalChangeProposalRequest(
 /**
  * The exact bytes one attempt's digest is taken over, binding it to the request
  * it answers. The base ref an unheld target was read from, a proposal's base,
- * a queue's group commit and a re-check's commit, reason and base are last
- * parts only where there is one, all but the first each behind its own label,
+ * a queue's group commit, a re-check's commit, reason and base, and a
+ * re-stack's line are last parts only where there is one, all but the first each behind its own label,
  * so every attempt without them keeps the bytes it had.
  */
 export function canonicalFinalizationAttempt(
@@ -682,6 +685,15 @@ export function canonicalFinalizationAttempt(
     ...(record.recheckBaseRef === undefined
       ? []
       : ["recheckBaseRef", record.recheckBaseRef]),
+    ...(record.restackBeneath === undefined
+      ? []
+      : [
+          "restackBeneath",
+          ...record.restackBeneath.flatMap((member) => [
+            String(member.ticket),
+            member.commit,
+          ]),
+        ]),
   ]);
 }
 
@@ -710,7 +722,7 @@ export interface FinalizationEvidence {
   readonly proposalBase?: GitObjectId;
   /** Which failure this was, so a rework can tell a re-check from a conflict by what the attempt recorded. */
   readonly failureKind: FinalizationFailureKind;
-  /** The accepted commit to re-report, present exactly for a `RecheckRequired` failure. */
+  /** The accepted commit to re-report, present exactly for a `RecheckRequired` or `Restack` failure. */
   readonly recheckCommit?: GitObjectId;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictManifestDigest?: string;

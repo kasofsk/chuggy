@@ -102,6 +102,7 @@ import {
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
+  type Partition,
   type RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
@@ -342,7 +343,8 @@ async function finalizerSerializedCandidates(
  * Takes a bounded lease on the oldest requests nobody holds, drawing nothing
  * under a superseded epoch and no finalization of a Serialized ticket that is
  * waiting on the holder of its reference, so a waiting request stays open and
- * costs neither a lease nor a hold pass.
+ * costs neither a lease nor a hold pass. A waiting request with a failed
+ * attempt is drawn, because all it can do is conclude.
  */
 async function finalizerClaimRequests(
   client: pg.PoolClient,
@@ -373,7 +375,11 @@ async function finalizerClaimRequests(
                  AND NOT (q.kind = 'RunFinalizer' AND EXISTS (
                    SELECT FROM unnest(${waitingTenants}::text[], ${waitingProjects}::text[],
                                       ${waitingTickets}::bigint[]) AS w(tenant, project, ticket)
-                    WHERE w.tenant = q.tenant AND w.project = q.project AND w.ticket = q.ticket))
+                    WHERE w.tenant = q.tenant AND w.project = q.project AND w.ticket = q.ticket)
+                   AND NOT EXISTS (
+                     SELECT FROM finalization_attempt a
+                      WHERE a.tenant = q.tenant AND a.project = q.project
+                        AND a.request = q.request AND a.outcome = 'Failed'))
                ORDER BY q.authorizing_seq, q.request
                LIMIT ${requestsMax} FOR UPDATE SKIP LOCKED)
       RETURNING r.tenant, r.project, r.request, r.ticket::text AS ticket,
@@ -382,6 +388,44 @@ async function finalizerClaimRequests(
                 r.claim_generation::text AS claim_generation, r.state, r.kind`,
   );
   return claimed.rows.map((row) => finalizerRowClaim(row, owner, epoch));
+}
+
+/** Takes a bounded lease on one ticket's open, unheld `RunFinalizer` request that has no attempt, under the current epoch. */
+async function finalizerClaimUnattempted(
+  client: pg.PoolClient,
+  owner: FinalizerOwnerId,
+  epoch: RecoveryEpoch,
+  partition: Partition,
+  ticket: TicketId,
+  leaseSecs: number,
+): Promise<FinalizationClaim | undefined> {
+  finalizerBounded(leaseSecs, "leaseSecs");
+  if ((await postgresOwnershipEpoch(client)) !== epoch) return undefined;
+  const claimed = await client.query<ClaimRow>(
+    sql`UPDATE finalization_request r
+        SET state = 'Registered', claim_owner = ${owner},
+            claim_generation = r.claim_generation + 1,
+            claim_expires_at = now() + make_interval(secs => ${leaseSecs}::double precision),
+            recovery_epoch = ${epoch}
+      WHERE (r.tenant, r.project, r.request) IN (
+              SELECT q.tenant, q.project, q.request FROM finalization_request q
+               WHERE q.tenant = ${partition.tenant} AND q.project = ${partition.project}
+                 AND q.ticket = ${ticket} AND q.kind = 'RunFinalizer'
+                 AND q.state = 'Open'
+                 AND (q.claim_owner IS NULL OR q.claim_expires_at <= now())
+                 AND NOT EXISTS (
+                   SELECT FROM finalization_attempt a
+                    WHERE a.tenant = q.tenant AND a.project = q.project
+                      AND a.request = q.request)
+               ORDER BY q.authorizing_seq, q.request
+               LIMIT 1 FOR UPDATE SKIP LOCKED)
+      RETURNING r.tenant, r.project, r.request, r.ticket::text AS ticket,
+                r.authorizing_seq::text AS authorizing_seq,
+                r.request_generation::text AS request_generation,
+                r.claim_generation::text AS claim_generation, r.state, r.kind`,
+  );
+  const [row] = claimed.rows;
+  return row === undefined ? undefined : finalizerRowClaim(row, owner, epoch);
 }
 
 /** Extends a lease the caller still holds at its own generation, under the epoch it took it in. */
@@ -948,6 +992,17 @@ export function postgresFinalizer(
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),
+      ),
+    claimUnattempted: (owner, epoch, partition, ticket, leaseSecs) =>
+      postgresTransaction(pool, (client) =>
+        finalizerClaimUnattempted(
+          client,
+          owner,
+          epoch,
+          partition,
+          ticket,
+          leaseSecs,
+        ),
       ),
     extendClaim: (claim, leaseSecs) =>
       postgresTransaction(pool, (client) =>

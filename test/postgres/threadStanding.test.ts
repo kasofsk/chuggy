@@ -411,7 +411,7 @@ test("closing a standing thread clears it, places it nowhere, and names it to th
     { project: partition.project, session },
   ]);
   assert.equal(
-    (await polled(host, 0, [], "1.91.0")).threadsClosed,
+    (await polled(host, 0, [], "1.92.0")).threadsClosed,
     undefined,
     "a host of a release before the field was named it",
   );

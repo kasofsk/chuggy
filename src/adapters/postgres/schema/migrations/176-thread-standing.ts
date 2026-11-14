@@ -101,8 +101,8 @@ function lastHostedBy(
                   AND last.pool_principal=${principal})`;
 }
 
-export const migration175: Migration = {
-  version: 175,
+export const migration176: Migration = {
+  version: 176,
   name: "a chat host's thread with restartable jobs is standing, and kept placed",
   statements: [
     `ALTER TABLE public.agent_session

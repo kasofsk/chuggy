@@ -275,6 +275,71 @@ test("an attempt keeps a re-check's reason only from its closed set on a re-chec
     });
 });
 
+test("an attempt keeps a re-stack's line exactly on a re-stack, as paired object identities no deeper than a stack", async () => {
+  const commit = finalizerCommit();
+  for (const [label, failureKind, restack, constraint] of [
+    ["unlined", "Restack", undefined, "restack_line"],
+    [
+      "lined",
+      "MergeConflict",
+      { tickets: [1], commits: [commit] },
+      "restack_line",
+    ],
+    ["empty", "Restack", { tickets: [], commits: [] }, "restack_line"],
+    [
+      "unpaired",
+      "Restack",
+      { tickets: [1, 2], commits: [commit] },
+      "restack_line",
+    ],
+    [
+      "deep",
+      "Restack",
+      { tickets: [1, 2, 3, 4], commits: [commit, commit, commit, commit] },
+      "restack_line",
+    ],
+    [
+      "unidentified",
+      "Restack",
+      { tickets: [1, 2], commits: [commit, "main"] },
+      "restack_line",
+    ],
+    ["null", "Restack", { tickets: [1], commits: [null] }, "restack_line"],
+  ] as const) {
+    await assert.rejects(
+      finalizerPrepare(rig, project, `restack-${label}`, {
+        outcome: "Failed",
+        failureKind,
+        ...(failureKind === "Restack" ? { recheckCommit: commit } : {}),
+        ...(restack === undefined
+          ? {}
+          : {
+              restack: {
+                tickets: restack.tickets,
+                commits: restack.commits as readonly string[],
+              },
+            }),
+      }),
+      new RegExp(`finalization_attempt_${constraint}_is_whole`, "u"),
+      label,
+    );
+  }
+  await assert.rejects(
+    finalizerPrepare(rig, project, "restack-uncommitted", {
+      outcome: "Failed",
+      failureKind: "Restack",
+      restack: { tickets: [1], commits: [commit] },
+    }),
+    /finalization_attempt_recheck_commit_is_whole/u,
+  );
+  await finalizerPrepare(rig, project, "restack-admitted", {
+    outcome: "Failed",
+    failureKind: "Restack",
+    recheckCommit: commit,
+    restack: { tickets: [1, 2, 3], commits: [commit, commit, commit] },
+  });
+});
+
 test("an attempt names a request, a repository and a configuration that were retained", async () => {
   for (const [values, constraint] of [
     [
