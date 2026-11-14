@@ -1,0 +1,29 @@
+/* Select: the browser's own list in the box an Input is drawn in, with the
+   same refused and disabled states. */
+
+@layer ui {
+  .select {
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    color: var(--ink-1);
+    padding: var(--space-1) var(--space-2);
+    max-width: 100%;
+  }
+
+  .select[data-invalid] {
+    border-color: var(--tone-fail);
+  }
+
+  .select:disabled {
+    color: var(--ink-3);
+    cursor: not-allowed;
+  }
+
+  @media (pointer: coarse) {
+    .select {
+      min-height: var(--height-control);
+      font-size: var(--text-unzoomed);
+    }
+  }
+}
