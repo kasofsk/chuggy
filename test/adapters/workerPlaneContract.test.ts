@@ -109,6 +109,7 @@ import type {
   SessionLivePublished,
   SessionPlaneIdentity,
   SessionReferenceBound,
+  SessionStandingRecorded,
   SessionStoreStreamRow,
   SessionTurnAnswered,
   SessionTurnFailed,
@@ -1215,6 +1216,7 @@ const sessionPlaneCalls: Readonly<
   },
   turnStopped: { headers: json, payload: { turn: "turn" } },
   held: { headers: json, payload: {} },
+  standing: { headers: json, payload: { standing: true } },
   storeStreams: {},
   storeBatch: {
     rest: "stream/1",
@@ -1298,6 +1300,7 @@ const sessionPlaneRequests: Readonly<
   },
   turnStopped: { schema: "sessionTurnStoppedSchema", bodies: [] },
   held: "Unparsed",
+  standing: { schema: "sessionStandingSchema", bodies: [] },
   storeStreams: "Unparsed",
   storeBatch: "Unparsed",
   storePage: "Unparsed",
@@ -1321,6 +1324,12 @@ const referencesBound: Readonly<Record<SessionReferenceBound, true>> = {
   AlreadyBound: true,
   Conflict: true,
   Fenced: true,
+};
+
+const standingsRecorded: Readonly<Record<SessionStandingRecorded, true>> = {
+  Recorded: true,
+  Fenced: true,
+  NotChatHostThread: true,
 };
 
 const turnsAnswered: Readonly<Record<SessionTurnAnswered, true>> = {
@@ -1566,6 +1575,16 @@ const sessionPlaneCases: Readonly<
     ...bothAnswers.map((held) => ({
       name: `a hold answering ${String(held)}`,
       service: sessionPorts({ holds: { hold: () => Promise.resolve(held) } }),
+    })),
+  ],
+  standing: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...keysOf(standingsRecorded).map((recorded) => ({
+      name: `a report recorded as ${recorded}`,
+      service: sessionPorts({
+        standings: { stand: () => Promise.resolve(recorded) },
+      }),
     })),
   ],
   storeStreams: [

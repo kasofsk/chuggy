@@ -298,7 +298,9 @@ scheduler taking an attempt number, by the worker plane binding the runtime's
 session id once, by the selector moving the project's lead onto the objectives
 it now holds, by `set_session_capabilities` reconfiguring one session's roster
 and by `rename_member_thread` and `hide_member_thread` writing the member's own
-name for a thread and their own way of putting it away; a trigger refuses every
+name for a thread and their own way of putting it away, and by a chat host's
+thread attempt reporting whether its thread is standing through
+`report_session_standing`, which `close_agent_session` clears; a trigger refuses every
 other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead and any number of
 closed ones — a closed lead is the context that ended, and the successor the
 selector opens is how a project whose lead ended decides again — so the

@@ -160,6 +160,7 @@ function threadWeb(options: Serving, asked: unknown[]): ServedWeb {
             },
             turns: [],
             streams: [],
+            jobsStanding: false,
           };
     },
   };

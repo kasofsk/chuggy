@@ -2217,6 +2217,12 @@ export const threadResponseSchema = z.object({
   streams: z
     .array(leadStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
+  /**
+   * Present where the thread holds jobs its chat host restarts with each
+   * attempt, so the plane keeps an attempt placed for it until its owner
+   * closes it or its jobs stop.
+   */
+  jobsStanding: z.literal(true).optional(),
 });
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 

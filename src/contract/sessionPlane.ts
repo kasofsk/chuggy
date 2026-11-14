@@ -105,6 +105,7 @@ export const sessionPlaneRoutes = {
   turnLive: { method: "POST", path: "/v1/session/turn/live" },
   turnStopped: { method: "POST", path: "/v1/session/turn/stopped" },
   held: { method: "POST", path: "/v1/session/held" },
+  standing: { method: "PUT", path: "/v1/session/standing" },
   storeStreams: { method: "GET", path: "/v1/session/store" },
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
   storePage: { method: "GET", path: "/v1/session/store/*" },
@@ -238,6 +239,17 @@ export const sessionTurnStoppedSchema = z.strictObject({
   turn: sessionIdentitySchema,
 });
 
+/**
+ * Whether a thread a chat host runs is standing: whether it holds jobs its
+ * host restarts with each attempt. The plane keeps the latest report on the
+ * thread rather than the attempt, and keeps an attempt placed for a standing
+ * thread on the host that ran its last one until the thread closes or an
+ * attempt reports it is not.
+ */
+export const sessionStandingSchema = z.strictObject({
+  standing: z.boolean(),
+});
+
 /** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
@@ -369,6 +381,12 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     204: "empty",
     401: workerPlaneStopSchema,
     409: workerPlaneRefusalSchema(["Fenced"]),
+  },
+  standing: {
+    204: "empty",
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["Fenced", "NotChatHostThread"]),
   },
   storeStreams: {
     200: sessionStoreStreamsAnswerSchema,

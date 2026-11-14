@@ -413,3 +413,12 @@ export const tenantDeletionHoldsFunction = "tenant_deletion_holds";
 
 /** The door a tenant that holds no project is deleted through. */
 export const tenantDeleteFunction = "delete_unrun_tenant";
+
+/** The door a chat host's thread attempt reports through whether its thread is standing. */
+export const sessionStandingReportFunction = "report_session_standing";
+
+/** The threads a chat host last ran that have since closed, read by the pool plane. */
+export const chatHostThreadsClosedFunction = "chat_host_threads_closed";
+
+/** Whether a thread is standing, read by the API. */
+export const threadStandingFunction = "thread_jobs_standing";

@@ -170,7 +170,7 @@ function portsOf(kept: readonly Kept[], calls: string[]): NativeThreadPorts {
         return Promise.resolve(
           record === undefined
             ? undefined
-            : { thread: record, turns: [], streams: [] },
+            : { thread: record, turns: [], streams: [], jobsStanding: false },
         );
       },
       enqueueMessage: (input) => {

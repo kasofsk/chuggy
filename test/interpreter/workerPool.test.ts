@@ -28,6 +28,7 @@ import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   workerPoolPollIdleSecsMax,
   workerPoolReconciliationSchema,
+  workerPoolThreadsClosedMax,
   type WorkerPoolCredentialOutcome,
 } from "../../src/contract/workerPool.ts";
 import {
@@ -164,6 +165,7 @@ const launch: SessionLaunchFacts = {
 /** A session store holding no session attempt and offering none, under a published launch. */
 const noSessions: WorkerPoolSessions = {
   launch: () => Promise.resolve(launch),
+  threadsClosed: () => Promise.resolve([]),
   among: () => Promise.resolve(new Set()),
   awaiting: () => Promise.resolve([]),
   open: () => Promise.resolve("NotClaimable"),
@@ -1440,6 +1442,51 @@ test("only a chat host's poll names the published session image, by the host it 
     undefined,
   );
   assert.equal(await chatImageOf(host, noSessions, unaddressed), undefined);
+});
+
+test("only a chat host's poll on a release that reads them is answered the threads it ran that have since closed, as many as an answer holds, and none where none has", async () => {
+  const closed = [{ project: "project", session: "thread-closed" }];
+  const asks: number[] = [];
+  const store: WorkerPoolSessions = {
+    ...noSessions,
+    threadsClosed: (_identity, max) => {
+      asks.push(max);
+      return Promise.resolve(closed);
+    },
+  };
+  const threadsClosedOf = async (
+    caller: PoolPlaneIdentity,
+    contract: string | undefined,
+    over: WorkerPoolSessions = store,
+  ): Promise<unknown> => {
+    const polled = await workerPoolPoll(
+      ports(idle, over),
+      caller,
+      asked(contract === undefined ? {} : { contract }),
+      settings,
+    );
+    if (polled.polled !== "Answered") throw new Error("a poll was refused");
+    return polled.answer.threadsClosed;
+  };
+  assert.deepEqual(await threadsClosedOf(host, workerContractRelease), closed);
+  assert.deepEqual(asks, [workerPoolThreadsClosedMax]);
+  for (const contract of ["1.92.0", undefined])
+    assert.equal(
+      await threadsClosedOf(host, contract),
+      undefined,
+      String(contract),
+    );
+  for (const other of [identity, runner])
+    assert.equal(
+      await threadsClosedOf(other, workerContractRelease),
+      undefined,
+      other.kind,
+    );
+  assert.deepEqual(asks, [workerPoolThreadsClosedMax]);
+  assert.equal(
+    await threadsClosedOf(host, workerContractRelease, noSessions),
+    undefined,
+  );
 });
 
 test("a personal runner claims only in the projects it allowlists that its owner may still read, every one asked before any claim", async () => {

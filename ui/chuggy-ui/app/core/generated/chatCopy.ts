@@ -18,6 +18,8 @@ export interface ChatCopy {
   readonly "chat-standing-open": Record<never, never>;
   readonly "chat-standing-closed": Record<never, never>;
   readonly "chat-standing-orphaned": Record<never, never>;
+  readonly "chat-kept-running": Record<never, never>;
+  readonly "chat-kept-running-detail": Record<never, never>;
   readonly "chat-history": Record<never, never>;
   readonly "chat-history-loading": Record<never, never>;
   readonly "chat-history-none": Record<never, never>;

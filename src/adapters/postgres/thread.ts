@@ -189,6 +189,19 @@ async function threadStandingRows(
   return found.rows;
 }
 
+/** Whether the thread holds jobs its chat host restarts, read beside its standing rather than in it. */
+async function threadJobsStanding(
+  pool: pg.Pool,
+  partition: Partition,
+  session: SessionId,
+): Promise<boolean> {
+  const found = await pool.query<{ standing: boolean | null }>(
+    sql`SELECT thread_jobs_standing(
+          ${partition.tenant},${partition.project},${session})::boolean AS standing`,
+  );
+  return found.rows[0]?.standing === true;
+}
+
 /**
  * One thread's standing, or nothing where the session named is not this
  * project's own thread — which the definer decides by admitting `kind='Thread'`
@@ -223,6 +236,7 @@ async function threadStanding(
     }),
     ...(nextBefore === undefined ? {} : { nextBefore }),
     streams: await sessionStoreStreamRows(pool, partition, session, streamsMax),
+    jobsStanding: await threadJobsStanding(pool, partition, session),
   };
 }
 

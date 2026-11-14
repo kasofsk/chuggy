@@ -218,6 +218,7 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
               turns: [],
               ...(found.turns > 1 ? { nextBefore: 1 } : {}),
               streams: [],
+              jobsStanding: false,
             },
       );
     },

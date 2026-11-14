@@ -121,6 +121,12 @@ export const workerContractUnscopedChat: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a chat host's poll may be answered the threads it last ran that have since closed, a field a host of an earlier one refuses its whole answer over. */
+export const workerContractChatThreadsClosed: WorkerContractRange = {
+  min: { major: 1, minor: 93 },
+  max: workerContractAccepted.max,
+};
+
 /** The versions in which a run's totals may carry its account's usage and its end the limit that stopped it, fields a plane of an earlier one refuses the whole body over. */
 export const workerContractRunUsages: WorkerContractRange = {
   min: workerContractRunUsage,
