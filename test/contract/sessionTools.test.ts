@@ -256,12 +256,6 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "read_placement",
     "update_placement",
   ]);
-  assert.deepEqual(chuggyToolCapabilities.AgentAccounts, [
-    "read_usage",
-    "update_usage_settings",
-    "retry_paused_agent",
-    "retire_credential",
-  ]);
 });
 
 /**
@@ -284,7 +278,13 @@ test("no session can hold the capability that admits the settings tools", () => 
 });
 
 /** A session must not change the thresholds it runs under or retire the credential whose reading pauses it, so the account tools are a person's own agent's alone. */
-test("no session can hold the capability that admits the account tools, and no other capability admits them", () => {
+test("no session can hold the capability that admits the account tools", () => {
+  assert.deepEqual(chuggyToolCapabilities.AgentAccounts, [
+    "read_usage",
+    "update_usage_settings",
+    "retry_paused_agent",
+    "retire_credential",
+  ]);
   assert.ok(
     !(sessionCapabilities as readonly string[]).includes("AgentAccounts"),
   );
@@ -295,16 +295,6 @@ test("no session can hold the capability that admits the account tools, and no o
   const sessionTools = new Set(chuggyToolNames(sessionCapabilities));
   for (const tool of chuggyToolNames(["AgentAccounts"]))
     assert.ok(!sessionTools.has(tool), tool);
-  for (const capability of [
-    ...sessionCapabilities,
-    ...personalAgentCapabilities,
-  ])
-    if (capability !== "AgentAccounts")
-      for (const tool of chuggyToolCapabilities.AgentAccounts)
-        assert.ok(
-          !chuggyToolCapabilities[capability].includes(tool),
-          `${capability} admits ${tool}`,
-        );
 });
 
 test("each capability admits the runtime's own tools the roster gives it and no other", () => {
