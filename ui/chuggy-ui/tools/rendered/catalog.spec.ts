@@ -1,6 +1,8 @@
 /**
  * The catalog at a phone's width and the desk's: a repository's catalog, then
- * its search matching nothing, and one configuration with an entry chosen.
+ * its search matching nothing, one configuration with an entry chosen, and
+ * the repository's head with an entry chosen that another one uses, so the
+ * head line's link and a reference's link are each drawn and measured.
  * The stub's repository and a workload's name each run past a phone. No state
  * scrolls the page sideways, on the phone every control each draws is at
  * least the touch height, and every read is one the stub answers. The search
@@ -81,6 +83,31 @@ for (const viewport of catalogViewports)
         .getByRole("heading", { level: 3, name: catalogWorkload })
         .getByRole("link"),
     ).toHaveAttribute("aria-current", "page");
+    await renderedNoOverflow(page);
+    if (viewport === "phone") await renderedTouchTargets(page, column);
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  });
+
+for (const viewport of catalogViewports)
+  test(`the head with a used entry chosen does not scroll sideways on the ${viewport}, and its links are a finger's size`, async ({
+    browser,
+    served,
+  }) => {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: `${catalogPath}?${new URLSearchParams({ configuration: "revision-coding", source: "head", entry: "workloads/checks" }).toString()}`,
+      viewport,
+      signedIn: true,
+      ready: (page) => page.getByRole("article", { name: "checks" }),
+    });
+    const page = rendered.page;
+    const column = page.locator("header.page-header").locator("..");
+    await expect(
+      page.getByRole("region", { name: "Used by" }).getByRole("link"),
+    ).toHaveText("checked");
+    await expect(
+      page.getByRole("link", { name: "Show the import" }),
+    ).toBeVisible();
     await renderedNoOverflow(page);
     if (viewport === "phone") await renderedTouchTargets(page, column);
     renderedNoViolations(rendered, [zodProbeViolation]);

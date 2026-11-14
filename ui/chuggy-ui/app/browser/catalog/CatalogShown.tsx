@@ -7,7 +7,7 @@
  * chosen in the repository's head stays in the head.
  */
 
-import { Link, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import type { LinkOptions } from "@tanstack/react-router";
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
@@ -35,6 +35,7 @@ import { CountBadge } from "../ui/CountBadge.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { RecordList, RecordRow, RecordRowSkeleton } from "../ui/RecordList.tsx";
+import { TextLink } from "../ui/TextLink.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
@@ -50,14 +51,14 @@ export function CatalogLink(props: {
 }): ReactNode {
   const partition = useCatalogPartition();
   return (
-    <Link
+    <TextLink
       to={settingsRoutes.project.catalog}
       params={partition}
       search={props.query}
       resetScroll={false}
     >
       {props.children}
-    </Link>
+    </TextLink>
   );
 }
 

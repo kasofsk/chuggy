@@ -46,6 +46,7 @@ import {
   projectAbilitiesResponseSchema,
   projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
   projectInventoryResponseSchema,
   projectResponseSchema,
   personalRunnerPermitResponseSchema,
@@ -297,6 +298,25 @@ const repositoryConfigurationCoding = {
   }),
 };
 
+/** The repository's head, declaring the ready configuration as its newest
+ * import stored it, so the catalog's head line offers the way back. */
+const repositoryConfigurationHead = {
+  head: {
+    state: "Ready",
+    branch: "main",
+    commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+    configurations: [
+      {
+        name: "coding",
+        path: ".chug/configurations/coding.json",
+        revision: repositoryConfigurationCoding.revision,
+        canonical: repositoryConfigurationCoding.canonical,
+        digest: repositoryConfigurationCoding.digest,
+      },
+    ],
+  },
+};
+
 /** The tenant's connected accounts: one holding both apps, and one lacking
  * the worker app, whose install is the step the repositories page offers. */
 const forgeInstallations = {
@@ -473,6 +493,11 @@ export const stubApiReads: readonly StubApiRead[] = [
     `${projectPath}/configurations/revision-coding`,
     configurationResponseSchema,
     repositoryConfigurationCoding,
+  ),
+  stubApiRead(
+    `${projectPath}/configurations/imports/head`,
+    repositoryConfigurationHeadResponseSchema,
+    repositoryConfigurationHead,
   ),
   stubApiRead(`${projectPath}/landing-queues`, landingQueuesResponseSchema, {
     queues: [],
