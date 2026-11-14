@@ -46,7 +46,6 @@ import type {
 } from "./repositoryConfigurationIdentity.ts";
 import type { Worker } from "./workerCatalog.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
-import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type {
   BriefFinalization,
@@ -790,14 +789,6 @@ export type ConfigurationRevisionProvenance =
       readonly name: RepositoryConfigurationName;
     };
 
-/**
- * What one ready configuration decides about finishing, for a reader choosing
- * between configurations without opening either.
- */
-export interface ConfigurationFinalization {
-  readonly approvalRequired: boolean;
-}
-
 export type ConfigurationRevisionSummary =
   | (ConfigurationRevisionSummaryBase & { readonly readiness: "Incomplete" })
   | (ConfigurationRevisionSummaryBase & {
@@ -805,7 +796,6 @@ export type ConfigurationRevisionSummary =
       readonly image: string;
       readonly worker?: Worker;
       readonly practices: readonly string[];
-      readonly finalization: ConfigurationFinalization;
       readonly evaluationStagesCount: number;
     } & ConfigurationDocumentSummary);
 
@@ -861,18 +851,6 @@ export interface ConfigurationPageQuery {
 
 export const configurationPageLimitMax = 100;
 
-/**
- * What a ready configuration decides about finishing. An approval policy this
- * tree cannot read is not read as no approval: the finalizer refuses such a
- * candidate rather than promoting it, so the summary says a person is in the
- * way of one.
- */
-function configurationFinalizationOf(
-  canonical: CanonicalConfiguration,
-): ConfigurationFinalization {
-  return { approvalRequired: handoffApprovalRequired(canonical) ?? true };
-}
-
 export function configurationRevisionSummary(input: {
   readonly revision: ConfigurationRevisionId;
   readonly parent?: ConfigurationRevisionId;
@@ -898,7 +876,6 @@ export function configurationRevisionSummary(input: {
     ...base,
     readiness: "Ready" as const,
     image: configuration.image,
-    finalization: configurationFinalizationOf(input.canonical),
   };
   if (configuration.version !== releaseConfigurationVersion)
     return {

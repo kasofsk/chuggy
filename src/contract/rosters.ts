@@ -68,10 +68,9 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * reading one all name the same kinds, and `test/contract/rosters.test.ts`
  * holds it against the interpreter's `allFinalizationHoldKinds` as
  * `test/postgres/finalizationHold.test.ts` holds it against the column that
- * mirrors it. The six left out stay holds, each for its own reason:
- * `ApprovalDeclined` is a human's answer, which a resume would put to the same
- * human again; `ProposalRefused` is that answer or a pin the rows contradict,
- * and neither is reachability; `ContradictoryEvidence` is durable rows
+ * mirrors it. The five left out stay holds, each for its own reason:
+ * `ProposalRefused` is a human's answer or a pin the rows contradict, and
+ * neither is reachability; `ContradictoryEvidence` is durable rows
  * disagreeing, which is a defect for telemetry and not a desk item;
  * `ProposalMergeBlocked` and `ProposalHeadMoved` are merges waiting on the
  * forge, read again until somebody merges or closes the proposal, and a wait
@@ -635,7 +634,6 @@ export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 export const ticketLandingStates = [
   "Running",
   "Held",
-  "AwaitingApproval",
   "AwaitingMerge",
   "Failed",
   "Unavailable",
@@ -766,6 +764,7 @@ export const repositoryConfigurationFaults = [
   "DuplicatePath",
   "ReferenceAbsent",
   "TooManyReferences",
+  "ApprovalOutsidePlan",
 ] as const;
 export type RepositoryConfigurationFault =
   (typeof repositoryConfigurationFaults)[number];
@@ -773,7 +772,6 @@ export type RepositoryConfigurationFault =
 /** The kinds of question a native action puts to a person. */
 export const nativeActionKinds = [
   "TicketEscalation",
-  "FinalizationApproval",
   "EvaluationApproval",
 ] as const;
 export type NativeActionKind = (typeof nativeActionKinds)[number];
@@ -785,7 +783,6 @@ export type NativeActionKind = (typeof nativeActionKinds)[number];
  */
 export const nativeActionKindResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
-  FinalizationApproval: ["Approve", "Decline"],
   EvaluationApproval: ["Approve", "Reject"],
 } as const;
 
@@ -798,7 +795,6 @@ export const nativeActionResolutions = [
   "Resume",
   "Revoke",
   "Approve",
-  "Decline",
   "Reject",
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];

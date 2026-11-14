@@ -91,8 +91,6 @@ export interface TicketCopy {
   readonly "ticket-actions-sentence-resume-default": Record<never, never>;
   readonly "ticket-actions-sentence-resume-rework": Record<never, never>;
   readonly "ticket-actions-sentence-revoke": Record<never, never>;
-  readonly "ticket-actions-sentence-approve": Record<never, never>;
-  readonly "ticket-actions-sentence-decline": Record<never, never>;
   readonly "ticket-actions-sentence-approve-evaluation": Record<never, never>;
   readonly "ticket-actions-sentence-reject": Record<never, never>;
   readonly "ticket-actions-sentence-release": Record<never, never>;

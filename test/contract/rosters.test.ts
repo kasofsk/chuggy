@@ -467,10 +467,10 @@ test("the briefing carriers are the interpreter's", () => {
  * The unavailable kinds are the wire's own list and the finalizer's holds are
  * the interpreter's, so this is a containment rather than an equality: what it
  * holds is that every member is a hold the finalizer can reach, and that the
- * six left out are exactly the ones named for staying holds. A kind added to
+ * five left out are exactly the ones named for staying holds. A kind added to
  * either side without the other lands in one of the two assertions.
  */
-test("the unavailable kinds are finalization holds, less the six that stay holds", () => {
+test("the unavailable kinds are finalization holds, less the five that stay holds", () => {
   const roster: readonly FinalizationHoldKind[] = finalizationUnavailableKinds;
   assert.deepEqual(
     roster.filter((kind) => !allFinalizationHoldKinds.includes(kind)),
@@ -481,7 +481,6 @@ test("the unavailable kinds are finalization holds, less the six that stay holds
       (kind) => !roster.some((named) => named === kind),
     ),
     [
-      "ApprovalDeclined",
       "ContradictoryEvidence",
       "ProposalRefused",
       "ProposalHeadMoved",
@@ -803,6 +802,7 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     DuplicatePath: true,
     ReferenceAbsent: true,
     TooManyReferences: true,
+    ApprovalOutsidePlan: true,
   };
   assert.deepEqual(sorted(draftStates), keysOf(states));
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));

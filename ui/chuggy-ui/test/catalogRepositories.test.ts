@@ -43,7 +43,6 @@ function summary(
     readiness: "Ready",
     image: "an-image",
     practices: [],
-    finalization: { approvalRequired: false },
     evaluationStagesCount: 1,
   };
 }
@@ -129,7 +128,7 @@ test("the fragments are grouped as a catalog groups its entries, each once with 
   ).toStrictEqual([
     ["Workload", ["build", "quick", "gates", "review"]],
     ["Plan", ["review", "gated"]],
-    ["Finalizer", ["land", "approved"]],
+    ["Finalizer", ["land", "proposed"]],
     ["Prompt", ["prompts/build.md"]],
   ]);
   const [build] = groups[0]?.fragments ?? [];
@@ -167,8 +166,8 @@ test("one name saying otherwise in two configurations is two fragments, each hel
   const changed = JSON.stringify({
     ...(JSON.parse(creationCatalogCanonical) as object),
     finalizers: {
-      land: { approvalRequired: true },
-      approved: { approvalRequired: true },
+      land: { landing: { mode: "PullRequest" } },
+      proposed: { landing: { mode: "PullRequest" } },
     },
   });
   const groups = catalogFragmentsOf([
@@ -183,7 +182,7 @@ test("one name saying otherwise in two configurations is two fragments, each hel
     ]),
   ).toStrictEqual([
     ["land", ["chuggy-development"]],
-    ["approved", ["chuggy-development", "basic-coding"]],
+    ["proposed", ["chuggy-development", "basic-coding"]],
     ["land", ["basic-coding"]],
   ]);
 });

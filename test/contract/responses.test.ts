@@ -1352,27 +1352,23 @@ const readyConfiguration = {
   workInstructionsCount: 2,
   reviewInstructionsCount: 1,
   provenance: { source: "Authored" },
-  finalization: { approvalRequired: true },
   evaluationStagesCount: 2,
 } as const;
 
-test("a ready configuration names its finalization facts and its evaluation stages", () => {
+test("a ready configuration names its evaluation stages", () => {
   const summary = configurationsResponseSchema.parse({
     configurations: [readyConfiguration],
   }).configurations[0];
   assert.deepEqual(summary?.readiness === "Ready" ? summary : undefined, {
     ...readyConfiguration,
   });
-  for (const configuration of [
-    { ...readyConfiguration, finalization: undefined },
-    { ...readyConfiguration, evaluationStagesCount: undefined },
-    { ...readyConfiguration, finalization: {} },
-  ])
-    assert.throws(
-      () =>
-        configurationsResponseSchema.parse({ configurations: [configuration] }),
-      `a ready summary is refused: ${JSON.stringify(configuration.finalization)}`,
-    );
+  assert.throws(() =>
+    configurationsResponseSchema.parse({
+      configurations: [
+        { ...readyConfiguration, evaluationStagesCount: undefined },
+      ],
+    }),
+  );
 });
 
 test("a configuration read and its page parse with readiness and provenance", () => {

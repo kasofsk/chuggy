@@ -69,9 +69,9 @@ function over21(
 
 const approval: NativeActionResponse = {
   action: "action-eleven",
-  kind: "FinalizationApproval",
+  kind: "EvaluationApproval",
   authorizingSequence: 51,
-  admits: ["Approve", "Decline"],
+  admits: ["Approve", "Reject"],
   answerable: true,
 };
 
@@ -498,12 +498,12 @@ test("an open approval needs you even while the ticket is running", () => {
         status: "Running",
       },
     ],
-    { phase: "Finalization" },
+    { phase: "Evaluation" },
   );
   expect(ticketSlot({ ...running, open: [approval] }, copyTextEn)).toEqual({
     slot: "NeedsYou",
     approvals: [],
-    detail: "Awaiting approval",
+    detail: "Awaiting evaluation approval",
     where: undefined,
     run: undefined,
     more: undefined,

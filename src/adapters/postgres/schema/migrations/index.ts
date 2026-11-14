@@ -178,7 +178,8 @@ import { migration177 } from "./177-run-credential-absent.ts";
 import { migration178 } from "./178-session-bearer-capabilities.ts";
 import { migration179 } from "./179-thread-job-wake.ts";
 import { migration180 } from "./180-chat-host-session-capabilities.ts";
-import { migration181 } from "./181-session-shell-credential.ts";
+import { migration181 } from "./181-finalizer-approval-retired.ts";
+import { migration182 } from "./182-session-shell-credential.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -363,4 +364,5 @@ export const migrations: readonly Migration[] = [
   migration179,
   migration180,
   migration181,
+  migration182,
 ];

@@ -1,12 +1,8 @@
 /**
- * A finalization approval reaching the inbox and leaving it, which no pure
- * function can express: the row's membership is the server's, read again on a
- * live frame, and the cache holds it between.
- *
- * `Finalization` is not a phase the inbox holds by itself, so every row on
- * screen is there because the server says a question is open on it. The shell
- * is mounted beside the screen, so the badge and the list are read as the one
- * value they are meant to be.
+ * An escalation reaching the inbox and leaving it, which no pure function can
+ * express: the row's membership is the server's, read again on a live frame,
+ * and the cache holds it between. The shell is mounted beside the screen, so
+ * the badge and the list are read as the one value they are meant to be.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -90,24 +86,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const approval: ProjectNativeActionResponse = {
+const escalation: ProjectNativeActionResponse = {
   ticket: 11,
   action: "action-eleven",
-  kind: "FinalizationApproval",
+  kind: "TicketEscalation",
   authorizingSequence: 51,
-  admits: ["Approve", "Decline"],
+  admits: ["Resume", "Revoke"],
   answerable: true,
 };
 
-const finalizing: ProjectTicket = {
+const escalated: ProjectTicket = {
   ticket: 11,
   title: "Land the release notes",
-  phase: "Finalization",
+  phase: "Escalated",
   sequence: 6,
   ...ticketInstants,
 };
 
-const awaiting = inboxEntry(finalizing, { actions: [approval] });
+const awaiting = inboxEntry(escalated, { actions: [escalation] });
 
 /** The routes a mounted shell reads, the inbox answering what `inbox` holds or failing where it is `undefined`. */
 function serving(inbox: () => readonly InboxEntryResponse[] | undefined) {
@@ -147,7 +143,7 @@ function mounted(route: (url: string) => Response) {
   return inboxShellMounted(atlas, route);
 }
 
-test("an approval opening puts its ticket in the inbox and its answer takes it out", async () => {
+test("an escalation opening puts its ticket in the inbox and its answer takes it out", async () => {
   let entries: readonly InboxEntryResponse[] = [];
   const { api, server } = mounted(serving(() => entries));
   await settled();
@@ -156,20 +152,19 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
 
   entries = [awaiting];
   await turned(() => {
-    server.push(openActions([approval]));
+    server.push(openActions([escalation]));
   });
   await settled();
-  expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "decline" })).toBeDefined();
-  expect(screen.getByText("awaiting your approval")).toBeDefined();
+  expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "revoke" })).toBeDefined();
   expect(badge()).toBe("1");
 
   await turned(() => {
-    screen.getByRole("button", { name: "approve" }).click();
+    screen.getByRole("button", { name: "resume" }).click();
   });
   expect(api.submissions()).toBe(1);
   expect(
-    screen.queryByRole("button", { name: "approve" }),
+    screen.queryByRole("button", { name: "resume" }),
     "the answered row left the inbox before a frame said the question was answered",
   ).not.toBeNull();
   expect(badge()).toBe("1");
@@ -179,29 +174,28 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
     server.push(openActions([]));
   });
   await settled();
-  expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
   expect(badge()).toBeUndefined();
 });
 
 /**
- * One read is one failed state. A reread that fails keeps the approval it last
- * drew answerable and the badge counting it, and says only that it was not
- * updated.
+ * One read is one failed state. A reread that fails keeps the escalation it
+ * last drew answerable and the badge counting it, and says only that it was
+ * not updated.
  */
-test("a reread that fails leaves the approval it drew answerable, and counted", async () => {
+test("a reread that fails leaves the escalation it drew answerable, and counted", async () => {
   let entries: readonly InboxEntryResponse[] | undefined = [awaiting];
   const { server } = mounted(serving(() => entries));
   await settled();
   expect(badge()).toBe("1");
   entries = undefined;
   await turned(() => {
-    server.push(openActions([approval]));
+    server.push(openActions([escalation]));
   });
   await settled();
   expect(badge()).toBe("1");
-  expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
-  expect(screen.getByText("awaiting your approval")).toBeDefined();
+  expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
   expect(screen.getByText("Not updated")).toBeDefined();
   expect(screen.queryByText("Inbox is clear")).toBeNull();
 });
@@ -213,7 +207,7 @@ test("nothing the inbox draws is a runtime style element", async () => {
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
   await turned(() => {
-    screen.getByRole("button", { name: "approve" }).click();
+    screen.getByRole("button", { name: "resume" }).click();
   });
   expect(held.api.submissions()).toBe(1);
   expect(document.querySelectorAll("style").length).toBe(0);
@@ -239,11 +233,11 @@ test("an open action's answers are drawn under the catalog's words for them, whi
   );
   await settled();
   const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
-  for (const action of ["Approve", "Decline"] as const) {
+  for (const action of ["Resume", "Revoke"] as const) {
     const name = pseudo(inboxActionLabel(action));
     expect(name).not.toBe(copyTextEn(inboxActionLabel(action)));
     expect(screen.getByRole("button", { name })).toBeDefined();
   }
-  expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "decline" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "revoke" })).toBeNull();
 });

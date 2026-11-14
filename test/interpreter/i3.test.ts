@@ -63,7 +63,6 @@ import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import {
   allNativeActionKinds,
   allNativeActionResolutions,
-  isApprovalResolution,
   isCompletionTicketCommand,
   isEscalationResolution,
   nativeActionResolutions,
@@ -321,11 +320,6 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
       nativeActionResolutions[kind].some((each) => each === resolution),
     );
     assert.ok(asking.length >= 1, resolution);
-    assert.equal(
-      isApprovalResolution(resolution),
-      asking.includes("FinalizationApproval"),
-      resolution,
-    );
     assert.equal(
       isEscalationResolution(resolution),
       asking.includes("TicketEscalation"),
@@ -1089,7 +1083,7 @@ function finalizationInput(event: TicketCommand): DecisionInput {
   };
 }
 
-test("a decision leaving finalization withdraws the approval it left unanswered", () => {
+test("a decision leaving finalization withdraws for its ticket, as a stored journal derived it", () => {
   const before = finalizing();
   const result = reportFinalizationResultCommand(id(1), 1, 1, {
     type: "FinalizationNeedsWork",

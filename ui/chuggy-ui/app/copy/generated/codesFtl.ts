@@ -176,7 +176,6 @@ codes-detail-evaluation-blocked = Resume asks it again
 ## What an open native action asks, and what a revoked dependency leaves.
 
 codes-native-escalation = { -escalation(case: "upper") }
-codes-native-approval = Awaiting { -approval }
 codes-native-evaluation-approval = Awaiting { -evaluation } { -approval }
 codes-revoked-dependencies = Blocked by { -revoke(form: "ed") } { $count ->
     [one] { -dependency }
@@ -205,8 +204,6 @@ codes-merge-policy-stacked-effect = Evaluated over the { -ticket(form: "plural")
 codes-landing-onto = { $method } · { -landing(form: "s") } on { $target }
 codes-landing-into = { $method } · into { $target }
 codes-landing-default-branch = the default branch
-codes-approval-required = Required
-codes-approval-not-required = Not required
 
 ## The answers a ticket offers, and what each does.
 
@@ -214,7 +211,6 @@ codes-action-dispatch = { -dispatch(case: "upper") }
 codes-action-resume = Resume
 codes-action-revoke = { -revoke(case: "upper") }
 codes-action-approve = Approve
-codes-action-decline = Decline
 codes-action-reject = Reject
 codes-action-release = { -release(case: "upper") }
 # spells -run: to re-run is a verb here
@@ -232,8 +228,6 @@ codes-wall-exit-two = only { $action } or { $other } exit this wall
 codes-edit-effect = Revises the { -draft } · { -release(form: "s") } a new { -revision }
 codes-action-dispatch-effect = { -dispatch(case: "upper", form: "s") } the observed version
 codes-action-revoke-effect = { -revoke(case: "upper", form: "ing") } blocks its { -dependent(form: "plural") }
-codes-action-approve-effect = Lets { -landing } proceed
-codes-action-decline-effect = Holds { -landing } back
 codes-action-approve-evaluation-effect = Passes this { -evaluator }
 codes-action-reject-effect = Sends the { -work-stage } back with your note
 codes-action-release-effect = Makes the { -draft } { -ticket(form: "a") }

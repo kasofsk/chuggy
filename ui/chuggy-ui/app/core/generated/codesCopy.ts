@@ -142,7 +142,6 @@ export interface CodesCopy {
   readonly "codes-detail-work-unavailable": Record<never, never>;
   readonly "codes-detail-evaluation-blocked": Record<never, never>;
   readonly "codes-native-escalation": Record<never, never>;
-  readonly "codes-native-approval": Record<never, never>;
   readonly "codes-native-evaluation-approval": Record<never, never>;
   readonly "codes-revoked-dependencies": {
     readonly count: unknown;
@@ -173,13 +172,10 @@ export interface CodesCopy {
     readonly target: unknown;
   };
   readonly "codes-landing-default-branch": Record<never, never>;
-  readonly "codes-approval-required": Record<never, never>;
-  readonly "codes-approval-not-required": Record<never, never>;
   readonly "codes-action-dispatch": Record<never, never>;
   readonly "codes-action-resume": Record<never, never>;
   readonly "codes-action-revoke": Record<never, never>;
   readonly "codes-action-approve": Record<never, never>;
-  readonly "codes-action-decline": Record<never, never>;
   readonly "codes-action-reject": Record<never, never>;
   readonly "codes-action-release": Record<never, never>;
   readonly "codes-resume-work": Record<never, never>;
@@ -197,8 +193,6 @@ export interface CodesCopy {
   readonly "codes-edit-effect": Record<never, never>;
   readonly "codes-action-dispatch-effect": Record<never, never>;
   readonly "codes-action-revoke-effect": Record<never, never>;
-  readonly "codes-action-approve-effect": Record<never, never>;
-  readonly "codes-action-decline-effect": Record<never, never>;
   readonly "codes-action-approve-evaluation-effect": Record<never, never>;
   readonly "codes-action-reject-effect": Record<never, never>;
   readonly "codes-action-release-effect": Record<never, never>;

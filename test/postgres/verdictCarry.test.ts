@@ -828,9 +828,9 @@ async function landed(
       `INSERT INTO finalization_attempt
          (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
           target_ref,target_commit,strategy,configuration_revision,configuration_digest,
-          approval_required,outcome,candidate_commit,attempt_digest)
+          outcome,candidate_commit,attempt_digest)
        VALUES ($1,$2,$3,$4,$5,$6,$7,repeat('2',64),$8,$9,'Merge','revision','digest',
-               false,'Prepared',$10,repeat('3',64))`,
+               'Prepared',$10,repeat('3',64))`,
       [
         ...key(at),
         attempt,
