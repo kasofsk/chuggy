@@ -7,7 +7,10 @@
  * and a reader who filled the frame with the chat still has every screen one
  * press away. Below two columns a pane over the whole body takes the nav's row
  * and the page's under it too, the room a phone cannot spare, and the strip
- * gives them back: the banner and the project's row stay over it.
+ * gives them back: the banner and the project's row stay over it. On a phone
+ * the nav is a bar along the foot of the frame instead, under the pages and
+ * the strip, and it stays under a pane over the whole body, so every screen is
+ * still one press away from the chat.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
  * navigation between the pages: they change beneath the bar and the
@@ -109,7 +112,7 @@ import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
 import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
-import { TopBar, TopBarRows } from "./shell/TopBar.tsx";
+import { TopBar, TopBarPhone, TopBarRows } from "./shell/TopBar.tsx";
 import {
   useElementAtLeastEm,
   useViewportAtLeastEm,
@@ -194,7 +197,7 @@ export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
   return (
     <div
       data-stream={carrying ? "live" : "not-live"}
-      className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden"
     >
       {props.children}
     </div>
@@ -572,6 +575,7 @@ function ShellDrawn(props: {
           }
         />
       </div>
+      <TopBarPhone partition={props.partition} />
     </ShellFrame>
   );
 }

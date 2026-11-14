@@ -13,13 +13,15 @@
  *
  * The project's primary places are the bar's, drawn from `shellNav.ts`; the
  * settings, the reader's preferences and signing out sit behind the account
- * menu beside the project. A screen outside every project draws the same bar
- * without what only a project has — its screens and its page row — so
- * signing out is reachable before there is a project to open.
+ * menu beside the project. On a phone the places, the inbox among them, leave
+ * the top for a bar along the foot of the frame, each named under its glyph.
+ * A screen outside every project draws the same bar without what only a
+ * project has — its screens and its page row — so signing out is reachable
+ * before there is a project to open.
  */
 
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Separator } from "radix-ui";
+import { DropdownMenu, Separator } from "radix-ui";
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
@@ -29,10 +31,16 @@ import { inboxCountLabel } from "../../core/inboxList.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import type { ShellCrumb } from "../../core/shellCrumbs.ts";
 import { memberChatCrumbs, shellCrumbs } from "../../core/shellCrumbs.ts";
-import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
+import {
+  navEntryCurrent,
+  shellNav,
+  shellNavPhone,
+} from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { useInboxRows } from "../Inbox.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
+import { CountBadge } from "../ui/CountBadge.tsx";
+import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { useChatPaneYields } from "./chatPaneHeld.ts";
 import { DetailsToggle } from "./DetailsPane.tsx";
@@ -40,6 +48,7 @@ import { NavIcon } from "./navIcons.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { useShellSlotHolder, useShellSlotsFilled } from "./slots.tsx";
+import { useViewportAtMostEm, viewportNarrowEm } from "./viewport.ts";
 
 /** One screen's entry, which also moves a pane that filled the body out of
  * the way, as `useChatPaneYields` says. */
@@ -68,55 +77,85 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
 }
 
 /** The project's primary places but the inbox, which sits beside the account
- * menu. */
+ * menu, in a row of their own; on a phone the places are the bar along its
+ * foot, and the row is drawn only where it says the project is view only. */
 function TopBarNav(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   const text = useCopyText();
+  const phone = useViewportAtMostEm(viewportNarrowEm);
+  const viewOnly = projectAbilityRefused(abilities, "mutate") ? (
+    <Pill tone="neutral">{text({ id: "shell-view-only" })}</Pill>
+  ) : null;
+  if (phone)
+    return viewOnly === null ? null : (
+      <div className="topbar-rows">{viewOnly}</div>
+    );
   const entries = shellNav(props.partition).filter(
     (entry) => entry.id !== "inbox",
   );
   return (
-    <nav aria-label={text({ id: "shell-nav" })} className="min-w-0">
-      <ul className="topbar-nav">
-        {entries.map((entry) => (
-          <TopBarNavEntry key={entry.id} entry={entry} />
-        ))}
-        {projectAbilityRefused(abilities, "mutate") ? (
-          <li className="px-3">
-            <Pill tone="neutral">{text({ id: "shell-view-only" })}</Pill>
-          </li>
-        ) : null}
-      </ul>
-    </nav>
+    <div className="topbar-rows">
+      <nav aria-label={text({ id: "shell-nav" })} className="min-w-0">
+        <ul className="topbar-nav">
+          {entries.map((entry) => (
+            <TopBarNavEntry key={entry.id} entry={entry} />
+          ))}
+          {viewOnly === null ? null : <li className="px-3">{viewOnly}</li>}
+        </ul>
+      </nav>
+    </div>
   );
 }
 
-/** The inbox beside the account menu, with a badge for what waits in it. */
+/** How many wait in the inbox, and nothing where it is clear; and the inbox's
+ * name with it, for a reader who does not see the badge. */
+function useTopBarInboxCount(
+  partition: PartitionIdentity,
+  entry: NavEntry,
+): { readonly count: number | undefined; readonly label: string } {
+  const text = useCopyText();
+  const rows = useInboxRows(partition).rows;
+  const figure = inboxCountLabel(rows);
+  return {
+    count: figure === undefined ? undefined : rows?.count,
+    label: text(
+      figure === undefined
+        ? entry.label
+        : { id: "shell-inbox-unread", args: { count: figure } },
+    ),
+  };
+}
+
+/** The inbox beside the account menu, with a badge for what waits in it; on
+ * a phone the inbox is an item of the bar along its foot instead. */
 function TopBarInbox(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
-  const yields = useChatPaneYields();
-  const text = useCopyText();
-  const count = inboxCountLabel(useInboxRows(props.partition).rows);
+  const phone = useViewportAtMostEm(viewportNarrowEm);
   const entry = shellNav(props.partition).find((place) => place.id === "inbox");
+  if (phone || entry === undefined) return null;
+  return <TopBarInboxLink partition={props.partition} entry={entry} />;
+}
+
+function TopBarInboxLink(props: {
+  readonly partition: PartitionIdentity;
+  readonly entry: NavEntry;
+}): ReactNode {
+  const { entry } = props;
+  const yields = useChatPaneYields();
+  const { count, label } = useTopBarInboxCount(props.partition, entry);
   const current = useRouterState({
-    select: (router) =>
-      entry !== undefined && navEntryCurrent(entry, router.location.pathname),
+    select: (router) => navEntryCurrent(entry, router.location.pathname),
   });
-  if (entry === undefined) return null;
   return (
     <Link
       to={entry.to}
       params={entry.params}
       onClick={yields}
       aria-current={current ? "page" : undefined}
-      aria-label={text(
-        count === undefined
-          ? entry.label
-          : { id: "shell-inbox-unread", args: { count } },
-      )}
+      aria-label={label}
       className="topbar-inbox"
     >
       <NavIcon id="inbox" />
@@ -126,6 +165,136 @@ function TopBarInbox(props: {
         </span>
       )}
     </Link>
+  );
+}
+
+/** One item of a phone's bar: its glyph with its name under it, and where
+ * it carries a count, a `CountBadge` on its glyph and the count in its name. */
+function TopBarPhoneItem(props: {
+  readonly entry: NavEntry;
+  readonly count?: number | undefined;
+  readonly label?: string | undefined;
+}): ReactNode {
+  const { entry, count } = props;
+  const text = useCopyText();
+  const yields = useChatPaneYields();
+  const current = useRouterState({
+    select: (router) => navEntryCurrent(entry, router.location.pathname),
+  });
+  return (
+    <li className="topbar-phone-place">
+      <Link
+        to={entry.to}
+        params={entry.params}
+        onClick={yields}
+        activeOptions={{ exact: true }}
+        aria-current={current ? "page" : undefined}
+        aria-label={count === undefined ? undefined : props.label}
+        className="topbar-phone-item"
+      >
+        <span className="topbar-phone-glyph">
+          <NavIcon id={entry.id} />
+          {count === undefined ? null : (
+            <CountBadge count={count} name={props.label ?? ""} />
+          )}
+        </span>
+        <span className="topbar-phone-label">{text(entry.label)}</span>
+      </Link>
+    </li>
+  );
+}
+
+/** The inbox's item on a phone's bar, carrying what waits in it. */
+function TopBarPhoneInbox(props: {
+  readonly partition: PartitionIdentity;
+  readonly entry: NavEntry;
+}): ReactNode {
+  const { count, label } = useTopBarInboxCount(props.partition, props.entry);
+  return <TopBarPhoneItem entry={props.entry} count={count} label={label} />;
+}
+
+/** More, the last item of a phone's bar where its places outnumber its
+ * items, opening the rest; it is marked where the reader is on one of them. */
+function TopBarPhoneMore(props: {
+  readonly entries: readonly NavEntry[];
+}): ReactNode {
+  const text = useCopyText();
+  const yields = useChatPaneYields();
+  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const held = props.entries.some((entry) => navEntryCurrent(entry, pathname));
+  return (
+    <li className="topbar-phone-place">
+      <DropdownMenu.Root modal={false}>
+        <DropdownMenu.Trigger
+          className="topbar-phone-item"
+          data-current={held ? "" : undefined}
+        >
+          <NavIcon id="more" />
+          <span className="topbar-phone-label">
+            {text({ id: "shell-nav-more" })}
+          </span>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <MenuContent className="topbar-phone-menu" side="top" align="end">
+            {props.entries.map((entry) => (
+              <DropdownMenu.Item
+                key={entry.id}
+                className={`${menuItemClassName} text-ink-1 no-underline`}
+                asChild
+              >
+                <Link
+                  to={entry.to}
+                  params={entry.params}
+                  onClick={yields}
+                  activeOptions={{ exact: true }}
+                  aria-current={
+                    navEntryCurrent(entry, pathname) ? "page" : undefined
+                  }
+                >
+                  {text(entry.label)}
+                </Link>
+              </DropdownMenu.Item>
+            ))}
+          </MenuContent>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </li>
+  );
+}
+
+/**
+ * A project's primary places on a phone, as a bar along the foot of the
+ * screen where a thumb reaches, each its glyph with its name under it. It is
+ * drawn only on a phone; wider, the places are the bar's row above the page.
+ */
+export function TopBarPhone(props: {
+  readonly partition: PartitionIdentity;
+  /** The most items the bar holds, which only a case states. */
+  readonly itemsMax?: number;
+}): ReactNode {
+  const text = useCopyText();
+  const phone = useViewportAtMostEm(viewportNarrowEm);
+  if (!phone) return null;
+  const laid = shellNavPhone(shellNav(props.partition), props.itemsMax);
+  return (
+    <nav aria-label={text({ id: "shell-nav" })} className="topbar-phone">
+      <ul className="topbar-phone-items">
+        {laid.items.map((entry) =>
+          entry.id === "inbox" ? (
+            <TopBarPhoneInbox
+              key={entry.id}
+              partition={props.partition}
+              entry={entry}
+            />
+          ) : (
+            <TopBarPhoneItem key={entry.id} entry={entry} />
+          ),
+        )}
+        {laid.more.length === 0 ? null : (
+          <TopBarPhoneMore entries={laid.more} />
+        )}
+      </ul>
+    </nav>
   );
 }
 
@@ -205,9 +374,7 @@ export function TopBarRows(props: {
 }): ReactNode {
   return (
     <>
-      <div className="topbar-rows">
-        <TopBarNav partition={props.partition} />
-      </div>
+      <TopBarNav partition={props.partition} />
       <TopBarPage />
     </>
   );

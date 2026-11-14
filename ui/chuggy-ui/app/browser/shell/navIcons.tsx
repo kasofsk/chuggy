@@ -1,14 +1,16 @@
 /**
- * Each primary place's glyph, drawn beside its name in the bar and alone in
- * the bar on a phone, where the name is kept for a reader who does
- * not see the glyph. They are lucide's, as chuggernaut draws its own.
+ * Each primary place's glyph, and More's, drawn beside its name in the bar
+ * and above it in a phone's. They are lucide's, as chuggernaut draws its own.
  */
 
 import type { ReactNode } from "react";
 
 import type { NavEntryId } from "../../core/shellNav.ts";
 
-const navIconPaths: Readonly<Record<NavEntryId, ReactNode>> = {
+/** What a glyph is drawn for: a primary place, or More on a phone's bar. */
+export type NavIconId = NavEntryId | "more";
+
+const navIconPaths: Readonly<Record<NavIconId, ReactNode>> = {
   overview: (
     <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2ZM13 5v2M13 17v2M13 11v2" />
   ),
@@ -25,9 +27,16 @@ const navIconPaths: Readonly<Record<NavEntryId, ReactNode>> = {
       <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
     </>
   ),
+  more: (
+    <>
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
+    </>
+  ),
 };
 
-export function NavIcon(props: { readonly id: NavEntryId }): ReactNode {
+export function NavIcon(props: { readonly id: NavIconId }): ReactNode {
   return (
     <svg
       aria-hidden="true"

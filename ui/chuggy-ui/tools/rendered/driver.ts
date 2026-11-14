@@ -193,6 +193,24 @@ export async function renderedTokenPixels(
   }, property);
 }
 
+export interface RenderedInsets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+}
+
+/** The screen's unsafe edges, in pixels, as a phone with a notch and a home
+ * indicator reports them to `env(safe-area-inset-*)`. Chromium alone can be
+ * told them, through its own protocol. */
+export async function renderedSafeAreaInsets(
+  page: Page,
+  insets: RenderedInsets,
+): Promise<void> {
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setSafeAreaInsetsOverride", { insets });
+}
+
 const renderedInteractive = [
   "a[href]",
   "button",
