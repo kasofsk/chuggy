@@ -79,17 +79,6 @@ import {
 import { planeStopping } from "./planeStopping.ts";
 
 /**
- * The session half of this plane, over the same pool and the same artifact
- * store the run half already holds. The ports are one adapter because they are
- * one bearer: a plane holding some of them and not others could only answer a
- * session wrongly, so the composition is whole or the field is absent.
- *
- * THE LEASE DEFAULTS TO WHAT OPENS IT. The scheduler opens a session attempt's
- * lease under `sessionSchedulerDefaults.attemptLeaseSecs` and this plane renews
- * it, so taking that same value is the two tiers agreeing by construction; a
- * deployment that moves one moves both, by naming each.
- */
-/**
  * How a chat host's thread attempt wakes its own thread, composed only where
  * the plane is told the project access its checks ask, because a wake the
  * plane could not check is one it does not make.
@@ -114,6 +103,17 @@ function planeSessionWakes(
   };
 }
 
+/**
+ * The session half of this plane, over the same pool and the same artifact
+ * store the run half already holds. The ports are one adapter because they are
+ * one bearer: a plane holding some of them and not others could only answer a
+ * session wrongly, so the composition is whole or the field is absent.
+ *
+ * THE LEASE DEFAULTS TO WHAT OPENS IT. The scheduler opens a session attempt's
+ * lease under `sessionSchedulerDefaults.attemptLeaseSecs` and this plane renews
+ * it, so taking that same value is the two tiers agreeing by construction; a
+ * deployment that moves one moves both, by naming each.
+ */
 function planeSessions(
   pool: ReturnType<typeof postgresPool>,
   artifacts: ArtifactStore,

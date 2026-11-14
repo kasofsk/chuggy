@@ -249,7 +249,7 @@ test("a key file the plane cannot mint with refuses to start rather than minting
   assert.match(refused.stderr, /CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE:/u);
 });
 
-test("a plane told its project access starts with the wake route composed in front of the session authority", async () => {
+test("a plane told its project access starts, and its wake route asks for a session bearer before anything else", async () => {
   const port = await freePort();
   const child = planeProcess({
     ...planeEnvironment(port),

@@ -3,7 +3,7 @@
  * mailbox, and the one wake a thread's own attempt offers it. It reads a cursor, reads one page of candidates,
  * offers each of them one wake, and moves the cursor once. It is pure —
  * nothing here reaches a store, a clock or a route except through
- * `ThreadWakeService` — and it composes no body: the document names the reason
+ * `ThreadWakeService` or `ThreadJobWakeService` — and it composes no body: the document names the reason
  * and the resource, and a thread that wants the ticket reads it with its own
  * tools.
  *
