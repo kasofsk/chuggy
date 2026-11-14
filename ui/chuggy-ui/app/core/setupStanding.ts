@@ -32,6 +32,7 @@ import type {
 import type {
   ForgeAppName,
   PlacementRoute,
+  SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
@@ -59,6 +60,7 @@ import type {
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
+import { workRunnerStanding } from "./workRunner.ts";
 import type {
   SetupStepName,
   SetupStepSaid,
@@ -76,6 +78,8 @@ export type SetupReadName =
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
+  | "personal"
   | "tickets"
   | "drafts"
   | "landings";
@@ -112,8 +116,12 @@ export type SetupLack =
     }
   | { readonly lacks: "Binding" }
   | { readonly lacks: "Configuration"; readonly repository: string }
-  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
-  | { readonly lacks: "Runner"; readonly chat: boolean }
+  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner; `named` where the project names an owner fallback, so a personal runner of the person's serving it would take its work. */
+  | {
+      readonly lacks: "Runner";
+      readonly chat: boolean;
+      readonly named: boolean;
+    }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
   | { readonly lacks: "ChatHost" }
   | { readonly lacks: "ChatHostLive" }
@@ -207,6 +215,8 @@ const setupReadSubjects: Readonly<Record<SetupReadName, Copy>> = {
   repositories: { id: "setup-read-repositories" },
   work: { id: "setup-read-work" },
   placement: { id: "setup-read-placement" },
+  fallback: { id: "setup-read-fallback" },
+  personal: { id: "setup-read-personal" },
   tickets: { id: "setup-read-tickets" },
   drafts: { id: "setup-read-drafts" },
   landings: { id: "setup-read-landings" },
@@ -629,10 +639,45 @@ export function setupHosted(route: PlacementRoute): boolean {
 }
 
 /**
+ * How the runners the project's work would go to stand, by the console's own
+ * decider, and whether the project names an owner fallback; or the step
+ * unread, where a read it turns on was not got. The fallback is read only
+ * where the project has no pool to say it has a runner, and the person's
+ * personal runners only where it also names one.
+ */
+function setupWorkStanding(
+  reads: SetupReads,
+  route: PlacementRoute,
+  project: SessionRunnerStanding,
+):
+  | SetupStep
+  | { readonly standing: SessionRunnerStanding; readonly named: boolean } {
+  const pooled = sessionRunnerShort(route, project) !== "NoRunner";
+  const fallback = reads.fallback;
+  if (fallback.read !== "Got")
+    return pooled
+      ? { standing: project, named: false }
+      : setupUnread("runner", "fallback", setupFateOf(fallback));
+  const named = fallback.value.fallback !== undefined;
+  const personal = reads.personal;
+  if (personal.read !== "Got")
+    return pooled || !named
+      ? { standing: project, named }
+      : setupUnread("runner", "personal", setupFateOf(personal));
+  return {
+    standing: workRunnerStanding(project, named, personal.value),
+    named,
+  };
+}
+
+/**
  * Done where the project's work has a runner live or the cluster runs it, and
  * the person's chats in it have their chat host live or the cluster runs
- * them; waiting where a runner is registered and is not running. The
- * project's runner is said first, and the person's chat host once it is done.
+ * them; waiting where a runner is registered and is not running, its runner
+ * being a pool or, where it has none and names an owner fallback, a personal
+ * runner of the person's that serves the project, as the console's own
+ * decider counts one, and never their chat host, which takes no work. The
+ * project's runner is said first, and the chat host once it is done.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
@@ -641,15 +686,19 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       ? setupUndone("runner", "todo", undefined, {
           lacks: "Runner",
           chat: true,
+          named: false,
         })
       : setupUnread("runner", "work", setupFateOf(work));
   const read = reads.placement;
   if (read.read !== "Got")
     return setupUnread("runner", "placement", setupFateOf(read));
   const route = work.value.work.route;
+  const standing = setupWorkStanding(reads, route, read.value.runners.project);
+  if ("step" in standing) return standing;
+  const { named } = standing;
   const mine = sessionPlacementShort(read.value, "thread", "mine");
   const chat = mine !== undefined;
-  switch (sessionRunnerShort(route, read.value.runners.project)) {
+  switch (sessionRunnerShort(route, standing.standing)) {
     case "RunnerOffline":
       return setupUndone(
         "runner",
@@ -661,6 +710,7 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       return setupUndone("runner", "todo", undefined, {
         lacks: "Runner",
         chat,
+        named,
       });
     case undefined:
       break;

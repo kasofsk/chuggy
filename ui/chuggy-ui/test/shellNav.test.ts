@@ -17,12 +17,13 @@ import {
   shellNav,
   shellSetupNav,
 } from "../app/core/shellNav.ts";
+import { settingsRoutes } from "../app/core/settingsNav.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
 test("every entry names a route of the partition and carries its params", () => {
   const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
-  const routes = Object.values(navRoutes);
+  const routes = [...Object.values(navRoutes), settingsRoutes.project.myRunner];
   for (const entry of entries) {
     expect(routes).toContain(entry.to);
     expect(entry.params).toStrictEqual(atlas);
@@ -87,11 +88,22 @@ test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
   expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
-  expect(currentAt("/acme/atlas/runners")).toStrictEqual(["runners"]);
   expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);
   expect(currentAt("/acme/atlas/repositories/a%2Fb")).toStrictEqual([
     "repositories",
   ]);
+});
+
+test("the gear's Runners opens the reader's own runners, and is current there beside Settings and not at the address that redirects there", () => {
+  expect(shellSetupNav(atlas).find((entry) => entry.id === "runners")?.to).toBe(
+    settingsRoutes.project.myRunner,
+  );
+  expect(currentAt("/acme/atlas/settings/workspace/runner")).toStrictEqual([
+    "settings",
+    "runners",
+  ]);
+  expect(currentAt("/acme/atlas/settings/pools")).toStrictEqual(["settings"]);
+  expect(currentAt("/acme/atlas/runners")).toStrictEqual([]);
 });
 
 test("a ticket's page and its edit belong to Tickets, and a new one to none", () => {

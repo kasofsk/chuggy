@@ -213,11 +213,11 @@ test("taking a member's runners off says whether there were any it could take", 
   );
 });
 
-test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's", () => {
+test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's Pools page", () => {
   expect(sessionRunnerAdded("Thread")).toBe("MyRunner");
   expect(sessionRunnerAdded("Inquiry")).toBe("MyRunner");
   expect(sessionRunnerAdded("Chat")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Lead")).toBe("Runners");
+  expect(sessionRunnerAdded("Lead")).toBe("Pools");
 });
 
 test("a thread's, an inquiry's and a member's own chat's missing runner is named their chat host, and the lead's a runner", () => {

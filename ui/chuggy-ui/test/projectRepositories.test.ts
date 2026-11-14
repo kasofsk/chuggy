@@ -66,6 +66,7 @@ import {
   executionPlacementBody,
   workRunnerAnswered,
   workRunnerFailed,
+  workRunnerNoPersonal,
   workRunnerUnnamed,
   workRunnerUnread,
 } from "./workRunnerFixture.ts";
@@ -871,7 +872,13 @@ function bindStep(
   );
   return repositoryNextStep(
     note.ticketOffered,
-    workRunner(placement, runners, workRunnerUnnamed, "Reader"),
+    workRunner(
+      placement,
+      runners,
+      workRunnerUnnamed,
+      workRunnerNoPersonal,
+      "Reader",
+    ),
   );
 }
 
