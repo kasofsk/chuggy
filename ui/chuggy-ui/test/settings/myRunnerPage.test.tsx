@@ -516,6 +516,32 @@ test("a member's chat host is drawn with whether it has polled, and registering 
   expect(screen.queryByText("tok_host-1")).toBeNull();
 });
 
+test("a member's chat host says what the chats it hosts may do where it named that, and that each may do all its own allows where it named nothing", async () => {
+  for (const [named, said] of [
+    [
+      ["ProjectRead", "ThreadOffer"],
+      "Chats here may: Read the project, Offer you a page or an action",
+    ],
+    [[], "Chats here may: nothing"],
+    [undefined, "Chats here may do all their own allows"],
+  ] as const) {
+    drawing = {
+      granted: true,
+      runner: undefined,
+      host: {
+        ...(hostListed("5be0d7aa") as object),
+        ...(named === undefined ? {} : { sessionCapabilities: [...named] }),
+      },
+    };
+    await drawMyRunner();
+    const [row] = within(screen.getByRole("table", { name: "Chat host" }))
+      .getAllByRole("row")
+      .slice(1);
+    expect(row?.textContent).toContain(said);
+    cleanup();
+  }
+});
+
 test("a chat host is drawn though its owner may no longer register one, and taking it off is asked first, then sent, and leaves none", async () => {
   drawing = { granted: false, runner: undefined, host: hostListed("5be0d7aa") };
   const sent = await drawMyRunner();

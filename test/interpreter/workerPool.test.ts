@@ -745,6 +745,98 @@ test("a chat host is claimed sessions alone, each in a project its owner may sti
   );
 });
 
+test("a chat host's thread is opened under its roster less what its host named, which its attempt records, and its inquiry and a pool's thread keep their roster", async () => {
+  const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
+  const thread = { ...candidate, capabilities: roster };
+  const inquiry = {
+    ...candidate,
+    session: asSessionId("inquiry-one"),
+    kind: "Inquiry" as const,
+    capabilities: roster,
+  };
+  const named = ["ProjectRead", "RepositoryRead", "LeadDecision"] as const;
+  const claimedBy = async (claimant: PoolPlaneIdentity) => {
+    const { store, opened } = offering([thread, inquiry]);
+    await workerPoolReconcile(
+      ports(idle, store),
+      claimant,
+      nothingHeld,
+      { wanted: 0, wantedSessions: 2, sessionCapabilities: named },
+      settings,
+    );
+    return opened.map((opening) => [
+      opening.candidate.session,
+      opening.invocation.capabilities,
+      opening.hostCapabilities,
+    ]);
+  };
+  assert.deepEqual(await claimedBy(host), [
+    [thread.session, ["RepositoryRead", "ProjectRead"], named],
+    [inquiry.session, roster, undefined],
+  ]);
+  assert.deepEqual(await claimedBy(identity), [
+    [thread.session, roster, undefined],
+    [inquiry.session, roster, undefined],
+  ]);
+});
+
+test("a chat host naming no set leaves its thread's roster whole, and one leaving out reading the repository hands it no repository", async () => {
+  for (const [sessionCapabilities, held, repository] of [
+    [undefined, ["RepositoryRead"], true],
+    [["ProjectRead"], [], false],
+    [[], [], false],
+  ] as const) {
+    const { store, opened } = offering([candidate]);
+    await workerPoolReconcile(
+      ports(idle, store),
+      host,
+      nothingHeld,
+      {
+        wanted: 0,
+        wantedSessions: 1,
+        ...(sessionCapabilities === undefined ? {} : { sessionCapabilities }),
+      },
+      settings,
+    );
+    const said = JSON.stringify(sessionCapabilities);
+    assert.deepEqual(opened[0]?.invocation.capabilities, held, said);
+    assert.equal(
+      "repository" in (opened[0]?.invocation ?? {}),
+      repository,
+      said,
+    );
+    assert.deepEqual(opened[0]?.hostCapabilities, sessionCapabilities, said);
+  }
+});
+
+test("a chat host's poll keeps the capabilities it named for its threads, and no other caller's is kept", async () => {
+  const named = ["ProjectRead"] as const;
+  for (const [claimant, over, kept] of [
+    [host, { sessionCapabilities: named }, named],
+    [host, {}, undefined],
+    [identity, { sessionCapabilities: named }, undefined],
+    [runner, { sessionCapabilities: named }, undefined],
+  ] as const) {
+    const recorded: unknown[] = [];
+    await workerPoolPoll(
+      ports(idle, noSessions, undefined, undefined, {
+        named: (...args) => {
+          recorded.push(args[6]);
+          return Promise.resolve();
+        },
+      }),
+      claimant,
+      asked(over),
+      { ...settings, pollsMax: 1 },
+    );
+    assert.deepEqual(
+      recorded,
+      [kept],
+      `${claimant.kind} ${JSON.stringify(over)}`,
+    );
+  }
+});
+
 test("a session is claimed only up to the least of the pool's room, the per-poll bound and what the held bound leaves", async () => {
   const many = ["a", "b", "c", "d", "e"].map((name) => ({
     ...candidate,

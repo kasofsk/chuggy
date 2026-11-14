@@ -41,6 +41,11 @@
  *
  * VERSION 2 added the credential a `Start` names. Every frame of version 1
  * reads unchanged in version 2.
+ *
+ * A HOST'S SETTINGS MAY NAME THE CAPABILITIES ITS THREADS HOLD, which it sends
+ * on each poll as `workerPoolPollQuery.sessionCapabilities`. A thread it claims
+ * runs under its roster intersected with that set, in its facts and in what
+ * the API admits its bearer to; a host naming none leaves the roster whole.
  */
 
 import { z } from "zod";
@@ -48,7 +53,10 @@ import { z } from "zod";
 import { textUtf8Bytes } from "./http.ts";
 import { sessionEndedSchema } from "./sessionPlane.ts";
 import { workerContractVersionOf } from "./workerContract.ts";
-import { workerPoolAssignmentIdentitySchema } from "./workerPool.ts";
+import {
+  workerPoolAssignmentIdentitySchema,
+  workerPoolSessionCapabilitiesSchema,
+} from "./workerPool.ts";
 import { poolEnvelopeSchema } from "./workerTask.ts";
 
 /** The version of the protocol this release describes. */
@@ -67,6 +75,11 @@ export const chatHostCredentialSchema = z.strictObject({
   agent: z.enum(["Claude", "Codex"]),
   type: z.enum(["OAuth", "ApiKey", "Bedrock", "Vertex", "Foundry"]),
   name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
+});
+
+/** What a host's settings name that chuggy reads: the capabilities its threads may hold, absent where it names none. */
+export const chatHostSettingsSchema = z.strictObject({
+  sessionCapabilities: workerPoolSessionCapabilitiesSchema.exactOptional(),
 });
 
 /** Start the session the pool's poll handed the host under `assignment`, on the credential it names where it names one. */
@@ -166,6 +179,7 @@ export type ChatHostSessionEnvelope = z.infer<
   typeof chatHostSessionEnvelopeSchema
 >;
 export type ChatHostCredential = z.infer<typeof chatHostCredentialSchema>;
+export type ChatHostSettings = z.infer<typeof chatHostSettingsSchema>;
 export type ChatHostFrame = z.infer<typeof chatHostFrameSchema>;
 export type ChatSupervisorReady = z.infer<typeof chatSupervisorReadySchema>;
 export type ChatSupervisorFrame = z.infer<typeof chatSupervisorFrameSchema>;

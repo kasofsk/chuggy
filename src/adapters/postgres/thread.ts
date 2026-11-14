@@ -37,6 +37,7 @@ import {
   allSessionScopes,
   allSessionStates,
   asSessionId,
+  type SessionCapability,
   type SessionId,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
@@ -77,6 +78,7 @@ import type {
 import { projectRowCounter } from "./rows.ts";
 import { sessionStoreStreamRows } from "./sessionStoreReads.ts";
 import {
+  sessionRowCapabilities,
   sessionRowMember,
   sessionRowText,
   sessionTurnStandingOf,
@@ -202,6 +204,20 @@ async function threadJobsStanding(
   return found.rows[0]?.standing === true;
 }
 
+/** What the thread holds while a chat host holds it, absent while none does, read beside its standing rather than in it. */
+async function threadChatHostCapabilities(
+  pool: pg.Pool,
+  partition: Partition,
+  session: SessionId,
+): Promise<readonly SessionCapability[] | undefined> {
+  const found = await pool.query<{ capabilities: string[] | null }>(
+    sql`SELECT thread_chat_host_capabilities(
+          ${partition.tenant},${partition.project},${session})::text[] AS capabilities`,
+  );
+  const held = found.rows[0]?.capabilities ?? null;
+  return held === null ? undefined : sessionRowCapabilities(held);
+}
+
 /**
  * One thread's standing, or nothing where the session named is not this
  * project's own thread — which the definer decides by admitting `kind='Thread'`
@@ -224,6 +240,11 @@ async function threadStanding(
   );
   const head = rows[0];
   if (head === undefined) return undefined;
+  const chatHostCapabilities = await threadChatHostCapabilities(
+    pool,
+    partition,
+    session,
+  );
   const nextBefore =
     head.next_before === null
       ? undefined
@@ -237,6 +258,7 @@ async function threadStanding(
     ...(nextBefore === undefined ? {} : { nextBefore }),
     streams: await sessionStoreStreamRows(pool, partition, session, streamsMax),
     jobsStanding: await threadJobsStanding(pool, partition, session),
+    ...(chatHostCapabilities === undefined ? {} : { chatHostCapabilities }),
   };
 }
 

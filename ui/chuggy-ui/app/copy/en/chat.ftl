@@ -20,6 +20,23 @@ chat-standing-closed = Closed
 chat-standing-orphaned = Orphaned
 chat-kept-running = Kept running
 chat-kept-running-detail = This { -thread } holds processes your { -chat-host } restarts each time it starts again, so it is kept up. Close it, or ask it to stop them, to end that.
+chat-host-capabilities = On your { -chat-host }
+chat-host-capabilities-detail = On your { -chat-host }, this { -thread } may: { $capabilities }
+
+## What a chat may do, as its roster and its chat host's setting name it.
+
+chat-capability-repository-read = Read the { -repository }
+chat-capability-repository-write = Change the { -repository }
+# spells -run: to run is a verb here
+chat-capability-run-commands = Run commands
+chat-capability-project-read = Read the { -project }
+chat-capability-draft-author = Write { -draft(form: "plural") }
+chat-capability-draft-originate = Start new { -draft(form: "plural") }
+chat-capability-ticket-dispatch = { -dispatch(case: "upper") } { -ticket(form: "plural") }
+chat-capability-lead-decision = Decide as the { -lead }
+chat-capability-member-read = Read what is yours
+chat-capability-thread-offer = Offer you a page or an action
+chat-capabilities-none = nothing
 
 ## The history, and what is done to the chat the pane holds.
 

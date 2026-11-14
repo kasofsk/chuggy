@@ -2871,6 +2871,9 @@ function nativeThreadReadMethods(
           : { nextBefore: found.nextBefore }),
         streams: found.streams,
         jobsStanding: found.jobsStanding,
+        ...(found.chatHostCapabilities === undefined
+          ? {}
+          : { chatHostCapabilities: found.chatHostCapabilities }),
       };
     },
   };

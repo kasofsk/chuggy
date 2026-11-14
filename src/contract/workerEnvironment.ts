@@ -107,6 +107,14 @@ export const workerRepositoriesSchema = z.record(
 /** The environment variable naming the model a session's runtime is opened against. */
 export const sessionModelVariable = "CHUG_SESSION_MODEL";
 
+/**
+ * What a chat host's session hands its shell: the origin of the API its bearer
+ * is honoured at, and that bearer, which the API confines to the session's
+ * capabilities as its host narrowed them.
+ */
+export const sessionApiOriginVariable = "CHUG_SESSION_API_ORIGIN";
+export const sessionBearerVariable = "CHUG_SESSION_BEARER";
+
 /** The agent runtime's own variable for the directory it writes its local copy to. */
 export const sessionConfigDirectoryVariable = "CLAUDE_CONFIG_DIR";
 

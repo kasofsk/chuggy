@@ -20,6 +20,21 @@ export interface ChatCopy {
   readonly "chat-standing-orphaned": Record<never, never>;
   readonly "chat-kept-running": Record<never, never>;
   readonly "chat-kept-running-detail": Record<never, never>;
+  readonly "chat-host-capabilities": Record<never, never>;
+  readonly "chat-host-capabilities-detail": {
+    readonly capabilities: unknown;
+  };
+  readonly "chat-capability-repository-read": Record<never, never>;
+  readonly "chat-capability-repository-write": Record<never, never>;
+  readonly "chat-capability-run-commands": Record<never, never>;
+  readonly "chat-capability-project-read": Record<never, never>;
+  readonly "chat-capability-draft-author": Record<never, never>;
+  readonly "chat-capability-draft-originate": Record<never, never>;
+  readonly "chat-capability-ticket-dispatch": Record<never, never>;
+  readonly "chat-capability-lead-decision": Record<never, never>;
+  readonly "chat-capability-member-read": Record<never, never>;
+  readonly "chat-capability-thread-offer": Record<never, never>;
+  readonly "chat-capabilities-none": Record<never, never>;
   readonly "chat-history": Record<never, never>;
   readonly "chat-history-loading": Record<never, never>;
   readonly "chat-history-none": Record<never, never>;

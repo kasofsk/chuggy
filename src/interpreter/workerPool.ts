@@ -111,6 +111,7 @@ import {
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
+import type { SessionCapability } from "./agentSession.ts";
 import type { ExecutionRequirement } from "./executionRequirement.ts";
 import type { TaskResources } from "./taskResources.ts";
 import type { Principal } from "./principal.ts";
@@ -171,7 +172,7 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle and the contract release it offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle, the capabilities a chat host's threads may hold and the contract release it offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
@@ -183,8 +184,15 @@ export interface WorkerPoolAsked {
   readonly memoryRoomMib?: number;
   readonly pollWaitSecs?: number;
   readonly idleSecs?: number;
+  readonly sessionCapabilities?: readonly SessionCapability[];
   readonly contract?: string;
 }
+
+/** What of a poll its query names, the rest being its headers. */
+export type WorkerPoolAskedQuery = Pick<
+  WorkerPoolAsked,
+  "held" | "wanted" | "wantedSessions" | "idleSecs" | "sessionCapabilities"
+>;
 
 /** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
 export const workerPoolMemoryMibDefault = 4_096;
@@ -513,7 +521,9 @@ export interface WorkerPoolPollSettings {
  * naming none leaves as they were recorded; for a personal runner, whether
  * those capabilities name exactly the agents it takes, which every poll writes
  * afresh from its release, so a runner moved back to an earlier one is read as
- * that one; and the credentials it named, which a poll naming none clears.
+ * that one; the credentials it named, which a poll naming none clears; and
+ * for a chat host, the capabilities it named for its threads, which a poll
+ * naming none clears too.
  */
 export interface WorkerPoolRunners {
   named(
@@ -523,6 +533,7 @@ export interface WorkerPoolRunners {
     memoryCeilingMib?: number,
     agentsAdvertised?: boolean,
     credentials?: WorkerRunnerCredentials,
+    sessionCapabilities?: readonly SessionCapability[],
   ): Promise<void>;
 }
 
@@ -831,6 +842,7 @@ function workerPoolSessionsClaimed(
   asked: {
     readonly wanted: number;
     readonly idleSecs?: number;
+    readonly sessionCapabilities?: readonly SessionCapability[];
     readonly contract?: string;
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
@@ -956,7 +968,12 @@ export async function workerPoolReconcile(
   holding: WorkerPoolHolding,
   asked: Pick<
     WorkerPoolAsked,
-    "wanted" | "wantedSessions" | "memoryRoomMib" | "idleSecs" | "contract"
+    | "wanted"
+    | "wantedSessions"
+    | "memoryRoomMib"
+    | "idleSecs"
+    | "sessionCapabilities"
+    | "contract"
   >,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
@@ -1001,6 +1018,9 @@ export async function workerPoolReconcile(
         settings.sessionsHeldMax - holding.sessions.length,
       ),
       ...(asked.idleSecs === undefined ? {} : { idleSecs: asked.idleSecs }),
+      ...(asked.sessionCapabilities === undefined
+        ? {}
+        : { sessionCapabilities: asked.sessionCapabilities }),
       ...(asked.contract === undefined ? {} : { contract: asked.contract }),
     }),
     stop,
@@ -1040,7 +1060,8 @@ async function workerPoolHoldingRead(
  * Records the runner this poll named, and the capabilities it has and the
  * memory ceiling it takes jobs under where it named them, whether a personal
  * runner's release advertises its agents among them, the credentials it
- * named, which its claims read, and the poll as the
+ * named, which its claims read, the capabilities a chat host named for its
+ * threads, which its owner reads, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -1066,6 +1087,7 @@ async function workerPoolPollRecorded(
     identity.kind === "Personal" &&
       contractVersionAccepted(workerContractRunnerAgents, asked.contract),
     asked.credentials ?? {},
+    identity.kind === "ChatHost" ? asked.sessionCapabilities : undefined,
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (
