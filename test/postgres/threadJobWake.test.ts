@@ -18,19 +18,34 @@ import {
   schedulerRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { postgresThreadJobWakes } from "../../src/adapters/postgres/thread.ts";
+import {
+  postgresThreadJobWakes,
+  postgresThreads,
+} from "../../src/adapters/postgres/thread.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import type { WorkerPoolSessionAssignment } from "../../src/contract/workerPool.ts";
 import {
   asSessionBearerSecret,
+  asSessionId,
+  asSessionTurnId,
+  memberScopePartition,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
 import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { threadJobWakeTurn } from "../../src/interpreter/threadWake.ts";
+import { asThreadOpenKey } from "../../src/interpreter/threadRead.ts";
+import {
+  threadJobWake,
+  threadJobWakeTurn,
+} from "../../src/interpreter/threadWake.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
   workerPoolPoll,
   workerPoolSettled,
@@ -152,6 +167,7 @@ test("a chat host's thread attempt is viewed as the wake pass reads a candidate"
     session,
     route: "Pool",
     runner: "Live",
+    inquiryRunner: "Live",
   });
 });
 
@@ -239,4 +255,101 @@ test("an ended attempt's bearer is fenced at the view and at the door, and wakes
     "Fenced",
   );
   assert.deepEqual(await wakeTurns(session), []);
+});
+
+/** The authority as a member's own partition meets it: no project tuple names it, and the tenant grants everything. */
+const tenantGranting: ProjectAccess = {
+  authorize: () => Promise.resolve(undefined),
+  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
+  authorizeSite: projectAccessSiteRefused,
+};
+
+/** One of a member's own threads, opened and messaged as the API does, and handed to that member's chat host. */
+async function ownChatHostThread(label: string): Promise<{
+  readonly own: Partition;
+  readonly member: Principal;
+  readonly session: SessionId;
+  readonly held: WorkerPoolSessionAssignment;
+}> {
+  const partition = await sessionRigProject(rig, label);
+  const member = principal(`member-${label}`);
+  const registered = principal("host");
+  const written = await postgresChatHostRegistry(apiPool).register({
+    tenant: partition.tenant,
+    owner: member,
+    clientId: `chuggy-host-${randomUUID()}`,
+    principal: registered,
+  });
+  assert.equal(written.written, "Registered");
+  const own = memberScopePartition(partition.tenant, member);
+  const threads = postgresThreads(apiPool, { streamsMax: 4 });
+  const opened = await threads.openUnscoped({
+    partition: own,
+    principal: member,
+    session: asSessionId(`thread-${label}-${randomUUID()}`),
+    key: asThreadOpenKey(randomUUID()),
+    systemPrompt: "you are a member's own thread",
+    credentialSlot: "claude-code",
+  });
+  if (opened.opened === "ThreadLimitReached")
+    throw new Error("job wake suite: a member's own thread was refused");
+  const session = opened.thread.session;
+  const queued = await threads.enqueueMessage({
+    partition: own,
+    principal: member,
+    session,
+    turn: asSessionTurnId(`turn-${label}-${randomUUID()}`),
+    input: "start the dispatcher",
+    route: "Pool",
+  });
+  assert.equal(queued.enqueued, "Enqueued");
+  const answered = await workerPoolPoll(
+    ports,
+    {
+      kind: "ChatHost",
+      tenant: partition.tenant,
+      owner: member,
+      principal: registered,
+    },
+    { held: [], wanted: 0, wantedSessions: 1, contract: workerContractRelease },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`job wake suite: a poll answered ${answered.polled}`);
+  const [held] = answered.answer.sessions;
+  assert.ok(held !== undefined, "the host was handed no thread");
+  return { own, member, session, held };
+}
+
+test("a member's own thread on their chat host is viewed in their own scope and woken through the door", async () => {
+  const { own, member, session, held } =
+    await ownChatHostThread("job-wake-own");
+  const bearer = bearerOf(held);
+  const view = await wakes.wakeView(bearer);
+  assert.ok(typeof view === "object");
+  assert.deepEqual(
+    {
+      partition: view.partition,
+      principal: view.principal,
+      session: view.session,
+      inquiryRunner: view.inquiryRunner,
+    },
+    { partition: own, principal: member, session, inquiryRunner: "Live" },
+  );
+  const woken = await threadJobWake(
+    {
+      store: wakes,
+      access: tenantGranting,
+      clock: { nowIso: () => new Date().toISOString() },
+    },
+    bearer,
+    { wake: "JobExited", resource: "dispatcher", event: "dispatcher-exit-1" },
+  );
+  assert.ok("woken" in woken && woken.woken === "Woken", JSON.stringify(woken));
+  const turns = await wakeTurns(session);
+  assert.equal(turns.length, 1);
+  assert.equal(
+    turns[0]?.["turn"],
+    threadJobWakeTurn(session, "dispatcher-exit-1"),
+  );
 });

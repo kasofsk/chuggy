@@ -60,7 +60,7 @@
  * fell due, or jobs a new attempt restored. Its turn is derived from the
  * session and the attempt's own identity for the event, its document names
  * the job, watch or timer and nothing the job printed, and it is admitted on
- * the checks above. It holds no cursor, so the attempt is told what its wake
+ * the checks above, or a member's own thread on those its messages pass. It holds no cursor, so the attempt is told what its wake
  * came to, and an authority that could not answer is the one refusal worth
  * offering again.
  *
@@ -81,7 +81,8 @@ import type {
   SessionId,
   SessionTurnId,
 } from "./agentSession.ts";
-import { asSessionTurnId } from "./agentSession.ts";
+import { asSessionTurnId, memberScopeReserved } from "./agentSession.ts";
+import { memberChatAccess } from "./memberChat.ts";
 import type { Principal } from "./principal.ts";
 import type {
   PlacementRoute,
@@ -359,7 +360,10 @@ export async function threadWakePass(
  * the attempt instead.
  */
 export type ThreadJobWakeView = ThreadWakeAdmission &
-  Pick<ThreadWakeCandidate, "session" | "standingRules">;
+  Pick<ThreadWakeCandidate, "session" | "standingRules"> & {
+    /** The runner standing a member's own scope is served on, which a member's own thread is judged by in place of `runner`. */
+    readonly inquiryRunner: SessionRunnerStanding;
+  };
 
 /** Why a bearer offers no wake: no live attempt holds it, or the attempt is not a thread's on a chat host. */
 export type ThreadJobWakeUnbound = "Fenced" | "NotChatHostThread";
@@ -432,6 +436,23 @@ export function threadJobWakeTurn(
 }
 
 /**
+ * The authority a job wake is asked of and what it is judged on. A member's own
+ * thread is judged as a message of theirs is: on the owner's tenant grant
+ * alone, on the pool, by the runner their own scope is served on.
+ */
+function threadJobWakeAdmission(
+  access: ProjectAccess,
+  view: ThreadJobWakeView,
+): { readonly access: ProjectAccess; readonly admission: ThreadWakeAdmission } {
+  return memberScopeReserved(view.partition)
+    ? {
+        access: memberChatAccess(access),
+        admission: { ...view, route: "Pool", runner: view.inquiryRunner },
+      }
+    : { access, admission: view };
+}
+
+/**
  * Offers one wake a thread's attempt asks for its own thread, under the
  * checks the pass makes of a candidate and through the door the pass wakes
  * through: the attempt is the candidate, and its event the change.
@@ -444,13 +465,14 @@ export async function threadJobWake(
   const view = await service.store.wakeView(bearer);
   if (view === "Fenced" || view === "NotChatHostThread")
     return { refused: view };
-  const admitted = await threadWakeAdmitted(service.access, view);
+  const { access, admission } = threadJobWakeAdmission(service.access, view);
+  const admitted = await threadWakeAdmitted(access, admission);
   if (admitted === undefined) return { refused: "AccessUnavailable" };
   if (!admitted) return { refused: "NotAdmitted" };
   const woken = await service.store.wakeThread({
     ...bearer,
     turn: threadJobWakeTurn(view.session, offer.event),
-    route: view.route,
+    route: admission.route,
     input: threadWakeText(
       threadWakeDocument({
         wake: offer.wake,

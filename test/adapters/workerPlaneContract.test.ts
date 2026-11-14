@@ -1396,6 +1396,7 @@ function jobWakes(
             session: liveSession.session,
             route: "Pool",
             runner: "Live",
+            inquiryRunner: "Live",
           },
         ),
       wakeThread: () =>

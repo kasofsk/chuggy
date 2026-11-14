@@ -4,9 +4,9 @@
  *
  * `thread_job_wake_view` IS THE PASS'S CANDIDATE, READ OFF THE ATTEMPT. Under
  * the attempt's bearer it answers the thread, its principal, the route its
- * turns run on, the member's chat host standing and the project's standing
- * rules, which are what `thread_wake_candidates` and the read beside it answer
- * for a change row. A bearer no live attempt holds is `Fenced`, and a lead, an
+ * turns run on, the member's chat host standing for the project and for their
+ * own scope, and the project's standing rules, which are what
+ * `thread_wake_candidates` and the read beside it answer for a change row. A bearer no live attempt holds is `Fenced`, and a lead, an
  * inquiry and a thread held anywhere but a chat host are `NotChatHostThread`,
  * as `report_session_standing` refuses them.
  *
@@ -53,7 +53,7 @@ export const migration179: Migration = {
     `CREATE FUNCTION ${view}
        RETURNS TABLE(verdict text, tenant text, project text, session text,
                      principal text, route text, runner text,
-                     standing_rules text)
+                     inquiry_runner text, standing_rules text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
@@ -63,7 +63,7 @@ export const migration179: Migration = {
        RETURN QUERY
          SELECT 'Viewed'::text,bound.tenant,bound.project,bound.session,
                 bound.principal,routed.route,runners.member_standing,
-                settings.thread_standing_rules
+                runners.inquiry_standing,settings.thread_standing_rules
            FROM session_route(bound.tenant,bound.project,'Thread') routed
           CROSS JOIN session_runner_standing(bound.tenant,bound.project,
                        bound.principal,in_polled_secs_max) runners

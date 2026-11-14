@@ -17,6 +17,7 @@ import type {
 import {
   asSessionBearerSecret,
   asSessionId,
+  memberScopePartition,
   type SessionId,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
@@ -57,7 +58,14 @@ function viewOf(
   route: PlacementRoute = "Pool",
   runner: SessionRunnerStanding = "Live",
 ): ThreadJobWakeView {
-  return { partition, principal, session, route, runner };
+  return {
+    partition,
+    principal,
+    session,
+    route,
+    runner,
+    inquiryRunner: "Unregistered",
+  };
 }
 
 /** What one door call was offered, so a case can read the turn and its input back. */
@@ -279,4 +287,82 @@ test("the project's standing rules ride on the document as on a ticket wake's", 
     parseThreadWake(offer.input).standing,
     /Ask before you dispatch\./,
   );
+});
+
+/** The authority as a member's own partition meets it: no project tuple names it, so only the tenant's grant to open unscoped chat speaks. */
+function memberAccess(options: { readonly unscoped?: boolean } = {}) {
+  const asked: string[] = [];
+  const authority: ProjectAccess = {
+    authorize: () => Promise.resolve(undefined),
+    authorizeTenant: (_principal, _tenant, kind) => {
+      asked.push(kind);
+      return Promise.resolve(
+        kind === "OpenUnscopedChat" && options.unscoped === false
+          ? undefined
+          : memberAuthority(principal),
+      );
+    },
+    authorizeSite: projectAccessSiteRefused,
+  };
+  return { authority, asked };
+}
+
+function ownViewOf(
+  owner = principal,
+  inquiryRunner: SessionRunnerStanding = "Live",
+): ThreadJobWakeView {
+  return {
+    partition: memberScopePartition(partition.tenant, owner),
+    principal: owner,
+    session,
+    route: "InCluster",
+    runner: "Unregistered",
+    inquiryRunner,
+  };
+}
+
+test("a member's own thread on their chat host is woken on the pool, under the tenant's unscoped chat grant", async () => {
+  const store = jobWakeStore({ view: ownViewOf() });
+  const { authority, asked } = memberAccess();
+  assert.deepEqual(
+    await threadJobWake(serviceOf(store, authority), bearer, exited),
+    { woken: "Woken", ordinal: 1 },
+  );
+  assert.deepEqual(asked, ["OpenUnscopedChat"]);
+  assert.equal(store.offers[0]?.route, "Pool");
+});
+
+test("a member's own thread is not admitted without the grant, for another principal, or with no chat host serving their own scope", async () => {
+  const cases = [
+    { name: "no unscoped chat grant", view: ownViewOf(), unscoped: false },
+    {
+      name: "a partition another member owns",
+      view: {
+        ...ownViewOf(),
+        partition: memberScopePartition(
+          partition.tenant,
+          asPrincipal("oidc:grace"),
+        ),
+      },
+      unscoped: true,
+    },
+    {
+      name: "no runner serving the member's own scope",
+      view: ownViewOf(principal, "Unregistered"),
+      unscoped: true,
+    },
+  ];
+  for (const { name, view, unscoped } of cases) {
+    const store = jobWakeStore({ view });
+    assert.deepEqual(
+      await threadJobWake(
+        serviceOf(store, memberAccess({ unscoped }).authority),
+        bearer,
+        exited,
+      ),
+      { refused: "NotAdmitted" },
+      name,
+    );
+    assert.deepEqual(store.offers, [], name);
+  }
 });

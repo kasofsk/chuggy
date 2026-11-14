@@ -905,6 +905,7 @@ function threadJobWakeViewOf(row: {
   readonly principal: string | null;
   readonly route: string | null;
   readonly runner: string | null;
+  readonly inquiry_runner: string | null;
   readonly standing_rules: string | null;
 }): ThreadJobWakeView | ThreadJobWakeUnbound {
   if (row.verdict === "Fenced" || row.verdict === "NotChatHostThread")
@@ -929,6 +930,11 @@ function threadJobWakeViewOf(row: {
       row.runner,
       "runner standing",
     ),
+    inquiryRunner: sessionRowMember(
+      sessionRunnerStandings,
+      row.inquiry_runner,
+      "inquiry runner standing",
+    ),
   };
 }
 
@@ -944,10 +950,11 @@ export function postgresThreadJobWakes(pool: pg.Pool): ThreadJobWakeStore {
         principal: string | null;
         route: string | null;
         runner: string | null;
+        inquiry_runner: string | null;
         standing_rules: string | null;
       }>(
         sql`SELECT verdict,tenant,project,session,principal,route,runner,
-                   standing_rules
+                   inquiry_runner,standing_rules
               FROM thread_job_wake_view(${sessionSecretDigest(bearer.secret)},
                      ${bearer.generation},${sessionRunnerPolledSecsMax})`,
       );
