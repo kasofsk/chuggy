@@ -229,7 +229,14 @@ test("no runtime role but the API binds a repository, and none records one", asy
   }
 });
 
-test("the access plane's role reaches its invite links and is refused every relation that is not its own", async () => {
+test("the access plane's role reaches its invite links and tenants' display names, and is refused every relation that is not its own", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      accessPlaneRole,
+      "UPDATE tenant SET display_name=display_name WHERE false",
+    ),
+    undefined,
+  );
   assert.equal(
     await harness.attemptAs(
       accessPlaneRole,
@@ -246,7 +253,8 @@ test("the access plane's role reaches its invite links and is refused every rela
   );
   for (const [statement, relation] of [
     ["SELECT * FROM project", "project"],
-    ["SELECT * FROM tenant", "tenant"],
+    ["UPDATE tenant SET tenant=tenant", "tenant"],
+    ["DELETE FROM tenant", "tenant"],
     [
       "SELECT * FROM worker_pool_registration_token",
       "worker_pool_registration_token",

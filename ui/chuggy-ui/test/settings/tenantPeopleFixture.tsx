@@ -31,6 +31,12 @@ export const peopleTenant = "acme-co";
 
 export const peoplePath = `/access/v1/tenants/${peopleTenant}/people`;
 
+/** Where the reader's own workspaces are read, which names this one. */
+export const peopleWorkspacesPath = "/access/v1/workspaces";
+
+/** What the workspace is named to its reader, which is not its id. */
+export const peopleWorkspaceName = "Acme Co.";
+
 export const abilitiesPath = `/access/v1/tenants/${peopleTenant}/abilities`;
 
 export const invitationPath = `/access/v1/tenants/${peopleTenant}/invitations`;
@@ -183,6 +189,8 @@ export interface PeopleDrawing {
   readonly abilities?: () => Response;
   /** What the workspace's links answer, a plane that keeps none where a case says nothing. */
   readonly links?: () => Response | Promise<Response>;
+  /** What the reader's own workspaces answer, this one by its display name where a case says nothing. */
+  readonly workspaces?: () => Response | Promise<Response>;
   /** What a grant, a removal, an invitation, a link made or one revoked is answered with. */
   readonly changed?: (request: SentRequest) => Response | Promise<Response>;
 }
@@ -192,12 +200,28 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
   const abilities = drawing.abilities ?? (() => answer(peopleAbilitiesAll()));
   const links = drawing.links ?? (() => answer({}, 404));
   const changed = drawing.changed ?? noContent;
+  const workspaces =
+    drawing.workspaces ??
+    (() =>
+      answer({
+        tenants: [
+          {
+            tenant: peopleTenant,
+            displayName: peopleWorkspaceName,
+            roles: ["Admin"],
+            administer: true,
+          },
+        ],
+        truncated: false,
+      }));
   return drawnStrict(<TenantPeoplePage />, (request: SentRequest) => {
     if (request.url === peoplePath && request.method === "GET")
       return listing();
     if (request.url === abilitiesPath && request.method === "GET")
       return abilities();
     if (request.url === linksPath && request.method === "GET") return links();
+    if (request.url === peopleWorkspacesPath && request.method === "GET")
+      return workspaces();
     if (request.url.startsWith("/access/v1/")) return changed(request);
     return answer({}, 404);
   });

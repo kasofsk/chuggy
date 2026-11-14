@@ -54,6 +54,7 @@ function siteOf(
   const site = setupSiteEmpty();
   site.tenants = workspaces.map((tenant) => ({
     tenant,
+    displayName: tenant,
     roles: ["Admin"],
     administer: true,
   }));

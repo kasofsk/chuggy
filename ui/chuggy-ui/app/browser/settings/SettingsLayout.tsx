@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { settingsNav, settingsNavSiteDrawn } from "../../core/settingsNav.ts";
 import type { SettingsNavGroup } from "../../core/settingsNav.ts";
+import { useWorkspaceNames } from "../workspaceNames.ts";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
 
 import "./settings.css";
@@ -32,7 +33,9 @@ function SettingsNavGroupLinks(props: {
         {group.name === undefined ? null : (
           <>
             {" "}
-            <span className="truncate text-sm text-ink-3">{group.name}</span>
+            <span className="truncate text-sm text-ink-3" translate="no">
+              {group.name}
+            </span>
           </>
         )}
       </p>
@@ -63,8 +66,10 @@ export function SettingsLayout(props: {
 }): ReactNode {
   const text = useCopyText();
   const abilities = useSiteAbilities(props.tenant);
+  const named = useWorkspaceNames();
   const groups = settingsNav({
     tenant: props.tenant,
+    tenantName: named(props.tenant),
     project: props.project,
     site: settingsNavSiteDrawn(
       abilities.state === "Ready" ? abilities.value : undefined,

@@ -9,7 +9,7 @@
  * way, and so are the site's workspace links, and either is redeemed by any
  * caller signed in, who needs no kind because the link's maker held them. The
  * tenants a caller is written into are answered to any caller signed in, about
- * them alone.
+ * them alone, and a tenant's administrators change its display name.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -59,6 +59,8 @@ import {
   accessSiteAuthoritySchema,
   accessSubjectSchema,
   accessTenantAuthoritySchema,
+  accessTenantDisplayNameChangeSchema,
+  accessTenantNamesNotConfiguredCode,
   accessTenantRoleGrantSchema,
   accessTenantRoleSchema,
   accessTenantTakenCode,
@@ -69,7 +71,10 @@ import {
   type AccessOwnerInvited,
   type AccessPlaneRouteName,
 } from "../../contract/accessPlane.ts";
-import { projectNameCharsMax } from "../../contract/requests.ts";
+import {
+  displayNameCharsMax,
+  projectNameCharsMax,
+} from "../../contract/requests.ts";
 import {
   identitySchema,
   nativeHttpError,
@@ -102,6 +107,7 @@ import type {
   AccessPlane,
 } from "../../interpreter/accessPlane.ts";
 import type { AccessSiteTenantsList } from "../../interpreter/accessSiteTenants.ts";
+import type { AccessTenantNames } from "../../interpreter/accessTenantNames.ts";
 import type { Principal } from "../../interpreter/principal.ts";
 import {
   asTenantId,
@@ -138,6 +144,7 @@ export interface AccessPlaneService {
   readonly holders: AccessAuthorityHolders;
   readonly siteTenants: AccessSiteTenantsList;
   readonly callerTenants: AccessCallerTenantsList;
+  readonly tenantNames: AccessTenantNames;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -156,6 +163,10 @@ export const accessOwnerInvitationBodyBytesMax = planeJsonObjectBytesMax(
   accessGithubLoginCharsMax,
   accessEmailCharsMax,
 );
+
+/** The most a display name's change reads: the name. */
+export const accessTenantDisplayNameBodyBytesMax =
+  planeJsonObjectBytesMax(displayNameCharsMax);
 
 /** The most a workspace link's mint reads: its note. */
 export const accessWorkspaceLinkBodyBytesMax = planeJsonObjectBytesMax(
@@ -317,6 +328,38 @@ function accessTenantRoutes(
           accessTenantRoleSchema.parse(accessParams(request)["role"]),
         ),
       ),
+  );
+}
+
+function accessTenantNameRoute(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantDisplayNameChange",
+    async (request, reply, caller) => {
+      const renamed = await service.tenantNames.renamed(
+        caller,
+        accessTenantOf(request),
+        accessTenantDisplayNameChangeSchema.parse(request.body).displayName,
+      );
+      switch (renamed) {
+        case "NotConfigured":
+          return accessRefused(
+            reply,
+            404,
+            accessTenantNamesNotConfiguredCode,
+            "This deployment keeps no display names.",
+          );
+        case "Absent":
+        case "Changed":
+        case "Refused":
+          return accessChanged(reply, renamed);
+      }
+    },
+    accessTenantDisplayNameBodyBytesMax,
   );
 }
 
@@ -1027,6 +1070,7 @@ export function createAccessPlaneApp(
   });
   planeHealthRoutes(app, service.ready);
   accessTenantRoutes(app, service);
+  accessTenantNameRoute(app, service);
   accessProjectRoutes(app, service);
   accessHostedRunsRoutes(app, service);
   accessPersonalRunnersRoutes(app, service);

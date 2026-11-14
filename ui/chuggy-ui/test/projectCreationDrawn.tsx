@@ -47,11 +47,11 @@ const accessUnanswered: ProjectCreationAccess = {
 };
 
 export function administered(tenant: string): AccessCallerTenant {
-  return { tenant, roles: ["Admin"], administer: true };
+  return { tenant, displayName: tenant, roles: ["Admin"], administer: true };
 }
 
 export function joined(tenant: string): AccessCallerTenant {
-  return { tenant, roles: ["Member"], administer: false };
+  return { tenant, displayName: tenant, roles: ["Member"], administer: false };
 }
 
 /** A plane listing these workspaces to a reader who may do nothing on the

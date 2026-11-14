@@ -34,6 +34,7 @@ import {
   threadOpenKeyPattern,
   threadTitleCharsMax,
   threadsOpenMax,
+  textCodePointsCount,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
@@ -169,6 +170,27 @@ export const forgeAuthorizationSchema = z.strictObject({
 
 /** The longest tenant or project name a principal may create. */
 export const projectNameCharsMax = 39;
+
+/** The longest display name a tenant or a project is given, in code points. */
+export const displayNameCharsMax = 64;
+
+/**
+ * What a tenant or a project is named to a reader, apart from the name its
+ * addresses carry: free text, trimmed, not empty, within the bound, and with no
+ * control character and no half of a pair.
+ */
+export const displayNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(
+    (name) => textCodePointsCount(name) <= displayNameCharsMax,
+    `a display name is at most ${String(displayNameCharsMax)} characters`,
+  )
+  .refine(
+    (name) => !/[\p{Cc}\p{Cs}]/u.test(name),
+    "a display name holds no control character",
+  );
 
 /**
  * A tenant or project name a principal creates: lowercase ASCII letters, digits

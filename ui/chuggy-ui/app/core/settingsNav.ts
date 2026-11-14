@@ -76,6 +76,8 @@ export interface SettingsNavSite {
 
 export interface SettingsNavInput {
   readonly tenant: string;
+  /** What the workspace's group is headed with, which its addresses are not. */
+  readonly tenantName: string;
   readonly project: string | undefined;
   readonly site: SettingsNavSite;
 }
@@ -133,7 +135,7 @@ export function settingsNav(
   const workspaceGroup: SettingsNavGroup = {
     id: "workspace",
     label: { id: "settings-nav-workspace" },
-    name: tenant,
+    name: input.tenantName,
     entries: [
       entry("people", frame.people),
       entry("accounts", frame.accounts),
