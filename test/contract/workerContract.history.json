@@ -466,7 +466,12 @@
   },
   {
     "release": "1.93.0",
-    "wire": "5f00b5b19a8590c0d9e3b8e65deaf936b8f13c50d62c93785a6d1405bb40417c",
-    "files": "7b2e1ff73cab08c1a31201ac1ddd1e51b53d09d01f8325d2fb8f19742f9ce4cc"
+    "wire": "4e7c93fd4b8e0a3747ba3b62ea00cb2940cb3b5cd43452f9884af92cf6e975f0",
+    "files": "acabb709066db1917a4dbddef05e2d748ad8f9c3985479f61e708440932b85b5"
+  },
+  {
+    "release": "1.94.0",
+    "wire": "d04102a666ccdabef0a5d7f9363b643d0598561173884672ab84ef3ec0cf6134",
+    "files": "b4ff316e833c16cb0a14e2b0e3d1d7a36140c681e906b5c1404c55e085cf49d0"
   }
 ]

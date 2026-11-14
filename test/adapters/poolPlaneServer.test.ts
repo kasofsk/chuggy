@@ -266,6 +266,7 @@ function sessionCalls(
     made,
     store: {
       launch: () => answer(["launch"], launch),
+      threadsClosed: () => answer(["threadsClosed"], []),
       among: (_identity, named) =>
         answer(
           ["among", [...named]],

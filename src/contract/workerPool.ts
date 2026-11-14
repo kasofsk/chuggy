@@ -466,6 +466,15 @@ export const workerPoolCredentialPauseSchema = z.strictObject({
   pausedUntil: runUsageInstantSchema,
 });
 
+/** The most threads one answer names as closed. */
+export const workerPoolThreadsClosedMax = 64;
+
+/** A thread as a session's facts name it: its project and its session. */
+export const workerPoolThreadClosedSchema = z.strictObject({
+  project: workerPoolProjectSchema,
+  session: z.string().min(1).max(workerPoolIdentityCharsMax),
+});
+
 /** Whether each credential outcome names an assignment the same answer stops, and no assignment twice. */
 function workerPoolReconciliationOutcomesStopped(answer: {
   readonly stop: readonly string[];
@@ -540,6 +549,18 @@ export const workerPoolReconciliationSchema = z
         workerRunnerCredentialAgents.length *
           workerRunnerCredentialsPerAgentMax,
       )
+      .optional(),
+    /**
+     * The threads whose last attempt this chat host ran and that have since
+     * closed, the most recently closed first and in every answer while among
+     * the most recent, so the host may remove what it keeps for each. It is
+     * named only to a chat host whose poll's release reads it, and absent is
+     * the default: none has closed.
+     */
+    threadsClosed: z
+      .array(workerPoolThreadClosedSchema)
+      .min(1)
+      .max(workerPoolThreadsClosedMax)
       .optional(),
   })
   .refine(workerPoolReconciliationOutcomesStopped);
@@ -709,6 +730,9 @@ export type WorkerPoolCredentialOutcome = z.infer<
 >;
 export type WorkerPoolCredentialPause = z.infer<
   typeof workerPoolCredentialPauseSchema
+>;
+export type WorkerPoolThreadClosed = z.infer<
+  typeof workerPoolThreadClosedSchema
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerCredentials = z.infer<

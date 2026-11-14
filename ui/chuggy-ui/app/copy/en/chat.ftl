@@ -18,6 +18,8 @@ chat-title = { -thread(case: "upper") } title
 chat-standing-open = Open
 chat-standing-closed = Closed
 chat-standing-orphaned = Orphaned
+chat-kept-running = Kept running
+chat-kept-running-detail = This { -thread } holds processes your { -chat-host } restarts each time it starts again, so it is kept up. Close it, or ask it to stop them, to end that.
 
 ## The history, and what is done to the chat the pane holds.
 

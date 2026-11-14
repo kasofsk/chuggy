@@ -198,6 +198,27 @@ test("a thread's address draws its conversation as the page, with no chat pane a
   styleless();
 });
 
+test("a thread kept running says so beside its standing, with how to end it, and one that is not says nothing of it", async () => {
+  await mountedAt(threadPath(threadMineSession));
+  expect(screen.queryByText("Kept running")).toBeNull();
+  cleanup();
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      (async (url: string, init?: RequestInit) => {
+        const read = await served(url, init);
+        if (!url.endsWith(`/threads/${threadMineSession}`)) return read;
+        return answer({ ...(await read.json()), jobsStanding: true });
+      }) as typeof fetch,
+  );
+  const kept = screen.getByText("Kept running");
+  expect(screen.getByText("Open")).toBeDefined();
+  fireEvent.focus(kept.closest("[tabindex]") ?? kept);
+  expect(
+    (await screen.findAllByText(/Close it, or ask it to stop them/u)).length,
+  ).toBeGreaterThan(0);
+});
+
 test("the bar's Context opens the thread's context beside its conversation, and its close takes it away", async () => {
   await mountedAt(
     threadPath(threadMineSession),

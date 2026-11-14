@@ -159,6 +159,22 @@ export interface SessionReferencePort {
   }): Promise<SessionReferenceBound>;
 }
 
+/**
+ * What recording whether a thread is standing found: recorded on its thread,
+ * the bearer no live attempt's, or an attempt that is not a thread's on a chat
+ * host, which no report makes standing.
+ */
+export type SessionStandingRecorded =
+  "Recorded" | "Fenced" | "NotChatHostThread";
+
+export interface SessionStandingPort {
+  stand(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+    readonly standing: boolean;
+  }): Promise<SessionStandingRecorded>;
+}
+
 /** One turn as the mailbox hands it over, its input opaque to everything here. */
 export interface SessionTurnClaimed {
   readonly turn: SessionTurnId;

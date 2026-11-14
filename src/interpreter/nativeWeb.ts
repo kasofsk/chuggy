@@ -2870,6 +2870,7 @@ function nativeThreadReadMethods(
           ? {}
           : { nextBefore: found.nextBefore }),
         streams: found.streams,
+        jobsStanding: found.jobsStanding,
       };
     },
   };

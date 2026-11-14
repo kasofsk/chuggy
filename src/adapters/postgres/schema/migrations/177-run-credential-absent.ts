@@ -37,8 +37,8 @@ const lostCreated = `public.${workerAttemptLostFunction}(in_secret_digest text, 
 
 const failure = `public.${ticketRunStepFailureFunction}(in_tenant text, in_project text, in_ticket bigint)`;
 
-export const migration176: Migration = {
-  version: 176,
+export const migration177: Migration = {
+  version: 177,
   name: "a run ended for a credential not delivered keeps the credential and why, and is read as a failed step",
   statements: [
     `ALTER TABLE public.execution_attempt

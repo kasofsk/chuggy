@@ -136,6 +136,7 @@ interface ThreadCase {
   readonly hid?: ThreadHiding;
   readonly found?: boolean;
   readonly opening?: ThreadOpening;
+  readonly jobsStanding?: boolean;
 }
 
 /** The call a send is logged under, the images it named and the page it was
@@ -179,6 +180,7 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
               turns: [turn],
               nextBefore: 1,
               streams: [{ stream: asSessionStoreStream("1a2b"), batches: 2 }],
+              jobsStanding: held.jobsStanding === true,
             }
           : { result: "NotFound" },
       );
@@ -206,11 +208,7 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
     sendThreadMessage: (_principal, _partition, input) => {
       held.calls.push(sendCall(input));
       return Promise.resolve(
-        held.sent ?? {
-          result: "Sent",
-          turn: input.turn,
-          ordinal: 12,
-        },
+        held.sent ?? { result: "Sent", turn: input.turn, ordinal: 12 },
       );
     },
     closeThread: (_principal, _partition, session) => {
@@ -336,6 +334,26 @@ test("one thread answers its standing, its page and the cursor behind it", async
   assert.equal(body.turns[0]?.input, "what is blocking 42?");
   assert.equal(body.turns[0]?.model, "claude");
   assert.deepEqual(held.calls, [`thread:${mine}:4:2`]);
+});
+
+test("one thread kept running answers so, and one that is not answers nothing of it", async () => {
+  for (const jobsStanding of [true, false]) {
+    await using app = appOf({ calls: [], jobsStanding });
+    const found = await app.inject({
+      url: `${root}/${mine}`,
+      headers: authorized,
+    });
+    assert.equal(found.statusCode, 200);
+    const body: unknown = found.json();
+    assert.equal(
+      threadResponseSchema.parse(body).jobsStanding,
+      jobsStanding ? true : undefined,
+    );
+    assert.equal(
+      typeof body === "object" && body !== null && "jobsStanding" in body,
+      jobsStanding,
+    );
+  }
 });
 
 /** The tail is what a reader wants first, so a page nobody asked for is the newest one. */
