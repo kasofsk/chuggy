@@ -5,12 +5,14 @@
  * value, written `--name value` or `--name=value`, each at most once. Anything
  * else is asked wrongly, and which way is all that is kept of it, so nothing a
  * person typed is ever printed back. `listen` is the command a sign-in starts
- * for itself and no person runs. `runner` is the one command that changes the
- * machine, so it is run for a project named whole and never for one the
- * program would have to choose. `--workspace` and `--project` say which
- * project a run is about where more than one could be meant; every command
- * the program prints carries them, so the conversation holds that choice and
- * no file does.
+ * for itself and no person runs. `runner` and `chat-host` are the commands
+ * that change the machine, so `runner` is run for a project named whole and
+ * `chat-host` for a workspace named whole, never for one the program would
+ * have to choose. `--workspace` and `--project` say which project a run is
+ * about where more than one could be meant; every command the program prints
+ * carries them, so the conversation holds that choice and no file does.
+ * `--replace` is the person's yes to `chat-host` registering this machine in
+ * place of the chat host of theirs it names.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
@@ -24,10 +26,17 @@ export const setupListenSecsDefault = 600;
 
 /** Which part of the arguments could not be read. */
 export type SetupAskFault =
-  "Command" | "Flag" | "Site" | "WaitSecs" | "Name" | "Project";
+  | "Command"
+  | "Flag"
+  | "Site"
+  | "WaitSecs"
+  | "Name"
+  | "Project"
+  | "Workspace"
+  | "Replace";
 
 /** The commands a person or an agent runs, as a report names them. */
-export type SetupCommand = "Status" | "SignIn" | "Runner";
+export type SetupCommand = "Status" | "SignIn" | "Runner" | "ChatHost";
 
 /** Which workspace and project a run is about, as far as its arguments named them. */
 export interface SetupAnswers {
@@ -62,6 +71,16 @@ export type SetupAsked =
       readonly project: string;
     }
   | {
+      readonly asked: "ChatHost";
+      readonly site: string | undefined;
+      readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+      /** The workspace the chat host is for, which the command is not run without. */
+      readonly workspace: string;
+      /** The short id of the chat host this machine is to be registered in place of, where the person said one. */
+      readonly replace: string | undefined;
+    }
+  | {
       readonly asked: "Listen";
       readonly site: string;
       readonly lifeSecs: number;
@@ -73,6 +92,7 @@ type SetupRun = Exclude<SetupAsked["asked"], "Wrongly">;
 const setupCommandWords = {
   "sign-in": "SignIn",
   runner: "Runner",
+  "chat-host": "ChatHost",
   listen: "Listen",
 } as const;
 
@@ -84,6 +104,7 @@ const setupFlags = [
   "life-secs",
   "workspace",
   "project",
+  "replace",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
@@ -93,6 +114,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Status: ["site", "workspace", "project"],
   SignIn: ["site", "wait-secs", "workspace", "project"],
   Runner: ["site", "wait-secs", "workspace", "project"],
+  ChatHost: ["site", "wait-secs", "workspace", "replace"],
   Listen: ["site", "life-secs"],
 };
 
@@ -157,19 +179,41 @@ function setupTokens(argv: readonly string[]): SetupTokens | SetupAskFault {
 /** What an address reads as a place and not a name, so one made with either would be another address. */
 const setupPlaces: readonly string[] = [".", ".."];
 
-/** The names the flags gave, or nothing where one is not a name a line can carry back unchanged or an address can carry as itself. */
+/** Whether a name is one a line can carry back unchanged and an address can carry as itself. */
+function setupNameWhole(name: string | undefined): boolean {
+  return (
+    name === undefined || (setupSayable(name) && !setupPlaces.includes(name))
+  );
+}
+
+/** The names the flags gave, or nothing where one is not whole. */
 function setupAnswersRead(
   flags: ReadonlyMap<SetupFlag, string>,
 ): SetupAnswers | undefined {
   const workspace = flags.get("workspace");
   const project = flags.get("project");
-  for (const name of [workspace, project])
-    if (
-      name !== undefined &&
-      (!setupSayable(name) || setupPlaces.includes(name))
-    )
-      return undefined;
-  return { workspace, project };
+  return setupNameWhole(workspace) && setupNameWhole(project)
+    ? { workspace, project }
+    : undefined;
+}
+
+function setupChatHostAsked(
+  site: string | undefined,
+  waitSecs: number,
+  answers: SetupAnswers,
+  replace: string | undefined,
+): SetupAsked {
+  const { workspace } = answers;
+  if (workspace === undefined) return { asked: "Wrongly", fault: "Workspace" };
+  if (!setupNameWhole(replace)) return { asked: "Wrongly", fault: "Replace" };
+  return {
+    asked: "ChatHost",
+    site,
+    waitSecs,
+    answers,
+    workspace,
+    replace,
+  };
 }
 
 function setupAskedOf(
@@ -203,6 +247,8 @@ function setupAskedOf(
         ? { asked: "Wrongly", fault: "Project" }
         : { asked, site, waitSecs: wait, answers, workspace, project };
     }
+    case "ChatHost":
+      return setupChatHostAsked(site, wait, answers, flags.get("replace"));
     case "Listen":
       return site === undefined
         ? { asked: "Wrongly", fault: "Site" }
@@ -232,6 +278,8 @@ export function setupCommandArguments(
       return ["sign-in"];
     case "Runner":
       return ["runner"];
+    case "ChatHost":
+      return ["chat-host"];
   }
 }
 

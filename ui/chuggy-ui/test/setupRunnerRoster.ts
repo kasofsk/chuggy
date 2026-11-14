@@ -272,6 +272,7 @@ export const runnerStops: {
   PermitWithheld: [
     { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },
     { stop: "PermitWithheld", people: rosterPeople, work: "Cluster" },
+    { stop: "PermitWithheld", people: rosterPeople, work: undefined },
   ],
   ChatMintRefused: [
     { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
@@ -296,7 +297,29 @@ export const runnerStops: {
     },
   ],
   ChatHostNotLive: [{ stop: "ChatHostNotLive", waitedSecs: 90 }],
+  ChatHostHeld: [
+    { stop: "ChatHostHeld", short: "0f3a9c21", live: true },
+    { stop: "ChatHostHeld", short: "0f3a9c21", live: false },
+  ],
+  ReplaceMismatched: [
+    { stop: "ReplaceMismatched", short: "0f3a9c21", live: true },
+    { stop: "ReplaceMismatched", short: "0f3a9c21", live: false },
+  ],
+  MacChatHost: [
+    {
+      stop: "MacChatHost",
+      site: "https://chuggy.example",
+      page: rosterMyRunners,
+    },
+  ],
 };
+
+/** The stops only `chat-host` makes, whose rule may name `--replace`, which `runner` does not read. */
+export const rosterChatHostStops: readonly SetupRunnerStop["stop"][] = [
+  "ChatHostHeld",
+  "ReplaceMismatched",
+  "MacChatHost",
+];
 
 export const runnerNotes: {
   readonly [Kind in SetupRunnerNote["note"]]: readonly (SetupRunnerNote & {
@@ -355,6 +378,9 @@ export const runnerNotes: {
   ChatHost: [{ note: "ChatHost", path: rosterChat }],
   ChatHostGone: [{ note: "ChatHostGone", path: rosterChat }],
   ChatHostRegistered: [{ note: "ChatHostRegistered", path: rosterChat }],
+  ChatHostReplaced: [
+    { note: "ChatHostReplaced", path: rosterChat, short: "0f3a9c21" },
+  ],
   ChatChecked: [
     { note: "ChatChecked", warned: undefined },
     { note: "ChatChecked", warned: "warn  chat image: it is old" },

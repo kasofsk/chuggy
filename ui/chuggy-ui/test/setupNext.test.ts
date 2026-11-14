@@ -198,14 +198,14 @@ const mends: {
     ),
   ],
   ChatHost: [
-    { lacks: "ChatHost", pooled: true },
+    { lacks: "ChatHost" },
     hand(
       `Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet. On the machine that will be it, ${chatByHand}. Tell me once it is running.`,
       "once the person says their chat host is running",
     ),
   ],
   ChatHostLive: [
-    { lacks: "ChatHostLive", pooled: true },
+    { lacks: "ChatHostLive" },
     hand(
       "Your chats in acme/widgets run only on your chat host, one machine of yours, which is registered and not running. Start it on its machine and tell me once it is running.",
       "once the person says their chat host is running",
@@ -495,6 +495,15 @@ const offered = (tell: string): SaidThing => ({
   project: "widgets",
 });
 
+/** What `chat-host` offers for the workspace, with `tell` said. */
+const chatOffered = (tell: string): SaidThing => ({
+  thing: "Offer",
+  tell,
+  when: "once the person says yes to this machine as their chat host",
+  workspace: "acme",
+  project: undefined,
+});
+
 /** What is next for a lack once the machine was looked at and showed `room`. */
 function here(
   lack: SetupLack,
@@ -537,22 +546,17 @@ test("with neither a runner of the project nor the person's chat host, the offer
   );
 });
 
-test("with the project's work provided for and no chat host of the person's, a machine that could take one is offered as theirs, said as a second runner of the work too where the work's runner is elsewhere, and otherwise they are told the page, the press and each runner package's own commands that make another machine it", () => {
+test("with the project's work provided for and no chat host of the person's, a machine that could take one is offered as theirs by chat-host for the workspace, never as a runner of the project too, and otherwise they are told the page, the press and each runner package's own commands that make another machine it", () => {
   const chats =
     "Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet.";
   const yours = `${chats} I can make this machine it: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan.`;
-  expect(here({ lacks: "ChatHost", pooled: false }, roomy)).toEqual(
-    offered(`${yours} Tell me yes to go ahead.`),
+  expect(here({ lacks: "ChatHost" }, roomy)).toEqual(
+    chatOffered(`${yours} Tell me yes to go ahead.`),
   );
-  expect(here({ lacks: "ChatHost", pooled: true }, roomy, true)).toEqual(
-    offered(`${yours} Tell me yes to go ahead.`),
+  expect(here({ lacks: "ChatHost" }, roomy, true)).toEqual(
+    chatOffered(`${yours} Tell me yes to go ahead.`),
   );
-  expect(here({ lacks: "ChatHost", pooled: true }, roomy)).toEqual(
-    offered(
-      `${yours} The work on acme/widgets has a runner elsewhere, and this machine is made one of it too, a second service of yours. Tell me yes to go ahead.`,
-    ),
-  );
-  expect(here({ lacks: "ChatHost", pooled: false }, { room: "Mac" })).toEqual(
+  expect(here({ lacks: "ChatHost" }, { room: "Mac" })).toEqual(
     hand(
       `Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet; chuggy setup cannot make this machine it. On the machine that will be it, ${chatByHand}. Tell me once it is running.`,
       "once the person says their chat host is running",
@@ -561,16 +565,12 @@ test("with the project's work provided for and no chat host of the person's, a m
 });
 
 test("a chat host registered and not running is offered to be started here only where this machine holds a registration of one, and is otherwise the person's to start where it is", () => {
-  expect(
-    here({ lacks: "ChatHostLive", pooled: false }, roomy, false, true),
-  ).toEqual(
-    offered(
+  expect(here({ lacks: "ChatHostLive" }, roomy, false, true)).toEqual(
+    chatOffered(
       "Your chats in acme/widgets run only on your chat host, one machine of yours, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the site holds. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
     ),
   );
-  expect(here({ lacks: "ChatHostLive", pooled: true }, roomy)).toEqual(
-    mends.ChatHostLive[1],
-  );
+  expect(here({ lacks: "ChatHostLive" }, roomy)).toEqual(mends.ChatHostLive[1]);
 });
 
 test("where this machine could not take a runner the person is told why instead, and nothing is offered: a Mac, user services that do not answer, no engine", () => {
@@ -670,7 +670,7 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
         [{ lacks: "Runner", chat: false }, false],
         [{ lacks: "Runner", chat: true }, false],
         [{ lacks: "RunnerLive", chat: false }, true],
-        [{ lacks: "ChatHost", pooled: false }, false],
+        [{ lacks: "ChatHost" }, false],
       ] as const
     ).map(([lack, held]) => {
       const { thing } = saidNext(
@@ -716,8 +716,8 @@ test("the machine is looked at only where the runner's step is the first not don
   });
   for (const lack of [
     { lacks: "RunnerLive", chat: false },
-    { lacks: "ChatHost", pooled: true },
-    { lacks: "ChatHostLive", pooled: false },
+    { lacks: "ChatHost" },
+    { lacks: "ChatHostLive" },
   ] as const)
     expect(due(lack), lack.lacks).toEqual({
       tenant: "acme",

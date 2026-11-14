@@ -229,3 +229,52 @@ test("the arguments a sign-in starts its listener with are read back as that lis
     setupAsked(setupListenArguments(site, setupListenSecsDefault)),
   ).toEqual({ asked: "Listen", site, lifeSecs: setupListenSecsDefault });
 });
+
+test("chat-host is read for a workspace named whole and no project, with --replace at most once and read by no other command, and is run again as itself", () => {
+  const answers = { workspace: "acme", project: undefined };
+  expect(setupAsked(["chat-host", "--workspace", "acme"])).toEqual({
+    asked: "ChatHost",
+    site: undefined,
+    waitSecs: setupWaitSecsDefault,
+    answers,
+    workspace: "acme",
+    replace: undefined,
+  });
+  expect(
+    setupAsked(["chat-host", "--workspace=acme", "--replace", "0f3a9c21"]),
+  ).toMatchObject({ asked: "ChatHost", replace: "0f3a9c21" });
+  expect(setupAsked(["chat-host"])).toEqual(wrongly("Workspace"));
+  expect(setupAsked(["chat-host", "--project", "widgets"])).toEqual(
+    wrongly("Flag"),
+  );
+  for (const replace of ["..", "two\nlines"])
+    expect(
+      setupAsked(["chat-host", "--workspace", "acme", "--replace", replace]),
+      replace,
+    ).toEqual(wrongly("Replace"));
+  expect(
+    setupAsked([
+      "chat-host",
+      "--workspace",
+      "acme",
+      "--replace",
+      "a",
+      "--replace",
+      "a",
+    ]),
+  ).toEqual(wrongly("Flag"));
+  for (const command of [
+    [],
+    ["sign-in"],
+    ["runner", "--workspace", "acme", "--project", "widgets"],
+  ])
+    expect(
+      setupAsked([...command, "--replace", "0f3a9c21"]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+  expect(setupAsked(["chat-host", "runner"])).toEqual(wrongly("Command"));
+  expect(setupCommandArguments("ChatHost")).toEqual(["chat-host"]);
+  expect(setupAnswersAsked(["chat-host", "--workspace", "acme"])).toEqual(
+    answers,
+  );
+});

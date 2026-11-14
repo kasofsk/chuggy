@@ -40,12 +40,14 @@ setup-rule-ask = Run { $command } with the person's answer after it, only once t
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn } or as { $runner }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $runner } or as { $chatHost }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, and { $replace } with { $chatHost }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
 setup-asked-project = { $runner } takes { $workspace } and { $project }, both: the { -project } the { -runner } is for
+setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
+setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 
 ## A machine the program is not served on, or a Node too old to run it.
 
@@ -258,6 +260,7 @@ setup-mend-configuration-when = once the person says { $retry } has answered for
 ## person's yes.
 
 setup-offer-when = once the person says yes to { -runner(form: "a") } on this machine
+setup-offer-chat-host-when = once the person says yes to this machine as their { -chat-host }
 setup-claude-on-subscription = your { -claude } plan
 setup-claude-on-api-key = your Anthropic API key
 setup-claude-on-bedrock = your Amazon Bedrock account
@@ -293,20 +296,12 @@ setup-mend-runner-put = That puts here the { -runner } package, { $program }, an
 setup-mend-chat-by-hand = open { $page }, press { $register } and copy the token it shows. Then, with the { -runner } package installed there, on Linux run { $linux }, which starts its service where it can and otherwise prints what is left, and on a Mac run { $darwin }, then { $agent } with the file it wrote, and load the agent as that prints
 # spells -run: to run is a verb here
 setup-mend-chats = Your { -thread(form: "plural") } in { $project } run only on your { -chat-host }, one machine of yours
-# spells -work-stage: the work in general
-setup-mend-chat-besides = The work on { $project } has { -runner(form: "a") } elsewhere, and this machine is made one of it too, a second service of yours.
 # spells -brief-check: to check is a verb here
-setup-mend-chat-live-offer = { $chats }, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the { -site } holds. { setup-mend-package-newer }{ $besides ->
-    [with] { " " }{ setup-mend-chat-besides }
-   *[without] { "" }
-} Tell me yes to go ahead.
+setup-mend-chat-live-offer = { $chats }, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the { -site } holds. { setup-mend-package-newer } Tell me yes to go ahead.
 setup-mend-chat-live-tell = { $chats }, which is registered and not running. Start it on its machine and tell me once it is running.
 setup-mend-chat-host-when = once the person says their { -chat-host } is running
 # spells -run: to run is a verb here
-setup-mend-chat-offer = { $chats }, and you have none yet. I can make this machine it: that puts here the { -runner } package, { $program }, where it is not here yet or is older than { setup-program } needs, and a background service of yours that starts when you log in, which your { -thread(form: "plural") } then run on, { $runs }.{ $besides ->
-    [with] { " " }{ setup-mend-chat-besides }
-   *[without] { "" }
-} Tell me yes to go ahead.
+setup-mend-chat-offer = { $chats }, and you have none yet. I can make this machine it: that puts here the { -runner } package, { $program }, where it is not here yet or is older than { setup-program } needs, and a background service of yours that starts when you log in, which your { -thread(form: "plural") } then run on, { $runs }. Tell me yes to go ahead.
 setup-mend-chat-tell = { $chats }, and you have none yet{ $here ->
     [seen] ; { setup-program } cannot make this machine it
    *[unseen] { "" }

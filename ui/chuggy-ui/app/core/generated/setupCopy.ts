@@ -45,12 +45,15 @@ export interface SetupCopy {
   readonly "setup-asked-command": {
     readonly signIn: unknown;
     readonly runner: unknown;
+    readonly chatHost: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
     readonly wait: unknown;
+    readonly replace: unknown;
+    readonly chatHost: unknown;
   };
   readonly "setup-asked-site": {
     readonly flag: unknown;
@@ -68,6 +71,13 @@ export interface SetupCopy {
     readonly runner: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
+  };
+  readonly "setup-asked-workspace": {
+    readonly chatHost: unknown;
+    readonly workspace: unknown;
+  };
+  readonly "setup-asked-replace": {
+    readonly flag: unknown;
   };
   readonly "setup-platforms-and": {
     readonly one: unknown;
@@ -436,6 +446,7 @@ export interface SetupCopy {
     readonly repository: unknown;
   };
   readonly "setup-offer-when": Record<never, never>;
+  readonly "setup-offer-chat-host-when": Record<never, never>;
   readonly "setup-claude-on-subscription": Record<never, never>;
   readonly "setup-claude-on-api-key": Record<never, never>;
   readonly "setup-claude-on-bedrock": Record<never, never>;
@@ -476,14 +487,9 @@ export interface SetupCopy {
   readonly "setup-mend-chats": {
     readonly project: unknown;
   };
-  readonly "setup-mend-chat-besides": {
-    readonly project: unknown;
-  };
   readonly "setup-mend-chat-live-offer": {
     readonly chats: unknown;
     readonly program: unknown;
-    readonly besides: unknown;
-    readonly project: unknown;
   };
   readonly "setup-mend-chat-live-tell": {
     readonly chats: unknown;
@@ -493,8 +499,6 @@ export interface SetupCopy {
     readonly chats: unknown;
     readonly program: unknown;
     readonly runs: unknown;
-    readonly besides: unknown;
-    readonly project: unknown;
   };
   readonly "setup-mend-chat-tell": {
     readonly chats: unknown;

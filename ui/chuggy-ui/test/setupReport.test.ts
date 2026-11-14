@@ -9,7 +9,8 @@
  * Every command any line names is split as a shell splits it and read back by
  * the program's own argument reader, with the workspace and project the run
  * was about. A run asked as `runner` is one that named both, since the program
- * reads no other, so its reports are printed with both.
+ * reads no other, so its reports are printed with both; one asked as
+ * `chat-host` named the workspace alone.
  */
 
 import { expect, test } from "vitest";
@@ -41,7 +42,12 @@ import { setupPressed } from "../app/core/setupNext.ts";
 import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
 import { setupSeen } from "../app/core/setupStanding.ts";
 import { machineScript } from "./setupMachine.ts";
-import { runnerNotesAll, runnerStopsAll } from "./setupRunnerRoster.ts";
+import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
+import {
+  rosterChatHostStops,
+  runnerNotesAll,
+  runnerStopsAll,
+} from "./setupRunnerRoster.ts";
 
 const site = "https://chuggy.example";
 const next = `next: node ${machineScript}`;
@@ -174,6 +180,13 @@ const things: {
       workspace: "two words",
       project: "it's --site",
     },
+    {
+      thing: "Offer",
+      tell: offerTell,
+      when: offerWhen,
+      workspace: "two words",
+      project: undefined,
+    },
   ],
   Ask: [
     {
@@ -202,11 +215,25 @@ const choices: readonly SetupAnswers[] = [
   { workspace: "two words", project: "it's --site" },
 ];
 
-/** The projects a run of `runner` is about: one plainly named, and one a shell would not read whole. */
-const pairs = [
+/** The projects a run of `runner` is about, and the workspaces one of `chat-host` is: one plainly named, and one a shell would not read whole. */
+const pairs: readonly SetupRunnerAt[] = [
   { workspace: "acme", project: "widgets" },
   { workspace: "two words", project: "it's --site" },
-] as const;
+  { workspace: "acme", project: undefined },
+  { workspace: "two words", project: undefined },
+];
+
+/** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
+function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
+  return at.project === undefined
+    ? runnerStopsAll
+    : runnerStopsAll.filter((one) => !rosterChatHostStops.includes(one.stop));
+}
+
+/** Whether a stop is said before any site is asked. */
+function siteless(stop: (typeof runnerStopsAll)[number]): boolean {
+  return stop.stop === "Mac" || stop.stop === "MacChatHost";
+}
 
 function checklist(
   thing: SetupThing,
@@ -221,16 +248,20 @@ function checklist(
   };
 }
 
-/** What ends a run of `runner` whose sign-in the site stopped taking: a report a sign-in entered again comes back with. */
-const outs: readonly SetupReport[] = [
-  { report: "SignedOut", site, directory, ended: undefined },
-  { report: "SiteUnusable", site, phase: "Unreachable", asked: "Runner" },
-  { report: "IssuerUnanswered", site, asked: "Runner" },
-  { report: "SiteUnusable", site, phase: "Unconfigured", asked: "Runner" },
-  { report: "Busy", asked: "Runner", site, pid: 4242 },
-  { report: "Faulted", asked: "Runner", site, fault: faults.Unkept },
-  { report: "SignedOut", site, directory, ended: "Declined" },
-];
+/** What ends a run of `runner` or `chat-host` whose sign-in the site stopped taking: a report a sign-in entered again comes back with. */
+function outsOf(asked: "Runner" | "ChatHost"): readonly SetupReport[] {
+  return [
+    { report: "SignedOut", site, directory, ended: undefined },
+    { report: "SiteUnusable", site, phase: "Unreachable", asked },
+    { report: "IssuerUnanswered", site, asked },
+    { report: "SiteUnusable", site, phase: "Unconfigured", asked },
+    { report: "Busy", asked, site, pid: 4242 },
+    { report: "Faulted", asked, site, fault: faults.Unkept },
+    { report: "SignedOut", site, directory, ended: "Declined" },
+  ];
+}
+
+const outs = outsOf("Runner");
 
 const roster: {
   readonly [Kind in SetupReport["report"]]: readonly Extract<
@@ -250,17 +281,21 @@ const roster: {
     { report: "AskedWrongly", fault: "WaitSecs" },
     { report: "AskedWrongly", fault: "Name" },
     { report: "AskedWrongly", fault: "Project" },
+    { report: "AskedWrongly", fault: "Workspace" },
+    { report: "AskedWrongly", fault: "Replace" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
     { report: "Busy", asked: "SignIn", site: undefined, pid: 4242 },
     { report: "Busy", asked: "Status", site, pid: undefined },
     { report: "Busy", asked: "Runner", site: undefined, pid: 4242 },
+    { report: "Busy", asked: "ChatHost", site, pid: 4242 },
   ],
   Faulted: Object.values(faults).flatMap((fault) => [
     { report: "Faulted", asked: "Status", site: undefined, fault },
     { report: "Faulted", asked: "SignIn", site, fault },
     { report: "Faulted", asked: "Runner", site, fault },
+    { report: "Faulted", asked: "ChatHost", site, fault },
   ]),
   SiteUnusable: [
     { report: "SiteUnusable", site, phase: "Unreachable", asked: "Status" },
@@ -326,15 +361,16 @@ const roster: {
   })),
   Runner: pairs.flatMap(({ workspace, project }) =>
     [
-      ...runnerStopsAll.map((stop) => ({ ended: "Stopped" as const, stop })),
+      ...stopsOf({ workspace, project }).map((stop) => ({
+        ended: "Stopped" as const,
+        stop,
+      })),
       { ended: "Live" as const },
-      { ended: "Hosted" as const },
+      ...(project === undefined ? [] : [{ ended: "Hosted" as const }]),
     ].map((ended) => ({
       report: "Runner",
       site:
-        ended.ended === "Stopped" && ended.stop.stop === "Mac"
-          ? undefined
-          : site,
+        ended.ended === "Stopped" && siteless(ended.stop) ? undefined : site,
       workspace,
       project,
       notes: runnerNotesAll,
@@ -342,7 +378,7 @@ const roster: {
     })),
   ),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
-    outs.map((out) => ({
+    outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
       workspace,
       project,
@@ -364,12 +400,23 @@ const sessions = every.filter(
 
 /** The choices a run that made a report can have been given: any, and for a run asked as `runner` only those naming both. */
 function given(report: SetupReport): readonly SetupAnswers[] {
-  return report.report === "RunnerOut" ||
-    ("asked" in report && report.asked === "Runner")
-    ? choices.filter(
-        (held) => held.workspace !== undefined && held.project !== undefined,
-      )
-    : choices;
+  const asked =
+    report.report === "RunnerOut"
+      ? report.project === undefined
+        ? "ChatHost"
+        : "Runner"
+      : "asked" in report
+        ? report.asked
+        : undefined;
+  if (asked === "Runner")
+    return choices.filter(
+      (held) => held.workspace !== undefined && held.project !== undefined,
+    );
+  if (asked === "ChatHost")
+    return choices.filter(
+      (held) => held.workspace !== undefined && held.project === undefined,
+    );
+  return choices;
 }
 
 /** A report as a run given the first of those choices prints it. */
@@ -506,10 +553,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     : answers;
 }
 
-function project(of: {
-  readonly workspace: string;
-  readonly project: string;
-}): SetupAnswers {
+function project(of: SetupRunnerAt): SetupAnswers {
   return { workspace: of.workspace, project: of.project };
 }
 
@@ -640,7 +684,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -898,13 +942,15 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Done")).toEqual([0]);
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
 test("a run of runner that stopped says what it found and did, then the stop as every stop is said: what was found, one tell, and one command under a rule, which is runner or the checklist for that project", () => {
   const stops = roster.Runner.filter((one) => one.ended.ended === "Stopped");
-  expect(stops).toHaveLength(pairs.length * runnerStopsAll.length);
+  expect(stops).toHaveLength(
+    pairs.reduce((count, at) => count + stopsOf(at).length, 0),
+  );
   for (const report of stops) {
     const lines = setupReportLines(
       report,
@@ -927,12 +973,19 @@ test("a run of runner that stopped says what it found and did, then the stop as 
     ).toEqual([]);
     const [again, ...more] = ruled(lines);
     expect(more, said).toEqual([]);
+    const ruling =
+      report.ended.ended === "Stopped"
+        ? setupRunnerStopSaid(report.ended.stop, report)
+        : undefined;
     expect(setupAsked(again ?? ["?"]), said).toMatchObject({
       asked:
-        report.ended.ended === "Stopped"
-          ? setupRunnerStopSaid(report.ended.stop, "p").again
-          : "Runner",
+        ruling?.again === "Status"
+          ? "Status"
+          : report.project === undefined
+            ? "ChatHost"
+            : "Runner",
       answers: project(report),
+      ...(ruling?.replace === undefined ? {} : { replace: ruling.replace }),
     });
   }
 });
@@ -953,7 +1006,7 @@ test("a run of runner says each thing it found and did in the order it met them,
     );
   }
   expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
-    pairs.length,
+    pairs.reduce((count, at) => count + stopsOf(at).filter(siteless).length, 0),
   );
 });
 
@@ -1038,7 +1091,10 @@ test("whichever report an entry makes, the run it ends part-way says it as the r
 
 test("runners the site sees live, and a project whose work and chats need none, end on the checklist for that project and tell the person nothing, the runners seen live being among what the run found", () => {
   const quiet = roster.Runner.filter(
-    (one) => one.ended.ended !== "Stopped" && one.workspace === "acme",
+    (one) =>
+      one.ended.ended !== "Stopped" &&
+      one.workspace === "acme" &&
+      one.project !== undefined,
   ).map((one) => ({ ...one, notes: [] }));
   expect(
     quiet.map((one) => setupReportLines(one, machineScript, copyTextEn)),
@@ -1051,6 +1107,23 @@ test("runners the site sees live, and a project whose work and chats need none, 
     ],
   ]);
   expect(quiet.map((one) => setupReportExit(one))).toEqual([0, 0]);
+});
+
+test("a run of chat-host whose chat host the site sees live ends on the checklist for the workspace it was for, and on no project", () => {
+  const live: SetupReport = {
+    report: "Runner",
+    site,
+    workspace: "acme",
+    project: undefined,
+    notes: [{ note: "ChatHostLive" }],
+    ended: { ended: "Live" },
+  };
+  expect(setupReportLines(live, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "found: the site sees this machine live as your chat host, so your chats in every project of acme can run on it",
+    `${next} --workspace acme`,
+  ]);
+  expect(setupReportExit(live)).toBe(0);
 });
 
 test("a run that is not signed in names the workspace and project it was given in the sign-in that is next, and in the command after it", () => {

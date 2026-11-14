@@ -12,15 +12,15 @@
  * tells the person, and names in a `rule:` line the one command and the
  * condition it may be run under. A step the person does by hand is that shape
  * too, so nothing printed is a command an agent could run round and round
- * without her. `runner` is the one command that changes the machine, so it is
- * named only under a rule that waits on her yes, and where it stops short it
- * is that shape again, after everything it found and did.
+ * without her. `runner` and `chat-host` are the commands that change the
+ * machine, so each is named only under a rule that waits on her yes, and where
+ * one stops short it is that shape again, after everything it found and did.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
  * descriptors made in `ui/chuggy-ui/app/core/setupStanding.ts` and
  * `ui/chuggy-ui/app/core/setupNext.ts` from the names a site and the folder's
- * remote gave. A report of `runner` holds paths, names and members of closed
+ * remote gave. A report of either holds paths, names and members of closed
  * sets, and of what another program printed at most an excerpt the redactor
  * has been through. None has a field a token, a code or a message of another
  * system's is put in, and every line is flattened where it is printed. A
@@ -54,11 +54,17 @@ import {
   setupProgramPath,
 } from "./setupProgram.ts";
 import {
+  setupReplaceFlag,
+  setupRunnerNamed,
   setupRunnerNoteSaid,
   setupRunnerStopExit,
   setupRunnerStopSaid,
 } from "./setupRunnerSaid.ts";
-import type { SetupRunnerEnded, SetupRunnerNote } from "./setupRunnerSaid.ts";
+import type {
+  SetupRunnerAt,
+  SetupRunnerEnded,
+  SetupRunnerNote,
+} from "./setupRunnerSaid.ts";
 import { setupCommandLine, setupFlat } from "./setupText.ts";
 
 /** How a sign-in in the browser ended, in the order a person could meet them. */
@@ -117,7 +123,8 @@ export interface SetupStepSaid {
  * The one next thing a checklist ends on: nothing, where setup is done;
  * something the person does by hand, and the condition the checklist may be
  * read again under; something `runner` would do on this machine for the
- * project named, and the yes it waits on; a question only she answers, and the
+ * project named, or `chat-host` for the workspace where no project is, and the
+ * yes it waits on; a question only she answers, and the
  * flag her answer is passed in; or a read that failed, `stale` where this copy
  * of the program could not read what the site sent.
  */
@@ -129,7 +136,7 @@ export type SetupThing =
       readonly tell: Copy;
       readonly when: Copy;
       readonly workspace: string;
-      readonly project: string;
+      readonly project: string | undefined;
     }
   | {
       readonly thing: "Ask";
@@ -214,22 +221,28 @@ export type SetupReport =
       readonly ended: SetupSignInEnded;
     }
   | {
+      /** A run of `runner`, or of `chat-host` where it names no project. */
       readonly report: "Runner";
       /** The site the run was signed in to, or nothing where it stopped before it asked one. */
       readonly site: string | undefined;
       readonly workspace: string;
-      readonly project: string;
+      readonly project: string | undefined;
       readonly notes: readonly SetupRunnerNote[];
       readonly ended: SetupRunnerEnded;
     }
   | {
-      /** A run of `runner` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
+      /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
-      readonly project: string;
+      readonly project: string | undefined;
       readonly notes: readonly SetupRunnerNote[];
       readonly out: SetupReport;
     };
+
+/** The command a run that changes the machine is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
+function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
+  return at.project === undefined ? "ChatHost" : "Runner";
+}
 
 export const setupWords = [
   "site",
@@ -303,18 +316,25 @@ const setupFlagProject = "--project";
 const setupSiteExample = "https://chuggy.example";
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
-  const [signIn = "", runner = ""] = [
+  const [signIn = "", runner = "", chatHost = ""] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("Runner"),
+    ...setupCommandArguments("ChatHost"),
   ];
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
-      return { id: "setup-asked-command", args: { signIn, runner } };
+      return { id: "setup-asked-command", args: { signIn, runner, chatHost } };
     case "Flag":
       return {
         id: "setup-asked-flag",
-        args: { ...names, site: setupFlagSite, wait: "--wait-secs" },
+        args: {
+          ...names,
+          site: setupFlagSite,
+          wait: "--wait-secs",
+          replace: setupReplaceFlag,
+          chatHost,
+        },
       };
     case "Site":
       return {
@@ -330,6 +350,13 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       return { id: "setup-asked-name", args: names };
     case "Project":
       return { id: "setup-asked-project", args: { ...names, runner } };
+    case "Workspace":
+      return {
+        id: "setup-asked-workspace",
+        args: { workspace: setupFlagWorkspace, chatHost },
+      };
+    case "Replace":
+      return { id: "setup-asked-replace", args: { flag: setupReplaceFlag } };
   }
 }
 
@@ -806,11 +833,8 @@ function setupFailedLines(
   ];
 }
 
-/** How a command for one project is written, whatever names the run was given: both of that project's. */
-function setupSayingOf(
-  saying: SetupSaying,
-  named: { readonly workspace: string; readonly project: string },
-): SetupSaying {
+/** How a command for one project, or for a workspace alone, is written, whatever names the run was given: that project's or that workspace's. */
+function setupSayingOf(saying: SetupSaying, named: SetupRunnerAt): SetupSaying {
   const { workspace, project } = named;
   return { ...saying, answers: { workspace, project } };
 }
@@ -846,7 +870,7 @@ function setupThingLines(
         ["tell", thing.tell],
         ...setupStopRule(
           thing,
-          setupCommandOf(setupSayingOf(saying, thing), "Runner"),
+          setupCommandOf(setupSayingOf(saying, thing), setupRunCommand(thing)),
         ),
       ];
     case "Ask":
@@ -878,26 +902,26 @@ function setupChecklistLines(
   ];
 }
 
-/** What a run of `runner` found and did, in the order it met them. */
+/** What a run of `runner` or `chat-host` found and did, in the order it met them. */
 function setupNoteLines(
   report: Extract<SetupReport, { readonly report: "Runner" | "RunnerOut" }>,
 ): readonly SetupLine[] {
-  const named = `${report.workspace}/${report.project}`;
-  return report.notes.map((note) => setupRunnerNoteSaid(note, named));
+  return report.notes.map((note) => setupRunnerNoteSaid(note, report));
 }
 
 /**
- * A run of `runner`: everything it found and did, in the order it met them,
- * each runner it waited on seen live among them, then the checklist as the
- * next command where those runners are live or none is needed, and otherwise
- * the stop, whose rule names the command to run once what stopped it is
- * mended.
+ * A run of `runner` or `chat-host`: everything it found and did, in the order
+ * it met them, each runner it waited on seen live among them, then the
+ * checklist as the next command where those runners are live or none is
+ * needed, and otherwise the stop, whose rule names the command to run once
+ * what stopped it is mended, with the chat host it may replace where it says
+ * one.
  */
 function setupRunnerLines(
   report: Extract<SetupReport, { readonly report: "Runner" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
-  const named = `${report.workspace}/${report.project}`;
+  const named = setupRunnerNamed(report);
   const of = setupSayingOf(saying, report);
   const head: readonly SetupLine[] = [
     ...(report.site === undefined
@@ -915,11 +939,15 @@ function setupRunnerLines(
         setupNextLine(of, "Status"),
       ];
     case "Stopped": {
-      const stop = setupRunnerStopSaid(report.ended.stop, named);
+      const stop = setupRunnerStopSaid(report.ended.stop, report);
+      const command =
+        stop.again === "Status" ? "Status" : setupRunCommand(report);
+      const rest =
+        stop.replace === undefined ? [] : [setupReplaceFlag, stop.replace];
       return [
         ...head,
         ...setupStopSaid(stop),
-        ...setupStopRule(stop, setupCommandOf(of, stop.again)),
+        ...setupStopRule(stop, setupCommandOf(of, command, rest)),
       ];
     }
   }
