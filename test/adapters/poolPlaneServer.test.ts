@@ -38,12 +38,12 @@ import {
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
+import type { SessionKind } from "../../src/contract/rosters.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
   asSessionBearerSecret,
   asSessionId,
-  type SessionKind,
 } from "../../src/interpreter/agentSession.ts";
 import {
   contractVersionAccepted,
@@ -1480,7 +1480,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         [],
         ["session-waiting"],
         [{ project: partition.project, session: "thread-closed" }],
-        "Thread",
+        token === hostToken ? "Thread" : "Lead",
       );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
