@@ -1,6 +1,6 @@
 /**
  * The shell's navigation, derived: the project's primary places, in the order
- * the bar above every page draws them, and the two places the account menu
+ * the bar draws them, and the two places the account menu
  * names, the settings and the reader's preferences among them, which
  * `settingsNav.ts`'s roster holds with every other page a reader visits
  * rarely. A place is primary only where a reader goes in the ordinary course
@@ -85,6 +85,29 @@ export function shellNav(partition: PartitionIdentity): readonly NavEntry[] {
     },
     { id: "inbox", label: { id: "shell-inbox" }, to: navRoutes.inbox, params },
   ];
+}
+
+/** The most items a phone's bar holds, More among them where it is drawn. */
+export const shellNavPhoneItemsMax = 4;
+
+/** A phone's bar: the places with an item of their own, in order, and those
+ * behind More, none where every place has its own. */
+export interface ShellNavPhone {
+  readonly items: readonly NavEntry[];
+  readonly more: readonly NavEntry[];
+}
+
+/** The primary places laid along a phone's bar. Every place fits, or the last
+ * item is More and holds the rest, so no label is ever shrunk to make room. */
+export function shellNavPhone(
+  entries: readonly NavEntry[],
+  itemsMax: number = shellNavPhoneItemsMax,
+): ShellNavPhone {
+  if (!Number.isInteger(itemsMax) || itemsMax < 2)
+    throw new RangeError("a phone's bar holds a place and More at least");
+  if (entries.length <= itemsMax) return { items: entries, more: [] };
+  const kept = itemsMax - 1;
+  return { items: entries.slice(0, kept), more: entries.slice(kept) };
 }
 
 /** Where the account menu is drawn: in a project, in a workspace outside

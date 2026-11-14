@@ -18,6 +18,8 @@ import {
   navRoutes,
   shellAccountNav,
   shellNav,
+  shellNavPhone,
+  shellNavPhoneItemsMax,
 } from "../app/core/shellNav.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -40,6 +42,26 @@ test("the primary places are Tickets, Epics and the Inbox, in that order, each a
     "Inbox",
   ]);
   for (const entry of places) expect(entry.params).toStrictEqual(atlas);
+});
+
+test("on a phone every primary place has an item of its own, and none is behind More", () => {
+  const places = shellNav(atlas);
+  expect(places.length).toBeLessThanOrEqual(shellNavPhoneItemsMax);
+  expect(shellNavPhone(places)).toStrictEqual({ items: places, more: [] });
+});
+
+test("places that outnumber a phone's items keep their order, the last item More holding every place past it", () => {
+  const places = shellNav(atlas);
+  for (let itemsMax = 2; itemsMax < places.length; itemsMax += 1) {
+    const laid = shellNavPhone(places, itemsMax);
+    expect(laid.items.length + 1).toBe(itemsMax);
+    expect([...laid.items, ...laid.more]).toStrictEqual(places);
+  }
+  expect(shellNavPhone(places, places.length).more).toStrictEqual([]);
+});
+
+test("a phone's bar too short to hold a place beside More is refused", () => {
+  expect(() => shellNavPhone(shellNav(atlas), 1)).toThrow(RangeError);
 });
 
 test("in a project the account menu names the project's settings, then the reader's preferences section there", () => {

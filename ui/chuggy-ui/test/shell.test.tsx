@@ -864,9 +864,10 @@ function paneDocked(): void {
 }
 
 /** On a phone the chat starts as the strip under the page, and expanded over
- * the whole body the bar's first row stays over it, so the inbox is still one
- * press away and the strip one more from every screen. */
-test("on a phone the pane opens as the strip under the page, expanded keeps the banner and the project's row, and pressing the inbox draws it", async () => {
+ * the whole body the bar's first row stays over it and the places' bar under
+ * it, so the inbox is still one press away and the strip one more from every
+ * screen. */
+test("on a phone the pane opens as the strip under the page, expanded keeps the banner, the project's row and the places' bar, and pressing the inbox draws it", async () => {
   pageDrawn = () => <p>the screen</p>;
   paneDocked();
   await mounted(viewportNarrowEm - 1);
@@ -876,7 +877,8 @@ test("on a phone the pane opens as the strip under the page, expanded keeps the 
   await pressed("Expand chat");
   expect(frameDivided()).toBe("down chat-bottom");
   expect(chatDrawn()).not.toBeNull();
-  expect(navDrawn()).toBeNull();
+  expect(navDrawn()?.closest(".shell-under")).toBeNull();
+  expect(navDrawn()?.classList.contains("topbar-phone")).toBe(true);
   expect(screen.queryByRole("button", { name: "Account menu" })).not.toBeNull();
   expect(document.querySelector(".shell-banner")).not.toBeNull();
   expect(screen.queryByText("the screen")).toBeNull();
