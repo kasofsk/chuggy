@@ -39,6 +39,7 @@ import {
 import type { NavEntry } from "../../core/shellNav.ts";
 import { useInboxRows } from "../Inbox.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
+import { CountBadge } from "../ui/CountBadge.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { useChatPaneYields } from "./chatPaneHeld.ts";
@@ -108,21 +109,21 @@ function TopBarNav(props: {
   );
 }
 
-/** What waits in the inbox, as its badge reads, and nothing where it is
- * clear; and the inbox's name with it, for a reader who does not see the
- * badge. */
+/** How many wait in the inbox, and nothing where it is clear; and the inbox's
+ * name with it, for a reader who does not see the badge. */
 function useTopBarInboxCount(
   partition: PartitionIdentity,
   entry: NavEntry,
-): { readonly count: string | undefined; readonly label: string } {
+): { readonly count: number | undefined; readonly label: string } {
   const text = useCopyText();
-  const count = inboxCountLabel(useInboxRows(partition).rows);
+  const rows = useInboxRows(partition).rows;
+  const figure = inboxCountLabel(rows);
   return {
-    count,
+    count: figure === undefined ? undefined : rows?.count,
     label: text(
-      count === undefined
+      figure === undefined
         ? entry.label
-        : { id: "shell-inbox-unread", args: { count } },
+        : { id: "shell-inbox-unread", args: { count: figure } },
     ),
   };
 }
@@ -168,10 +169,10 @@ function TopBarInboxLink(props: {
 }
 
 /** One item of a phone's bar: its glyph with its name under it, and where
- * it carries a count, the badge on its glyph and the count in its name. */
+ * it carries a count, a `CountBadge` on its glyph and the count in its name. */
 function TopBarPhoneItem(props: {
   readonly entry: NavEntry;
-  readonly count?: string | undefined;
+  readonly count?: number | undefined;
   readonly label?: string | undefined;
 }): ReactNode {
   const { entry, count } = props;
@@ -194,9 +195,7 @@ function TopBarPhoneItem(props: {
         <span className="topbar-phone-glyph">
           <NavIcon id={entry.id} />
           {count === undefined ? null : (
-            <span aria-hidden="true" className="topbar-inbox-badge">
-              {count}
-            </span>
+            <CountBadge count={count} name={props.label ?? ""} />
           )}
         </span>
         <span className="topbar-phone-label">{text(entry.label)}</span>
@@ -205,8 +204,7 @@ function TopBarPhoneItem(props: {
   );
 }
 
-/** The inbox's item on a phone's bar, carrying its count as the badge beside
- * the account menu does wider. */
+/** The inbox's item on a phone's bar, carrying what waits in it. */
 function TopBarPhoneInbox(props: {
   readonly partition: PartitionIdentity;
   readonly entry: NavEntry;

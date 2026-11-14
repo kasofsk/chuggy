@@ -144,10 +144,12 @@ test("the page the router is at is the one item marked current", async () => {
   expect(currentNames()).toStrictEqual(["Tickets"]);
 });
 
-test("the inbox's item carries what waits in it as a badge, and says the count in its name", async () => {
+test("the inbox's item carries what waits in it as a CountBadge, and says the count in its name", async () => {
   await drawnAt({ path: "/acme/atlas", inbox: [waiting] });
   const inbox = within(bar()).getByRole("link", { name: "Inbox, 1 unread" });
-  expect(inbox.querySelector(".topbar-inbox-badge")?.textContent).toBe("1");
+  expect(
+    inbox.querySelector(".count-badge [aria-hidden='true']")?.textContent,
+  ).toBe("1");
   expect(inbox.querySelector(".topbar-phone-label")?.textContent).toBe("Inbox");
 });
 

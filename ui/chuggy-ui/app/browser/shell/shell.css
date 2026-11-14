@@ -429,10 +429,11 @@
     display: flex;
   }
 
-  .topbar-phone-glyph > .topbar-inbox-badge {
+  .topbar-phone-glyph > .count-badge {
+    position: absolute;
     top: calc(-1 * var(--space-2));
-    right: auto;
     left: calc(100% - var(--space-1));
+    outline: var(--hairline) solid var(--edge);
   }
 
   .topbar-phone-label {
