@@ -33,7 +33,10 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSessionPlacement } from "../../src/adapters/postgres/sessionPlacement.ts";
-import { postgresSessionBearerAuthority } from "../../src/adapters/postgres/sessionPlane.ts";
+import {
+  postgresSessionBearerAuthority,
+  postgresSessionPlane,
+} from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresThreads } from "../../src/adapters/postgres/thread.ts";
 import { postgresWorkerTasks } from "../../src/adapters/postgres/workerPlane.ts";
 import {
@@ -2200,6 +2203,16 @@ async function attemptCapabilitiesOf(
   ];
 }
 
+/** The capabilities the session plane tells the pod holding `claimed` it holds. */
+async function factsCapabilitiesOf(
+  claimed: WorkerPoolSessionAssignment,
+): Promise<readonly SessionCapability[] | undefined> {
+  const identity = await postgresSessionPlane(planePool).authenticate(
+    asSessionBearerSecret(claimed.bearer),
+  );
+  return identity?.capabilities;
+}
+
 /** The one session a poll of `host` naming `named` for its threads claims. */
 async function hostClaimedNaming(
   host: PoolPlaneIdentity,
@@ -2219,7 +2232,7 @@ async function hostClaimedNaming(
   return claimed;
 }
 
-test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and confines that thread's bearer to the same, while its inquiry keeps its roster", async () => {
+test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, while its inquiry keeps its roster", async () => {
   const { partition, member } = await routedProject("host-capabilities");
   const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
   const lead = await sessionRigSession(
@@ -2257,6 +2270,11 @@ test("a chat host naming its threads' capabilities records them, opens its threa
     )?.capabilities,
     held,
   );
+  assert.deepEqual(
+    await factsCapabilitiesOf(claimed),
+    held,
+    "the pod's facts name what its bearer is confined to",
+  );
   assert.deepEqual(await threadHostCapabilitiesOf(partition, thread), held);
   assert.deepEqual(
     (await chatHostRegistry.host(owner))?.sessionCapabilities,
@@ -2271,6 +2289,7 @@ test("a chat host naming its threads' capabilities records them, opens its threa
     null,
     roster,
   ]);
+  assert.deepEqual(await factsCapabilitiesOf(asked), roster);
   assert.equal(
     (await chatHostRegistry.host(owner))?.sessionCapabilities,
     undefined,

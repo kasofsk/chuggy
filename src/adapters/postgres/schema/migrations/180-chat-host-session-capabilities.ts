@@ -19,6 +19,9 @@
  * `authenticate_session_bearer` ANSWERS THE INTERSECTION: the session's roster,
  * read live as 178 reads it, less whatever its attempt's set leaves out, in the
  * roster's order. Its return type is 178's, so it is replaced in place.
+ * `read_session_attempt`, what the session plane tells a pod of its own
+ * session, answers the same intersection, its body and return type 154's, so
+ * it too is replaced in place and keeps its owner and grant.
  *
  * `thread_chat_host_capabilities` IS THE API'S READ OF THE SAME INTERSECTION
  * for a thread placed on a chat host now: NULL where no chat host holds a live
@@ -32,6 +35,7 @@ import {
   chatHostSessionOpenFunction,
   memberScopeProjectFunction,
   poolPlaneRole,
+  sessionAttemptReadFunction,
   sessionBearerAuthenticateFunction,
   sessionWaitingRouteFunction,
   threadChatHostCapabilitiesFunction,
@@ -75,6 +79,8 @@ const hostOpenedOld = `public.${chatHostSessionOpenFunction}(in_tenant text, in_
 const hostOpened = `public.${chatHostSessionOpenFunction}(in_tenant text, in_owner text, in_principal text, in_project text, in_session text, in_capabilities text[], in_agent_reference text, in_attempt text, in_assignment text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_held_max bigint, in_invocation jsonb, in_image text, in_launch jsonb, in_idle_secs bigint, in_host_capabilities text[])`;
 
 const bearer = `public.${sessionBearerAuthenticateFunction}(in_secret_digest text)`;
+
+const attemptRead = `public.${sessionAttemptReadFunction}(in_secret_digest text)`;
 
 const threadHeld = `public.${threadChatHostCapabilitiesFunction}(in_tenant text, in_project text, in_session text)`;
 
@@ -211,6 +217,29 @@ export const migration180: Migration = {
         WHERE a.bearer_secret_digest=in_secret_digest
           AND a.state IN ('Placing','Running') AND s.state='Open'
           AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
+     $$`,
+    `CREATE OR REPLACE FUNCTION ${attemptRead} RETURNS TABLE(tenant text, project text, session text, attempt text, generation bigint, kind text, principal text, capabilities text[], credential_slot text, agent_reference text, system_prompt text, auto_compact_window bigint, model text, effort text, fork_from text, system_prompt_own boolean, live boolean)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+       SELECT a.tenant,a.project,a.session,a.attempt,a.generation,s.kind,s.principal,
+              ${capabilitiesHeld("s.capabilities", "a.host_capabilities")},
+              s.credential_slot,s.agent_reference,s.system_prompt,
+              s.auto_compact_window,
+              CASE WHEN s.kind='Inquiry' THEN p.model ELSE s.model END,
+              CASE WHEN s.kind='Inquiry' THEN p.effort ELSE s.effort END,
+              p.agent_reference,
+              CASE WHEN s.kind='Inquiry' THEN coalesce(p.system_prompt_own,false)
+                   ELSE s.system_prompt_own END,
+              (a.state IN ('Placing','Running') AND s.state='Open'
+               AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch
+                                      ORDER BY ordinal DESC LIMIT 1))
+         FROM session_attempt a
+         JOIN agent_session s ON s.tenant=a.tenant AND s.project=a.project
+                             AND s.session=a.session
+         LEFT JOIN agent_session p ON p.tenant=s.tenant AND p.project=s.project
+                                  AND p.session=s.parent_session
+        WHERE a.bearer_secret_digest=in_secret_digest
      $$`,
     `CREATE FUNCTION ${threadHeld} RETURNS text[]
     LANGUAGE sql STABLE SECURITY DEFINER

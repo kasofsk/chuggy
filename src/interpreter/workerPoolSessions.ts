@@ -348,10 +348,7 @@ export function workerPoolSessionCapabilitiesHeld(
 ): readonly SessionCapability[] {
   if (hostCapabilities === undefined) return roster;
   const named = new Set(hostCapabilities);
-  const held = roster.filter((capability) => named.has(capability));
-  if (held.some((capability) => !roster.includes(capability)))
-    throw new Error("a claimed session holds a capability its roster lacks");
-  return held;
+  return roster.filter((capability) => named.has(capability));
 }
 
 const millisecondsPerSecond = 1_000;
