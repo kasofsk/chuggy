@@ -32,7 +32,11 @@ import {
   workerRunCredentialDefaults,
   workerRunCredentialSchema,
 } from "./http.ts";
-import { sessionContainerEnds } from "./rosters.ts";
+import {
+  sessionCapabilities,
+  sessionContainerEnds,
+  type SessionCapability,
+} from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
 export const workerPoolTokenCharsMax = 63;
@@ -188,6 +192,7 @@ export const workerPoolPollQuery = {
   wanted: "wanted",
   wantedSessions: "wantedSessions",
   idleSecs: "idleSecs",
+  sessionCapabilities: "sessionCapabilities",
 } as const;
 
 /** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
@@ -196,6 +201,22 @@ const workerPoolQueryCountSchema = z
   .regex(/^(?:0|[1-9][0-9]*)$/u)
   .transform(Number)
   .pipe(z.number().int().nonnegative().safe());
+
+/** A set of session capabilities, each named once. */
+export const workerPoolSessionCapabilitiesSchema = z
+  .array(z.enum(sessionCapabilities))
+  .max(sessionCapabilities.length)
+  .refine((named) => new Set(named).size === named.length);
+
+/** The separator a set of session capabilities is written with in one query value, which no capability's name holds. */
+const workerPoolSessionCapabilitiesSeparator = ",";
+
+/** A set of session capabilities as the poll's one value carries it, the empty set as the empty value. */
+export function workerPoolPollSessionCapabilitiesText(
+  capabilities: readonly SessionCapability[],
+): string {
+  return capabilities.join(workerPoolSessionCapabilitiesSeparator);
+}
 
 /** The longest idle bound a chat host may name: the longest delay a timer holds, in whole seconds. */
 export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
@@ -207,7 +228,10 @@ export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
  * `wantedSessions`, how many more sessions, which is none where it is absent,
  * and `idleSecs`, how long a session a member's chat host claims may sit idle,
  * which is without limit where it is absent, is refused above
- * `workerPoolPollIdleSecsMax`, and is read from no other caller.
+ * `workerPoolPollIdleSecsMax`, and is read from no other caller, and
+ * `sessionCapabilities`, the capabilities a chat host's threads may hold, as
+ * `workerPoolPollSessionCapabilitiesText` writes them once, which leaves a
+ * roster whole where it is absent and is read from no other caller.
  * The held list's length is the plane's own setting rather than a figure
  * written here, and a list longer than that is refused whole rather than cut,
  * because a cut list reads as a pool that let go of work it is still running;
@@ -229,6 +253,13 @@ export function workerPoolPollQuerySchema(heldMax: number) {
     [workerPoolPollQuery.wantedSessions]: workerPoolQueryCountSchema.default(0),
     [workerPoolPollQuery.idleSecs]: workerPoolQueryCountSchema
       .pipe(z.number().positive().max(workerPoolPollIdleSecsMax))
+      .optional(),
+    [workerPoolPollQuery.sessionCapabilities]: z
+      .string()
+      .transform((text) =>
+        text === "" ? [] : text.split(workerPoolSessionCapabilitiesSeparator),
+      )
+      .pipe(workerPoolSessionCapabilitiesSchema)
       .optional(),
   });
 }

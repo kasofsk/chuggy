@@ -187,6 +187,7 @@ import {
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
+  sessionCapabilities,
   sessionRunnerStandings,
   sessionScopes,
   sessionStates,
@@ -2238,6 +2239,8 @@ export const threadResponseSchema = z.object({
    * closes it or its jobs stop.
    */
   jobsStanding: z.literal(true).optional(),
+  /** The capabilities in force while its owner's chat host holds it, which is its roster less whatever that host's setting leaves out; absent while no chat host holds it. */
+  chatHostCapabilities: z.array(z.enum(sessionCapabilities)).optional(),
 });
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 
@@ -3203,6 +3206,8 @@ export const chatHostResponseSchema = z.strictObject({
   live: z.boolean(),
   /** What its newest poll named, absent where it named none. */
   runner: runnerListedSchema.optional(),
+  /** The capabilities its newest poll named for the threads it hosts, each of which holds no more of its roster; absent where it named none, and each keeps its roster. */
+  sessionCapabilities: z.array(z.enum(sessionCapabilities)).optional(),
 });
 export type ChatHostResponse = z.infer<typeof chatHostResponseSchema>;
 

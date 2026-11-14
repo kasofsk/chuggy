@@ -71,6 +71,7 @@ import type { ThreadOfferReply } from "../contract/threadOffers.ts";
 import type { PlacementRoute } from "../contract/rosters.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
+  SessionCapability,
   SessionId,
   SessionScope,
   SessionState,
@@ -175,6 +176,8 @@ export interface ThreadStandingRecord {
   readonly streams: readonly SessionStoreStreamRow[];
   /** Whether the thread holds jobs its chat host restarts with each attempt, which keeps an attempt placed for it. */
   readonly jobsStanding: boolean;
+  /** What it holds while its owner's chat host holds it: its roster less whatever the host's setting leaves out, absent while no chat host holds it. */
+  readonly chatHostCapabilities?: readonly SessionCapability[];
 }
 
 declare const threadOpenKeyBrand: unique symbol;
@@ -437,6 +440,7 @@ export type ThreadRead =
       readonly nextBefore?: number;
       readonly streams: readonly SessionStoreStreamRow[];
       readonly jobsStanding: boolean;
+      readonly chatHostCapabilities?: readonly SessionCapability[];
     };
 
 /** What opening a thread of mine answered, and which of the two the wire reports as created. */

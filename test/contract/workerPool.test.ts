@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { agentAccountCredentialsMax } from "../../src/contract/http.ts";
+import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import {
@@ -18,6 +19,7 @@ import {
   workerPoolIdentityCharsMax,
   workerPoolPollIdleSecsMax,
   workerPoolPollQuerySchema,
+  workerPoolPollSessionCapabilitiesText,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolRegistrationSchema,
@@ -740,6 +742,37 @@ test("a poll's idle bound is a positive count no longer than the longest delay a
     String(Number.MAX_SAFE_INTEGER),
   ])
     assert.equal(query.safeParse({ wanted: "0", idleSecs }).success, false);
+});
+
+test("a poll's session capabilities read back as the set a host wrote, the empty set as the empty value, and nothing else is read", () => {
+  const query = workerPoolPollQuerySchema(2);
+  for (const named of [
+    [],
+    ["ProjectRead"],
+    ["RunCommands", "RepositoryRead", "ThreadOffer"],
+    [...sessionCapabilities],
+  ] as const)
+    assert.deepEqual(
+      query.parse({
+        wanted: "0",
+        sessionCapabilities: workerPoolPollSessionCapabilitiesText(named),
+      }).sessionCapabilities,
+      named,
+    );
+  assert.equal("sessionCapabilities" in query.parse({ wanted: "0" }), false);
+  for (const sessionCapabilities of [
+    "ProjectRead,ProjectRead",
+    "ProjectRead,",
+    "ProjectSettings",
+    "projectread",
+    "ProjectRead ,RunCommands",
+    ["ProjectRead", "RunCommands"],
+  ])
+    assert.equal(
+      query.safeParse({ wanted: "0", sessionCapabilities }).success,
+      false,
+      JSON.stringify(sessionCapabilities),
+    );
 });
 
 test("each settlement route is the poll route, the assignment and the outcome", () => {

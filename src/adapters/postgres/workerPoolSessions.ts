@@ -375,6 +375,10 @@ function postgresChatHostSessionClaims(
         opening.idleSecs === undefined
           ? null
           : workerPoolSessionBound(opening.idleSecs, "idle bound");
+      const hostCapabilities =
+        opening.hostCapabilities === undefined
+          ? null
+          : [...opening.hostCapabilities];
       return sessionOpenedOf(
         await pool.query<{ opened: string | null }>(
           sql`SELECT open_chat_host_session_attempt(
@@ -385,7 +389,8 @@ function postgresChatHostSessionClaims(
                 ${opening.bearerSecretDigest},${terms.leaseSecs},
                 ${opening.placementBackoffSecs},${terms.heldMax},
                 ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb,${idleSecs}::bigint)::text AS opened`,
+                ${terms.launch}::jsonb,${idleSecs}::bigint,
+                ${hostCapabilities}::text[])::text AS opened`,
         ),
       );
     },
