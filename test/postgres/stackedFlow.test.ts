@@ -871,6 +871,74 @@ async function bPassed(
   return drained.memory;
 }
 
+/** The accepted commit B's latest work spawn names as its Recheck reference. */
+async function bRecheckReference(pair: Pair): Promise<unknown> {
+  const [recheck] = await rig.harness.query(
+    `SELECT r.reference_id FROM execution_request q
+       JOIN input_bundle_reference r
+         ON r.tenant = q.tenant AND r.project = q.project AND r.bundle = q.input_bundle
+      WHERE q.tenant=$1 AND q.project=$2 AND q.ticket=$3 AND q.kind='SpawnWork'
+        AND r.reference_kind='Recheck'`,
+    [...keysOf(pair.b, pair.b.ticket)],
+  );
+  return recheck?.["reference_id"];
+}
+
+/** B's second work cycle passed at its accepted commit, and the stack the next pass records for it. */
+async function bRestackedWork(
+  pair: Pair,
+  label: string,
+): Promise<EvaluationStack | undefined> {
+  const bRef = `refs/heads/chuggy/tickets/${String(pair.b.ticket)}/attempts/b`;
+  const rework = await finalizerPassedWork(rig, pair.b, `${label}-work`, []);
+  await finalizerDeclareSource(
+    rig,
+    pair.b,
+    rework,
+    bRef,
+    pair.bCommit,
+    pair.tip,
+  );
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    `${label}-stack`,
+  );
+  return postgresEvaluationStack(rig.pool).read(
+    pair.b.partition,
+    asTicketId(pair.b.ticket),
+    2,
+  );
+}
+
+/** A landed at its accepted commit onto the tip, and Done. */
+async function aLandedAt(pair: Pair, label: string): Promise<void> {
+  finalizerGitVerb(
+    pair.remote.origin,
+    "update-ref",
+    landingTarget,
+    pair.aCommit,
+    pair.tip,
+  );
+  await landingWrite(
+    rig,
+    { ...pair.b, request: pair.aRequest },
+    pair.bWork,
+    label,
+    {
+      ticket: pair.aTicket,
+      accepted: pair.aCommit,
+      onto: pair.tip,
+      candidate: pair.aCommit,
+    },
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.aTicket)],
+  );
+}
+
 test("B sent back to re-stack re-reports its accepted commit, stacks over A, and once A lands B lands with no re-check and no rework counted", async () => {
   const label = "flow-restack-lands";
   const pair = await pairOpened(label, "Finalization");
@@ -892,36 +960,13 @@ test("B sent back to re-stack re-reports its accepted commit, stacks over A, and
     reworksBefore,
     "the send-back is no rework",
   );
-  const [recheck] = await rig.harness.query(
-    `SELECT r.reference_id FROM execution_request q
-       JOIN input_bundle_reference r
-         ON r.tenant = q.tenant AND r.project = q.project AND r.bundle = q.input_bundle
-      WHERE q.tenant=$1 AND q.project=$2 AND q.ticket=$3 AND q.kind='SpawnWork'
-        AND r.reference_kind='Recheck'`,
-    [...keysOf(pair.b, pair.b.ticket)],
-  );
   assert.equal(
-    recheck?.["reference_id"],
+    await bRecheckReference(pair),
     pair.bCommit,
     "the new cycle re-reports B's accepted commit",
   );
 
-  const bRef = `refs/heads/chuggy/tickets/${String(pair.b.ticket)}/attempts/b`;
-  const rework = await finalizerPassedWork(rig, pair.b, `${label}-work`, []);
-  await finalizerDeclareSource(
-    rig,
-    pair.b,
-    rework,
-    bRef,
-    pair.bCommit,
-    pair.tip,
-  );
-  await finalizerPassOnce(rig, pair.b, port, `${label}-stack`);
-  const stack = await postgresEvaluationStack(rig.pool).read(
-    pair.b.partition,
-    asTicketId(pair.b.ticket),
-    2,
-  );
+  const stack = await bRestackedWork(pair, label);
   assert.deepEqual(
     stack?.beneath,
     [{ ticket: pair.aTicket, commit: pair.aCommit }],
@@ -943,29 +988,7 @@ test("B sent back to re-stack re-reports its accepted commit, stacks over A, and
   assert.equal(await bPhase(pair), "Finalization");
   assert.equal(bReworks(pair, evaluated), reworksBefore);
 
-  finalizerGitVerb(
-    pair.remote.origin,
-    "update-ref",
-    landingTarget,
-    pair.aCommit,
-    pair.tip,
-  );
-  await landingWrite(
-    rig,
-    { ...pair.b, request: pair.aRequest },
-    pair.bWork,
-    `${label}-a`,
-    {
-      ticket: pair.aTicket,
-      accepted: pair.aCommit,
-      onto: pair.tip,
-      candidate: pair.aCommit,
-    },
-  );
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [...keysOf(pair.b, pair.aTicket)],
-  );
+  await aLandedAt(pair, `${label}-a`);
   await finalizerPassOnce(rig, pair.b, port, `${label}-lands`);
 
   assert.deepEqual(
