@@ -147,8 +147,10 @@
     min-width: 0;
   }
 
+  /* Narrow, every control in the bar is a finger's height. */
   @container (max-width: 40em) {
     .list-controls {
+      --control-height: var(--height-touch);
       margin-inline: calc(-1 * var(--space-4));
       padding: var(--space-3) var(--space-4) var(--space-2);
     }
@@ -171,7 +173,12 @@
       width: 100cqi;
     }
 
+    .list-search > .btn.list-search-toggle {
+      height: var(--control-height);
+    }
+
     .list-search-field .input-box {
+      min-height: var(--height-touch);
       font-size: var(--text-unzoomed);
     }
   }

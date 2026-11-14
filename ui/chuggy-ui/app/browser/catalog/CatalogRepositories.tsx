@@ -314,6 +314,7 @@ function CatalogRepositoryGroups(props: {
           title={{ id: "configuration-catalog-section-configurations" }}
           level={3}
           count={configurations.length}
+          counted="Configurations"
         >
           {configurations.map(({ summary, state }) => (
             <CatalogConfigurationRow

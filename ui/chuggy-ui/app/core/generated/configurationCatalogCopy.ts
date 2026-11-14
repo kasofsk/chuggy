@@ -16,6 +16,9 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-count": {
     readonly count: unknown;
   };
+  readonly "configuration-catalog-count-configurations": {
+    readonly count: unknown;
+  };
   readonly "configuration-catalog-picker-repository": Record<never, never>;
   readonly "configuration-catalog-repository-back": {
     readonly repository: unknown;

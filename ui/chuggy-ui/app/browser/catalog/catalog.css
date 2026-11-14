@@ -2,9 +2,8 @@
    its name and commit, then its configurations and fragments; and for one
    configuration where the version came from and what the repository's head
    says of it where the head is drawn, then the entries grouped by what each
-   is, the chosen one's row on the sunken ground. On a phone every link and
-   button is a finger's height. With an entry chosen the list and the entry sit
-   side by side, the entry held in view and scrolling on its own while the
+   is, the chosen one's row on the sunken ground. With an entry chosen the
+   list and the entry sit side by side, the entry held in view and scrolling on its own while the
    list scrolls; where the page is narrow they stack with the entry first,
    since it is what the reader just asked for. */
 
@@ -209,23 +208,6 @@
   .catalog-field {
     color: var(--ink-3);
     font: var(--text-xs) var(--font-mono);
-  }
-
-  @container (max-width: 40em) {
-    .catalog-page :is(.btn, a[href], button, [tabindex="0"]) {
-      display: inline-flex;
-      align-items: center;
-      min-width: var(--height-touch);
-      min-height: var(--height-touch);
-    }
-
-    .catalog-page .list-controls {
-      --control-height: var(--height-touch);
-    }
-
-    .catalog-page .list-search-field .input-box {
-      min-height: var(--height-touch);
-    }
   }
 
   @container (min-width: 60em) {

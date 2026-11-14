@@ -112,11 +112,13 @@ export function CatalogSkeleton(): ReactNode {
   );
 }
 
-/** A group's name over its rows, and how many it lists. */
+/** A group's name over its rows, and how many it lists: entries, unless
+ * the group is the configurations. */
 export function CatalogGroup(props: {
   readonly title: Copy;
   readonly level: 2 | 3;
   readonly count: number;
+  readonly counted?: "Entries" | "Configurations";
   readonly children: ReactNode;
 }): ReactNode {
   const text = useCopyText();
@@ -129,7 +131,10 @@ export function CatalogGroup(props: {
         <CountBadge
           count={props.count}
           name={text({
-            id: "configuration-catalog-count",
+            id:
+              props.counted === "Configurations"
+                ? "configuration-catalog-count-configurations"
+                : "configuration-catalog-count",
             args: { count: props.count },
           })}
         />

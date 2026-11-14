@@ -22,6 +22,11 @@ configuration-catalog-count = { $count ->
     [one] { $count } entry
    *[other] { $count } entries
 }
+# What the count beside the configurations' heading counts, read in its figure's place.
+configuration-catalog-count-configurations = { $count ->
+    [one] { $count } { -configuration }
+   *[other] { $count } { -configuration(form: "plural") }
+}
 
 ## A repository's configurations and the fragments they are made of.
 

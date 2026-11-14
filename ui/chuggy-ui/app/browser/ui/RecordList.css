@@ -205,5 +205,25 @@
     .record-row-foot {
       gap: var(--space-2);
     }
+
+    /* Narrow, the title's link is a finger's height and keeps the title's
+       clamp, and so is any link a row's line or foot carries. */
+    .record-row-title a {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-box-pack: center;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      min-height: var(--height-touch);
+    }
+
+    .record-row-line a[href],
+    .record-row-foot a[href] {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
   }
 }

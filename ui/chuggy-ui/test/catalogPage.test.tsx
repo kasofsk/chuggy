@@ -254,7 +254,7 @@ test("with no configuration in the address, the page draws the repository import
       .map((count) => count.textContent),
   ).toStrictEqual(["4 entries", "2 entries", "2 entries", "1 entry"]);
   expectHeadings(3, [
-    "Configurations 2 entries",
+    "Configurations 2 configurations",
     "Workloads 4 entries",
     "Evaluation plans 2 entries",
     "Landings 2 entries",
