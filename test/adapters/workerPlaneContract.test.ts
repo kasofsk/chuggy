@@ -446,6 +446,10 @@ const workerPlaneRequests: Readonly<
       },
       { evidence: "RunRateLimited", limit: {} },
       { evidence: "RunRateLimited", limit: { credential: "work" } },
+      {
+        evidence: "RunCredentialAbsent",
+        absent: { credential: "work", reason: "NotGranted" },
+      },
     ],
   },
   credential: {

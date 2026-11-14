@@ -336,7 +336,10 @@ export function workerContractEnumsSeen(
 /**
  * `body` first, then again for each other value of each enum `schema` reads in
  * it, the rest held, so a roster is offered whole wherever the body offers one
- * member. A union is followed down the member that reads the body.
+ * member. A union is followed down the member that reads the body, and an
+ * object's variant its own refinement refuses is left out, being no body a
+ * release builds: a value it ties to another field is offered by a body that
+ * carries that field.
  */
 export function workerContractEnumsWalked(
   schema: z.ZodType,
@@ -361,11 +364,13 @@ export function workerContractEnumsWalked(
     const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
     return [
       held,
-      ...Object.entries(shape).flatMap(([key, field]) =>
-        workerContractEnumsWalked(field, held[key])
-          .slice(1)
-          .map((value) => ({ ...held, [key]: value })),
-      ),
+      ...Object.entries(shape)
+        .flatMap(([key, field]) =>
+          workerContractEnumsWalked(field, held[key])
+            .slice(1)
+            .map((value) => ({ ...held, [key]: value })),
+        )
+        .filter((variant) => schema.safeParse(variant).success),
     ];
   }
   if (schema instanceof z.ZodArray) {
