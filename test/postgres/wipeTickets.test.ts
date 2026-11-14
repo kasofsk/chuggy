@@ -53,6 +53,7 @@ const wipeKept = [
   "project_repository",
   "project_repository_bind_operation",
   "project_session_placement",
+  "project_vacancy",
   "recovery_epoch",
   "repository_action",
   "repository_configuration_import",

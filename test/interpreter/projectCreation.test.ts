@@ -21,6 +21,7 @@ import {
   projectCreationGrants,
   projectCreationNameFault,
   type ProjectCreationAnswer,
+  type ProjectCreationAuthority,
   type ProjectCreationOutcome,
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
@@ -39,6 +40,7 @@ import {
 import {
   asProjectId,
   asTenantId,
+  type Partition,
   type TenantId,
 } from "../../src/interpreter/projectStore.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
@@ -70,6 +72,43 @@ function creationAccess(unpermitted: boolean) {
   return { access, siteAsked, asking };
 }
 
+type CreationStep = "Erased" | "Filled" | "Written";
+
+/** The authority's write side, recording each list it takes, each object it erases and the order of both in `steps`. */
+function creationAuthority(
+  steps: CreationStep[],
+  writer: { failing: boolean },
+  erasureFails: boolean,
+) {
+  const grants: ProjectGrant[] = [];
+  const lists: (readonly ProjectGrant[])[] = [];
+  const erased: Partition[] = [];
+  const authority: ProjectCreationAuthority = {
+    grants: {
+      write: () => Promise.reject(new Error("creation writes one list")),
+      writeAll: (named) => {
+        if (writer.failing)
+          return Promise.reject(new ProjectAccessUnavailable("keto down"));
+        lists.push(named);
+        grants.push(...named);
+        steps.push("Written");
+        return Promise.resolve();
+      },
+      remove: () => Promise.reject(new Error("creation removes no grant")),
+    },
+    erasure: {
+      projectErased: (named) => {
+        if (erasureFails)
+          return Promise.reject(new ProjectAccessUnavailable("keto down"));
+        erased.push(named);
+        steps.push("Erased");
+        return Promise.resolve();
+      },
+    },
+  };
+  return { authority, grants, lists, erased };
+}
+
 /**
  * A creation over ports that record what they were asked and answer as
  * scripted, its creator permitted `CreateTenant` unless `unpermitted`.
@@ -78,18 +117,24 @@ function creationWith(
   answer: ProjectCreationAnswer,
   options: {
     readonly claimed?: readonly string[];
+    readonly erasureFails?: boolean;
     readonly grantFails?: boolean;
     readonly selector?: Principal;
     readonly unpermitted?: boolean;
+    readonly vacated?: boolean;
   } = {},
 ) {
   const { access, siteAsked, asking } = creationAccess(
     options.unpermitted === true,
   );
   const writes: ProjectCreationWrite[] = [];
-  const grants: ProjectGrant[] = [];
-  const lists: (readonly ProjectGrant[])[] = [];
   const writer = { failing: options.grantFails === true };
+  const steps: CreationStep[] = [];
+  const { authority, grants, lists, erased } = creationAuthority(
+    steps,
+    writer,
+    options.erasureFails === true,
+  );
   const recorded: OperationId[] = [];
   const asked: TenantId[] = [];
   const claims = {
@@ -113,18 +158,13 @@ function creationWith(
         recorded.push(operation);
         return Promise.resolve();
       },
-    },
-    grants: {
-      write: () => Promise.reject(new Error("creation writes one list")),
-      writeAll: (named) => {
-        if (writer.failing)
-          return Promise.reject(new ProjectAccessUnavailable("keto down"));
-        lists.push(named);
-        grants.push(...named);
+      vacated: () => Promise.resolve(options.vacated === true),
+      fillVacancy: () => {
+        steps.push("Filled");
         return Promise.resolve();
       },
-      remove: () => Promise.reject(new Error("creation removes no grant")),
     },
+    authority,
     ...(options.selector === undefined ? {} : { selector: options.selector }),
   });
   return {
@@ -136,6 +176,8 @@ function creationWith(
     grants,
     lists,
     writer,
+    erased,
+    steps,
     recorded,
     service,
   };
@@ -490,19 +532,58 @@ test("a repeat before the grants are recorded writes them and records the operat
   }
 });
 
+test("a creation under a name a deleted project vacated erases its object, then fills the vacancy, then writes its grants, and so does a repeat before they are recorded", async () => {
+  for (const answer of [
+    created,
+    { ...created, outcome: "AlreadyCreated" as const, operation: earlier },
+  ]) {
+    const { erased, steps, service } = creationWith(answer, { vacated: true });
+    assert.equal(
+      (await service.create(principal, request)).result,
+      answer.outcome,
+    );
+    assert.deepEqual(erased, [partition], answer.outcome);
+    assert.deepEqual(steps, ["Erased", "Filled", "Written"], answer.outcome);
+  }
+});
+
+test("a creation under a name never vacated erases nothing, so what was written on it in advance stands", async () => {
+  const { erased, steps, service } = creationWith(created);
+  assert.equal((await service.create(principal, request)).result, "Created");
+  assert.deepEqual(erased, []);
+  assert.deepEqual(steps, ["Written"]);
+});
+
+test("an erasure the authority does not take leaves the name vacant, writes no grant and leaves the creation unrecorded", async () => {
+  const { steps, recorded, service } = creationWith(created, {
+    vacated: true,
+    erasureFails: true,
+  });
+  await assert.rejects(
+    service.create(principal, request),
+    ProjectAccessUnavailable,
+  );
+  assert.deepEqual(steps, []);
+  assert.deepEqual(recorded, []);
+});
+
 test("a repeat after the grants are recorded writes nothing", async () => {
   for (const tenantCreated of [true, false]) {
-    const { grants, recorded, service } = creationWith({
-      outcome: "AlreadyCreated",
-      tenantCreated,
-      grantsWritten: true,
-      operation: earlier,
-    });
+    const { grants, erased, recorded, service } = creationWith(
+      {
+        outcome: "AlreadyCreated",
+        tenantCreated,
+        grantsWritten: true,
+        operation: earlier,
+      },
+      { vacated: true },
+    );
     assert.deepEqual(await service.create(principal, request), {
       result: "AlreadyCreated",
       partition,
     });
     assert.deepEqual(grants, []);
+    assert.deepEqual(erased, []);
     assert.deepEqual(recorded, []);
   }
 });
@@ -514,20 +595,20 @@ test("a refusal from the door grants nothing", async () => {
     "TenantReserved",
     "OperationConflict",
   ] as const satisfies readonly ProjectCreationOutcome[]) {
-    const { grants, recorded, service } = creationWith({
-      ...created,
-      outcome,
-      tenantCreated: false,
-    });
+    const { grants, erased, recorded, service } = creationWith(
+      { ...created, outcome, tenantCreated: false },
+      { vacated: true },
+    );
     assert.deepEqual(await service.create(principal, request), {
       result: outcome,
     });
     assert.deepEqual(grants, [], outcome);
+    assert.deepEqual(erased, [], outcome);
     assert.deepEqual(recorded, [], outcome);
   }
 });
 
-test("a deployment with no grant writer creates nothing", async () => {
+test("a deployment with no authority to write to creates nothing", async () => {
   const writes: ProjectCreationWrite[] = [];
   const service = projectCreation({
     access: memoryProjectAccess(),
@@ -538,6 +619,8 @@ test("a deployment with no grant writer creates nothing", async () => {
         return Promise.resolve(created);
       },
       recordGrants: () => Promise.reject(new Error("nothing to record")),
+      vacated: () => Promise.reject(new Error("nothing to ask")),
+      fillVacancy: () => Promise.reject(new Error("nothing to fill")),
     },
   });
   assert.deepEqual(await service.create(principal, request), {

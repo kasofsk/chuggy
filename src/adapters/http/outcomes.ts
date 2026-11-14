@@ -225,7 +225,10 @@ import type {
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
-import { agentAccountCredentialInUseCode } from "../../contract/responses.ts";
+import {
+  agentAccountCredentialInUseCode,
+  deletionHeldCode,
+} from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
@@ -239,6 +242,10 @@ import type {
 } from "../../contract/responses.ts";
 import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import type { LandingQueues } from "../../interpreter/landingQueues.ts";
+import type {
+  UnrunDeleted,
+  UnrunDeletionStanding,
+} from "../../interpreter/unrunDeletion.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -1805,6 +1812,42 @@ function tenantResourcePath(
 /** A resource that is not found, which every refused permit in this file answers with. */
 export function notFound(): NativeHttpResponse {
   return response(404, nativeHttpError("NotFound", "Resource not found."));
+}
+
+/** What holds a project or a workspace its reader may delete. */
+export function unrunDeletionStandingResponse<Holding extends string>(
+  standing: UnrunDeletionStanding<Holding>,
+): NativeHttpResponse {
+  switch (standing.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, { held: standing.held });
+    default:
+      return assertNever(standing);
+  }
+}
+
+/** A deletion: done, absent, or refused with what holds it. */
+export function unrunDeletedResponse<Holding extends string>(
+  deleted: UnrunDeleted<Holding>,
+): NativeHttpResponse {
+  switch (deleted.result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "Held":
+      return response(409, {
+        ...nativeHttpError(
+          deletionHeldCode,
+          "It has run work, or holds what has, and is not deleted.",
+        ),
+        held: deleted.held,
+      });
+    default:
+      return assertNever(deleted);
+  }
 }
 
 /** What a session bearer is answered on a route no session may reach, RFC 6750's `insufficient_scope`. */

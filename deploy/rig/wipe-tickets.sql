@@ -28,7 +28,8 @@
 -- the list below. Nor is what each declared action was reported to have done,
 -- or the last configuration import attempted of each repository: each is a
 -- record of a repository and names no ticket. Nor is what a person set of
--- their agent accounts' pauses, or their last press: each is theirs.
+-- their agent accounts' pauses, or their last press: each is theirs. Nor is
+-- the name a deleted project vacated, which is a name and names no ticket.
 --
 -- WHY THE SEEDED SINGLETONS ARE NOT IN IT. `thread_wake_cursor`,
 -- `selector_inventory_state` and `selector_runtime_readiness` hold one row

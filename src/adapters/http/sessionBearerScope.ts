@@ -16,7 +16,8 @@
  * outright, so a member's own session reaches no project route and a project's
  * reaches no member route. A `Refused` route never admits one: everything else
  * not addressed to one partition, and inside one the registration-token mint,
- * because enrolling a machine is provisioning rather than work — which is also
+ * because enrolling a machine is provisioning rather than work, as deleting the
+ * project is — which is also
  * why every personal runner write is refused, its allowlist among them, and why
  * a member's thread limit is read but never set, a session widening the cap on
  * sessions — and the answer to a lead's held proposal, because the hold is
@@ -67,6 +68,8 @@ export const sessionBearerRouteClasses = {
   personalRunnerRegistrations: "Public",
   actionReports: "Public",
   projects: { GET: "Refused", POST: "Refused" },
+  projectDeletion: { GET: "Refused", DELETE: "Refused" },
+  tenantDeletion: { GET: "Refused", DELETE: "Refused" },
   forgeApps: { GET: "Refused" },
   forgeAuthorizations: { POST: "Refused" },
   forgeInstallations: { GET: "Refused" },

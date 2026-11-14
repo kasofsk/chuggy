@@ -201,3 +201,29 @@ settings-accounts-installed = Installed
 settings-accounts-missing = Missing
 settings-accounts-update-pending = Update pending
 settings-accounts-review = Review on { -github }
+
+## Deleting a project, or a workspace, that nothing ran in.
+
+settings-delete-project-title = Delete this { -project }
+settings-delete-project-about = Only { -project(form: "a") } with no { -ticket } ever { -release(form: "ed") } and no { -run(form: "plural") } can be deleted. Its { -draft(form: "plural") }, { -epic(form: "plural") }, { -repository(form: "plural") } and settings go with it.
+settings-delete-project = Delete { -project }
+settings-delete-project-question = Delete { $project }?
+settings-delete-project-line = { $project } and everything in it is deleted. This cannot be undone.
+settings-delete-project-done = { $project } is deleted.
+settings-delete-workspace-title = Delete this { -workspace }
+settings-delete-workspace-about = Only { -workspace(form: "a") } that holds no { -project } and no { -runner } can be deleted. Its people, { -invite } links and settings go with it, and its name can be taken again.
+settings-delete-workspace = Delete { -workspace }
+settings-delete-workspace-question = Delete { $workspace }?
+settings-delete-workspace-line = { $workspace } and everything in it is deleted, and its name is free. This cannot be undone.
+settings-delete-workspace-done = { $workspace } is deleted.
+settings-delete-back = Back to the start
+settings-delete-held = It cannot be deleted: { $held }.
+settings-delete-held-released-ticket = { -ticket(form: "a") } was { -release(form: "ed") }
+settings-delete-held-execution = it has { -run(form: "plural") }
+settings-delete-held-session = it has { -thread(form: "plural") } or { -lead(form: "a") }
+settings-delete-held-worker-pool = { -runner(form: "a") } is registered for it
+settings-delete-held-action-observation = an action reported what it did
+settings-delete-held-project = it holds { -project(form: "a") }
+settings-delete-held-personal-runner = { -personal-runner(form: "a") } is registered in it
+settings-delete-held-chat-host = { -chat-host(form: "a") } is registered in it
+settings-delete-held-joined = { $lead }, { $rest }
