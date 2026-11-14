@@ -164,7 +164,7 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import type { AttemptEvidence } from "./executionScheduler.ts";
-import type { RunStepEvidence } from "./runEvidence.ts";
+import type { RunCredentialAbsence, RunStepEvidence } from "./runEvidence.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
@@ -368,6 +368,8 @@ export interface RunStepFailureResource {
   readonly attempt: AttemptId;
   /** The text its worker kept, which is read on the attempt's own route. */
   readonly error?: { readonly bytes: number };
+  /** The credential not delivered and why, present with `RunCredentialAbsent` alone. */
+  readonly absent?: RunCredentialAbsence;
 }
 
 /** An escalation the scheduler resumes by itself once its usage pauses end, and when the latest ends where one still holds. */

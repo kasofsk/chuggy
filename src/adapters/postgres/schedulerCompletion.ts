@@ -751,6 +751,8 @@ function schedulerStepReport(step: RunStepEvidence): string {
       return "The run passed its deadline.";
     case "RunDiskLow":
       return "Its runner stopped the run because its disk ran low.";
+    case "RunCredentialAbsent":
+      return "A credential its job lists was not delivered.";
     default:
       return assertNever(step);
   }

@@ -66,6 +66,7 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
+import { workerHeldCredentialAbsences } from "../../contract/rosters.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -539,6 +540,8 @@ interface StoredRunStepFailure {
   readonly attempt?: unknown;
   readonly evidence?: unknown;
   readonly error_bytes?: unknown;
+  readonly credential_absent?: unknown;
+  readonly credential_absent_reason?: unknown;
 }
 
 /** The task a parked ticket waits on, where `ticket_run_step_failure` reads its run as stopped at a failed step. */
@@ -568,7 +571,23 @@ function projectionRunStepFailure(
             ),
           },
         }),
+    ...projectionRunStepAbsent(failed),
   };
+}
+
+/** The credential a failed step names not delivered and why, which the row holds both or neither of. */
+function projectionRunStepAbsent(
+  failed: StoredRunStepFailure,
+): Pick<RunStepFailureResource, "absent"> {
+  const credential = failed.credential_absent;
+  const reason = workerHeldCredentialAbsences.find(
+    (each) => each === failed.credential_absent_reason,
+  );
+  if (credential === null && failed.credential_absent_reason === null)
+    return {};
+  if (typeof credential !== "string" || reason === undefined)
+    throw new Error("native read: a run step's absent credential is not whole");
+  return { absent: { credential, reason } };
 }
 
 function ticketUsageResumeTicket(ticket: string | null): string {

@@ -508,7 +508,9 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
  * Which of the two boundaries is `runEndedLoss`'s answer to the label rather
  * than the pod's: `lose_worker_attempt` spends a retry because the attempt ran,
  * and `withdraw_worker_attempt` spends none because a provider that refused
- * every request held the work rather than failing it.
+ * every request held the work rather than failing it. A loss keeps the
+ * credential not delivered and why where the run names one, in the same
+ * update that ends the attempt.
  */
 export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
   return {
@@ -520,7 +522,9 @@ export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
         );
       const ended = await pool.query<{ ended: boolean | null }>(
         sql`SELECT lose_worker_attempt(${digest},
-          ${input.generation},${input.evidence})::boolean AS ended`,
+          ${input.generation},${input.evidence},
+          ${input.absent?.credential ?? null},
+          ${input.absent?.reason ?? null})::boolean AS ended`,
       );
       return ended.rows[0]?.ended === true;
     },

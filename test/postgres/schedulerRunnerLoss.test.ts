@@ -23,7 +23,10 @@ import {
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
-import { workerErrorPath } from "../../src/contract/http.ts";
+import {
+  nativeHttpPathSegmentCharsMax,
+  workerErrorPath,
+} from "../../src/contract/http.ts";
 import {
   runStepEvidences,
   type RunEndedEvidence,
@@ -150,7 +153,13 @@ async function concluded(routed: Routed): Promise<void> {
   await drained(routed);
 }
 
-/** The run under `bearer` ends itself as `evidence`, its worker having kept an error of `bytes`, and is concluded. */
+/** The credential a run ended `RunCredentialAbsent` names, the longest a credential's name may be. */
+const stepAbsent = {
+  credential: "c".repeat(nativeHttpPathSegmentCharsMax),
+  reason: "IssuerRefused",
+} as const;
+
+/** The run under `bearer` ends itself as `evidence`, naming `stepAbsent` where that is `RunCredentialAbsent`, its worker having kept an error of `bytes`, and is concluded. */
 async function lostOnRunner(
   routed: Routed,
   bearer: string,
@@ -173,6 +182,7 @@ async function lostOnRunner(
       secret,
       generation: 1,
       evidence,
+      ...(evidence === "RunCredentialAbsent" ? { absent: stepAbsent } : {}),
     }),
     true,
   );
@@ -258,6 +268,7 @@ const stepReports = {
   RunPushFailed: "The push failed.",
   RunTimedOut: "The run passed its deadline.",
   RunDiskLow: "Its runner stopped the run because its disk ran low.",
+  RunCredentialAbsent: "A credential its job lists was not delivered.",
 } as const;
 
 const workLost = { phase: "Escalated", escalation: "WorkFailureEscalated" };
@@ -578,6 +589,7 @@ test("work whose push failed on its runner waits for a person and is never resum
         execution,
         attempt: attempt.attempt,
         error: { bytes: 61 },
+        ...(step === "RunCredentialAbsent" ? { absent: stepAbsent } : {}),
       },
       step,
     );
@@ -586,6 +598,39 @@ test("work whose push failed on its runner waits for a person and is never resum
       stepReports[step],
       step,
     );
+  }
+});
+
+test("an attempt keeps a credential not delivered only beside `RunCredentialAbsent`, and never that label without one", async () => {
+  for (const [evidence, absent] of [
+    ["RunFailed", stepAbsent],
+    ["RunDiskLow", stepAbsent],
+    ["RunCredentialAbsent", undefined],
+  ] as const) {
+    const { routed, execution } = await routedTicket(`absent-${evidence}`);
+    const pool = await poolOf(routed);
+    const { bearer } = await claimed(routed, execution, pool);
+    await assert.rejects(
+      postgresWorkerRunEnded(workerPool).end({
+        secret: asAttemptCapabilitySecret(bearer),
+        generation: 1,
+        evidence,
+        ...(absent === undefined ? {} : { absent }),
+      }),
+      /execution_attempt_credential_absent_is_whole/u,
+      evidence,
+    );
+    const live = await rig.harness.query(
+      `SELECT attempt FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND execution=$3
+          AND state IN ('Placing','Running') AND evidence IS NULL`,
+      [
+        routed.project.partition.tenant,
+        routed.project.partition.project,
+        execution,
+      ],
+    );
+    assert.equal(live.length, 1, evidence);
   }
 });
 

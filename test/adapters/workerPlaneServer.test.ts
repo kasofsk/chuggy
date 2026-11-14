@@ -1737,6 +1737,9 @@ test("a run's credential reaches the boundary beside its usage and its limit, ne
   await app.close();
 });
 
+/** The credential a run ended `RunCredentialAbsent` names as not delivered, and why. */
+const runEndedAbsent = { credential: "chuggy.github", reason: "NotEnabled" };
+
 test("a run's ending is taken under every label a run may end itself under", async () => {
   const offered: unknown[] = [];
   const app = runFigurePlane(offered);
@@ -1747,13 +1750,41 @@ test("a run's ending is taken under every label a run may end itself under", asy
           method: "POST",
           url: "/v1/run/ended",
           headers: held,
-          payload: { evidence },
+          payload:
+            evidence === "RunCredentialAbsent"
+              ? { evidence, absent: runEndedAbsent }
+              : { evidence },
         })
       ).statusCode,
       204,
       evidence,
     );
   assert.deepEqual(offered, [...runEndedEvidences]);
+  await app.close();
+});
+
+test("a run ended for a credential not delivered hands its boundary the credential and why", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    endings: {
+      end: (input) => {
+        offered.push([input.evidence, input.absent]);
+        return Promise.resolve(true);
+      },
+    },
+  });
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/run/ended",
+        headers: held,
+        payload: { evidence: "RunCredentialAbsent", absent: runEndedAbsent },
+      })
+    ).statusCode,
+    204,
+  );
+  assert.deepEqual(offered, [["RunCredentialAbsent", runEndedAbsent]]);
   await app.close();
 });
 
@@ -1790,6 +1821,15 @@ test("a totals or ending body the contract does not name reaches no boundary", a
       },
     ],
     ["/v1/run/ended", { evidence: "RunRateLimited", limit: { resetsAt: 0.5 } }],
+    ["/v1/run/ended", { evidence: "RunCredentialAbsent" }],
+    ["/v1/run/ended", { evidence: "RunFailed", absent: runEndedAbsent }],
+    [
+      "/v1/run/ended",
+      {
+        evidence: "RunCredentialAbsent",
+        absent: { ...runEndedAbsent, reason: "Expired" },
+      },
+    ],
   ] as const) {
     const refused = await app.inject({
       method: "POST",
