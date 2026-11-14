@@ -26,14 +26,16 @@
  * answered by `Refused` with `Stopped`; one for an assignment the supervisor
  * neither prepares nor runs is answered by nothing. After `Drain` the
  * supervisor refuses every `Start` that is not a `Duplicate` with `Draining`,
- * ends each session that holds no claimed turn as a `Stop` would, and ends one
- * that holds a claimed turn once that turn settles; once every `Start` and
- * every `Forget` read before `Drain` is answered and every `Started` has its
- * `Ended`, it writes `Drained` and exits. A session holds a claimed turn from
- * the session plane's answer handing it one until it answers, fails or stops
- * that turn there. Only the session sees either, so its supervisor learns both
- * from the session itself, on the channel it runs the session over, which is
- * the supervisor's own and not this protocol's. At the end of its standard
+ * ends each session that holds no claimed turn as a `Stop` would, ends one
+ * that holds a claimed turn once that turn settles, and answers each `Forget`
+ * as it would before `Drain`. Once every `Start` and every `Forget` it has read
+ * is answered and every `Started` has its `Ended`, it writes `Drained`, reads
+ * nothing more, and exits; a `Forget` it did not read is unanswered, and the
+ * host names that thread again to the next supervisor. A session holds a
+ * claimed turn from the session plane's answer handing it one until it
+ * answers, fails or stops that turn there. Only the session sees either, so
+ * its supervisor learns both from the session itself, on the channel it runs
+ * the session over, which is the supervisor's own and not this protocol's. At the end of its standard
  * input it answers every preparation with `Refused` and `Stopped`, stops every
  * running session and writes its `Ended`, answers every `Forget` it holds,
  * and exits.
@@ -54,7 +56,7 @@
  * pool's answer named as closed. Once no session of that thread is prepared or
  * running, the supervisor removes its directory and answers with `Forgotten`,
  * and it answers a thread it keeps no directory for the same way, so every
- * `Forget` is answered by one `Forgotten`.
+ * `Forget` it reads is answered by one `Forgotten`.
  *
  * A SESSION'S BEARER CROSSES ONLY IN `Start`, and no refusal raised here
  * repeats the line it read. A credential crosses only by name: a `Start` may
@@ -200,7 +202,7 @@ export const chatSupervisorEndedSchema = z.strictObject({
   phase: sessionEndedSchema.shape.phase,
 });
 
-/** Every `Start` and every `Forget` read before `Drain` is answered and every `Started` has its `Ended`, and the supervisor exits. */
+/** Every `Start` and every `Forget` the supervisor has read is answered and every `Started` has its `Ended`, and it reads nothing more and exits. */
 export const chatSupervisorDrainedSchema = z.strictObject({
   frame: z.literal("Drained"),
 });
