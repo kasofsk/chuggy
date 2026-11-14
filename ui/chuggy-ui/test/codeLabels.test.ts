@@ -36,6 +36,7 @@ import {
   resumePoints,
   runStepEvidences,
   ticketLandingStates,
+  workerHeldCredentialAbsences,
   type EscalationKind,
   type GitEvidenceLabel,
 } from "../../../src/contract/rosters.ts";
@@ -435,19 +436,23 @@ test("a run stopped at a failed step names the step, and setup says where its fi
         ? "Fix it under Overrides · Setup, then Resume"
         : evidence === "RunDiskLow"
           ? "Free space on its runner, then Resume"
-          : undefined,
+          : evidence === "RunCredentialAbsent"
+            ? "Have chuggy.github held or issued here, then Resume"
+            : undefined,
     );
     expect(textOf(runStepLine(failed, false))).toBe(
       evidence === "RunDiskLow"
         ? "Free space on its runner, then Resume"
-        : undefined,
+        : evidence === "RunCredentialAbsent"
+          ? "Have chuggy.github held or issued here, then Resume"
+          : undefined,
     );
     for (const said of [
       copyTextEn(runStepLabel(evidence)),
       textOf(runStepLine(failed, true)) ?? "",
     ]) {
       expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
-      expect(said).not.toMatch(/[.:;]/u);
+      expect(said.replace("chuggy.github", "")).not.toMatch(/[.:;]/u);
     }
   }
   expect([...labels]).toEqual([
@@ -459,6 +464,51 @@ test("a run stopped at a failed step names the step, and setup says where its fi
     "Disk low",
     "Credential missing",
   ]);
+});
+
+/**
+ * A run ended for a credential not delivered names that credential and says
+ * what to change, a sentence of its own for every reason the contract gives,
+ * to any reader; one that names no credential is said by its label alone.
+ */
+test("a credential not delivered names the credential and what to change for each reason", () => {
+  const lines = new Map<string, string | undefined>();
+  for (const reason of workerHeldCredentialAbsences) {
+    const failed = {
+      evidence: "RunCredentialAbsent" as const,
+      execution: "execution-1",
+      attempt: "attempt-1",
+      absent: { credential: "chuggy.github", reason },
+    };
+    const line = textOf(runStepLine(failed, false));
+    expect(textOf(runStepLine(failed, true))).toBe(line);
+    expect(line).toContain("chuggy.github");
+    expect(line?.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(line?.replace("chuggy.github", "")).not.toMatch(/[.:;]/u);
+    lines.set(reason, line);
+  }
+  expect(Object.fromEntries(lines)).toStrictEqual({
+    NotGranted: "Let its workload mint chuggy.github, then Resume",
+    NotHeld: "Have chuggy.github held or issued here, then Resume",
+    NotEnabled: "Enable chuggy.github for its project or repository",
+    IssuerRefused: "See why chuggy.github's issuer refused it, then Resume",
+    WorkerTooOld: "Update its worker to take chuggy.github, then Resume",
+  });
+  const unnamed = {
+    evidence: "RunCredentialAbsent" as const,
+    execution: "execution-1",
+    attempt: "attempt-1",
+  };
+  expect(runStepLine(unnamed, true)).toBeUndefined();
+  expect(
+    copyTextEn(
+      escalationDetail({
+        kind: "WorkFailureEscalated",
+        resumeAt: "ResumeWork",
+        failed: unnamed,
+      }),
+    ),
+  ).toBe("Credential missing");
 });
 
 /** The continuation path's evidence is drawn from the git roster, the third

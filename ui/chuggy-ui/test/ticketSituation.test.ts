@@ -270,10 +270,15 @@ test("a job lost on its runner says where, how often, and the attempt its worker
 /** The slot of a ticket whose work escalated at a failed step, to a reader offered the ticket's setup lines or not. */
 const parkedAtStep = (
   failed: {
-    readonly evidence: "RunSetupFailed" | "RunPushFailed" | "RunDiskLow";
+    readonly evidence:
+      "RunSetupFailed" | "RunPushFailed" | "RunDiskLow" | "RunCredentialAbsent";
     readonly execution: string;
     readonly attempt: string;
     readonly error?: { readonly bytes: number };
+    readonly absent?: {
+      readonly credential: string;
+      readonly reason: "NotGranted";
+    };
   },
   setupOverridable = true,
 ) =>
@@ -363,6 +368,41 @@ test("a run its runner stopped for low disk says that runner needs room, to any 
     step: undefined,
     more: "Free space on its runner, then Resume",
     reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+});
+
+/** A run ended for a credential not delivered says which and what to change
+ * where it was told, and keeps the wall's own line where it was not. */
+test("a run ended for a credential not delivered names it and what to change, to any reader", () => {
+  expect(
+    parkedAtStep(
+      {
+        evidence: "RunCredentialAbsent",
+        execution: "execution-1",
+        attempt: "attempt-3",
+        absent: { credential: "chuggy.github", reason: "NotGranted" },
+      },
+      false,
+    ),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    approvals: [],
+    detail: "Credential missing",
+    where: undefined,
+    run: undefined,
+    step: undefined,
+    more: "Let its workload mint chuggy.github, then Resume",
+    reason: undefined,
+  });
+  expect(
+    parkedAtStep({
+      evidence: "RunCredentialAbsent",
+      execution: "execution-1",
+      attempt: "attempt-3",
+    }),
+  ).toMatchObject({
+    detail: "Credential missing",
+    more: "Failed work is not reworked",
   });
 });
 

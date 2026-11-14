@@ -117,6 +117,21 @@ export interface CodesCopy {
   readonly "codes-step-credential-absent": Record<never, never>;
   readonly "codes-step-setup-line": Record<never, never>;
   readonly "codes-step-disk-line": Record<never, never>;
+  readonly "codes-step-credential-not-granted-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-not-held-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-not-enabled-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-issuer-refused-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-worker-too-old-line": {
+    readonly credential: unknown;
+  };
   readonly "codes-evidence-workflows-line": Record<never, never>;
   readonly "codes-evidence-declined-line": Record<never, never>;
   readonly "codes-evidence-unreadable-line": Record<never, never>;

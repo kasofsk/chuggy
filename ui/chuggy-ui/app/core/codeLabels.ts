@@ -456,7 +456,7 @@ export function runStepLabel(step: RunStepEvidence): Copy {
   }
 }
 
-/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change, and what a runner whose disk ran low needs. */
+/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change, what a runner whose disk ran low needs, and what to change for a credential not delivered where the failure names it. */
 export function runStepLine(
   failed: RunStepFailure,
   setupOverridable: boolean,
@@ -466,12 +466,34 @@ export function runStepLine(
       return setupOverridable ? { id: "codes-step-setup-line" } : undefined;
     case "RunDiskLow":
       return { id: "codes-step-disk-line" };
+    case "RunCredentialAbsent":
+      return failed.absent === undefined
+        ? undefined
+        : runStepLineAbsent(failed.absent);
     case "RunCloneFailed":
     case "RunCommitFailed":
     case "RunPushFailed":
     case "RunTimedOut":
-    case "RunCredentialAbsent":
       return undefined;
+  }
+}
+
+/** What to change for a credential a run's job lists that was not delivered, by why it was not. */
+function runStepLineAbsent(
+  absent: NonNullable<RunStepFailure["absent"]>,
+): Copy {
+  const args = { credential: absent.credential };
+  switch (absent.reason) {
+    case "NotGranted":
+      return { id: "codes-step-credential-not-granted-line", args };
+    case "NotHeld":
+      return { id: "codes-step-credential-not-held-line", args };
+    case "NotEnabled":
+      return { id: "codes-step-credential-not-enabled-line", args };
+    case "IssuerRefused":
+      return { id: "codes-step-credential-issuer-refused-line", args };
+    case "WorkerTooOld":
+      return { id: "codes-step-credential-worker-too-old-line", args };
   }
 }
 
