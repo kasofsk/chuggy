@@ -278,6 +278,7 @@ function MyRunnerRunning(props: {
   readonly runner: PersonalRunnerListed;
 }): ReactNode {
   const text = useCopyText();
+  const projectNamed = useProjectNamed();
   const { held, heldTruncated } = props.runner;
   return (
     <td>
@@ -302,7 +303,13 @@ function MyRunnerRunning(props: {
               >
                 {text({
                   id: "runners-personal-running-ticket",
-                  args: { project: attempt.project, ticket: attempt.ticket },
+                  args: {
+                    project: projectNamed({
+                      tenant: props.tenant,
+                      project: attempt.project,
+                    }),
+                    ticket: attempt.ticket,
+                  },
                 })}
               </Link>
               <span className="block text-sm text-ink-3">

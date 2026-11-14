@@ -476,7 +476,7 @@ test("each runner says what it is running, each ticket linked with what it runs,
     within(busy ?? document.body)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toStrictEqual(["atlas #12", "borealis #4"]);
+  ).toStrictEqual(["Atlas Web #12", "Borealis #4"]);
   expect(busy?.textContent).toContain("Work · cycle 1");
   expect(busy?.textContent).toContain("Stage 1 · cycle 2");
   expect(busy?.textContent).toContain("More not shown");
