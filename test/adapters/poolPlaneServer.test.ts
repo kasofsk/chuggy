@@ -34,6 +34,7 @@ import {
   workerRunnerPollWaitHeader,
   workerRunnerReportBytesMax,
   workerRunnerReportRoute,
+  type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
 import {
@@ -253,11 +254,13 @@ const launch: SessionLaunchFacts = {
 
 /**
  * Records every call a route made of the session side, which holds `holding`
- * and offers `offered`, each opened as the claim asks.
+ * and offers `offered`, each opened as the claim asks, and answers `closed` as
+ * the threads a chat host ran that have since closed.
  */
 function sessionCalls(
   holding: readonly string[] = [],
   offered: readonly string[] = [],
+  closed: readonly WorkerPoolThreadClosed[] = [],
 ): { readonly made: unknown[]; readonly store: WorkerPoolSessions } {
   const made: unknown[] = [];
   const answer = <T>(call: unknown[], value: T): Promise<T> =>
@@ -266,7 +269,7 @@ function sessionCalls(
     made,
     store: {
       launch: () => answer(["launch"], launch),
-      threadsClosed: () => answer(["threadsClosed"], []),
+      threadsClosed: () => answer(["threadsClosed"], closed),
       among: (_identity, named) =>
         answer(
           ["among", [...named]],
@@ -1465,7 +1468,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
     )) {
       const recorded = calls();
       const ports = poolReplayPorts(recorded.ports, claimed);
-      const offering = sessionCalls([], ["session-waiting"]);
+      const offering = sessionCalls(
+        [],
+        ["session-waiting"],
+        [{ project: partition.project, session: "thread-closed" }],
+      );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
         [older.pollQuery.wanted, String(wanted)],

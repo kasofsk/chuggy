@@ -451,6 +451,8 @@ export function runStepLabel(step: RunStepEvidence): Copy {
       return { id: "codes-step-timed-out" };
     case "RunDiskLow":
       return { id: "codes-step-disk-low" };
+    case "RunCredentialAbsent":
+      return { id: "codes-step-credential-absent" };
   }
 }
 
@@ -468,6 +470,7 @@ export function runStepLine(
     case "RunCommitFailed":
     case "RunPushFailed":
     case "RunTimedOut":
+    case "RunCredentialAbsent":
       return undefined;
   }
 }

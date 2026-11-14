@@ -208,6 +208,7 @@ import {
   projectRepositoryConfigurationDeferrals,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
+  workerHeldCredentialAbsences,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
 
@@ -484,15 +485,29 @@ export type RunnerLoss = z.infer<typeof runnerLossSchema>;
 
 /**
  * The task a parked ticket waits on where its run stopped at a failed step:
- * the step, the attempt it stopped on, and the size of the text its worker
- * kept, which is read on that attempt's own route.
+ * the step, the attempt it stopped on, the size of the text its worker kept,
+ * which is read on that attempt's own route, and, with `RunCredentialAbsent`
+ * and no other step, the credential its job lists that was not delivered and
+ * why.
  */
-export const runStepFailureSchema = z.strictObject({
-  evidence: z.enum(runStepEvidences),
-  execution: identitySchema,
-  attempt: identitySchema,
-  error: z.object({ bytes: countSchema }).optional(),
-});
+export const runStepFailureSchema = z
+  .strictObject({
+    evidence: z.enum(runStepEvidences),
+    execution: identitySchema,
+    attempt: identitySchema,
+    error: z.object({ bytes: countSchema }).optional(),
+    absent: z
+      .strictObject({
+        credential: identitySchema,
+        reason: z.enum(workerHeldCredentialAbsences),
+      })
+      .optional(),
+  })
+  .refine(
+    (failed) =>
+      (failed.evidence === "RunCredentialAbsent") ===
+      (failed.absent !== undefined),
+  );
 export type RunStepFailure = z.infer<typeof runStepFailureSchema>;
 
 /**

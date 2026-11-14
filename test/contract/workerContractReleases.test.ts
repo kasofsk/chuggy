@@ -25,6 +25,7 @@ import {
   workerContractHeader,
   workerContractRelease,
   workerContractCredentialOutcome,
+  workerContractRunCredentialAbsent,
   workerContractRunDiskLow,
 } from "../../src/contract/workerContract.ts";
 import {
@@ -189,6 +190,45 @@ test("a run ends `RunDiskLow` from the version a runner holds a plane's release 
       contractVersionAccepted(from, release),
       release,
     );
+});
+
+test("a run ends `RunCredentialAbsent`, naming the credential and why, from the version a runner holds a plane's release to, and no release below it names that label or takes that field", async () => {
+  const from = {
+    min: workerContractRunCredentialAbsent,
+    max: workerContractAccepted.max,
+  };
+  const carried = (schema: z.ZodType) =>
+    schema instanceof z.ZodObject && Object.hasOwn(schema.shape, "absent");
+  assert.ok(runEndedEvidences.includes("RunCredentialAbsent"));
+  assert.ok(carried(workerRunEndedSchema));
+  assert.ok(contractVersionAccepted(from, workerContractRelease));
+  for (const release of workerContractReplayed("job")) {
+    const accepted = contractVersionAccepted(from, release);
+    assert.equal(
+      (
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "runEndedEvidences",
+          z.array(z.string()).optional(),
+        )
+      )?.includes("RunCredentialAbsent") ?? false,
+      accepted,
+      release,
+    );
+    assert.equal(
+      carried(
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "workerRunEndedSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      accepted,
+      release,
+    );
+  }
 });
 
 test("a run ends `RunCreditsExhausted` from the version a harness holds a plane's release to, and no release below it names that label", async () => {

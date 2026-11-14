@@ -502,8 +502,9 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
 }
 
 /**
- * Narrowing a live attempt to the label its own run ended under, through the
- * boundary that already ends one; the lease sweep ends it either way.
+ * Narrowing a live attempt to the label its own run ended under, and to the
+ * credential not delivered and why where it names one, through the boundary
+ * that already ends one; the lease sweep ends it either way.
  *
  * Which of the two boundaries is `runEndedLoss`'s answer to the label rather
  * than the pod's: `lose_worker_attempt` spends a retry because the attempt ran,
@@ -520,7 +521,9 @@ export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
         );
       const ended = await pool.query<{ ended: boolean | null }>(
         sql`SELECT lose_worker_attempt(${digest},
-          ${input.generation},${input.evidence})::boolean AS ended`,
+          ${input.generation},${input.evidence},
+          ${input.absent?.credential ?? null},
+          ${input.absent?.reason ?? null})::boolean AS ended`,
       );
       return ended.rows[0]?.ended === true;
     },

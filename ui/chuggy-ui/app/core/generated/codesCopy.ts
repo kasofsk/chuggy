@@ -114,6 +114,7 @@ export interface CodesCopy {
   readonly "codes-step-push-failed": Record<never, never>;
   readonly "codes-step-timed-out": Record<never, never>;
   readonly "codes-step-disk-low": Record<never, never>;
+  readonly "codes-step-credential-absent": Record<never, never>;
   readonly "codes-step-setup-line": Record<never, never>;
   readonly "codes-step-disk-line": Record<never, never>;
   readonly "codes-evidence-workflows-line": Record<never, never>;
