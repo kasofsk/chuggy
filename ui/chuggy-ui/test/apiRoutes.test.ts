@@ -289,9 +289,9 @@ test("a project's bindings are read without reach by saying reach=false, and wit
 test("the inventory carries its cursor and stops when there is none", async () => {
   const held = recording((url) =>
     url.includes("cursor=next")
-      ? { projects: [{ tenant: "acme", project: "beta" }] }
+      ? { projects: [{ tenant: "acme", project: "beta", name: "Beta" }] }
       : {
-          projects: [{ tenant: "acme", project: "atlas" }],
+          projects: [{ tenant: "acme", project: "atlas", name: "Atlas" }],
           nextCursor: "next",
         },
   );
@@ -302,7 +302,7 @@ test("the inventory carries its cursor and stops when there is none", async () =
 
 test("an inventory that never stops is stopped by the page budget", async () => {
   const held = recording(() => ({
-    projects: [{ tenant: "acme", project: "atlas" }],
+    projects: [{ tenant: "acme", project: "atlas", name: "Atlas" }],
     nextCursor: "again",
   }));
   const result = await apiProjectInventoryAll(held.ports);

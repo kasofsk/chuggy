@@ -19,8 +19,11 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { lastProjectRead } from "../app/core/lastProject.ts";
 import { memberChatRoutes } from "../app/core/memberChat.ts";
+import { projectDisplayNameCharsMax } from "../../../src/contract/requests.ts";
 import {
   projectCreationRoutePath,
+  projectDisplayNameRule,
+  projectNameLengthFault,
   projectNameRule,
 } from "../app/core/projectCreation.ts";
 import { persistentStore } from "../app/browser/ports.ts";
@@ -70,6 +73,8 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 // jscpd:ignore-end -- the case's own doubles resume here
 
 const partition = { tenant: "vteng", project: "chuggy" };
+/** The project as the api answers it, called what its form typed. */
+const named = { ...partition, name: "Chuggy" };
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => undefined;
@@ -88,7 +93,7 @@ afterEach(() => {
 });
 
 test("a reader with no project meets the form, under a bar that signs out and sets the theme", async () => {
-  served([], () => Promise.resolve(answer(partition, 201)));
+  served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<Landing />);
   expect(screen.getByText("No projects")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
@@ -105,23 +110,105 @@ test("a reader with no project meets the form, under a bar that signs out and se
   expect(screen.queryByRole("menuitem", { name: "Runners" })).toBeNull();
 });
 
-test("the rule both names are held to stands under each field before anything is typed", async () => {
-  served([], () => Promise.resolve(answer(partition, 201)));
+test("the rule each name is held to stands under its field before anything is typed", async () => {
+  served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<Landing />);
   expect(copyTextEn(projectNameRule)).toBe(
     "Lowercase letters, digits, inner hyphens",
   );
-  for (const label of ["Workspace", "Project"]) {
-    expect(ruleUnder(label).textContent, label).toBe(
-      copyTextEn(projectNameRule),
-    );
+  expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
+  expect(ruleUnder("Project").textContent).toBe(
+    copyTextEn(projectDisplayNameRule),
+  );
+  for (const label of ["Workspace", "Project"])
     expect(ruleUnder(label).className, label).not.toContain("text-tone-fail");
-  }
+  expect(screen.queryByRole("textbox", { name: "Address" })).toBeNull();
   expect(screen.queryByText("Tenant")).toBeNull();
 });
 
+test("a project is named as the reader calls it, and sent at the address that name makes, shown under it as it is typed", async () => {
+  const posted = served([], () =>
+    Promise.resolve(
+      answer(
+        { ...partition, project: "acme-billing", name: "Acme Billing" },
+        201,
+      ),
+    ),
+  );
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", "Acme");
+  expect(ruleUnder("Project").textContent).toBe("Address: acme");
+  typed("Project", "Acme Billing");
+  expect(ruleUnder("Project").textContent).toBe("Address: acme-billing");
+  expect(screen.queryByRole("textbox", { name: "Address" })).toBeNull();
+  await pressed();
+  expect(posted.map((one) => one.body)).toEqual([
+    { tenant: "vteng", project: "acme-billing", name: "Acme Billing" },
+  ]);
+});
+
+test("an address the reader edits stops following the name", async () => {
+  const posted = served([], () => Promise.resolve(answer(named, 201)));
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", "Acme Billing");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Edit address" }));
+  });
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Address" }).value,
+  ).toBe("acme-billing");
+  expect(screen.queryByRole("button", { name: "Edit address" })).toBeNull();
+  typed("Address", "billing");
+  typed("Project", "Acme Billing, the second");
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Address" }).value,
+  ).toBe("billing");
+  expect(ruleUnder("Project").textContent).toBe("Address: billing");
+  await pressed();
+  expect(posted.map((one) => one.body)).toEqual([
+    { tenant: "vteng", project: "billing", name: "Acme Billing, the second" },
+  ]);
+});
+
+test("a name that makes no address asks for one, and nothing is sent until it is typed", async () => {
+  const posted = served([], () => Promise.resolve(answer(named, 201)));
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", "!!!");
+  expect(ruleUnder("Project").textContent).toBe(
+    copyTextEn({ id: "project-creation-address-none" }),
+  );
+  expect(ruleUnder("Address").textContent).toBe(copyTextEn(projectNameRule));
+  expect(screen.queryByRole("button", { name: "Edit address" })).toBeNull();
+  expect(submit()).toHaveProperty("disabled", true);
+  typed("Address", "bang");
+  await pressed();
+  expect(posted.map((one) => one.body)).toEqual([
+    { tenant: "vteng", project: "bang", name: "!!!" },
+  ]);
+});
+
+test("a name the wire would refuse turns the line under it, and nothing is sent", async () => {
+  const posted = served([], () => Promise.resolve(answer(named, 201)));
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", "n".repeat(projectDisplayNameCharsMax + 1));
+  expect(ruleUnder("Project").textContent).toBe(
+    copyTextEn(projectNameLengthFault),
+  );
+  expect(ruleUnder("Project").className).toContain("text-tone-fail");
+  expect(submit()).toHaveProperty("disabled", true);
+  typed("Project", "   ");
+  expect(submit()).toHaveProperty("disabled", true);
+  fireEvent.click(submit());
+  await settled();
+  expect(posted).toEqual([]);
+});
+
 test("a name the wire refuses turns its own rule line, and nothing is sent", async () => {
-  const posted = served([], () => Promise.resolve(answer(partition, 201)));
+  const posted = served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<Landing />);
   typed("Workspace", "Vteng");
   typed("Project", "chuggy");
@@ -140,12 +227,12 @@ test("a name the wire refuses turns its own rule line, and nothing is sent", asy
 });
 
 test("a created project is opened at its repositories and remembered", async () => {
-  const posted = served([], () => Promise.resolve(answer(partition, 201)));
+  const posted = served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<Landing />);
   typed("Workspace", partition.tenant);
-  typed("Project", partition.project);
+  typed("Project", named.name);
   await pressed();
-  expect(posted.map((one) => one.body)).toEqual([partition]);
+  expect(posted.map((one) => one.body)).toEqual([named]);
   expect(posted[0]?.key).toBeTruthy();
   expect(held.went).toEqual([
     { to: "/$tenant/$project/repositories", params: partition },
@@ -160,11 +247,11 @@ test("a project created after its form was left is still opened at its repositor
   served([], () => creating.answered);
   await drawn(<Landing />);
   typed("Workspace", partition.tenant);
-  typed("Project", partition.project);
+  typed("Project", named.name);
   await pressed();
   cleanup();
   await turned(() => {
-    creating.release(answer(partition, 201));
+    creating.release(answer(named, 201));
   });
   await settled();
   expect(held.went).toEqual([
@@ -180,7 +267,7 @@ test("a creation refused after its form was drawn again empty is a toast and no 
   served([], () => creating.answered);
   const shown = await redrawable(<Landing />, consoleQueryClient());
   typed("Workspace", partition.tenant);
-  typed("Project", partition.project);
+  typed("Project", named.name);
   await pressed();
   await shown(false);
   await shown(true);
@@ -209,7 +296,7 @@ test("a refusal is one short line, and the form stays where it was", async () =>
   );
   await drawn(<Landing />);
   typed("Workspace", partition.tenant);
-  typed("Project", partition.project);
+  typed("Project", named.name);
   await pressed();
   expect(answerLine()?.textContent).toBe("Taken");
   expect(held.went).toEqual([]);
@@ -226,7 +313,7 @@ test("a workspace the reader may not make says what a new one needs, and the for
   );
   await drawn(<Landing />);
   typed("Workspace", partition.tenant);
-  typed("Project", partition.project);
+  typed("Project", named.name);
   await pressed();
   expect(answerLine()?.textContent).toBe("New workspace needs an invite link");
   expect(
@@ -239,7 +326,7 @@ test("a press repeated after no answer spends the same identity, and an edit dra
   const posted = served([], () => Promise.reject(new Error("offline")));
   await drawn(<Landing />);
   typed("Workspace", partition.tenant);
-  typed("Project", partition.project);
+  typed("Project", named.name);
   await pressed();
   expect(answerLine()?.textContent).toBe("Unreachable");
   await pressed();
@@ -254,7 +341,7 @@ test("a press repeated after no answer spends the same identity, and an edit dra
 /** The projects as `served` answers them, and the workspace's chat abilities
  * answering whether the reader may chat outside a project. */
 function chatServed(opens: boolean): void {
-  served([partition], () => Promise.resolve(answer(partition, 201)));
+  served([named], () => Promise.resolve(answer(named, 201)));
   const projects = globalThis.fetch;
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
     url.endsWith(`/tenants/${partition.tenant}/chat/abilities`)
@@ -284,7 +371,7 @@ test("the switcher offers the workspace shown with no project where it lets the 
   await drawn(<ProjectSwitcher partition={partition} />);
   expect(await switcherOffers()).toEqual([
     "vteng / No project",
-    "vteng / chuggy",
+    "vteng / Chuggy",
   ]);
   fireEvent.click(
     screen.getByRole("menuitemradio", { name: "vteng / No project" }),
@@ -297,11 +384,11 @@ test("the switcher offers the workspace shown with no project where it lets the 
 test("the switcher offers no project only where the workspace lets the reader chat outside one", async () => {
   chatServed(false);
   await drawn(<ProjectSwitcher partition={partition} />);
-  expect(await switcherOffers()).toEqual(["vteng / chuggy"]);
+  expect(await switcherOffers()).toEqual(["vteng / Chuggy"]);
 });
 
 test("the switcher offers a new project beside every project, and it opens the form in the workspace of the project shown", async () => {
-  served([partition], () => Promise.resolve(answer(partition, 201)));
+  served([named], () => Promise.resolve(answer(named, 201)));
   await drawn(<ProjectSwitcher partition={partition} />);
   fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
     key: "ArrowDown",
@@ -311,7 +398,7 @@ test("the switcher offers a new project beside every project, and it opens the f
   });
   expect(
     screen.getAllByRole("menuitemradio").map((one) => one.textContent),
-  ).toEqual(["vteng / chuggy"]);
+  ).toEqual(["vteng / Chuggy"]);
   fireEvent.click(item);
   expect(held.went).toStrictEqual([
     { to: projectCreationRoutePath, search: { workspace: partition.tenant } },

@@ -72,7 +72,7 @@ const footerText = "Copyright 2026. chuggy";
 function mount(children: ReactNode): void {
   const api = apiDouble({
     operation: operationAt("Pending"),
-    route: () => answer({ projects: [atlas] }),
+    route: () => answer({ projects: [{ ...atlas, name: atlas.project }] }),
   });
   viewportAtEm(viewportDeskEm);
   vi.stubGlobal("fetch", api.fetch);

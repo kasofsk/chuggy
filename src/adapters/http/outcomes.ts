@@ -129,7 +129,11 @@ import type {
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
-import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type {
+  NamedPartition,
+  Partition,
+  TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { ChatAbilitiesResponse } from "../../contract/responses.ts";
 import type {
   MemberChatProjectsRead,
@@ -140,6 +144,7 @@ import type {
   ProjectCreationResult,
 } from "../../interpreter/projectCreation.ts";
 import {
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../contract/requests.ts";
@@ -228,6 +233,8 @@ import type {
 import {
   agentAccountCredentialInUseCode,
   deletionHeldCode,
+  projectCreatedSchema,
+  type ProjectCreatedResponse,
 } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
@@ -2010,12 +2017,23 @@ export function forgeInstallationPermissionsResponse(
   }
 }
 
-/** Why a name was refused, by the field it is in. */
-const projectNameInvalidCodes: Readonly<Record<ProjectCreationField, string>> =
-  {
-    tenant: "TenantNameInvalid",
-    project: "ProjectNameInvalid",
-  };
+/** Why a name was refused, by the field it is in, with the rule it broke. */
+const projectNameInvalid: Readonly<
+  Record<ProjectCreationField, { readonly code: string; readonly rule: string }>
+> = {
+  tenant: {
+    code: "TenantNameInvalid",
+    rule: `A tenant name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  project: {
+    code: "ProjectNameInvalid",
+    rule: `A project name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  name: {
+    code: "ProjectDisplayNameInvalid",
+    rule: `A project's display name is at most ${String(projectDisplayNameCharsMax)} characters once trimmed, is not empty, and holds no control character.`,
+  },
+};
 
 /** What creation answers a caller the site does not permit to create a tenant. */
 function tenantCreationRefused(): NativeHttpResponse {
@@ -2028,6 +2046,10 @@ function tenantCreationRefused(): NativeHttpResponse {
   );
 }
 
+function projectCreatedBody(project: NamedPartition): ProjectCreatedResponse {
+  return projectCreatedSchema.parse(project);
+}
+
 /**
  * A creation. A tenant another principal holds is a conflict rather than a
  * missing resource, because a tenant name is first-come and not a secret.
@@ -2037,15 +2059,15 @@ export function projectCreationResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Created":
-      return response(201, result.partition, {
+      return response(201, projectCreatedBody(result.project), {
         location: tenantResourcePath(
-          result.partition.tenant,
+          result.project.tenant,
           "projects",
-          result.partition.project,
+          result.project.project,
         ),
       });
     case "AlreadyCreated":
-      return response(200, result.partition);
+      return response(200, projectCreatedBody(result.project));
     case "ProjectExists":
       return response(
         409,
@@ -2071,8 +2093,8 @@ export function projectCreationResponse(
       return response(
         422,
         nativeHttpError(
-          projectNameInvalidCodes[result.field],
-          `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+          projectNameInvalid[result.field].code,
+          projectNameInvalid[result.field].rule,
         ),
       );
     case "TenantCreationNotPermitted":

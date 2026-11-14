@@ -119,6 +119,7 @@ import {
 } from "./workerPool.ts";
 import {
   agentAccountSettingsSchema,
+  projectDisplayNameCharsMax,
   repositoryFinalizationSchema,
   repositoryLandingSchema,
   selectorProjectOverridesSchema,
@@ -225,16 +226,23 @@ export const installationResponseSchema = z.object({
 });
 export type InstallationResponse = z.infer<typeof installationResponseSchema>;
 
+/** A project as it is listed and created: the partition that addresses it, and what it is called. */
+export const namedProjectSchema = z.strictObject({
+  ...partitionSchema.shape,
+  name: z.string().min(1).max(projectDisplayNameCharsMax),
+});
+export type NamedProject = z.infer<typeof namedProjectSchema>;
+
 export const projectInventoryResponseSchema = z.strictObject({
-  projects: page(partitionSchema),
+  projects: page(namedProjectSchema),
   nextCursor: z.string().optional(),
 });
 export type ProjectInventoryResponse = z.infer<
   typeof projectInventoryResponseSchema
 >;
 
-/** A project created, or the one the same request already created: the partition that addresses it. */
-export const projectCreatedSchema = partitionSchema;
+/** A project created, or the one the same request already created, named as its creation named it. */
+export const projectCreatedSchema = namedProjectSchema;
 export type ProjectCreatedResponse = z.infer<typeof projectCreatedSchema>;
 
 /** Tokens by kind, as the agent runtime counts them. */

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../src/contract/requests.ts";
@@ -53,8 +54,11 @@ const partition = {
 const request = {
   tenant: partition.tenant,
   project: partition.project,
+  name: "Chuggy",
   operation: asOperationId("create-chuggy-1"),
 };
+/** The project as an accepted creation answers it. */
+const named = { ...partition, name: request.name };
 
 /** The creator's access, `CreateTenant` granted unless `unpermitted`, and `asking` recording each site kind it is asked. */
 function creationAccess(unpermitted: boolean) {
@@ -185,6 +189,7 @@ function creationWith(
 
 const created: ProjectCreationAnswer = {
   outcome: "Created",
+  name: request.name,
   tenantCreated: true,
   grantsWritten: false,
   operation: request.operation,
@@ -228,7 +233,7 @@ test("a name is lowercase letters, digits and hyphens that begin and end with a 
     "a".repeat(projectNameCharsMax),
   ])
     assert.equal(
-      projectCreationNameFault({ tenant: name, project: name }),
+      projectCreationNameFault({ tenant: name, project: name, name }),
       undefined,
       name,
     );
@@ -245,7 +250,11 @@ test("a name is lowercase letters, digits and hyphens that begin and end with a 
     "a".repeat(projectNameCharsMax + 1),
   ])
     assert.equal(
-      projectCreationNameFault({ tenant: name, project: "chuggy" }),
+      projectCreationNameFault({
+        tenant: name,
+        project: "chuggy",
+        name: "Chuggy",
+      }),
       "tenant",
       name,
     );
@@ -253,12 +262,59 @@ test("a name is lowercase letters, digits and hyphens that begin and end with a 
 
 test("a refused name names its own field, the tenant's first", () => {
   assert.equal(
-    projectCreationNameFault({ tenant: "vteng", project: "Chuggy" }),
+    projectCreationNameFault({
+      tenant: "vteng",
+      project: "Chuggy",
+      name: "Chuggy",
+    }),
     "project",
   );
   assert.equal(
-    projectCreationNameFault({ tenant: "Vteng", project: "Chuggy" }),
+    projectCreationNameFault({
+      tenant: "Vteng",
+      project: "Chuggy",
+      name: "",
+    }),
     "tenant",
+  );
+});
+
+test("a display name is refused after both names, and a creation writes it trimmed", async () => {
+  for (const name of [
+    "",
+    "   ",
+    "Chug\ngy",
+    "n".repeat(projectDisplayNameCharsMax + 1),
+  ])
+    assert.equal(
+      projectCreationNameFault({ tenant: "vteng", project: "chuggy", name }),
+      "name",
+      JSON.stringify(name),
+    );
+  const refused = creationWith(created);
+  assert.deepEqual(
+    await refused.service.create(principal, { ...request, name: " \t " }),
+    { result: "NameInvalid", field: "name" },
+  );
+  assert.deepEqual(refused.writes, []);
+  const trimmed = creationWith(created);
+  await trimmed.service.create(principal, { ...request, name: "  Chuggy  " });
+  assert.equal(trimmed.writes[0]?.name, "Chuggy");
+});
+
+test("an accepted creation answers the name the door read off the project, not the one it was asked for", async () => {
+  const repeating = creationWith({
+    ...created,
+    outcome: "AlreadyCreated",
+    name: "Chuggy itself",
+    operation: earlier,
+  });
+  assert.deepEqual(
+    await repeating.service.create(principal, { ...request, name: "Another" }),
+    {
+      result: "AlreadyCreated",
+      project: { ...partition, name: "Chuggy itself" },
+    },
   );
 });
 
@@ -307,7 +363,7 @@ test("a caller who administers the tenant or finds it claimed is answered as bef
     });
     assert.deepEqual(await administering.service.create(principal, request), {
       result: "Created",
-      partition,
+      project: named,
     });
     assert.deepEqual(administering.lists, [madeProject]);
     assert.deepEqual(administering.siteAsked, []);
@@ -458,11 +514,12 @@ test("a caller nothing names the tenant to makes it and administers what it made
   const { writes, lists, recorded, service } = creationWith(created);
   assert.deepEqual(await service.create(principal, request), {
     result: "Created",
-    partition,
+    project: named,
   });
   assert.deepEqual(writes, [
     {
       partition,
+      name: request.name,
       standing: "Unclaimed",
       reserved: false,
       operation: request.operation,
@@ -510,7 +567,7 @@ test("a tenant's administrator is granted nothing on it again", async () => {
   });
   assert.deepEqual(await service.create(principal, request), {
     result: "Created",
-    partition,
+    project: named,
   });
   assert.deepEqual(lists, [madeProject]);
 });
@@ -519,13 +576,14 @@ test("a repeat before the grants are recorded writes them and records the operat
   for (const tenantCreated of [true, false]) {
     const { lists, recorded, service } = creationWith({
       outcome: "AlreadyCreated",
+      name: request.name,
       tenantCreated,
       grantsWritten: false,
       operation: earlier,
     });
     assert.deepEqual(await service.create(principal, request), {
       result: "AlreadyCreated",
-      partition,
+      project: named,
     });
     assert.deepEqual(lists, [tenantCreated ? madeTenant : madeProject]);
     assert.deepEqual(recorded, [earlier]);
@@ -572,6 +630,7 @@ test("a repeat after the grants are recorded writes nothing", async () => {
     const { grants, erased, recorded, service } = creationWith(
       {
         outcome: "AlreadyCreated",
+        name: request.name,
         tenantCreated,
         grantsWritten: true,
         operation: earlier,
@@ -580,7 +639,7 @@ test("a repeat after the grants are recorded writes nothing", async () => {
     );
     assert.deepEqual(await service.create(principal, request), {
       result: "AlreadyCreated",
-      partition,
+      project: named,
     });
     assert.deepEqual(grants, []);
     assert.deepEqual(erased, []);

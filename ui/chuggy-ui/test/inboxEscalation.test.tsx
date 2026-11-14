@@ -117,7 +117,7 @@ function serving(inbox: () => readonly InboxEntryResponse[] | undefined) {
     if (url.includes("/executions")) return answer({ executions: [] });
     if (url.includes("/tenants/"))
       return answer({ partition: atlas, sequence: 9, tickets: [] });
-    return answer({ projects: [atlas] });
+    return answer({ projects: [{ ...atlas, name: atlas.project }] });
   };
 }
 
