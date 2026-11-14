@@ -307,11 +307,11 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
     import { accessSync, constants, readFileSync } from "node:fs"; \
-    import { workerContractRelease } from "@chuggy/worker-contract/workerContract"; \
     import { workerJobCommand, workerRuntimeDirectory } from "@chuggy/worker-contract/workerEnvironment"; \
     const { contractRelease } = JSON.parse(readFileSync("/tmp/core.json", "utf8")); \
-    if (workerContractRelease !== contractRelease) { \
-      console.error(`core.json names contract ${contractRelease} and the core installs ${workerContractRelease}`); \
+    const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.resolve("@chuggy/worker-contract/workerContract")), "utf8")); \
+    if (version !== contractRelease) { \
+      console.error(`core.json names contract ${contractRelease} and the core installs ${version}`); \
       process.exit(1); \
     } \
     if (workerRuntimeDirectory !== "/opt/chuggy") { \

@@ -1,18 +1,24 @@
 /**
  * Which worker contract a request and an answer speak. Each side names its
  * release in one header, and a plane serves a range of versions and refuses the
- * rest by name. A version is a release's major and minor; the patch moves only
- * the packaging, so two releases differing in it speak one wire.
+ * rest by name. A version is a release's major and minor, so two releases
+ * differing in their patch speak one wire.
  *
- * What a peer implements is asked by feature. A peer that lists its features in
+ * The release this tree names is frozen, and a change to the contract does not
+ * move it. What a peer implements is asked by feature. A peer that lists its features in
  * a header of their own is answered by that list, and one that lists none by
  * its release. A new gate takes a feature name, never a new version constant.
  */
 
 import { z } from "zod";
 
-/** The release of the worker contract, which versions the package `scripts/pack-worker-contract.ts` builds. */
-export const workerContractRelease = "1.103.0";
+/**
+ * The version of the wire each side names in the header, frozen: a change to
+ * the contract does not move it, a feature being how a side learns what its
+ * peer implements. Only a deliberate break moves it, by hand, and a package's
+ * label is its publisher's.
+ */
+export const workerContractRelease = "1.104.0";
 
 /** The header a pod or a pool names its release in, and a plane answers with its own. */
 export const workerContractHeader = "chuggy-worker-contract";
@@ -221,11 +227,11 @@ export function workerContractFeaturesOf(
 }
 
 /**
- * Whether `peer` implements `feature`. A peer that listed its features
+ * Whether `peer` implements `feature`: a peer that listed its features
  * implements exactly those, whatever release it named. One that listed none is
- * read by its release: naming none speaks `workerContractUnnamed`, text that is
- * no release implements nothing, and any other implements a feature from the
- * version it first shipped in.
+ * read by its release, where naming none speaks `workerContractUnnamed`, text
+ * that is no release implements nothing, and any other implements a feature
+ * from the version it first shipped in.
  */
 export function workerContractImplements(
   feature: WorkerContractFeature,

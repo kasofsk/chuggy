@@ -60,6 +60,14 @@ test("the contract's own release is one", () => {
   assert.notEqual(workerContractVersionOf(workerContractRelease), undefined);
 });
 
+test("the contract's release is the one it was frozen at", () => {
+  assert.equal(
+    workerContractRelease,
+    "1.104.0",
+    "the wire's version is frozen: a contract change no longer moves it, and the package's label is the publisher's",
+  );
+});
+
 test("a refusal names the range as versions, never as releases", () => {
   const refusal = {
     action: "stop",

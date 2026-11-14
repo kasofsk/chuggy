@@ -1,6 +1,7 @@
 /**
- * The worker contract's wire as one digest, and the history that names the
- * release each wire was published as and the files its asset holds.
+ * The worker contract's wire as one digest, and the history: a frozen record
+ * of each release published while a release named its wire, with that wire and
+ * the files its asset holds. Nothing is added to it.
  *
  * THE DIGEST IS TAKEN OVER EVERY EXPORT OF EVERY ENTRY THE PACKAGE NAMES, read
  * off the modules rather than listed, so an export added or removed moves it
@@ -58,7 +59,7 @@ import { workspaceManifestOf } from "./pack-worker-contract.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-/** Where the history is kept, one entry per published release, its files as `workerContractFilesDigest` reads them. */
+/** Where the history is kept, one entry per release it records, its files as `workerContractFilesDigest` reads them. */
 export const workerContractHistoryPath = join(
   root,
   "test/contract/workerContract.history.json",
@@ -1077,51 +1078,4 @@ export function workerContractHistoryLater(
     if (part !== other) return part < other;
   }
   return false;
-}
-
-/** The version a release speaks, which is all of it but its patch. */
-function workerContractHistoryVersion(release: string): string {
-  return release.slice(0, release.lastIndexOf("."));
-}
-
-/**
- * Why `history` does not name `release` as the wire `wire` is, or nothing
- * where it does. Releases only rise, the last is `release` at `wire`, and a
- * wire that moved between two entries moved their major or minor, because a
- * patch moves only the packaging.
- */
-export function workerContractHistoryRefusal(
-  history: readonly Pick<WorkerContractHistory[number], "release" | "wire">[],
-  release: string,
-  wire: string,
-): string | undefined {
-  for (const [index, entry] of history.entries()) {
-    const earlier = history[index - 1];
-    if (earlier === undefined) continue;
-    if (!workerContractHistoryLater(earlier.release, entry.release))
-      return `${entry.release} does not follow ${earlier.release}`;
-    if (
-      earlier.wire !== entry.wire &&
-      workerContractHistoryVersion(earlier.release) ===
-        workerContractHistoryVersion(entry.release)
-    )
-      return `${entry.release} moved the wire in a patch`;
-  }
-  const last = history.at(-1);
-  if (last?.release !== release)
-    return `the history's last release is ${String(last?.release)}, and the contract's is ${release}: add its entry`;
-  if (last.wire !== wire)
-    return `the wire is no longer the one ${release} was published as: move the release, and add its entry`;
-  return undefined;
-}
-
-/** Why `history` does not record `files` as `release`'s, or nothing where it does. */
-export function workerContractFilesRefusal(
-  history: readonly Pick<WorkerContractHistory[number], "release" | "files">[],
-  release: string,
-  files: string,
-): string | undefined {
-  const recorded = history.find((entry) => entry.release === release)?.files;
-  if (recorded === files) return undefined;
-  return `the history records ${String(recorded)} as ${release}'s files, and the pack's are ${files}: record the pack's`;
 }
