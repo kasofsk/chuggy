@@ -45,6 +45,7 @@ import {
   SettingsListingUnread,
 } from "./SettingsListing.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
+import { TenantDeletion } from "./UnrunDeletion.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
 import { TenantInviteLinks } from "./TenantInviteLinks.tsx";
 import { TenantPersonRow } from "./TenantPersonRow.tsx";
@@ -191,6 +192,7 @@ export function TenantPeoplePage(): ReactNode {
         {people.state !== "Ready" || read.state === "Pending" ? null : (
           <PanelUnready state={read} />
         )}
+        <TenantDeletion tenant={tenant} />
       </SettingsListing>
     </SettingsPage>
   );

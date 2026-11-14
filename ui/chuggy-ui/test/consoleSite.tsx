@@ -82,6 +82,8 @@ import {
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  projectDeletionResponseSchema,
+  tenantDeletionResponseSchema,
   sessionPlacementResponseSchema,
   threadResponseSchema,
   threadsResponseSchema,
@@ -416,6 +418,11 @@ const consoleReads: readonly ConsoleRead[] = [
     body: () => ({ administers: false }),
   },
   {
+    path: consoleReadAt(`${projectPath}/deletion`),
+    schema: projectDeletionResponseSchema,
+    body: () => ({ held: ["ReleasedTicket"] }),
+  },
+  {
     path: consoleReadAt(`${projectPath}/hosted-runs`),
     schema: hostedRunsResponseSchema,
     body: () => ({ granted: true }),
@@ -612,6 +619,11 @@ const consoleReads: readonly ConsoleRead[] = [
         readings: [],
       })),
     }),
+  },
+  {
+    path: consoleReadAt(`${tenantPath}/deletion`),
+    schema: tenantDeletionResponseSchema,
+    body: () => ({ held: ["Project"] }),
   },
   {
     path: consoleReadAt(`${tenantPath}/chat-host`),

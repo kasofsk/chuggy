@@ -23,6 +23,8 @@ import {
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectOwnerFallbackResponseSchema,
+  projectDeletionResponseSchema,
+  tenantDeletionResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeAuthorizationResponseSchema,
@@ -56,6 +58,8 @@ import {
 import type {
   AgentAccountsResponse,
   AgenticRefusalsResponse,
+  ProjectDeletionResponse,
+  TenantDeletionResponse,
   ChatHostResponse,
   ConfigurationResponse,
   ConfigurationsResponse,
@@ -629,6 +633,55 @@ export function apiMintChatHostToken(
       body: request,
     },
     (value) => workerPoolTokenResponseSchema.parse(value),
+  );
+}
+
+/** What holds the project from deletion, answered only to its workspace's administrator. */
+export function apiProjectDeletion(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ProjectDeletionResponse>> {
+  return apiGet(ports, apiSegments(partition, "deletion"), (value) =>
+    projectDeletionResponseSchema.parse(value),
+  );
+}
+
+/** The project deleted, refused as a conflict naming what holds it. */
+export function apiDeleteProject(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    { method: "DELETE", path: apiSegments(partition, "deletion") },
+    () => undefined,
+  );
+}
+
+/** What holds the workspace from deletion, answered only to the site's administrator. */
+export function apiTenantDeletion(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<TenantDeletionResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.tenantDeletion, { tenant }),
+    (value) => tenantDeletionResponseSchema.parse(value),
+  );
+}
+
+/** The workspace deleted, refused as a conflict naming what holds it. */
+export function apiDeleteTenant(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiFilled(nativeHttpRoutes.tenantDeletion, { tenant }),
+    },
+    () => undefined,
   );
 }
 

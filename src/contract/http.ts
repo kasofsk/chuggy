@@ -637,6 +637,8 @@ export const nativeHttpRoutes = {
   forgeInstallationPermissions: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/permissions`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
+  projectDeletion: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/deletion`,
+  tenantDeletion: `${nativeHttpBasePath}/tenants/:tenant/deletion`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,

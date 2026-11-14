@@ -255,16 +255,20 @@ test("the claim under an installation identity is the asking tenant's own row", 
   );
 });
 
-test("a claim is never released and never changes hands, even by the owner", async () => {
-  const recorded = claim();
+test("a claim is released only with a tenant holding no project, and never changes hands, even by the owner", async () => {
+  const recorded = claim({ tenant: asTenantId(`tenant-${randomUUID()}`) });
   assert.equal(
     await postgresForgeInstallationRecording(harness.pool).record(recorded),
     "Recorded",
   );
+  await harness.query(
+    "SELECT outcome FROM create_project($1,'claimed','Unclaimed',false,$2,'Member','alice')",
+    [recorded.tenant, `operation-${randomUUID()}`],
+  );
   const named = `forge='${recorded.forge}' AND app='${recorded.app}' AND account='${recorded.account}'`;
   await assert.rejects(
     () => harness.query(`DELETE FROM forge_installation WHERE ${named}`),
-    /is not released/u,
+    /released only with a tenant that holds no project/u,
   );
   await assert.rejects(
     () =>

@@ -24,6 +24,14 @@
  * creator asking again for the same tenant and project, under any idempotency
  * key; once recorded, a repeat writes nothing, so it cannot restore a grant or
  * a default anyone has since removed.
+ *
+ * A NAME A DELETED PROJECT VACATED IS ERASED BEFORE IT IS GRANTED ON. A grant
+ * can land on a deleted project's object after its erasure, or its erasure be
+ * lost, so where the store says the name is vacant every tuple on the object is
+ * erased before the grants are written, and the vacancy is filled only once
+ * that erasure is done. A name never vacated keeps what was written on it
+ * before its project existed, which is how an operator provisions a project in
+ * advance.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -39,6 +47,7 @@ import {
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
 import type { Principal } from "./principal.ts";
+import type { AccessErasure } from "./unrunDeletion.ts";
 import {
   asProjectId,
   asTenantId,
@@ -94,22 +103,35 @@ export interface TenantClaims {
   claimed(tenant: TenantId): Promise<boolean>;
 }
 
-/** The durable side: the tenant, the project and the operation in one transaction, and later the record that its grants were written. */
+/**
+ * The durable side: the tenant, the project and the operation in one
+ * transaction, later the record that its grants were written, and whether a
+ * deleted project left the name vacant until a project standing under it fills
+ * the vacancy.
+ */
 export interface ProjectCreationStore {
   create(write: ProjectCreationWrite): Promise<ProjectCreationAnswer>;
   recordGrants(operation: OperationId): Promise<void>;
+  vacated(partition: Partition): Promise<boolean>;
+  fillVacancy(partition: Partition): Promise<void>;
+}
+
+/** The authority's write side creation reaches: the grants it writes, and the erasure of a vacated name's object. */
+export interface ProjectCreationAuthority {
+  readonly grants: ProjectGrantWriter;
+  readonly erasure: Pick<AccessErasure, "projectErased">;
 }
 
 /**
- * What creation reaches, with no grant writer on a deployment that names no
- * authority to write to, and no selector on one whose selector is granted each
- * project by hand.
+ * What creation reaches, with no authority on a deployment that names none to
+ * write to, and no selector on one whose selector is granted each project by
+ * hand.
  */
 export interface ProjectCreationPorts {
   readonly access: ProjectAccess;
   readonly claims: TenantClaims;
   readonly store: ProjectCreationStore;
-  readonly grants?: ProjectGrantWriter;
+  readonly authority?: ProjectCreationAuthority;
   readonly selector?: Principal;
 }
 
@@ -180,7 +202,7 @@ async function projectCreationStanding(
 
 async function projectCreationCreate(
   ports: ProjectCreationPorts,
-  grants: ProjectGrantWriter,
+  authority: ProjectCreationAuthority,
   principal: Principal,
   request: ProjectCreationRequest,
 ): Promise<ProjectCreationResult> {
@@ -207,7 +229,11 @@ async function projectCreationCreate(
     case "Created":
     case "AlreadyCreated":
       if (!answer.grantsWritten) {
-        await grants.writeAll(
+        if (await ports.store.vacated(partition)) {
+          await authority.erasure.projectErased(partition);
+          await ports.store.fillVacancy(partition);
+        }
+        await authority.grants.writeAll(
           projectCreationGrants(
             principal,
             partition,
@@ -231,10 +257,10 @@ async function projectCreationCreate(
 export function projectCreation(ports: ProjectCreationPorts): ProjectCreation {
   return {
     create: (principal, request) => {
-      const grants = ports.grants;
-      if (grants === undefined)
+      const authority = ports.authority;
+      if (authority === undefined)
         return Promise.resolve({ result: "NotConfigured" });
-      return projectCreationCreate(ports, grants, principal, request);
+      return projectCreationCreate(ports, authority, principal, request);
     },
   };
 }

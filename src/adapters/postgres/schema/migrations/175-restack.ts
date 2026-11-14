@@ -55,8 +55,8 @@ const rankSignature = `public.${ticketFinalizationRankFunction}(in_tenant text, 
 
 const stacksSignature = `public.${ticketEvaluationStacksReadFunction}(in_tenant text, in_project text, in_ticket bigint, in_count integer)`;
 
-export const migration174: Migration = {
-  version: 174,
+export const migration175: Migration = {
+  version: 175,
   name: "a Stacked ticket pending unstacked is sent back to re-stack over the queue ahead of it",
   statements: [
     `ALTER TABLE public.finalization_attempt

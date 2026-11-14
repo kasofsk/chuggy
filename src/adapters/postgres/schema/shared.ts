@@ -395,3 +395,21 @@ export const epicSaveFunction = "save_epic";
 
 /** The door a draft is created into an epic through. */
 export const draftInEpicFunction = "create_draft_in_epic";
+
+/** What a project holds that keeps it from deletion, read by the API. */
+export const projectDeletionHoldsFunction = "project_deletion_holds";
+
+/** The door a project that never ran work is deleted through. */
+export const projectDeleteFunction = "delete_unrun_project";
+
+/** Whether a deleted project's name is vacant, read by the API before it grants on a project made under it. */
+export const projectVacatedFunction = "project_vacated";
+
+/** The door a vacancy is filled through, once a project made under the name has its predecessor's tuples erased. */
+export const projectVacancyFillFunction = "fill_project_vacancy";
+
+/** What a tenant holds that keeps it from deletion, read by the API. */
+export const tenantDeletionHoldsFunction = "tenant_deletion_holds";
+
+/** The door a tenant that holds no project is deleted through. */
+export const tenantDeleteFunction = "delete_unrun_tenant";

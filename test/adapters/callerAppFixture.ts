@@ -3,7 +3,10 @@
  * that names one caller.
  */
 
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import {
+  createNativeHttpApp,
+  type UnrunDeletions,
+} from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import type { AgentAccountService } from "../../src/interpreter/agentAccount.ts";
 import type { MemberChat } from "../../src/interpreter/memberChat.ts";
@@ -24,6 +27,7 @@ export interface CallerAppServices {
   readonly chat?: MemberChat;
   readonly agentAccounts?: AgentAccountService;
   readonly landingQueues?: LandingQueueReads;
+  readonly deletions?: UnrunDeletions;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -70,5 +74,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.agentAccounts,
     undefined,
     services.landingQueues,
+    services.deletions,
   );
 }

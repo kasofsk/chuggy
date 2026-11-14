@@ -171,7 +171,8 @@ import { migration170 } from "./170-agent-account-pause-live-credentials.ts";
 import { migration171 } from "./171-agent-account-credential-retire.ts";
 import { migration172 } from "./172-agent-account-pause-holding-credentials.ts";
 import { migration173 } from "./173-program-stage-out-of-position.ts";
-import { migration174 } from "./174-restack.ts";
+import { migration174 } from "./174-unrun-deletion.ts";
+import { migration175 } from "./175-restack.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -349,4 +350,5 @@ export const migrations: readonly Migration[] = [
   migration172,
   migration173,
   migration174,
+  migration175,
 ];
