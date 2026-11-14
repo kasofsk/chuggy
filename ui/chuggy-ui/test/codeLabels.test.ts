@@ -409,7 +409,16 @@ test("a job lost on its runner names the runner and how often it was resumed", (
 test("a run stopped at a failed step names the step, and setup says where its fix goes to a reader who can make it", () => {
   const labels = new Set<string>();
   for (const evidence of runStepEvidences) {
-    const failed = { evidence, execution: "execution-1", attempt: "attempt-1" };
+    const failed = {
+      evidence,
+      execution: "execution-1",
+      attempt: "attempt-1",
+      ...(evidence === "RunCredentialAbsent"
+        ? {
+            absent: { credential: "chuggy.github", reason: "NotHeld" as const },
+          }
+        : {}),
+    };
     for (const kind of [
       "WorkFailureEscalated",
       "EvaluationBlockedEscalated",
@@ -448,6 +457,7 @@ test("a run stopped at a failed step names the step, and setup says where its fi
     "Push failed",
     "Timed out",
     "Disk low",
+    "Credential missing",
   ]);
 });
 

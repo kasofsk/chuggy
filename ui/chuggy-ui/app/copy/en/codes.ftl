@@ -152,6 +152,7 @@ codes-step-commit-failed = Commit failed
 codes-step-push-failed = Push failed
 codes-step-timed-out = Timed out
 codes-step-disk-low = Disk low
+codes-step-credential-absent = Credential missing
 codes-step-setup-line = Fix it under { -override(case: "upper", form: "plural") } · Setup, then Resume
 codes-step-disk-line = Free space on its { -runner }, then Resume
 # spells -turn: to turn on is a verb here
