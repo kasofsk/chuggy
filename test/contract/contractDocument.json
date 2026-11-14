@@ -3599,6 +3599,7 @@
                   "enum": [
                     "ProjectLead",
                     "ProjectPlacement",
+                    "ProjectPools",
                     "ProjectPermissions",
                     "WorkspacePeople",
                     "WorkspaceAccounts",

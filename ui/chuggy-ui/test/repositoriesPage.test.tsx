@@ -2418,7 +2418,7 @@ const bootstrapped = (): Response =>
 
 const configured = "Default configuration added";
 
-const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/runners`;
+const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/settings/workspace/runner`;
 
 /** The steps the open dialog offers, each by its words and where it goes. */
 function dialogSteps(): readonly (readonly [string | null, string | null])[] {

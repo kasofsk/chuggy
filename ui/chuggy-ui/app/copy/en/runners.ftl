@@ -1,10 +1,10 @@
-## The runners page.
+## A project's pools, and the words the pages of runners share.
 
 runners-title = { -runner(case: "upper", form: "plural") }
+runners-pools-title = Pools
 # spells -run: to run is a verb here
-runners-about = Machines that run this { -project }'s { -agent(form: "plural") }.
-runners-none = No { -runner } registered
-runners-caption = Registered { -runner(form: "plural") }
+runners-pools-about = Shared machines registered to run this { -project }'s { -agent(form: "plural") }.
+runners-pools-none = No pools
 runners-col-runner = { -runner(case: "upper") }
 runners-col-platforms = Platforms
 runners-col-version = Version

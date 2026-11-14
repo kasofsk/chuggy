@@ -508,5 +508,10 @@
     "release": "1.101.0",
     "wire": "d1aafd55ff8df9019582a40843b2d9d40acd757f271ebdc700bc61251171bb00",
     "files": "61b5f4fefc486fadcfb6d0a187e4ec9c7c1bd4666378df012108aa18d8d4d9f3"
+  },
+  {
+    "release": "1.102.0",
+    "wire": "8b759207450ca43dedac28d6748000f5668d82073435b91858693ce38235d11b",
+    "files": "454b1f403ff34408a1a9473dd5e924489d4c4b3e7d193b4fd0a96ef8e8b79440"
   }
 ]

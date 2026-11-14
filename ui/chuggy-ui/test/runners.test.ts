@@ -1,5 +1,5 @@
 /**
- * The Runners page's words and drafts, derived: what a route and its source
+ * The runner pages' words and drafts, derived: what a route and its source
  * are called, which route a draft starts on, what a refused write says, the
  * package a machine is handed with its commands and its guide, and where the
  * control that hands it over is drawn.
@@ -10,7 +10,6 @@ import { expect, test } from "vitest";
 import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
-  WorkerPoolsResponse,
 } from "../../../src/contract/responses.ts";
 import { selectorProjectSettingsResponseSchema } from "../../../src/contract/responses.ts";
 import {
@@ -22,9 +21,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { leadSelectorSettingsBody } from "./leadFixture.ts";
 import type { Copy } from "../app/core/copy.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
-import type { PanelState } from "../app/core/freshness.ts";
 import {
-  runnerAddPlace,
   runnerAskRead,
   runnerCapabilitiesTyped,
   runnerCapabilityLabel,
@@ -444,60 +441,6 @@ test("a token that starts with a dash stays the token's value", () => {
       "Pool",
     ),
   ).toBe("chuggy-linux register --api https://chuggy.test --token=-tok");
-});
-
-function roster(count: number): PanelState<WorkerPoolsResponse> {
-  return {
-    state: "Ready",
-    observedAtMs: undefined,
-    value: {
-      truncated: false,
-      pools: Array.from({ length: count }, (_, at) => ({
-        pool: `pool-${String(at)}`,
-        capabilities: ["Platform:Linux:Amd64"],
-        registeredAt: "2026-09-29T00:00:00Z",
-        live: false,
-      })),
-    },
-  };
-}
-
-const adding = { administers: true, roster: roster(0), opened: false };
-
-test("a reader who may add is drawn the control under an empty roster's line, and in the head once a runner is registered", () => {
-  expect(runnerAddPlace(adding)).toBe("Empty");
-  expect(runnerAddPlace({ ...adding, roster: roster(1) })).toBe("Head");
-  expect(runnerAddPlace({ ...adding, roster: roster(1), opened: true })).toBe(
-    "Head",
-  );
-});
-
-test("a reader who may not add is drawn the control nowhere, whatever the roster holds", () => {
-  for (const held of [roster(0), roster(1)])
-    expect(
-      runnerAddPlace({ ...adding, administers: false, roster: held }),
-    ).toBeUndefined();
-});
-
-test("the control is drawn nowhere while the roster is unread, and in the head where its read came to nothing", () => {
-  expect(
-    runnerAddPlace({ ...adding, roster: { state: "Pending" } }),
-  ).toBeUndefined();
-  for (const state of ["Absent", "Failed"] as const)
-    expect(
-      runnerAddPlace({
-        ...adding,
-        roster:
-          state === "Absent"
-            ? { state }
-            : { state, failure: { outcome: "Unreachable", reason: "no" } },
-      }),
-      state,
-    ).toBe("Head");
-});
-
-test("an empty roster's control is not drawn again under the steps it opened", () => {
-  expect(runnerAddPlace({ ...adding, opened: true })).toBeUndefined();
 });
 
 test("a platform is drawn by its parts and any other capability as spelled", () => {

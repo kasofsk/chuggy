@@ -1,7 +1,7 @@
 /**
  * What a minted registration token is handed over in: the steps that make a
- * machine a runner, each command copied by its own control, for a project's
- * pool, a member's own runner and their chat host alike.
+ * machine a runner, each command copied by its own control, for a member's
+ * own runner and their chat host alike.
  */
 
 import { useEffect, useRef } from "react";
@@ -55,11 +55,12 @@ export function useFocusedUnheld<
   return drawn;
 }
 
+/** What the console registers a machine as: a pool is registered from its own machine alone. */
+export type RunnerStepsKind = Exclude<RunnerKind, "Pool">;
+
 /** What the steps' list is called for a machine registered as `kind`. */
-function runnerStepsLabel(kind: RunnerKind): Copy {
+function runnerStepsLabel(kind: RunnerStepsKind): Copy {
   switch (kind) {
-    case "Pool":
-      return { id: "runners-add" };
     case "Personal":
       return { id: "runners-register" };
     case "ChatHost":
@@ -72,7 +73,7 @@ export function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
   /** What the reader asked, which the register command declares. */
   readonly ask: RunnerAsk;
-  readonly kind: RunnerKind;
+  readonly kind: RunnerStepsKind;
   readonly onDone: () => void;
 }): ReactNode {
   const text = useCopyText();

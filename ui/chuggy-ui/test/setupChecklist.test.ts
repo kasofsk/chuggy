@@ -165,7 +165,16 @@ test("a project whose work the cluster runs, with a ticket landed and no runner,
     `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
     "next: stop",
   ]);
-  expect(done.lines.join("\n")).not.toContain("/runners");
+  expect(done.lines.join("\n")).not.toContain("/settings/workspace/runner");
+});
+
+test("a project with no runner names Personal runners for one on another machine, and nothing that once added a pool", async () => {
+  const done = await printed(await machineSignedIn(setupSiteAt("Configured")));
+  const said = done.lines.join("\n");
+  expect(said).toContain(
+    `opens ${pages}/settings/workspace/runner, where you press Register runner`,
+  );
+  expect(said).not.toMatch(/\/runners\b|Add runner/u);
 });
 
 test("a repository whose own account lacks the worker app holds the GitHub step, though another account has both apps, and the person is sent to install it there", async () => {
