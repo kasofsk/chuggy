@@ -80,7 +80,7 @@ import type { SetupPorts } from "./setupPorts.ts";
 import { setupGot, setupReadPorts } from "./setupReads.ts";
 import type { SetupRead } from "./setupReads.ts";
 import type { SetupReport } from "./setupReport.ts";
-import { setupSessionRead } from "./setupStore.ts";
+import { setupSessionSite } from "./setupStore.ts";
 import {
   setupChatClient,
   setupChatFiles,
@@ -138,6 +138,8 @@ export const setupMintLifetimeSecs = 300;
 /** How long each thing run on the machine is waited on, which bounds a hang and not the work. */
 export const setupActWaitMs: Readonly<Record<SetupRunnerAct, number>> = {
   Install: 300_000,
+  ServerRemoved: 60_000,
+  ServerAdded: 60_000,
   Register: 60_000,
   Check: 120_000,
   Service: 60_000,
@@ -177,6 +179,8 @@ export type SetupChatHostAsked = Extract<
 /** A run of a command that changes the machine, for the workspace `tenant`, whose writes go out only as `writes`. */
 interface Run {
   readonly ports: SetupPorts;
+  /** Whether this command installs the runner package where none it can use is found: `chat-host` does, and `runner` finds the one the MCP step's `mcp` installed. */
+  readonly installs: boolean;
   readonly tenant: string;
   readonly writes: readonly string[];
   readonly waitSecs: number;
@@ -202,7 +206,10 @@ function halted(value: object | undefined): value is Halt {
   return value !== undefined && ("halt" in value || "reported" in value);
 }
 
-function halt(stop: SetupRunnerStop): Halt {
+/** A walk's own stop, which no part of it that asks nothing of a site can end otherwise. */
+type Stopped = { readonly halt: SetupRunnerStop };
+
+function halt(stop: SetupRunnerStop): Stopped {
   return { halt: stop };
 }
 
@@ -379,6 +386,8 @@ async function setupMachineProbed(
   const probe = await setupPackageProbed(ports, places, least);
   const usable =
     probe.found !== undefined && setupPackageCurrent(probe.found, least);
+  if (!usable && !run.installs)
+    return halt({ stop: "Unpackaged", found: probe.found, least });
   if (!usable && probe.prefix === undefined) return halt({ stop: "Npmless" });
   return { engine: room.engine, settings, credential, probe, least };
 }
@@ -388,12 +397,18 @@ interface Exited {
   readonly err: string;
 }
 
+/** What running a thing on the machine needs of a run. */
+type Acting = Pick<Run, "ports" | "secrets">;
+
+/** What installing the runner package needs of a run. */
+type Packaging = Acting & Pick<Run, "places" | "notes">;
+
 /** Runs one thing on the machine to its end, and answers what it printed or the stop its failure is; the registration, which is handed the token, fails with nothing it printed kept. */
 async function setupActed(
-  run: Run,
+  run: Acting,
   act: SetupRunnerAct,
   command: readonly string[],
-): Promise<Exited | Halt> {
+): Promise<Exited | Stopped> {
   const waitMs = setupActWaitMs[act];
   const ended = await run.ports.process.run(
     command,
@@ -408,6 +423,16 @@ async function setupActed(
   return ended.ended === "Exited" ? ended : { out: "", err: "" };
 }
 
+/** Runs one thing on the machine for a command that holds no secret, answering the stop its failure is, or nothing where it ended well. */
+export async function setupActedStop(
+  ports: SetupPorts,
+  act: SetupRunnerAct,
+  command: readonly string[],
+): Promise<SetupRunnerStop | undefined> {
+  const acted = await setupActed({ ports, secrets: [] }, act, command);
+  return "halt" in acted ? acted.halt : undefined;
+}
+
 interface Packaged {
   readonly command: string;
   /** Whether this run installed the package, which is whether a service running from before it runs the old one. */
@@ -416,9 +441,9 @@ interface Packaged {
 
 /** The runner package a run can use: the one found, or one installed by the console's command where none is found, or where the one found is older than the least or of a version that cannot be read. */
 async function setupPackageHad(
-  run: Run,
-  machine: Machine,
-): Promise<Packaged | Halt> {
+  run: Packaging,
+  machine: Pick<Machine, "probe" | "least">,
+): Promise<Packaged | Stopped> {
   const { least } = machine;
   const found = machine.probe.found;
   if (found !== undefined && setupPackageCurrent(found, least)) {
@@ -454,6 +479,30 @@ async function setupPackageHad(
       : undefined;
   run.notes.push({ note: "Installed", ...after, kept });
   return { command: after.command, installed: true };
+}
+
+/**
+ * The runner package for a command that needs no more of the machine than
+ * it: the one found where it is none older than `least`, and otherwise one
+ * the console's command installs, with what was found and done noted in
+ * `notes`. Nothing is installed where npm did not say where it installs.
+ */
+export async function setupPackageReady(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  notes: SetupRunnerNote[],
+  least: string,
+): Promise<{ readonly command: string } | { readonly stop: SetupRunnerStop }> {
+  const probe = await setupPackageProbed(ports, places, least);
+  const usable =
+    probe.found !== undefined && setupPackageCurrent(probe.found, least);
+  if (!usable && probe.prefix === undefined)
+    return { stop: { stop: "Npmless" } };
+  const packaged = await setupPackageHad(
+    { ports, places, notes, secrets: [] },
+    { probe, least },
+  );
+  return "halt" in packaged ? { stop: packaged.halt } : packaged;
 }
 
 /** Writes the settings a machine with none is given, or answers the stop a path that would not be made is. */
@@ -1129,6 +1178,7 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
 /** A run as it is begun, under the sign-in `session` it entered. */
 function setupRunMade(
   ports: SetupPorts,
+  installs: boolean,
   tenant: string,
   writes: readonly string[],
   asked: { readonly waitSecs: number },
@@ -1138,6 +1188,7 @@ function setupRunMade(
 ): Run {
   return {
     ports,
+    installs,
     tenant,
     writes,
     waitSecs: asked.waitSecs,
@@ -1204,6 +1255,7 @@ export async function setupRunner(
   const run: ProjectRun = {
     ...setupRunMade(
       ports,
+      false,
       workspace,
       setupRunnerWrites(partition),
       asked,
@@ -1230,7 +1282,7 @@ export async function setupChatHost(
   const { workspace } = asked;
   const at: SetupRunnerAt = { workspace, project: undefined };
   if (ports.surroundings.platform !== setupRunnerPlatform) {
-    const site = asked.site ?? setupSessionRead(ports.files)?.site;
+    const site = asked.site ?? setupSessionSite(ports.files);
     if (site === undefined) return { report: "SiteUnknown" };
     const page = settingsRoutes.workspace.myRunner.replace(
       "$tenant",
@@ -1245,6 +1297,7 @@ export async function setupChatHost(
   if (entered.entered === "Out") return entered.report;
   const run = setupRunMade(
     ports,
+    true,
     workspace,
     setupChatHostWrites(workspace),
     asked,

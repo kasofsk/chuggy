@@ -11,6 +11,9 @@ export interface SetupCopy {
   readonly "setup-site": Record<never, never>;
   readonly "setup-stale": Record<never, never>;
   readonly "setup-site-unknown": Record<never, never>;
+  readonly "setup-site-named": {
+    readonly site: unknown;
+  };
   readonly "setup-site-signed-in": {
     readonly site: unknown;
   };
@@ -44,6 +47,7 @@ export interface SetupCopy {
   };
   readonly "setup-asked-command": {
     readonly signIn: unknown;
+    readonly mcp: unknown;
     readonly runner: unknown;
     readonly chatHost: unknown;
   };
@@ -68,6 +72,7 @@ export interface SetupCopy {
     readonly project: unknown;
   };
   readonly "setup-asked-project": {
+    readonly mcp: unknown;
     readonly runner: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
@@ -308,6 +313,12 @@ export interface SetupCopy {
   readonly "setup-step-unconfigured": {
     readonly repository: unknown;
   };
+  readonly "setup-step-mcp-named": {
+    readonly project: unknown;
+  };
+  readonly "setup-step-mcp-none": {
+    readonly project: unknown;
+  };
   readonly "setup-step-runner-offline": Record<never, never>;
   readonly "setup-step-runner-live": Record<never, never>;
   readonly "setup-step-runner-hosted": Record<never, never>;
@@ -447,6 +458,18 @@ export interface SetupCopy {
     readonly retry: unknown;
     readonly repository: unknown;
   };
+  readonly "setup-offer-mcp-when": Record<never, never>;
+  readonly "setup-mend-mcp-serves": Record<never, never>;
+  readonly "setup-mend-mcp-offer": {
+    readonly project: unknown;
+    readonly site: unknown;
+    readonly program: unknown;
+  };
+  readonly "setup-mend-mcp-offer-package": {
+    readonly project: unknown;
+    readonly site: unknown;
+    readonly program: unknown;
+  };
   readonly "setup-offer-when": Record<never, never>;
   readonly "setup-offer-chat-host-when": Record<never, never>;
   readonly "setup-claude-on-subscription": Record<never, never>;
@@ -467,7 +490,6 @@ export interface SetupCopy {
   readonly "setup-mend-runner-live-offer": {
     readonly project: unknown;
     readonly runs: unknown;
-    readonly program: unknown;
     readonly chat: unknown;
   };
   readonly "setup-mend-runner-live-tell": Record<never, never>;

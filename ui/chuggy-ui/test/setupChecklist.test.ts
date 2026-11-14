@@ -12,6 +12,7 @@
 import { expect, test } from "vitest";
 
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
+import { setupCheckoutTopCommand } from "../app/core/setupAgent.ts";
 import { setupAnswersAsked } from "../app/core/setupArguments.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
@@ -22,8 +23,10 @@ import {
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import {
+  machineHeld,
   machineScript,
   machineSignedIn,
+  machineTokenFile,
   machineSite,
   setupMachine,
 } from "./setupMachine.ts";
@@ -71,6 +74,7 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
       signedIn,
       "step: workspace   todo     you are in no workspace yet",
       "step: project     todo",
+      "step: mcp         todo",
       "step: github      todo",
       "step: repository  todo",
       "step: runner      todo",
@@ -90,6 +94,7 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       signedIn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
+      "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      waiting  acme-org has the portal app, not the worker app",
       "step: repository  todo",
       "step: runner      todo",
@@ -109,6 +114,7 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       signedIn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
+      "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      done     acme-org, both apps granted acme-org/widgets",
       "step: repository  done     acme-org/widgets",
       "step: runner      done     live",
@@ -185,7 +191,7 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     setupSiteClaim("acme-org", "portal"),
   ]);
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(3, 5)).toEqual([
+  expect(done.lines.slice(4, 6)).toEqual([
     "step: github      waiting  acme-org, which owns acme-org/widgets, has the portal app, not the worker app",
     "step: repository  done     acme-org/widgets",
   ]);
@@ -220,7 +226,7 @@ test("a person whose one project is on a later page of the site's list is asked 
 test("at every stage of a site the bare command sends the site nothing but reads, and every one of them with the lock given up but the one that confirms the sign-in", async () => {
   for (const stage of setupSiteStages) {
     const machine = await machineSignedIn(setupSiteAt(stage));
-    const kept = machine.files.get(setupFiles.session);
+    const kept = machine.store.get(machineTokenFile());
     await printed(machine);
     expect(machine.sent.length, stage).toBeGreaterThan(1);
     expect(
@@ -233,8 +239,9 @@ test("at every stage of a site the bare command sends the site nothing but reads
     expect(machine.lock, stage).toBeUndefined();
     expect(machine.detached, stage).toHaveLength(1);
     expect(machine.launched, stage).toHaveLength(1);
-    expect(machine.files.get(setupFiles.session) === kept, stage).toBe(false);
+    expect(machine.store.get(machineTokenFile()) === kept, stage).toBe(false);
     expect([...machine.files.keys()], stage).toEqual([setupFiles.session]);
+    expect([...machine.store.keys()], stage).toEqual([machineTokenFile()]);
   }
 });
 
@@ -266,10 +273,7 @@ test.each(reads)(
       "next: stop",
     ]);
     expect(machine.bodies).toHaveLength(1);
-    expect(JSON.parse(machine.files.get(setupFiles.session) ?? "{}")).toEqual({
-      site: machineSite,
-      refreshToken: machine.live(),
-    });
+    expect(machineHeld(machine)).toBe(machine.live());
     machine.world.fates.clear();
     expect((await printed(machine)).exit).toBe(0);
   },
@@ -330,7 +334,7 @@ test("a folder whose remote is added to one of two projects proposes it and says
   );
   expect(done.lines.join("\n")).not.toContain(secret);
   expect(done.lines.join("\n")).not.toContain("deploy-user");
-  expect(machine.ran).toEqual([setupRemoteCommand]);
+  expect(machine.ran).toEqual([setupRemoteCommand, setupCheckoutTopCommand]);
   expect(machine.asked.join("\n")).not.toContain(secret);
 });
 
