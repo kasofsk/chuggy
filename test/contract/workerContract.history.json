@@ -491,7 +491,12 @@
   },
   {
     "release": "1.98.0",
-    "wire": "a6903be7f3b4acdc1880b822eba2eeca41aa9f73f2c1c58384b267d9fd3e25cd",
-    "files": "3fb0a94b2e617bc6f6afda3f6add0e8f77c88cd25d002a1eb1e6b37cb7ef2a89"
+    "wire": "1c475e33e8656364020602c36ab5c79e58dfa1776289206c6a561eff4b039f7b",
+    "files": "b615f0218cbd2871b908e35a7d1846360511ad6c03427cc7bcf7525f48625929"
+  },
+  {
+    "release": "1.99.0",
+    "wire": "b84da8a5f6e90db5bdcde24b71e5234004d453523a4705e78c70893e6553a0d6",
+    "files": "2a88139da22f3966004c8596e396ce3443e867215091a7f33d3860de5f1201ab"
   }
 ]
