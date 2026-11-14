@@ -207,7 +207,9 @@ function workerContractFeatureVersion(
 }
 
 /** The features header naming `names`. */
-export function workerContractFeaturesText(names: readonly string[]): string {
+export function workerContractFeaturesText(
+  names: readonly WorkerContractFeature[],
+): string {
   return names.join(", ");
 }
 

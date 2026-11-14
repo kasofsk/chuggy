@@ -62,6 +62,7 @@ import {
 import {
   workerContractReleasePool,
   workerContractReplayed,
+  workerContractWireOf,
 } from "./workerContractReleases.ts";
 
 const assignment = {
@@ -171,7 +172,10 @@ test("a pool of a release the runner-projects range accepts reads a job assignme
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractRunnerProjects, older),
+      contractVersionAccepted(
+        workerContractRunnerProjects,
+        workerContractWireOf(older),
+      ),
       older,
     );
   }
@@ -252,7 +256,10 @@ test("a chat host of a release the session-threads range accepts reads a session
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractChatSessionThreads, older),
+      contractVersionAccepted(
+        workerContractChatSessionThreads,
+        workerContractWireOf(older),
+      ),
       older,
     );
   }
@@ -462,7 +469,10 @@ test("a runner of a release before the credential-outcome range refuses a whole 
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractRunnerCredentialOutcomes, older),
+      contractVersionAccepted(
+        workerContractRunnerCredentialOutcomes,
+        workerContractWireOf(older),
+      ),
       older,
     );
     assert.ok(reconciliation.safeParse(unnamed).success, older);
@@ -743,7 +753,10 @@ test("a pool of a release the runner-release range accepts reads an answer namin
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractRunnerReleases, older),
+      contractVersionAccepted(
+        workerContractRunnerReleases,
+        workerContractWireOf(older),
+      ),
       older,
     );
   }

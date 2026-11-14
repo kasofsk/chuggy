@@ -29,20 +29,15 @@ const versioned = Object.entries(contract).flatMap(([name, value]) =>
     : [],
 );
 
-/** The features whose first version is the floor of a range the planes keep. */
-const ranged = [
-  "RunnerSessions",
-  "LiveStops",
-  "ProjectReads",
-  "RunnerReleases",
-  "RunnerProjects",
-  "TicketDispatch",
-  "ChatHost",
-  "UnscopedChat",
-  "ThreadOffer",
-  "ChatThreadsClosed",
-  "ChatSessionThreads",
-] as const satisfies readonly WorkerContractFeature[];
+/** The features a range of the planes first gated: each range that floors itself rather than at a version constant, by the feature named after it. */
+const ranged = Object.entries(plane).flatMap(([name, value]) => {
+  if (name === "workerContractAccepted") return [];
+  if (!z.object({ min: versionSchema }).safeParse(value).success) return [];
+  const { min } = value as { readonly min: unknown };
+  return versioned.some(([, version]) => version === min)
+    ? []
+    : [[name.slice("workerContract".length), min] as const];
+});
 
 test("a release speaks its major and minor, and its patch says nothing of the wire", () => {
   assert.deepEqual(workerContractVersionOf("12.34.5"), {
@@ -92,35 +87,32 @@ test("each version constant is the version of the feature named after it", () =>
     assert.deepEqual(features[name], version, name);
 });
 
-test("each feature a range first gated has that range's floor as its version", () => {
-  const ranges: Readonly<Record<string, unknown>> = plane;
-  for (const name of ranged)
-    assert.deepEqual(
-      z.object({ min: versionSchema }).parse(ranges[`workerContract${name}`])
-        .min,
-      workerContractFeatures[name],
-      name,
-    );
+test("each range that floors itself has its floor as the version of the feature named after it", () => {
+  assert.notEqual(ranged.length, 0);
+  const features: Readonly<Record<string, unknown>> = workerContractFeatures;
+  for (const [name, floor] of ranged)
+    assert.deepEqual(features[name], floor, name);
 });
 
 test("every feature is named after a version constant or a range, and none after both", () => {
   assert.deepEqual(
     Object.keys(workerContractFeatures).sort(),
-    [...versioned.map(([name]) => name), ...ranged].sort(),
+    [...versioned, ...ranged].map(([name]) => name).sort(),
   );
 });
 
-test("a features header reads back as the names it was written with, one this tree does not know kept", () => {
-  const names = ["RunUsage", "NotAFeatureYet", "ThreadOffer"];
+test("a features header reads back as the names it was written with, and one this tree does not know is kept", () => {
+  const names = ["RunUsage", "ThreadOffer"] as const;
   assert.equal(workerContractFeaturesHeader, "chuggy-worker-features");
-  assert.equal(
-    workerContractFeaturesText(names),
-    "RunUsage, NotAFeatureYet, ThreadOffer",
-  );
+  assert.equal(workerContractFeaturesText(names), "RunUsage, ThreadOffer");
   assert.deepEqual(
     workerContractFeaturesOf(workerContractFeaturesText(names)),
     names,
   );
+  assert.deepEqual(workerContractFeaturesOf("RunUsage, NotAFeatureYet"), [
+    "RunUsage",
+    "NotAFeatureYet",
+  ]);
 });
 
 test("a features header is read past its spacing and its empty names", () => {

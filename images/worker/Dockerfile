@@ -274,8 +274,9 @@ RUN case "$TARGETARCH" in \
 # What the core needs, read off the tree rather than off this file. Each import
 # runs from the directory the core's modules live in, because what finds a
 # package is the `node_modules` walk up from there. The contract installed is the
-# release a pod names in every request, so it is held to the one `core.json`
-# names, and the tree to sitting where that release starts a job from.
+# package the core was tested with, so its version is held to the one
+# `core.json` names, and the tree to sitting where that contract starts a job
+# from.
 #
 # Both probes resolve the runtime through `session.mjs`'s own `sessionSdk`, so
 # what they prove is the resolution a turn will make. `sdkProbe.mjs` holds the
