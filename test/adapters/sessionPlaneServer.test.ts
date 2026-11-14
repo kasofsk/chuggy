@@ -391,6 +391,27 @@ test("a session on its own system prompt is told so, and a lead or a thread on i
   }
 });
 
+test("a session whose shell is handed its credential is told so, and a session told nothing is answered no such fact", async () => {
+  const told = await factsAnswered(
+    { kind: "Thread", shellCredentialHanded: true },
+    workerContractRelease,
+  );
+  assert.equal(told.statusCode, 200);
+  assert.equal(
+    told.json<{ shellCredentialHanded?: true }>().shellCredentialHanded,
+    true,
+  );
+  for (const kind of ["Lead", "Thread", "Inquiry"] as const) {
+    const answered = await factsAnswered({ kind }, workerContractRelease);
+    assert.equal(answered.statusCode, 200, kind);
+    assert.equal(
+      "shellCredentialHanded" in answered.json<object>(),
+      false,
+      kind,
+    );
+  }
+});
+
 test("a pod whose release predates a session's own system prompt is refused that session's facts, and answered a session on its project's settings as before", async () => {
   for (const release of ["1.62.0", "1.0.0", undefined]) {
     const refused = await factsAnswered({ systemPromptOwn: true }, release);
