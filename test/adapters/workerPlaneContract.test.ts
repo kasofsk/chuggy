@@ -61,6 +61,8 @@ import {
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
 import {
+  heldCredentialSecretCharsMax,
+  workerHeldCredentialAbsences,
   workerPlaneAnswers,
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
@@ -139,7 +141,7 @@ import {
   type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
-import type { HeldCredentialsAnswered } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import type { CredentialsResolved } from "../../src/interpreter/credentialIssuers.ts";
 import type { SessionTaskLaunch } from "../../src/interpreter/workerTask.ts";
 import {
   workerContractEnumsWalked,
@@ -692,47 +694,81 @@ const heldGrantedTask: WorkerTaskRead = {
   },
 };
 
-/** Every answer the held credentials can give, one served credential with an expiry and one without. */
-const heldAnswers: readonly HeldCredentialsAnswered[] = [
-  { answered: "Credentials", credentials: [] },
-  {
-    answered: "Credentials",
-    credentials: [
-      {
-        credential: heldName,
-        variable: "TRACK_RECORD_TOKEN_FILE",
-        secret: "s",
-      },
-    ],
-  },
-  {
-    answered: "Credentials",
-    credentials: [
-      {
-        credential: heldName,
-        variable: "TRACK_RECORD_TOKEN_FILE",
-        secret: "s",
-        expiresAtMs: 1,
-      },
-    ],
-  },
-  { answered: "Unavailable" },
-];
-
-/** A credential served as a bundle, with an expiry and without, and one named absent beside it. */
+/** A credential served as one secret file whose path one variable names, which a pod of any release reads. */
 const heldBundle: WorkerHeldCredentialBundle = {
   credential: heldName,
   files: [{ file: "token", content: { kind: "Secret", secret: "s" } }],
   variables: [{ kind: "Path", variable: "GH_TOKEN_FILE", file: "token" }],
 };
-const heldBundleAnswers: readonly HeldCredentialsAnswered[] = [
-  { answered: "Credentials", credentials: [heldBundle] },
+
+/** Credentials that are more than one secret file and one variable naming it, which only a pod reading bundles is sent. */
+const heldBundlesWide: readonly WorkerHeldCredentialBundle[] = [
   {
-    answered: "Credentials",
-    credentials: [{ ...heldBundle, expiresAtMs: 1 }],
-    absent: [{ credential: "unheld", reason: "NotHeld" }],
+    credential: "two-files",
+    files: [
+      ...heldBundle.files,
+      { file: "config", content: { kind: "Text", text: "{{file:token}}" } },
+    ],
+    variables: heldBundle.variables,
+  },
+  {
+    credential: "a-value",
+    files: heldBundle.files,
+    variables: [
+      ...heldBundle.variables,
+      { kind: "Value", variable: "GH_HOST", value: "github.com" },
+    ],
+  },
+  {
+    credential: "a-text",
+    files: [{ file: "token", content: { kind: "Text", text: "t" } }],
+    variables: heldBundle.variables,
+  },
+  {
+    credential: "no-file",
+    files: [],
+    variables: [{ kind: "Value", variable: "GH_HOST", value: "github.com" }],
+  },
+  {
+    credential: "a-long-secret",
+    files: [
+      {
+        file: "token",
+        content: {
+          kind: "Secret",
+          secret: "s".repeat(heldCredentialSecretCharsMax + 1),
+        },
+      },
+    ],
+    variables: heldBundle.variables,
   },
 ];
+
+/** Every answer the resolver can give: nothing, each shape of credential with an expiry and without, each reason a name is absent, and an outage. */
+const heldResolutions: Readonly<Record<string, CredentialsResolved>> = {
+  "nothing served or absent": {
+    resolved: "Credentials",
+    credentials: [],
+    absent: [],
+  },
+  "every shape served and every reason absent": {
+    resolved: "Credentials",
+    credentials: [heldBundle, ...heldBundlesWide],
+    absent: workerHeldCredentialAbsences.map((reason) => ({
+      credential: `absent-${reason.toLowerCase()}`,
+      reason,
+    })),
+  },
+  "every shape served with an expiry": {
+    resolved: "Credentials",
+    credentials: [heldBundle, ...heldBundlesWide].map((bundle) => ({
+      ...bundle,
+      expiresAtMs: 1,
+    })),
+    absent: [],
+  },
+  "an outage": { resolved: "Unavailable" },
+};
 
 const heldCredentialCases: readonly WorkerPlaneCase[] = [
   workerContractStranger,
@@ -753,27 +789,20 @@ const heldCredentialCases: readonly WorkerPlaneCase[] = [
     service: workerPlaneTask(heldGrantedTask),
     status: 200,
   },
-  ...heldAnswers.map((answered) => ({
-    name: `the held credentials answering ${JSON.stringify(answered)}`,
-    service: {
-      ...workerPlaneTask(heldGrantedTask),
-      heldCredentials: { served: () => Promise.resolve(answered) },
-    },
-  })),
-  ...heldBundleAnswers.flatMap((answered) => [
+  ...Object.entries(heldResolutions).flatMap(([answered, resolved]) => [
     {
-      name: `the held credentials answering ${JSON.stringify(answered)} to a pod that reads a bundle`,
+      name: `the resolver answering ${answered} to a pod that reads a bundle`,
       named: true as const,
       service: {
         ...workerPlaneTask(heldGrantedTask),
-        heldCredentials: { served: () => Promise.resolve(answered) },
+        heldCredentials: { resolve: () => Promise.resolve(resolved) },
       },
     },
     {
-      name: `the held credentials answering ${JSON.stringify(answered)} to a pod naming no release`,
+      name: `the resolver answering ${answered} to a pod naming no release`,
       service: {
         ...workerPlaneTask(heldGrantedTask),
-        heldCredentials: { served: () => Promise.resolve(answered) },
+        heldCredentials: { resolve: () => Promise.resolve(resolved) },
       },
     },
   ]),
