@@ -361,7 +361,6 @@ test("a ticket's action history names an answered approval's answer, its executi
   assert.equal(approval.kind, "EvaluationApproval");
   assert.equal(approval.resolution, "Approve");
   assert.equal(approval.execution, asked.execution);
-  assert.equal(approval.attempt, undefined);
   assert.equal(approval.answeredBy, approver);
   assert.ok(approval.answeredAt !== undefined, "the answer is dated");
   ticketNativeActionHistoryResponseSchema.parse(history);

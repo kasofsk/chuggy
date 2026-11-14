@@ -62,7 +62,6 @@ import {
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
-  approvalRequestFunction,
   finalizerRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
@@ -991,7 +990,6 @@ export interface FinalizerAttempt {
   readonly outcome?: FinalizationAttemptOutcome;
   readonly candidate?: string | null;
   readonly failureKind?: string | null;
-  readonly approvalRequired?: boolean;
   /** The conflict manifest a failed attempt names, and the digest it is recorded under. */
   readonly conflictManifest?: {
     readonly artifact: string;
@@ -1054,11 +1052,11 @@ export async function finalizerPrepare(
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
-        approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
+        outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
         proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref,
         restack_tickets, restack_commits)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$23,$24,$25,$26)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$21,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$22,$23,$24,$25)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -1071,7 +1069,6 @@ export async function finalizerPrepare(
       attempt.target ?? finalizerCommit(),
       project.configurationRevision,
       project.configurationDigest,
-      attempt.approvalRequired ?? false,
       outcome,
       outcome === "Failed" ? null : (attempt.candidate ?? finalizerCommit()),
       outcome === "Failed" ? (attempt.failureKind ?? "MergeConflict") : null,
@@ -1153,27 +1150,6 @@ export async function finalizerPromote(
     [project.partition.tenant, project.partition.project, permit],
   );
   return attempt;
-}
-
-/** Asks for the approval of one prepared attempt, through the one door that may open it. */
-export async function finalizerRequestApproval(
-  rig: FinalizerRig,
-  project: FinalizerProject,
-  attempt: string,
-  action: string,
-  epoch: string = project.epoch,
-): Promise<Record<string, unknown>> {
-  const asked = await rig.as(
-    `SELECT result, action FROM ${approvalRequestFunction}($1,$2,$3,$4,$5)`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      attempt,
-      action,
-      epoch,
-    ],
-  );
-  return asked[0] ?? { result: "no row" };
 }
 
 /**

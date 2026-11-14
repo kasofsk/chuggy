@@ -19,7 +19,6 @@ import {
   ticketRunsLessThanPlanned,
 } from "../../src/interpreter/authoring.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
-import { handoffApprovalRequired } from "../../src/interpreter/finalizerPreparation.ts";
 import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
 import { catalogNamedWorkloadTask } from "../../src/interpreter/workloadTask.ts";
 
@@ -333,16 +332,15 @@ test("a program over a plan an override replaces or adds is keyed by position, s
   );
 });
 
-test("a selection naming a plan only its overrides define lands with the finalizer, and asks the approval, the catalog's default does", () => {
+test("a selection naming a plan only its overrides define lands with the finalizer the catalog's default does", () => {
   const finalizing = {
     ...catalog,
     finalizers: {
-      gated: { approvalRequired: true },
-      open: { approvalRequired: false },
+      proposed: { landing: "PullRequest" },
+      pushed: { landing: "Push" },
     },
-    defaults: { ...catalog.defaults, finalization: "gated" },
+    defaults: { ...catalog.defaults, finalization: "proposed" },
   };
-  const gated = canonicalConfigurationOf(finalizing);
   for (const overrides of [
     approvalOnly,
     {
@@ -354,21 +352,17 @@ test("a selection naming a plan only its overrides define lands with the finaliz
       catalogSelectedFinalizer(finalizing, { evaluation: "gate" }, overrides),
       catalogSelectedFinalizer(finalizing, undefined),
     );
-    assert.equal(
-      handoffApprovalRequired(gated, { evaluation: "gate" }, overrides),
-      true,
-    );
-    assert.equal(
-      handoffApprovalRequired(
-        gated,
-        { evaluation: "gate", finalization: "open" },
+    assert.deepEqual(
+      catalogSelectedFinalizer(
+        finalizing,
+        { evaluation: "gate", finalization: "pushed" },
         overrides,
       ),
-      false,
+      catalogSelectedFinalizer(finalizing, { finalization: "pushed" }),
     );
   }
   assert.equal(
-    handoffApprovalRequired(gated, { evaluation: "gate" }),
+    catalogSelectedFinalizer(finalizing, { evaluation: "gate" }),
     undefined,
     "without its overrides the plan is one the catalog does not hold",
   );

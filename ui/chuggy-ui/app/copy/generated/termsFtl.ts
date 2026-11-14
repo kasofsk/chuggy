@@ -695,7 +695,7 @@ export const termsFtl = `## The product's own nouns, and the verbs done to a tic
     }
 }
 
-# A person's leave for a landing to proceed.
+# A person's leave for work to proceed: an approval evaluator's, or a lead dispatch's.
 -approval = { $case ->
     [upper] { $form ->
         [plural] Approvals

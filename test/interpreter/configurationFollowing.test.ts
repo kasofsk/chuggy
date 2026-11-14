@@ -48,7 +48,7 @@ function catalog(
       standard: [{ name: "review", evaluators: ["review"] }],
       tested: [{ name: "tests", evaluators: ["tests"] }],
     },
-    finalizers: { merged: { approvalRequired: false } },
+    finalizers: { merged: {} },
     defaults: {
       work: "build",
       evaluation: "standard",
@@ -138,7 +138,7 @@ test("a head changing the evaluator its selection names moves it", () => {
 
 test("a head changing only the selected finalizer moves the ticket", () => {
   const head = catalog((value) => {
-    field(value, "finalizers")["merged"] = { approvalRequired: true };
+    field(value, "finalizers")["merged"] = { landing: { mode: "PullRequest" } };
   });
   assert.deepEqual(
     configurationFollowingVerdict(ticket(head)).verdict,

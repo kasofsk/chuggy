@@ -406,7 +406,6 @@ test("a release card whose brief names no landing draws the landing of the final
     finalizers: Record<string, object>;
   };
   catalog.finalizers["land"] = {
-    approvalRequired: false,
     landing: { mode: "PullRequest", target: "main" },
   };
   await drawn(

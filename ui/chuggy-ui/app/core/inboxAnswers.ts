@@ -37,10 +37,6 @@ export function inboxActionLabel(action: TicketActionName): Copy {
       return { id: "inbox-action-resume" };
     case "Revoke":
       return { id: "inbox-action-revoke" };
-    case "Approve":
-      return { id: "inbox-action-approve" };
-    case "Decline":
-      return { id: "inbox-action-decline" };
     case "ApproveEvaluation":
       return { id: "inbox-action-approve" };
     case "Reject":

@@ -26,7 +26,7 @@ function RepositoryConfigurationFacts(props: {
   const facts = props.row.facts;
   if (facts === undefined)
     return (
-      <td colSpan={3}>
+      <td colSpan={2}>
         <Pill tone="neutral">{text({ id: "repositories-incomplete" })}</Pill>
       </td>
     );
@@ -38,7 +38,6 @@ function RepositoryConfigurationFacts(props: {
         </Tooltip>
       </td>
       <td className="tabular-nums">{facts.stages}</td>
-      <td>{text(facts.approval)}</td>
     </>
   );
 }
@@ -72,7 +71,6 @@ export function RepositoryConfigurationTable(props: {
             </th>
             <th scope="col">{text({ id: "repositories-col-worker" })}</th>
             <th scope="col">{text({ id: "repositories-col-stages" })}</th>
-            <th scope="col">{text({ id: "repositories-col-approval" })}</th>
           </tr>
         </thead>
         <tbody>

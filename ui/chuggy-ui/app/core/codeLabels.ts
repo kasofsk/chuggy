@@ -230,7 +230,6 @@ export function ticketLandingStateLabel(state: TicketLandingState): Copy {
       return { id: "codes-landing-running" };
     case "Held":
       return { id: "codes-landing-held" };
-    case "AwaitingApproval":
     case "AwaitingMerge":
       return { id: "codes-landing-waiting" };
     case "Failed":
@@ -620,8 +619,6 @@ export function nativeActionKindLabel(kind: NativeActionKind): Copy {
   switch (kind) {
     case "TicketEscalation":
       return { id: "codes-native-escalation" };
-    case "FinalizationApproval":
-      return { id: "codes-native-approval" };
     case "EvaluationApproval":
       return { id: "codes-native-evaluation-approval" };
   }
@@ -755,13 +752,6 @@ export function finalizationLine(finalization: FinalizationOfTarget): Copy {
   };
 }
 
-/** Whether finalization waits for a person before it runs. */
-export function approvalLabel(required: boolean): Copy {
-  return required
-    ? { id: "codes-approval-required" }
-    : { id: "codes-approval-not-required" };
-}
-
 /**
  * What a mutation does and at most one consequence that matters. `offered` is
  * false only where the machine admits no such answer at all, and
@@ -862,10 +852,6 @@ export function ticketActionLabel(action: TicketActionName): Copy {
       return { id: "codes-action-resume" };
     case "Revoke":
       return { id: "codes-action-revoke" };
-    case "Approve":
-      return { id: "codes-action-approve" };
-    case "Decline":
-      return { id: "codes-action-decline" };
     case "ApproveEvaluation":
       return { id: "codes-action-approve" };
     case "Reject":
@@ -892,10 +878,6 @@ export function ticketActionEffect(
       return resumeActionEffect(resume, exits);
     case "Revoke":
       return offered({ id: "codes-action-revoke-effect" });
-    case "Approve":
-      return offered({ id: "codes-action-approve-effect" });
-    case "Decline":
-      return offered({ id: "codes-action-decline-effect" });
     case "ApproveEvaluation":
       return offered({ id: "codes-action-approve-evaluation-effect" });
     case "Reject":

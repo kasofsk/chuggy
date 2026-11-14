@@ -141,7 +141,6 @@ function declared(
         practices: [],
         workInstructionsCount: 1,
         reviewInstructionsCount: 1,
-        finalization: { approvalRequired: true },
         evaluationStagesCount: 2,
       };
 }
@@ -631,8 +630,8 @@ test("the configurations are this repository's own, incomplete rows saying so", 
   expect(
     rows.map((row) => [...row.children].map((cell) => cell.textContent)),
   ).toStrictEqual([
-    ["Configuration", "Workload worker", "Stages", "Approval"],
-    ["chuggy #12", "worker:1", "2", "Required"],
+    ["Configuration", "Workload worker", "Stages"],
+    ["chuggy #12", "worker:1", "2"],
     ["nightly #12", "Incomplete"],
   ]);
 });

@@ -276,8 +276,6 @@ export interface TicketHeaderActions {
 const ticketHeaderMainOrder: readonly TicketActionName[] = [
   "ApproveEvaluation",
   "Reject",
-  "Approve",
-  "Decline",
   "Resume",
   "Dispatch",
 ];

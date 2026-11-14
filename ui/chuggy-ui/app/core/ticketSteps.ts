@@ -350,7 +350,6 @@ function ticketStepsLandingWords(
         ticketLandingFragment(landing, nowMs).text ?? landing.word,
       );
     case "Running":
-    case "AwaitingApproval":
     case "Invalidated":
       return landing.word;
   }

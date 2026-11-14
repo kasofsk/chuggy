@@ -114,11 +114,11 @@ export function approvalWorkloadApprovers(
 /**
  * One finalizer of a catalog, its finalization named whole. A version 2
  * finalizer's landing mode is read as the finalization it maps forward to,
- * ordered `Direct`.
+ * ordered `Direct`, and the `approvalRequired` a stored finalizer may name is
+ * not read.
  */
 export interface Finalizer {
   readonly finalization?: WorkloadReadonly<BriefFinalizationBody> | undefined;
-  readonly approvalRequired?: boolean | undefined;
 }
 
 /** A ready catalog: every workload inline and every prompt read, and every finalizer named whole. */
@@ -177,9 +177,6 @@ function workloadConfigurationFinalizerForward(
     ...(forward.finalization === undefined
       ? {}
       : { finalization: forward.finalization }),
-    ...(finalizer.approvalRequired === undefined
-      ? {}
-      : { approvalRequired: finalizer.approvalRequired }),
   };
 }
 
@@ -189,7 +186,14 @@ function workloadConfigurationFinalizers(
 ): Readonly<Record<string, Finalizer>> | undefined {
   if (parsed.finalizers === undefined) return undefined;
   if (parsed.version === finalizationConfigurationVersion)
-    return parsed.finalizers;
+    return Object.fromEntries(
+      Object.entries(parsed.finalizers).map(([name, finalizer]) => [
+        name,
+        finalizer.finalization === undefined
+          ? {}
+          : { finalization: finalizer.finalization },
+      ]),
+    );
   return Object.fromEntries(
     Object.entries(parsed.finalizers).map(([name, finalizer]) => [
       name,
