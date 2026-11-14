@@ -85,6 +85,24 @@ test("the router declares routes for the walk to visit", () => {
   expect(consoleRoutePaths.length).toBeGreaterThan(1);
 });
 
+/** The address the project's runners were once at replaces itself with the
+ * reader's own runners in the project's frame, so going back leaves it. */
+test("the old runners address is replaced by Personal runners", async () => {
+  const router = consoleRouterOver(
+    createMemoryHistory({
+      initialEntries: [
+        "/elsewhere",
+        consoleRouteAddress("/$tenant/$project/runners"),
+      ],
+    }),
+  );
+  await router.load();
+  expect(router.state.location.pathname).toBe(
+    consoleRouteAddress("/$tenant/$project/settings/workspace/runner"),
+  );
+  expect(router.history.length).toBe(2);
+});
+
 /** The elements whose text is data whatever it spells: code, and what is
  * marked as no words to translate, as an address is. */
 const consoleRouteCode = 'code, pre, kbd, samp, [translate="no"]';

@@ -152,7 +152,7 @@ test("every tab of a ticket, a run and its landing are that ticket's page, so a 
     ).toEqual({ page: "Ticket", ticket: 41 });
 });
 
-test("a Runners page a thread still names moves the console to the address that redirects to Personal runners, which is named no page", () => {
+test("a Runners page a thread still names moves the console to the old runners address, which is named no page", () => {
   const { leaf } = consolePageLeaf({ page: "Runners" });
   expect(leaf?.routeId).toBe(runnersRedirectRouteId);
   expect(consolePageOf(matched(runnersRedirectRouteId))).toBeUndefined();
