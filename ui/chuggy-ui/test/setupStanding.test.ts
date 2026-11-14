@@ -224,7 +224,6 @@ test("a pull request counts only on a landing that has neither failed nor been i
   }
   expect(counted).toEqual([
     "Running",
-    "AwaitingApproval",
     "AwaitingMerge",
     "Unavailable",
     "Proposed",

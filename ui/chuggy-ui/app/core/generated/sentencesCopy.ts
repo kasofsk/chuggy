@@ -9,7 +9,6 @@ export interface SentencesCopy {
   readonly "sentences-escalation-evaluation-blocked": Record<never, never>;
   readonly "sentences-escalation-landing-unavailable": Record<never, never>;
   readonly "sentences-native-escalation": Record<never, never>;
-  readonly "sentences-native-approval": Record<never, never>;
   readonly "sentences-native-evaluation-approval": Record<never, never>;
   readonly "sentences-native-evaluation-approval-awaited": Record<never, never>;
   readonly "sentences-state-pending": Record<never, never>;

@@ -488,5 +488,10 @@
     "release": "1.97.0",
     "wire": "12ae04bf31bd149559ce4d7e0a832ebaededf6afd64f350cd6579b612824b3d0",
     "files": "3596423c0f1ef5bf25a7c60952db46428e2db0b9d5b8950743885cb44b332354"
+  },
+  {
+    "release": "1.98.0",
+    "wire": "9646256ebee8b3a88148230d1921a7e5dfebfa3629b47bb94cd7308bea454218",
+    "files": "dd769b47005379d102907c27253fbb5df642d9be005eee2888e6f62be0273716"
   }
 ]

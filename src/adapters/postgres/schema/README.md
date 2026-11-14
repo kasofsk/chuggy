@@ -260,18 +260,8 @@ that both rules live in.
 
 WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
 the finalization request it is answering, then the project whose mailbox it
-writes into — and `request_finalization_approval` and
-`record_finalization_hold` take the first of those alone, all in the global
-order `src/interpreter/finalizer.ts` declares.
-
-WHY AN APPROVAL SUPERSEDES RATHER THAN QUEUES. `native_action_one_open`
-admits one open action per ticket, and the revision fence prepares again when
-the observed target moves, so the ask a person is holding is about a
-candidate that no longer exists. Withdrawing it is what keeps that invariant
-and the question in agreement, and it is the same `Withdrawn` a phase exit
-writes. The uniqueness the same relation carried over an effect position
-moves with it: an effect materializes one action, and an approval no effect
-produced is unique by the attempt it names instead.
+writes into — and `record_finalization_hold` takes the first of those alone,
+all in the global order `src/interpreter/finalizer.ts` declares.
 
 A QUESTION AND ITS ANSWERS ARE ONE ROSTER, AND THE SERVER HOLDS THEM TO IT.
 `src/interpreter/projectCommand.ts` pairs each action kind with the answers it
@@ -279,8 +269,9 @@ admits, and `native_action_resolution_pairs_with_its_kind` refuses a row
 offering the other kind's answer — which a CHECK cannot see, because the kind
 is on the action and the answer is on a row of its own.
 
-AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
-`Decline` name no domain command, so the input that carried one settles
+AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. An evaluation
+approval's `Approve` and `Reject` name no domain command, so the input that
+carried one settles
 `Answered`: the state a decision input reaches without a decided sequence, and
 the one public operation state that carries no sequence for a client to read.
 

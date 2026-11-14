@@ -765,9 +765,9 @@ export type ProjectNativeActionsResponse = z.infer<
 
 /**
  * One action a ticket has had, in whatever state it stands: its resolution
- * where it was answered, the finalization attempt or execution it asked about
- * where it names one, and who answered it and when where that is recorded,
- * which is on an answered EvaluationApproval alone.
+ * where it was answered, the execution an EvaluationApproval asked about, and
+ * who answered it and when where that is recorded, which is on an answered
+ * EvaluationApproval alone.
  */
 export const nativeActionRecordResponseSchema = z
   .strictObject({
@@ -776,7 +776,6 @@ export const nativeActionRecordResponseSchema = z
     authorizingSequence: countSchema,
     state: z.enum(nativeActionStates),
     resolution: z.enum(nativeActionResolutions).optional(),
-    attempt: identitySchema.optional(),
     execution: identitySchema.optional(),
     answeredBy: z.string().min(1).max(principalCharsMax).optional(),
     answeredAt: instantSchema.optional(),
@@ -1527,7 +1526,6 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     practices: page(z.string().min(1)),
     workInstructionsCount: countSchema.optional(),
     reviewInstructionsCount: countSchema.optional(),
-    finalization: z.strictObject({ approvalRequired: z.boolean() }),
     evaluationStagesCount: countSchema,
     catalog: z
       .object({

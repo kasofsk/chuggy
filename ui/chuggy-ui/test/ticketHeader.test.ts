@@ -249,7 +249,7 @@ function laid(
   };
 }
 
-test("the header leads with Dispatch, Resume, or Approve with Decline beside it, and keeps Revoke for its menu", () => {
+test("the header leads with Dispatch, Resume, or Approve with Reject beside it, and keeps Revoke for its menu", () => {
   expect(laid(offered(["Dispatch", "Revoke"], true), "Pending")).toStrictEqual({
     main: ["Dispatch"],
     revoke: true,
@@ -263,8 +263,8 @@ test("the header leads with Dispatch, Resume, or Approve with Decline beside it,
     duplicate: "Menu",
   });
   expect(
-    laid(offered(["Decline", "Approve"]), "Finalization").main,
-  ).toStrictEqual(["Approve", "Decline"]);
+    laid(offered(["Reject", "ApproveEvaluation"]), "Evaluation").main,
+  ).toStrictEqual(["ApproveEvaluation", "Reject"]);
 });
 
 test("a Resume the page holds back is not offered, and the header still offers the rest", () => {

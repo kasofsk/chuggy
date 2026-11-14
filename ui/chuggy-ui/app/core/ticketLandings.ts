@@ -582,7 +582,6 @@ export function ticketLandingFragment(
         caveat: undefined,
       };
     case "Running":
-    case "AwaitingApproval":
     case "Proposed":
     case "Landed":
       return {
@@ -629,7 +628,6 @@ function ticketLandingSummaryLabel(state: TicketLandingState): Copy {
       return { id: "ticket-landing-summary-running" };
     case "Held":
       return { id: "ticket-landing-summary-held" };
-    case "AwaitingApproval":
     case "AwaitingMerge":
       return { id: "ticket-landing-summary-waiting" };
     case "Failed":
@@ -693,7 +691,6 @@ function ticketLandingLive(state: TicketLandingState): boolean {
   switch (state) {
     case "Running":
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
       return true;
     case "Failed":

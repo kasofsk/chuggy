@@ -692,7 +692,7 @@
     }
 }
 
-# A person's leave for a landing to proceed.
+# A person's leave for work to proceed: an approval evaluator's, or a lead dispatch's.
 -approval = { $case ->
     [upper] { $form ->
         [plural] Approvals

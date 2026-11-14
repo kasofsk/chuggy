@@ -154,9 +154,9 @@ test("an open action's answers go with the ability to mutate", () => {
     ready([
       {
         action: "action-one",
-        kind: "FinalizationApproval",
+        kind: "TicketEscalation",
         authorizingSequence: 42,
-        admits: ["Approve", "Decline"],
+        admits: ["Resume", "Revoke"],
         answerable: true,
       },
     ]),

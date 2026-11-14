@@ -147,7 +147,6 @@ function shaping(
     practices: [],
     workInstructionsCount: 1,
     reviewInstructionsCount: 1,
-    finalization: { approvalRequired: false },
     evaluationStagesCount: 1,
   };
 }

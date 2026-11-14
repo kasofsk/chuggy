@@ -20,7 +20,6 @@ import {
   journalledRevocation,
   migratedDatabase,
   renamedAttemptFailed,
-  renamedAttemptPrepared,
   renamedFinalization,
 } from "./migrationHarness.ts";
 
@@ -63,25 +62,6 @@ test("the finalizer's door concludes at either spelling of the outcome it needs 
             'PreparationFailed',1,'epoch-5','operation-5','subject-5')`,
       ),
       /is not one this boundary submits/u,
-    );
-  });
-});
-
-test("the approval door binds to a ticket the projection holds at the renamed phase", async () => {
-  await migratedDatabase("rename_approval", async (subject) => {
-    await subject.query(
-      `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
-       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
-       VALUES('tenant-5','project-5',1,'Finalization',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,action FROM request_finalization_approval
-             ('tenant-5','project-5','attempt-5','action-5','epoch-5')`,
-        )
-      ).rows,
-      [{ result: "Requested", action: "action-5" }],
     );
   });
 });
@@ -474,33 +454,6 @@ test("the finalizer records a hold the api role reads and cannot record itself",
         )
       ).rows[0]?.owner,
       boundaryOwnerRole,
-    );
-  });
-});
-
-test("the approval door writes a desk task at no escalation", async () => {
-  await migratedDatabase("escalation_approval", async (subject) => {
-    await subject.query(
-      `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
-       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
-       VALUES('tenant-5','project-5',1,'Finalization',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,action FROM request_finalization_approval
-             ('tenant-5','project-5','attempt-5','action-5','epoch-5')`,
-        )
-      ).rows,
-      [{ result: "Requested", action: "action-5" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation FROM native_action WHERE action='action-5'",
-        )
-      ).rows,
-      [{ escalation: "NoEscalation" }],
     );
   });
 });

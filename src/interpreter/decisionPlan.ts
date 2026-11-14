@@ -463,10 +463,11 @@ export function inputBundleReferencesOf(
 }
 
 /**
- * The phases this plan withdraws an open native action for, `Escalated`'s desk
- * task and `Finalization`'s approval, one open row of either per ticket, which a
- * ticket leaving the phase must take with it or the next cannot open. An
- * evaluation approval stands in `Evaluation` and migration 148's
+ * The phases this plan withdraws an open native action for: `Escalated`'s desk
+ * task, one open row per ticket, which a ticket leaving the phase must take with
+ * it or the next cannot open, and `Finalization`, where none stands but a stored
+ * journal derives the withdrawal it always did. An evaluation approval stands in
+ * `Evaluation` and migration 148's
  * `ticket_leaving_evaluation_closes_its_approvals` withdraws it in the database.
  */
 const materializationActionablePhases: readonly Phase[] = [

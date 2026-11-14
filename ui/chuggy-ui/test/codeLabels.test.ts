@@ -41,7 +41,6 @@ import {
   type GitEvidenceLabel,
 } from "../../../src/contract/rosters.ts";
 import {
-  approvalLabel,
   blockedReasonLabel,
   changeProposalCreationLabel,
   changeProposalMergeabilityLabel,
@@ -97,8 +96,8 @@ const ticketActionNames: readonly TicketActionName[] = [
   "Dispatch",
   "Resume",
   "Revoke",
-  "Approve",
-  "Decline",
+  "ApproveEvaluation",
+  "Reject",
   "Release",
 ];
 
@@ -624,8 +623,8 @@ test("a wall names the exits the page draws, and none where it draws none", () =
   expect(textOf(wallExitLine(["Resume", "Revoke"]))).toBe(
     "only Revoke exits this wall",
   );
-  expect(textOf(wallExitLine(["Resume", "Approve", "Decline"]))).toBe(
-    "only Approve or Decline exit this wall",
+  expect(textOf(wallExitLine(["Resume", "ApproveEvaluation", "Reject"]))).toBe(
+    "only Approve or Reject exit this wall",
   );
   expect(textOf(wallExitLine(["Resume"]))).toBe(undefined);
   expect(textOf(wallExitLine([]))).toBe(undefined);
@@ -774,8 +773,6 @@ test("every finalization and approval label is inside the budget", () => {
     ...briefGitMergePolicies.map((each) =>
       copyTextEn(gitMergePolicyEffect(each)),
     ),
-    copyTextEn(approvalLabel(true)),
-    copyTextEn(approvalLabel(false)),
   ];
   for (const label of drawn) {
     expect(label.length).toBeGreaterThan(0);
@@ -823,11 +820,6 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
     "Lands alone on its reference, evaluated on what it lands",
     "Evaluated over the tickets ahead, lands if its base held",
   ]);
-});
-
-test("an approval reads as one noun", () => {
-  expect(copyTextEn(approvalLabel(true))).toBe("Required");
-  expect(copyTextEn(approvalLabel(false))).toBe("Not required");
 });
 
 /** A push with no target lands on the branch the work was done on, which is a
@@ -949,7 +941,7 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
     [...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
     true,
   ],
-  ["landing states", ticketLandingStates.map(ticketLandingStateLabel), false],
+  ["landing states", ticketLandingStates.map(ticketLandingStateLabel), true],
   [
     "landing failures",
     finalizationFailureKinds.map(finalizationFailureKindLabel),
@@ -1011,7 +1003,6 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
     briefGitMergePolicies.map(gitMergePolicyEffect),
     true,
   ],
-  ["approvals", [true, false].map(approvalLabel), true],
   ["ticket actions", ticketActionNames.map(ticketActionLabel), true],
   [
     "resume points",
@@ -1037,14 +1028,6 @@ test.each(codeSwitches)(
       expect(new Set(labels.map((label) => label.id)).size).toBe(labels.length);
   },
 );
-
-/** The two waits a landing stands at are one word to a reader, so one
- * message. */
-test("a landing's two waits share their one message", () => {
-  expect(ticketLandingStateLabel("AwaitingApproval")).toStrictEqual(
-    ticketLandingStateLabel("AwaitingMerge"),
-  );
-});
 
 /** The lines a reader is shown name no part of the machine they cannot see. */
 test("a follow under way names no actor, mailbox or sequence", () => {

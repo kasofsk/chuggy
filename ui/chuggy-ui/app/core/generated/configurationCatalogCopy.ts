@@ -68,8 +68,7 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-commands": Record<never, never>;
   readonly "configuration-catalog-prompt-inline": Record<never, never>;
   readonly "configuration-catalog-prompt-written-inline": Record<never, never>;
-  readonly "configuration-catalog-approved-first": Record<never, never>;
-  readonly "configuration-catalog-lands-unapproved": Record<never, never>;
+  readonly "configuration-catalog-repository-landing": Record<never, never>;
   readonly "configuration-catalog-stage": {
     readonly number: unknown;
     readonly name: unknown;
@@ -86,7 +85,6 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-field-prompt": Record<never, never>;
   readonly "configuration-catalog-field-approvers": Record<never, never>;
   readonly "configuration-catalog-field-instructions": Record<never, never>;
-  readonly "configuration-catalog-field-approval": Record<never, never>;
   readonly "configuration-catalog-field-landing": Record<never, never>;
   readonly "configuration-catalog-field-policy": Record<never, never>;
   readonly "configuration-catalog-field-path": Record<never, never>;
@@ -105,8 +103,6 @@ export interface ConfigurationCatalogCopy {
     readonly name: unknown;
     readonly detail: unknown;
   };
-  readonly "configuration-catalog-choice-approved-first": Record<never, never>;
-  readonly "configuration-catalog-choice-unapproved": Record<never, never>;
   readonly "configuration-catalog-agent-claude-code": Record<never, never>;
   readonly "configuration-catalog-agent-single": Record<never, never>;
   readonly "configuration-catalog-network": Record<never, never>;

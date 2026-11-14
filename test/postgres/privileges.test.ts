@@ -926,7 +926,7 @@ test("the API reads a ticket's questions, how each was answered and by whom, and
   assert.equal(
     await harness.attemptAs(
       apiRole,
-      `SELECT action,state,resolution,attempt,execution,answered_by,answered_at
+      `SELECT action,state,resolution,execution,answered_by,answered_at
          FROM native_action WHERE ticket=1`,
     ),
     undefined,
@@ -959,7 +959,7 @@ test("the API reads a ticket's questions, how each was answered and by whom, and
         table_name: "native_action",
         privilege_type: "SELECT",
         columns:
-          "action,answered_at,answered_by,attempt,authorizing_seq,execution,feedback,kind,project,resolution,state,tenant,ticket",
+          "action,answered_at,answered_by,authorizing_seq,execution,feedback,kind,project,resolution,state,tenant,ticket",
       },
       {
         table_name: "native_action_resolution",

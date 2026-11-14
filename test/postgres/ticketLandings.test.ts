@@ -86,17 +86,12 @@ import {
   finalizerPrepare,
   finalizerProject,
   finalizerPromote,
-  finalizerRequestApproval,
   finalizerRigOpen,
   finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
-import {
-  postgresHarnessDenial,
-  postgresHarnessRolePool,
-  postgresHarnessSubmission,
-} from "./harness.ts";
+import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 let rig: FinalizerRig;
@@ -993,55 +988,6 @@ test("a concluded landing whose hold columns are still set answers how it conclu
   assert.equal(unavailable.hold?.kind, "RepositoryUnbound");
   assert.equal(unavailable.hold.passes, 1);
   assert.equal("removal" in unavailable.hold, false);
-});
-
-test("a landing waiting on an approval answers AwaitingApproval, and one whose approval was declined or whose permit was granted does not", async () => {
-  for (const label of ["awaiting", "declined", "permitted"]) {
-    const project = await finalizing(label, "Push");
-    await finalizerClaim(rig, project, finalizerIdentity("owner"));
-    const attempt = await finalizerPrepare(rig, project, label, {
-      approvalRequired: true,
-    });
-    const action = finalizerIdentity(`action-${label}`);
-    assert.equal(
-      (await finalizerRequestApproval(rig, project, attempt, action))["result"],
-      "Requested",
-    );
-    if (label === "declined") {
-      const answered = await rig.harness.inbox.accept({
-        ...postgresHarnessSubmission(project.partition, label),
-        command: {
-          version: 1,
-          command: "ResolveNativeAction",
-          action,
-          authorizingSeq: project.authorizingSeq,
-          resolution: "Decline",
-        },
-      });
-      assert.equal(answered.accepted, "Accepted");
-      await finalizerDrain(rig.harness, project.partition, project.memory);
-    }
-    if (label === "permitted")
-      await rig.as(
-        `INSERT INTO commit_permit
-           (tenant, project, permit, attempt, recovery_epoch, lifecycle_generation)
-         VALUES ($1,$2,$3,$4,$5,1)`,
-        [
-          project.partition.tenant,
-          project.partition.project,
-          finalizerIdentity("permit"),
-          attempt,
-          project.epoch,
-        ],
-      );
-    const [landing] = (await landingsOf(project))?.landings ?? [];
-    assert.equal(
-      landing?.state,
-      label === "awaiting" ? "AwaitingApproval" : "Running",
-      label,
-    );
-    assert.equal(landing.attempt?.outcome, "Prepared", label);
-  }
 });
 
 test("a pull request found by reading it back answers the link its reading recorded, and a link that is not an https one that parses is left out", async () => {

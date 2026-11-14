@@ -29,7 +29,6 @@ import {
   configurationCatalogWorkload,
 } from "./configurationCatalog.ts";
 import type {
-  CatalogFinalizer,
   CatalogPlanStage,
   CatalogWorkload,
   ConfigurationCatalog,
@@ -585,11 +584,9 @@ function catalogStageRowOf(
   });
 }
 
-/** The landing: how the work is finalized, its policy, and whether a person
- * approves it first. */
+/** The landing: how the work is finalized, and its policy. */
 function stepsLandingOf(
   finalization: StepsFinalization | undefined,
-  finalizer: CatalogFinalizer | undefined,
 ): ConfigurationStepRow {
   const detail = (name: Copy, line: Copy): ConfigurationStepDetail => ({
     name,
@@ -609,14 +606,6 @@ function stepsLandingOf(
             detail(
               { id: "configuration-steps-policy" },
               gitMergePolicyLabel(finalization.policy),
-            ),
-          ]
-        : []),
-      ...(finalizer?.approvalRequired === true
-        ? [
-            detail(
-              { id: "configuration-steps-approval" },
-              { id: "configuration-steps-required" },
             ),
           ]
         : []),
@@ -673,9 +662,7 @@ function catalogStepsOf(
       {
         phase: "Finalization",
         note: undefined,
-        rows: [
-          stepsLandingOf(finalization ?? finalizer?.finalization, finalizer),
-        ],
+        rows: [stepsLandingOf(finalization ?? finalizer?.finalization)],
       },
     ],
   };
@@ -986,7 +973,7 @@ function legacyStepsOf(
           {
             phase: "Finalization" as const,
             note: undefined,
-            rows: [stepsLandingOf(finalization, undefined)],
+            rows: [stepsLandingOf(finalization)],
           },
         ]),
   ];
