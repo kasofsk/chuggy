@@ -16,6 +16,7 @@ module stacking_test {
   action redo(i: int): bool = all { canRework(st, i), move(rework(st, i)) }
   action ejectIt(i: int): bool = all { canEject(st, i), move(eject(st, i)) }
   action lands(i: int): bool = all { canLand(st, i), move(land(st, i)) }
+  action restacks(i: int): bool = all { canRestack(st, i), move(restack(st, i)) }
   /// The work is reported and its evaluation starts and passes.
   action enter(i: int): bool = rep(i).then(begin(i)).then(pass(i))
   action holds(c: bool): bool = all { c, st' = st }
@@ -228,4 +229,98 @@ module stacking_test {
       .then(pass(2)).then(lands(2))
       .then(holds(and { phaseOf(st, 2) == Landed,
                         st.history == List(pair(1, 1), pair(3, 1), pair(4, 1), pair(2, 2)) }))
+
+  run unstackedBehindAPendingHolderRestacksAndLandsNextTest =
+    setup(Map(1 -> Serialized, 2 -> Stacked))
+      .then(rep(1)).then(begin(1)).then(rep(2)).then(begin(2))
+      .then(holds(unstacked(st, 2)))
+      .then(pass(1)).then(pass(2))
+      .then(holds(and { holder(st) == 1, phaseOf(st, 2) == Pending, canRestack(st, 2) }))
+      .then(restacks(2))
+      .then(holds(and {
+        phaseOf(st, 2) == Work, st.tickets.get(2).entry == 2, st.tickets.get(2).rechecks == 0,
+        st.tickets.get(2).stackFailures == 0, st.restacked == List({ ticket: 2, over: List(pair(1, 1)) }) }))
+      .then(repKept(2)).then(begin(2))
+      .then(holds(and { beneathOf(st, 2) == List(pair(1, 1)),
+                        verdictOf(st, 2) == Carried({ over: Unstacked, patch: 1 }) }))
+      .then(pass(2)).then(lands(1)).then(lands(2))
+      .then(holds(and { phaseOf(st, 2) == Landed, st.tickets.get(2).rechecks == 0,
+                        st.history == List(pair(1, 1), pair(2, 2)) }))
+
+  run holderLeavingAfterARestackSweepsTheStackTest =
+    setup(Map(1 -> Stacked, 2 -> Stacked))
+      .then(rep(1)).then(begin(1)).then(rep(2)).then(begin(2))
+      .then(pass(1)).then(pass(2)).then(restacks(2))
+      .then(repKept(2)).then(begin(2)).then(pass(2))
+      .then(holds(beneathOf(st, 2) == List(pair(1, 1))))
+      .then(ejectIt(1))
+      .then(holds(and { phaseOf(st, 2) == Ready, unstacked(st, 2), st.tickets.get(2).invalidations == 1,
+                        holder(st) == 2, not(canRestack(st, 2)) }))
+      .then(begin(2)).then(pass(2)).then(lands(2))
+      .then(holds(and { phaseOf(st, 2) == Landed, st.history == List(pair(2, 2)) }))
+
+  run noRestackBehindAHolderInWorkTest =
+    setup(Map(1 -> Direct, 2 -> Stacked, 3 -> Stacked))
+      .then(enter(2)).then(enter(1)).then(lands(1)).then(lands(2))
+      .then(enter(3))
+      .then(holds(and { phaseOf(st, 2) == Work, holder(st) == 2, unstacked(st, 3),
+                        phaseOf(st, 3) == Pending, not(canRestack(st, 3)) }))
+
+  run restacksGoOneAtATimeFromTheHolderTest =
+    setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Stacked))
+      .then(rep(1)).then(begin(1)).then(rep(2)).then(begin(2)).then(rep(3)).then(begin(3))
+      .then(pass(1)).then(pass(2)).then(pass(3))
+      .then(holds(and { canRestack(st, 2), not(canRestack(st, 3)), not(canRestack(st, 1)) }))
+      .then(restacks(2))
+      .then(holds(not(canRestack(st, 3))))
+      .then(repKept(2)).then(begin(2))
+      .then(holds(and { phaseOf(st, 2) == Evaluation, not(canRestack(st, 3)) }))
+      .then(pass(2))
+      .then(holds(canRestack(st, 3)))
+      .then(restacks(3)).then(repKept(3)).then(begin(3))
+      .then(holds(beneathOf(st, 3) == List(pair(1, 1), pair(2, 2))))
+      .then(pass(3)).then(lands(1)).then(lands(2)).then(lands(3))
+      .then(holds(and { st.history == List(pair(1, 1), pair(2, 2), pair(3, 2)),
+                        st.tickets.get(2).rechecks == 0, st.tickets.get(3).rechecks == 0 }))
+
+  run noRestackPastASerializedBarrierTest =
+    setup(Map(1 -> Stacked, 2 -> Serialized, 3 -> Stacked))
+      .then(rep(1)).then(begin(1)).then(rep(2)).then(begin(2)).then(rep(3)).then(begin(3))
+      .then(pass(1)).then(pass(2)).then(pass(3))
+      .then(holds(and { not(canRestack(st, 2)), not(canRestack(st, 3)) }))
+
+  run noRestackDeeperThanTheDepthTest =
+    setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Stacked, 4 -> Stacked, 5 -> Stacked))
+      .then(enter(1)).then(enter(2)).then(enter(3)).then(enter(4)).then(enter(5))
+      .then(holds(and { beneathOf(st, 4).length() == stackDepthMax, unstacked(st, 5),
+                        not(canRestack(st, 5)) }))
+
+  run noRestackAtTheFailureCapTest =
+    setup(Map(1 -> Serialized, 2 -> Stacked))
+      .then(enter(1))
+      .then(rep(2)).then(begin(2)).then(failsAt(2)).then(redo(2))
+      .then(rep(2)).then(begin(2)).then(failsAt(2)).then(redo(2))
+      .then(rep(2)).then(begin(2)).then(pass(2))
+      .then(holds(and { unstacked(st, 2), phaseOf(st, 2) == Pending,
+                        st.tickets.get(2).stackFailures == stackFailuresMax, not(canRestack(st, 2)) }))
+
+  run restackEndingUnstackedWaitsForTheLineToChangeTest =
+    setup(Map(1 -> Direct, 2 -> Stacked, 3 -> Stacked, 4 -> Stacked))
+      .then(rep(2)).then(begin(2)).then(rep(4)).then(begin(4))
+      .then(pass(2)).then(rep(3)).then(begin(3)).then(pass(3)).then(pass(4))
+      .then(holds(beneathOf(st, 3) == List(pair(2, 1))))
+      .then(restacks(4))
+      .then(enter(1)).then(lands(1))
+      .then(holds(phaseOf(st, 3) == Ready))
+      .then(repKept(4)).then(begin(4))
+      .then(holds(unstacked(st, 4)))
+      .then(pass(4)).then(begin(3)).then(pass(3))
+      .then(holds(and { restackLine(st, 4) == List(pair(2, 1), pair(3, 1)),
+                        restackLine(st, 4) == restackedOver(st, 4), not(canRestack(st, 4)) }))
+      .then(lands(2)).then(enter(2)).then(begin(3)).then(pass(3))
+      .then(holds(and { restackLine(st, 4) == List(pair(2, 2), pair(3, 1)), canRestack(st, 4) }))
+      .then(restacks(4)).then(repKept(4)).then(begin(4)).then(pass(4))
+      .then(lands(2)).then(lands(3)).then(lands(4))
+      .then(holds(and { phaseOf(st, 4) == Landed, st.tickets.get(4).rechecks == 0,
+                        st.history == List(pair(1, 1), pair(2, 2), pair(3, 1), pair(4, 3)) }))
 }
