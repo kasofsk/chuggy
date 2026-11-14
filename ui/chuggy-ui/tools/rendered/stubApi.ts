@@ -240,19 +240,24 @@ const projectRepositories = {
 
 /** What the long-named repository declares: one configuration ready to run,
  * on a worker image whose name runs past a phone, and one not ready yet. */
+/** Where a configuration the stub's repository declares is read from. */
+function repositoryConfigurationProvenance(name: string) {
+  return {
+    source: "Repository",
+    repository: stubApiRepositoryLong,
+    commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+    path: `.chug/configurations/${name}.json`,
+    name,
+  } as const;
+}
+
 const repositoryConfigurations = {
   configurations: ["coding", "nightly"].map((name, index) => {
     const base = {
       revision: `revision-${name}`,
       digest: "a".repeat(64),
       createdAt: "2026-11-01T00:00:00Z",
-      provenance: {
-        source: "Repository",
-        repository: stubApiRepositoryLong,
-        commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
-        path: `.chug/configurations/${name}.json`,
-        name,
-      },
+      provenance: repositoryConfigurationProvenance(name),
       version: { name, number: 3 },
     };
     return index === 0
@@ -300,15 +305,18 @@ const repositoryConfigurationCoding = {
 
 /** The repository's head, declaring the ready configuration as its newest
  * import stored it, so the catalog's head line offers the way back. */
+const repositoryConfigurationCodingProvenance =
+  repositoryConfigurationProvenance("coding");
+
 const repositoryConfigurationHead = {
   head: {
     state: "Ready",
     branch: "main",
-    commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+    commit: repositoryConfigurationCodingProvenance.commit,
     configurations: [
       {
-        name: "coding",
-        path: ".chug/configurations/coding.json",
+        name: repositoryConfigurationCodingProvenance.name,
+        path: repositoryConfigurationCodingProvenance.path,
         revision: repositoryConfigurationCoding.revision,
         canonical: repositoryConfigurationCoding.canonical,
         digest: repositoryConfigurationCoding.digest,
