@@ -7,11 +7,14 @@
 
 import { expect, test } from "vitest";
 
+import { signInStoreDirectory } from "../../../src/contract/signInStore.ts";
 import {
   setupAgentRead,
   setupServerArguments,
   setupServerName,
+  setupServerProgram,
 } from "../app/core/setupAgent.ts";
+import { setupRunnerPlaces } from "../app/core/setupRunnerMachine.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
@@ -26,6 +29,7 @@ import type { SetupMachine } from "./setupMachine.ts";
 import {
   boxClaudeConfig,
   boxFolder,
+  boxHome,
   boxPrefix,
   boxServing,
 } from "./setupRunnerBox.ts";
@@ -133,6 +137,27 @@ test("mcp where the folder's local chuggy server is for another project removes 
   );
 });
 
+test("mcp on a Mac whose person set a configuration directory names the program that keeps its sign-ins in the store there, over the Mac package's server", async () => {
+  const machine = await unserved();
+  machine.platform = "darwin";
+  machine.configHome = "/xdg";
+  writeConfig(machine, local(entry("widgets", "chuggy-darwin")));
+  machine.box.acts.length = 0;
+  expect(ended(await machine.command(mcp))).toEqual(served);
+  expect(machine.box.acts.filter((act) => act.startsWith("mcp"))).toEqual([
+    "mcpRemove",
+    "mcpAdd",
+  ]);
+  expect(JSON.parse(machine.box.paths.get(boxClaudeConfig) ?? "{}")).toEqual(
+    local(entry()),
+  );
+  const surroundings = machine.ports().surroundings;
+  expect(setupServerProgram).toBe("chuggy-linux");
+  expect(signInStoreDirectory({ home: boxHome, configHome: "/xdg" })).toBe(
+    setupRunnerPlaces(surroundings).pools.replace(/pools$/u, "sign-ins"),
+  );
+});
+
 test("a run of runner with no runner package here changes nothing and names mcp, which installs it", async () => {
   const machine = await unserved();
   const report = await machine.command(["runner", ...mcp.slice(1)]);
@@ -143,7 +168,7 @@ test("a run of runner with no runner package here changes nothing and names mcp,
   expect(machine.box.acts).not.toContain("install");
 });
 
-test("the server the agent would run is the folder's local one over the checkout's shared one over the person's own, and counts only where it names this project run by a runner package's program that is there", async () => {
+test("the server the agent would run is the folder's local one over the checkout's shared one over the person's own, and counts only where it names this project run by the program mcp installs, there to run", async () => {
   const machine = await unserved();
   boxServing(machine.box, machineServing);
   const ports = machine.ports();
@@ -165,6 +190,8 @@ test("the server the agent would run is the folder's local one over the checkout
   writeConfig(machine, local(entry("widgets", "chuggy-linux")));
   expect(await named()).toBe(true);
   writeConfig(machine, local(entry("widgets", "/usr/bin/other")));
+  expect(await named()).toBe(false);
+  writeConfig(machine, local(entry("widgets", "chuggy-darwin")));
   expect(await named()).toBe(false);
   machine.box.paths.set(boxClaudeConfig, "{ not json");
   expect(await named()).toBe(false);

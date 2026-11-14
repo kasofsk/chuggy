@@ -21,12 +21,14 @@
  * the one the agent runs over one of the same name in either other, and one
  * shared with the checkout over the person's own. The step is done where the
  * server the agent would run names this project of this site, run by the
- * runner package's program.
+ * program of the package `mcp` installs, on every platform: it keeps its
+ * sign-ins in the store, and a Mac's own package keeps them elsewhere where
+ * the person set a configuration directory.
  */
 
 import { z } from "zod";
 
-import { runnerPackageOffered, runnerPackages } from "./runners.ts";
+import { runnerPackageOffered } from "./runners.ts";
 import type { SetupAsked } from "./setupArguments.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import type { SetupReport } from "./setupReport.ts";
@@ -42,6 +44,9 @@ import {
 import type { SetupRunnerNote, SetupServerEnded } from "./setupRunnerSaid.ts";
 import { setupSessionSite } from "./setupStore.ts";
 import { setupFlat } from "./setupText.ts";
+
+/** The runner package `mcp` would install, by the name its program goes by. */
+export const setupServerProgram = runnerPackageOffered.program;
 
 /** The name the server is given in the agent's configuration. */
 export const setupServerName = "chuggy";
@@ -162,12 +167,7 @@ async function setupAgentFolder(ports: SetupPorts): Promise<string> {
     : ports.surroundings.folder;
 }
 
-/** The programs that run the server: each runner package's own. */
-const setupServerPrograms: ReadonlySet<string> = new Set(
-  Object.values(runnerPackages).map((named) => named.program),
-);
-
-/** Whether a server as the configuration holds it is chuggy's for the project, run by a runner package's program that is there to run. */
+/** Whether a server as the configuration holds it is chuggy's for the project, run by the program `mcp` installs, there to run. */
 function setupServerNames(
   ports: SetupPorts,
   server: unknown,
@@ -177,7 +177,7 @@ function setupServerNames(
   if (!read.success) return false;
   const { command, args = [] } = read.data;
   const program = command.slice(command.lastIndexOf("/") + 1);
-  if (!setupServerPrograms.has(program)) return false;
+  if (program !== setupServerProgram) return false;
   if (command.includes("/") && ports.disk.kind(command) !== "File")
     return false;
   const wanted = setupServerArguments(at);
@@ -289,6 +289,3 @@ export async function setupServer(
       : await setupServerHad(ports, at, packaged.command, notes);
   return { report: "Mcp", site, workspace, project, notes, ended };
 }
-
-/** The runner package `mcp` would install, by the name its program goes by. */
-export const setupServerProgram = runnerPackageOffered.program;

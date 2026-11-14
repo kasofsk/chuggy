@@ -32,22 +32,19 @@ export const signInStorePlatforms = ["linux", "darwin"] as const;
 
 export type SignInStorePlatform = (typeof signInStorePlatforms)[number];
 
-/** What the store's place is read from: the platform, the person's home, and the configuration directory they set, where they set one. */
+/** What the store's place is read from: the person's home, and the configuration directory they set, where they set one. */
 export interface SignInStoreSurroundings {
-  readonly platform: SignInStorePlatform;
   readonly home: string;
   readonly configHome: string | undefined;
 }
 
-/** The store's directory: under the configuration directory the person set on Linux where it is a whole path, and under `.config` in their home otherwise. */
+/** The store's directory: under the configuration directory the person set where it is a whole path, on every platform, and under `.config` in their home otherwise. */
 export function signInStoreDirectory(
   surroundings: SignInStoreSurroundings,
 ): string {
-  const { platform, home, configHome } = surroundings;
+  const { home, configHome } = surroundings;
   const config =
-    platform === "linux" &&
-    configHome !== undefined &&
-    configHome.startsWith("/")
+    configHome !== undefined && configHome.startsWith("/")
       ? configHome.replace(/\/+$/u, "")
       : `${home.replace(/\/+$/u, "")}/.config`;
   return `${config}/chuggy/sign-ins`;

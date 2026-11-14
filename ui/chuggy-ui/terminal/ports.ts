@@ -20,7 +20,6 @@ import {
   signInStoreDirectory,
   signInStorePlatforms,
 } from "../../../src/contract/signInStore.ts";
-import type { SignInStorePlatform } from "../../../src/contract/signInStore.ts";
 import {
   SetupMachineError,
   setupDirectoryName,
@@ -84,17 +83,15 @@ const nowhere: Pick<SetupPorts, "files" | "store" | "lock"> = {
   lock: { read: homeless, swap: homeless },
 };
 
-function storePlatform(platform: string): SignInStorePlatform | undefined {
-  return signInStorePlatforms.find((named) => named === platform);
+function storeDefined(platform: string): boolean {
+  return signInStorePlatforms.some((named) => named === platform);
 }
 
 /** The shared sign-in store's directory on this machine, or nothing where it has no home or the store is not defined on its platform. */
 function storeOf(home: string | undefined): string | undefined {
-  const platform = storePlatform(process.platform);
-  return home === undefined || platform === undefined
+  return home === undefined || !storeDefined(process.platform)
     ? undefined
     : signInStoreDirectory({
-        platform,
         home,
         configHome: process.env["XDG_CONFIG_HOME"],
       });

@@ -245,7 +245,6 @@ setup-runner-act-found = { $act } { $failed }
 # spells -work-stage: to work is a verb here
 setup-runner-act-tell = { $act } did not work, so the { -runner } is not set up yet. { setup-runner-picked-up }
 # spells -work-stage: to work is a verb here
-# spells -work-stage: to work is a verb here
 # spells -agent: the person's own coding agent, not one of chuggy's
 setup-runner-act-tell-server = { $act } did not work, so your agent has no { -brand-name } tools yet. { setup-runner-picked-up }
 setup-runner-unpackaged-found-none = the { -runner } package, { $program }, is not installed here

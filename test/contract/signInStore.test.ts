@@ -1,7 +1,8 @@
 /**
  * The shared sign-in store as each program that keeps a sign-in in it reads
- * it: where it is on each platform, what a site's file holds, which names are
- * drafts a lock holder removes, and when a lock is nobody's.
+ * it: where it is on every platform it is defined for, what a site's file
+ * holds, which names are drafts a lock holder removes, and when a lock is
+ * nobody's.
  */
 
 import assert from "node:assert/strict";
@@ -17,29 +18,27 @@ import {
   signInStoreLockSecsMax,
   signInStoreLockStale,
   signInStoreLockWord,
+  signInStorePlatforms,
   signInStoreText,
   signInStoreTokenRead,
 } from "../../src/contract/signInStore.ts";
 
 const home = "/home/person";
 
-test("the store is under the configuration directory a Linux person set, and under their home's .config otherwise", () => {
+test("the store is under the configuration directory a person set as a whole path, on every platform, and under their home's .config otherwise", () => {
   assert.equal(
-    signInStoreDirectory({ platform: "linux", home, configHome: undefined }),
+    signInStoreDirectory({ home, configHome: undefined }),
     "/home/person/.config/chuggy/sign-ins",
   );
   assert.equal(
-    signInStoreDirectory({ platform: "linux", home, configHome: "/xdg/" }),
+    signInStoreDirectory({ home, configHome: "/xdg/" }),
     "/xdg/chuggy/sign-ins",
   );
   assert.equal(
-    signInStoreDirectory({ platform: "linux", home, configHome: "xdg" }),
+    signInStoreDirectory({ home, configHome: "xdg" }),
     "/home/person/.config/chuggy/sign-ins",
   );
-  assert.equal(
-    signInStoreDirectory({ platform: "darwin", home, configHome: "/xdg" }),
-    "/home/person/.config/chuggy/sign-ins",
-  );
+  assert.deepEqual(signInStorePlatforms, ["linux", "darwin"]);
 });
 
 test("a site's file is named by its origin, as one name and no path", () => {
