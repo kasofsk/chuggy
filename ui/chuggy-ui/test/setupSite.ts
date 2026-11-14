@@ -968,7 +968,11 @@ function inventory(site: SetupSite, cursor: string | null): SetupSiteAnswer {
     answered({
       projects: site.projects
         .filter((held) => held.page === at)
-        .map((held) => ({ tenant: held.tenant, project: held.project })),
+        .map((held) => ({
+          tenant: held.tenant,
+          project: held.project,
+          name: held.project,
+        })),
       ...(at < last || cut(site, "inventory")
         ? { nextCursor: String(at + 1) }
         : {}),

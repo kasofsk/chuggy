@@ -94,7 +94,9 @@ function threadsServed(url: string): Response {
       title: read.title,
     });
   if (url.endsWith("/threads")) return answer({ threads: listed });
-  return answer({ projects: [threadPartition] });
+  return answer({
+    projects: [{ ...threadPartition, name: threadPartition.project }],
+  });
 }
 
 function ThreadAt(): ReactNode {

@@ -16,6 +16,7 @@ import { accessProjectRoles } from "../../../../../src/contract/accessPlane.ts";
 import type { AccessProjectRole } from "../../../../../src/contract/accessPlane.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { projectRoleLabel } from "../../core/tenantPeople.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Table } from "../ui/Table.tsx";
 
@@ -31,13 +32,14 @@ export interface TenantProjectsBox {
 
 function TenantProjectsRow(props: {
   readonly project: string;
+  readonly name: string;
   readonly box: (role: AccessProjectRole) => TenantProjectsBox | undefined;
   readonly onToggle: (role: AccessProjectRole) => void;
 }): ReactNode {
   const text = useCopyText();
   return (
     <tr>
-      <th scope="row">{props.project}</th>
+      <th scope="row">{props.name}</th>
       {accessProjectRoles.map((role) => {
         const box = props.box(role);
         const word = projectRoleLabel(role);
@@ -52,7 +54,7 @@ function TenantProjectsRow(props: {
                   bare
                   label={text({
                     id: "settings-people-grid-box",
-                    args: { project: props.project, role: word },
+                    args: { project: props.name, role: word },
                   })}
                   checked={box.checked}
                   disabled={box.disabled}
@@ -71,6 +73,7 @@ function TenantProjectsRow(props: {
 }
 
 export function TenantProjectsGrid(props: {
+  readonly tenant: string;
   readonly projects: readonly string[];
   readonly box: (
     project: string,
@@ -79,6 +82,7 @@ export function TenantProjectsGrid(props: {
   readonly onToggle: (project: string, role: AccessProjectRole) => void;
 }): ReactNode {
   const text = useCopyText();
+  const named = useProjectNamed();
   if (props.projects.length === 0) return null;
   const projects = text({ id: "settings-people-projects" });
   return (
@@ -99,6 +103,7 @@ export function TenantProjectsGrid(props: {
             <TenantProjectsRow
               key={project}
               project={project}
+              name={named({ tenant: props.tenant, project })}
               box={(role) => props.box(project, role)}
               onToggle={(role) => {
                 props.onToggle(project, role);

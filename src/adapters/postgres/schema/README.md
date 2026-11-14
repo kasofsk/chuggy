@@ -37,7 +37,10 @@ at; a project identity never begins `@`, which names a member's own partition
 in the relations that hold one. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
 the same transaction as the entry it counts. Unfinished work is found by selecting
-active projects whose lease has expired by database time. It is deleted by
+active projects whose lease has expired by database time. Its `name` is what
+the creation that made it called it, written by `create_project`,
+and absent where no creation named it, which reads as its
+identity. It is deleted by
 `delete_unrun_project` alone, with every relation keyed by it, under its row
 lock and after moving it to `Deleting`, and only while it holds no journal
 entry and no execution, session, pool or action observation.

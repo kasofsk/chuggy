@@ -17,9 +17,10 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
         tenant_created: boolean | null;
         grants_written: boolean | null;
         operation: string | null;
+        name: string | null;
       }>(
-        sql`SELECT outcome, tenant_created, grants_written, operation FROM create_project(
-          ${write.partition.tenant},${write.partition.project},${write.standing},
+        sql`SELECT outcome, tenant_created, grants_written, operation, name FROM create_project(
+          ${write.partition.tenant},${write.partition.project},${write.name},${write.standing},
           ${write.reserved},${write.operation},${write.authority.kind},
           ${write.authority.subject})`,
       );
@@ -41,6 +42,7 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
         tenantCreated: row.tenant_created,
         grantsWritten: row.grants_written,
         operation: asOperationId(row.operation),
+        ...(row.name === null ? {} : { name: row.name }),
       };
     },
     recordGrants: async (operation) => {

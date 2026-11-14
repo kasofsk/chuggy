@@ -40,6 +40,7 @@ import { threadStandingTone } from "../../core/tones.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { currentOrigin } from "../ports.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
@@ -148,8 +149,12 @@ function ChatPaneHistoryElsewhere(props: {
   readonly held: MemberChatProjectThread;
 }): ReactNode {
   const text = useCopyText();
+  const projectNamed = useProjectNamed();
   const { partition, thread } = props.held;
-  const named = { project: partition.project, title: threadLabel(thread) };
+  const named = {
+    project: projectNamed(partition),
+    title: threadLabel(thread),
+  };
   const standing = threadStandingLabel(thread.state);
   return (
     <DropdownMenu.Item

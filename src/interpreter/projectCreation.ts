@@ -35,7 +35,11 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
-import { projectNameSchema, tenantNameReserved } from "../contract/requests.ts";
+import {
+  projectDisplayNameSchema,
+  projectNameSchema,
+  tenantNameReserved,
+} from "../contract/requests.ts";
 import type { OperationId, Authority } from "./operationInbox.ts";
 import { memberAuthority, type ProjectAccess } from "./projectAccess.ts";
 import {
@@ -51,19 +55,21 @@ import type { AccessErasure } from "./unrunDeletion.ts";
 import {
   asProjectId,
   asTenantId,
+  type NamedPartition,
   type Partition,
   type TenantId,
 } from "./projectStore.ts";
 
-/** One creation as the wire names it, before either name is held to the rule. */
+/** One creation as the wire names it, before any name is held to its rule. */
 export interface ProjectCreationRequest {
   readonly tenant: string;
   readonly project: string;
+  readonly name: string;
   readonly operation: OperationId;
 }
 
-/** The name a refusal is about. */
-export type ProjectCreationField = "tenant" | "project";
+/** The name a refusal is about: the tenant's, the project's, or what the project is called. */
+export type ProjectCreationField = "tenant" | "project" | "name";
 
 /** Every answer the door gives. */
 export const allProjectCreationOutcomes = [
@@ -78,9 +84,10 @@ export const allProjectCreationOutcomes = [
 export type ProjectCreationOutcome =
   (typeof allProjectCreationOutcomes)[number];
 
-/** What the door answered and, for a creation, the operation that made the project, whether it made the tenant and whether its grants are recorded as written. */
+/** What the door answered and, for a creation, the operation that made the project, what the project is called, whether it made the tenant and whether its grants are recorded as written. */
 export interface ProjectCreationAnswer {
   readonly outcome: ProjectCreationOutcome;
+  readonly name?: string;
   readonly tenantCreated: boolean;
   readonly grantsWritten: boolean;
   readonly operation: OperationId;
@@ -92,6 +99,7 @@ export type TenantStanding = "Administers" | "Claimed" | "Unclaimed";
 /** One creation as the door takes it, with what the authority says of the tenant. */
 export interface ProjectCreationWrite {
   readonly partition: Partition;
+  readonly name: string;
   readonly standing: TenantStanding;
   readonly reserved: boolean;
   readonly operation: OperationId;
@@ -136,8 +144,8 @@ export interface ProjectCreationPorts {
 }
 
 export type ProjectCreationResult =
-  | { readonly result: "Created"; readonly partition: Partition }
-  | { readonly result: "AlreadyCreated"; readonly partition: Partition }
+  | { readonly result: "Created"; readonly project: NamedPartition }
+  | { readonly result: "AlreadyCreated"; readonly project: NamedPartition }
   | { readonly result: "ProjectExists" }
   | { readonly result: "TenantTaken" }
   | { readonly result: "OperationConflict" }
@@ -153,12 +161,13 @@ export interface ProjectCreation {
   ): Promise<ProjectCreationResult>;
 }
 
-/** The first name the rule refuses, tenant before project. */
+/** The first name its rule refuses: the tenant, then the project, then what it is called. */
 export function projectCreationNameFault(
-  request: Pick<ProjectCreationRequest, "tenant" | "project">,
+  request: Pick<ProjectCreationRequest, "tenant" | "project" | "name">,
 ): ProjectCreationField | undefined {
   if (!projectNameSchema.safeParse(request.tenant).success) return "tenant";
   if (!projectNameSchema.safeParse(request.project).success) return "project";
+  if (!projectDisplayNameSchema.safeParse(request.name).success) return "name";
   return undefined;
 }
 
@@ -220,6 +229,7 @@ async function projectCreationCreate(
     return { result: "TenantCreationNotPermitted" };
   const answer = await ports.store.create({
     partition,
+    name: projectDisplayNameSchema.parse(request.name),
     standing,
     reserved: tenantNameReserved(partition.tenant),
     operation: request.operation,
@@ -243,7 +253,10 @@ async function projectCreationCreate(
         );
         await ports.store.recordGrants(answer.operation);
       }
-      return { result: answer.outcome, partition };
+      return {
+        result: answer.outcome,
+        project: { ...partition, name: projectCreationNamed(answer) },
+      };
     case "ProjectExists":
     case "TenantTaken":
     case "TenantReserved":
@@ -252,6 +265,15 @@ async function projectCreationCreate(
     default:
       return assertNever(answer.outcome);
   }
+}
+
+/** The name an accepted creation answers, which the store reads off the project rather than the request, so a repeat answers what the first creation named. */
+function projectCreationNamed(answer: ProjectCreationAnswer): string {
+  if (answer.name === undefined)
+    throw new Error(
+      `project creation: ${answer.outcome} answered no name for ${answer.operation}`,
+    );
+  return answer.name;
 }
 
 export function projectCreation(ports: ProjectCreationPorts): ProjectCreation {
