@@ -12,7 +12,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { accessNotPermittedCode } from "../../../../src/contract/accessPlane.ts";
-import { displayNameCharsMax } from "../../../../src/contract/requests.ts";
+import { projectDisplayNameCharsMax } from "../../../../src/contract/requests.ts";
 import { answer, press, settled, turned } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
@@ -139,7 +139,7 @@ test("a name the contract refuses is marked and cannot be saved, and sends nothi
   const drawn = await drawPeople();
   for (const typed of [
     "   ",
-    "n".repeat(displayNameCharsMax + 1),
+    "n".repeat(projectDisplayNameCharsMax + 1),
     "two\u0007bells",
   ]) {
     await typedName(typed);

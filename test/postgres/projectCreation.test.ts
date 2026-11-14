@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
+import { projectDisplayNameCharsMax } from "../../src/contract/requests.ts";
 import { postgresProjectCreation } from "../../src/adapters/postgres/projectCreation.ts";
 import {
   apiRole,
@@ -65,6 +66,9 @@ function freshPartition(label: string): Partition {
   };
 }
 
+/** What every creation here calls its project unless a case says otherwise. */
+const projectName = "Acme Billing";
+
 /** One creation of a tenant nothing names by one member, under an identity no other case is using. */
 function creation(
   partition: Partition,
@@ -72,6 +76,7 @@ function creation(
 ): ProjectCreationWrite {
   return {
     partition,
+    name: projectName,
     standing: "Unclaimed",
     reserved: false,
     operation: asOperationId(`operation-${randomUUID()}`),
@@ -145,6 +150,7 @@ test("a new tenant is made with its project, its capacity account and the operat
   const write = creation(partition);
   assert.deepEqual(await creator().create(write), {
     outcome: "Created",
+    name: projectName,
     tenantCreated: true,
     grantsWritten: false,
     operation: write.operation,
@@ -193,6 +199,7 @@ test("a replay answers the creation it repeats, whatever the caller's standing n
   for (const standing of ["Administers", "Claimed", "Unclaimed"] as const)
     assert.deepEqual(await creator().create({ ...write, standing }), {
       outcome: "AlreadyCreated",
+      name: projectName,
       tenantCreated: true,
       grantsWritten: false,
       operation: write.operation,
@@ -215,6 +222,7 @@ test("a replay after its own grants are recorded is told so, and recording again
   await creator().recordGrants(write.operation);
   assert.deepEqual(await creator().create(write), {
     outcome: "AlreadyCreated",
+    name: projectName,
     tenantCreated: true,
     grantsWritten: true,
     operation: write.operation,
@@ -226,6 +234,44 @@ test("a replay after its own grants are recorded is told so, and recording again
     ),
     first,
   );
+});
+
+test("a creation stores what its project is called, and a repeat answers that rather than the name it asks for", async () => {
+  const partition = freshPartition("named");
+  const write = creation(partition, { name: "Bob's API v2" });
+  assert.equal((await creator().create(write)).name, "Bob's API v2");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT name FROM project WHERE tenant=$1 AND project=$2",
+      [partition.tenant, partition.project],
+    ),
+    [{ name: "Bob's API v2" }],
+  );
+  const renaming = { ...repeated(write, "Administers"), name: "Another" };
+  assert.deepEqual(await creator().create(renaming), {
+    outcome: "AlreadyCreated",
+    name: "Bob's API v2",
+    tenantCreated: true,
+    grantsWritten: false,
+    operation: write.operation,
+  });
+  const replayRenaming = { ...write, name: "Another" };
+  assert.deepEqual(
+    await creator().create(replayRenaming),
+    refused("OperationConflict", replayRenaming),
+  );
+});
+
+test("a project's name is bounded as the contract bounds a display name", async () => {
+  const longest = "n".repeat(projectDisplayNameCharsMax);
+  const bounded = creation(freshPartition("longest"), { name: longest });
+  assert.equal((await creator().create(bounded)).name, longest);
+  for (const name of ["", `${longest}n`])
+    await assert.rejects(
+      creator().create(creation(freshPartition("unbounded"), { name })),
+      /project_name_is_bounded/u,
+      JSON.stringify(name),
+    );
 });
 
 test("grants are recorded only for an operation that created a project", async () => {
@@ -299,6 +345,7 @@ test("a caller administering a tenant that stands adds a project to it without m
   );
   assert.deepEqual(await creator().create(second), {
     outcome: "Created",
+    name: projectName,
     tenantCreated: false,
     grantsWritten: false,
     operation: second.operation,
@@ -312,6 +359,7 @@ test("a caller administering a tenant no row holds makes the row", async () => {
   });
   assert.deepEqual(await creator().create(write), {
     outcome: "Created",
+    name: projectName,
     tenantCreated: true,
     grantsWritten: false,
     operation: write.operation,
@@ -364,6 +412,7 @@ test("the creator asking again under a new identity is answered with the creatio
     const again = repeated(write, standing);
     assert.deepEqual(await creator().create(again), {
       outcome: "AlreadyCreated",
+      name: projectName,
       tenantCreated: true,
       grantsWritten: false,
       operation: write.operation,
@@ -387,6 +436,7 @@ test("the creator of a project in a tenant it did not make is answered with that
   await creator().create(added);
   assert.deepEqual(await creator().create(repeated(added, "Administers")), {
     outcome: "AlreadyCreated",
+    name: projectName,
     tenantCreated: false,
     grantsWritten: false,
     operation: added.operation,
@@ -428,7 +478,7 @@ test("another authority, or another project, asking again is refused as before",
 test("a standing the door does not know is refused", async () => {
   await assert.rejects(
     harness.query(
-      `SELECT * FROM ${projectCreateFunction}($1,'project','Unknown',false,$2,'Member','alice')`,
+      `SELECT * FROM ${projectCreateFunction}($1,'project','Project','Unknown',false,$2,'Member','alice')`,
       [`tenant-standing-${randomUUID()}`, `operation-${randomUUID()}`],
     ),
     /unknown standing/u,
@@ -442,7 +492,7 @@ test("of two creators racing for one new tenant, the one that waited is told it 
   try {
     await first.query(`SET LOCAL ROLE ${apiRole}`);
     await first.query(
-      `SELECT outcome FROM ${projectCreateFunction}($1,$2,'Unclaimed',false,$3,'Member','alice')`,
+      `SELECT outcome FROM ${projectCreateFunction}($1,$2,'Project','Unclaimed',false,$3,'Member','alice')`,
       [partition.tenant, partition.project, `operation-${randomUUID()}`],
     );
     second = creator().create(
@@ -471,7 +521,7 @@ test("one identity sent twice at once is decided once, and a second request unde
   try {
     await first.query(`SET LOCAL ROLE ${apiRole}`);
     await first.query(
-      `SELECT outcome FROM ${projectCreateFunction}($1,$2,'Unclaimed',false,$3,'Member','alice')`,
+      `SELECT outcome FROM ${projectCreateFunction}($1,$2,'Project','Unclaimed',false,$3,'Member','alice')`,
       [partition.tenant, partition.project, operation],
     );
     conflicting = creator().create(
@@ -525,7 +575,7 @@ test("at most one creation made a tenant, and none names an unbounded identity",
   );
   await assert.rejects(
     harness.query(
-      `SELECT * FROM ${projectCreateFunction}($1,'project','Unclaimed',false,$2,'Member','alice')`,
+      `SELECT * FROM ${projectCreateFunction}($1,'project','Project','Unclaimed',false,$2,'Member','alice')`,
       [`tenant-bounded-${randomUUID()}`, "o".repeat(257)],
     ),
     /project_creation_operation_is_bounded/u,
@@ -546,7 +596,7 @@ test("the API executes the creation doors and reaches no relation behind them", 
   const write = creation(freshPartition("api"));
   await creator().create(write);
   for (const call of [
-    `SELECT * FROM ${projectCreateFunction}('tenant-${randomUUID()}','project','Unclaimed',false,'operation-${randomUUID()}','Member','alice')`,
+    `SELECT * FROM ${projectCreateFunction}('tenant-${randomUUID()}','project','Project','Unclaimed',false,'operation-${randomUUID()}','Member','alice')`,
     `SELECT ${projectCreationGrantsFunction}('${write.operation}')`,
   ])
     assert.equal(await harness.attemptAs(apiRole, call), undefined, call);
@@ -570,7 +620,7 @@ test("no runtime role but the API creates a project or records its grants", asyn
   for (const [door, call] of [
     [
       projectCreateFunction,
-      `SELECT * FROM ${projectCreateFunction}('tenant','project','Unclaimed',false,'operation','Member','alice')`,
+      `SELECT * FROM ${projectCreateFunction}('tenant','project','Project','Unclaimed',false,'operation','Member','alice')`,
     ],
     [
       projectCreationGrantsFunction,

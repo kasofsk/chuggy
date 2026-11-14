@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
-import { displayNameCharsMax } from "../../src/contract/requests.ts";
-import { tenantDisplayNameCharsMaxAt183 } from "../../src/adapters/postgres/schema/migrations/183-tenant-display-name.ts";
+import { projectDisplayNameCharsMax } from "../../src/contract/requests.ts";
+import { tenantDisplayNameCharsMaxAt184 } from "../../src/adapters/postgres/schema/migrations/184-tenant-display-name.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresTenantNames } from "../../src/adapters/postgres/tenantNames.ts";
 import type { AccessTenantNameStore } from "../../src/interpreter/accessTenantNames.ts";
@@ -71,8 +71,8 @@ test("names are read for the tenants asked, a tenant no row names left out", asy
 });
 
 test("the row holds a display name to the contract's bound, in code points, and refuses one past it", async () => {
-  assert.equal(tenantDisplayNameCharsMaxAt183, displayNameCharsMax);
-  const widest = "\u{1F600}".repeat(displayNameCharsMax);
+  assert.equal(tenantDisplayNameCharsMaxAt184, projectDisplayNameCharsMax);
+  const widest = "\u{1F600}".repeat(projectDisplayNameCharsMax);
   await names.renamed(asTenantId("names-bound"), widest);
   assert.deepEqual(await tenantRow("names-bound"), [
     { tenant: "names-bound", display_name: widest },
@@ -88,7 +88,7 @@ test("the row holds a display name to the contract's bound, in code points, and 
 });
 
 test("a tenant whose id is longer than a display name may be is named by its id, and a rename gives it a name within the bound", async () => {
-  const long = `names-long-${"l".repeat(displayNameCharsMax)}`;
+  const long = `names-long-${"l".repeat(projectDisplayNameCharsMax)}`;
   await harness.query("INSERT INTO tenant(tenant) VALUES($1)", [long]);
   assert.deepEqual(await tenantRow(long), [
     { tenant: long, display_name: long },

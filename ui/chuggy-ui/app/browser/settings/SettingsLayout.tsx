@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { settingsNav, settingsNavSiteDrawn } from "../../core/settingsNav.ts";
 import type { SettingsNavGroup } from "../../core/settingsNav.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { useWorkspaceNames } from "../workspaceNames.ts";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
 
@@ -67,10 +68,20 @@ export function SettingsLayout(props: {
   const text = useCopyText();
   const abilities = useSiteAbilities(props.tenant);
   const named = useWorkspaceNames();
+  const projectNamed = useProjectNamed();
   const groups = settingsNav({
     tenant: props.tenant,
     tenantName: named(props.tenant),
-    project: props.project,
+    project:
+      props.project === undefined
+        ? undefined
+        : {
+            address: props.project,
+            name: projectNamed({
+              tenant: props.tenant,
+              project: props.project,
+            }),
+          },
     site: settingsNavSiteDrawn(
       abilities.state === "Ready" ? abilities.value : undefined,
     ),

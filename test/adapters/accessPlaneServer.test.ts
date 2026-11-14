@@ -60,7 +60,7 @@ import {
   type AccessPlaneRouteName,
 } from "../../src/contract/accessPlane.ts";
 import {
-  displayNameCharsMax,
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../src/contract/requests.ts";
@@ -1591,7 +1591,7 @@ test("a rename to a name empty once trimmed, past its bound, holding a control c
   for (const displayName of [
     "",
     "   ",
-    "n".repeat(displayNameCharsMax + 1),
+    "n".repeat(projectDisplayNameCharsMax + 1),
     "two\nlines",
     "tab\tbed",
     "\u0000",
@@ -1616,7 +1616,7 @@ test("a rename to a name empty once trimmed, past its bound, holding a control c
   const longest = await renamed(
     app,
     "alice-token",
-    "\u{1F600}".repeat(displayNameCharsMax),
+    "€".repeat(projectDisplayNameCharsMax),
   );
   assert.equal(longest.statusCode, 204, longest.body);
 });

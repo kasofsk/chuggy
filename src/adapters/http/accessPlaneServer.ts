@@ -72,7 +72,7 @@ import {
   type AccessPlaneRouteName,
 } from "../../contract/accessPlane.ts";
 import {
-  displayNameCharsMax,
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
 } from "../../contract/requests.ts";
 import {
@@ -165,8 +165,9 @@ export const accessOwnerInvitationBodyBytesMax = planeJsonObjectBytesMax(
 );
 
 /** The most a display name's change reads: the name. */
-export const accessTenantDisplayNameBodyBytesMax =
-  planeJsonObjectBytesMax(displayNameCharsMax);
+export const accessTenantDisplayNameBodyBytesMax = planeJsonObjectBytesMax(
+  projectDisplayNameCharsMax,
+);
 
 /** The most a workspace link's mint reads: its note. */
 export const accessWorkspaceLinkBodyBytesMax = planeJsonObjectBytesMax(

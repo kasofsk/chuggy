@@ -51,7 +51,7 @@ import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "./http.ts";
 import {
-  displayNameSchema,
+  projectDisplayNameSchema,
   projectNameCharsMax,
   projectNameSchema,
   tenantNameReserved,
@@ -400,13 +400,13 @@ export const accessProjectRoleGrantSchema = z.strictObject({
  * display name is.
  */
 export const accessTenantDisplayNameSchema = z.union([
-  displayNameSchema,
+  projectDisplayNameSchema,
   identitySchema,
 ]);
 
 /** What a tenant's display name is changed to. */
 export const accessTenantDisplayNameChangeSchema = z.strictObject({
-  displayName: displayNameSchema,
+  displayName: projectDisplayNameSchema,
 });
 
 /** The refusal of a display name's change on a plane composed with no store. */

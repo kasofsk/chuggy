@@ -15,8 +15,11 @@ import {
 } from "../app/core/settingsNav.ts";
 import type {
   SettingsNavGroup,
+  SettingsNavProject,
   SettingsNavSite,
 } from "../app/core/settingsNav.ts";
+
+const atlas: SettingsNavProject = { address: "atlas", name: "Atlas Billing" };
 
 const siteNone: SettingsNavSite = { workspaces: false, permissions: false };
 
@@ -32,15 +35,15 @@ function drawn(
   ]);
 }
 
-test("in a project the project's pages lead, then the workspace's, each group under its level and its name, the workspace's its display name", () => {
+test("in a project the project's pages lead, then the workspace's, each group under its level and its name, each by its display name", () => {
   const groups = settingsNav({
     tenant: "acme",
     tenantName: "Acme Co.",
-    project: "atlas",
+    project: atlas,
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
-    ["Project", "atlas", ["Lead", "Placement", "Pools", "Permissions"]],
+    ["Project", "Atlas Billing", ["Lead", "Placement", "Pools", "Permissions"]],
     [
       "Workspace",
       "Acme Co.",
@@ -72,7 +75,7 @@ test.each([
 ])(
   "the site's group is last, named by nothing, and holds $pages alone",
   ({ site, pages }) => {
-    for (const project of ["atlas", undefined])
+    for (const project of [atlas, undefined])
       expect(
         drawn(
           settingsNav({
@@ -87,7 +90,7 @@ test.each([
 );
 
 test("a reader drawn none of the site's pages is drawn no group for it", () => {
-  for (const project of ["atlas", undefined])
+  for (const project of [atlas, undefined])
     expect(
       settingsNav({
         tenant: "acme",
@@ -102,7 +105,7 @@ test("every entry is its page's address in the frame it is drawn in, with that f
   const inProject = settingsNav({
     tenant: "acme",
     tenantName: "Acme Co.",
-    project: "atlas",
+    project: atlas,
     site: siteEvery,
   }).flatMap((group) => group.entries);
   expect(inProject.map((entry) => entry.to)).toStrictEqual(
@@ -127,7 +130,7 @@ test("entries are told apart by id though two pages share a label", () => {
   const ids = settingsNav({
     tenant: "acme",
     tenantName: "Acme Co.",
-    project: "atlas",
+    project: atlas,
     site: siteEvery,
   })
     .flatMap((group) => group.entries)

@@ -383,7 +383,7 @@ test("the list of projects is read past its first page, and is whole once a page
     const reads = await siteRead(site, { sent });
     expect(reads.inventory).toEqual({
       read: "Got",
-      value: [{ tenant: "acme", project: "widgets" }],
+      value: [{ tenant: "acme", project: "widgets", name: "widgets" }],
       whole: true,
     });
     expect(reads.choice).toEqual(made("Only", "acme", "widgets"));
@@ -675,7 +675,11 @@ test("each of the console's writes, sent through the ports the checklist reads t
   const ports = setupReadPorts(recording(sent), "access");
   const partition = { tenant: "acme", project: "widgets" };
   const writes = [
-    apiCreateProject(ports, { tenant: "acme", project: "widgets" }, "op-1"),
+    apiCreateProject(
+      ports,
+      { tenant: "acme", project: "widgets", name: "Widgets" },
+      "op-1",
+    ),
     apiMintWorkerPoolToken(ports, partition, { pool: "laptop" } as never),
     apiWriteSessionPlacement(ports, partition, {} as never),
   ];

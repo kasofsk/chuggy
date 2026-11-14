@@ -6,7 +6,7 @@
  */
 
 import type { AccessTenantAbilities } from "../../../../src/contract/accessPlane.ts";
-import { displayNameSchema } from "../../../../src/contract/requests.ts";
+import { projectDisplayNameSchema } from "../../../../src/contract/requests.ts";
 
 export function tenantRenameOffered(
   abilities: AccessTenantAbilities | undefined,
@@ -19,6 +19,6 @@ export function tenantRenameSent(
   typed: string,
   current: string,
 ): string | undefined {
-  const parsed = displayNameSchema.safeParse(typed);
+  const parsed = projectDisplayNameSchema.safeParse(typed);
   return parsed.success && parsed.data !== current ? parsed.data : undefined;
 }

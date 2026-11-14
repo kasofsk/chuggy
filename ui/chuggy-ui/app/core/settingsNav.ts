@@ -74,11 +74,17 @@ export interface SettingsNavSite {
   readonly permissions: boolean;
 }
 
+/** The open project: its address, which every entry's link carries, and the name its group is headed by. */
+export interface SettingsNavProject {
+  readonly address: string;
+  readonly name: string;
+}
+
 export interface SettingsNavInput {
   readonly tenant: string;
   /** What the workspace's group is headed with, which its addresses are not. */
   readonly tenantName: string;
-  readonly project: string | undefined;
+  readonly project: SettingsNavProject | undefined;
   readonly site: SettingsNavSite;
 }
 
@@ -116,7 +122,7 @@ export function settingsNav(
   const frame =
     project === undefined ? settingsRoutes.workspace : settingsRoutes.project;
   const params: SettingsNavParams =
-    project === undefined ? { tenant } : { tenant, project };
+    project === undefined ? { tenant } : { tenant, project: project.address };
   const entry = (
     id: keyof typeof settingsNavLabels,
     to: SettingsRoute,
@@ -124,7 +130,7 @@ export function settingsNav(
   const projectGroup: SettingsNavGroup = {
     id: "project",
     label: { id: "settings-nav-project" },
-    name: project,
+    name: project?.name,
     entries: [
       entry("lead", settingsRoutes.project.lead),
       entry("placement", settingsRoutes.project.placement),

@@ -1,9 +1,13 @@
 /**
- * Making a project: the workspace it belongs to, its own name, and one submit,
- * on the landing a reader with no project meets and at its own address, where
- * the address may name the workspace the form starts on. The workspace is a
- * choice among the ones the reader may add a project to, and a typed name's
- * rule stands under its field before anything is typed.
+ * Making a project: the workspace it belongs to, what it is called, the address
+ * that makes, and one submit, on the landing a reader with no project meets and
+ * at its own address, where the address may name the workspace the form starts
+ * on. The workspace is a choice among the ones the reader may add a project
+ * to, and a typed name's rule stands under its field before anything is typed.
+ *
+ * The project's address stands under its name as the name makes it, with the
+ * control that edits it, and is a box of its own once that is pressed or the
+ * name makes none.
  *
  * Over the form stands the line a reader pastes into Claude Code to have this
  * site's setup program run in their repository, in a box with the control that
@@ -14,10 +18,9 @@
  * would be, and neither the line nor what its page leads the form with is
  * drawn over it.
  *
- * The last press's operation identity belongs to the two names it sent. A
- * press while the form holds those two repeats that creation, as after an
- * answer that never arrived, and any other two go under an identity of their
- * own.
+ * The last press's operation identity belongs to the names it sent. A press
+ * while the form holds those repeats that creation, as after an answer that
+ * never arrived, and any others go under an identity of their own.
  */
 
 import { useNavigate } from "@tanstack/react-router";
@@ -39,7 +42,11 @@ import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import {
+  projectAddressOf,
+  projectCreationAddress,
+  projectCreationAddressAsked,
   projectCreationNameFault,
+  projectCreationNameLine,
   projectCreationRefusalLabel,
   projectCreationSendable,
   projectCreationStanding,
@@ -47,6 +54,7 @@ import {
 } from "../core/projectCreation.ts";
 import type {
   ProjectCreationForm as ProjectCreationFields,
+  ProjectCreationNaming,
   ProjectCreationSent,
 } from "../core/projectCreation.ts";
 import {
@@ -130,6 +138,63 @@ function ProjectCreationName(props: ProjectCreationNameProps): ReactNode {
       {props.label}
       <ProjectCreationNameBox {...props} />
     </label>
+  );
+}
+
+/** What the project is called, the line under it saying the address that
+ * makes, and the box the address is typed into once it is asked for. */
+function ProjectCreationNamed(props: {
+  readonly naming: ProjectCreationNaming;
+  readonly onName: (naming: ProjectCreationNaming) => void;
+}): ReactNode {
+  const text = useCopyText();
+  const lineId = useId();
+  const { naming, onName } = props;
+  const { line, fault } = projectCreationNameLine(naming);
+  const asked = projectCreationAddressAsked(naming);
+  const label = text({ id: "project-creation-project-label" });
+  return (
+    <>
+      <div className={fieldClassName}>
+        <span>{label}</span>
+        <Input
+          label={label}
+          value={naming.name}
+          onChange={(name) => {
+            onName({ ...naming, name });
+          }}
+          invalid={fault}
+          describedBy={lineId}
+        />
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          <span
+            id={lineId}
+            className={`text-xs ${fault ? "text-tone-fail" : "text-ink-3"}`}
+          >
+            {text(line)}
+          </span>
+          {asked || projectAddressOf(naming.name) === "" ? null : (
+            <Button
+              size="sm"
+              onClick={() => {
+                onName({ ...naming, address: projectAddressOf(naming.name) });
+              }}
+            >
+              {text({ id: "project-creation-address-edit" })}
+            </Button>
+          )}
+        </span>
+      </div>
+      {asked ? (
+        <ProjectCreationName
+          label={text({ id: "project-creation-address-label" })}
+          value={projectCreationAddress(naming)}
+          onChange={(address) => {
+            onName({ ...naming, address });
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -240,20 +305,20 @@ function projectCreationWrite(
     write: (ports, sent) =>
       apiCreateProject(ports, sent.fields, sent.operation),
     refusal: (failure) => text(projectCreationRefusalLabel(failure)),
-    landed: async (client, partition) => {
-      lastProjectWrite(persistentStore, partition);
+    landed: async (client, created) => {
+      lastProjectWrite(persistentStore, created);
       await client.invalidateQueries({
         queryKey: projectsInventoryQuery().queryKey,
       });
       void navigate({
         to: "/$tenant/$project/repositories",
-        params: partition,
+        params: { tenant: created.tenant, project: created.project },
       });
     },
   };
 }
 
-/** The press that sends these two names, and the line a refusal of them left,
+/** The press that sends these names, and the line a refusal of them left,
  * which is drawn only while the form holds the names it answered. */
 function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly busy: boolean;
@@ -282,10 +347,11 @@ function ProjectCreationForm(props: {
 }): ReactNode {
   const [workspace, setWorkspace] =
     useState<ProjectCreationWorkspaceSaid>(undefined);
-  const [project, setProject] = useState("");
+  const [naming, setNaming] = useState<ProjectCreationNaming>({ name: "" });
   const fields: ProjectCreationFields = {
     tenant: projectCreationWorkspaceTenant(props.offer, workspace),
-    project,
+    project: projectCreationAddress(naming),
+    name: naming.name,
   };
   const send = useProjectCreationSend(fields);
   const text = useCopyText();
@@ -296,11 +362,7 @@ function ProjectCreationForm(props: {
         said={workspace}
         onSay={setWorkspace}
       />
-      <ProjectCreationName
-        label={text({ id: "project-creation-project-label" })}
-        value={project}
-        onChange={setProject}
-      />
+      <ProjectCreationNamed naming={naming} onName={setNaming} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           variant="primary"

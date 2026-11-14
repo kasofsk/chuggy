@@ -38,6 +38,7 @@ import {
 import type { UnrunDeletionHolding } from "../../core/unrunDeletion.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
+import { useProjectNamed } from "../projectNamed.ts";
 import { useWorkspaceNames } from "../workspaceNames.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -146,14 +147,18 @@ function UnrunDeletionSection<Held extends UnrunDeletionHolding>(
   );
 }
 
-/** The project deleted, for its workspace's administrator, while it has never run work. */
+/** The project deleted, for its workspace's administrator, while it has never
+ * run work. Its name is kept past the deletion, whose landing rereads an
+ * inventory that no longer holds it. */
 export function ProjectDeletion(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const text = useCopyText();
   const { partition } = props;
   const standing = usePanelState(projectDeletionQuery(partition));
-  const project = partition.project;
+  const found = useProjectNamed()(partition);
+  const [project, setProject] = useState(found);
+  if (found !== partition.project && found !== project) setProject(found);
   return (
     <UnrunDeletionSection
       standing={standing}

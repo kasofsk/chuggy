@@ -802,9 +802,14 @@ test("the settings history parses every retained override and its administrator"
 
 test("a project inventory page parses with the cursor the server encoded", () => {
   const page = projectInventoryResponseSchema.parse(
-    inventoryResponse({ projects: [partition], nextAfter: partition }).body,
+    inventoryResponse({
+      projects: [{ ...partition, name: "Acme Atlas" }],
+      nextAfter: partition,
+    }).body,
   );
-  assert.deepEqual(page.projects, [{ tenant: "acme", project: "atlas" }]);
+  assert.deepEqual(page.projects, [
+    { tenant: "acme", project: "atlas", name: "Acme Atlas" },
+  ]);
   assert.ok((page.nextCursor ?? "").length > 0);
 });
 

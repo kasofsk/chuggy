@@ -7,7 +7,7 @@
 import { expect, test } from "vitest";
 
 import type { AccessTenantAbilities } from "../../../src/contract/accessPlane.ts";
-import { displayNameCharsMax } from "../../../src/contract/requests.ts";
+import { projectDisplayNameCharsMax } from "../../../src/contract/requests.ts";
 import {
   tenantRenameOffered,
   tenantRenameSent,
@@ -37,7 +37,7 @@ test("the rename is offered to a reader who administers the workspace, and to no
 
 test("a name is sent trimmed, up to the contract's bound", () => {
   expect(tenantRenameSent("  Acme Co.  ", "acme-co")).toBe("Acme Co.");
-  const widest = "\u{1F600}".repeat(displayNameCharsMax);
+  const widest = "€".repeat(projectDisplayNameCharsMax);
   expect(tenantRenameSent(widest, "acme-co")).toBe(widest);
 });
 
@@ -45,7 +45,7 @@ test("nothing is sent for a name empty once trimmed, past the bound, holding a c
   for (const typed of [
     "",
     "   ",
-    "n".repeat(displayNameCharsMax + 1),
+    "n".repeat(projectDisplayNameCharsMax + 1),
     "two\nlines",
     "tab\tbed",
     "Acme Co.",

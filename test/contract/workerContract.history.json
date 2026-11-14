@@ -522,6 +522,11 @@
   {
     "release": "1.104.0",
     "wire": "b39e8e4096172398b44963324db0db3d2886138d4516077c7056f8aae26c7c6b",
-    "files": "e2dea03bfe02d48929488ed1ab23422ae49be47ee67b5236764ec38a6a374c09"
+    "files": "606ee3909788bd961a1150a5d7f4f76aca6d9a294bfde0cbe2c6017229667ac4"
+  },
+  {
+    "release": "1.105.0",
+    "wire": "eea1e74e5e72073098021534a4cbf450a16dc65bb50019df71067c28d82c84a3",
+    "files": "ad4c743bb36c8e36ddf7a4181bda578597f4dcb4ec9304c7f83de95187f500ee"
   }
 ]

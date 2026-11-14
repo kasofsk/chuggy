@@ -82,7 +82,9 @@ afterEach(() => {
 });
 
 function created(): Promise<Response> {
-  return Promise.resolve(answer({ tenant: "acme", project: "atlas" }, 201));
+  return Promise.resolve(
+    answer({ tenant: "acme", project: "atlas", name: "atlas" }, 201),
+  );
 }
 
 function refused(): Promise<Response> {
@@ -124,7 +126,7 @@ test("one workspace the reader may add to is shown chosen, and the project is th
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "mimage", project: "atlas" },
+    { tenant: "mimage", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -204,7 +206,7 @@ test("the form sends the workspace the reader chose", async () => {
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -219,8 +221,8 @@ test("choosing another workspace takes a refusal's line down and sends under a n
   expect(answerLine()).toBeNull();
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "acme", project: "atlas" },
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
   expect(posted[1]?.key).not.toBe(posted[0]?.key);
 });
@@ -238,8 +240,8 @@ test("the two names an answer never came for, stood on again, show its line agai
   expect(answerLine()?.textContent).toBe("Unreachable");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "acme", project: "atlas" },
-    { tenant: "acme", project: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
   ]);
   expect(posted[1]?.key).toBe(posted[0]?.key);
 });
@@ -324,8 +326,8 @@ test("a read arriving again that moves where the form stands takes the unanswere
   expect(answerLine()).toBeNull();
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
-    { tenant: "acme", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
   ]);
   expect(again.posted[1]?.key).not.toBe(again.posted[0]?.key);
 });
@@ -346,7 +348,7 @@ test("a read arriving again moves nothing the reader chose", async () => {
   typed("Project", "atlas");
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -373,7 +375,7 @@ test.each([
     ).toBeDefined();
     await pressed();
     expect(again.posted.map((one) => one.body)).toStrictEqual([
-      { tenant: "northwind", project: "atlas" },
+      { tenant: "northwind", project: "atlas", name: "atlas" },
     ]);
   },
 );
@@ -490,7 +492,7 @@ test("a name typed over a read that answered none that no workspace is called is
   expect(workspaceBox()).toHaveProperty("value", "brand-new");
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "brand-new", project: "atlas" },
+    { tenant: "brand-new", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -537,7 +539,7 @@ test("the only workspace to add to is where a reader who may make another starts
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "mimage", project: "atlas" },
+    { tenant: "mimage", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -560,7 +562,7 @@ test("choosing New workspace shows its name field under the rule, and choosing a
   expect(submit()).toHaveProperty("disabled", false);
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -595,7 +597,7 @@ test("the form sends the name typed for a new workspace, which choosing New work
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "brand-new", project: "atlas" },
+    { tenant: "brand-new", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -687,7 +689,7 @@ test.each([
     typed("Project", "atlas");
     await pressed();
     expect(posted.map((one) => one.body)).toStrictEqual([
-      { tenant: "typed-here", project: "atlas" },
+      { tenant: "typed-here", project: "atlas", name: "atlas" },
     ]);
   },
 );
@@ -702,7 +704,7 @@ test("the abilities read failing over one workspace to add to starts the typed n
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "mimage", project: "atlas" },
+    { tenant: "mimage", project: "atlas", name: "atlas" },
   ]);
 });
 

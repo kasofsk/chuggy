@@ -191,6 +191,8 @@ export interface PeopleDrawing {
   readonly links?: () => Response | Promise<Response>;
   /** What the reader's own workspaces answer, this one by its display name where a case says nothing. */
   readonly workspaces?: () => Response | Promise<Response>;
+  /** The project inventory the console names projects from, none where a case says nothing. */
+  readonly inventory?: () => Response;
   /** What a grant, a removal, an invitation, a link made or one revoked is answered with. */
   readonly changed?: (request: SentRequest) => Response | Promise<Response>;
 }
@@ -199,6 +201,7 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
   const listing = drawing.listing ?? (() => answer(peopleListed));
   const abilities = drawing.abilities ?? (() => answer(peopleAbilitiesAll()));
   const links = drawing.links ?? (() => answer({}, 404));
+  const inventory = drawing.inventory ?? (() => answer({}, 404));
   const changed = drawing.changed ?? noContent;
   const workspaces =
     drawing.workspaces ??
@@ -222,6 +225,7 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
     if (request.url === linksPath && request.method === "GET") return links();
     if (request.url === peopleWorkspacesPath && request.method === "GET")
       return workspaces();
+    if (request.url === "/api/v1/projects") return inventory();
     if (request.url.startsWith("/access/v1/")) return changed(request);
     return answer({}, 404);
   });
