@@ -101,7 +101,12 @@ export const allForgeAccountKinds = ["User", "Organization"] as const;
 export type ForgeAccountKind = (typeof allForgeAccountKinds)[number];
 
 /** Every permission set an act in this tree asks a forge for. */
-export const allForgePermissionSets = ["read", "write", "propose"] as const;
+export const allForgePermissionSets = [
+  "read",
+  "write",
+  "propose",
+  "runPipelines",
+] as const;
 
 export type ForgePermissionSet = (typeof allForgePermissionSets)[number];
 
@@ -118,6 +123,12 @@ export interface ForgeRepositoryPermissions {
    * rather than refused.
    */
   readonly pipelines?: "write";
+  /**
+   * Starting the repository's pipeline runs and reading them, which is asked
+   * for whatever the binding or the installation allows: a forge refusing it is
+   * a refused mint, never a token without it.
+   */
+  readonly pipelineRuns?: "write";
 }
 
 /**
@@ -131,6 +142,7 @@ export const forgePermissionSets: Readonly<
   read: { contents: "read" },
   write: { contents: "write", pipelines: "write" },
   propose: { contents: "write", changeProposals: "write", pipelines: "write" },
+  runPipelines: { contents: "read", pipelineRuns: "write" },
 };
 
 /** The segments a forge addresses an account or a repository by. */

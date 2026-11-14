@@ -14,7 +14,9 @@
  * for one the installation does not hold, so such a request reads the
  * installation as the app first and spells `workflows` only where it is
  * granted. The read answers as a mint does, and a request asking for no
- * pipelines makes none.
+ * pipelines makes none. Pipeline runs, spelled `actions`, are never narrowed
+ * so: a set naming them always asks for them, and an installation that does
+ * not hold them refuses the mint.
  *
  * A TOKEN IS HELD UNTIL ITS OWN EXPIRY, LESS A MARGIN, KEYED BY WHAT IT IS GOOD
  * FOR. Repeated mints for one key are one mint for as long as the held token
@@ -283,6 +285,9 @@ async function githubInstallationTokensPermissions(
     ...(permissions.changeProposals === undefined
       ? {}
       : { pull_requests: permissions.changeProposals }),
+    ...(permissions.pipelineRuns === undefined
+      ? {}
+      : { actions: permissions.pipelineRuns }),
   };
   const pipelines = githubInstallationTokensPipelinesAsked(request);
   if (pipelines === undefined)

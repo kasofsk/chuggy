@@ -20,6 +20,8 @@
  * machine, where that job's own shells are told the project already, by the
  * core's `workerJobVariables`, and where those credentials are kept. A
  * project's pool is told neither, since its registration names its project.
+ * A member's chat host is told the thread each session it is handed is an
+ * attempt of, and the threads it last ran that have since closed.
  * A runner, a pool or a chat host that names the credentials it holds is told
  * which of them are paused for the member whose account its work spends.
  */
@@ -122,6 +124,12 @@ export const workerPoolAssignmentSchema = z.strictObject({
   bearer: z.string().min(1).max(workerPoolIdentityCharsMax),
 });
 
+/** A thread as a session's facts name it: its project and its session. */
+export const workerPoolThreadClosedSchema = z.strictObject({
+  project: workerPoolProjectSchema,
+  session: z.string().min(1).max(workerPoolIdentityCharsMax),
+});
+
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
  * its image always named, because a session runs its site's session image and
@@ -131,7 +139,15 @@ export const workerPoolAssignmentSchema = z.strictObject({
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
   .omit({ runtime: true, project: true })
-  .extend({ image: workerPoolImageSchema });
+  .extend({
+    image: workerPoolImageSchema,
+    /**
+     * The thread the session is an attempt of, so a chat host may keep what
+     * it keeps for that thread across its attempts. It is named only to a chat
+     * host whose poll's release reads it, and absent for an inquiry or a lead.
+     */
+    thread: workerPoolThreadClosedSchema.optional(),
+  });
 
 /**
  * Both kinds of no are final for the assignment: a refusal becomes the attempt's
@@ -499,12 +515,6 @@ export const workerPoolCredentialPauseSchema = z.strictObject({
 
 /** The most threads one answer names as closed. */
 export const workerPoolThreadsClosedMax = 64;
-
-/** A thread as a session's facts name it: its project and its session. */
-export const workerPoolThreadClosedSchema = z.strictObject({
-  project: workerPoolProjectSchema,
-  session: z.string().min(1).max(workerPoolIdentityCharsMax),
-});
 
 /** Whether each credential outcome names an assignment the same answer stops, and no assignment twice. */
 function workerPoolReconciliationOutcomesStopped(answer: {
