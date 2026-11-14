@@ -71,7 +71,8 @@
  * to it names the session image the scheduler publishes, and it may pull that
  * image while it holds nothing. Each answer to one whose release reads it
  * also names the threads it last ran that have since closed, so it may remove
- * what it keeps for them.
+ * what it keeps for them, and names on each session it hands it the thread
+ * that session is an attempt of, so it may keep that across attempts.
  *
  * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
  * memory it takes one job of, each replace the one recorded before anything

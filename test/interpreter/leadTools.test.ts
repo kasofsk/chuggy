@@ -83,7 +83,9 @@ test("origination, revoking, updating, dispatching and offering are admitted for
     Object.entries(chuggyToolCapabilities)
       .filter(
         ([capability]) =>
-          capability !== "MemberRead" && capability !== "ProjectSettings",
+          capability !== "MemberRead" &&
+          capability !== "ProjectSettings" &&
+          capability !== "AgentAccounts",
       )
       .flatMap(([, tools]) => tools),
   );

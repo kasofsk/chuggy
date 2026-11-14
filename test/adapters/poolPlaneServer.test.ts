@@ -38,6 +38,7 @@ import {
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
+import type { SessionKind } from "../../src/contract/rosters.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
@@ -255,13 +256,14 @@ const launch: SessionLaunchFacts = {
 
 /**
  * Records every call a route made of the session side, which holds `holding`
- * and offers `offered`, each opened as the claim asks, and answers `closed` as
- * the threads a chat host ran that have since closed.
+ * and offers `offered` as sessions of `kind`, each opened as the claim asks,
+ * and answers `closed` as the threads a chat host ran that have since closed.
  */
 function sessionCalls(
   holding: readonly string[] = [],
   offered: readonly string[] = [],
   closed: readonly WorkerPoolThreadClosed[] = [],
+  kind: SessionKind = "Lead",
 ): { readonly made: unknown[]; readonly store: WorkerPoolSessions } {
   const made: unknown[] = [];
   const answer = <T>(call: unknown[], value: T): Promise<T> =>
@@ -282,7 +284,7 @@ function sessionCalls(
           offered.slice(0, max).map((session) => ({
             project: partition.project,
             session: asSessionId(session),
-            kind: "Lead" as const,
+            kind,
             capabilities: [],
           })),
         ),
@@ -1478,6 +1480,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         [],
         ["session-waiting"],
         [{ project: partition.project, session: "thread-closed" }],
+        token === hostToken ? "Thread" : "Lead",
       );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),

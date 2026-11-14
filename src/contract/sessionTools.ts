@@ -7,18 +7,22 @@
  * schemas are not: those are the zod raw shapes the agent runtime's own
  * `tool()` takes, and they live in the image beside the handlers.
  *
- * TWO CHANNELS, TOLD APART BY WHAT THEY WRITE. A project tool is a command a
- * console user has: it goes over HTTP to the API presenting the pod's session
- * bearer, the API resolves that bearer to the session's principal and
- * authorizes it through the project membership exactly as it authorizes a
- * human's, and the operation row records which session issued it. The API
- * also confines that bearer to its own session's tenant and project, answering
- * another project's routes 404 and a tenant's or the site's 403, and to the
- * routes its session's capabilities admit, answering one they do not 404. A decision
- * tool writes nothing at all: it accumulates in the pod and becomes the turn's
- * answer, which the selector runtime still reads and acts on under its own
- * fence, so the runtime remains the single writer of a lead's dispatch and of
- * the refusal ledger. An offer tool writes nothing and reaches no route
+ * THE CHANNELS ARE TOLD APART BY WHAT THEY WRITE AND WHOSE BEARER THEY PRESENT.
+ * A project tool is a command a console user has: it goes over HTTP to the API
+ * presenting the pod's session bearer, the API resolves that bearer to the
+ * session's principal and authorizes it through the project membership
+ * exactly as it authorizes a human's, and the operation row records which
+ * session issued it. The API also confines that bearer to its own session's
+ * tenant and project, answering another project's routes 404 and a tenant's
+ * or the site's 403, and to the routes its session's capabilities admit,
+ * answering one they do not 404. A person's own agent's tool presents no
+ * session bearer: it reaches the API as that person, authorized as the
+ * console's own call is, and an agent-account tool's route is that person's
+ * own, at no tenant and no project, which every session bearer is refused. A
+ * decision tool writes nothing at all: it accumulates in the pod and becomes
+ * the turn's answer, which the selector runtime still reads and acts on under
+ * its own fence, so the runtime remains the single writer of a lead's dispatch
+ * and of the refusal ledger. An offer tool writes nothing and reaches no route
  * either: its call stands in the thread's transcript like any other, and what
  * it offers is done by the member, as the member, or not at all.
  *
@@ -170,6 +174,10 @@ export {
 export { selectorProjectOverridesSchema } from "./requests.ts";
 export { selectorSettingsTextCharsMax } from "./http.ts";
 export { leadOfferings, placementRoutes } from "./rosters.ts";
+
+/** What `update_usage_settings`, `retry_paused_agent` and `retire_credential` publish as their arguments' shapes: an agent's settings, written whole, and the agents an account names. */
+export { agentAccountSettingsSchema } from "./requests.ts";
+export { accountAgents } from "./rosters.ts";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -607,14 +615,28 @@ const chuggyToolRoster = {
     "read_placement",
     "update_placement",
   ],
+  /**
+   * What a person's own agent reads and does to their agent accounts, which
+   * only that person's agent holds and no session can, because a session must
+   * not change the thresholds it runs under or retire the credential whose
+   * reading pauses it. The API authorizes these tools as it does the console's
+   * own reads and writes of the account, and each acts on the person's own
+   * account, whichever project the server is bound to.
+   */
+  AgentAccounts: [
+    "read_usage",
+    "update_usage_settings",
+    "retry_paused_agent",
+    "retire_credential",
+  ],
 } as const satisfies Readonly<Record<ToolCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
  * session may see of the project, what it may author, what it may decide, what
  * a member's own session reads of them, what a thread may offer its member,
- * and what a person's own agent may do to a project's settings, each named
- * once.
+ * and what a person's own agent may do to a project's settings and to their
+ * own agent accounts, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
@@ -625,6 +647,7 @@ export const allChuggyTools = [
   ...chuggyToolMemberReads,
   ...chuggyToolRoster.ThreadOffer,
   ...chuggyToolRoster.ProjectSettings,
+  ...chuggyToolRoster.AgentAccounts,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -666,6 +689,7 @@ export const builtInToolCapabilities: Readonly<
   MemberRead: [],
   ThreadOffer: [],
   ProjectSettings: [],
+  AgentAccounts: [],
 };
 
 /**
@@ -679,7 +703,7 @@ export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
 export type DependentRelation = (typeof allDependentRelations)[number];
 export const dependentRelationsAdmitted = ["FollowUp"] as const;
 
-/** The public API routes the project tools call; each is the route table's own entry. */
+/** The public API routes the chuggy tools call; each is the route table's own entry. */
 export const chuggyToolRoutes = {
   project: nativeHttpRoutes.project,
   ticket: nativeHttpRoutes.ticket,
@@ -753,4 +777,15 @@ export const chuggyToolRoutes = {
   chatThread: nativeHttpRoutes.chatThread,
   personalRunner: nativeHttpRoutes.personalRunner,
   chatHost: nativeHttpRoutes.chatHost,
+  /**
+   * What a person's own agent reads and writes of their own agent accounts,
+   * each the caller's own, at no tenant and no project: `read_usage` every
+   * agent's readings, pause and credentials, `update_usage_settings` an
+   * agent's settings, `retry_paused_agent` a press, and `retire_credential`
+   * one credential.
+   */
+  agentAccounts: nativeHttpRoutes.agentAccounts,
+  agentAccountSettings: nativeHttpRoutes.agentAccountSettings,
+  agentAccountPresses: nativeHttpRoutes.agentAccountPresses,
+  agentAccountCredential: nativeHttpRoutes.agentAccountCredential,
 } as const;
