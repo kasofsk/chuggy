@@ -987,10 +987,10 @@ type ChatOf =
   | { readonly of: "ChatHost"; readonly replace: string | undefined };
 
 /**
- * A chat host of the person's on another machine. `runner` never replaces
- * one, so a live one is left serving and one that is not live stops the run.
- * `chat-host` stops on either, saying which, and goes on to register this
- * machine in its place, answering nothing, only where `--replace` named it.
+ * A chat host of the person's on another machine: `runner` never replaces
+ * one, leaving a live one serving and stopping on one that is not live, and
+ * `chat-host` stops on either, going on to register this machine in its
+ * place, answering nothing, only where `--replace` named it.
  */
 function setupChatElsewhere(
   run: Run,
