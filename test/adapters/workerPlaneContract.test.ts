@@ -94,7 +94,20 @@ import {
 } from "../../src/interpreter/forgeInstallation.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  ProjectAccessUnavailable,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import type {
+  ThreadJobWakeService,
+  ThreadJobWakeUnbound,
+  ThreadJobWakeView,
+  ThreadJobWoken,
+  ThreadWakeOffered,
+} from "../../src/interpreter/threadWake.ts";
 import {
   allArtifactFailures,
   allArtifactRoles,
@@ -144,6 +157,7 @@ import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPl
 import type { CredentialsResolved } from "../../src/interpreter/credentialIssuers.ts";
 import type { SessionTaskLaunch } from "../../src/interpreter/workerTask.ts";
 import {
+  workerContractEnumsSeen,
   workerContractEnumsWalked,
   workerContractOptionalsSeen,
   workerContractReleasePlane,
@@ -1250,6 +1264,10 @@ const sessionPlaneCalls: Readonly<
   turnStopped: { headers: json, payload: { turn: "turn" } },
   held: { headers: json, payload: {} },
   standing: { headers: json, payload: { standing: true } },
+  wake: {
+    headers: json,
+    payload: { wake: "JobExited", resource: "dispatcher", event: "exit-1" },
+  },
   storeStreams: {},
   storeBatch: {
     rest: "stream/1",
@@ -1334,6 +1352,7 @@ const sessionPlaneRequests: Readonly<
   turnStopped: { schema: "sessionTurnStoppedSchema", bodies: [] },
   held: "Unparsed",
   standing: { schema: "sessionStandingSchema", bodies: [] },
+  wake: { schema: "sessionWakeSchema", bodies: [] },
   storeStreams: "Unparsed",
   storeBatch: "Unparsed",
   storePage: "Unparsed",
@@ -1357,6 +1376,64 @@ const referencesBound: Readonly<Record<SessionReferenceBound, true>> = {
   AlreadyBound: true,
   Conflict: true,
   Fenced: true,
+};
+
+/** A job wake's service whose view, door and authority answer as one outcome needs. */
+function jobWakes(
+  over: {
+    readonly view?: ThreadJobWakeView | ThreadJobWakeUnbound;
+    readonly door?: ThreadWakeOffered | ThreadJobWakeUnbound;
+    readonly authorize?: ProjectAccess["authorize"];
+  } = {},
+): ThreadJobWakeService {
+  return {
+    store: {
+      wakeView: () =>
+        Promise.resolve(
+          over.view ?? {
+            partition: liveSession.partition,
+            principal: asPrincipal("oidc:member"),
+            session: liveSession.session,
+            route: "Pool",
+            runner: "Live",
+            inquiryRunner: "Live",
+          },
+        ),
+      wakeThread: () =>
+        Promise.resolve(over.door ?? { woken: "Woken", ordinal: 1 }),
+    },
+    access: {
+      authorize:
+        over.authorize ??
+        ((principal) => Promise.resolve(memberAuthority(principal))),
+      authorizeTenant: (principal) =>
+        Promise.resolve(memberAuthority(principal)),
+      authorizeSite: () => Promise.resolve(undefined),
+    },
+    clock: { nowIso: () => "2026-11-14T12:00:00.000Z" },
+  };
+}
+
+/** Every outcome a job wake comes to, keyed by its answer so a new one fails to compile here. */
+const jobWakesWoken: Readonly<
+  Record<
+    | ThreadWakeOffered["woken"]
+    | Extract<ThreadJobWoken, { refused: string }>["refused"],
+    ThreadJobWakeService
+  >
+> = {
+  Woken: jobWakes(),
+  AlreadyWoken: jobWakes({ door: { woken: "AlreadyWoken", ordinal: 1 } }),
+  NoThread: jobWakes({ door: { woken: "NoThread" } }),
+  Closed: jobWakes({ door: { woken: "Closed" } }),
+  Backlogged: jobWakes({ door: { woken: "Backlogged" } }),
+  Fenced: jobWakes({ view: "Fenced" }),
+  NotChatHostThread: jobWakes({ door: "NotChatHostThread" }),
+  NotAdmitted: jobWakes({ authorize: () => Promise.resolve(undefined) }),
+  AccessUnavailable: jobWakes({
+    authorize: () =>
+      Promise.reject(new ProjectAccessUnavailable("the authority is down")),
+  }),
 };
 
 const standingsRecorded: Readonly<Record<SessionStandingRecorded, true>> = {
@@ -1619,6 +1696,20 @@ const sessionPlaneCases: Readonly<
         standings: { stand: () => Promise.resolve(recorded) },
       }),
     })),
+  ],
+  wake: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    {
+      name: "a plane composed without project access",
+      service: sessionPorts({}),
+    },
+    ...(Object.keys(jobWakesWoken) as (keyof typeof jobWakesWoken)[]).map(
+      (woken) => ({
+        name: `a wake that came to ${woken}`,
+        service: sessionPorts({ wakes: jobWakesWoken[woken] }),
+      }),
+    ),
   ],
   storeStreams: [
     ...sessionPlaneStrangers,
@@ -1935,9 +2026,10 @@ function workerPlaneReplayed<Name extends string>(
 }
 
 /**
- * Offers one JSON route every body `older` builds of those `request` names, each
- * roster value in turn, and asserts none is refused. The bodies it builds must
- * between them offer each optional field its schema names and leave it out.
+ * Offers one JSON route every body `older` builds of those `request` names,
+ * each roster value in turn in some body that release takes, and asserts none
+ * is refused. The bodies must between them offer each optional field its
+ * schema names and leave it out.
  */
 async function workerPlaneBodiesTaken<Name extends string>(
   plane: WorkerPlaneDriven<Name>,
@@ -1953,11 +2045,16 @@ async function workerPlaneBodiesTaken<Name extends string>(
   );
   assert.ok(built.length > 0, `${older.release} builds no body offered`);
   const seen = new Map<string, Set<boolean>>();
+  const walked = new Map<string, Set<unknown>>();
+  const taken = new Map<string, Set<unknown>>();
   for (const body of built) {
     workerContractOptionalsSeen(schema, body, request.schema, seen);
-    for (const offered of workerContractEnumsWalked(schema, body)) {
+    const offers: readonly unknown[] = workerContractEnumsWalked(schema, body);
+    for (const offered of offers) {
+      workerContractEnumsSeen(schema, offered, request.schema, walked);
+      if (!schema.safeParse(offered).success) continue;
+      workerContractEnumsSeen(schema, offered, request.schema, taken);
       const what = JSON.stringify(offered);
-      assert.ok(schema.safeParse(offered).success, what);
       const answered = await workerPlaneDriven(
         plane,
         name,
@@ -1978,6 +2075,12 @@ async function workerPlaneBodiesTaken<Name extends string>(
       held.size,
       2,
       `${field} is ${held.has(true) ? "present" : "absent"} in every body offered`,
+    );
+  for (const [field, values] of walked)
+    assert.deepEqual(
+      [...values].filter((value) => taken.get(field)?.has(value) !== true),
+      [],
+      `${field} holds values no body ${older.release} takes offers`,
     );
 }
 

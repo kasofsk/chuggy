@@ -2,7 +2,8 @@
  * A member's thread against PostgreSQL: the listing, the door that opens one,
  * the standing read behind a thread page, the door a message goes through, the
  * door that stops a turn, the door that closes one, what a first turn is
- * seeded from, and the bounded pass that wakes a thread.
+ * seeded from, the bounded pass that wakes a thread, and the wake a thread's
+ * own attempt offers it.
  *
  * THIS FILE DECIDES NOTHING. `open_member_thread` takes no roster and no
  * limit, and `enqueue_thread_message` decides whether the session named is the
@@ -12,10 +13,11 @@
  * same reason, because a name is a decision. An adapter that checked any of
  * them itself would be a second opinion racing the definer that decides it.
  *
- * THE API AND THE SELECTOR REACH DIFFERENT DOORS, so they are different
- * factories over different pools. `postgresThreads` is the API's reads and
- * doors; `postgresThreadWakes` is the selector's cursor, candidate read and
- * wake door. A single factory over one pool would be a shape a deployment
+ * THE API, THE SELECTOR AND THE WORKER PLANE REACH DIFFERENT DOORS, so they are
+ * different factories over different pools. `postgresThreads` is the API's
+ * reads and doors; `postgresThreadWakes` is the selector's cursor, candidate
+ * read and wake door; `postgresThreadJobWakes` is the worker plane's view and
+ * wake door under a session bearer. A single factory over one pool would be a shape a deployment
  * cannot supply, because no credential in it holds both roles.
  *
  * THE BOUNDS ARE THE CALLER'S ARGUMENTS. Every page limit arrives from
@@ -50,12 +52,15 @@ import {
   type TenantId,
 } from "../../interpreter/projectStore.ts";
 import {
-  allThreadWakeReasons,
+  allThreadTicketWakeReasons,
   type ThreadProjectTexts,
   type ThreadSeededDraft,
   type ThreadSeededRefusal,
 } from "../../interpreter/thread.ts";
 import type {
+  ThreadJobWakeStore,
+  ThreadJobWakeUnbound,
+  ThreadJobWakeView,
   ThreadWakeCandidate,
   ThreadWakeOffered,
   ThreadWakeStore,
@@ -75,6 +80,7 @@ import type {
   ThreadTurnStopped,
 } from "../../interpreter/threadRead.ts";
 import { projectRowCounter } from "./rows.ts";
+import { sessionSecretDigest } from "./sessionPlane.ts";
 import { sessionStoreStreamRows } from "./sessionStoreReads.ts";
 import {
   sessionRowMember,
@@ -781,7 +787,7 @@ function threadWakeCandidateOf(row: {
     },
     resource: sessionRowText(row.resource, "change resource"),
     reason: sessionRowMember(
-      allThreadWakeReasons,
+      allThreadTicketWakeReasons,
       row.reason,
       "thread wake reason",
     ),
@@ -886,6 +892,94 @@ export function postgresThreadWakes(pool: pg.Pool): ThreadWakeStore {
         sessionRowText(moved.rows[0]?.sequence ?? null, "wake cursor"),
         "wake cursor",
       );
+    },
+  };
+}
+
+/** A job wake's view row, narrowed as a candidate row is, or the verdict its bearer was refused with. */
+function threadJobWakeViewOf(row: {
+  readonly verdict: string | null;
+  readonly tenant: string | null;
+  readonly project: string | null;
+  readonly session: string | null;
+  readonly principal: string | null;
+  readonly route: string | null;
+  readonly runner: string | null;
+  readonly inquiry_runner: string | null;
+  readonly standing_rules: string | null;
+}): ThreadJobWakeView | ThreadJobWakeUnbound {
+  if (row.verdict === "Fenced" || row.verdict === "NotChatHostThread")
+    return row.verdict;
+  if (row.verdict !== "Viewed")
+    throw new Error(
+      `postgres thread job wake: the view answered ${String(row.verdict)}`,
+    );
+  return {
+    ...(row.standing_rules === null
+      ? {}
+      : { standingRules: row.standing_rules }),
+    partition: {
+      tenant: asTenantId(sessionRowText(row.tenant, "tenant")),
+      project: asProjectId(sessionRowText(row.project, "project")),
+    },
+    principal: asPrincipal(sessionRowText(row.principal, "principal")),
+    session: asSessionId(sessionRowText(row.session, "session")),
+    route: sessionRowMember(placementRoutes, row.route, "thread route"),
+    runner: sessionRowMember(
+      sessionRunnerStandings,
+      row.runner,
+      "runner standing",
+    ),
+    inquiryRunner: sessionRowMember(
+      sessionRunnerStandings,
+      row.inquiry_runner,
+      "inquiry runner standing",
+    ),
+  };
+}
+
+/** The doors a thread's attempt on a chat host wakes its own thread through, answering the port `src/interpreter/threadWake.ts` declares. */
+export function postgresThreadJobWakes(pool: pg.Pool): ThreadJobWakeStore {
+  return {
+    wakeView: async (bearer) => {
+      const found = await pool.query<{
+        verdict: string | null;
+        tenant: string | null;
+        project: string | null;
+        session: string | null;
+        principal: string | null;
+        route: string | null;
+        runner: string | null;
+        inquiry_runner: string | null;
+        standing_rules: string | null;
+      }>(
+        sql`SELECT verdict,tenant,project,session,principal,route,runner,
+                   inquiry_runner,standing_rules
+              FROM thread_job_wake_view(${sessionSecretDigest(bearer.secret)},
+                     ${bearer.generation},${sessionRunnerPolledSecsMax})`,
+      );
+      const row = found.rows[0];
+      if (row === undefined)
+        throw new Error("postgres thread job wake: the view returned no row");
+      return threadJobWakeViewOf(row);
+    },
+    wakeThread: async (input) => {
+      const answered = await pool.query<{
+        verdict: string | null;
+        ordinal: string | null;
+      }>(
+        sql`SELECT verdict,ordinal::text AS ordinal FROM wake_thread_job(
+              ${sessionSecretDigest(input.secret)},${input.generation},
+              ${input.turn},${input.input},${input.route})`,
+      );
+      const row = answered.rows[0];
+      if (row === undefined)
+        throw new Error(
+          "postgres thread job wake: the door returned no verdict",
+        );
+      return row.verdict === "Fenced" || row.verdict === "NotChatHostThread"
+        ? row.verdict
+        : threadWokenRow({ enqueued: row.verdict, ordinal: row.ordinal });
     },
   };
 }

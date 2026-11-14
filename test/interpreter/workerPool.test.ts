@@ -780,7 +780,7 @@ test("only a chat host on a release that reads it is handed each session naming 
     undefined,
     undefined,
   ]);
-  for (const contract of ["1.95.0", undefined])
+  for (const contract of ["1.96.0", undefined])
     assert.deepEqual(
       await threadsOf(host, contract),
       [undefined, undefined, undefined],
