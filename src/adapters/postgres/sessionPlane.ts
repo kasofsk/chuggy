@@ -103,9 +103,10 @@ interface SessionIdentityRow {
   readonly principal: string | null;
 }
 
-/** One `authenticate_session_bearer` row, which names its session's scope as well. */
+/** One `authenticate_session_bearer` row, which names its session's scope and capabilities as well. */
 interface SessionBearerRow extends SessionIdentityRow {
   readonly scope: string | null;
+  readonly capabilities: string[] | null;
 }
 
 /** One `read_session_attempt` row, with the liveness the server computed. */
@@ -142,7 +143,7 @@ function sessionPartitionOf(row: SessionIdentityRow): Partition {
 /** The roster columns a session identity carries, refused when the join lost one. */
 function sessionIdentityOf(
   row: SessionIdentityRow,
-): Omit<SessionBearerIdentity, "scope"> {
+): Omit<SessionBearerIdentity, "scope" | "capabilities"> {
   return {
     partition: sessionPartitionOf(row),
     session: asSessionId(sessionRowText(row.session, "session")),
@@ -267,7 +268,7 @@ async function sessionPlaneBinding(
   pool: pg.Pool,
   secret: SessionBearerSecret,
   generation: number,
-): Promise<Omit<SessionBearerIdentity, "scope"> | undefined> {
+): Promise<Omit<SessionBearerIdentity, "scope" | "capabilities"> | undefined> {
   const found = await pool.query<SessionIdentityRow>(
     sql`SELECT tenant,project,session,kind,principal
           FROM session_attempt_binding(
@@ -528,7 +529,7 @@ export function postgresSessionBearerAuthority(
   return {
     authenticate: async (secret) => {
       const found = await pool.query<SessionBearerRow>(
-        sql`SELECT tenant,project,session,kind,principal,scope
+        sql`SELECT tenant,project,session,kind,principal,scope,capabilities
               FROM authenticate_session_bearer(${sessionSecretDigest(secret)})`,
       );
       const row = found.rows[0];
@@ -541,6 +542,7 @@ export function postgresSessionBearerAuthority(
               row.scope,
               "session scope",
             ),
+            capabilities: sessionRowCapabilities(row.capabilities),
           };
     },
   };

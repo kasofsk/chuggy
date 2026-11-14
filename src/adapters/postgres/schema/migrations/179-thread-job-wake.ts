@@ -46,8 +46,8 @@ const chatHostThreadBound = `SELECT * INTO bound FROM session_attempt_binding(
          verdict := 'NotChatHostThread'; RETURN NEXT; RETURN;
        END IF;`;
 
-export const migration178: Migration = {
-  version: 178,
+export const migration179: Migration = {
+  version: 179,
   name: "a thread's attempt on a chat host wakes its own thread through the wake door",
   statements: [
     `CREATE FUNCTION ${view}

@@ -2427,6 +2427,7 @@ function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
                   kind: "Thread" as const,
                   principal: asPrincipal("issuer subject"),
                   scope: "Project" as const,
+                  capabilities: ["DraftAuthor"] as const,
                 }
               : undefined,
           );
