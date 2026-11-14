@@ -25,9 +25,8 @@
  * AN ANSWERED ACTION IS THAT SAME SHAPE WITH ONE ROW MORE. An approval answer
  * names no domain command, so the transaction records which answer was given
  * and settles the input, and writes no entry, no projection and no focused work
- * — which is the whole of what keeps approval out of `TicketGraph`. An answer
- * to an evaluation approval goes through `answer_evaluation_approval`, which
- * also writes that evaluator's result and submits its completion under the
+ * — which is the whole of what keeps approval out of `TicketGraph`. It goes
+ * through `answer_evaluation_approval`, which also writes that evaluator's result and submits its completion under the
  * scheduler's authority; the completion is decided as its own input, and an
  * approval a cancellation withdrew first is refused `TicketChanged`.
  *
@@ -954,9 +953,10 @@ async function decisionApplyJournaled(
 }
 
 /**
- * Records an answer to an open action and settles its input, or answers false
- * having written nothing where the action is an evaluation approval a
- * cancellation withdrew first.
+ * Records an answer to an open evaluation approval and settles its input, or
+ * answers false having written nothing where a cancellation withdrew the
+ * approval first. Only an evaluation approval is answered with no ticket
+ * command, so any other kind here is a writer and this layer disagreeing.
  */
 async function decisionApplyAnswer(
   client: pg.PoolClient,
@@ -965,8 +965,10 @@ async function decisionApplyAnswer(
   outcome: Extract<DecisionOutcome, { readonly outcome: "Answered" }>,
 ): Promise<boolean> {
   if (outcome.answer.kind !== "EvaluationApproval")
-    await decisionAnswerAction(client, lease.partition, outcome.answer);
-  else if (
+    throw new Error(
+      `a ${outcome.answer.kind} answer names no ticket command to decide`,
+    );
+  if (
     (await decisionAnswerEvaluationApproval(client, lease.partition, cause)) ===
     "Withdrawn"
   )

@@ -595,24 +595,15 @@ const configurationOutputsSchema = z
     "Result artifacts shown as outputs: an artifact a result holds at an output's path is shown under its name, as its media type, by its renderer. The built-in outputs come first, and one declared at a built-in output's path is not used. The importer takes any value here; its reader takes a list and skips an entry it cannot read, so only an entry of the shape shown is an output.",
   );
 
-/** Whether a person approves a candidate before it lands, as its reader takes it beside any value the importer takes. */
-const configurationApprovalRequiredSchema = z
-  .union([z.boolean(), z.unknown()])
-  .describe(
-    "Whether a person approves each candidate before it lands; absent is false. The importer takes any value here, but one that is not a boolean is an approval policy finalization cannot read, so no candidate made under it lands.",
-  );
-
 /** The configuration a release reads, which keeps a field it does not name as written. */
 export const releaseConfigurationSchema = z
   .looseObject({
     ...releaseConfigurationHeaderSchema.shape,
     ...configurationTaskShape,
     outputs: configurationOutputsSchema.optional(),
-    finalizationApprovalRequired:
-      configurationApprovalRequiredSchema.optional(),
   })
   .describe(
-    `What a ticket runs on. A key not named here is kept as written and ignored. The importer also holds that no key at any depth contains password, secret or token, or credential other than as the credentials that ends it, in any letter case, and that the configuration as JSON with its keys sorted and no whitespace is at most ${String(configurationCanonicalCharsMax)} UTF-16 code units.`,
+    `What a ticket runs on. A key not named here is kept as written and ignored, but the importer refuses finalizationApprovalRequired: a person's approval is an Approval evaluator in a plan. The importer also holds that no key at any depth contains password, secret or token, or credential other than as the credentials that ends it, in any letter case, and that the configuration as JSON with its keys sorted and no whitespace is at most ${String(configurationCanonicalCharsMax)} UTF-16 code units.`,
   );
 
 /** The longest path a catalog names another repository file by, in code points. */
@@ -862,26 +853,33 @@ export const evaluationPlanSchema = z
   .max(evaluationBlocksMax);
 
 /**
- * How a version 2 catalog's passed work lands, by a landing mode and no policy,
- * and whether a person approves it first.
+ * A finalizer's former approval policy, which a stored revision may still name
+ * and its reader ignores; an import naming it is refused.
  */
+const finalizerApprovalRequiredSchema = z.boolean().optional().meta({
+  deprecated: true,
+  description:
+    "Refused on import. A person's approval is an Approval evaluator in a plan.",
+});
+
+/** How a version 2 catalog's passed work lands, by a landing mode and no policy. */
 export const finalizerSchema = z.strictObject({
   landing: briefFinalizationModeSchema
     .optional()
     .describe(
       "The landing a ticket whose brief names none takes, in place of its repository's, ordered Direct.",
     ),
-  approvalRequired: z.boolean().optional(),
+  approvalRequired: finalizerApprovalRequiredSchema,
 });
 
-/** How a version 3 catalog's passed work lands, as a whole finalization, and whether a person approves it first. */
+/** How a version 3 catalog's passed work lands, as a whole finalization. */
 export const finalizationFinalizerSchema = z.strictObject({
   finalization: briefFinalizationSchema
     .optional()
     .describe(
       "The finalization a ticket whose brief names none takes, in place of its repository's landing.",
     ),
-  approvalRequired: z.boolean().optional(),
+  approvalRequired: finalizerApprovalRequiredSchema,
 });
 
 /**

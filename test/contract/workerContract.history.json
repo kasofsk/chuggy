@@ -502,6 +502,11 @@
   {
     "release": "1.100.0",
     "wire": "25f81c62b14129d6ebbd3d1fc8c55c36d5ec0b5c7c590b476b45d835220a719f",
-    "files": "707a9d05d138f964c45febbdf02804fd571894f6b5eaf865d24f75a0b6ff8798"
+    "files": "9415471809eee7ba78db93ee659edd7fa982ba0e52d86617ed44355c2ec53043"
+  },
+  {
+    "release": "1.101.0",
+    "wire": "56dbaea8dfe276503a7ddb9ffbffb8097eaa490e48cec2d620ab5c7b3d734d5d",
+    "files": "522abfb6bd8d4d2d4cfbebcbbe2bdfb8e87a1b91046347e1f3a8cb5044507c16"
   }
 ]

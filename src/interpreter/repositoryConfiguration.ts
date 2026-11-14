@@ -8,6 +8,13 @@
  * for a configuration — a lead selects by it — so two repositories declaring one
  * name are two sources of one named thing, their numbers interleave into its
  * chronology, and the provenance row is what tells the sources apart.
+ *
+ * AN IMPORT REFUSES A LANDING APPROVAL, AND A STORED REVISION STILL READS ONE.
+ * A person's approval is an `Approval` evaluator in a plan, so a version 1
+ * configuration's `finalizationApprovalRequired` and a catalog finalizer's
+ * `approvalRequired` are refused `ApprovalOutsidePlan` here, ahead of the
+ * reader every stored revision is read through, which takes either key and
+ * ignores it.
  */
 
 import {
@@ -29,6 +36,7 @@ import type {
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import { configurationDocumentSchema } from "../contract/configurationDocument.ts";
+import { declaredConfigurationIsCatalog } from "./workloadConfiguration.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   importRepositoryActions,
@@ -223,7 +231,8 @@ export type RepositoryConfigurationFault =
   | "DuplicateName"
   | "DuplicatePath"
   | "ReferenceAbsent"
-  | "TooManyReferences";
+  | "TooManyReferences"
+  | "ApprovalOutsidePlan";
 
 /**
  * A file refused, the file it names by reference where that is what was
@@ -1212,6 +1221,47 @@ function repositoryConfigurationImportReferences(
   ];
 }
 
+/** `value` as an object's fields, or nothing where it is no object. */
+function repositoryConfigurationEnvelopeFields(
+  value: unknown,
+): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Whether a declared configuration asks a person's approval at landing rather than in a plan. */
+function repositoryConfigurationEnvelopeAsksLandingApproval(
+  configuration: unknown,
+): boolean {
+  const fields = repositoryConfigurationEnvelopeFields(configuration);
+  if (fields === undefined) return false;
+  if (!declaredConfigurationIsCatalog(fields))
+    return Object.hasOwn(fields, "finalizationApprovalRequired");
+  const finalizers = repositoryConfigurationEnvelopeFields(
+    fields["finalizers"],
+  );
+  return Object.values(finalizers ?? {}).some((finalizer) => {
+    const named = repositoryConfigurationEnvelopeFields(finalizer);
+    return named !== undefined && Object.hasOwn(named, "approvalRequired");
+  });
+}
+
+/** The envelope's fields, when it is an object naming exactly its own and a version this tree reads. */
+function repositoryConfigurationEnvelopeRecord(
+  value: unknown,
+): Readonly<Record<string, unknown>> | undefined {
+  const record = repositoryConfigurationEnvelopeFields(value);
+  if (
+    record === undefined ||
+    Object.keys(record).sort().join(",") !== repositoryConfigurationFields ||
+    !configurationDocumentSchema.shape.version.safeParse(record["version"])
+      .success
+  )
+    return undefined;
+  return record;
+}
+
 function repositoryConfigurationEnvelope(
   file: RepositoryDeclarationFile,
   repository: RepositoryId,
@@ -1223,18 +1273,15 @@ function repositoryConfigurationEnvelope(
   const content = repositoryDeclarationContent(file);
   if (content.content === "Refused")
     return { path: file.path, fault: content.fault };
-  const value = content.document;
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return { path: file.path, fault: "EnvelopeInvalid" };
-  const record = value as Record<string, unknown>;
-  if (
-    Object.keys(record).sort().join(",") !== repositoryConfigurationFields ||
-    !configurationDocumentSchema.shape.version.safeParse(record["version"])
-      .success
-  )
+  const record = repositoryConfigurationEnvelopeRecord(content.document);
+  if (record === undefined)
     return { path: file.path, fault: "EnvelopeInvalid" };
   const name = asRepositoryConfigurationName(record["name"]);
   if (name === undefined) return { path: file.path, fault: "NameInvalid" };
+  if (
+    repositoryConfigurationEnvelopeAsksLandingApproval(record["configuration"])
+  )
+    return { path: file.path, fault: "ApprovalOutsidePlan" };
   const resolved = repositoryConfigurationResolved(
     record["configuration"],
     referenced,

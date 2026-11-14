@@ -215,6 +215,7 @@ test("every fault a file is refused for is the console's own words, a configurat
     ["DuplicatePath", "File listed twice"],
     ["ReferenceAbsent", "Referenced file missing"],
     ["TooManyReferences", "Too many referenced files"],
+    ["ApprovalOutsidePlan", "Approval outside an evaluation plan"],
   ]);
   expect(
     copiedWords(

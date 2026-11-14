@@ -128,7 +128,6 @@ repositories-col-configuration = { -configuration(case: "upper") }
 # The worker a workload runs on, never the worker app.
 repositories-col-worker = { -workload(case: "upper") } worker
 repositories-col-stages = { -stage(case: "upper", form: "plural") }
-repositories-col-approval = { -approval(case: "upper") }
 repositories-incomplete = Incomplete
 repositories-catalog-work = { $work } of { $count ->
     [one] { $count } { -workload }
@@ -164,5 +163,6 @@ repositories-fault-duplicate-name = Name declared twice
 repositories-fault-duplicate-path = File listed twice
 repositories-fault-reference-absent = Referenced file missing
 repositories-fault-too-many-references = Too many referenced files
+repositories-fault-approval-outside-plan = { -approval(case: "upper") } outside { -evaluation-plan(form: "a") }
 repositories-fault-chars = { $chars } of { $charsMax } characters
 repositories-fault-reference-named = Missing { $reference }

@@ -20,7 +20,6 @@ import type {
   BriefGitMergePolicy,
   FinalizationUnavailableKind,
 } from "../../src/contract/rosters.ts";
-import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asForgeBindingId,
   asForgeCredentialReference,
@@ -112,8 +111,6 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import {
   asProjectArtifactId,
-  type ApprovalAsk,
-  type ApprovalAsked,
   type AttemptRecord,
   type FinalizerIdentityFactory,
   type FinalizerPreparationStore,
@@ -248,7 +245,6 @@ function attemptBaseOf(
     strategy: "Merge",
     configurationRevision: "revision-run",
     configurationDigest: commitOf("b").repeat(2).slice(0, 64),
-    approvalRequired: false,
     attemptDigest: commitOf("d").repeat(2).slice(0, 64),
   };
 }
@@ -284,12 +280,10 @@ interface FinalizerRecorder
   /** The conclusion each of those offers carried, which is what the request ends as. */
   readonly concluded: FinalizationConclusion[];
   readonly attempts: AttemptRecord[];
-  readonly asks: ApprovalAsk[];
   readonly opened: ChangeProposalRecord[];
   readonly results: ChangeProposalResult[];
   readonly mergeResults: ChangeProposalMergeResult[];
   gathering: HandoffGathering;
-  asked: ApprovalAsked;
   granted?: PermitGranted;
   /** What the row says the forge was asked for, written when the first attempt is counted. */
   askedProposal?: ChangeProposalAsked;
@@ -350,7 +344,6 @@ const passedWork: HandoffWork = {
   task: 1,
   manifest: asResultManifestId("manifest-run"),
   configuration: { revision: "revision-run", digest: digestOf("revision-run") },
-  canonical: asCanonicalConfiguration('{"image":"i","version":1}'),
 };
 
 /** One declared handoff artifact, whose digest is a real hash of the bytes named for it. */
@@ -845,7 +838,6 @@ function recordingLedgers(): Pick<
   | "submitted"
   | "concluded"
   | "attempts"
-  | "asks"
   | "opened"
   | "results"
   | "mergeResults"
@@ -861,7 +853,6 @@ function recordingLedgers(): Pick<
     submitted: [],
     concluded: [],
     attempts: [],
-    asks: [],
     opened: [],
     results: [],
     mergeResults: [],
@@ -985,15 +976,10 @@ function recordingStore(
       artifacts: [handoffOf("one.txt", "one")],
       sources: [],
     },
-    asked: { asked: "Requested" },
     handoffGathering: () => Promise.resolve(own.gathering),
     recordAttempt: (record) => {
       own.attempts.push(record);
       return Promise.resolve({ recorded: "Attempt" });
-    },
-    requestApproval: (ask) => {
-      own.asks.push(ask);
-      return Promise.resolve(own.asked);
     },
     claimRequests: () => Promise.resolve(views.map((view) => view.claim)),
     ...recordingWaiting(views, () => own),
@@ -1261,7 +1247,6 @@ function promotableView(request: string): FinalizationView {
     claim: claimOf(request),
     repository: binding,
     attempt: attemptOf(request),
-    approval: "Pending",
     attemptsMade: 1,
   };
 }
@@ -1271,14 +1256,16 @@ function unboundView(request: string): FinalizationView {
   return {
     lifecycle: "Active",
     claim: claimOf(request),
-    approval: "Pending",
     attemptsMade: 0,
   };
 }
 
-/** A candidate a person answered no to, which is the hold a resume would put to the same person again. */
-function declinedView(request: string): FinalizationView {
-  return { ...promotableView(request), approval: "Declined" };
+/** A permit concluded with no reading behind it, which is durable rows disagreeing rather than anything a resume clears. */
+function contradictedView(request: string): FinalizationView {
+  return {
+    ...promotableView(request),
+    permit: { ...permitOf(request), state: "Concluded" },
+  };
 }
 
 /**
@@ -1812,45 +1799,11 @@ test("an absent ref onto a target nobody held at preparation reads as not promot
   }
 });
 
-test("a candidate awaiting approval opens the ask and reaches neither the remote nor the permit", async () => {
-  const waiting = promotableView("request-one");
-  const store = recordingStore([
-    {
-      ...waiting,
-      attempt: { ...attemptOf("request-one"), approvalRequired: true },
-    },
-  ]);
-  const git = recordingGit();
-  const report = await passOver(serviceOf(store, git));
-  assert.equal(report.approvals, 1);
-  assert.equal(report.promotions, 0);
-  assert.deepEqual(
-    store.asks.map((ask) => ask.attempt),
-    ["attempt-request-one"],
-  );
-  assert.deepEqual(git.promotions, []);
-  assert.deepEqual(store.grants, []);
-});
-
-test("an ask already standing holds rather than opening a second question", async () => {
-  const store = recordingStore([
-    {
-      ...promotableView("request-one"),
-      attempt: { ...attemptOf("request-one"), approvalRequired: true },
-    },
-  ]);
-  store.asked = { asked: "AlreadyRequested" };
-  const report = await passOver(serviceOf(store, recordingGit()));
-  assert.equal(report.approvals, 0);
-  assert.equal(report.holds, 1);
-});
-
 test("a settled request gives its claim back and moves nothing else", async () => {
   const settled: FinalizationView = {
     lifecycle: "Active",
     claim: { ...claimOf("request-one"), state: "Fulfilled" },
     repository: binding,
-    approval: "Pending",
     attemptsMade: 0,
   };
   const store = recordingStore([settled]);
@@ -1868,7 +1821,6 @@ function preparableView(request: string): FinalizationView {
     claim: claimOf(request),
     repository: binding,
     observedTarget: attemptOf(request).target,
-    approval: "Pending",
     attemptsMade: 0,
   };
 }
@@ -1899,7 +1851,6 @@ test("a clean preparation builds over the observed target and records one prepar
   assert.equal(recorded?.candidate, integrated);
   assert.equal(recorded?.strategy, "Merge");
   assert.equal(recorded?.configuration.revision, "revision-run");
-  assert.equal(recorded?.approvalRequired, false);
   assert.equal(recorded?.attemptDigest.length, 64);
   assert.deepEqual(
     recorded?.bundle.references.map((each) => each.kind),
@@ -3982,24 +3933,6 @@ test("a ticket that reworked prepares the source its latest passed work declared
   );
 });
 
-test("the pinned revision is what says a candidate needs a person's approval", async () => {
-  const store = recordingStore([preparableView("request-one")]);
-  store.gathering = {
-    work: [
-      {
-        ...passedWork,
-        canonical: asCanonicalConfiguration(
-          '{"finalizationApprovalRequired":true,"image":"i","version":1}',
-        ),
-      },
-    ],
-    artifacts: store.gathering.artifacts,
-    sources: [],
-  };
-  await passOver(serviceOf(store, recordingGit()));
-  assert.equal(store.attempts[0]?.approvalRequired, true);
-});
-
 /** A remote that answers each observation in turn, which is how a target moves mid-preparation. */
 function movingTarget(
   git: GitRecorder,
@@ -4990,7 +4923,6 @@ test("a pass over a ticket that lands nothing concludes it and asks no remote", 
   assert.deepEqual(store.attempts, []);
   assert.deepEqual(store.grants, []);
   assert.deepEqual(store.opened, []);
-  assert.deepEqual(store.asks, []);
   assert.deepEqual(git.observations, []);
   assert.deepEqual(git.preparations, []);
   assert.deepEqual(git.promotions, []);
@@ -5036,7 +4968,7 @@ test("a pass that moves the request clears the count rather than adding to it", 
 });
 
 test("a hold no resume could get past is never recorded and never reported", async () => {
-  const store = recordingStore([declinedView("request-one")]);
+  const store = recordingStore([contradictedView("request-one")]);
   const service = serviceOf(store, recordingGit(), { holdPassesMax: 1 });
   await passOver(service);
   await passOver(service);
@@ -5050,7 +4982,7 @@ test("a hold no resume could get past is never recorded and never reported", asy
 });
 
 test("a hold off the roster leaves the count another kind is keeping alone", async () => {
-  const store = recordingStore([declinedView("request-one")]);
+  const store = recordingStore([contradictedView("request-one")]);
   store.heldKind = "TargetUnreadable";
   store.heldPasses = 1;
   await passOver(serviceOf(store, recordingGit(), { holdPassesMax: 2 }));

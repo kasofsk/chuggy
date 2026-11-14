@@ -95,7 +95,6 @@ function listed(
     readiness: "Ready",
     image: "an-image",
     practices: [],
-    finalization: { approvalRequired: false },
     evaluationStagesCount: 1,
     ...(catalog
       ? {

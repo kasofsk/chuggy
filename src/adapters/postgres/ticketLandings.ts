@@ -79,7 +79,6 @@ interface TicketLandingRow {
   readonly candidate_commit: string | null;
   readonly prepared_at: string | null;
   readonly conflict_manifest: string | null;
-  readonly approval_open: boolean | null;
   readonly proposed: boolean | null;
   readonly head_ref: string | null;
   readonly base_ref: string | null;
@@ -332,7 +331,6 @@ function ticketLandingRecord(row: TicketLandingRow): TicketLandingRecord {
     ...(row.conflict_manifest === null
       ? {}
       : { conflictManifest: asProjectArtifactId(row.conflict_manifest) }),
-    approvalOpen: finalizerRowPresent(row.approval_open, "approval open"),
     ...(proposal === undefined ? {} : { proposal }),
     ...(wait === undefined ? {} : { wait }),
     ...(row.landed_commit === null
@@ -356,7 +354,7 @@ async function ticketLandingsRead(
                l.attempts,l.outcome,l.failure_kind,l.target_ref,l.target_commit,
                l.candidate_commit,
                to_char(l.prepared_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS prepared_at,
-               l.conflict_manifest,l.approval_open,l.proposed,l.head_ref,
+               l.conflict_manifest,l.proposed,l.head_ref,
                l.base_ref,l.creation,l.url,l.merge,l.merge_reason,
                l.mergeability,l.merge_commit,l.landed_commit,l.merge_state,
                l.merge_wait,

@@ -15,7 +15,6 @@ sentences-escalation-evaluation-blocked = { -evaluation(case: "upper") } could n
 # spells -run: to run is a verb here
 sentences-escalation-landing-unavailable = { -landing(case: "upper") } could not run
 sentences-native-escalation = { -escalation }
-sentences-native-approval = awaiting your { -approval }
 sentences-native-evaluation-approval = awaiting your { -evaluation } { -approval }
 sentences-native-evaluation-approval-awaited = awaiting { -evaluation } { -approval }
 

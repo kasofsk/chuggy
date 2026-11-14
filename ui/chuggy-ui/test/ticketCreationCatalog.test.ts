@@ -195,7 +195,7 @@ test("a selection written as YAML reads back as the same form", () => {
     offers,
     {
       evaluation: "gated",
-      finalization: "approved",
+      finalization: "proposed",
     },
     [],
   );
