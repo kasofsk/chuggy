@@ -3,7 +3,9 @@
  * hold where the address names no configuration, the repository chosen in the
  * address, the entries a configuration lists, what an entry chosen in the
  * address shows, a version 1 configuration drawn as a ticket's page draws one,
- * and the repository's head read only where the address asks for it.
+ * and the repository's head read only where the address asks for it; the
+ * page's one title, the rows standing in while the listing is read, and the
+ * search narrowing whichever list is drawn.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -40,20 +42,28 @@ vi.mock("@tanstack/react-router", () => ({
   createLink:
     (Component: (props: Record<string, unknown>) => ReactNode) =>
     (props: Record<string, unknown>) => {
-      const { to, params, ...rest } = props;
+      const { to, params, search, resetScroll, ...rest } = props;
       void params;
-      return <Component {...rest} href={String(to)} />;
+      void resetScroll;
+      return (
+        <Component
+          {...rest}
+          href={
+            search === undefined
+              ? String(to)
+              : `?${new URLSearchParams(search as Record<string, string>).toString()}`
+          }
+        />
+      );
     },
   Link: (props: {
     readonly search?: CatalogQuery;
     readonly className?: string;
-    readonly "aria-current"?: "true";
     readonly children?: ReactNode;
   }) => (
     <a
       href={`?${new URLSearchParams({ ...props.search }).toString()}`}
       className={props.className}
-      aria-current={props["aria-current"]}
     >
       {props.children}
     </a>
@@ -207,6 +217,22 @@ function drawnRepository(): string | null {
   return screen.getByRole("heading", { level: 2 }).textContent;
 }
 
+/** The row a list draws for the entry of this name, by its heading's link. */
+function rowOf(region: HTMLElement, name: string): HTMLElement {
+  const row = within(region)
+    .getByRole("link", { name })
+    .closest<HTMLElement>("li");
+  if (row === null) throw new Error(`${name} is drawn in a row`);
+  return row;
+}
+
+/** The headings at one level, each with the name given, and no more. */
+function expectHeadings(level: number, names: readonly string[]): void {
+  expect(screen.getAllByRole("heading", { level })).toHaveLength(names.length);
+  for (const name of names)
+    expect(screen.getByRole("heading", { level, name })).toBeTruthy();
+}
+
 test("with no configuration in the address, the page draws the repository imported last with its configurations and their fragments", async () => {
   const sent = await drawPage({}, twoRepositories);
   expect(drawnRepository()).toBe("kasofsk/chuggy");
@@ -223,15 +249,16 @@ test("with no configuration in the address, the page draws the repository import
   ]);
   expect(within(declared).getByText("Version 1 configuration")).toBeTruthy();
   expect(
-    screen
-      .getAllByRole("heading", { level: 3 })
-      .map((heading) => heading.textContent),
-  ).toStrictEqual([
-    "Configurations 2",
-    "Workloads 4",
-    "Evaluation plans 2",
-    "Landings 2",
-    "Prompts 1",
+    within(rowOf(declared, "chuggy-development"))
+      .getAllByText(/^\d+ entr/u)
+      .map((count) => count.textContent),
+  ).toStrictEqual(["4 entries", "2 entries", "2 entries", "1 entry"]);
+  expectHeadings(3, [
+    "Configurations 2 entries",
+    "Workloads 4 entries",
+    "Evaluation plans 2 entries",
+    "Landings 2 entries",
+    "Prompts 1 entry",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });
   expect(
@@ -239,7 +266,7 @@ test("with no configuration in the address, the page draws the repository import
       .getAllByRole("link", { name: "chuggy-development" })
       .map((link) => link.getAttribute("href")),
   ).toContain("?configuration=r4&entry=workloads%2Fbuild");
-  expect(screen.queryByRole("article")).toBeNull();
+  expect(screen.queryByRole("article", { name: /./u })).toBeNull();
 });
 
 test("the repository the address names is the one drawn, and choosing another writes it into the address", async () => {
@@ -279,11 +306,10 @@ test("a configuration whose read fails says so in its row, and the fragments say
     undefined,
     ["r3"],
   );
-  const declared = screen.getByRole("region", { name: "Configurations" });
-  const failed = within(declared)
-    .getByRole("link", { name: "chuggy-review" })
-    .closest("li");
-  if (failed === null) throw new Error("the row is drawn");
+  const failed = rowOf(
+    screen.getByRole("region", { name: "Configurations" }),
+    "chuggy-review",
+  );
   expect(within(failed).getByRole("button", { name: "Retry" })).toBeTruthy();
   expect(
     screen.getByText(
@@ -306,24 +332,21 @@ test("an incomplete configuration is listed as one, and not read", async () => {
       readiness: "Incomplete",
     },
   ]);
-  const incomplete = within(
+  const incomplete = rowOf(
     screen.getByRole("region", { name: "Configurations" }),
-  )
-    .getByRole("link", { name: "chuggy-review" })
-    .closest("li");
-  expect(incomplete?.textContent).toContain("Incomplete");
+    "chuggy-review",
+  );
+  expect(incomplete.textContent).toContain("Incomplete");
   expect(sent.some((url) => url.endsWith("/configurations/r3"))).toBe(false);
 });
 
 test("a configuration chosen in the address is drawn with its entries, and links back to its repository", async () => {
   await drawPage({ configuration: "r4" });
-  expect(
-    screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
-  ).toStrictEqual([
-    "Workloads 4",
-    "Evaluation plans 2",
-    "Landings 2",
-    "Prompts 1",
+  expectHeadings(2, [
+    "Workloads 4 entries",
+    "Evaluation plans 2 entries",
+    "Landings 2 entries",
+    "Prompts 1 entry",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });
   expect(
@@ -354,9 +377,6 @@ test("an entry the address names is shown beside the list, with what it uses and
       "Nothing in the catalog.",
     ),
   ).toBeTruthy();
-  expect(
-    screen.getByRole("link", { name: /^gated/u }).getAttribute("aria-current"),
-  ).toBe("true");
 });
 
 test("a plan whose stages are named in free text is listed and shown under those names", async () => {
@@ -395,9 +415,75 @@ test("a version 1 configuration is drawn as no catalog", async () => {
   expect(screen.queryByRole("button", { name: /Revision/u })).toBeNull();
 });
 
-test("a project that imported nothing says so", async () => {
+test("a project that imported nothing says so in one line, under the page's title and no bar", async () => {
   await drawPage({}, []);
-  expect(screen.getByText("No configuration imported")).toBeTruthy();
+  expect(screen.getByText("No configuration imported").tagName).toBe("P");
+  expectHeadings(1, ["Catalog"]);
+  expect(screen.queryByRole("button", { name: /^Search/u })).toBeNull();
+});
+
+test("the page has one title: the catalog's over every repository, and a configuration's own name and version over it", async () => {
+  await drawPage({}, twoRepositories);
+  expectHeadings(1, ["Catalog"]);
+  cleanup();
+  await drawPage({ configuration: "r2" });
+  expectHeadings(1, ["chuggy-development #1"]);
+});
+
+test("while the listing is read, rows stand where its rows will be", async () => {
+  vi.stubGlobal("fetch", () => new Promise<never>(() => undefined));
+  renderCopied(
+    <ScreenHarness
+      partition={leadPartition}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <CatalogPage query={{}} />
+    </ScreenHarness>,
+  );
+  await settled();
+  expectHeadings(1, ["Catalog"]);
+  const standing = screen.getByRole("list", { name: "Loading…" });
+  expect(standing.querySelectorAll("[data-skeleton]").length).toBeGreaterThan(
+    0,
+  );
+});
+
+/** The catalog's search, typed into. */
+function searched(typed: string): void {
+  act(() => {
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Search the catalog" }),
+      { target: { value: typed } },
+    );
+  });
+}
+
+test("the search narrows a repository's configurations and fragments to the rows whose name or summary it matches, and drops a group it empties", async () => {
+  await drawPage({});
+  searched("review");
+  expect(screen.queryByRole("region", { name: "Configurations" })).toBeNull();
+  const plans = screen.getByRole("region", { name: "Evaluation plans" });
+  expect(
+    within(plans)
+      .getAllByRole("heading", { level: 4 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual(["review", "gated"]);
+  expect(screen.queryByRole("region", { name: "Prompts" })).toBeNull();
+});
+
+test("the search narrows a configuration's entries, and a search matching nothing says so in one line", async () => {
+  await drawPage({ configuration: "r4" });
+  searched("build");
+  expect(
+    within(screen.getByRole("region", { name: "Workloads" }))
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent),
+  ).toStrictEqual(["build"]);
+  expect(screen.queryByRole("region", { name: "Landings" })).toBeNull();
+  searched("nothing-is-named-this");
+  expect(screen.queryByRole("region")).toBeNull();
+  expect(screen.getByText("Nothing in the catalog matches").tagName).toBe("P");
 });
 
 test("the repository's head is not read unless the address asks for it", async () => {

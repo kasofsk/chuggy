@@ -5,14 +5,17 @@
 export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-title": Record<never, never>;
   readonly "configuration-catalog-none": Record<never, never>;
-  readonly "configuration-catalog-none-detail": {
-    readonly directory: unknown;
-  };
   readonly "configuration-catalog-picker-configuration": Record<never, never>;
   readonly "configuration-catalog-picker-revision": Record<never, never>;
   readonly "configuration-catalog-version-one": Record<never, never>;
   readonly "configuration-catalog-authored": Record<never, never>;
   readonly "configuration-catalog-imported": Record<never, never>;
+  readonly "configuration-catalog-search": Record<never, never>;
+  readonly "configuration-catalog-search-placeholder": Record<never, never>;
+  readonly "configuration-catalog-search-none": Record<never, never>;
+  readonly "configuration-catalog-count": {
+    readonly count: unknown;
+  };
   readonly "configuration-catalog-picker-repository": Record<never, never>;
   readonly "configuration-catalog-repository-back": {
     readonly repository: unknown;

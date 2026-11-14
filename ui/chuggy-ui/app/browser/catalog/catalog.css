@@ -1,9 +1,9 @@
-/* The catalog: the chosen repository under its name and commit, its
-   configurations and fragments as ruled cards, a configuration's parts in one
-   column where the page is narrow; and for one configuration the chooser,
-   where the version came from and what the repository's head says of it where
-   the head is drawn, then the entries grouped by what each is, one card per
-   group with its rows ruled. With an entry chosen the list and the entry sit
+/* The catalog, on the shared head, bar and rows: the chosen repository under
+   its name and commit, then its configurations and fragments; and for one
+   configuration where the version came from and what the repository's head
+   says of it where the head is drawn, then the entries grouped by what each
+   is, the chosen one's row on the sunken ground. On a phone every link and
+   button is a finger's height. With an entry chosen the list and the entry sit
    side by side, the entry held in view and scrolling on its own while the
    list scrolls; where the page is narrow they stack with the entry first,
    since it is what the reader just asked for. */
@@ -16,20 +16,6 @@
     min-width: 0;
   }
 
-  .catalog-chooser {
-    display: grid;
-    gap: var(--space-2);
-    padding-bottom: var(--space-3);
-    border-bottom: var(--hairline) solid var(--edge);
-  }
-
-  .catalog-chooser-pickers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    min-width: 0;
-  }
-
   .catalog-provenance {
     display: flex;
     flex-wrap: wrap;
@@ -39,18 +25,6 @@
     color: var(--ink-3);
     font-size: var(--text-sm);
     overflow-wrap: anywhere;
-  }
-
-  .catalog-back {
-    justify-self: start;
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-  }
-
-  .catalog-repositories {
-    display: grid;
-    gap: var(--space-4);
-    min-width: 0;
   }
 
   .catalog-repository {
@@ -74,32 +48,8 @@
     overflow-wrap: anywhere;
   }
 
-  .catalog-configuration,
-  .catalog-fragment {
-    display: grid;
-    gap: var(--space-1);
-    min-width: 0;
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .catalog-configuration-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 var(--space-3);
-    min-width: 0;
-  }
-
-  .catalog-configuration-head > * {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .catalog-configuration-head .catalog-entry-name {
-    color: var(--ink-1);
-  }
-
-  .catalog-origin {
+  .catalog-origin,
+  .catalog-counts {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -108,48 +58,6 @@
     color: var(--ink-3);
     font-size: var(--text-sm);
     overflow-wrap: anywhere;
-  }
-
-  .catalog-parts {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-1) var(--space-3);
-    margin: 0;
-    font-size: var(--text-sm);
-  }
-
-  .catalog-parts > div {
-    display: contents;
-  }
-
-  .catalog-parts dt {
-    color: var(--ink-3);
-  }
-
-  .catalog-parts dd {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-3);
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-
-  @container (max-width: 30em) {
-    .catalog-parts {
-      grid-template-columns: minmax(0, 1fr);
-      row-gap: 0;
-    }
-
-    .catalog-parts > div + div dt {
-      margin-top: var(--space-1);
-    }
-  }
-
-  .catalog-part {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1);
   }
 
   .catalog-head {
@@ -191,6 +99,10 @@
     min-width: 0;
   }
 
+  .catalog-groups .record-row:has(.record-row-title a[aria-current="page"]) {
+    background: var(--surface-2);
+  }
+
   .catalog-group-title {
     margin: 0 0 var(--space-2);
     color: var(--ink-3);
@@ -198,59 +110,6 @@
     font-weight: var(--weight-strong);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-  }
-
-  .catalog-count {
-    font-weight: var(--weight-regular);
-  }
-
-  .catalog-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    background: var(--surface-1);
-    border: var(--hairline) solid var(--edge);
-    border-radius: var(--radius-3);
-    overflow: hidden;
-  }
-
-  .catalog-list li + li {
-    border-top: var(--hairline) solid var(--edge);
-  }
-
-  .catalog-entry {
-    display: grid;
-    gap: var(--space-1);
-    min-width: 0;
-    padding: var(--space-2) var(--space-3);
-    color: var(--ink-1);
-    text-decoration: none;
-  }
-
-  .catalog-entry:hover {
-    background: var(--surface-2);
-  }
-
-  .catalog-entry:hover .catalog-entry-name {
-    text-decoration: underline;
-  }
-
-  .catalog-entry[aria-current="true"] {
-    background: var(--surface-2);
-    box-shadow: inset calc(3 * var(--hairline)) 0 0 var(--ink-1);
-  }
-
-  .catalog-entry-name {
-    font-weight: var(--weight-strong);
-    overflow-wrap: anywhere;
-  }
-
-  .catalog-entry-summary {
-    overflow: hidden;
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .catalog-badges {
@@ -350,6 +209,23 @@
   .catalog-field {
     color: var(--ink-3);
     font: var(--text-xs) var(--font-mono);
+  }
+
+  @container (max-width: 40em) {
+    .catalog-page :is(.btn, a[href], button, [tabindex="0"]) {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+
+    .catalog-page .list-controls {
+      --control-height: var(--height-touch);
+    }
+
+    .catalog-page .list-search-field .input-box {
+      min-height: var(--height-touch);
+    }
   }
 
   @container (min-width: 60em) {

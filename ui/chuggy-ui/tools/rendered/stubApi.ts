@@ -26,6 +26,7 @@ import {
   agentAccountsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
+  configurationResponseSchema,
   configurationsResponseSchema,
   forgeAppsResponseSchema,
   forgeInstallationsResponseSchema,
@@ -249,6 +250,35 @@ const repositoryConfigurations = {
   }),
 };
 
+/** The ready configuration's own version: a catalog whose workload's name
+ * runs past a phone, a plan evaluating with it, and a landing. */
+const repositoryConfigurationCoding = {
+  partition,
+  revision: "revision-coding",
+  digest: "a".repeat(64),
+  canonical: JSON.stringify({
+    version: 2,
+    image: "ghcr.io/kasofsk/chuggy-worker-with-a-long-image-name:2026.11.01",
+    workloads: {
+      "build-and-test-everything-the-repository-declares": {
+        runner: "Agent",
+        prompt: { text: "Build it." },
+        worker: {
+          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        },
+      },
+      checks: { runner: "Commands", commands: ["npm test"] },
+    },
+    plans: { checked: [{ name: "checks", evaluators: ["checks"] }] },
+    finalizers: { land: { approvalRequired: false } },
+    defaults: {
+      work: "build-and-test-everything-the-repository-declares",
+      evaluation: "checked",
+      finalization: "land",
+    },
+  }),
+};
+
 /** The tenant's connected accounts: one holding both apps, and one lacking
  * the worker app, whose install is the step the repositories page offers. */
 const forgeInstallations = {
@@ -380,6 +410,11 @@ export const stubApiReads: readonly StubApiRead[] = [
     `${projectPath}/configurations`,
     configurationsResponseSchema,
     repositoryConfigurations,
+  ),
+  stubApiRead(
+    `${projectPath}/configurations/revision-coding`,
+    configurationResponseSchema,
+    repositoryConfigurationCoding,
   ),
   stubApiRead(`${projectPath}/landing-queues`, landingQueuesResponseSchema, {
     queues: [],

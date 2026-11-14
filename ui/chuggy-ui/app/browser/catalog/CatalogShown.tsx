@@ -8,6 +8,8 @@
  */
 
 import { Link, useParams } from "@tanstack/react-router";
+import type { LinkOptions } from "@tanstack/react-router";
+import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -26,8 +28,13 @@ import type {
 } from "../../core/catalogEntries.ts";
 import type { Copy } from "../../core/copy.ts";
 import { copyOrDataText } from "../../core/copy.ts";
+import { repositoryLabel } from "../../core/projectRepositories.ts";
+import { rosterSearchFilter } from "../../core/rosterSearch.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
+import { CountBadge } from "../ui/CountBadge.tsx";
+import { EmptyState } from "../ui/EmptyState.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
+import { RecordList, RecordRow, RecordRowSkeleton } from "../ui/RecordList.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
@@ -39,8 +46,6 @@ export function useCatalogPartition(): PartitionIdentity {
 /** A link to this page drawing a choice, which keeps the reader's place in the list. */
 export function CatalogLink(props: {
   readonly query: CatalogQuery;
-  readonly className?: string;
-  readonly current?: boolean;
   readonly children: ReactNode;
 }): ReactNode {
   const partition = useCatalogPartition();
@@ -50,8 +55,6 @@ export function CatalogLink(props: {
       params={partition}
       search={props.query}
       resetScroll={false}
-      className={props.className}
-      aria-current={props.current === true ? "true" : undefined}
     >
       {props.children}
     </Link>
@@ -74,45 +77,137 @@ export function CatalogBadges(props: {
   );
 }
 
-function CatalogList(props: {
-  readonly base: CatalogQuery;
-  readonly entries: CatalogEntries;
-  readonly selected: string | undefined;
-}): ReactNode {
+/** What the reader has typed into the catalog's search, which every list on
+ * the page narrows to. */
+const catalogSearchContext = createContext("");
+
+export const CatalogSearchProvider = catalogSearchContext.Provider;
+
+export function useCatalogSearch(): string {
+  return useContext(catalogSearchContext);
+}
+
+/** The address a row of this page links to, which keeps the reader's place in the list. */
+export function useCatalogRowLink(): (query: CatalogQuery) => LinkOptions {
+  const partition = useCatalogPartition();
+  return (query) => ({
+    to: settingsRoutes.project.catalog,
+    params: partition,
+    search: query,
+    resetScroll: false,
+  });
+}
+
+const catalogSkeletonRowsCount = 3;
+
+/** Rows standing where a read's rows will be, until they are read. */
+export function CatalogSkeleton(): ReactNode {
   const text = useCopyText();
   return (
+    <RecordList label={text({ id: "panel-loading" })}>
+      {Array.from({ length: catalogSkeletonRowsCount }, (_, index) => (
+        <RecordRowSkeleton key={index} />
+      ))}
+    </RecordList>
+  );
+}
+
+/** A group's name over its rows, and how many it lists. */
+export function CatalogGroup(props: {
+  readonly title: Copy;
+  readonly level: 2 | 3;
+  readonly count: number;
+  readonly children: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  const title = text(props.title);
+  const Heading = `h${String(props.level)}` as "h2" | "h3";
+  return (
+    <section className="catalog-group" aria-label={title}>
+      <Heading className="catalog-group-title">
+        {title}{" "}
+        <CountBadge
+          count={props.count}
+          name={text({
+            id: "configuration-catalog-count",
+            args: { count: props.count },
+          })}
+        />
+      </Heading>
+      <RecordList label={title}>{props.children}</RecordList>
+    </section>
+  );
+}
+
+/** The line that stands for a list the search left empty. */
+export function CatalogSearchNone(): ReactNode {
+  const text = useCopyText();
+  return (
+    <EmptyState label={text({ id: "configuration-catalog-search-none" })} />
+  );
+}
+
+/** What a row says of where an entry is from and what it is. */
+export function CatalogRowMeta(props: {
+  readonly repository: string | undefined;
+  readonly said: string;
+}): ReactNode {
+  return (
+    <>
+      {props.repository === undefined ? null : (
+        <span title={props.repository}>
+          {repositoryLabel(props.repository)}
+        </span>
+      )}
+      {props.said === "" ? null : <span>{props.said}</span>}
+    </>
+  );
+}
+
+function CatalogList(props: {
+  readonly base: CatalogQuery;
+  readonly repository: string | undefined;
+  readonly entries: CatalogEntries;
+}): ReactNode {
+  const text = useCopyText();
+  const search = useCatalogSearch();
+  const linked = useCatalogRowLink();
+  const groups = props.entries.groups.flatMap((group) => {
+    const entries = rosterSearchFilter(group.entries, search, (entry) =>
+      [entry.name, catalogEntrySummary(entry, text)].join(" "),
+    );
+    return entries.length === 0 ? [] : [{ ...group, entries }];
+  });
+  if (groups.length === 0) return <CatalogSearchNone />;
+  return (
     <div className="catalog-groups">
-      {props.entries.groups.map((group) => (
-        <section
+      {groups.map((group) => (
+        <CatalogGroup
           key={group.kind}
-          className="catalog-group"
-          aria-label={text(group.title)}
+          title={group.title}
+          level={2}
+          count={group.entries.length}
         >
-          <h2 className="catalog-group-title">
-            {text(group.title)}{" "}
-            <span className="catalog-count">{group.entries.length}</span>
-          </h2>
-          <ul className="catalog-list">
-            {group.entries.map((entry) => {
-              const summary = catalogEntrySummary(entry, text);
-              return (
-                <li key={entry.key}>
-                  <CatalogLink
-                    query={{ ...props.base, entry: entry.key }}
-                    className="catalog-entry"
-                    current={entry.key === props.selected}
-                  >
-                    <span className="catalog-entry-name">{entry.name}</span>
-                    {summary === "" ? null : (
-                      <span className="catalog-entry-summary">{summary}</span>
-                    )}
-                    <CatalogBadges entry={entry} />
-                  </CatalogLink>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+          {group.entries.map((entry) => (
+            <RecordRow
+              key={entry.key}
+              title={entry.name}
+              link={linked({ ...props.base, entry: entry.key })}
+              level={3}
+              meta={
+                <CatalogRowMeta
+                  repository={props.repository}
+                  said={catalogEntrySummary(entry, text)}
+                />
+              }
+              trailing={
+                entry.defaults.length === 0 ? undefined : (
+                  <CatalogBadges entry={entry} />
+                )
+              }
+            />
+          ))}
+        </CatalogGroup>
       ))}
     </div>
   );
@@ -226,6 +321,8 @@ const catalogEntryAbsentMark = "\u0000";
 /** One version as a catalog: its entries listed, and the chosen one beside them. */
 export function CatalogShown(props: {
   readonly base: CatalogQuery;
+  /** The repository the version was read from, none where it was authored. */
+  readonly repository: string | undefined;
   readonly canonical: string;
   readonly entries: CatalogEntries;
   readonly selected: string | undefined;
@@ -233,8 +330,8 @@ export function CatalogShown(props: {
   const list = (
     <CatalogList
       base={props.base}
+      repository={props.repository}
       entries={props.entries}
-      selected={props.selected}
     />
   );
   if (props.selected === undefined) return list;

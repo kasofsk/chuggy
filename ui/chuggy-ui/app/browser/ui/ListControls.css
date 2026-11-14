@@ -27,6 +27,12 @@
       opacity var(--duration-2) var(--ease-out);
   }
 
+  /* In a page's head the bar stands under the head's last line, rather than
+     pulling up into the page's top as it does where it opens the page. */
+  .page-header > .list-controls {
+    margin-top: 0;
+  }
+
   .list-controls[data-hidden] {
     opacity: 0;
     transform: translateY(-100%);
@@ -80,6 +86,12 @@
 
   .list-search[data-expanded] .list-search-field {
     width: var(--width-aside);
+  }
+
+  /* Closed and laid out no longer, the box is not drawn at all, so nothing
+     of it stands in the row. */
+  .list-search:not([data-open]) .list-search-field > .input {
+    display: none;
   }
 
   .list-search-field > .input {
