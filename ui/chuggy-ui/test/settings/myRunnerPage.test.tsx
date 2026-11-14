@@ -101,8 +101,8 @@ const runnersTwo = {
 /** Projects the reader reads: two in this workspace, one in another. */
 const inventory = {
   projects: [
-    { tenant: "acme", project: "atlas", name: "atlas" },
-    { tenant: "acme", project: "borealis", name: "borealis" },
+    { tenant: "acme", project: "atlas", name: "Atlas Web" },
+    { tenant: "acme", project: "borealis", name: "Borealis" },
     { tenant: "other", project: "cirrus", name: "cirrus" },
   ],
 };
@@ -508,7 +508,7 @@ test("a member holding a runner may register another, and one holding as many as
   expect(screen.getByText("Limit reached")).toBeTruthy();
 });
 
-test("a runner is given only a project of this workspace the reader reads, and takes one away", async () => {
+test("a runner is given only a project of this workspace the reader reads, each named by its name and written by its address, and takes one away", async () => {
   drawing = { granted: true, runner: runnerHeld };
   const sent = await drawMyRunner();
   fireEvent.keyDown(screen.getByRole("button", { name: /^Add a project/u }), {
@@ -519,12 +519,13 @@ test("a runner is given only a project of this workspace the reader reads, and t
     within(menu)
       .getAllByRole("menuitemradio")
       .map((item) => item.textContent),
-  ).toStrictEqual(["borealis"]);
+  ).toStrictEqual(["Borealis"]);
   fireEvent.click(
-    within(menu).getByRole("menuitemradio", { name: "borealis" }),
+    within(menu).getByRole("menuitemradio", { name: "Borealis" }),
   );
   await settled();
-  await press("Remove atlas");
+  expect(screen.getByRole("rowheader", { name: "Atlas Web" })).toBeTruthy();
+  await press("Remove Atlas Web");
   expect(written(sent)).toStrictEqual([
     "PUT /personal-runner/projects/borealis",
     "DELETE /personal-runner/projects/atlas",
@@ -535,12 +536,12 @@ test("a project's priority is drawn and chosen from High, Normal and Low, and on
   drawing = { granted: true, runner: runnerHeld };
   const sent = await drawMyRunner();
   const priority = screen.getByRole("button", {
-    name: /^Priority of atlas/u,
+    name: /^Priority of Atlas Web/u,
   });
   expect(priority.textContent).toContain("Normal");
   const choose = async (name: string) => {
     fireEvent.keyDown(
-      screen.getByRole("button", { name: /^Priority of atlas/u }),
+      screen.getByRole("button", { name: /^Priority of Atlas Web/u }),
       { key: "ArrowDown" },
     );
     const menu = await screen.findByRole("menu");

@@ -213,6 +213,7 @@ function useTenantInvite(
 }
 
 function TenantInviteProjects(props: {
+  readonly tenant: string;
   readonly abilities: AccessTenantAbilities;
   readonly offered: ReturnType<typeof tenantInvitationProjects>;
   readonly inviting: TenantInviting;
@@ -224,6 +225,7 @@ function TenantInviteProjects(props: {
   return (
     <div className="grid gap-1">
       <TenantProjectsGrid
+        tenant={props.tenant}
         projects={props.offered.map((offered) => offered.project)}
         box={(project, role) =>
           projectRoleOffered(props.abilities, project, role)
@@ -268,6 +270,7 @@ function TenantInvitePerson(props: {
 }
 
 function TenantInviteFields(props: {
+  readonly tenant: string;
   readonly abilities: AccessTenantAbilities;
   readonly offered: ReturnType<typeof tenantInvitationProjects>;
   readonly inviting: TenantInviting;
@@ -297,6 +300,7 @@ function TenantInviteFields(props: {
         }}
       />
       <TenantInviteProjects
+        tenant={props.tenant}
         abilities={props.abilities}
         offered={props.offered}
         inviting={props.inviting}
@@ -378,6 +382,7 @@ function TenantInviteDialog(props: {
     >
       {inviting.made === undefined ? (
         <TenantInviteFields
+          tenant={props.tenant}
           abilities={props.abilities}
           offered={offered}
           inviting={inviting}

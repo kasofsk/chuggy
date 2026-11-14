@@ -48,14 +48,29 @@ function deletesSent(drawn: DrawnStrict): readonly string[] {
     .map((request) => request.url);
 }
 
-test("a project nothing holds is deleted once asked, naming it, and offers the way back", async () => {
+test("a project nothing holds is deleted once asked, naming it by its name, and offers the way back", async () => {
+  let listed = true;
+  const deletions = deletionRoute(
+    () => answer({ held: [] }),
+    () => {
+      listed = false;
+      return new Response(null, { status: 204 });
+    },
+  );
   const drawn = await drawnStrict(
     <ProjectDeletion partition={leadPartition} />,
-    deletionRoute(() => answer({ held: [] })),
+    (request) =>
+      request.url.endsWith("/api/v1/projects")
+        ? answer({
+            projects: listed
+              ? [{ ...leadPartition, name: "Atlas Billing" }]
+              : [],
+          })
+        : deletions(request),
   );
   await press("Delete project");
   const asked = screen.getByRole("group", {
-    name: `Delete ${leadPartition.project}?`,
+    name: "Delete Atlas Billing?",
   });
   expect(asked.textContent).toContain("cannot be undone");
   expect(deletesSent(drawn)).toEqual([]);
@@ -65,7 +80,7 @@ test("a project nothing holds is deleted once asked, naming it, and offers the w
     `/projects/${leadPartition.project}/deletion`,
   );
   expect(
-    screen.getByText(`${leadPartition.project} is deleted.`, { exact: false }),
+    screen.getByText("Atlas Billing is deleted.", { exact: false }),
   ).toBeTruthy();
   expect(
     screen

@@ -81,6 +81,7 @@ import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { personalRunnerReread, usePersonalRunner } from "../personalRunner.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import {
   RunnerMintOpened,
   runnerMintRefusal,
@@ -476,6 +477,7 @@ function MyRunnersTable(props: {
 /** What heads the list of projects: the menu of those the reader may add, where there are any. */
 function MyRunnerProjectAdd(props: {
   readonly addable: readonly string[] | undefined;
+  readonly named: (project: string) => string;
   readonly onAdd: (project: string) => void;
 }): ReactNode {
   const text = useCopyText();
@@ -488,7 +490,10 @@ function MyRunnerProjectAdd(props: {
       value=""
       placeholder={add}
       align="end"
-      options={addable.map((project) => ({ value: project, text: project }))}
+      options={addable.map((project) => ({
+        value: project,
+        text: props.named(project),
+      }))}
       onChoose={props.onAdd}
     />
   );
@@ -497,15 +502,16 @@ function MyRunnerProjectAdd(props: {
 /** The menu a project's priority is chosen from. */
 function MyRunnerProjectPriority(props: {
   readonly served: PersonalRunnerProjectListed;
+  readonly name: string;
   readonly onPrioritize: (priority: PersonalRunnerPriority) => void;
 }): ReactNode {
   const text = useCopyText();
-  const { project, priority } = props.served;
+  const { priority } = props.served;
   return (
     <Picker
       label={text({
         id: "runners-personal-project-priority",
-        args: { project },
+        args: { project: props.name },
       })}
       value={priority}
       align="start"
@@ -542,6 +548,7 @@ function MyRunnerProjectWaiting(props: {
  * press that removes it. */
 function MyRunnerProjectsTable(props: {
   readonly projects: readonly PersonalRunnerProjectListed[];
+  readonly named: (project: string) => string;
   readonly busy: boolean;
   readonly onPrioritize: (
     project: string,
@@ -573,12 +580,13 @@ function MyRunnerProjectsTable(props: {
           <tr key={served.project}>
             <th scope="row">
               <span className="people-name block text-ink-1">
-                {served.project}
+                {props.named(served.project)}
               </span>
             </th>
             <td>
               <MyRunnerProjectPriority
                 served={served}
+                name={props.named(served.project)}
                 onPrioritize={(priority) => {
                   props.onPrioritize(served.project, priority);
                 }}
@@ -591,7 +599,7 @@ function MyRunnerProjectsTable(props: {
                 size="sm"
                 named={text({
                   id: "runners-personal-project-remove",
-                  args: { project: served.project },
+                  args: { project: props.named(served.project) },
                 })}
                 disabled={props.busy}
                 onClick={() => {
@@ -610,6 +618,7 @@ function MyRunnerProjectsTable(props: {
 
 /** The projects every runner of the reader's takes work in, each removable, and the ones they may be given. */
 function MyRunnerProjects(props: {
+  readonly tenant: string;
   readonly held: PersonalRunnerResponse;
   readonly addable: readonly string[] | undefined;
   readonly writing: MyRunnerWriting;
@@ -617,6 +626,9 @@ function MyRunnerProjects(props: {
   const text = useCopyText();
   const { held, writing } = props;
   const busy = writing.busy;
+  const projectNamed = useProjectNamed();
+  const named = (project: string): string =>
+    projectNamed({ tenant: props.tenant, project });
   const serves = (
     project: string,
     served: boolean,
@@ -637,6 +649,7 @@ function MyRunnerProjects(props: {
       action={
         <MyRunnerProjectAdd
           addable={props.addable}
+          named={named}
           onAdd={(project) => {
             serves(project, true);
           }}
@@ -648,6 +661,7 @@ function MyRunnerProjects(props: {
       ) : (
         <MyRunnerProjectsTable
           projects={held.projects}
+          named={named}
           busy={busy}
           onPrioritize={(project, priority) => {
             serves(project, true, priority);
@@ -680,6 +694,7 @@ function MyRunnersHeld(props: {
         />,
       )}
       <MyRunnerProjects
+        tenant={props.tenant}
         held={props.held}
         addable={props.addable}
         writing={writing}

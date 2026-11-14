@@ -23,7 +23,6 @@ import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { projectNamed } from "../../core/projectNaming.ts";
 import { projectDeletionQuery } from "../../core/projectQueries.ts";
 import {
   callerTenantsQuery,
@@ -39,6 +38,7 @@ import {
 import type { UnrunDeletionHolding } from "../../core/unrunDeletion.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
+import { useProjectNamed } from "../projectNamed.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -153,11 +153,10 @@ export function ProjectDeletion(props: {
   const text = useCopyText();
   const { partition } = props;
   const standing = usePanelState(projectDeletionQuery(partition));
-  const inventory = usePanelState(projectsInventoryQuery());
-  const project = projectNamed(
-    inventory.state === "Ready" ? inventory.value : undefined,
-    partition,
-  );
+  // Kept past the deletion, whose landing rereads an inventory without it.
+  const found = useProjectNamed()(partition);
+  const [project, setProject] = useState(found);
+  if (found !== partition.project && found !== project) setProject(found);
   return (
     <UnrunDeletionSection
       standing={standing}
