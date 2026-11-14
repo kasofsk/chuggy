@@ -16,7 +16,10 @@ import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
+import type {
+  ThreadEntryResponse,
+  ThreadResponse,
+} from "../../../../../src/contract/responses.ts";
 import type { ThreadStanding } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../../core/copy.ts";
@@ -307,11 +310,13 @@ function ChatPaneCloseConfirm(props: {
 }
 
 /** What of a thread its actions read, which a listing's entry and the
- * thread's own read both carry. */
+ * thread's own read both carry, and whether it is kept running, which only
+ * its own read says. */
 type ChatPaneThreadNamed = Pick<
   ThreadEntryResponse,
   "session" | "title" | "mine" | "state"
->;
+> &
+  Partial<Pick<ThreadResponse, "jobsStanding">>;
 
 /** Where the actions are drawn: the pane's header, or the bar over the
  * thread's own page, where the title is the page's and its standing is said
@@ -334,6 +339,15 @@ function ChatPaneThreadTitle(props: {
           {text(threadStandingLabel(props.thread.state))}
         </Pill>
       </span>
+      {props.thread.jobsStanding === true ? (
+        <span className="flex shrink-0 pr-2">
+          <Tooltip text={{ id: "chat-kept-running-detail" }}>
+            <span>
+              <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
+            </span>
+          </Tooltip>
+        </span>
+      ) : null}
     </>
   );
 }

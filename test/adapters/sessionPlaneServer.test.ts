@@ -2077,6 +2077,11 @@ const sessionHeaviest: Readonly<
     status: 204,
   },
   held: { headers: json, payload: "{}", status: 204 },
+  standing: {
+    headers: json,
+    payload: planeJsonHeaviest({ standing: false }),
+    status: 204,
+  },
   storeStreams: undefined,
   storeBatch: {
     rest: "1a2b/1",

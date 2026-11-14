@@ -38,6 +38,7 @@ import {
   sessionEndedSchema,
   sessionPlaneRoutes,
   sessionReferenceSchema,
+  sessionStandingSchema,
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
   sessionTurnLiveSchema,
@@ -83,6 +84,7 @@ import {
   type SessionPlaneIdentity,
   type SessionReferenceBound,
   type SessionReferencePort,
+  type SessionStandingPort,
   type SessionStoreQueryPort,
   type SessionStoreRecordPort,
   type SessionTurnAnswered,
@@ -401,6 +403,11 @@ export const sessionPlaneServed = {
     bodyBytesMax: planeJsonObjectBytesMax(sessionIdentityCharsMax),
   },
   held: { caller: "Session", ...workerPlaneBodyless },
+  standing: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(),
+  },
   storeStreams: { caller: "Session", ...workerPlaneBodyless },
   storeBatch: {
     caller: "Session",
@@ -545,6 +552,7 @@ export interface SessionPlaneService {
   readonly heartbeats: SessionHeartbeatPort;
   readonly heartbeatLeaseSecs: number;
   readonly references: SessionReferencePort;
+  readonly standings: SessionStandingPort;
   readonly turns: SessionTurnClaimPort;
   readonly settlements: SessionTurnSettlePort;
   readonly watches: SessionTurnWatchPort;
@@ -1523,6 +1531,24 @@ function sessionReferenceRoute(
   });
 }
 
+function sessionStandingRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  register("standing", async (request, reply, caller) => {
+    const offered = sessionStandingSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const recorded = await sessions.standings.stand({
+      secret: caller.secret,
+      generation: caller.identity.generation,
+      standing: offered.data.standing,
+    });
+    return recorded === "Recorded"
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: recorded });
+  });
+}
+
 /** What one asking of a held request found: its answer, which may be that there is none, or nothing yet. */
 type SessionWaitAsked<Answer> =
   { readonly answer: Answer | undefined } | undefined;
@@ -1977,6 +2003,7 @@ export function createWorkerPlaneApp(
     sessionFactsRoute(registerSession);
     sessionHeartbeatRoute(registerSession, sessions);
     sessionReferenceRoute(registerSession, sessions);
+    sessionStandingRoute(registerSession, sessions);
     sessionTurnRoute(registerSession, sessions);
     sessionSettleRoutes(registerSession, sessions);
     sessionTurnLiveRoute(registerSession, sessions);

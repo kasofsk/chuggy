@@ -2894,6 +2894,7 @@ export function threadResponse(result: ThreadRead): NativeHttpResponse {
           ? {}
           : { nextBefore: result.nextBefore }),
         streams: result.streams,
+        ...(result.jobsStanding ? { jobsStanding: true } : {}),
       });
 }
 

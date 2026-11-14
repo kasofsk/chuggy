@@ -69,7 +69,9 @@
  * where it names none; no other caller's poll is read for one. Its
  * sessions run in one container it starts before it holds any, so each answer
  * to it names the session image the scheduler publishes, and it may pull that
- * image while it holds nothing.
+ * image while it holds nothing. Each answer to one whose release reads it
+ * also names the threads it last ran that have since closed, so it may remove
+ * what it keeps for them.
  *
  * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
  * memory it takes one job of, each replace the one recorded before anything
@@ -96,15 +98,16 @@
  */
 import { setTimeout as delay } from "node:timers/promises";
 
-import type {
-  AssignmentOutcome,
-  WorkerPoolAssignment,
-  WorkerPoolCredentialOutcome,
-  WorkerPoolCredentialPause,
-  WorkerPoolReconciliation,
-  WorkerPoolSessionAssignment,
-  WorkerRunner,
-  WorkerRunnerCredentials,
+import {
+  workerPoolThreadsClosedMax,
+  type AssignmentOutcome,
+  type WorkerPoolAssignment,
+  type WorkerPoolCredentialOutcome,
+  type WorkerPoolCredentialPause,
+  type WorkerPoolReconciliation,
+  type WorkerPoolSessionAssignment,
+  type WorkerRunner,
+  type WorkerRunnerCredentials,
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
@@ -124,6 +127,7 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractChatThreadsClosed,
   workerContractRunnerAgents,
   workerContractRunnerCredentialOutcomes,
   workerContractRunnerCredentialPauses,
@@ -918,6 +922,29 @@ async function workerPoolCredentialPausesNamed(
 }
 
 /**
+ * The threads a chat host last ran that have since closed, named only to a
+ * chat host whose poll's release reads them, and absent where none has.
+ */
+async function workerPoolThreadsClosedNamed(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  contract: string | undefined,
+): Promise<Pick<WorkerPoolReconciliation, "threadsClosed">> {
+  if (
+    identity.kind !== "ChatHost" ||
+    !contractVersionAccepted(workerContractChatThreadsClosed, contract)
+  )
+    return {};
+  const closed = await ports.sessions.store.threadsClosed(
+    identity,
+    workerPoolThreadsClosedMax,
+  );
+  if (closed.length > workerPoolThreadsClosedMax)
+    throw new Error("a chat host was read more closed threads than it asked");
+  return closed.length === 0 ? {} : { threadsClosed: [...closed] };
+}
+
+/**
  * One reconciliation pass, which is a renewal of what is held and a claim of
  * what is not, each kind through its own rows. Each kind's room is the least
  * of what the pool asked, the plane's per-poll bound and what its held bound
@@ -1139,6 +1166,7 @@ export async function workerPoolPoll(
     answer: {
       ...(await workerPoolChatImageNamed(ports, identity, settings, answer)),
       ...(await workerPoolCredentialPausesNamed(ports, identity, asked)),
+      ...(await workerPoolThreadsClosedNamed(ports, identity, asked.contract)),
     },
   };
 }

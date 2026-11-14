@@ -49,6 +49,8 @@ import type {
   SessionPlaneIdentity,
   SessionReferenceBound,
   SessionReferencePort,
+  SessionStandingPort,
+  SessionStandingRecorded,
   SessionStoreBatchWritten,
   SessionStoreQueryPort,
   SessionStoreRecordPort,
@@ -80,6 +82,7 @@ export type SessionPlaneStore = SessionPlaneAuthority &
   SessionAttemptLossPort &
   SessionHeartbeatPort &
   SessionReferencePort &
+  SessionStandingPort &
   SessionTurnClaimPort &
   SessionTurnSettlePort &
   SessionTurnWatchPort &
@@ -208,6 +211,12 @@ const referenceArms = [
   "Conflict",
   "Fenced",
 ] as const satisfies readonly SessionReferenceBound[];
+
+const standingArms = [
+  "Recorded",
+  "Fenced",
+  "NotChatHostThread",
+] as const satisfies readonly SessionStandingRecorded[];
 
 const answerArms = [
   "Answered",
@@ -413,6 +422,21 @@ async function sessionPlaneRecord(
   return sessionVerdict(recordedArms, stored.rows[0]?.stored, "a store batch");
 }
 
+async function sessionPlaneStand(
+  pool: pg.Pool,
+  input: Parameters<SessionStandingPort["stand"]>[0],
+): Promise<SessionStandingRecorded> {
+  const stood = await pool.query<{ stood: string | null }>(
+    sql`SELECT report_session_standing(${sessionSecretDigest(input.secret)},
+      ${input.generation},${input.standing})::text AS stood`,
+  );
+  return sessionVerdict(
+    standingArms,
+    stood.rows[0]?.stood,
+    "recording a thread's standing",
+  );
+}
+
 /** Everything a session pod may ask of the durable side, over the plane's own pool. */
 export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
   return {
@@ -467,6 +491,8 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
         "binding a runtime session",
       );
     },
+
+    stand: (input) => sessionPlaneStand(pool, input),
 
     claim: (input) => sessionPlaneClaim(pool, input.secret, input.generation),
 

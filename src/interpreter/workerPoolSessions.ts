@@ -51,6 +51,7 @@ import type { SessionBounds } from "../contract/workerTask.ts";
 import {
   workerPoolPollIdleSecsMax,
   type WorkerPoolSessionAssignment,
+  type WorkerPoolThreadClosed,
 } from "../contract/workerPool.ts";
 import type {
   SessionAttemptId,
@@ -80,6 +81,7 @@ import {
   type WorkerPoolImageHosts,
 } from "./workerPoolImagePull.ts";
 import type {
+  ChatHostIdentity,
   PoolPlaneIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
@@ -192,6 +194,11 @@ export interface WorkerPoolSessionRows<Identity> {
 /** The durable side of a runner-held session attempt, for whichever claimant the pool plane admitted. */
 export interface WorkerPoolSessions extends WorkerPoolSessionRows<WorkerPoolSessionClaimant> {
   launch(): Promise<SessionLaunchFacts | undefined>;
+  /** The threads whose last attempt `identity` ran that have since closed, the most recently closed first, at most `max` of them. */
+  threadsClosed(
+    identity: ChatHostIdentity,
+    max: number,
+  ): Promise<readonly WorkerPoolThreadClosed[]>;
 }
 
 /** Everything a session claim reaches beyond its rows and the authority: each project's binding, and where a bearer is drawn. */

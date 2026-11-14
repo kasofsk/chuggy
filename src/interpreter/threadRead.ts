@@ -173,6 +173,8 @@ export interface ThreadStandingRecord {
   /** The cursor an older page is asked for with, absent where this page reaches the first turn. */
   readonly nextBefore?: number;
   readonly streams: readonly SessionStoreStreamRow[];
+  /** Whether the thread holds jobs its chat host restarts with each attempt, which keeps an attempt placed for it. */
+  readonly jobsStanding: boolean;
 }
 
 declare const threadOpenKeyBrand: unique symbol;
@@ -434,6 +436,7 @@ export type ThreadRead =
       readonly turns: readonly ThreadTurnRecord[];
       readonly nextBefore?: number;
       readonly streams: readonly SessionStoreStreamRow[];
+      readonly jobsStanding: boolean;
     };
 
 /** What opening a thread of mine answered, and which of the two the wire reports as created. */

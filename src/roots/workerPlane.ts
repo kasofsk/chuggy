@@ -88,6 +88,7 @@ function planeSessions(
     authority: sessions,
     heartbeats: sessions,
     references: sessions,
+    standings: sessions,
     turns: sessions,
     settlements: sessions,
     watches: sessions,

@@ -460,6 +460,7 @@ export function sessionRigPlaneService(
     heartbeats: rig.plane,
     heartbeatLeaseSecs: 300,
     references: rig.plane,
+    standings: rig.plane,
     turns: rig.plane,
     settlements: rig.plane,
     watches: rig.plane,
