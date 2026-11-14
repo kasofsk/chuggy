@@ -44,7 +44,7 @@ test("the groups are listed workloads, plans, finalizers, then the prompt files 
   ).toStrictEqual([
     ["Workload", ["build", "quick", "gates", "review"]],
     ["Plan", ["review", "gated"]],
-    ["Finalizer", ["land", "approved"]],
+    ["Finalizer", ["land", "proposed"]],
     ["Prompt", ["prompts/build.md"]],
   ]);
 });
@@ -112,8 +112,8 @@ test("each entry says in a line what it is", () => {
     "review → gates",
   );
   expect(
-    catalogEntrySummary(entryOf(entries, "finalizers/approved"), copyTextEn),
-  ).toBe("Approved first");
+    catalogEntrySummary(entryOf(entries, "finalizers/proposed"), copyTextEn),
+  ).toBe("Pull request");
   expect(
     catalogEntrySummary(
       entryOf(entries, "prompts/prompts/build.md"),
@@ -216,8 +216,7 @@ test("a finalizer's entry says how it lands, and a git merge's policy beside it"
             policy: "Serialized",
           },
         },
-        approved: {
-          approvalRequired: true,
+        proposed: {
           finalization: { kind: "PullRequest" },
         },
       },
@@ -225,18 +224,14 @@ test("a finalizer's entry says how it lands, and a git merge's policy beside it"
   );
   expect(
     catalogEntrySummary(entryOf(finalized, "finalizers/land"), copyTextEn),
-  ).toBe("Lands unapproved · Push");
+  ).toBe("Push");
   expect(
     catalogEntryFields(entryOf(finalized, "finalizers/land"), copyTextEn),
   ).toStrictEqual([
-    ["Approval", "Lands unapproved"],
     ["Landing", "Push · lands on refs/heads/release"],
     ["Policy", "Serialized"],
   ]);
   expect(
-    catalogEntryFields(entryOf(finalized, "finalizers/approved"), copyTextEn),
-  ).toStrictEqual([
-    ["Approval", "Approved first"],
-    ["Landing", "Pull request · into the default branch"],
-  ]);
+    catalogEntryFields(entryOf(finalized, "finalizers/proposed"), copyTextEn),
+  ).toStrictEqual([["Landing", "Pull request · into the default branch"]]);
 });

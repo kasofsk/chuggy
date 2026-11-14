@@ -267,7 +267,6 @@ import {
   type CandidateIntegrated,
   type CommitPermitId,
   type FinalizationAttempt,
-  type FinalizationAttemptId,
   type FinalizationClaim,
   type FinalizationConclusion,
   type FinalizationOffer,
@@ -377,7 +376,6 @@ export interface FinalizerPassReport {
   readonly reopened: number;
   readonly rereadings: number;
   readonly preparations: number;
-  readonly approvals: number;
   readonly promotions: number;
   readonly reconciliations: number;
   readonly proposals: number;
@@ -394,7 +392,6 @@ export interface FinalizerPassReport {
 interface FinalizerTally {
   rereadings: number;
   preparations: number;
-  approvals: number;
   promotions: number;
   reconciliations: number;
   proposals: number;
@@ -850,7 +847,6 @@ interface FinalizerPreparation {
   readonly bundle: InputBundle;
   readonly target: ObservedTarget;
   readonly configuration: PinnedConfiguration;
-  readonly approvalRequired: boolean;
 }
 
 /**
@@ -907,7 +903,6 @@ function finalizerAttemptBase(
     target,
     strategy: finalizerStrategy,
     configuration: subject.configuration,
-    approvalRequired: subject.approvalRequired,
   };
 }
 
@@ -1520,7 +1515,6 @@ async function finalizerGathered(
       ),
       target,
       configuration,
-      approvalRequired: handoff?.approvalRequired ?? false,
     },
     ...(handoff === undefined ? {} : { handoff }),
   };
@@ -1576,24 +1570,6 @@ async function finalizerPrepare(
     return;
   }
   await finalizerBuild(service, subject, read.files, tally);
-}
-
-/** Opens the approval one prepared attempt needs, leaving the finalization where it stood. */
-async function finalizerAwaitApproval(
-  service: FinalizerService,
-  view: FinalizationView,
-  attempt: FinalizationAttemptId,
-  tally: FinalizerTally,
-): Promise<void> {
-  const asked = await service.store.requestApproval({
-    claim: view.claim,
-    attempt,
-  });
-  recordFinalizer(service.metrics, (metrics) => {
-    metrics.approval(asked.asked);
-  });
-  if (asked.asked === "Requested") tally.approvals += 1;
-  else finalizerHold(service, tally, "ApprovalUnopened");
 }
 
 /**
@@ -2811,9 +2787,6 @@ async function finalizerAdvanceDecided(
       if (!finalizerPreparationPriced(service, tally)) return;
       await finalizerAbort(service, view, decision.target, tally);
       return;
-    case "AwaitApproval":
-      await finalizerAwaitApproval(service, view, decision.attempt, tally);
-      return;
     case "Promote":
       if (ceilingReached("promotions", config.promotionsPerPassMax)) return;
       tally.promotions += 1;
@@ -3072,7 +3045,6 @@ export async function finalizerPass(
   const tally: FinalizerTally = {
     rereadings: 0,
     preparations: 0,
-    approvals: 0,
     promotions: 0,
     reconciliations: 0,
     proposals: 0,
@@ -3099,7 +3071,6 @@ export async function finalizerPass(
     reopened,
     rereadings: tally.rereadings,
     preparations: tally.preparations,
-    approvals: tally.approvals,
     promotions: tally.promotions,
     reconciliations: tally.reconciliations,
     proposals: tally.proposals,

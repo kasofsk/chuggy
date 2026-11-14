@@ -84,10 +84,7 @@ import {
   configurationFollowingRead,
   type ConfigurationFollowingTicket,
 } from "../../interpreter/configurationFollowing.ts";
-import {
-  asFinalizationAttemptId,
-  asRepositoryId,
-} from "../../interpreter/finalizer.ts";
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
 import type { NativeActionAsked } from "../../interpreter/nativeActionAnswer.ts";
 import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
@@ -223,7 +220,6 @@ interface NativeActionHistoryRow {
   readonly authorizing_seq: string | null;
   readonly state: string | null;
   readonly resolution: string | null;
-  readonly attempt: string | null;
   readonly execution: string | null;
   readonly answered_by: string | null;
   readonly answered_at: string | null;
@@ -1430,9 +1426,6 @@ function nativeActionRecord(
       row.authorizing_seq,
       "native action authorizing sequence",
     ),
-    ...(row.attempt === null
-      ? {}
-      : { attempt: asFinalizationAttemptId(row.attempt) }),
     ...(row.execution === null
       ? {}
       : { execution: asExecutionId(row.execution) }),
@@ -1478,7 +1471,7 @@ async function nativeReadsActionHistory(
 ): Promise<TicketNativeActionHistoryPage | undefined> {
   const found = await pool.query<NativeActionHistoryRow>(
     sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
-               a.state,a.resolution,a.attempt,a.execution,a.answered_by,
+               a.state,a.resolution,a.execution,a.answered_by,
                to_char(a.answered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS answered_at
           FROM ticket_projection t
           LEFT JOIN native_action a
@@ -1626,8 +1619,8 @@ async function readInboxPositions(
 }
 
 /**
- * The open actions of the page's tickets. A ticket holds one escalation or
- * finalization approval, or an evaluation approval for each approval evaluator
+ * The open actions of the page's tickets. A ticket holds one escalation, or an
+ * evaluation approval for each approval evaluator
  * of the stage it evaluates, and a stage lists no more evaluators than a draft
  * may.
  */

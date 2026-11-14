@@ -43,7 +43,6 @@ import type {
   NativeActionAnswerRefusalCode,
   ResumePoint,
 } from "../contract/rosters.ts";
-import type { FinalizationAttemptId } from "./finalizer.ts";
 import {
   nativeActionAnswerer,
   nativeActionCallerOf,
@@ -577,14 +576,13 @@ export interface NativeActionPage {
 /**
  * One action a ticket has had, open or settled. A resolution is what an
  * answered action carries alone, and who answered it and when is recorded of
- * an answered evaluation approval alone; the finalization attempt or execution
- * is the one the action asked about, where its kind names one.
+ * an answered evaluation approval alone; the execution is the one an
+ * evaluation approval asked about.
  */
 export type TicketNativeActionRecord = {
   readonly action: string;
   readonly kind: NativeActionKind;
   readonly authorizingSequence: number;
-  readonly attempt?: FinalizationAttemptId;
   readonly execution?: ExecutionId;
 } & (
   | { readonly state: "Open" | "Withdrawn" }

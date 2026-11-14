@@ -1,8 +1,8 @@
 /**
  * Who may answer one native action, and what an answer to it must carry.
  *
- * AN ESCALATION AND A FINALIZATION APPROVAL ARE ANSWERED UNDER `Mutate`, as
- * every submission is that names no permit of its own. An evaluation approval
+ * AN ESCALATION IS ANSWERED UNDER `Mutate`, as every submission is that names
+ * no permit of its own. An evaluation approval
  * is answered by whom its approvers name, as the ticket was released with
  * them: `Developer` is anyone holding the project's develop permit, `Admin`
  * anyone holding its administer permit, and a list exactly the principals it
@@ -45,7 +45,7 @@ export interface NativeActionAgents {
 
 /** What one action asks, as far as who may answer it: its kind, and an evaluation approval's approvers. */
 export type NativeActionAsked =
-  | { readonly kind: Exclude<NativeActionKind, "EvaluationApproval"> }
+  | { readonly kind: "TicketEscalation" }
   | {
       readonly kind: "EvaluationApproval";
       readonly approvers: ApprovalApprovers;

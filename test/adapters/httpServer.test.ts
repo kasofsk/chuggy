@@ -131,7 +131,7 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
   };
 }
 
-/** One ticket per kind, one whose action was resolved, and one that never existed. */
+/** One ticket with an escalation, one whose escalation offers only a revoke, and one with none. */
 const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
   [
     1,
@@ -149,10 +149,10 @@ const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
     2,
     [
       {
-        action: "approval",
-        kind: "FinalizationApproval",
+        action: "revocation",
+        kind: "TicketEscalation",
         authorizingSequence: 13,
-        admits: ["Approve", "Decline"],
+        admits: ["Revoke"],
         answerable: true,
       },
     ],
@@ -183,7 +183,7 @@ function fakeNativeActions(calls: string[]): NativeWeb["nativeActions"] {
       value: {
         actions: listed,
         ...(query.after === undefined
-          ? { nextAfter: { authorizingSequence: 13, action: "approval" } }
+          ? { nextAfter: { authorizingSequence: 13, action: "revocation" } }
           : {}),
       },
     });
@@ -1407,10 +1407,10 @@ test("a ticket's open actions answer per kind with the fence and the answers", a
   ]);
   assert.deepEqual(await listed(2), [
     {
-      action: "approval",
-      kind: "FinalizationApproval",
+      action: "revocation",
+      kind: "TicketEscalation",
       authorizingSequence: 13,
-      admits: ["Approve", "Decline"],
+      admits: ["Revoke"],
       answerable: true,
     },
   ]);
@@ -1546,7 +1546,7 @@ test("a project's open actions page behind an opaque cursor of its own", async (
     page.actions.map(({ ticket, kind }) => [ticket, kind]),
     [
       [1, "TicketEscalation"],
-      [2, "FinalizationApproval"],
+      [2, "TicketEscalation"],
     ],
   );
   const cursor = page.nextCursor;
@@ -1568,7 +1568,7 @@ test("a project's open actions page behind an opaque cursor of its own", async (
   assert.equal((await app.inject({ url: root })).statusCode, 401);
   assert.deepEqual(calls, [
     "nativeActionsPage:2:",
-    "nativeActionsPage:50:approval",
+    "nativeActionsPage:50:revocation",
   ]);
 });
 

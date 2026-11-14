@@ -52,7 +52,6 @@ export function creationSummary(
         practices: [],
         workInstructionsCount: 1,
         reviewInstructionsCount: 1,
-        finalization: { approvalRequired: false },
         evaluationStagesCount: 1,
       };
 }
@@ -302,8 +301,8 @@ export const creationCatalogCanonical = JSON.stringify({
     ],
   },
   finalizers: {
-    land: { approvalRequired: false },
-    approved: { approvalRequired: true },
+    land: {},
+    proposed: { landing: { mode: "PullRequest" } },
   },
   defaults: { work: "build", evaluation: "review", finalization: "land" },
 });

@@ -38,12 +38,6 @@
  * no remote call inside it. A durable move that assumed a promotion had happened
  * would forge the one outcome the repository is the only authority on.
  *
- * AN APPROVAL IS READ AND NEVER WRITTEN. The action a finalizer opens is the
- * ticket service's row and this role holds `SELECT` on it and no more, so the
- * standing gathered here is whatever answer that writer recorded — and the
- * action read is the one naming the attempt in hand, so a superseded ask
- * answers for the candidate it was about and not for this one.
- *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
  * THEN ATTEMPT, and within each class in key order. The sweeps take their
  * requests in key order and the door this file calls takes the request and then
@@ -74,9 +68,6 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
-  approvalStandingOf,
-  type ApprovalAction,
-  type ApprovalStanding,
   type CommitPermitId,
   type FinalizationAttempt,
   type FinalizationClaim,
@@ -91,7 +82,6 @@ import {
 } from "../../interpreter/finalizer.ts";
 import type { FinalizerProposalStore } from "../../interpreter/finalizationProposal.ts";
 import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
-import { nativeActionResolutions } from "../../interpreter/projectCommand.ts";
 import {
   serializedQueues,
   serializedWaiting,
@@ -137,7 +127,6 @@ import {
   finalizerPermitReconcile,
 } from "./finalizerPermit.ts";
 import {
-  finalizerPreparationApproval,
   finalizerPreparationGathering,
   finalizerPreparationRecord,
 } from "./finalizerPreparation.ts";
@@ -148,13 +137,6 @@ import {
   finalizerRowValue,
 } from "./finalizerRows.ts";
 import { finalizerRole } from "./schema.ts";
-
-/** The states migration five gave a native action, so a column narrows rather than restates. */
-const allNativeActionStates: readonly ApprovalAction["state"][] = [
-  "Open",
-  "Resolved",
-  "Withdrawn",
-];
 
 /** One claimed request row. */
 interface ClaimRow {
@@ -182,7 +164,6 @@ interface ViewRow {
   readonly strategy: string | null;
   readonly configuration_revision: string | null;
   readonly configuration_digest: string | null;
-  readonly approval_required: boolean | null;
   readonly outcome: string | null;
   readonly candidate_commit: string | null;
   readonly failure_kind: string | null;
@@ -196,8 +177,6 @@ interface ViewRow {
   readonly reconciled_ref: string | null;
   readonly observed_commit: string | null;
   readonly declined: string | null;
-  readonly approval_state: string | null;
-  readonly approval_resolution: string | null;
   readonly attempts_made: string | null;
   readonly held_permit: string | null;
 }
@@ -232,7 +211,6 @@ function finalizerViewOf(
     lifecycle: finalizerRowValue(allLifecycles, row.lifecycle, "lifecycle"),
     ...(repository === undefined ? {} : { repository }),
     ...(attempt === undefined ? {} : { attempt }),
-    approval: finalizerRowApproval(row),
     ...finalizerRowPermit(row),
     ...(row.held_permit === null
       ? {}
@@ -550,7 +528,6 @@ function finalizerRowAttempt(
     row.strategy === null ||
     row.configuration_revision === null ||
     row.configuration_digest === null ||
-    row.approval_required === null ||
     row.outcome === null ||
     row.attempt_digest === null
   ) {
@@ -575,7 +552,6 @@ function finalizerRowAttempt(
     ),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
-    approvalRequired: row.approval_required,
     outcome: finalizerRowValue(
       allFinalizationAttemptOutcomes,
       row.outcome,
@@ -627,27 +603,6 @@ function finalizerRowReconciliation(
   };
 }
 
-/** Where the approval for the attempt in hand stands, pending until an answer is recorded. */
-function finalizerRowApproval(row: ViewRow): ApprovalStanding {
-  if (row.approval_state === null) return approvalStandingOf(undefined);
-  return approvalStandingOf({
-    state: finalizerRowValue(
-      allNativeActionStates,
-      row.approval_state,
-      "action state",
-    ),
-    ...(row.approval_resolution === null
-      ? {}
-      : {
-          resolution: finalizerRowValue(
-            nativeActionResolutions.FinalizationApproval,
-            row.approval_resolution,
-            "approval answer",
-          ),
-        }),
-  });
-}
-
 /** The permit that authorizes the one irreversible act, absent until it is granted. */
 function finalizerRowPermit(
   row: ViewRow,
@@ -697,13 +652,12 @@ async function finalizerDurableView(
     sql`SELECT
   f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
   a.attempt, a.target_ref, a.target_commit, a.target_base_ref, a.strategy,
-  a.configuration_revision, a.configuration_digest, a.approval_required,
+  a.configuration_revision, a.configuration_digest,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
   p.permit, p.recovery_epoch AS permit_epoch,
   p.lifecycle_generation::text AS lifecycle_generation, p.state AS permit_state,
   r.verdict, r.candidate_commit AS reconciled_candidate,
   r.target_ref AS reconciled_ref, r.observed_commit, r.declined,
-  n.state AS approval_state, n.resolution AS approval_resolution,
   c.made::text AS attempts_made, h.permit AS held_permit
       FROM finalization_request f
   JOIN project j ON j.tenant = f.tenant AND j.project = f.project
@@ -722,8 +676,6 @@ async function finalizerDurableView(
     ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
   LEFT JOIN finalization_reconciliation r
     ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
-  LEFT JOIN native_action n
-    ON n.tenant = a.tenant AND n.project = a.project AND n.attempt = a.attempt
   LEFT JOIN LATERAL (
     SELECT count(*) AS made FROM finalization_attempt y
      WHERE y.tenant = f.tenant AND y.project = f.project AND y.request = f.request) c
@@ -861,7 +813,7 @@ async function finalizerSubmitResult(
   return verdict;
 }
 
-/** The three moves preparation owns, over the same pool the rest of the authority runs on. */
+/** The two moves preparation owns, over the same pool the rest of the authority runs on. */
 function postgresFinalizerPreparation(
   pool: pg.Pool,
 ): FinalizerPreparationStore {
@@ -873,10 +825,6 @@ function postgresFinalizerPreparation(
     recordAttempt: (record) =>
       postgresTransaction(pool, (client) =>
         finalizerPreparationRecord(client, record),
-      ),
-    requestApproval: (ask) =>
-      postgresTransaction(pool, (client) =>
-        finalizerPreparationApproval(client, ask),
       ),
   };
 }

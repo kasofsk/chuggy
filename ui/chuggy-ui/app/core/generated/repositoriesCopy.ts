@@ -138,7 +138,6 @@ export interface RepositoriesCopy {
   readonly "repositories-col-configuration": Record<never, never>;
   readonly "repositories-col-worker": Record<never, never>;
   readonly "repositories-col-stages": Record<never, never>;
-  readonly "repositories-col-approval": Record<never, never>;
   readonly "repositories-incomplete": Record<never, never>;
   readonly "repositories-catalog-work": {
     readonly work: unknown;
@@ -180,6 +179,7 @@ export interface RepositoriesCopy {
   readonly "repositories-fault-duplicate-path": Record<never, never>;
   readonly "repositories-fault-reference-absent": Record<never, never>;
   readonly "repositories-fault-too-many-references": Record<never, never>;
+  readonly "repositories-fault-approval-outside-plan": Record<never, never>;
   readonly "repositories-fault-chars": {
     readonly chars: unknown;
     readonly charsMax: unknown;

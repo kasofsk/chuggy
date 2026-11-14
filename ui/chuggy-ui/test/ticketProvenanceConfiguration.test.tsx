@@ -468,7 +468,7 @@ test("instructions the ticket overrode are its prompt, marked over them", async 
 test("a catalog draws what the ticket selected of it: its work, its plan's stages in order and its landing", async () => {
   await drawExpanded(creationCatalogCanonical, undefined, undefined, {
     evaluation: "gated",
-    finalization: "approved",
+    finalization: "proposed",
   });
   expect(groupsDrawn()).toStrictEqual(["Work", "Evaluation", "Finalization"]);
   const work = row("Work");
@@ -485,7 +485,7 @@ test("a catalog draws what the ticket selected of it: its work, its plan's stage
   expect(cell(gates, "workload")).toBeUndefined();
   expect(cell(gates, "runs")).toBe("Commands · npm test");
   expect(details(row("Landing", group("Finalization")))).toStrictEqual(
-    new Map([["Approval", "Required"]]),
+    new Map(),
   );
   expect(screen.queryByText("Do it fast.")).toBeNull();
 });
@@ -653,19 +653,19 @@ test("a version 1 ticket's landing is the one its brief names, and no Finalizati
   expect(groupsDrawn()).not.toContain("Finalization");
 });
 
-test("a catalog ticket's landing is the brief's before its finalizer's, with the finalizer's approval", async () => {
+test("a catalog ticket's landing is the brief's before its finalizer's", async () => {
   await drawExpanded(
     creationCatalogCanonical,
     undefined,
     undefined,
-    { finalization: "approved" },
+    { finalization: "proposed" },
     undefined,
     briefFinalized,
   );
   expect(cell(landing(), "runs")).toBe(
     copyTextEn(finalizationLine(briefFinalized.finalization)),
   );
-  expect(details(landing())).toStrictEqual(new Map([["Approval", "Required"]]));
+  expect(details(landing())).toStrictEqual(new Map());
 });
 
 /** A policy orders a git merge alone, so it is drawn beside a git merge's

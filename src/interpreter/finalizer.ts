@@ -7,8 +7,8 @@
  * NOTHING HERE DECIDES A TICKET. The finalizer submits `SubmitFinalizationResult`
  * through one narrow authenticated boundary and cannot append a journal entry,
  * settle an operation or move a ticket projection. `model/domain.qnt` has a
- * finalizer report one domain outcome and nothing else, so queueing,
- * approval, permits and the irreversible act itself are operational protocol
+ * finalizer report one domain outcome and nothing else, so queueing, permits
+ * and the irreversible act itself are operational protocol
  * rather than `TicketGraph` state.
  *
  * NO REF, COMMIT OR OTHER GIT IDENTIFIER REACHES `TicketGraph`. The target branch, the
@@ -89,10 +89,7 @@ import type { FinalizationUnavailableKind } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
-import type {
-  ApprovalResolution,
-  FinalizationOutcome,
-} from "./projectCommand.ts";
+import type { FinalizationOutcome } from "./projectCommand.ts";
 import type { Lifecycle, Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { CredentialMintEvidence } from "./repositoryReadEvidence.ts";
 
@@ -582,7 +579,6 @@ export interface FinalizationAttempt {
   readonly strategy: IntegrationStrategy;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
-  readonly approvalRequired: boolean;
   readonly outcome: FinalizationAttemptOutcome;
   readonly candidate?: GitObjectId;
   readonly failureKind?: FinalizationFailureKind;
@@ -615,41 +611,6 @@ export interface FinalizationReconciliation {
 }
 
 /**
- * Where the approval a pinned revision may require currently stands. The
- * finalizer reads the ticket-service-owned native action and maps it here, so a
- * withdrawn action is pending again rather than a fourth state.
- */
-export type ApprovalStanding = "Pending" | "Granted" | "Declined";
-
-/** Every approval standing, so a suite iterates rather than restates. */
-export const allApprovalStandings: readonly ApprovalStanding[] = [
-  "Pending",
-  "Granted",
-  "Declined",
-];
-
-/** What the ticket-service-owned action a finalizer opened currently says. */
-export interface ApprovalAction {
-  readonly state: "Open" | "Resolved" | "Withdrawn";
-  readonly resolution?: ApprovalResolution;
-}
-
-/**
- * Where the approval for one prepared candidate stands. An action nobody has
- * answered and one the revision fence withdrew are both pending, because the
- * question either is still open or will be asked again against a new candidate.
- */
-export function approvalStandingOf(
-  action: ApprovalAction | undefined,
-): ApprovalStanding {
-  if (action === undefined || action.state !== "Resolved") return "Pending";
-  if (action.resolution === undefined) {
-    throw new Error("approval: a resolved action records no answer");
-  }
-  return action.resolution === "Approve" ? "Granted" : "Declined";
-}
-
-/**
  * The lifecycles under which the one irreversible act will never be authorized
  * again, so a finalization holding no permit aborts rather than waits.
  */
@@ -673,7 +634,6 @@ export interface FinalizationView {
   /** What reading the branch the remote defaults to found, present only for a proposing brief that names no base of its own. */
   readonly proposalBase?: TargetObserved;
   readonly attempt?: FinalizationAttempt;
-  readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
   readonly reconciliation?: FinalizationReconciliation;
   /** A permit an earlier request of this ticket holds under a reading the held re-read of this epoch settles, which no later promotion of the ticket is granted beside. */
@@ -686,7 +646,6 @@ export type FinalizationHoldKind =
   | "RepositoryUnbound"
   | "TargetUnreadable"
   | "PreparationRestartsExhausted"
-  | "ApprovalDeclined"
   | "ReconciliationUnreadable"
   | "ContradictoryEvidence"
   | "ProposalRefused"
@@ -716,7 +675,6 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "RepositoryUnbound",
   "TargetUnreadable",
   "PreparationRestartsExhausted",
-  "ApprovalDeclined",
   "ReconciliationUnreadable",
   "ContradictoryEvidence",
   "ProposalRefused",
@@ -771,10 +729,6 @@ export type FinalizationDecision =
       readonly decide: "Prepare";
       readonly target: ObservedTarget;
       readonly restartsSpent: number;
-    }
-  | {
-      readonly decide: "AwaitApproval";
-      readonly attempt: FinalizationAttemptId;
     }
   | { readonly decide: "Abort"; readonly target: ObservedTarget }
   | { readonly decide: "Promote"; readonly attempt: FinalizationAttemptId }
@@ -1029,12 +983,6 @@ function finalizationNextBeforePermit(
     attempt.target.ref !== target.ref
   ) {
     return finalizationNextRestart(config, view);
-  }
-  if (view.approval === "Declined") {
-    return { decide: "Hold", hold: "ApprovalDeclined" };
-  }
-  if (attempt.approvalRequired && view.approval === "Pending") {
-    return { decide: "AwaitApproval", attempt: attempt.attempt };
   }
   return { decide: "Promote", attempt: attempt.attempt };
 }

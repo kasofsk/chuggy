@@ -13,10 +13,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  allApprovalStandings,
   allClosingLifecycles,
   allCommitPermitStates,
-  approvalStandingOf,
   allFinalizationFailureKinds,
   allFinalizationHoldKinds,
   allFinalizationRequestStates,
@@ -36,7 +34,6 @@ import {
   finalizerIdentityCharsMax,
   gitObjectIdPattern,
   gitRefNameCharsMax,
-  type ApprovalStanding,
   type CommitPermit,
   type CommitPermitState,
   type FinalizationAttempt,
@@ -105,7 +102,6 @@ const prepared: FinalizationAttempt = {
   strategy: "Merge",
   configurationRevision: "revision-1",
   configurationDigest: "d".repeat(64),
-  approvalRequired: false,
   outcome: "Prepared",
   candidate,
   attemptDigest: "e".repeat(64),
@@ -124,7 +120,6 @@ function attemptFailed(
     strategy: "Merge",
     configurationRevision: "revision-1",
     configurationDigest: "d".repeat(64),
-    approvalRequired: false,
     outcome: "Failed",
     failureKind: kind,
     attemptDigest: "e".repeat(64),
@@ -159,7 +154,6 @@ function viewWith(overrides: ViewOverrides): FinalizationView {
     },
     repository: { partition, repository, recoveryEpoch: epoch },
     observedTarget: target,
-    approval: "Pending",
     attemptsMade: 0,
   };
   return Object.fromEntries(
@@ -375,7 +369,6 @@ test("an attempt whose target already held its candidate succeeds with nothing p
           lifecycle,
           attempt: landed,
           observedTarget: { ...target, commit: moved },
-          approval: "Declined",
           attemptsMade: 1,
         }),
       ),
@@ -383,7 +376,7 @@ test("an attempt whose target already held its candidate succeeds with nothing p
         decide: "Conclude",
         conclusion: { outcome: "FinalizationSucceeded" },
       },
-      `${lifecycle}: no target since read and no approval asked changes it`,
+      `${lifecycle}: no target since read changes it`,
     );
   assert.throws(
     () =>
@@ -595,50 +588,11 @@ test("a closing project whose ref moved after a refused update aborts rather tha
   }
 });
 
-test("a standing is the answer recorded, and an unanswered or withdrawn ask is pending", () => {
-  assert.equal(approvalStandingOf(undefined), "Pending");
-  assert.equal(approvalStandingOf({ state: "Open" }), "Pending");
-  assert.equal(approvalStandingOf({ state: "Withdrawn" }), "Pending");
-  assert.equal(
-    approvalStandingOf({ state: "Resolved", resolution: "Approve" }),
-    "Granted",
-  );
-  assert.equal(
-    approvalStandingOf({ state: "Resolved", resolution: "Decline" }),
-    "Declined",
-  );
-  assert.throws(
-    () => approvalStandingOf({ state: "Resolved" }),
-    /records no answer/u,
-  );
-});
-
-test("approval is awaited only where the pinned revision required it", () => {
-  const required = { ...prepared, approvalRequired: true };
-  for (const approval of populated(
-    allApprovalStandings,
-    "allApprovalStandings",
-  )) {
-    const decision = finalizationNext(
-      finalizerDefaults,
-      viewWith({ attempt: required, approval, attemptsMade: 1 }),
-    );
-    const expected =
-      approval === "Pending"
-        ? "AwaitApproval"
-        : approval === "Declined"
-          ? "Hold"
-          : "Promote";
-    assert.equal(
-      decision.decide,
-      expected,
-      `${approval} decided ${decision.decide}`,
-    );
-  }
+test("a prepared attempt on the target it was built over is promoted, nothing awaited first", () => {
   assert.deepEqual(
     finalizationNext(
       finalizerDefaults,
-      viewWith({ attempt: prepared, approval: "Pending", attemptsMade: 1 }),
+      viewWith({ attempt: prepared, attemptsMade: 1 }),
     ),
     { decide: "Promote", attempt: attemptId },
   );
@@ -951,11 +905,7 @@ test("a ref still absent onto a target nobody held at preparation is prepared ag
  */
 test("a request beside its ticket's unsettled permit holds as the reading does and is never promoted", () => {
   const heldPermit = asCommitPermitId("permit-earlier");
-  for (const varied of [
-    {},
-    { attempt: prepared, attemptsMade: 1 },
-    { attempt: prepared, attemptsMade: 1, approval: "Granted" as const },
-  ]) {
+  for (const varied of [{}, { attempt: prepared, attemptsMade: 1 }]) {
     assert.deepEqual(
       finalizationNext(finalizerDefaults, viewWith({ ...varied, heldPermit })),
       { decide: "Hold", hold: "ReconciliationUnreadable" },
@@ -1171,35 +1121,31 @@ test("no hold is a failure kind, over every view this machine can be handed", ()
   )) {
     assert.ok(!holds.has(kind), `${kind} is spelled as a hold as well`);
   }
-  const approvals: readonly ApprovalStanding[] = allApprovalStandings;
   for (const state of [undefined, ...allCommitPermitStates]) {
     for (const verdict of [undefined, ...allReconciliationVerdicts]) {
-      for (const approval of populated(approvals, "allApprovalStandings")) {
-        if (state === undefined && verdict !== undefined) continue;
-        const decision = finalizationNext(
-          finalizerDefaults,
-          viewWith({
-            attempt: prepared,
-            attemptsMade: 1,
-            approval,
-            permit: state === undefined ? undefined : permitIn(state),
-            reconciliation:
-              verdict === undefined ? undefined : reconciliationOf(verdict),
-          }),
+      if (state === undefined && verdict !== undefined) continue;
+      const decision = finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          attempt: prepared,
+          attemptsMade: 1,
+          permit: state === undefined ? undefined : permitIn(state),
+          reconciliation:
+            verdict === undefined ? undefined : reconciliationOf(verdict),
+        }),
+      );
+      if (decision.decide === "Hold") {
+        assert.ok(
+          holds.has(decision.hold),
+          `${decision.hold} is not a declared hold`,
         );
-        if (decision.decide === "Hold") {
-          assert.ok(
-            holds.has(decision.hold),
-            `${decision.hold} is not a declared hold`,
-          );
-        }
-        if (decision.decide === "Conclude") {
-          assert.equal(
-            verdict,
-            "Promoted",
-            "a conclusive outcome was reached on a view that proved nothing",
-          );
-        }
+      }
+      if (decision.decide === "Conclude") {
+        assert.equal(
+          verdict,
+          "Promoted",
+          "a conclusive outcome was reached on a view that proved nothing",
+        );
       }
     }
   }

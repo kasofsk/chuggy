@@ -747,7 +747,6 @@ function setupProposed(landing: TicketLandingResponse): boolean {
       return false;
     case "Running":
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
     case "Unavailable":
     case "Landed":

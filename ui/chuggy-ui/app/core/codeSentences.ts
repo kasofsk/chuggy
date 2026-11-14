@@ -58,8 +58,6 @@ export function nativeActionKindSentence(kind: NativeActionKind): Copy {
   switch (kind) {
     case "TicketEscalation":
       return { id: "sentences-native-escalation" };
-    case "FinalizationApproval":
-      return { id: "sentences-native-approval" };
     case "EvaluationApproval":
       return { id: "sentences-native-evaluation-approval" };
   }

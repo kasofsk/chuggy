@@ -17,14 +17,10 @@
  * an entry nothing names is still one a ticket can choose.
  */
 
-import {
-  finalizationLine,
-  finalizationMethodLabel,
-  gitMergePolicyLabel,
-} from "./codeLabels.ts";
+import { finalizationLine, gitMergePolicyLabel } from "./codeLabels.ts";
 import {
   catalogApproversLine,
-  catalogFinalizerApproval,
+  catalogFinalizerLanding,
   catalogPlanLine,
   catalogWorkloadModel,
   catalogWorkloadRuns,
@@ -337,14 +333,7 @@ export function catalogEntrySummary(
     case "Plan":
       return copyOrDataText(text, detail.line);
     case "Finalizer":
-      return [
-        text(catalogFinalizerApproval(detail.finalizer)),
-        detail.finalizer.finalization === undefined
-          ? undefined
-          : text(finalizationMethodLabel(detail.finalizer.finalization)),
-      ]
-        .filter((part) => part !== undefined)
-        .join(" · ");
+      return text(catalogFinalizerLanding(detail.finalizer));
     case "Prompt":
       return catalogPromptOpening(detail.text);
   }
@@ -453,10 +442,6 @@ export function catalogEntryFields(
       const { finalizer } = detail;
       const finalization = finalizer.finalization;
       return [
-        field(
-          { id: "configuration-catalog-field-approval" },
-          catalogFinalizerApproval(finalizer),
-        ),
         ...(finalization === undefined
           ? []
           : [

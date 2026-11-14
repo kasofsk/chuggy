@@ -534,7 +534,6 @@ export function ticketRunLandingMarked(
       return { mark: "Slash", tone: "retired" };
     case "Running":
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
     case "Proposed":
     case "Landed":
