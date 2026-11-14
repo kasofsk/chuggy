@@ -1,6 +1,6 @@
 /**
  * The bounded pass that turns a change-log row into a turn in a member's
- * mailbox, and nothing else. It reads a cursor, reads one page of candidates,
+ * mailbox, and the one wake a thread's own attempt offers it. It reads a cursor, reads one page of candidates,
  * offers each of them one wake, and moves the cursor once. It is pure —
  * nothing here reaches a store, a clock or a route except through
  * `ThreadWakeService` — and it composes no body: the document names the reason
@@ -54,6 +54,16 @@
  * is not in sequence order, or that is wider than the bound it was asked for,
  * raises rather than deriving a cursor from an order it does not have.
  *
+ * A THREAD'S OWN ATTEMPT WAKES IT THROUGH THE SAME DOOR. `threadJobWake` is
+ * one candidate offered by a thread's attempt on its member's chat host rather
+ * than read off the log: a job that exited, a watch that matched, a timer that
+ * fell due, or jobs a new attempt restored. Its turn is derived from the
+ * session and the attempt's own identity for the event, its document names
+ * the job, watch or timer and nothing the job printed, and it is admitted on
+ * the checks above. It holds no cursor, so the attempt is told what its wake
+ * came to, and an authority that could not answer is the one refusal worth
+ * offering again.
+ *
  * A BOUND ABOVE `threadWakesPerPassMax` IS REFUSED, NOT CLAMPED. The candidate
  * read caps what it is asked for at that ceiling, so a service carrying a wider
  * bound would read a capped page, read it as short, and advance to a sequence
@@ -66,7 +76,11 @@
 import { createHash } from "node:crypto";
 
 import { threadWakesPerPassMax } from "../contract/http.ts";
-import type { SessionId, SessionTurnId } from "./agentSession.ts";
+import type {
+  SessionBearerSecret,
+  SessionId,
+  SessionTurnId,
+} from "./agentSession.ts";
 import { asSessionTurnId } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
 import type {
@@ -83,14 +97,15 @@ import { sessionRunnerServes } from "./sessionPlacement.ts";
 import {
   threadWakeDocument,
   threadWakeText,
-  type ThreadWakeReason,
+  type ThreadJobWakeReason,
+  type ThreadTicketWakeReason,
 } from "./thread.ts";
 
 /** One change row and the thread it wakes: the open thread its ticket's draft was filed from. */
 export interface ThreadWakeCandidate {
   readonly sequence: number;
   readonly partition: Partition;
-  readonly reason: ThreadWakeReason;
+  readonly reason: ThreadTicketWakeReason;
   readonly resource: string;
   readonly principal: Principal;
   readonly session: SessionId;
@@ -217,10 +232,16 @@ function orderedPage(
   return page;
 }
 
-/** Whether a candidate's principal may still change the project and the thread's route still lets them spend a turn, or nothing where the authority could not say. */
+/** What deciding whether a thread may be woken reads of it. */
+type ThreadWakeAdmission = Pick<
+  ThreadWakeCandidate,
+  "partition" | "principal" | "route" | "runner"
+>;
+
+/** Whether a thread's principal may still change the project and the thread's route still lets them spend a turn, or nothing where the authority could not say. */
 async function threadWakeAdmitted(
   access: ProjectAccess,
-  candidate: ThreadWakeCandidate,
+  candidate: ThreadWakeAdmission,
 ): Promise<boolean | undefined> {
   try {
     return (
@@ -330,4 +351,118 @@ export async function threadWakePass(
       ? {}
       : { truncatedAt: advanced.truncatedAt }),
   };
+}
+
+/**
+ * A thread's live attempt on its member's chat host, as its bearer resolves
+ * for a wake of its own thread: what the pass reads off a candidate, read off
+ * the attempt instead.
+ */
+export type ThreadJobWakeView = ThreadWakeAdmission &
+  Pick<ThreadWakeCandidate, "session" | "standingRules">;
+
+/** Why a bearer offers no wake: no live attempt holds it, or the attempt is not a thread's on a chat host. */
+export type ThreadJobWakeUnbound = "Fenced" | "NotChatHostThread";
+
+/** The bearer one job wake is offered under, which the store fences on at each door. */
+export interface ThreadJobWakeBearer {
+  readonly secret: SessionBearerSecret;
+  readonly generation: number;
+}
+
+/**
+ * The durable side of a job wake. `wake` resolves the bearer again rather than
+ * trusting the view, so an attempt fenced between the two is not a turn, and
+ * puts the turn through the same mailbox door the pass's `wake` does.
+ */
+export interface ThreadJobWakeStore {
+  wakeView(
+    bearer: ThreadJobWakeBearer,
+  ): Promise<ThreadJobWakeView | ThreadJobWakeUnbound>;
+  wakeThread(
+    bearer: ThreadJobWakeBearer & {
+      readonly turn: SessionTurnId;
+      readonly input: string;
+      readonly route: PlacementRoute;
+    },
+  ): Promise<ThreadWakeOffered | ThreadJobWakeUnbound>;
+}
+
+export interface ThreadJobWakeService {
+  readonly store: ThreadJobWakeStore;
+  readonly access: ProjectAccess;
+  readonly clock: { nowIso(): string };
+}
+
+/** One wake a thread's attempt offers: the reason, the job, watch or timer it is about, and the attempt's identity for the event. */
+export interface ThreadJobWakeOffer {
+  readonly wake: ThreadJobWakeReason;
+  readonly resource: string;
+  readonly event: string;
+}
+
+/**
+ * What a job wake came to: what the mailbox made of it, why the bearer offers
+ * none, a thread the pass would have skipped, or an authority that could not
+ * say, which is the one answer worth offering again.
+ */
+export type ThreadJobWoken =
+  | ThreadWakeOffered
+  | { readonly refused: ThreadJobWakeUnbound | "NotAdmitted" }
+  | { readonly refused: "AccessUnavailable" };
+
+/** What every job wake turn's identity opens with, which no ticket wake's sequence can. */
+export const threadJobWakeTurnPrefix = `${threadWakeTurnPrefix}-job`;
+
+/**
+ * The turn a job wake becomes, derived from the session and the attempt's own
+ * identity for the event, so the same event offered again is the same turn.
+ * Both are digested together, as a pair no separator can make ambiguous.
+ */
+export function threadJobWakeTurn(
+  session: SessionId,
+  event: string,
+): SessionTurnId {
+  if (event.length === 0)
+    throw new RangeError("thread job wake: the event identity is empty");
+  const digest = createHash("sha256")
+    .update(JSON.stringify([session, event]))
+    .digest("hex");
+  return asSessionTurnId(`${threadJobWakeTurnPrefix}-${digest}`);
+}
+
+/**
+ * Offers one wake a thread's attempt asks for its own thread, under the
+ * checks the pass makes of a candidate and through the door the pass wakes
+ * through: the attempt is the candidate, and its event the change.
+ */
+export async function threadJobWake(
+  service: ThreadJobWakeService,
+  bearer: ThreadJobWakeBearer,
+  offer: ThreadJobWakeOffer,
+): Promise<ThreadJobWoken> {
+  const view = await service.store.wakeView(bearer);
+  if (view === "Fenced" || view === "NotChatHostThread")
+    return { refused: view };
+  const admitted = await threadWakeAdmitted(service.access, view);
+  if (admitted === undefined) return { refused: "AccessUnavailable" };
+  if (!admitted) return { refused: "NotAdmitted" };
+  const woken = await service.store.wakeThread({
+    ...bearer,
+    turn: threadJobWakeTurn(view.session, offer.event),
+    route: view.route,
+    input: threadWakeText(
+      threadWakeDocument({
+        wake: offer.wake,
+        resource: offer.resource,
+        at: service.clock.nowIso(),
+        ...(view.standingRules === undefined
+          ? {}
+          : { standingRules: view.standingRules }),
+      }),
+    ),
+  });
+  return woken === "Fenced" || woken === "NotChatHostThread"
+    ? { refused: woken }
+    : woken;
 }

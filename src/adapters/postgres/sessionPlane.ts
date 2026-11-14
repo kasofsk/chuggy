@@ -90,7 +90,7 @@ export type SessionPlaneStore = SessionPlaneAuthority &
   SessionStoreQueryPort;
 
 /** The digest a session bearer is keyed by, which is all the database holds of it. */
-function sessionSecretDigest(secret: SessionBearerSecret): string {
+export function sessionSecretDigest(secret: SessionBearerSecret): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 

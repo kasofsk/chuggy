@@ -249,6 +249,37 @@ test("a key file the plane cannot mint with refuses to start rather than minting
   assert.match(refused.stderr, /CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE:/u);
 });
 
+test("a plane told its project access starts with the wake route composed in front of the session authority", async () => {
+  const port = await freePort();
+  const child = planeProcess({
+    ...planeEnvironment(port),
+    CHUG_WORKER_PLANE_KETO_READ_URL: "http://127.0.0.1:1",
+  });
+  try {
+    await planeListening(port, child);
+    const answered = await fetch(
+      `http://127.0.0.1:${String(port)}/v1/session/wake`,
+      { method: "POST" },
+    );
+    assert.equal(answered.status, 401);
+  } finally {
+    child.kill("SIGKILL");
+  }
+});
+
+test("a project access URL the plane cannot ask refuses to start rather than waking unchecked", async () => {
+  const port = await freePort();
+  const refused = await planeRefusal({
+    ...planeEnvironment(port),
+    CHUG_WORKER_PLANE_KETO_READ_URL: "ftp://keto.invalid",
+  });
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.stderr,
+    /project access read URL must be HTTP or HTTPS/u,
+  );
+});
+
 test("a session bound that is not a positive integer is refused by its own name", async () => {
   const port = await freePort();
   for (const name of [

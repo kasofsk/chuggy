@@ -45,9 +45,9 @@ import {
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { Authority } from "../../src/interpreter/operationInbox.ts";
 import {
-  allThreadWakeReasons,
+  allThreadTicketWakeReasons,
   parseThreadWake,
-  type ThreadWakeReason,
+  type ThreadTicketWakeReason,
 } from "../../src/interpreter/thread.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import {
@@ -78,7 +78,7 @@ function member(label: string): { principal: Principal; session: SessionId } {
 function candidateAt(
   sequence: number,
   label: string,
-  reason: ThreadWakeReason = "TicketRefused",
+  reason: ThreadTicketWakeReason = "TicketRefused",
   route: PlacementRoute = "InCluster",
   runner: SessionRunnerStanding = "Unregistered",
 ): ThreadWakeCandidate {
@@ -262,19 +262,19 @@ test("an empty page costs one bounded read, writes nothing and moves nothing", a
 });
 
 test("every reason the roster names becomes a turn whose document says so", async () => {
-  const log = allThreadWakeReasons.map((reason, index) =>
+  const log = allThreadTicketWakeReasons.map((reason, index) =>
     candidateAt(index + 1, `member-${reason}`, reason),
   );
   const store = referenceStore({ log });
   const report = await threadWakePass(serviceOf(store));
 
-  assert.equal(report.read, allThreadWakeReasons.length);
-  assert.equal(report.woken, allThreadWakeReasons.length);
+  assert.equal(report.read, allThreadTicketWakeReasons.length);
+  assert.equal(report.woken, allThreadTicketWakeReasons.length);
   assert.equal(report.skipped, 0);
-  assert.equal(report.cursor, allThreadWakeReasons.length);
+  assert.equal(report.cursor, allThreadTicketWakeReasons.length);
   assert.deepEqual(
     store.offers.map((offer) => parseThreadWake(offer.input).wake),
-    [...allThreadWakeReasons],
+    [...allThreadTicketWakeReasons],
   );
   for (const [index, offer] of store.offers.entries()) {
     const document = parseThreadWake(offer.input);
@@ -760,8 +760,9 @@ function walkLog(
         candidateAt(
           sequence,
           label,
-          allThreadWakeReasons[random.below(allThreadWakeReasons.length)] ??
-            "TicketRefused",
+          allThreadTicketWakeReasons[
+            random.below(allThreadTicketWakeReasons.length)
+          ] ?? "TicketRefused",
         ),
       );
     }

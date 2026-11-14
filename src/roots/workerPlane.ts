@@ -18,6 +18,7 @@ import {
   createWorkerPlaneApp,
   type SessionPlaneService,
 } from "../adapters/http/workerPlaneServer.ts";
+import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresProjectRepositoryLanding } from "../adapters/postgres/repositoryBinding.ts";
@@ -25,6 +26,7 @@ import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { reporterSecretBytes } from "../adapters/reporters/secretFile.ts";
 import { postgresSessionLivePublisher } from "../adapters/postgres/sessionLive.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
+import { postgresThreadJobWakes } from "../adapters/postgres/thread.ts";
 import {
   postgresWorkerPlaneAuthority,
   postgresWorkerAttemptHeartbeats,
@@ -43,6 +45,10 @@ import {
   credentialResolver,
   type CredentialResolver,
 } from "../interpreter/credentialIssuers.ts";
+import {
+  checkedProjectAccessSettings,
+  projectAccessTimeoutMsDefault,
+} from "../interpreter/projectAccess.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
 import {
@@ -56,6 +62,7 @@ import {
 } from "../interpreter/sessionLiveAllowance.ts";
 import type { SessionLivePublishPort } from "../interpreter/sessionPlane.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
+import type { ThreadJobWakeService } from "../interpreter/threadWake.ts";
 import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
@@ -82,16 +89,43 @@ import { planeStopping } from "./planeStopping.ts";
  * it, so taking that same value is the two tiers agreeing by construction; a
  * deployment that moves one moves both, by naming each.
  */
+/**
+ * How a chat host's thread attempt wakes its own thread, composed only where
+ * the plane is told the project access its checks ask, because a wake the
+ * plane could not check is one it does not make.
+ */
+function planeSessionWakes(
+  pool: ReturnType<typeof postgresPool>,
+): ThreadJobWakeService | undefined {
+  const readUrl = process.env["CHUG_WORKER_PLANE_KETO_READ_URL"];
+  if (readUrl === undefined || readUrl.length === 0) return undefined;
+  return {
+    store: postgresThreadJobWakes(pool),
+    access: ketoProjectAccess(
+      checkedProjectAccessSettings({
+        readUrl,
+        requestTimeoutMs: positive(
+          "CHUG_WORKER_PLANE_KETO_TIMEOUT_MS",
+          projectAccessTimeoutMsDefault,
+        ),
+      }),
+    ),
+    clock: { nowIso: () => new Date().toISOString() },
+  };
+}
+
 function planeSessions(
   pool: ReturnType<typeof postgresPool>,
   artifacts: ArtifactStore,
 ): SessionPlaneService {
   const sessions = postgresSessionPlane(pool);
+  const wakes = planeSessionWakes(pool);
   return {
     authority: sessions,
     heartbeats: sessions,
     references: sessions,
     standings: sessions,
+    ...(wakes === undefined ? {} : { wakes }),
     turns: sessions,
     settlements: sessions,
     watches: sessions,

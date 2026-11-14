@@ -27,6 +27,8 @@ import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   allThreadStandings,
+  allThreadJobWakeReasons,
+  allThreadTicketWakeReasons,
   allThreadWakeReasons,
   parseThreadWake,
   threadCapabilitiesDefault,
@@ -91,14 +93,24 @@ test("the default roster is capabilities the tree knows, and holds neither of th
  * joins, so a member lost or renamed here is a wake nobody ever gets. The list
  * is written out rather than iterated, the way the capability roster is.
  */
-test("the wake roster holds exactly the reasons the wake runtime joins", () => {
-  assert.deepEqual(allThreadWakeReasons, [
+test("the wake roster holds exactly the reasons the wake runtime joins and the job host's", () => {
+  assert.deepEqual(allThreadTicketWakeReasons, [
     "TicketRefused",
     "RefusalLifted",
     "DraftDeleted",
     "TicketEscalated",
     "TicketCompleted",
     "TicketAbandoned",
+  ]);
+  assert.deepEqual(allThreadJobWakeReasons, [
+    "JobExited",
+    "WatchMatched",
+    "TimerDue",
+    "AttemptEnded",
+  ]);
+  assert.deepEqual(allThreadWakeReasons, [
+    ...allThreadTicketWakeReasons,
+    ...allThreadJobWakeReasons,
   ]);
   assert.deepEqual(allThreadStandings, ["Open", "Closed", "Orphaned"]);
 });

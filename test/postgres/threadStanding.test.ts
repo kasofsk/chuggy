@@ -10,20 +10,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
-import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
-import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import {
   apiRole,
   poolPlaneRole,
   schedulerRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresThreads } from "../../src/adapters/postgres/thread.ts";
-import {
-  postgresWorkerPoolAssignments,
-  postgresWorkerPoolRunners,
-} from "../../src/adapters/postgres/workerPool.ts";
-import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import type {
   WorkerPoolReconciliation,
@@ -42,8 +35,6 @@ import {
   workerPoolPoll,
   workerPoolSettled,
   type PoolPlaneIdentity,
-  type WorkerPoolPollSettings,
-  type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
@@ -51,8 +42,9 @@ import {
   sessionRigBoundless,
   sessionRigLaunch,
   sessionRigLaunchMet,
-  sessionRigReadingEverything,
   sessionRigOpen,
+  sessionRigPollSettings,
+  sessionRigPoolPorts,
   sessionRigProject,
   sessionRigRouted,
   sessionRigSession,
@@ -74,35 +66,8 @@ after(async () => {
 const launch = sessionRigLaunch;
 await sessionRigLaunchMet(schedulerPool);
 
-const readingEverything = sessionRigReadingEverything;
-
-const ports: WorkerPoolPorts = {
-  assignments: postgresWorkerPoolAssignments(poolPlanePool),
-  runners: postgresWorkerPoolRunners(poolPlanePool),
-  access: readingEverything,
-  sessions: {
-    store: postgresWorkerPoolSessions(poolPlanePool),
-    bindings: postgresProjectRepositoryBinding(poolPlanePool),
-    bearers: sessionAttemptMint(),
-  },
-  mint: () => randomUUID(),
-};
-
-const settings: WorkerPoolPollSettings = {
-  leaseSecs: 3600,
-  cpuMillis: 500,
-  memoryMib: 256,
-  assignmentsPerPollMax: 1,
-  heldMax: 1,
-  sessionsPerPollMax: 4,
-  sessionsHeldMax: 4,
-  deadlineSecs: 600,
-  callbackUrl: "http://127.0.0.1:1/",
-  sessionApiUrl: "https://api.invalid/",
-  pollIntervalMs: 1,
-  pollsMax: 1,
-  imageHosts: new Map(),
-};
+const ports = sessionRigPoolPorts(poolPlanePool);
+const settings = sessionRigPollSettings;
 
 type ChatHostPlaneIdentity = Extract<PoolPlaneIdentity, { kind: "ChatHost" }>;
 

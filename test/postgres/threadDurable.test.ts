@@ -16,7 +16,7 @@
  * arguments would be green over a door that had grown a wrong one.
  *
  * THE WAKE REASONS ARE ASSERTED AS A SET AGAINST THE ROSTER, not one by one, so
- * a reason added to `allThreadWakeReasons` without an arm in the derivation is
+ * a reason added to `allThreadTicketWakeReasons` without an arm in the derivation is
  * a red rather than a member nothing produces.
  */
 
@@ -85,7 +85,7 @@ import { memberAuthorities } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   allThreadStandings,
-  allThreadWakeReasons,
+  allThreadTicketWakeReasons,
   threadCapabilitiesDefault,
   threadStanding,
   threadSystemPromptCharsMax,
@@ -1975,7 +1975,7 @@ test("every reason the roster names is a reason the join derives", async () => {
 
   assert.deepEqual(
     [...new Set(mine.map((candidate) => candidate.reason))].sort(),
-    [...allThreadWakeReasons].sort(),
+    [...allThreadTicketWakeReasons].sort(),
   );
   assert.deepEqual(
     [...new Set(mine.map((candidate) => candidate.session))],
