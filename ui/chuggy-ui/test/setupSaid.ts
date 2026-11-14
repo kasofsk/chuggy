@@ -197,9 +197,14 @@ export const saidLanding: readonly Said[] = [
   ["waiting", "ticket 1 is in Landing"],
 ];
 
-/** The step each read leaves unread, and what the read is called there. */
+/** The step each read leaves unread, and what the read is called there. The
+ * owner fallback's leaves one unread only where the project has no pool, so
+ * its cases are its own. */
 export const saidUnread: Readonly<
-  Record<Exclude<SetupSiteRead, "workspaces">, readonly [number, string]>
+  Record<
+    Exclude<SetupSiteRead, "workspaces" | "fallback">,
+    readonly [number, string]
+  >
 > = {
   inventory: [1, "your projects were"],
   settings: [1, "acme/widgets: its lead settings were"],

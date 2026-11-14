@@ -22,6 +22,7 @@ import {
 export const consolePageSettingsSections = [
   "ProjectLead",
   "ProjectPlacement",
+  "ProjectPools",
   "ProjectPermissions",
   "WorkspacePeople",
   "WorkspaceAccounts",
@@ -67,6 +68,7 @@ export const consolePageSchema = z.union([
     page: z.literal("Repository"),
     repository: consolePageRepositorySchema,
   }),
+  /** No console names it any more, and one loaded before that still may. */
   z.strictObject({ page: z.literal("Runners") }),
   z.strictObject({ page: z.literal("Epics") }),
   z.strictObject({ page: z.literal("Epic"), epic: ticketNumberSchema }),

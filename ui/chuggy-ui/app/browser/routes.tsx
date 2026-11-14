@@ -13,6 +13,7 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
   useNavigate,
   useParams,
   useRouter,
@@ -40,6 +41,7 @@ import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { memberChatRoutes } from "../core/memberChat.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import {
   projectCreationQueryOf,
   projectCreationRoutePath,
@@ -76,7 +78,6 @@ import {
 import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
-import { RunnersPage } from "./RunnersPage.tsx";
 import {
   projectSettingsRoutes,
   workspaceSettingsRoutes,
@@ -312,10 +313,19 @@ const repositoriesRoute = createRoute({
   component: RepositoriesPage,
 });
 
+/** The address the project's runners were once at, which replaces itself
+ * with the reader's own, where a runner is added now. */
 const runnersRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/runners",
-  component: RunnersPage,
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: settingsRoutes.project.myRunner,
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
 function ThreadRoute(): ReactNode {

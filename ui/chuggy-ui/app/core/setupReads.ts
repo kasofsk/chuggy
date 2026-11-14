@@ -29,6 +29,7 @@ import type {
   ExecutionPlacementResponse,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
+  ProjectOwnerFallbackResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
@@ -44,6 +45,7 @@ import {
   apiExecutionPlacement,
   apiForgeInstallationRepositories,
   apiForgeInstallations,
+  apiOwnerFallback,
   apiProject,
   apiProjectInventory,
   apiProjectRepositories,
@@ -201,6 +203,8 @@ export interface SetupReads {
   /** Where the project's work runs, which is what says whether it waits on a runner at all. */
   readonly work: SetupRead<ExecutionPlacementResponse>;
   readonly placement: SetupRead<SessionPlacementResponse>;
+  /** Whether the project lets a member's own runners take their work, which says whether the person's own can be its runner. */
+  readonly fallback: SetupRead<ProjectOwnerFallbackResponse>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
   /** The tickets on their way, most lately moved first. */
@@ -499,6 +503,7 @@ type SetupProjectReads = Pick<
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
   | "landed"
   | "moving"
   | "drafts"
@@ -509,6 +514,7 @@ const setupProjectUnasked: SetupProjectReads = {
   repositories: setupUnasked,
   work: setupUnasked,
   placement: setupUnasked,
+  fallback: setupUnasked,
   landed: setupUnasked,
   moving: setupUnasked,
   drafts: setupUnasked,
@@ -519,25 +525,35 @@ async function setupProjectRead(
   partition: PartitionIdentity,
   held: SetupRepositories | undefined,
 ): Promise<SetupProjectReads> {
-  const [settings, repositories, work, placement, landed, moving, drafts] =
-    await Promise.all([
-      apiSelectorSettings(ports, partition),
-      held ?? setupRepositoriesRead(ports, partition),
-      apiExecutionPlacement(ports, partition),
-      apiSessionPlacement(ports, partition),
-      apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
-      apiProject(ports, partition, {
-        phase: setupMovingPhases,
-        order: "RecentActivity",
-      }),
-      apiDrafts(ports, partition, { limit: 1 }),
-    ]);
+  const [
+    settings,
+    repositories,
+    work,
+    placement,
+    fallback,
+    landed,
+    moving,
+    drafts,
+  ] = await Promise.all([
+    apiSelectorSettings(ports, partition),
+    held ?? setupRepositoriesRead(ports, partition),
+    apiExecutionPlacement(ports, partition),
+    apiSessionPlacement(ports, partition),
+    apiOwnerFallback(ports, partition),
+    apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
+    apiProject(ports, partition, {
+      phase: setupMovingPhases,
+      order: "RecentActivity",
+    }),
+    apiDrafts(ports, partition, { limit: 1 }),
+  ]);
   const all = (): boolean => true;
   return {
     settings: setupGot(settings, (answered) => answered, all),
     repositories,
     work: setupGot(work, (answered) => answered, all),
     placement: setupGot(placement, (answered) => answered, all),
+    fallback: setupGot(fallback, (answered) => answered, all),
     landed: setupGot(landed, (answered) => answered.tickets, all),
     moving: setupGot(
       moving,

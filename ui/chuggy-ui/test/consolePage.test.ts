@@ -84,6 +84,10 @@ test("a route is the page the contract names for it, with what its address carri
   expect(
     consolePageOf(matched("/$tenant/$project/settings/placement")),
   ).toEqual({ page: "Settings", section: "ProjectPlacement" });
+  expect(consolePageOf(matched("/$tenant/$project/settings/pools"))).toEqual({
+    page: "Settings",
+    section: "ProjectPools",
+  });
   expect(
     consolePageOf(matched("/$tenant/$project/settings/workspace/runner")),
   ).toEqual({ page: "Settings", section: "WorkspaceRunners" });
@@ -148,6 +152,12 @@ test("every tab of a ticket, a run and its landing are that ticket's page, so a 
     ).toEqual({ page: "Ticket", ticket: 41 });
 });
 
+test("a Runners page a thread still names moves the console to the address that redirects to Personal runners, which is named no page", () => {
+  const { leaf } = consolePageLeaf({ page: "Runners" });
+  expect(leaf?.routeId).toBe(runnersRedirectRouteId);
+  expect(consolePageOf(matched(runnersRedirectRouteId))).toBeUndefined();
+});
+
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
   expect(
     consolePageOf(
@@ -178,7 +188,10 @@ test("every route the console hangs under a project and draws the pane on is a p
   expect(
     consolePageOf(matched(threadRouteId, { session: "0123" })),
   ).toBeUndefined();
-  const paned = routeIds.filter((routeId) => routeId !== threadRouteId);
+  const paned = routeIds.filter(
+    (routeId) =>
+      routeId !== threadRouteId && routeId !== runnersRedirectRouteId,
+  );
   expect(paned).not.toEqual([]);
   for (const routeId of paned) {
     const page = consolePageOf(
@@ -214,6 +227,7 @@ test("a page is named in the console's own words for it", () => {
     "Repository acme/atlas",
     "Settings · Project · Lead",
     "Settings · Project · Placement",
+    "Settings · Project · Pools",
     "Settings · Project · Permissions",
     "Settings · Workspace · People",
     "Settings · Workspace · GitHub accounts",
@@ -235,12 +249,22 @@ test("a page is named in the console's own words for it", () => {
 
 /** The address a thread's `navigate` moves the console to is the page it
  * named, read back by the router the console runs. */
+/** The route a page's address is matched as, by the console's router. */
+function consolePageLeaf(page: ConsolePage) {
+  const href = consolePageHref({ tenant: "acme", project: "at las" }, page);
+  const [path = "", query = ""] = href.split("?");
+  const search = consoleRouter.options.parseSearch(`?${query}`);
+  return { href, search, leaf: consoleRouter.matchRoutes(path, search).at(-1) };
+}
+
+/** The address the Runners page was at only redirects, so no route is named it. */
+const runnersRedirectRouteId = `${partitionRouteId}/runners`;
+
 test("every page's address is matched by the console's router as that page", () => {
-  for (const page of consolePagesEvery) {
-    const href = consolePageHref({ tenant: "acme", project: "at las" }, page);
-    const [path = "", query = ""] = href.split("?");
-    const search = consoleRouter.options.parseSearch(`?${query}`);
-    const leaf = consoleRouter.matchRoutes(path, search).at(-1);
+  for (const page of consolePagesEvery.filter(
+    (named) => named.page !== "Runners",
+  )) {
+    const { href, search, leaf } = consolePageLeaf(page);
     expect(leaf?.params, href).toMatchObject({
       tenant: "acme",
       project: "at las",

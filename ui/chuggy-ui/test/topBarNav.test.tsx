@@ -62,7 +62,6 @@ async function drawnAt(path: string): Promise<readonly string[]> {
         leaf("/lead"),
         leaf("/settings"),
         leaf("/repositories"),
-        leaf("/runners"),
         leaf("/tickets/new"),
         leaf("/tickets/$ticket"),
         leaf("/tickets/$ticket/edit"),
@@ -83,7 +82,7 @@ test("the Inbox page, which sits beside the gear, leaves no screen current", asy
 });
 
 test("a setup page, which the gear holds, leaves no screen current", async () => {
-  expect(await drawnAt("/acme/atlas/runners")).toStrictEqual([]);
+  expect(await drawnAt("/acme/atlas/repositories")).toStrictEqual([]);
 });
 
 test("the overview is Tickets alone", async () => {

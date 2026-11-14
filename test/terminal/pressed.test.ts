@@ -44,6 +44,8 @@ type SetupPressedCatalogued =
   | "projectCreate"
   | "ticket"
   | "runner"
+  | "runnerProject"
+  | "fallback"
   | "chatHost"
   | "connect"
   | "add"
@@ -57,6 +59,7 @@ const projectCreationPage = "ui/chuggy-ui/app/browser/ProjectCreation.tsx";
 const invitePage = "ui/chuggy-ui/app/browser/InvitePage.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
+const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
@@ -82,9 +85,11 @@ const drawnFromCatalog: Readonly<
     page: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
     id: "ticket-authoring-create-ticket",
   },
-  runner: {
-    page: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
-    id: "runners-add",
+  runner: { page: myRunnerPage, id: "runners-register" },
+  runnerProject: { page: myRunnerPage, id: "runners-personal-project-add" },
+  fallback: {
+    page: "ui/chuggy-ui/app/browser/settings/OwnerFallbackSection.tsx",
+    id: "runners-fallback-title",
   },
   chatHost: {
     page: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",

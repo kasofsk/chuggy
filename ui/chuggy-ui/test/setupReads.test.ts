@@ -529,6 +529,7 @@ const reads = [
   `GET ${project}/repositories?reach=false`,
   `GET ${project}/execution-placement`,
   `GET ${project}/session-placement`,
+  `GET ${project}/owner-fallback`,
   `GET ${project}?limit=1&phase=Done`,
   `GET ${project}?order=RecentActivity&${moving}`,
   `GET ${project}/drafts?limit=1`,

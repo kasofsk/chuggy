@@ -12,7 +12,7 @@ import {
   executionPlacementQuery,
   ownerFallbackQuery,
 } from "../core/projectQueries.ts";
-import { navRoutes } from "../core/shellNav.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { workRunner } from "../core/workRunner.ts";
 import type { WorkRunner, WorkRunnerOwner } from "../core/workRunner.ts";
 import { usePanelState } from "./api.ts";
@@ -38,13 +38,13 @@ export function useWorkRunner(
   );
 }
 
-/** The way to the Runners page, said as what a project with no runner does there. */
+/** The way to the reader's own runners, said as what a project with no runner does there. */
 export function AddRunnerLink(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Link to={navRoutes.runners} params={props.partition}>
+    <Link to={settingsRoutes.project.myRunner} params={props.partition}>
       {text({ id: "runners-add" })}
     </Link>
   );

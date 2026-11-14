@@ -195,10 +195,10 @@ function addRunner(): HTMLElement | null {
 
 /** The link stands after the line and outside it, so the button is described
  * by the words alone and the way to a runner is a control of its own. */
-test("a press with no runner to start work on draws the way to the project's Runners page after its line", () => {
+test("a press with no runner to start work on draws the way to Personal runners after its line", () => {
   draw(answeringApi(ticketDispatching()).ports, "NoRunner");
   expect(addRunner()?.getAttribute("href")).toBe(
-    `/${creationPartition.tenant}/${creationPartition.project}/runners`,
+    `/${creationPartition.tenant}/${creationPartition.project}/settings/workspace/runner`,
   );
   expect(addRunner()?.parentElement?.textContent).toBe(
     "No runner · Add runner",

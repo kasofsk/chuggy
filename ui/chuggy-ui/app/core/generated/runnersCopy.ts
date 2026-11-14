@@ -4,9 +4,9 @@
 /** Each message's variables, by name. */
 export interface RunnersCopy {
   readonly "runners-title": Record<never, never>;
-  readonly "runners-about": Record<never, never>;
-  readonly "runners-none": Record<never, never>;
-  readonly "runners-caption": Record<never, never>;
+  readonly "runners-pools-title": Record<never, never>;
+  readonly "runners-pools-about": Record<never, never>;
+  readonly "runners-pools-none": Record<never, never>;
   readonly "runners-col-runner": Record<never, never>;
   readonly "runners-col-platforms": Record<never, never>;
   readonly "runners-col-version": Record<never, never>;

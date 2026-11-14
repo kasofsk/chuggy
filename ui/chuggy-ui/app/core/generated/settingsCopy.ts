@@ -7,6 +7,7 @@ export interface SettingsCopy {
   readonly "settings-nav-project": Record<never, never>;
   readonly "settings-nav-lead": Record<never, never>;
   readonly "settings-nav-placement": Record<never, never>;
+  readonly "settings-nav-pools": Record<never, never>;
   readonly "settings-nav-permissions": Record<never, never>;
   readonly "settings-nav-workspace": Record<never, never>;
   readonly "settings-nav-people": Record<never, never>;

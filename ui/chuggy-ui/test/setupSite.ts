@@ -43,6 +43,7 @@ import type {
 } from "../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
+  OwnerFallback,
   PlacementRoute,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
@@ -75,6 +76,8 @@ export interface SetupSiteProject {
   work: PlacementRoute;
   threads: PlacementRoute;
   runner: SessionRunnerStanding;
+  /** The owner fallback the project names, where it names one. */
+  fallback: OwnerFallback | undefined;
   /** Most lately moved first. */
   tickets: SetupSiteTicket[];
   drafts: number[];
@@ -97,6 +100,7 @@ export type SetupSiteRead =
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
   | "landed"
   | "moving"
   | "drafts"
@@ -176,6 +180,7 @@ export function setupSiteProject(
     work: "Pool",
     threads: "Pool",
     runner: "Unregistered",
+    fallback: undefined,
     tickets: [],
     drafts: [],
     landings: new Map(),
@@ -771,6 +776,16 @@ function projectAnswered(
       return fated(site, "work") ?? answered(work(project));
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
+    case "/owner-fallback":
+      return (
+        fated(site, "fallback") ??
+        answered({
+          ...(project.fallback === undefined
+            ? {}
+            : { fallback: project.fallback }),
+          administers: project.administer,
+        })
+      );
     case "/abilities":
       return abilities(site, project);
     case "/worker-pools":

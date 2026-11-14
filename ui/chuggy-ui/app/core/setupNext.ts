@@ -30,6 +30,7 @@ import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
+import { ownerFallbackLabel } from "./myRunner.ts";
 import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
@@ -61,7 +62,9 @@ export const setupPressed = {
   connect: { id: "repositories-connect-github" },
   add: { id: "repositories-add" },
   retry: { id: "repositories-retry" },
-  runner: { id: "runners-add" },
+  runner: { id: "runners-register" },
+  runnerProject: { id: "runners-personal-project-add" },
+  fallback: { id: "runners-fallback-title" },
   chatHost: setupChatHostPressed,
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
@@ -399,6 +402,30 @@ function setupChatMend(
 }
 
 /**
+ * What a runner of the person's own, registered by hand on Personal runners,
+ * needs there before it takes the project's work: the project given to it,
+ * and where the project names no owner fallback, one set on its Placement
+ * page, which the person is told of and this program never sets.
+ */
+function setupRunnerServes(at: SetupAt, named: boolean): Copy {
+  const choose = setupPressed.runnerProject;
+  const project = at.project;
+  if (named)
+    return { id: "setup-mend-runner-serves", args: { choose, project } };
+  return {
+    id: "setup-mend-runner-serves-unnamed",
+    args: {
+      choose,
+      project,
+      placement: setupPage(at, settingsRoutes.project.placement),
+      setting: setupPressed.fallback,
+      strict: ownerFallbackLabel("Strict"),
+      preferred: ownerFallbackLabel("Preferred"),
+    },
+  };
+}
+
+/**
  * No runner yet. Where this machine could take one the person is told what
  * `runner` would put here before it may be run; where it could not, why not;
  * and where the machine was not looked at, the console's own page.
@@ -415,15 +442,16 @@ function setupRunnerMend(
     return setupChatMend(lack, at, here);
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
-  const page = setupPage(at, navRoutes.runners);
+  const page = setupPage(at, settingsRoutes.project.myRunner);
   const add = setupPressed.runner;
+  const serves = setupRunnerServes(at, lack.named);
   const elsewhere: Copy = {
     id: "setup-mend-runner-elsewhere",
-    args: { page, add },
+    args: { page, add, serves },
   };
   const instead: Copy = {
     id: "setup-mend-runner-instead",
-    args: { page, add },
+    args: { page, add, serves },
   };
   const room = here?.room;
   switch (room?.room) {
@@ -433,7 +461,12 @@ function setupRunnerMend(
       return setupOffer(
         {
           id: "setup-mend-runner-offer",
-          args: { put: setupRunnerPut(lack.chat, here?.claude), page, add },
+          args: {
+            put: setupRunnerPut(lack.chat, here?.claude),
+            page,
+            add,
+            serves,
+          },
         },
         at,
       );
@@ -441,7 +474,12 @@ function setupRunnerMend(
       return setupHand(
         {
           id: "setup-mend-runner-mac",
-          args: { program: runnerPackages.darwin.program, page, add },
+          args: {
+            program: runnerPackages.darwin.program,
+            page,
+            add,
+            serves,
+          },
         },
         setupRunnerRunning,
       );

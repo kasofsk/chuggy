@@ -56,11 +56,14 @@ const consolePagePlainPaths = {
   Lead: "lead",
   Catalog: "catalog",
   Repositories: "repositories",
-  Runners: "runners",
   Epics: "epics",
 } as const satisfies Readonly<Record<string, string>>;
 
 type ConsolePagePlain = keyof typeof consolePagePlainPaths;
+
+/** Where a page the contract still names as Runners is, an address that only
+ * redirects and so is no page this table reads a match as. */
+const consolePageRunnersPath = "runners";
 
 /** Each settings section, by where under the project its page is. */
 const consolePageSettingsPaths: Readonly<
@@ -68,6 +71,7 @@ const consolePageSettingsPaths: Readonly<
 > = {
   ProjectLead: "settings/lead",
   ProjectPlacement: "settings/placement",
+  ProjectPools: "settings/pools",
   ProjectPermissions: "settings/permissions",
   WorkspacePeople: "settings/workspace/people",
   WorkspaceAccounts: "settings/workspace/accounts",
@@ -165,9 +169,10 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Lead":
     case "Catalog":
     case "Repositories":
-    case "Runners":
     case "Epics":
       return consolePagePlainPaths[page.page satisfies ConsolePagePlain];
+    case "Runners":
+      return consolePageRunnersPath;
     case "Epic":
       return `epics/${String(page.epic)}`;
     case "Repository":
@@ -222,6 +227,7 @@ const consolePageSectionWords: Readonly<
     { id: "settings-nav-project" },
     { id: "settings-nav-placement" },
   ],
+  ProjectPools: [{ id: "settings-nav-project" }, { id: "settings-nav-pools" }],
   ProjectPermissions: [
     { id: "settings-nav-project" },
     { id: "settings-nav-permissions" },

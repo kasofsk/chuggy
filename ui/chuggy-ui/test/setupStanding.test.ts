@@ -13,6 +13,7 @@ import { expect, test } from "vitest";
 
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import {
+  ownerFallbacks,
   placementRoutes,
   sessionRunnerStandings,
   ticketLandingStates,
@@ -831,6 +832,75 @@ test("for every route a project's work can take and every standing its runners c
   });
 });
 
+test("a project with no pool that names an owner fallback takes the person's own runner as its runner, live or offline as a pool is, exactly where the console says the work has a runner", async () => {
+  const said: Record<string, Said | undefined> = {};
+  for (const fallback of [undefined, ...ownerFallbacks])
+    for (const mine of sessionRunnerStandings) {
+      const { site, project } = saidRunnable();
+      project.runner = "Unregistered";
+      project.fallback = fallback;
+      if (mine === "Unregistered") site.chat.clear();
+      else
+        site.chat.set("acme", { id: "chuggy-chat-1", live: mine === "Live" });
+      const step = (await column(site))[4];
+      const reads = await siteRead(site);
+      const console = workRunner(
+        settled(reads.work),
+        settled(reads.placement),
+        settled(reads.fallback),
+        "Reader",
+      );
+      expect(step?.[0] === "todo", `${String(fallback)} ${mine}`).toBe(
+        console === "NoRunner",
+      );
+      said[`${fallback ?? "None"} ${mine}`] = step;
+    }
+  const offline: Said = ["waiting", "registered, not running"];
+  expect(said).toEqual({
+    "None Unregistered": saidTodo,
+    "None Offline": saidTodo,
+    "None Live": saidTodo,
+    "Strict Unregistered": saidTodo,
+    "Strict Offline": offline,
+    "Strict Live": saidLive,
+    "Preferred Unregistered": saidTodo,
+    "Preferred Offline": offline,
+    "Preferred Live": saidLive,
+  });
+});
+
+test("a project with no pool says whether it names an owner fallback in what its runner step lacks", async () => {
+  for (const fallback of [undefined, "Strict"] as const) {
+    const { site, project } = saidRunnable();
+    project.runner = "Unregistered";
+    project.fallback = fallback;
+    site.chat.clear();
+    expect((await stood(site)).steps[4]?.lacks).toEqual({
+      lacks: "Runner",
+      chat: true,
+      named: fallback !== undefined,
+    });
+  }
+});
+
+test("the owner fallback unread leaves the runner step unread only where the project has no pool", async () => {
+  for (const [runner, said] of [
+    [
+      "Unregistered",
+      [
+        "unread",
+        "whether personal runners take its work was not answered (Fault)",
+      ],
+    ],
+    ["Live", saidLive],
+  ] as const) {
+    const { site, project } = saidRunnable();
+    project.runner = runner;
+    site.fates.set("fallback", "Failed");
+    expect((await column(site))[4], runner).toEqual(said);
+  }
+});
+
 test("a project whose work the cluster runs needs no runner of its own, and its step waits only on where the person's chats in it run", async () => {
   const site = setupSiteAt("Landed");
   for (const held of site.projects) {
@@ -874,9 +944,21 @@ test("where the person's chats run on runners the runner step is done only once 
     }
   const chat = (lacks: "ChatHost" | "ChatHostLive") => ({ lacks });
   expect(said).toEqual({
-    "Unregistered Unregistered": ["todo", "", { lacks: "Runner", chat: true }],
-    "Unregistered Offline": ["todo", "", { lacks: "Runner", chat: true }],
-    "Unregistered Live": ["todo", "", { lacks: "Runner", chat: false }],
+    "Unregistered Unregistered": [
+      "todo",
+      "",
+      { lacks: "Runner", chat: true, named: false },
+    ],
+    "Unregistered Offline": [
+      "todo",
+      "",
+      { lacks: "Runner", chat: true, named: false },
+    ],
+    "Unregistered Live": [
+      "todo",
+      "",
+      { lacks: "Runner", chat: false, named: false },
+    ],
     "Offline Unregistered": [
       "waiting",
       "registered, not running",

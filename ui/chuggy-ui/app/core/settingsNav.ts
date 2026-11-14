@@ -19,6 +19,7 @@ export const settingsRoutes = {
   project: {
     lead: "/$tenant/$project/settings/lead",
     placement: "/$tenant/$project/settings/placement",
+    pools: "/$tenant/$project/settings/pools",
     permissions: "/$tenant/$project/settings/permissions",
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
@@ -95,6 +96,7 @@ export function settingsNavSiteDrawn(
 const settingsNavLabels = {
   lead: { id: "settings-nav-lead" },
   placement: { id: "settings-nav-placement" },
+  pools: { id: "settings-nav-pools" },
   permissions: { id: "settings-nav-permissions" },
   people: { id: "settings-nav-people" },
   accounts: { id: "settings-nav-accounts" },
@@ -124,6 +126,7 @@ export function settingsNav(
     entries: [
       entry("lead", settingsRoutes.project.lead),
       entry("placement", settingsRoutes.project.placement),
+      entry("pools", settingsRoutes.project.pools),
       entry("permissions", settingsRoutes.project.permissions),
     ],
   };

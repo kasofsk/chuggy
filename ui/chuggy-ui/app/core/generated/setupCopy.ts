@@ -234,6 +234,7 @@ export interface SetupCopy {
   readonly "setup-read-repositories": Record<never, never>;
   readonly "setup-read-work": Record<never, never>;
   readonly "setup-read-placement": Record<never, never>;
+  readonly "setup-read-fallback": Record<never, never>;
   readonly "setup-read-tickets": Record<never, never>;
   readonly "setup-read-drafts": Record<never, never>;
   readonly "setup-read-landings": Record<never, never>;
@@ -502,23 +503,39 @@ export interface SetupCopy {
     readonly here: unknown;
     readonly byHand: unknown;
   };
+  readonly "setup-mend-runner-serves": {
+    readonly choose: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-mend-runner-serves-unnamed": {
+    readonly choose: unknown;
+    readonly project: unknown;
+    readonly placement: unknown;
+    readonly setting: unknown;
+    readonly strict: unknown;
+    readonly preferred: unknown;
+  };
   readonly "setup-mend-runner-elsewhere": {
     readonly page: unknown;
     readonly add: unknown;
+    readonly serves: unknown;
   };
   readonly "setup-mend-runner-instead": {
     readonly page: unknown;
     readonly add: unknown;
+    readonly serves: unknown;
   };
   readonly "setup-mend-runner-offer": {
     readonly put: unknown;
     readonly page: unknown;
     readonly add: unknown;
+    readonly serves: unknown;
   };
   readonly "setup-mend-runner-mac": {
     readonly program: unknown;
     readonly page: unknown;
     readonly add: unknown;
+    readonly serves: unknown;
   };
   readonly "setup-mend-runner-serviceless": {
     readonly elsewhere: unknown;

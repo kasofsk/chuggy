@@ -59,6 +59,7 @@ import type {
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
+import { workRunnerStanding } from "./workRunner.ts";
 import type {
   SetupStepName,
   SetupStepSaid,
@@ -76,6 +77,7 @@ export type SetupReadName =
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
   | "tickets"
   | "drafts"
   | "landings";
@@ -112,8 +114,12 @@ export type SetupLack =
     }
   | { readonly lacks: "Binding" }
   | { readonly lacks: "Configuration"; readonly repository: string }
-  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
-  | { readonly lacks: "Runner"; readonly chat: boolean }
+  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner; `named` where the project names an owner fallback, so a runner of the person's own would take its work. */
+  | {
+      readonly lacks: "Runner";
+      readonly chat: boolean;
+      readonly named: boolean;
+    }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
   | { readonly lacks: "ChatHost" }
   | { readonly lacks: "ChatHostLive" }
@@ -207,6 +213,7 @@ const setupReadSubjects: Readonly<Record<SetupReadName, Copy>> = {
   repositories: { id: "setup-read-repositories" },
   work: { id: "setup-read-work" },
   placement: { id: "setup-read-placement" },
+  fallback: { id: "setup-read-fallback" },
   tickets: { id: "setup-read-tickets" },
   drafts: { id: "setup-read-drafts" },
   landings: { id: "setup-read-landings" },
@@ -631,8 +638,10 @@ export function setupHosted(route: PlacementRoute): boolean {
 /**
  * Done where the project's work has a runner live or the cluster runs it, and
  * the person's chats in it have their chat host live or the cluster runs
- * them; waiting where a runner is registered and is not running. The
- * project's runner is said first, and the person's chat host once it is done.
+ * them; waiting where a runner is registered and is not running, its runner
+ * being a pool or, where it has none and names an owner fallback, the
+ * person's own, as the console's own decider counts one. The project's runner
+ * is said first, and the person's chat host once it is done.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
@@ -641,15 +650,25 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       ? setupUndone("runner", "todo", undefined, {
           lacks: "Runner",
           chat: true,
+          named: false,
         })
       : setupUnread("runner", "work", setupFateOf(work));
   const read = reads.placement;
   if (read.read !== "Got")
     return setupUnread("runner", "placement", setupFateOf(read));
   const route = work.value.work.route;
+  const { runners } = read.value;
+  const fallback = reads.fallback;
+  if (
+    fallback.read !== "Got" &&
+    sessionRunnerShort(route, runners.project) === "NoRunner"
+  )
+    return setupUnread("runner", "fallback", setupFateOf(fallback));
+  const named =
+    fallback.read === "Got" && fallback.value.fallback !== undefined;
   const mine = sessionPlacementShort(read.value, "thread", "mine");
   const chat = mine !== undefined;
-  switch (sessionRunnerShort(route, read.value.runners.project)) {
+  switch (sessionRunnerShort(route, workRunnerStanding(runners, named))) {
     case "RunnerOffline":
       return setupUndone(
         "runner",
@@ -661,6 +680,7 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       return setupUndone("runner", "todo", undefined, {
         lacks: "Runner",
         chat,
+        named,
       });
     case undefined:
       break;

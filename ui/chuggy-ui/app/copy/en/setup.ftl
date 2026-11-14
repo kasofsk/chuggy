@@ -171,6 +171,8 @@ setup-read-repositories = its { -repository(form: "plural") } were
 # spells -run: to run is a verb here
 setup-read-work = where its work runs was
 setup-read-placement = its { -runner(form: "plural") } were
+# spells -work-stage: the work in general
+setup-read-fallback = whether { -personal-runner(form: "plural") } take its work was
 setup-read-tickets = its { -ticket(form: "plural") } were
 setup-read-drafts = its { -draft(form: "plural") } were
 setup-read-landings = { -ticket(form: "a") }'s { -landing(form: "plural") } were
@@ -305,12 +307,16 @@ setup-mend-chat-tell = { $chats }, and you have none yet{ $here ->
    *[unseen] { "" }
 }. On the machine that will be it, { $byHand }. Tell me once it is running.
 # spells -work-stage: the work in general
+setup-mend-runner-serves = then press { $choose } and choose { $project }, so the { -runner } takes its work
+# spells -work-stage: the work in general
+setup-mend-runner-serves-unnamed = then press { $choose } and choose { $project }, and on { $placement } set { $setting } to { $strict } or { $preferred }, so the { -runner } takes its work
+# spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-elsewhere = Open { $page } and press { $add }, then do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
-setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there and press { $add }, and tell me once it is running.
-setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add }.
+setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work, { $serves }. Tell me once the { -runner } is running.
+setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, { $serves }, and tell me once it is running.
+setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows, { $serves }.
 # spells -run: to run is a verb here
-setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there. Tell me once the { -runner } is running.
+setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there, { $serves }. Tell me once the { -runner } is running.
 # spells -run: to run is a verb here
 setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
 setup-mend-runner-engineless = { setup-next-runner }, in containers. This machine cannot be one yet: { $none } here without a password. { setup-runner-engine-needs-password } Tell me once one answers you here. { $instead }

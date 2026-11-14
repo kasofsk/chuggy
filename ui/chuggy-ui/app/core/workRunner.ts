@@ -55,6 +55,22 @@ function workRunnerOwnerServes(
 }
 
 /**
+ * How the runners the reader's own work would go to stand: the project's
+ * pools, or where none is registered and the project names a fallback that
+ * lets the reader's own runner take it, that runner.
+ */
+export function workRunnerStanding(
+  runners: SessionPlacementResponse["runners"],
+  named: boolean,
+): SessionRunnerStanding {
+  return runners.project === "Unregistered" &&
+    named &&
+    workRunnerOwnerServes("Reader", runners.mine)
+    ? runners.mine
+    : runners.project;
+}
+
+/**
  * Whether work started now would have a runner to go to. An unread read is
  * taken as the worst it could say, so a read that settles the question alone
  * is not waited on: a hosted route, or a runner already registered.
