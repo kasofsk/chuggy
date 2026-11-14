@@ -158,6 +158,11 @@ codes-step-disk-low = Disk low
 codes-step-credential-absent = Credential missing
 codes-step-setup-line = Fix it under { -override(case: "upper", form: "plural") } · Setup, then Resume
 codes-step-disk-line = Free space on its { -runner }, then Resume
+codes-step-credential-not-granted-line = Let its { -workload } mint { $credential }, then Resume
+codes-step-credential-not-held-line = Have { $credential } held or issued here, then Resume
+codes-step-credential-not-enabled-line = Enable { $credential } for its { -project } or { -repository }
+codes-step-credential-issuer-refused-line = See why { $credential }'s issuer refused it, then Resume
+codes-step-credential-worker-too-old-line = Update its worker to take { $credential }, then Resume
 # spells -turn: to turn on is a verb here
 codes-evidence-workflows-line = Turn on Workflow files and the App's Workflows, then Resume
 # spells -brief-check: to check is a verb here
