@@ -285,8 +285,12 @@ export const sessionEndedSchema = z.strictObject({
  * session has none, as `model` and `effort` are where it opened under the
  * site's session model and the runtime's own effort. `autoCompactWindow` is a
  * lead's alone: the context, in tokens, at which its runtime compacts the
- * conversation; and `systemPromptOwn` is present only where the session runs
- * on its own system prompt and loads nothing of its project's settings.
+ * conversation; `systemPromptOwn` is present only where the session runs
+ * on its own system prompt and loads nothing of its project's settings; and
+ * `shellCredentialHanded` is present only for a thread a chat host whose
+ * settings name its threads' capabilities holds, whose session hands its shell
+ * the API's origin and its bearer, in `sessionApiOriginVariable` and
+ * `sessionBearerVariable`, where a session told nothing hands its shell neither.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
@@ -309,6 +313,7 @@ export const sessionFactsAnswerSchema = z.object({
   effort: z.enum(sessionEfforts).optional(),
   forkFrom: sessionIdentitySchema.optional(),
   systemPromptOwn: z.literal(true).optional(),
+  shellCredentialHanded: z.literal(true).optional(),
 });
 
 /** One turn as the mailbox hands it over, its input opaque to the plane. */

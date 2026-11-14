@@ -2213,6 +2213,17 @@ async function factsCapabilitiesOf(
   return identity?.capabilities;
 }
 
+/** Whether the session plane tells the pod holding `claimed` that its shell is handed its credential. */
+async function factsShellCredentialOf(
+  claimed: WorkerPoolSessionAssignment,
+): Promise<true | undefined> {
+  const identity = await postgresSessionPlane(planePool).authenticate(
+    asSessionBearerSecret(claimed.bearer),
+  );
+  assert.ok(identity !== undefined);
+  return identity.shellCredentialHanded;
+}
+
 /** The one session a poll of `host` naming `named` for its threads claims. */
 async function hostClaimedNaming(
   host: PoolPlaneIdentity,
@@ -2232,7 +2243,7 @@ async function hostClaimedNaming(
   return claimed;
 }
 
-test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, while its inquiry keeps its roster", async () => {
+test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, and that its shell is handed its credential, while its inquiry keeps its roster and is told nothing of its shell", async () => {
   const { partition, member } = await routedProject("host-capabilities");
   const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
   const lead = await sessionRigSession(
@@ -2275,6 +2286,11 @@ test("a chat host naming its threads' capabilities records them, opens its threa
     held,
     "the pod's facts name what its bearer is confined to",
   );
+  assert.equal(
+    await factsShellCredentialOf(claimed),
+    true,
+    "a thread on a host naming a set is told its shell is handed its credential",
+  );
   assert.deepEqual(await threadHostCapabilitiesOf(partition, thread), held);
   assert.deepEqual(
     (await chatHostRegistry.host(owner))?.sessionCapabilities,
@@ -2290,6 +2306,7 @@ test("a chat host naming its threads' capabilities records them, opens its threa
     roster,
   ]);
   assert.deepEqual(await factsCapabilitiesOf(asked), roster);
+  assert.equal(await factsShellCredentialOf(asked), undefined);
   assert.equal(
     (await chatHostRegistry.host(owner))?.sessionCapabilities,
     undefined,
@@ -2297,7 +2314,7 @@ test("a chat host naming its threads' capabilities records them, opens its threa
   );
 });
 
-test("an attempt records a host's set only where a chat host holds it, and only capabilities a session may hold", async () => {
+test("an attempt records a host's set only where a chat host holds it, and only capabilities a session may hold, and a thread on a host naming none is told nothing of its shell", async () => {
   const { partition, member } = await routedProject("host-capabilities-held");
   const session = await sessionRigSession(
     rig,
@@ -2312,6 +2329,11 @@ test("an attempt records a host's set only where a chat host holds it, and only 
   const host = await chatHost(partition, member);
   const [claimed] = await polledOffering(host, workerContractRelease);
   assert.ok(claimed !== undefined);
+  assert.equal(
+    await factsShellCredentialOf(claimed),
+    undefined,
+    "a thread on a host naming no set is told nothing of its shell",
+  );
   for (const [set, holder, constraint] of [
     [
       ["ProjectSettings"],

@@ -1548,6 +1548,9 @@ function sessionFactsRoute(register: SessionRegistrar): void {
         ? {}
         : { forkFrom: identity.forkFrom }),
       ...(identity.systemPromptOwn === true ? { systemPromptOwn: true } : {}),
+      ...(identity.shellCredentialHanded === true
+        ? { shellCredentialHanded: true }
+        : {}),
     });
   });
 }

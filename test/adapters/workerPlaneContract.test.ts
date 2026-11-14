@@ -1579,6 +1579,14 @@ const sessionPlaneCases: Readonly<
       status: 409,
       service: sessionAuthority({ ...liveSession, systemPromptOwn: true }),
     },
+    {
+      name: "a thread on a chat host naming its threads' capabilities, whose shell is handed its credential",
+      service: sessionAuthority({
+        ...liveSession,
+        kind: "Thread",
+        shellCredentialHanded: true,
+      }),
+    },
     ...allSessionKinds.map((kind) => ({
       name: `a ${kind} session holding every capability`,
       service: sessionAuthority({
