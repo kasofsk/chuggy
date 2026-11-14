@@ -418,12 +418,25 @@ const runnerReads: readonly (readonly [
   ],
   [
     "with no runner but the reader's own, which it lets take their work",
-    { runners: "Unregistered", fallback: "Strict" },
+    {
+      runners: "Unregistered",
+      fallback: "Strict",
+      personal: { live: false, project: creationPartition.project },
+    },
     starting,
   ],
   [
     "with no runner, which lets a reader with none of their own take their work",
-    { runners: "Unregistered", mine: "Unregistered", fallback: "Preferred" },
+    { runners: "Unregistered", fallback: "Preferred" },
+    ["No runner", true],
+  ],
+  [
+    "with no runner, which lets a reader take their work on a personal runner they gave only another project",
+    {
+      runners: "Unregistered",
+      fallback: "Strict",
+      personal: { live: true, project: "elsewhere" },
+    },
     ["No runner", true],
   ],
   ["with a runner that is offline", { runners: "Offline" }, starting],

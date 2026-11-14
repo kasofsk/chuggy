@@ -37,7 +37,10 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
-import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
+import type {
+  ForgeAppName,
+  SessionRunnerStanding,
+} from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
@@ -46,6 +49,7 @@ import {
   apiForgeInstallationRepositories,
   apiForgeInstallations,
   apiOwnerFallback,
+  apiPersonalRunner,
   apiProject,
   apiProjectInventory,
   apiProjectRepositories,
@@ -58,6 +62,7 @@ import type { SetupAnswers } from "./setupArguments.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import type { SetupWorkspacesAnswered } from "./setupSession.ts";
+import { workRunnerPersonal } from "./workRunner.ts";
 
 export type SetupRead<T> =
   | { readonly read: "Got"; readonly value: T; readonly whole: boolean }
@@ -205,6 +210,8 @@ export interface SetupReads {
   readonly placement: SetupRead<SessionPlacementResponse>;
   /** Whether the project lets a member's own runners take their work, which says whether the person's own can be its runner. */
   readonly fallback: SetupRead<ProjectOwnerFallbackResponse>;
+  /** How the person's own personal runners stand for the project, unregistered where they hold none or none serves it; they take the person's work where the fallback lets them. */
+  readonly personal: SetupRead<SessionRunnerStanding>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
   /** The tickets on their way, most lately moved first. */
@@ -504,6 +511,7 @@ type SetupProjectReads = Pick<
   | "work"
   | "placement"
   | "fallback"
+  | "personal"
   | "landed"
   | "moving"
   | "drafts"
@@ -515,6 +523,7 @@ const setupProjectUnasked: SetupProjectReads = {
   work: setupUnasked,
   placement: setupUnasked,
   fallback: setupUnasked,
+  personal: setupUnasked,
   landed: setupUnasked,
   moving: setupUnasked,
   drafts: setupUnasked,
@@ -531,6 +540,7 @@ async function setupProjectRead(
     work,
     placement,
     fallback,
+    personal,
     landed,
     moving,
     drafts,
@@ -540,6 +550,7 @@ async function setupProjectRead(
     apiExecutionPlacement(ports, partition),
     apiSessionPlacement(ports, partition),
     apiOwnerFallback(ports, partition),
+    apiPersonalRunner(ports, partition.tenant),
     apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
     apiProject(ports, partition, {
       phase: setupMovingPhases,
@@ -554,6 +565,14 @@ async function setupProjectRead(
     work: setupGot(work, (answered) => answered, all),
     placement: setupGot(placement, (answered) => answered, all),
     fallback: setupGot(fallback, (answered) => answered, all),
+    personal:
+      personal.outcome === "Absent"
+        ? { read: "Got", value: "Unregistered", whole: true }
+        : setupGot(
+            personal,
+            (answered) => workRunnerPersonal(answered, partition.project),
+            all,
+          ),
     landed: setupGot(landed, (answered) => answered.tickets, all),
     moving: setupGot(
       moving,

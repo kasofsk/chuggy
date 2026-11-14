@@ -173,6 +173,7 @@ setup-read-work = where its work runs was
 setup-read-placement = its { -runner(form: "plural") } were
 # spells -work-stage: the work in general
 setup-read-fallback = whether { -personal-runner(form: "plural") } take its work was
+setup-read-personal = your { -personal-runner(form: "plural") } were
 setup-read-tickets = its { -ticket(form: "plural") } were
 setup-read-drafts = its { -draft(form: "plural") } were
 setup-read-landings = { -ticket(form: "a") }'s { -landing(form: "plural") } were

@@ -72,7 +72,10 @@ import type {
 } from "./setupSite.ts";
 import { siteRead, stood } from "./setupStood.ts";
 import type { Asking } from "./setupStood.ts";
-import { workRunnerUnnamed } from "./workRunnerFixture.ts";
+import {
+  workRunnerNoPersonal,
+  workRunnerUnnamed,
+} from "./workRunnerFixture.ts";
 
 /** A step with its few words as the program prints them. */
 function worded(step: SetupStep | undefined) {
@@ -814,6 +817,7 @@ test("for every route a project's work can take and every standing its runners c
         settled(reads.work),
         settled(reads.placement),
         workRunnerUnnamed,
+        workRunnerNoPersonal,
         "Reader",
       );
       expect(step?.[0] === "todo", `${route} ${runner}`).toBe(
@@ -832,28 +836,31 @@ test("for every route a project's work can take and every standing its runners c
   });
 });
 
-test("a project with no pool that names an owner fallback takes the person's own runner as its runner, live or offline as a pool is, exactly where the console says the work has a runner", async () => {
+test("a project with no pool that names an owner fallback takes the person's own personal runner serving it as its runner, live or offline as a pool is, exactly where the console says the work has a runner", async () => {
   const said: Record<string, Said | undefined> = {};
   for (const fallback of [undefined, ...ownerFallbacks])
-    for (const mine of sessionRunnerStandings) {
+    for (const own of sessionRunnerStandings) {
       const { site, project } = saidRunnable();
       project.runner = "Unregistered";
       project.fallback = fallback;
-      if (mine === "Unregistered") site.chat.clear();
-      else
-        site.chat.set("acme", { id: "chuggy-chat-1", live: mine === "Live" });
+      if (own !== "Unregistered")
+        site.personal.set("acme", {
+          live: [own === "Live"],
+          projects: [project.project],
+        });
       const step = (await column(site))[4];
       const reads = await siteRead(site);
       const console = workRunner(
         settled(reads.work),
         settled(reads.placement),
         settled(reads.fallback),
+        settled(reads.personal),
         "Reader",
       );
-      expect(step?.[0] === "todo", `${String(fallback)} ${mine}`).toBe(
+      expect(step?.[0] === "todo", `${String(fallback)} ${own}`).toBe(
         console === "NoRunner",
       );
-      said[`${fallback ?? "None"} ${mine}`] = step;
+      said[`${fallback ?? "None"} ${own}`] = step;
     }
   const offline: Said = ["waiting", "registered, not running"];
   expect(said).toEqual({
@@ -867,6 +874,51 @@ test("a project with no pool that names an owner fallback takes the person's own
     "Preferred Offline": offline,
     "Preferred Live": saidLive,
   });
+});
+
+/** A chat host runs the person's threads and takes no work, and a personal
+ * runner takes only the work of the projects it is given. */
+test("a project with no pool that names an owner fallback takes neither the person's chat host nor a personal runner given only another project as its runner", async () => {
+  for (const held of ["chat host", "another project's runner"] as const) {
+    const { site, project } = saidRunnable();
+    project.runner = "Unregistered";
+    project.fallback = "Strict";
+    site.chat.set("acme", { id: "chuggy-chat-1", live: true });
+    if (held === "another project's runner")
+      site.personal.set("acme", { live: [true], projects: ["gadgets"] });
+    expect((await column(site))[4], held).toEqual(saidTodo);
+    const reads = await siteRead(site);
+    expect(
+      workRunner(
+        settled(reads.work),
+        settled(reads.placement),
+        settled(reads.fallback),
+        settled(reads.personal),
+        "Reader",
+      ),
+      held,
+    ).toBe("NoRunner");
+  }
+});
+
+test("the person's personal runners unread leave the runner step unread only where the project has no pool and names a fallback", async () => {
+  const unread: Said = [
+    "unread",
+    "your personal runners were not answered (Fault)",
+  ];
+  for (const [runner, fallback, said] of [
+    ["Unregistered", "Strict", unread],
+    ["Unregistered", undefined, saidTodo],
+    ["Live", "Strict", saidLive],
+  ] as const) {
+    const { site, project } = saidRunnable();
+    project.runner = runner;
+    project.fallback = fallback;
+    site.fates.set("personal", "Failed");
+    expect((await column(site))[4], `${runner} ${String(fallback)}`).toEqual(
+      said,
+    );
+  }
 });
 
 test("a project with no pool says whether it names an owner fallback in what its runner step lacks", async () => {

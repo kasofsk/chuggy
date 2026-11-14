@@ -235,6 +235,7 @@ export interface SetupCopy {
   readonly "setup-read-work": Record<never, never>;
   readonly "setup-read-placement": Record<never, never>;
   readonly "setup-read-fallback": Record<never, never>;
+  readonly "setup-read-personal": Record<never, never>;
   readonly "setup-read-tickets": Record<never, never>;
   readonly "setup-read-drafts": Record<never, never>;
   readonly "setup-read-landings": Record<never, never>;

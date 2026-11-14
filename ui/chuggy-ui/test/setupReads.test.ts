@@ -530,6 +530,7 @@ const reads = [
   `GET ${project}/execution-placement`,
   `GET ${project}/session-placement`,
   `GET ${project}/owner-fallback`,
+  "GET /api/v1/tenants/acme/personal-runner",
   `GET ${project}?limit=1&phase=Done`,
   `GET ${project}?order=RecentActivity&${moving}`,
   `GET ${project}/drafts?limit=1`,
