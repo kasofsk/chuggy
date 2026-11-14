@@ -839,6 +839,7 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
     landing: { mode: "PullRequest" },
     finalization: { kind: "PullRequest" },
     pipelinesWritable: false,
+    pipelinesRunnable: false,
   };
   const held = recordingRequests(() => ({ repository: row }));
   const answered = await apiWriteProjectRepositoryLanding(

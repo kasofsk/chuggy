@@ -278,6 +278,7 @@ test("only a live binding whose newest import was refused is counted refused", (
     landing: { mode: "Push" as const },
     finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" } as const,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     configured: false as const,
     lastImport: { attemptedAt, outcome: { result } },
     ...(retiredAt === undefined ? {} : { retiredAt }),

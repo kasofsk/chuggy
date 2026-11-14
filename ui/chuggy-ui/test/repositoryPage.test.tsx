@@ -89,6 +89,7 @@ function binding(
     },
     finalization,
     pipelinesWritable,
+    pipelinesRunnable: false,
     configured: true,
   };
 }
@@ -333,6 +334,7 @@ test.each([
           landing: { mode: "Push" },
           finalization: push,
           pipelinesWritable: false,
+          pipelinesRunnable: false,
           configured: true,
           ...(retiredAt === undefined ? {} : { retiredAt }),
         },

@@ -3138,6 +3138,19 @@
           },
           "required": ["expected", "wanted"],
           "additionalProperties": false
+        },
+        "pipelinesRunnable": {
+          "type": "object",
+          "properties": {
+            "expected": {
+              "type": "boolean"
+            },
+            "wanted": {
+              "type": "boolean"
+            }
+          },
+          "required": ["expected", "wanted"],
+          "additionalProperties": false
         }
       },
       "required": ["repository", "expected", "landing", "pipelinesWritable"],

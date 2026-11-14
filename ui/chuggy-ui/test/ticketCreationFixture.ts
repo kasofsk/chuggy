@@ -186,6 +186,7 @@ export function creationBinding(
     landing: { mode },
     finalization: repositoryFinalizationOfLanding({ mode }),
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };
 }

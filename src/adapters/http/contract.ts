@@ -302,6 +302,9 @@ export function parseProjectRepositoryLanding(
     expected: parseRepositoryFinalization(parsed.expected),
     landing: parseRepositoryFinalization(parsed.landing),
     pipelinesWritable: parsed.pipelinesWritable,
+    ...(parsed.pipelinesRunnable === undefined
+      ? {}
+      : { pipelinesRunnable: parsed.pipelinesRunnable }),
   };
 }
 
