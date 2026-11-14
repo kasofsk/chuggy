@@ -4,6 +4,9 @@
  * page draws under them.
  * Once the header has scrolled out of view, a thin bar holding the status, the
  * title and the primary action sticks to the top of the page in its place.
+ * A list's `controls` are drawn after the header rather than in it, so they
+ * stick for the whole page as the tickets list's do; where they are given they
+ * are what sticks, and the header draws no bar of its own to stand over them.
  *
  * The actions are values rather than elements, so the header is what draws
  * them: `primary` is one action or none, and `secondary` are drawn in the
@@ -193,6 +196,8 @@ export function PageHeader(
     /** The status as the condensed bar draws it, where it is drawn smaller. */
     readonly statusCondensed?: ReactNode;
     readonly description?: string;
+    /** The list's `ListControls`, drawn after the header. */
+    readonly controls?: ReactNode;
     readonly children?: ReactNode;
   },
 ): ReactNode {
@@ -200,12 +205,14 @@ export function PageHeader(
   const away = usePageHeaderScrolledAway(header);
   return (
     <>
-      <PageHeaderBar
-        away={away}
-        title={props.title}
-        status={props.statusCondensed ?? props.status}
-        primary={props.primary}
-      />
+      {props.controls === undefined ? (
+        <PageHeaderBar
+          away={away}
+          title={props.title}
+          status={props.statusCondensed ?? props.status}
+          primary={props.primary}
+        />
+      ) : null}
       <header ref={header} className="page-header">
         {props.back === undefined ? null : (
           <Breadcrumb>
@@ -226,6 +233,7 @@ export function PageHeader(
         />
         {props.children}
       </header>
+      {props.controls}
     </>
   );
 }

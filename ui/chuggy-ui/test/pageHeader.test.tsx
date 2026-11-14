@@ -1,7 +1,8 @@
 /**
  * The page header in each shape it draws: a level-one title, the controls it
  * is handed by their names, one primary action at most, and the bar that
- * stands in for it once it has scrolled away.
+ * stands in for it once it has scrolled away, or the list controls drawn
+ * after it in that bar's place.
  *
  * The router is stubbed, as `ButtonLink`'s own suite stubs it, so the links
  * are drawn with no provider around them.
@@ -209,4 +210,26 @@ test("a browser without the observer never shows the bar", () => {
   expect(
     document.querySelector<HTMLElement>(".page-header-sticky-bar")?.hidden,
   ).toBe(true);
+});
+
+test("a list's controls are drawn after the header rather than in it, and the header draws no bar over them", () => {
+  const report = intersectionObserverStubbed();
+  const view = renderCopied(
+    <PageHeader
+      title="Catalog"
+      primary={merge}
+      controls={<div className="list-controls">Search</div>}
+    >
+      <p>Partial</p>
+    </PageHeader>,
+  );
+  const header = view.container.querySelector(".page-header");
+  const controls = view.container.querySelector(".list-controls");
+  expect(header?.contains(controls)).toBe(false);
+  expect(header?.nextElementSibling).toBe(controls);
+  act(() => {
+    report(false);
+  });
+  expect(view.container.querySelector(".page-header-sticky")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Merge" })).toHaveLength(1);
 });

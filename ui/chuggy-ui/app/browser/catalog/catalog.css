@@ -3,9 +3,10 @@
    configuration where the version came from and what the repository's head
    says of it where the head is drawn, then the entries grouped by what each
    is, the chosen one's row on the sunken ground. With an entry chosen the
-   list and the entry sit side by side, the entry held in view and scrolling on its own while the
-   list scrolls; where the page is narrow they stack with the entry first,
-   since it is what the reader just asked for. */
+   list and the entry sit side by side, the entry held in view under the bar
+   and scrolling on its own while the list scrolls; where the page is narrow
+   they stack with the entry first, since it is what the reader just asked
+   for. */
 
 @layer page {
   .catalog-page {
@@ -217,9 +218,11 @@
 
     .catalog-pane {
       position: sticky;
-      top: var(--space-3);
+      top: calc(var(--list-controls-block) + var(--space-3));
       order: 0;
-      max-height: calc(100dvh - 2 * var(--space-3));
+      max-height: calc(
+        100dvh - var(--list-controls-block) - 2 * var(--space-3)
+      );
       overflow: auto;
     }
   }

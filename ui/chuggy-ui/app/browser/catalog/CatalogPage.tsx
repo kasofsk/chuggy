@@ -310,12 +310,13 @@ function CatalogDrawn(props: {
 }
 
 /** The page's head: its title, the line saying the listing is partial where
- * it is, and what the view draws under them. */
+ * it is, what the view draws under them, and the bar after it. */
 function CatalogPageHead(props: {
   readonly title?: string | undefined;
   readonly number?: number | undefined;
   readonly back?: PageHeaderBack | undefined;
   readonly partial: boolean;
+  readonly controls?: ReactNode;
   readonly children?: ReactNode;
 }): ReactNode {
   const text = useCopyText();
@@ -324,6 +325,7 @@ function CatalogPageHead(props: {
       title={props.title ?? text({ id: "configuration-catalog-title" })}
       {...(props.number === undefined ? {} : { number: props.number })}
       {...(props.back === undefined ? {} : { back: props.back })}
+      controls={props.controls}
     >
       {props.partial ? (
         <p className="catalog-none">{text(configurationsPartialLabel)}</p>
@@ -373,6 +375,16 @@ function CatalogConfigurationView(props: {
             : undefined
         }
         partial={props.partial}
+        controls={
+          <ListControls>
+            {props.search}
+            <CatalogConfigurationPickers
+              configurations={props.configurations}
+              revision={props.revision}
+              query={props.query}
+            />
+          </ListControls>
+        }
       >
         {summary === undefined ? null : <CatalogProvenance summary={summary} />}
         <CatalogChosenHead
@@ -380,14 +392,6 @@ function CatalogConfigurationView(props: {
           revision={props.revision}
           query={props.query}
         />
-        <ListControls>
-          {props.search}
-          <CatalogConfigurationPickers
-            configurations={props.configurations}
-            revision={props.revision}
-            query={props.query}
-          />
-        </ListControls>
       </CatalogPageHead>
       <CatalogDrawn
         key={props.revision}
@@ -419,18 +423,21 @@ function CatalogRepositoriesView(props: {
     );
   return (
     <>
-      <CatalogPageHead partial={props.partial}>
-        <ListControls>
-          {props.search}
-          {props.repositories.length < 2 ? null : (
-            <CatalogRepositoryPicker
-              partition={props.partition}
-              repositories={props.repositories}
-              chosen={repository}
-            />
-          )}
-        </ListControls>
-      </CatalogPageHead>
+      <CatalogPageHead
+        partial={props.partial}
+        controls={
+          <ListControls>
+            {props.search}
+            {props.repositories.length < 2 ? null : (
+              <CatalogRepositoryPicker
+                partition={props.partition}
+                repositories={props.repositories}
+                chosen={repository}
+              />
+            )}
+          </ListControls>
+        }
+      />
       <CatalogRepositorySection
         key={repository.repository}
         partition={props.partition}

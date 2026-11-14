@@ -422,6 +422,17 @@ test("a project that imported nothing says so in one line, under the page's titl
   expect(screen.queryByRole("button", { name: /^Search/u })).toBeNull();
 });
 
+test("the bar is drawn after the page's head, not in it, over every repository and over a configuration", async () => {
+  for (const query of [{}, { configuration: "r2" }]) {
+    await drawPage(query, twoRepositories);
+    const search = screen.getByRole("button", { name: "Search the catalog" });
+    const header = document.querySelector("header.page-header");
+    expect(header?.contains(search)).toBe(false);
+    expect(header?.nextElementSibling?.contains(search)).toBe(true);
+    cleanup();
+  }
+});
+
 test("the page has one title: the catalog's over every repository, and a configuration's own name and version over it", async () => {
   await drawPage({}, twoRepositories);
   expectHeadings(1, ["Catalog"]);
