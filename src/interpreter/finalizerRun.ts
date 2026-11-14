@@ -2888,11 +2888,10 @@ async function finalizerInvalidateStacks(
 /**
  * Sends back to Work every Stacked ticket pending unstacked that `restackLine`
  * finds could now stack over the queue ahead of it, by claiming its waiting
- * request and recording a `Restack` failure on it, which the request's next
- * claim concludes as `FinalizationNeedsWork`. The failure names the accepted
- * commit for the work cycle to report again and the line it was sent back
- * over. A queue that cannot be read and a request someone else holds are left
- * for the next pass.
+ * request and recording a `Restack` failure naming the accepted commit and the
+ * line, which the request's next claim concludes as `FinalizationNeedsWork`.
+ * A queue that cannot be read and a request someone else holds are left for
+ * the next pass.
  */
 async function finalizerRestackStacks(
   service: FinalizerService,

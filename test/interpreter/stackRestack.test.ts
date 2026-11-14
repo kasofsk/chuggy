@@ -8,45 +8,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
-import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import {
   stackDepthMax,
   stackFailuresMax,
   type StackEntry,
   type StackMember,
-  type StackPhase,
-  type StackPolicy,
 } from "../../src/interpreter/stackChoice.ts";
+import { entry, member } from "./stackQueueFixture.ts";
 import {
   restackLine,
   type RestackCandidate,
 } from "../../src/interpreter/stackRestack.ts";
-
-function commit(number: number) {
-  return asGitObjectId(number.toString(16).padStart(40, "0"));
-}
-
-function member(ticket: number, at = 1): StackMember {
-  return { ticket: asTicketId(ticket), commit: commit(ticket * 100 + at) };
-}
-
-/** A queued ticket accepted at its first commit, ranked by its number. */
-function entry(
-  ticket: number,
-  policy: StackPolicy,
-  phase: StackPhase,
-  over: Partial<StackEntry> = {},
-): StackEntry {
-  return {
-    ticket: asTicketId(ticket),
-    policy,
-    phase,
-    rank: ticket,
-    commit: member(ticket).commit,
-    stack: undefined,
-    ...over,
-  };
-}
 
 /** A Stacked ticket that passed over `beneath` with nothing landed since. */
 function stacked(ticket: number, beneath: readonly number[]): StackEntry {
