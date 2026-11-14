@@ -23,6 +23,7 @@ import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
+import { projectNamed } from "../../core/projectNaming.ts";
 import { projectDeletionQuery } from "../../core/projectQueries.ts";
 import {
   callerTenantsQuery,
@@ -152,7 +153,11 @@ export function ProjectDeletion(props: {
   const text = useCopyText();
   const { partition } = props;
   const standing = usePanelState(projectDeletionQuery(partition));
-  const project = partition.project;
+  const inventory = usePanelState(projectsInventoryQuery());
+  const project = projectNamed(
+    inventory.state === "Ready" ? inventory.value : undefined,
+    partition,
+  );
   return (
     <UnrunDeletionSection
       standing={standing}

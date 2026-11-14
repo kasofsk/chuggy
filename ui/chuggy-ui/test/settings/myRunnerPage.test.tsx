@@ -101,9 +101,9 @@ const runnersTwo = {
 /** Projects the reader reads: two in this workspace, one in another. */
 const inventory = {
   projects: [
-    { tenant: "acme", project: "atlas" },
-    { tenant: "acme", project: "borealis" },
-    { tenant: "other", project: "cirrus" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
+    { tenant: "acme", project: "borealis", name: "borealis" },
+    { tenant: "other", project: "cirrus", name: "cirrus" },
   ],
 };
 

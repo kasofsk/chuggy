@@ -1,6 +1,7 @@
 /**
  * The project the bar is showing, every other project this reader may read,
- * and the way to make another. That names the workspace of the one shown to
+ * each by its workspace and the name it was given, and the way to make
+ * another. That names the workspace of the one shown to
  * the form that makes it, whose choice starts there only where the reader
  * administers that workspace.
  *
@@ -16,12 +17,14 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { NamedProject } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import { projectsInventoryQuery } from "../../core/tenantQueries.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
 import { memberChatOpens, memberChatRoutes } from "../../core/memberChat.ts";
 import { projectCreationRoutePath } from "../../core/projectCreation.ts";
+import { projectNamed } from "../../core/projectNaming.ts";
 import { usePanelState } from "../api.ts";
 import { persistentStore } from "../ports.ts";
 import { useChatAbilities } from "../thread/threadRead.ts";
@@ -83,10 +86,11 @@ function ProjectSwitcherAt(props: {
 /** The project's whole name, which is what the trigger says where it is a folder. */
 function projectSwitcherHint(
   partition: PartitionIdentity | undefined,
+  inventory: readonly NamedProject[],
 ): string | undefined {
   return partition === undefined
     ? undefined
-    : `${partition.tenant} / ${partition.project}`;
+    : `${partition.tenant} / ${projectNamed(inventory, partition)}`;
 }
 
 /** The workspace's own chat, as the picker offers it where it may be had. */
@@ -129,7 +133,7 @@ function ProjectSwitcherPicker(props: {
     <Picker
       label={text({ id: "shell-project" })}
       glyph={projectGlyph}
-      hint={projectSwitcherHint(props.partition)}
+      hint={projectSwitcherHint(props.partition, state.value)}
       value={
         props.partition !== undefined
           ? `${props.partition.tenant}/${props.partition.project}`
@@ -142,7 +146,7 @@ function ProjectSwitcherPicker(props: {
         ...none,
         ...state.value.map((candidate) => ({
           value: `${candidate.tenant}/${candidate.project}`,
-          text: `${candidate.tenant} / ${candidate.project}`,
+          text: `${candidate.tenant} / ${candidate.name}`,
         })),
       ]}
       onChoose={(picked) => {

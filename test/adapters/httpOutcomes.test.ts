@@ -522,11 +522,12 @@ test("notification authorization and reset remain visible without SSE", () => {
 });
 
 test("inventory exposes only an opaque continuation cursor", () => {
+  const named = { ...partition, name: "Acme Atlas" };
   const found = inventoryResponse({
-    projects: [partition],
+    projects: [named],
     nextAfter: partition,
   });
-  assert.deepEqual((found.body as { projects: unknown }).projects, [partition]);
+  assert.deepEqual((found.body as { projects: unknown }).projects, [named]);
   assert.equal(
     typeof (found.body as { nextCursor: unknown }).nextCursor,
     "string",
