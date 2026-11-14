@@ -47,9 +47,17 @@ import {
 } from "../../contract/sessionPlane.ts";
 import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
-import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
-import type { workerHeldCredentialsAnswerSchema } from "../../contract/workerPlane.ts";
 import {
+  workTaskCredentialsListed,
+  type WorkTaskAnswer,
+} from "../../contract/workerTask.ts";
+import type {
+  WorkerHeldCredentialBundle,
+  workerHeldCredentialSchema,
+  workerHeldCredentialsAnswerSchema,
+} from "../../contract/workerPlane.ts";
+import {
+  heldCredentialSecretCharsMax,
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
   workerCredentialSchema,
@@ -127,10 +135,11 @@ import type {
   WorkerPlaneCredentialMinting,
   WorkerPlaneCredentialUnreached,
 } from "../../interpreter/workerPlaneCredentials.ts";
-import type {
-  HeldCredentialsAnswered,
-  WorkerPlaneHeldCredentials,
-} from "../../interpreter/workerPlaneHeldCredentials.ts";
+import {
+  credentialResolver,
+  type CredentialResolver,
+  type CredentialsResolved,
+} from "../../interpreter/credentialIssuers.ts";
 import {
   artifactPathRejection,
   asArtifactDigest,
@@ -594,10 +603,10 @@ export interface WorkerPlaneServerService {
    */
   readonly credentials?: WorkerPlaneCredentialMinting;
   /**
-   * The credentials a deployment holds as files. Without them the
-   * held-credential route answers every attempt that none is held.
+   * What the held-credential route answers through. Without one, no issuer
+   * serves any name.
    */
-  readonly heldCredentials?: WorkerPlaneHeldCredentials;
+  readonly heldCredentials?: CredentialResolver;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
 }
@@ -1248,63 +1257,89 @@ function workerCredentialRoute(
   });
 }
 
-/** How long a pod leaves a plane that could not read a held credential's file before asking again. */
+/** How long a pod leaves a plane whose issuer could not answer before asking again. */
 const workerHeldCredentialRetryAfterSeconds = 1;
 
 /**
- * The answer to an attempt whose ask came to `served`, a bundle named absent
- * as `WorkerTooOld` to a release that cannot read one, and `absent` left out
- * where it names nothing.
+ * `bundle` as a release before `workerContractCredentialBundles` reads a
+ * credential: one secret file whose path one variable names, within the
+ * secret's bound. Nothing where the bundle is more than that.
  */
-function workerHeldCredentialsAnswer(
-  served: Extract<HeldCredentialsAnswered, { answered: "Credentials" }>,
-  release: string | undefined,
-): z.infer<typeof workerHeldCredentialsAnswerSchema> {
-  const bundled = contractVersionAccepted(
-    workerContractCredentialBundlesServed,
-    release,
-  );
-  const credentials = served.credentials.filter(
-    (each) => bundled || !("files" in each),
-  );
-  const absent = [
-    ...(served.absent ?? []),
-    ...served.credentials
-      .filter((each) => !credentials.includes(each))
-      .map((each) => ({
-        credential: each.credential,
-        reason: "WorkerTooOld" as const,
-      })),
-  ];
-  return absent.length === 0 ? { credentials } : { credentials, absent };
+function workerHeldCredentialOneSecret(
+  bundle: WorkerHeldCredentialBundle,
+): z.infer<typeof workerHeldCredentialSchema> | undefined {
+  const [file, ...files] = bundle.files;
+  const [variable, ...variables] = bundle.variables;
+  if (
+    file?.content.kind !== "Secret" ||
+    variable?.kind !== "Path" ||
+    files.length > 0 ||
+    variables.length > 0 ||
+    textCodePointsCount(file.content.secret) > heldCredentialSecretCharsMax
+  )
+    return undefined;
+  return {
+    credential: bundle.credential,
+    variable: variable.variable,
+    secret: file.content.secret,
+    ...(bundle.expiresAtMs === undefined
+      ? {}
+      : { expiresAtMs: bundle.expiresAtMs }),
+  };
 }
 
 /**
- * The credentials a deployment holds as files that one attempt is served: those
- * it asks for that the grant the scheduler recorded for it names and that are
- * held for its project. The grant and the project are what its own task read
- * found, so nothing the pod sends but the names it asks for is weighed.
+ * The answer to an attempt whose ask resolved to `resolved`: its bundles and
+ * its absences to a release that reads them, and to any other only the
+ * bundles it can read as one secret, naming nothing absent.
+ */
+function workerHeldCredentialsAnswer(
+  resolved: Extract<CredentialsResolved, { resolved: "Credentials" }>,
+  release: string | undefined,
+): z.infer<typeof workerHeldCredentialsAnswerSchema> {
+  if (contractVersionAccepted(workerContractCredentialBundlesServed, release))
+    return {
+      credentials: [...resolved.credentials],
+      absent: [...resolved.absent],
+    };
+  return {
+    credentials: resolved.credentials.flatMap(
+      (bundle) => workerHeldCredentialOneSecret(bundle) ?? [],
+    ),
+  };
+}
+
+/**
+ * The credentials one attempt is served, resolved from the names it asks for
+ * against the names its configuration listed and its grant carries. The grant,
+ * the listed names and the project are what its own task read found, so
+ * nothing the pod sends but the names it asks for is weighed.
  */
 function workerHeldCredentialsRoute(
   register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
+  const resolver = service.heldCredentials ?? credentialResolver([]);
   register("heldCredentials", async (request, reply, { task }) => {
     const offered = workerHeldCredentialsSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
-    if (task.invocation === undefined)
+    const invocation = task.invocation;
+    if (invocation === undefined)
       return reply
         .code(409)
         .send({ action: "stop", reason: "TaskNotRecorded" });
-    const held = service.heldCredentials;
-    if (held === undefined) return { credentials: [] };
-    const served = await held.served({
-      partition: task.identity.partition,
-      granted: task.invocation.authority.credentials,
+    const resolved = await resolver.resolve({
+      requester: {
+        partition: task.identity.partition,
+        ticket: task.identity.ticket,
+        task: task.identity.task,
+      },
+      listed: workTaskCredentialsListed(invocation),
+      granted: invocation.authority.credentials,
       asked: offered.data.credentials,
     });
-    return served.answered === "Credentials"
-      ? workerHeldCredentialsAnswer(served, workerContractOffered(request))
+    return resolved.resolved === "Credentials"
+      ? workerHeldCredentialsAnswer(resolved, workerContractOffered(request))
       : workerPlaneRefused(reply, {
           status: 503,
           body: { action: "retry" },
