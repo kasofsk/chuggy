@@ -56,6 +56,7 @@ import {
   landingTarget,
   landingWrite,
   recordStack,
+  type Landing,
 } from "./evaluationStackLandings.ts";
 import { releasedEvaluatorDefinition } from "./migrationHarness.ts";
 import { seedJournalEntry } from "./nativeActionFixture.ts";
@@ -452,29 +453,7 @@ test("B evaluates over a stack holding A, and once A lands B lands as its merge 
     stack.stackCommit,
   );
 
-  finalizerGitVerb(
-    pair.remote.origin,
-    "update-ref",
-    landingTarget,
-    pair.aCommit,
-    pair.tip,
-  );
-  await landingWrite(
-    rig,
-    { ...pair.b, request: pair.aRequest },
-    pair.bWork,
-    "flow-lands-a",
-    {
-      ticket: pair.aTicket,
-      accepted: pair.aCommit,
-      onto: pair.tip,
-      candidate: pair.aCommit,
-    },
-  );
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [...keysOf(pair.b, pair.aTicket)],
-  );
+  await aLandedAt(pair, "flow-lands-a");
   assert.equal((await bStanding(pair)).stands, true, "A landed as stacked");
 
   await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), "flow-lands");
@@ -546,30 +525,10 @@ test("B evaluates over a stack holding A, and once A's evaluation fails B is re-
 
 /** A's proposal, from its own branch, merged into the reference at A's commit. */
 async function aProposalMerged(pair: Pair, label: string): Promise<void> {
-  finalizerGitVerb(
-    pair.remote.origin,
-    "update-ref",
-    landingTarget,
-    pair.aCommit,
-    pair.tip,
-  );
-  await landingWrite(
-    rig,
-    { ...pair.b, request: pair.aRequest },
-    pair.bWork,
-    label,
-    {
-      ticket: pair.aTicket,
-      accepted: pair.aCommit,
-      onto: pair.tip,
-      candidate: pair.aCommit,
-      proposal: { head: `refs/heads/${label}-a`, merged: pair.aCommit },
-    },
-  );
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [...keysOf(pair.b, pair.aTicket)],
-  );
+  await aLandedAt(pair, label, {
+    head: `refs/heads/${label}-a`,
+    merged: pair.aCommit,
+  });
 }
 
 test("B proposing from its own branch is stacked over A proposing from another while A is evaluated, on the base's tip, and lands on the stack's tree once A merges", async () => {
@@ -912,8 +871,12 @@ async function bRestackedWork(
   );
 }
 
-/** A landed at its accepted commit onto the tip, and Done. */
-async function aLandedAt(pair: Pair, label: string): Promise<void> {
+/** A landed at its accepted commit onto the tip, by `proposal` where one is named, and Done. */
+async function aLandedAt(
+  pair: Pair,
+  label: string,
+  proposal?: Landing["proposal"],
+): Promise<void> {
   finalizerGitVerb(
     pair.remote.origin,
     "update-ref",
@@ -931,6 +894,7 @@ async function aLandedAt(pair: Pair, label: string): Promise<void> {
       accepted: pair.aCommit,
       onto: pair.tip,
       candidate: pair.aCommit,
+      ...(proposal === undefined ? {} : { proposal }),
     },
   );
   await rig.harness.query(
