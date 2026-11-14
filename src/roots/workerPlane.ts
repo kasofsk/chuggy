@@ -104,15 +104,11 @@ function planeSessionWakes(
 }
 
 /**
- * The session half of this plane, over the same pool and the same artifact
- * store the run half already holds. The ports are one adapter because they are
- * one bearer: a plane holding some of them and not others could only answer a
- * session wrongly, so the composition is whole or the field is absent.
- *
- * THE LEASE DEFAULTS TO WHAT OPENS IT. The scheduler opens a session attempt's
- * lease under `sessionSchedulerDefaults.attemptLeaseSecs` and this plane renews
- * it, so taking that same value is the two tiers agreeing by construction; a
- * deployment that moves one moves both, by naming each.
+ * The session half of this plane, over the run half's pool and artifact store,
+ * composed whole or not at all because its ports are one bearer and a partial
+ * one could only answer a session wrongly. Its lease defaults to
+ * `sessionSchedulerDefaults.attemptLeaseSecs`, the value the scheduler opens a
+ * session attempt's lease under, so a deployment that moves one moves both.
  */
 function planeSessions(
   pool: ReturnType<typeof postgresPool>,
