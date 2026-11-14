@@ -62,6 +62,7 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import type { PlacementRoute } from "../../src/contract/rosters.ts";
+import type { SessionLaunchFacts } from "../../src/interpreter/workerPoolSessions.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -72,6 +73,30 @@ import {
 
 /** A ceiling no case reaches, so only the case that names its own is about one. */
 export const sessionRigBoundless = 1_000_000;
+
+/** What a runner-held session is launched with, its backoff short of any dwell. */
+export const sessionRigLaunch: SessionLaunchFacts = {
+  image: "registry.invalid/session:1",
+  authority: {
+    tools: [],
+    credentials: ["claude-code"],
+    network: true,
+    filesystem: "ReadWorkspace",
+    mayCompleteTask: false,
+  },
+  mirrors: {},
+  bounds: {
+    mailboxPollMs: 1,
+    idleMs: 2,
+    resultDrainMs: 3,
+    loadTimeoutMs: 4,
+    turnsMax: 5,
+    budgetUsd: 6,
+  },
+  model: "session-model",
+  deadlineSecs: 900,
+  placementBackoffSecs: 60,
+};
 
 /** A lease long enough that no case races its own expiry. */
 export const sessionRigLeaseSecs = 60;

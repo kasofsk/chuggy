@@ -552,11 +552,10 @@ export const workerPoolReconciliationSchema = z
       .optional(),
     /**
      * The threads whose last attempt this chat host ran and that have since
-     * closed, the most recently closed first, so the host may remove what it
-     * keeps for each. A thread is named in every answer while it is among the
-     * most recent, whether or not the host already removed it. It is named only
-     * to a chat host whose poll's release reads it, and absent is the default:
-     * none has closed.
+     * closed, the most recently closed first and in every answer while among
+     * the most recent, so the host may remove what it keeps for each. It is
+     * named only to a chat host whose poll's release reads it, and absent is
+     * the default: none has closed.
      */
     threadsClosed: z
       .array(workerPoolThreadClosedSchema)

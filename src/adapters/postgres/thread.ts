@@ -197,7 +197,7 @@ async function threadJobsStanding(
 ): Promise<boolean> {
   const found = await pool.query<{ standing: boolean | null }>(
     sql`SELECT thread_jobs_standing(
-          ${partition.tenant},${partition.project},${session}) AS standing`,
+          ${partition.tenant},${partition.project},${session})::boolean AS standing`,
   );
   return found.rows[0]?.standing === true;
 }

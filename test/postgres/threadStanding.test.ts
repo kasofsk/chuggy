@@ -52,12 +52,12 @@ import {
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
-import type { SessionLaunchFacts } from "../../src/interpreter/workerPoolSessions.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
   sessionRigAttempt,
   sessionRigBoundless,
+  sessionRigLaunch,
   sessionRigOpen,
   sessionRigProject,
   sessionRigRouted,
@@ -77,28 +77,7 @@ after(async () => {
   await rig.close();
 });
 
-const launch: SessionLaunchFacts = {
-  image: "registry.invalid/session:1",
-  authority: {
-    tools: [],
-    credentials: ["claude-code"],
-    network: true,
-    filesystem: "ReadWorkspace",
-    mayCompleteTask: false,
-  },
-  mirrors: {},
-  bounds: {
-    mailboxPollMs: 1,
-    idleMs: 2,
-    resultDrainMs: 3,
-    loadTimeoutMs: 4,
-    turnsMax: 5,
-    budgetUsd: 6,
-  },
-  model: "session-model",
-  deadlineSecs: 900,
-  placementBackoffSecs: 60,
-};
+const launch = sessionRigLaunch;
 
 assert.deepEqual(
   await postgresSessionLaunchPrecondition(schedulerPool, launch).check(

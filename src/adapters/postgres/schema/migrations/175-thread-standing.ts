@@ -66,12 +66,16 @@ const threadsClosed = `public.${chatHostThreadsClosedFunction}(in_tenant text, i
 
 const jobsStanding = `public.${threadStandingFunction}(in_tenant text, in_project text, in_session text)`;
 
-/** The definer boilerplate every function this adds ends with, granted to `role`. */
-function owned(signature: string, role: string): readonly string[] {
+/** The definer boilerplate every function this adds ends with, granted to `role` as that role's other doors are. */
+function owned(
+  signature: string,
+  role: string,
+  privilege: "ALL" | "EXECUTE" = "EXECUTE",
+): readonly string[] {
   return [
     `ALTER FUNCTION ${signature} OWNER TO ${boundaryOwnerRole}`,
     `REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC`,
-    `GRANT EXECUTE ON FUNCTION ${signature} TO ${role}`,
+    `GRANT ${privilege} ON FUNCTION ${signature} TO ${role}`,
   ];
 }
 
@@ -136,7 +140,7 @@ export const migration175: Migration = {
           AND s.session=bound.session AND s.standing<>in_standing;
        RETURN 'Recorded';
      END $$`,
-    ...owned(report, workerPlaneRole),
+    ...owned(report, workerPlaneRole, "ALL"),
     `CREATE OR REPLACE FUNCTION ${close} RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'

@@ -99,7 +99,6 @@ import {
 import { asThreadOpenKey } from "../../src/interpreter/threadRead.ts";
 import { sessionTaskInvocation } from "../../src/interpreter/workerTask.ts";
 import type {
-  SessionLaunchFacts,
   WorkerPoolSessionCandidate,
   WorkerPoolSessionClaimant,
   WorkerPoolSessionOpened,
@@ -123,6 +122,7 @@ import {
 import {
   sessionRigAttempt,
   sessionRigBoundless,
+  sessionRigLaunch,
   sessionRigOpen,
   sessionRigProject,
   sessionRigQueuedFor,
@@ -178,29 +178,7 @@ after(async () => {
   await rig.close();
 });
 
-/** What every session here is launched with, its backoff short of any dwell. */
-const launch: SessionLaunchFacts = {
-  image: "registry.invalid/session:1",
-  authority: {
-    tools: [],
-    credentials: ["claude-code"],
-    network: true,
-    filesystem: "ReadWorkspace",
-    mayCompleteTask: false,
-  },
-  mirrors: {},
-  bounds: {
-    mailboxPollMs: 1,
-    idleMs: 2,
-    resultDrainMs: 3,
-    loadTimeoutMs: 4,
-    turnsMax: 5,
-    budgetUsd: 6,
-  },
-  model: "session-model",
-  deadlineSecs: 900,
-  placementBackoffSecs: 60,
-};
+const launch = sessionRigLaunch;
 
 assert.deepEqual(
   await postgresSessionLaunchPrecondition(schedulerPool, launch).check(
