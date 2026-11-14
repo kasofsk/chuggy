@@ -38,12 +38,12 @@ import {
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
+import type { SessionKind } from "../../src/contract/rosters.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
   asSessionBearerSecret,
   asSessionId,
-  type SessionKind,
 } from "../../src/interpreter/agentSession.ts";
 import {
   contractVersionAccepted,

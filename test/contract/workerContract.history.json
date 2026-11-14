@@ -496,7 +496,12 @@
   },
   {
     "release": "1.99.0",
-    "wire": "6dc0389a37530cab9dbbf8e7608915e6cea56b148212ca4c6d75969483f48fe9",
-    "files": "0fcd08ed7e5c6dd3ce91cede40717d7f6f9f34ed9d0b92e7b55f5087fb3fe0ce"
+    "wire": "b84da8a5f6e90db5bdcde24b71e5234004d453523a4705e78c70893e6553a0d6",
+    "files": "2a88139da22f3966004c8596e396ce3443e867215091a7f33d3860de5f1201ab"
+  },
+  {
+    "release": "1.100.0",
+    "wire": "29ec02e0dc29c96a358501f981364a51233137c0e075ffa793d833f482c5b69b",
+    "files": "fc4e0ec00e3fa1ca9d587bfb2fd9f0494bcbe3f3ac30c1e2b813e1a50361c35d"
   }
 ]
