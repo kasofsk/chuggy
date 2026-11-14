@@ -27,6 +27,7 @@ import {
   workerPoolIdentityCharsMax,
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
+import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
 import {
   contractVersionAccepted,
   workerContractChatHost,
@@ -78,9 +79,24 @@ const versionThreeHostFrames: readonly ChatHostFrame[] = [
   { frame: "Forget", thread },
 ];
 
+/** The frames version 4 added to the host's. */
+const versionFourHostFrames: readonly ChatHostFrame[] = [
+  {
+    frame: "Start",
+    assignment: "01HZ",
+    envelope: {
+      callbackUrl: start.envelope.callbackUrl,
+      bearer,
+      outputBytesMax: start.envelope.outputBytesMax,
+    },
+    thread,
+  },
+];
+
 const hostFrames: readonly ChatHostFrame[] = [
   ...versionTwoHostFrames,
   ...versionThreeHostFrames,
+  ...versionFourHostFrames,
 ];
 
 const versionTwoSupervisorFrames: readonly ChatSupervisorFrame[] = [
@@ -346,20 +362,20 @@ test("a `Start` names its credential by agent, type and name, and nothing else",
     );
 });
 
-test("a host of version 3 speaks to a supervisor of its window, and not to one of version 2 alone", () => {
+test("a host of version 4 speaks to a supervisor of its window, and not to one of version 3 alone", () => {
   const ready = (protocols: number[]) => ({
     frame: "Ready" as const,
     protocols,
     sessionsMax: 1,
     contractRelease: workerContractRelease,
   });
-  assert.equal(chatProtocolVersion, 3);
-  assert.equal(chatProtocolSpoken(ready([2, 3])), true);
-  assert.equal(chatProtocolSpoken(ready([2])), false);
+  assert.equal(chatProtocolVersion, 4);
+  assert.equal(chatProtocolSpoken(ready([3, 4])), true);
+  assert.equal(chatProtocolSpoken(ready([3])), false);
 });
 
-/** The host's and the supervisor's frame schemas of each release a chat host still polls in that speaks version 2. */
-async function chatHostVersionTwoReleases(): Promise<
+/** The host's and the supervisor's frame schemas of each release a chat host still polls in that speaks `spoken`. */
+async function chatHostVersionReleases(spoken: number): Promise<
   readonly {
     readonly release: string;
     readonly host: ReturnType<typeof workerContractReleaseSchema.parse>;
@@ -383,7 +399,7 @@ async function chatHostVersionTwoReleases(): Promise<
       "chatProtocolVersion",
       z.number().optional(),
     );
-    if (version === 2)
+    if (version === spoken)
       releases.push({
         release,
         host: await exported("chatHostFrameSchema"),
@@ -394,7 +410,7 @@ async function chatHostVersionTwoReleases(): Promise<
 }
 
 test("every frame a release of version 2 writes reads unchanged in version 3, and none version 3 added reads in version 2", async () => {
-  const releases = await chatHostVersionTwoReleases();
+  const releases = await chatHostVersionReleases(2);
   assert.ok(releases.length > 0);
   for (const { release, host, supervisor } of releases) {
     for (const frame of versionTwoHostFrames) {
@@ -414,6 +430,25 @@ test("every frame a release of version 2 writes reads unchanged in version 3, an
       false,
       release,
     );
+  }
+});
+
+test("every frame a release of version 3 writes reads unchanged in version 4, and none version 4 added reads in version 3", async () => {
+  const releases = await chatHostVersionReleases(3);
+  assert.ok(releases.length > 0);
+  for (const { release, host, supervisor } of releases) {
+    for (const frame of [...versionTwoHostFrames, ...versionThreeHostFrames]) {
+      const line = read(chatProtocolLine(frame));
+      assert.deepEqual(host.parse(JSON.parse(line)), frame, release);
+      assert.deepEqual(parseChatHostFrame(line), frame, release);
+    }
+    for (const frame of supervisorFrames) {
+      const line = read(chatProtocolLine(frame));
+      assert.deepEqual(supervisor.parse(JSON.parse(line)), frame, release);
+      assert.deepEqual(parseChatSupervisorFrame(line), frame, release);
+    }
+    for (const frame of versionFourHostFrames)
+      assert.equal(host.safeParse(frame).success, false, release);
   }
 });
 
@@ -471,4 +506,35 @@ test("a `Forget` naming the longest thread fits in a frame", () => {
     thread: { project: long, session: long },
   });
   assert.ok(textUtf8Bytes(line) <= chatProtocolFrameBytesMax + 1);
+});
+
+test("a `Start` whose envelope names no deadline is read without one, and one naming a deadline is read as before", () => {
+  const { timeoutSecsMax: _deadline, ...envelope } = start.envelope;
+  const unbounded = { ...start, envelope } as const satisfies ChatHostFrame;
+  const read = parseChatHostFrame(JSON.stringify(unbounded));
+  assert.deepEqual(read, unbounded);
+  assert.equal("timeoutSecsMax" in (read as typeof unbounded).envelope, false);
+  assert.deepEqual(parseChatHostFrame(JSON.stringify(start)), start);
+  for (const wrong of [null, "3600"])
+    assert.throws(() =>
+      parseChatHostFrame(
+        JSON.stringify({
+          ...start,
+          envelope: { ...envelope, timeoutSecsMax: wrong },
+        }),
+      ),
+    );
+});
+
+test("a pod's envelope still names its deadline", () => {
+  const { timeoutSecsMax: _deadline, ...envelope } = {
+    ...start.envelope,
+    workspace: "/workspace",
+  };
+  assert.equal(
+    poolEnvelopeSchema.safeParse({ ...envelope, timeoutSecsMax: 3_600 })
+      .success,
+    true,
+  );
+  assert.equal(poolEnvelopeSchema.safeParse(envelope).success, false);
 });
