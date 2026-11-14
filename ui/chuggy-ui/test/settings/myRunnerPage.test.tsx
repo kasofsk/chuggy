@@ -3,8 +3,8 @@
  * is told why and offered nothing; one it has is handed the personal command;
  * and a member with runners sees a row for each, registers another while under
  * the bound, gives them projects they read, takes them away, and takes one
- * runner off at a time; and their chat host is drawn, registered with a token
- * and taken off.
+ * runner off at a time; and their chat host is drawn, registered on the
+ * machine they choose by the steps it is handed over in, and taken off.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -24,6 +24,8 @@ import {
 } from "../../../../src/contract/http.ts";
 import { MyRunnerPage } from "../../app/browser/settings/MyRunnerPage.tsx";
 import { copyTextEn } from "../../app/copy/catalog.ts";
+import { runnerPackages } from "../../app/core/runners.ts";
+import type { RunnerPackageName } from "../../app/core/runners.ts";
 import {
   myRunnerRemovalLine,
   myRunnerWithheld,
@@ -483,13 +485,92 @@ test("taking the last runner off says the projects go with it, and leaves none l
   expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
 });
 
-test("a member with no chat host is handed a token that replaces nothing", async () => {
+/** Register chat host pressed, `machine` chosen and its token minted. */
+async function chatHostRegistered(machine: string): Promise<void> {
+  await press("Register chat host");
+  await turnedMachine(machine);
+  await press("Create token");
+}
+
+async function turnedMachine(machine: string): Promise<void> {
+  fireEvent.click(
+    within(screen.getByRole("radiogroup", { name: "Machine" })).getByRole(
+      "radio",
+      {
+        name: machine,
+      },
+    ),
+  );
+  await settled();
+}
+
+/** The commands the chat host's steps hand over, each in its own box. */
+function chatHostStepsCommands(): readonly (string | null)[] {
+  const steps = screen.getByRole("list", { name: "Register chat host" });
+  return [...steps.querySelectorAll("code")].map((code) => code.textContent);
+}
+
+test("a member with no chat host chooses the machine before a token is minted, and is handed one that replaces nothing", async () => {
   const sent = await drawMyRunner();
   expect(screen.getByText("No chat host yet")).toBeTruthy();
   await press("Register chat host");
+  expect(written(sent)).toStrictEqual([]);
+  expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+  await press("Create token");
   expect(written(sent)).toStrictEqual(["POST /chat-host-registration-tokens"]);
-  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(chatHostStepsCommands()).toContain(
+    "chuggy-linux register --api https://chuggy.test --token=tok_host-1 --chat",
+  );
   expect(screen.queryByText(/replaces chat host/u)).toBeNull();
+});
+
+test("a chat host is handed over on each machine as its package's install, a register command carrying --chat and the minted token, and its package's chat host guide", async () => {
+  for (const [machine, name, guide] of [
+    ["Linux", "linux", "https://github.com/kasofsk/chuggy-linux#a-chat-host"],
+    ["Mac", "darwin", "https://github.com/kasofsk/chuggy-darwin#chat-host"],
+  ] as const satisfies readonly (readonly [
+    string,
+    RunnerPackageName,
+    string,
+  ])[]) {
+    await drawMyRunner();
+    await chatHostRegistered(machine);
+    const offered = runnerPackages[name];
+    expect(chatHostStepsCommands()).toStrictEqual([
+      offered.installCommand,
+      `${offered.program} register --api https://chuggy.test --token=tok_host-1 --chat`,
+    ]);
+    expect(
+      within(screen.getByRole("list", { name: "Register chat host" }))
+        .getByRole("link", { name: "Setup guide" })
+        .getAttribute("href"),
+    ).toBe(guide);
+    cleanup();
+  }
+});
+
+test("on Linux the line to paste into Claude Code, naming chat-host and the workspace and no token, comes before the steps, and on a Mac only the steps are handed over", async () => {
+  await drawMyRunner();
+  await chatHostRegistered("Linux");
+  const line = screen.getByText(/chat-host --site/u);
+  expect(line.textContent).toBe(
+    `Make this machine my chuggy chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs chat-host --site https://chuggy.test --workspace ${leadPartition.tenant}" and do what its output says.`,
+  );
+  expect(
+    screen.getByText(
+      "Paste into Claude Code on the machine that will be your chat host",
+    ),
+  ).toBeTruthy();
+  expect(
+    line.compareDocumentPosition(
+      screen.getByRole("list", { name: "Register chat host" }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  cleanup();
+  await drawMyRunner();
+  await chatHostRegistered("Mac");
+  expect(screen.getByRole("list", { name: "Register chat host" })).toBeTruthy();
+  expect(screen.queryByText(/chat-host --site/u)).toBeNull();
 });
 
 test("a member's chat host is drawn with whether it has polled, and registering another hands over a token said to replace it and end its sessions", async () => {
@@ -502,18 +583,18 @@ test("a member's chat host is drawn with whether it has polled, and registering 
   expect(row[0]?.textContent).toContain("5be0d7aa");
   expect(row[0]?.textContent).toContain("Never");
   expect(row[0]?.textContent).toContain("Offline");
-  await press("Register chat host");
+  await chatHostRegistered("Linux");
   expect(
     sent
       .filter((one) => one.method === "POST")
       .map((one) => [one.url.slice(tenantPath.length), one.body]),
   ).toStrictEqual([["/chat-host-registration-tokens", { lifetimeSecs: 3600 }]]);
-  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(chatHostStepsCommands().join(" ")).toContain("--token=tok_host-1");
   expect(
     screen.getByText("Replaces chat host 5be0d7aa · Ends its sessions"),
   ).toBeTruthy();
   await press("Done");
-  expect(screen.queryByText("tok_host-1")).toBeNull();
+  expect(screen.queryByRole("list", { name: "Register chat host" })).toBeNull();
 });
 
 test("a member's chat host says what the chats it hosts may do where it named that, and that each may do everything its own roster allows where it named nothing", async () => {

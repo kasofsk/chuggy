@@ -480,9 +480,6 @@ export interface SetupCopy {
   readonly "setup-mend-chat-by-hand": {
     readonly page: unknown;
     readonly register: unknown;
-    readonly linux: unknown;
-    readonly darwin: unknown;
-    readonly agent: unknown;
   };
   readonly "setup-mend-chats": {
     readonly project: unknown;

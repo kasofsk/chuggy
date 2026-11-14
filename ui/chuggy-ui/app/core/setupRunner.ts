@@ -1238,7 +1238,7 @@ export async function setupChatHost(
     );
     return setupRunSaid(at, undefined, [], {
       ended: "Stopped",
-      stop: { stop: "MacChatHost", site, page: `${site}${page}` },
+      stop: { stop: "MacChatHost", page: `${site}${page}` },
     });
   }
   const entered = await enter();

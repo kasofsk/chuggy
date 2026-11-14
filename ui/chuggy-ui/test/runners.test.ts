@@ -307,6 +307,7 @@ test("setup offers the Linux package: what it needs, the command that installs i
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.51.0/chuggy-linux-0.51.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   });
   expect(copyTextEn(runnerPackageOffered.label)).toBe("Linux");
   expect(copyTextEn(runnerPackageOffered.needs)).toBe(
@@ -322,6 +323,7 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.21.0/chuggy-darwin-0.21.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
   });
   expect(copyTextEn(runnerPackages.darwin.label)).toBe("Mac");
   expect(copyTextEn(runnerPackages.darwin.needs)).toBe(

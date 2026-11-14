@@ -104,8 +104,8 @@ const hand = (tell: string, when: string): SaidThing => ({
 
 const pages = `${stoodSite}/acme/widgets`;
 
-/** How a chat host is registered on another machine, by each runner package's own commands, as the CLIs' guides say them. */
-const chatByHand = `open ${pages}/settings/workspace/runner, press Register chat host and copy the token it shows. Then, with the runner package installed there, on Linux run chuggy-linux register --api ${stoodSite} --token=<token> --chat, which starts its service where it can and otherwise prints what is left, and on a Mac run chuggy-darwin register --api ${stoodSite} --token=<token> --chat, then chuggy-darwin install-agent --pool with the file it wrote, and load the agent as that prints`;
+/** How a chat host is registered on another machine, by the commands its personal runners page shows. */
+const chatByHand = `open ${pages}/settings/workspace/runner, press Register chat host, choose the machine and run the commands it shows`;
 const create = `Open ${pages}/tickets/new, say what you want done and press Create ticket`;
 
 /** Every thing a step can lack, the lack as it is found, and what the person is told to do about it. */

@@ -391,10 +391,7 @@ function setupChatMend(
       args: {
         chats,
         here: here === undefined ? "unseen" : "seen",
-        byHand: setupChatByHand(
-          at.site,
-          setupPage(at, settingsRoutes.project.myRunner),
-        ),
+        byHand: setupChatByHand(setupPage(at, settingsRoutes.project.myRunner)),
       },
     },
     running,

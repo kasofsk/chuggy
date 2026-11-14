@@ -33,8 +33,8 @@ import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
 const runnerPackageNames = Object.keys(runnerPackages) as RunnerPackageName[];
 
-/** The machine a runner is made of. */
-function RunnerMachine(props: {
+/** The machine a runner or a chat host is made of. */
+export function RunnerMachine(props: {
   readonly chosen: RunnerPackageName;
   readonly onChoose: (chosen: RunnerPackageName) => void;
 }): ReactNode {

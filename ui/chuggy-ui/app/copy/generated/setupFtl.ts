@@ -293,10 +293,8 @@ setup-mend-runner-put-chat = That puts here the { -runner } package, { $program 
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
 setup-mend-runner-put = That puts here the { -runner } package, { $program }, and a background service of yours that starts when you log in; work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
-# The commands are the runner packages' own, which is code.
 # spells -run: to run is a verb here
-# spells -agent: a Mac's launch agent is the Mac's, not a run's
-setup-mend-chat-by-hand = open { $page }, press { $register } and copy the token it shows. Then, with the { -runner } package installed there, on Linux run { $linux }, which starts its service where it can and otherwise prints what is left, and on a Mac run { $darwin }, then { $agent } with the file it wrote, and load the agent as that prints
+setup-mend-chat-by-hand = open { $page }, press { $register }, choose the machine and run the commands it shows
 # spells -run: to run is a verb here
 setup-mend-chats = Your { -thread(form: "plural") } in { $project } run only on your { -chat-host }, one machine of yours
 # spells -brief-check: to check is a verb here
