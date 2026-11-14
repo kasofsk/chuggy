@@ -238,8 +238,6 @@ const projectRepositories = {
   ],
 };
 
-/** What the long-named repository declares: one configuration ready to run,
- * on a worker image whose name runs past a phone, and one not ready yet. */
 /** Where a configuration the stub's repository declares is read from. */
 function repositoryConfigurationProvenance(name: string) {
   return {
@@ -251,6 +249,8 @@ function repositoryConfigurationProvenance(name: string) {
   } as const;
 }
 
+/** What the long-named repository declares: one configuration ready to run,
+ * on a worker image whose name runs past a phone, and one not ready yet. */
 const repositoryConfigurations = {
   configurations: ["coding", "nightly"].map((name, index) => {
     const base = {

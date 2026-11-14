@@ -10,7 +10,9 @@
  * The shell around the page is not this page's, so the touch height is held
  * under the page's own column, the element its head is in. Scrolled past its
  * head and back up a little, the page holds its bar at the top of where it
- * scrolls, as the tickets list does, and the head draws no bar over it.
+ * scrolls, as the tickets list does, and the head draws no bar over it;
+ * motion is reduced there too, so the bar is measured where it stands once
+ * it has gone and come back.
  */
 
 import {
@@ -120,20 +122,22 @@ for (const viewport of catalogViewports)
 
 /** Scrolls the page's own scroller by `by` and waits for it to be there. */
 async function catalogScrolled(page: Page, by: number): Promise<void> {
-  await page.locator(".list-controls").evaluate((bar, delta) => {
-    let scroller = bar.parentElement;
-    while (
-      scroller !== null &&
-      !["auto", "scroll"].includes(getComputedStyle(scroller).overflowY)
-    )
-      scroller = scroller.parentElement;
-    (scroller ?? document.documentElement).scrollTop += delta;
-  }, by);
-  await page.waitForTimeout(catalogScrollSettleMs);
+  const scrollTop = (delta: number) =>
+    page.locator(".list-controls").evaluate((bar, moved) => {
+      let scroller = bar.parentElement;
+      while (
+        scroller !== null &&
+        !["auto", "scroll"].includes(getComputedStyle(scroller).overflowY)
+      )
+        scroller = scroller.parentElement;
+      const scrolled = scroller ?? document.documentElement;
+      scrolled.scrollTop += moved;
+      return scrolled.scrollTop;
+    }, delta);
+  const from = await scrollTop(0);
+  await scrollTop(by);
+  await expect.poll(() => scrollTop(0)).toBe(from + by);
 }
-
-/** How long a scroll is given to land and its listeners to run. */
-const catalogScrollSettleMs = 200;
 
 /** Far enough down that the head is gone and the bar has gone out of the
  * way, as `useHeadroom` puts it. */
@@ -156,8 +160,10 @@ for (const viewport of catalogViewports)
     const page = rendered.page;
     const bar = page.locator(".list-controls");
     const head = page.locator("header.page-header");
+    await page.emulateMedia({ reducedMotion: "reduce" });
     const resting = await bar.boundingBox();
     await catalogScrolled(page, catalogScrollDown);
+    await expect(bar).toHaveAttribute("data-hidden");
     await catalogScrolled(page, -catalogScrollUp);
     await expect(bar).not.toHaveAttribute("data-hidden");
     const stuck = await bar.boundingBox();
