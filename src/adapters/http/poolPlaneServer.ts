@@ -102,6 +102,7 @@ import {
   type ChatHostPlaneRegistry,
   type PersonalRunnerPlaneRegistry,
   type PoolPlaneIdentity,
+  type WorkerPoolAskedQuery,
   type WorkerPoolAssignments,
   type WorkerPoolMint,
   type WorkerPoolPollSettings,
@@ -339,6 +340,21 @@ function poolAssignmentNamed(request: FastifyRequest): string | undefined {
   return named.success ? named.data : undefined;
 }
 
+/** What a poll's query asks: what it holds, its room for each kind of work, and a chat host's idle bound and its threads' capabilities where it named them. */
+function poolPollQueryAsked(
+  query: ReturnType<ReturnType<typeof workerPoolPollQuerySchema>["parse"]>,
+): WorkerPoolAskedQuery {
+  const idleSecs = query[workerPoolPollQuery.idleSecs];
+  const sessionCapabilities = query[workerPoolPollQuery.sessionCapabilities];
+  return {
+    held: query[workerPoolPollQuery.held],
+    wanted: query[workerPoolPollQuery.wanted],
+    wantedSessions: query[workerPoolPollQuery.wantedSessions],
+    ...(idleSecs === undefined ? {} : { idleSecs }),
+    ...(sessionCapabilities === undefined ? {} : { sessionCapabilities }),
+  };
+}
+
 /** The reconciliation poll, which is the whole of what a pool asks for. */
 function poolAssignmentsRoute(
   app: FastifyInstance,
@@ -365,16 +381,13 @@ function poolAssignmentsRoute(
       const runner = poolRunnerNamed(request);
       const contract = workerContractOffered(request);
       poolPolledHeld(service, identity, runner, room, ceiling);
-      const idleSecs = query.data[workerPoolPollQuery.idleSecs];
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
         polled = await workerPoolPoll(
           poolPorts(service),
           identity,
           {
-            held: query.data[workerPoolPollQuery.held],
-            wanted: query.data[workerPoolPollQuery.wanted],
-            wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
+            ...poolPollQueryAsked(query.data),
             ...(runner === undefined ? {} : { runner }),
             ...(capabilities.named === "Set"
               ? { capabilities: capabilities.capabilities }
@@ -385,7 +398,6 @@ function poolAssignmentsRoute(
               : {}),
             ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
             ...(wait.named === "Count" ? { pollWaitSecs: wait.count } : {}),
-            ...(idleSecs === undefined ? {} : { idleSecs }),
             ...(contract === undefined ? {} : { contract }),
           },
           service.settings,

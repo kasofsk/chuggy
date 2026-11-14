@@ -33,7 +33,10 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSessionPlacement } from "../../src/adapters/postgres/sessionPlacement.ts";
-import { postgresSessionBearerAuthority } from "../../src/adapters/postgres/sessionPlane.ts";
+import {
+  postgresSessionBearerAuthority,
+  postgresSessionPlane,
+} from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresThreads } from "../../src/adapters/postgres/thread.ts";
 import { postgresWorkerTasks } from "../../src/adapters/postgres/workerPlane.ts";
 import {
@@ -58,6 +61,7 @@ import {
   asSessionTurnId,
   memberScopePartition,
   type SessionId,
+  type SessionCapability,
   type SessionKind,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
@@ -2171,6 +2175,167 @@ test("a member's own thread is handed to their chat host alone, on a contract th
       capabilities: ["MemberRead"],
     },
   );
+});
+
+/** What the API reads a thread to hold while a chat host holds it, NULL while none does. */
+async function threadHostCapabilitiesOf(
+  partition: Partition,
+  session: SessionId,
+): Promise<unknown> {
+  const found = await apiPool.query<{ held: string[] | null }>(
+    `SELECT thread_chat_host_capabilities($1,$2,$3) AS held`,
+    [partition.tenant, partition.project, session],
+  );
+  return found.rows[0]?.held;
+}
+
+/** The host's set and the capabilities an attempt's invocation names. */
+async function attemptCapabilitiesOf(
+  assignment: string,
+): Promise<readonly unknown[]> {
+  const [attempt] = await rig.harness.query(
+    `SELECT host_capabilities,invocation FROM session_attempt WHERE assignment=$1`,
+    [assignment],
+  );
+  return [
+    attempt?.["host_capabilities"],
+    documentOf(attempt?.["invocation"])["capabilities"],
+  ];
+}
+
+/** The capabilities the session plane tells the pod holding `claimed` it holds. */
+async function factsCapabilitiesOf(
+  claimed: WorkerPoolSessionAssignment,
+): Promise<readonly SessionCapability[] | undefined> {
+  const identity = await postgresSessionPlane(planePool).authenticate(
+    asSessionBearerSecret(claimed.bearer),
+  );
+  return identity?.capabilities;
+}
+
+/** The one session a poll of `host` naming `named` for its threads claims. */
+async function hostClaimedNaming(
+  host: PoolPlaneIdentity,
+  named: readonly SessionCapability[],
+): Promise<WorkerPoolSessionAssignment> {
+  const answered = await workerPoolPoll(
+    ports,
+    host,
+    { held: [], wanted: 0, wantedSessions: 4, sessionCapabilities: named },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`pool session suite: a poll answered ${answered.polled}`);
+  const [claimed, ...more] = answered.answer.sessions;
+  assert.deepEqual(more, []);
+  assert.ok(claimed !== undefined);
+  return claimed;
+}
+
+test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, while its inquiry keeps its roster", async () => {
+  const { partition, member } = await routedProject("host-capabilities");
+  const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
+  const lead = await sessionRigSession(
+    rig,
+    partition,
+    "host-capabilities-lead",
+  );
+  const opened = async (label: string, kind: SessionKind) => {
+    const session = await sessionRigSession(rig, partition, label, {
+      kind,
+      principal: member,
+      capabilities: [...roster],
+      ...(kind === "Inquiry" ? { parent: lead } : {}),
+    });
+    await sessionRigTurn(rig, partition, session, label);
+    return session;
+  };
+  const owner = { tenant: partition.tenant, owner: member };
+  const thread = await opened("host-capabilities-thread", "Thread");
+  const host = await chatHost(partition, member);
+  const named = ["ProjectRead", "RepositoryRead", "LeadDecision"] as const;
+  const held = ["RepositoryRead", "ProjectRead"];
+  assert.equal(await threadHostCapabilitiesOf(partition, thread), null);
+  const claimed = await hostClaimedNaming(host, named);
+  assert.equal(await sessionOf(claimed), thread);
+  assert.deepEqual(await attemptCapabilitiesOf(claimed.assignment), [
+    named,
+    held,
+  ]);
+  assert.deepEqual(
+    (
+      await postgresSessionBearerAuthority(apiPool).authenticate(
+        asSessionBearerSecret(claimed.bearer),
+      )
+    )?.capabilities,
+    held,
+  );
+  assert.deepEqual(
+    await factsCapabilitiesOf(claimed),
+    held,
+    "the pod's facts name what its bearer is confined to",
+  );
+  assert.deepEqual(await threadHostCapabilitiesOf(partition, thread), held);
+  assert.deepEqual(
+    (await chatHostRegistry.host(owner))?.sessionCapabilities,
+    named,
+  );
+
+  const inquiry = await opened("host-capabilities-inquiry", "Inquiry");
+  const [asked] = await polledOffering(host, workerContractRelease);
+  assert.ok(asked !== undefined);
+  assert.equal(await sessionOf(asked), inquiry);
+  assert.deepEqual(await attemptCapabilitiesOf(asked.assignment), [
+    null,
+    roster,
+  ]);
+  assert.deepEqual(await factsCapabilitiesOf(asked), roster);
+  assert.equal(
+    (await chatHostRegistry.host(owner))?.sessionCapabilities,
+    undefined,
+    "a poll naming no set clears the one recorded",
+  );
+});
+
+test("an attempt records a host's set only where a chat host holds it, and only capabilities a session may hold", async () => {
+  const { partition, member } = await routedProject("host-capabilities-held");
+  const session = await sessionRigSession(
+    rig,
+    partition,
+    "host-capabilities-held",
+    {
+      kind: "Thread",
+      principal: member,
+    },
+  );
+  await sessionRigTurn(rig, partition, session, "host-capabilities-held");
+  const host = await chatHost(partition, member);
+  const [claimed] = await polledOffering(host, workerContractRelease);
+  assert.ok(claimed !== undefined);
+  for (const [set, holder, constraint] of [
+    [
+      ["ProjectSettings"],
+      "ChatHost",
+      "session_attempt_host_capabilities_are_known",
+    ],
+    [
+      ["ProjectRead"],
+      "Pool",
+      "session_attempt_host_capabilities_are_a_chat_hosts",
+    ],
+  ] as const)
+    await assert.rejects(
+      rig.harness.query(
+        `UPDATE session_attempt SET host_capabilities=$2::text[],holder_kind=$3
+          WHERE assignment=$1`,
+        [claimed.assignment, set, holder],
+      ),
+      (failure: unknown) =>
+        failure instanceof Error &&
+        "constraint" in failure &&
+        failure.constraint === constraint,
+      JSON.stringify([set, holder]),
+    );
 });
 
 test("a chat host is handed no member's own thread once its owner may no longer open unscoped chat, asking the tenant rather than any project", async () => {

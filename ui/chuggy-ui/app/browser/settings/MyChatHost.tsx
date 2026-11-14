@@ -1,7 +1,8 @@
 /**
  * The reader's chat host in this workspace, the one machine of theirs their
  * questions run on and their threads run on first: a row saying when it
- * registered and last polled and whether it is live, and taking it off; and the
+ * registered and last polled, whether it is live and what the threads it hosts
+ * may do, and taking it off; and the
  * token a host registers with, which replaces the one they hold.
  *
  * A HOST THE READER HOLDS IS DRAWN WHETHER OR NOT THEY MAY REGISTER ONE NOW, as
@@ -38,6 +39,7 @@ import {
   runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
+import { sessionCapabilitiesSaid } from "../../core/sessionCapabilities.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
@@ -111,6 +113,24 @@ function chatHostRemovalWrite(
   };
 }
 
+/** What the threads the host runs may do, as its newest poll named it. */
+function ChatHostThreadsMay(props: {
+  readonly host: ChatHostResponse;
+}): ReactNode {
+  const text = useCopyText();
+  const named = props.host.sessionCapabilities;
+  return (
+    <span className="block text-sm text-ink-3">
+      {named === undefined
+        ? text({ id: "runners-chat-host-threads-whole" })
+        : text({
+            id: "runners-chat-host-threads",
+            args: { capabilities: sessionCapabilitiesSaid(text, named) },
+          })}
+    </span>
+  );
+}
+
 function ChatHostRow(props: {
   readonly host: ChatHostResponse;
   readonly busy: boolean;
@@ -127,6 +147,7 @@ function ChatHostRow(props: {
         <span className="people-name block font-strong text-ink-1">
           <span title={host.id}>{short}</span>
         </span>
+        <ChatHostThreadsMay host={host} />
       </th>
       <td data-none={settingsListingNone(host.runner === undefined)}>
         <span className="people-stacked-label">

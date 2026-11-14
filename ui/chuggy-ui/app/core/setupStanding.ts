@@ -115,9 +115,8 @@ export type SetupLack =
   /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
   | { readonly lacks: "Runner"; readonly chat: boolean }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
-  /** `pooled` where the project's work goes to runners, which `runner` registers a machine for where it holds no registration of the project. */
-  | { readonly lacks: "ChatHost"; readonly pooled: boolean }
-  | { readonly lacks: "ChatHostLive"; readonly pooled: boolean }
+  | { readonly lacks: "ChatHost" }
+  | { readonly lacks: "ChatHostLive" }
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
@@ -666,8 +665,7 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
     case undefined:
       break;
   }
-  const pooled = !setupHosted(route);
-  const said: Copy = pooled
+  const said: Copy = !setupHosted(route)
     ? { id: "setup-step-runner-live" }
     : { id: "setup-step-runner-hosted" };
   switch (mine) {
@@ -678,14 +676,14 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
         "runner",
         "waiting",
         { id: "setup-step-chat-host-offline", args: { runner: said } },
-        { lacks: "ChatHostLive", pooled },
+        { lacks: "ChatHostLive" },
       );
     case "NoRunner":
       return setupUndone(
         "runner",
         "todo",
         { id: "setup-step-chat-host-none", args: { runner: said } },
-        { lacks: "ChatHost", pooled },
+        { lacks: "ChatHost" },
       );
   }
 }

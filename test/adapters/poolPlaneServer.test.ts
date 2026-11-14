@@ -34,6 +34,7 @@ import {
   workerRunnerPollWaitHeader,
   workerRunnerReportBytesMax,
   workerRunnerReportRoute,
+  workerPoolPollSessionCapabilitiesText,
   type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
@@ -355,6 +356,7 @@ function runnerCalls(): {
   readonly ceilings: unknown[];
   readonly agents: unknown[];
   readonly credentials: unknown[];
+  readonly hosted: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
@@ -362,12 +364,14 @@ function runnerCalls(): {
   const ceilings: unknown[] = [];
   const agents: unknown[] = [];
   const credentials: unknown[] = [];
+  const hosted: unknown[] = [];
   return {
     named,
     advertised,
     ceilings,
     agents,
     credentials,
+    hosted,
     runners: {
       named: (
         caller: PoolPlaneIdentity,
@@ -376,7 +380,9 @@ function runnerCalls(): {
         ceiling,
         agentsAdvertised,
         credentialsNamed,
+        sessionCapabilities,
       ) => {
+        hosted.push([caller.kind, sessionCapabilities]);
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
         ceilings.push([caller.kind, ceiling]);
@@ -2326,6 +2332,45 @@ test("a chat host's declared idle bound is recorded on its claim as named and la
       named,
     );
   }
+});
+
+test("a chat host's poll names the capabilities its threads may hold as it wrote them, a pool's is not read, and a set naming one twice is refused", async () => {
+  const set = ["RunCommands", "ProjectRead"] as const;
+  const query = `&${workerPoolPollQuery.sessionCapabilities}=`;
+  for (const [headers, suffix, kept] of [
+    [
+      hostSpeaking,
+      `${query}${workerPoolPollSessionCapabilitiesText(set)}`,
+      ["ChatHost", set],
+    ],
+    [hostSpeaking, query, ["ChatHost", []]],
+    [hostSpeaking, "", ["ChatHost", undefined]],
+    [
+      speaking,
+      `${query}${workerPoolPollSessionCapabilitiesText(set)}`,
+      ["Dedicated", undefined],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(
+        calls().ports,
+        authority("Allow"),
+        openingsRecorded().store,
+        recorded.runners,
+      ),
+    ).inject({ method: "GET", url: `${polling([], 0, 1)}${suffix}`, headers });
+    assert.equal(answered.statusCode, 200, suffix);
+    assert.deepEqual(recorded.hosted, [kept], suffix);
+  }
+  const refused = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), openingsRecorded().store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}${query}ProjectRead,ProjectRead`,
+    headers: hostSpeaking,
+  });
+  assert.equal(refused.statusCode, 400);
 });
 
 test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {

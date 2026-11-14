@@ -219,6 +219,33 @@ test("a thread kept running says so beside its standing, with how to end it, and
   ).toBeGreaterThan(0);
 });
 
+test("a thread its owner's chat host holds says so beside its standing, with what it may do there, and one no chat host holds says nothing of it", async () => {
+  await mountedAt(threadPath(threadMineSession));
+  expect(screen.queryByText("On your chat host")).toBeNull();
+  cleanup();
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      (async (url: string, init?: RequestInit) => {
+        const read = await served(url, init);
+        if (!url.endsWith(`/threads/${threadMineSession}`)) return read;
+        return answer({
+          ...(await read.json()),
+          chatHostCapabilities: ["RepositoryRead", "RunCommands"],
+        });
+      }) as typeof fetch,
+  );
+  const hosted = screen.getByText("On your chat host");
+  fireEvent.focus(hosted.closest("[tabindex]") ?? hosted);
+  expect(
+    (
+      await screen.findAllByText(
+        "On your chat host, this chat may: Read the repository, Run commands",
+      )
+    ).length,
+  ).toBeGreaterThan(0);
+});
+
 test("the bar's Context opens the thread's context beside its conversation, and its close takes it away", async () => {
   await mountedAt(
     threadPath(threadMineSession),

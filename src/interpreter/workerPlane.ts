@@ -129,7 +129,7 @@ export const workerContractChatThreadsClosed: WorkerContractRange = {
 
 /** The versions in which a chat host may be handed a session naming the thread it is an attempt of, a field a host of an earlier one refuses its whole answer over. */
 export const workerContractChatSessionThreads: WorkerContractRange = {
-  min: { major: 1, minor: 97 },
+  min: { major: 1, minor: 98 },
   max: workerContractAccepted.max,
 };
 

@@ -49,7 +49,7 @@ export type SaidThing =
       readonly tell: string;
       readonly when: string;
       readonly workspace: string;
-      readonly project: string;
+      readonly project: string | undefined;
     }
   | {
       readonly thing: "Ask";

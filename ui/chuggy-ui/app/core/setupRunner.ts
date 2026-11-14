@@ -27,9 +27,15 @@
  * work. This machine is the person's chat host where it holds a file of the
  * one the site holds for them; otherwise it is registered as theirs the same
  * way, where the workspace lets them, which is the other write. A member has
- * one chat host, so where theirs is another machine it is never replaced: one
- * that is live is left serving, and one that is not is theirs to start or
- * remove.
+ * one chat host, so where theirs is another machine `runner` never replaces
+ * it: one that is live is left serving, and one that is not is theirs to start
+ * or remove.
+ *
+ * `chat-host` is the person's chat host alone, for a workspace: the same walk
+ * `runner` makes for it where a project's work needs no runner, which reads no
+ * project. Its one write is the chat host's mint. A chat host of theirs on
+ * another machine stops it, and is replaced only where `--replace` names it,
+ * since registering this machine ends that host's sessions.
  *
  * No password is taken: a child is run with no terminal to ask on, and what
  * would need one is told to the person to do themselves. Nothing a child
@@ -46,6 +52,7 @@ import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import type {
   ChatHostResponse,
   SessionPlacementResponse,
+  WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type { PlacementRoute } from "../../../../src/contract/rosters.ts";
 
@@ -60,6 +67,7 @@ import {
   apiSessionPlacement,
   apiWorkerPools,
 } from "./apiRoutes.ts";
+import { myRunnerShort } from "./myRunner.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
 import { runnerPackageOffered, runnerTokenLifetimeSecs } from "./runners.ts";
 import type { RunnerKind } from "./runners.ts";
@@ -72,6 +80,7 @@ import type { SetupPorts } from "./setupPorts.ts";
 import { setupGot, setupReadPorts } from "./setupReads.ts";
 import type { SetupRead } from "./setupReads.ts";
 import type { SetupReport } from "./setupReport.ts";
+import { setupSessionRead } from "./setupStore.ts";
 import {
   setupChatClient,
   setupChatFiles,
@@ -114,6 +123,7 @@ import type {
   SetupClaudeCredential,
   SetupEngine,
   SetupRunnerAct,
+  SetupRunnerAt,
   SetupRunnerEnded,
   SetupRunnerNote,
   SetupRunnerRead,
@@ -159,9 +169,16 @@ export type SetupRunnerAsked = Extract<
   { readonly asked: "Runner" }
 >;
 
+export type SetupChatHostAsked = Extract<
+  SetupAsked,
+  { readonly asked: "ChatHost" }
+>;
+
+/** A run of a command that changes the machine, for the workspace `tenant`, whose writes go out only as `writes`. */
 interface Run {
   readonly ports: SetupPorts;
-  readonly partition: PartitionIdentity;
+  readonly tenant: string;
+  readonly writes: readonly string[];
   readonly waitSecs: number;
   readonly livePollMs: number;
   readonly places: SetupRunnerPlaces;
@@ -170,6 +187,11 @@ interface Run {
   readonly secrets: string[];
   readonly enter: () => Promise<SetupRunnerEntered>;
   session: SetupRunnerSession;
+}
+
+/** A run of `runner`, for one project. */
+interface ProjectRun extends Run {
+  readonly partition: PartitionIdentity;
 }
 
 /** Why a walk went no further: a stop of its own, or a report another part of the program makes. */
@@ -184,29 +206,35 @@ function halt(stop: SetupRunnerStop): Halt {
   return { halt: stop };
 }
 
+/** Each write `chat-host` makes in a workspace, by its method and its address: the mint of a registration token for the person's chat host. */
+export function setupChatHostWrites(tenant: string): readonly string[] {
+  const route = nativeHttpRoutes.chatHostRegistrationTokens.replace(
+    ":tenant",
+    encodeURIComponent(tenant),
+  );
+  return [`POST ${route}`];
+}
+
 /** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the project's runner and for the person's chat host. */
-function setupWrites(partition: PartitionIdentity): readonly string[] {
-  const filled = (route: string): string =>
-    route
-      .replace(":tenant", encodeURIComponent(partition.tenant))
-      .replace(":project", encodeURIComponent(partition.project));
-  return [
-    `POST ${filled(nativeHttpRoutes.workerPoolRegistrationTokens)}`,
-    `POST ${filled(nativeHttpRoutes.chatHostRegistrationTokens)}`,
-  ];
+export function setupRunnerWrites(
+  partition: PartitionIdentity,
+): readonly string[] {
+  const route = nativeHttpRoutes.workerPoolRegistrationTokens
+    .replace(":tenant", encodeURIComponent(partition.tenant))
+    .replace(":project", encodeURIComponent(partition.project));
+  return [`POST ${route}`, ...setupChatHostWrites(partition.tenant)];
 }
 
 /**
- * The ports every write `runner` makes goes out through: the ones it makes
- * for this project, and beside them nothing that is not a read.
+ * The ports every write a run makes goes out through: the `writes` its
+ * command makes, and beside them nothing that is not a read.
  */
 export function setupWritePorts(
   api: ApiPorts,
   bearer: string,
-  partition: PartitionIdentity,
+  writes: readonly string[],
 ): ApiPorts {
   const reads = setupReadPorts(api, bearer);
-  const writes = setupWrites(partition);
   return {
     ...reads,
     fetch: (url, init) =>
@@ -220,11 +248,8 @@ function setupRunnerReads(session: SetupRunnerSession): ApiPorts {
   return setupReadPorts(session.api, session.bearer);
 }
 
-function setupRunnerWrites(
-  run: Run,
-): (session: SetupRunnerSession) => ApiPorts {
-  return (session) =>
-    setupWritePorts(session.api, session.bearer, run.partition);
+function setupRunWrites(run: Run): (session: SetupRunnerSession) => ApiPorts {
+  return (session) => setupWritePorts(session.api, session.bearer, run.writes);
 }
 
 /**
@@ -263,7 +288,7 @@ const setupWhole = (): boolean => true;
 
 /** Where the person's chats in the project run, read before anything is touched: whether they run on a chat host, which is the person's. */
 async function setupChatsAsked(
-  run: Run,
+  run: ProjectRun,
 ): Promise<{ readonly chats: boolean } | Halt> {
   const placement = await setupSiteAsked(run, setupRunnerReads, (ports) =>
     apiSessionPlacement(ports, run.partition),
@@ -280,7 +305,7 @@ async function setupChatsAsked(
 
 /** Where the project's work runs, read before anything is touched: on the cluster, which needs no runner, or on runners this person may register one of. */
 async function setupProjectAsked(
-  run: Run,
+  run: ProjectRun,
 ): Promise<{ readonly route: PlacementRoute } | Halt> {
   const work = await setupSiteAsked(run, setupRunnerReads, (ports) =>
     apiExecutionPlacement(ports, run.partition),
@@ -458,7 +483,7 @@ type Pooled = Registered<SetupPoolFile>;
 
 /** The pool file among those held whose pool the site lists, which is what makes a registration good; or that none is, where the site's list was whole. */
 async function setupPoolGood(
-  run: Run,
+  run: ProjectRun,
   held: readonly SetupPoolFile[],
 ): Promise<{ readonly good: SetupPoolFile | undefined } | Halt> {
   const pools = await setupSiteAsked(run, setupRunnerReads, (ports) =>
@@ -482,24 +507,29 @@ function setupTokenWhole(token: string): boolean {
   return setupSayable(token) && /^\S+$/u.test(token);
 }
 
+/** A registration token's mint, as a pool's or as the person's chat host's. */
+type Mint = (
+  ports: ApiPorts,
+  asked: { readonly lifetimeSecs: number },
+) => Promise<ApiResult<WorkerPoolTokenResponse>>;
+
 /**
- * Mints a registration token, as a pool's or as the person's chat host's, and
- * hands it to the package's `register` as one word of its arguments and to
- * nothing else, answering what `register` printed.
+ * Mints a registration token by `mint`, as a pool's or as the person's chat
+ * host's, and hands it to the package's `register` as one word of its
+ * arguments and to nothing else, answering what `register` printed.
  */
 async function setupTokenHanded(
   run: Run,
   command: string,
   kind: Exclude<RunnerKind, "Personal">,
+  mint: Mint,
 ): Promise<Exited | Halt> {
   const lapseMins = Math.ceil(
     Math.max(runnerTokenLifetimeSecs, setupMintLifetimeSecs) / 60,
   );
   const asked = { lifetimeSecs: setupMintLifetimeSecs };
-  const minted = await setupSiteAsked(run, setupRunnerWrites(run), (ports) =>
-    kind === "Pool"
-      ? apiMintWorkerPoolToken(ports, run.partition, asked)
-      : apiMintChatHostToken(ports, run.partition.tenant, asked),
+  const minted = await setupSiteAsked(run, setupRunWrites(run), (ports) =>
+    mint(ports, asked),
   );
   if ("reported" in minted) return minted;
   const refused = (outcome: ApiFailure["outcome"]): Halt =>
@@ -531,10 +561,12 @@ function setupFileSaid<File extends SetupFile>(
 }
 
 async function setupRegistered(
-  run: Run,
+  run: ProjectRun,
   command: string,
 ): Promise<Pooled | Halt> {
-  const acted = await setupTokenHanded(run, command, "Pool");
+  const acted = await setupTokenHanded(run, command, "Pool", (ports, asked) =>
+    apiMintWorkerPoolToken(ports, run.partition, asked),
+  );
   if (halted(acted)) return acted;
   const file = setupFileSaid(
     acted,
@@ -546,7 +578,10 @@ async function setupRegistered(
   return { file, fresh: true };
 }
 
-async function setupPoolHad(run: Run, command: string): Promise<Pooled | Halt> {
+async function setupPoolHad(
+  run: ProjectRun,
+  command: string,
+): Promise<Pooled | Halt> {
   const held = setupPoolFiles(run.ports, run.places, run.partition);
   const [first] = held;
   if (first === undefined) return setupRegistered(run, command);
@@ -755,7 +790,7 @@ async function setupWaited<Seen extends object, Unseen>(
 
 /** The project's runner as the console's own decider says it stands on `route`: live, or why not. */
 async function setupProjectLooked(
-  run: Run,
+  run: ProjectRun,
   route: PlacementRoute,
 ): Promise<SetupLook<SessionPlacementResponse, SessionRunnerShort>> {
   const placement = await setupSiteAsked(run, setupRunnerReads, (ports) =>
@@ -780,7 +815,7 @@ async function setupMachineShared(
 
 /** The project's runner's acts in their order, each found done or done now, from its registration to its service running, which is what is answered. */
 async function setupPoolDone(
-  run: Run,
+  run: ProjectRun,
   packaged: Packaged,
 ): Promise<SetupUnit | Halt> {
   const pooled = await setupPoolHad(run, packaged.command);
@@ -805,7 +840,7 @@ async function setupChatHad(
   run: Run,
 ): Promise<{ readonly had: ChatHostResponse | undefined } | Halt> {
   const host = await setupSiteAsked(run, setupRunnerReads, (ports) =>
-    apiChatHost(ports, run.partition.tenant),
+    apiChatHost(ports, run.tenant),
   );
   if ("reported" in host) return host;
   if (host.outcome === "Absent") return { had: undefined };
@@ -813,13 +848,13 @@ async function setupChatHad(
   return read.read === "Got" ? { had: read.value } : setupUnread("chat", read);
 }
 
-/** Whether the workspace lets the person register a chat host; `pooled` is whether the project's work has a runner, which the stop says is set up, or the cluster. */
+/** Whether the workspace lets the person register a chat host; `work` is what the project's work has, which the stop says is set up, and nothing where the run is for the workspace alone. */
 async function setupPermitted(
   run: Run,
-  pooled: boolean,
+  work: "Runner" | "Cluster" | undefined,
 ): Promise<Halt | undefined> {
   const permit = await setupSiteAsked(run, setupRunnerReads, (ports) =>
-    apiPersonalRunnerPermit(ports, run.partition.tenant),
+    apiPersonalRunnerPermit(ports, run.tenant),
   );
   if ("reported" in permit) return permit;
   const read = setupGot(permit, (answered) => answered.granted, setupWhole);
@@ -827,12 +862,12 @@ async function setupPermitted(
   if (read.value) return undefined;
   const people = settingsRoutes.workspace.people.replace(
     "$tenant",
-    encodeURIComponent(run.partition.tenant),
+    encodeURIComponent(run.tenant),
   );
   return halt({
     stop: "PermitWithheld",
     people: `${run.session.site}${people}`,
-    work: pooled ? "Runner" : "Cluster",
+    work,
   });
 }
 
@@ -858,31 +893,39 @@ function setupChatGood(
 function setupMyRunnersPage(run: Run): string {
   const page = settingsRoutes.workspace.myRunner.replace(
     "$tenant",
-    encodeURIComponent(run.partition.tenant),
+    encodeURIComponent(run.tenant),
   );
   return `${run.session.site}${page}`;
 }
 
 /**
- * This machine registered as the person's chat host, where they hold none
- * and the workspace lets them; a file of one the site no longer holds is said
- * first.
+ * This machine registered as the person's chat host, where they hold none,
+ * or in place of `replaced` where `chat-host` was told to, and the workspace
+ * lets them; a file of one the site no longer holds is said first.
  */
 async function setupChatRegistered(
   run: Run,
   command: string,
   held: SetupFile | undefined,
-  pooled: boolean,
+  of: ChatOf,
+  replaced: string | undefined,
 ): Promise<Hosting | Halt> {
   if (held !== undefined)
     run.notes.push({ note: "ChatHostGone", path: held.path });
-  const permitted = await setupPermitted(run, pooled);
+  const work =
+    of.of === "ChatHost" ? undefined : of.pooled ? "Runner" : "Cluster";
+  const permitted = await setupPermitted(run, work);
   if (halted(permitted)) return permitted;
-  const acted = await setupTokenHanded(run, command, "ChatHost");
+  const acted = await setupTokenHanded(
+    run,
+    command,
+    "ChatHost",
+    (ports, asked) => apiMintChatHostToken(ports, run.tenant, asked),
+  );
   if (halted(acted)) return acted;
   const file = setupFileSaid(
     acted,
-    setupChatFiles(run.ports, run.places, run.partition.tenant),
+    setupChatFiles(run.ports, run.places, run.tenant),
   );
   if (file === undefined)
     return halt({
@@ -893,7 +936,11 @@ async function setupChatRegistered(
   const client = setupChatClient(run.ports, file);
   if (client === undefined)
     return halt({ stop: "Unseen", act: "RegisterChat", path: file.path });
-  run.notes.push({ note: "ChatHostRegistered", path: file.path });
+  run.notes.push(
+    replaced === undefined
+      ? { note: "ChatHostRegistered", path: file.path }
+      : { note: "ChatHostReplaced", path: file.path, short: replaced },
+  );
   return { file, client, fresh: true };
 }
 
@@ -930,34 +977,75 @@ async function setupChatLooked(
 }
 
 /**
+ * What a walk of the person's chat host is part of: `runner`, `pooled` where
+ * the project's runner was set up first, which set their services to outlive
+ * a logout; or `chat-host`, told by `replace` which chat host of theirs it may
+ * register this machine in place of.
+ */
+type ChatOf =
+  | { readonly of: "Runner"; readonly pooled: boolean }
+  | { readonly of: "ChatHost"; readonly replace: string | undefined };
+
+/**
+ * A chat host of the person's on another machine: `runner` never replaces
+ * one, leaving a live one serving and stopping on one that is not live, and
+ * `chat-host` stops on either, going on to register this machine in its
+ * place, answering nothing, only where `--replace` named it.
+ */
+function setupChatElsewhere(
+  run: Run,
+  had: ChatHostResponse,
+  of: ChatOf,
+): SetupRunnerEnded | Halt | undefined {
+  if (of.of === "Runner") {
+    if (!had.live)
+      return halt({
+        stop: "ChatHostOffline",
+        runners: setupMyRunnersPage(run),
+      });
+    run.notes.push({ note: "ChatHostElsewhere" });
+    return { ended: "Live" };
+  }
+  const short = myRunnerShort(had.id);
+  if (of.replace === short) return undefined;
+  return halt({
+    stop: of.replace === undefined ? "ChatHostHeld" : "ReplaceMismatched",
+    short,
+    live: had.live,
+  });
+}
+
+/**
  * This machine as the person's chat host, which their chats run on: kept
- * where it holds a file of the one the site holds for them, and registered as
- * theirs where they hold none. One on another machine is never replaced, since
- * a member holds one, so a live one is left serving and one that is not live
- * stops the run; `pooled` is whether the project's runner was set up first,
- * which set their services to outlive a logout.
+ * where it holds a file of the one the site holds for them, registered as
+ * theirs where they hold none, and where theirs is another machine, as `of`
+ * says.
  */
 async function setupChatWalked(
   run: Run,
   machine: Machine,
   packaged: Packaged,
-  pooled: boolean,
+  of: ChatOf,
 ): Promise<SetupRunnerEnded | Halt> {
   const host = await setupChatHad(run);
   if (halted(host)) return host;
-  const held = setupChatFiles(run.ports, run.places, run.partition.tenant);
+  const held = setupChatFiles(run.ports, run.places, run.tenant);
   const good = setupChatGood(run, host.had, held);
+  const elsewhere =
+    good === undefined && host.had !== undefined ? host.had : undefined;
   if (good !== undefined)
     run.notes.push({ note: "ChatHost", path: good.file.path });
-  else if (host.had?.live === true) {
-    run.notes.push({ note: "ChatHostElsewhere" });
-    return { ended: "Live" };
-  } else if (host.had !== undefined)
-    return halt({ stop: "ChatHostOffline", runners: setupMyRunnersPage(run) });
+  else if (elsewhere !== undefined) {
+    const kept = setupChatElsewhere(run, elsewhere, of);
+    if (kept !== undefined) return kept;
+  }
   const shared = setupChatLogin(run, machine.credential);
   if (halted(shared)) return shared;
+  const replaced =
+    elsewhere === undefined ? undefined : myRunnerShort(elsewhere.id);
   const hosting =
-    good ?? (await setupChatRegistered(run, packaged.command, held[0], pooled));
+    good ??
+    (await setupChatRegistered(run, packaged.command, held[0], of, replaced));
   if (halted(hosting)) return hosting;
   const checked = await setupChecked(
     run,
@@ -968,6 +1056,7 @@ async function setupChatWalked(
   if (halted(checked)) return checked;
   const served = await setupServiceHad(run, packaged, hosting.file, "ChatHost");
   if (halted(served)) return served;
+  const pooled = of.of === "Runner" && of.pooled;
   const lingering = pooled ? undefined : await setupLingerHad(run);
   if (halted(lingering)) return lingering;
   const changed = hosting.fresh || packaged.installed || served.written;
@@ -984,6 +1073,18 @@ async function setupChatWalked(
   return { ended: "Live" };
 }
 
+/** The person's chat host alone on this machine: the machine looked at, the package and the settings had, and then the chat host's own walk. */
+async function setupChatAlone(
+  run: Run,
+  of: ChatOf,
+): Promise<SetupRunnerEnded | Halt> {
+  const machine = await setupMachineProbed(run, setupChatPackageLeast);
+  if (halted(machine)) return machine;
+  const packaged = await setupMachineShared(run, machine);
+  if (halted(packaged)) return packaged;
+  return setupChatWalked(run, machine, packaged, of);
+}
+
 /** Where the project's work runs on the cluster: nothing is set up where the person's chats do too, and only their chat host where those run on one. */
 async function setupHostedWalked(
   run: Run,
@@ -991,14 +1092,10 @@ async function setupHostedWalked(
 ): Promise<SetupRunnerEnded | Halt> {
   if (!chats) return { ended: "Hosted" };
   run.notes.push({ note: "Hosted" });
-  const machine = await setupMachineProbed(run, setupChatPackageLeast);
-  if (halted(machine)) return machine;
-  const packaged = await setupMachineShared(run, machine);
-  if (halted(packaged)) return packaged;
-  return setupChatWalked(run, machine, packaged, false);
+  return setupChatAlone(run, { of: "Runner", pooled: false });
 }
 
-async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
+async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   const project = await setupProjectAsked(run);
   if (halted(project)) return project;
   const asked = await setupChatsAsked(run);
@@ -1025,15 +1122,68 @@ async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
   if (halted(seen)) return seen;
   run.notes.push({ note: "ProjectLive" });
   return chats
-    ? setupChatWalked(run, machine, packaged, true)
+    ? setupChatWalked(run, machine, packaged, { of: "Runner", pooled: true })
     : { ended: "Live" };
+}
+
+/** A run as it is begun, under the sign-in `session` it entered. */
+function setupRunMade(
+  ports: SetupPorts,
+  tenant: string,
+  writes: readonly string[],
+  asked: { readonly waitSecs: number },
+  livePollMs: number,
+  enter: () => Promise<SetupRunnerEntered>,
+  session: SetupRunnerSession,
+): Run {
+  return {
+    ports,
+    tenant,
+    writes,
+    waitSecs: asked.waitSecs,
+    livePollMs,
+    places: setupRunnerPlaces(ports.surroundings),
+    notes: [],
+    secrets: [session.bearer],
+    enter,
+    session,
+  };
+}
+
+/** What a run's report says of how it ended, for the project or the workspace `at`. */
+function setupRunSaid(
+  at: SetupRunnerAt,
+  site: string | undefined,
+  notes: readonly SetupRunnerNote[],
+  ended: SetupRunnerEnded,
+): SetupReport {
+  return { report: "Runner", site, ...at, notes, ended };
+}
+
+/** A walk's end as a run's report, with whatever the walk found and did before it, also where what ended it is a sign-in the site stopped taking part-way. */
+function setupRunReported(
+  run: Run,
+  at: SetupRunnerAt,
+  ended: SetupRunnerEnded | Halt,
+): SetupReport {
+  if ("reported" in ended)
+    return {
+      report: "RunnerOut",
+      ...at,
+      notes: run.notes,
+      out: ended.reported,
+    };
+  return setupRunSaid(
+    at,
+    run.session.site,
+    run.notes,
+    "halt" in ended ? { ended: "Stopped", stop: ended.halt } : ended,
+  );
 }
 
 /**
  * One run of `runner`, to its report. A machine that is not the package's
- * platform is said before anything is asked of a site, and whatever the walk
- * found and did before it ended is in the report, also where what ended it is
- * a sign-in the site stopped taking part-way.
+ * platform is said before anything is asked of a site.
  */
 export async function setupRunner(
   ports: SetupPorts,
@@ -1042,45 +1192,66 @@ export async function setupRunner(
   livePollMs: number,
 ): Promise<SetupReport> {
   const { workspace, project } = asked;
-  const said = (
-    site: string | undefined,
-    notes: readonly SetupRunnerNote[],
-    ended: SetupRunnerEnded,
-  ): SetupReport => ({
-    report: "Runner",
-    site,
-    workspace,
-    project,
-    notes,
-    ended,
-  });
+  const at: SetupRunnerAt = { workspace, project };
   if (ports.surroundings.platform !== setupRunnerPlatform)
-    return said(undefined, [], { ended: "Stopped", stop: { stop: "Mac" } });
+    return setupRunSaid(at, undefined, [], {
+      ended: "Stopped",
+      stop: { stop: "Mac" },
+    });
   const entered = await enter();
   if (entered.entered === "Out") return entered.report;
-  const run: Run = {
-    ports,
-    partition: { tenant: workspace, project },
-    waitSecs: asked.waitSecs,
-    livePollMs,
-    places: setupRunnerPlaces(ports.surroundings),
-    notes: [],
-    secrets: [entered.session.bearer],
-    enter,
-    session: entered.session,
-  };
-  const ended = await setupWalked(run);
-  if ("reported" in ended)
-    return {
-      report: "RunnerOut",
+  const partition = { tenant: workspace, project };
+  const run: ProjectRun = {
+    ...setupRunMade(
+      ports,
       workspace,
-      project,
-      notes: run.notes,
-      out: ended.reported,
-    };
-  return said(
-    run.session.site,
-    run.notes,
-    "halt" in ended ? { ended: "Stopped", stop: ended.halt } : ended,
+      setupRunnerWrites(partition),
+      asked,
+      livePollMs,
+      enter,
+      entered.session,
+    ),
+    partition,
+  };
+  return setupRunReported(run, at, await setupWalked(run));
+}
+
+/**
+ * One run of `chat-host`, to its report. A machine that is not the package's
+ * platform is told how to register one by hand, at the site the command named
+ * or the one remembered, before anything is asked of a site.
+ */
+export async function setupChatHost(
+  ports: SetupPorts,
+  asked: SetupChatHostAsked,
+  enter: () => Promise<SetupRunnerEntered>,
+  livePollMs: number,
+): Promise<SetupReport> {
+  const { workspace } = asked;
+  const at: SetupRunnerAt = { workspace, project: undefined };
+  if (ports.surroundings.platform !== setupRunnerPlatform) {
+    const site = asked.site ?? setupSessionRead(ports.files)?.site;
+    if (site === undefined) return { report: "SiteUnknown" };
+    const page = settingsRoutes.workspace.myRunner.replace(
+      "$tenant",
+      encodeURIComponent(workspace),
+    );
+    return setupRunSaid(at, undefined, [], {
+      ended: "Stopped",
+      stop: { stop: "MacChatHost", site, page: `${site}${page}` },
+    });
+  }
+  const entered = await enter();
+  if (entered.entered === "Out") return entered.report;
+  const run = setupRunMade(
+    ports,
+    workspace,
+    setupChatHostWrites(workspace),
+    asked,
+    livePollMs,
+    enter,
+    entered.session,
   );
+  const of: ChatOf = { of: "ChatHost", replace: asked.replace };
+  return setupRunReported(run, at, await setupChatAlone(run, of));
 }

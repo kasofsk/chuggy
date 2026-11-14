@@ -30,8 +30,10 @@ import { setupPacing } from "../app/core/setupPacing.ts";
 import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
+  setupChatHostWrites,
   setupLivePollMs,
   setupMintLifetimeSecs,
+  setupRunnerWrites,
   setupWritePorts,
 } from "../app/core/setupRunner.ts";
 import {
@@ -111,7 +113,10 @@ function secrets(machine: SetupMachine): readonly string[] {
 }
 
 /** One command as the entry prints it: it holds no secret whatever the run met, and where it says a thing was done it does not say nothing was. */
-async function ran(machine: SetupMachine, argv = runner): Promise<Ran> {
+async function ran(
+  machine: SetupMachine,
+  argv: readonly string[] = runner,
+): Promise<Ran> {
   const report = await machine.command(argv);
   const lines = setupReportLines(
     report,
@@ -2280,7 +2285,7 @@ function reaching(): { readonly api: ApiPorts; readonly reached: string[] } {
 test("the ports the writes go out through pass the mint for this project's runner, the mint for the person's chat host, and any read, and refuse every other write having reached nothing", async () => {
   const { api, reached } = reaching();
   const partition = { tenant: "two words", project: "a/b" };
-  const ports = setupWritePorts(api, "the run's", partition);
+  const ports = setupWritePorts(api, "the run's", setupRunnerWrites(partition));
   const tenant = "/api/v1/tenants/two%20words";
   const path = `${tenant}/projects/a%2Fb/worker-pool-registration-tokens`;
   const hosting = `${tenant}/chat-host-registration-tokens`;
@@ -2328,4 +2333,328 @@ test("the ports the writes go out through pass the mint for this project's runne
     "GET /api/v1/projects",
   ]);
   expect(await ports.bearer()).toBe("the run's");
+});
+
+test("the ports chat-host's writes go out through pass the mint for the person's chat host in the workspace and any read, and refuse the mint of a project's runner and every other write having reached nothing", async () => {
+  const { api, reached } = reaching();
+  const ports = setupWritePorts(
+    api,
+    "the run's",
+    setupChatHostWrites("two words"),
+  );
+  const tenant = "/api/v1/tenants/two%20words";
+  const init = (method: string) => ({
+    method,
+    headers: {},
+    signal: new AbortController().signal,
+  });
+  expect(
+    (await apiMintChatHostToken(ports, "two words", { lifetimeSecs: 1 }))
+      .outcome,
+  ).toBe("Ok");
+  await ports.fetch("/api/v1/projects", init("GET"));
+  for (const url of [
+    `${tenant}/projects/a%2Fb/worker-pool-registration-tokens`,
+    "/api/v1/tenants/acme/chat-host-registration-tokens",
+    `${tenant}/personal-runner-registration-tokens`,
+  ])
+    await expect(ports.fetch(url, init("POST")), url).rejects.toThrow(
+      "the checklist sends nothing but reads",
+    );
+  expect(reached).toEqual([
+    `POST ${tenant}/chat-host-registration-tokens`,
+    "GET /api/v1/projects",
+  ]);
+});
+
+const chatHost = ["chat-host", "--workspace", "acme"];
+const chatNext = `next: node ${machineScript} --workspace acme`;
+const chatLiveHere =
+  "found: the site sees this machine live as your chat host, so your chats in every project of acme can run on it";
+
+function chatAgain(when: string, replace?: string): string {
+  const replacing = replace === undefined ? "" : ` --replace ${replace}`;
+  return `rule: Run node ${machineScript} chat-host --workspace acme${replacing} only ${when}.`;
+}
+
+/** Whether a run asked the site anything of a project. */
+function projectAsked(machine: SetupMachine): boolean {
+  return machine.sent.some((asked) => asked.includes("/projects/"));
+}
+
+/** What a first run of chat-host does on a machine with an engine and a Claude login and nothing else. */
+const chatHostMade = [
+  signedIn,
+  found.engine,
+  found.login,
+  did.package,
+  did.settings,
+  did.chat,
+  found.chatCheck,
+  did.chatUnit,
+  did.linger,
+  did.chatStarted,
+  chatLiveHere,
+  chatNext,
+];
+
+test("chat-host makes this machine the person's chat host in the workspace on the runner walk's own acts in their order, reads nothing of any project, needs no admin of one whose work runs on runners, and makes the chat host's mint its one write", async () => {
+  const machine = await fresh();
+  for (const held of machine.world.projects) held.administer = false;
+  expect(await ran(machine, chatHost)).toEqual({
+    exit: 0,
+    lines: chatHostMade,
+  });
+  expect(machine.box.acts).toEqual([
+    "services",
+    "docker",
+    "install",
+    "register",
+    "doctor",
+    "service",
+    "linger",
+    "lingerOn",
+    "linger",
+    "enabled",
+    "active",
+    "reload",
+    "start",
+    "active",
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+  expect(projectAsked(machine)).toBe(false);
+  expect(machine.box.paths.has(pool)).toBe(false);
+  expect([...machine.box.units.keys()]).toEqual([chatUnit]);
+  expect(machine.world.chat.get("acme")).toEqual({
+    id: "chuggy-chat-1",
+    live: true,
+  });
+});
+
+test("a repeat run of chat-host on the machine that is the person's chat host keeps it, checks it, finds it running, and changes nothing at the site or on the machine", async () => {
+  const machine = await fresh();
+  await ran(machine, chatHost);
+  const before = new Map(machine.box.paths);
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  expect(await ran(machine, chatHost)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      found.engine,
+      found.settings,
+      found.login,
+      found.package,
+      found.chat,
+      found.chatCheck,
+      found.chatUnit,
+      found.linger,
+      found.chatRunning,
+      chatLiveHere,
+      chatNext,
+    ],
+  });
+  expect(writes(machine)).toEqual([]);
+  expect(times(machine, "register")).toBe(0);
+  expect(times(machine, "restart")).toBe(0);
+  expect(times(machine, "start")).toBe(0);
+  expect(machine.box.paths).toEqual(before);
+});
+
+test("a chat host of the person's on another machine, live or not, stops chat-host naming it by its short id and whether it is live, registers nothing, and names chat-host again with --replace and that id on the person's yes", async () => {
+  for (const live of [true, false]) {
+    const machine = await fresh();
+    const elsewhere = setupSiteChatAdded(machine.world, "acme", live);
+    const state = live ? "live" : "registered and not running";
+    const stopped = await ran(machine, chatHost);
+    expect(stopped.exit).toBe(0);
+    expect(stopped.lines.slice(-4)).toEqual([
+      `found: your chat host is another machine, ${elsewhere}, ${state}`,
+      `tell: Your chat host is another machine, ${elsewhere}, ${state}, and your chats run only on it. A member has one chat host, so registering this machine ends the sessions of ${elsewhere}. With your yes I will register this machine in its place, running this command again with --replace ${elsewhere}. Tell me if you want this machine to be it.`,
+      chatAgain(
+        `once the person says yes to this machine as their chat host in place of ${elsewhere}, ending its sessions`,
+        elsewhere,
+      ),
+      stop,
+    ]);
+    expect(writes(machine)).toEqual([]);
+    expect(times(machine, "register")).toBe(0);
+    expect(machine.world.chat.get("acme")).toEqual({ id: elsewhere, live });
+    expect(machine.box.paths.has(chat)).toBe(false);
+  }
+});
+
+test("a chat host's id the console shows short is the one a stop names and --replace is matched against", async () => {
+  const machine = await fresh();
+  const id = "chuggy-chat-0f3a9c21-4b5d-4e6f-8a9b-0c1d2e3f4a5b";
+  machine.world.chat.set("acme", { id, live: true });
+  const stopped = await ran(machine, chatHost);
+  expect(stopped.lines.at(-2)).toBe(
+    chatAgain(
+      "once the person says yes to this machine as their chat host in place of 0f3a9c21, ending its sessions",
+      "0f3a9c21",
+    ),
+  );
+  expect(stopped.lines.join("\n")).not.toContain(id);
+  const replaced = await ran(machine, [...chatHost, "--replace", "0f3a9c21"]);
+  expect(replaced.lines.at(-1)).toBe(chatNext);
+});
+
+test("chat-host with --replace naming the person's chat host on another machine registers this machine in its place, saying which it replaced, and with any other id stops on that, replacing nothing", async () => {
+  const machine = await fresh();
+  const elsewhere = setupSiteChatAdded(machine.world, "acme", true);
+  const wrong = await ran(machine, [...chatHost, "--replace", "chuggy-chat-9"]);
+  expect(wrong.exit).toBe(0);
+  expect(wrong.lines.slice(-4)).toEqual([
+    `found: the chat host --replace names is not your chat host, ${elsewhere}, so nothing was replaced`,
+    `tell: The chat host --replace names is not the one the site holds for you, so nothing was replaced. Your chat host is another machine, ${elsewhere}, live, and registering this machine ends its sessions. With your yes I will register this machine in its place, running this command again with --replace ${elsewhere}. Tell me if you want this machine to be it.`,
+    chatAgain(
+      `once the person says yes to this machine as their chat host in place of ${elsewhere}, ending its sessions`,
+      elsewhere,
+    ),
+    stop,
+  ]);
+  expect(wrong.lines.join("\n")).not.toContain("chuggy-chat-9");
+  expect(writes(machine)).toEqual([]);
+  expect(machine.world.chat.get("acme")).toEqual({ id: elsewhere, live: true });
+
+  const right = await ran(machine, [...chatHost, "--replace", elsewhere]);
+  expect(right.lines.slice(-7)).toEqual([
+    `did: registered this machine as your chat host, in ${chat}, in place of ${elsewhere}, whose sessions end`,
+    found.chatCheck,
+    did.chatUnit,
+    did.linger,
+    did.chatStarted,
+    chatLiveHere,
+    chatNext,
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+  expect(machine.world.chat.get("acme")).toEqual({
+    id: "chuggy-chat-2",
+    live: true,
+  });
+});
+
+test("runner keeps its rule of never replacing a chat host of the person's on another machine, and does not read --replace", async () => {
+  const machine = await both();
+  setupSiteChatAdded(machine.world, "acme", false);
+  expect(
+    (await ran(machine, [...runner, "--replace", "chuggy-chat-1"])).lines,
+  ).toEqual([
+    "found: chuggy setup takes --site, --workspace, --project and --wait-secs, and --replace with chat-host, each once with a value, and no other flag",
+    `next: node ${machineScript}`,
+  ]);
+  expect(machine.box.ran).toEqual([]);
+});
+
+test("a workspace that does not let the person register a chat host stops chat-host before anything is minted, saying where an admin turns it on and nothing of a project's work, and the run named again finishes the job", async () => {
+  const machine = await fresh();
+  machine.world.withheld.add("acme");
+  const withheld = await ran(machine, chatHost);
+  expect(withheld.exit).toBe(0);
+  expect(withheld.lines.slice(-4)).toEqual([
+    "found: the workspace does not let you register a chat host",
+    `tell: The workspace does not let you register a chat host yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${machineSite}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
+    chatAgain(
+      "once the person says Personal runners is on for them in the workspace",
+    ),
+    stop,
+  ]);
+  expect(writes(machine)).toEqual([]);
+  expect(times(machine, "register")).toBe(0);
+  machine.world.withheld.delete("acme");
+  const granted = await ran(machine, chatHost);
+  expect(granted.lines.slice(-7)).toEqual([
+    did.chat,
+    found.chatCheck,
+    did.chatUnit,
+    did.linger,
+    did.chatStarted,
+    chatLiveHere,
+    chatNext,
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+});
+
+test("off Linux chat-host says so before it asks a site anything or looks at the machine, and gives the by-hand steps from the workspace's personal runners page at the site named or remembered", async () => {
+  const page = `${machineSite}/tenants/acme/settings/runner`;
+  const lines = [
+    "found: this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
+    `tell: chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${page}, press Register chat host and copy the token it shows. Then, with the runner package installed there, on Linux run chuggy-linux register --api ${machineSite} --token=<token> --chat, which starts its service where it can and otherwise prints what is left, and on a Mac run chuggy-darwin register --api ${machineSite} --token=<token> --chat, then chuggy-darwin install-agent --pool with the file it wrote, and load the agent as that prints. Tell me once it is running.`,
+    `rule: Run node ${machineScript} --workspace acme only once the person says their chat host is running.`,
+    stop,
+  ];
+  const signed = await fresh();
+  const stranger = setupMachine();
+  for (const [machine, argv] of [
+    [signed, chatHost],
+    [stranger, [...chatHost, "--site", machineSite]],
+  ] as const) {
+    machine.platform = "darwin";
+    expect(await ran(machine, argv)).toEqual({ exit: 2, lines });
+    expect(machine.asked).toEqual([]);
+    expect(machine.box.ran).toEqual([]);
+    expect(machine.box.read).toEqual([]);
+    expect(machine.lock).toBeUndefined();
+  }
+  expect(lines.join("\n")).not.toContain("/acme/widgets/");
+});
+
+test("chat-host is not read without a workspace, with a project, or with --replace that is no id a line could carry back", async () => {
+  const machine = await fresh();
+  for (const [argv, said] of [
+    [
+      ["chat-host"],
+      "found: chat-host takes --workspace: the workspace the chat host is for",
+    ],
+    [
+      [...chatHost, "--project", "widgets"],
+      "found: chuggy setup takes --site, --workspace, --project and --wait-secs, and --replace with chat-host, each once with a value, and no other flag",
+    ],
+    [
+      [...chatHost, "--replace", ".."],
+      "found: --replace takes the short id of your chat host, as your Personal runners page shows it",
+    ],
+  ] as const)
+    expect(await ran(machine, argv), argv.join(" ")).toEqual({
+      exit: 2,
+      lines: [said, `next: node ${machineScript}`],
+    });
+  expect(machine.box.ran).toEqual([]);
+  expect(machine.sent).toEqual([]);
+});
+
+test("where the project's runner is live and the person's chat host is all that is lacking, the bare command offers chat-host for the workspace and never runner, and the command its rule names makes this machine their chat host again with no runner of the project registered", async () => {
+  const machine = await both();
+  await ran(machine);
+  machine.world.chat.delete("acme");
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  const offered = await ran(machine, []);
+  expect(offered.lines.slice(-3)).toEqual([
+    "tell: Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet. I can make this machine it: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Tell me yes to go ahead.",
+    chatAgain("once the person says yes to this machine as their chat host"),
+    stop,
+  ]);
+  const ruled = /^rule: Run node \S+ (.+) only once /u.exec(
+    offered.lines.at(-2) ?? "",
+  );
+  expect(ruled?.[1]?.split(" ")).toEqual(chatHost);
+  const made = await ran(machine, ruled?.[1]?.split(" "));
+  expect(made.lines.slice(-8)).toEqual([
+    found.chatGone,
+    did.chat,
+    found.chatCheck,
+    found.chatUnit,
+    found.linger,
+    did.chatRestarted,
+    chatLiveHere,
+    chatNext,
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+  expect(times(machine, "register")).toBe(1);
+  const after = await ran(machine, []);
+  expect(after.lines.find((line) => line.startsWith("step: runner "))).toBe(
+    "step: runner      done     live",
+  );
 });

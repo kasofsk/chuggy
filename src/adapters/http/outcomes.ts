@@ -1454,6 +1454,9 @@ export function chatHostResponse(result: ChatHostRead): NativeHttpResponse {
           : { polledAt: result.value.polledAt }),
         live: result.value.live,
         ...runnerListedBody(result.value.runner),
+        ...(result.value.sessionCapabilities === undefined
+          ? {}
+          : { sessionCapabilities: [...result.value.sessionCapabilities] }),
       } satisfies ChatHostResponse);
     default:
       return assertNever(result);
@@ -2895,6 +2898,9 @@ export function threadResponse(result: ThreadRead): NativeHttpResponse {
           : { nextBefore: result.nextBefore }),
         streams: result.streams,
         ...(result.jobsStanding ? { jobsStanding: true } : {}),
+        ...(result.chatHostCapabilities === undefined
+          ? {}
+          : { chatHostCapabilities: result.chatHostCapabilities }),
       });
 }
 

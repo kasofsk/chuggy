@@ -3,7 +3,7 @@
  *
  * A run that uses the remembered sign-in holds the lock while it does, and
  * gives it up before it waits on a person, reads a checklist or touches the
- * machine for `runner`. Before it asks a site or an issuer
+ * machine for `runner` or `chat-host`. Before it asks a site or an issuer
  * anything it keeps room for what it may have to write, so a home that takes
  * no new file is found while the remembered sign-in is still good. Whatever
  * goes wrong on the machine ends as one report: which path it would not make,
@@ -25,8 +25,12 @@ import type { SetupPorts } from "./setupPorts.ts";
 import { readSetup, setupReadPorts } from "./setupReads.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
-import { setupRunner } from "./setupRunner.ts";
-import type { SetupRunnerAsked, SetupRunnerEntered } from "./setupRunner.ts";
+import { setupChatHost, setupRunner } from "./setupRunner.ts";
+import type {
+  SetupChatHostAsked,
+  SetupRunnerAsked,
+  SetupRunnerEntered,
+} from "./setupRunner.ts";
 import { setupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
 import type {
@@ -257,21 +261,21 @@ async function setupStatus(
 }
 
 /**
- * One entry of the sign-in `runner` works under. Whatever does not end signed
- * in is answered as a report, a fault of this machine's among them, so a run
- * that enters again part-way has one way out and says what it had done ahead
- * of it.
+ * One entry of the sign-in `runner` or `chat-host` works under. Whatever does
+ * not end signed in is answered as a report, a fault of this machine's among
+ * them, so a run that enters again part-way has one way out and says what it
+ * had done ahead of it.
  */
 async function setupRunnerEntry(
   ports: SetupPorts,
-  asked: SetupRunnerAsked,
+  asked: SetupRunnerAsked | SetupChatHostAsked,
 ): Promise<SetupRunnerEntered> {
   try {
-    const held = await setupEntered(ports, asked.site, "Runner");
+    const held = await setupEntered(ports, asked.site, asked.asked);
     if (held === undefined)
       return {
         entered: "Out",
-        report: setupBusy(ports, "Runner", asked.site),
+        report: setupBusy(ports, asked.asked, asked.site),
       };
     if (held.signed === "Out") return { entered: "Out", report: held.report };
     const { site, api } = held.opened;
@@ -282,21 +286,20 @@ async function setupRunnerEntry(
 }
 
 /**
- * `runner` works under the remembered sign-in as the bare command does, and
- * enters it again the same way where the site stops taking the bearer it
- * held, so the lock is never held while the machine is worked on.
+ * `runner` and `chat-host` work under the remembered sign-in as the bare
+ * command does, and enter it again the same way where the site stops taking
+ * the bearer they held, so the lock is never held while the machine is worked
+ * on.
  */
 function setupRunnerRun(
   ports: SetupPorts,
-  asked: SetupRunnerAsked,
+  asked: SetupRunnerAsked | SetupChatHostAsked,
   pacing: SetupPacing,
 ): Promise<SetupReport> {
-  return setupRunner(
-    ports,
-    asked,
-    () => setupRunnerEntry(ports, asked),
-    pacing.livePollMs,
-  );
+  const enter = () => setupRunnerEntry(ports, asked);
+  return asked.asked === "Runner"
+    ? setupRunner(ports, asked, enter, pacing.livePollMs)
+    : setupChatHost(ports, asked, enter, pacing.livePollMs);
 }
 
 type SetupSignInStep =
@@ -394,6 +397,7 @@ export async function setupRun(
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
       case "Runner":
+      case "ChatHost":
         return await setupRunnerRun(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
