@@ -197,8 +197,9 @@ on the cluster, and her chats in it have a runner of her own serving it live, or
 on the cluster too. At that step it looks at the machine and changes nothing.
 Where a runner could be put there, one `tell:` says what `runner` would put on
 the machine, a service for the project's work and one for her own chats or
-whichever of the two is lacking, and the `rule:` names that command for once
-she says yes; where one could not (a Mac, user services that do not answer, no
+the first alone, or, where her chat host is all that is lacking, what
+`chat-host` would put there for the workspace, and the `rule:` names that
+command for once she says yes; where one could not (a Mac, user services that do not answer, no
 container engine that answers her without a password, or none the runner
 package takes from her user) the `tell:` says that instead.
 
@@ -259,6 +260,16 @@ came: a failure, or a check that passed with a warning, keeps one short excerpt
 with the run's secrets struck out; a service's state is said only where it is
 one word; and of the registration, which is handed the token, nothing it printed
 is kept but which of the package's own refusals it was.
+
+`chat-host --workspace <w>` makes the Linux machine it is run on her chat host
+in that workspace, by the walk `runner` makes for it where a project's work
+runs on the cluster, and reads no project. Its one write is the chat host's
+registration token. Where this machine holds the file of the chat host the site
+holds for her, that one is kept, checked and started. Where her chat host is
+another machine the run stops and names it by its short id and whether it is
+live, since registering this machine ends that host's sessions; the same
+command with `--replace <id>` naming it registers this machine in its place, and
+naming any other id is a stop of its own. On a Mac it gives the steps by hand.
 
 ## The session
 

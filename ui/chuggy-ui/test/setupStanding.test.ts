@@ -872,10 +872,7 @@ test("where the person's chats run on runners the runner step is done only once 
         step?.lacks,
       ];
     }
-  const chat = (lacks: "ChatHost" | "ChatHostLive") => ({
-    lacks,
-    pooled: true,
-  });
+  const chat = (lacks: "ChatHost" | "ChatHostLive") => ({ lacks });
   expect(said).toEqual({
     "Unregistered Unregistered": ["todo", "", { lacks: "Runner", chat: true }],
     "Unregistered Offline": ["todo", "", { lacks: "Runner", chat: true }],

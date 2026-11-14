@@ -8,9 +8,9 @@
  * person says the step is done. The runner's step changes the machine, so it
  * is offered and never run unasked: the person is told what `runner` would
  * put here, a service for the project's work and one for their chat host or
- * whichever of the two is lacking, and the command is named under a rule that
- * waits on their yes; where the machine could not take a runner, they are
- * told that instead.
+ * the first alone, or, where their chat host is all that is lacking, what
+ * `chat-host` would, and the command is named under a rule that waits on their
+ * yes; where the machine could not take a runner, they are told that instead.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -30,18 +30,19 @@ import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
-import {
-  runnerPackageOffered,
-  runnerPackages,
-  runnerRegisterCommand,
-} from "./runners.ts";
+import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
-import { setupDockerBarredTold, setupEnginesNone } from "./setupRunnerSaid.ts";
+import {
+  setupChatByHand,
+  setupChatHostPressed,
+  setupDockerBarredTold,
+  setupEnginesNone,
+} from "./setupRunnerSaid.ts";
 import { setupAppNames, setupPhaseSaid, setupSeen } from "./setupStanding.ts";
 import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
 import { setupFlat } from "./setupText.ts";
@@ -61,7 +62,7 @@ export const setupPressed = {
   add: { id: "repositories-add" },
   retry: { id: "repositories-retry" },
   runner: { id: "runners-add" },
-  chatHost: { id: "runners-chat-host-register" },
+  chatHost: setupChatHostPressed,
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
   workspaceCreate: { id: "settings-invite-create" },
@@ -335,39 +336,21 @@ function setupRunnerPut(
     : { id: "setup-mend-runner-put", args };
 }
 
-/** How a chat host is registered on a machine `runner` does not set one up on, by each runner package's own commands, with the token the console's page shows in place of `<token>`. */
-function setupChatByHand(at: SetupAt): Copy {
-  const token = "<token>";
-  const linux = runnerRegisterCommand(
-    runnerPackages.linux,
-    at.site,
-    token,
-    "ChatHost",
-  );
-  const darwin = runnerRegisterCommand(
-    runnerPackages.darwin,
-    at.site,
-    token,
-    "ChatHost",
-  );
+/** Something `chat-host` would do on this machine for the checklist's workspace, which waits on the person's yes. */
+function setupChatOffer(tell: Copy, at: SetupAt): SetupThing {
   return {
-    id: "setup-mend-chat-by-hand",
-    args: {
-      page: setupPage(at, settingsRoutes.project.myRunner),
-      register: setupPressed.chatHost,
-      linux,
-      darwin,
-      agent: `${runnerPackages.darwin.program} install-agent --pool`,
-    },
+    thing: "Offer",
+    tell,
+    when: { id: "setup-offer-chat-host-when" },
+    workspace: at.workspace,
+    project: undefined,
   };
 }
 
 /**
  * The person's chat host lacking where the project's work has what it needs.
- * `runner` makes this machine their chat host, which takes their chats in
- * every project of the workspace; it registers this machine for the project's
- * work too where the work goes to runners and this machine holds no
- * registration of the project, and the person is told so.
+ * `chat-host` makes this machine their chat host, which takes their chats in
+ * every project of the workspace, and registers no runner of the project.
  */
 function setupChatMend(
   lack: Extract<SetupLack, { readonly lacks: "ChatHost" | "ChatHostLive" }>,
@@ -376,14 +359,13 @@ function setupChatMend(
 ): SetupThing {
   const project = setupNamed(at);
   const chats: Copy = { id: "setup-mend-chats", args: { project } };
-  const besides = setupWith(lack.pooled && here?.held !== true);
   const running: Copy = { id: "setup-mend-chat-host-when" };
   if (lack.lacks === "ChatHostLive")
     return here?.chat === true
-      ? setupOffer(
+      ? setupChatOffer(
           {
             id: "setup-mend-chat-live-offer",
-            args: { chats, program: setupProgram, besides, project },
+            args: { chats, program: setupProgram },
           },
           at,
         )
@@ -392,15 +374,13 @@ function setupChatMend(
           running,
         );
   if (here?.room.room === "Open")
-    return setupOffer(
+    return setupChatOffer(
       {
         id: "setup-mend-chat-offer",
         args: {
           chats,
           program: setupProgram,
           runs: setupRunsOn(here.claude),
-          besides,
-          project,
         },
       },
       at,
@@ -411,7 +391,10 @@ function setupChatMend(
       args: {
         chats,
         here: here === undefined ? "unseen" : "seen",
-        byHand: setupChatByHand(at),
+        byHand: setupChatByHand(
+          at.site,
+          setupPage(at, settingsRoutes.project.myRunner),
+        ),
       },
     },
     running,
