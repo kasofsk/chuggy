@@ -52,6 +52,7 @@ import {
   sessionTurnInputKinds,
 } from "./rosters.ts";
 import { sessionLiveEventSchema } from "./sessionLive.ts";
+import { allThreadJobWakeReasons } from "./threadWake.ts";
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
@@ -88,6 +89,7 @@ export {
   sessionContainerEnds,
   sessionContextCauses,
 } from "./rosters.ts";
+export { allThreadJobWakeReasons } from "./threadWake.ts";
 export {
   isSessionLiveText,
   sessionLiveBlockKinds,
@@ -106,6 +108,7 @@ export const sessionPlaneRoutes = {
   turnStopped: { method: "POST", path: "/v1/session/turn/stopped" },
   held: { method: "POST", path: "/v1/session/held" },
   standing: { method: "PUT", path: "/v1/session/standing" },
+  wake: { method: "POST", path: "/v1/session/wake" },
   storeStreams: { method: "GET", path: "/v1/session/store" },
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
   storePage: { method: "GET", path: "/v1/session/store/*" },
@@ -250,6 +253,28 @@ export const sessionStandingSchema = z.strictObject({
   standing: z.boolean(),
 });
 
+/**
+ * One wake a thread's attempt on its member's chat host offers its own thread:
+ * why, and the name of the job, watch or timer it is about, which is all the
+ * turn carries. `event` is the attempt's own identity for what happened, and
+ * the turn is derived from it and the session, so the same event posted again
+ * is the same turn.
+ */
+export const sessionWakeSchema = z.strictObject({
+  wake: z.enum(allThreadJobWakeReasons),
+  resource: sessionIdentitySchema,
+  event: sessionIdentitySchema,
+});
+
+/** What the thread's mailbox made of a wake: a turn, the same turn again, or no turn to put in it. */
+export const sessionWokenAnswerSchema = z.union([
+  z.object({
+    woken: z.enum(["Woken", "AlreadyWoken"]),
+    ordinal: z.number().int().positive().max(sessionTurnSeriesMax),
+  }),
+  z.object({ woken: z.enum(["NoThread", "Closed", "Backlogged"]) }),
+]);
+
 /** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
@@ -387,6 +412,18 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,
     409: workerPlaneRefusalSchema(["Fenced", "NotChatHostThread"]),
+  },
+  wake: {
+    200: sessionWokenAnswerSchema,
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    404: workerPlaneRefusalSchema(["NotConfigured"]),
+    409: workerPlaneRefusalSchema([
+      "Fenced",
+      "NotChatHostThread",
+      "NotAdmitted",
+    ]),
+    503: workerPlaneRetrySchema,
   },
   storeStreams: {
     200: sessionStoreStreamsAnswerSchema,

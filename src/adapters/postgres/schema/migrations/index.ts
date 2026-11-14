@@ -176,6 +176,7 @@ import { migration175 } from "./175-restack.ts";
 import { migration176 } from "./176-thread-standing.ts";
 import { migration177 } from "./177-run-credential-absent.ts";
 import { migration178 } from "./178-session-bearer-capabilities.ts";
+import { migration179 } from "./179-thread-job-wake.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -357,4 +358,5 @@ export const migrations: readonly Migration[] = [
   migration176,
   migration177,
   migration178,
+  migration179,
 ];

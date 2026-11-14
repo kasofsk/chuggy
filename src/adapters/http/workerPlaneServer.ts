@@ -39,6 +39,7 @@ import {
   sessionPlaneRoutes,
   sessionReferenceSchema,
   sessionStandingSchema,
+  sessionWakeSchema,
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
   sessionTurnLiveSchema,
@@ -140,6 +141,10 @@ import {
   type CredentialResolver,
   type CredentialsResolved,
 } from "../../interpreter/credentialIssuers.ts";
+import {
+  threadJobWake,
+  type ThreadJobWakeService,
+} from "../../interpreter/threadWake.ts";
 import {
   artifactPathRejection,
   asArtifactDigest,
@@ -417,6 +422,14 @@ export const sessionPlaneServed = {
     stored: false,
     bodyBytesMax: planeJsonObjectBytesMax(),
   },
+  wake: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(
+      sessionIdentityCharsMax,
+      sessionIdentityCharsMax,
+    ),
+  },
   storeStreams: { caller: "Session", ...workerPlaneBodyless },
   storeBatch: {
     caller: "Session",
@@ -562,6 +575,12 @@ export interface SessionPlaneService {
   readonly heartbeatLeaseSecs: number;
   readonly references: SessionReferencePort;
   readonly standings: SessionStandingPort;
+  /**
+   * How a thread's attempt on a chat host wakes its own thread, absent where
+   * the plane was composed without the project access its checks ask, which
+   * the route answers as not configured rather than waking unchecked.
+   */
+  readonly wakes?: ThreadJobWakeService;
   readonly turns: SessionTurnClaimPort;
   readonly settlements: SessionTurnSettlePort;
   readonly watches: SessionTurnWatchPort;
@@ -1584,6 +1603,34 @@ function sessionStandingRoute(
   });
 }
 
+/** How long a runner leaves a plane whose project access could not answer before offering a wake again. */
+const sessionWakeRetryAfterSeconds = 1;
+
+function sessionWakeRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  register("wake", async (request, reply, caller) => {
+    const offered = sessionWakeSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const wakes = sessions.wakes;
+    if (wakes === undefined)
+      return reply.code(404).send({ action: "stop", reason: "NotConfigured" });
+    const woken = await threadJobWake(
+      wakes,
+      { secret: caller.secret, generation: caller.identity.generation },
+      offered.data,
+    );
+    if ("woken" in woken) return reply.code(200).send(woken);
+    return woken.refused === "AccessUnavailable"
+      ? reply
+          .header("retry-after", String(sessionWakeRetryAfterSeconds))
+          .code(503)
+          .send({ action: "retry" })
+      : reply.code(409).send({ action: "stop", reason: woken.refused });
+  });
+}
+
 /** What one asking of a held request found: its answer, which may be that there is none, or nothing yet. */
 type SessionWaitAsked<Answer> =
   { readonly answer: Answer | undefined } | undefined;
@@ -2039,6 +2086,7 @@ export function createWorkerPlaneApp(
     sessionHeartbeatRoute(registerSession, sessions);
     sessionReferenceRoute(registerSession, sessions);
     sessionStandingRoute(registerSession, sessions);
+    sessionWakeRoute(registerSession, sessions);
     sessionTurnRoute(registerSession, sessions);
     sessionSettleRoutes(registerSession, sessions);
     sessionTurnLiveRoute(registerSession, sessions);
