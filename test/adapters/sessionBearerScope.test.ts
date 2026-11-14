@@ -390,7 +390,22 @@ const chuggyToolCalls = {
     ["sessionPlacement", "GET"],
     ["sessionPlacement", "PUT"],
   ],
+  read_usage: [["agentAccounts", "GET"]],
+  update_usage_settings: [
+    ["agentAccounts", "GET"],
+    ["agentAccountSettings", "PUT"],
+  ],
+  retry_paused_agent: [["agentAccountPresses", "POST"]],
+  retire_credential: [["agentAccountCredential", "DELETE"]],
 } as const satisfies Readonly<Record<ChuggyTool, readonly ChuggyToolCall[]>>;
+
+/** The routes the account tools call, each the caller's own at no tenant and no project, which no session bearer reaches. */
+const accountToolRoutes: ReadonlySet<keyof typeof chuggyToolRoutes> = new Set([
+  "agentAccounts",
+  "agentAccountSettings",
+  "agentAccountPresses",
+  "agentAccountCredential",
+]);
 
 /** The capabilities a session may hold, each beside every call the tools it admits make, keyed as the scope table keys a route. */
 const sessionToolCalls: readonly (readonly [SessionCapability, string])[] =
@@ -463,6 +478,45 @@ test("each admitted method requires the capabilities whose tools call it and, fo
       route,
     );
   }
+});
+
+test("every call the account tools make is to an account route, which a project's and a member's session bearer are both refused, holding every capability its scope may", () => {
+  const called: readonly ChuggyToolCall[] =
+    chuggyToolCapabilities.AgentAccounts.flatMap(
+      (tool): readonly ChuggyToolCall[] => chuggyToolCalls[tool],
+    );
+  assert.deepEqual(
+    new Set(called.map(([route]) => route)),
+    new Set(accountToolRoutes),
+  );
+  for (const [route, method] of called) {
+    const pattern = chuggyToolRoutes[route];
+    assert.equal(
+      sessionBearerMethodClasses.get(`${method} ${pattern}`),
+      "Refused",
+      `${method} ${pattern}`,
+    );
+    for (const [scope, capabilities] of [
+      ["Project", projectCapabilities],
+      ["Member", memberCapabilities],
+    ] as const)
+      assert.equal(
+        sessionBearerAdmission(
+          sessionHolding(capabilities, scope),
+          method,
+          pattern,
+          { tenant: own.tenant, project: own.project },
+        ),
+        "Refused",
+        `${scope} is admitted to ${method} ${pattern}`,
+      );
+  }
+  for (const [, route] of sessionToolCalls)
+    for (const account of accountToolRoutes)
+      assert.ok(
+        !route.endsWith(` ${chuggyToolRoutes[account]}`),
+        `a session's tool calls ${route}`,
+      );
 });
 
 test("no session capability admits a tool the person's own agent alone may call", () => {

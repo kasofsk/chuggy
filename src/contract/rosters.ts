@@ -847,7 +847,10 @@ export type SessionCapability = (typeof sessionCapabilities)[number];
  * `chuggy-linux mcp` as that person. It is kept out of `sessionCapabilities`
  * so that no session's facts can name it.
  */
-export const personalAgentCapabilities = ["ProjectSettings"] as const;
+export const personalAgentCapabilities = [
+  "ProjectSettings",
+  "AgentAccounts",
+] as const;
 export type PersonalAgentCapability =
   (typeof personalAgentCapabilities)[number];
 

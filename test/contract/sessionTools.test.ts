@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  agentAccountCredentialsMax,
   configurationCanonicalCharsMax,
   dispatchViewSchemaVersion,
   leadAutoCompactWindowTokensMax,
@@ -28,25 +29,34 @@ import {
   sessionEfforts,
   sessionStoreBatchBytesMax,
   sessionTurnToolsMax,
+  workerRunCredentialSchema,
 } from "../../src/contract/http.ts";
 import * as authoring from "../../src/contract/authoring.ts";
 import * as brief from "../../src/contract/brief.ts";
 import * as configurationSelection from "../../src/contract/configurationSelection.ts";
 import * as epics from "../../src/contract/epics.ts";
 import {
+  agentAccountsResponseSchema,
   epicViewResponseSchema,
   selectorProjectSettingsResponseSchema,
+  type AgentAccountsResponse,
 } from "../../src/contract/responses.ts";
 import {
+  accountAgents,
+  agentPauseReasons,
   leadOfferings,
   personalAgentCapabilities,
   phaseRoster,
   placementRoutes,
+  runUsageWindows,
   selectorDispatchModes,
   selectorModes,
   sessionCapabilities,
 } from "../../src/contract/rosters.ts";
-import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
+import {
+  agentAccountSettingsSchema,
+  selectorProjectOverridesSchema,
+} from "../../src/contract/requests.ts";
 import { sessionFactsAnswerSchema } from "../../src/contract/sessionPlane.ts";
 import * as epicDomain from "../../src/domain/epics.ts";
 import {
@@ -133,6 +143,10 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "update_lead_settings",
     "read_placement",
     "update_placement",
+    "read_usage",
+    "update_usage_settings",
+    "retry_paused_agent",
+    "retire_credential",
   ]);
 });
 
@@ -242,6 +256,12 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "read_placement",
     "update_placement",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.AgentAccounts, [
+    "read_usage",
+    "update_usage_settings",
+    "retry_paused_agent",
+    "retire_credential",
+  ]);
 });
 
 /**
@@ -263,6 +283,30 @@ test("no session can hold the capability that admits the settings tools", () => 
     assert.ok(!sessionTools.has(tool), tool);
 });
 
+/** A session must not change the thresholds it runs under or retire the credential whose reading pauses it, so the account tools are a person's own agent's alone. */
+test("no session can hold the capability that admits the account tools, and no other capability admits them", () => {
+  assert.ok(
+    !(sessionCapabilities as readonly string[]).includes("AgentAccounts"),
+  );
+  assert.ok(
+    !sessionFactsAnswerSchema.shape.capabilities.safeParse(["AgentAccounts"])
+      .success,
+  );
+  const sessionTools = new Set(chuggyToolNames(sessionCapabilities));
+  for (const tool of chuggyToolNames(["AgentAccounts"]))
+    assert.ok(!sessionTools.has(tool), tool);
+  for (const capability of [
+    ...sessionCapabilities,
+    ...personalAgentCapabilities,
+  ])
+    if (capability !== "AgentAccounts")
+      for (const tool of chuggyToolCapabilities.AgentAccounts)
+        assert.ok(
+          !chuggyToolCapabilities[capability].includes(tool),
+          `${capability} admits ${tool}`,
+        );
+});
+
 test("each capability admits the runtime's own tools the roster gives it and no other", () => {
   assert.deepEqual(builtInToolCapabilities, {
     RepositoryRead: ["Glob", "Grep", "Read"],
@@ -276,6 +320,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     MemberRead: [],
     ThreadOffer: [],
     ProjectSettings: [],
+    AgentAccounts: [],
   });
 });
 
@@ -327,6 +372,15 @@ test("the qualified names are the roster's own, prefixed, and never repeated", (
       "update_lead_settings",
       "read_placement",
       "update_placement",
+    ].map((tool) => `${chuggyToolPrefix}${tool}`),
+  );
+  assert.deepEqual(
+    chuggyToolNames(["AgentAccounts"]),
+    [
+      "read_usage",
+      "update_usage_settings",
+      "retry_paused_agent",
+      "retire_credential",
     ].map((tool) => `${chuggyToolPrefix}${tool}`),
   );
   const every = chuggyToolNames([
@@ -622,6 +676,121 @@ test("the heaviest lead settings the wire admits are under the bound the setting
   assert.ok(bytes <= chuggyToolLeadSettingsResponseBytesMax);
 });
 
+test("the account tools reach the route table's own agent-account routes", () => {
+  assert.equal(chuggyToolRoutes.agentAccounts, nativeHttpRoutes.agentAccounts);
+  assert.equal(
+    chuggyToolRoutes.agentAccountSettings,
+    nativeHttpRoutes.agentAccountSettings,
+  );
+  assert.equal(
+    chuggyToolRoutes.agentAccountPresses,
+    nativeHttpRoutes.agentAccountPresses,
+  );
+  assert.equal(
+    chuggyToolRoutes.agentAccountCredential,
+    nativeHttpRoutes.agentAccountCredential,
+  );
+});
+
+/**
+ * What one instant writes inside its quotes, escaping included: the server
+ * writes each as `toISOString` renders one, which JSON never escapes. The
+ * schema bounds none, so this is a ceiling rather than a measurement.
+ */
+const agentAccountInstantBytesCeiling = 64;
+
+/**
+ * What one utilization writes, a JSON number the schema bounds below and not
+ * above. It is a ceiling rather than a measurement, past the longest any
+ * double is written in.
+ */
+const agentAccountUtilizationBytesCeiling = 32;
+
+/** The longest name a credential may have, which no character of JSON escapes. */
+const agentAccountCredentialNameCharsMax = 64;
+
+/** Each window's reading, every instant at its ceiling and the utilization written as the one character `0`. */
+function heaviestAgentAccountReadings(instant: string) {
+  return runUsageWindows.map((window) => ({
+    window,
+    utilization: 0,
+    resetsAt: instant,
+    observedAt: instant,
+  }));
+}
+
+/**
+ * The heaviest accounts the wire admits: every agent with every credential it
+ * may name, each at its longest name with every window's reading and a pause
+ * of every reason, and the account's own readings, limit and pause naming every
+ * credential. Instants are at their ceiling and each utilization is `0`, which
+ * the bound adds the rest of its ceiling to.
+ */
+function heaviestAgentAccounts(): AgentAccountsResponse {
+  const instant = "9".repeat(agentAccountInstantBytesCeiling);
+  const names = Array.from({ length: agentAccountCredentialsMax }, (_, index) =>
+    workerRunCredentialSchema.parse(
+      String(index).padStart(agentAccountCredentialNameCharsMax, "-"),
+    ),
+  );
+  const pause = {
+    until: instant,
+    reasons: [...agentPauseReasons],
+    pressed: false,
+  };
+  return {
+    accounts: accountAgents.map((agent) => ({
+      agent,
+      settings: agentAccountSettingsSchema.parse({
+        fiveHourPercent: 100,
+        sevenDayPercent: 100,
+        pausesThreads: false,
+      }),
+      readings: heaviestAgentAccountReadings(instant),
+      limit: {
+        window: longestOf(runUsageWindows),
+        resetsAt: instant,
+        observedAt: instant,
+      },
+      pause: { ...pause, credentials: names },
+      credentials: names.map((name) => ({
+        name,
+        readings: heaviestAgentAccountReadings(instant),
+        pause,
+      })),
+    })),
+  } satisfies AgentAccountsResponse;
+}
+
+/**
+ * `read_usage` reads every account under an ordinary answer's bound, so the
+ * heaviest accounts must fit it whole, every utilization written at its
+ * ceiling and every string as escaped as JSON writes it.
+ */
+test("the heaviest agent accounts the wire admits are under the bound the account tools read them with", () => {
+  assert.ok(
+    !workerRunCredentialSchema.safeParse(
+      "-".repeat(agentAccountCredentialNameCharsMax + 1),
+    ).success,
+  );
+  const accounts = agentAccountsResponseSchema.parse(heaviestAgentAccounts());
+  const utilizations = accounts.accounts.reduce(
+    (count, account) =>
+      count +
+      account.readings.length +
+      (account.credentials ?? []).reduce(
+        (readings, credential) => readings + credential.readings.length,
+        0,
+      ),
+    0,
+  );
+  const text = JSON.stringify(accounts);
+  const bytes =
+    Buffer.byteLength(text, "utf8") +
+    utilizations * (agentAccountUtilizationBytesCeiling - "0".length);
+  assert.ok(bytes <= chuggyToolResponseBytesMax, String(bytes));
+});
+
 test("the request shapes a drafting tool publishes, and their bounds, are the package entry's own", async () => {
   const entry =
     (await import("@chuggy/worker-contract/sessionTools")) as Record<
@@ -656,6 +825,8 @@ test("the request shapes a drafting tool publishes, and their bounds, are the pa
     selectorSettingsTextCharsMax,
     placementRoutes,
     leadOfferings,
+    agentAccountSettingsSchema,
+    accountAgents,
   };
   for (const [name, value] of Object.entries(published))
     assert.equal(entry[name], value, name);
