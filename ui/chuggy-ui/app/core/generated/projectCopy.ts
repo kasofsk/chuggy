@@ -10,6 +10,14 @@ export interface ProjectCopy {
   readonly "project-creation-submit": Record<never, never>;
   readonly "project-creation-name-rule": Record<never, never>;
   readonly "project-creation-name-too-long": Record<never, never>;
+  readonly "project-creation-display-name-rule": Record<never, never>;
+  readonly "project-creation-display-name-control": Record<never, never>;
+  readonly "project-creation-address-label": Record<never, never>;
+  readonly "project-creation-address-made": {
+    readonly address: unknown;
+  };
+  readonly "project-creation-address-edit": Record<never, never>;
+  readonly "project-creation-address-none": Record<never, never>;
   readonly "project-creation-tenant-reserved": Record<never, never>;
   readonly "project-creation-tenant-needs-invite": Record<never, never>;
   readonly "project-creation-refusal-taken": Record<never, never>;

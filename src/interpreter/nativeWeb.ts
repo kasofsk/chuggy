@@ -75,7 +75,7 @@ import {
   type LeadInquiryRecord,
   type LeadInquiryStore,
 } from "./leadInquiry.ts";
-import type { Partition } from "./projectStore.ts";
+import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
   NativeActionResolution,
@@ -311,7 +311,7 @@ export interface ProjectInventory {
 }
 
 export interface ProjectInventoryPage {
-  readonly projects: readonly Partition[];
+  readonly projects: readonly NamedPartition[];
   readonly nextAfter?: Partition;
 }
 
