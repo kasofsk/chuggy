@@ -25,12 +25,36 @@
  * A `Stop` while its session is being prepared cancels the preparation and is
  * answered by `Refused` with `Stopped`; one for an assignment the supervisor
  * neither prepares nor runs is answered by nothing. After `Drain` the
- * supervisor refuses every `Start` that is not a `Duplicate` with `Draining`
- * and lets each running session end on its own; once every `Start` read
- * before `Drain` is answered and every `Started` has its `Ended`, it writes
- * `Drained` and exits. At the end of its standard input it answers every
- * preparation with `Refused` and `Stopped`, stops every running session and
- * writes its `Ended`, and exits.
+ * supervisor refuses every `Start` that is not a `Duplicate` with `Draining`,
+ * ends each session that holds no claimed turn as a `Stop` would, and ends one
+ * that holds a claimed turn once that turn settles; once every `Start` and
+ * every `Forget` read before `Drain` is answered and every `Started` has its
+ * `Ended`, it writes `Drained` and exits. A session holds a claimed turn from
+ * the session plane's answer handing it one until it answers, fails or stops
+ * that turn there. Only the session sees either, so its supervisor learns both
+ * from the session itself, on the channel it runs the session over, which is
+ * the supervisor's own and not this protocol's. At the end of its standard
+ * input it answers every preparation with `Refused` and `Stopped`, stops every
+ * running session and writes its `Ended`, answers every `Forget` it holds,
+ * and exits.
+ *
+ * A THREAD'S SESSIONS KEEP ONE DIRECTORY. A `Start` for an attempt of a thread
+ * names that thread, and the supervisor gives the session a directory kept for
+ * the thread rather than one made for it: owned by the session's user while it
+ * runs, given to no session of any other thread, and kept after the session
+ * ends, in the volume the supervisor keeps its sessions' directories in, which
+ * is named for the host and outlives the supervisor's container. Everything
+ * else a session is given is removed when it ends, and a `Start` naming no
+ * thread is given nothing that is kept. A `Start` for a thread another session
+ * of which is prepared or running is prepared once that session has ended, and
+ * one for a thread named by a `Forget` not yet answered is refused
+ * `Unprepared`.
+ *
+ * A THREAD'S DIRECTORY IS REMOVED ONLY BY `Forget`, which names a thread the
+ * pool's answer named as closed. Once no session of that thread is prepared or
+ * running, the supervisor removes its directory and answers with `Forgotten`,
+ * and it answers a thread it keeps no directory for the same way, so every
+ * `Forget` is answered by one `Forgotten`.
  *
  * A SESSION'S BEARER CROSSES ONLY IN `Start`, and no refusal raised here
  * repeats the line it read. A credential crosses only by name: a `Start` may
@@ -41,6 +65,11 @@
  *
  * VERSION 2 added the credential a `Start` names. Every frame of version 1
  * reads unchanged in version 2.
+ *
+ * VERSION 3 added the thread a `Start` names and the directory kept for it,
+ * `Forget` and `Forgotten`, and a `Drain` that ends each session holding no
+ * claimed turn rather than waiting on it. Every frame of version 2 reads
+ * unchanged in version 3.
  */
 
 import { z } from "zod";
@@ -48,16 +77,19 @@ import { z } from "zod";
 import { textUtf8Bytes } from "./http.ts";
 import { sessionEndedSchema } from "./sessionPlane.ts";
 import { workerContractVersionOf } from "./workerContract.ts";
-import { workerPoolAssignmentIdentitySchema } from "./workerPool.ts";
+import {
+  workerPoolAssignmentIdentitySchema,
+  workerPoolThreadClosedSchema,
+} from "./workerPool.ts";
 import { poolEnvelopeSchema } from "./workerTask.ts";
 
 /** The version of the protocol this release describes. */
-export const chatProtocolVersion = 2;
+export const chatProtocolVersion = 3;
 
 /** The longest frame either side writes, in UTF-8, its newline left out. */
 export const chatProtocolFrameBytesMax = 16_384;
 
-/** What a session is started with: a pool's envelope less its workspace, because the supervisor makes one directory per session for that session's user. */
+/** What a session is started with: a pool's envelope less its workspace, because the supervisor gives each session's user its directory: its thread's where its `Start` names one, and otherwise one made for that session. */
 export const chatHostSessionEnvelopeSchema = z.strictObject(
   poolEnvelopeSchema.omit({ workspace: true }).shape,
 );
@@ -69,12 +101,13 @@ export const chatHostCredentialSchema = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
 });
 
-/** Start the session the pool's poll handed the host under `assignment`, on the credential it names where it names one. */
+/** Start the session the pool's poll handed the host under `assignment`, on the credential it names where it names one, and in the directory kept for the thread it names where it names one, as the poll named it. */
 export const chatHostStartSchema = z.strictObject({
   frame: z.literal("Start"),
   assignment: workerPoolAssignmentIdentitySchema,
   envelope: chatHostSessionEnvelopeSchema,
   credential: chatHostCredentialSchema.exactOptional(),
+  thread: workerPoolThreadClosedSchema.exactOptional(),
 });
 
 /** End a session, or cancel one being prepared. */
@@ -83,9 +116,15 @@ export const chatHostStopSchema = z.strictObject({
   assignment: workerPoolAssignmentIdentitySchema,
 });
 
-/** Start nothing more, and wait for every running session to end on its own, which `Drained` says. */
+/** Start nothing more, and end every session once it holds no claimed turn, which `Drained` says. */
 export const chatHostDrainSchema = z.strictObject({
   frame: z.literal("Drain"),
+});
+
+/** Remove the directory kept for a thread the pool's answer named as closed, once no session of it is prepared or running. */
+export const chatHostForgetSchema = z.strictObject({
+  frame: z.literal("Forget"),
+  thread: workerPoolThreadClosedSchema,
 });
 
 /** What the host writes. */
@@ -93,6 +132,7 @@ export const chatHostFrameSchema = z.discriminatedUnion("frame", [
   chatHostStartSchema,
   chatHostStopSchema,
   chatHostDrainSchema,
+  chatHostForgetSchema,
 ]);
 
 /**
@@ -121,9 +161,10 @@ export const chatSupervisorStartedSchema = z.strictObject({
  * `Ready` named; `Draining`, it was told to drain; `Duplicate`, ahead of every
  * other reason, it already prepares or runs that assignment under an earlier
  * `Start`; `Unprepared`, the session's user, directory or credential could not
- * be made, which is that session's failure rather than the supervisor's;
- * `Stopped`, a `Stop` or the end of the host's stream came while it was being
- * prepared, which is the end the host asked for.
+ * be made, its thread's directory included, which is that session's failure
+ * rather than the supervisor's; `Stopped`, a `Stop`, a `Drain` or the end of
+ * the host's stream came while it was being prepared, which is the end the
+ * host asked for.
  */
 export const chatSupervisorRefusals = [
   "Full",
@@ -148,9 +189,15 @@ export const chatSupervisorEndedSchema = z.strictObject({
   phase: sessionEndedSchema.shape.phase,
 });
 
-/** Every `Start` read before `Drain` is answered and every `Started` has its `Ended`, and the supervisor exits. */
+/** Every `Start` and every `Forget` read before `Drain` is answered and every `Started` has its `Ended`, and the supervisor exits. */
 export const chatSupervisorDrainedSchema = z.strictObject({
   frame: z.literal("Drained"),
+});
+
+/** A thread a `Forget` named whose directory the supervisor no longer keeps. */
+export const chatSupervisorForgottenSchema = z.strictObject({
+  frame: z.literal("Forgotten"),
+  thread: workerPoolThreadClosedSchema,
 });
 
 /** What the supervisor writes. */
@@ -160,6 +207,7 @@ export const chatSupervisorFrameSchema = z.discriminatedUnion("frame", [
   chatSupervisorRefusedSchema,
   chatSupervisorEndedSchema,
   chatSupervisorDrainedSchema,
+  chatSupervisorForgottenSchema,
 ]);
 
 export type ChatHostSessionEnvelope = z.infer<

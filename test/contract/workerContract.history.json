@@ -478,5 +478,10 @@
     "release": "1.95.0",
     "wire": "ec4c7ee7f9bd5aaacb49735452d03fb38be9eb98c59c1d60a9ecb92d6111eee2",
     "files": "28b88f80abedda4428c53796bed33f382885cce9c6ca4259fd2d24ec0c9b4483"
+  },
+  {
+    "release": "1.96.0",
+    "wire": "ff87490c648f7a180f4c2d86eed14630ab858689da659c9ab992309d67beb23f",
+    "files": "ebb6cf0950cb467999a76fc05202582c9c835424754df9f85adc3e9673ca2b0b"
   }
 ]

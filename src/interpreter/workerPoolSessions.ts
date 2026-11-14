@@ -60,7 +60,7 @@ import type {
   SessionId,
   SessionKind,
 } from "./agentSession.ts";
-import type { RepositoryBinding, RepositoryId } from "./finalizer.ts";
+import type { RepositoryBinding } from "./finalizer.ts";
 import { memberScopePartition } from "./agentSession.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { ProjectId } from "./projectStore.ts";
@@ -73,6 +73,7 @@ import {
 import type { SessionAttemptMint } from "./sessionSchedulerRun.ts";
 import {
   contractVersionAccepted,
+  workerContractChatSessionThreads,
   workerContractUnscopedChat,
 } from "./workerPlane.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
@@ -219,12 +220,17 @@ export interface WorkerPoolSessionTerms {
   readonly imageHosts: WorkerPoolImageHosts;
 }
 
-/** The invocation a claimed session's runner fetches, built as `sessionPlaceOne` builds a pod's. */
+/** The invocation a claimed session's runner fetches, built as `sessionPlaceOne` builds a pod's, on the repository its project's binding places. */
 function workerPoolSessionInvocation(
   candidate: WorkerPoolSessionCandidate,
   launch: SessionLaunchFacts,
-  repository: RepositoryId | undefined,
+  binding: RepositoryBinding | undefined,
 ): SessionTaskInvocation {
+  const repository = sessionRepositoryPlaced(
+    binding,
+    candidate.capabilities,
+    launch.mirrors,
+  );
   return sessionTaskInvocation({
     capabilities: candidate.capabilities,
     ...(candidate.agentReference === undefined
@@ -336,6 +342,20 @@ export function workerPoolSessionBounds(
   return { mailboxPollMs, resultDrainMs, loadTimeoutMs, turnsMax, budgetUsd };
 }
 
+/** The launch a claimed session is opened with: the plane's API, its bounds, and the site's model. */
+function workerPoolSessionLaunched(
+  identity: WorkerPoolSessionClaimant,
+  terms: WorkerPoolSessionTerms,
+  launch: SessionLaunchFacts,
+  idleSecs: number | undefined,
+): SessionTaskLaunch {
+  return {
+    api: { url: terms.apiUrl },
+    bounds: workerPoolSessionBounds(identity, launch, idleSecs),
+    model: launch.model,
+  };
+}
+
 /** Whether a poll may be handed its owner's own sessions: a chat host's alone, offering a release that runs one. */
 function workerPoolSessionClaimsMemberScope(
   identity: PoolPlaneIdentity,
@@ -399,27 +419,40 @@ export async function workerPoolSessionClaims(
       invocation: workerPoolSessionInvocation(
         candidate,
         launch,
-        sessionRepositoryPlaced(
-          served.get(candidate.project),
-          candidate.capabilities,
-          launch.mirrors,
-        ),
+        served.get(candidate.project),
       ),
       image: launch.image,
-      launch: {
-        api: { url: terms.apiUrl },
-        bounds: workerPoolSessionBounds(identity, launch, idleSecs),
-        model: launch.model,
-      },
+      launch: workerPoolSessionLaunched(identity, terms, launch, idleSecs),
       ...(idleSecs === undefined ? {} : { idleSecs }),
     });
     if (opened === "PoolFull") break;
     if (opened === "NotClaimable") continue;
-    claimed.push(
-      workerPoolSessionHanded(terms, launch, assignment, minted.bearer.secret),
-    );
+    claimed.push({
+      ...workerPoolSessionHanded(
+        terms,
+        launch,
+        assignment,
+        minted.bearer.secret,
+      ),
+      ...workerPoolSessionThreadNamed(identity, asked.contract, candidate),
+    });
   }
   return claimed;
+}
+
+/** The thread a claimed session is an attempt of, named only to a chat host whose poll's release reads it, and absent for an inquiry or a lead. */
+export function workerPoolSessionThreadNamed(
+  identity: WorkerPoolSessionClaimant,
+  contract: string | undefined,
+  candidate: WorkerPoolSessionCandidate,
+): Pick<WorkerPoolSessionAssignment, "thread"> {
+  if (
+    identity.kind !== "ChatHost" ||
+    candidate.kind !== "Thread" ||
+    !contractVersionAccepted(workerContractChatSessionThreads, contract)
+  )
+    return {};
+  return { thread: { project: candidate.project, session: candidate.session } };
 }
 
 /** A session a claim opened, as the pool is handed it on the plane's terms. */

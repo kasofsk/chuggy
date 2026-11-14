@@ -745,6 +745,54 @@ test("a chat host is claimed sessions alone, each in a project its owner may sti
   );
 });
 
+test("only a chat host on a release that reads it is handed each session naming the thread it is an attempt of, and an inquiry or a lead names none", async () => {
+  const inquiry = {
+    ...candidate,
+    session: asSessionId("inquiry-one"),
+    kind: "Inquiry" as const,
+  };
+  const lead = {
+    ...candidate,
+    session: asSessionId("lead-one"),
+    kind: "Lead" as const,
+  };
+  const threadsOf = async (
+    caller: PoolPlaneIdentity,
+    contract: string | undefined,
+  ): Promise<unknown[]> => {
+    const { store } = offering([candidate, inquiry, lead]);
+    const answered = await workerPoolReconcile(
+      ports(idle, store),
+      caller,
+      nothingHeld,
+      {
+        wanted: 0,
+        wantedSessions: 3,
+        ...(contract === undefined ? {} : { contract }),
+      },
+      { ...settings, sessionsPerPollMax: 3, sessionsHeldMax: 3 },
+    );
+    assert.equal(answered.sessions.length, 3);
+    return answered.sessions.map((session) => session.thread);
+  };
+  assert.deepEqual(await threadsOf(host, workerContractRelease), [
+    { project: candidate.project, session: candidate.session },
+    undefined,
+    undefined,
+  ]);
+  for (const contract of ["1.95.0", undefined])
+    assert.deepEqual(
+      await threadsOf(host, contract),
+      [undefined, undefined, undefined],
+      String(contract),
+    );
+  assert.deepEqual(await threadsOf(identity, workerContractRelease), [
+    undefined,
+    undefined,
+    undefined,
+  ]);
+});
+
 test("a session is claimed only up to the least of the pool's room, the per-poll bound and what the held bound leaves", async () => {
   const many = ["a", "b", "c", "d", "e"].map((name) => ({
     ...candidate,

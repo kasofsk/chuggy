@@ -47,6 +47,7 @@ import { agentAccountCredentialsKeptMaxAt163 } from "../../src/adapters/postgres
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
+  workerContractChatSessionThreads,
   workerContractRunnerCredentialOutcomes,
   workerContractRunnerCredentialPauses,
   workerContractRunnerProjects,
@@ -195,6 +196,64 @@ test("a session assignment is an assignment that always names its image, under a
       false,
       JSON.stringify(invalid),
     );
+});
+
+test("a session assignment may name the thread it is an attempt of by its project and its session, and is read without one as before", () => {
+  const session = {
+    ...assignment,
+    image: "registry.invalid/worker:1",
+    bearer: `chgs_${"a".repeat(240)}`,
+  };
+  const thread = { project: "chuggy", session: "thread-one" };
+  assert.deepEqual(
+    workerPoolSessionAssignmentSchema.parse({ ...session, thread }),
+    { ...session, thread },
+  );
+  assert.equal(
+    "thread" in workerPoolSessionAssignmentSchema.parse(session),
+    false,
+  );
+  for (const wrong of [
+    { project: "chuggy" },
+    { ...thread, session: "" },
+    { ...thread, attempt: "attempt-one" },
+    "thread-one",
+  ])
+    assert.equal(
+      workerPoolSessionAssignmentSchema.safeParse({ ...session, thread: wrong })
+        .success,
+      false,
+      JSON.stringify(wrong),
+    );
+});
+
+test("a chat host of a release the session-threads range accepts reads a session naming its thread, and one of any earlier refuses the whole answer", async () => {
+  const answer = {
+    assignments: [],
+    sessions: [
+      {
+        ...assignment,
+        image: "registry.invalid/worker:1",
+        thread: { project: "chuggy", session: "thread-one" },
+      },
+    ],
+    stop: [],
+  };
+  assert.ok(
+    contractVersionAccepted(
+      workerContractChatSessionThreads,
+      workerContractRelease,
+    ),
+  );
+  assert.ok(workerPoolReconciliationSchema.safeParse(answer).success);
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    assert.equal(
+      reconciliation.safeParse(answer).success,
+      contractVersionAccepted(workerContractChatSessionThreads, older),
+      older,
+    );
+  }
 });
 
 test("an outcome tells a settled no from an unavailable one, which carries nothing", () => {
