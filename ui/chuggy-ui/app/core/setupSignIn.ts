@@ -62,7 +62,7 @@ import {
   setupLockReleased,
   setupLockTaken,
   setupLockWaitMs,
-  setupSessionRead,
+  setupSessionSite,
   setupSignInNoteRead,
   setupSignInNoteWritten,
 } from "./setupStore.ts";
@@ -419,8 +419,7 @@ async function setupCallbackExchanged(
 ): Promise<SetupSignInEnded> {
   if (!(await setupLockTaken(ports, setupListenLockWaitMs))) return "Busy";
   try {
-    if (setupSessionRead(ports.files)?.site !== opened.site)
-      return "SiteChanged";
+    if (setupSessionSite(ports.files) !== opened.site) return "SiteChanged";
     const callback = await opened.holder.completeCallback({
       pathname: heard.path,
       search: heard.search,

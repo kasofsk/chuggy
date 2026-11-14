@@ -45,6 +45,7 @@ import { machineScript } from "./setupMachine.ts";
 import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
 import {
   rosterChatHostStops,
+  rosterRunnerStops,
   runnerNotesAll,
   runnerStopsAll,
 } from "./setupRunnerRoster.ts";
@@ -80,6 +81,11 @@ const steps: readonly SetupStepSaid[] = [
       id: "setup-step-north-star",
       args: { project: "acme/widgets", section: setupSeen.northStar },
     },
+  },
+  {
+    step: "mcp",
+    state: "todo",
+    detail: { id: "setup-step-mcp-none", args: { project: "acme/widgets" } },
   },
   {
     step: "github",
@@ -168,6 +174,7 @@ const things: {
   Offer: [
     {
       thing: "Offer",
+      command: "Runner",
       tell: offerTell,
       when: offerWhen,
       workspace: "acme",
@@ -175,6 +182,7 @@ const things: {
     },
     {
       thing: "Offer",
+      command: "Runner",
       tell: offerTell,
       when: offerWhen,
       workspace: "two words",
@@ -182,6 +190,7 @@ const things: {
     },
     {
       thing: "Offer",
+      command: "ChatHost",
       tell: offerTell,
       when: offerWhen,
       workspace: "two words",
@@ -225,9 +234,9 @@ const pairs: readonly SetupRunnerAt[] = [
 
 /** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
 function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
-  return at.project === undefined
-    ? runnerStopsAll
-    : runnerStopsAll.filter((one) => !rosterChatHostStops.includes(one.stop));
+  const others =
+    at.project === undefined ? rosterRunnerStops : rosterChatHostStops;
+  return runnerStopsAll.filter((one) => !others.includes(one.stop));
 }
 
 /** Whether a stop is said before any site is asked. */
@@ -377,6 +386,24 @@ const roster: {
       ended,
     })),
   ),
+  Mcp: pairs.flatMap(({ workspace, project }) =>
+    project === undefined
+      ? []
+      : [
+          ...stopsOf({ workspace, project }).map((stop) => ({
+            ended: "Stopped" as const,
+            stop,
+          })),
+          { ended: "Served" as const },
+        ].map((ended) => ({
+          report: "Mcp",
+          site,
+          workspace,
+          project,
+          notes: runnerNotesAll,
+          ended,
+        })),
+  ),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -390,25 +417,31 @@ const roster: {
 
 const every: readonly SetupReport[] = Object.values(roster).flat();
 
-/** Every report but a checklist and a run of `runner`, which is every report a run that is not signed in can make. */
+/** What a stop's rule names where it names no run of the same command again. */
+const setupAskedOfAgain = { Status: "Status", Mcp: "Mcp" } as const;
+
+/** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
 const sessions = every.filter(
   (report) =>
     report.report !== "Checklist" &&
     report.report !== "Runner" &&
+    report.report !== "Mcp" &&
     report.report !== "RunnerOut",
 );
 
-/** The choices a run that made a report can have been given: any, and for a run asked as `runner` only those naming both. */
+/** The choices a run that made a report can have been given: any, and for a run asked as `mcp` or `runner` only those naming both. */
 function given(report: SetupReport): readonly SetupAnswers[] {
   const asked =
     report.report === "RunnerOut"
       ? report.project === undefined
         ? "ChatHost"
         : "Runner"
-      : "asked" in report
-        ? report.asked
-        : undefined;
-  if (asked === "Runner")
+      : report.report === "Mcp"
+        ? "Mcp"
+        : "asked" in report
+          ? report.asked
+          : undefined;
+  if (asked === "Runner" || asked === "Mcp")
     return choices.filter(
       (held) => held.workspace !== undefined && held.project !== undefined,
     );
@@ -542,7 +575,8 @@ test("every command any line of any report names, on next: or in a rule:, is one
 
 /** The names a report's commands carry: the project's where it is `runner` that is named or was run, a checklist's own, and otherwise the ones the run was given, which a run that could not read its arguments or its Node has none of. */
 function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
-  if (report.report === "Runner") return project(report);
+  if (report.report === "Runner" || report.report === "Mcp")
+    return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
@@ -792,6 +826,7 @@ test("signed in, the bare command prints what was found, each step in columns, a
     "found: this folder's remote github.com/acme-org/widgets is added to no project the site shows you, so it proposes none",
     "step: workspace   done     acme",
     "step: project     waiting  acme/widgets has no North Star yet",
+    "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
     "step: runner      todo",
@@ -979,8 +1014,8 @@ test("a run of runner that stopped says what it found and did, then the stop as 
         : undefined;
     expect(setupAsked(again ?? ["?"]), said).toMatchObject({
       asked:
-        ruling?.again === "Status"
-          ? "Status"
+        ruling?.again === "Status" || ruling?.again === "Mcp"
+          ? setupAskedOfAgain[ruling.again]
           : report.project === undefined
             ? "ChatHost"
             : "Runner",

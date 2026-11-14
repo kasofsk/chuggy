@@ -58,6 +58,10 @@ setup-runner-note-checked = the { -runner }'s own check passed
 setup-runner-note-checked-warned = the { -runner }'s own check passed, with a warning: { $warned }
 setup-runner-note-unit = the { -runner }'s service is installed: { $unit }
 setup-runner-note-unit-written = installed the { -runner }'s service, { $unit }
+# spells -run: to run is a verb here
+setup-runner-note-server-found = { -claude-code } in this folder runs { -brand-name }'s MCP server for { $project }, as { $path } names it
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-runner-note-server-added = named { -brand-name }'s MCP server for { $project } in { -claude-code }'s configuration for this folder, in { $path }; a { -claude-code } session started here from now on has its tools
 setup-runner-note-linger = your services keep running after you log out
 setup-runner-note-linger-on = set your services to keep running after you log out
 setup-runner-note-linger-on-unread = set your services to keep running after you log out, not having learned whether they already did
@@ -177,6 +181,15 @@ setup-runner-act-install = { $case ->
     [upper] Installing the { -runner } package
    *[lower] installing the { -runner } package
 }
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-runner-act-server-removed = { $case ->
+    [upper] Removing the other { -brand-name } MCP server from { -claude-code }'s configuration for this folder
+   *[lower] removing the other { -brand-name } MCP server from { -claude-code }'s configuration for this folder
+}
+setup-runner-act-server-added = { $case ->
+    [upper] Adding { -brand-name }'s MCP server to { -claude-code }
+   *[lower] adding { -brand-name }'s MCP server to { -claude-code }
+}
 setup-runner-act-register = { $case ->
     [upper] Registering this machine
    *[lower] registering this machine
@@ -228,6 +241,15 @@ setup-runner-failed-unseen = ended well, and what it makes is not at { $path }
 setup-runner-act-found = { $act } { $failed }
 # spells -work-stage: to work is a verb here
 setup-runner-act-tell = { $act } did not work, so the { -runner } is not set up yet. { setup-runner-picked-up }
+# spells -work-stage: to work is a verb here
+# spells -work-stage: to work is a verb here
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-runner-act-tell-server = { $act } did not work, so your agent has no { -brand-name } tools yet. { setup-runner-picked-up }
+setup-runner-unpackaged-found-none = the { -runner } package, { $program }, is not installed here
+setup-runner-unpackaged-found = the { -runner } package here is { $versioned }, and { setup-program } needs { $least } or later
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-runner-unpackaged-tell = The { -runner } package, { $program }, is installed by the MCP step, which gives your agent { -brand-name }'s tools for { $project }, and it is not here at a version this step can use, { setup-runner-unchanged }. With your yes I will install it and name its MCP server in { -claude-code } here, and then set up the { -runner }. Tell me if you want me to go ahead.
+setup-runner-unpackaged-when = once the person says yes to { $program } and { -brand-name }'s MCP server on this machine
 # spells -work-stage: to work is a verb here
 setup-runner-service-refused-tell = { $act } did not work, so the { -runner } is not set up yet: the { -runner } package would not write it over the service already at { $path }. If that one is left from { -runner(form: "a") } set up before, remove it, and tell me once you have or if you want me to try again.
 setup-runner-service-refused-when = once the person says { $path } is removed, or asks to try again

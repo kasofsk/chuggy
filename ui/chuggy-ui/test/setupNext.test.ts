@@ -18,6 +18,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import {
   setupAskNamesMax,
+  setupMcpDue,
   setupNext,
   setupRunnerDue,
 } from "../app/core/setupNext.ts";
@@ -81,6 +82,8 @@ function lacking(
   };
 }
 
+const lacking_ = (lack: SetupLack): SetupStanding => lacking(lack);
+
 function thing(lack: SetupLack, given?: Partial<SetupStanding>): SaidThing {
   return saidThing(setupNext(lacking(lack, given), setupAnswersNone).thing);
 }
@@ -110,7 +113,7 @@ const create = `Open ${pages}/tickets/new, say what you want done and press Crea
 
 /** Every thing a step can lack, the lack as it is found, and what the person is told to do about it. */
 const mends: {
-  readonly [Kind in Exclude<SetupLack["lacks"], "Read">]: readonly [
+  readonly [Kind in Exclude<SetupLack["lacks"], "Read" | "Mcp">]: readonly [
     Extract<SetupLack, { readonly lacks: Kind }>,
     SaidThing,
   ];
@@ -247,6 +250,46 @@ const mends: {
     ),
   ],
 };
+
+/** What `mcp` offers for the project, with `tell` said. */
+const mcpOffered = (tell: string): SaidThing => ({
+  thing: "Offer",
+  command: "Mcp",
+  tell,
+  when: "once the person says yes to chuggy's MCP server on this machine",
+  workspace: "acme",
+  project: "widgets",
+});
+
+const mcpServes =
+  "Claude Code is the agent it is named in, for this folder, and it signs in as chuggy setup does, under the one sign-in, so you sign in once. Tell me yes to go ahead.";
+
+test("the MCP step offers mcp, which installs the runner package first where none here is one it leaves as it is, and names its server in the agent", () => {
+  const lacking = { lacks: "Mcp" } as const;
+  expect(thing(lacking)).toEqual(
+    mcpOffered(
+      `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}. The runner package, chuggy-linux, serves them as an MCP server, and it is not here at a version chuggy setup uses. With your yes I will install it with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
+    ),
+  );
+  expect(
+    saidThing(
+      setupNext(lacking_(lacking), setupAnswersNone, undefined, true).thing,
+    ),
+  ).toEqual(
+    mcpOffered(
+      `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}. The runner package here, chuggy-linux, serves them as an MCP server. With your yes I will name that server in Claude Code's configuration for this folder. ${mcpServes}`,
+    ),
+  );
+});
+
+test("the MCP step is the one next only while it is the first step not done, which is when the package here is looked for", () => {
+  expect(setupMcpDue(lacking_({ lacks: "Mcp" }))).toEqual({
+    tenant: "acme",
+    project: "widgets",
+  });
+  expect(setupMcpDue(lacking_({ lacks: "Ticket" }))).toBeUndefined();
+  expect(setupRunnerDue(lacking_({ lacks: "Mcp" }))).toBeUndefined();
+});
 
 test.each(Object.entries(mends))(
   "a step that lacks %s is the person's to mend, on the page named by its full address, and is read again only once she says so",
@@ -510,6 +553,7 @@ test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
 
 const offered = (tell: string): SaidThing => ({
   thing: "Offer",
+  command: "Runner",
   tell,
   when: "once the person says yes to a runner on this machine",
   workspace: "acme",
@@ -519,6 +563,7 @@ const offered = (tell: string): SaidThing => ({
 /** What `chat-host` offers for the workspace, with `tell` said. */
 const chatOffered = (tell: string): SaidThing => ({
   thing: "Offer",
+  command: "ChatHost",
   tell,
   when: "once the person says yes to this machine as their chat host",
   workspace: "acme",
@@ -551,7 +596,7 @@ const runnerIs =
 test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
   expect(here({ lacks: "Runner", chat: false, named: true }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
+      `${runnerIs}. I can make this machine one. That puts here a background service of yours, run by the runner package, chuggy-linux, that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
     ),
   );
   expect(
@@ -562,7 +607,7 @@ test("with no runner yet and a machine that could take one, the person is told o
 test("with neither a runner of the project nor the person's chat host, the offer says two services of theirs are put here: one for the work on the project's tickets, one their chat host", () => {
   expect(here({ lacks: "Runner", chat: true, named: true }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
+      `${runnerIs}. I can make this machine one. That puts here two background services of yours, run by the runner package, chuggy-linux, that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
     ),
   );
 });
@@ -675,7 +720,7 @@ test("a user the runner package bars from docker is told the package's reason an
 test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
   expect(here({ lacks: "RunnerLive", chat: false }, roomy, true)).toEqual(
     offered(
-      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
+      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
     ),
   );
   for (const room of [roomy, { room: "Mac" }, { room: "Serviceless" }] as const)
@@ -684,7 +729,7 @@ test("a runner registered and not running is offered to be started here only whe
     );
   expect(here({ lacks: "RunnerLive", chat: true }, roomy, true)).toMatchObject({
     tell: expect.stringMatching(
-      / If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first\. Your chats run only on your chat host, a machine of yours, so I will also make this machine it, as a second service of yours\. Tell me yes to go ahead\.$/u,
+      / Your chats run only on your chat host, a machine of yours, so I will also make this machine it, as a second service of yours\. Tell me yes to go ahead\.$/u,
     ) as unknown,
   });
 });
