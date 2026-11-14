@@ -3,7 +3,6 @@
 
 configuration-catalog-title = { -catalog(case: "upper") }
 configuration-catalog-none = No { -configuration } imported
-configuration-catalog-none-detail = Import one from { $directory }
 configuration-catalog-picker-configuration = { -configuration(case: "upper") }
 # Each version a configuration has held, by the newest revision holding it.
 configuration-catalog-picker-revision = { -revision(case: "upper") }
@@ -11,6 +10,20 @@ configuration-catalog-picker-revision = { -revision(case: "upper") }
 configuration-catalog-version-one = Version 1 { -configuration }
 configuration-catalog-authored = Authored
 configuration-catalog-imported = Imported
+configuration-catalog-search = Search the { -catalog }
+configuration-catalog-search-placeholder = Search names…
+# Where nothing the page lists matches the search.
+configuration-catalog-search-none = Nothing in the { -catalog } matches
+# What a count beside a group's or a configuration's heading counts, read in its figure's place.
+configuration-catalog-count = { $count ->
+    [one] { $count } entry
+   *[other] { $count } entries
+}
+# What the count beside the configurations' heading counts, read in its figure's place.
+configuration-catalog-count-configurations = { $count ->
+    [one] { $count } { -configuration }
+   *[other] { $count } { -configuration(form: "plural") }
+}
 
 ## A repository's configurations and the fragments they are made of.
 

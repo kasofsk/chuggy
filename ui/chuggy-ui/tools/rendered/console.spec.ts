@@ -1,6 +1,7 @@
 /**
  * The console's first rendered cases: each screen loads under the served
- * policy with no violation, and does not scroll sideways at a phone's width.
+ * policy with no violation, and does not scroll sideways at a phone's width;
+ * on the phone the tickets list's bar is the touch height on its own sheet.
  *
  * THE POLICY CASES ARE EXPECTED FAILURES. zod probes whether it may compile
  * its parsers by calling `Function("")` once, inside a `try`, and
@@ -15,6 +16,7 @@ import {
   renderedNoOverflow,
   renderedNoViolations,
   renderedOpen,
+  renderedTouchTargets,
   test,
 } from "./driver.ts";
 import type { RenderedOpening } from "./driver.ts";
@@ -62,12 +64,16 @@ test("the tickets list loads with no policy violation", async ({
   renderedNoViolations(await renderedOpen(browser, served.origin, ticketsList));
 });
 
-test("the tickets list does not scroll sideways on a phone, and nothing else is refused", async ({
+test("the tickets list does not scroll sideways on a phone, its bar's controls are the touch height, and nothing else is refused", async ({
   browser,
   served,
 }) => {
   const rendered = await renderedOpen(browser, served.origin, ticketsList);
   await renderedNoOverflow(rendered.page);
+  await renderedTouchTargets(
+    rendered.page,
+    rendered.page.locator(".list-controls"),
+  );
   renderedNoViolations(rendered, [zodProbeViolation]);
   test.expect(served.unanswered).toEqual([]);
 });

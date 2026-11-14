@@ -32,6 +32,7 @@ import {
   agentAccountsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
+  configurationResponseSchema,
   configurationsResponseSchema,
   dispatchViewResponseSchema,
   executionsResponseSchema,
@@ -45,6 +46,7 @@ import {
   projectAbilitiesResponseSchema,
   projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
   projectInventoryResponseSchema,
   projectResponseSchema,
   personalRunnerPermitResponseSchema,
@@ -236,6 +238,17 @@ const projectRepositories = {
   ],
 };
 
+/** Where a configuration the stub's repository declares is read from. */
+function repositoryConfigurationProvenance(name: string) {
+  return {
+    source: "Repository",
+    repository: stubApiRepositoryLong,
+    commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
+    path: `.chug/configurations/${name}.json`,
+    name,
+  } as const;
+}
+
 /** What the long-named repository declares: one configuration ready to run,
  * on a worker image whose name runs past a phone, and one not ready yet. */
 const repositoryConfigurations = {
@@ -244,13 +257,7 @@ const repositoryConfigurations = {
       revision: `revision-${name}`,
       digest: "a".repeat(64),
       createdAt: "2026-11-01T00:00:00Z",
-      provenance: {
-        source: "Repository",
-        repository: stubApiRepositoryLong,
-        commit: "4f1c2a9e0b7d6c5a4f1c2a9e0b7d6c5a4f1c2a9e",
-        path: `.chug/configurations/${name}.json`,
-        name,
-      },
+      provenance: repositoryConfigurationProvenance(name),
       version: { name, number: 3 },
     };
     return index === 0
@@ -265,6 +272,57 @@ const repositoryConfigurations = {
         }
       : { ...base, readiness: "Incomplete" };
   }),
+};
+
+/** The ready configuration's own version: a catalog whose workload's name
+ * runs past a phone, a plan evaluating with it, and a landing. */
+const repositoryConfigurationCoding = {
+  partition,
+  revision: "revision-coding",
+  digest: "a".repeat(64),
+  canonical: JSON.stringify({
+    version: 2,
+    image: "ghcr.io/kasofsk/chuggy-worker-with-a-long-image-name:2026.11.01",
+    workloads: {
+      "build-and-test-everything-the-repository-declares": {
+        runner: "Agent",
+        prompt: { text: "Build it." },
+        worker: {
+          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        },
+      },
+      checks: { runner: "Commands", commands: ["npm test"] },
+    },
+    plans: { checked: [{ name: "checks", evaluators: ["checks"] }] },
+    finalizers: { land: { approvalRequired: false } },
+    defaults: {
+      work: "build-and-test-everything-the-repository-declares",
+      evaluation: "checked",
+      finalization: "land",
+    },
+  }),
+};
+
+/** The repository's head, declaring the ready configuration as its newest
+ * import stored it, so the catalog's head line offers the way back. */
+const repositoryConfigurationCodingProvenance =
+  repositoryConfigurationProvenance("coding");
+
+const repositoryConfigurationHead = {
+  head: {
+    state: "Ready",
+    branch: "main",
+    commit: repositoryConfigurationCodingProvenance.commit,
+    configurations: [
+      {
+        name: repositoryConfigurationCodingProvenance.name,
+        path: repositoryConfigurationCodingProvenance.path,
+        revision: repositoryConfigurationCoding.revision,
+        canonical: repositoryConfigurationCoding.canonical,
+        digest: repositoryConfigurationCoding.digest,
+      },
+    ],
+  },
 };
 
 /** The tenant's connected accounts: one holding both apps, and one lacking
@@ -438,6 +496,16 @@ export const stubApiReads: readonly StubApiRead[] = [
     `${projectPath}/configurations`,
     configurationsResponseSchema,
     repositoryConfigurations,
+  ),
+  stubApiRead(
+    `${projectPath}/configurations/revision-coding`,
+    configurationResponseSchema,
+    repositoryConfigurationCoding,
+  ),
+  stubApiRead(
+    `${projectPath}/configurations/imports/head`,
+    repositoryConfigurationHeadResponseSchema,
+    repositoryConfigurationHead,
   ),
   stubApiRead(`${projectPath}/landing-queues`, landingQueuesResponseSchema, {
     queues: [],

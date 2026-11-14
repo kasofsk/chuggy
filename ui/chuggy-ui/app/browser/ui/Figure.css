@@ -37,4 +37,13 @@
     margin: 0 var(--space-1);
     font-style: normal;
   }
+
+  /* On a narrow screen a figure a finger opens is a finger's height. */
+  @media (max-width: 40em) {
+    .fig[tabindex="0"] {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--height-touch);
+    }
+  }
 }

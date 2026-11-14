@@ -74,6 +74,12 @@
     .page-header-actions .btn {
       height: var(--height-touch);
     }
+
+    .page-header .breadcrumb-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--height-touch);
+    }
   }
 
   /* jscpd:ignore-start — the ticket page's sticky bar, lifted rule for rule so adopting this draws it unchanged */
