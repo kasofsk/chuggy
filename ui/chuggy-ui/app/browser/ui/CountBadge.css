@@ -1,0 +1,18 @@
+/* CountBadge: a figure on the sunken surface, as wide as its digits and never
+   narrower than it is tall. */
+
+@layer ui {
+  .count-badge {
+    display: inline-block;
+    min-width: calc(var(--leading-dense) * 1em);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-3);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font: var(--weight-medium) var(--text-xs) / var(--leading-dense)
+      var(--font-prose);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
