@@ -90,7 +90,9 @@ export interface SessionAttemptBindingPort {
   binding(input: {
     readonly secret: SessionBearerSecret;
     readonly generation: number;
-  }): Promise<Omit<SessionBearerIdentity, "scope"> | undefined>;
+  }): Promise<
+    Omit<SessionBearerIdentity, "scope" | "capabilities"> | undefined
+  >;
 }
 
 /**

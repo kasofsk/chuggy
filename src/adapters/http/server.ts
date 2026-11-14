@@ -298,10 +298,10 @@ import {
 export interface AuthenticatedBearer {
   readonly principal: Principal;
   readonly expiresAtMs?: number | undefined;
-  /** The session a session bearer carried, which a command records, and the partition and scope it is confined to. */
+  /** The session a session bearer carried, which a command records, and the partition, scope and capabilities it is confined to. */
   readonly viaSession?: Pick<
     SessionBearerIdentity,
-    "partition" | "session" | "scope"
+    "partition" | "session" | "scope" | "capabilities"
   >;
 }
 
@@ -569,9 +569,10 @@ function registerAuthentication(
 
 /**
  * Whether a session bearer may reach the route this request matched, having
- * answered it when it may not: another partition, or a member's own session
- * whose owner may no longer open unscoped chat, as an unauthorized read is
- * answered, and a route no session may reach as `insufficient_scope`.
+ * answered it when it may not: another partition, a capability its session
+ * does not hold, or a member's own session whose owner may no longer open
+ * unscoped chat, as an unauthorized read is answered, and a route no session
+ * may reach as `insufficient_scope`.
  */
 async function registerAuthenticationSession(
   request: FastifyRequest,
@@ -596,6 +597,7 @@ async function registerAuthenticationSession(
       nativeHttpSend(reply, notFound());
       return false;
     case "OtherPartition":
+    case "Unheld":
       nativeHttpSend(reply, notFound());
       return false;
     case "Refused":
