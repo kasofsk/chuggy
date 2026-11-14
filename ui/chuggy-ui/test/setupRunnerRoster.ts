@@ -308,7 +308,6 @@ export const runnerStops: {
   MacChatHost: [
     {
       stop: "MacChatHost",
-      site: "https://chuggy.example",
       page: rosterMyRunners,
     },
   ],

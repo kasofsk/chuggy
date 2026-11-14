@@ -15,7 +15,7 @@
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
-import { runnerPackages, runnerRegisterCommand } from "./runners.ts";
+import { runnerPackages } from "./runners.ts";
 
 /** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone. */
 export interface SetupRunnerAt {
@@ -405,10 +405,9 @@ export type SetupRunnerStop =
       readonly short: string;
       readonly live: boolean;
     }
-  /** `chat-host` on a machine that is not the package's platform: the person registers one by hand from `page`, the workspace's personal runners page at `site`. */
+  /** `chat-host` on a machine that is not the package's platform: the person registers one by hand from `page`, the workspace's personal runners page at the site. */
   | {
       readonly stop: "MacChatHost";
-      readonly site: string;
       readonly page: string;
     };
 
@@ -1582,28 +1581,11 @@ export const setupChatHostPressed = {
   id: "runners-chat-host-register",
 } as const;
 
-/** How a chat host is registered on a machine the setup program does not set one up on, by each runner package's own commands, with the token `page` shows in place of `<token>`. */
-export function setupChatByHand(site: string, page: string): Copy {
-  const token = "<token>";
+/** How a chat host is registered on a machine the setup program does not set one up on: by the commands `page` shows for the machine chosen there. */
+export function setupChatByHand(page: string): Copy {
   return {
     id: "setup-mend-chat-by-hand",
-    args: {
-      page,
-      register: setupChatHostPressed,
-      linux: runnerRegisterCommand(
-        runnerPackages.linux,
-        site,
-        token,
-        "ChatHost",
-      ),
-      darwin: runnerRegisterCommand(
-        runnerPackages.darwin,
-        site,
-        token,
-        "ChatHost",
-      ),
-      agent: `${runnerPackages.darwin.program} install-agent --pool`,
-    },
+    args: { page, register: setupChatHostPressed },
   };
 }
 
@@ -1666,7 +1648,7 @@ export function setupRunnerStopSaid(
         found: { id: "setup-runner-mac-chat-found" },
         tell: {
           id: "setup-runner-mac-chat-tell",
-          args: { byHand: setupChatByHand(stop.site, stop.page) },
+          args: { byHand: setupChatByHand(stop.page) },
         },
         when: { id: "setup-mend-chat-host-when" },
         again: "Status",
