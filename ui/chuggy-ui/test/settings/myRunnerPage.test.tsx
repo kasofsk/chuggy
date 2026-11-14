@@ -516,14 +516,14 @@ test("a member's chat host is drawn with whether it has polled, and registering 
   expect(screen.queryByText("tok_host-1")).toBeNull();
 });
 
-test("a member's chat host says what the chats it hosts may do where it named that, and that each may do all its own allows where it named nothing", async () => {
+test("a member's chat host says what the chats it hosts may do where it named that, and that each may do everything its own roster allows where it named nothing", async () => {
   for (const [named, said] of [
     [
       ["ProjectRead", "ThreadOffer"],
       "Chats here may: Read the project, Offer you a page or an action",
     ],
     [[], "Chats here may: nothing"],
-    [undefined, "Chats here may do all their own allows"],
+    [undefined, "Chats here may do everything their own roster allows"],
   ] as const) {
     drawing = {
       granted: true,

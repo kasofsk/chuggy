@@ -138,7 +138,7 @@ runners-chat-host-token-about = Registers your { -chat-host } once · expires
 runners-chat-host-copy-token = Copy token
 runners-chat-host-replaces = Replaces { -chat-host } { $short } · Ends its sessions
 runners-chat-host-threads = { -thread(case: "upper", form: "plural") } here may: { $capabilities }
-runners-chat-host-threads-whole = { -thread(case: "upper", form: "plural") } here may do all their own allows
+runners-chat-host-threads-whole = { -thread(case: "upper", form: "plural") } here may do everything their own roster allows
 
 ## Taking a member's personal runners off, in their editor.
 
