@@ -87,6 +87,10 @@ export interface ChatCopy {
   readonly "chat-wake-escalated": Record<never, never>;
   readonly "chat-wake-done": Record<never, never>;
   readonly "chat-wake-revoked": Record<never, never>;
+  readonly "chat-wake-job-exited": Record<never, never>;
+  readonly "chat-wake-watch-matched": Record<never, never>;
+  readonly "chat-wake-timer-due": Record<never, never>;
+  readonly "chat-wake-attempt-ended": Record<never, never>;
   readonly "chat-limit": Record<never, never>;
   readonly "chat-start-refused-limit": Record<never, never>;
   readonly "chat-cause-signed-out": Record<never, never>;

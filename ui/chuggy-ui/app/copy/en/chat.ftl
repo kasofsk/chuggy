@@ -84,6 +84,10 @@ chat-wake-draft-deleted = { -draft(case: "upper") } deleted
 chat-wake-escalated = { -escalation(case: "upper") }
 chat-wake-done = Done
 chat-wake-revoked = { -revoke(case: "upper", form: "ed") }
+chat-wake-job-exited = Process exited
+chat-wake-watch-matched = Watch matched
+chat-wake-timer-due = Timer due
+chat-wake-attempt-ended = { -attempt(case: "upper") } ended, processes restored
 
 ## What a press of Send or Stop came to.
 

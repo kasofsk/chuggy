@@ -417,6 +417,12 @@ export const tenantDeleteFunction = "delete_unrun_tenant";
 /** The door a chat host's thread attempt reports through whether its thread is standing. */
 export const sessionStandingReportFunction = "report_session_standing";
 
+/** What a chat host's thread attempt is, read by the worker plane before the attempt wakes its own thread. */
+export const threadJobWakeViewFunction = "thread_job_wake_view";
+
+/** The door a chat host's thread attempt wakes its own thread through. */
+export const threadJobWakeFunction = "wake_thread_job";
+
 /** The threads a chat host last ran that have since closed, read by the pool plane. */
 export const chatHostThreadsClosedFunction = "chat_host_threads_closed";
 

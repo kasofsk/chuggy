@@ -48,6 +48,7 @@ import {
   sessionContainerEnds,
 } from "../../src/contract/rosters.ts";
 import {
+  allThreadJobWakeReasons,
   jsonTextBytes,
   sessionPlaneRoutes,
   type SessionPlaneRouteName,
@@ -2081,6 +2082,17 @@ const sessionHeaviest: Readonly<
     headers: json,
     payload: planeJsonHeaviest({ standing: false }),
     status: 204,
+  },
+  wake: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      wake: allThreadJobWakeReasons.reduce((longest, wake) =>
+        wake.length > longest.length ? wake : longest,
+      ),
+      resource: planeTextHeaviest(sessionIdentityCharsMax),
+      event: planeTextHeaviest(sessionIdentityCharsMax),
+    }),
+    status: 404,
   },
   storeStreams: undefined,
   storeBatch: {

@@ -53,7 +53,11 @@ import {
 } from "../contract/http.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
 import {
+  allThreadJobWakeReasons,
+  allThreadTicketWakeReasons,
   allThreadWakeReasons,
+  type ThreadJobWakeReason,
+  type ThreadTicketWakeReason,
   type ThreadWakeReason,
 } from "../contract/threadWake.ts";
 import {
@@ -113,7 +117,14 @@ export function threadStanding(input: {
     : input.state;
 }
 
-export { allThreadWakeReasons, type ThreadWakeReason };
+export {
+  allThreadJobWakeReasons,
+  allThreadTicketWakeReasons,
+  allThreadWakeReasons,
+  type ThreadJobWakeReason,
+  type ThreadTicketWakeReason,
+  type ThreadWakeReason,
+};
 
 /** The version every wake document this release writes carries. */
 export const threadWakeVersion = 1;
@@ -122,7 +133,7 @@ export const threadWakeVersion = 1;
 export interface ThreadWakeDocument {
   readonly version: typeof threadWakeVersion;
   readonly wake: ThreadWakeReason;
-  /** The ticket the event is about, as the change row named it. */
+  /** What the event is about: the ticket a change row named, or the name of the job, watch or timer the thread set. */
   readonly resource: string;
   readonly at: string;
   /** The standing rules, carried on the turn that could break them. */

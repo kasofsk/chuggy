@@ -1,0 +1,355 @@
+/**
+ * A thread's attempt on its member's chat host waking its own thread, against a
+ * real PostgreSQL and under the worker plane's role: the view answers what the
+ * wake pass reads of a candidate, the door puts the turn in the thread's
+ * mailbox through `wake_member_thread` and answers a replayed turn already
+ * woken, and a bearer that is not a live chat-host thread attempt's is refused
+ * at both. Each case holds a project of its own.
+ */
+
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { after, test } from "node:test";
+
+import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
+import {
+  apiRole,
+  poolPlaneRole,
+  schedulerRole,
+  workerPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
+import {
+  postgresThreadJobWakes,
+  postgresThreads,
+} from "../../src/adapters/postgres/thread.ts";
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
+import type { WorkerPoolSessionAssignment } from "../../src/contract/workerPool.ts";
+import {
+  asSessionBearerSecret,
+  asSessionId,
+  asSessionTurnId,
+  memberScopePartition,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asThreadOpenKey } from "../../src/interpreter/threadRead.ts";
+import {
+  threadJobWake,
+  threadJobWakeTurn,
+} from "../../src/interpreter/threadWake.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import {
+  workerPoolPoll,
+  workerPoolSettled,
+  type PoolPlaneIdentity,
+} from "../../src/interpreter/workerPool.ts";
+import { postgresHarnessRolePool } from "./harness.ts";
+import {
+  sessionRigAttempt,
+  sessionRigLaunchMet,
+  sessionRigOpen,
+  sessionRigPollSettings,
+  sessionRigPoolPorts,
+  sessionRigProject,
+  sessionRigRouted,
+  sessionRigSession,
+  sessionRigTurn,
+} from "./sessionHarness.ts";
+
+const rig = await sessionRigOpen();
+const apiPool = postgresHarnessRolePool(apiRole);
+const poolPlanePool = postgresHarnessRolePool(poolPlaneRole);
+const schedulerPool = postgresHarnessRolePool(schedulerRole);
+const workerPlanePool = postgresHarnessRolePool(workerPlaneRole);
+const wakes = postgresThreadJobWakes(workerPlanePool);
+
+after(async () => {
+  await Promise.all(
+    [apiPool, poolPlanePool, schedulerPool, workerPlanePool].map((pool) =>
+      pool.end(),
+    ),
+  );
+  await rig.close();
+});
+
+await sessionRigLaunchMet(schedulerPool);
+
+const ports = sessionRigPoolPorts(poolPlanePool);
+const settings = sessionRigPollSettings;
+
+function principal(label: string): Principal {
+  return asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`);
+}
+
+/** A project whose sessions run on runners, its member, and a thread of theirs, or an inquiry forked from one, that member's chat host holds. */
+async function chatHostThread(
+  label: string,
+  kind: "Thread" | "Inquiry" = "Thread",
+): Promise<{
+  readonly partition: Partition;
+  readonly member: Principal;
+  readonly session: SessionId;
+  readonly host: PoolPlaneIdentity;
+  readonly held: WorkerPoolSessionAssignment;
+}> {
+  const partition = await sessionRigProject(rig, label);
+  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  const member = principal(`member-${label}`);
+  const registered = principal("host");
+  const written = await postgresChatHostRegistry(apiPool).register({
+    tenant: partition.tenant,
+    owner: member,
+    clientId: `chuggy-host-${randomUUID()}`,
+    principal: registered,
+  });
+  assert.equal(written.written, "Registered");
+  const host: PoolPlaneIdentity = {
+    kind: "ChatHost",
+    tenant: partition.tenant,
+    owner: member,
+    principal: registered,
+  };
+  const thread = await sessionRigSession(rig, partition, label, {
+    kind: "Thread",
+    principal: member,
+  });
+  const session =
+    kind === "Thread"
+      ? thread
+      : await sessionRigSession(rig, partition, `${label}-inquiry`, {
+          kind,
+          principal: member,
+          parent: thread,
+        });
+  await sessionRigTurn(rig, partition, session, label);
+  const answered = await workerPoolPoll(
+    ports,
+    host,
+    { held: [], wanted: 0, wantedSessions: 1, contract: workerContractRelease },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`job wake suite: a poll answered ${answered.polled}`);
+  const [held, ...more] = answered.answer.sessions;
+  assert.deepEqual(more, []);
+  assert.ok(held !== undefined, "the host was handed no thread");
+  return { partition, member, session, host, held };
+}
+
+function bearerOf(held: { readonly bearer: string }) {
+  return { secret: asSessionBearerSecret(held.bearer), generation: 1 };
+}
+
+async function wakeTurns(
+  session: SessionId,
+): Promise<readonly Record<string, unknown>[]> {
+  return rig.harness.query(
+    `SELECT turn,input_kind,input,ordinal::text AS ordinal FROM session_turn
+      WHERE session=$1 AND input_kind='Wake' ORDER BY ordinal`,
+    [session],
+  );
+}
+
+test("a chat host's thread attempt is viewed as the wake pass reads a candidate", async () => {
+  const { partition, member, session, held } =
+    await chatHostThread("job-wake-view");
+  assert.deepEqual(await wakes.wakeView(bearerOf(held)), {
+    partition,
+    principal: member,
+    session,
+    route: "Pool",
+    runner: "Live",
+    inquiryRunner: "Live",
+  });
+});
+
+test("a wake through the door is one turn in the thread's mailbox, and the same turn again is already woken", async () => {
+  const { session, held } = await chatHostThread("job-wake-door");
+  const turn = threadJobWakeTurn(session, "dispatcher-exit-1");
+  const offered = {
+    ...bearerOf(held),
+    turn,
+    input: '{"wake":"JobExited"}',
+    route: "Pool" as const,
+  };
+  const woken = await wakes.wakeThread(offered);
+  assert.ok(typeof woken === "object" && woken.woken === "Woken");
+  assert.deepEqual(await wakes.wakeThread(offered), {
+    woken: "AlreadyWoken",
+    ordinal: woken.ordinal,
+  });
+  assert.deepEqual(await wakeTurns(session), [
+    {
+      turn,
+      input_kind: "Wake",
+      input: '{"wake":"JobExited"}',
+      ordinal: String(woken.ordinal),
+    },
+  ]);
+});
+
+test("an attempt that is not a thread's on a chat host is refused a wake at the view and at the door", async () => {
+  const partition = await sessionRigProject(rig, "job-wake-elsewhere");
+  for (const kind of ["Thread", "Lead"] as const) {
+    const label = `job-wake-elsewhere-${kind}`;
+    const session = await sessionRigSession(rig, partition, label, { kind });
+    await sessionRigTurn(rig, partition, session, label);
+    const placed = await sessionRigAttempt(rig, partition, session, label);
+    const bearer = { secret: placed.secret, generation: 1 };
+    assert.equal(await wakes.wakeView(bearer), "NotChatHostThread", kind);
+    assert.equal(
+      await wakes.wakeThread({
+        ...bearer,
+        turn: threadJobWakeTurn(session, "e"),
+        input: "{}",
+        route: "Pool",
+      }),
+      "NotChatHostThread",
+      kind,
+    );
+    assert.deepEqual(await wakeTurns(session), [], kind);
+  }
+});
+
+test("an inquiry a chat host holds is refused a wake at the view and at the door", async () => {
+  const { session, held } = await chatHostThread("job-wake-inquiry", "Inquiry");
+  const bearer = bearerOf(held);
+  assert.equal(await wakes.wakeView(bearer), "NotChatHostThread");
+  assert.equal(
+    await wakes.wakeThread({
+      ...bearer,
+      turn: threadJobWakeTurn(session, "e"),
+      input: "{}",
+      route: "Pool",
+    }),
+    "NotChatHostThread",
+  );
+  assert.deepEqual(await wakeTurns(session), []);
+});
+
+test("an ended attempt's bearer is fenced at the view and at the door, and wakes nothing", async () => {
+  const { session, host, held } = await chatHostThread("job-wake-fenced");
+  assert.equal(
+    await workerPoolSettled(ports, host, held.assignment, {
+      outcome: "Unavailable",
+    }),
+    true,
+  );
+  const bearer = bearerOf(held);
+  assert.equal(await wakes.wakeView(bearer), "Fenced");
+  assert.equal(
+    await wakes.wakeThread({
+      ...bearer,
+      turn: threadJobWakeTurn(session, "e"),
+      input: "{}",
+      route: "Pool",
+    }),
+    "Fenced",
+  );
+  assert.deepEqual(await wakeTurns(session), []);
+});
+
+/** The authority as a member's own partition meets it: no project tuple names it, and the tenant grants everything. */
+const tenantGranting: ProjectAccess = {
+  authorize: () => Promise.resolve(undefined),
+  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
+  authorizeSite: projectAccessSiteRefused,
+};
+
+/** One of a member's own threads, opened and messaged as the API does, and handed to that member's chat host. */
+async function ownChatHostThread(label: string): Promise<{
+  readonly own: Partition;
+  readonly member: Principal;
+  readonly session: SessionId;
+  readonly held: WorkerPoolSessionAssignment;
+}> {
+  const partition = await sessionRigProject(rig, label);
+  const member = principal(`member-${label}`);
+  const registered = principal("host");
+  const written = await postgresChatHostRegistry(apiPool).register({
+    tenant: partition.tenant,
+    owner: member,
+    clientId: `chuggy-host-${randomUUID()}`,
+    principal: registered,
+  });
+  assert.equal(written.written, "Registered");
+  const own = memberScopePartition(partition.tenant, member);
+  const threads = postgresThreads(apiPool, { streamsMax: 4 });
+  const opened = await threads.openUnscoped({
+    partition: own,
+    principal: member,
+    session: asSessionId(`thread-${label}-${randomUUID()}`),
+    key: asThreadOpenKey(randomUUID()),
+    systemPrompt: "you are a member's own thread",
+    credentialSlot: "claude-code",
+  });
+  if (opened.opened === "ThreadLimitReached")
+    throw new Error("job wake suite: a member's own thread was refused");
+  const session = opened.thread.session;
+  const queued = await threads.enqueueMessage({
+    partition: own,
+    principal: member,
+    session,
+    turn: asSessionTurnId(`turn-${label}-${randomUUID()}`),
+    input: "start the dispatcher",
+    route: "Pool",
+  });
+  assert.equal(queued.enqueued, "Enqueued");
+  const answered = await workerPoolPoll(
+    ports,
+    {
+      kind: "ChatHost",
+      tenant: partition.tenant,
+      owner: member,
+      principal: registered,
+    },
+    { held: [], wanted: 0, wantedSessions: 1, contract: workerContractRelease },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`job wake suite: a poll answered ${answered.polled}`);
+  const [held] = answered.answer.sessions;
+  assert.ok(held !== undefined, "the host was handed no thread");
+  return { own, member, session, held };
+}
+
+test("a member's own thread on their chat host is viewed in their own scope and woken through the door", async () => {
+  const { own, member, session, held } =
+    await ownChatHostThread("job-wake-own");
+  const bearer = bearerOf(held);
+  const view = await wakes.wakeView(bearer);
+  assert.ok(typeof view === "object");
+  assert.deepEqual(
+    {
+      partition: view.partition,
+      principal: view.principal,
+      session: view.session,
+      inquiryRunner: view.inquiryRunner,
+    },
+    { partition: own, principal: member, session, inquiryRunner: "Live" },
+  );
+  const woken = await threadJobWake(
+    {
+      store: wakes,
+      access: tenantGranting,
+      clock: { nowIso: () => new Date().toISOString() },
+    },
+    bearer,
+    { wake: "JobExited", resource: "dispatcher", event: "dispatcher-exit-1" },
+  );
+  assert.ok("woken" in woken && woken.woken === "Woken", JSON.stringify(woken));
+  const turns = await wakeTurns(session);
+  assert.equal(turns.length, 1);
+  assert.equal(
+    turns[0]?.["turn"],
+    threadJobWakeTurn(session, "dispatcher-exit-1"),
+  );
+});

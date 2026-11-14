@@ -109,8 +109,8 @@ function lastHostedBy(
                   AND last.pool_principal=${principal})`;
 }
 
-export const migration179: Migration = {
-  version: 179,
+export const migration180: Migration = {
+  version: 180,
   name: "a chat host names the capabilities its threads may hold",
   statements: [
     `ALTER TABLE public.chat_host
