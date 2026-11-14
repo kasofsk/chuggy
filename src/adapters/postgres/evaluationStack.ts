@@ -47,6 +47,7 @@ import type {
   EvaluationStack,
   EvaluationStackStore,
   RemovableStack,
+  RestackableStack,
   UnrecordedStack,
   StackInvalidationOffered,
   StackDecision,
@@ -121,6 +122,17 @@ interface EvaluatingRow {
   readonly ticket: string;
   readonly brief: string | null;
   readonly cycle: string | null;
+}
+
+interface RestackableRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly ticket: string;
+  readonly brief: string | null;
+  readonly repository: string | null;
+  readonly cycle: string | null;
+  readonly restack_tickets: string[] | null;
+  readonly restack_commits: string[] | null;
 }
 
 interface RemovableRow {
@@ -682,6 +694,101 @@ async function stackEvaluatingOf(
   };
 }
 
+/**
+ * The Stacked tickets pending over the cycle of their latest accepted work
+ * with no stack recorded for it, whose finalization request is open, unheld
+ * and has no attempt, each with the line of its newest `Restack` attempt.
+ */
+async function stackRestackable(
+  pool: pg.Pool,
+  limit: number,
+  rotation: number | undefined,
+): Promise<readonly RestackableStack[]> {
+  const found = await pool.query<RestackableRow>(
+    sql`SELECT d.tenant, d.project, d.ticket::text AS ticket, d.brief::text AS brief,
+               d.brief->>'repository' AS repository, w.cycle::text AS cycle,
+               x.restack_tickets::text[] AS restack_tickets, x.restack_commits
+          FROM ticket_definition d
+          JOIN ticket_projection p
+            ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
+          JOIN LATERAL (
+            SELECT max(t.cycle) AS cycle
+              FROM execution e
+              JOIN execution_request_task t
+                ON t.tenant = e.tenant AND t.project = e.project
+                   AND t.request = e.source_request AND t.task = e.task
+              JOIN execution_result r
+                ON r.tenant = e.tenant AND r.project = e.project
+                   AND r.execution = e.execution
+             WHERE e.tenant = d.tenant AND e.project = d.project
+               AND e.ticket = d.ticket AND t.kind = 'Work'
+               AND e.status = 'Terminal' AND e.outcome = 'Passed'
+               AND r.verdict = 'Pass') w ON w.cycle IS NOT NULL
+          LEFT JOIN LATERAL (
+            SELECT a.restack_tickets, a.restack_commits
+              FROM finalization_attempt a
+             WHERE a.tenant = d.tenant AND a.project = d.project
+               AND a.ticket = d.ticket AND a.failure_kind = 'Restack'
+             ORDER BY a.prepared_at DESC, a.attempt DESC LIMIT 1) x ON true
+         WHERE d.brief->>'landing' = 'Stacked'
+           AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
+           AND d.brief->>'repository' IS NOT NULL
+           AND p.phase = 'Finalization'
+           AND NOT EXISTS (
+                 SELECT 1 FROM evaluation_stack s
+                  WHERE s.tenant = d.tenant AND s.project = d.project
+                    AND s.ticket = d.ticket AND s.work_cycle = w.cycle)
+           AND EXISTS (
+                 SELECT 1 FROM finalization_request f
+                  WHERE f.tenant = d.tenant AND f.project = d.project
+                    AND f.ticket = d.ticket AND f.kind = 'RunFinalizer'
+                    AND f.state = 'Open'
+                    AND (f.claim_owner IS NULL OR f.claim_expires_at <= now())
+                    AND NOT EXISTS (
+                          SELECT 1 FROM finalization_attempt a
+                           WHERE a.tenant = f.tenant AND a.project = f.project
+                             AND a.request = f.request))
+         ORDER BY md5(d.tenant || d.project || d.ticket::text || coalesce(${rotation ?? null}::bigint, floor(extract(epoch FROM now()) / ${stackRotationSecs}::integer)::bigint)::text)
+         LIMIT ${limit}`,
+  );
+  return found.rows.flatMap(stackRestackableOf);
+}
+
+function stackRestackableOf(row: RestackableRow): RestackableStack[] {
+  const brief = releasedBriefOf(row.brief);
+  if (brief === undefined) return [];
+  return [
+    {
+      partition: {
+        tenant: asTenantId(row.tenant),
+        project: asProjectId(row.project),
+      },
+      ticket: asTicketId(projectRowCounter(row.ticket, "restackable ticket")),
+      cycle: projectRowCounter(row.cycle ?? "", "restackable cycle"),
+      repository: finalizerRowPresent(row.repository, "restackable repository"),
+      target: briefQueuesOn(brief),
+      restackedOver: stackRestackedOver(row),
+    },
+  ];
+}
+
+/** The line a re-stack attempt recorded, its tickets and commits paired by position. */
+function stackRestackedOver(
+  row: RestackableRow,
+): readonly StackMember[] | undefined {
+  const tickets = row.restack_tickets;
+  const commits = row.restack_commits;
+  if (tickets === null && commits === null) return undefined;
+  if (tickets === null || commits === null || tickets.length !== commits.length)
+    throw new Error(
+      "evaluation stack: a re-stack's line tickets and commits do not pair",
+    );
+  return tickets.map((ticket, at) => ({
+    ticket: asTicketId(projectRowCounter(ticket, "re-stack ticket")),
+    commit: asGitObjectId(finalizerRowPresent(commits[at] ?? null, "commit")),
+  }));
+}
+
 async function stackInvalidate(
   pool: pg.Pool,
   partition: Partition,
@@ -831,6 +938,7 @@ export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
     decision: (partition, ticket, cycle) =>
       stackDecision(pool, partition, ticket, cycle),
     evaluating: (limit, rotation) => stackEvaluating(pool, limit, rotation),
+    restackable: (limit, rotation) => stackRestackable(pool, limit, rotation),
     invalidate: (partition, ticket, cycle, epoch) =>
       stackInvalidate(pool, partition, ticket, cycle, epoch),
     dead: (partition, ticket) => stackDead(pool, partition, ticket),

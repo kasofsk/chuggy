@@ -46,6 +46,11 @@
  * exactly where it found it — a hold the view decided, a ref it could not read,
  * a permit it was refused, and a request the pass had no budget left for.
  *
+ * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
+ * ticket pending unstacked that could now stack over the queue ahead of it has
+ * its waiting request claimed and a `Restack` failure recorded on it, and the
+ * request's next claim concludes it; nothing else is done under that claim.
+ *
  * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. Claims held under a superseded
  * epoch and claims past their expiry are reopened first, because a lease that
  * lapsed is not self-healing and nothing claimable can be drawn until those rows
@@ -321,6 +326,8 @@ import {
 } from "./evaluationStack.ts";
 import { stackPrepared } from "./evaluationStacking.ts";
 import { stackInvalidations } from "./stackInvalidation.ts";
+import { restackLine } from "./stackRestack.ts";
+import type { StackMember } from "./stackChoice.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
   finalizerLandingOf,
@@ -355,6 +362,7 @@ export interface FinalizerService {
     | "stackFailures"
     | "evaluating"
     | "invalidate"
+    | "restackable"
   >;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
@@ -2838,6 +2846,9 @@ const stackPreparationsPerPassMax = 8;
 /** The most evaluations over a stack one pass looks at. */
 const stackEvaluatingPerPassMax = 16;
 
+/** The most tickets pending unstacked one pass looks at for a re-stack. */
+const stackRestacksPerPassMax = 8;
+
 /**
  * Offers the invalidation of every evaluation whose stack stopped standing,
  * from here because this is the one principal that reads the queue and the landings.
@@ -2872,6 +2883,91 @@ async function finalizerInvalidateStacks(
     for (const dead of stackInvalidations(group, queue))
       await stacks.invalidate(dead.partition, dead.ticket, dead.cycle, epoch);
   }
+}
+
+/**
+ * Sends back to Work every Stacked ticket pending unstacked that `restackLine`
+ * finds could now stack over the queue ahead of it, by claiming its waiting
+ * request and recording a `Restack` failure on it, which the request's next
+ * claim concludes as `FinalizationNeedsWork`. The failure names the accepted
+ * commit for the work cycle to report again and the line it was sent back
+ * over. A queue that cannot be read and a request someone else holds are left
+ * for the next pass.
+ */
+async function finalizerRestackStacks(
+  service: FinalizerService,
+  owner: FinalizerOwnerId,
+  epoch: RecoveryEpoch,
+  tally: FinalizerTally,
+): Promise<void> {
+  const stacks = service.stacks;
+  if (stacks === undefined) return;
+  const config = checkedFinalizerConfig(service.config);
+  const restackable = await stacks
+    .restackable(stackRestacksPerPassMax)
+    .catch((): readonly [] => []);
+  for (const due of restackable) {
+    const read = await Promise.all([
+      stacks.queue(due.partition, due.repository, due.target),
+      stacks.stackFailures(due.partition, due.ticket),
+    ]).catch((): undefined => undefined);
+    if (read === undefined) continue;
+    const [queue, stackFailures] = read;
+    const line = restackLine(
+      { ticket: due.ticket, stackFailures, restackedOver: due.restackedOver },
+      queue,
+    );
+    const accepted = queue.find((entry) => entry.ticket === due.ticket);
+    if (line === undefined || accepted === undefined) continue;
+    const claim = await service.store.claimUnattempted(
+      owner,
+      epoch,
+      due.partition,
+      due.ticket,
+      config.requestClaimLeaseSecs,
+    );
+    if (claim === undefined) continue;
+    await finalizerRestack(service, claim, accepted.commit, line, tally);
+  }
+}
+
+/** Records the `Restack` failure one claimed, waiting request is sent back to Work with. */
+async function finalizerRestack(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  accepted: GitObjectId,
+  line: readonly StackMember[],
+  tally: FinalizerTally,
+): Promise<void> {
+  const gathered = await finalizerGather(service, claim);
+  if (gathered === undefined) return;
+  if (gathered.gathered === "Held") {
+    finalizerHold(service, tally, gathered.hold);
+    return;
+  }
+  const target = gathered.view.observedTarget;
+  if (target === undefined) {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return;
+  }
+  const prepared = await finalizerGathered(
+    service,
+    gathered.view,
+    target,
+    tally,
+  );
+  if (prepared === undefined) return;
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(prepared.subject, target),
+      outcome: "Failed",
+      failureKind: "Restack",
+      recheckCommit: accepted,
+      restackBeneath: line,
+    }),
+    tally,
+  );
 }
 
 /**
@@ -2997,6 +3093,7 @@ export async function finalizerPass(
   });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
   await finalizerInvalidateStacks(service, epoch);
+  await finalizerRestackStacks(service, owner, epoch, tally);
   await finalizerPrepareStacks(service, epoch);
   await finalizerSweepStacks(service, epoch);
   return {

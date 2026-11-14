@@ -198,8 +198,12 @@ export interface TicketLandingsStore {
   ): Promise<readonly TicketLandingRecord[] | undefined>;
 }
 
-/** What one work cycle's evaluation was prepared over: a stack, or the decision to evaluate it unstacked. */
-export type TicketLandingStack =
+/**
+ * What one work cycle's evaluation was prepared over: a stack, or the decision
+ * to evaluate it unstacked, `restacked` where the cycle before it was sent back
+ * to re-stack.
+ */
+export type TicketLandingStack = { readonly restacked?: true } & (
   | {
       readonly cycle: number;
       readonly prepared: "Stacked";
@@ -211,7 +215,8 @@ export type TicketLandingStack =
       readonly cycle: number;
       readonly prepared: "Unstacked";
       readonly reason: UnstackedReason;
-    };
+    }
+);
 
 export interface TicketLandingStacksStore {
   /**

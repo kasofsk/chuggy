@@ -753,3 +753,71 @@ test("B's proposal stacked over A's, merged into the base at a commit recording 
   assert.equal(rechecked[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(rechecked[0]?.["recheck_commit"], pair.bCommit);
 });
+
+async function bRestacks(pair: Pair) {
+  return rig.as(
+    `SELECT outcome, failure_kind, recheck_commit,
+            restack_tickets::text[] AS restack_tickets, restack_commits
+       FROM finalization_attempt WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.b.ticket)],
+  );
+}
+
+test("B pending unstacked behind A pending is sent back to re-stack over A on the next pass, keeping its rank, and its next claim concludes it", async () => {
+  const pair = await pairOpened("flow-restack", "Finalization");
+  assert.deepEqual(await queued(pair), [
+    [pair.aTicket, "Pending"],
+    [pair.b.ticket, "Pending"],
+  ]);
+  const rank = await rankOf(pair.b, pair.b.ticket);
+
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack",
+  );
+
+  const [attempt, ...rest] = await bRestacks(pair);
+  assert.deepEqual(rest, []);
+  assert.equal(attempt?.["outcome"], "Failed");
+  assert.equal(attempt?.["failure_kind"], "Restack");
+  assert.equal(attempt?.["recheck_commit"], pair.bCommit);
+  assert.deepEqual(attempt?.["restack_tickets"], [String(pair.aTicket)]);
+  assert.deepEqual(attempt?.["restack_commits"], [pair.aCommit]);
+  assert.equal(await rankOf(pair.b, pair.b.ticket), rank, "B keeps its rank");
+
+  const operations = async () => {
+    const [row] = await rig.harness.query(
+      `SELECT count(*)::int AS operations FROM operation WHERE tenant=$1 AND project=$2`,
+      [pair.b.partition.tenant, pair.b.partition.project],
+    );
+    return Number(row?.["operations"]);
+  };
+  const before = await operations();
+  await finalizerExpireClaim(rig, pair.b);
+  const concluded = await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack-concluded",
+  );
+  assert.ok(concluded.conclusions >= 1, "the waiting request is drawn");
+  assert.equal(await operations(), before + 1, "and its conclusion submitted");
+  assert.equal((await bRestacks(pair)).length, 1, "nothing more is attempted");
+});
+
+test("B already stacked over A is not sent back to re-stack", async () => {
+  const pair = await pairOpened("flow-restack-stacked", "Finalization");
+  await bStacked(pair);
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack-stacked",
+  );
+  assert.deepEqual(
+    (await bRestacks(pair)).map((row) => row["failure_kind"]),
+    [],
+  );
+});

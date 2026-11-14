@@ -997,8 +997,13 @@ export interface FinalizerAttempt {
     readonly artifact: string;
     readonly digest: string;
   };
-  /** The accepted commit a `RecheckRequired` failure re-reports, and no other failure keeps one. */
+  /** The accepted commit a `RecheckRequired` or `Restack` failure re-reports, and no other failure keeps one. */
   readonly recheckCommit?: string;
+  /** The line a `Restack` failure was sent back over, as its tickets and commits. */
+  readonly restack?: {
+    readonly tickets: readonly number[];
+    readonly commits: readonly string[];
+  };
   /** Why a `RecheckRequired` failure was sent back. */
   readonly recheckReason?: string;
   /** The base a re-check was read against, where it records one. */
@@ -1051,8 +1056,9 @@ export async function finalizerPrepare(
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
-        proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$23,$24)`,
+        proposal_base_commit, recheck_commit, recheck_reason, recheck_base_ref,
+        restack_tickets, restack_commits)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$22,$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$23,$24,$25,$26)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -1078,6 +1084,8 @@ export async function finalizerPrepare(
       attempt.targetRef ?? "refs/heads/main",
       attempt.recheckReason ?? null,
       attempt.recheckBaseRef ?? null,
+      attempt.restack?.tickets ?? null,
+      attempt.restack?.commits ?? null,
     ],
   );
   return identity;

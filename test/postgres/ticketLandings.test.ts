@@ -1525,6 +1525,40 @@ test("a cycle decided unstacked answers its reason, each cycle in order, and a c
   assert.equal(read.stacks, undefined);
 });
 
+test("a landing sent back to re-stack answers its kind and no re-check, and the cycle after it answers that it came from a re-stack", async () => {
+  const project = await landingAs("stacks-restack", "Stacked");
+  const target = finalizerCommit();
+  const commit = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, "stacks-restack", {
+    outcome: "Failed",
+    failureKind: "Restack",
+    recheckCommit: commit,
+    restack: { tickets: [3], commits: [commit] },
+    target,
+  });
+  await unstacked(project, 1, "Unchosen");
+  const { beneath, tip } = await stacked(project, 2);
+  const read = await landingsOf(project);
+  assert.deepEqual(read?.landings[0]?.attempt, {
+    outcome: "Failed",
+    failureKind: "Restack",
+    targetRef: "refs/heads/main",
+    targetCommit: target,
+    preparedAt: await preparedAt(project, attempt),
+  });
+  assert.deepEqual(read?.stacks?.cycles, [
+    { cycle: 1, prepared: "Unstacked", reason: "Unchosen" },
+    {
+      cycle: 2,
+      restacked: true,
+      prepared: "Stacked",
+      beneath,
+      reference: stackTarget,
+      tip,
+    },
+  ]);
+});
+
 test("a ticket that is not Stacked answers no stacks, though the finalizer left one for it", async () => {
   for (const how of ["Direct", "Serialized"] as const) {
     const project = await landingAs(`stacks-${how.toLowerCase()}`, how);
