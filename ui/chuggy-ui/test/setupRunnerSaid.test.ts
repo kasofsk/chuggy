@@ -1107,7 +1107,7 @@ test("chat-host off Linux says so, changes nothing, and gives the by-hand steps 
   expect(mac).toEqual({
     found:
       "this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
-    tell: `chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${rosterMyRunners}, press Register chat host and copy the token it shows. Then, with the runner package installed there, on Linux run chuggy-linux register --api https://chuggy.example --token=<token> --chat, which starts its service where it can and otherwise prints what is left, and on a Mac run chuggy-darwin register --api https://chuggy.example --token=<token> --chat, then chuggy-darwin install-agent --pool with the file it wrote, and load the agent as that prints. Tell me once it is running.`,
+    tell: `chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${rosterMyRunners}, press Register chat host, choose the machine and run the commands it shows. Tell me once it is running.`,
     when: "once the person says their chat host is running",
     again: "Status",
   });

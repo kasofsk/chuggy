@@ -1,7 +1,7 @@
 /**
  * What a minted registration token is handed over in: the steps that make a
  * machine a runner, each command copied by its own control, for a project's
- * pool and a member's own runner alike.
+ * pool, a member's own runner and their chat host alike.
  */
 
 import { useEffect, useRef } from "react";
@@ -10,7 +10,12 @@ import type { ReactNode, RefObject } from "react";
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantFigure } from "../core/figures.ts";
-import { runnerPackages, runnerRegisterCommand } from "../core/runners.ts";
+import type { Copy } from "../core/copy.ts";
+import {
+  runnerGuideAddress,
+  runnerPackages,
+  runnerRegisterCommand,
+} from "../core/runners.ts";
 import type { RunnerAsk, RunnerKind } from "../core/runners.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { currentOrigin } from "./ports.ts";
@@ -50,6 +55,18 @@ export function useFocusedUnheld<
   return drawn;
 }
 
+/** What the steps' list is called for a machine registered as `kind`. */
+function runnerStepsLabel(kind: RunnerKind): Copy {
+  switch (kind) {
+    case "Pool":
+      return { id: "runners-add" };
+    case "Personal":
+      return { id: "runners-register" };
+    case "ChatHost":
+      return { id: "runners-chat-host-register" };
+  }
+}
+
 /** The list takes the focus as it is drawn where nothing holds it. */
 export function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
@@ -68,9 +85,7 @@ export function RunnerSteps(props: {
       <ol
         ref={steps}
         tabIndex={-1}
-        aria-label={text({
-          id: props.kind === "Pool" ? "runners-add" : "runners-register",
-        })}
+        aria-label={text(runnerStepsLabel(props.kind))}
         className="grid min-w-0 list-decimal gap-3 pl-6"
       >
         <RunnerStep title={text({ id: "runners-steps-install" })}>
@@ -101,7 +116,7 @@ export function RunnerSteps(props: {
         <RunnerStep title={text({ id: "runners-steps-finish" })}>
           <a
             className="justify-self-start"
-            href={offered.guideAddress}
+            href={runnerGuideAddress(offered, props.kind)}
             rel="noopener noreferrer"
             target="_blank"
           >

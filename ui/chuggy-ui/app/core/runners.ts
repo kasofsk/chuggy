@@ -37,8 +37,10 @@ export interface RunnerPackage {
   readonly needs: Copy;
   /** The command that installs the release chuggy pins for the package. */
   readonly installCommand: string;
-  /** Where the package says what is left to do after registering. */
+  /** Where the package says what is left to do after registering a runner. */
   readonly guideAddress: string;
+  /** Where the package says what is left to do after registering a chat host. */
+  readonly chatHostGuideAddress: string;
 }
 
 const runnerReleasePattern =
@@ -73,6 +75,7 @@ export const runnerPackages = {
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.51.0/chuggy-linux-0.51.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   },
   darwin: {
     label: { id: "runners-package-darwin" },
@@ -81,6 +84,7 @@ export const runnerPackages = {
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.21.0/chuggy-darwin-0.21.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
   },
 } as const satisfies Record<string, RunnerPackage>;
 
@@ -190,6 +194,20 @@ export function runnerCapabilityLabel(capability: string): string {
 
 /** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
 export type RunnerKind = "Pool" | "Personal" | "ChatHost";
+
+/** Where a package says what is left to do once a machine is registered as `kind`. */
+export function runnerGuideAddress(
+  offered: RunnerPackage,
+  kind: RunnerKind,
+): string {
+  switch (kind) {
+    case "Pool":
+    case "Personal":
+      return offered.guideAddress;
+    case "ChatHost":
+      return offered.chatHostGuideAddress;
+  }
+}
 
 /** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
