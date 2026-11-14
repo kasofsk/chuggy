@@ -80,6 +80,7 @@ import {
 import type { SessionAttemptMint } from "./sessionSchedulerRun.ts";
 import {
   contractVersionAccepted,
+  workerContractChatSessionThreads,
   workerContractUnscopedChat,
 } from "./workerPlane.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
@@ -485,11 +486,32 @@ export async function workerPoolSessionClaims(
     );
     if (opened === "PoolFull") break;
     if (opened === "NotClaimable") continue;
-    claimed.push(
-      workerPoolSessionHanded(terms, launch, assignment, minted.bearer.secret),
-    );
+    claimed.push({
+      ...workerPoolSessionHanded(
+        terms,
+        launch,
+        assignment,
+        minted.bearer.secret,
+      ),
+      ...workerPoolSessionThreadNamed(identity, asked.contract, candidate),
+    });
   }
   return claimed;
+}
+
+/** The thread a claimed session is an attempt of, named only to a chat host whose poll's release reads it, and absent for an inquiry or a lead. */
+function workerPoolSessionThreadNamed(
+  identity: WorkerPoolSessionClaimant,
+  contract: string | undefined,
+  candidate: WorkerPoolSessionCandidate,
+): Pick<WorkerPoolSessionAssignment, "thread"> {
+  if (
+    identity.kind !== "ChatHost" ||
+    candidate.kind !== "Thread" ||
+    !contractVersionAccepted(workerContractChatSessionThreads, contract)
+  )
+    return {};
+  return { thread: { project: candidate.project, session: candidate.session } };
 }
 
 /** A session a claim opened, as the pool is handed it on the plane's terms. */
