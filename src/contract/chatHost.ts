@@ -73,6 +73,11 @@
  * claimed turn rather than waiting on it. Every frame of version 2 reads
  * unchanged in version 3.
  *
+ * VERSION 4 let a `Start` name no deadline: one whose envelope names no
+ * `timeoutSecsMax` runs until it ends by itself, by `Stop`, by `Drain` or by
+ * the end of the host's stream, and version 3 refuses it. Every frame of
+ * version 3 reads unchanged in version 4.
+ *
  * A HOST'S SETTINGS MAY NAME THE CAPABILITIES ITS THREADS HOLD, which it sends
  * on each poll as `workerPoolPollQuery.sessionCapabilities`. A thread it claims
  * runs under its roster intersected with that set, in its facts and in what
@@ -92,15 +97,16 @@ import {
 import { poolEnvelopeSchema } from "./workerTask.ts";
 
 /** The version of the protocol this release describes. */
-export const chatProtocolVersion = 3;
+export const chatProtocolVersion = 4;
 
 /** The longest frame either side writes, in UTF-8, its newline left out. */
 export const chatProtocolFrameBytesMax = 16_384;
 
-/** What a session is started with: a pool's envelope less its workspace, because the supervisor gives each session's user its directory: its thread's where its `Start` names one, and otherwise one made for that session. */
-export const chatHostSessionEnvelopeSchema = z.strictObject(
-  poolEnvelopeSchema.omit({ workspace: true }).shape,
-);
+/** What a session is started with: a pool's envelope less its workspace, because the supervisor gives each session's user its directory: its thread's where its `Start` names one, and otherwise one made for that session. Its deadline is absent where the session runs under none. */
+export const chatHostSessionEnvelopeSchema = z.strictObject({
+  ...poolEnvelopeSchema.omit({ workspace: true }).shape,
+  timeoutSecsMax: poolEnvelopeSchema.shape.timeoutSecsMax.exactOptional(),
+});
 
 /** A credential as a host names it to its supervisor: its agent, its type, and its name, which is unique across the host's agents and is never the secret. */
 export const chatHostCredentialSchema = z.strictObject({
