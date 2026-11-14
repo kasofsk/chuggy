@@ -230,15 +230,16 @@ export const attemptEvidences = [
   "RunPushFailed",
   "RunTimedOut",
   "RunDiskLow",
+  "RunCredentialAbsent",
   ...workerImageFaults,
 ] as const;
 export type AttemptEvidence = (typeof attemptEvidences)[number];
 
 /**
- * The labels a run ends under when one of its own steps failed, or it was
- * killed at its deadline or because its runner's disk ran low: a failure
- * another attempt would repeat, so the work waits for a person rather than
- * being resumed.
+ * The labels a run ends under when one of its own steps failed, it was
+ * killed at its deadline or because its runner's disk ran low, or a credential
+ * its job lists was not delivered: a failure another attempt would repeat, so
+ * the work waits for a person rather than being resumed.
  */
 export const runStepEvidences = [
   "RunCloneFailed",
@@ -247,6 +248,7 @@ export const runStepEvidences = [
   "RunPushFailed",
   "RunTimedOut",
   "RunDiskLow",
+  "RunCredentialAbsent",
 ] as const;
 export type RunStepEvidence = (typeof runStepEvidences)[number];
 
@@ -260,6 +262,20 @@ export const runEndedEvidences = [
   ...runStepEvidences,
 ] as const;
 export type RunEndedEvidence = (typeof runEndedEvidences)[number];
+
+/**
+ * Why a credential asked for was not served: the attempt's grant does not
+ * allow its name, nothing here holds or issues it, it is not enabled for the
+ * attempt's project or repository, the outside system that issues it refused,
+ * or the worker's release is too old to read the shape it is served in.
+ */
+export const workerHeldCredentialAbsences = [
+  "NotGranted",
+  "NotHeld",
+  "NotEnabled",
+  "IssuerRefused",
+  "WorkerTooOld",
+] as const;
 
 /** The windows a provider limits an agent account's usage in, as the agent runtime names them. */
 export const runUsageWindows = ["five_hour", "seven_day"] as const;

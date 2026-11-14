@@ -41,6 +41,7 @@ import {
   forgeApps,
   runEndedEvidences,
   runUsageWindows,
+  workerHeldCredentialAbsences,
 } from "./rosters.ts";
 import {
   artifactFailures,
@@ -117,6 +118,7 @@ export {
   runContextCategoryKinds,
   runEndedEvidences,
   runUsageWindows,
+  workerHeldCredentialAbsences,
 } from "./rosters.ts";
 export type { WorkerPlaneAnswer } from "./planeAnswers.ts";
 
@@ -186,12 +188,6 @@ export const workerRunLimitSchema = z.strictObject({
   window: z.enum(runUsageWindows).exactOptional(),
   resetsAt: runUsageInstantSchema.exactOptional(),
   credential: workerRunCredentialSchema.exactOptional(),
-});
-
-/** The label a run ended itself under, and the limit that stopped it, which is kept only beside `RunRateLimited`. */
-export const workerRunEndedSchema = z.strictObject({
-  evidence: z.enum(runEndedEvidences),
-  limit: workerRunLimitSchema.exactOptional(),
 });
 
 /** A refusal the pod stops on. */
@@ -435,20 +431,6 @@ export type WorkerHeldCredentialBundle = z.infer<
   typeof workerHeldCredentialBundleSchema
 >;
 
-/**
- * Why a credential asked for was not served: the attempt's grant does not
- * allow its name, nothing here holds or issues it, it is not enabled for the
- * attempt's project or repository, the outside system that issues it refused,
- * or the worker's release is too old to read the shape it is served in.
- */
-export const workerHeldCredentialAbsences = [
-  "NotGranted",
-  "NotHeld",
-  "NotEnabled",
-  "IssuerRefused",
-  "WorkerTooOld",
-] as const;
-
 /** One credential asked for and not served, and why. */
 export const workerHeldCredentialAbsentSchema = z.object({
   credential: identitySchema,
@@ -457,6 +439,25 @@ export const workerHeldCredentialAbsentSchema = z.object({
 export type WorkerHeldCredentialAbsent = z.infer<
   typeof workerHeldCredentialAbsentSchema
 >;
+
+/**
+ * The label a run ended itself under; the limit that stopped it, which is kept
+ * only beside `RunRateLimited`; and the credential its job lists that was not
+ * delivered and why, named with `RunCredentialAbsent` and with no other label.
+ */
+export const workerRunEndedSchema = z
+  .strictObject({
+    evidence: z.enum(runEndedEvidences),
+    limit: workerRunLimitSchema.exactOptional(),
+    absent: z
+      .strictObject(workerHeldCredentialAbsentSchema.shape)
+      .exactOptional(),
+  })
+  .refine(
+    (ended) =>
+      (ended.evidence === "RunCredentialAbsent") ===
+      (ended.absent !== undefined),
+  );
 
 /** Each credential asked for that the plane serves, and those it names absent; a plane before `workerContractCredentialBundles` names none absent. */
 export const workerHeldCredentialsAnswerSchema = z.object({

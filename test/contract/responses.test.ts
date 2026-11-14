@@ -93,6 +93,7 @@ import {
   repositoryConfigurationsAbsentSchema,
   runConfigurationResponseSchema,
   runErrorResponseSchema,
+  runStepFailureSchema,
   runTranscriptResponseSchema,
   runContextResponseSchema,
   runTurnsResponseSchema,
@@ -119,6 +120,7 @@ import {
   leadAbsencesUntimed,
   leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
+  workerHeldCredentialAbsences,
 } from "../../src/contract/rosters.ts";
 import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
@@ -134,6 +136,7 @@ import {
   forgeInstallationsAnsweredMax,
   forgeRepositoriesAnsweredMax,
   nativeHttpPageItemsMax,
+  nativeHttpPathSegmentCharsMax,
   projectRepositoriesAnsweredMax,
   repositoryConfigurationIgnoredAnsweredMax,
   runModelCharsMax,
@@ -499,6 +502,54 @@ test("a wall a failed run step parked names the step and the attempt it stopped 
         },
       }),
     );
+});
+
+test("a step failed for a credential not delivered names the credential and why, and no other step names one", () => {
+  const failed = {
+    execution: "execution-1",
+    attempt: "attempt-1",
+    error: { bytes: 61 },
+  };
+  for (const reason of workerHeldCredentialAbsences)
+    for (const credential of ["a", "c".repeat(nativeHttpPathSegmentCharsMax)]) {
+      const named = {
+        ...failed,
+        evidence: "RunCredentialAbsent",
+        absent: { credential, reason },
+      };
+      assert.deepEqual(runStepFailureSchema.parse(named), named, reason);
+    }
+  for (const [offered, why] of [
+    [{ ...failed, evidence: "RunCredentialAbsent" }, "the step without it"],
+    [
+      {
+        ...failed,
+        evidence: "RunPushFailed",
+        absent: { credential: "chuggy.github", reason: "NotHeld" },
+      },
+      "another step with it",
+    ],
+    [
+      {
+        ...failed,
+        evidence: "RunCredentialAbsent",
+        absent: { credential: "chuggy.github", reason: "Lost" },
+      },
+      "a reason the roster does not hold",
+    ],
+    [
+      {
+        ...failed,
+        evidence: "RunCredentialAbsent",
+        absent: {
+          credential: "c".repeat(nativeHttpPathSegmentCharsMax + 1),
+          reason: "NotHeld",
+        },
+      },
+      "a name past its bound",
+    ],
+  ] as const)
+    assert.equal(runStepFailureSchema.safeParse(offered).success, false, why);
 });
 
 test("a wall a runner lost names the runner, the attempt and how often", () => {

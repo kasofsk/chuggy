@@ -8,8 +8,10 @@ import {
   runUsageWindows,
   workerRunEndedSchema,
   workerRunTotalsSchema,
+  workerHeldCredentialAbsences,
   workerRunUsageSchema,
 } from "../../src/contract/workerPlane.ts";
+import { nativeHttpPathSegmentCharsMax } from "../../src/contract/http.ts";
 import { runTotalsBody } from "../adapters/workerPlaneFixtures.ts";
 
 const reading = {
@@ -17,6 +19,8 @@ const reading = {
   resetsAt: 1_800_000_000,
   observedAt: 1_799_990_000,
 };
+
+const absent = { credential: "chuggy.github", reason: "NotHeld" } as const;
 
 const totalsWith = (usage: unknown) => ({ ...runTotalsBody, usage });
 
@@ -100,7 +104,11 @@ test("a run's end names its limit with either part, both or neither, beside any 
       { resetsAt: 1_800_000_000 },
       { window: "seven_day", resetsAt: runUsageInstantSecsMax },
     ]) {
-      const offered = limit === undefined ? { evidence } : { evidence, limit };
+      const offered = {
+        evidence,
+        ...(limit === undefined ? {} : { limit }),
+        ...(evidence === "RunCredentialAbsent" ? { absent } : {}),
+      };
       assert.deepEqual(
         workerRunEndedSchema.parse(offered),
         offered,
@@ -124,4 +132,52 @@ test("a run's limit naming a window the roster does not, or a reset out of its b
       false,
       why,
     );
+});
+
+test("a run ended `RunCredentialAbsent` names the credential and each reason the roster holds, at the longest name a credential has", () => {
+  for (const reason of workerHeldCredentialAbsences)
+    for (const credential of ["a", "c".repeat(nativeHttpPathSegmentCharsMax)]) {
+      const offered = {
+        evidence: "RunCredentialAbsent",
+        absent: { credential, reason },
+      };
+      assert.deepEqual(workerRunEndedSchema.parse(offered), offered, reason);
+    }
+});
+
+test("a run's absent credential is refused without `RunCredentialAbsent`, missing with it, or out of its bounds", () => {
+  for (const [offered, why] of [
+    [{ evidence: "RunCredentialAbsent" }, "the label without the credential"],
+    [{ evidence: "RunFailed", absent }, "the credential beside another label"],
+    [{ evidence: "RunDiskLow", absent }, "the credential beside another step"],
+    [
+      {
+        evidence: "RunCredentialAbsent",
+        absent: { ...absent, reason: "Lost" },
+      },
+      "a reason the roster does not hold",
+    ],
+    [
+      {
+        evidence: "RunCredentialAbsent",
+        absent: { ...absent, credential: "" },
+      },
+      "an empty name",
+    ],
+    [
+      {
+        evidence: "RunCredentialAbsent",
+        absent: {
+          ...absent,
+          credential: "c".repeat(nativeHttpPathSegmentCharsMax + 1),
+        },
+      },
+      "a name past its bound",
+    ],
+    [
+      { evidence: "RunCredentialAbsent", absent: { ...absent, secret: "x" } },
+      "an unknown field",
+    ],
+  ] as const)
+    assert.equal(workerRunEndedSchema.safeParse(offered).success, false, why);
 });
