@@ -70,6 +70,8 @@ export interface SessionPlaneIdentity {
   readonly forkFrom?: string;
   /** Present where the session runs on its own system prompt with none of its project's settings; an inquiry's is its lead's. */
   readonly systemPromptOwn?: true;
+  /** Present only for a thread a chat host whose poll named a capability set holds, whose shell is handed its credential. */
+  readonly shellCredentialHanded?: true;
   /** Whether the attempt may still act, which every route requires before anything else. */
   readonly live: boolean;
 }
