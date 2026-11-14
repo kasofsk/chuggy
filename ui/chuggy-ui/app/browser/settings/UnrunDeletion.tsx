@@ -146,14 +146,15 @@ function UnrunDeletionSection<Held extends UnrunDeletionHolding>(
   );
 }
 
-/** The project deleted, for its workspace's administrator, while it has never run work. */
+/** The project deleted, for its workspace's administrator, while it has never
+ * run work. Its name is kept past the deletion, whose landing rereads an
+ * inventory that no longer holds it. */
 export function ProjectDeletion(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const text = useCopyText();
   const { partition } = props;
   const standing = usePanelState(projectDeletionQuery(partition));
-  // Kept past the deletion, whose landing rereads an inventory without it.
   const found = useProjectNamed()(partition);
   const [project, setProject] = useState(found);
   if (found !== partition.project && found !== project) setProject(found);
