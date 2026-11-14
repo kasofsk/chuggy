@@ -409,8 +409,8 @@ async function setupExchangeConfirmed(
  * before the exchange until the token it produced is written and has been used
  * once; what the store was refused ends the page as a fault, whatever the
  * holder made of it. A page whose site is no longer the one remembered
- * exchanges nothing, because what it wrote would replace another site's
- * sign-in.
+ * exchanges nothing, because the token it kept would be for a site no run of
+ * this program then uses.
  */
 async function setupCallbackExchanged(
   ports: SetupPorts,
