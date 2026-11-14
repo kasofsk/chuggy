@@ -52,6 +52,14 @@ const start = {
   },
 } as const satisfies ChatHostFrame;
 
+/** The envelope of a session that runs under no deadline. */
+const unboundedEnvelope = {
+  callbackUrl: start.envelope.callbackUrl,
+  bearer,
+  outputBytesMax: start.envelope.outputBytesMax,
+  providerCredentialFile: start.envelope.providerCredentialFile,
+} as const;
+
 const credential = {
   agent: "Claude",
   type: "OAuth",
@@ -84,11 +92,7 @@ const versionFourHostFrames: readonly ChatHostFrame[] = [
   {
     frame: "Start",
     assignment: "01HZ",
-    envelope: {
-      callbackUrl: start.envelope.callbackUrl,
-      bearer,
-      outputBytesMax: start.envelope.outputBytesMax,
-    },
+    envelope: unboundedEnvelope,
     thread,
   },
 ];
@@ -509,28 +513,22 @@ test("a `Forget` naming the longest thread fits in a frame", () => {
 });
 
 test("a `Start` whose envelope names no deadline is read without one, and one naming a deadline is read as before", () => {
-  const { timeoutSecsMax: _deadline, ...envelope } = start.envelope;
-  const unbounded = { ...start, envelope } as const satisfies ChatHostFrame;
-  const read = parseChatHostFrame(JSON.stringify(unbounded));
-  assert.deepEqual(read, unbounded);
-  assert.equal("timeoutSecsMax" in (read as typeof unbounded).envelope, false);
+  const unbounded = { ...start, envelope: unboundedEnvelope } as const;
+  assert.deepEqual(parseChatHostFrame(JSON.stringify(unbounded)), unbounded);
   assert.deepEqual(parseChatHostFrame(JSON.stringify(start)), start);
   for (const wrong of [null, "3600"])
     assert.throws(() =>
       parseChatHostFrame(
         JSON.stringify({
           ...start,
-          envelope: { ...envelope, timeoutSecsMax: wrong },
+          envelope: { ...unboundedEnvelope, timeoutSecsMax: wrong },
         }),
       ),
     );
 });
 
 test("a pod's envelope still names its deadline", () => {
-  const { timeoutSecsMax: _deadline, ...envelope } = {
-    ...start.envelope,
-    workspace: "/workspace",
-  };
+  const envelope = { ...unboundedEnvelope, workspace: "/workspace" };
   assert.equal(
     poolEnvelopeSchema.safeParse({ ...envelope, timeoutSecsMax: 3_600 })
       .success,
