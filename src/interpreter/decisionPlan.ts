@@ -327,7 +327,8 @@ function nativeActions(
  * What a failed finalization's evidence pins: the identities it named, and
  * where the change starts again — the base the proposal failed on where the
  * attempt recorded one, since the rework is told to bring it in, and the
- * target's commit otherwise.
+ * target's commit otherwise — and the accepted commit a re-check or a re-stack
+ * reports again.
  */
 function inputBundleEvidenceReferences(
   evidence: NonNullable<ExecutionRequestBundle["evidence"]>,
@@ -344,7 +345,8 @@ function inputBundleEvidenceReferences(
       kind: "ChangeBase",
       reference: evidence.proposalBase ?? evidence.targetCommit,
     },
-    ...(evidence.failureKind === "RecheckRequired" &&
+    ...((evidence.failureKind === "RecheckRequired" ||
+      evidence.failureKind === "Restack") &&
     evidence.recheckCommit !== undefined
       ? [{ kind: "Recheck" as const, reference: evidence.recheckCommit }]
       : []),

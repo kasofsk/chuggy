@@ -93,6 +93,7 @@
     "@chuggy/worker-contract-1.89.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.89.0/chuggy-worker-contract-1.89.0.tgz",
     "@chuggy/worker-contract-1.9.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.9.0/chuggy-worker-contract-1.9.0.tgz",
     "@chuggy/worker-contract-1.90.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.90.0/chuggy-worker-contract-1.90.0.tgz",
+    "@chuggy/worker-contract-1.91.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.91.0/chuggy-worker-contract-1.91.0.tgz",
     "@eslint/js": "^10.0.1",
     "@informalsystems/quint": "0.33.1",
     "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.7.0",

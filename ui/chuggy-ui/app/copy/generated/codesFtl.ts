@@ -98,6 +98,7 @@ codes-landing-failure-preparation = Preparation failed
 codes-landing-failure-queue-checks = Merge queue checks failed
 # spells -brief-check: to re-check is to evaluate again
 codes-landing-failure-recheck = Target moved, re-check required
+codes-landing-failure-restack = Sent back to stack on the queue ahead
 
 ## Why one landing attempt was sent back to re-check.
 

@@ -776,9 +776,10 @@ test("a review that passed with handoffs is not carried", async () => {
 
 const landingTarget = "refs/heads/main";
 
-/** Records the stack cycle 1 was evaluated over, one ticket beneath it accepted at `beneath`. */
-async function stackedFirst(
+/** Records the stack `workCycle` was evaluated over, one ticket beneath it accepted at `beneath`. */
+async function stackedAt(
   at: Carrying,
+  workCycle: number,
   tip: string,
   beneath: { ticket: number; commit: string },
 ): Promise<void> {
@@ -786,7 +787,7 @@ async function stackedFirst(
   await rig.harness.query(
     `INSERT INTO evaluation_stack
        (tenant,project,ticket,work_cycle,repository,target_ref,tip,stack_commit,stack_tree)
-     VALUES ($1,$2,$3,1,$4,$5,$6,$7,$7)`,
+     VALUES ($1,$2,$3,$8,$4,$5,$6,$7,$7)`,
     [
       ...key(at),
       at.project.ticket,
@@ -794,13 +795,14 @@ async function stackedFirst(
       landingTarget,
       tip,
       "9".repeat(40),
+      workCycle,
     ],
   );
   await rig.harness.query(
     `INSERT INTO evaluation_stack_beneath
        (tenant,project,ticket,work_cycle,depth,beneath_ticket,beneath_commit)
-     VALUES ($1,$2,$3,1,1,$4,$5)`,
-    [...key(at), at.project.ticket, beneath.ticket, beneath.commit],
+     VALUES ($1,$2,$3,$6,1,$4,$5)`,
+    [...key(at), at.project.ticket, beneath.ticket, beneath.commit, workCycle],
   );
 }
 
@@ -875,7 +877,7 @@ async function landed(
 test("a review earned over a stack whose ticket beneath was ejected is not carried", async () => {
   const at = await carrying("ejected");
   const first = await cycle(at, 1, change);
-  await stackedFirst(at, "a".repeat(40), {
+  await stackedAt(at, 1, "a".repeat(40), {
     ticket: at.project.ticket + 100,
     commit: "b".repeat(40),
   });
@@ -892,7 +894,7 @@ test("a review earned over a stack whose tickets beneath all landed is carried",
   const first = await cycle(at, 1, change);
   const tip = "a".repeat(40);
   const beneath = { ticket: at.project.ticket + 100, commit: "b".repeat(40) };
-  await stackedFirst(at, tip, beneath);
+  await stackedAt(at, 1, tip, beneath);
   await landed(at, {
     ticket: beneath.ticket,
     onto: tip,
@@ -912,7 +914,7 @@ test("a review earned over a stack whose ticket beneath landed at another commit
   const first = await cycle(at, 1, change);
   const tip = "a".repeat(40);
   const beneath = { ticket: at.project.ticket + 100, commit: "b".repeat(40) };
-  await stackedFirst(at, tip, beneath);
+  await stackedAt(at, 1, tip, beneath);
   await landed(at, {
     ticket: beneath.ticket,
     onto: tip,
@@ -923,6 +925,25 @@ test("a review earned over a stack whose ticket beneath landed at another commit
   const later = await cycle(at, 2, change);
   assert.equal(
     (await rig.store.openAttempt(openingOf(at, later.review))).opened,
+    "Opened",
+  );
+});
+
+test("a review earned unstacked carries into a cycle re-stacked over the same diff, and the commands run again", async () => {
+  const at = await carrying("restacked");
+  const first = await cycle(at, 1, change);
+  await evaluated(at, first);
+  await stackedAt(at, 2, "a".repeat(40), {
+    ticket: at.project.ticket + 100,
+    commit: "b".repeat(40),
+  });
+  const later = await cycle(at, 2, change);
+  assert.deepEqual(await rig.store.openAttempt(openingOf(at, later.review)), {
+    opened: "Carried",
+    source: first.review,
+  });
+  assert.equal(
+    (await rig.store.openAttempt(openingOf(at, later.tests))).opened,
     "Opened",
   );
 });

@@ -106,6 +106,18 @@ export interface EvaluatingStack {
   readonly standing: StackStanding;
 }
 
+/** A Stacked ticket pending over a cycle with no stack, whose finalization nobody holds and no attempt answers. */
+export interface RestackableStack {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+  readonly cycle: number;
+  readonly repository: string;
+  /** The reference its brief queues on, absent for the repository's default. */
+  readonly target: string | undefined;
+  /** The line its latest re-stack was sent back over, absent where it has none. */
+  readonly restackedOver: readonly StackMember[] | undefined;
+}
+
 /** What offering an invalidation to the finalizer's door answered. */
 export type StackInvalidationOffered =
   "Submitted" | "AlreadySubmitted" | "Refused";
@@ -198,6 +210,15 @@ export interface EvaluationStackStore {
     cycle: number,
     epoch: RecoveryEpoch,
   ): Promise<StackInvalidationOffered>;
+  /**
+   * The Stacked tickets pending over a work cycle no stack was recorded for,
+   * whose finalization request is open, unheld and unattempted, at most
+   * `limit` of them.
+   */
+  restackable(
+    limit: number,
+    rotation?: number,
+  ): Promise<readonly RestackableStack[]>;
   /** The cycles of the ticket whose stack was found no longer standing, each with the journal position it was found at. */
   dead(
     partition: Partition,

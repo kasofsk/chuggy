@@ -392,6 +392,7 @@ interface TicketLandingStackRow {
   readonly beneath_tickets: string[] | null;
   readonly beneath_commits: string[] | null;
   readonly reason: string | null;
+  readonly restacked: boolean | null;
 }
 
 function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
@@ -399,9 +400,11 @@ function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
     finalizerRowPresent(row.work_cycle, "work cycle"),
     "work cycle",
   );
+  const restacked = row.restacked === true ? { restacked: true as const } : {};
   if (row.reason !== null)
     return {
       cycle,
+      ...restacked,
       prepared: "Unstacked",
       reason: finalizerRowValue(unstackedReasons, row.reason, "stack reason"),
     };
@@ -413,6 +416,7 @@ function ticketLandingStack(row: TicketLandingStackRow): TicketLandingStack {
     );
   return {
     cycle,
+    ...restacked,
     prepared: "Stacked",
     beneath: tickets.map((ticket, at) => ({
       ticket: asTicketId(projectRowCounter(ticket, "beneath ticket")),
@@ -432,7 +436,7 @@ async function ticketLandingStacksRead(
   const found = await pool.query<TicketLandingStackRow>(
     sql`SELECT s.work_cycle::text AS work_cycle,s.target_ref,s.tip,
                s.beneath_tickets::text[] AS beneath_tickets,
-               s.beneath_commits,s.reason
+               s.beneath_commits,s.reason,s.restacked
           FROM read_ticket_evaluation_stacks(${partition.tenant},${partition.project},${ticket},${count}::integer) s
          ORDER BY s.work_cycle`,
   );

@@ -225,12 +225,14 @@ export const chuggyToolTicketLandingBytesMax =
 /**
  * What one work cycle's stack `read_ticket_landings`'s route answers weighs
  * beside its reference: the deepest stack there may be, its cycle and the
- * tickets beneath it at the largest number a ticket's may be, and its comma. A
- * cycle decided unstacked carries none of these and weighs less.
+ * tickets beneath it at the largest number a ticket's may be, its mark of a
+ * re-stack, and its comma. A cycle decided unstacked carries none of the stack's
+ * and weighs less.
  */
 const chuggyToolTicketLandingStackFieldsBytesMax = textUtf8Bytes(
   `${JSON.stringify({
     cycle: Number.MAX_SAFE_INTEGER,
+    restacked: true,
     prepared: "Stacked",
     beneath: Array.from({ length: ticketLandingStackDepthMax }, () => ({
       ticket: Number.MAX_SAFE_INTEGER,

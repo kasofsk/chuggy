@@ -53,11 +53,12 @@
  * hold ends when reconciliation concludes and no earlier.
  *
  * THE FAILURE KINDS ARE `MergeConflict`, `PreparationFailed`,
- * `QueueChecksFailed` AND `RecheckRequired`. An integration answered by a
+ * `QueueChecksFailed`, `RecheckRequired` AND `Restack`. An integration answered by a
  * conflict is the first, a preparation that produced no candidate is the
  * second, a merge queue whose required checks failed twice on the change
- * merged onto its base is the third, and a serialized landing whose target
- * moved past what was evaluated is the fourth; all four reduce to the one priced `FinalizationNeedsWork` the model
+ * merged onto its base is the third, a serialized landing whose target
+ * moved past what was evaluated is the fourth, and a Stacked ticket pending
+ * unstacked that could now stack over the queue ahead of it is the fifth; all five reduce to the one priced `FinalizationNeedsWork` the model
  * already has, and no hold is any of them: a hold spends nothing and refunds
  * nothing, so a finalizer's own re-preparations stay invisible to
  * `TicketGraph`.
@@ -319,15 +320,17 @@ export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome
 /**
  * An integration answered by a conflict, a preparation that produced no
  * candidate, a merge queue's required checks failing twice on the change
- * merged onto its base, and a target that moved past the commit a serialized
- * landing evaluated, each of which reduces to the one priced
+ * merged onto its base, a target that moved past the commit a serialized
+ * landing evaluated, and a Stacked ticket sent back to evaluate over the queue
+ * ahead of it, each of which reduces to the one priced
  * `FinalizationNeedsWork`.
  */
 export type FinalizationFailureKind =
   | "MergeConflict"
   | "PreparationFailed"
   | "QueueChecksFailed"
-  | "RecheckRequired";
+  | "RecheckRequired"
+  | "Restack";
 
 /** Every failure kind, so a suite and a database CHECK iterate rather than restate. */
 export const allFinalizationFailureKinds: readonly FinalizationFailureKind[] = [
@@ -335,6 +338,7 @@ export const allFinalizationFailureKinds: readonly FinalizationFailureKind[] = [
   "PreparationFailed",
   "QueueChecksFailed",
   "RecheckRequired",
+  "Restack",
 ];
 
 /**
@@ -1544,7 +1548,8 @@ export interface FinalizerStore {
    * Takes a bounded lease on at most `requestsMax` unclaimed or lapsed requests
    * in `authorizing_seq` order, refusing every claim under a superseded epoch.
    * A Serialized ticket's request is left open unless the ticket holds its
-   * reference (`./serializedHolder.ts`).
+   * reference (`./serializedHolder.ts`) or the request has a failed attempt,
+   * which can only conclude.
    */
   claimRequests(
     owner: FinalizerOwnerId,
@@ -1552,6 +1557,19 @@ export interface FinalizerStore {
     requestsMax: number,
     leaseSecs: number,
   ): Promise<readonly FinalizationClaim[]>;
+
+  /**
+   * Takes a bounded lease on the open, unheld `RunFinalizer` request of one
+   * ticket, where it has no attempt, under the current epoch; nothing where
+   * there is none.
+   */
+  claimUnattempted(
+    owner: FinalizerOwnerId,
+    epoch: RecoveryEpoch,
+    partition: Partition,
+    ticket: TicketId,
+    leaseSecs: number,
+  ): Promise<FinalizationClaim | undefined>;
 
   /** Extends a claim still held at its own generation under the current epoch. */
   extendClaim(claim: FinalizationClaim, leaseSecs: number): Promise<boolean>;

@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
   asFinalizerOwnerId,
@@ -355,6 +356,89 @@ test("a re-check in flight holds the reference ahead of an earlier entry", async
     "the re-check cycle holds the reference",
   );
   assert.equal(await untouched(first), true);
+});
+
+/** A `Restack` failure over one ticket ahead, at a commit of the harness's. */
+function restacked(over: FinalizerProject) {
+  const commit = finalizerCommit();
+  return {
+    outcome: "Failed" as const,
+    failureKind: "Restack",
+    recheckCommit: commit,
+    restack: { tickets: [over.ticket], commits: [commit] },
+  };
+}
+
+test("a re-stack in flight keeps its rank, and holds the reference ahead of a later entry as a re-check does", async () => {
+  const first = await serialized("restack-first");
+  const restacking = await sibling(first, "restack-flight", {
+    landing: "Stacked",
+    phase: "Work",
+    pending: false,
+    after: -1,
+  });
+  await finalizerPrepare(rig, restacking, "restack-flight", restacked(first));
+  assert.equal(
+    includes(await drawn([first], "restack-held"), first),
+    false,
+    "the re-stack cycle holds the reference",
+  );
+  assert.equal(await untouched(first), true);
+});
+
+test("a waiting finalization with a failed attempt is drawn, because all it can do is conclude", async () => {
+  const first = await serialized("restack-drawn-first");
+  const second = await sibling(first, "restack-drawn-second", {
+    landing: "Stacked",
+    phase: "Finalization",
+    pending: true,
+  });
+  assert.equal(
+    includes(await drawn([second], "restack-unattempted"), second),
+    false,
+  );
+  await finalizerPrepare(rig, second, "restack-drawn", restacked(first));
+  assert.equal(
+    includes(await drawn([second], "restack-attempted"), second),
+    true,
+  );
+});
+
+test("a waiting finalization is claimed by its ticket alone while it is open, unheld and unattempted", async () => {
+  const first = await serialized("restack-claim-first");
+  const second = await sibling(first, "restack-claim-second", {
+    landing: "Stacked",
+    phase: "Finalization",
+    pending: true,
+  });
+  const claim = (label: string, epoch = first.epoch) =>
+    store.claimUnattempted(
+      asFinalizerOwnerId(finalizerIdentity(`owner-${label}`)),
+      asRecoveryEpoch(epoch),
+      second.partition,
+      asTicketId(second.ticket),
+      60,
+    );
+  assert.equal(
+    await claim("restack-claim-stale", "superseded-epoch"),
+    undefined,
+  );
+  const claimed = await claim("restack-claim");
+  assert.equal(claimed?.request, second.request);
+  assert.equal(claimed?.state, "Registered");
+  assert.equal(await claim("restack-claim-again"), undefined, "a held request");
+  await rig.harness.query(
+    `UPDATE finalization_request SET claim_owner=NULL, claim_expires_at=NULL, recovery_epoch=NULL,
+            state='Open'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [second.partition.tenant, second.partition.project, second.request],
+  );
+  await finalizerPrepare(rig, second, "restack-claim", restacked(first));
+  assert.equal(
+    await claim("restack-claim-attempted"),
+    undefined,
+    "an attempted request",
+  );
 });
 
 test("the holder is the lowest rank, whatever its ticket number or phase", async () => {

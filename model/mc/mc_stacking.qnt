@@ -32,9 +32,11 @@ module mc_stacking {
     all { canEject(queue, i), queue.tickets.keys().forall(j => queue.tickets.get(j).phase != Ejected), queue' = eject(queue, i) }
   action landTicket = nondet i = ticketIds.oneOf()
     all { canLand(queue, i), queue' = land(queue, i) }
+  action restackPending = nondet i = ticketIds.oneOf()
+    all { canRestack(queue, i), queue' = restack(queue, i) }
   action step = any {
     reportWork, startEvaluation, evaluationPasses, evaluationFails,
-    reworkFailed, ejectTicket, landTicket
+    reworkFailed, ejectTicket, landTicket, restackPending
   }
 
   val allInvariants: bool = invariants(queue)
