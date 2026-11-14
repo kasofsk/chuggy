@@ -16,9 +16,12 @@
  * asserting about whatever an earlier case left running.
  */
 
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
+
+import type pg from "pg";
 
 import {
   asSessionAttemptId,
@@ -64,6 +67,12 @@ import {
 import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import type { SessionLaunchFacts } from "../../src/interpreter/workerPoolSessions.ts";
 import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
+import { postgresSessionLaunchPrecondition } from "../../src/adapters/postgres/workerPoolSessions.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import {
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRolePool,
@@ -99,6 +108,23 @@ export const sessionRigLaunch: SessionLaunchFacts = {
 };
 
 /** A lease long enough that no case races its own expiry. */
+/** Asserts the scheduler holds every fact {@link sessionRigLaunch} needs. */
+export async function sessionRigLaunchMet(pool: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    await postgresSessionLaunchPrecondition(pool, sessionRigLaunch).check(
+      new AbortController().signal,
+    ),
+    { met: "Met" },
+  );
+}
+
+/** An authority answering every read, so a case turns on the rows alone. */
+export const sessionRigReadingEverything: ProjectAccess = {
+  authorize: (caller) => Promise.resolve(memberAuthority(caller)),
+  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
+  authorizeSite: projectAccessSiteRefused,
+};
+
 export const sessionRigLeaseSecs = 60;
 
 /** One opened subject: the harness, the three stores over it and the live epoch. */

@@ -23,10 +23,7 @@ import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
-import {
-  postgresSessionLaunchPrecondition,
-  postgresWorkerPoolSessions,
-} from "../../src/adapters/postgres/workerPoolSessions.ts";
+import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import type {
   WorkerPoolReconciliation,
@@ -40,10 +37,6 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import {
-  memberAuthority,
-  type ProjectAccess,
-} from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   workerPoolPoll,
@@ -52,12 +45,13 @@ import {
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
-import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
   sessionRigAttempt,
   sessionRigBoundless,
   sessionRigLaunch,
+  sessionRigLaunchMet,
+  sessionRigReadingEverything,
   sessionRigOpen,
   sessionRigProject,
   sessionRigRouted,
@@ -78,19 +72,9 @@ after(async () => {
 });
 
 const launch = sessionRigLaunch;
+await sessionRigLaunchMet(schedulerPool);
 
-assert.deepEqual(
-  await postgresSessionLaunchPrecondition(schedulerPool, launch).check(
-    new AbortController().signal,
-  ),
-  { met: "Met" },
-);
-
-const readingEverything: ProjectAccess = {
-  authorize: (caller) => Promise.resolve(memberAuthority(caller)),
-  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
-  authorizeSite: projectAccessSiteRefused,
-};
+const readingEverything = sessionRigReadingEverything;
 
 const ports: WorkerPoolPorts = {
   assignments: postgresWorkerPoolAssignments(poolPlanePool),

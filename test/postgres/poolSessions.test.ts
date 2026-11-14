@@ -41,10 +41,7 @@ import {
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
-import {
-  postgresSessionLaunchPrecondition,
-  postgresWorkerPoolSessions,
-} from "../../src/adapters/postgres/workerPoolSessions.ts";
+import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import {
   workerContractHeader,
@@ -68,10 +65,7 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import {
-  memberAuthority,
-  type ProjectAccess,
-} from "../../src/interpreter/projectAccess.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   type Partition,
@@ -123,6 +117,8 @@ import {
   sessionRigAttempt,
   sessionRigBoundless,
   sessionRigLaunch,
+  sessionRigLaunchMet,
+  sessionRigReadingEverything,
   sessionRigOpen,
   sessionRigProject,
   sessionRigQueuedFor,
@@ -135,7 +131,6 @@ import {
   workerPoolReportAgeMsMax,
   workerPoolReports,
 } from "../../src/interpreter/workerPoolReports.ts";
-import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const rig = await sessionRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -179,20 +174,9 @@ after(async () => {
 });
 
 const launch = sessionRigLaunch;
+await sessionRigLaunchMet(schedulerPool);
 
-assert.deepEqual(
-  await postgresSessionLaunchPrecondition(schedulerPool, launch).check(
-    new AbortController().signal,
-  ),
-  { met: "Met" },
-);
-
-/** An authority answering every read, so a case here turns on the rows alone. */
-const readingEverything: ProjectAccess = {
-  authorize: (caller) => Promise.resolve(memberAuthority(caller)),
-  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
-  authorizeSite: projectAccessSiteRefused,
-};
+const readingEverything = sessionRigReadingEverything;
 
 const store = postgresWorkerPoolSessions(poolPlanePool);
 const ports: WorkerPoolPorts = {
