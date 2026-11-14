@@ -22,17 +22,22 @@
  * either: its call stands in the thread's transcript like any other, and what
  * it offers is done by the member, as the member, or not at all.
  *
- * A ROSTER IS A CONTROL WHERE THE API HOLDS IT. The agent runtime enforces a
- * roster inside the pod, and the pod is the thing being controlled; what makes
- * the chuggy tools' half of it a control is that the API admits a session
- * bearer only to the routes its session row's capabilities admit, so a call
- * made around a tool the roster lacks is refused as the tool's absence would
- * be. The runtime's own tools reach no route, and what a roster grants them is
- * the pod's alone. Beside it stand the membership, enforced by the database
- * when it authorizes a project access, and the decision controls the selector
- * applies to a finished turn — and the last is post-hoc: the tool has already
- * run and its command has already landed, and what the selector refuses is the
- * decision that used it. A control described as stronger than it is, is worse
+ * A ROSTER IS A CONTROL AS FAR AS THE API HOLDS IT, WHICH IS BY ROUTE AND
+ * METHOD. The agent runtime enforces a roster inside the pod, and the pod is
+ * the thing being controlled; the API admits a session bearer to a read of
+ * its own scope under that scope's read capability, and otherwise only to the
+ * routes some tool of its session row's capabilities calls, so a call to a
+ * route none of them calls is refused. A route two capabilities' tools share
+ * admits either one's whole body: `release_draft` posts an operation, so a
+ * session holding `DraftAuthor` without `DraftOriginate` or `TicketDispatch`,
+ * a lead among them, may still post any operation, `ManualDispatch`,
+ * `RevokeTicket` and `UpdateTicket` among them, and a draft no parent bears,
+ * though no tool its roster holds does. The runtime's own tools reach no
+ * route, and what a roster grants them is the pod's alone. Beside it stand the
+ * membership, enforced by the database when it authorizes a project access,
+ * and the decision controls the selector applies to a finished turn — and the
+ * last is post-hoc: the tool has already run and its command has already
+ * landed, and what the selector refuses is the decision that used it. A control described as stronger than it is, is worse
  * than none.
  *
  * DERIVED WORK IS A FACT ABOUT THE MAP. `DraftAuthor` carries no bare create: a
