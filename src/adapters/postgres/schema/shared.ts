@@ -428,3 +428,7 @@ export const chatHostThreadsClosedFunction = "chat_host_threads_closed";
 
 /** Whether a thread is standing, read by the API. */
 export const threadStandingFunction = "thread_jobs_standing";
+
+/** The capabilities a thread holds while a chat host holds it, read by the API. */
+export const threadChatHostCapabilitiesFunction =
+  "thread_chat_host_capabilities";

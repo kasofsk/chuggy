@@ -26,6 +26,7 @@ import { copyOrDataText } from "../../core/copy.ts";
 import type { Copy } from "../../core/copy.ts";
 import { agoText } from "../../core/figures.ts";
 import { memberChatRoutes } from "../../core/memberChat.ts";
+import { sessionCapabilitiesSaid } from "../../core/sessionCapabilities.ts";
 import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
@@ -310,13 +311,13 @@ function ChatPaneCloseConfirm(props: {
 }
 
 /** What of a thread its actions read, which a listing's entry and the
- * thread's own read both carry, and whether it is kept running, which only
- * its own read says. */
+ * thread's own read both carry, and whether it is kept running and what it
+ * may do on its owner's chat host, which only its own read says. */
 type ChatPaneThreadNamed = Pick<
   ThreadEntryResponse,
   "session" | "title" | "mine" | "state"
 > &
-  Partial<Pick<ThreadResponse, "jobsStanding">>;
+  Partial<Pick<ThreadResponse, "jobsStanding" | "chatHostCapabilities">>;
 
 /** Where the actions are drawn: the pane's header, or the bar over the
  * thread's own page, where the title is the page's and its standing is said
@@ -348,6 +349,27 @@ function ChatPaneThreadTitle(props: {
           </Tooltip>
         </span>
       ) : null}
+      {props.thread.chatHostCapabilities === undefined ? null : (
+        <span className="flex shrink-0 pr-2">
+          <Tooltip
+            text={text({
+              id: "chat-host-capabilities-detail",
+              args: {
+                capabilities: sessionCapabilitiesSaid(
+                  text,
+                  props.thread.chatHostCapabilities,
+                ),
+              },
+            })}
+          >
+            <span>
+              <Pill tone="neutral">
+                {text({ id: "chat-host-capabilities" })}
+              </Pill>
+            </span>
+          </Tooltip>
+        </span>
+      )}
     </>
   );
 }

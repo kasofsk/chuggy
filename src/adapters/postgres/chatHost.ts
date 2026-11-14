@@ -27,6 +27,7 @@ import { asTenantId } from "../../interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import type { ChatHostPlaneRegistry } from "../../interpreter/workerPool.ts";
 import { postgresTransaction } from "./pool.ts";
+import { sessionRowCapabilities } from "./sessionRows.ts";
 import { workerPoolRunnerKept } from "./workerPool.ts";
 
 const foreignKeyViolation = "23503";
@@ -102,7 +103,7 @@ async function chatHostDeleted(
   return true;
 }
 
-/** The member's host with its newest poll and the runner that poll named. */
+/** The member's host with its newest poll and the runner and threads' capabilities that poll named. */
 async function chatHostRead(
   pool: pg.Pool,
   key: ChatHostKey,
@@ -114,8 +115,9 @@ async function chatHostRead(
     live: boolean | null;
     runner_package: string | null;
     runner_version: string | null;
+    session_capabilities: string[] | null;
   }>(sql`SELECT h.client_id,h.registered_at,h.last_polled_at,
-      h.runner_package,h.runner_version,
+      h.runner_package,h.runner_version,h.session_capabilities,
       h.last_polled_at
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live
     FROM chat_host h
@@ -130,6 +132,11 @@ async function chatHostRead(
       : { polledAt: row.last_polled_at.toISOString() }),
     live: row.live === true,
     ...workerPoolRunnerKept(row),
+    ...(row.session_capabilities === null
+      ? {}
+      : {
+          sessionCapabilities: sessionRowCapabilities(row.session_capabilities),
+        }),
   };
 }
 

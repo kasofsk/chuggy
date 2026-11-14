@@ -46,6 +46,13 @@
  * the host and the reaper read one figure. A pool's claim records nothing and
  * launches with the site's bounds, so its attempt is reaped at the
  * scheduler's window as a placed one is.
+ *
+ * A CHAT HOST'S THREAD HOLDS ITS ROSTER INTERSECTED WITH WHAT ITS HOST NAMED,
+ * and the whole of its roster where the host named nothing: the claim records
+ * the host's set on the attempt and builds the invocation from the
+ * intersection, and the API confines the attempt's bearer to the same
+ * intersection, taken from the session's roster as it reads it then. An
+ * inquiry, a lead and any session a pool claims hold their roster.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
@@ -134,6 +141,8 @@ export interface WorkerPoolSessionOpening {
   readonly launch: SessionTaskLaunch;
   /** How long a chat host's attempt may sit idle, absent where its host named no bound; a pool's attempt is reaped at the scheduler's window whatever this says. */
   readonly idleSecs?: number;
+  /** The capabilities a chat host named for the thread this opens, absent where it named none or this opens no chat host's thread. */
+  readonly hostCapabilities?: readonly SessionCapability[];
 }
 
 /** `NotClaimable` skips one session; `PoolFull` ends the claims. */
@@ -219,14 +228,15 @@ export interface WorkerPoolSessionTerms {
   readonly imageHosts: WorkerPoolImageHosts;
 }
 
-/** The invocation a claimed session's runner fetches, built as `sessionPlaceOne` builds a pod's. */
+/** The invocation a claimed session's runner fetches, built as `sessionPlaceOne` builds a pod's, under the capabilities its claim holds. */
 function workerPoolSessionInvocation(
   candidate: WorkerPoolSessionCandidate,
+  capabilities: readonly SessionCapability[],
   launch: SessionLaunchFacts,
   repository: RepositoryId | undefined,
 ): SessionTaskInvocation {
   return sessionTaskInvocation({
-    capabilities: candidate.capabilities,
+    capabilities,
     ...(candidate.agentReference === undefined
       ? {}
       : { agentReference: candidate.agentReference }),
@@ -320,6 +330,27 @@ export function workerPoolSessionIdleSecs(
   return idleSecs;
 }
 
+/** The set a claim records of what a chat host named: its own for a thread, and none for any other session or caller. */
+export function workerPoolSessionHostCapabilities(
+  identity: PoolPlaneIdentity,
+  kind: SessionKind,
+  hostCapabilities: readonly SessionCapability[] | undefined,
+): readonly SessionCapability[] | undefined {
+  return identity.kind === "ChatHost" && kind === "Thread"
+    ? hostCapabilities
+    : undefined;
+}
+
+/** The capabilities a claimed session holds: its roster, less whatever its host's set leaves out. */
+export function workerPoolSessionCapabilitiesHeld(
+  roster: readonly SessionCapability[],
+  hostCapabilities: readonly SessionCapability[] | undefined,
+): readonly SessionCapability[] {
+  if (hostCapabilities === undefined) return roster;
+  const named = new Set(hostCapabilities);
+  return roster.filter((capability) => named.has(capability));
+}
+
 const millisecondsPerSecond = 1_000;
 
 /** The bounds a claimed session is launched under: the site's, and for a chat host's its idle limit the host's own bound or none. */
@@ -347,6 +378,56 @@ function workerPoolSessionClaimsMemberScope(
   );
 }
 
+/** What claiming `candidate` asks the durable side to open, under the capabilities its claim holds. */
+function workerPoolSessionOpeningOf(
+  identity: WorkerPoolSessionClaimant,
+  candidate: WorkerPoolSessionCandidate,
+  claim: {
+    readonly terms: WorkerPoolSessionTerms;
+    readonly launch: SessionLaunchFacts;
+    readonly binding: RepositoryBinding | undefined;
+    readonly minted: ReturnType<SessionAttemptMint["mint"]>;
+    readonly assignment: string;
+    readonly idleSecs?: number;
+    readonly sessionCapabilities?: readonly SessionCapability[];
+  },
+): WorkerPoolSessionOpening {
+  const { terms, launch, minted, idleSecs } = claim;
+  const hostCapabilities = workerPoolSessionHostCapabilities(
+    identity,
+    candidate.kind,
+    claim.sessionCapabilities,
+  );
+  const held = workerPoolSessionCapabilitiesHeld(
+    candidate.capabilities,
+    hostCapabilities,
+  );
+  return {
+    candidate,
+    attempt: minted.attempt,
+    assignment: claim.assignment,
+    bearer: minted.bearer.id,
+    bearerSecretDigest: minted.bearerSecretDigest,
+    leaseSecs: terms.leaseSecs,
+    placementBackoffSecs: launch.placementBackoffSecs,
+    heldMax: terms.heldMax,
+    invocation: workerPoolSessionInvocation(
+      candidate,
+      held,
+      launch,
+      sessionRepositoryPlaced(claim.binding, held, launch.mirrors),
+    ),
+    image: launch.image,
+    launch: {
+      api: { url: terms.apiUrl },
+      bounds: workerPoolSessionBounds(identity, launch, idleSecs),
+      model: launch.model,
+    },
+    ...(idleSecs === undefined ? {} : { idleSecs }),
+    ...(hostCapabilities === undefined ? {} : { hostCapabilities }),
+  };
+}
+
 /**
  * The sessions one poll claims, at most `wanted` of them. Each project's
  * binding is read once, and only once a session in it is waiting.
@@ -360,6 +441,7 @@ export async function workerPoolSessionClaims(
   asked: {
     readonly wanted: number;
     readonly idleSecs?: number;
+    readonly sessionCapabilities?: readonly SessionCapability[];
     readonly contract?: string;
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
@@ -387,32 +469,20 @@ export async function workerPoolSessionClaims(
     if (!served.has(candidate.project)) continue;
     const minted = ports.bearers.mint();
     const assignment = mint();
-    const opened = await ports.store.open(identity, {
-      candidate,
-      attempt: minted.attempt,
-      assignment,
-      bearer: minted.bearer.id,
-      bearerSecretDigest: minted.bearerSecretDigest,
-      leaseSecs: terms.leaseSecs,
-      placementBackoffSecs: launch.placementBackoffSecs,
-      heldMax: terms.heldMax,
-      invocation: workerPoolSessionInvocation(
-        candidate,
+    const opened = await ports.store.open(
+      identity,
+      workerPoolSessionOpeningOf(identity, candidate, {
+        terms,
         launch,
-        sessionRepositoryPlaced(
-          served.get(candidate.project),
-          candidate.capabilities,
-          launch.mirrors,
-        ),
-      ),
-      image: launch.image,
-      launch: {
-        api: { url: terms.apiUrl },
-        bounds: workerPoolSessionBounds(identity, launch, idleSecs),
-        model: launch.model,
-      },
-      ...(idleSecs === undefined ? {} : { idleSecs }),
-    });
+        binding: served.get(candidate.project),
+        minted,
+        assignment,
+        ...(idleSecs === undefined ? {} : { idleSecs }),
+        ...(asked.sessionCapabilities === undefined
+          ? {}
+          : { sessionCapabilities: asked.sessionCapabilities }),
+      }),
+    );
     if (opened === "PoolFull") break;
     if (opened === "NotClaimable") continue;
     claimed.push(

@@ -152,6 +152,10 @@ export interface RunnersCopy {
   readonly "runners-chat-host-replaces": {
     readonly short: unknown;
   };
+  readonly "runners-chat-host-threads": {
+    readonly capabilities: unknown;
+  };
+  readonly "runners-chat-host-threads-whole": Record<never, never>;
   readonly "runners-member-label": Record<never, never>;
   readonly "runners-member-question": {
     readonly name: unknown;
