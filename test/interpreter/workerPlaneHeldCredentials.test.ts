@@ -1,7 +1,6 @@
 /**
  * The credentials a deployment holds as files: the roster it names them in,
- * refused whole where any entry is wrong, and which of them one attempt is
- * served.
+ * refused whole where any entry is wrong, and the issuer that serves them.
  */
 
 import assert from "node:assert/strict";
@@ -19,8 +18,6 @@ import {
   heldCredentialRoster,
   heldCredentialSecret,
   heldCredentialsMax,
-  heldCredentialsSelected,
-  workerPlaneHeldCredentials,
   type HeldCredential,
 } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
 
@@ -108,86 +105,6 @@ test("a roster is refused for each thing wrong with it, naming no file", () => {
       assert.doesNotMatch(read.why, /\/var\/run\/secrets/u, encoded);
     }
   }
-});
-
-test("a credential is selected only where it is asked for, granted, and held for the attempt's project", () => {
-  const ask = { partition, granted: ["track-record"], asked: ["track-record"] };
-  assert.deepEqual(heldCredentialsSelected(held, ask), held);
-  for (const [what, refused] of [
-    ["unasked", { ...ask, asked: [] }],
-    ["asked for something else", { ...ask, asked: ["other"] }],
-    ["ungranted", { ...ask, granted: [] }],
-    ["granted something else", { ...ask, granted: ["other"] }],
-    [
-      "another project",
-      { ...ask, partition: { ...partition, project: asProjectId("other") } },
-    ],
-    [
-      "another tenant",
-      { ...ask, partition: { ...partition, tenant: asTenantId("other") } },
-    ],
-  ] as const)
-    assert.deepEqual(heldCredentialsSelected(held, refused), [], what);
-});
-
-test("a credential asked for twice is selected once", () => {
-  assert.deepEqual(
-    heldCredentialsSelected(held, {
-      partition,
-      granted: ["track-record"],
-      asked: ["track-record", "track-record"],
-    }),
-    held,
-  );
-});
-
-test("a selected file is read as asked, trimmed, and an unreadable or blank one is an outage", async () => {
-  const files = new Map<string, string | undefined>();
-  const read: string[] = [];
-  const served = workerPlaneHeldCredentials(held, (file) => {
-    read.push(file);
-    return Promise.resolve(files.get(file));
-  });
-  const ask = { partition, granted: ["track-record"], asked: ["track-record"] };
-  const file = "/var/run/secrets/track-record";
-
-  files.set(file, "  first\n");
-  assert.deepEqual(await served.served(ask), {
-    answered: "Credentials",
-    credentials: [
-      {
-        credential: "track-record",
-        variable: "TRACK_RECORD_TOKEN_FILE",
-        secret: "first",
-      },
-    ],
-  });
-  files.set(file, "second");
-  assert.deepEqual(await served.served(ask), {
-    answered: "Credentials",
-    credentials: [
-      {
-        credential: "track-record",
-        variable: "TRACK_RECORD_TOKEN_FILE",
-        secret: "second",
-      },
-    ],
-  });
-  for (const text of [undefined, "", " \n\t"]) {
-    files.set(file, text);
-    assert.deepEqual(await served.served(ask), { answered: "Unavailable" });
-  }
-  assert.deepEqual(
-    await workerPlaneHeldCredentials(held, () =>
-      Promise.reject(new Error("unreadable")),
-    ).served(ask),
-    { answered: "Unavailable" },
-  );
-  assert.deepEqual(await served.served({ ...ask, granted: [] }), {
-    answered: "Credentials",
-    credentials: [],
-  });
-  assert.equal(read.length, 5, "an unserved credential's file was read");
 });
 
 test("a secret longer than the contract carries is none", () => {

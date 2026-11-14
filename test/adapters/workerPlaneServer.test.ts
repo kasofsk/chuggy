@@ -67,9 +67,13 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import {
-  workerPlaneHeldCredentials,
+  heldCredentialIssuer,
   type HeldCredential,
 } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import {
+  credentialResolver,
+  type CredentialsAsk,
+} from "../../src/interpreter/credentialIssuers.ts";
 import { reporterSecretBytes } from "../../src/adapters/reporters/secretFile.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
@@ -2266,9 +2270,11 @@ function heldPlane(
     ...(file === undefined
       ? {}
       : {
-          heldCredentials: workerPlaneHeldCredentials(roster, async (path) =>
-            (await reporterSecretBytes(path))?.toString("utf8"),
-          ),
+          heldCredentials: credentialResolver([
+            heldCredentialIssuer(roster, async (path) =>
+              (await reporterSecretBytes(path))?.toString("utf8"),
+            ),
+          ]),
         }),
   });
 }
@@ -2330,34 +2336,88 @@ test("a plane holding no roster serves an empty list to a granted attempt", asyn
   await app.close();
 });
 
-test("a bundle is served only to a release that reads one, and named absent as too old to any other, beside every credential served and absent", async () => {
-  const bundle: WorkerHeldCredentialBundle = {
-    credential: "chuggy.github",
-    files: [{ file: "token", content: { kind: "Secret", secret: heldSecret } }],
-    variables: [{ kind: "Path", variable: "GH_TOKEN_FILE", file: "token" }],
+test("the resolver is handed the attempt's identity, the names its configuration listed and its grant carries, and the names it asked", async () => {
+  const asks: CredentialsAsk[] = [];
+  const granted = heldTask(["track-record"]);
+  const { invocation } = granted;
+  assert.ok(invocation !== undefined);
+  for (const found of [
+    granted,
+    {
+      ...granted,
+      invocation: {
+        ...invocation,
+        credentialsListed: ["track-record", "unlisted-grant"],
+      },
+    },
+  ]) {
+    const app = createWorkerPlaneApp({
+      ...inertWorkerPlane(workerPlaneUploadBytesMax),
+      tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+      heldCredentials: {
+        resolve: (ask) => {
+          asks.push(ask);
+          return Promise.resolve({
+            resolved: "Credentials",
+            credentials: [],
+            absent: [],
+          });
+        },
+      },
+    });
+    await heldAsked(app, { credentials: ["track-record", "other"] });
+    await app.close();
+  }
+  const requester = {
+    partition: authority.partition,
+    ticket: granted.identity.ticket,
+    task: granted.identity.task,
   };
-  const entry = {
+  const asked = ["track-record", "other"];
+  assert.deepEqual(asks, [
+    { requester, listed: ["track-record"], granted: ["track-record"], asked },
+    {
+      requester,
+      listed: ["track-record", "unlisted-grant"],
+      granted: ["track-record"],
+      asked,
+    },
+  ]);
+});
+
+test("a release that reads bundles is served every bundle and every absence, and any other only the one-secret credentials and no absence", async () => {
+  const oneSecret: WorkerHeldCredentialBundle = {
     credential: "track-record",
-    variable: "TRACK_RECORD_TOKEN_FILE",
-    secret: heldSecret,
+    files: [
+      { file: "secret", content: { kind: "Secret", secret: heldSecret } },
+    ],
+    variables: [
+      { kind: "Path", variable: "TRACK_RECORD_TOKEN_FILE", file: "secret" },
+    ],
+    expiresAtMs: 1,
   };
-  const unheld = { credential: "unheld", reason: "NotHeld" } as const;
+  const wide: WorkerHeldCredentialBundle = {
+    credential: "gh",
+    files: oneSecret.files,
+    variables: [
+      { kind: "Path", variable: "GH_TOKEN_FILE", file: "secret" },
+      { kind: "Value", variable: "GH_HOST", value: "github.com" },
+    ],
+  };
+  const absent = [{ credential: "unheld", reason: "NotHeld" }] as const;
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
-    tasks: {
-      ...inertTasks,
-      work: () => Promise.resolve(heldTask(["track-record"])),
-    },
+    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
     heldCredentials: {
-      served: () =>
+      resolve: () =>
         Promise.resolve({
-          answered: "Credentials",
-          credentials: [bundle, entry],
-          absent: [unheld],
+          resolved: "Credentials",
+          credentials: [wide, oneSecret],
+          absent,
         }),
     },
   });
-  const ask = { credentials: ["track-record"] };
+  const ask = { credentials: ["gh", "track-record", "unheld"] };
   assert.deepEqual(
     await heldAsked(app, ask, {
       ...held,
@@ -2365,7 +2425,7 @@ test("a bundle is served only to a release that reads one, and named absent as t
     }),
     {
       status: 200,
-      body: JSON.stringify({ credentials: [bundle, entry], absent: [unheld] }),
+      body: JSON.stringify({ credentials: [wide, oneSecret], absent }),
     },
   );
   for (const release of [undefined, "1.73.0"])
@@ -2380,15 +2440,70 @@ test("a bundle is served only to a release that reads one, and named absent as t
       {
         status: 200,
         body: JSON.stringify({
-          credentials: [entry],
-          absent: [
-            unheld,
-            { credential: "chuggy.github", reason: "WorkerTooOld" },
+          credentials: [
+            {
+              credential: "track-record",
+              variable: "TRACK_RECORD_TOKEN_FILE",
+              secret: heldSecret,
+              expiresAtMs: 1,
+            },
           ],
         }),
       },
       String(release),
     );
+  await app.close();
+});
+
+test("a release that reads bundles is served a held file as a bundle, and told which listed names are not granted or not held", async () => {
+  const file = join(heldRoot, "bundled");
+  writeFileSync(file, heldSecret);
+  const granted = heldTask(["track-record", "unheld"]);
+  assert.ok(granted.invocation !== undefined);
+  const app = heldPlane(
+    {
+      ...granted,
+      invocation: {
+        ...granted.invocation,
+        credentialsListed: ["track-record", "unheld", "ungranted"],
+      },
+    },
+    file,
+  );
+  assert.deepEqual(
+    await heldAsked(
+      app,
+      { credentials: ["ungranted", "track-record", "unlisted", "unheld"] },
+      { ...held, [workerContractHeader]: workerContractRelease },
+    ),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [
+          {
+            credential: "track-record",
+            files: [
+              {
+                file: "secret",
+                content: { kind: "Secret", secret: heldSecret },
+              },
+            ],
+            variables: [
+              {
+                kind: "Path",
+                variable: "TRACK_RECORD_TOKEN_FILE",
+                file: "secret",
+              },
+            ],
+          },
+        ],
+        absent: [
+          { credential: "ungranted", reason: "NotGranted" },
+          { credential: "unheld", reason: "NotHeld" },
+        ],
+      }),
+    },
+  );
   await app.close();
 });
 

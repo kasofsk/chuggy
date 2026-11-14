@@ -1,6 +1,6 @@
 /**
- * The credentials a deployment holds as files, and which of them one attempt
- * is answered with.
+ * The credentials a deployment holds as files, and the issuer that serves
+ * them.
  *
  * A HELD CREDENTIAL IS CONFIGURATION. A deployment names each one in a roster:
  * the name a grant gives it, the project it is held for, the variable a job's
@@ -8,11 +8,9 @@
  * at most once for a project, and several entries may name one file. No name
  * is in the prefix chuggy issues its own under, so no file stands in for one.
  *
- * AN ATTEMPT IS ANSWERED ONLY WHAT IT ASKED, WAS GRANTED AND IS HELD FOR. The
- * pod contributes only the names it asks for. The grant is the one the
- * scheduler recorded for the attempt and the project is the attempt's own,
- * both read from what its bearer finds, so no pod widens either by what it
- * sends.
+ * A CREDENTIAL IS SERVED ONLY FOR THE PROJECT IT IS HELD FOR. The project is
+ * the requester's own, read from what its bearer finds, so no pod widens it by
+ * what it sends; which names it may ask for is the resolver's to decide.
  *
  * A FILE IS READ ON EVERY REQUEST, so a rotated secret is served without a
  * restart, and one that cannot be read is an outage rather than an absence:
@@ -23,11 +21,7 @@
 import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "../contract/http.ts";
-import {
-  heldCredentialSecretCharsMax,
-  type WorkerHeldCredentialAbsent,
-  type WorkerHeldCredentialBundle,
-} from "../contract/workerPlane.ts";
+import { heldCredentialSecretCharsMax } from "../contract/workerPlane.ts";
 import {
   isHeldCredentialVariable,
   isIssuedCredential,
@@ -50,41 +44,9 @@ export interface HeldCredential {
   readonly file: string;
 }
 
-/** One credential as an attempt is answered it. */
-export interface HeldCredentialServed {
-  readonly credential: string;
-  readonly variable: string;
-  readonly secret: string;
-  /** Absent for a credential held as a file, which does not expire. */
-  readonly expiresAtMs?: number;
-}
-
 export type HeldCredentialRosterRead =
   | { readonly read: "Roster"; readonly held: readonly HeldCredential[] }
   | { readonly read: "Refused"; readonly why: string };
-
-/** What one attempt's ask came to, an unreadable file kept apart from a credential not served, and those not served named where they are. */
-export type HeldCredentialsAnswered =
-  | {
-      readonly answered: "Credentials";
-      readonly credentials: readonly (
-        HeldCredentialServed | WorkerHeldCredentialBundle
-      )[];
-      readonly absent?: readonly WorkerHeldCredentialAbsent[];
-    }
-  | { readonly answered: "Unavailable" };
-
-/** What the plane answers an attempt from: the project the attempt is in, the names its recorded grant gives, and the names it asked for. */
-export interface HeldCredentialsAsk {
-  readonly partition: Partition;
-  readonly granted: readonly string[];
-  readonly asked: readonly string[];
-}
-
-/** Answers an attempt's ask with the credentials it is served, read as it asks. */
-export interface WorkerPlaneHeldCredentials {
-  served(ask: HeldCredentialsAsk): Promise<HeldCredentialsAnswered>;
-}
 
 /** The text a file holds, or nothing where it is not a readable regular file within its bound. */
 export type HeldCredentialFileRead = (
@@ -158,24 +120,6 @@ export function heldCredentialRoster(
   return { read: "Roster", held };
 }
 
-/** Each held credential an attempt asked for, was granted and is held for in its project, once each and in the order it asked. */
-export function heldCredentialsSelected(
-  held: readonly HeldCredential[],
-  ask: HeldCredentialsAsk,
-): readonly HeldCredential[] {
-  const keyed = new Map(
-    held.map((entry) => [
-      heldCredentialKey(entry.credential, entry.partition),
-      entry,
-    ]),
-  );
-  const granted = new Set(ask.granted);
-  return [...new Set(ask.asked)].flatMap((credential) => {
-    const entry = keyed.get(heldCredentialKey(credential, ask.partition));
-    return entry === undefined || !granted.has(credential) ? [] : [entry];
-  });
-}
-
 /** The secret a file's text is, its surrounding whitespace trimmed, or nothing where it holds none or more than the contract carries. */
 export function heldCredentialSecret(
   text: string | undefined,
@@ -241,28 +185,6 @@ export function heldCredentialIssuer(
           ],
         },
       };
-    },
-  };
-}
-
-/** Answers an attempt from `held`, reading each selected credential's file through `read` as it is asked. */
-export function workerPlaneHeldCredentials(
-  held: readonly HeldCredential[],
-  read: HeldCredentialFileRead,
-): WorkerPlaneHeldCredentials {
-  return {
-    served: async (ask) => {
-      const credentials: HeldCredentialServed[] = [];
-      for (const entry of heldCredentialsSelected(held, ask)) {
-        const secret = await heldCredentialFileSecret(entry, read);
-        if (secret === undefined) return { answered: "Unavailable" };
-        credentials.push({
-          credential: entry.credential,
-          variable: entry.variable,
-          secret,
-        });
-      }
-      return { answered: "Credentials", credentials };
     },
   };
 }

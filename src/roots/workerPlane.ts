@@ -39,6 +39,10 @@ import {
   postgresWorkerTasks,
 } from "../adapters/postgres/workerPlane.ts";
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
+import {
+  credentialResolver,
+  type CredentialResolver,
+} from "../interpreter/credentialIssuers.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
 import {
@@ -57,10 +61,9 @@ import {
   type WorkerPlaneCredentialMinting,
 } from "../interpreter/workerPlaneCredentials.ts";
 import {
+  heldCredentialIssuer,
   heldCredentialRoster,
   heldCredentialSecret,
-  workerPlaneHeldCredentials,
-  type WorkerPlaneHeldCredentials,
 } from "../interpreter/workerPlaneHeldCredentials.ts";
 import {
   planeEnvironmentPositive as positive,
@@ -239,21 +242,20 @@ async function planeHeldCredentialText(
 }
 
 /**
- * What the held-credential route answers from, or nothing where the roster is
- * absent or empty. Every file the roster names is read once before the plane
- * starts, as the app key is, so a deployment that mounted the wrong path
+ * What the held-credential route answers through: a resolver over the file
+ * roster's issuer, or over none where no roster is named. Every file the
+ * roster names is read once before the plane starts, as the app key is, so a
+ * deployment that mounted the wrong path
  * refuses to start rather than answering an outage at every request; it is
  * read again on every request after that.
  */
-async function planeHeldCredentials(): Promise<
-  WorkerPlaneHeldCredentials | undefined
-> {
+async function planeHeldCredentials(): Promise<CredentialResolver> {
   const encoded = process.env[heldCredentialsVariable];
-  if (encoded === undefined || encoded.length === 0) return undefined;
+  if (encoded === undefined || encoded.length === 0)
+    return credentialResolver([]);
   const roster = heldCredentialRoster(encoded);
   if (roster.read === "Refused")
     throw new Error(`${heldCredentialsVariable} ${roster.why}`);
-  if (roster.held.length === 0) return undefined;
   for (const entry of roster.held)
     if (
       heldCredentialSecret(await planeHeldCredentialText(entry.file)) ===
@@ -262,7 +264,9 @@ async function planeHeldCredentials(): Promise<
       throw new Error(
         `${heldCredentialsVariable} holds ${entry.credential} for ${entry.partition.tenant}/${entry.partition.project} in a file that is not a readable, non-empty regular file`,
       );
-  return workerPlaneHeldCredentials(roster.held, planeHeldCredentialText);
+  return credentialResolver([
+    heldCredentialIssuer(roster.held, planeHeldCredentialText),
+  ]);
 }
 
 async function main(): Promise<void> {
@@ -308,7 +312,7 @@ async function main(): Promise<void> {
     },
     sessions: planeSessions(pool, artifacts),
     ...(credentials === undefined ? {} : { credentials }),
-    ...(heldCredentials === undefined ? {} : { heldCredentials }),
+    heldCredentials,
     uploadBytesMax,
     ready: async () => {
       try {
