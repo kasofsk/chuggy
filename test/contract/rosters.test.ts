@@ -491,6 +491,25 @@ test("the unavailable kinds are finalization holds, less the six that stay holds
   );
 });
 
+/**
+ * The sets a member may mint through the API are the interpreter's, less the
+ * one only a job is issued. A set added to the interpreter lands in the second
+ * assertion until it is placed on one side or the other.
+ */
+test("the credential permissions are the interpreter's sets, less the one only a job is issued", () => {
+  const roster: readonly string[] = forgeCredentialPermissions;
+  assert.deepEqual(
+    roster.filter(
+      (set) => !allForgePermissionSets.some((named) => named === set),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    allForgePermissionSets.filter((set) => !roster.includes(set)),
+    ["runPipelines"],
+  );
+});
+
 test("the resume points are the model's, less the absent one", () => {
   assert.deepEqual(
     [...resumePoints],
@@ -822,7 +841,6 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
-  assert.deepEqual(forgeCredentialPermissions, allForgePermissionSets);
   assert.deepEqual(forgeIds, allForgeIds);
   assert.deepEqual(forgeApps, allForgeApps);
   assert.deepEqual(forgeAccountKinds, allForgeAccountKinds);

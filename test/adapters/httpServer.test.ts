@@ -840,7 +840,7 @@ const forgeCredentialsPath =
   "/api/v1/tenants/acme/projects/atlas/forge-credentials";
 
 /** One credential request, the repository being what each case is about. */
-function forgeCredentialRequest(repository: string) {
+function forgeCredentialRequest(repository: string, permissions = "write") {
   return {
     method: "POST" as const,
     url: forgeCredentialsPath,
@@ -848,7 +848,7 @@ function forgeCredentialRequest(repository: string) {
       authorization: "Bearer valid",
       "content-type": "application/vnd.chuggy.v1+json",
     },
-    payload: JSON.stringify({ repository, permissions: "write" }),
+    payload: JSON.stringify({ repository, permissions }),
   };
 }
 
@@ -866,6 +866,16 @@ test("a bound repository is answered with a token and when it stops working", as
   assert.deepEqual(calls, [
     "forge-credentials:https://github.com/kasofsk/chuggy:write",
   ]);
+});
+
+test("a credential request naming the set only a job is issued is refused and reaches no minting", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/chuggy", "runPipelines"),
+  );
+  assert.equal(refused.statusCode, 400);
+  assert.deepEqual(calls, []);
 });
 
 test("a repository this caller may not mint for is not found and a forge that is down is a wait", async () => {
