@@ -3632,6 +3632,16 @@ function registerOnboarding(
   registerProjectRepositoryConfigurations(app, onboarding);
 }
 
+/** The credentials a project's forge is reached with, and the repositories onboarded from it. */
+function registerForge(
+  app: FastifyInstance,
+  credentials: ForgeCredentialMinting | undefined,
+  onboarding: RepositoryOnboarding | undefined,
+): void {
+  if (credentials !== undefined) registerForgeCredentials(app, credentials);
+  if (onboarding !== undefined) registerOnboarding(app, onboarding);
+}
+
 /** Every failure a route throws, answered as the wire's error. */
 function registerFailures(app: FastifyInstance): void {
   app.setErrorHandler((failure, _request, reply) => {
@@ -3688,9 +3698,7 @@ export function createNativeHttpApp(
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   registerReviewsAndInbox(app, proposalReviews, inbox);
-  if (forgeCredentials !== undefined)
-    registerForgeCredentials(app, forgeCredentials);
-  if (onboarding !== undefined) registerOnboarding(app, onboarding);
+  registerForge(app, forgeCredentials, onboarding);
   registerOperations(app, web);
   registerProjectArtifacts(app, web, limits.projectArtifactUploadBytesMax);
   registerNotifications(app, web);
