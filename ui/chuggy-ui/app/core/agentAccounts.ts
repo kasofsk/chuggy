@@ -8,15 +8,18 @@
  * only while its reset is ahead, so a stale one pauses nothing until the next
  * reading arrives, and the mark is how a reader sees that.
  *
- * AN AGENT HOLDING SEVERAL CREDENTIALS IS DRAWN BY EACH CURRENT ONE: a reading
- * and a pause of each by its name, since the agent's own are the newest
- * reading across them and a pause holding while any credential's does. One
- * holding a single credential or none is drawn by the agent's own.
+ * AN AGENT HOLDING SEVERAL CREDENTIALS, OR ANY TURNED OFF, IS DRAWN BY EACH
+ * CURRENT ONE: a reading and a pause of each by its name, since the agent's
+ * own are the newest reading across them and a pause holding while any
+ * credential's does. One turned off is always current, since its `off` pause
+ * holds it, so it is drawn alone or unread, where its Turn on is. One holding
+ * a single credential that is on, or none, is drawn by the agent's own.
  */
 
 import { agentAccountSettingsSchema } from "../../../../src/contract/requests.ts";
 import {
   agentAccountCredentialInUseCode,
+  agentAccountCredentialsOffFullCode,
   type AgentAccount,
   type AgentAccountCredential,
   type AgentPause,
@@ -110,15 +113,26 @@ export function agentAccountCredentialCurrent(
   );
 }
 
-/** Each current credential an agent holding several is drawn by, in the
- * wire's order, or `undefined` for one holding one or none, which is drawn by
- * its own. */
+/** A credential its owner turned off, which its `off` pause holds until it is turned on. */
+export function agentAccountCredentialOff(
+  credential: AgentAccountCredential,
+): boolean {
+  return credential.pause?.off === true;
+}
+
+/** The status a credential turned off is drawn with. */
+export const agentAccountCredentialOffWord: Copy = agentPauseReasonLabel("off");
+
+/** Each current credential an agent holding several, or any turned off, is
+ * drawn by, in the wire's order, or `undefined` for one holding one that is on
+ * or none, which is drawn by its own. */
 export function agentAccountCredentialsDrawn(
   account: AgentAccount,
   nowMs: number,
 ): readonly AgentAccountCredential[] | undefined {
   const credentials = account.credentials ?? [];
-  if (credentials.length <= 1) return undefined;
+  if (credentials.length <= 1 && !credentials.some(agentAccountCredentialOff))
+    return undefined;
   return credentials.filter((credential) =>
     agentAccountCredentialCurrent(credential, nowMs),
   );
@@ -218,5 +232,13 @@ export function agentAccountRetireRefusal(failure: ApiFailure): Copy {
   return failure.outcome === "Conflict" &&
     failure.code === agentAccountCredentialInUseCode
     ? { id: "usage-retire-in-use" }
+    : failureWords(failure).word;
+}
+
+/** A turning off refused because as many credentials as the account holds off are off already says so. */
+export function agentAccountTurnOffRefusal(failure: ApiFailure): Copy {
+  return failure.outcome === "Conflict" &&
+    failure.code === agentAccountCredentialsOffFullCode
+    ? { id: "usage-turn-off-full" }
     : failureWords(failure).word;
 }

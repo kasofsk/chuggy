@@ -2,7 +2,8 @@
  * The Usage page, mounted: each agent of the reader's own account drawn with
  * each window's newest reading and how long ago it was read, a stale one marked
  * so, the pause holding it and the press that tries it once past a limit; each
- * credential it is drawn by retired once the reader confirms it; and its
+ * credential it is drawn by marked Off where it is, turned off once the reader
+ * confirms it and on at a press, and retired once the reader confirms it; its
  * thresholds and options written whole, a threshold outside the wire's bounds
  * refused in its own box before anything is sent.
  */
@@ -97,6 +98,8 @@ interface Drawing {
   pressStatus?: number;
   /** Where set, the status a retirement is answered with. */
   retireStatus?: number;
+  /** Where set, the status turning a credential off is answered with. */
+  offStatus?: number;
 }
 
 let drawing: Drawing = { pressed: false };
@@ -124,6 +127,13 @@ async function drawUsage(): Promise<readonly SentRequest[]> {
             drawing.pressStatus,
           );
     if (path.endsWith("/settings")) return answer(undefined, 204);
+    if (path.endsWith("/off"))
+      return drawing.offStatus === undefined
+        ? answer(undefined, 204)
+        : answer(
+            { error: { code: "OffFull", message: "Full" } },
+            drawing.offStatus,
+          );
     if (path.includes("/credentials/"))
       return drawing.retireStatus === undefined
         ? answer(undefined, 204)
@@ -466,6 +476,127 @@ test("an agent drawn by its own readings offers no credential to retire", async 
       name: /^Retire credential /,
     }),
   ).toBeNull();
+});
+
+const offPause = { off: true, reasons: ["off"], pressed: false };
+
+/** `home` read and on, `work` read and turned off, and `spare` turned off and never read. */
+const offCredentials = {
+  pause: undefined,
+  credentials: [
+    twoCredentials.credentials[0],
+    { ...twoCredentials.credentials[2], pause: offPause },
+    { name: "spare", readings: [], pause: offPause },
+  ],
+};
+
+test("a credential is turned off only once the reader confirms it, and on at a press, and the account is read again after each", async () => {
+  drawing.claude = twoCredentials;
+  const sent = await drawUsage();
+  const claude = within(sectionOf("Claude"));
+  await press("Turn off credential home");
+  const asked = claude.getByRole("group", {
+    name: "Turn off credential home?",
+  });
+  expect(asked.textContent).toContain("Every runner of yours passes it over.");
+  expect(written(sent)).toStrictEqual([]);
+  await press("Cancel");
+  expect(written(sent)).toStrictEqual([]);
+  const before = reads(sent);
+  await press("Turn off credential home");
+  await press("Turn off");
+  expect(written(sent)).toStrictEqual([
+    ["PUT /Claude/credentials/home/off", undefined],
+  ]);
+  expect(reads(sent)).toBeGreaterThan(before);
+  cleanup();
+  drawing.claude = offCredentials;
+  const again = await drawUsage();
+  const turnedOn = reads(again);
+  await press("Turn on credential work");
+  expect(within(sectionOf("Claude")).queryByRole("group")).toBeNull();
+  expect(written(again)).toStrictEqual([
+    ["DELETE /Claude/credentials/work/off", undefined],
+  ]);
+  expect(reads(again)).toBeGreaterThan(turnedOn);
+});
+
+test("an agent holding one credential that is on offers it no Turn off", async () => {
+  drawing.claude = {
+    credentials: [
+      { name: "home", readings: twoCredentials.credentials[0]?.readings },
+    ],
+  };
+  await drawUsage();
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", { name: /^Turn off/u }),
+  ).toBeNull();
+});
+
+test("an agent holding one credential, turned off and never read, draws it marked Off with its Turn on", async () => {
+  drawing.claude = {
+    readings: [],
+    limit: undefined,
+    pause: { ...offPause, credentials: ["work"] },
+    credentials: [{ name: "work", readings: [], pause: offPause }],
+  };
+  await drawUsage();
+  const claude = within(sectionOf("Claude"));
+  expect(windowLines("Five-hour window").join("")).toContain("workNo reading");
+  expect(claude.getByText("Off", { selector: ".pill" })).toBeTruthy();
+  expect(
+    claude.getByRole("button", { name: "Turn on credential work" }),
+  ).toBeTruthy();
+});
+
+test("a credential turned off beside one that is on is marked Off while the agent is paused by nothing", async () => {
+  drawing.claude = offCredentials;
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude).not.toContain("Paused");
+  expect(
+    within(sectionOf("Claude")).getAllByText("Off", { selector: ".pill" }),
+  ).toHaveLength(2);
+  expect(
+    within(sectionOf("Claude")).getByRole("button", {
+      name: "Turn off credential home",
+    }),
+  ).toBeTruthy();
+});
+
+test("an agent every credential of which is off draws its own line once, naming none, and no line of any credential", async () => {
+  const [, work, spare] = offCredentials.credentials;
+  drawing.claude = {
+    ...offCredentials,
+    pause: { ...offPause, credentials: ["work", "spare"] },
+    credentials: [work, spare],
+  };
+  await drawUsage();
+  const claude = sectionOf("Claude").textContent ?? "";
+  expect(claude.match(/Paused/gu)).toHaveLength(1);
+  expect(claude).toContain("Paused · Off");
+  expect(claude).not.toMatch(/held by|work · Paused|spare · Paused/u);
+});
+
+test("a credential turned off offers Retire only where it lists a reading", async () => {
+  drawing.claude = offCredentials;
+  await drawUsage();
+  expect(
+    within(sectionOf("Claude"))
+      .getAllByRole("button", { name: /^Retire credential / })
+      .map((button) => button.getAttribute("aria-label")),
+  ).toStrictEqual(["Retire credential home", "Retire credential work"]);
+});
+
+test("turning a credential off refused because as many as the account holds off are off says so", async () => {
+  drawing.claude = twoCredentials;
+  drawing.offStatus = 409;
+  await drawUsage();
+  await press("Turn off credential home");
+  await press("Turn off");
+  expect(sectionOf("Claude").textContent).toContain(
+    "No more credentials can be off",
+  );
 });
 
 /** One section's Edit pressed, of the two the page draws. */

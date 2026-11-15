@@ -787,6 +787,28 @@ test("no agent is said paused above a member's runners where their read answers 
   }
 });
 
+test("an agent the read of a member's runners answers held only by credentials turned off is said so, with neither until when nor a press", async () => {
+  drawing = {
+    granted: true,
+    runner: {
+      ...runnerHeld,
+      pauses: [
+        {
+          agent: "Claude",
+          pause: { off: true, reasons: ["off"], pressed: false },
+        },
+      ],
+    },
+  };
+  await drawMyRunner();
+  const paused = screen.getByRole("group", { name: "Paused agents" });
+  expect(paused.textContent).toContain("Claude · Paused · Off");
+  expect(paused.textContent).not.toContain("until");
+  expect(
+    within(paused).queryByRole("button", { name: /again now/u }),
+  ).toBeNull();
+});
+
 test("each agent the read of a member's runners answers paused is said above them, by its agent, with where it is set", async () => {
   drawing = {
     granted: true,
