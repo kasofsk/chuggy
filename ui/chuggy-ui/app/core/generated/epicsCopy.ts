@@ -6,6 +6,7 @@ export interface EpicsCopy {
   readonly "epics-title": Record<never, never>;
   readonly "epics-page-title": Record<never, never>;
   readonly "epics-none": Record<never, never>;
+  readonly "epics-none-matching": Record<never, never>;
   readonly "epics-not-found": Record<never, never>;
   readonly "epics-search": Record<never, never>;
   readonly "epics-search-placeholder": Record<never, never>;
