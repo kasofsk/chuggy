@@ -186,6 +186,7 @@ import { migration185 } from "./185-metrics-plane-ticket-repository.ts";
 import { migration186 } from "./186-tenant-display-name.ts";
 import { migration187 } from "./187-pipelines-runnable.ts";
 import { migration188 } from "./188-target-commit-ref.ts";
+import { migration189 } from "./189-worker-task-inputs.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -377,4 +378,5 @@ export const migrations: readonly Migration[] = [
   migration186,
   migration187,
   migration188,
+  migration189,
 ];

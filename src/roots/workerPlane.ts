@@ -43,7 +43,7 @@ import {
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import {
   credentialResolver,
-  type CredentialResolver,
+  type CredentialIssuer,
 } from "../interpreter/credentialIssuers.ts";
 import {
   checkedProjectAccessSettings,
@@ -67,6 +67,7 @@ import {
   workerPlaneCredentialMinting,
   type WorkerPlaneCredentialMinting,
 } from "../interpreter/workerPlaneCredentials.ts";
+import { workflowRunsCredentialIssuer } from "../interpreter/workflowRunsCredential.ts";
 import {
   heldCredentialIssuer,
   heldCredentialRoster,
@@ -221,17 +222,24 @@ function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
   );
 }
 
+/** What this plane mints with its forge app: a pod's git credential, and the credential that runs its repository's workflows. */
+interface PlaneForgeCredentials {
+  readonly minting: WorkerPlaneCredentialMinting;
+  readonly workflowRuns: CredentialIssuer;
+}
+
 /**
- * The minting a pod's credential routes answer from, or nothing where this
- * deployment holds no app key and a pod resolves what its launcher mounted for
- * the repository it works in.
+ * The minting a pod's credential routes answer from, and the issuer of the
+ * workflow runs credential, or nothing where this deployment holds no app key:
+ * a pod then resolves what its launcher mounted for the repository it works in,
+ * and the workflow runs credential is served by no issuer.
  * A key this process could not sign with refuses the start, leaving no pool
  * open behind it: minting that fails at every attempt is worse than not minting
  * at all, because the pods cannot tell the two apart.
  */
 async function planeCredentials(
   pool: ReturnType<typeof postgresPool>,
-): Promise<WorkerPlaneCredentialMinting | undefined> {
+): Promise<PlaneForgeCredentials | undefined> {
   const options = planeForgeOptions();
   if (options === undefined) return undefined;
   const verdict = await githubInstallationTokensPrecondition(options).check(
@@ -242,19 +250,18 @@ async function planeCredentials(
     throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
   }
   const bindings = postgresProjectRepositoryLanding(pool);
-  return workerPlaneCredentialMinting({
-    tokens: mintedRepositoryTokens({
-      forge: githubForgeId,
-      app: workerPodForgeApp,
-      repositoryHost: githubRepositoryHost,
-      installations: postgresForgeInstallations(pool),
-      tokens: githubInstallationTokens(
-        githubInstallationTokensSettled(options),
-      ),
-      bindings,
-    }),
+  const tokens = mintedRepositoryTokens({
+    forge: githubForgeId,
+    app: workerPodForgeApp,
+    repositoryHost: githubRepositoryHost,
+    installations: postgresForgeInstallations(pool),
+    tokens: githubInstallationTokens(githubInstallationTokensSettled(options)),
     bindings,
   });
+  return {
+    minting: workerPlaneCredentialMinting({ tokens, bindings }),
+    workflowRuns: workflowRunsCredentialIssuer({ tokens, bindings }),
+  };
 }
 
 /**
@@ -272,17 +279,15 @@ async function planeHeldCredentialText(
 }
 
 /**
- * What the held-credential route answers through: a resolver over the file
- * roster's issuer, or over none where no roster is named. Every file the
+ * The file roster's issuer, or none where no roster is named. Every file the
  * roster names is read once before the plane starts, as the app key is, so a
  * deployment that mounted the wrong path
  * refuses to start rather than answering an outage at every request; it is
  * read again on every request after that.
  */
-async function planeHeldCredentials(): Promise<CredentialResolver> {
+async function planeHeldCredentials(): Promise<readonly CredentialIssuer[]> {
   const encoded = process.env[heldCredentialsVariable];
-  if (encoded === undefined || encoded.length === 0)
-    return credentialResolver([]);
+  if (encoded === undefined || encoded.length === 0) return [];
   const roster = heldCredentialRoster(encoded);
   if (roster.read === "Refused")
     throw new Error(`${heldCredentialsVariable} ${roster.why}`);
@@ -294,13 +299,11 @@ async function planeHeldCredentials(): Promise<CredentialResolver> {
       throw new Error(
         `${heldCredentialsVariable} holds ${entry.credential} for ${entry.partition.tenant}/${entry.partition.project} in a file that is not a readable, non-empty regular file`,
       );
-  return credentialResolver([
-    heldCredentialIssuer(roster.held, planeHeldCredentialText),
-  ]);
+  return [heldCredentialIssuer(roster.held, planeHeldCredentialText)];
 }
 
 async function main(): Promise<void> {
-  const heldCredentials = await planeHeldCredentials();
+  const held = await planeHeldCredentials();
   const pool = postgresPool(required("CHUG_WORKER_PLANE_DATABASE_URL"));
   const uploadBytesMax = positive(
     "CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX",
@@ -310,7 +313,7 @@ async function main(): Promise<void> {
     root: required("CHUG_WORKER_PLANE_ARTIFACT_ROOT"),
     writeBytesMax: uploadBytesMax,
   });
-  const credentials = await planeCredentials(pool);
+  const forge = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
     authority: postgresWorkerPlaneAuthority(pool),
     tasks: postgresWorkerTasks(pool),
@@ -341,8 +344,10 @@ async function main(): Promise<void> {
         ),
     },
     sessions: planeSessions(pool, artifacts),
-    ...(credentials === undefined ? {} : { credentials }),
-    heldCredentials,
+    ...(forge === undefined ? {} : { credentials: forge.minting }),
+    heldCredentials: credentialResolver(
+      forge === undefined ? held : [...held, forge.workflowRuns],
+    ),
     uploadBytesMax,
     ready: async () => {
       try {

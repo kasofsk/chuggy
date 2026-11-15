@@ -107,6 +107,7 @@ const workInvocation: WorkTaskInvocation = {
 
 const workTaskFound: WorkerTaskRead = {
   live: true,
+  inputs: attemptAuthority.inputs,
   identity: {
     partition,
     execution: attemptAuthority.execution,

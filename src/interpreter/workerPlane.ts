@@ -257,6 +257,8 @@ export interface WorkerTaskRead {
   readonly live: boolean;
   readonly identity: WorkTaskIdentity;
   readonly invocation?: WorkTaskInvocation;
+  /** The references its input bundle pins, as its authority read finds them. */
+  readonly inputs: readonly WorkerInputReference[];
 }
 
 /** What a session attempt's bearer finds of its task, the invocation absent where the attempt opened before one was recorded and the launch present only where a pool holds it. */

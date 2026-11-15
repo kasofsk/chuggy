@@ -135,10 +135,11 @@ import {
   asProjectArtifactId,
   type ProjectArtifactPort,
 } from "../../interpreter/finalizerPreparation.ts";
-import type {
-  WorkerPlaneCredentialMinted,
-  WorkerPlaneCredentialMinting,
-  WorkerPlaneCredentialUnreached,
+import {
+  workerPlaneCredentialRepository,
+  type WorkerPlaneCredentialMinted,
+  type WorkerPlaneCredentialMinting,
+  type WorkerPlaneCredentialUnreached,
 } from "../../interpreter/workerPlaneCredentials.ts";
 import {
   credentialResolver,
@@ -1319,8 +1320,9 @@ function workerHeldCredentialsAnswer(
 /**
  * The credentials one attempt is served, resolved from the names it asks for
  * against the names its configuration listed and its grant carries. The grant,
- * the listed names and the project are what its own task read found, so
- * nothing the pod sends but the names it asks for is weighed.
+ * the listed names, the project and the repository its input bundle pinned
+ * are what its own task read found, so nothing the pod sends but the names it
+ * asks for is weighed.
  */
 function workerHeldCredentialsRoute(
   register: WorkerJobRegistrar,
@@ -1335,11 +1337,13 @@ function workerHeldCredentialsRoute(
       return reply
         .code(409)
         .send({ action: "stop", reason: "TaskNotRecorded" });
+    const repository = workerPlaneCredentialRepository(task);
     const resolved = await resolver.resolve({
       requester: {
         partition: task.identity.partition,
         ticket: task.identity.ticket,
         task: task.identity.task,
+        ...(repository === undefined ? {} : { repository }),
       },
       listed: workTaskCredentialsListed(invocation),
       granted: invocation.authority.credentials,

@@ -377,5 +377,7 @@ export interface ForgeRepositoryTokens {
     repository: RepositoryId,
     partition: Partition,
     permissions: ForgePermissionSet,
+    /** Carried to the forge's mint as `ForgeTokenRequest` reads it. */
+    mint?: Pick<ForgeTokenRequest, "unheld">,
   ): Promise<ForgeTokenMinted>;
 }

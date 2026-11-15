@@ -516,6 +516,21 @@ test("an evaluator fetches the task its pod is launched with, its kind and stage
   });
 });
 
+test("a task read answers the input references its authority read does", async () => {
+  const { project } = await admittedProject("task-inputs");
+  const placement = await launched(project);
+  const secret = placement.capability.secret;
+  const task = await postgresWorkerTasks(planePool).work(secret);
+  const authority =
+    await postgresWorkerPlaneAuthority(planePool).authenticate(secret);
+  assert.ok(task !== undefined && authority !== undefined);
+  assert.ok(
+    authority.inputs.some((input) => input.kind === "Repository"),
+    "the fixture's bundle pins a repository",
+  );
+  assert.deepEqual(task.inputs, authority.inputs);
+});
+
 test("a reported attempt's bearer is answered as stopped, though the read still finds its task", async () => {
   const { project } = await admittedProject("task-reported");
   const placement = await launched(project);
