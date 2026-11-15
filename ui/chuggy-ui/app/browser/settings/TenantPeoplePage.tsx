@@ -40,18 +40,20 @@ import {
 } from "../../core/tenantPeople.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import type { TableColumn } from "../ui/Table.tsx";
 import {
   SettingsListing,
   SettingsListingCut,
   SettingsListingSection,
-  SettingsListingTable,
+  SettingsListingStacked,
   SettingsListingUnread,
 } from "./SettingsListing.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { TenantDeletion } from "./UnrunDeletion.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
 import { TenantInviteLinks } from "./TenantInviteLinks.tsx";
-import { TenantPersonRow } from "./TenantPersonRow.tsx";
+import { tenantPersonRow } from "./TenantPersonRow.tsx";
+import type { TenantPersonColumn } from "./TenantPersonRow.tsx";
 import { TenantRename } from "./TenantRename.tsx";
 import {
   useTenantAbilities,
@@ -72,39 +74,41 @@ function TenantPeopleTable(props: {
 }): ReactNode {
   const text = useCopyText();
   const editable = tenantPersonEditOffered(props.abilities, props.projects);
+  const columns: TableColumn<TenantPersonColumn>[] = [
+    { key: "person", label: text(props.named), rowHeader: true },
+    {
+      key: "held",
+      label: text({ id: "settings-people-workspace" }),
+      headClassName: "people-col-held",
+    },
+    {
+      key: "projects",
+      label: text({ id: "settings-people-projects" }),
+      headClassName: "people-col-projects",
+    },
+  ];
+  if (editable)
+    columns.push({
+      key: "edit",
+      label: text({ id: "settings-edit" }),
+      actions: true,
+      headClassName: "people-col-edit",
+    });
   return (
-    <SettingsListingTable caption={text(props.caption)}>
-      <thead>
-        <tr>
-          <th scope="col">{text(props.named)}</th>
-          <th scope="col" className="people-col-held">
-            {text({ id: "settings-people-workspace" })}
-          </th>
-          <th scope="col" className="people-col-projects">
-            {text({ id: "settings-people-projects" })}
-          </th>
-          {editable ? (
-            <th scope="col" className="people-col-edit">
-              <span className="visually-hidden">
-                {text({ id: "settings-edit" })}
-              </span>
-            </th>
-          ) : null}
-        </tr>
-      </thead>
-      <tbody>
-        {props.people.map((person) => (
-          <TenantPersonRow
-            key={person.subject}
-            tenant={props.tenant}
-            person={person}
-            projects={props.projects}
-            abilities={props.abilities}
-            editable={editable}
-          />
-        ))}
-      </tbody>
-    </SettingsListingTable>
+    <SettingsListingStacked
+      className="people-table"
+      caption={text(props.caption)}
+      columns={columns}
+      rows={props.people.map((person) =>
+        tenantPersonRow({
+          tenant: props.tenant,
+          person,
+          projects: props.projects,
+          abilities: props.abilities,
+          editable,
+        }),
+      )}
+    />
   );
 }
 

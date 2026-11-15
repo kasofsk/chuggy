@@ -19,6 +19,16 @@
     border-bottom: 0;
   }
 
+  /* What stands under a row is part of it, so no rule parts the two. */
+  .tabular tbody tr:has(+ .tabular-below) > * {
+    border-bottom: 0;
+  }
+
+  .tabular .tabular-below > td {
+    padding-block-start: 0;
+    white-space: normal;
+  }
+
   .tabular thead th {
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
@@ -36,8 +46,40 @@
     background: var(--surface-2);
   }
 
-  .tabular .num {
+  .tabular :is(.num, .tabular-actions) {
     text-align: right;
+  }
+
+  /* A value longer than its column, like a name, is cut short there, and
+     drawn whole in a card, where a finger has no hover to read the rest by. */
+  .tabular .tabular-cut {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* A table drawn edge to edge in a card pads its edges as the card does,
+     sets a row's cells on their first line, and wraps a value in its column
+     rather than widening the table. */
+  .tabular-framed :is(th, td) {
+    padding: var(--space-3);
+    vertical-align: baseline;
+    white-space: normal;
+    font-weight: var(--weight-regular);
+  }
+
+  .tabular-framed :is(th, td):where(:first-child) {
+    padding-inline-start: var(--space-4);
+  }
+
+  .tabular-framed :is(th, td):where(:last-child) {
+    padding-inline-end: var(--space-4);
+  }
+
+  .tabular-framed thead th {
+    padding-block: var(--space-2);
+    font-weight: var(--weight-medium);
   }
 
   /* The scroller keeps a bar a reader can see, because an overlay bar leaves a
@@ -148,13 +190,64 @@
       grid-column: 1 / -1;
     }
 
-    .tabular-stacked .num {
+    /* A wide value, and every value of a card drawn to its frame's edges, is
+       set under its label at the card's width. */
+    .tabular-stacked tbody .tabular-wide,
+    .tabular-framed tbody :is(th, td) {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: var(--space-1);
+    }
+
+    .tabular-stacked :is(.num, .tabular-actions) {
       text-align: start;
     }
 
-    /* A value a finger opens, like a figure's exact time, is given a
-       finger's height in a card. */
-    .tabular-stacked tbody .tabular-value [tabindex="0"] {
+    /* What names the row is the card's title. */
+    .tabular-stacked tbody th > .tabular-value {
+      font-weight: var(--weight-strong);
+      color: var(--ink-1);
+    }
+
+    .tabular-stacked tbody [data-empty] {
+      display: none;
+    }
+
+    .tabular-stacked tbody .tabular-inline {
+      display: inline-grid;
+      grid-template-columns: max-content;
+      row-gap: var(--space-1);
+      margin-inline-end: var(--space-4);
+      vertical-align: top;
+    }
+
+    .tabular-stacked tbody .tabular-inline[data-empty] {
+      visibility: hidden;
+    }
+
+    .tabular-stacked tbody .tabular-cut,
+    .tabular-stacked tbody .tabular-cut .identity {
+      overflow: visible;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    /* What stands under a row is the foot of its card. */
+    .tabular-stacked tbody tr:has(+ .tabular-below) {
+      padding-block-end: 0;
+      border-bottom: 0;
+    }
+
+    .tabular-stacked tbody tr.tabular-below {
+      padding-block-start: 0;
+    }
+
+    .tabular-stacked tbody .tabular-below > td {
+      display: block;
+    }
+
+    /* A press, a link and a value a finger opens, like a figure's exact
+       time, are given a finger's height in a card. */
+    .tabular-stacked tbody .tabular-value :is(.btn, a[href], [tabindex="0"]) {
       display: inline-flex;
       align-items: center;
       min-width: var(--height-touch);
