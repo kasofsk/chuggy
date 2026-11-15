@@ -39,6 +39,7 @@ import {
   sessionContainerEnds,
   type SessionCapability,
 } from "./rosters.ts";
+import type { WorkerContractFeature } from "./workerContract.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
 export const workerPoolTokenCharsMax = 63;
@@ -615,6 +616,27 @@ export const workerPoolReconciliationSchema = z
  * `workerContractRunnerReport` or a later version.
  */
 export const workerRunnerReportRoute = "/v1/runner-report";
+
+/**
+ * The feature each pool plane route belongs to, keyed by the route as a server
+ * registers it, so a client is held only to the routes of the features it
+ * lists. A new route names the feature it belongs to, and `null` is for a
+ * route every client of the plane must speak.
+ */
+export const workerPoolRouteFeatures: Readonly<
+  Record<
+    | typeof workerPoolPollRoute
+    | typeof workerRunnerReportRoute
+    | (typeof workerPoolSettlementRoutes)[keyof typeof workerPoolSettlementRoutes],
+    WorkerContractFeature | null
+  >
+> = {
+  [workerPoolPollRoute]: null,
+  [workerRunnerReportRoute]: null,
+  [workerPoolSettlementRoutes.Accepted]: null,
+  [workerPoolSettlementRoutes.Refused]: null,
+  [workerPoolSettlementRoutes.Unavailable]: null,
+};
 
 /** The longest machine name a report carries. */
 export const workerRunnerHostCharsMax = 253;

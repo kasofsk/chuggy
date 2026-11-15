@@ -96,6 +96,9 @@ import {
   workerErrorPath,
 } from "../../src/contract/http.ts";
 import {
+  workerContractFeatures,
+  workerContractFeaturesHeader,
+  workerContractFeaturesOf,
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
@@ -1598,6 +1601,12 @@ test("an error text is uploaded where its worker would have, under the bearer it
   assert.equal(upload.authorization, "Bearer secret-one");
   assert.equal(upload.headers.get("content-type"), workerPlaneBytesMediaType);
   assert.equal(upload.headers.get(workerContractHeader), workerContractRelease);
+  assert.deepEqual(
+    workerContractFeaturesOf(
+      upload.headers.get(workerContractFeaturesHeader) ?? undefined,
+    ),
+    Object.keys(workerContractFeatures),
+  );
   assert.equal(upload.body, text);
   assert.equal(reached.length, 2);
 });
