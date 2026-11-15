@@ -64,13 +64,23 @@ function steps(done: Ran): readonly (readonly [string, string])[] {
   return printed.map(([, state, detail]) => [state, detail]);
 }
 
-test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again", async () => {
+test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name", async () => {
   const session = await signed();
   for (const stage of setupSiteStages) {
     const done = await read(session, setupSiteAt(stage));
     assert.equal(done.code, 0, stage);
     assert.deepEqual(steps(done), saidStages[stage], stage);
     assert.equal(done.lines.at(-1), "next: stop", stage);
+    if (stage === "Workspace") {
+      assert.deepEqual(said(done, "tell"), []);
+      assert.deepEqual(await ruled(done), [
+        "project",
+        "--workspace",
+        "acme",
+        "--name",
+      ]);
+      continue;
+    }
     const [tell = ""] = said(done, "tell");
     assert.equal(
       tell.includes(`${session.installation.site}/`),
@@ -243,6 +253,37 @@ test("with more than one workspace the person is asked which and then which proj
     const again = await read(session, awkward(), await ruled(first));
     assert.equal(again.stdout, first.stdout);
   }
+});
+
+test("with a workspace and no project, the command the rule names, split by a shell and run with the name the person gave, makes the project by its one write, and the checklist it names next has the project step moved on", async () => {
+  const session = await signed();
+  const { installation } = session;
+  const world = setupSiteAt("Workspace");
+  const asked = await read(session, world);
+  const named = [...(await ruled(asked)), "Atlas Web"];
+  installation.writes.length = 0;
+  const made = await read(session, world, named);
+  assert.equal(made.code, 0, made.stdout);
+  assert.deepEqual(said(made, "did"), [
+    "made acme/atlas-web, called Atlas Web",
+  ]);
+  assert.equal(
+    made.lines.at(-1),
+    `next: node ${program} --workspace acme --project atlas-web`,
+  );
+  assert.deepEqual(
+    installation.writes.map((write) => write.split(" ").slice(1).join(" ")),
+    ["POST /api/v1/projects"],
+  );
+  const next = await read(
+    session,
+    world,
+    made.lines.at(-1)?.split(" ").slice(3) ?? [],
+  );
+  assert.deepEqual(steps(next).slice(0, 2), [
+    ["done", "acme"],
+    ["waiting", "acme/atlas-web has no North Star yet"],
+  ]);
 });
 
 test("a member who administers nothing, and a viewer of one project, are each shown what they wait on and are not shown, as states and not failures, and are handed nothing to run", async () => {

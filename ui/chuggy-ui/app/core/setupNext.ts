@@ -1,11 +1,13 @@
 /**
  * The one next thing, from where a person stands on each step of setup.
  *
- * The first step that is not done decides it. This program does two steps
- * itself, the MCP step's and the runner's, and it never prints a `next:` it
- * cannot run, so for every other step what it names is a page of the console
- * by its full address and what is pressed there, and the checklist is read
- * again only once the person says the step is done. The MCP step and the
+ * The first step that is not done decides it. This program does three steps
+ * itself, the project's, the MCP step's and the runner's, and it never prints
+ * a `next:` it cannot run, so for every other step what it names is a page of
+ * the console by its full address and what is pressed there, and the
+ * checklist is read again only once the person says the step is done. A
+ * project is made by `project` once the person has said what to call it, so
+ * where one is lacking the next thing is that question. The MCP step and the
  * runner's change the machine, so each is offered and never run unasked: the
  * person is told what `mcp` would do, the runner package installed where it
  * is not here and its server named in their agent, and for the runner's step
@@ -27,7 +29,6 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
-import { projectCreationPathIn } from "./projectCreation.ts";
 import {
   repositoryGrantLines,
   repositoryLabel,
@@ -35,6 +36,7 @@ import {
 import { ownerFallbackLabel } from "./myRunner.ts";
 import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
+import { setupNameFlag } from "./setupArguments.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
@@ -57,8 +59,6 @@ import { navRoutes } from "./shellNav.ts";
  * each page for it and fails where a page renamed it.
  */
 export const setupPressed = {
-  projectPage: { id: "project-creation-new-title" },
-  projectCreate: { id: "project-creation-submit" },
   edit: { id: "ui-edit" },
   save: { id: "ui-save" },
   connect: { id: "repositories-connect-github" },
@@ -145,18 +145,24 @@ function setupProjectMend(
   lack: Extract<SetupLack, { readonly lacks: "Project" | "NorthStar" }>,
   at: SetupAt,
 ): SetupThing {
-  if (lack.lacks === "Project")
-    return setupHand(
-      {
-        id: "setup-mend-project-tell",
+  if (lack.lacks === "Project") {
+    const { workspace, project } = at;
+    const address = project === "" ? undefined : project;
+    return {
+      thing: "Name",
+      ask: {
+        id: "setup-ask-project-name",
         args: {
-          page: `${at.site}${projectCreationPathIn(at.workspace)}`,
-          named: setupPressed.projectPage,
-          create: setupPressed.projectCreate,
+          workspace,
+          address: address === undefined ? "made" : "given",
+          project: address ?? "",
+          flag: setupNameFlag,
         },
       },
-      { id: "setup-mend-project-when" },
-    );
+      workspace,
+      project: address,
+    };
+  }
   return setupHand(
     {
       id: "setup-mend-north-star-tell",
