@@ -82,7 +82,6 @@
     }
   }
 
-  /* jscpd:ignore-start — the ticket page's sticky bar, lifted rule for rule so adopting this draws it unchanged */
   .page-header-sticky {
     position: sticky;
     top: 0;
@@ -106,7 +105,6 @@
   .page-header-sticky-bar[hidden] {
     display: none;
   }
-  /* jscpd:ignore-end — the lifted bar ends here */
 
   .page-header-sticky-title {
     min-width: 0;

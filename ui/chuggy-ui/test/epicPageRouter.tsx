@@ -59,7 +59,7 @@ function EpicLink(
 }
 
 export const epicRouterDouble = {
-  createLink: (component: unknown) => component,
+  createLink: () => EpicLink,
   Link: EpicLink,
   useParams: () => ({ ...leadPartition, epic: epicRouted.epic }),
   useBlocker: (options: { readonly shouldBlockFn: () => boolean }) => {
