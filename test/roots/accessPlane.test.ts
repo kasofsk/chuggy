@@ -1,7 +1,7 @@
 /**
  * The access plane's root: what it says about an environment it cannot start
- * under, and that its composition, handed a double for the authentication,
- * serves the plane.
+ * under, that its composition, handed a double for the authentication,
+ * serves the plane, and what a workspace link's workspace is drawn as.
  *
  * IT IS DRIVEN AS A PROCESS BECAUSE NOTHING MAY IMPORT ONE. The composition is
  * imported inside a child program, where `.dependency-cruiser.cjs` does not
@@ -12,6 +12,11 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
+
+import { z } from "zod";
+
+import { accessOwnedTenantSchema } from "../../src/contract/accessPlane.ts";
+import { projectNameSchema } from "../../src/contract/requests.ts";
 
 const execute = promisify(execFile);
 
@@ -146,4 +151,28 @@ test("a directory address that is not HTTP is refused naming it", async () => {
     answered.stderr,
     "access plane: directory admin URL must be HTTP or HTTPS\n",
   );
+});
+
+const workspacesDrawn = `
+  const { accessPlaneWorkspaceDraw } = await import('./src/roots/accessPlane.ts');
+  const drawn = [accessPlaneWorkspaceDraw(), accessPlaneWorkspaceDraw()];
+  process.stdout.write(JSON.stringify(drawn));
+`;
+
+test("a workspace a workspace link makes is drawn a fresh lowercase UUID v4, a name a new tenant may take", async () => {
+  const answered = await ran(
+    ["--input-type=module", "--eval", workspacesDrawn],
+    {},
+  );
+  assert.equal(answered.code, 0, answered.stderr);
+  const drawn = z.array(z.string()).parse(JSON.parse(answered.stdout));
+  assert.equal(new Set(drawn).size, drawn.length);
+  for (const workspace of drawn) {
+    assert.match(
+      workspace,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    );
+    assert.equal(projectNameSchema.parse(workspace), workspace);
+    assert.equal(accessOwnedTenantSchema.parse(workspace), workspace);
+  }
 });

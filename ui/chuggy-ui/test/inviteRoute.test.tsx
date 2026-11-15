@@ -36,6 +36,8 @@ afterEach(() => {
 
 const granted = {
   tenant: "acme",
+  displayName: "Acme",
+  workspaceMade: false,
   role: "Member",
   projects: [{ project: "atlas", roles: ["Viewer"] }],
 };

@@ -14,18 +14,20 @@
  *
  * A WORKSPACE LINK ASKS WHAT THE SITE'S INVITATION ASKS, to make, list or
  * revoke one, and using it writes what that invitation writes for whoever
- * presents it and the workspace they name. The two kinds never meet: a
+ * presents it and a workspace made for them. The two kinds never meet: a
  * tenant's routes reach its links alone, and the site's its workspace links.
  *
- * A REDEMPTION READS THE LINK BEFORE IT SPENDS IT, so a workspace link
- * presented with no name, a name no new tenant may take or one something
- * holds is answered and stays open. A free name is then carried in the spend,
- * where the store refuses one another link has made, so two links never make
- * one workspace.
+ * A WORKSPACE LINK'S USER IS ASKED NOTHING. Its workspace's id is drawn, and
+ * read before the spend that carries it, so one something holds is answered
+ * and the link stays open; the store refuses one another link has made, so
+ * two links never make one workspace. It is first named for the GitHub login
+ * the directory records for its user.
  *
  * A SPEND IS GIVEN BACK WHERE THE GRANT FAULTS. The grants are written as one
  * request, all or none, so a link given back is open again and nothing was
  * granted; the fault is then raised as the authority's outage is everywhere.
+ * A workspace's name is written before its grants and given back with them,
+ * so a workspace is granted only where it is named.
  *
  * A USED LINK ANSWERS ITS USER AGAIN WHAT IT GAVE, and nothing is written, so
  * a person whose answer was lost and who sends again is told what they hold
@@ -44,6 +46,7 @@
 
 import {
   accessOwnedTenantSchema,
+  accessWorkspaceLinkDisplayName,
   type AccessInvitationGrants,
   type AccessInviteLink,
   type AccessInviteLinkMinted,
@@ -69,6 +72,10 @@ import {
   accessOwnerInvitationAdmitted,
   accessOwnerInvitationGrants,
 } from "./accessOwnerInvitation.ts";
+import {
+  accessTenantDisplayNames,
+  type AccessTenantNameStore,
+} from "./accessTenantNames.ts";
 import { oidcPrincipalSubject, type Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { TenantClaims } from "./projectCreation.ts";
@@ -227,10 +234,13 @@ export interface AccessInviteLinkPorts {
   readonly grants: ProjectGrantWriter;
   readonly claims: TenantClaims;
   readonly directory?: AccessDirectory | undefined;
+  /** The links, the display names a redemption reads and a workspace link's use writes, and how a made workspace's id is drawn. */
   readonly links?:
     | {
         readonly store: AccessInviteLinkStore;
         readonly secrets: AccessInviteLinkSecrets;
+        readonly names: AccessTenantNameStore;
+        readonly workspaceDraw: () => string;
       }
     | undefined;
 }
@@ -272,7 +282,7 @@ export type AccessInviteLinkRedemption =
       readonly redeemed: AccessInviteLinkRedeemed;
     }
   | AccessInviteLinkRefusal
-  | { readonly outcome: "NameWanted" | "TenantTaken" };
+  | { readonly outcome: "TenantTaken" };
 
 export interface AccessInviteLinkService {
   mint(
@@ -295,11 +305,10 @@ export interface AccessInviteLinkService {
     caller: Principal,
     link: string,
   ): Promise<AccessInviteLinkRevocation>;
-  /** Uses the link `token` names, `workspace` the name a workspace link's new workspace takes and ignored for a tenant's link. */
+  /** Uses the link `token` names. */
   redeemed(
     caller: Principal,
     token: string,
-    workspace?: string,
   ): Promise<AccessInviteLinkRedemption>;
   /** Whether a person with no account may register holding `token`: only while it is an open link whose maker could make accounts. */
   registrationAdmitted(token: string | undefined): Promise<boolean>;
@@ -523,19 +532,21 @@ async function accessWorkspaceLinkRevoked(
 }
 
 /**
- * Writes a spent link's grants as one request, giving the link back and
- * raising where that faults. Until the give-back the link reads as used by its
- * caller, who is answered as though this send had worked, and where the
- * give-back never happens that stays so with nothing granted for as long as
- * the row is kept.
+ * Writes a spent link's grants as one request, after whatever `before` writes,
+ * giving the link back and raising where either faults. Until the give-back
+ * the link reads as used by its caller, who is answered as though this send
+ * had worked, and where the give-back never happens that stays so with nothing
+ * granted for as long as the row is kept.
  */
 async function accessInviteLinkGrantsWritten(
   ports: AccessInviteLinkPorts,
   store: AccessInviteLinkStore,
   link: string,
   grants: Parameters<ProjectGrantWriter["writeAll"]>[0],
+  before: () => Promise<void> = () => Promise.resolve(),
 ): Promise<void> {
   try {
+    await before();
     await ports.grants.writeAll(grants);
   } catch (failure) {
     await store.restore(link);
@@ -543,13 +554,21 @@ async function accessInviteLinkGrantsWritten(
   }
 }
 
+/** What `tenant` is named to a reader, as a redemption answers it. */
+async function accessInviteLinkDisplayName(
+  links: AccessInviteLinkKept,
+  tenant: TenantId,
+): Promise<string> {
+  return (await accessTenantDisplayNames(links.names, [tenant]))(tenant);
+}
+
 /** What a redemption that found no open link to take answers: what the link gave, where the caller used it, and absent otherwise. */
 async function accessInviteLinkUsedAnswer(
-  store: AccessInviteLinkStore,
+  links: AccessInviteLinkKept,
   digest: string,
   subject: string,
 ): Promise<AccessInviteLinkRedemption> {
-  const used = await store.usedBy(digest, subject);
+  const used = await links.store.usedBy(digest, subject);
   if (used === undefined) return { outcome: "Absent" };
   switch (used.kind) {
     case "Tenant":
@@ -557,6 +576,8 @@ async function accessInviteLinkUsedAnswer(
         outcome: "Redeemed",
         redeemed: {
           tenant: used.tenant,
+          displayName: await accessInviteLinkDisplayName(links, used.tenant),
+          workspaceMade: false,
           role: used.role,
           projects: [...used.projects],
         },
@@ -564,33 +585,56 @@ async function accessInviteLinkUsedAnswer(
     case "Workspace":
       return {
         outcome: "Redeemed",
-        redeemed: { tenant: used.workspace, role: "Admin", projects: [] },
+        redeemed: {
+          tenant: used.workspace,
+          displayName: await accessInviteLinkDisplayName(links, used.workspace),
+          workspaceMade: true,
+          role: "Admin",
+          projects: [],
+        },
       };
   }
 }
 
-/** Using an open workspace link: the name wanted, admissible and free before the spend that carries it, and the site's invitation's grants after. A send overlapping its caller's own first with the same name can find the name taken by the first's grants. */
+/** What a workspace `subject` makes is first named: for the GitHub login the directory records for them, where it records one. */
+async function accessWorkspaceLinkDisplayNameDrawn(
+  directory: AccessDirectory | undefined,
+  subject: string,
+): Promise<string> {
+  const [person] = await accessAccountsNamed<{
+    readonly subject: string;
+    readonly githubLogin?: string | undefined;
+  }>(directory, [{ subject }]);
+  return accessWorkspaceLinkDisplayName(person?.githubLogin);
+}
+
+/** A made workspace's id, drawn, and held to the names a new tenant may take. */
+function accessWorkspaceLinkTenantDrawn(links: AccessInviteLinkKept): TenantId {
+  const drawn = links.workspaceDraw();
+  if (!accessOwnedTenantSchema.safeParse(drawn).success)
+    throw new RangeError(
+      "access workspace link: the drawn workspace is not a name a new tenant may take",
+    );
+  return asTenantId(drawn);
+}
+
+/** Using an open workspace link: a drawn id, free before the spend that carries it, then the workspace's first name and the site's invitation's grants. */
 async function accessWorkspaceLinkRedeemed(
   ports: AccessInviteLinkPorts,
   links: AccessInviteLinkKept,
   settings: AccessInviteLinkSettings,
-  request: {
-    readonly subject: string;
-    readonly digest: string;
-    readonly workspace: string | undefined;
-  },
+  request: { readonly subject: string; readonly digest: string },
 ): Promise<AccessInviteLinkRedemption> {
-  const { subject, digest, workspace } = request;
-  if (workspace === undefined) return { outcome: "NameWanted" };
-  if (!accessOwnedTenantSchema.safeParse(workspace).success)
-    throw new RangeError(
-      "access workspace link: the workspace is not a name a new tenant may take",
-    );
-  const tenant = asTenantId(workspace);
+  const { subject, digest } = request;
+  const tenant = accessWorkspaceLinkTenantDrawn(links);
   if (await ports.claims.claimed(tenant)) return { outcome: "TenantTaken" };
+  const displayName = await accessWorkspaceLinkDisplayNameDrawn(
+    ports.directory,
+    subject,
+  );
   const spent = await links.store.workspaceSpend(digest, subject, tenant);
   if (spent === undefined)
-    return accessInviteLinkUsedAnswer(links.store, digest, subject);
+    return accessInviteLinkUsedAnswer(links, digest, subject);
   if (spent.spent === "Taken") return { outcome: "TenantTaken" };
   await accessInviteLinkGrantsWritten(
     ports,
@@ -602,10 +646,17 @@ async function accessWorkspaceLinkRedeemed(
       subject,
       spent.createAccounts,
     ),
+    () => links.names.renamed(tenant, displayName),
   );
   return {
     outcome: "Redeemed",
-    redeemed: { tenant, role: "Admin", projects: [] },
+    redeemed: {
+      tenant,
+      displayName,
+      workspaceMade: true,
+      role: "Admin",
+      projects: [],
+    },
   };
 }
 
@@ -613,26 +664,21 @@ async function accessInviteLinkRedeemed(
   ports: AccessInviteLinkPorts,
   links: AccessInviteLinkKept,
   settings: AccessInviteLinkSettings,
-  request: {
-    readonly caller: Principal;
-    readonly token: string;
-    readonly workspace: string | undefined;
-  },
+  request: { readonly caller: Principal; readonly token: string },
 ): Promise<AccessInviteLinkRedemption> {
   const subject = accessInviteLinkSubject(settings.issuer, request.caller);
   const digest = links.secrets.digest(request.token);
   const presented = await links.store.presented(digest);
   if (presented === undefined)
-    return accessInviteLinkUsedAnswer(links.store, digest, subject);
+    return accessInviteLinkUsedAnswer(links, digest, subject);
   if (presented === "Workspace")
     return accessWorkspaceLinkRedeemed(ports, links, settings, {
       subject,
       digest,
-      workspace: request.workspace,
     });
   const spent = await links.store.spend(digest, subject);
   if (spent === undefined)
-    return accessInviteLinkUsedAnswer(links.store, digest, subject);
+    return accessInviteLinkUsedAnswer(links, digest, subject);
   await accessInviteLinkGrantsWritten(
     ports,
     links.store,
@@ -643,6 +689,8 @@ async function accessInviteLinkRedeemed(
     outcome: "Redeemed",
     redeemed: {
       tenant: spent.tenant,
+      displayName: await accessInviteLinkDisplayName(links, spent.tenant),
+      workspaceMade: false,
       role: spent.role,
       projects: [...spent.projects],
     },
@@ -719,12 +767,8 @@ export function accessInviteLinks(
     revoked: (caller, tenant, link) =>
       accessInviteLinkRevoked(ports, links.store, { caller, tenant, link }),
     ...accessWorkspaceLinkRoutes(ports, links, settings),
-    redeemed: (caller, token, workspace) =>
-      accessInviteLinkRedeemed(ports, links, settings, {
-        caller,
-        token,
-        workspace,
-      }),
+    redeemed: (caller, token) =>
+      accessInviteLinkRedeemed(ports, links, settings, { caller, token }),
     registrationAdmitted: async (token) =>
       token !== undefined &&
       token !== "" &&

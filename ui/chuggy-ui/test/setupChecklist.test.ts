@@ -79,7 +79,7 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
       "step: repository  todo",
       "step: runner      todo",
       "step: ticket      todo",
-      `tell: You are not in a chuggy workspace yet. A new workspace is made from an invite link: open the one you were sent (it starts ${machineSite}/invite), and under New workspace name the workspace and press Create. Tell me once it is made.`,
+      `tell: You are not in a chuggy workspace yet. A new workspace is made from an invite link: open the one you were sent (it starts ${machineSite}/invite) and sign in, and the workspace is made for you. Tell me once it is made.`,
       `rule: Run node ${machineScript} only once the person says their workspace is made.`,
       "next: stop",
     ],

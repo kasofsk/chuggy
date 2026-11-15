@@ -5,7 +5,8 @@
  * A LINK'S STATE IS DERIVED AS THE STORE'S STATEMENTS DERIVE IT, against a
  * clock a case moves, and a mint keeps the tenant's bounds, or the site's, as
  * the store's does. A workspace link is a row naming no tenant, and no two
- * used links hold one workspace. Whether the database's own clock and lock answer the same is
+ * used links hold one workspace, which is drawn in a UUID's shape and named
+ * in a display name store of its own. Whether the database's own clock and lock answer the same is
  * `test/postgres/inviteLinks.test.ts`'s to show.
  */
 
@@ -26,11 +27,14 @@ import {
   type AccessInviteLinkWritten,
   type AccessWorkspaceLinkStored,
 } from "../../src/interpreter/accessInviteLink.ts";
+import type { AccessTenantNameStore } from "../../src/interpreter/accessTenantNames.ts";
 import type { TenantId } from "../../src/interpreter/projectStore.ts";
 import { accessMemoryClaims } from "./accessInvitationFixture.ts";
 import {
   accessFixtureIssuer,
+  tenantNameMemory,
   type AccessMemory,
+  type TenantNameMemory,
 } from "./accessPlaneFixture.ts";
 
 /** What every link keeps, whatever its kind. */
@@ -73,7 +77,10 @@ export interface InviteLinkMemory {
   nowMs: number;
   /** Every token drawn, in order. */
   readonly drawn: string[];
+  /** Every workspace id drawn, in order. */
+  readonly workspacesDrawn: string[];
   readonly store: AccessInviteLinkStore;
+  readonly names: TenantNameMemory;
 }
 
 /** When a link ended, or nothing while it is open. */
@@ -357,6 +364,8 @@ export function inviteLinkMemory(): InviteLinkMemory {
     rows: [],
     nowMs: 3_600_000,
     drawn: [],
+    workspacesDrawn: [],
+    names: tenantNameMemory(),
   };
   const full = memory as InviteLinkMemory;
   return Object.assign(full, { store: inviteLinkStore(full) });
@@ -384,17 +393,25 @@ export function inviteLinkOverlapped(
   };
 }
 
+/** The workspace id the fixture draws `drawn`-th, counting from zero: a UUID v4's shape, its count in the last group. */
+export function inviteLinkWorkspaceDrawn(drawn: number): string {
+  return `00000000-0000-4000-8000-${String(drawn).padStart(12, "0")}`;
+}
+
 /** The digest the fixture's secrets give `token`. */
 export function inviteLinkDigest(token: string): string {
   return `digest:${token}`;
 }
 
-/** Invite links over the authority `memory` and the links `links` hold, with no store where `links` is undefined, and the grants and claims `ported` names in place of the authority's. */
+/** Invite links over the authority `memory` and the links `links` hold, with no store where `links` is undefined, the grants and claims `ported` names in place of the authority's, and its draw and display names in place of the links'. */
 export function accessMemoryInviteLinks(
   memory: AccessMemory,
   links: InviteLinkMemory | undefined,
   directory?: AccessDirectory,
-  ported: Partial<Pick<AccessInviteLinkPorts, "grants" | "claims">> = {},
+  ported: Partial<Pick<AccessInviteLinkPorts, "grants" | "claims">> & {
+    readonly workspaceDraw?: () => string;
+    readonly names?: AccessTenantNameStore;
+  } = {},
 ): AccessInviteLinkService {
   return accessInviteLinks(
     {
@@ -416,6 +433,16 @@ export function accessMemoryInviteLinks(
                 },
                 digest: inviteLinkDigest,
               },
+              names: ported.names ?? links.names,
+              workspaceDraw:
+                ported.workspaceDraw ??
+                (() => {
+                  const workspace = inviteLinkWorkspaceDrawn(
+                    links.workspacesDrawn.length,
+                  );
+                  links.workspacesDrawn.push(workspace);
+                  return workspace;
+                }),
             },
     },
     { issuer: accessFixtureIssuer },

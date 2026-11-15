@@ -1,22 +1,20 @@
 /**
  * The page an invite link is opened at, drawn the same with a session and
- * without one: a card, one line, and at most one action, which for a link that
- * makes a workspace is the form that names it.
+ * without one: a card, one line, and at most one action.
  *
  * It reads no router, because the tree's root draws it for a browser that
  * holds no session and has no router, and the route draws it for a reader.
  * What it draws and what it does to the cookie are decided in
  * `ui/chuggy-ui/app/core/invitePage.ts`; what must outlive a mount, the token
- * and the one send made for it without a name, is the holder's, handed down
- * from the process root.
+ * and the one send made for it, is the holder's, handed down from the process
+ * root.
  *
  * NOTHING HERE LEAVES THE PAGE WITHOUT A PRESS but a redemption the plane
- * took. A person the sign-in service refused is drawn a card and not sent
- * round again, and a workspace's name is sent by a press of `Create` and by
- * nothing else: no effect sends one, so no mount does.
+ * took, a link that makes a workspace among them. A person the sign-in
+ * service refused is drawn a card and not sent round again.
  */
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../copy/CopyProvider.tsx";
@@ -28,18 +26,12 @@ import { copyOrDataText } from "../core/copy.ts";
 import type { Copy, CopyOrData, CopyText } from "../core/copy.ts";
 import type { InviteHolder } from "../core/inviteHolder.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
-import {
-  inviteElsewherePath,
-  invitePageWords,
-  inviteWorkspaceSendable,
-} from "../core/invitePage.ts";
-import type { InviteNaming, InviteRedemption } from "../core/invitePage.ts";
-import { siteWorkspaceNameFault } from "../core/siteWorkspaces.ts";
+import { inviteElsewherePath, invitePageWords } from "../core/invitePage.ts";
+import type { InviteRedemption } from "../core/invitePage.ts";
 import { accessFailureLabel } from "../core/tenantPeople.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
 import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
-import { InvitationText } from "./settings/InvitationFields.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Locomotive } from "./ui/Locomotive.tsx";
 
@@ -117,8 +109,8 @@ function InviteElsewhere(): ReactNode {
 }
 
 /** How a send of the token that leaves the reader here is drawn: a link no
- * retry mends, a failure the reader may retry, or a name the field refuses. */
-type InviteRefusal = "NotValid" | "Failed" | "Refused";
+ * retry mends, or a failure the reader may retry. */
+type InviteRefusal = "NotValid" | "Failed";
 
 /** A send of the token the plane answered without letting the reader on, in
  * the line the page draws for it. */
@@ -136,27 +128,24 @@ function inviteRefusalOf(refused: ConsoleWriteRefused): InviteRefusal {
   return refused instanceof InviteRefused ? refused.refusal : "Failed";
 }
 
-/** A send's answer as a write's: one that lets the reader on or asks for a
- * name answered, and any other thrown as the refusal it is drawn as. */
-function inviteAnswered<Came extends InviteRedemption | InviteNaming>(
-  came: Came,
+/** A send's answer as a write's: one that lets the reader on answered, and
+ * any other thrown as the refusal it is drawn as. */
+function inviteAnswered(
+  came: InviteRedemption,
   text: CopyText,
-): ApiResult<Came> {
+): ApiResult<InviteRedemption> {
   switch (came.outcome) {
     case "Redeemed":
-    case "NameWanted":
       return { outcome: "Ok", value: came };
     case "NotValid":
       throw new InviteRefused("NotValid", text(invitePageWords.notValid));
     case "Failed":
       throw new InviteRefused("Failed", text(came.line));
-    case "Refused":
-      throw new InviteRefused("Refused", text(came.fault));
   }
 }
 
-/** The send of a token without a name, which the holder makes once however
- * many writes ask for it. */
+/** The send of a token, which the holder makes once however many writes ask
+ * for it. */
 function inviteRedemptionWrite(
   invite: InviteHolder,
   token: string,
@@ -176,33 +165,12 @@ function inviteRedemptionWrite(
   };
 }
 
-/** One send of a token with the name of the workspace it makes. */
-function inviteNamingWrite(
-  invite: InviteHolder,
-  token: string,
-  domain: string | undefined,
-  text: CopyText,
-): ConsoleWrite<string, InviteNaming> {
-  return {
-    mutationKey: consoleWriteKey("invite-naming"),
-    write: async (ports, name) =>
-      inviteAnswered(
-        await invite.named(token, domain, name, (sent, workspace) =>
-          apiRedeemInviteLink(ports, sent, workspace),
-        ),
-        text,
-      ),
-    refusal: (failure) => text(accessFailureLabel(failure)),
-  };
-}
-
-/** The answer the latest attempt at the send without a name came to, none
- * while it is unanswered. */
+/** What the latest attempt at the send was refused with, none while it is
+ * unanswered or once it lets the reader on. */
 function useInviteRedemption(
   token: string,
   domain: string | undefined,
 ): {
-  readonly redemption: InviteRedemption | undefined;
   readonly refused: ConsoleWriteRefused | null;
   readonly retry: () => void;
 } {
@@ -217,7 +185,6 @@ function useInviteRedemption(
     mutate(undefined);
   }, [mutate, token, domain]);
   return {
-    redemption: redeeming.isSuccess ? redeeming.data : undefined,
     refused: redeeming.error,
     retry: () => {
       invite.retry();
@@ -226,125 +193,12 @@ function useInviteRedemption(
   };
 }
 
-interface InviteNamed {
-  readonly name: string;
-  /** A press unanswered, or answered by a workspace the reader is leaving for. */
-  readonly sending: boolean;
-  /** What the last press was refused with, until the name is changed. */
-  readonly refused: ConsoleWriteRefused | null;
-  readonly change: (name: string) => void;
-  /** The name as it stands sent with the token, which only a press asks for. */
-  readonly create: () => void;
-}
-
-function useInviteNaming(
-  token: string,
-  domain: string | undefined,
-): InviteNamed {
-  const invite = useInviteHolder();
-  const text = useCopyText();
-  const [name, setName] = useState("");
-  const naming = useConsoleWrite(
-    inviteNamingWrite(invite, token, domain, text),
-    { drawn: true },
-  );
-  const sending = naming.isPending || naming.isSuccess;
-  return {
-    name,
-    sending,
-    refused: naming.error,
-    change: (changed) => {
-      setName(changed);
-      naming.reset();
-    },
-    create: () => {
-      if (sending || !inviteWorkspaceSendable(name)) return;
-      naming.mutate(name);
-    },
-  };
-}
-
-/** The card as a form: the field, under it what a workspace is until a fault stands there, and `Create`, which Enter in the field presses. */
-function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
-  const { name, sending, refused, change, create } = props.named;
-  const text = useCopyText();
-  const nameFault = siteWorkspaceNameFault(name);
-  return (
-    <SessionCard
-      title={text(invitePageWords.brand)}
-      detail={text(sending ? invitePageWords.creating : invitePageWords.naming)}
-      action={
-        <form
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create();
-          }}
-        >
-          <InvitationText
-            label={text(invitePageWords.workspaceName)}
-            value={name}
-            fault={
-              (nameFault === undefined ? undefined : text(nameFault)) ??
-              (refused !== null && inviteRefusalOf(refused) === "Refused"
-                ? refused.message
-                : undefined)
-            }
-            about={text(invitePageWords.workspaceAbout)}
-            disabled={sending}
-            onChange={change}
-          />
-          <Button
-            variant="primary"
-            type="submit"
-            disabled={sending || !inviteWorkspaceSendable(name)}
-            busy={sending}
-          >
-            {text(invitePageWords.create)}
-          </Button>
-        </form>
-      }
-    />
-  );
-}
-
-/** A link that makes a workspace, from the plane asking for its name to the answer one press of `Create` came to. */
-function InviteNamingCard(props: {
-  readonly token: string;
-  readonly domain: string | undefined;
-}): ReactNode {
-  const invite = useInviteHolder();
-  const named = useInviteNaming(props.token, props.domain);
-  const refused = named.refused;
-  const refusal = refused === null ? undefined : inviteRefusalOf(refused);
-  if (refusal === "NotValid")
-    return (
-      <InviteCard
-        line={invitePageWords.notValid}
-        action={invitePageWords.open}
-        onAction={invite.elsewhere}
-      />
-    );
-  if (refused !== null && refusal === "Failed")
-    return (
-      <InviteCard
-        line={refused.message}
-        action={invitePageWords.retry}
-        onAction={named.create}
-      />
-    );
-  return <InviteNamingForm named={named} />;
-}
-
 function InviteRedeeming(props: {
   readonly token: string;
   readonly domain: string | undefined;
 }): ReactNode {
   const invite = useInviteHolder();
-  const { redemption, refused, retry } = useInviteRedemption(
-    props.token,
-    props.domain,
-  );
+  const { refused, retry } = useInviteRedemption(props.token, props.domain);
   if (refused !== null)
     return inviteRefusalOf(refused) === "NotValid" ? (
       <InviteCard
@@ -359,8 +213,6 @@ function InviteRedeeming(props: {
         onAction={retry}
       />
     );
-  if (redemption?.outcome === "NameWanted")
-    return <InviteNamingCard token={props.token} domain={props.domain} />;
   return <InviteCard line={invitePageWords.redeeming} media={<Locomotive />} />;
 }
 

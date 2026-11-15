@@ -29,6 +29,8 @@ const redemptionPath = "/access/v1/invite-links/redemptions";
 /** What a tenant's link answers its redemption with. */
 export const inviteGranted = {
   tenant: "acme",
+  displayName: "Acme",
+  workspaceMade: false,
   role: "Member",
   projects: [{ project: "atlas", roles: ["Viewer"] }],
 };

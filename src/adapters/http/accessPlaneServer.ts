@@ -65,7 +65,6 @@ import {
   accessTenantRoleSchema,
   accessTenantTakenCode,
   accessWorkspaceLinkCreationSchema,
-  accessWorkspaceLinkNameWantedCode,
   accessWorkspaceLinkNoteCharsMax,
   type AccessInvited,
   type AccessOwnerInvited,
@@ -174,10 +173,9 @@ export const accessWorkspaceLinkBodyBytesMax = planeJsonObjectBytesMax(
   accessWorkspaceLinkNoteCharsMax,
 );
 
-/** The most a redemption reads: a token, and the name of a workspace it makes. */
+/** The most a redemption reads: a token. */
 export const accessInviteLinkRedemptionBodyBytesMax = planeJsonObjectBytesMax(
   accessInviteLinkTokenCharsMax,
-  projectNameCharsMax,
 );
 
 /** The most the registration gate reads: one token. */
@@ -958,27 +956,14 @@ function accessInviteLinkEndingRoutes(
     service,
     "inviteLinkRedemption",
     async (request, reply, caller) => {
-      const { token, workspace } = accessInviteLinkRedemptionSchema.parse(
-        request.body,
-      );
-      const result = await service.inviteLinks.redeemed(
-        caller,
-        token,
-        workspace,
-      );
+      const { token } = accessInviteLinkRedemptionSchema.parse(request.body);
+      const result = await service.inviteLinks.redeemed(caller, token);
       switch (result.outcome) {
         case "Redeemed":
           return reply
             .code(200)
             .type(nativeHttpMediaType)
             .send(result.redeemed);
-        case "NameWanted":
-          return accessRefused(
-            reply,
-            409,
-            accessWorkspaceLinkNameWantedCode,
-            "The invite link makes a workspace, and wants its name.",
-          );
         case "TenantTaken":
           return accessTenantTaken(reply);
         case "Absent":

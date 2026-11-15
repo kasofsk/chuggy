@@ -20,7 +20,7 @@
  * have failed for its own reasons. The composition is exported taking the
  * authentication, which is what lets a suite start it without an issuer.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import type { FastifyInstance } from "fastify";
@@ -106,6 +106,11 @@ function accessPlaneDatabaseUrl(): string | undefined {
   return url === undefined || url.length === 0 ? undefined : url;
 }
 
+/** A workspace a workspace link makes, its id: a lowercase UUID v4, which is a name a new tenant may take and never a reserved one. */
+export function accessPlaneWorkspaceDraw(): string {
+  return randomUUID();
+}
+
 /** The invite link and display name stores over the database `url` names, their pool, and whether its connection is the plane's role. */
 function accessPlaneLinks(url: string) {
   const pool = postgresPool(url);
@@ -113,6 +118,7 @@ function accessPlaneLinks(url: string) {
     pool,
     store: postgresInviteLinks(pool),
     names: postgresTenantNames(pool),
+    workspaceDraw: accessPlaneWorkspaceDraw,
     secrets: {
       draw: () => randomBytes(32).toString("base64url"),
       digest: (token: string) =>

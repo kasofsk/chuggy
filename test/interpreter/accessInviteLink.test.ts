@@ -178,7 +178,13 @@ test("a redemption writes the caller exactly the tuples an invitation of the sam
   memory.asked.length = 0;
   assert.deepEqual(await service.redeemed(zed, link.token), {
     outcome: "Redeemed",
-    redeemed: { tenant, role: "Member", projects: granted.projects },
+    redeemed: {
+      tenant,
+      displayName: tenant,
+      workspaceMade: false,
+      role: "Member",
+      projects: granted.projects,
+    },
   });
   assert.deepEqual(memory.asked, []);
   assert.deepEqual(memory.changes, []);
@@ -277,7 +283,13 @@ test("a send that read the link open and whose spend took nothing is answered wh
     const answer = await overlapping.redeemed(zed, link.token);
     assert.deepEqual(taken, {
       outcome: "Redeemed",
-      redeemed: { tenant, role: "Member", projects: granted.projects },
+      redeemed: {
+        tenant,
+        displayName: tenant,
+        workspaceMade: false,
+        role: "Member",
+        projects: granted.projects,
+      },
     });
     assert.deepEqual(
       answer,

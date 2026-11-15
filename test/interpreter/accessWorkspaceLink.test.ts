@@ -1,8 +1,8 @@
 /**
  * The site's workspace links over an authority and a store held in memory:
  * who may make, list and revoke one, what a person presenting one is answered
- * before and after it is spent, what using one writes, what a grant that
- * faults leaves behind, which tokens the registration gate admits, and that a
+ * before and after it is spent, the workspace using one makes and names, what
+ * using one writes, what a grant that faults leaves behind, which tokens the registration gate admits, and that a
  * tenant's links and the site's never meet.
  */
 
@@ -22,11 +22,17 @@ import {
 } from "../../src/interpreter/projectGrant.ts";
 import { projectAccessSiteObject } from "../../src/interpreter/projectAccess.ts";
 import { asTenantId } from "../../src/interpreter/projectStore.ts";
+import { AccessDirectoryUnavailable } from "../../src/interpreter/accessDirectory.ts";
+import {
+  directoryMemory,
+  directorySubject,
+} from "./accessInvitationFixture.ts";
 import {
   accessMemoryInviteLinks,
   inviteLinkDigest,
   inviteLinkMemory,
   inviteLinkOverlapped,
+  inviteLinkWorkspaceDrawn,
   type InviteLinkMemory,
 } from "./accessInviteLinkFixture.ts";
 import {
@@ -200,106 +206,188 @@ test("a workspace link answers its token once, `newAccounts` its maker's `Create
   assert.ok(!JSON.stringify(listed).includes(noted.token));
 });
 
+/** What using a workspace link answers where it made `workspace`, named `displayName`. */
+function workspaceRedeemed(
+  workspace: string,
+  displayName = "My Workspace",
+): unknown {
+  return {
+    outcome: "Redeemed",
+    redeemed: {
+      tenant: workspace,
+      displayName,
+      workspaceMade: true,
+      role: "Admin",
+      projects: [],
+    },
+  };
+}
+
+const drawnFirst = inviteLinkWorkspaceDrawn(0);
+const drawnSecond = inviteLinkWorkspaceDrawn(1);
+
 test("no answer to the person using a workspace link carries its note", async () => {
   const { service } = await sited();
   const made = await workspaceMinted(service, { createAccounts: true, note });
-  const answers: unknown[] = [
+  const answers = [
     await service.redeemed(zed, made.token),
-    await service.redeemed(zed, made.token, tenant),
-    await service
-      .redeemed(zed, made.token, "Not A Name")
-      .catch((failure: unknown) =>
-        failure instanceof Error ? failure.message : "",
-      ),
-    await service.redeemed(zed, made.token, "zed-works"),
-    await service.redeemed(zed, made.token, "zed-works"),
+    await service.redeemed(zed, made.token),
   ];
-  assert.equal(
-    (answers[3] as { outcome: string } | undefined)?.outcome,
-    "Redeemed",
-  );
+  assert.deepEqual(answers[0], workspaceRedeemed(drawnFirst));
   for (const answer of answers)
     assert.ok(!JSON.stringify(answer).includes("Octo"), JSON.stringify(answer));
 });
 
-test("an unknown token is absent with no name and with any name the request admits, and the authority is asked nothing", async () => {
-  const { memory, service } = await sited();
+test("an unknown token is absent, and the authority is asked nothing and no workspace drawn", async () => {
+  const { memory, links, service } = await sited();
   await workspaceMinted(service);
   memory.asked.length = 0;
   memory.pages = 0;
-  for (const workspace of [undefined, "fresh", tenant, "api", "Not A Name", ""])
-    assert.deepEqual(
-      await service.redeemed(zed, "token-nobody-holds", workspace),
-      { outcome: "Absent" },
-      String(workspace),
-    );
+  assert.deepEqual(await service.redeemed(zed, "token-nobody-holds"), {
+    outcome: "Absent",
+  });
   assert.deepEqual(memory.asked, []);
   assert.equal(memory.pages, 0);
   assert.deepEqual(memory.batches, []);
+  assert.deepEqual(links?.workspacesDrawn, []);
+  assert.deepEqual(links?.names.rows, new Map());
 });
 
-test("a tenant's link presented with a name, admissible or not, is used as today and the name ignored", async () => {
-  for (const workspace of ["fresh", "Not A Name", "api", tenant]) {
-    const { memory, links, service } = await sited();
-    const link = await tenantMinted(service);
-    assert.deepEqual(await service.redeemed(zed, link.token, workspace), {
-      outcome: "Redeemed",
-      redeemed: { tenant, role: "Member", projects: [] },
-    });
-    assert.equal(rowOf(links, link.link)?.used?.by, "zed");
-    assert.equal(rowOf(links, link.link)?.used?.workspace, undefined);
-    assert.equal(memory.batches.length, 1);
-    assert.ok(
-      !JSON.stringify(memory.batches).includes('"fresh"'),
-      JSON.stringify(memory.batches),
-    );
-  }
+test("a tenant's link is used as it was, answered with its tenant's display name, and draws and names no workspace", async () => {
+  const { memory, links, service } = await sited();
+  const link = await tenantMinted(service);
+  const renamed = await tenantMinted(service);
+  assert.deepEqual(await service.redeemed(zed, link.token), {
+    outcome: "Redeemed",
+    redeemed: {
+      tenant,
+      displayName: tenant,
+      workspaceMade: false,
+      role: "Member",
+      projects: [],
+    },
+  });
+  links?.names.rows.set(tenant, "Acme Co.");
+  assert.deepEqual(await service.redeemed(dee, renamed.token), {
+    outcome: "Redeemed",
+    redeemed: {
+      tenant,
+      displayName: "Acme Co.",
+      workspaceMade: false,
+      role: "Member",
+      projects: [],
+    },
+  });
+  assert.equal(rowOf(links, link.link)?.used?.by, "zed");
+  assert.equal(rowOf(links, link.link)?.used?.workspace, undefined);
+  assert.equal(memory.batches.length, 2);
+  assert.deepEqual(links?.workspacesDrawn, []);
+  assert.deepEqual([...(links?.names.rows.keys() ?? [])], [tenant]);
 });
 
-test("a workspace link with no name, a name no new tenant may take, or a taken one is answered and stays open, and is then used with a free name", async () => {
+test("using a workspace link asks its user nothing: it makes a workspace at a drawn id, named as theirs where the directory records no GitHub login", async () => {
   const { memory, links, service } = await sited();
   const made = await workspaceMinted(service);
-  assert.deepEqual(await service.redeemed(zed, made.token), {
-    outcome: "NameWanted",
-  });
-  assert.ok(open(links, made.link));
-  for (const refused of ["Not A Name", "api", "-edge", ""]) {
-    await assert.rejects(
-      service.redeemed(zed, made.token, refused),
-      RangeError,
-      refused,
-    );
-    assert.ok(open(links, made.link), refused);
-  }
-  for (const caller of [zed, alice]) {
-    assert.deepEqual(await service.redeemed(caller, made.token, tenant), {
-      outcome: "TenantTaken",
-    });
-    assert.ok(open(links, made.link));
-  }
-  assert.deepEqual(memory.batches, []);
-  assert.deepEqual(memory.changes, []);
-  assert.deepEqual(await service.redeemed(zed, made.token, "zed-works"), {
-    outcome: "Redeemed",
-    redeemed: { tenant: "zed-works", role: "Admin", projects: [] },
-  });
-  assert.equal(rowOf(links, made.link)?.used?.workspace, "zed-works");
+  assert.deepEqual(
+    await service.redeemed(zed, made.token),
+    workspaceRedeemed(drawnFirst),
+  );
+  assert.equal(rowOf(links, made.link)?.used?.workspace, drawnFirst);
+  assert.deepEqual(links?.workspacesDrawn, [drawnFirst]);
+  assert.deepEqual(
+    links?.names.rows,
+    new Map([[asTenantId(drawnFirst), "My Workspace"]]),
+  );
+  assert.equal(memory.batches.length, 1);
 });
 
-test("using a workspace link writes exactly the site's invitation's grants for the chosen name, with and without `createAccounts`, as one request", async () => {
+test("a workspace a link makes is named for the GitHub login the directory records for its user, and as their own where it records none", async () => {
+  for (const [githubLogin, displayName] of [
+    ["octocat", "octocat's Workspace"],
+    [undefined, "My Workspace"],
+  ] as const) {
+    const { memory, links } = await sited();
+    const subject = directorySubject(0);
+    const caller = accessFixturePrincipal(subject);
+    const directory = directoryMemory([
+      {
+        subject,
+        email: "octo@example.com",
+        ...(githubLogin === undefined ? {} : { githubLogin }),
+      },
+    ]);
+    const service = accessMemoryInviteLinks(memory, links, directory.directory);
+    const made = await workspaceMinted(service);
+    assert.deepEqual(
+      await service.redeemed(caller, made.token),
+      workspaceRedeemed(drawnFirst, displayName),
+    );
+    assert.deepEqual(
+      links?.names.rows,
+      new Map([[asTenantId(drawnFirst), displayName]]),
+    );
+  }
+});
+
+test("a directory that cannot answer leaves the link open, and nothing named or granted", async () => {
+  const { memory, links } = await sited();
+  const directory = directoryMemory([]);
+  directory.unavailable = true;
+  const service = accessMemoryInviteLinks(memory, links, directory.directory);
+  const made = await workspaceMinted(service);
+  await assert.rejects(
+    service.redeemed(accessFixturePrincipal(directorySubject(0)), made.token),
+    AccessDirectoryUnavailable,
+  );
+  assert.ok(open(links, made.link));
+  assert.deepEqual(links?.names.rows, new Map());
+  assert.deepEqual(memory.batches, []);
+});
+
+test("a drawn id no new tenant may take is a fault that leaves the link open, and nothing named or granted", async () => {
+  for (const drawn of ["api", "Not-A-Name", ""]) {
+    const { memory, links } = await sited();
+    const service = accessMemoryInviteLinks(memory, links, undefined, {
+      workspaceDraw: () => drawn,
+    });
+    const made = await workspaceMinted(service);
+    await assert.rejects(service.redeemed(zed, made.token), RangeError, drawn);
+    assert.ok(open(links, made.link), drawn);
+    assert.deepEqual(links?.names.rows, new Map());
+    assert.deepEqual(memory.batches, []);
+  }
+});
+
+test("a drawn id something already holds is answered taken and leaves the link open, and the next send draws another", async () => {
+  const { memory, links } = await sited();
+  const service = accessMemoryInviteLinks(memory, links, undefined, {
+    claims: {
+      claimed: (claimed) => Promise.resolve(claimed === drawnFirst),
+    },
+  });
+  const made = await workspaceMinted(service);
+  assert.deepEqual(await service.redeemed(zed, made.token), {
+    outcome: "TenantTaken",
+  });
+  assert.ok(open(links, made.link));
+  assert.deepEqual(links?.names.rows, new Map());
+  assert.deepEqual(memory.batches, []);
+  assert.deepEqual(
+    await service.redeemed(zed, made.token),
+    workspaceRedeemed(drawnSecond),
+  );
+});
+
+test("using a workspace link writes exactly the site's invitation's grants for the drawn id, with and without `createAccounts`, as one request", async () => {
   for (const createAccounts of [true, false]) {
     const { memory, service } = await sited();
     const made = await workspaceMinted(service, { createAccounts });
     memory.asked.length = 0;
-    const workspace = asTenantId(`zed-${String(createAccounts)}`);
-    assert.equal(
-      (await service.redeemed(zed, made.token, workspace)).outcome,
-      "Redeemed",
-    );
+    assert.equal((await service.redeemed(zed, made.token)).outcome, "Redeemed");
     assert.deepEqual(memory.batches, [
       accessOwnerInvitationGrants(
         accessFixtureIssuer,
-        workspace,
+        asTenantId(drawnFirst),
         "zed",
         createAccounts,
       ),
@@ -312,11 +400,7 @@ test("using a workspace link writes exactly the site's invitation's grants for t
 test("the person a workspace link makes a workspace for holds personal runners in it", async () => {
   const { memory, service } = await sited();
   const made = await workspaceMinted(service);
-  const workspace = asTenantId("zed-works");
-  assert.equal(
-    (await service.redeemed(zed, made.token, workspace)).outcome,
-    "Redeemed",
-  );
+  assert.equal((await service.redeemed(zed, made.token)).outcome, "Redeemed");
   assert.deepEqual(
     memory.batches
       .flat()
@@ -325,17 +409,16 @@ test("the person a workspace link makes a workspace for holds personal runners i
       tenantPrincipalGrant({
         issuer: accessFixtureIssuer,
         subject: "zed",
-        tenant: workspace,
+        tenant: asTenantId(drawnFirst),
         relation: "personal_runners",
       }),
     ],
   );
 });
 
-test("a grant that faults gives the link back open and naming nothing, and the name is then free for another link", async () => {
+test("a grant that faults gives the link back open and naming nothing, and the next send makes one workspace at a fresh id", async () => {
   const { memory, links, service } = await sited();
-  const first = await workspaceMinted(service);
-  const second = await workspaceMinted(service);
+  const made = await workspaceMinted(service);
   const fault = new Error("write refused");
   const faulting = accessMemoryInviteLinks(memory, links, undefined, {
     grants: {
@@ -344,69 +427,73 @@ test("a grant that faults gives the link back open and naming nothing, and the n
       writeAll: () => Promise.reject(fault),
     },
   });
-  await assert.rejects(faulting.redeemed(zed, first.token, "shared"), fault);
-  assert.ok(open(links, first.link));
-  assert.equal(rowOf(links, first.link)?.used, undefined);
+  await assert.rejects(faulting.redeemed(zed, made.token), fault);
+  assert.ok(open(links, made.link));
+  assert.equal(rowOf(links, made.link)?.used, undefined);
   assert.deepEqual(memory.batches, []);
-  assert.deepEqual(await service.redeemed(dee, second.token, "shared"), {
-    outcome: "Redeemed",
-    redeemed: { tenant: "shared", role: "Admin", projects: [] },
-  });
-  assert.deepEqual(await service.redeemed(zed, first.token, "shared"), {
-    outcome: "TenantTaken",
-  });
-  assert.equal(
-    (await service.redeemed(zed, first.token, "zed-works")).outcome,
-    "Redeemed",
+  assert.deepEqual(
+    await service.redeemed(zed, made.token),
+    workspaceRedeemed(drawnSecond),
   );
+  assert.equal(memory.batches.length, 1);
 });
 
-test("a workspace link used once is absent after to another person, with any name or none", async () => {
-  const { memory, service } = await sited();
+test("a display name's write that faults gives the link back open, and nothing is granted", async () => {
+  const { memory, links } = await sited();
+  const fault = new Error("name refused");
+  const service = accessMemoryInviteLinks(memory, links, undefined, {
+    names: {
+      named: () => Promise.resolve(new Map()),
+      renamed: () => Promise.reject(fault),
+    },
+  });
   const made = await workspaceMinted(service);
-  await service.redeemed(zed, made.token, "zed-works");
-  memory.batches.length = 0;
-  for (const workspace of [undefined, "other-works", "zed-works"])
-    assert.deepEqual(await service.redeemed(dee, made.token, workspace), {
-      outcome: "Absent",
-    });
+  await assert.rejects(service.redeemed(zed, made.token), fault);
+  assert.ok(open(links, made.link));
   assert.deepEqual(memory.batches, []);
 });
 
-test("a workspace link's user sending again is answered the workspace it made, whatever name the send carries, and nothing is written", async () => {
+test("a workspace link used once is absent after to another person", async () => {
   const { memory, links, service } = await sited();
   const made = await workspaceMinted(service);
-  const first = await service.redeemed(zed, made.token, "zed-works");
-  assert.deepEqual(first, {
-    outcome: "Redeemed",
-    redeemed: { tenant: "zed-works", role: "Admin", projects: [] },
+  await service.redeemed(zed, made.token);
+  memory.batches.length = 0;
+  assert.deepEqual(await service.redeemed(dee, made.token), {
+    outcome: "Absent",
   });
+  assert.deepEqual(memory.batches, []);
+  assert.deepEqual(links?.workspacesDrawn, [drawnFirst]);
+});
+
+test("a workspace link's user sending again is answered the workspace it made, by its name now, and nothing is drawn or written", async () => {
+  const { memory, links, service } = await sited();
+  const made = await workspaceMinted(service);
+  const first = await service.redeemed(zed, made.token);
+  assert.deepEqual(first, workspaceRedeemed(drawnFirst));
   for (const grant of memory.batches.flat()) await memory.grants.remove(grant);
   const row = structuredClone(rowOf(links, made.link));
   memory.batches.length = 0;
   memory.changes.length = 0;
   memory.asked.length = 0;
   if (links !== undefined) links.nowMs = made.expiresAtMs;
-  for (const workspace of [
-    undefined,
-    "other-works",
-    "zed-works",
-    "Not A Name",
-    "api",
-    "",
-  ])
-    assert.deepEqual(
-      await service.redeemed(zed, made.token, workspace),
-      first,
-      String(workspace),
-    );
+  assert.deepEqual(await service.redeemed(zed, made.token), first);
+  links?.names.rows.set(asTenantId(drawnFirst), "Zed's Lab");
+  assert.deepEqual(
+    await service.redeemed(zed, made.token),
+    workspaceRedeemed(drawnFirst, "Zed's Lab"),
+  );
   assert.deepEqual(memory.batches, []);
   assert.deepEqual(memory.changes, []);
   assert.deepEqual(memory.asked, []);
   assert.deepEqual(rowOf(links, made.link), row);
+  assert.deepEqual(links?.workspacesDrawn, [drawnFirst]);
+  assert.deepEqual(
+    links?.names.rows,
+    new Map([[asTenantId(drawnFirst), "Zed's Lab"]]),
+  );
 });
 
-test("a send that read a workspace link open and whose spend took nothing is answered the workspace its caller's own other send made, and absent where another person's took it", async () => {
+test("a send that read a workspace link open and whose spend took nothing is answered the workspace its caller's own other send made, and absent where another person's took it, and one workspace is made", async () => {
   for (const [other, answered] of [
     [zed, "Redeemed"],
     [dee, "Absent"],
@@ -418,35 +505,31 @@ test("a send that read a workspace link open and whose spend took nothing is ans
     const overlapping = accessMemoryInviteLinks(
       memory,
       inviteLinkOverlapped(links, async () => {
-        taken = await service.redeemed(other, made.token, "first-works");
+        taken = await service.redeemed(other, made.token);
       }),
     );
-    const answer = await overlapping.redeemed(zed, made.token, "second-works");
-    assert.deepEqual(taken, {
-      outcome: "Redeemed",
-      redeemed: { tenant: "first-works", role: "Admin", projects: [] },
-    });
+    const answer = await overlapping.redeemed(zed, made.token);
+    assert.deepEqual(taken, workspaceRedeemed(drawnFirst));
     assert.deepEqual(
       answer,
       answered === "Redeemed" ? taken : { outcome: "Absent" },
     );
     assert.equal(memory.batches.length, 1);
+    assert.deepEqual([...links.names.rows.keys()], [drawnFirst]);
   }
 });
 
-test("two links never make one workspace: where the authority does not yet hold a name another link took, the spend is refused it and the link stays open", async () => {
+test("two links never make one workspace: where the authority does not yet hold an id another link took, the spend is refused it and the link stays open", async () => {
   const { memory, links } = await sited();
   const service = accessMemoryInviteLinks(memory, links, undefined, {
     claims: { claimed: () => Promise.resolve(false) },
+    workspaceDraw: () => drawnFirst,
   });
   const first = await workspaceMinted(service);
   const second = await workspaceMinted(service);
-  assert.equal(
-    (await service.redeemed(zed, first.token, "shared")).outcome,
-    "Redeemed",
-  );
+  assert.equal((await service.redeemed(zed, first.token)).outcome, "Redeemed");
   memory.batches.length = 0;
-  assert.deepEqual(await service.redeemed(dee, second.token, "shared"), {
+  assert.deepEqual(await service.redeemed(dee, second.token), {
     outcome: "TenantTaken",
   });
   assert.ok(open(links, second.link));
@@ -472,7 +555,7 @@ test("the registration gate admits a workspace link only with `newAccounts`, and
       : [],
     ["Open", "Open"],
   );
-  await service.redeemed(zed, admitted.token, "zed-works");
+  await service.redeemed(zed, admitted.token);
   assert.equal(await service.registrationAdmitted(admitted.token), false);
 });
 
@@ -480,8 +563,8 @@ test("a tenant's list and revocation never see or end a workspace link, open or 
   const { links, service } = await sited();
   const used = await workspaceMinted(service);
   const opened = await workspaceMinted(service);
-  await service.redeemed(zed, used.token, "zed-works");
-  const made = asTenantId("zed-works");
+  await service.redeemed(zed, used.token);
+  const made = asTenantId(drawnFirst);
   for (const [caller, at] of [
     [zed, made],
     [alice, tenant],
@@ -606,7 +689,7 @@ test("a plane with no store answers every workspace link route not configured be
   assert.deepEqual(await service.workspaceRevoked(sita, "link"), {
     outcome: "NotConfigured",
   });
-  assert.deepEqual(await service.redeemed(zed, "token", "zed-works"), {
+  assert.deepEqual(await service.redeemed(zed, "token"), {
     outcome: "NotConfigured",
   });
   assert.deepEqual(memory.asked, []);

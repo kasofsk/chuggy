@@ -121,11 +121,6 @@ export interface SettingsCopy {
   readonly "settings-invite-sign-in": Record<never, never>;
   readonly "settings-invite-open": Record<never, never>;
   readonly "settings-invite-retry": Record<never, never>;
-  readonly "settings-invite-naming": Record<never, never>;
-  readonly "settings-invite-workspace-name": Record<never, never>;
-  readonly "settings-invite-workspace-about": Record<never, never>;
-  readonly "settings-invite-create": Record<never, never>;
-  readonly "settings-invite-name-not-valid": Record<never, never>;
   readonly "settings-permissions-title": Record<never, never>;
   readonly "settings-permissions-project": Record<never, never>;
   readonly "settings-permissions-workspace": Record<never, never>;

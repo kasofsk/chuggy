@@ -54,7 +54,6 @@ import {
   accessTenantRoles,
   accessTenantNamesNotConfiguredCode,
   accessTenantTakenCode,
-  accessWorkspaceLinkNameWantedCode,
   accessWorkspaceLinkNoteCharsMax,
   accessWorkspaceLinksSchema,
   type AccessPlaneRouteName,
@@ -117,6 +116,7 @@ import { fixtureForge } from "./forgeFixtures.ts";
 import {
   accessMemoryInviteLinks,
   inviteLinkMemory,
+  inviteLinkWorkspaceDrawn,
 } from "../interpreter/accessInviteLinkFixture.ts";
 import {
   accessFixtureIssuer,
@@ -132,7 +132,6 @@ import {
   accessMemoryHolders,
   accessMemoryPlane,
   accessMemorySiteTenants,
-  tenantNameMemory,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
 import { accessTenantNames } from "../../src/interpreter/accessTenantNames.ts";
@@ -228,7 +227,7 @@ async function served(
 ) {
   const memory = accessMemory();
   const links = stored ? inviteLinkMemory() : undefined;
-  const names = stored ? tenantNameMemory() : undefined;
+  const names = links?.names;
   for (const grant of [
     projectTenantGrant(web),
     tenantPrincipalGrant({
@@ -1906,6 +1905,8 @@ test("a redemption answers what it granted to the caller, and the same again to 
   assert.equal(redeemed.statusCode, 200, redeemed.body);
   assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
     tenant,
+    displayName: tenant,
+    workspaceMade: false,
     role: "Member",
     projects: [{ project: "web", roles: ["Viewer"] }],
   });
@@ -1947,7 +1948,7 @@ test("a plane with no store answers every link route not configured, while an in
         ? {
             payload: JSON.stringify(
               name === "inviteLinkRedemption"
-                ? { token: "token-0", workspace: "alice-works" }
+                ? { token: "token-0" }
                 : name === "siteWorkspaceLinkCreation"
                   ? { createAccounts: false }
                   : { role: "Member" },
@@ -2165,16 +2166,8 @@ test("a workspace link's note past its bound or holding a line break, or a body 
   );
 });
 
-test("a workspace link presented without a name, with a taken one or one no tenant may take is refused under its own code and stays open, with a free name makes its user the workspace's administrator, and is then answered the same to them alone", async () => {
-  const { app, memory } = await served();
-  await memory.grants.write(
-    tenantPrincipalGrant({
-      issuer: accessFixtureIssuer,
-      subject: "alice",
-      tenant: asTenantId("held-works"),
-      relation: "admins",
-    }),
-  );
+test("a workspace link makes its user the administrator of a workspace at a drawn id, named for them, asking them nothing, and is then answered the same to them alone", async () => {
+  const { app, memory, names } = await served();
   const minted = accessInviteLinkMintedSchema.parse(
     (
       await workspaceLinkMinted(app, "sita-token", {
@@ -2185,70 +2178,46 @@ test("a workspace link presented without a name, with a taken one or one no tena
   );
   const { token } = minted;
   enveloped(await redemption(app, undefined, { token }), "Unauthenticated");
-  const wanted = await redemption(app, "sam-token", { token });
-  enveloped(wanted, "Conflict", accessWorkspaceLinkNameWantedCode);
-  for (const caller of ["sam-token", "alice-token"])
-    enveloped(
-      await redemption(app, caller, { token, workspace: "held-works" }),
-      "Conflict",
-      accessTenantTakenCode,
-    );
-  for (const workspace of ["Not A Name", "api", "w".repeat(40), 7])
-    enveloped(
-      await redemption(app, "sam-token", { token, workspace }),
-      "Rejected",
-      "InvalidRequest",
-    );
   assert.equal((await registrationAsked(app, { token })).statusCode, 204);
-  const redeemed = await redemption(app, "sam-token", {
-    token,
-    workspace: "sam-works",
-  });
+  const redeemed = await redemption(app, "sam-token", { token });
   assert.equal(redeemed.statusCode, 200, redeemed.body);
+  const workspace = inviteLinkWorkspaceDrawn(0);
   assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
-    tenant: "sam-works",
+    tenant: workspace,
+    displayName: "My Workspace",
+    workspaceMade: true,
     role: "Admin",
     projects: [],
   });
+  assert.equal(names?.rows.get(asTenantId(workspace)), "My Workspace");
   assert.ok(!redeemed.body.includes("Octo"), redeemed.body);
-  assert.ok(!wanted.body.includes("Octo"), wanted.body);
   const batches = memory.batches.length;
-  for (const workspace of [undefined, "sam-other-works", "Not A Name"]) {
-    const again = await redemption(app, "sam-token", { token, workspace });
-    assert.equal(again.statusCode, 200, again.body);
-    assert.equal(again.body, redeemed.body);
-  }
+  const again = await redemption(app, "sam-token", { token });
+  assert.equal(again.statusCode, 200, again.body);
+  assert.equal(again.body, redeemed.body);
   assert.equal(memory.batches.length, batches);
+  enveloped(await redemption(app, "dee-token", { token }), "Absent");
   enveloped(
-    await redemption(app, "dee-token", { token, workspace: "dee-works" }),
-    "Absent",
-  );
-  enveloped(
-    await redemption(app, "dee-token", {
-      token: "token-nobody-holds",
-      workspace: "Not A Name",
-    }),
+    await redemption(app, "dee-token", { token: "token-nobody-holds" }),
     "Absent",
   );
 });
 
-test("a tenant's link redeemed with a workspace's name or without one is used as before", async () => {
-  const { app } = await served();
-  for (const workspace of [undefined, "sam-works", "Not A Name"]) {
-    const minted = accessInviteLinkMintedSchema.parse(
-      (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+test("a redemption carrying a workspace's name is a request the plane will not read, and leaves the link open", async () => {
+  const { app, links } = await served();
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", { createAccounts: false })
+    ).json(),
+  );
+  for (const workspace of ["sam-works", "Not A Name", 7])
+    enveloped(
+      await redemption(app, "sam-token", { token: minted.token, workspace }),
+      "Rejected",
+      "InvalidRequest",
     );
-    const redeemed = await redemption(app, "sam-token", {
-      token: minted.token,
-      ...(workspace === undefined ? {} : { workspace }),
-    });
-    assert.equal(redeemed.statusCode, 200, redeemed.body);
-    assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
-      tenant,
-      role: "Member",
-      projects: [],
-    });
-  }
+  assert.equal(links?.rows[0]?.used, undefined);
+  assert.deepEqual(links?.workspacesDrawn, []);
 });
 
 /** The directory's question about a registration presenting `body`, sent as JSON as the directory sends it, with `headers` beside. */
