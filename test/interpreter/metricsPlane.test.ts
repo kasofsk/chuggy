@@ -38,9 +38,12 @@ import { journalOf, loadCorpus } from "../golden/corpus.ts";
 
 const issuer = "https://issuer.test";
 
+const repository = "https://github.com/acme/web.git";
+
 const task: MetricsPlaneTask = {
   tenant: "acme",
   project: "web",
+  repository,
   owner: "alice-id",
   phase: "Evaluation",
   stage: "checks",
@@ -173,6 +176,7 @@ test("an attempt's state labels its count and not its duration, whose buckets an
       labels: {
         tenant: "acme",
         project: "web",
+        repository,
         owner: "alice-id",
         phase: "Evaluation",
         stage: "checks",
@@ -321,6 +325,7 @@ test("each counter and histogram series began at the earliest row it sums, and t
       {
         tenant: "acme",
         project: "web",
+        repository,
         owner: "alice-id",
         phase: "Escalated",
         escalation: "WorkFailureEscalated",
@@ -354,6 +359,7 @@ test("each counter and histogram series began at the earliest row it sums, and t
       labels: {
         tenant: "acme",
         project: "web",
+        repository,
         owner: "alice-id",
         phase: "Escalated",
         escalation: "WorkFailureEscalated",
@@ -392,6 +398,7 @@ test("a read's refusal is the scrape's, and a page past its series is refused ra
       (phase) => ({
         tenant: "acme",
         project: "web",
+        repository: "",
         owner: "",
         phase,
         escalation: "NoEscalation" as const,
@@ -451,7 +458,12 @@ function boundedAt(
   return [...bounds, Infinity].map((_, at) => (at === index ? count : 0));
 }
 
-const owned = { tenant: "acme", project: "web", owner: "alice-id" };
+const owned = {
+  tenant: "acme",
+  project: "web",
+  repository,
+  owner: "alice-id",
+};
 
 /** The ticket histograms of one owner's rows: a lead time, two reworks rows, a cost and an escalation. */
 const ticketFamilies = () =>
@@ -789,7 +801,7 @@ test("a landed ticket's phase times are seconds by phase and its work cycles cou
   });
 });
 
-test("a claimed attempt's wait is seconds, by its owner, phase and placement alone", () => {
+test("a claimed attempt's wait is seconds, by its ticket's owner and repository, its phase and its placement alone", () => {
   assert.deepEqual(
     metricsPlaneAttemptWaitBoundsSecs,
     [10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400],
@@ -822,4 +834,178 @@ test("a claimed attempt's wait is seconds, by its owner, phase and placement alo
       ],
     },
   );
+});
+
+/** The labels every ticket family begins with, the repository beside the project it narrows. */
+const ticketLabelNames = ["tenant", "project", "repository", "owner"];
+
+/** The labels every run and attempt family begins with: its ticket's, then what ran it. */
+const taskLabelNames = [
+  ...ticketLabelNames,
+  "phase",
+  "stage",
+  "runner",
+  "placement",
+  "workload",
+];
+
+/** The labels of each family's series, in order: every ticket and task family's carries the repository, and no session's or pause's does. */
+const familyLabelNames: Readonly<Record<string, readonly string[]>> = {
+  chuggy_attempts_ended_total: [...taskLabelNames, "state"],
+  chuggy_attempt_duration_seconds: taskLabelNames,
+  chuggy_attempt_wait_seconds: [...ticketLabelNames, "phase", "placement"],
+  chuggy_run_turns_total: taskLabelNames,
+  chuggy_run_duration_seconds_total: taskLabelNames,
+  chuggy_run_api_duration_seconds_total: taskLabelNames,
+  chuggy_run_tokens_total: [...taskLabelNames, "model", "type"],
+  chuggy_run_cost_usd_total: [...taskLabelNames, "model"],
+  chuggy_session_turns_ended_total: [
+    "tenant",
+    "project",
+    "owner",
+    "session",
+    "state",
+  ],
+  chuggy_session_turn_tokens_total: [
+    "tenant",
+    "project",
+    "owner",
+    "session",
+    "model",
+  ],
+  chuggy_session_turn_cost_usd_total: [
+    "tenant",
+    "project",
+    "owner",
+    "session",
+    "model",
+  ],
+  chuggy_session_turn_duration_seconds: [
+    "tenant",
+    "project",
+    "owner",
+    "session",
+  ],
+  chuggy_tickets: [...ticketLabelNames, "phase", "escalation"],
+  chuggy_ticket_events_total: [...ticketLabelNames, "event", "stage"],
+  chuggy_ticket_lead_time_seconds: ticketLabelNames,
+  chuggy_ticket_run_time_seconds: ticketLabelNames,
+  chuggy_ticket_reworks: ticketLabelNames,
+  chuggy_ticket_cost_usd: [...ticketLabelNames, "end"],
+  chuggy_ticket_escalation_duration_seconds: [
+    ...ticketLabelNames,
+    "event",
+    "by",
+  ],
+  chuggy_ticket_work_cycle_duration_seconds: [
+    ...ticketLabelNames,
+    "began",
+    "ended",
+  ],
+  chuggy_ticket_evaluation_cycle_duration_seconds: [
+    ...ticketLabelNames,
+    "began",
+    "ended",
+  ],
+  chuggy_ticket_phase_time_seconds: [...ticketLabelNames, "phase"],
+  chuggy_ticket_work_cycles: ticketLabelNames,
+  chuggy_agent_paused: ["owner", "agent", "trigger"],
+};
+
+/** A row of `owned`'s observed once in the first bucket of `bounds`. */
+const ownedObserved = (bounds: readonly number[]) => ({
+  ...owned,
+  buckets: boundedAt(bounds, 0, 1),
+  sum: 1,
+  createdSecs: 1,
+});
+
+/** One row of every family, each ticket's and task's in `repository`. */
+const everyFamilyRows = (): MetricsPlaneRows => ({
+  attempts: [
+    {
+      task,
+      state: "Reported",
+      buckets: bucketsAt(0, 1),
+      ended: 1,
+      durationMs: 1,
+      createdSecs: 1,
+    },
+  ],
+  attemptWaits: [
+    {
+      ...ownedObserved(metricsPlaneAttemptWaitBoundsSecs),
+      phase: "Work",
+      placement: "Pool",
+    },
+  ],
+  runs: [{ task, turns: 1, durationMs: 1, durationApiMs: 1, createdSecs: 1 }],
+  models: [
+    {
+      task,
+      model: "model-large",
+      tokensInput: 1,
+      tokensOutput: 1,
+      tokensCacheCreation: 1,
+      tokensCacheRead: 1,
+      costUsdMicros: 1,
+      createdSecs: 1,
+    },
+  ],
+  turns: [leadTurn("Answered", "model-large", 1)],
+  tickets: [
+    { ...owned, phase: "Work", escalation: "NoEscalation", tickets: 1 },
+  ],
+  ticketEvents: [
+    {
+      ...owned,
+      event: "TicketCreated",
+      stage: "",
+      entries: 1,
+      createdSecs: 1,
+    },
+  ],
+  leadTimes: [ownedObserved(metricsPlaneTicketTimeBoundsSecs)],
+  runTimes: [ownedObserved(metricsPlaneTicketTimeBoundsSecs)],
+  reworks: [ownedObserved(metricsPlaneTicketReworkBounds)],
+  costs: [{ ...ownedObserved(metricsPlaneTicketCostBoundsUsd), end: "Done" }],
+  escalations: [
+    {
+      ...ownedObserved(metricsPlaneEscalationBoundsSecs),
+      event: "TicketWorkProcessFailed",
+      by: "",
+    },
+  ],
+  workCycleDurations: [
+    ownedCycle("TicketDispatched", "TicketWorkResultAccepted", 1),
+  ],
+  evaluationCycleDurations: [
+    ownedCycle("TicketWorkResultAccepted", "TicketEvaluationPassed", 1),
+  ],
+  phaseTimes: [
+    { ...ownedObserved(metricsPlanePhaseTimeBoundsSecs), phase: "Work" },
+  ],
+  workCycles: [ownedObserved(metricsPlaneWorkCycleBounds)],
+  agentPauses: [
+    { owner: "alice-id", agent: "Claude", trigger: "soft", paused: 1 },
+  ],
+});
+
+test("every ticket and task family is labelled by the repository its ticket's brief names, and no session or pause family is", () => {
+  const families = metricsPlaneFamilies(everyFamilyRows());
+  assert.deepEqual(
+    families.map((each) => each.name).toSorted(),
+    Object.keys(familyLabelNames).toSorted(),
+    "every family the plane serves is one whose labels are held here",
+  );
+  for (const each of families)
+    for (const sample of each.samples) {
+      assert.deepEqual(
+        Object.keys(sample.labels),
+        familyLabelNames[each.name],
+        each.name,
+      );
+      if (familyLabelNames[each.name]?.includes("repository"))
+        assert.equal(sample.labels["repository"], repository, each.name);
+    }
 });
