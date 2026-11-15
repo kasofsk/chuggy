@@ -260,6 +260,7 @@ export interface TicketCopy {
   readonly "ticket-run-image": Record<never, never>;
   readonly "ticket-run-worker": Record<never, never>;
   readonly "ticket-run-cpus": Record<never, never>;
+  readonly "ticket-run-credential": Record<never, never>;
   readonly "ticket-run-id-field": Record<never, never>;
   readonly "ticket-run-not-found": Record<never, never>;
   readonly "ticket-run-showing-first": {

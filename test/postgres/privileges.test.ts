@@ -321,6 +321,7 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ["SELECT command FROM operation", "operation"],
     ["SELECT escalation_evidence FROM ticket_projection", "ticket_projection"],
     ["UPDATE ticket_projection SET phase=phase", "ticket_projection"],
+    ["SELECT credential FROM execution_run_total", "execution_run_total"],
     ["SELECT utilization FROM agent_account_usage", "agent_account_usage"],
     ["SELECT attempt FROM agent_account_limit", "agent_account_limit"],
     ["SELECT * FROM agent_account_setting", "agent_account_setting"],

@@ -259,6 +259,7 @@ ticket-run-runner = { -runner(case: "upper") }
 ticket-run-image = Image
 ticket-run-worker = Worker
 ticket-run-cpus = CPUs
+ticket-run-credential = Credential
 ticket-run-id-field = { -run(case: "upper") } ID
 ticket-run-not-found = No such { -run }
 ticket-run-showing-first = Showing first { $run }

@@ -88,6 +88,7 @@ export interface RunTotals extends RunTokens {
   readonly permissionDenials: number;
   readonly resultSubtype?: string;
   readonly stopReason?: string;
+  readonly credential?: string;
 }
 
 /** How much of one window an agent account had used, where one is the whole window, when the window reopens and when the runtime read it, each instant in Unix seconds. */
@@ -215,13 +216,12 @@ export interface WorkerRunContextPort {
   ): Promise<RunContextStored>;
 }
 
-/** A run's totals, and the usage of the account it spent under the credential the run named, which is kept with totals that were stored or already were. */
+/** A run's totals with the credential the run named inside them, and the usage of the account it spent under that credential, which is kept with totals that were stored or already were. */
 export interface WorkerRunTotalPort {
   record(
     input: RunEvidenceWrite & {
       readonly totals: RunTotals;
       readonly usage?: RunUsage;
-      readonly credential?: string;
     },
   ): Promise<RunEvidenceStored>;
 }

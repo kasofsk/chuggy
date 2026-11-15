@@ -274,6 +274,7 @@ export const runTotalsSchema = runTokensSchema.extend({
   permissionDenials: countSchema,
   resultSubtype: z.string().min(1).max(runOutcomeLabelCharsMax).optional(),
   stopReason: z.string().min(1).max(runOutcomeLabelCharsMax).optional(),
+  credential: workerRunCredentialSchema.optional(),
 });
 export type RunTotals = z.infer<typeof runTotalsSchema>;
 
