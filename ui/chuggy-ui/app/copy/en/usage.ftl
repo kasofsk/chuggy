@@ -46,3 +46,18 @@ usage-retire-named = Retire credential { $credential }
 usage-retire-question = Retire credential { $credential }?
 usage-retirement = Its readings and its limit are forgotten. { -runner(case: "upper", form: "a") } that reports { $credential } again brings it back.
 usage-retire-in-use = A live { -runner } still names it
+
+## Turning a credential off, which every runner of the reader's passes over, and on.
+
+# spells -turn: to turn off is a verb here
+usage-turn-off = Turn off
+# spells -turn: to turn off is a verb here
+usage-turn-off-named = Turn off credential { $credential }
+# spells -turn: to turn off is a verb here
+usage-turn-off-question = Turn off credential { $credential }?
+usage-turned-off = Every { -runner } of yours passes it over.
+usage-turn-off-full = No more credentials can be off
+# spells -turn: to turn on is a verb here
+usage-turn-on = Turn on
+# spells -turn: to turn on is a verb here
+usage-turn-on-named = Turn on credential { $credential }

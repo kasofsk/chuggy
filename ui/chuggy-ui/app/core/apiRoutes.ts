@@ -829,6 +829,46 @@ export function apiRetireAgentAccountCredential(
   );
 }
 
+/** One credential of the reader's own agent turned off by name, so every
+ * runner of theirs passes it over; refused `OffFull` while as many as the
+ * account holds off are already off. */
+export function apiTurnOffAgentAccountCredential(
+  ports: ApiPorts,
+  agent: AccountAgent,
+  credential: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiFilled(nativeHttpRoutes.agentAccountCredentialOff, {
+        agent,
+        credential,
+      }),
+    },
+    () => undefined,
+  );
+}
+
+/** One credential of the reader's own agent turned on again by name. */
+export function apiTurnOnAgentAccountCredential(
+  ports: ApiPorts,
+  agent: AccountAgent,
+  credential: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiFilled(nativeHttpRoutes.agentAccountCredentialOff, {
+        agent,
+        credential,
+      }),
+    },
+    () => undefined,
+  );
+}
+
 export function apiProjectInventory(
   ports: ApiPorts,
   page: { readonly cursor?: string | undefined } = {},

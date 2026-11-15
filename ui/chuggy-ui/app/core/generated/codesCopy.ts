@@ -108,6 +108,7 @@ export interface CodesCopy {
   readonly "codes-usage-resumes-at": {
     readonly until: unknown;
   };
+  readonly "codes-usage-off": Record<never, never>;
   readonly "codes-step-clone-failed": Record<never, never>;
   readonly "codes-step-setup-failed": Record<never, never>;
   readonly "codes-step-commit-failed": Record<never, never>;

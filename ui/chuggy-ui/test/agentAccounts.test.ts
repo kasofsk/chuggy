@@ -18,6 +18,7 @@ import {
   agentAccountPressRefusal,
   agentAccountReading,
   agentAccountReadingStale,
+  agentAccountTurnOffRefusal,
   agentPauseParts,
   agentPausePressable,
   agentPauseReasonLabel,
@@ -143,6 +144,28 @@ test("an agent holding one credential or none, or read without the field, is dra
   ).toStrictEqual([]);
 });
 
+test("an agent holding a credential turned off is drawn by each current one, the one off always among them, and a lone one on is drawn by its own", () => {
+  const nowMs = Date.parse("2026-10-03T10:00:00Z");
+  const off = { off: true as const, reasons: ["off" as const], pressed: false };
+  const drawn = (
+    credentials: NonNullable<AgentAccount["credentials"]>,
+  ): readonly string[] | undefined =>
+    agentAccountCredentialsDrawn({ ...claude, credentials }, nowMs)?.map(
+      (credential) => credential.name,
+    );
+  expect(drawn([{ name: "home", readings: claude.readings }])).toBeUndefined();
+  expect(drawn([{ name: "work", readings: [], pause: off }])).toStrictEqual([
+    "work",
+  ]);
+  expect(
+    drawn([
+      { name: "home", readings: claude.readings },
+      { name: "unread", readings: [] },
+      { name: "work", readings: [], pause: off },
+    ]),
+  ).toStrictEqual(["home", "work"]);
+});
+
 test("a share is read in whole percent, rounded down past the float's noise", () => {
   expect(shareFigure(0.29)).toStrictEqual({
     kind: "Quantity",
@@ -206,6 +229,21 @@ test("a press refused because no limit holds the agent says so, and any other re
     ),
   ).toBe("No limit holds it");
   expect(copyTextEn(agentAccountPressRefusal({ outcome: "Absent" }))).toBe(
+    "Not found",
+  );
+});
+
+test("a turning off refused because as many credentials as the account holds off are off says so, and any other refusal is its word", () => {
+  expect(
+    copyTextEn(
+      agentAccountTurnOffRefusal({
+        outcome: "Conflict",
+        code: "OffFull",
+        body: undefined,
+      }),
+    ),
+  ).toBe("No more credentials can be off");
+  expect(copyTextEn(agentAccountTurnOffRefusal({ outcome: "Absent" }))).toBe(
     "Not found",
   );
 });
