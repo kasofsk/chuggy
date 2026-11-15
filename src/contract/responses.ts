@@ -211,6 +211,7 @@ import {
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
   workerHeldCredentialAbsences,
+  ticketTakeOutcomes,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
 
@@ -610,6 +611,12 @@ export const ticketResponseSchema = z.object({
    * revision carries no member's authority.
    */
   creator: identitySchema.optional(),
+  /**
+   * The member the ticket's next execution is placed for, encoded as
+   * `creator` is: the member who took it, else its creator. It is absent
+   * where neither is a member.
+   */
+  owner: identitySchema.optional(),
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   /**
@@ -1133,7 +1140,7 @@ export const projectResponseSchema = z.object({
   tickets: page(projectTicketSchema),
   nextAfter: ticketNumberSchema.optional(),
   nextCursor: cursorSchema.optional(),
-  /** How many tickets a search or creator matched across the project, its phases and activity included; only a read naming `q` or `creator` carries it. */
+  /** How many tickets a search, creator or owner matched across the project, its phases and activity included; only a read naming `q`, `creator` or `owner` carries it. */
   matched: countSchema.optional(),
 });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
@@ -2879,6 +2886,17 @@ export const epicWriteResponseSchema = z.strictObject({
   revision: ticketNumberSchema,
 });
 export type EpicWriteResponse = z.infer<typeof epicWriteResponseSchema>;
+
+/**
+ * What a take or a return of a ticket answers where it was not refused: what
+ * it did, and the member the ticket's next execution is placed for now,
+ * encoded as a ticket's `owner` is, absent where none is.
+ */
+export const ticketTakeResponseSchema = z.strictObject({
+  outcome: z.enum(ticketTakeOutcomes),
+  owner: identitySchema.optional(),
+});
+export type TicketTakeResponse = z.infer<typeof ticketTakeResponseSchema>;
 
 /** The error envelope a refused write answers with, carrying what the reason names. */
 export const epicRefusalResponseSchema = z.strictObject({

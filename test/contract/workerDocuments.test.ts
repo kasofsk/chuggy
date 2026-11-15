@@ -11,7 +11,7 @@
  * retained version is lifted to the version the harness writes, which is the
  * only one the schema describes.
  *
- * AN OLDER RELEASE A PLANE STILL SERVES WRITES DOCUMENTS THIS TREE READS. Each
+ * EACH RELEASE REPLAYED ON A PLANE WRITES DOCUMENTS THIS TREE READS. Each
  * example written at that release's version that its schema accepts is offered
  * again with every value of each roster the schema names. Lifted to the version
  * the harness writes, every one is accepted by this tree's schema. The reader

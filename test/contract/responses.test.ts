@@ -338,6 +338,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     title: "The ticket the contract names",
     repository: "https://github.com/acme/widgets.git",
     creator: "23:https://issuer.example/alice",
+    owner: "21:https://issuer.example/bob",
     phase: "Escalated",
     sequence: 9,
     escalation: ticketEscalationResource(

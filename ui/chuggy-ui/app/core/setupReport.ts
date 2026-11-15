@@ -64,6 +64,7 @@ import type {
   SetupRunnerAt,
   SetupRunnerEnded,
   SetupRunnerNote,
+  SetupServerEnded,
 } from "./setupRunnerSaid.ts";
 import { setupCommandLine, setupFlat } from "./setupText.ts";
 
@@ -99,6 +100,7 @@ export type SetupFault =
 export const setupSteps = [
   "workspace",
   "project",
+  "mcp",
   "github",
   "repository",
   "runner",
@@ -122,9 +124,9 @@ export interface SetupStepSaid {
 /**
  * The one next thing a checklist ends on: nothing, where setup is done;
  * something the person does by hand, and the condition the checklist may be
- * read again under; something `runner` would do on this machine for the
- * project named, or `chat-host` for the workspace where no project is, and the
- * yes it waits on; a question only she answers, and the
+ * read again under; something `mcp` or `runner` would do on this machine for
+ * the project named, or `chat-host` for the workspace where no project is, and
+ * the yes it waits on; a question only she answers, and the
  * flag her answer is passed in; or a read that failed, `stale` where this copy
  * of the program could not read what the site sent.
  */
@@ -133,6 +135,7 @@ export type SetupThing =
   | { readonly thing: "Hand"; readonly tell: Copy; readonly when: Copy }
   | {
       readonly thing: "Offer";
+      readonly command: SetupMachineCommand;
       readonly tell: Copy;
       readonly when: Copy;
       readonly workspace: string;
@@ -231,6 +234,15 @@ export type SetupReport =
       readonly ended: SetupRunnerEnded;
     }
   | {
+      /** A run of `mcp`: what it found and did of the runner package and the agent's configuration, and how it ended. */
+      readonly report: "Mcp";
+      readonly site: string;
+      readonly workspace: string;
+      readonly project: string;
+      readonly notes: readonly SetupRunnerNote[];
+      readonly ended: SetupServerEnded;
+    }
+  | {
       /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
@@ -239,7 +251,13 @@ export type SetupReport =
       readonly out: SetupReport;
     };
 
-/** The command a run that changes the machine is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
+/** The commands that change the machine. */
+export type SetupMachineCommand = Extract<
+  SetupCommand,
+  "Mcp" | "Runner" | "ChatHost"
+>;
+
+/** The command a run of the runner package's service is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
 function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
   return at.project === undefined ? "ChatHost" : "Runner";
 }
@@ -316,15 +334,19 @@ const setupFlagProject = "--project";
 const setupSiteExample = "https://chuggy.example";
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
-  const [signIn = "", runner = "", chatHost = ""] = [
+  const [signIn = "", mcp = "", runner = "", chatHost = ""] = [
     ...setupCommandArguments("SignIn"),
+    ...setupCommandArguments("Mcp"),
     ...setupCommandArguments("Runner"),
     ...setupCommandArguments("ChatHost"),
   ];
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
-      return { id: "setup-asked-command", args: { signIn, runner, chatHost } };
+      return {
+        id: "setup-asked-command",
+        args: { signIn, mcp, runner, chatHost },
+      };
     case "Flag":
       return {
         id: "setup-asked-flag",
@@ -349,7 +371,7 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
     case "Name":
       return { id: "setup-asked-name", args: names };
     case "Project":
-      return { id: "setup-asked-project", args: { ...names, runner } };
+      return { id: "setup-asked-project", args: { ...names, mcp, runner } };
     case "Workspace":
       return {
         id: "setup-asked-workspace",
@@ -383,6 +405,7 @@ function setupUnservedLines(platform: string): readonly SetupLine[] {
 function setupSiteSaid(
   site: string,
   id:
+    | "setup-site-named"
     | "setup-site-signed-in"
     | "setup-site-signed-out"
     | "setup-site-unconfirmed"
@@ -870,7 +893,7 @@ function setupThingLines(
         ["tell", thing.tell],
         ...setupStopRule(
           thing,
-          setupCommandOf(setupSayingOf(saying, thing), setupRunCommand(thing)),
+          setupCommandOf(setupSayingOf(saying, thing), thing.command),
         ),
       ];
     case "Ask":
@@ -902,9 +925,26 @@ function setupChecklistLines(
   ];
 }
 
-/** What a run of `runner` or `chat-host` found and did, in the order it met them. */
+/** The command a stop's rule names, for a run that was for `at`. */
+function setupAgainOf(
+  again: "Again" | "Status" | "Mcp",
+  at: SetupRunnerAt,
+): SetupCommand {
+  switch (again) {
+    case "Again":
+      return setupRunCommand(at);
+    case "Status":
+    case "Mcp":
+      return again;
+  }
+}
+
+/** What a run of `mcp`, `runner` or `chat-host` found and did, in the order it met them. */
 function setupNoteLines(
-  report: Extract<SetupReport, { readonly report: "Runner" | "RunnerOut" }>,
+  report: Extract<
+    SetupReport,
+    { readonly report: "Mcp" | "Runner" | "RunnerOut" }
+  >,
 ): readonly SetupLine[] {
   return report.notes.map((note) => setupRunnerNoteSaid(note, report));
 }
@@ -940,8 +980,7 @@ function setupRunnerLines(
       ];
     case "Stopped": {
       const stop = setupRunnerStopSaid(report.ended.stop, report);
-      const command =
-        stop.again === "Status" ? "Status" : setupRunCommand(report);
+      const command = setupAgainOf(stop.again, report);
       const rest =
         stop.replace === undefined ? [] : [setupReplaceFlag, stop.replace];
       return [
@@ -951,6 +990,27 @@ function setupRunnerLines(
       ];
     }
   }
+}
+
+/** A run of `mcp`: everything it found and did, then the checklist where the agent's configuration names the server, and otherwise the stop, whose rule names `mcp` again or the checklist. */
+function setupServerLines(
+  report: Extract<SetupReport, { readonly report: "Mcp" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const of = setupSayingOf(saying, report);
+  const head: readonly SetupLine[] = [
+    setupSiteSaid(report.site, "setup-site-named"),
+    ...setupNoteLines(report),
+  ];
+  if (report.ended.ended === "Served")
+    return [...head, setupNextLine(of, "Status")];
+  const stop = setupRunnerStopSaid(report.ended.stop, report);
+  const command = stop.again === "Status" ? "Status" : "Mcp";
+  return [
+    ...head,
+    ...setupStopSaid(stop),
+    ...setupStopRule(stop, setupCommandOf(of, command)),
+  ];
 }
 
 function setupNodeOldSaid(
@@ -1017,6 +1077,8 @@ function setupLines(
         ...saying,
         answers: report.next.carried,
       });
+    case "Mcp":
+      return setupServerLines(report, saying);
     case "Runner":
       return setupRunnerLines(report, saying);
     case "RunnerOut":
@@ -1093,6 +1155,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
       return setupEndedFailures.has(report.ended) ? 1 : 0;
     case "Checklist":
       return report.next.thing.thing === "Failed" ? 1 : 0;
+    case "Mcp":
     case "Runner":
       return report.ended.ended === "Stopped"
         ? setupRunnerStopExit(report.ended.stop)

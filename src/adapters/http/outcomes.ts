@@ -42,6 +42,7 @@ import {
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
+import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type {
   SelectorProposalReviews,
@@ -94,6 +95,7 @@ import {
   briefFinalizationModeOf,
   type BriefFinalizationMode,
   type NativeActionAnswerRefusalCode,
+  type TicketTakeRefusalCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
@@ -3357,4 +3359,45 @@ export function epicWriteResponse(result: EpicWritten): NativeHttpResponse {
       ? { tickets: outcome.tickets }
       : {}),
   });
+}
+
+const ticketTakeRefusalMessage: Readonly<
+  Record<TicketTakeRefusalCode, string>
+> = {
+  TakerNotAPerson:
+    "A ticket is taken and returned by a person, never by an agent.",
+  Unreleased: "A draft never released is its author's.",
+  TicketDone: "The ticket is Done and runs nothing more.",
+  TicketRevoked: "The ticket is Revoked and runs nothing more.",
+  NotTaker: "Only the member who took the ticket may return it.",
+};
+
+/**
+ * A take or a return: what it did, with the owner it leaves, or a refusal
+ * named by its code. A caller who may read and not mutate meets `403`, as an
+ * agent does; a ticket in a state that refuses it is a `409`; a project or
+ * ticket the caller cannot see is a `404` like any other absence.
+ */
+export function ticketTakeResponse(
+  result: TicketTakeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError("Forbidden", "The caller may not take tickets."),
+      );
+    case "Refused":
+      return response(
+        result.reason === "TakerNotAPerson" ? 403 : 409,
+        nativeHttpError(result.reason, ticketTakeRefusalMessage[result.reason]),
+      );
+    case "Written":
+      return response(200, {
+        outcome: result.outcome,
+        ...(result.owner === undefined ? {} : { owner: result.owner }),
+      });
+  }
 }
