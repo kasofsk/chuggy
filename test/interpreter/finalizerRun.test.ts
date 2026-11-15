@@ -2048,6 +2048,82 @@ test("a brief landing somewhere while naming no branch of its own is built over 
   );
 });
 
+/** The line every case's ticket is titled with, its brief naming no title of its own. */
+const mergingTitle = "ticket 1: carry the ticket's own branch";
+
+test("a push landing on a branch apart from its work's integrates as a merge commit naming the ticket, and pins that commit", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+  git.integrated = integratedAs("e");
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(git.integrations.length, 1);
+  assert.deepEqual(git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: briefBranch,
+  });
+  assert.equal(git.integrations[0]?.candidate, commitOf("c"));
+  assert.equal(
+    store.attempts[0]?.candidate,
+    commitOf("e"),
+    "the merge commit is what is promoted and proved, not the candidate under it",
+  );
+});
+
+test("a push landing on a branch apart from the default its work ran against merges that default by name", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(undefined, landingBranch),
+  });
+
+  assert.deepEqual(git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: "refs/heads/main",
+  });
+});
+
+test("a push landing on the branch its work happened on asks for no merge commit", async () => {
+  for (const briefs of [briefsOf(briefBranch), briefsOf()]) {
+    const store = recordingStore([preparableView("request-one")]);
+    const git = gitPerBranch();
+
+    await passOver({ ...serviceOf(store, git), ticketBriefs: briefs });
+
+    assert.equal(git.integrations.length, 1);
+    assert.equal(git.integrations[0]?.merging, undefined);
+  }
+});
+
+test("a pushed source landing elsewhere whose work branch nobody named or read holds rather than fast-forwarding", async () => {
+  const store = sourcedStore();
+  const git = gitPerBranch();
+  const answered = git.observeTarget.bind(git);
+  git.observeTarget = (repository) => {
+    if (repository.targetRef !== undefined) return answered(repository);
+    git.observations.push(repository);
+    return Promise.resolve<TargetObserved>({
+      observed: "Unreadable",
+      evidence: "RemoteUnreachable",
+    });
+  };
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(undefined, landingBranch),
+  });
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(git.integrations, []);
+  assert.deepEqual(store.attempts, []);
+});
+
 /** A remote answering for the branch a case lands on and failing on the one it worked on. */
 function gitWithoutWorkBranch(): GitRecorder {
   const git = recordingGit();
@@ -4208,6 +4284,19 @@ test("a proposing brief asks its base whether the candidate landed, and never it
   assert.deepEqual(forge.creates, [], "nothing is proposed");
 });
 
+test("a proposing brief's head is integrated with no merge commit, being the work's own branch", async () => {
+  const store = recordingStore([
+    { ...preparableView("request-one"), finalization: proposalMerged },
+  ]);
+  const git = recordingGit();
+  const forge = recordingForge(store);
+
+  await passOver(mergingService(store, forge, {}, git));
+
+  assert.equal(git.integrations.length, 1);
+  assert.equal(git.integrations[0]?.merging, undefined);
+});
+
 test("a candidate holding a real change is still integrated, and an unanswered question holds", async () => {
   const store = recordingStore([preparableView("request-one")]);
   const git = recordingGit();
@@ -4240,6 +4329,29 @@ function landingService(
     ticketBriefs: briefsOf(undefined, undefined, "Push", landing),
   };
 }
+
+test("a serialized landing on a branch apart from its work's lands the merge commit of the accepted commit it holds", async () => {
+  const store = sourcedStore();
+  const git = gitPerBranch();
+  git.contained = "Contained";
+  git.integrated = integratedAs("e");
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch, "Push", "Serialized"),
+  });
+
+  assert.equal(git.containedQuestions.length, 1);
+  assert.equal(git.integrations.length, 1);
+  assert.equal(git.integrations[0]?.candidate, commitOf("c"));
+  assert.equal(git.integrations[0]?.target.ref, landingBranch);
+  assert.deepEqual(git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: briefBranch,
+  });
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+  assert.equal(store.attempts[0]?.candidate, commitOf("e"));
+});
 
 test("a serialized landing whose accepted commit holds the target's tip lands that commit as it is, merging nothing", async () => {
   const store = sourcedStore();
@@ -4436,6 +4548,37 @@ test("landsWhenTreeEqual: a stacked landing whose merge result is the stack's tr
   assert.equal(store.attempts.length, 1);
   assert.equal(store.attempts[0]?.outcome, "Prepared");
   assert.equal(store.attempts[0]?.candidate, merged);
+});
+
+test("a stacked landing on a branch apart from its work's is held to the stack's tree by its merge commit", async () => {
+  const landing = (tree: GitObjectId) => {
+    const store = sourcedStore();
+    const git = gitPerBranch();
+    git.integrated = {
+      integrated: "Candidate",
+      candidate: asGitObjectId(commitOf("e")),
+      tree,
+    };
+    return { store, git };
+  };
+  const stackedElsewhere = (store: FinalizerRecorder, git: GitRecorder) => ({
+    ...stackedService(store, git, stackOf(stackedTree)),
+    ticketBriefs: briefsOf(briefBranch, landingBranch, "Push", "Stacked"),
+  });
+
+  const equal = landing(stackedTree);
+  await passOver(stackedElsewhere(equal.store, equal.git));
+  assert.deepEqual(equal.git.integrations[0]?.merging, {
+    title: mergingTitle,
+    work: briefBranch,
+  });
+  assert.equal(equal.store.attempts[0]?.candidate, commitOf("e"));
+
+  const differing = landing(asGitObjectId(commitOf("8")));
+  await passOver(stackedElsewhere(differing.store, differing.git));
+  assert.equal(differing.store.attempts[0]?.failureKind, "RecheckRequired");
+  assert.equal(differing.store.attempts[0]?.recheckReason, "StackTreeDiffers");
+  assert.deepEqual(differing.git.promotions, []);
 });
 
 test("rechecksWhenTreeDiffers: a stacked landing whose merge result is not the stack's tree is sent back to re-check the accepted commit", async () => {

@@ -57,6 +57,7 @@ import {
   asRepositoryCredential,
   asRepositoryId,
   type CandidateFile,
+  type CandidateIntegration,
   type CredentialResolved,
   type GitObjectId,
   type GitPromotionPort,
@@ -686,6 +687,156 @@ test("a target the candidate already contains integrates to the candidate itself
       `${candidate}^{tree}`,
     ),
   });
+});
+
+/** How a ticket landing on a branch other than its work's names its merge commit. */
+const fixtureMerging = {
+  title: "ticket 7: Footer",
+  work: asGitRefName("refs/heads/chuggy/footer"),
+};
+
+/** The parents one commit records, first parent first. */
+function fixtureParents(scratch: string, commit: string): string[] {
+  return fixtureGit(scratch, "rev-list", "--parents", "-n", "1", commit)
+    .split(" ")
+    .slice(1);
+}
+
+/** A candidate built over the remote's target, and the merging integration of it against that target, moved first where `moved`. */
+async function fixtureMergingIntegration(t: TestContext, moved: boolean) {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const built = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, built, [
+    ["new.txt", "new\n"],
+  ]);
+  if (moved) fixtureCommit(fixture, "other.txt", "other\n", "other");
+  const target = moved ? await fixtureTarget(port, binding) : built;
+  const integration = {
+    repository: binding,
+    target,
+    candidate,
+    strategy: "Merge" as const,
+    merging: fixtureMerging,
+  };
+  return { fixture, binding, port, target, candidate, integration };
+}
+
+/** The merge commit one integration wrote, failing the case where it wrote none. */
+async function fixtureMerged(
+  port: GitPromotionPort,
+  integration: CandidateIntegration,
+): Promise<{ readonly candidate: GitObjectId; readonly tree: GitObjectId }> {
+  const integrated = await port.integrateCandidate(integration);
+  if (integrated.integrated !== "Candidate") {
+    assert.fail(`the merge did not integrate: ${JSON.stringify(integrated)}`);
+  }
+  return integrated;
+}
+
+/** The message every merging case's commit carries. */
+const fixtureMergingMessage =
+  "ticket 7: Footer\n\nMerges chuggy/footer into main.";
+
+test("a ticket landing on a branch apart from its work's is a merge commit naming it, even where the target has not moved", async (t) => {
+  const { fixture, port, target, candidate, integration } =
+    await fixtureMergingIntegration(t, false);
+  const integrated = await fixtureMerged(port, integration);
+  const scratch = fixtureScratch(fixture);
+  assert.notEqual(integrated.candidate, candidate);
+  assert.deepEqual(fixtureParents(scratch, integrated.candidate), [
+    target.commit,
+    candidate,
+  ]);
+  assert.equal(
+    integrated.tree,
+    fixtureGit(scratch, "rev-parse", `${candidate}^{tree}`),
+    "the merge records the candidate's own tree",
+  );
+  assert.equal(
+    fixtureGit(scratch, "log", "-1", "--format=%B", integrated.candidate),
+    fixtureMergingMessage,
+  );
+});
+
+test("a ticket landing on a branch apart from its work's that moved is the same merge commit shape and message", async (t) => {
+  const { fixture, port, target, candidate, integration } =
+    await fixtureMergingIntegration(t, true);
+  const integrated = await fixtureMerged(port, integration);
+  const scratch = fixtureScratch(fixture);
+  assert.deepEqual(fixtureParents(scratch, integrated.candidate), [
+    target.commit,
+    candidate,
+  ]);
+  assert.deepEqual(
+    fixtureGit(
+      scratch,
+      "ls-tree",
+      "-r",
+      "--name-only",
+      integrated.candidate,
+    ).split("\n"),
+    ["base.txt", "keep.txt", "new.txt", "other.txt"],
+  );
+  assert.equal(
+    fixtureGit(scratch, "log", "-1", "--format=%B", integrated.candidate),
+    fixtureMergingMessage,
+  );
+});
+
+test("a repeated merging integration is the same commit, and once it lands the target holds the candidate", async (t) => {
+  const { fixture, binding, port, target, candidate, integration } =
+    await fixtureMergingIntegration(t, false);
+  const first = await fixtureMerged(port, integration);
+  assert.deepEqual(
+    await port.integrateCandidate(integration),
+    { integrated: "Candidate", ...first },
+    "the same merge is written once",
+  );
+  const scratch = fixtureScratch(fixture);
+  assert.equal(
+    fixtureGit(
+      scratch,
+      "log",
+      "-1",
+      "--date=raw",
+      "--format=%ad %cd",
+      first.candidate,
+    ),
+    fixtureGit(
+      scratch,
+      "log",
+      "-1",
+      "--date=raw",
+      "--format=%cd %cd",
+      candidate,
+    ),
+    "the merge is dated at its candidate rather than at the clock",
+  );
+  assert.deepEqual(
+    await port.promoteCandidate({
+      repository: binding,
+      permit: asCommitPermitId("permit-1"),
+      target,
+      candidate: first.candidate,
+    }),
+    { promoted: "Advanced" },
+  );
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
+    first.candidate,
+    "the merge commit is what the target is advanced to",
+  );
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Held",
+    "a target holding the merge already holds the candidate under it",
+  );
 });
 
 test("a commit's tree is read from the remote by its hash, and one the remote does not hold, or a credential refused, reads as nothing", async (t) => {

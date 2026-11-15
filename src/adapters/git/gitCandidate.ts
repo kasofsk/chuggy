@@ -27,10 +27,13 @@
  * a rebase, a conflict resolved by hand and a merge carrying anything else are
  * each another shape or another tree, and are refused.
  *
- * AN INTEGRATION THE TARGET IS ALREADY INSIDE OF IS THE CANDIDATE ITSELF.
- * Merging a commit into one that already contains it changes nothing, and the
- * ancestry check is what keeps a repeated integration from writing a second
- * merge commit and a second identity for the same work.
+ * AN INTEGRATION THE TARGET IS ALREADY INSIDE OF IS THE CANDIDATE ITSELF,
+ * unless it lands on a branch other than its work's. Merging a commit into one
+ * that already contains it changes nothing, so a ticket landing where it worked
+ * fast-forwards; one landing elsewhere is always a merge commit naming the
+ * ticket, so the target's first-parent history reads as one merge per ticket.
+ * Every merge commit is dated at its candidate's own committing, so the same
+ * target, candidate and message are the same commit however often it is written.
  *
  * A TARGET HOLDS A CANDIDATE IT REACHES, OR ONE WHOSE MERGE IS ITS OWN TREE.
  * That is the other direction of the same question, asked of the target a
@@ -53,6 +56,7 @@ import {
   type GitObjectId,
   type GitPromotionPort,
   type GitRefName,
+  gitRefNamePrefix,
   type HeadAdoption,
   type HeadAdoptionQuestion,
   type ObservedTarget,
@@ -62,8 +66,10 @@ import {
   type TargetContained,
 } from "../../interpreter/finalizer.ts";
 import {
+  scratchCommitDate,
   scratchCommitShape,
   scratchCommitTree,
+  scratchCommitTreeFixed,
   scratchDiffPaths,
   scratchFetchHistory,
   scratchFetchRef,
@@ -155,9 +161,46 @@ function candidatePrepareMessage(preparation: CandidatePreparation): string {
   return `chug: finalize ticket ${String(preparation.ticket)}\n\nInput bundle ${preparation.bundle}.\n`;
 }
 
-/** The message an integration carries, naming the target the candidate was merged against. */
+/** The name a branch goes by in a message, without the namespace every branch shares. */
+function candidateIntegrateBranch(ref: GitRefName): string {
+  return ref.startsWith(gitRefNamePrefix)
+    ? ref.slice(gitRefNamePrefix.length)
+    : ref;
+}
+
+/**
+ * The message an integration carries: the ticket and the two branches where it
+ * lands on a branch other than its work's, and otherwise the target the
+ * candidate was merged against.
+ */
 function candidateIntegrateMessage(integration: CandidateIntegration): string {
-  return `chug: integrate candidate ${integration.candidate}\n\nAgainst ${integration.target.ref} at ${integration.target.commit}.\n`;
+  const { merging } = integration;
+  if (merging === undefined)
+    return `chug: integrate candidate ${integration.candidate}\n\nAgainst ${integration.target.ref} at ${integration.target.commit}.\n`;
+  return `${merging.title}\n\nMerges ${candidateIntegrateBranch(merging.work)} into ${candidateIntegrateBranch(integration.target.ref)}.\n`;
+}
+
+/** Writes the merge commit of an integration's tree, dated at the candidate's own committing. */
+async function candidateIntegrateCommit(
+  scratch: GitScratch,
+  integration: CandidateIntegration,
+  tree: GitObjectId,
+): Promise<GitObjectId | undefined> {
+  const repository = integration.repository.repository;
+  const date = await scratchCommitDate(
+    scratch,
+    repository,
+    integration.candidate,
+  );
+  if (date === undefined) return undefined;
+  return scratchCommitTreeFixed(
+    scratch,
+    repository,
+    tree,
+    [integration.target.commit, integration.candidate],
+    candidateIntegrateMessage(integration),
+    { ...scratch.options.identity, date },
+  );
 }
 
 /** Writes every artifact as a blob, stopping at the first git will not take. */
@@ -255,12 +298,10 @@ async function candidateIntegrateMerge(
       };
     }
     case "Tree": {
-      const candidate = await scratchCommitTree(
+      const candidate = await candidateIntegrateCommit(
         scratch,
-        repository,
+        integration,
         merged.tree,
-        [integration.target.commit, integration.candidate],
-        candidateIntegrateMessage(integration),
       );
       if (
         candidate === undefined ||
@@ -313,7 +354,7 @@ export async function candidateIntegrate(
   if (contains === undefined) {
     return { integrated: "Failed", evidence: "IntegrationFailed" };
   }
-  if (contains) {
+  if (contains && integration.merging === undefined) {
     const shape = await scratchCommitShape(
       scratch,
       repository,

@@ -1091,12 +1091,28 @@ export type CandidatePrepared =
 export type CandidateSourcePrepared =
   CandidatePrepared | { readonly prepared: "Undescended" };
 
-/** One integration against exactly one observed target, which is what bounded means here. */
+/**
+ * What names the merge commit a ticket lands as on a branch its work did not
+ * happen on: the line it is titled with, which is the ticket's proposal title,
+ * and the branch it merges.
+ */
+export interface CandidateMerging {
+  readonly title: string;
+  readonly work: GitRefName;
+}
+
+/**
+ * One integration against exactly one observed target, which is what bounded
+ * means here. `merging` is present where the ticket lands on a branch other
+ * than its work's, and makes the integration a merge commit even where the
+ * target has not moved.
+ */
 export interface CandidateIntegration {
   readonly repository: RepositoryBinding;
   readonly target: ObservedTarget;
   readonly candidate: GitObjectId;
   readonly strategy: IntegrationStrategy;
+  readonly merging?: CandidateMerging;
 }
 
 /** The conflicting paths one integration reported, bounded so a summary cannot become a payload. */

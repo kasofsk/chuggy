@@ -267,6 +267,7 @@ import {
   type AncestryProved,
   type CandidateFile,
   type CandidateIntegrated,
+  type CandidateIntegration,
   type CommitPermitId,
   type ConflictSummary,
   type FinalizationAttempt,
@@ -339,6 +340,7 @@ import {
 } from "./finalizerLanding.ts";
 import {
   briefFinalizationTarget,
+  type DraftBrief,
   type TicketBriefPort,
 } from "./ticketBrief.ts";
 
@@ -1272,6 +1274,60 @@ async function finalizerLandable(
   return landing === undefined ? undefined : { target, landing };
 }
 
+/**
+ * The branch the work happened on where the ticket lands on another one, which
+ * only a push does: a proposal's head is the work's own branch. `undefined` is
+ * a ticket landing where it worked, and `Unobserved` a work branch neither the
+ * brief nor the remote named.
+ */
+function finalizerMergedWork(
+  subject: FinalizerPreparation,
+  brief: DraftBrief,
+  target: ObservedTarget,
+): GitRefName | "Unobserved" | undefined {
+  const { view } = subject;
+  if (briefFinalizationOpensProposal(view.finalization)) return undefined;
+  const work = view.observedWorkBranch?.ref ?? brief.branch;
+  if (work === undefined)
+    return briefFinalizationTarget(brief.finalization) === undefined
+      ? undefined
+      : "Unobserved";
+  return work === target.ref ? undefined : work;
+}
+
+/**
+ * The integration one candidate is merged with, titled as the ticket's proposal
+ * would be where the ticket lands on a branch other than its work's, and
+ * `undefined` where the pass is held because the work's branch is unknown.
+ */
+async function finalizerIntegration(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<CandidateIntegration | undefined> {
+  const integration: CandidateIntegration = {
+    repository: subject.repository,
+    target,
+    candidate,
+    strategy: finalizerStrategy,
+  };
+  const { claim } = subject.view;
+  const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
+  if (brief === undefined) return integration;
+  const work = finalizerMergedWork(subject, brief, target);
+  if (work === undefined) return integration;
+  if (work === "Unobserved") {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return undefined;
+  }
+  return {
+    ...integration,
+    merging: { title: finalizationProposalTitle(claim.ticket, brief), work },
+  };
+}
+
 /** Re-observes and integrates one candidate, however that candidate was prepared. */
 async function finalizerIntegratePrepared(
   service: FinalizerService,
@@ -1282,12 +1338,15 @@ async function finalizerIntegratePrepared(
   const landable = await finalizerLandable(service, subject, candidate, tally);
   if (landable === undefined) return;
   const { target } = landable;
-  const integrated = await service.git.integrateCandidate({
-    repository: subject.repository,
+  const integration = await finalizerIntegration(
+    service,
+    subject,
     target,
     candidate,
-    strategy: finalizerStrategy,
-  });
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated = await service.git.integrateCandidate(integration);
   await finalizerIntegrated(
     service,
     subject,
@@ -1347,9 +1406,43 @@ async function finalizerRecheckRequired(
 }
 
 /**
- * Prepares a serialized landing: the accepted commit lands as it is when it
- * holds the target's tip, so its fast-forward is the tree that was evaluated,
- * and otherwise goes back to be re-checked. It is never merged here.
+ * Records a serialized landing whose accepted commit holds the target's tip:
+ * the commit itself where it lands where it worked, and otherwise its merge
+ * commit, whose tree is the accepted commit's own.
+ */
+async function finalizerContainedIntegrated(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const integration = await finalizerIntegration(
+    service,
+    subject,
+    target,
+    accepted,
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated =
+    integration.merging === undefined
+      ? { integrated: "Candidate" as const, candidate: accepted }
+      : await service.git.integrateCandidate(integration);
+  await finalizerIntegrated(
+    service,
+    subject,
+    target,
+    accepted,
+    integrated,
+    tally,
+  );
+}
+
+/**
+ * Prepares a serialized landing: the accepted commit lands when it holds the
+ * target's tip, so what lands is the tree that was evaluated, and otherwise
+ * goes back to be re-checked. It is never merged with a target that moved.
  */
 async function finalizerContainedPrepared(
   service: FinalizerService,
@@ -1367,12 +1460,11 @@ async function finalizerContainedPrepared(
   });
   switch (contained) {
     case "Contained":
-      await finalizerIntegrated(
+      await finalizerContainedIntegrated(
         service,
         subject,
         target,
         accepted,
-        { integrated: "Candidate", candidate: accepted },
         tally,
       );
       return;
@@ -1415,12 +1507,15 @@ async function finalizerStackedPrepared(
   const landable = await finalizerLandable(service, subject, accepted, tally);
   if (landable === undefined) return;
   const { target, landing } = landable;
-  const integrated = await service.git.integrateCandidate({
-    repository: subject.repository,
+  const integration = await finalizerIntegration(
+    service,
+    subject,
     target,
-    candidate: accepted,
-    strategy: finalizerStrategy,
-  });
+    accepted,
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated = await service.git.integrateCandidate(integration);
   if (
     integrated.integrated === "Candidate" &&
     integrated.tree !== stack.stackTree

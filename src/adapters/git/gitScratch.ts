@@ -614,6 +614,34 @@ export async function scratchCommitWritten(
     : { name, email, subject };
 }
 
+/**
+ * The instant one commit records its committing at, in the form git reads a
+ * date in, or `undefined` where git could not answer or printed something that
+ * is not that.
+ */
+export async function scratchCommitDate(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<string | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
+    argv: [
+      "--no-replace-objects",
+      "show",
+      "--no-patch",
+      "--date=raw",
+      "--format=%cd",
+      commit,
+      "--",
+    ],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  const raw = ran.stdout.trim();
+  return /^\d+ [+-]\d{4}$/u.test(raw) ? `@${raw}` : undefined;
+}
+
 /** One commit's tree and its parents in order, as the object itself records them. */
 export interface ScratchCommitShape {
   readonly tree: GitObjectId;
