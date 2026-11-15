@@ -159,13 +159,16 @@ function polling(
   wantedSessions?: number,
 ): string {
   const query = new URLSearchParams([
-    ...held.map((assignment) => [workerPoolPollQuery.held, assignment]),
+    ...held.map((assignment): [string, string] => [
+      workerPoolPollQuery.held,
+      assignment,
+    ]),
     [workerPoolPollQuery.wanted, String(wanted)],
-    ...(wantedSessions === undefined
-      ? []
-      : [[workerPoolPollQuery.wantedSessions, String(wantedSessions)]]),
-  ]).toString();
-  return `${workerPoolPollRoute}?${query}`;
+  ]);
+  if (wantedSessions !== undefined) {
+    query.append(workerPoolPollQuery.wantedSessions, String(wantedSessions));
+  }
+  return `${workerPoolPollRoute}?${query.toString()}`;
 }
 
 /** Records every call a route made, so the route's mapping is what the case reads, the pool holding `pinning`. */
@@ -1483,7 +1486,10 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         token === hostToken ? "Thread" : "Lead",
       );
       const query = new URLSearchParams([
-        ...held.map((assignment) => [older.pollQuery.held, assignment]),
+        ...held.map((assignment): [string, string] => [
+          older.pollQuery.held,
+          assignment,
+        ]),
         [older.pollQuery.wanted, String(wanted)],
         [older.pollQuery.wantedSessions, String(sessions)],
       ]);

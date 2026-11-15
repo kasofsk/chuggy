@@ -4,18 +4,19 @@
 # so the sources are the deliverable and a build stage here would be a second
 # way to produce something the tree never produces.
 #
-# THE BASE IS NODE 26 because `package.json` types this tree against
-# `@types/node` ^26. A runtime on an older line admits every call the
-# typechecker has already accepted, and finds out at request time. The digest is
-# the multi-architecture index's, read on 2026-08-22 with
-#   docker buildx imagetools inspect node:26.7.0-trixie-slim
+# THE BASE IS NODE 24 because `package.json` types this tree against
+# `@types/node` ^24, and a runtime on another line is one whose calls the
+# typechecker has not vouched for. The `images/worker/Dockerfile` base's header
+# gives why the line is not 26. The digest is the multi-architecture index's,
+# read on 2026-11-15 with
+#   docker buildx imagetools inspect node:24.22.3-trixie-slim
 #
 # THE CONTEXT IS THE REPOSITORY ROOT:
 #   docker build -f images/api/Dockerfile -t chuggy.invalid/api:<tag> .
 # `deploy/rig/images/build-and-import.sh` is that command plus the tag and the
 # import, and `deploy/rig/images/README.md` is the procedure.
 
-FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 AS dependencies
+FROM node:24.22.3-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS dependencies
 WORKDIR /srv/chuggy
 COPY package.json package-lock.json ./
 # Production dependencies only, and none of their install scripts: this tree's
@@ -26,11 +27,11 @@ RUN npm ci --omit=dev --ignore-scripts
 # THE CA BUNDLE THE APT STEP VERIFIES AGAINST comes from the full image of the
 # same release: the slim one ships none, and a bundle cannot be installed over
 # a connection that needs one. The digest is the multi-architecture index's,
-# read on 2026-09-10 with
-#   docker buildx imagetools inspect node:26.7.0-trixie
-FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS certificates
+# read on 2026-11-15 with
+#   docker buildx imagetools inspect node:24.22.3-trixie
+FROM node:24.22.3-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1 AS certificates
 
-FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
+FROM node:24.22.3-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0
 
 # The source binds 127.0.0.1, which is right on a developer's machine and
 # unreachable by a kubelet: a container's loopback is its own namespace's. The
@@ -61,7 +62,7 @@ ENV NODE_ENV=production \
 # `git --version` and refuses below it. The pinned base's candidate clears it
 # today —
 #   docker run --rm \
-#     node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 \
+#     node:24.22.3-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 \
 #     sh -c 'apt-get -qq update && apt-cache policy git'
 # — and the day it does not, the finalizer says so by name instead of promoting
 # against a git that cannot write the tree.

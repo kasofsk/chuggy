@@ -291,7 +291,10 @@ function poolPlaneFeaturePolling(
   wantedSessions: number,
 ): string {
   const query = new URLSearchParams([
-    ...held.map((assignment) => [workerPoolPollQuery.held, assignment]),
+    ...held.map((assignment): [string, string] => [
+      workerPoolPollQuery.held,
+      assignment,
+    ]),
     [workerPoolPollQuery.wanted, String(wanted)],
     [workerPoolPollQuery.wantedSessions, String(wantedSessions)],
   ]).toString();

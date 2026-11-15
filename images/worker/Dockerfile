@@ -34,13 +34,19 @@ ARG TRACK_RECORD_VERSION=0.2.1
 # suite ends in QNT516 and `check-model` cannot run, which is not a pass, so no
 # ticket touching the model could ever pass evaluation here.
 #
-# The digest is the multi-architecture index's, read on 2026-09-17 with
-#   docker buildx imagetools inspect node:26.7.0-trixie
-FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS base
+# THE BASE IS NODE 24 BECAUSE NODE 26 CRASHES UNDER THIS TREE'S CODE. Its node
+# dies of SIGSEGV inside V8's `Array.prototype.sort`, reached from optimized
+# code in `src/domain/enablement.ts`, which ends `check-random`'s walk and
+# `check-console`'s typecheck at random. The newest Node 26 does the same, and
+# Node 24 does not.
+#
+# The digest is the multi-architecture index's, read on 2026-11-15 with
+#   docker buildx imagetools inspect node:24.22.3-trixie
+FROM node:24.22.3-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1 AS base
 
-# The node chuggy's runtime runs the core on: Node 24, an LTS release, and not
-# the base's. Node 26 also needs libatomic.so.1, which debian:trixie-slim,
-# ubuntu:24.04 and even buildpack-deps:trixie-scm do not ship, so chuggy's node
+# The node chuggy's runtime runs the core on: Node 24, an LTS release, which
+# needs no libatomic.so.1. debian:trixie-slim, ubuntu:24.04 and even
+# buildpack-deps:trixie-scm do not ship that library, so a node that needed it
 # would not load in any of them.
 # The official image's node is nodejs.org's own build, which that image's
 # build verifies against the release's signed checksums, so it is taken from

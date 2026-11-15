@@ -14,11 +14,8 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import type { TestsStreamEventMap } from "node:test";
+import type { TestEvent } from "node:test/reporters";
 import { inspect } from "node:util";
-
-/** What the runner hands a reporter, one event at a time. */
-type TestEvent = TestsStreamEventMap["data"][0];
 
 /** Where one suite's log is cut back to once it passes twice this: the start is dropped and the end kept. */
 export const unitOutcomesLogCharsMax = 1_048_576;

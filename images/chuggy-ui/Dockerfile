@@ -10,7 +10,7 @@
 #
 #   docker build -f images/chuggy-ui/Dockerfile -t chuggy.invalid/chuggy-ui:<tag> .
 
-FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 AS build
+FROM node:24.22.3-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS build
 
 WORKDIR /workspace
 COPY package.json package-lock.json ./
