@@ -104,6 +104,17 @@ export const workTaskDocumentSchema = z.object({
   worker: workerConfigurationSchema.exactOptional(),
   /** The ref the ticket's finalization lands on, absent where it lands on none its brief or binding names. */
   targetRef: z.string().min(1).exactOptional(),
+  /** What the core merges into the workspace to meet the change it lands beside, absent where the task merges nothing. */
+  targetMerge: z
+    .object({
+      /** The ref merged: a push's target, a proposal's base, or `HEAD` where that base is the branch the remote defaults to. */
+      ref: z.string().min(1),
+      /** Whether the task's own repository's binding lets pipelines be written, and so whether a target's change to them may be merged. */
+      pipelinesWritable: z.boolean(),
+      /** The change commit of the failed landing a rework follows, merged after the target, and absent on every other task. */
+      change: z.string().min(1).exactOptional(),
+    })
+    .exactOptional(),
   workerPlane: z.object({
     url: z.string(),
     capabilityFile: z.string(),
@@ -199,6 +210,8 @@ export function workTaskCredentialsListed(
   return task.credentialsListed ?? task.authority.credentials;
 }
 
+/** What a work task's core merges in, where it merges anything. */
+export type WorkTaskTargetMerge = NonNullable<WorkTaskDocument["targetMerge"]>;
 export type WorkTaskAnswer = LaunchedDocument<
   z.infer<typeof workTaskAnswerSchema>
 >;
