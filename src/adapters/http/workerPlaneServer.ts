@@ -625,13 +625,12 @@ export interface WorkerPlaneServerService {
   readonly uploadBytesMax: number;
 }
 
-/** The offered totals as the durable port takes them, an absent label omitted, and the account usage and its credential offered beside them, which a reader of totals is never answered with. */
+/** The offered totals as the durable port takes them, an absent label omitted and the credential kept inside them, and the account usage offered beside them, which a reader of totals is never answered with. */
 function workerRunTotals(offered: z.infer<typeof workerRunTotalsSchema>): {
   readonly totals: RunTotals;
   readonly usage?: RunUsage;
-  readonly credential?: string;
 } {
-  const { resultSubtype, stopReason, usage, credential, ...rest } = offered;
+  const { resultSubtype, stopReason, usage, ...rest } = offered;
   return {
     totals: {
       ...rest,
@@ -639,7 +638,6 @@ function workerRunTotals(offered: z.infer<typeof workerRunTotalsSchema>): {
       ...(stopReason === undefined ? {} : { stopReason }),
     },
     ...(usage === undefined ? {} : { usage }),
-    ...(credential === undefined ? {} : { credential }),
   };
 }
 
@@ -748,7 +746,7 @@ async function workerAttemptTaskCaller(
   return task?.live === true ? { task, secret } : undefined;
 }
 
-/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref only to a peer that reads one. */
+/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref and its target merge each only to a peer that reads it. */
 async function workerTaskOf(
   service: WorkerPlaneServerService,
   secret: AttemptCapabilitySecret,
@@ -757,12 +755,19 @@ async function workerTaskOf(
   const found = await service.tasks.work(secret);
   if (found === undefined || !found.live) return undefined;
   if (found.invocation === undefined) return "TaskNotRecorded";
-  const { targetRef, ...unnamed } = found.invocation;
-  const named =
-    targetRef !== undefined && workerContractImplements("TargetRef", peer);
+  const { targetRef, targetMerge, ...unnamed } = found.invocation;
   return {
     kind: "Work",
-    ...workTask(found.identity, named ? found.invocation : unnamed),
+    ...workTask(found.identity, {
+      ...unnamed,
+      ...(targetRef !== undefined && workerContractImplements("TargetRef", peer)
+        ? { targetRef }
+        : {}),
+      ...(targetMerge !== undefined &&
+      workerContractImplements("TargetMerge", peer)
+        ? { targetMerge }
+        : {}),
+    }),
   };
 }
 

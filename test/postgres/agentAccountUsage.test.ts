@@ -668,9 +668,8 @@ function totalsNamed(attempt: Attempt, usage: RunUsage, credential: string) {
   return totals.record({
     secret: attempt.capability.secret,
     generation: attempt.generation,
-    totals: runTotals,
+    totals: { ...runTotals, credential },
     usage,
-    credential,
   });
 }
 

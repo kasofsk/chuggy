@@ -1685,12 +1685,12 @@ test("a run's usage reaches the boundary beside its totals and never inside them
   await app.close();
 });
 
-test("a run's credential reaches the boundary beside its usage and its limit, never inside its totals, and a name outside the pattern reaches nothing", async () => {
+test("a run's credential reaches the boundary inside its totals with or without usage, its limit's beside its ending, and a name outside the pattern reaches nothing", async () => {
   const offered: unknown[] = [];
   const app = runEvidencePlane({
     totals: {
       record: (input) => {
-        offered.push([input.totals, input.usage, input.credential]);
+        offered.push([input.totals, input.usage]);
         return Promise.resolve("Stored");
       },
     },
@@ -1743,8 +1743,8 @@ test("a run's credential reaches the boundary beside its usage and its limit, ne
       JSON.stringify(payload),
     );
   assert.deepEqual(offered, [
-    [runTotalsBody, usage, "work-1"],
-    [runTotalsBody, undefined, "work-1"],
+    [{ ...runTotalsBody, credential: "work-1" }, usage],
+    [{ ...runTotalsBody, credential: "work-1" }, undefined],
     ["RunRateLimited", limit],
   ]);
   await app.close();

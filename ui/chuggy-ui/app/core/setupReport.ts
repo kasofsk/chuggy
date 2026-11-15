@@ -12,7 +12,8 @@
  * tells the person, and names in a `rule:` line the one command and the
  * condition it may be run under. A step the person does by hand is that shape
  * too, so nothing printed is a command an agent could run round and round
- * without her. `runner` and `chat-host` are the commands that change the
+ * without her. `project` makes a project at the site, and is named only under
+ * a rule that waits on her saying what to call it. `runner` and `chat-host` are the commands that change the
  * machine, so each is named only under a rule that waits on her yes, and where
  * one stops short it is that shape again, after everything it found and did.
  *
@@ -39,6 +40,7 @@ import {
   setupAnswerArguments,
   setupAnswersNone,
   setupCommandArguments,
+  setupNameFlag,
   setupWaitSecsMax,
 } from "./setupArguments.ts";
 import type {
@@ -127,7 +129,8 @@ export interface SetupStepSaid {
  * read again under; something `mcp` or `runner` would do on this machine for
  * the project named, or `chat-host` for the workspace where no project is, and
  * the yes it waits on; a question only she answers, and the
- * flag her answer is passed in; or a read that failed, `stale` where this copy
+ * flag her answer is passed in; what to call the project `project` makes in
+ * the workspace, at the address named where one is; or a read that failed, `stale` where this copy
  * of the program could not read what the site sent.
  */
 export type SetupThing =
@@ -147,9 +150,29 @@ export type SetupThing =
       readonly flag: "workspace" | "project";
     }
   | {
+      readonly thing: "Name";
+      readonly ask: Copy;
+      readonly workspace: string;
+      readonly project: string | undefined;
+    }
+  | {
       readonly thing: "Failed";
       readonly found: Copy;
       readonly stale: boolean;
+    };
+
+/**
+ * How a run of `project` ended: the project the site answered as made, which
+ * is also its answer to the person who made it asking again, or refused, in
+ * the console form's own words for the refusal, and whether the same command
+ * could be answered otherwise if tried again.
+ */
+export type SetupProjectEnded =
+  | { readonly ended: "Made"; readonly project: string; readonly name: string }
+  | {
+      readonly ended: "Refused";
+      readonly refusal: Copy;
+      readonly again: boolean;
     };
 
 export interface SetupNext {
@@ -234,6 +257,15 @@ export type SetupReport =
       readonly ended: SetupRunnerEnded;
     }
   | {
+      /** A run of `project`: the workspace, the address it was given where it was given one, the name, and how it ended. */
+      readonly report: "Project";
+      readonly site: string;
+      readonly workspace: string;
+      readonly project: string | undefined;
+      readonly name: string;
+      readonly ended: SetupProjectEnded;
+    }
+  | {
       /** A run of `mcp`: what it found and did of the runner package and the agent's configuration, and how it ended. */
       readonly report: "Mcp";
       readonly site: string;
@@ -308,7 +340,7 @@ function setupCommandOf(
     "node",
     saying.script,
     ...setupCommandArguments(command),
-    ...setupAnswerArguments(saying.answers),
+    ...setupAnswerArguments(saying.answers, command),
     ...rest,
   ]);
 }
@@ -334,8 +366,9 @@ const setupFlagProject = "--project";
 const setupSiteExample = "https://chuggy.example";
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
-  const [signIn = "", mcp = "", runner = "", chatHost = ""] = [
+  const [signIn = "", made = "", mcp = "", runner = "", chatHost = ""] = [
     ...setupCommandArguments("SignIn"),
+    ...setupCommandArguments("Project"),
     ...setupCommandArguments("Mcp"),
     ...setupCommandArguments("Runner"),
     ...setupCommandArguments("ChatHost"),
@@ -345,7 +378,7 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
     case "Command":
       return {
         id: "setup-asked-command",
-        args: { signIn, mcp, runner, chatHost },
+        args: { signIn, made, mcp, runner, chatHost },
       };
     case "Flag":
       return {
@@ -356,6 +389,8 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
           wait: "--wait-secs",
           replace: setupReplaceFlag,
           chatHost,
+          name: setupNameFlag,
+          made,
         },
       };
     case "Site":
@@ -379,6 +414,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       };
     case "Replace":
       return { id: "setup-asked-replace", args: { flag: setupReplaceFlag } };
+    case "ProjectName":
+      return {
+        id: "setup-asked-project-name",
+        args: { made, workspace: setupFlagWorkspace, name: setupNameFlag },
+      };
   }
 }
 
@@ -908,6 +948,25 @@ function setupThingLines(
         ],
         ["next", setupNextStop],
       ];
+    case "Name": {
+      const { workspace, project } = thing;
+      const answers = { workspace, project };
+      return [
+        ["ask", thing.ask],
+        [
+          "rule",
+          {
+            id: "setup-rule-ask-name",
+            args: {
+              command: setupCommandOf({ ...saying, answers }, "Project", [
+                setupNameFlag,
+              ]),
+            },
+          },
+        ],
+        ["next", setupNextStop],
+      ];
+    }
     case "Failed":
       return setupFailedLines(report.site, thing, saying);
   }
@@ -1013,6 +1072,57 @@ function setupServerLines(
   ];
 }
 
+/**
+ * A run of `project`: the project made, and the checklist for it as the next
+ * command; or the refusal, and either the same command again, where trying
+ * again could be answered otherwise, or the checklist for the workspace, which
+ * asks again what to call the project where there is still none.
+ */
+function setupProjectLines(
+  report: Extract<SetupReport, { readonly report: "Project" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const { workspace, ended } = report;
+  const head = setupSiteSaid(report.site, "setup-site-signed-in");
+  if (ended.ended === "Made")
+    return [
+      head,
+      [
+        "did",
+        {
+          id: "setup-project-made",
+          args: { project: `${workspace}/${ended.project}`, name: ended.name },
+        },
+      ],
+      setupNextLine(
+        { ...saying, answers: { workspace, project: ended.project } },
+        "Status",
+      ),
+    ];
+  const { refusal } = ended;
+  const command = ended.again
+    ? setupCommandOf(
+        {
+          ...saying,
+          answers: { workspace, project: report.project, name: report.name },
+        },
+        "Project",
+      )
+    : setupCommandOf(
+        { ...saying, answers: { workspace, project: undefined } },
+        "Status",
+      );
+  return [
+    head,
+    ["found", { id: "setup-project-refused-found", args: { refusal } }],
+    ["tell", { id: "setup-project-refused-tell", args: { refusal } }],
+    ...setupStopRule(
+      { when: ended.again ? setupAskedRetry : setupLookAgain },
+      command,
+    ),
+  ];
+}
+
 function setupNodeOldSaid(
   major: number | undefined,
   saying: SetupSaying,
@@ -1077,6 +1187,8 @@ function setupLines(
         ...saying,
         answers: report.next.carried,
       });
+    case "Project":
+      return setupProjectLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
     case "Runner":
@@ -1155,6 +1267,8 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
       return setupEndedFailures.has(report.ended) ? 1 : 0;
     case "Checklist":
       return report.next.thing.thing === "Failed" ? 1 : 0;
+    case "Project":
+      return report.ended.ended === "Made" ? 0 : 1;
     case "Mcp":
     case "Runner":
       return report.ended.ended === "Stopped"

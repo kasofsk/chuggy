@@ -12,7 +12,10 @@ import type {
   WorkerPlaneServerService,
   WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
-import { workerContractHeader } from "../../src/contract/workerContract.ts";
+import {
+  workerContractFeaturesHeader,
+  workerContractHeader,
+} from "../../src/contract/workerContract.ts";
 import type { SessionPlaneAuthority } from "../../src/interpreter/sessionPlane.ts";
 import type { WorkerTaskPort } from "../../src/interpreter/workerPlane.ts";
 
@@ -174,6 +177,7 @@ export async function taskFetched(
   plane: Pick<FastifyInstance, "inject">,
   bearer: string,
   release?: string,
+  features?: string,
 ): Promise<{ readonly status: number; readonly body: unknown }> {
   const response = await plane.inject({
     method: "GET",
@@ -181,6 +185,9 @@ export async function taskFetched(
     headers: {
       authorization: `Bearer ${bearer}`,
       ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      ...(features === undefined
+        ? {}
+        : { [workerContractFeaturesHeader]: features }),
     },
   });
   return {
