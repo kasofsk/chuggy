@@ -132,7 +132,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 17;
+export const briefingTemplateVersion = 18;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -211,7 +211,7 @@ export const briefingPipelinesUnwritable: readonly string[] = [
 export const briefingReworkPreface: readonly string[] = [
   "Evaluators of an earlier change made for this ticket reported the findings below.",
   "Address what the reports name before anything else the ticket asks for; where a report names a command, run it before you report.",
-  "Add commits on top of the commit this workspace is at. An amended or rebased commit is refused and the run's work is lost, so a finding about a commit's message is answered in the message of a new commit.",
+  "A finding about a commit's message is answered in the message of a new commit.",
 ];
 
 /**
@@ -381,14 +381,14 @@ export function briefingTargetMergeFirstLines(
   ];
 }
 
-/** What a work task does as its last step: merge the target's head again, and verify the merged tree where that brought anything in. */
+/** What a work task does as its last step: merge the target's head again, and verify the merged tree where that conflicted or touched this change's files. */
 export function briefingTargetMergeLastLines(
   targetRef: string,
   pipelinesWritable: boolean,
 ): readonly string[] {
   return [
     `As your last step before you report, bring ${briefingTargetName(targetRef)} in again: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
-    `Where that brought anything in, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree.`,
+    `Where that merge conflicted, or brought in a change to a file this change also changes, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree. Otherwise report on the checks you ran before the merge, since the checks stage runs them on the merged tree.`,
     ...briefingTargetMergeResolution(pipelinesWritable),
   ];
 }
@@ -548,6 +548,7 @@ export function briefingRoleInstructions(
         "Read the code you are about to change before you change it.",
         "Change the least that satisfies the acceptance criteria below, and leave the rest alone.",
         "If the ticket cannot be satisfied as written, report that rather than satisfying something adjacent to it.",
+        "Add commits on top of the commit this workspace is at, and bring another branch in by merging it; a rebased, squashed or amended commit is refused and the run's work is lost.",
       ];
     case "Review":
       return [
