@@ -3,6 +3,8 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agentAccountCredentialOffFunction,
+  agentAccountCredentialOnFunction,
   agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountNamedCredentialPausesFunction,
@@ -326,6 +328,10 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ["SELECT attempt FROM agent_account_limit", "agent_account_limit"],
     ["SELECT * FROM agent_account_setting", "agent_account_setting"],
     ["SELECT * FROM agent_account_press", "agent_account_press"],
+    [
+      "SELECT * FROM agent_account_credential_off",
+      "agent_account_credential_off",
+    ],
   ] as const)
     assert.match(
       (await harness.attemptAs(metricsPlaneRole, statement)) ?? "",
@@ -1094,13 +1100,15 @@ test("only the scheduler finds and resumes a job a usage limit stopped on its ru
   );
 });
 
-test("only the API reads, sets, presses and retires a credential of a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
+test("only the API reads, sets, presses, retires and turns off and on a credential of a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
   for (const signature of [
     `${agentAccountStandingFunction}(text)`,
     `${agentAccountCredentialStandingFunction}(text)`,
     `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     `${agentAccountPressFunction}(text,text)`,
     `${agentAccountCredentialRetireFunction}(text,text,text)`,
+    `${agentAccountCredentialOffFunction}(text,text,text)`,
+    `${agentAccountCredentialOnFunction}(text,text,text)`,
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
   ])
     assert.deepEqual(await changeLogExecutors(signature), [apiRole], signature);
@@ -1133,6 +1141,18 @@ test("only the API reads, sets, presses and retires a credential of a person's o
     ],
     ["DELETE FROM agent_account_usage", "agent_account_usage"],
     ["DELETE FROM agent_account_limit", "agent_account_limit"],
+    [
+      "SELECT * FROM agent_account_credential_off",
+      "agent_account_credential_off",
+    ],
+    [
+      "INSERT INTO agent_account_credential_off VALUES('p','Claude','work')",
+      "agent_account_credential_off",
+    ],
+    [
+      "DELETE FROM agent_account_credential_off",
+      "agent_account_credential_off",
+    ],
   ] as const)
     assert.match(
       (await harness.attemptAs(apiRole, statement)) ?? "",

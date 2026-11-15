@@ -55,6 +55,8 @@ export function agentPauseReasonLabel(reason: AgentPauseReason): Copy {
       return runUsageWindowLabel(reason);
     case "limit":
       return { id: "usage-provider-limit" };
+    case "off":
+      return { id: "usage-reason-off" };
   }
 }
 

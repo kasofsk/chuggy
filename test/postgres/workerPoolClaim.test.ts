@@ -75,6 +75,7 @@ import {
   apiRole,
   poolPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { agentAccountCredentialOffSecsAt191 } from "../../src/adapters/postgres/schema/migrations/191-agent-account-credential-off.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRunners,
@@ -2577,6 +2578,41 @@ for (const by of namingClaimants)
       },
     ]);
     assert.deepEqual(await assignments.credentialPauses(claimant, {}), []);
+  });
+
+for (const by of namingClaimants)
+  test(`${by} is answered each named credential its owner turned off as paused, and waits while every one it names is off, claiming once one is on`, async () => {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const { project, claimant } = await namingClaimant(
+      by,
+      "claim-named-off",
+      member,
+      { Claude: ["work", "home"] },
+    );
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+      off: ["work", "home", "unnamed"],
+    });
+    const pauses = await assignments.credentialPauses(claimant, {
+      Claude: ["work", "home"],
+    });
+    assert.deepEqual(
+      pauses.map((pause) => [pause.agent, pause.credential]),
+      [
+        ["Claude", "home"],
+        ["Claude", "work"],
+      ],
+    );
+    const nowSecs = Date.now() / 1000;
+    for (const pause of pauses)
+      assert.ok(
+        pause.pausedUntil > nowSecs + agentAccountCredentialOffSecsAt191 - 3600,
+        "an off credential's pause ends past every window",
+      );
+    assert.equal(await takes(claimant, project.partition), false, "all off");
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+      off: ["work", "unnamed"],
+    });
+    assert.equal(await takes(claimant, project.partition), true, "one on");
   });
 
 /** How many claims a case asking for an order makes at most, past the attempts any of them opens. */

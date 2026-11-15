@@ -1993,13 +1993,14 @@ type SessionNamedCase = readonly [
 
 /**
  * Whether a session of `kind`, its claimant's member's own, is taken once its
- * claimant has named `named` of Claude and `paused` of that member's Claude
- * credentials are each over a threshold: both the waiting read and the
- * opening one are asked, and refused where they disagree.
+ * claimant has named `named` of Claude, `paused` of that member's Claude
+ * credentials are each over a threshold and `off` are turned off: both the
+ * waiting read and the opening one are asked, and refused where they disagree.
  */
 async function sessionNamedTaken(
   kind: "Lead" | "Thread",
   [why, named, paused, pausesThreads]: SessionNamedCase,
+  off: readonly string[] = [],
 ): Promise<boolean> {
   const label = `named-${kind}-${randomUUID()}`;
   const partition = await sessionRigProject(rig, label);
@@ -2025,6 +2026,7 @@ async function sessionNamedTaken(
       Object.fromEntries(paused.map((credential) => [credential, 3600])),
     ),
     setting: { fiveHourPercent: 80, sevenDayPercent: 90, pausesThreads },
+    off,
   });
   const read = (await awaitingOf(claimant)).has(session);
   assert.equal(
@@ -2072,6 +2074,35 @@ test("a chat host takes its owner's thread while any Claude credential it named 
     ],
   ] as const satisfies readonly SessionNamedCase[])
     assert.equal(await sessionNamedTaken("Thread", named), named[4], named[0]);
+});
+
+test("a chat host takes no thread of its owner while every Claude credential it named is off, whatever their setting, and takes it once one is on", async () => {
+  for (const pausesThreads of [true, false]) {
+    const all = [
+      `all named off, threads pausing ${String(pausesThreads)}`,
+      ["work", "home"],
+      [],
+      pausesThreads,
+      false,
+    ] as const satisfies SessionNamedCase;
+    assert.equal(
+      await sessionNamedTaken("Thread", all, ["work", "home"]),
+      false,
+      all[0],
+    );
+    const one = [
+      `one named off, threads pausing ${String(pausesThreads)}`,
+      ["work", "home"],
+      [],
+      pausesThreads,
+      true,
+    ] as const satisfies SessionNamedCase;
+    assert.equal(
+      await sessionNamedTaken("Thread", one, ["work"]),
+      true,
+      one[0],
+    );
+  }
 });
 
 test("an attempt a pool claimed under an epoch since restored away is no longer held, renewed or pulled for", async () => {

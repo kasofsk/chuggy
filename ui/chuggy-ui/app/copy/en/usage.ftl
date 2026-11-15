@@ -15,6 +15,7 @@ usage-window-five-hour = Five-hour window
 # spells -window: an account's usage window, not a context's
 usage-window-seven-day = Weekly window
 usage-provider-limit = Provider limit
+usage-reason-off = Off
 usage-until = until
 usage-held-by = held by { $credentials }
 usage-try-again = Try again now
