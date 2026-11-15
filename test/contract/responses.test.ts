@@ -2347,6 +2347,7 @@ test("a binding and a project's bindings name the repository and its moment", ()
     boundAt: instant,
     landing: onboardingPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
   };
   const listed: readonly ProjectRepositoryListed[] = [
     {
@@ -2432,6 +2433,7 @@ test("a binding names a landing by its kind and by its mode alone, and both answ
     boundAt: instant,
     landing: { kind: "GitMerge", mode: "Push", policy: "Serialized" } as const,
     pipelinesWritable: true,
+    pipelinesRunnable: true,
   };
   const binding = {
     ...stands,
@@ -2489,6 +2491,24 @@ test("a binding names a landing by its kind and by its mode alone, and both answ
   );
 });
 
+test("a binding always answers whether its jobs may start and read its pipeline runs", () => {
+  const binding = {
+    repository: onboardingRepository,
+    boundAt: instant,
+    landing: { mode: "Push" as const },
+    finalization: onboardingPush,
+    pipelinesWritable: false,
+  };
+  assert.deepEqual(
+    projectRepositoryResponseSchema.parse({
+      ...binding,
+      pipelinesRunnable: true,
+    }).pipelinesRunnable,
+    true,
+  );
+  assert.throws(() => projectRepositoryResponseSchema.parse(binding));
+});
+
 test("a retirement answers the row it left, carrying the instant it was retired at", () => {
   const retired = {
     repository: onboardingRepository,
@@ -2496,6 +2516,7 @@ test("a retirement answers the row it left, carrying the instant it was retired 
     landing: { mode: "Push" as const },
     finalization: onboardingPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     retiredAt: instant,
   };
   assert.deepEqual(

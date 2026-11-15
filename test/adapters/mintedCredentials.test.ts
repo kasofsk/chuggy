@@ -106,6 +106,7 @@ function fixtureBound(
     boundAt: "2026-10-25T00:00:00Z",
     landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     pipelinesWritable: true,
+    pipelinesRunnable: false,
     ...standing,
   };
 }

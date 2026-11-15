@@ -53,6 +53,7 @@ function binding(
     },
     finalization,
     pipelinesWritable,
+    pipelinesRunnable: false,
   };
 }
 

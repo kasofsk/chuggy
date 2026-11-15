@@ -916,6 +916,7 @@ const realForgeCredentialsBindings: Pick<
         policy: "Direct",
       }),
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     }),
 };
 
