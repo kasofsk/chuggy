@@ -199,6 +199,25 @@ test("a repository's owner and the asking tenant select the installation, and th
   });
 });
 
+test("a mint asked unheld reaches the forge unheld, and one asking nothing reaches it as it always has", async () => {
+  const askedMints: ForgeTokenRequest[] = [];
+  const tokens = fixtureRepositoryTokens({ askedMints });
+  await tokens.token(fixtureRepository, fixturePartition, "runPipelines", {
+    unheld: true,
+  });
+  await tokens.token(fixtureRepository, fixturePartition, "runPipelines");
+  await tokens.token(fixtureRepository, fixturePartition, "read", {});
+  assert.deepEqual(
+    askedMints.map((request) => [request.permissions, request.unheld]),
+    [
+      ["runPipelines", true],
+      ["runPipelines", undefined],
+      ["read", undefined],
+    ],
+  );
+  assert.ok(askedMints.slice(1).every((request) => !("unheld" in request)));
+});
+
 test("a repository this forge does not hold and an account no tenant claimed are both denied", async () => {
   const askedMints: ForgeTokenRequest[] = [];
   const elsewhere: readonly RepositoryId[] = [

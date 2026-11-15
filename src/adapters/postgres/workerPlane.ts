@@ -112,6 +112,17 @@ function workerInput(
   };
 }
 
+/** An attempt's input references as a read answers them, refused past their bound. */
+function workerInputs(inputs: unknown): readonly WorkerInputReference[] {
+  if (!Array.isArray(inputs) || inputs.length > inputBundleReferencesMax)
+    throw new Error(
+      "postgres worker plane: input references exceed their bound",
+    );
+  return inputs.map((input) =>
+    workerInput(input as Readonly<Record<string, unknown>>),
+  );
+}
+
 async function workerAuthenticate(
   pool: pg.Pool,
   secret: AttemptCapabilitySecret,
@@ -137,11 +148,6 @@ async function workerAuthenticate(
     row.live === null
   )
     throw new Error("postgres worker plane: authority has an invalid shape");
-  const inputs = row.inputs;
-  if (!Array.isArray(inputs) || inputs.length > inputBundleReferencesMax)
-    throw new Error(
-      "postgres worker plane: input references exceed their bound",
-    );
   return {
     partition: {
       tenant: asTenantId(row.tenant),
@@ -155,9 +161,7 @@ async function workerAuthenticate(
     manifest: asResultManifestId(row.manifest),
     inputBundle: row.input_bundle,
     inputBundleDigest: row.input_bundle_digest,
-    inputs: inputs.map((input) =>
-      workerInput(input as Readonly<Record<string, unknown>>),
-    ),
+    inputs: workerInputs(row.inputs),
   };
 }
 
@@ -186,6 +190,7 @@ interface WorkerTaskRow {
   readonly requirement_digest: string | null;
   readonly live: boolean | null;
   readonly invocation: unknown;
+  readonly inputs: unknown;
 }
 
 /** A recorded invocation, which the scheduler wrote in the shape of the pod document it came from. */
@@ -209,7 +214,7 @@ async function workerTask(
                ticket::text AS ticket,task::text AS task,task_kind,
                stage::text AS stage,source_request,input_bundle,input_bundle_digest,
                configuration_revision,configuration_digest,
-               requirement_identity,requirement_digest,live,invocation
+               requirement_identity,requirement_digest,live,invocation,inputs
           FROM read_worker_task(${workerSecretDigest(secret)})`,
   );
   const row = found.rows[0];
@@ -258,6 +263,7 @@ async function workerTask(
     ...(row.invocation === null
       ? {}
       : { invocation: workerTaskInvocationSchema.parse(row.invocation) }),
+    inputs: workerInputs(row.inputs),
   };
 }
 

@@ -317,8 +317,10 @@ export const sessionEndedSchema = z.strictObject({
  * on its own system prompt and loads nothing of its project's settings; and
  * `shellCredentialHanded` is present only for a thread a chat host whose
  * settings name its threads' capabilities holds, whose session hands its shell
- * the API's origin and its bearer, in `sessionApiOriginVariable` and
- * `sessionBearerVariable`, where a session told nothing hands its shell neither.
+ * the API's origin, its bearer, its tenant and its project, in
+ * `sessionApiOriginVariable`, `sessionBearerVariable`, `sessionTenantVariable`
+ * and `sessionProjectVariable`, where a session told nothing hands its shell
+ * none of them.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,

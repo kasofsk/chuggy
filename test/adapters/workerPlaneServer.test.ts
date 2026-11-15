@@ -61,11 +61,17 @@ import {
 import {
   asForgeInstallationId,
   asForgeInstallationToken,
+  type ForgeTokenMinted,
 } from "../../src/interpreter/forgeInstallation.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import type { ProjectRepositoryBound } from "../../src/interpreter/repositoryBinding.ts";
+import {
+  workflowRunsCredential,
+  workflowRunsCredentialIssuer,
+} from "../../src/interpreter/workflowRunsCredential.ts";
 import {
   heldCredentialIssuer,
   type HeldCredential,
@@ -152,6 +158,7 @@ function heldTask(
 ): WorkerTaskRead {
   return {
     live: true,
+    inputs: authority.inputs,
     identity: {
       partition,
       execution: authority.execution,
@@ -450,10 +457,11 @@ function workTaskAnswered(
 test("a task is answered only to a live attempt, and only once the scheduler recorded it", async () => {
   const identity = workTaskIdentity;
   const invocation = workTaskInvoked;
+  const inputs = authority.inputs;
   const answered = workTaskAnswered({
-    ended: { live: false, identity, invocation },
-    unrecorded: { live: true, identity },
-    held: { live: true, identity, invocation },
+    ended: { live: false, identity, invocation, inputs },
+    unrecorded: { live: true, identity, inputs },
+    held: { live: true, identity, invocation, inputs },
   });
   assert.deepEqual(await answered("ended"), {
     status: 401,
@@ -472,9 +480,10 @@ test("a task is answered only to a live attempt, and only once the scheduler rec
 test("a task names the ref its finalization lands on only to a release that reads one, and every release reads one that names none", async () => {
   const identity = workTaskIdentity;
   const invocation = { ...workTaskInvoked, targetRef: "refs/heads/release" };
+  const inputs = authority.inputs;
   const answered = workTaskAnswered({
-    named: { live: true, identity, invocation },
-    unnamed: { live: true, identity, invocation: workTaskInvoked },
+    named: { live: true, identity, invocation, inputs },
+    unnamed: { live: true, identity, invocation: workTaskInvoked, inputs },
   });
   const naming = { kind: "Work", ...workTask(identity, invocation) };
   const unnaming = { kind: "Work", ...workTask(identity, workTaskInvoked) };
@@ -2336,7 +2345,7 @@ test("a plane holding no roster serves an empty list to a granted attempt", asyn
   await app.close();
 });
 
-test("the resolver is handed the attempt's identity, the names its configuration listed and its grant carries, and the names it asked", async () => {
+test("the resolver is handed the attempt's identity, the one repository its input bundle pinned, the names its configuration listed and its grant carries, and the names it asked", async () => {
   const asks: CredentialsAsk[] = [];
   const granted = heldTask(["track-record"]);
   const { invocation } = granted;
@@ -2372,6 +2381,7 @@ test("the resolver is handed the attempt's identity, the names its configuration
     partition: authority.partition,
     ticket: granted.identity.ticket,
     task: granted.identity.task,
+    repository: asRepositoryId("source"),
   };
   const asked = ["track-record", "other"];
   assert.deepEqual(asks, [
@@ -2587,7 +2597,10 @@ test("a bearer that is no live attempt is refused, and one whose grant is not re
     );
     await app.close();
   }
-  const app = heldPlane({ live: true, identity: heldTask().identity }, file);
+  const app = heldPlane(
+    { live: true, identity: heldTask().identity, inputs: authority.inputs },
+    file,
+  );
   assert.deepEqual(await heldAsked(app, { credentials: ["track-record"] }), {
     status: 409,
     body: JSON.stringify({ action: "stop", reason: "TaskNotRecorded" }),
@@ -2624,4 +2637,157 @@ test("a held file that cannot be read is an outage to wait out, naming no secret
     assert.doesNotMatch(answered.body, new RegExp(heldSecret, "u"));
   }
   await app.close();
+});
+
+/** The workflow runs credential's binding of the attempt's own repository, live with its runs on unless a case says otherwise. */
+function workflowRunsBound(
+  standing: Partial<ProjectRepositoryBound> = {},
+): ProjectRepositoryBound {
+  return {
+    repository: asRepositoryId("source"),
+    boundAt: "2026-11-01T00:00:00Z",
+    landing: { kind: "PullRequest" },
+    pipelinesWritable: false,
+    pipelinesRunnable: true,
+    ...standing,
+  };
+}
+
+/** A plane serving the workflow runs credential to an attempt granted it whose task read finds `inputs`, its forge answering `minted`, every mint recorded. */
+function workflowRunsPlane(options: {
+  readonly inputs?: WorkerTaskRead["inputs"];
+  readonly bound?: ProjectRepositoryBound | undefined;
+  readonly minted?: ForgeTokenMinted;
+  readonly mints?: unknown[];
+}): ReturnType<typeof createWorkerPlaneApp> {
+  const found: WorkerTaskRead = {
+    ...heldTask([workflowRunsCredential]),
+    inputs: options.inputs ?? authority.inputs,
+  };
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    heldCredentials: credentialResolver([
+      workflowRunsCredentialIssuer({
+        bindings: {
+          landing: () =>
+            Promise.resolve(
+              "bound" in options ? options.bound : workflowRunsBound(),
+            ),
+        },
+        tokens: {
+          token: (repository, partition, permissions, mint) => {
+            options.mints?.push([repository, partition, permissions, mint]);
+            return Promise.resolve(
+              options.minted ?? {
+                minted: "Token",
+                token: asForgeInstallationToken("ghs_runs"),
+                expiresAtMs: 5_000,
+              },
+            );
+          },
+        },
+      }),
+    ]),
+  });
+}
+
+/** What a release that reads bundles is answered when it asks for the workflow runs credential. */
+async function workflowRunsAsked(app: ReturnType<typeof createWorkerPlaneApp>) {
+  const answered = await heldAsked(
+    app,
+    { credentials: [workflowRunsCredential] },
+    { ...held, [workerContractHeader]: workerContractRelease },
+  );
+  await app.close();
+  return answered;
+}
+
+test("an attempt granted the workflow runs credential is served a fresh token for the repository its own input bundle pinned", async () => {
+  const mints: unknown[] = [];
+  assert.deepEqual(await workflowRunsAsked(workflowRunsPlane({ mints })), {
+    status: 200,
+    body: JSON.stringify({
+      credentials: [
+        {
+          credential: workflowRunsCredential,
+          files: [
+            { file: "token", content: { kind: "Secret", secret: "ghs_runs" } },
+          ],
+          variables: [
+            { kind: "Path", variable: "GH_TOKEN_FILE", file: "token" },
+          ],
+          expiresAtMs: 5_000,
+        },
+      ],
+      absent: [],
+    }),
+  });
+  assert.deepEqual(mints, [
+    [
+      asRepositoryId("source"),
+      authority.partition,
+      "runPipelines",
+      { unheld: true },
+    ],
+  ]);
+});
+
+test("the workflow runs credential is absent, and nothing minted, where the attempt pins no one repository or its binding does not enable it", async () => {
+  const twoRepositories = [
+    ...authority.inputs,
+    { ordinal: 2, kind: "Repository", reference: "other", digest: "pin" },
+  ] as const;
+  for (const [why, options, reason] of [
+    ["no repository pinned", { inputs: [] }, "IssuerRefused"],
+    ["two repositories pinned", { inputs: twoRepositories }, "IssuerRefused"],
+    ["no binding", { bound: undefined }, "NotEnabled"],
+    [
+      "retired binding",
+      { bound: workflowRunsBound({ retiredAt: "2026-11-02T00:00:00Z" }) },
+      "NotEnabled",
+    ],
+    [
+      "workflow runs off",
+      { bound: workflowRunsBound({ pipelinesRunnable: false }) },
+      "NotEnabled",
+    ],
+  ] as const) {
+    const mints: unknown[] = [];
+    assert.deepEqual(
+      await workflowRunsAsked(workflowRunsPlane({ ...options, mints })),
+      {
+        status: 200,
+        body: JSON.stringify({
+          credentials: [],
+          absent: [{ credential: workflowRunsCredential, reason }],
+        }),
+      },
+      why,
+    );
+    assert.deepEqual(mints, [], why);
+  }
+});
+
+test("a workflow runs mint the forge refuses is absent, and one it could not answer is an outage", async () => {
+  assert.deepEqual(
+    await workflowRunsAsked(
+      workflowRunsPlane({ minted: { minted: "Denied" } }),
+    ),
+    {
+      status: 200,
+      body: JSON.stringify({
+        credentials: [],
+        absent: [
+          { credential: workflowRunsCredential, reason: "IssuerRefused" },
+        ],
+      }),
+    },
+  );
+  assert.deepEqual(
+    await workflowRunsAsked(
+      workflowRunsPlane({ minted: { minted: "Unavailable" } }),
+    ),
+    { status: 503, body: JSON.stringify({ action: "retry" }) },
+  );
 });

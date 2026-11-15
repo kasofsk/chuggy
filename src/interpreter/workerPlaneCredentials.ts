@@ -104,8 +104,8 @@ export interface WorkerPlaneCredentialOptions {
  * does not pin exactly one: a bundle naming none has no repository to mint for,
  * and one naming several leaves the choice to the pod.
  */
-function workerPlaneCredentialRepository(
-  authority: WorkerAttemptAuthority,
+export function workerPlaneCredentialRepository(
+  authority: Pick<WorkerAttemptAuthority, "inputs">,
 ): RepositoryId | undefined {
   const named = authority.inputs.filter(
     (input) => input.kind === repositoryReferenceKind,
