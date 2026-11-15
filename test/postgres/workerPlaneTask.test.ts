@@ -4,7 +4,13 @@
  * worker plane's own role, and no other role reads it.
  */
 
-import { workerContractRelease } from "../../src/contract/workerContract.ts";
+import { githubPipelinePaths } from "../../src/adapters/forge/githubPipelines.ts";
+import {
+  workerContractFeatures,
+  workerContractFeaturesText,
+  workerContractRelease,
+  type WorkerContractFeature,
+} from "../../src/contract/workerContract.ts";
 import { workerContractClientFeatures } from "../../src/interpreter/workerContractClientFeatures.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -281,6 +287,7 @@ function launching(
         }),
     },
     practices: blessedPracticeCatalog,
+    pipelinePaths: githubPipelinePaths,
     workerRuntime: schedulerRuntime,
     poolMemoryMib: workerPoolMemoryMibDefault,
     config: executionSchedulerDefaults,
@@ -324,6 +331,7 @@ test("a worker fetches the task its pod is launched with, less the plane", async
   assert.ok(document.worker !== undefined);
   assert.equal(document.targetRef, postgresHarnessBrief.branch);
   assert.ok(document.targetMerge !== undefined);
+  assert.deepEqual(document.pushPathsRefused, githubPipelinePaths);
   assert.deepEqual(await storedInvocation(placement), {
     profile: document.profile,
     briefing: document.briefing,
@@ -332,6 +340,7 @@ test("a worker fetches the task its pod is launched with, less the plane", async
     worker: document.worker,
     targetRef: document.targetRef,
     targetMerge: document.targetMerge,
+    pushPathsRefused: document.pushPathsRefused,
   });
 });
 
@@ -733,6 +742,39 @@ test("an invocation naming what its core merges in is recorded with it, read bac
     );
   }
   assert.deepEqual(named, [invocation.targetMerge, undefined, undefined]);
+});
+
+test("an invocation naming the paths its push may not change is recorded with them, and fetched with them only by a pod that lists reading them", async () => {
+  const attempt = await openedAttempt("task-push-paths");
+  const invocation: WorkTaskInvocation = {
+    ...schedulerInvocation,
+    pushPathsRefused: [".forgejo/workflows/"],
+  };
+  assert.equal(await rig.store.attemptInvoked(attempt, invocation), true);
+  assert.deepEqual(await storedInvocation(attempt), invocation);
+  const named = [];
+  for (const features of [
+    workerContractClientFeatures,
+    workerContractFeaturesText(
+      (Object.keys(workerContractFeatures) as WorkerContractFeature[]).filter(
+        (feature) => feature !== "PushPathsRefused",
+      ),
+    ),
+    undefined,
+  ]) {
+    const fetched = await taskFetched(
+      plane,
+      attempt.capability.secret,
+      workerContractRelease,
+      features,
+    );
+    assert.equal(fetched.status, 200);
+    named.push(
+      (fetched.body as { readonly pushPathsRefused?: readonly string[] })
+        .pushPathsRefused,
+    );
+  }
+  assert.deepEqual(named, [[".forgejo/workflows/"], undefined, undefined]);
 });
 
 test("an invocation's listed credentials are recorded with it and fetched by every release, and one recorded without them lists its granted ones", async () => {

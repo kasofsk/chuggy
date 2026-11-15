@@ -855,9 +855,9 @@ test("every worker configuration reaches a document the contract names in full",
     { mode: { type: "Commands", commands: ["just check"] }, ...preparation },
   ];
   for (const worker of workers)
-    for (const [stage, targetRef] of [
-      [undefined, undefined],
-      [1, asGitRefName("refs/heads/main")],
+    for (const [stage, targetRef, pushPathsRefused] of [
+      [undefined, undefined, undefined],
+      [1, asGitRefName("refs/heads/main"), [".forgejo/workflows/"]],
     ] as const) {
       const document = JSON.parse(
         JSON.stringify(
@@ -865,6 +865,7 @@ test("every worker configuration reaches a document the contract names in full",
             ...placement,
             ...(stage === undefined ? {} : { stage }),
             ...(targetRef === undefined ? {} : { targetRef }),
+            ...(pushPathsRefused === undefined ? {} : { pushPathsRefused }),
             invocation: {
               ...placement.invocation,
               ...(worker === undefined ? {} : { worker }),
@@ -881,6 +882,11 @@ test("every worker configuration reaches a document the contract names in full",
       assert.equal(
         (document as { readonly targetRef?: string }).targetRef,
         targetRef,
+      );
+      assert.deepEqual(
+        (document as { readonly pushPathsRefused?: readonly string[] })
+          .pushPathsRefused,
+        pushPathsRefused,
       );
     }
 });

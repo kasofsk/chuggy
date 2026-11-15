@@ -203,6 +203,7 @@ const workerTaskInvocationSchema = workTaskDocumentSchema
     worker: true,
     targetRef: true,
     targetMerge: true,
+    pushPathsRefused: true,
   })
   .strict();
 
