@@ -59,6 +59,12 @@ export type SaidThing =
       readonly flag: "workspace" | "project";
     }
   | {
+      readonly thing: "Name";
+      readonly ask: string;
+      readonly workspace: string;
+      readonly project: string | undefined;
+    }
+  | {
       readonly thing: "Failed";
       readonly found: string;
       readonly stale: boolean;
@@ -76,6 +82,7 @@ export function saidThing(thing: SetupThing): SaidThing {
         when: copyTextEn(thing.when),
       };
     case "Ask":
+    case "Name":
       return { ...thing, ask: copyTextEn(thing.ask) };
     case "Failed":
       return { ...thing, found: copyTextEn(thing.found) };

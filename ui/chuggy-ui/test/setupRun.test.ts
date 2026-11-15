@@ -117,7 +117,7 @@ test("the bare command, signed in, reads where the person stands and reports it 
       { step: "runner", state: "todo", detail: undefined },
       { step: "ticket", state: "todo", detail: undefined },
     ],
-    next: { carried: setupAnswersNone, thing: { thing: "Hand" } },
+    next: { carried: setupAnswersNone, thing: { thing: "Name" } },
   });
 });
 

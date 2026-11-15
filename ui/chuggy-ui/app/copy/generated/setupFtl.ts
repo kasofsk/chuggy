@@ -40,17 +40,20 @@ setup-rule-directory = Never read or print anything under { $directory }: it hol
 setup-rule-site = Run { $command } with the address of the person's { setup-site } after it, such as { $example }. Ask the person for the address if you do not have it.
 # spells -run: to run is a verb here
 setup-rule-ask = Run { $command } with the person's answer after it, only once the person has answered.
+# spells -run: to run is a verb here
+setup-rule-ask-name = Run { $command } with the person's answer after it, quoted as one word, only once the person has answered.
 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $mcp }, as { $runner } or as { $chatHost }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, and { $replace } with { $chatHost }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner } or as { $chatHost }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, and { $replace } with { $chatHost }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
 setup-asked-project = { $mcp } and { $runner } each take { $workspace } and { $project }, both: the { -project } each is for
 setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
+setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: the { -workspace } the { -project } is made in, and what it is called, on one line
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 
 ## A machine the program is not served on, or a Node too old to run it.
@@ -246,8 +249,6 @@ setup-mend-workspace-none = You are not in a { -brand-name } { -workspace } yet.
 setup-mend-workspace-unnamed = You are not in a { -brand-name } { -workspace } named { $workspace }.
 setup-mend-workspace-tell = { $none } A new { -workspace } is made from { -invite(form: "a") } link: open the one you were sent (it starts { $invites }), and under { $naming } name the { -workspace } and press { $create }. Tell me once it is made.
 setup-mend-workspace-when = once the person says their { -workspace } is made
-setup-mend-project-tell = Open { $page }, the { $named } page, name the { -project } and press { $create }. Tell me once it is made.
-setup-mend-project-when = once the person says the { -project } is made
 setup-mend-north-star-tell = Open { $page }, press { $edit } beside { $section }, write a paragraph that says what the { -project } is for, and press { $save }. Tell me once it is saved.
 setup-mend-north-star-when = once the person says the { $section } is saved
 # The status and the label are the picker's own words, which another section holds.
@@ -278,6 +279,13 @@ setup-mend-mcp-offer = The next step is { -brand-name }'s tools in your agent, f
 # spells -agent: the person's own coding agent, not one of chuggy's
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
 setup-mend-mcp-offer-package = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not here at a version { setup-program } uses. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+
+## A run of the project command. A refusal is the console form's own word for
+## it, handed in as the message the form draws.
+
+setup-project-made = made { $project }, called { $name }
+setup-project-refused-found = the { -project } was not made: { $refusal }
+setup-project-refused-tell = The { -project } was not made: { $refusal }. Tell me what to do instead.
 
 ## The runner's step, which the runner command does on this machine with the
 ## person's yes.
@@ -372,6 +380,10 @@ setup-ask-part = The { -site } sent only part of the list, so the one meant may 
 setup-ask = { $of } is this for: { $names }?{ $whole ->
     [whole] { "" }
    *[part] { " " }{ setup-ask-part }
+} Pass the name as { $flag }.
+setup-ask-project-name = What should the new { -project } in { $workspace } be called?{ $address ->
+    [given] { " " }Its address will be { $project }.
+   *[made] { " " }Its address is made from the name.
 } Pass the name as { $flag }.
 setup-ask-unnamed = { $of } is this for?{ $whole ->
     [whole] { "" }

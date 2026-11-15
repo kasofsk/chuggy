@@ -111,6 +111,8 @@ export interface SetupMachine {
   admits: boolean;
   /** What happens as the API is sent a request, before it answers. */
   answering: () => void;
+  /** Whether the API takes each write and its answer never arrives. */
+  drops: boolean;
   /** What the site holds, which is what its reads answer. */
   world: SetupSite;
   /** What git prints of the folder's `origin`, or nothing where it has none to print. */
@@ -319,6 +321,8 @@ function apiFetch(
       : unreached;
   if (machine.api === "Silent")
     return Promise.reject(new Error("no route to host"));
+  if (machine.drops && init.method !== "GET")
+    return Promise.reject(new Error("connection reset"));
   if (machine.api === "Refuses" || answer === undefined)
     return Promise.resolve(
       new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
@@ -680,6 +684,7 @@ export function setupMachine(): SetupMachine {
     accessSecs: 600,
     admits: true,
     answering: () => undefined,
+    drops: false,
     world: setupSiteAt("Workspace"),
     remote: undefined,
     top: undefined,

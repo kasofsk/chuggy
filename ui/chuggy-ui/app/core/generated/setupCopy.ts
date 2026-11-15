@@ -45,8 +45,12 @@ export interface SetupCopy {
   readonly "setup-rule-ask": {
     readonly command: unknown;
   };
+  readonly "setup-rule-ask-name": {
+    readonly command: unknown;
+  };
   readonly "setup-asked-command": {
     readonly signIn: unknown;
+    readonly made: unknown;
     readonly mcp: unknown;
     readonly runner: unknown;
     readonly chatHost: unknown;
@@ -56,6 +60,8 @@ export interface SetupCopy {
     readonly workspace: unknown;
     readonly project: unknown;
     readonly wait: unknown;
+    readonly name: unknown;
+    readonly made: unknown;
     readonly replace: unknown;
     readonly chatHost: unknown;
   };
@@ -80,6 +86,11 @@ export interface SetupCopy {
   readonly "setup-asked-workspace": {
     readonly chatHost: unknown;
     readonly workspace: unknown;
+  };
+  readonly "setup-asked-project-name": {
+    readonly made: unknown;
+    readonly workspace: unknown;
+    readonly name: unknown;
   };
   readonly "setup-asked-replace": {
     readonly flag: unknown;
@@ -393,12 +404,6 @@ export interface SetupCopy {
     readonly create: unknown;
   };
   readonly "setup-mend-workspace-when": Record<never, never>;
-  readonly "setup-mend-project-tell": {
-    readonly page: unknown;
-    readonly named: unknown;
-    readonly create: unknown;
-  };
-  readonly "setup-mend-project-when": Record<never, never>;
   readonly "setup-mend-north-star-tell": {
     readonly page: unknown;
     readonly edit: unknown;
@@ -469,6 +474,16 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly site: unknown;
     readonly program: unknown;
+  };
+  readonly "setup-project-made": {
+    readonly project: unknown;
+    readonly name: unknown;
+  };
+  readonly "setup-project-refused-found": {
+    readonly refusal: unknown;
+  };
+  readonly "setup-project-refused-tell": {
+    readonly refusal: unknown;
   };
   readonly "setup-offer-when": Record<never, never>;
   readonly "setup-offer-chat-host-when": Record<never, never>;
@@ -635,6 +650,12 @@ export interface SetupCopy {
     readonly of: unknown;
     readonly names: unknown;
     readonly whole: unknown;
+    readonly flag: unknown;
+  };
+  readonly "setup-ask-project-name": {
+    readonly workspace: unknown;
+    readonly address: unknown;
+    readonly project: unknown;
     readonly flag: unknown;
   };
   readonly "setup-ask-unnamed": {
