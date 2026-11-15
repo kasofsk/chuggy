@@ -157,6 +157,7 @@ interface ViewRow {
   readonly lifecycle: string;
   readonly repository: string | null;
   readonly binding_epoch: string | null;
+  readonly pipelines_writable: boolean | null;
   readonly attempt: string | null;
   readonly target_ref: string | null;
   readonly target_commit: string | null;
@@ -210,6 +211,9 @@ function finalizerViewOf(
     },
     lifecycle: finalizerRowValue(allLifecycles, row.lifecycle, "lifecycle"),
     ...(repository === undefined ? {} : { repository }),
+    ...(row.pipelines_writable === null
+      ? {}
+      : { pipelinesWritable: row.pipelines_writable }),
     ...(attempt === undefined ? {} : { attempt }),
     ...finalizerRowPermit(row),
     ...(row.held_permit === null
@@ -651,7 +655,7 @@ async function finalizerDurableView(
   const found = await client.query<ViewRow>(
     sql`SELECT
   f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
-  a.attempt, a.target_ref, a.target_commit, a.target_base_ref, a.strategy,
+  b.pipelines_writable, a.attempt, a.target_ref, a.target_commit, a.target_base_ref, a.strategy,
   a.configuration_revision, a.configuration_digest,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
   p.permit, p.recovery_epoch AS permit_epoch,
@@ -726,7 +730,9 @@ async function finalizerRecordHold(
     sql`SELECT result, hold_passes FROM record_finalization_hold(
       ${claim.partition.tenant},${claim.partition.project},${claim.request},
       ${record.kind ?? null},${claim.owner},${claim.claimGeneration},
-      ${claim.requestGeneration},${claim.recoveryEpoch})`,
+      ${claim.requestGeneration},${claim.recoveryEpoch},
+      ${record.refused === undefined ? null : [...record.refused.paths]}::text[],
+      ${record.refused?.truncated ?? null}::boolean)`,
   );
   const row = held.rows[0];
   if (row === undefined)

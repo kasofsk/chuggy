@@ -326,6 +326,9 @@ export interface TicketCopy {
   readonly "ticket-landing-queue-removal": {
     readonly removal: unknown;
   };
+  readonly "ticket-landing-target-paths-refused": {
+    readonly paths: unknown;
+  };
   readonly "ticket-landing-attempts": Record<never, never>;
   readonly "ticket-landing-rechecked": Record<never, never>;
   readonly "ticket-landing-recheck-against": {
