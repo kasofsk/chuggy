@@ -1,17 +1,14 @@
 import {
   workerContractCredentialOutcome,
   workerContractCredentialPauses,
-  workerContractEvaluatedTree,
+  workerContractFeatures,
   workerContractMemoryRoom,
   workerContractRelease,
   workerContractRunContext,
-  workerContractCredentialBundles,
   workerContractRunCredential,
   workerContractRunUsage,
   workerContractRunnerAgentsAdvertised,
   workerContractSessionContext,
-  workerContractSystemPromptOwn,
-  workerContractTargetRef,
   workerContractUnnamed,
   workerContractVersionOf,
   workerContractVersionText,
@@ -28,7 +25,7 @@ import type {
   AttemptSubmission,
   ReportIngested,
 } from "./executionSchedulerReport.ts";
-import type { ExecutionTaskKind } from "./executionRequirement.ts";
+import type { ExecutionTaskKind } from "../contract/executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { SessionTaskInvocation } from "./sessionScheduler.ts";
 import type {
@@ -51,37 +48,37 @@ export const workerContractAccepted: WorkerContractRange = {
 
 /** The versions in which a runner launches sessions, which is where a pool-held task names what it is launched with. */
 export const workerContractRunnerSessions: WorkerContractRange = {
-  min: { major: 1, minor: 3 },
+  min: workerContractFeatures.RunnerSessions,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a live post of a turn its member stopped is answered with that turn, which a runner of an earlier one has no reading of. */
 export const workerContractLiveStops: WorkerContractRange = {
-  min: { major: 1, minor: 5 },
+  min: workerContractFeatures.LiveStops,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which an attempt may name the repository it asks a credential for, which a pod of an earlier one never does. */
 export const workerContractProjectReads: WorkerContractRange = {
-  min: { major: 1, minor: 8 },
+  min: workerContractFeatures.ProjectReads,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a poll's answer may name the release pinned for its runner, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerReleases: WorkerContractRange = {
-  min: { major: 1, minor: 11 },
+  min: workerContractFeatures.RunnerReleases,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a session's facts may name `TicketDispatch`, a capability a pod of an earlier one refuses its whole answer over. */
 export const workerContractTicketDispatch: WorkerContractRange = {
-  min: { major: 1, minor: 20 },
+  min: workerContractFeatures.TicketDispatch,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a personal runner's job assignment may name its project, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerProjects: WorkerContractRange = {
-  min: { major: 1, minor: 15 },
+  min: workerContractFeatures.RunnerProjects,
   max: workerContractAccepted.max,
 };
 
@@ -111,13 +108,25 @@ export const workerContractRunnerAgents: WorkerContractRange = {
 
 /** The versions a member's chat host polls in, which is where a poll may name its sessions' idle bound and an answer names the image its sessions run in; a host of an earlier one is refused every pool plane route. */
 export const workerContractChatHost: WorkerContractRange = {
-  min: { major: 1, minor: 27 },
+  min: workerContractFeatures.ChatHost,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a chat host runs its member's own sessions, which name `MemberRead`, a capability a host of an earlier one refuses its whole answer over. */
 export const workerContractUnscopedChat: WorkerContractRange = {
-  min: { major: 1, minor: 29 },
+  min: workerContractFeatures.UnscopedChat,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a chat host's poll may be answered the threads it last ran that have since closed, a field a host of an earlier one refuses its whole answer over. */
+export const workerContractChatThreadsClosed: WorkerContractRange = {
+  min: workerContractFeatures.ChatThreadsClosed,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a chat host may be handed a session naming the thread it is an attempt of, a field a host of an earlier one refuses its whole answer over. */
+export const workerContractChatSessionThreads: WorkerContractRange = {
+  min: workerContractFeatures.ChatSessionThreads,
   max: workerContractAccepted.max,
 };
 
@@ -147,31 +156,31 @@ export const workerContractSessionContexts: WorkerContractRange = {
 
 /** The versions in which a work task may name the ref its finalization lands on, a field a pod of an earlier one refuses its whole answer over. */
 export const workerContractTargetRefs: WorkerContractRange = {
-  min: workerContractTargetRef,
+  min: workerContractFeatures.TargetRef,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a result manifest may name the tree an evaluation checked out, a field a plane of an earlier one refuses the whole manifest over. */
 export const workerContractEvaluatedTrees: WorkerContractRange = {
-  min: workerContractEvaluatedTree,
+  min: workerContractFeatures.EvaluatedTree,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a session's facts may name `ThreadOffer` and its mailbox hand over an `OfferReply`, members a pod of an earlier one refuses its whole answer over. */
 export const workerContractThreadOffer: WorkerContractRange = {
-  min: { major: 1, minor: 36 },
+  min: workerContractFeatures.ThreadOffer,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which a pod runs a session its facts mark `systemPromptOwn` as they say, where a pod of an earlier one drops the field and loads its project's settings. */
 export const workerContractSystemPromptsOwn: WorkerContractRange = {
-  min: workerContractSystemPromptOwn,
+  min: workerContractFeatures.SystemPromptOwn,
   max: workerContractAccepted.max,
 };
 
 /** The versions in which held credentials may be answered as bundles, a member a pod of an earlier one refuses its whole answer over. */
 export const workerContractCredentialBundlesServed: WorkerContractRange = {
-  min: workerContractCredentialBundles,
+  min: workerContractFeatures.CredentialBundles,
   max: workerContractAccepted.max,
 };
 
@@ -248,6 +257,8 @@ export interface WorkerTaskRead {
   readonly live: boolean;
   readonly identity: WorkTaskIdentity;
   readonly invocation?: WorkTaskInvocation;
+  /** The references its input bundle pins, as its authority read finds them. */
+  readonly inputs: readonly WorkerInputReference[];
 }
 
 /** What a session attempt's bearer finds of its task, the invocation absent where the attempt opened before one was recorded and the launch present only where a pool holds it. */

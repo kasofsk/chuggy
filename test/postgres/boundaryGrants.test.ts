@@ -7,7 +7,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   accessPlaneRole,
+  agentAccountCredentialHoldsFunction,
   agentAccountCredentialKeptFunction,
+  agentAccountCredentialOffFunction,
+  agentAccountCredentialOnFunction,
   agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
@@ -50,6 +53,12 @@ import {
   projectChangeSweepFunction,
   projectCreateFunction,
   projectCreationGrantsFunction,
+  projectDeleteFunction,
+  projectVacancyFillFunction,
+  projectVacatedFunction,
+  projectDeletionHoldsFunction,
+  tenantDeleteFunction,
+  tenantDeletionHoldsFunction,
   rateLimitedTicketsFunction,
   rateLimitResumeFunction,
   repositoryBindingListFunction,
@@ -274,7 +283,7 @@ test("the landing doors migrate without exposing the relation they read", async 
   await migratedDatabase("i90grants", async (subject) => {
     for (const signature of [
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
     ])
       assert.equal(
         (
@@ -325,7 +334,7 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryRetirementWriteFunction}(text,text,text)`,
       `${repositoryBindingListFunction}(text,text,bigint)`,
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
       `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
@@ -661,7 +670,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [poolPlaneRole],
   },
   boundaryGrantsDoor(
-    `${projectCreateFunction}(text,text,text,boolean,text,text,text)`,
+    `${projectCreateFunction}(text,text,text,text,boolean,text,text,text)`,
     [apiRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
@@ -669,6 +678,36 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${projectCreationGrantsFunction}(text)`,
     [apiRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectDeletionHoldsFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectDeleteFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectVacatedFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectVacancyFillFunction}(text,text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${tenantDeletionHoldsFunction}(text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${tenantDeleteFunction}(text)`,
+    [apiRole],
+    [schedulerRole, workerPlaneRole, poolPlaneRole, accessPlaneRole],
   ),
   boundaryGrantsDoor(
     `${forgeInstallationRecordFunction}(text,text,text,text,text,text,text,text)`,
@@ -766,7 +805,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [],
   ),
   boundaryGrantsDoor(
-    `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
+    `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
     [apiRole],
     [],
   ),
@@ -838,6 +877,12 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [poolPlaneRole, apiRole, metricsPlaneRole],
   },
   {
+    signature: `${agentAccountCredentialHoldsFunction}(text,text)`,
+    definer: false,
+    callers: [],
+    strangers: [poolPlaneRole, apiRole, metricsPlaneRole],
+  },
+  {
     signature: `${agentAccountCredentialKeptFunction}(text,text,text)`,
     definer: false,
     callers: [],
@@ -893,6 +938,16 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${agentAccountCredentialRetireFunction}(text,text,text)`,
+    [apiRole],
+    [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountCredentialOffFunction}(text,text,text)`,
+    [apiRole],
+    [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountCredentialOnFunction}(text,text,text)`,
     [apiRole],
     [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
   ),
@@ -1028,6 +1083,13 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
     boundaryOwnerRole,
     true,
   ],
+  [
+    "project_repository",
+    "pipelines_runnable",
+    "UPDATE",
+    boundaryOwnerRole,
+    true,
+  ],
   ["finalization_reconciliation", "declined", "UPDATE", finalizerRole, true],
   ["execution_attempt", "claimed_at", "UPDATE", poolPlaneRole, true],
   ["execution_attempt", "claimed_at", "SELECT", apiRole, true],
@@ -1061,6 +1123,13 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["agent_account_setting", null, "SELECT", apiRole, false],
   ["agent_account_setting", null, "INSERT", boundaryOwnerRole, true],
   ["agent_account_press", null, "UPDATE", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "SELECT", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "INSERT", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "DELETE", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "UPDATE", boundaryOwnerRole, false],
+  ["agent_account_credential_off", null, "SELECT", apiRole, false],
+  ["agent_account_credential_off", null, "SELECT", poolPlaneRole, false],
+  ["agent_account_credential_off", null, "SELECT", metricsPlaneRole, false],
   ["personal_runner_project", "priority", "UPDATE", apiRole, true],
   ["personal_runner_project", "priority", "SELECT", poolPlaneRole, true],
   ["personal_runner_project", "priority", "UPDATE", poolPlaneRole, false],

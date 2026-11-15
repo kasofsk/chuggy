@@ -19,7 +19,7 @@ import type {
 import { ketoRequest } from "./request.ts";
 
 /** The write API's tuple resource, which every verb addresses. */
-const ketoAdminTuplesPath = "admin/relation-tuples";
+export const ketoAdminTuplesPath = "admin/relation-tuples";
 
 /**
  * A subject set's relation is empty where it names an object itself rather

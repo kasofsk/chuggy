@@ -26,6 +26,7 @@ import {
   tenantPersonName,
 } from "../../core/tenantPeople.ts";
 import type { TenantHeldProjectLine } from "../../core/tenantPeople.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { Identity } from "../ui/Identity.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import type { TableRow } from "../ui/Table.tsx";
@@ -122,10 +123,12 @@ export function TenantHeldWords(props: {
 /** The projects a role is held on as a line each, under the one line that
  * says every project is, or the listing's none-mark. */
 export function TenantHeldProjects(props: {
+  readonly tenant: string;
   readonly every: boolean;
   readonly lines: readonly TenantHeldProjectLine[];
 }): ReactNode {
   const text = useCopyText();
+  const named = useProjectNamed();
   const lines = props.lines;
   if (!props.every && lines.length === 0) return <SettingsListingNone />;
   return (
@@ -135,7 +138,9 @@ export function TenantHeldProjects(props: {
         <dl className="people-projects">
           {lines.map((line) => (
             <div key={line.project} className="contents">
-              <dt className="truncate">{line.project}</dt>
+              <dt className="truncate">
+                {named({ tenant: props.tenant, project: line.project })}
+              </dt>
               <dd className="text-ink-3">{line.roles.map(text).join(", ")}</dd>
             </div>
           ))}
@@ -169,7 +174,9 @@ export function tenantPersonRow(props: {
     cells: {
       person: <TenantPersonNamed person={person} />,
       held: <TenantHeldWords held={held} />,
-      projects: <TenantHeldProjects every={every} lines={lines} />,
+      projects: (
+        <TenantHeldProjects tenant={props.tenant} every={every} lines={lines} />
+      ),
       edit: props.editable ? (
         <TenantPersonEditor
           tenant={props.tenant}

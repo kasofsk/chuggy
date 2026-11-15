@@ -207,6 +207,7 @@ const bindings = {
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
       configured: true,
     },
   ],
@@ -1948,6 +1949,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
           landing: { mode: "Push" },
           finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
+          pipelinesRunnable: false,
           configured: true,
         },
       ],
@@ -2077,6 +2079,7 @@ const unconfigured = {
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
       configured: true,
     },
     {
@@ -2085,6 +2088,7 @@ const unconfigured = {
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
       configured: false,
       retiredAt: "2026-09-14T00:00:00Z",
     },
@@ -2511,7 +2515,7 @@ const bootstrapped = (): Response =>
 
 const configured = "Default configuration added";
 
-const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/settings/runners`;
+const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/settings/workspace/runner`;
 
 /** The steps the open dialog offers, each by its words and where it goes. */
 function dialogSteps(): readonly (readonly [string | null, string | null])[] {
@@ -2715,6 +2719,7 @@ const liveAndRetired = {
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
       configured: true,
       retiredAt,
     },
@@ -2800,6 +2805,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
           landing: { mode: "Push" },
           finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
+          pipelinesRunnable: false,
           retiredAt,
         },
       }),

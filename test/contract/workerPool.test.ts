@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { agentAccountCredentialsMax } from "../../src/contract/http.ts";
+import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import {
@@ -18,6 +19,7 @@ import {
   workerPoolIdentityCharsMax,
   workerPoolPollIdleSecsMax,
   workerPoolPollQuerySchema,
+  workerPoolPollSessionCapabilitiesText,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolRegistrationSchema,
@@ -44,9 +46,11 @@ import {
   workerRunCredentialDefaults,
 } from "../../src/contract/workerPlane.ts";
 import { agentAccountCredentialsKeptMaxAt163 } from "../../src/adapters/postgres/schema/migrations/163-agent-account-credential.ts";
+import { agentAccountCredentialsOffMaxAt191 } from "../../src/adapters/postgres/schema/migrations/191-agent-account-credential-off.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
+  workerContractChatSessionThreads,
   workerContractRunnerCredentialOutcomes,
   workerContractRunnerCredentialPauses,
   workerContractRunnerProjects,
@@ -59,6 +63,7 @@ import {
 import {
   workerContractReleasePool,
   workerContractReplayed,
+  workerContractWireOf,
 } from "./workerContractReleases.ts";
 
 const assignment = {
@@ -168,7 +173,10 @@ test("a pool of a release the runner-projects range accepts reads a job assignme
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractRunnerProjects, older),
+      contractVersionAccepted(
+        workerContractRunnerProjects,
+        workerContractWireOf(older),
+      ),
       older,
     );
   }
@@ -195,6 +203,67 @@ test("a session assignment is an assignment that always names its image, under a
       false,
       JSON.stringify(invalid),
     );
+});
+
+test("a session assignment may name the thread it is an attempt of by its project and its session, and is read without one as before", () => {
+  const session = {
+    ...assignment,
+    image: "registry.invalid/worker:1",
+    bearer: `chgs_${"a".repeat(240)}`,
+  };
+  const thread = { project: "chuggy", session: "thread-one" };
+  assert.deepEqual(
+    workerPoolSessionAssignmentSchema.parse({ ...session, thread }),
+    { ...session, thread },
+  );
+  assert.equal(
+    "thread" in workerPoolSessionAssignmentSchema.parse(session),
+    false,
+  );
+  for (const wrong of [
+    { project: "chuggy" },
+    { ...thread, session: "" },
+    { ...thread, attempt: "attempt-one" },
+    "thread-one",
+  ])
+    assert.equal(
+      workerPoolSessionAssignmentSchema.safeParse({ ...session, thread: wrong })
+        .success,
+      false,
+      JSON.stringify(wrong),
+    );
+});
+
+test("a chat host of a release the session-threads range accepts reads a session naming its thread, and one of any earlier refuses the whole answer", async () => {
+  const answer = {
+    assignments: [],
+    sessions: [
+      {
+        ...assignment,
+        image: "registry.invalid/worker:1",
+        thread: { project: "chuggy", session: "thread-one" },
+      },
+    ],
+    stop: [],
+  };
+  assert.ok(
+    contractVersionAccepted(
+      workerContractChatSessionThreads,
+      workerContractRelease,
+    ),
+  );
+  assert.ok(workerPoolReconciliationSchema.safeParse(answer).success);
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    assert.equal(
+      reconciliation.safeParse(answer).success,
+      contractVersionAccepted(
+        workerContractChatSessionThreads,
+        workerContractWireOf(older),
+      ),
+      older,
+    );
+  }
 });
 
 test("an outcome tells a settled no from an unavailable one, which carries nothing", () => {
@@ -401,7 +470,10 @@ test("a runner of a release before the credential-outcome range refuses a whole 
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractRunnerCredentialOutcomes, older),
+      contractVersionAccepted(
+        workerContractRunnerCredentialOutcomes,
+        workerContractWireOf(older),
+      ),
       older,
     );
     assert.ok(reconciliation.safeParse(unnamed).success, older);
@@ -606,8 +678,11 @@ test("a poll names no more credentials of an agent than the plane keeps of one a
   );
 });
 
-test("an account read may name every credential the plane keeps of one account's agent, so none kept is dropped from the wire", () => {
-  assert.equal(agentAccountCredentialsMax, agentAccountCredentialsKeptMaxAt163);
+test("an account read may name every credential the plane keeps of one account's agent and every one turned off beside them, so none is dropped from the wire", () => {
+  assert.equal(
+    agentAccountCredentialsMax,
+    agentAccountCredentialsKeptMaxAt163 + agentAccountCredentialsOffMaxAt191,
+  );
 });
 
 test("a reconciliation may name a credential's pause by its agent, its name and its end, and a runner of a release before the pauses range refuses a whole answer naming one", async () => {
@@ -682,7 +757,10 @@ test("a pool of a release the runner-release range accepts reads an answer namin
     const { reconciliation } = await workerContractReleasePool(older);
     assert.equal(
       reconciliation.safeParse(answer).success,
-      contractVersionAccepted(workerContractRunnerReleases, older),
+      contractVersionAccepted(
+        workerContractRunnerReleases,
+        workerContractWireOf(older),
+      ),
       older,
     );
   }
@@ -740,6 +818,37 @@ test("a poll's idle bound is a positive count no longer than the longest delay a
     String(Number.MAX_SAFE_INTEGER),
   ])
     assert.equal(query.safeParse({ wanted: "0", idleSecs }).success, false);
+});
+
+test("a poll's session capabilities read back as the set a host wrote, the empty set as the empty value, and nothing else is read", () => {
+  const query = workerPoolPollQuerySchema(2);
+  for (const named of [
+    [],
+    ["ProjectRead"],
+    ["RunCommands", "RepositoryRead", "ThreadOffer"],
+    [...sessionCapabilities],
+  ] as const)
+    assert.deepEqual(
+      query.parse({
+        wanted: "0",
+        sessionCapabilities: workerPoolPollSessionCapabilitiesText(named),
+      }).sessionCapabilities,
+      named,
+    );
+  assert.equal("sessionCapabilities" in query.parse({ wanted: "0" }), false);
+  for (const sessionCapabilities of [
+    "ProjectRead,ProjectRead",
+    "ProjectRead,",
+    "ProjectSettings",
+    "projectread",
+    "ProjectRead ,RunCommands",
+    ["ProjectRead", "RunCommands"],
+  ])
+    assert.equal(
+      query.safeParse({ wanted: "0", sessionCapabilities }).success,
+      false,
+      JSON.stringify(sessionCapabilities),
+    );
 });
 
 test("each settlement route is the poll route, the assignment and the outcome", () => {

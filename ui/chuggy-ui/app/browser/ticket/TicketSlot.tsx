@@ -47,7 +47,7 @@ function NeedsYouStep(props: {
       <Link
         to={
           props.step === "Runners"
-            ? settingsRoutes.project.runners
+            ? settingsRoutes.project.myRunner
             : settingsRoutes.project.repositories
         }
         params={props.partition}

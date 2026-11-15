@@ -16,13 +16,17 @@ import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
+import type {
+  ThreadEntryResponse,
+  ThreadResponse,
+} from "../../../../../src/contract/responses.ts";
 import type { ThreadStanding } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../../core/copy.ts";
 import type { Copy } from "../../core/copy.ts";
 import { agoText } from "../../core/figures.ts";
 import { memberChatRoutes } from "../../core/memberChat.ts";
+import { sessionCapabilitiesSaid } from "../../core/sessionCapabilities.ts";
 import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
@@ -35,6 +39,7 @@ import { threadStandingTone } from "../../core/tones.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { currentOrigin } from "../ports.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
@@ -159,8 +164,12 @@ function ChatPaneHistoryElsewhere(props: {
   readonly held: MemberChatProjectThread;
 }): ReactNode {
   const text = useCopyText();
+  const projectNamed = useProjectNamed();
   const { partition, thread } = props.held;
-  const named = { project: partition.project, title: threadLabel(thread) };
+  const named = {
+    project: projectNamed(partition),
+    title: threadLabel(thread),
+  };
   const standing = threadStandingLabel(thread.state);
   return (
     <DropdownMenu.Item
@@ -417,11 +426,13 @@ export function ChatPaneCloseConfirm(props: {
 }
 
 /** What of a thread its actions read, which a listing's entry and the
- * thread's own read both carry. */
+ * thread's own read both carry, and whether it is kept running and what it
+ * may do on its owner's chat host, which only its own read says. */
 export type ChatPaneThreadNamed = Pick<
   ThreadEntryResponse,
   "session" | "title" | "mine" | "state"
->;
+> &
+  Partial<Pick<ThreadResponse, "jobsStanding" | "chatHostCapabilities">>;
 
 /** The thread's title as its own page's heading, its standing said beside it. */
 function ChatPaneThreadTitle(props: {
@@ -438,6 +449,36 @@ function ChatPaneThreadTitle(props: {
           {text(threadStandingLabel(props.thread.state))}
         </Pill>
       </span>
+      {props.thread.jobsStanding === true ? (
+        <span className="flex shrink-0 pr-2">
+          <Tooltip text={{ id: "chat-kept-running-detail" }}>
+            <span>
+              <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
+            </span>
+          </Tooltip>
+        </span>
+      ) : null}
+      {props.thread.chatHostCapabilities === undefined ? null : (
+        <span className="flex shrink-0 pr-2">
+          <Tooltip
+            text={text({
+              id: "chat-host-capabilities-detail",
+              args: {
+                capabilities: sessionCapabilitiesSaid(
+                  text,
+                  props.thread.chatHostCapabilities,
+                ),
+              },
+            })}
+          >
+            <span>
+              <Pill tone="neutral">
+                {text({ id: "chat-host-capabilities" })}
+              </Pill>
+            </span>
+          </Tooltip>
+        </span>
+      )}
     </>
   );
 }

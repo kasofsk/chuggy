@@ -12,6 +12,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 import { z } from "zod";
 
+import type { WorkerPoolThreadClosed } from "../../contract/workerPool.ts";
 import { sessionTaskDocumentSchema } from "../../contract/workerTask.ts";
 import {
   allSessionKinds,
@@ -374,6 +375,10 @@ function postgresChatHostSessionClaims(
         opening.idleSecs === undefined
           ? null
           : workerPoolSessionBound(opening.idleSecs, "idle bound");
+      const hostCapabilities =
+        opening.hostCapabilities === undefined
+          ? null
+          : [...opening.hostCapabilities];
       return sessionOpenedOf(
         await pool.query<{ opened: string | null }>(
           sql`SELECT open_chat_host_session_attempt(
@@ -384,11 +389,32 @@ function postgresChatHostSessionClaims(
                 ${opening.bearerSecretDigest},${terms.leaseSecs},
                 ${opening.placementBackoffSecs},${terms.heldMax},
                 ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb,${idleSecs}::bigint)::text AS opened`,
+                ${terms.launch}::jsonb,${idleSecs}::bigint,
+                ${hostCapabilities}::text[])::text AS opened`,
         ),
       );
     },
   };
+}
+
+/** The threads a chat host last ran that have since closed, as its answer names them. */
+async function chatHostThreadsClosed(
+  pool: pg.Pool,
+  identity: ChatHostIdentity,
+  max: number,
+): Promise<readonly WorkerPoolThreadClosed[]> {
+  const found = await pool.query<{
+    project: string | null;
+    session: string | null;
+  }>(
+    sql`SELECT project,session FROM chat_host_threads_closed(
+          ${identity.tenant},${identity.owner},${identity.principal},
+          ${workerPoolSessionBound(max, "closed thread bound")})`,
+  );
+  return found.rows.map((row) => ({
+    project: sessionRowText(row.project, "project"),
+    session: sessionRowText(row.session, "session"),
+  }));
 }
 
 /** What a chat host holds, through the registration that claimed it. */
@@ -484,6 +510,8 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
   };
   return {
     launch: () => sessionLaunch(pool),
+    threadsClosed: (identity, max) =>
+      chatHostThreadsClosed(pool, identity, max),
     among: (identity, assignments) =>
       sessionsRouted(identity, sides, (side, held) =>
         side.among(held, assignments),

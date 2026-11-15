@@ -31,7 +31,7 @@ import type { PublicInstant } from "./publicResource.ts";
 import type {
   ExecutionRequirement,
   RequirementSource,
-} from "./executionRequirement.ts";
+} from "../contract/executionRequirement.ts";
 import type { Worker } from "./workerCatalog.ts";
 import type { BriefingCarrier } from "./briefingTemplate.ts";
 import type { TaskResources } from "./taskResources.ts";

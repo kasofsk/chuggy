@@ -32,10 +32,10 @@ import { LeadPage } from "../LeadPage.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { RepositoriesPage } from "../RepositoriesPage.tsx";
 import { RepositoryPage } from "../repositories/RepositoryPage.tsx";
-import { RunnersPage } from "../RunnersPage.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
+import { PoolsSettingsPage } from "./PoolsSettingsPage.tsx";
 import { PreferencesPage } from "./PreferencesPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
@@ -64,6 +64,11 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
     }),
     createRoute({
       getParentRoute,
+      path: "/pools",
+      component: PoolsSettingsPage,
+    }),
+    createRoute({
+      getParentRoute,
       path: "/permissions",
       component: ProjectPermissionsPage,
     }),
@@ -79,7 +84,6 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       path: "/repositories/$repository",
       component: RepositoryPage,
     }),
-    createRoute({ getParentRoute, path: "/runners", component: RunnersPage }),
     createRoute({
       getParentRoute,
       path: "/catalog",

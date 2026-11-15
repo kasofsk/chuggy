@@ -128,3 +128,36 @@ export function offersDispatchByHand(
     offers.actions.some((action) => action.action === "Dispatch")
   );
 }
+
+/** The ticket's owner where that is not its creator: the member who took it.
+ * A creator who owns their own ticket is not drawn twice and has nothing to
+ * return. */
+export function ticketTaker(
+  ticket: Pick<TicketResponse, "creator" | "owner">,
+): string | undefined {
+  return ticket.owner === ticket.creator ? undefined : ticket.owner;
+}
+
+/** The take a ticket's header offers its reader, for themselves alone. */
+export type TicketTakeOffer = "Take" | "Return" | "None";
+
+/**
+ * Return where the reader is the ticket's taker, Take where they may mutate
+ * and do not own it, and neither on a Done or Revoked ticket, which refuses
+ * both, or before the abilities read has named the reader.
+ */
+export function ticketTakeOffer(
+  ticket: Pick<TicketResponse, "phase" | "creator" | "owner">,
+  abilities: ProjectAbilities,
+): TicketTakeOffer {
+  const reader = abilities?.principal;
+  if (
+    reader === undefined ||
+    projectAbilityRefused(abilities, "mutate") ||
+    ticket.phase === "Done" ||
+    ticket.phase === "Revoked"
+  )
+    return "None";
+  if (ticketTaker(ticket) === reader) return "Return";
+  return ticket.owner === reader ? "None" : "Take";
+}

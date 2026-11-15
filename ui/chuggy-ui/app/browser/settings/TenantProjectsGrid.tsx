@@ -18,6 +18,7 @@ import type { AccessProjectRole } from "../../../../../src/contract/accessPlane.
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import { projectRoleLabel } from "../../core/tenantPeople.ts";
+import { useProjectNamed } from "../projectNamed.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Table } from "../ui/Table.tsx";
 import type { TableRow } from "../ui/Table.tsx";
@@ -37,6 +38,7 @@ type TenantProjectsColumn = "project" | AccessProjectRole;
 function tenantProjectsRow(
   project: string,
   drawn: {
+    readonly name: string;
     readonly box: (role: AccessProjectRole) => TenantProjectsBox | undefined;
     readonly onToggle: (role: AccessProjectRole) => void;
     readonly text: CopyText;
@@ -51,7 +53,7 @@ function tenantProjectsRow(
           bare
           label={drawn.text({
             id: "settings-people-grid-box",
-            args: { project, role: projectRoleLabel(role) },
+            args: { project: drawn.name, role: projectRoleLabel(role) },
           })}
           checked={box.checked}
           disabled={box.disabled}
@@ -66,7 +68,7 @@ function tenantProjectsRow(
   return {
     key: project,
     cells: {
-      project,
+      project: drawn.name,
       ...(Object.fromEntries(boxes) as Record<AccessProjectRole, ReactNode>),
     },
     empty: boxes.filter(([, box]) => box === null).map(([role]) => role),
@@ -74,6 +76,7 @@ function tenantProjectsRow(
 }
 
 export function TenantProjectsGrid(props: {
+  readonly tenant: string;
   readonly projects: readonly string[];
   readonly box: (
     project: string,
@@ -82,6 +85,7 @@ export function TenantProjectsGrid(props: {
   readonly onToggle: (project: string, role: AccessProjectRole) => void;
 }): ReactNode {
   const text = useCopyText();
+  const named = useProjectNamed();
   if (props.projects.length === 0) return null;
   const projects = text({ id: "settings-people-projects" });
   return (
@@ -104,6 +108,7 @@ export function TenantProjectsGrid(props: {
           ],
           rows: props.projects.map((project) =>
             tenantProjectsRow(project, {
+              name: named({ tenant: props.tenant, project }),
               box: (role) => props.box(project, role),
               onToggle: (role) => {
                 props.onToggle(project, role);

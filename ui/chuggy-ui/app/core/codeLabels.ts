@@ -93,7 +93,7 @@ export function escalationKindLabel(kind: EscalationKind): Copy {
     case "EvaluationBlockedEscalated":
       return { id: "codes-escalation-evaluation-blocked" };
     case "FinalizationUnavailableEscalated":
-      return { id: "codes-escalation-landing-unavailable" };
+      return { id: "codes-escalation-finalization-unavailable" };
   }
 }
 
@@ -196,6 +196,8 @@ export function finalizationUnavailableKindLabel(
       return { id: "codes-hold-dequeued" };
     case "RecheckReworksExhausted":
       return { id: "codes-hold-rechecks-exhausted" };
+    case "TargetPathsRefused":
+      return { id: "codes-hold-target-paths-refused" };
   }
 }
 
@@ -227,22 +229,21 @@ export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
 export function ticketLandingStateLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
-      return { id: "codes-landing-running" };
+      return { id: "codes-finalization-running" };
     case "Held":
-      return { id: "codes-landing-held" };
-    case "AwaitingApproval":
+      return { id: "codes-finalization-held" };
     case "AwaitingMerge":
-      return { id: "codes-landing-waiting" };
+      return { id: "codes-finalization-waiting" };
     case "Failed":
-      return { id: "codes-landing-failed" };
+      return { id: "codes-finalization-failed" };
     case "Unavailable":
-      return { id: "codes-landing-escalated" };
+      return { id: "codes-finalization-escalated" };
     case "Landed":
-      return { id: "codes-landing-landed" };
+      return { id: "codes-finalization-finalized" };
     case "Proposed":
-      return { id: "codes-landing-proposed" };
+      return { id: "codes-finalization-proposed" };
     case "Invalidated":
-      return { id: "codes-landing-invalidated" };
+      return { id: "codes-finalization-invalidated" };
   }
 }
 
@@ -252,13 +253,15 @@ export function finalizationFailureKindLabel(
 ): Copy {
   switch (kind) {
     case "MergeConflict":
-      return { id: "codes-landing-failure-conflict" };
+      return { id: "codes-finalization-failure-conflict" };
     case "PreparationFailed":
-      return { id: "codes-landing-failure-preparation" };
+      return { id: "codes-finalization-failure-preparation" };
     case "QueueChecksFailed":
-      return { id: "codes-landing-failure-queue-checks" };
+      return { id: "codes-finalization-failure-queue-checks" };
     case "RecheckRequired":
-      return { id: "codes-landing-failure-recheck" };
+      return { id: "codes-finalization-failure-recheck" };
+    case "Restack":
+      return { id: "codes-finalization-failure-restack" };
   }
 }
 
@@ -420,11 +423,13 @@ export function runnerLossLine(lost: RunnerLoss): Copy {
 }
 
 /** That the scheduler resumes the escalation by itself, and when the latest
- * pause holding it ends where one still does, in the reader's own zone. */
+ * pause holding it ends where one still does, in the reader's own zone, or
+ * that credentials turned off hold it, which it never resumes past by itself. */
 export function usageResumeLine(
   usageResume: NonNullable<TicketEscalation["usageResume"]>,
   nowMs: number,
 ): Copy {
+  if (usageResume.off === true) return { id: "codes-usage-off" };
   const until =
     usageResume.until === undefined
       ? undefined
@@ -449,10 +454,12 @@ export function runStepLabel(step: RunStepEvidence): Copy {
       return { id: "codes-step-timed-out" };
     case "RunDiskLow":
       return { id: "codes-step-disk-low" };
+    case "RunCredentialAbsent":
+      return { id: "codes-step-credential-absent" };
   }
 }
 
-/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change, and what a runner whose disk ran low needs. */
+/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change, what a runner whose disk ran low needs, and what to change for a credential not delivered where the failure names it. */
 export function runStepLine(
   failed: RunStepFailure,
   setupOverridable: boolean,
@@ -462,11 +469,34 @@ export function runStepLine(
       return setupOverridable ? { id: "codes-step-setup-line" } : undefined;
     case "RunDiskLow":
       return { id: "codes-step-disk-line" };
+    case "RunCredentialAbsent":
+      return failed.absent === undefined
+        ? undefined
+        : runStepLineAbsent(failed.absent);
     case "RunCloneFailed":
     case "RunCommitFailed":
     case "RunPushFailed":
     case "RunTimedOut":
       return undefined;
+  }
+}
+
+/** What to change for a credential a run's job lists that was not delivered, by why it was not. */
+function runStepLineAbsent(
+  absent: NonNullable<RunStepFailure["absent"]>,
+): Copy {
+  const args = { credential: absent.credential };
+  switch (absent.reason) {
+    case "NotGranted":
+      return { id: "codes-step-credential-not-granted-line", args };
+    case "NotHeld":
+      return { id: "codes-step-credential-not-held-line", args };
+    case "NotEnabled":
+      return { id: "codes-step-credential-not-enabled-line", args };
+    case "IssuerRefused":
+      return { id: "codes-step-credential-issuer-refused-line", args };
+    case "WorkerTooOld":
+      return { id: "codes-step-credential-worker-too-old-line", args };
   }
 }
 
@@ -508,7 +538,8 @@ export function escalationStep(
 }
 
 /** What has to change before a resume gets a push past, for an escalation
- * whose evidence is a declined push or a push whose branch would not read. */
+ * whose evidence is a declined push or a push whose branch would not read,
+ * and the landing by hand a resume finds for a target no run may merge in. */
 export function escalationEvidenceLine(
   evidence: TicketEscalation["evidence"],
 ): Copy | undefined {
@@ -518,6 +549,8 @@ export function escalationEvidenceLine(
     return { id: "codes-evidence-declined-line" };
   if (evidence === "ReconciliationUnreadable")
     return { id: "codes-evidence-unreadable-line" };
+  if (evidence === "TargetPathsRefused")
+    return { id: "codes-evidence-target-paths-line" };
   return undefined;
 }
 
@@ -593,8 +626,6 @@ export function nativeActionKindLabel(kind: NativeActionKind): Copy {
   switch (kind) {
     case "TicketEscalation":
       return { id: "codes-native-escalation" };
-    case "FinalizationApproval":
-      return { id: "codes-native-approval" };
     case "EvaluationApproval":
       return { id: "codes-native-evaluation-approval" };
   }
@@ -623,11 +654,11 @@ export function revokedDependencyLine(
 export function finalizationKindLabel(kind: BriefFinalizationKind): Copy {
   switch (kind) {
     case "GitMerge":
-      return { id: "codes-landing-kind-git-merge" };
+      return { id: "codes-finalization-kind-git-merge" };
     case "PullRequest":
-      return { id: "codes-landing-kind-pull-request" };
+      return { id: "codes-finalization-kind-pull-request" };
     case "None":
-      return { id: "codes-landing-kind-none" };
+      return { id: "codes-finalization-kind-none" };
   }
 }
 
@@ -636,11 +667,11 @@ export function finalizationKindLabel(kind: BriefFinalizationKind): Copy {
 export function finalizationKindEffect(kind: BriefFinalizationKind): Copy {
   switch (kind) {
     case "GitMerge":
-      return { id: "codes-landing-kind-git-merge-effect" };
+      return { id: "codes-finalization-kind-git-merge-effect" };
     case "PullRequest":
-      return { id: "codes-landing-kind-pull-request-effect" };
+      return { id: "codes-finalization-kind-pull-request-effect" };
     case "None":
-      return { id: "codes-landing-kind-none-effect" };
+      return { id: "codes-finalization-kind-none-effect" };
   }
 }
 
@@ -716,23 +747,18 @@ export function finalizationLine(finalization: FinalizationOfTarget): Copy {
     return finalization.target === undefined
       ? method
       : {
-          id: "codes-landing-onto",
+          id: "codes-finalization-onto",
           args: { method, target: finalization.target },
         };
   return {
-    id: "codes-landing-into",
+    id: "codes-finalization-into",
     args: {
       method,
-      target: finalization.target ?? { id: "codes-landing-default-branch" },
+      target: finalization.target ?? {
+        id: "codes-finalization-default-branch",
+      },
     },
   };
-}
-
-/** Whether finalization waits for a person before it runs. */
-export function approvalLabel(required: boolean): Copy {
-  return required
-    ? { id: "codes-approval-required" }
-    : { id: "codes-approval-not-required" };
 }
 
 /**
@@ -771,7 +797,7 @@ function resumeEffect(point: ResumePoint): Copy {
     case "ResumeEvaluation":
       return { id: "codes-resume-evaluation" };
     case "ResumeFinalization":
-      return { id: "codes-resume-landing" };
+      return { id: "codes-resume-finalization" };
   }
 }
 
@@ -835,10 +861,6 @@ export function ticketActionLabel(action: TicketActionName): Copy {
       return { id: "codes-action-resume" };
     case "Revoke":
       return { id: "codes-action-revoke" };
-    case "Approve":
-      return { id: "codes-action-approve" };
-    case "Decline":
-      return { id: "codes-action-decline" };
     case "ApproveEvaluation":
       return { id: "codes-action-approve" };
     case "Reject":
@@ -865,10 +887,6 @@ export function ticketActionEffect(
       return resumeActionEffect(resume, exits);
     case "Revoke":
       return offered({ id: "codes-action-revoke-effect" });
-    case "Approve":
-      return offered({ id: "codes-action-approve-effect" });
-    case "Decline":
-      return offered({ id: "codes-action-decline-effect" });
     case "ApproveEvaluation":
       return offered({ id: "codes-action-approve-evaluation-effect" });
     case "Reject":
@@ -935,7 +953,7 @@ export function operationRefusalLabel(code: OperationRefusalCode): Copy {
     case "EvaluationNotCurrent":
       return { id: "codes-refusal-evaluation-not-current" };
     case "FinalizationNotCurrent":
-      return { id: "codes-refusal-landing-not-current" };
+      return { id: "codes-refusal-finalization-not-current" };
   }
 }
 
@@ -979,7 +997,7 @@ function operationRefusalBoundaryLabel(
     case "TicketCapacityReached":
       return { id: "codes-refusal-capacity-reached" };
     case "FinalizationRequestClosed":
-      return { id: "codes-refusal-landing-request-closed" };
+      return { id: "codes-refusal-finalization-request-closed" };
     case "OverridesMoveDefinition":
       return { id: "codes-refusal-overrides-move-definition" };
     case "ApprovalAsWork":

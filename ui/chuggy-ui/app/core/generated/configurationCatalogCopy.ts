@@ -53,15 +53,15 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-head-snapshot-refused": Record<never, never>;
   readonly "configuration-catalog-group-workloads": Record<never, never>;
   readonly "configuration-catalog-group-plans": Record<never, never>;
-  readonly "configuration-catalog-group-landings": Record<never, never>;
+  readonly "configuration-catalog-group-finalizers": Record<never, never>;
   readonly "configuration-catalog-group-prompts": Record<never, never>;
   readonly "configuration-catalog-kind-workload": Record<never, never>;
   readonly "configuration-catalog-kind-plan": Record<never, never>;
-  readonly "configuration-catalog-kind-landing": Record<never, never>;
+  readonly "configuration-catalog-kind-finalizer": Record<never, never>;
   readonly "configuration-catalog-kind-prompt": Record<never, never>;
   readonly "configuration-catalog-default-work": Record<never, never>;
   readonly "configuration-catalog-default-evaluation": Record<never, never>;
-  readonly "configuration-catalog-default-landing": Record<never, never>;
+  readonly "configuration-catalog-default-finalization": Record<never, never>;
   readonly "configuration-catalog-model-default": Record<never, never>;
   readonly "configuration-catalog-unread": Record<never, never>;
   readonly "configuration-catalog-runner-unknown": Record<never, never>;
@@ -74,8 +74,10 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-commands": Record<never, never>;
   readonly "configuration-catalog-prompt-inline": Record<never, never>;
   readonly "configuration-catalog-prompt-written-inline": Record<never, never>;
-  readonly "configuration-catalog-approved-first": Record<never, never>;
-  readonly "configuration-catalog-lands-unapproved": Record<never, never>;
+  readonly "configuration-catalog-repository-finalization": Record<
+    never,
+    never
+  >;
   readonly "configuration-catalog-stage": {
     readonly number: unknown;
     readonly name: unknown;
@@ -92,8 +94,7 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-field-prompt": Record<never, never>;
   readonly "configuration-catalog-field-approvers": Record<never, never>;
   readonly "configuration-catalog-field-instructions": Record<never, never>;
-  readonly "configuration-catalog-field-approval": Record<never, never>;
-  readonly "configuration-catalog-field-landing": Record<never, never>;
+  readonly "configuration-catalog-field-finalization": Record<never, never>;
   readonly "configuration-catalog-field-policy": Record<never, never>;
   readonly "configuration-catalog-field-path": Record<never, never>;
   readonly "configuration-catalog-uses": Record<never, never>;
@@ -111,8 +112,6 @@ export interface ConfigurationCatalogCopy {
     readonly name: unknown;
     readonly detail: unknown;
   };
-  readonly "configuration-catalog-choice-approved-first": Record<never, never>;
-  readonly "configuration-catalog-choice-unapproved": Record<never, never>;
   readonly "configuration-catalog-agent-claude-code": Record<never, never>;
   readonly "configuration-catalog-agent-single": Record<never, never>;
   readonly "configuration-catalog-network": Record<never, never>;

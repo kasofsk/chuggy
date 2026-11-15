@@ -20,6 +20,7 @@ export interface ShellCopy {
   readonly "shell-projects-unavailable": Record<never, never>;
   readonly "shell-project-new": Record<never, never>;
   readonly "shell-project-none": Record<never, never>;
+  readonly "shell-project-welcome": Record<never, never>;
   readonly "shell-stream-reconnecting": Record<never, never>;
   readonly "shell-stream-not-live": Record<never, never>;
   readonly "shell-version": Record<never, never>;
@@ -28,10 +29,25 @@ export interface ShellCopy {
   readonly "shell-chat-size": Record<never, never>;
   readonly "shell-footer": Record<never, never>;
   readonly "shell-projects": Record<never, never>;
-  readonly "shell-projects-none": Record<never, never>;
-  readonly "shell-projects-none-detail": Record<never, never>;
   readonly "shell-projects-loading": Record<never, never>;
   readonly "shell-page-failed": Record<never, never>;
   readonly "shell-page-reload": Record<never, never>;
   readonly "shell-page-absent": Record<never, never>;
+  readonly "shell-welcome-title": Record<never, never>;
+  readonly "shell-welcome-account": {
+    readonly login: unknown;
+  };
+  readonly "shell-welcome-next": Record<never, never>;
+  readonly "shell-welcome-admin": {
+    readonly workspace: unknown;
+  };
+  readonly "shell-welcome-member": {
+    readonly workspace: unknown;
+    readonly roles: unknown;
+  };
+  readonly "shell-welcome-member-detail": Record<never, never>;
+  readonly "shell-welcome-admins": {
+    readonly admins: unknown;
+  };
+  readonly "shell-welcome-none-detail": Record<never, never>;
 }

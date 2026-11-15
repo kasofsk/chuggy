@@ -79,7 +79,7 @@ import { repositoryConfigurationRoot } from "./repositoryConfigurationIdentity.t
 import {
   taskConfigurationLineFault,
   type TicketBrief,
-} from "./taskConfiguration.ts";
+} from "../contract/taskConfiguration.ts";
 
 /** What one bootstrap configuration is generated from. */
 export interface BootstrapConfigurationInput {

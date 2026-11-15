@@ -285,6 +285,20 @@ test("a lead paused for usage says until when, whatever the placement says", () 
   ).toBe(`Paused for usage · since ${sinceLocal().clock}`);
 });
 
+test("a lead every live pool of which credentials turned off hold says so, and neither since nor until when", () => {
+  expect(
+    projectLeadAbsenceLine(
+      ready({
+        lead: "None",
+        absence: { reason: "UsagePaused", since: sinceIso, off: true },
+      }),
+      sameDayMs,
+      undefined,
+      copyTextEn,
+    ),
+  ).toBe("Paused for usage · credentials off");
+});
+
 /** No frame says a refusal was kept or forgotten, so a read naming one is read again on the clock, and a lead with none is not. */
 test("a read is polled while it names no lead, or a lead a refusal is kept for", () => {
   expect(projectLeadPolled(none)).toBe(true);

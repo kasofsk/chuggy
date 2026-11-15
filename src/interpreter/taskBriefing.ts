@@ -112,7 +112,10 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 import { workerPlaneRoutes } from "../contract/workerPlane.ts";
-import { commandLinesMax } from "../contract/workerTask.ts";
+import {
+  commandLinesMax,
+  pushPathsRefusedMax,
+} from "../contract/workerTask.ts";
 import {
   dependencyDeliveriesMax,
   type DependencyDelivery,
@@ -140,7 +143,7 @@ import {
   type TaskConfigurationReadFault,
   type TicketBrief,
   type WorkerConfiguration,
-} from "./taskConfiguration.ts";
+} from "../contract/taskConfiguration.ts";
 export {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
@@ -162,7 +165,7 @@ export {
   type WorkBlock,
   type WorkerConfiguration,
   type WorkerMode,
-} from "./taskConfiguration.ts";
+} from "../contract/taskConfiguration.ts";
 import {
   briefingDependencyLines,
   briefingDependencyName,
@@ -177,8 +180,6 @@ import {
   briefingReworkPreface,
   briefingRoleInstructions,
   briefingSectionOrder,
-  briefingTargetMergeFirstLines,
-  briefingTargetMergeLastLines,
   briefingTemplateVersion,
   type BriefingCarrier,
   type BriefingSectionId,
@@ -567,15 +568,13 @@ export interface BriefingView {
   readonly configuration: PinnedConfiguration;
   readonly runtime: RuntimeFacts;
   readonly readOnlyRepositories: readonly RepositoryId[];
-  /** Whether the task's own repository's binding lets pipelines be written, absent where it is not bound live. */
-  readonly pipelinesWritable?: boolean;
+  /** The paths a work task's push may not change, absent where its binding allows pipelines or its forge names none. */
+  readonly pushPathsRefused?: readonly string[];
   /** What each of the ticket's dependencies delivered, in the order they ascend. */
   readonly dependencyDeliveries: readonly DependencyDelivery[];
   readonly priorWorkReports: PriorWorkReports;
   readonly priorEvaluationReports: PriorEvaluationReports;
   readonly failedLanding?: FailedLanding;
-  /** The ref a work task merges in: where the ticket's change lands, or the base its proposal opens into, absent where nothing names one. */
-  readonly targetRef?: string;
   readonly brief?: DraftBrief;
   readonly grant: PolicyAuthorityGrant;
 }
@@ -1015,9 +1014,9 @@ function briefingCriteriaLines(brief: TicketBrief): readonly string[] {
 /**
  * The runtime facts as lines, each of them absent when the adapter observed
  * nothing, and the project's other repositories as one line beside the
- * workspace, absent where the project binds no other. A work task whose own
- * binding does not let pipelines be written is told so beside them, because
- * its push is what would be refused.
+ * workspace, absent where the project binds no other. A work task whose push
+ * may not change some paths is told which beside them, because its push is
+ * what would be refused.
  */
 function briefingRuntimeLines(view: BriefingView): readonly string[] {
   const { runtime, readOnlyRepositories } = view;
@@ -1030,8 +1029,8 @@ function briefingRuntimeLines(view: BriefingView): readonly string[] {
       : [
           `${briefingLabels.readOnlyRepositories} ${readOnlyRepositories.join(", ")}`,
         ]),
-    ...(view.purpose === "Work" && view.pipelinesWritable === false
-      ? briefingPipelinesUnwritable
+    ...(view.purpose === "Work" && view.pushPathsRefused !== undefined
+      ? briefingPipelinesUnwritable(view.pushPathsRefused)
       : []),
     ...briefingLabelled(briefingLabels.changedFiles, runtime.changedFiles),
     ...briefingLabelled(briefingLabels.handoff, runtime.handoff),
@@ -1047,9 +1046,6 @@ function briefingBodies(
   const commands = briefingStageCommands(view, task);
   const carrier = briefingCarrier(task);
   const briefed = carrier === "Agent";
-  const target =
-    briefed && view.purpose === "Work" ? view.targetRef : undefined;
-  const pipelinesWritable = view.pipelinesWritable !== false;
   return {
     Prompt: task.prompt === undefined ? [] : [task.prompt],
     RoleInstructions: task.framed
@@ -1067,10 +1063,6 @@ function briefingBodies(
     AcceptanceAndConstraints:
       task.brief === undefined ? [] : briefingCriteriaLines(task.brief),
     DependencyDeliveries: briefed ? briefingDependencyDeliveryLines(view) : [],
-    TargetMergeFirst:
-      target === undefined
-        ? []
-        : briefingTargetMergeFirstLines(target, pipelinesWritable),
     FailedLanding:
       briefed && view.purpose === "Work" && view.failedLanding !== undefined
         ? briefingFailedLandingLines(view.failedLanding)
@@ -1092,10 +1084,6 @@ function briefingBodies(
       briefingBullet(practice.instruction),
     ),
     RuntimeContext: briefingRuntimeLines(view),
-    TargetMergeLast:
-      target === undefined
-        ? []
-        : briefingTargetMergeLastLines(target, pipelinesWritable),
     RequiredResult: task.framed
       ? briefingRequiredResult(view.purpose, carrier)
       : [],
@@ -1328,7 +1316,7 @@ export function composeTaskInvocation(
     briefingRuntimeFault(view.runtime) ??
     briefingListsFault([
       [view.readOnlyRepositories, readOnlyRepositoriesMax],
-      [view.targetRef === undefined ? [] : [view.targetRef], 1],
+      [view.pushPathsRefused, pushPathsRefusedMax],
     ]) ??
     briefingReportsFault(view.priorWorkReports.reports, priorWorkReportsMax) ??
     briefingReportsFault(

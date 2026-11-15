@@ -1,7 +1,10 @@
 /**
- * The releases of the worker contract this server still serves below its own,
- * and how a suite reads one. A plane serves every history entry its accepted
- * range holds; each older one is installed as a devDependency named for its
+ * The releases of the worker contract a suite replays against this server, and
+ * how it reads one. They are the releases on either side of each feature's
+ * first version, the last the history records, and the packages listed as
+ * deployed, each where a plane's range accepts the release its contract names.
+ * The history is a frozen record of the releases published while a package's
+ * label was the release its contract named. Each replayed is installed as a devDependency named for its
  * release, from the asset its tag was published with, and is read through its
  * own emitted modules rather than this tree's sources. A body one of its schemas
  * builds is walked through every roster value that schema names.
@@ -15,13 +18,12 @@ import { z } from "zod";
 
 import { workspaceManifest } from "../../scripts/pack-worker-contract.ts";
 import { workerContractTag } from "../../scripts/publish-worker-contract.ts";
-import {
-  workerContractHistory,
-  workerContractHistoryLater,
-  type WorkerContractHistory,
-} from "../../scripts/worker-contract-wire.ts";
 import type { WorkerPlaneAnswer } from "../../src/contract/planeAnswers.ts";
-import { workerContractRelease } from "../../src/contract/workerContract.ts";
+import {
+  workerContractFeatures,
+  workerContractVersionOf,
+  type WorkerContractVersion,
+} from "../../src/contract/workerContract.ts";
 import type { WorkerPlaneRoute } from "../../src/contract/workerPlane.ts";
 import {
   contractVersionAccepted,
@@ -33,6 +35,37 @@ import { workerPoolContractAccepted } from "../../src/interpreter/workerPool.ts"
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const manifest = workspaceManifest();
 
+const workerContractHistorySchema = z
+  .array(
+    z.strictObject({
+      release: z
+        .string()
+        .refine((release) => workerContractVersionOf(release) !== undefined),
+      wire: z.string().regex(/^[0-9a-f]{64}$/u),
+      files: z.string().regex(/^[0-9a-f]{64}$/u),
+    }),
+  )
+  .min(1);
+export type WorkerContractHistory = z.infer<typeof workerContractHistorySchema>;
+
+/** The history as this tree holds it, one entry per release it records, its files as `workerContractFilesDigest` reads them. */
+export function workerContractHistory(): WorkerContractHistory {
+  return workerContractHistorySchema.parse(
+    JSON.parse(
+      readFileSync(
+        join(root, "test/contract/workerContract.history.json"),
+        "utf8",
+      ),
+    ),
+  );
+}
+
+/** One published package: the label it was published under, and the release its contract names in the header. */
+export interface WorkerContractPackage {
+  readonly label: string;
+  readonly wire: string;
+}
+
 /** Every plane a harness speaks, and the range of versions the server serves on it. */
 export const workerContractPlanes = {
   job: workerContractAccepted,
@@ -41,30 +74,86 @@ export const workerContractPlanes = {
 } as const satisfies Readonly<Record<string, WorkerContractRange>>;
 export type WorkerContractPlane = keyof typeof workerContractPlanes;
 
-/** The releases in `history` below `served` that `range` accepts, in the history's order. */
-export function workerContractReleasesBelow(
-  history: readonly Pick<WorkerContractHistory[number], "release">[],
-  range: WorkerContractRange,
-  served: string,
-): readonly string[] {
-  return history
-    .map(({ release }) => release)
-    .filter(
-      (release) =>
-        workerContractHistoryLater(release, served) &&
-        contractVersionAccepted(range, release),
-    );
+/**
+ * The packages replayed because something deployed installs one, by label.
+ * What puts a label here is a pin in a harness's own repository, which this
+ * tree holds only for the worker image's core.
+ */
+export const workerContractFieldReleases: readonly string[] = [
+  "1.77.0",
+  "1.78.0",
+  "1.94.0",
+  "1.115.0",
+  "1.117.0",
+];
+
+/** Where the version `release` speaks sits against `version`: below it, at it, or past it. */
+function workerContractReleaseAgainst(
+  release: string,
+  version: WorkerContractVersion,
+): number {
+  const spoken = workerContractVersionOf(release);
+  if (spoken === undefined) throw new Error(`${release} is not a release`);
+  return spoken.major === version.major
+    ? Math.sign(spoken.minor - version.minor)
+    : Math.sign(spoken.major - version.major);
 }
 
-/** The releases below this tree's own that `plane` still serves. */
-export function workerContractReplayed(
-  plane: WorkerContractPlane,
+/**
+ * The labels replayed where `range` accepts the release each one's contract
+ * names: for each version in `features` the first of `history` at it and the
+ * last below it, the last of `history`, and every one of `field`. A release
+ * the history records names itself, and they come in the history's order, then
+ * any the history does not record.
+ */
+export function workerContractBaselines(
+  history: readonly Pick<WorkerContractHistory[number], "release">[],
+  features: readonly WorkerContractVersion[],
+  range: WorkerContractRange,
+  field: readonly WorkerContractPackage[],
 ): readonly string[] {
-  return workerContractReleasesBelow(
-    workerContractHistory(),
-    workerContractPlanes[plane],
-    workerContractRelease,
+  const releases = history.map(({ release }) => release);
+  const recorded = [
+    ...features.flatMap((first) => [
+      releases.find(
+        (release) => workerContractReleaseAgainst(release, first) === 0,
+      ),
+      releases.findLast(
+        (release) => workerContractReleaseAgainst(release, first) < 0,
+      ),
+    ]),
+    releases.at(-1),
+  ].filter((release) => release !== undefined);
+  const replayed = new Set(
+    [...recorded.map((label) => ({ label, wire: label })), ...field]
+      .filter(({ wire }) => contractVersionAccepted(range, wire))
+      .map(({ label }) => label),
   );
+  return [
+    ...releases.filter((release) => replayed.has(release)),
+    ...field
+      .map(({ label }) => label)
+      .filter((label) => replayed.has(label) && !releases.includes(label)),
+  ];
+}
+
+/**
+ * Why a package is not one `range` is replayed with, or nothing where it is. A
+ * label `history` records names itself in the header, and any other names a
+ * release `range` accepts.
+ */
+export function workerContractPackageRefusal(
+  history: readonly Pick<WorkerContractHistory[number], "release">[],
+  range: WorkerContractRange,
+  { label, wire }: WorkerContractPackage,
+): string | undefined {
+  if (history.some(({ release }) => release === label))
+    return wire === label
+      ? undefined
+      : `the history records ${label}, and its contract names ${wire}`;
+  return contractVersionAccepted(range, wire)
+    ? undefined
+    : `${label}'s contract names ${wire}, which the plane refuses`;
 }
 
 /** The name an older release is installed under. */
@@ -92,6 +181,47 @@ export function workerContractAliases(): ReadonlyMap<string, string> {
     Object.entries(installed.devDependencies).filter(([name]) =>
       name.startsWith(`${manifest.name}-`),
     ),
+  );
+}
+
+/** The release each installed package's own contract names in the header, by the name it is installed under. */
+const workerContractWires: ReadonlyMap<string, string> = new Map(
+  await Promise.all(
+    [...workerContractAliases().keys()].map(
+      async (alias) =>
+        [
+          alias,
+          z
+            .object({ workerContractRelease: z.string() })
+            .parse(await import(`${alias}/workerContract`))
+            .workerContractRelease,
+        ] as const,
+    ),
+  ),
+);
+
+/** The release the package installed as `label` names in the header, which is what a plane reads of it. */
+export function workerContractWireOf(label: string): string {
+  const wire = workerContractWires.get(workerContractAlias(label));
+  if (wire === undefined)
+    throw new Error(`${workerContractAlias(label)} is not installed`);
+  return wire;
+}
+
+/** The labels replayed on `plane`. */
+export function workerContractReplayed(
+  plane: WorkerContractPlane,
+): readonly string[] {
+  const versions: readonly (WorkerContractVersion | undefined)[] =
+    Object.values(workerContractFeatures);
+  return workerContractBaselines(
+    workerContractHistory(),
+    versions.filter((version) => version !== undefined),
+    workerContractPlanes[plane],
+    workerContractFieldReleases.map((label) => ({
+      label,
+      wire: workerContractWireOf(label),
+    })),
   );
 }
 
@@ -149,6 +279,9 @@ const workerContractReleaseAnswers = z.record(
 /** One plane as an older release's pod speaks it: the routes it calls, how it reads each answer, and the schemas its entry exports. */
 export interface WorkerContractReleasePlane {
   readonly release: string;
+
+  /** The release its contract names in the header. */
+  readonly wire: string;
   readonly routes: Readonly<Record<string, WorkerPlaneRoute>>;
   readonly answers: Readonly<
     Record<string, Readonly<Record<number, WorkerPlaneAnswer>>>
@@ -181,6 +314,7 @@ export async function workerContractReleasePlane(
   const exported = await workerContractReleaseEntry(release, entry);
   return {
     release,
+    wire: workerContractWireOf(release),
     routes: await workerContractReleaseExport(
       release,
       entry,
@@ -204,6 +338,9 @@ export async function workerContractReleasePlane(
 /** The pool plane as an older release's pool speaks it: where it polls and under which names, where it settles, and the schemas it reads and builds with. */
 export interface WorkerContractReleasePool {
   readonly release: string;
+
+  /** The release its contract names in the header. */
+  readonly wire: string;
   readonly pollRoute: string;
 
   /** The names the release's poll goes under. */
@@ -232,6 +369,7 @@ export async function workerContractReleasePool(
     workerContractReleaseExport(release, "workerPool", name, schema);
   return {
     release,
+    wire: workerContractWireOf(release),
     pollRoute: await read("workerPoolPollRoute", z.string()),
     pollQuery: await read(
       "workerPoolPollQuery",
@@ -336,7 +474,10 @@ export function workerContractEnumsSeen(
 /**
  * `body` first, then again for each other value of each enum `schema` reads in
  * it, the rest held, so a roster is offered whole wherever the body offers one
- * member. A union is followed down the member that reads the body.
+ * member. A union is followed down the member that reads the body, and an
+ * object's variant its own refinement refuses is left out, being no body a
+ * release builds: a value it ties to another field is offered by a body that
+ * carries that field.
  */
 export function workerContractEnumsWalked(
   schema: z.ZodType,
@@ -361,11 +502,13 @@ export function workerContractEnumsWalked(
     const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
     return [
       held,
-      ...Object.entries(shape).flatMap(([key, field]) =>
-        workerContractEnumsWalked(field, held[key])
-          .slice(1)
-          .map((value) => ({ ...held, [key]: value })),
-      ),
+      ...Object.entries(shape)
+        .flatMap(([key, field]) =>
+          workerContractEnumsWalked(field, held[key])
+            .slice(1)
+            .map((value) => ({ ...held, [key]: value })),
+        )
+        .filter((variant) => schema.safeParse(variant).success),
     ];
   }
   if (schema instanceof z.ZodArray) {

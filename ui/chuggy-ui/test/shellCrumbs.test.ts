@@ -60,6 +60,14 @@ test("a screen links to its own page, and what it holds is named decoded", () =>
   ]);
 });
 
+test("the Pools page is under settings, as every settings page is", () => {
+  expect(shellCrumbs(atlas, "/acme/atlas/settings/pools")).toStrictEqual([
+    ...head,
+    { label: "settings", link: { to: navRoutes.settings, params } },
+    { label: "pools" },
+  ]);
+});
+
 test("a screen with no page of its own is named and links nowhere", () => {
   expect(shellCrumbs(atlas, "/acme/atlas/threads/s1")).toStrictEqual([
     ...head,

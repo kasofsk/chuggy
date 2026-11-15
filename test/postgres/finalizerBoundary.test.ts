@@ -1,6 +1,6 @@
 /**
- * The two doors the finalizer reaches ticket-service-owned rows through, driven
- * as the role that will actually call them.
+ * The door the finalizer submits a conclusion to ticket-service-owned rows
+ * through, driven as the role that will actually call it.
  *
  * A REFUSAL IS ASSERTED BY WHAT IT DID NOT WRITE. A call that returned a
  * refusal tag and left a journal entry, an operation or a decision input behind
@@ -21,7 +21,6 @@ import {
   finalizerPromote,
   finalizerPrepare,
   finalizerProject,
-  finalizerRequestApproval,
   finalizerRigOpen,
   type FinalizerProject,
   type FinalizerRig,
@@ -76,16 +75,6 @@ async function submit(
     ],
   )) as readonly { result: string }[];
   return rows[0]?.result ?? "no row";
-}
-
-/** Calls the approval door as the finalizer and answers the tag and action it returned. */
-async function ask(
-  project: FinalizerProject,
-  attempt: string,
-  action: string,
-  epoch = project.epoch,
-): Promise<Record<string, unknown>> {
-  return finalizerRequestApproval(rig, project, attempt, action, epoch);
 }
 
 /** A project whose claimed request has one promoted, concluded attempt behind it. */
@@ -348,158 +337,4 @@ test("an outcome the model does not price is refused before anything is read", a
     /is not one this boundary submits/u,
   );
   assert.deepEqual(await mailbox(project), before);
-});
-
-test("an approval is opened against the attempt it names and against no other", async () => {
-  const project = await finalizerProject(rig, "approve");
-  await finalizerClaim(rig, project, finalizerIdentity("owner-approve"));
-  const attempt = await finalizerPrepare(rig, project, "approve", {
-    approvalRequired: true,
-  });
-  const before = await mailbox(project);
-  const action = finalizerIdentity("action-approve");
-  assert.deepEqual(await ask(project, attempt, action), {
-    result: "Requested",
-    action,
-  });
-  assert.deepEqual(
-    await rig.as(
-      `SELECT kind, state, required_capability, escalation, attempt,
-              authorizing_seq::text AS seq, action_version::text AS version
-         FROM native_action WHERE tenant=$1 AND project=$2 AND action=$3`,
-      [project.partition.tenant, project.partition.project, action],
-    ),
-    [
-      {
-        kind: "FinalizationApproval",
-        state: "Open",
-        required_capability: "ApproveFinalization",
-        escalation: "NoEscalation",
-        attempt,
-        seq: String(project.authorizingSeq),
-        version: String(project.authorizingSeq),
-      },
-    ],
-  );
-  assert.deepEqual(await mailbox(project), before);
-  assert.deepEqual(await ask(project, attempt, finalizerIdentity("again")), {
-    result: "AlreadyRequested",
-    action,
-  });
-});
-
-test("a re-prepared attempt supersedes the ask a person was holding", async () => {
-  const project = await finalizerProject(rig, "supersede");
-  await finalizerClaim(rig, project, finalizerIdentity("owner-supersede"));
-  const first = await finalizerPrepare(rig, project, "supersede-first", {
-    approvalRequired: true,
-  });
-  const second = await finalizerPrepare(rig, project, "supersede-second", {
-    approvalRequired: true,
-  });
-  const asked = finalizerIdentity("action-first");
-  const reasked = finalizerIdentity("action-second");
-  assert.equal((await ask(project, first, asked))["result"], "Requested");
-  assert.equal((await ask(project, second, reasked))["result"], "Requested");
-  assert.deepEqual(
-    await rig.as(
-      `SELECT attempt, state FROM native_action
-        WHERE tenant=$1 AND project=$2 ORDER BY state`,
-      [project.partition.tenant, project.partition.project],
-    ),
-    [
-      { attempt: second, state: "Open" },
-      { attempt: first, state: "Withdrawn" },
-    ],
-  );
-});
-
-test("an approval nothing durable supports is refused and opens no action", async () => {
-  const project = await finalizerProject(rig, "approve-refuse");
-  await finalizerClaim(rig, project, finalizerIdentity("owner-refuse"));
-  const unrequired = await finalizerPrepare(rig, project, "approve-unrequired");
-  const failed = await finalizerPrepare(rig, project, "approve-failed", {
-    outcome: "Failed",
-    approvalRequired: true,
-  });
-  const wanted = await finalizerPrepare(rig, project, "approve-wanted", {
-    approvalRequired: true,
-  });
-  for (const [expected, running] of [
-    ["UnknownAttempt", ask(project, "no-such-attempt", finalizerIdentity("a"))],
-    ["BindingMismatch", ask(project, unrequired, finalizerIdentity("b"))],
-    ["BindingMismatch", ask(project, failed, finalizerIdentity("c"))],
-    [
-      "BindingMismatch",
-      ask(project, wanted, finalizerIdentity("d"), "no-such-epoch"),
-    ],
-  ] as readonly (readonly [string, Promise<Record<string, unknown>>])[]) {
-    assert.equal((await running)["result"], expected);
-  }
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Work'
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [project.partition.tenant, project.partition.project, project.ticket],
-  );
-  assert.equal(
-    (await ask(project, wanted, finalizerIdentity("e")))["result"],
-    "BindingMismatch",
-    "the ticket left the phase",
-  );
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Finalization'
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [project.partition.tenant, project.partition.project, project.ticket],
-  );
-  await rig.as(
-    `UPDATE finalization_request SET state='Fulfilled'
-      WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [project.partition.tenant, project.partition.project, project.request],
-  );
-  assert.equal(
-    (await ask(project, wanted, finalizerIdentity("f")))["result"],
-    "BindingMismatch",
-    "the request settled",
-  );
-  assert.deepEqual(
-    await rig.as(
-      `SELECT count(*)::text AS opened FROM native_action
-        WHERE tenant=$1 AND project=$2`,
-      [project.partition.tenant, project.partition.project],
-    ),
-    [{ opened: "0" }],
-  );
-});
-
-test("an escalation holding the ticket's one open slot is reported, not overwritten", async () => {
-  const project = await finalizerProject(rig, "approve-escalated");
-  await finalizerClaim(rig, project, finalizerIdentity("owner-escalated"));
-  const attempt = await finalizerPrepare(rig, project, "approve-escalated", {
-    approvalRequired: true,
-  });
-  const escalation = finalizerIdentity("action-escalation");
-  await rig.harness.query(
-    `INSERT INTO native_action
-       (tenant, project, action, authorizing_seq, effect_position, ticket,
-        action_version, kind, escalation, required_capability)
-     VALUES ($1,$2,$3,$4,7,$5,$4,'TicketEscalation','WorkFailureEscalated','ResolveTicket')`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      escalation,
-      project.authorizingSeq,
-      project.ticket,
-    ],
-  );
-  assert.deepEqual(await ask(project, attempt, finalizerIdentity("g")), {
-    result: "TicketHasAnOpenAction",
-    action: escalation,
-  });
-  assert.deepEqual(
-    await rig.as(
-      `SELECT state FROM native_action WHERE tenant=$1 AND project=$2 AND action=$3`,
-      [project.partition.tenant, project.partition.project, escalation],
-    ),
-    [{ state: "Open" }],
-  );
 });

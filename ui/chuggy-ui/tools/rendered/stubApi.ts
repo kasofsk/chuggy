@@ -25,6 +25,7 @@ import {
 
 import {
   accessCallerAccountSchema,
+  accessCallerTenantsSchema,
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
 } from "../../../../src/contract/accessPlane.ts";
@@ -47,6 +48,7 @@ import {
   landingQueuesResponseSchema,
   leadReadResponseSchema,
   projectAbilitiesResponseSchema,
+  projectDeletionResponseSchema,
   projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
@@ -218,6 +220,7 @@ const projectRepositories = {
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
       configured: true,
       lastImport: {
         attemptedAt: "2026-11-01T00:00:00Z",
@@ -237,6 +240,7 @@ const projectRepositories = {
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
+      pipelinesRunnable: false,
       configured: false,
     },
   ],
@@ -501,7 +505,7 @@ const epicReads: readonly StubApiRead[] = [
 /** The reads every case is answered, a route to a row. */
 export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
-    projects: [partition],
+    projects: [{ ...partition, name: stubApiProject }],
   }),
   stubApiRead(projectPath, projectResponseSchema, {
     partition,
@@ -653,6 +657,20 @@ export const stubApiReads: readonly StubApiRead[] = [
     principal,
     githubLogin: stubApiLogin,
     email: stubApiEmail,
+  }),
+  stubApiRead("/access/v1/workspaces", accessCallerTenantsSchema, {
+    tenants: [
+      {
+        tenant: stubApiTenant,
+        displayName: stubApiTenant,
+        roles: ["Member"],
+        administer: false,
+      },
+    ],
+    truncated: false,
+  }),
+  stubApiRead(`${projectPath}/deletion`, projectDeletionResponseSchema, {
+    held: [],
   }),
   stubApiRead("/access/v1/site/abilities", accessSiteAbilitiesSchema, {
     administer: false,

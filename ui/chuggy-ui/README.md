@@ -203,7 +203,9 @@ failed or sent only part of leaves its own step not read and is said as that.
 Once a repository is added the github step is held to it: done only where both
 apps on the account that owns it are granted that repository, which is read
 from each of the two installations' own listings and from no other.
-The runner's step is the one the program does. For any other step that is the
+The project's step and the runner's are ones the program does. Where the
+project is lacking, an `ask:` line asks what to call it and the `rule:` names
+`project` with the answer. For any other step that is the
 first not done, a `tell:` line says what mends it, a console page and what to
 press there wherever a page is what does, and `next:` is `stop`. The runner's
 step is done once the project's work has a runner the site sees live, or runs
@@ -211,8 +213,9 @@ on the cluster, and her chats in it have a runner of her own serving it live, or
 on the cluster too. At that step it looks at the machine and changes nothing.
 Where a runner could be put there, one `tell:` says what `runner` would put on
 the machine, a service for the project's work and one for her own chats or
-whichever of the two is lacking, and the `rule:` names that command for once
-she says yes; where one could not (a Mac, user services that do not answer, no
+the first alone, or, where her chat host is all that is lacking, what
+`chat-host` would put there for the workspace, and the `rule:` names that
+command for once she says yes; where one could not (a Mac, user services that do not answer, no
 container engine that answers her without a password, or none the runner
 package takes from her user) the `tell:` says that instead.
 
@@ -233,6 +236,13 @@ renewal token in the person's home directory and never prints the token. The
 issuer hands a new token back for each one it is shown, so before one is shown
 the program keeps room in that directory for the next: a home that will not
 take it is said as that, with its path, and the sign-in is not spent.
+
+`project --workspace <w> --name <name>` makes a project in that workspace by
+the request the console's New project form sends, at the address the form
+makes from the name or the one `--project` gives, and names the checklist for
+it next. A refusal is said in the form's own words. The site answers its maker
+asking again with the same project, so running it again after an answer that
+never arrived makes no second one.
 
 `runner --workspace <w> --project <p>` sets a runner up for that project on the
 Linux machine it is run on, and is done once the site sees the runner live;
@@ -273,6 +283,29 @@ came: a failure, or a check that passed with a warning, keeps one short excerpt
 with the run's secrets struck out; a service's state is said only where it is
 one word; and of the registration, which is handed the token, nothing it printed
 is kept but which of the package's own refusals it was.
+
+`chat-host --workspace <w>` makes the Linux machine it is run on her chat host
+in that workspace, by the walk `runner` makes for it where a project's work
+runs on the cluster, and reads no project. Its one write is the chat host's
+registration token. Where this machine holds the file of the chat host the site
+holds for her, that one is kept, checked and started. Where her chat host is
+another machine the run stops and names it by its short id and whether it is
+live, since registering this machine ends that host's sessions; the same
+command with `--replace <id>` naming it registers this machine in its place, and
+naming any other id is a stop of its own. On a Mac it gives the steps by hand.
+
+Where the repository holds no configuration of its own, the checklist names
+`configuration`, which writes a starting one into the checkout it is run in,
+under `.chug/configurations/`, where nothing is declared there yet: a catalog
+with a build workload, a checks workload running the command `--test` gives, a
+review, and a plan its defaults name. The image, and the test command where
+none was given, are left blank for the agent to fill in with the person.
+`check` reads that directory, and every file its catalogs name, in the working
+tree as an import reads them at a commit, judges them with the import's own
+judgment from `src/contract/`, and says each fault by file and field. Neither
+asks the site anything. Once the commit is pushed, `import` asks the site to
+import the repository at the head of its default branch, its one write, says
+what the site answered, and reads the checklist again.
 
 ## The session
 
@@ -341,7 +374,7 @@ a fresh run of the program against it, so the tab lists the cycles newest
 first, a row per step as the plan names it. A stage the program short-circuited
 is a row saying so, which is what tells "not reached" from "not on this page".
 Every run is a page at its task's number, with its Summary, Transcript and
-Details each at an address of their own, and so is the ticket's landing.
+Details each at an address of their own, and so is the ticket's finalization.
 
 Every row, cycle and run carries what it spent and how long it ran, and every
 dollar carries the basis the wire gave it, so a list price is never read as a

@@ -43,7 +43,6 @@ import type {
   NativeActionAnswerRefusalCode,
   ResumePoint,
 } from "../contract/rosters.ts";
-import type { FinalizationAttemptId } from "./finalizer.ts";
 import {
   nativeActionAnswerer,
   nativeActionCallerOf,
@@ -53,7 +52,7 @@ import {
   type NativeActionAsked,
 } from "./nativeActionAnswer.ts";
 import { assertNever } from "../domain/assertNever.ts";
-import type { ApprovalApprovers } from "./workloadConfiguration.ts";
+import type { ApprovalApprovers } from "../contract/workloadConfiguration.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type {
@@ -76,7 +75,7 @@ import {
   type LeadInquiryRecord,
   type LeadInquiryStore,
 } from "./leadInquiry.ts";
-import type { Partition } from "./projectStore.ts";
+import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
   NativeActionResolution,
@@ -106,11 +105,11 @@ import {
   ticketCommandedCheckStage,
   ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
-  ticketProgramShort,
+  ticketRunsLessThanPlanned,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
-import { catalogSelectedFinalizer } from "./workloadConfiguration.ts";
+import { catalogSelectedFinalizer } from "../contract/workloadConfiguration.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   dispatchNeedsExecutionHeadroom,
@@ -164,7 +163,7 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import type { AttemptEvidence } from "./executionScheduler.ts";
-import type { RunStepEvidence } from "./runEvidence.ts";
+import type { RunCredentialAbsence, RunStepEvidence } from "./runEvidence.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
@@ -312,7 +311,7 @@ export interface ProjectInventory {
 }
 
 export interface ProjectInventoryPage {
-  readonly projects: readonly Partition[];
+  readonly projects: readonly NamedPartition[];
   readonly nextAfter?: Partition;
 }
 
@@ -368,11 +367,14 @@ export interface RunStepFailureResource {
   readonly attempt: AttemptId;
   /** The text its worker kept, which is read on the attempt's own route. */
   readonly error?: { readonly bytes: number };
+  /** The credential not delivered and why, present with `RunCredentialAbsent` alone. */
+  readonly absent?: RunCredentialAbsence;
 }
 
-/** An escalation the scheduler resumes by itself once its usage pauses end, and when the latest ends where one still holds. */
+/** An escalation usage pauses hold: when the latest ends where one still holds, which the scheduler resumes it by itself at, or `off` where a task waits only on credentials turned off and it never resumes by itself. */
 export interface TicketUsageResumeResource {
   readonly until?: PublicInstant;
+  readonly off?: true;
 }
 
 /**
@@ -389,7 +391,7 @@ export interface TicketEscalationResource {
   readonly lost?: RunnerLossResource;
   /** Present where the wall is a task whose run stopped at a failed step. */
   readonly failed?: RunStepFailureResource;
-  /** Present where the scheduler resumes it by itself once its usage pauses end. */
+  /** Present where usage pauses hold its rate-limited tasks. */
   readonly usageResume?: TicketUsageResumeResource;
 }
 
@@ -459,6 +461,8 @@ export interface TicketResource {
   readonly revision: number;
   /** The authority subject of the member whose first authoring revision filed the ticket. */
   readonly creator?: string;
+  /** The member the ticket's next execution is placed for: the member who took it, else its creator. */
+  readonly owner?: string;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;
@@ -575,14 +579,13 @@ export interface NativeActionPage {
 /**
  * One action a ticket has had, open or settled. A resolution is what an
  * answered action carries alone, and who answered it and when is recorded of
- * an answered evaluation approval alone; the finalization attempt or execution
- * is the one the action asked about, where its kind names one.
+ * an answered evaluation approval alone; the execution is the one an
+ * evaluation approval asked about.
  */
 export type TicketNativeActionRecord = {
   readonly action: string;
   readonly kind: NativeActionKind;
   readonly authorizingSequence: number;
-  readonly attempt?: FinalizationAttemptId;
   readonly execution?: ExecutionId;
 } & (
   | { readonly state: "Open" | "Withdrawn" }
@@ -630,7 +633,7 @@ export interface ProjectResource {
   readonly nextAfter?: TicketId;
   readonly nextRecentActivityAfter?: TicketActivityPosition;
   readonly nextNumberAfter?: TicketNumberPosition;
-  /** How many tickets the search or creator matched across the project, where the read named either. */
+  /** How many tickets the search, creator or owner matched across the project, where the read named one. */
   readonly matched?: number;
 }
 
@@ -661,6 +664,8 @@ export interface ProjectReadQuery {
   readonly search?: string;
   /** Only the tickets this member filed, as a ticket's `creator` names them. */
   readonly creator?: Principal;
+  /** Only the tickets this member owns, as a ticket's `owner` names them. */
+  readonly owner?: Principal;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
   /** Only the members of this epic. */
@@ -742,7 +747,7 @@ export function checkedProjectReadQuery(
   return query;
 }
 
-/** Refuses a search that is untrimmed or past its bound, and a creator no principal could be. */
+/** Refuses a search that is untrimmed or past its bound, and a creator or owner no principal could be. */
 function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
   if (
     query.search !== undefined &&
@@ -753,6 +758,7 @@ function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
       `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
     );
   if (query.creator !== undefined) asPrincipal(query.creator);
+  if (query.owner !== undefined) asPrincipal(query.owner);
 }
 
 /** The ticket a search names by number, where it is a whole number with or without a leading `#`. */
@@ -1420,6 +1426,7 @@ async function nativeDraftBriefLanded(
     readonly configurationRevision: ConfigurationRevisionId;
     readonly brief: DraftBrief;
     readonly selection?: ConfigurationSelection;
+    readonly overrides?: ConfigurationOverrides;
   },
 ): Promise<NativeDraftBriefLanded> {
   if (input.brief.finalization !== undefined)
@@ -1434,6 +1441,7 @@ async function nativeDraftBriefLanded(
       : catalogSelectedFinalizer(
           JSON.parse(configuration.canonical),
           input.selection,
+          input.overrides,
         )?.finalizer?.finalization;
   return finalization === undefined
     ? { brief: input.brief }
@@ -1581,7 +1589,13 @@ async function nativeSubmitRunsLessThanPlan(
   );
   return (
     readiness.readiness === "Ready" &&
-    ticketProgramShort(readiness.ticket, revision.program)
+    ticketRunsLessThanPlanned(
+      revision.canonical,
+      revision.overrides,
+      revision.selection,
+      readiness.ticket,
+      revision.program,
+    )
   );
 }
 
@@ -2860,6 +2874,10 @@ function nativeThreadReadMethods(
           ? {}
           : { nextBefore: found.nextBefore }),
         streams: found.streams,
+        jobsStanding: found.jobsStanding,
+        ...(found.chatHostCapabilities === undefined
+          ? {}
+          : { chatHostCapabilities: found.chatHostCapabilities }),
       };
     },
   };

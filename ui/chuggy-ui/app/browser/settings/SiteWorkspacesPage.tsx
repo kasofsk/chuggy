@@ -92,8 +92,9 @@ function siteWorkspaceRow(
         <span
           className="tabular-cut block font-strong text-ink-1"
           title={listed.tenant}
+          translate="no"
         >
-          {listed.tenant}
+          {listed.displayName}
         </span>
       ),
       admins: none ? (

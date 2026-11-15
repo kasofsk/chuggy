@@ -21,6 +21,8 @@ export interface TicketCopy {
   readonly "ticket-cancel": Record<never, never>;
   readonly "ticket-edit": Record<never, never>;
   readonly "ticket-duplicate": Record<never, never>;
+  readonly "ticket-take": Record<never, never>;
+  readonly "ticket-return": Record<never, never>;
   readonly "ticket-copy-link": Record<never, never>;
   readonly "ticket-copy-link-copied": Record<never, never>;
   readonly "ticket-cant-be-undone": Record<never, never>;
@@ -91,8 +93,6 @@ export interface TicketCopy {
   readonly "ticket-actions-sentence-resume-default": Record<never, never>;
   readonly "ticket-actions-sentence-resume-rework": Record<never, never>;
   readonly "ticket-actions-sentence-revoke": Record<never, never>;
-  readonly "ticket-actions-sentence-approve": Record<never, never>;
-  readonly "ticket-actions-sentence-decline": Record<never, never>;
   readonly "ticket-actions-sentence-approve-evaluation": Record<never, never>;
   readonly "ticket-actions-sentence-reject": Record<never, never>;
   readonly "ticket-actions-sentence-release": Record<never, never>;
@@ -129,6 +129,7 @@ export interface TicketCopy {
     readonly target: unknown;
   };
   readonly "ticket-overview-filed-by": Record<never, never>;
+  readonly "ticket-overview-owner": Record<never, never>;
   readonly "ticket-overview-depends-on": Record<never, never>;
   readonly "ticket-overview-configuration": Record<never, never>;
   readonly "ticket-overview-revision": {
@@ -145,7 +146,7 @@ export interface TicketCopy {
   readonly "ticket-steps-heading": Record<never, never>;
   readonly "ticket-steps-phase-work": Record<never, never>;
   readonly "ticket-steps-phase-evaluation": Record<never, never>;
-  readonly "ticket-steps-phase-landing": Record<never, never>;
+  readonly "ticket-steps-phase-finalization": Record<never, never>;
   readonly "ticket-steps-not-started": Record<never, never>;
   readonly "ticket-steps-not-on-page": Record<never, never>;
   readonly "ticket-plan-commands": Record<never, never>;
@@ -259,6 +260,7 @@ export interface TicketCopy {
   readonly "ticket-run-image": Record<never, never>;
   readonly "ticket-run-worker": Record<never, never>;
   readonly "ticket-run-cpus": Record<never, never>;
+  readonly "ticket-run-credential": Record<never, never>;
   readonly "ticket-run-id-field": Record<never, never>;
   readonly "ticket-run-not-found": Record<never, never>;
   readonly "ticket-run-showing-first": {
@@ -296,82 +298,85 @@ export interface TicketCopy {
   readonly "ticket-runs-unstacked": {
     readonly reason: unknown;
   };
-  readonly "ticket-landing-heading": Record<never, never>;
-  readonly "ticket-landing-none": Record<never, never>;
-  readonly "ticket-landing-not-reached": Record<never, never>;
-  readonly "ticket-landing-pull-request-field": Record<never, never>;
-  readonly "ticket-landing-from": Record<never, never>;
-  readonly "ticket-landing-into": Record<never, never>;
-  readonly "ticket-landing-head": Record<never, never>;
-  readonly "ticket-landing-base": Record<never, never>;
-  readonly "ticket-landing-creation": Record<never, never>;
-  readonly "ticket-landing-status": Record<never, never>;
-  readonly "ticket-landing-merge": Record<never, never>;
-  readonly "ticket-landing-reason": Record<never, never>;
-  readonly "ticket-landing-mergeability": Record<never, never>;
-  readonly "ticket-landing-merge-state": Record<never, never>;
-  readonly "ticket-landing-merge-commit": Record<never, never>;
-  readonly "ticket-landing-merged-head": Record<never, never>;
-  readonly "ticket-landing-evaluated-head": Record<never, never>;
-  readonly "ticket-landing-conflicts": Record<never, never>;
-  readonly "ticket-landing-more-not-shown": Record<never, never>;
-  readonly "ticket-landing-target": Record<never, never>;
-  readonly "ticket-landing-candidate": Record<never, never>;
-  readonly "ticket-landing-prepared": Record<never, never>;
-  readonly "ticket-landing-checked": Record<never, never>;
-  readonly "ticket-landing-details-label": Record<never, never>;
-  readonly "ticket-landing-details-hide": Record<never, never>;
-  readonly "ticket-landing-queue-removal": {
+  readonly "ticket-finalization-heading": Record<never, never>;
+  readonly "ticket-finalization-none": Record<never, never>;
+  readonly "ticket-finalization-not-reached": Record<never, never>;
+  readonly "ticket-finalization-pull-request-field": Record<never, never>;
+  readonly "ticket-finalization-from": Record<never, never>;
+  readonly "ticket-finalization-into": Record<never, never>;
+  readonly "ticket-finalization-head": Record<never, never>;
+  readonly "ticket-finalization-base": Record<never, never>;
+  readonly "ticket-finalization-creation": Record<never, never>;
+  readonly "ticket-finalization-status": Record<never, never>;
+  readonly "ticket-finalization-merge": Record<never, never>;
+  readonly "ticket-finalization-reason": Record<never, never>;
+  readonly "ticket-finalization-mergeability": Record<never, never>;
+  readonly "ticket-finalization-merge-state": Record<never, never>;
+  readonly "ticket-finalization-merge-commit": Record<never, never>;
+  readonly "ticket-finalization-merged-head": Record<never, never>;
+  readonly "ticket-finalization-evaluated-head": Record<never, never>;
+  readonly "ticket-finalization-conflicts": Record<never, never>;
+  readonly "ticket-finalization-more-not-shown": Record<never, never>;
+  readonly "ticket-finalization-target": Record<never, never>;
+  readonly "ticket-finalization-candidate": Record<never, never>;
+  readonly "ticket-finalization-prepared": Record<never, never>;
+  readonly "ticket-finalization-checked": Record<never, never>;
+  readonly "ticket-finalization-details-label": Record<never, never>;
+  readonly "ticket-finalization-details-hide": Record<never, never>;
+  readonly "ticket-finalization-queue-removal": {
     readonly removal: unknown;
   };
-  readonly "ticket-landing-attempts": Record<never, never>;
-  readonly "ticket-landing-rechecked": Record<never, never>;
-  readonly "ticket-landing-recheck-against": {
+  readonly "ticket-finalization-target-paths-refused": {
+    readonly paths: unknown;
+  };
+  readonly "ticket-finalization-attempts": Record<never, never>;
+  readonly "ticket-finalization-rechecked": Record<never, never>;
+  readonly "ticket-finalization-recheck-against": {
     readonly reason: unknown;
     readonly base: unknown;
   };
-  readonly "ticket-landing-recheck-required": {
+  readonly "ticket-finalization-recheck-required": {
     readonly reason: unknown;
   };
-  readonly "ticket-landing-removal-by": {
+  readonly "ticket-finalization-removal-by": {
     readonly reason: unknown;
     readonly actor: unknown;
   };
-  readonly "ticket-landing-hold-removal": {
+  readonly "ticket-finalization-hold-removal": {
     readonly hold: unknown;
     readonly removal: unknown;
   };
-  readonly "ticket-landing-held-for": {
+  readonly "ticket-finalization-held-for": {
     readonly age: unknown;
     readonly hold: unknown;
   };
-  readonly "ticket-landing-held": {
+  readonly "ticket-finalization-held": {
     readonly hold: unknown;
   };
-  readonly "ticket-landing-wait-state": {
+  readonly "ticket-finalization-wait-state": {
     readonly wait: unknown;
     readonly state: unknown;
   };
-  readonly "ticket-landing-wait-checked": {
+  readonly "ticket-finalization-wait-checked": {
     readonly wait: unknown;
     readonly checked: unknown;
   };
-  readonly "ticket-landing-failure-files": {
+  readonly "ticket-finalization-failure-files": {
     readonly failure: unknown;
     readonly files: unknown;
   };
-  readonly "ticket-landing-merged": Record<never, never>;
-  readonly "ticket-landing-unevaluated-head": Record<never, never>;
-  readonly "ticket-landing-pull-number": {
+  readonly "ticket-finalization-merged": Record<never, never>;
+  readonly "ticket-finalization-unevaluated-head": Record<never, never>;
+  readonly "ticket-finalization-pull-number": {
     readonly number: unknown;
   };
-  readonly "ticket-landing-summary-running": Record<never, never>;
-  readonly "ticket-landing-summary-held": Record<never, never>;
-  readonly "ticket-landing-summary-waiting": Record<never, never>;
-  readonly "ticket-landing-summary-failed": Record<never, never>;
-  readonly "ticket-landing-summary-escalated": Record<never, never>;
-  readonly "ticket-landing-summary-proposed": Record<never, never>;
-  readonly "ticket-landing-summary-invalidated": Record<never, never>;
+  readonly "ticket-finalization-summary-running": Record<never, never>;
+  readonly "ticket-finalization-summary-held": Record<never, never>;
+  readonly "ticket-finalization-summary-waiting": Record<never, never>;
+  readonly "ticket-finalization-summary-failed": Record<never, never>;
+  readonly "ticket-finalization-summary-escalated": Record<never, never>;
+  readonly "ticket-finalization-summary-proposed": Record<never, never>;
+  readonly "ticket-finalization-summary-invalidated": Record<never, never>;
   readonly "ticket-usage-basis-list": Record<never, never>;
   readonly "ticket-usage-models-note": {
     readonly count: unknown;

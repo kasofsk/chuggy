@@ -45,7 +45,8 @@ export function projectLeadPolled(read: LeadReadResponse): boolean {
 
 /**
  * A kept refusal as one line: its label, and when a usage pause ends where the
- * read names it, or else since when the refusal has stood.
+ * read names it, that credentials turned off hold it where the read says so,
+ * or else since when the refusal has stood.
  */
 export function projectLeadRefusalLine(
   refusal: LeadRefusalResponse,
@@ -54,6 +55,8 @@ export function projectLeadRefusalLine(
 ): string {
   const label = text(leadAbsenceLabel(refusal.reason));
   const now = new Date(nowMs);
+  if (refusal.off === true)
+    return text({ id: "lead-absence-off", args: { label } });
   return refusal.until === undefined
     ? text({
         id: "lead-absence-since",

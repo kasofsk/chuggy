@@ -1120,12 +1120,12 @@ test("a queued member's card draws its place in the landing queue", async () => 
   };
   await epicPageDrawn(abilitiesNone, { tab: <EpicGraphTabAddressed /> });
   await graphic();
-  const chip = card(5).querySelector<HTMLElement>(".landing-queue-chip");
+  const chip = card(5).querySelector<HTMLElement>(".finalization-queue-chip");
   expect(chip?.textContent).toBe("2/2");
   expect(chip?.getAttribute("title")).toBe(
-    "Waiting 2 of 2 to land: #9 holds https://forge.test/acme/billing's default branch",
+    "Waiting 2 of 2 to finalize: #9 holds https://forge.test/acme/billing's default branch",
   );
-  expect(card(4).querySelector(".landing-queue-chip")).toBeNull();
+  expect(card(4).querySelector(".finalization-queue-chip")).toBeNull();
 });
 
 test("a queue read that fails draws no chip and leaves every card drawn", async () => {
@@ -1141,7 +1141,7 @@ test("a queue read that fails draws no chip and leaves every card drawn", async 
   await settled();
   await graphic();
   expect(document.querySelectorAll(".epic-card")).toHaveLength(3);
-  expect(document.querySelector(".landing-queue-chip")).toBeNull();
+  expect(document.querySelector(".finalization-queue-chip")).toBeNull();
 });
 
 test("the rendered graph carries no style attribute", async () => {

@@ -4,7 +4,8 @@
  * Packs the worker contract for publishing: the workspace's entries emitted as
  * JavaScript and declarations, under a manifest derived from the workspace's
  * own, printed as the tarball's sha256 and path and the digest of the files it
- * holds.
+ * holds. `--release <label>` versions the package; without one it carries the
+ * release the contract names in its header, which a later package outgrows.
  */
 
 import { spawnSync } from "node:child_process";
@@ -56,7 +57,7 @@ export interface PublishedManifest {
 export interface PackedWorkerContract {
   readonly tarball: string;
   readonly sha256: string;
-  /** The files the tarball holds as `workerContractFilesDigest` reads them, which a release's history entry records. */
+  /** The files the tarball holds as `workerContractFilesDigest` reads them. */
   readonly files: string;
 }
 
@@ -119,8 +120,11 @@ export function publishedManifest(
   };
 }
 
-/** Emits the workspace's entries and what they import, then packs them with the workspace's licence under the published manifest into `outDirectory`. */
-export function packWorkerContract(outDirectory: string): PackedWorkerContract {
+/** Emits the workspace's entries and what they import, then packs them with the workspace's licence under the published manifest, versioned `release`, into `outDirectory`. */
+export function packWorkerContract(
+  outDirectory: string,
+  release: string = workerContractRelease,
+): PackedWorkerContract {
   const manifest = workspaceManifest();
   const work = mkdtempSync(join(tmpdir(), "worker-contract-"));
   try {
@@ -140,7 +144,7 @@ export function packWorkerContract(outDirectory: string): PackedWorkerContract {
     copyFileSync(join(workspace, "LICENSE"), join(staged, "LICENSE"));
     writeFileSync(
       join(staged, "package.json"),
-      `${JSON.stringify(publishedManifest(manifest, workerContractRelease), null, 2)}\n`,
+      `${JSON.stringify(publishedManifest(manifest, release), null, 2)}\n`,
     );
     const files = workerContractFilesDigest(staged);
     mkdirSync(outDirectory, { recursive: true });
@@ -185,11 +189,16 @@ function packWorkerContractCommand(
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { values } = parseArgs({ options: { out: { type: "string" } } });
+  const { values } = parseArgs({
+    options: { out: { type: "string" }, release: { type: "string" } },
+  });
   if (values.out === undefined)
     throw new Error(
-      "usage: node scripts/pack-worker-contract.ts --out <directory>",
+      "usage: node scripts/pack-worker-contract.ts --out <directory> [--release <label>]",
     );
-  const { tarball, sha256, files } = packWorkerContract(resolve(values.out));
+  const { tarball, sha256, files } = packWorkerContract(
+    resolve(values.out),
+    values.release,
+  );
   process.stdout.write(`${sha256}  ${tarball}\nfiles ${files}\n`);
 }

@@ -316,6 +316,14 @@ function threadWakeRosterWord(reason: ThreadWakeReason): Copy {
       return { id: "chat-wake-done" };
     case "TicketAbandoned":
       return { id: "chat-wake-revoked" };
+    case "JobExited":
+      return { id: "chat-wake-job-exited" };
+    case "WatchMatched":
+      return { id: "chat-wake-watch-matched" };
+    case "TimerDue":
+      return { id: "chat-wake-timer-due" };
+    case "AttemptEnded":
+      return { id: "chat-wake-attempt-ended" };
   }
 }
 

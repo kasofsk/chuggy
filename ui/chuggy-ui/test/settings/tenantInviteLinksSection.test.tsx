@@ -84,7 +84,7 @@ test("the links are a section under the people and over the other identities, a 
   await drawPeople({ links: () => answer(linksListed) });
   expect(
     screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
-  ).toStrictEqual(["1 person", "Invite links", "Other identities"]);
+  ).toStrictEqual(["1 person", "Invite links", "Other identities", "Name"]);
   expect(statuses()).toStrictEqual(["Open", "Used", "Revoked", "Expired"]);
   expect(linkHeadings()).toStrictEqual([
     "Access",

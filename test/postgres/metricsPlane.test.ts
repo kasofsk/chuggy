@@ -571,12 +571,12 @@ function metricsSamples(body: string): readonly string[] {
     .filter((line) => line !== "" && !line.startsWith("#"));
 }
 
-const workLabels = `tenant="metrics-one",project="web",owner="alice-id",phase="Work",stage="",runner="Agent",placement="Cluster",workload="build"`;
-const checksLabels = `tenant="metrics-one",project="web",owner="alice-id",phase="Evaluation",stage="checks",runner="Commands",placement="Personal",workload="tests"`;
-const reviewLabels = `tenant="metrics-one",project="web",owner="bob-id",phase="Evaluation",stage="review",runner="Agent",placement="Cluster",workload="review"`;
-const authoredLabels = `tenant="metrics-two",project="api",owner="",phase="Work",stage="",runner="Agent",placement="Cluster",workload=""`;
-const authoredReviewLabels = `tenant="metrics-two",project="api",owner="",phase="Evaluation",stage="1",runner="Agent",placement="Cluster",workload=""`;
-const pinnedLabels = `tenant="metrics-three",project="ops",owner="alice-id",phase="Work",stage="",runner="Agent",placement="Cluster",workload="build"`;
+const workLabels = `tenant="metrics-one",project="web",repository="",owner="alice-id",phase="Work",stage="",runner="Agent",placement="Cluster",workload="build"`;
+const checksLabels = `tenant="metrics-one",project="web",repository="",owner="alice-id",phase="Evaluation",stage="checks",runner="Commands",placement="Personal",workload="tests"`;
+const reviewLabels = `tenant="metrics-one",project="web",repository="",owner="bob-id",phase="Evaluation",stage="review",runner="Agent",placement="Cluster",workload="review"`;
+const authoredLabels = `tenant="metrics-two",project="api",repository="",owner="",phase="Work",stage="",runner="Agent",placement="Cluster",workload=""`;
+const authoredReviewLabels = `tenant="metrics-two",project="api",repository="",owner="",phase="Evaluation",stage="1",runner="Agent",placement="Cluster",workload=""`;
+const pinnedLabels = `tenant="metrics-three",project="ops",repository="",owner="alice-id",phase="Work",stage="",runner="Agent",placement="Cluster",workload="build"`;
 
 test("every ended attempt is counted under what ran it and whose ticket it was, the owner its bare subject", async () => {
   const page = await metricsPage(plane);
@@ -717,7 +717,7 @@ test("each session turn series began when its first turn ended, and the tickets 
     `chuggy_session_turn_tokens_created{${lead},model="model-large"} ${minuteSecs(1)}`,
     `chuggy_session_turn_cost_usd_created{${thread},model="model-small"} ${minuteSecs(1)}`,
     `chuggy_session_turn_duration_seconds_created{${thread}} ${minuteSecs(1)}`,
-    `chuggy_tickets{tenant="metrics-one",project="web",owner="",phase="Work",escalation="NoEscalation"} 2`,
+    `chuggy_tickets{tenant="metrics-one",project="web",repository="",owner="",phase="Work",escalation="NoEscalation"} 2`,
   ])
     assert.ok(samples.includes(expected), expected);
   assert.ok(!samples.some((line) => line.startsWith("chuggy_tickets_created")));
@@ -795,9 +795,9 @@ test("members' own turns that no label tells apart are one series under the cap,
 test("each project's tickets are a gauge per phase and escalation, under no owner where no member wrote their drafts", async () => {
   const samples = metricsSamples((await metricsPage(plane)).body);
   for (const expected of [
-    `chuggy_tickets{tenant="metrics-one",project="web",owner="",phase="Work",escalation="NoEscalation"} 2`,
-    `chuggy_tickets{tenant="metrics-one",project="web",owner="",phase="Done",escalation="NoEscalation"} 1`,
-    `chuggy_tickets{tenant="metrics-two",project="api",owner="",phase="Pending",escalation="NoEscalation"} 1`,
+    `chuggy_tickets{tenant="metrics-one",project="web",repository="",owner="",phase="Work",escalation="NoEscalation"} 2`,
+    `chuggy_tickets{tenant="metrics-one",project="web",repository="",owner="",phase="Done",escalation="NoEscalation"} 1`,
+    `chuggy_tickets{tenant="metrics-two",project="api",repository="",owner="",phase="Pending",escalation="NoEscalation"} 1`,
   ])
     assert.ok(samples.includes(expected), expected);
 });
@@ -849,6 +849,7 @@ test("runs under many pinned revisions that no label tells apart are one series,
         task: {
           tenant: three.tenant,
           project: three.project,
+          repository: "",
           owner: "alice-id",
           phase: "Work",
           stage: "",

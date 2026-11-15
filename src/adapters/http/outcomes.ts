@@ -42,6 +42,7 @@ import {
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
+import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type {
   SelectorProposalReviews,
@@ -94,6 +95,7 @@ import {
   briefFinalizationModeOf,
   type BriefFinalizationMode,
   type NativeActionAnswerRefusalCode,
+  type TicketTakeRefusalCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
@@ -129,7 +131,11 @@ import type {
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
-import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type {
+  NamedPartition,
+  Partition,
+  TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { ChatAbilitiesResponse } from "../../contract/responses.ts";
 import type {
   MemberChatProjectsRead,
@@ -140,6 +146,7 @@ import type {
   ProjectCreationResult,
 } from "../../interpreter/projectCreation.ts";
 import {
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../contract/requests.ts";
@@ -207,6 +214,8 @@ import type {
 import type {
   AgentAccountPressed,
   AgentAccountRetired,
+  AgentAccountTurnedOff,
+  AgentAccountTurnedOn,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
@@ -237,7 +246,13 @@ import type {
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
-import { agentAccountCredentialInUseCode } from "../../contract/responses.ts";
+import {
+  agentAccountCredentialInUseCode,
+  agentAccountCredentialsOffFullCode,
+  deletionHeldCode,
+  projectCreatedSchema,
+  type ProjectCreatedResponse,
+} from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
@@ -251,6 +266,10 @@ import type {
 } from "../../contract/responses.ts";
 import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import type { LandingQueues } from "../../interpreter/landingQueues.ts";
+import type {
+  UnrunDeleted,
+  UnrunDeletionStanding,
+} from "../../interpreter/unrunDeletion.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -476,7 +495,7 @@ export function submissionResponse(
         403,
         nativeHttpError(
           programSkipsPlannedEvaluationsCode,
-          "The draft's program runs less than its configuration plans: it leaves out the plan's last stages, or an evaluator of a stage it keeps. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it. A program keeping a later stage of the plan and leaving out an earlier one is refused whoever releases it, as ProgramStageOutOfPosition.",
+          "The draft's program runs less than its configuration plans: it leaves out the plan's last stages, or an evaluator of a stage it keeps, or, over a plan its overrides replace or add, it runs some workload at fewer positions than the catalog's plan for its selection, or the catalog's default where the catalog holds no plan of that name. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it. A program keeping a later stage of the plan and leaving out an earlier one is refused whoever releases it, as ProgramStageOutOfPosition.",
         ),
       );
     case "AnswerRefused":
@@ -1459,6 +1478,9 @@ export function chatHostResponse(result: ChatHostRead): NativeHttpResponse {
           : { polledAt: result.value.polledAt }),
         live: result.value.live,
         ...runnerListedBody(result.value.runner),
+        ...(result.value.sessionCapabilities === undefined
+          ? {}
+          : { sessionCapabilities: [...result.value.sessionCapabilities] }),
       } satisfies ChatHostResponse);
     default:
       return assertNever(result);
@@ -1623,6 +1645,40 @@ export function agentAccountRetiredResponse(
           "A live runner of the account still names this credential.",
         ),
       );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential off, or refused because as many of the agent's credentials as the account holds off are off. */
+export function agentAccountTurnedOffResponse(
+  result: AgentAccountTurnedOff,
+): NativeHttpResponse {
+  switch (result) {
+    case "Off":
+      return noContent();
+    case "OffFull":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialsOffFullCode,
+          "As many credentials of this agent as the account holds off are off.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential on again, or none of its name was off. */
+export function agentAccountTurnedOnResponse(
+  result: AgentAccountTurnedOn,
+): NativeHttpResponse {
+  switch (result) {
+    case "On":
+      return noContent();
+    case "NotOff":
+      return notFound();
     default:
       return assertNever(result);
   }
@@ -1943,6 +1999,42 @@ export function notFound(): NativeHttpResponse {
   return response(404, nativeHttpError("NotFound", "Resource not found."));
 }
 
+/** What holds a project or a workspace its reader may delete. */
+export function unrunDeletionStandingResponse<Holding extends string>(
+  standing: UnrunDeletionStanding<Holding>,
+): NativeHttpResponse {
+  switch (standing.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, { held: standing.held });
+    default:
+      return assertNever(standing);
+  }
+}
+
+/** A deletion: done, absent, or refused with what holds it. */
+export function unrunDeletedResponse<Holding extends string>(
+  deleted: UnrunDeleted<Holding>,
+): NativeHttpResponse {
+  switch (deleted.result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "Held":
+      return response(409, {
+        ...nativeHttpError(
+          deletionHeldCode,
+          "It has run work, or holds what has, and is not deleted.",
+        ),
+        held: deleted.held,
+      });
+    default:
+      return assertNever(deleted);
+  }
+}
+
 /** What a session bearer is answered on a route no session may reach, RFC 6750's `insufficient_scope`. */
 export function sessionBearerRefusedResponse(): NativeHttpResponse {
   return response(
@@ -2100,12 +2192,23 @@ export function forgeInstallationPermissionsResponse(
   }
 }
 
-/** Why a name was refused, by the field it is in. */
-const projectNameInvalidCodes: Readonly<Record<ProjectCreationField, string>> =
-  {
-    tenant: "TenantNameInvalid",
-    project: "ProjectNameInvalid",
-  };
+/** Why a name was refused, by the field it is in, with the rule it broke. */
+const projectNameInvalid: Readonly<
+  Record<ProjectCreationField, { readonly code: string; readonly rule: string }>
+> = {
+  tenant: {
+    code: "TenantNameInvalid",
+    rule: `A tenant name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  project: {
+    code: "ProjectNameInvalid",
+    rule: `A project name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  name: {
+    code: "ProjectDisplayNameInvalid",
+    rule: `A project's display name is at most ${String(projectDisplayNameCharsMax)} characters once trimmed, is not empty, and holds no control character.`,
+  },
+};
 
 /** What creation answers a caller the site does not permit to create a tenant. */
 function tenantCreationRefused(): NativeHttpResponse {
@@ -2118,6 +2221,10 @@ function tenantCreationRefused(): NativeHttpResponse {
   );
 }
 
+function projectCreatedBody(project: NamedPartition): ProjectCreatedResponse {
+  return projectCreatedSchema.parse(project);
+}
+
 /**
  * A creation. A tenant another principal holds is a conflict rather than a
  * missing resource, because a tenant name is first-come and not a secret.
@@ -2127,15 +2234,15 @@ export function projectCreationResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Created":
-      return response(201, result.partition, {
+      return response(201, projectCreatedBody(result.project), {
         location: tenantResourcePath(
-          result.partition.tenant,
+          result.project.tenant,
           "projects",
-          result.partition.project,
+          result.project.project,
         ),
       });
     case "AlreadyCreated":
-      return response(200, result.partition);
+      return response(200, projectCreatedBody(result.project));
     case "ProjectExists":
       return response(
         409,
@@ -2161,8 +2268,8 @@ export function projectCreationResponse(
       return response(
         422,
         nativeHttpError(
-          projectNameInvalidCodes[result.field],
-          `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+          projectNameInvalid[result.field].code,
+          projectNameInvalid[result.field].rule,
         ),
       );
     case "TenantCreationNotPermitted":
@@ -2760,6 +2867,7 @@ function leadRefusalBody(refused: LeadRefused): unknown {
     reason: refused.reason,
     since: refused.since,
     ...(refused.until === undefined ? {} : { until: refused.until }),
+    ...(refused.off === undefined ? {} : { off: refused.off }),
   };
 }
 
@@ -2987,6 +3095,10 @@ export function threadResponse(result: ThreadRead): NativeHttpResponse {
           ? {}
           : { nextBefore: result.nextBefore }),
         streams: result.streams,
+        ...(result.jobsStanding ? { jobsStanding: true } : {}),
+        ...(result.chatHostCapabilities === undefined
+          ? {}
+          : { chatHostCapabilities: result.chatHostCapabilities }),
       });
 }
 
@@ -3421,4 +3533,45 @@ export function epicWriteResponse(result: EpicWritten): NativeHttpResponse {
       ? { tickets: outcome.tickets }
       : {}),
   });
+}
+
+const ticketTakeRefusalMessage: Readonly<
+  Record<TicketTakeRefusalCode, string>
+> = {
+  TakerNotAPerson:
+    "A ticket is taken and returned by a person, never by an agent.",
+  Unreleased: "A draft never released is its author's.",
+  TicketDone: "The ticket is Done and runs nothing more.",
+  TicketRevoked: "The ticket is Revoked and runs nothing more.",
+  NotTaker: "Only the member who took the ticket may return it.",
+};
+
+/**
+ * A take or a return: what it did, with the owner it leaves, or a refusal
+ * named by its code. A caller who may read and not mutate meets `403`, as an
+ * agent does; a ticket in a state that refuses it is a `409`; a project or
+ * ticket the caller cannot see is a `404` like any other absence.
+ */
+export function ticketTakeResponse(
+  result: TicketTakeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError("Forbidden", "The caller may not take tickets."),
+      );
+    case "Refused":
+      return response(
+        result.reason === "TakerNotAPerson" ? 403 : 409,
+        nativeHttpError(result.reason, ticketTakeRefusalMessage[result.reason]),
+      );
+    case "Written":
+      return response(200, {
+        outcome: result.outcome,
+        ...(result.owner === undefined ? {} : { owner: result.owner }),
+      });
+  }
 }

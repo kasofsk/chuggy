@@ -1,6 +1,7 @@
 /**
  * Inviting a person from the workspace's people page: a dialog named for the
- * workspace, the roles and projects the reader may grant offered, the fields
+ * workspace that says it joins the person to it and where a workspace of
+ * their own comes from instead, the roles and projects the reader may grant offered, the fields
  * sent as the contract states them, a field's fault under it before anything
  * is sent, each refusal's line with the dialog left as it was, and a created
  * or found person closing it.
@@ -129,6 +130,15 @@ test("an invitation sends the fields the contract states, as it states them", as
       },
     },
   ]);
+});
+
+test("the dialog says it adds the person to this workspace, and that a workspace of their own comes from a signup link", async () => {
+  await invitedWith({});
+  expect(
+    within(dialog()).getByText(
+      `This adds them to ${peopleTenant}. A workspace of their own comes from a signup link, under Settings → Workspaces.`,
+    ),
+  ).toBeDefined();
 });
 
 test("a username or an email the schema refuses sends nothing and draws its fault", async () => {

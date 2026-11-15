@@ -61,6 +61,7 @@ export const workspacesListed: AccessSiteTenants = {
   tenants: [
     {
       tenant: "globex-co",
+      displayName: "Globex",
       administrators: [
         {
           subject: "s-bob",
@@ -76,6 +77,7 @@ export const workspacesListed: AccessSiteTenants = {
     },
     {
       tenant: "acme-co",
+      displayName: "Acme",
       administrators: [
         {
           subject: "s-ada",
@@ -91,12 +93,14 @@ export const workspacesListed: AccessSiteTenants = {
     },
     {
       tenant: "umbrella-co",
+      displayName: "Umbrella",
       administrators: [],
       unnamed: 3,
       createAccounts: true,
     },
     {
       tenant: "initech-co",
+      displayName: "Initech",
       administrators: [],
       unnamed: 0,
       createAccounts: false,

@@ -65,6 +65,8 @@ export interface InviteLinkColumn<Link> {
 /** What one list hands the frame: its two columns, which links it may revoke, and the write that revokes one. */
 export interface InviteLinksListed<Link extends InviteLinkListed> {
   readonly links: readonly Link[];
+  /** What the list is headed, where it names its links for what they are for. */
+  readonly heading?: Copy;
   readonly first: InviteLinkColumn<Link>;
   readonly third: InviteLinkColumn<Link>;
   readonly revocable: (link: Link) => boolean;
@@ -319,11 +321,12 @@ export function InviteLinksListing<Link extends InviteLinkListed>(
   const nowMs = useNowMs();
   if (props.links.length === 0) return null;
   const revocable = props.links.filter((link) => props.revocable(link));
+  const heading = text(props.heading ?? inviteLinksWords.heading);
   return (
-    <SettingsListingSection heading={text(inviteLinksWords.heading)}>
+    <SettingsListingSection heading={heading}>
       <SettingsListingStacked
         className="people-table"
-        caption={text(inviteLinksWords.heading)}
+        caption={heading}
         columns={inviteLinkColumns(
           props.first.heading,
           props.third.heading,

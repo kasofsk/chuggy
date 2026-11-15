@@ -17,6 +17,7 @@ import {
   apiOwnerFallback,
   apiProjectAbilities,
   apiProjectArtifact,
+  apiProjectDeletion,
   apiProjectRepositories,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
@@ -29,6 +30,13 @@ import { sessionPlacementPolledMs } from "./sessionRunners.ts";
 export function projectAbilitiesQuery(partition: PartitionIdentity) {
   return consolePartitionQuery(partition, "abilities", (ports) =>
     apiProjectAbilities(ports, partition),
+  );
+}
+
+/** What holds the project from deletion, absent to a reader who may not delete it. */
+export function projectDeletionQuery(partition: PartitionIdentity) {
+  return consolePartitionQuery(partition, "deletion", (ports) =>
+    apiProjectDeletion(ports, partition),
   );
 }
 

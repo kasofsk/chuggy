@@ -359,6 +359,30 @@ function workerPoolCeilingRead(kept: string | null): number | undefined {
   return kept === null ? undefined : Number(kept);
 }
 
+/** What a chat host's newest poll named, on its row under its current registration, written only where it differs from what is kept. */
+async function postgresChatHostNamed(
+  pool: pg.Pool,
+  identity: ChatHostIdentity,
+  kept: {
+    readonly named: string | null;
+    readonly version: string | null;
+    readonly credentialsNamed: string | null;
+    readonly hosted: string[] | null;
+  },
+): Promise<void> {
+  const { named, version, credentialsNamed, hosted } = kept;
+  await pool.query(sql`UPDATE chat_host h
+    SET runner_package=${named},runner_version=${version},
+        credentials_named=${credentialsNamed}::jsonb,
+        session_capabilities=${hosted}::text[]
+    WHERE h.tenant=${identity.tenant} AND h.owner=${identity.owner}
+      AND h.principal=${identity.principal}
+      AND (h.runner_package,h.runner_version,h.credentials_named,
+           h.session_capabilities)
+        IS DISTINCT FROM (${named}::text,${version}::text,
+          ${credentialsNamed}::jsonb,${hosted}::text[])`);
+}
+
 /**
  * The runner, capabilities and memory ceiling each caller's newest poll named,
  * whether a personal runner's advertises its agents, and the credentials it
@@ -366,7 +390,8 @@ function workerPoolCeilingRead(kept: string | null): number | undefined {
  * registration, written as one statement and only where it differs from what
  * is kept, so a poll that names what it named before writes nothing;
  * capabilities or a ceiling named as none keep what is recorded, and
- * credentials named as none clear what is.
+ * credentials, or a chat host's session capabilities, named as none clear what
+ * is.
  */
 export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
   return {
@@ -377,6 +402,7 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
       memoryCeilingMib,
       agentsAdvertised = false,
       credentials = {},
+      sessionCapabilities,
     ) => {
       const named = runner?.package ?? null;
       const version = runner?.version ?? null;
@@ -420,14 +446,15 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
                   ${agentsAdvertised}::boolean,${credentialsNamed}::jsonb)`);
           return;
         case "ChatHost":
-          await pool.query(sql`UPDATE chat_host h
-            SET runner_package=${named},runner_version=${version},
-                credentials_named=${credentialsNamed}::jsonb
-            WHERE h.tenant=${identity.tenant} AND h.owner=${identity.owner}
-              AND h.principal=${identity.principal}
-              AND (h.runner_package,h.runner_version,h.credentials_named)
-                IS DISTINCT FROM (${named}::text,${version}::text,
-                  ${credentialsNamed}::jsonb)`);
+          await postgresChatHostNamed(pool, identity, {
+            named,
+            version,
+            credentialsNamed,
+            hosted:
+              sessionCapabilities === undefined
+                ? null
+                : [...sessionCapabilities],
+          });
           return;
       }
     },

@@ -41,6 +41,7 @@ import {
   forgeApps,
   runEndedEvidences,
   runUsageWindows,
+  workerHeldCredentialAbsences,
 } from "./rosters.ts";
 import {
   artifactFailures,
@@ -50,6 +51,7 @@ import {
   isHeldCredentialValueVariable,
   isHeldCredentialVariable,
 } from "./workerEnvironment.ts";
+import type { WorkerContractFeature } from "./workerContract.ts";
 import { workerTaskAnswerSchema } from "./workerTask.ts";
 
 /** One route as the plane registers it, a trailing `*` standing for the rest of the path. */
@@ -75,6 +77,31 @@ export const workerPlaneRoutes = {
   heldCredentials: { method: "POST", path: "/v1/credentials/held" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type WorkerPlaneRouteName = keyof typeof workerPlaneRoutes;
+
+/**
+ * The feature each job plane route belongs to, so a client is held only to the
+ * routes of the features it lists.
+ * A new route names the feature it belongs to, and `null` is for a route every
+ * client of the plane must speak.
+ */
+export const workerPlaneRouteFeatures: Readonly<
+  Record<WorkerPlaneRouteName, WorkerContractFeature | null>
+> = {
+  input: null,
+  inputArtifact: null,
+  task: null,
+  heartbeat: null,
+  artifact: null,
+  report: null,
+  runConfiguration: null,
+  runTranscript: null,
+  runTurns: null,
+  runTotals: null,
+  runContext: null,
+  runEnded: null,
+  credential: null,
+  heldCredentials: null,
+};
 
 /**
  * The media type an artifact, a configuration snapshot, a transcript batch
@@ -117,6 +144,7 @@ export {
   runContextCategoryKinds,
   runEndedEvidences,
   runUsageWindows,
+  workerHeldCredentialAbsences,
 } from "./rosters.ts";
 export type { WorkerPlaneAnswer } from "./planeAnswers.ts";
 
@@ -171,7 +199,7 @@ export {
   workerRunCredentialSchema,
 } from "./http.ts";
 
-/** A run's totals as a worker offers them, the same figures a reader is answered with, the usage of the account it spent, and the credential that usage was read of. */
+/** A run's totals as a worker offers them, the same figures and credential a reader is answered with, and the usage of the account it spent, read of that credential. */
 export const workerRunTotalsSchema = z.strictObject({
   ...runTotalsSchema.shape,
   models: z
@@ -186,12 +214,6 @@ export const workerRunLimitSchema = z.strictObject({
   window: z.enum(runUsageWindows).exactOptional(),
   resetsAt: runUsageInstantSchema.exactOptional(),
   credential: workerRunCredentialSchema.exactOptional(),
-});
-
-/** The label a run ended itself under, and the limit that stopped it, which is kept only beside `RunRateLimited`. */
-export const workerRunEndedSchema = z.strictObject({
-  evidence: z.enum(runEndedEvidences),
-  limit: workerRunLimitSchema.exactOptional(),
 });
 
 /** A refusal the pod stops on. */
@@ -435,20 +457,6 @@ export type WorkerHeldCredentialBundle = z.infer<
   typeof workerHeldCredentialBundleSchema
 >;
 
-/**
- * Why a credential asked for was not served: the attempt's grant does not
- * allow its name, nothing here holds or issues it, it is not enabled for the
- * attempt's project or repository, the outside system that issues it refused,
- * or the worker's release is too old to read the shape it is served in.
- */
-export const workerHeldCredentialAbsences = [
-  "NotGranted",
-  "NotHeld",
-  "NotEnabled",
-  "IssuerRefused",
-  "WorkerTooOld",
-] as const;
-
 /** One credential asked for and not served, and why. */
 export const workerHeldCredentialAbsentSchema = z.object({
   credential: identitySchema,
@@ -457,6 +465,25 @@ export const workerHeldCredentialAbsentSchema = z.object({
 export type WorkerHeldCredentialAbsent = z.infer<
   typeof workerHeldCredentialAbsentSchema
 >;
+
+/**
+ * The label a run ended itself under; the limit that stopped it, which is kept
+ * only beside `RunRateLimited`; and the credential its job lists that was not
+ * delivered and why, named with `RunCredentialAbsent` and with no other label.
+ */
+export const workerRunEndedSchema = z
+  .strictObject({
+    evidence: z.enum(runEndedEvidences),
+    limit: workerRunLimitSchema.exactOptional(),
+    absent: z
+      .strictObject(workerHeldCredentialAbsentSchema.shape)
+      .exactOptional(),
+  })
+  .refine(
+    (ended) =>
+      (ended.evidence === "RunCredentialAbsent") ===
+      (ended.absent !== undefined),
+  );
 
 /** Each credential asked for that the plane serves, and those it names absent; a plane before `workerContractCredentialBundles` names none absent. */
 export const workerHeldCredentialsAnswerSchema = z.object({

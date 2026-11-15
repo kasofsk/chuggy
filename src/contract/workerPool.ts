@@ -20,6 +20,8 @@
  * machine, where that job's own shells are told the project already, by the
  * core's `workerJobVariables`, and where those credentials are kept. A
  * project's pool is told neither, since its registration names its project.
+ * A member's chat host is told the thread each session it is handed is an
+ * attempt of, and the threads it last ran that have since closed.
  * A runner, a pool or a chat host that names the credentials it holds is told
  * which of them are paused for the member whose account its work spends.
  */
@@ -32,7 +34,12 @@ import {
   workerRunCredentialDefaults,
   workerRunCredentialSchema,
 } from "./http.ts";
-import { sessionContainerEnds } from "./rosters.ts";
+import {
+  sessionCapabilities,
+  sessionContainerEnds,
+  type SessionCapability,
+} from "./rosters.ts";
+import type { WorkerContractFeature } from "./workerContract.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
 export const workerPoolTokenCharsMax = 63;
@@ -118,6 +125,12 @@ export const workerPoolAssignmentSchema = z.strictObject({
   bearer: z.string().min(1).max(workerPoolIdentityCharsMax),
 });
 
+/** A thread as a session's facts name it: its project and its session. */
+export const workerPoolThreadClosedSchema = z.strictObject({
+  project: workerPoolProjectSchema,
+  session: z.string().min(1).max(workerPoolIdentityCharsMax),
+});
+
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
  * its image always named, because a session runs its site's session image and
@@ -127,7 +140,15 @@ export const workerPoolAssignmentSchema = z.strictObject({
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
   .omit({ runtime: true, project: true })
-  .extend({ image: workerPoolImageSchema });
+  .extend({
+    image: workerPoolImageSchema,
+    /**
+     * The thread the session is an attempt of, so a chat host may keep what
+     * it keeps for that thread across its attempts. It is named only to a chat
+     * host whose poll's release reads it, and absent for an inquiry or a lead.
+     */
+    thread: workerPoolThreadClosedSchema.optional(),
+  });
 
 /**
  * Both kinds of no are final for the assignment: a refusal becomes the attempt's
@@ -188,6 +209,7 @@ export const workerPoolPollQuery = {
   wanted: "wanted",
   wantedSessions: "wantedSessions",
   idleSecs: "idleSecs",
+  sessionCapabilities: "sessionCapabilities",
 } as const;
 
 /** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
@@ -196,6 +218,22 @@ const workerPoolQueryCountSchema = z
   .regex(/^(?:0|[1-9][0-9]*)$/u)
   .transform(Number)
   .pipe(z.number().int().nonnegative().safe());
+
+/** A set of session capabilities, each named once. */
+export const workerPoolSessionCapabilitiesSchema = z
+  .array(z.enum(sessionCapabilities))
+  .max(sessionCapabilities.length)
+  .refine((named) => new Set(named).size === named.length);
+
+/** The separator a set of session capabilities is written with in one query value, which no capability's name holds. */
+const workerPoolSessionCapabilitiesSeparator = ",";
+
+/** A set of session capabilities as the poll's one value carries it, the empty set as the empty value. */
+export function workerPoolPollSessionCapabilitiesText(
+  capabilities: readonly SessionCapability[],
+): string {
+  return capabilities.join(workerPoolSessionCapabilitiesSeparator);
+}
 
 /** The longest idle bound a chat host may name: the longest delay a timer holds, in whole seconds. */
 export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
@@ -207,7 +245,10 @@ export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
  * `wantedSessions`, how many more sessions, which is none where it is absent,
  * and `idleSecs`, how long a session a member's chat host claims may sit idle,
  * which is without limit where it is absent, is refused above
- * `workerPoolPollIdleSecsMax`, and is read from no other caller.
+ * `workerPoolPollIdleSecsMax`, and is read from no other caller, and
+ * `sessionCapabilities`, the capabilities a chat host's threads may hold, as
+ * `workerPoolPollSessionCapabilitiesText` writes them once, which leaves a
+ * roster whole where it is absent and is read from no other caller.
  * The held list's length is the plane's own setting rather than a figure
  * written here, and a list longer than that is refused whole rather than cut,
  * because a cut list reads as a pool that let go of work it is still running;
@@ -229,6 +270,13 @@ export function workerPoolPollQuerySchema(heldMax: number) {
     [workerPoolPollQuery.wantedSessions]: workerPoolQueryCountSchema.default(0),
     [workerPoolPollQuery.idleSecs]: workerPoolQueryCountSchema
       .pipe(z.number().positive().max(workerPoolPollIdleSecsMax))
+      .optional(),
+    [workerPoolPollQuery.sessionCapabilities]: z
+      .string()
+      .transform((text) =>
+        text === "" ? [] : text.split(workerPoolSessionCapabilitiesSeparator),
+      )
+      .pipe(workerPoolSessionCapabilitiesSchema)
       .optional(),
   });
 }
@@ -459,12 +507,15 @@ export const workerPoolCredentialOutcomeSchema = z.discriminatedUnion(
   ],
 );
 
-/** A credential a poll named that is paused for the runner's owner, and when that pause ends, in whole Unix seconds. */
+/** A credential a poll named that is paused for the runner's owner, and when that pause ends, in whole Unix seconds; one its owner turned off ends past every usage window and moves again at each poll, so it never comes. */
 export const workerPoolCredentialPauseSchema = z.strictObject({
   agent: z.enum(workerRunnerCredentialAgents),
   credential: workerRunCredentialSchema,
   pausedUntil: runUsageInstantSchema,
 });
+
+/** The most threads one answer names as closed. */
+export const workerPoolThreadsClosedMax = 64;
 
 /** Whether each credential outcome names an assignment the same answer stops, and no assignment twice. */
 function workerPoolReconciliationOutcomesStopped(answer: {
@@ -541,6 +592,18 @@ export const workerPoolReconciliationSchema = z
           workerRunnerCredentialsPerAgentMax,
       )
       .optional(),
+    /**
+     * The threads whose last attempt this chat host ran and that have since
+     * closed, the most recently closed first and in every answer while among
+     * the most recent, so the host may remove what it keeps for each. It is
+     * named only to a chat host whose poll's release reads it, and absent is
+     * the default: none has closed.
+     */
+    threadsClosed: z
+      .array(workerPoolThreadClosedSchema)
+      .min(1)
+      .max(workerPoolThreadsClosedMax)
+      .optional(),
   })
   .refine(workerPoolReconciliationOutcomesStopped);
 
@@ -553,6 +616,27 @@ export const workerPoolReconciliationSchema = z
  * `workerContractRunnerReport` or a later version.
  */
 export const workerRunnerReportRoute = "/v1/runner-report";
+
+/**
+ * The feature each pool plane route belongs to, keyed by the route as a server
+ * registers it, so a client is held only to the routes of the features it
+ * lists. A new route names the feature it belongs to, and `null` is for a
+ * route every client of the plane must speak.
+ */
+export const workerPoolRouteFeatures: Readonly<
+  Record<
+    | typeof workerPoolPollRoute
+    | typeof workerRunnerReportRoute
+    | (typeof workerPoolSettlementRoutes)[keyof typeof workerPoolSettlementRoutes],
+    WorkerContractFeature | null
+  >
+> = {
+  [workerPoolPollRoute]: null,
+  [workerRunnerReportRoute]: null,
+  [workerPoolSettlementRoutes.Accepted]: null,
+  [workerPoolSettlementRoutes.Refused]: null,
+  [workerPoolSettlementRoutes.Unavailable]: null,
+};
 
 /** The longest machine name a report carries. */
 export const workerRunnerHostCharsMax = 253;
@@ -709,6 +793,9 @@ export type WorkerPoolCredentialOutcome = z.infer<
 >;
 export type WorkerPoolCredentialPause = z.infer<
   typeof workerPoolCredentialPauseSchema
+>;
+export type WorkerPoolThreadClosed = z.infer<
+  typeof workerPoolThreadClosedSchema
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerCredentials = z.infer<

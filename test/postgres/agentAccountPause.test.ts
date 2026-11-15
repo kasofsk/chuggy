@@ -21,6 +21,7 @@ import {
   poolPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { agentAccountRunnerPolledSecsMaxAt170 } from "../../src/adapters/postgres/schema/migrations/170-agent-account-pause-live-credentials.ts";
+import { agentAccountCredentialOffSecsAt191 } from "../../src/adapters/postgres/schema/migrations/191-agent-account-credential-off.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import {
@@ -543,5 +544,123 @@ test("a runner that has stopped polling past its bound no longer counts the cred
       { untilSecs: 900, reasons: ["seven_day"], admittedByPress: false },
       kind,
     );
+  }
+});
+
+const offPaused: Paused = {
+  untilSecs: agentAccountCredentialOffSecsAt191,
+  reasons: ["off"],
+  admittedByPress: false,
+};
+
+test("where every credential a live runner names is off, the agent is paused by off alone, at the off end", async () => {
+  for (const kind of runnerKinds)
+    assert.deepEqual(
+      await pausedFor({
+        readings: [weekly("work", 0.95, 900)],
+        off: ["work", "home"],
+        runners: [runner(["work"], kind), runner(["home"])],
+      }),
+      offPaused,
+      kind,
+    );
+});
+
+test("an off credential beside a free one a live runner names leaves the agent free", async () => {
+  assert.deepEqual(
+    await pausedFor({
+      off: ["work"],
+      runners: [runner(["work", "home"])],
+    }),
+    unpaused,
+  );
+});
+
+test("beside an off credential, the pause ends with the on one's and a press admits past its limit", async () => {
+  const state: AgentAccountHarnessState = {
+    limits: [{ observedSecs: -60, resetsSecs: 1200, credential: "home" }],
+    off: ["work"],
+    press: { pressedSecs: -30 },
+    runners: [runner(["work", "home"])],
+  };
+  assert.deepEqual(await pausedFor(state), {
+    untilSecs: 1200,
+    reasons: ["limit", "off"],
+    admittedByPress: true,
+  });
+  assert.deepEqual(
+    await pausedFor({ ...state, off: ["work", "home"] }),
+    offPaused,
+    "a press admits nothing where every credential is off",
+  );
+});
+
+test("where no live runner names a credential, an off one pauses by its own limit alone and is named, and a bare off one pauses nothing", async () => {
+  const principal = `https://issuer.invalid#member-${randomUUID()}`;
+  const transaction = await harness.begin();
+  try {
+    await agentAccountHarnessPlanted(transaction, principal, "Claude", {
+      limits: [{ observedSecs: -60, resetsSecs: 1200, credential: "work" }],
+      off: ["work", "spare"],
+      runners: [runner([])],
+    });
+    const holding = `SELECT extract(epoch FROM paused_until-now())::int AS until_secs,
+                            reasons,admitted_by_press,credentials
+                       FROM agent_account_pause_holding($1,'Claude')`;
+    assert.deepEqual(await transaction.query(holding, [principal]), [
+      {
+        until_secs: 1200,
+        reasons: ["limit"],
+        admitted_by_press: false,
+        credentials: ["work"],
+      },
+    ]);
+    await transaction.query(
+      "DELETE FROM agent_account_limit WHERE principal=$1",
+      [principal],
+    );
+    assert.deepEqual(await transaction.query(holding, [principal]), [
+      {
+        until_secs: null,
+        reasons: [],
+        admitted_by_press: false,
+        credentials: [],
+      },
+    ]);
+  } finally {
+    await transaction.rollback();
+  }
+});
+
+test("an off credential's own pause answers off alone, its readings and its limit set aside", async () => {
+  const principal = `https://issuer.invalid#member-${randomUUID()}`;
+  const transaction = await harness.begin();
+  try {
+    await agentAccountHarnessPlanted(transaction, principal, "Claude", {
+      readings: [weekly("work", 0.95, 900), weekly("home", 0.95, 600)],
+      off: ["work", "spare"],
+    });
+    assert.deepEqual(
+      await transaction.query(
+        `SELECT credential,extract(epoch FROM paused_until-now())::int AS until_secs,reasons
+           FROM agent_account_credential_pause($1,'Claude')`,
+        [principal],
+      ),
+      [
+        { credential: "home", until_secs: 600, reasons: ["seven_day"] },
+        {
+          credential: "spare",
+          until_secs: agentAccountCredentialOffSecsAt191,
+          reasons: ["off"],
+        },
+        {
+          credential: "work",
+          until_secs: agentAccountCredentialOffSecsAt191,
+          reasons: ["off"],
+        },
+      ],
+    );
+  } finally {
+    await transaction.rollback();
   }
 });

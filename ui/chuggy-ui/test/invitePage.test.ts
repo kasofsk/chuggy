@@ -1,9 +1,7 @@
 /**
  * The page an invite link is opened at, decided with no renderer: what counts
  * as a token, the cookie that carries one across a sign-in, the card for every
- * combination of what the page is opened with, what a redemption came to, and
- * for a link that makes a workspace, which name may be sent and what sending
- * one came to.
+ * combination of what the page is opened with, and what a redemption came to.
  */
 
 import { expect, test } from "vitest";
@@ -12,9 +10,7 @@ import {
   accessInviteLinkLimitReachedCode,
   accessInviteLinkTokenCharsMax,
   accessTenantTakenCode,
-  accessWorkspaceLinkNameWantedCode,
 } from "../../../src/contract/accessPlane.ts";
-import { projectNameCharsMax } from "../../../src/contract/requests.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { AccessInviteLinkRedeemed } from "../../../src/contract/accessPlane.ts";
 import {
@@ -24,25 +20,20 @@ import {
   inviteCookieToken,
   inviteCookieWritten,
   inviteFlowCarried,
-  inviteNaming,
   invitePageDecided,
   inviteRedemption,
   inviteTokenRead,
-  inviteWorkspaceSendable,
 } from "../app/core/invitePage.ts";
 import type {
   InviteArrival,
-  InviteNaming,
   InviteRedemption,
 } from "../app/core/invitePage.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 
-/** What a send came to, its line or its fault in the base language's words. */
-function worded(came: InviteRedemption | InviteNaming): object {
+/** What a send came to, its line in the base language's words. */
+function worded(came: InviteRedemption): object {
   if (came.outcome === "Failed")
     return { ...came, line: copyTextEn(came.line) };
-  if (came.outcome === "Refused")
-    return { ...came, fault: copyTextEn(came.fault) };
   return came;
 }
 
@@ -200,7 +191,7 @@ test("a link taken sends its reader to the first project it granted, and clears 
   });
 });
 
-test("a link taken that granted no project sends its reader to the landing page", () => {
+test("a link taken that granted no project, as a signup link's new workspace holds none, sends its reader to the welcome page", () => {
   expect(inviteRedemption(redeemed([]))).toStrictEqual({
     outcome: "Redeemed",
     path: "/",
@@ -239,13 +230,7 @@ function conflict(code: string): ApiResult<AccessInviteLinkRedeemed> {
   return { outcome: "Conflict", code, body: {} };
 }
 
-test("a link that asks for its workspace's name is no failure, and keeps the cookie", () => {
-  expect(
-    inviteRedemption(conflict(accessWorkspaceLinkNameWantedCode)),
-  ).toStrictEqual({ outcome: "NameWanted", cookieCleared: false });
-});
-
-test("any other conflict answering the send without a name is a failure with its own line", () => {
+test("a conflict answering the send is a failure with its own line, and keeps the cookie", () => {
   expect(
     worded(inviteRedemption(conflict(accessInviteLinkLimitReachedCode))),
   ).toStrictEqual({
@@ -253,77 +238,8 @@ test("any other conflict answering the send without a name is a failure with its
     line: "Link limit reached",
     cookieCleared: false,
   });
-});
-
-test("Create may send a name a new workspace may take, and no other", () => {
-  expect(inviteWorkspaceSendable("northwind")).toBe(true);
-  expect(inviteWorkspaceSendable("n".repeat(projectNameCharsMax))).toBe(true);
-  expect(inviteWorkspaceSendable("")).toBe(false);
-  expect(inviteWorkspaceSendable("North Wind")).toBe(false);
-  expect(inviteWorkspaceSendable("projects")).toBe(false);
-  expect(inviteWorkspaceSendable("n".repeat(projectNameCharsMax + 1))).toBe(
-    false,
-  );
-});
-
-function named(tenant: string): ApiResult<AccessInviteLinkRedeemed> {
-  return { outcome: "Ok", value: { tenant, role: "Admin", projects: [] } };
-}
-
-test("a workspace made sends its reader to where its first project is made, the workspace in the address, and clears the cookie", () => {
-  expect(inviteNaming(named("northwind"))).toStrictEqual({
-    outcome: "Redeemed",
-    path: "/projects/new?workspace=northwind",
-    cookieCleared: true,
-  });
-});
-
-test("a name something holds is the field's to say, the link still open and the cookie kept", () => {
-  expect(worded(inviteNaming(conflict(accessTenantTakenCode)))).toStrictEqual({
-    outcome: "Refused",
-    fault: "Name taken",
-    cookieCleared: false,
-  });
-});
-
-test("a name the plane will not read is the field's to say, and keeps the cookie", () => {
-  expect(
-    worded(
-      inviteNaming({
-        outcome: "Rejected",
-        code: "InvalidRequest",
-        status: 400,
-        body: {},
-      }),
-    ),
-  ).toStrictEqual({
-    outcome: "Refused",
-    fault: "Name not valid",
-    cookieCleared: false,
-  });
-});
-
-test("a link the plane no longer knows when its name is sent is not valid, and clears the cookie", () => {
-  expect(inviteNaming({ outcome: "Absent" })).toStrictEqual({
-    outcome: "NotValid",
-    cookieCleared: true,
-  });
-});
-
-test("any other answer to a name is a failure with its own line, and keeps the cookie", () => {
-  expect(
-    worded(
-      inviteNaming({ outcome: "Fault", code: "InternalError", status: 500 }),
-    ),
-  ).toStrictEqual({ outcome: "Failed", line: "Failed", cookieCleared: false });
-  expect(
-    inviteNaming(conflict(accessWorkspaceLinkNameWantedCode)),
-  ).toMatchObject({ outcome: "Failed", cookieCleared: false });
-  expect(
-    worded(inviteNaming({ outcome: "Unreachable", reason: "no answer" })),
-  ).toStrictEqual({
+  expect(inviteRedemption(conflict(accessTenantTakenCode))).toMatchObject({
     outcome: "Failed",
-    line: "Unreachable",
     cookieCleared: false,
   });
 });

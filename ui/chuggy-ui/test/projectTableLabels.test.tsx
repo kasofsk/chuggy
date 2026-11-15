@@ -283,6 +283,36 @@ test("a row names the member who filed it by subject where no email is read, the
   expect(unfiled?.querySelector(".identity")).toBeNull();
 });
 
+/** The members each place a row draws its creator holds, in order. */
+function membersDrawn(card: Element | null): readonly (readonly string[])[] {
+  return creatorPlaces.map((place) =>
+    [...(card?.querySelectorAll(`${place} .identity`) ?? [])].map(
+      (drawn) => drawn.textContent ?? "",
+    ),
+  );
+}
+
+test("a row names its owner after its creator in both places where they differ, and only its creator where they do not", async () => {
+  await drawTableWith(
+    [
+      { ...ticket, owner: "23:https://issuer.example/bob" },
+      { ...escalated, creator, owner: creator },
+    ],
+    [execution],
+  );
+  const taken = screen.getByText(title).closest("li");
+  expect(membersDrawn(taken)).toEqual([
+    ["alice", "bob"],
+    ["alice", "bob"],
+  ]);
+  expect(
+    taken?.querySelector(".ticket-list-creator .visually-hidden")?.textContent,
+  ).toContain("Owner");
+  expect(
+    membersDrawn(screen.getByText("Escalated ticket").closest("li")),
+  ).toEqual([["alice"], ["alice"]]);
+});
+
 const wideCondition = "(min-width: 53em)";
 const narrowCondition = "(max-width: 53em)";
 

@@ -51,23 +51,28 @@ function listedWith(listed: Partial<typeof workspacesListed>): () => Response {
   return () => answer({ ...workspacesListed, ...listed });
 }
 
-test("a workspace is a row, in the order answered: its name, its admins a line each, and whom they may invite", async () => {
+test("a workspace is a row, in the order answered: its display name, its admins a line each, and whom they may invite", async () => {
   await drawWorkspaces();
   expect(
     screen.getAllByRole("columnheader").map((column) => column.textContent),
   ).toStrictEqual(["Workspace", "Admins", "Invites"]);
   expect(workspacesDrawn()).toStrictEqual([
     [
-      "globex-co",
+      "Globex",
       "bob@example.com bob-k",
       "s-robot No account",
       "+2 more",
       "Existing accounts",
     ],
-    ["acme-co", "ada@example.com ada-l You", "s-dan", "New people"],
-    ["umbrella-co", "3 unnamed", "New people"],
-    ["initech-co", "Existing accounts"],
+    ["Acme", "ada@example.com ada-l You", "s-dan", "New people"],
+    ["Umbrella", "3 unnamed", "New people"],
+    ["Initech", "Existing accounts"],
   ]);
+  expect(
+    screen
+      .getAllByRole("rowheader")
+      .map((header) => header.querySelector("[title]")?.getAttribute("title")),
+  ).toStrictEqual(["globex-co", "acme-co", "umbrella-co", "initech-co"]);
   styleless();
 });
 
@@ -76,7 +81,7 @@ test("each workspace is a card titled by its name, its admins and whom they may 
   expect(
     tableCards(screen.getByRole("table", { name: "Workspaces" })),
   ).toStrictEqual(
-    ["globex-co", "acme-co", "umbrella-co", "initech-co"].map((title) => ({
+    ["Globex", "Acme", "Umbrella", "Initech"].map((title) => ({
       title,
       labels: ["Admins", "Invites"],
       actionsLast: false,
@@ -100,20 +105,20 @@ test("a workspace whose admins may make no account says so quietly, and one whos
       ".tabular-value > span",
     )?.classList ?? []),
   ];
-  expect(invites("globex-co")).toStrictEqual(["text-ink-3"]);
-  expect(invites("acme-co")).toStrictEqual([]);
+  expect(invites("Globex")).toStrictEqual(["text-ink-3"]);
+  expect(invites("Acme")).toStrictEqual([]);
 });
 
 test("a workspace with no admin draws a dash its card leaves out, and no other row does", async () => {
   await drawWorkspaces();
-  const none = within(workspaceRow("initech-co")).getByText("None");
+  const none = within(workspaceRow("Initech")).getByText("None");
   expect(none.closest("td")?.getAttribute("data-empty")).toBe("");
   expect(screen.getAllByText("None")).toStrictEqual([none]);
   expect(
     [...document.querySelectorAll("td[data-empty]")].map(
       (cell) => cell.closest("tr")?.firstElementChild?.textContent,
     ),
-  ).toStrictEqual(["initech-co"]);
+  ).toStrictEqual(["Initech"]);
 });
 
 test("the workspaces are counted over their table, beside the one action, with nothing said", async () => {

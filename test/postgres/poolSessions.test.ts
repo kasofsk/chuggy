@@ -33,7 +33,10 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSessionPlacement } from "../../src/adapters/postgres/sessionPlacement.ts";
-import { postgresSessionBearerAuthority } from "../../src/adapters/postgres/sessionPlane.ts";
+import {
+  postgresSessionBearerAuthority,
+  postgresSessionPlane,
+} from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresThreads } from "../../src/adapters/postgres/thread.ts";
 import { postgresWorkerTasks } from "../../src/adapters/postgres/workerPlane.ts";
 import {
@@ -41,10 +44,7 @@ import {
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
-import {
-  postgresSessionLaunchPrecondition,
-  postgresWorkerPoolSessions,
-} from "../../src/adapters/postgres/workerPoolSessions.ts";
+import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import {
   workerContractHeader,
@@ -61,6 +61,7 @@ import {
   asSessionTurnId,
   memberScopePartition,
   type SessionId,
+  type SessionCapability,
   type SessionKind,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
@@ -68,10 +69,7 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import {
-  memberAuthority,
-  type ProjectAccess,
-} from "../../src/interpreter/projectAccess.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   type Partition,
@@ -99,7 +97,6 @@ import {
 import { asThreadOpenKey } from "../../src/interpreter/threadRead.ts";
 import { sessionTaskInvocation } from "../../src/interpreter/workerTask.ts";
 import type {
-  SessionLaunchFacts,
   WorkerPoolSessionCandidate,
   WorkerPoolSessionClaimant,
   WorkerPoolSessionOpened,
@@ -123,6 +120,9 @@ import {
 import {
   sessionRigAttempt,
   sessionRigBoundless,
+  sessionRigLaunch,
+  sessionRigLaunchMet,
+  sessionRigReadingEverything,
   sessionRigOpen,
   sessionRigProject,
   sessionRigQueuedFor,
@@ -135,7 +135,7 @@ import {
   workerPoolReportAgeMsMax,
   workerPoolReports,
 } from "../../src/interpreter/workerPoolReports.ts";
-import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await sessionRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -178,43 +178,10 @@ after(async () => {
   await rig.close();
 });
 
-/** What every session here is launched with, its backoff short of any dwell. */
-const launch: SessionLaunchFacts = {
-  image: "registry.invalid/session:1",
-  authority: {
-    tools: [],
-    credentials: ["claude-code"],
-    network: true,
-    filesystem: "ReadWorkspace",
-    mayCompleteTask: false,
-  },
-  mirrors: {},
-  bounds: {
-    mailboxPollMs: 1,
-    idleMs: 2,
-    resultDrainMs: 3,
-    loadTimeoutMs: 4,
-    turnsMax: 5,
-    budgetUsd: 6,
-  },
-  model: "session-model",
-  deadlineSecs: 900,
-  placementBackoffSecs: 60,
-};
+const launch = sessionRigLaunch;
+await sessionRigLaunchMet(schedulerPool);
 
-assert.deepEqual(
-  await postgresSessionLaunchPrecondition(schedulerPool, launch).check(
-    new AbortController().signal,
-  ),
-  { met: "Met" },
-);
-
-/** An authority answering every read, so a case here turns on the rows alone. */
-const readingEverything: ProjectAccess = {
-  authorize: (caller) => Promise.resolve(memberAuthority(caller)),
-  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
-  authorizeSite: projectAccessSiteRefused,
-};
+const readingEverything = sessionRigReadingEverything;
 
 const store = postgresWorkerPoolSessions(poolPlanePool);
 const ports: WorkerPoolPorts = {
@@ -2026,13 +1993,14 @@ type SessionNamedCase = readonly [
 
 /**
  * Whether a session of `kind`, its claimant's member's own, is taken once its
- * claimant has named `named` of Claude and `paused` of that member's Claude
- * credentials are each over a threshold: both the waiting read and the
- * opening one are asked, and refused where they disagree.
+ * claimant has named `named` of Claude, `paused` of that member's Claude
+ * credentials are each over a threshold and `off` are turned off: both the
+ * waiting read and the opening one are asked, and refused where they disagree.
  */
 async function sessionNamedTaken(
   kind: "Lead" | "Thread",
   [why, named, paused, pausesThreads]: SessionNamedCase,
+  off: readonly string[] = [],
 ): Promise<boolean> {
   const label = `named-${kind}-${randomUUID()}`;
   const partition = await sessionRigProject(rig, label);
@@ -2058,6 +2026,7 @@ async function sessionNamedTaken(
       Object.fromEntries(paused.map((credential) => [credential, 3600])),
     ),
     setting: { fiveHourPercent: 80, sevenDayPercent: 90, pausesThreads },
+    off,
   });
   const read = (await awaitingOf(claimant)).has(session);
   assert.equal(
@@ -2105,6 +2074,35 @@ test("a chat host takes its owner's thread while any Claude credential it named 
     ],
   ] as const satisfies readonly SessionNamedCase[])
     assert.equal(await sessionNamedTaken("Thread", named), named[4], named[0]);
+});
+
+test("a chat host takes no thread of its owner while every Claude credential it named is off, whatever their setting, and takes it once one is on", async () => {
+  for (const pausesThreads of [true, false]) {
+    const all = [
+      `all named off, threads pausing ${String(pausesThreads)}`,
+      ["work", "home"],
+      [],
+      pausesThreads,
+      false,
+    ] as const satisfies SessionNamedCase;
+    assert.equal(
+      await sessionNamedTaken("Thread", all, ["work", "home"]),
+      false,
+      all[0],
+    );
+    const one = [
+      `one named off, threads pausing ${String(pausesThreads)}`,
+      ["work", "home"],
+      [],
+      pausesThreads,
+      true,
+    ] as const satisfies SessionNamedCase;
+    assert.equal(
+      await sessionNamedTaken("Thread", one, ["work"]),
+      true,
+      one[0],
+    );
+  }
 });
 
 test("an attempt a pool claimed under an epoch since restored away is no longer held, renewed or pulled for", async () => {
@@ -2164,7 +2162,12 @@ async function polledOffering(
   const answered = await workerPoolPoll(
     through,
     caller,
-    { held: [], wanted: 0, wantedSessions: 4, contract },
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 4,
+      contract: workerContractPeerNaming(contract),
+    },
     settings,
   );
   if (answered.polled !== "Answered")
@@ -2172,7 +2175,7 @@ async function polledOffering(
   return answered.answer.sessions;
 }
 
-test("a member's own thread is handed to their chat host alone, on a contract that runs one, with no repository, and its bearer answers its member's scope", async () => {
+test("a member's own thread is handed to their chat host alone, on a contract that runs one, with no repository, and its bearer answers its member's scope and capabilities", async () => {
   const { partition, member, pool } = await routedProject("host-own");
   const runs = await personal(partition, member);
   const host = await chatHost(partition, member);
@@ -2206,8 +2209,192 @@ test("a member's own thread is handed to their chat host alone, on a contract th
       kind: "Thread",
       principal: member,
       scope: "Member",
+      capabilities: ["MemberRead"],
     },
   );
+});
+
+/** What the API reads a thread to hold while a chat host holds it, NULL while none does. */
+async function threadHostCapabilitiesOf(
+  partition: Partition,
+  session: SessionId,
+): Promise<unknown> {
+  const found = await apiPool.query<{ held: string[] | null }>(
+    `SELECT thread_chat_host_capabilities($1,$2,$3) AS held`,
+    [partition.tenant, partition.project, session],
+  );
+  return found.rows[0]?.held;
+}
+
+/** The host's set and the capabilities an attempt's invocation names. */
+async function attemptCapabilitiesOf(
+  assignment: string,
+): Promise<readonly unknown[]> {
+  const [attempt] = await rig.harness.query(
+    `SELECT host_capabilities,invocation FROM session_attempt WHERE assignment=$1`,
+    [assignment],
+  );
+  return [
+    attempt?.["host_capabilities"],
+    documentOf(attempt?.["invocation"])["capabilities"],
+  ];
+}
+
+/** The capabilities the session plane tells the pod holding `claimed` it holds. */
+async function factsCapabilitiesOf(
+  claimed: WorkerPoolSessionAssignment,
+): Promise<readonly SessionCapability[] | undefined> {
+  const identity = await postgresSessionPlane(planePool).authenticate(
+    asSessionBearerSecret(claimed.bearer),
+  );
+  return identity?.capabilities;
+}
+
+/** Whether the session plane tells the pod holding `claimed` that its shell is handed its credential. */
+async function factsShellCredentialOf(
+  claimed: WorkerPoolSessionAssignment,
+): Promise<true | undefined> {
+  const identity = await postgresSessionPlane(planePool).authenticate(
+    asSessionBearerSecret(claimed.bearer),
+  );
+  assert.ok(identity !== undefined);
+  return identity.shellCredentialHanded;
+}
+
+/** The one session a poll of `host` naming `named` for its threads claims. */
+async function hostClaimedNaming(
+  host: PoolPlaneIdentity,
+  named: readonly SessionCapability[],
+): Promise<WorkerPoolSessionAssignment> {
+  const answered = await workerPoolPoll(
+    ports,
+    host,
+    { held: [], wanted: 0, wantedSessions: 4, sessionCapabilities: named },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`pool session suite: a poll answered ${answered.polled}`);
+  const [claimed, ...more] = answered.answer.sessions;
+  assert.deepEqual(more, []);
+  assert.ok(claimed !== undefined);
+  return claimed;
+}
+
+test("a chat host naming its threads' capabilities records them, opens its thread under its roster less what it left out, and tells its pod and confines its bearer to the same, and that its shell is handed its credential, while its inquiry keeps its roster and is told nothing of its shell", async () => {
+  const { partition, member } = await routedProject("host-capabilities");
+  const roster = ["RepositoryRead", "RunCommands", "ProjectRead"] as const;
+  const lead = await sessionRigSession(
+    rig,
+    partition,
+    "host-capabilities-lead",
+  );
+  const opened = async (label: string, kind: SessionKind) => {
+    const session = await sessionRigSession(rig, partition, label, {
+      kind,
+      principal: member,
+      capabilities: [...roster],
+      ...(kind === "Inquiry" ? { parent: lead } : {}),
+    });
+    await sessionRigTurn(rig, partition, session, label);
+    return session;
+  };
+  const owner = { tenant: partition.tenant, owner: member };
+  const thread = await opened("host-capabilities-thread", "Thread");
+  const host = await chatHost(partition, member);
+  const named = ["ProjectRead", "RepositoryRead", "LeadDecision"] as const;
+  const held = ["RepositoryRead", "ProjectRead"];
+  assert.equal(await threadHostCapabilitiesOf(partition, thread), null);
+  const claimed = await hostClaimedNaming(host, named);
+  assert.equal(await sessionOf(claimed), thread);
+  assert.deepEqual(await attemptCapabilitiesOf(claimed.assignment), [
+    named,
+    held,
+  ]);
+  assert.deepEqual(
+    (
+      await postgresSessionBearerAuthority(apiPool).authenticate(
+        asSessionBearerSecret(claimed.bearer),
+      )
+    )?.capabilities,
+    held,
+  );
+  assert.deepEqual(
+    await factsCapabilitiesOf(claimed),
+    held,
+    "the pod's facts name what its bearer is confined to",
+  );
+  assert.equal(
+    await factsShellCredentialOf(claimed),
+    true,
+    "a thread on a host naming a set is told its shell is handed its credential",
+  );
+  assert.deepEqual(await threadHostCapabilitiesOf(partition, thread), held);
+  assert.deepEqual(
+    (await chatHostRegistry.host(owner))?.sessionCapabilities,
+    named,
+  );
+
+  const inquiry = await opened("host-capabilities-inquiry", "Inquiry");
+  const [asked] = await polledOffering(host, workerContractRelease);
+  assert.ok(asked !== undefined);
+  assert.equal(await sessionOf(asked), inquiry);
+  assert.deepEqual(await attemptCapabilitiesOf(asked.assignment), [
+    null,
+    roster,
+  ]);
+  assert.deepEqual(await factsCapabilitiesOf(asked), roster);
+  assert.equal(await factsShellCredentialOf(asked), undefined);
+  assert.equal(
+    (await chatHostRegistry.host(owner))?.sessionCapabilities,
+    undefined,
+    "a poll naming no set clears the one recorded",
+  );
+});
+
+test("an attempt records a host's set only where a chat host holds it, and only capabilities a session may hold, and a thread on a host naming none is told nothing of its shell", async () => {
+  const { partition, member } = await routedProject("host-capabilities-held");
+  const session = await sessionRigSession(
+    rig,
+    partition,
+    "host-capabilities-held",
+    {
+      kind: "Thread",
+      principal: member,
+    },
+  );
+  await sessionRigTurn(rig, partition, session, "host-capabilities-held");
+  const host = await chatHost(partition, member);
+  const [claimed] = await polledOffering(host, workerContractRelease);
+  assert.ok(claimed !== undefined);
+  assert.equal(
+    await factsShellCredentialOf(claimed),
+    undefined,
+    "a thread on a host naming no set is told nothing of its shell",
+  );
+  for (const [set, holder, constraint] of [
+    [
+      ["ProjectSettings"],
+      "ChatHost",
+      "session_attempt_host_capabilities_are_known",
+    ],
+    [
+      ["ProjectRead"],
+      "Pool",
+      "session_attempt_host_capabilities_are_a_chat_hosts",
+    ],
+  ] as const)
+    await assert.rejects(
+      rig.harness.query(
+        `UPDATE session_attempt SET host_capabilities=$2::text[],holder_kind=$3
+          WHERE assignment=$1`,
+        [claimed.assignment, set, holder],
+      ),
+      (failure: unknown) =>
+        failure instanceof Error &&
+        "constraint" in failure &&
+        failure.constraint === constraint,
+      JSON.stringify([set, holder]),
+    );
 });
 
 test("a chat host is handed no member's own thread once its owner may no longer open unscoped chat, asking the tenant rather than any project", async () => {

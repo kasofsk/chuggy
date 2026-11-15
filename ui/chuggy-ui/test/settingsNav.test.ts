@@ -18,8 +18,11 @@ import {
 } from "../app/core/settingsNav.ts";
 import type {
   SettingsNavGroup,
+  SettingsNavProject,
   SettingsNavSite,
 } from "../app/core/settingsNav.ts";
+
+const atlas: SettingsNavProject = { address: "atlas", name: "Atlas Billing" };
 
 const siteNone: SettingsNavSite = { workspaces: false, permissions: false };
 
@@ -35,29 +38,30 @@ function drawn(
   ]);
 }
 
-test("in a project the project's pages lead, then the workspace's, then the reader's own, each group under its level and its name", () => {
+test("in a project the project's pages lead, then the workspace's, then the reader's own, each group under its level and its name, each by its display name", () => {
   const groups = settingsNav({
     tenant: "acme",
-    project: "atlas",
+    tenantName: "Acme Co.",
+    project: atlas,
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
     [
       "Project",
-      "atlas",
+      "Atlas Billing",
       [
         "Lead",
         "Lead session",
         "Placement",
+        "Pools",
         "Permissions",
         "Repositories",
-        "Runners",
         "Catalog",
       ],
     ],
     [
       "Workspace",
-      "acme",
+      "Acme Co.",
       ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
     ["You", undefined, ["Personal runners", "Preferences"]],
@@ -67,13 +71,14 @@ test("in a project the project's pages lead, then the workspace's, then the read
 test("outside a project the workspace's pages lead, then the reader's own", () => {
   const groups = settingsNav({
     tenant: "acme",
+    tenantName: "Acme Co.",
     project: undefined,
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
     [
       "Workspace",
-      "acme",
+      "Acme Co.",
       ["People", "GitHub accounts", "Permissions", "Usage"],
     ],
     ["You", undefined, ["Personal runners", "Preferences"]],
@@ -87,9 +92,16 @@ test.each([
 ])(
   "the site's group comes before the reader's own, is named by nothing, and holds $pages alone",
   ({ site, pages }) => {
-    for (const project of ["atlas", undefined])
+    for (const project of [atlas, undefined])
       expect(
-        drawn(settingsNav({ tenant: "acme", project, site })).slice(-2),
+        drawn(
+          settingsNav({
+            tenant: "acme",
+            tenantName: "Acme Co.",
+            project,
+            site,
+          }),
+        ).slice(-2),
       ).toStrictEqual([
         ["Site", undefined, pages],
         ["You", undefined, ["Personal runners", "Preferences"]],
@@ -98,18 +110,22 @@ test.each([
 );
 
 test("a reader drawn none of the site's pages is drawn no group for it", () => {
-  for (const project of ["atlas", undefined])
+  for (const project of [atlas, undefined])
     expect(
-      settingsNav({ tenant: "acme", project, site: siteNone }).map(
-        (group) => group.id,
-      ),
+      settingsNav({
+        tenant: "acme",
+        tenantName: "Acme Co.",
+        project,
+        site: siteNone,
+      }).map((group) => group.id),
     ).not.toContain("site");
 });
 
 test("every entry is its page's address in the frame it is drawn in, with that frame's params", () => {
   const inProject = settingsNav({
     tenant: "acme",
-    project: "atlas",
+    tenantName: "Acme Co.",
+    project: atlas,
     site: siteEvery,
   }).flatMap((group) => group.entries);
   expect(inProject.map((entry) => entry.to)).toStrictEqual(
@@ -119,6 +135,7 @@ test("every entry is its page's address in the frame it is drawn in, with that f
     expect(entry.params).toStrictEqual({ tenant: "acme", project: "atlas" });
   const outside = settingsNav({
     tenant: "acme",
+    tenantName: "Acme Co.",
     project: undefined,
     site: siteEvery,
   }).flatMap((group) => group.entries);
@@ -143,8 +160,13 @@ test.each([
 ])(
   "a section is drawn exactly where its ability is held: $shownBy",
   ({ site, shownBy }) => {
-    for (const project of ["atlas", undefined]) {
-      const ids = settingsNav({ tenant: "acme", project, site })
+    for (const project of [atlas, undefined]) {
+      const ids = settingsNav({
+        tenant: "acme",
+        tenantName: "Acme Co.",
+        project,
+        site,
+      })
         .flatMap((group) => group.entries)
         .map((entry) => entry.id);
       expect(ids).toStrictEqual(
@@ -166,9 +188,9 @@ test("the site's sections alone are shown by an ability other than membership", 
     ["lead", "Member"],
     ["lead-session", "Member"],
     ["placement", "Member"],
+    ["pools", "Member"],
     ["permissions", "Member"],
     ["repositories", "Member"],
-    ["runners", "Member"],
     ["catalog", "Member"],
     ["people", "Member"],
     ["accounts", "Member"],
@@ -191,7 +213,12 @@ test("the site's sections alone are shown by an ability other than membership", 
 });
 
 test("entries are told apart by id though two pages share a label", () => {
-  const ids = settingsNav({ tenant: "acme", project: "atlas", site: siteEvery })
+  const ids = settingsNav({
+    tenant: "acme",
+    tenantName: "Acme Co.",
+    project: atlas,
+    site: siteEvery,
+  })
     .flatMap((group) => group.entries)
     .map((entry) => entry.id);
   expect(new Set(ids).size).toBe(ids.length);
@@ -228,9 +255,10 @@ test("Workspaces is drawn to a reader who may make one, Permissions to one who a
 test("every section has a line of its own saying what is there, and its entry carries it in either frame", () => {
   const lines = settingsSections.map((section) => copyTextEn(section.summary));
   expect(new Set(lines).size).toBe(settingsSections.length);
-  for (const project of ["atlas", undefined])
+  for (const project of [atlas, undefined])
     for (const group of settingsNav({
       tenant: "acme",
+      tenantName: "Acme Co.",
       project,
       site: siteEvery,
     }))

@@ -452,6 +452,86 @@
   {
     "release": "1.90.0",
     "wire": "f6caa71e6d35016c0b5cd2a40d973fa5fe18f6546ecd3f41a0fd1084075e2761",
-    "files": "dd68c053e4e294c8eba5098ceb36f36d48a3c1f1f73b9c3221e788aeb003211f"
+    "files": "c92e176fdbe37e2d6232cbd64987249cecaddf9c1a1753f05ff025efd83f2462"
+  },
+  {
+    "release": "1.91.0",
+    "wire": "83473e3a4017fbabe211b4c8fb112c5a0410f94a2bfbf3d203f96a6943b0c8f5",
+    "files": "78808a5bd1dcc16041fc2394cae7439b4cf23964cdcbca4d1c798bdfa76bd4fe"
+  },
+  {
+    "release": "1.92.0",
+    "wire": "d6edaa08dd4a98d26d0dbcfb85edb2f6637342dab19e3b0cf0fd14773f08ffac",
+    "files": "87b451a588c427757088e531c88d3885d7ab26f3e09170696186c864f1d629a5"
+  },
+  {
+    "release": "1.93.0",
+    "wire": "4e7c93fd4b8e0a3747ba3b62ea00cb2940cb3b5cd43452f9884af92cf6e975f0",
+    "files": "acabb709066db1917a4dbddef05e2d748ad8f9c3985479f61e708440932b85b5"
+  },
+  {
+    "release": "1.94.0",
+    "wire": "d04102a666ccdabef0a5d7f9363b643d0598561173884672ab84ef3ec0cf6134",
+    "files": "b4ff316e833c16cb0a14e2b0e3d1d7a36140c681e906b5c1404c55e085cf49d0"
+  },
+  {
+    "release": "1.95.0",
+    "wire": "ec4c7ee7f9bd5aaacb49735452d03fb38be9eb98c59c1d60a9ecb92d6111eee2",
+    "files": "28b88f80abedda4428c53796bed33f382885cce9c6ca4259fd2d24ec0c9b4483"
+  },
+  {
+    "release": "1.96.0",
+    "wire": "bd527c9a09e817576cae5a8ea8164ae957c1fe2a5934286b9482c5ea65105bfe",
+    "files": "f234a6e8f59be252d65852601127f5e20342a69b72935b3ff6f44f625f9ea5de"
+  },
+  {
+    "release": "1.97.0",
+    "wire": "12ae04bf31bd149559ce4d7e0a832ebaededf6afd64f350cd6579b612824b3d0",
+    "files": "3596423c0f1ef5bf25a7c60952db46428e2db0b9d5b8950743885cb44b332354"
+  },
+  {
+    "release": "1.98.0",
+    "wire": "1c475e33e8656364020602c36ab5c79e58dfa1776289206c6a561eff4b039f7b",
+    "files": "b615f0218cbd2871b908e35a7d1846360511ad6c03427cc7bcf7525f48625929"
+  },
+  {
+    "release": "1.99.0",
+    "wire": "b84da8a5f6e90db5bdcde24b71e5234004d453523a4705e78c70893e6553a0d6",
+    "files": "2a88139da22f3966004c8596e396ce3443e867215091a7f33d3860de5f1201ab"
+  },
+  {
+    "release": "1.100.0",
+    "wire": "25f81c62b14129d6ebbd3d1fc8c55c36d5ec0b5c7c590b476b45d835220a719f",
+    "files": "9415471809eee7ba78db93ee659edd7fa982ba0e52d86617ed44355c2ec53043"
+  },
+  {
+    "release": "1.101.0",
+    "wire": "d1aafd55ff8df9019582a40843b2d9d40acd757f271ebdc700bc61251171bb00",
+    "files": "61b5f4fefc486fadcfb6d0a187e4ec9c7c1bd4666378df012108aa18d8d4d9f3"
+  },
+  {
+    "release": "1.102.0",
+    "wire": "8b759207450ca43dedac28d6748000f5668d82073435b91858693ce38235d11b",
+    "files": "454b1f403ff34408a1a9473dd5e924489d4c4b3e7d193b4fd0a96ef8e8b79440"
+  },
+  {
+    "release": "1.103.0",
+    "wire": "7ab4c4b5d220df529194ec811bdfa7615b3db457e4d1854e96e4d86612a6e547",
+    "files": "9a62f64c3b7df306fb05144848785e8a94bc7933862f1f0138bd43d4d9e564ad"
+  },
+  {
+    "release": "1.104.0",
+    "wire": "b39e8e4096172398b44963324db0db3d2886138d4516077c7056f8aae26c7c6b",
+    "files": "606ee3909788bd961a1150a5d7f4f76aca6d9a294bfde0cbe2c6017229667ac4"
+  },
+  {
+    "release": "1.105.0",
+    "wire": "c959132336ac16c2065695d2e7333f5cce0f9c3af13fe2c2e7beaf8186e9b635",
+    "files": "f103fdc01cb520c079e0eb0097dbf0bcb6f2de9c5215babab482790d31a45f48"
+  },
+  {
+    "release": "1.106.0",
+    "wire": "eb3cb4da8ccf1d6e5b264a7254ac59241c30591e4b7762cb39301bf44ed9244a",
+    "files": "c44a97f7a3827acd423abd8c9092a76335ce121de6dd5d1d181f6c808ccb0e0f"
   }
 ]

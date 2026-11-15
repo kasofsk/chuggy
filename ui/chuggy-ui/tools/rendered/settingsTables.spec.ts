@@ -27,7 +27,10 @@ import {
   accessTenantRoles,
   accessWorkspaceLinksSchema,
 } from "../../../../src/contract/accessPlane.ts";
-import { forgeInstallationPermissionsResponseSchema } from "../../../../src/contract/responses.ts";
+import {
+  forgeInstallationPermissionsResponseSchema,
+  tenantDeletionResponseSchema,
+} from "../../../../src/contract/responses.ts";
 
 import {
   expect,
@@ -201,6 +204,7 @@ const siteWorkspaces = {
   tenants: [
     {
       tenant: stubApiTenant,
+      displayName: stubApiTenant,
       administrators: [
         {
           subject: "member",
@@ -215,6 +219,7 @@ const siteWorkspaces = {
     },
     {
       tenant: "a-workspace-whose-name-is-longer-than-any-column",
+      displayName: "A workspace whose display name is longer than any column",
       administrators: [],
       unnamed: 0,
       createAccounts: false,
@@ -310,6 +315,11 @@ const settingsTablesReads: readonly StubApiRead[] = [
     "/access/v1/site/workspaces",
     accessSiteTenantsSchema,
     siteWorkspaces,
+  ),
+  stubApiRead(
+    `/api/v1/tenants/${stubApiTenant}/deletion`,
+    tenantDeletionResponseSchema,
+    { held: [] },
   ),
   stubApiRead(
     "/access/v1/site/workspace-links",

@@ -10,6 +10,13 @@ export interface ProjectCopy {
   readonly "project-creation-submit": Record<never, never>;
   readonly "project-creation-name-rule": Record<never, never>;
   readonly "project-creation-name-too-long": Record<never, never>;
+  readonly "project-creation-display-name-rule": Record<never, never>;
+  readonly "project-creation-display-name-control": Record<never, never>;
+  readonly "project-creation-address-label": Record<never, never>;
+  readonly "project-creation-address-made": {
+    readonly address: unknown;
+  };
+  readonly "project-creation-address-none": Record<never, never>;
   readonly "project-creation-tenant-reserved": Record<never, never>;
   readonly "project-creation-tenant-needs-invite": Record<never, never>;
   readonly "project-creation-refusal-taken": Record<never, never>;
@@ -22,6 +29,11 @@ export interface ProjectCopy {
   readonly "project-creation-refusal-unreadable": Record<never, never>;
   readonly "project-creation-refusal-refused": Record<never, never>;
   readonly "project-creation-workspace-new": Record<never, never>;
+  readonly "project-creation-workspace-name-label": Record<never, never>;
+  readonly "project-creation-address-hint": Record<never, never>;
+  readonly "project-creation-more": Record<never, never>;
+  readonly "project-creation-more-about": Record<never, never>;
+  readonly "project-creation-creating": Record<never, never>;
   readonly "project-creation-workspace-unheld-label": Record<never, never>;
   readonly "project-creation-workspace-unheld-detail": Record<never, never>;
   readonly "project-creation-workspace-unadmin-label": Record<never, never>;
@@ -35,6 +47,7 @@ export interface ProjectCopy {
   readonly "project-table-creator-label": Record<never, never>;
   readonly "project-table-creator-anyone": Record<never, never>;
   readonly "project-table-creator-me": Record<never, never>;
+  readonly "project-table-owner-label": Record<never, never>;
   readonly "project-table-sort-label": Record<never, never>;
   readonly "project-table-filter-label": Record<never, never>;
   readonly "project-table-filter-all": Record<never, never>;

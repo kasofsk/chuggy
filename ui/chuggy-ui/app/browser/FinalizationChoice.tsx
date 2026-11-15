@@ -80,9 +80,9 @@ export function FinalizationChoiceFields(
   return (
     <>
       {row(
-        text({ id: "ticket-landing-heading" }),
+        text({ id: "ticket-finalization-heading" }),
         <RadioGroup
-          label={text({ id: "ticket-landing-heading" })}
+          label={text({ id: "ticket-finalization-heading" })}
           value={choice.kind}
           disabled={disabled}
           describedBy={props.describedBy}
@@ -100,9 +100,9 @@ export function FinalizationChoiceFields(
       {choice.kind !== "GitMerge" ? null : (
         <>
           {row(
-            text({ id: "ticket-landing-merge" }),
+            text({ id: "ticket-finalization-merge" }),
             <RadioGroup
-              label={text({ id: "ticket-landing-merge" })}
+              label={text({ id: "ticket-finalization-merge" })}
               value={choice.mode}
               disabled={disabled}
               options={gitMergeModeOptions(text)}

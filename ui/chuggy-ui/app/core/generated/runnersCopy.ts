@@ -4,10 +4,11 @@
 /** Each message's variables, by name. */
 export interface RunnersCopy {
   readonly "runners-title": Record<never, never>;
-  readonly "runners-about": Record<never, never>;
-  readonly "runners-none": Record<never, never>;
-  readonly "runners-caption": Record<never, never>;
+  readonly "runners-pools-title": Record<never, never>;
+  readonly "runners-pools-about": Record<never, never>;
+  readonly "runners-pools-none": Record<never, never>;
   readonly "runners-col-runner": Record<never, never>;
+  readonly "runners-col-platforms": Record<never, never>;
   readonly "runners-col-version": Record<never, never>;
   readonly "runners-col-registered": Record<never, never>;
   readonly "runners-col-last-polled": Record<never, never>;
@@ -146,11 +147,14 @@ export interface RunnersCopy {
   readonly "runners-chat-host-removal": {
     readonly short: unknown;
   };
-  readonly "runners-chat-host-token-about": Record<never, never>;
-  readonly "runners-chat-host-copy-token": Record<never, never>;
+  readonly "runners-chat-host-claude-code-about": Record<never, never>;
   readonly "runners-chat-host-replaces": {
     readonly short: unknown;
   };
+  readonly "runners-chat-host-threads": {
+    readonly capabilities: unknown;
+  };
+  readonly "runners-chat-host-threads-whole": Record<never, never>;
   readonly "runners-member-label": Record<never, never>;
   readonly "runners-member-question": {
     readonly name: unknown;

@@ -441,3 +441,37 @@ test("the metrics plane reads whether each account's agent is paused by a thresh
   });
   assert.equal(capped.read, "Refused");
 });
+
+test("the metrics plane reads an agent held only by credentials turned off as paused by neither trigger", async () => {
+  const off = member();
+  await agentAccountHarnessCommitted(harness, off, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.1,
+        resetsSecs: 3_600,
+        observedSecs: -60,
+        credential: "work",
+      },
+    ],
+    off: ["work"],
+    runners: [
+      { kind: "Personal", polledSecs: -5, named: { Claude: ["work"] } },
+    ],
+  });
+  assert.equal((await agentOf(off, "Claude")).pause?.off, true);
+  const read = await postgresMetricsPlaneReads(metricsPool, 10_000).read({
+    seriesMax: 1_000,
+    owner: (principal) => principal,
+  });
+  assert.equal(read.read, "Read");
+  assert.deepEqual(
+    read.read === "Read"
+      ? read.rows.agentPauses.filter((row) => row.owner === off)
+      : [],
+    [
+      { owner: off, agent: "Claude", trigger: "hard", paused: 0 },
+      { owner: off, agent: "Claude", trigger: "soft", paused: 0 },
+    ],
+  );
+});

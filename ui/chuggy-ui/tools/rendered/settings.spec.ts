@@ -29,7 +29,8 @@ const settingsRoot = `/${stubApiTenant}/${stubApiProject}/settings`;
  * of the site's, whose abilities the stub answers with none. */
 const settingsSectionNames = settingsNav({
   tenant: stubApiTenant,
-  project: stubApiProject,
+  tenantName: stubApiTenant,
+  project: { address: stubApiProject, name: stubApiProject },
   site: { workspaces: false, permissions: false },
 }).flatMap((group) => group.entries.map((entry) => copyTextEn(entry.label)));
 
@@ -60,7 +61,7 @@ test("on the phone a section is drawn alone, its heading within the first screen
   served,
 }) => {
   const rendered = await renderedOpen(browser, served.origin, {
-    route: `${settingsRoot}/runners`,
+    route: `${settingsRoot}/pools`,
     viewport: "phone",
     signedIn: true,
     ready: (page) => page.getByRole("rowheader", { name: /^build-linux/u }),
@@ -70,7 +71,7 @@ test("on the phone a section is drawn alone, its heading within the first screen
   const back = page.getByRole("link", { name: "All settings" });
   await expect(back).toBeVisible();
   await renderedTouchTargets(page, back.locator(".."));
-  const heading = page.getByRole("heading", { level: 1, name: "Runners" });
+  const heading = page.getByRole("heading", { level: 1, name: "Pools" });
   const box = await heading.boundingBox();
   expect(box, "the section's heading is drawn").not.toBeNull();
   expect(box?.y ?? Infinity).toBeLessThan(renderedViewports.phone.height);

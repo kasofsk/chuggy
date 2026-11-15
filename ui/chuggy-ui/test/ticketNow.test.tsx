@@ -392,6 +392,20 @@ test("the reader's own run waiting on live runners their account holds paused sa
   expect(within(card).getByRole("link", { name: "Usage" })).toBeTruthy();
 });
 
+test("the reader's own run held only by credentials turned off says so, and neither until when nor a press", async () => {
+  await runPageDrawn(
+    atlas,
+    ownRunAnswered({
+      personalRunnerWait: "Live",
+      paused: { off: true, reasons: ["off"], pressed: false },
+    }),
+  );
+  const card = nowCard();
+  expect(nowLineParts()).toStrictEqual(["Paused", "· Off", "· Usage"]);
+  expect(card.textContent).not.toContain("until");
+  expect(within(card).queryByRole("button", { name: /again now/u })).toBeNull();
+});
+
 test("another member's waiting run says nothing of a pause", async () => {
   await runPageDrawn(
     atlas,

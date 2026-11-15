@@ -49,7 +49,7 @@ export function escalationKindSentence(kind: EscalationKind): Copy {
     case "EvaluationBlockedEscalated":
       return { id: "sentences-escalation-evaluation-blocked" };
     case "FinalizationUnavailableEscalated":
-      return { id: "sentences-escalation-landing-unavailable" };
+      return { id: "sentences-escalation-finalization-unavailable" };
   }
 }
 
@@ -58,8 +58,6 @@ export function nativeActionKindSentence(kind: NativeActionKind): Copy {
   switch (kind) {
     case "TicketEscalation":
       return { id: "sentences-native-escalation" };
-    case "FinalizationApproval":
-      return { id: "sentences-native-approval" };
     case "EvaluationApproval":
       return { id: "sentences-native-evaluation-approval" };
   }
@@ -246,7 +244,7 @@ function operationRefusalReportSentence(
       };
     case "FinalizationNotCurrent":
       return {
-        id: "sentences-refusal-landing-not-current",
+        id: "sentences-refusal-finalization-not-current",
         args: {
           cycle: refused.value.workCycle,
           ticket: operationRefusalTicket(refused.value.ticket),
@@ -305,7 +303,7 @@ export function operationRefusalSentence(refused: OperationRefusal): Copy {
     case "TicketCapacityReached":
       return { id: "sentences-refusal-capacity-reached" };
     case "FinalizationRequestClosed":
-      return { id: "sentences-refusal-landing-request-closed" };
+      return { id: "sentences-refusal-finalization-request-closed" };
     case "OverridesMoveDefinition":
       return { id: "sentences-refusal-overrides-move-definition" };
     case "ApprovalAsWork":

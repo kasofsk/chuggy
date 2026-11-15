@@ -9,7 +9,8 @@
  * way, and so are the site's workspace links, and either is redeemed by any
  * caller signed in, who needs no kind because the link's maker held them. The
  * tenants a caller is written into, and their own account, are answered to any
- * caller signed in, about them alone.
+ * caller signed in, about them alone, and a tenant's administrators change its
+ * display name.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -59,17 +60,21 @@ import {
   accessSiteAuthoritySchema,
   accessSubjectSchema,
   accessTenantAuthoritySchema,
+  accessTenantDisplayNameChangeSchema,
+  accessTenantNamesNotConfiguredCode,
   accessTenantRoleGrantSchema,
   accessTenantRoleSchema,
   accessTenantTakenCode,
   accessWorkspaceLinkCreationSchema,
-  accessWorkspaceLinkNameWantedCode,
   accessWorkspaceLinkNoteCharsMax,
   type AccessInvited,
   type AccessOwnerInvited,
   type AccessPlaneRouteName,
 } from "../../contract/accessPlane.ts";
-import { projectNameCharsMax } from "../../contract/requests.ts";
+import {
+  projectDisplayNameCharsMax,
+  projectNameCharsMax,
+} from "../../contract/requests.ts";
 import {
   identitySchema,
   nativeHttpError,
@@ -103,6 +108,7 @@ import type {
   AccessPlane,
 } from "../../interpreter/accessPlane.ts";
 import type { AccessSiteTenantsList } from "../../interpreter/accessSiteTenants.ts";
+import type { AccessTenantNames } from "../../interpreter/accessTenantNames.ts";
 import type { Principal } from "../../interpreter/principal.ts";
 import {
   asTenantId,
@@ -139,6 +145,7 @@ export interface AccessPlaneService {
   readonly holders: AccessAuthorityHolders;
   readonly siteTenants: AccessSiteTenantsList;
   readonly callerTenants: AccessCallerTenantsList;
+  readonly tenantNames: AccessTenantNames;
   readonly callerAccount: AccessCallerAccountRead;
   readonly ready: () => Promise<boolean>;
 }
@@ -159,15 +166,19 @@ export const accessOwnerInvitationBodyBytesMax = planeJsonObjectBytesMax(
   accessEmailCharsMax,
 );
 
+/** The most a display name's change reads: the name. */
+export const accessTenantDisplayNameBodyBytesMax = planeJsonObjectBytesMax(
+  projectDisplayNameCharsMax,
+);
+
 /** The most a workspace link's mint reads: its note. */
 export const accessWorkspaceLinkBodyBytesMax = planeJsonObjectBytesMax(
   accessWorkspaceLinkNoteCharsMax,
 );
 
-/** The most a redemption reads: a token, and the name of a workspace it makes. */
+/** The most a redemption reads: one token. */
 export const accessInviteLinkRedemptionBodyBytesMax = planeJsonObjectBytesMax(
   accessInviteLinkTokenCharsMax,
-  projectNameCharsMax,
 );
 
 /** The most the registration gate reads: one token. */
@@ -319,6 +330,38 @@ function accessTenantRoutes(
           accessTenantRoleSchema.parse(accessParams(request)["role"]),
         ),
       ),
+  );
+}
+
+function accessTenantNameRoute(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantDisplayNameChange",
+    async (request, reply, caller) => {
+      const renamed = await service.tenantNames.renamed(
+        caller,
+        accessTenantOf(request),
+        accessTenantDisplayNameChangeSchema.parse(request.body).displayName,
+      );
+      switch (renamed) {
+        case "NotConfigured":
+          return accessRefused(
+            reply,
+            404,
+            accessTenantNamesNotConfiguredCode,
+            "This deployment keeps no display names.",
+          );
+        case "Absent":
+        case "Changed":
+        case "Refused":
+          return accessChanged(reply, renamed);
+      }
+    },
+    accessTenantDisplayNameBodyBytesMax,
   );
 }
 
@@ -920,27 +963,14 @@ function accessInviteLinkEndingRoutes(
     service,
     "inviteLinkRedemption",
     async (request, reply, caller) => {
-      const { token, workspace } = accessInviteLinkRedemptionSchema.parse(
-        request.body,
-      );
-      const result = await service.inviteLinks.redeemed(
-        caller,
-        token,
-        workspace,
-      );
+      const { token } = accessInviteLinkRedemptionSchema.parse(request.body);
+      const result = await service.inviteLinks.redeemed(caller, token);
       switch (result.outcome) {
         case "Redeemed":
           return reply
             .code(200)
             .type(nativeHttpMediaType)
             .send(result.redeemed);
-        case "NameWanted":
-          return accessRefused(
-            reply,
-            409,
-            accessWorkspaceLinkNameWantedCode,
-            "The invite link makes a workspace, and wants its name.",
-          );
         case "TenantTaken":
           return accessTenantTaken(reply);
         case "Absent":
@@ -1033,6 +1063,7 @@ export function createAccessPlaneApp(
   });
   planeHealthRoutes(app, service.ready);
   accessTenantRoutes(app, service);
+  accessTenantNameRoute(app, service);
   accessProjectRoutes(app, service);
   accessHostedRunsRoutes(app, service);
   accessPersonalRunnersRoutes(app, service);

@@ -267,7 +267,7 @@ export function parseForgeInstallationId(value: string): ForgeInstallationId {
   return asForgeInstallationId(value);
 }
 
-/** One creation as the wire carries it, the identity coming from the header and neither name yet held to the rule. */
+/** One creation as the wire carries it, the identity coming from the header and no name yet held to its rule. */
 export function parseProjectCreation(
   body: unknown,
   operation: string,
@@ -276,6 +276,7 @@ export function parseProjectCreation(
   return {
     tenant: parsed.tenant,
     project: parsed.project,
+    name: parsed.name,
     operation: asOperationId(operation),
   };
 }
@@ -302,6 +303,9 @@ export function parseProjectRepositoryLanding(
     expected: parseRepositoryFinalization(parsed.expected),
     landing: parseRepositoryFinalization(parsed.landing),
     pipelinesWritable: parsed.pipelinesWritable,
+    ...(parsed.pipelinesRunnable === undefined
+      ? {}
+      : { pipelinesRunnable: parsed.pipelinesRunnable }),
   };
 }
 

@@ -13,7 +13,7 @@ import { turned } from "../screenHarness.tsx";
 import { tableText } from "../tableText.ts";
 
 export function linksTable(): HTMLElement {
-  return screen.getByRole("table", { name: "Invite links" });
+  return screen.getByRole("table", { name: /^(Invite|Signup) links$/u });
 }
 
 /** The table's rows under its head, a link each and under one the row its revocation asks in. */

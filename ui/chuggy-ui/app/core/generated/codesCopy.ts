@@ -7,7 +7,7 @@ export interface CodesCopy {
   readonly "codes-escalation-evaluation-failure": Record<never, never>;
   readonly "codes-escalation-work-unavailable": Record<never, never>;
   readonly "codes-escalation-evaluation-blocked": Record<never, never>;
-  readonly "codes-escalation-landing-unavailable": Record<never, never>;
+  readonly "codes-escalation-finalization-unavailable": Record<never, never>;
   readonly "codes-escalation-lost": Record<never, never>;
   readonly "codes-agent-claude": Record<never, never>;
   readonly "codes-agent-codex": Record<never, never>;
@@ -45,6 +45,7 @@ export interface CodesCopy {
   readonly "codes-hold-queue-timed-out": Record<never, never>;
   readonly "codes-hold-dequeued": Record<never, never>;
   readonly "codes-hold-rechecks-exhausted": Record<never, never>;
+  readonly "codes-hold-target-paths-refused": Record<never, never>;
   readonly "codes-lead-absence-not-needed": Record<never, never>;
   readonly "codes-lead-absence-paused": Record<never, never>;
   readonly "codes-lead-absence-not-granted": Record<never, never>;
@@ -54,18 +55,19 @@ export interface CodesCopy {
   readonly "codes-lead-absence-runner-offline": Record<never, never>;
   readonly "codes-lead-absence-usage-paused": Record<never, never>;
   readonly "codes-lead-absence-subsidy-exhausted": Record<never, never>;
-  readonly "codes-landing-running": Record<never, never>;
-  readonly "codes-landing-held": Record<never, never>;
-  readonly "codes-landing-waiting": Record<never, never>;
-  readonly "codes-landing-failed": Record<never, never>;
-  readonly "codes-landing-escalated": Record<never, never>;
-  readonly "codes-landing-landed": Record<never, never>;
-  readonly "codes-landing-proposed": Record<never, never>;
-  readonly "codes-landing-invalidated": Record<never, never>;
-  readonly "codes-landing-failure-conflict": Record<never, never>;
-  readonly "codes-landing-failure-preparation": Record<never, never>;
-  readonly "codes-landing-failure-queue-checks": Record<never, never>;
-  readonly "codes-landing-failure-recheck": Record<never, never>;
+  readonly "codes-finalization-running": Record<never, never>;
+  readonly "codes-finalization-held": Record<never, never>;
+  readonly "codes-finalization-waiting": Record<never, never>;
+  readonly "codes-finalization-failed": Record<never, never>;
+  readonly "codes-finalization-escalated": Record<never, never>;
+  readonly "codes-finalization-finalized": Record<never, never>;
+  readonly "codes-finalization-proposed": Record<never, never>;
+  readonly "codes-finalization-invalidated": Record<never, never>;
+  readonly "codes-finalization-failure-conflict": Record<never, never>;
+  readonly "codes-finalization-failure-preparation": Record<never, never>;
+  readonly "codes-finalization-failure-queue-checks": Record<never, never>;
+  readonly "codes-finalization-failure-recheck": Record<never, never>;
+  readonly "codes-finalization-failure-restack": Record<never, never>;
   readonly "codes-recheck-target-moved": Record<never, never>;
   readonly "codes-recheck-stack-tree-differs": Record<never, never>;
   readonly "codes-recheck-merged-tree-differs": Record<never, never>;
@@ -107,17 +109,35 @@ export interface CodesCopy {
   readonly "codes-usage-resumes-at": {
     readonly until: unknown;
   };
+  readonly "codes-usage-off": Record<never, never>;
   readonly "codes-step-clone-failed": Record<never, never>;
   readonly "codes-step-setup-failed": Record<never, never>;
   readonly "codes-step-commit-failed": Record<never, never>;
   readonly "codes-step-push-failed": Record<never, never>;
   readonly "codes-step-timed-out": Record<never, never>;
   readonly "codes-step-disk-low": Record<never, never>;
+  readonly "codes-step-credential-absent": Record<never, never>;
   readonly "codes-step-setup-line": Record<never, never>;
   readonly "codes-step-disk-line": Record<never, never>;
+  readonly "codes-step-credential-not-granted-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-not-held-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-not-enabled-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-issuer-refused-line": {
+    readonly credential: unknown;
+  };
+  readonly "codes-step-credential-worker-too-old-line": {
+    readonly credential: unknown;
+  };
   readonly "codes-evidence-workflows-line": Record<never, never>;
   readonly "codes-evidence-declined-line": Record<never, never>;
   readonly "codes-evidence-unreadable-line": Record<never, never>;
+  readonly "codes-evidence-target-paths-line": Record<never, never>;
   readonly "codes-stage-failed": {
     readonly stage: unknown;
   };
@@ -125,18 +145,17 @@ export interface CodesCopy {
   readonly "codes-detail-work-unavailable": Record<never, never>;
   readonly "codes-detail-evaluation-blocked": Record<never, never>;
   readonly "codes-native-escalation": Record<never, never>;
-  readonly "codes-native-approval": Record<never, never>;
   readonly "codes-native-evaluation-approval": Record<never, never>;
   readonly "codes-revoked-dependencies": {
     readonly count: unknown;
     readonly tickets: unknown;
   };
-  readonly "codes-landing-kind-git-merge": Record<never, never>;
-  readonly "codes-landing-kind-pull-request": Record<never, never>;
-  readonly "codes-landing-kind-none": Record<never, never>;
-  readonly "codes-landing-kind-git-merge-effect": Record<never, never>;
-  readonly "codes-landing-kind-pull-request-effect": Record<never, never>;
-  readonly "codes-landing-kind-none-effect": Record<never, never>;
+  readonly "codes-finalization-kind-git-merge": Record<never, never>;
+  readonly "codes-finalization-kind-pull-request": Record<never, never>;
+  readonly "codes-finalization-kind-none": Record<never, never>;
+  readonly "codes-finalization-kind-git-merge-effect": Record<never, never>;
+  readonly "codes-finalization-kind-pull-request-effect": Record<never, never>;
+  readonly "codes-finalization-kind-none-effect": Record<never, never>;
   readonly "codes-merge-mode-push": Record<never, never>;
   readonly "codes-merge-mode-pull-request": Record<never, never>;
   readonly "codes-merge-mode-push-effect": Record<never, never>;
@@ -147,28 +166,25 @@ export interface CodesCopy {
   readonly "codes-merge-policy-direct-effect": Record<never, never>;
   readonly "codes-merge-policy-serialized-effect": Record<never, never>;
   readonly "codes-merge-policy-stacked-effect": Record<never, never>;
-  readonly "codes-landing-onto": {
+  readonly "codes-finalization-onto": {
     readonly method: unknown;
     readonly target: unknown;
   };
-  readonly "codes-landing-into": {
+  readonly "codes-finalization-into": {
     readonly method: unknown;
     readonly target: unknown;
   };
-  readonly "codes-landing-default-branch": Record<never, never>;
-  readonly "codes-approval-required": Record<never, never>;
-  readonly "codes-approval-not-required": Record<never, never>;
+  readonly "codes-finalization-default-branch": Record<never, never>;
   readonly "codes-action-dispatch": Record<never, never>;
   readonly "codes-action-resume": Record<never, never>;
   readonly "codes-action-revoke": Record<never, never>;
   readonly "codes-action-approve": Record<never, never>;
-  readonly "codes-action-decline": Record<never, never>;
   readonly "codes-action-reject": Record<never, never>;
   readonly "codes-action-release": Record<never, never>;
   readonly "codes-resume-work": Record<never, never>;
   readonly "codes-resume-rework": Record<never, never>;
   readonly "codes-resume-evaluation": Record<never, never>;
-  readonly "codes-resume-landing": Record<never, never>;
+  readonly "codes-resume-finalization": Record<never, never>;
   readonly "codes-resume-nothing": Record<never, never>;
   readonly "codes-wall-exit-one": {
     readonly action: unknown;
@@ -180,8 +196,6 @@ export interface CodesCopy {
   readonly "codes-edit-effect": Record<never, never>;
   readonly "codes-action-dispatch-effect": Record<never, never>;
   readonly "codes-action-revoke-effect": Record<never, never>;
-  readonly "codes-action-approve-effect": Record<never, never>;
-  readonly "codes-action-decline-effect": Record<never, never>;
   readonly "codes-action-approve-evaluation-effect": Record<never, never>;
   readonly "codes-action-reject-effect": Record<never, never>;
   readonly "codes-action-release-effect": Record<never, never>;
@@ -204,7 +218,7 @@ export interface CodesCopy {
   readonly "codes-refusal-not-resumable": Record<never, never>;
   readonly "codes-refusal-run-not-current": Record<never, never>;
   readonly "codes-refusal-evaluation-not-current": Record<never, never>;
-  readonly "codes-refusal-landing-not-current": Record<never, never>;
+  readonly "codes-refusal-finalization-not-current": Record<never, never>;
   readonly "codes-refusal-authoring-changed": Record<never, never>;
   readonly "codes-refusal-configuration-invalid": Record<never, never>;
   readonly "codes-refusal-ticket-changed": Record<never, never>;
@@ -222,7 +236,7 @@ export interface CodesCopy {
   readonly "codes-refusal-overrides-unsupported": Record<never, never>;
   readonly "codes-refusal-overrides-unknown": Record<never, never>;
   readonly "codes-refusal-capacity-reached": Record<never, never>;
-  readonly "codes-refusal-landing-request-closed": Record<never, never>;
+  readonly "codes-refusal-finalization-request-closed": Record<never, never>;
   readonly "codes-refusal-overrides-move-definition": Record<never, never>;
   readonly "codes-refusal-approval-as-work": Record<never, never>;
   readonly "codes-refusal-overrides-change-approval": Record<never, never>;

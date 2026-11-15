@@ -38,10 +38,14 @@ import type { Copy, CopyOrData } from "./copy.ts";
 import type { PanelState } from "./freshness.ts";
 import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 
-/** One entry of the choice: a workspace the reader may add a project to, or
- * the making of one. */
+/** One entry of the choice: a workspace the reader may add a project to,
+ * called by its display name, or the making of one. */
 export type ProjectCreationWorkspaceEntry =
-  | { readonly entry: "Held"; readonly tenant: string }
+  | {
+      readonly entry: "Held";
+      readonly tenant: string;
+      readonly displayName: string;
+    }
   | { readonly entry: "New" };
 
 /** What the entry that makes a workspace is called. */
@@ -54,7 +58,7 @@ export function projectCreationWorkspaceEntryText(
 ): CopyOrData {
   switch (entry.entry) {
     case "Held":
-      return entry.tenant;
+      return entry.displayName;
     case "New":
       return projectCreationWorkspaceNewText;
   }
@@ -107,7 +111,11 @@ function projectCreationWorkspaceAdministered(
 ): readonly ProjectCreationWorkspaceHeld[] {
   return held.tenants
     .filter((listed) => listed.administer)
-    .map((listed) => ({ entry: "Held", tenant: listed.tenant }));
+    .map((listed) => ({
+      entry: "Held",
+      tenant: listed.tenant,
+      displayName: listed.displayName,
+    }));
 }
 
 /** The offer under the two reads and the workspace the address names. */

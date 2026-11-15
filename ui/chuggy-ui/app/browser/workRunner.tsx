@@ -13,7 +13,8 @@ import {
   ownerFallbackQuery,
 } from "../core/projectQueries.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
-import { workRunner } from "../core/workRunner.ts";
+import { personalRunnerQuery } from "../core/tenantQueries.ts";
+import { workRunner, workRunnerPersonalRead } from "../core/workRunner.ts";
 import type { WorkRunner, WorkRunnerOwner } from "../core/workRunner.ts";
 import { usePanelState } from "./api.ts";
 import { useSessionPlacementSettled } from "./sessionPlacement.tsx";
@@ -30,21 +31,26 @@ export function useWorkRunner(
     ownerFallbackQuery(partition),
     (state, answer) => ({ state, settled: answer.isFetched }),
   );
+  const personal = usePanelState(
+    personalRunnerQuery(partition.tenant),
+    (state, answer) => ({ state, settled: answer.isFetched }),
+  );
   return workRunner(
     placement,
     useSessionPlacementSettled(partition),
     fallback,
+    workRunnerPersonalRead(personal, partition.project),
     owner,
   );
 }
 
-/** The way to the Runners page, said as what a project with no runner does there. */
+/** The way to the reader's own runners, said as what a project with no runner does there. */
 export function AddRunnerLink(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Link to={settingsRoutes.project.runners} params={props.partition}>
+    <Link to={settingsRoutes.project.myRunner} params={props.partition}>
       {text({ id: "runners-add" })}
     </Link>
   );
