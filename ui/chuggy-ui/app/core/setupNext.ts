@@ -79,7 +79,6 @@ export const setupPressed = {
   chatHost: setupChatHostPressed,
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
-  workspaceCreate: { id: "settings-invite-create" },
 } as const satisfies Readonly<Record<string, Copy>>;
 
 /** How many names a question lists before it says how many more there are. */
@@ -142,8 +141,6 @@ function setupWorkspaceMend(
       args: {
         none,
         invites: `${at.site}${inviteRoutePath}`,
-        naming: setupSeen.workspaceNaming,
-        create: setupPressed.workspaceCreate,
       },
     },
     { id: "setup-mend-workspace-when" },

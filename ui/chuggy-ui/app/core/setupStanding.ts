@@ -170,7 +170,6 @@ export interface SetupStanding {
  */
 export const setupSeen = {
   northStar: { id: "lead-settings-section-north-star-title" },
-  workspaceNaming: { id: "settings-invite-naming" },
 } as const satisfies Readonly<Record<string, Copy>>;
 
 /** Each forge app, as a sentence names it. */
