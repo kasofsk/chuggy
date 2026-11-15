@@ -7,7 +7,8 @@
    filter; where the list is wide the foot moves beside them and the title
    keeps to one line. Where it is narrow
    the meta keeps its activity, what it is running and its repository, and the
-   creator moves to the start of the foot, opposite the state; on a phone the
+   creator and an owner beside it move to the start of the foot, opposite the
+   state, each name shortened on its own so neither is cut away; on a phone the
    rows run edge to edge with the controls stacked full width. */
 
 @layer page {
@@ -374,7 +375,16 @@
     }
 
     .ticket-list-foot-creator {
-      display: block;
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-1);
+    }
+
+    .ticket-list-foot-creator > .identity {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
