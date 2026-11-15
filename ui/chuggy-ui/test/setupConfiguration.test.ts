@@ -215,6 +215,9 @@ test("outside a checkout neither configuration nor check reads or writes anythin
   }
 });
 
+/** A prompt a case's catalog names, beside the declarations, which a file not ending `.json` is not one of. */
+const prompt = `${repositoryConfigurationRoot}prompts/build.md`;
+
 const prompted = (path: string) => {
   const envelope = JSON.parse(filled("make")) as {
     configuration: { workloads: { build: { prompt: unknown } } };
@@ -238,8 +241,8 @@ test("check judges a tree as the import does: each file it refuses by its path a
       [`found: ${root}b.json: Name declared twice at name`],
     ],
     [
-      { [`${root}a.json`]: prompted(".chug/prompts/build.md") },
-      [`found: ${root}a.json: Missing .chug/prompts/build.md`],
+      { [`${root}a.json`]: prompted(prompt) },
+      [`found: ${root}a.json: Missing ${prompt}`],
     ],
   ];
   for (const [files, faults] of cases) {
@@ -248,8 +251,8 @@ test("check judges a tree as the import does: each file it refuses by its path a
     expect(said[faults.length]).toMatch(/^tell: chuggy's import would refuse/u);
   }
   const named = checkout({
-    [`${root}a.json`]: prompted(".chug/prompts/build.md"),
-    ".chug/prompts/build.md": "Build it.",
+    [`${root}a.json`]: prompted(prompt),
+    [prompt]: "Build it.",
   });
   expect(bare(await named.command(["check"]))[0]).toBe(
     `found: ${root}a.json imports as it stands`,
