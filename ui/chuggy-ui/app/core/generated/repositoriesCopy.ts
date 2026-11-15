@@ -126,6 +126,8 @@ export interface RepositoriesCopy {
   readonly "repositories-landing-about": Record<never, never>;
   readonly "repositories-workflow-files": Record<never, never>;
   readonly "repositories-workflow-files-about": Record<never, never>;
+  readonly "repositories-workflow-runs": Record<never, never>;
+  readonly "repositories-workflow-runs-about": Record<never, never>;
   readonly "repositories-off": Record<never, never>;
   readonly "repositories-on": Record<never, never>;
   readonly "repositories-configurations-title": Record<never, never>;
