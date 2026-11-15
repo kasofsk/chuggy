@@ -150,6 +150,9 @@ const setupDeclarationBytesMax = repositoryDeclarationFileCharsMax * 4;
 /** How deep below `.chug/configurations/` the listing looks; the import's listing has no such bound, and refuses any path below the directory itself. */
 export const setupDeclarationDepthMax = 8;
 
+/** How many directories below `.chug/configurations/` the listing looks in; one past it is found as `Unlisted`, as one past the depth bound is. */
+export const setupDeclarationDirectoriesMax = 64;
+
 /** One path found under the directory an import reads, as the import's listing would hold it, or a directory past the listing's bound, which is refused unread. */
 type SetupDeclarationFound =
   | { readonly found: "File"; readonly file: RepositoryDeclarationFile }
@@ -190,8 +193,8 @@ function setupDeclarationRead(
  * Every `.json` path under `.chug/configurations/`, nested ones included, as
  * a commit's recursive listing of it holds them; no more than one past what
  * an import takes, since that one is enough to refuse the directory. A
- * directory that is a link is not looked in, and one past the depth bound is
- * found as `Unlisted` rather than looked in.
+ * directory that is a link is not looked in, and one past the depth bound or
+ * the directory bound is found as `Unlisted` rather than looked in.
  */
 function setupDeclarationsListed(
   disk: SetupDiskPort,
@@ -203,6 +206,7 @@ function setupDeclarationsListed(
   ];
   if (setupThroughLink(disk, top, `${directories[0]?.path ?? ""}/`))
     return found;
+  let queued = 0;
   for (let next = directories.shift(); next !== undefined;) {
     const whole = `${top}/${next.path}`;
     if (!disk.linked(whole) && disk.kind(whole) === "Directory")
@@ -212,9 +216,13 @@ function setupDeclarationsListed(
           disk.kind(`${top}/${path}`) === "Directory" &&
           !disk.linked(`${top}/${path}`)
         ) {
-          if (next.depth < setupDeclarationDepthMax)
+          if (
+            next.depth < setupDeclarationDepthMax &&
+            queued < setupDeclarationDirectoriesMax
+          ) {
+            queued += 1;
             directories.push({ path, depth: next.depth + 1 });
-          else found.push({ found: "Unlisted", path: `${path}/` });
+          } else found.push({ found: "Unlisted", path: `${path}/` });
           if (found.length > repositoryDeclarationsMax) return found;
           continue;
         }

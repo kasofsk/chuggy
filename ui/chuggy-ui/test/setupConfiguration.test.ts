@@ -19,6 +19,7 @@ import {
   setupConfigurationPath,
   setupConfigurationStarting,
   setupDeclarationDepthMax,
+  setupDeclarationDirectoriesMax,
 } from "../app/core/setupConfiguration.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
@@ -219,6 +220,36 @@ test("a directory past the listing's depth bound is refused by check and kept by
     `found: this checkout already declares ${unlisted}, which is left as it is`,
   );
   expect(deep.box.paths).toEqual(before);
+});
+
+test("a directory past the listing's directory bound is refused by check and kept by configuration, though no directory holds a declaration", async () => {
+  const names = Array.from(
+    { length: setupDeclarationDirectoriesMax },
+    (_, at) => `vendored/${String(at).padStart(3, "0")}`,
+  );
+  const unlisted = `${repositoryConfigurationRoot}${names.at(-1) ?? ""}/`;
+  const tree = Object.fromEntries(
+    names.map((name) => [
+      `${repositoryConfigurationRoot}${name}/notes.md`,
+      "held",
+    ]),
+  );
+  expect(
+    bare(
+      await checkout({
+        ...tree,
+        [setupConfigurationPath]: filled("make"),
+      }).command(["check"]),
+    )[0],
+  ).toBe(`found: ${unlisted}: Path not allowed`);
+  const vendored = checkout(tree);
+  const before = new Map(vendored.box.paths);
+  expect(
+    bare(await vendored.command(["configuration", "--test", "make"]))[0],
+  ).toBe(
+    `found: this checkout already declares ${unlisted}, which is left as it is`,
+  );
+  expect(vendored.box.paths).toEqual(before);
 });
 
 test("outside a checkout neither configuration nor check reads or writes anything, and each is a stop", async () => {
