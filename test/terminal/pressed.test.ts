@@ -29,7 +29,6 @@ import {
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 import { ticketActionLabel } from "../../ui/chuggy-ui/app/core/codeLabels.ts";
 import type { CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
-import { invitePageWords } from "../../ui/chuggy-ui/app/core/invitePage.ts";
 import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
 import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 import { setupSeen } from "../../ui/chuggy-ui/app/core/setupStanding.ts";
@@ -49,11 +48,7 @@ type SetupPressedCatalogued =
   | "add"
   | "retry";
 
-/** The names the invite page draws from the catalog, as its card's words. */
-type SetupPressedInvite = "workspaceCreate";
-
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
-const invitePage = "ui/chuggy-ui/app/browser/InvitePage.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
 const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
@@ -61,10 +56,7 @@ const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
 const drawnIn: Readonly<
-  Record<
-    Exclude<SetupPressed, SetupPressedCatalogued | SetupPressedInvite>,
-    string
-  >
+  Record<Exclude<SetupPressed, SetupPressedCatalogued>, string>
 > = {
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };
@@ -133,14 +125,6 @@ test("the lead's settings page draws, from the catalog, the section the program 
     selectorSettingsSection("northStar").title,
     setupSeen.northStar,
   );
-});
-
-test("the invite page draws, from the catalog, the card the program says a workspace is named under and what is pressed there", () => {
-  const source = readFileSync(invitePage, "utf8");
-  assert.match(source, /invitePageWords\.naming\b/u);
-  assert.match(source, /\{text\(invitePageWords\.create\)\}/u);
-  assert.deepEqual(invitePageWords.naming, setupSeen.workspaceNaming);
-  assert.deepEqual(invitePageWords.create, setupPressed.workspaceCreate);
 });
 
 test("a ticket's page draws each action it offers as a button under the action's label, Dispatch's being the program's word, and has a line of its own for a project with no runner", () => {

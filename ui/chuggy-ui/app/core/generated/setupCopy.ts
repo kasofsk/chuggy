@@ -400,8 +400,6 @@ export interface SetupCopy {
   readonly "setup-mend-workspace-tell": {
     readonly none: unknown;
     readonly invites: unknown;
-    readonly naming: unknown;
-    readonly create: unknown;
   };
   readonly "setup-mend-workspace-when": Record<never, never>;
   readonly "setup-mend-north-star-tell": {

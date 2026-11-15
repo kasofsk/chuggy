@@ -135,11 +135,6 @@ settings-invite-not-valid = Link not valid
 settings-invite-sign-in = Sign in
 settings-invite-open = Open { -brand-name }
 settings-invite-retry = Retry
-settings-invite-naming = New { -workspace }
-settings-invite-workspace-name = { -workspace(case: "upper") } name
-settings-invite-workspace-about = Your { -workspace }. { -project(case: "upper", form: "plural") } go inside.
-settings-invite-create = Create
-settings-invite-name-not-valid = Name not valid
 
 ## Adding a holder to a permission, and removing one.
 

@@ -468,18 +468,17 @@ export function apiRevokeTenantInviteLink(
   return accessSent(ports, "tenantInviteLinkRevocation", { tenant, link });
 }
 
-/** An invite link used by the caller, with the name of the workspace it makes where one is given, answered with what it granted them. */
+/** An invite link used by the caller, answered with what it granted them. */
 export function apiRedeemInviteLink(
   ports: ApiPorts,
   token: string,
-  workspace?: string,
 ): Promise<ApiResult<AccessInviteLinkRedeemed>> {
   return apiRead(
     ports,
     {
       method: accessPlaneRoutes.inviteLinkRedemption.method,
       path: accessPlanePath("inviteLinkRedemption", {}),
-      body: workspace === undefined ? { token } : { token, workspace },
+      body: { token },
     },
     (value) => accessInviteLinkRedeemedSchema.parse(value),
   );
