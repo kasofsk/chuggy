@@ -35,7 +35,10 @@ import {
   evaluationApprovalsAsked,
 } from "./evaluationApprovals.ts";
 import type { ApprovalAsked } from "./evaluationApprovals.ts";
-import { ticketLandingEscalatedRemoval } from "./ticketLandings.ts";
+import {
+  ticketLandingEscalatedRefused,
+  ticketLandingEscalatedRemoval,
+} from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 import type {
   Cycle,
@@ -141,6 +144,11 @@ function needsYouMore(
     escalation.evidence,
   );
   if (removal !== undefined) return text(removal);
+  const refused = ticketLandingEscalatedRefused(
+    reads.landings,
+    escalation.evidence,
+  );
+  if (refused !== undefined) return text(refused);
   const more =
     escalationEvidenceLine(escalation.evidence) ??
     escalationDetailLine(escalation.kind, {

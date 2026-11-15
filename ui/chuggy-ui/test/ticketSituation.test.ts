@@ -631,6 +631,64 @@ test("an escalation over a merge queue removal names the forge's reason and who 
     });
 });
 
+test("an escalation over a target that changed files no run may push names them and the landing by hand Resume finds, and says the second alone without its landing", () => {
+  const parked = (landings: SituationReads["landings"]) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "FinalizationUnavailableEscalated",
+            evidence: "TargetPathsRefused",
+            resumeAt: "ResumeFinalization",
+          },
+        }),
+        landings,
+      }),
+      copyTextEn,
+    );
+  const refusedFrom = (truncated: boolean): SituationReads["landings"] => {
+    const landing = landingEscalated(5, escalatedSince, "TargetPathsRefused");
+    return [
+      ticketLandingOf(
+        landing.state === "Unavailable" && landing.hold !== undefined
+          ? {
+              ...landing,
+              hold: {
+                ...landing.hold,
+                refused: {
+                  paths: [
+                    ".github/workflows/ci.yml",
+                    ".github/workflows/lint.yml",
+                  ],
+                  truncated,
+                },
+              },
+            }
+          : landing,
+        copyTextEn,
+      ),
+    ];
+  };
+  expect(parked(refusedFrom(false))).toStrictEqual({
+    slot: "NeedsYou",
+    approvals: [],
+    detail: "Target changed files no run may push",
+    where: undefined,
+    run: undefined,
+    step: undefined,
+    more: "The target changed .github/workflows/ci.yml, .github/workflows/lint.yml, which no run may push: merge its branch into the target yourself, then Resume",
+    reason: undefined,
+  });
+  expect(parked(refusedFrom(true))).toMatchObject({
+    more: "The target changed .github/workflows/ci.yml, .github/workflows/lint.yml, …, which no run may push: merge its branch into the target yourself, then Resume",
+  });
+  expect(parked([])).toMatchObject({
+    detail: "Target changed files no run may push",
+    more: "Merge its branch into the target yourself, then Resume",
+  });
+});
+
 test("an escalation over a hold that names no removal, or whose newest landing is not the escalated one, reads as the escalation alone", () => {
   for (const landings of [
     [],

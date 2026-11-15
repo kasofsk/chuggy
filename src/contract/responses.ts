@@ -3346,7 +3346,11 @@ const ticketLandingFields = {
   proposal: ticketLandingProposalSchema.optional(),
 };
 
-/** A hold a landing was recorded at, with the forge's reason and the login it names where it escalates a removal from a merge queue. */
+/**
+ * A hold a landing was recorded at, with the forge's reason and the login it
+ * names where it escalates a removal from a merge queue, and at
+ * `TargetPathsRefused` the files a job may not push that the target changed.
+ */
 const ticketLandingHoldSchema = z.strictObject({
   kind: z.enum(finalizationUnavailableKinds),
   passes: ticketNumberSchema,
@@ -3357,6 +3361,7 @@ const ticketLandingHoldSchema = z.strictObject({
       actor: z.string().min(1).max(proposalQueueWordCharsMax).optional(),
     })
     .optional(),
+  refused: ticketLandingConflictSchema.optional(),
 });
 
 /**

@@ -18,6 +18,7 @@ import {
 } from "./adapters/credentials/credentialFiles.ts";
 import { githubChangeProposals } from "./adapters/forge/githubChangeProposals.ts";
 import { githubRepositoryHost } from "./adapters/forge/githubAddress.ts";
+import { githubPipelinePaths } from "./adapters/forge/githubPipelines.ts";
 import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
@@ -702,6 +703,8 @@ export function composeRepositoryOnboarding(
 export interface FinalizerServiceRuntime {
   readonly git: GitPromotionPort;
   readonly forges: ChangeProposalForges;
+  /** The paths the forge says a job's push may not change where its binding withholds pipelines. */
+  readonly pipelinePaths: readonly string[];
   readonly artifactRoot: string;
   readonly artifacts?: ArtifactStoreOptions;
 }
@@ -794,6 +797,7 @@ export function composeFinalizerService(
     stacks: postgresEvaluationStack(finalizerPool),
     handoffs: artifacts,
     artifacts,
+    pipelinePaths: runtime.pipelinePaths,
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(config),
@@ -915,6 +919,7 @@ function finalizerServiceRuntime(
         ? {}
         : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
     }),
+    pipelinePaths: githubPipelinePaths,
     artifactRoot: settings.artifactRoot,
   };
 }

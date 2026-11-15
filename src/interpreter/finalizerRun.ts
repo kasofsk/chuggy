@@ -204,7 +204,8 @@
  * that list is left alone in both directions: it neither counts toward a result
  * nor wipes a count some other kind is keeping, because a reviewer who has not
  * merged a proposal says nothing about whether the target became readable.
- * Once the count reaches `holdPassesMax` the pass reports
+ * Once the count reaches `holdPassesMax`, or the first pass for a kind in
+ * `finalizationHoldsUnwaited`, the pass reports
  * `FinalizationResultUnavailable` at that kind, the machine escalates on it and
  * the operator's resume runs the operation again against a request that counts
  * from nothing — after asking its base's merge queue to give up a proposal that
@@ -260,12 +261,14 @@ import {
 } from "./finalizationProposal.ts";
 import {
   checkedFinalizerConfig,
+  finalizationHoldPassesMax,
   finalizationNext,
   promotionDeclineOf,
   type AncestryProved,
   type CandidateFile,
   type CandidateIntegrated,
   type CommitPermitId,
+  type ConflictSummary,
   type FinalizationAttempt,
   type FinalizationClaim,
   type FinalizationConclusion,
@@ -365,6 +368,8 @@ export interface FinalizerService {
   >;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
+  /** The paths the forge says a job's push may not change where its repository's binding withholds pipelines. */
+  readonly pipelinePaths: readonly string[];
   readonly identities: FinalizerIdentityFactory;
   readonly digestOf: FinalizationDigestFunction;
   readonly config: FinalizerConfig;
@@ -405,10 +410,15 @@ interface FinalizerTally {
    * before each request, so it never answers for the one before.
    */
   heldReason: FinalizerHoldReason | undefined;
+  /** The files a `TargetPathsRefused` hold is over, travelling beside `heldReason` and cleared with it. */
+  heldRefused: ConflictSummary | undefined;
 }
 
 /** Every count a pass prices a move against, which is every count it keeps. */
-type FinalizerCeiling = Exclude<keyof FinalizerTally, "heldReason">;
+type FinalizerCeiling = Exclude<
+  keyof FinalizerTally,
+  "heldReason" | "heldRefused"
+>;
 
 /**
  * The one strategy a preparation integrates with. `merge-tree --write-tree` is
@@ -451,6 +461,7 @@ function finalizerHold(
 ): void {
   tally.holds += 1;
   tally.heldReason = reason;
+  tally.heldRefused = undefined;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
@@ -847,6 +858,8 @@ interface FinalizerPreparation {
   readonly bundle: InputBundle;
   readonly target: ObservedTarget;
   readonly configuration: PinnedConfiguration;
+  /** Whether the candidate is the commit a job pushed, rather than one built here from its artifacts. */
+  readonly jobPushed: boolean;
 }
 
 /**
@@ -951,6 +964,47 @@ async function finalizerPreparationFailed(
   );
 }
 
+/** The paths a job's push may not change in the view's repository, none where its binding lets jobs write pipelines. */
+function finalizerPathsRefused(
+  service: FinalizerService,
+  view: FinalizationView,
+): readonly string[] {
+  return view.pipelinesWritable === false ? service.pipelinePaths : [];
+}
+
+/**
+ * Holds a conflict no job could resolve, which is one with a target that
+ * differs from the job's candidate in paths the job may not push, at
+ * `TargetPathsRefused` naming those files, and answers whether it held. A
+ * comparison git could not make holds too, since a conflict sent back to work
+ * on a guess may be the one no round can clear.
+ */
+async function finalizerConflictRefused(
+  service: FinalizerService,
+  view: FinalizationView,
+  repository: RepositoryBinding,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<boolean> {
+  const paths = finalizerPathsRefused(service, view);
+  if (paths.length === 0) return false;
+  const read = await service.git.readPathsDiffering({
+    repository,
+    target,
+    candidate,
+    paths,
+  });
+  if (read.read === "Unread") {
+    finalizerHold(service, tally, "IntegrationUnanswered");
+    return true;
+  }
+  if (read.differing.paths.length === 0) return false;
+  finalizerHold(service, tally, "TargetPathsRefused");
+  tally.heldRefused = read.differing;
+  return true;
+}
+
 /** Writes the conflict manifest one failed integration leaves, and records the attempt naming it. */
 async function finalizerConflicted(
   service: FinalizerService,
@@ -960,6 +1014,18 @@ async function finalizerConflicted(
   integrated: Extract<CandidateIntegrated, { integrated: "Conflicted" }>,
   tally: FinalizerTally,
 ): Promise<void> {
+  if (
+    subject.jobPushed &&
+    (await finalizerConflictRefused(
+      service,
+      subject.view,
+      subject.repository,
+      target,
+      candidate,
+      tally,
+    ))
+  )
+    return;
   const written = await service.artifacts.writeArtifact({
     partition: subject.view.claim.partition,
     artifact: subject.identity.conflict,
@@ -1418,7 +1484,7 @@ async function finalizerBuildSource(
       const { finalization } = subject.view;
       await finalizerPreparedBy(finalization)(
         service,
-        subject,
+        { ...subject, jobPushed: true },
         prepared.candidate,
         tally,
       );
@@ -1515,6 +1581,7 @@ async function finalizerGathered(
       ),
       target,
       configuration,
+      jobPushed: false,
     },
     ...(handoff === undefined ? {} : { handoff }),
   };
@@ -2286,10 +2353,22 @@ async function finalizerProposalFailed(
   );
 }
 
+/** Whether the work a request lands is a source a job pushed, read from the handoff its preparation accepted. */
+async function finalizerJobPushed(
+  service: FinalizerService,
+  view: FinalizationView,
+): Promise<boolean> {
+  const accepted = handoffAccepted(
+    handoffSuperseded(await service.store.handoffGathering(view.claim)),
+  );
+  return accepted.accepted === "Handoff" && accepted.handoff.kind === "Source";
+}
+
 /**
  * Records the conflict the forge refused the merge for, holding until the base
- * can be read. No manifest is written beside it: the forge named no paths, and
- * an empty one would be evidence of nothing.
+ * can be read, or at `TargetPathsRefused` where no job could resolve it. No
+ * manifest is written beside it: the forge named no paths, and an empty one
+ * would be evidence of nothing.
  */
 async function finalizerMergeConflicted(
   service: FinalizerService,
@@ -2300,12 +2379,24 @@ async function finalizerMergeConflicted(
   >,
   tally: FinalizerTally,
 ): Promise<void> {
-  const { repository } = finalizerCandidateOf(view);
+  const { repository, candidate } = finalizerCandidateOf(view);
   const base = await finalizerProposalBase(service, repository, decision.base);
   if (base === undefined) {
     finalizerHold(service, tally, "ProposalBaseUnreadable");
     return;
   }
+  if (
+    (await finalizerJobPushed(service, view)) &&
+    (await finalizerConflictRefused(
+      service,
+      view,
+      repository,
+      base,
+      candidate,
+      tally,
+    ))
+  )
+    return;
   await finalizerProposalFailed(
     service,
     view,
@@ -2706,15 +2797,21 @@ async function finalizerRecordHold(
   const reason = tally.heldReason;
   const kind = finalizerUnavailableKind(reason);
   if (reason !== undefined && kind === undefined) return;
+  const refused = kind === "TargetPathsRefused" ? tally.heldRefused : undefined;
+  if ((kind === "TargetPathsRefused") !== (refused !== undefined))
+    throw new Error(
+      "finalizer pass: a refused-paths hold and the files it is over travel together",
+    );
   const held = await service.store.recordHold({
     claim,
     ...(kind === undefined ? {} : { kind }),
+    ...(refused === undefined ? {} : { refused }),
   });
   const config = checkedFinalizerConfig(service.config);
   if (
     kind === undefined ||
     held.held !== "Recorded" ||
-    held.passes < config.holdPassesMax
+    held.passes < finalizationHoldPassesMax(config, kind)
   )
     return;
   if (view !== undefined) await finalizerDequeueEscalated(service, view, tally);
@@ -2738,6 +2835,7 @@ async function finalizerAdvance(
   tally: FinalizerTally,
 ): Promise<void> {
   tally.heldReason = undefined;
+  tally.heldRefused = undefined;
   const gathered = await finalizerGather(service, claim);
   if (gathered === undefined) return;
   const spent = tally.conclusions;
@@ -3051,6 +3149,7 @@ export async function finalizerPass(
     conclusions: 0,
     holds: 0,
     heldReason: undefined,
+    heldRefused: undefined,
   };
   await finalizerReadHolds(service, epoch, tally);
   const claims = await service.store.claimRequests(

@@ -189,6 +189,7 @@ import { migration188 } from "./188-target-commit-ref.ts";
 import { migration189 } from "./189-worker-task-inputs.ts";
 import { migration190 } from "./190-run-total-credential.ts";
 import { migration191 } from "./191-agent-account-credential-off.ts";
+import { migration192 } from "./192-target-paths-refused.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -383,4 +384,5 @@ export const migrations: readonly Migration[] = [
   migration189,
   migration190,
   migration191,
+  migration192,
 ];
