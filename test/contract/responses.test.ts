@@ -178,6 +178,7 @@ import {
   digest,
   draft as draftResource,
   evidencedExecution,
+  executionRun,
   execution,
   executionSummary,
   runTotals,
@@ -1817,6 +1818,26 @@ test("a run's evidence rides on the attempt that produced it", () => {
     "claude-representation",
   );
   assert.equal(detail.result?.report, "The fixture ran.");
+});
+
+test("an attempt's totals carry the credential its run named, and a name outside the pattern is refused", () => {
+  const named = (credential: string) =>
+    executionResponse({
+      ...evidencedExecution,
+      attempts: evidencedExecution.attempts.map((attempt) => ({
+        ...attempt,
+        run: { ...executionRun, totals: { ...runTotals, credential } },
+      })),
+    }).body;
+  assert.equal(
+    executionResponseSchema.parse(named("max-2")).attempts[0]?.run?.totals
+      ?.credential,
+    "max-2",
+  );
+  assert.equal(
+    executionResponseSchema.safeParse(named("max 2")).success,
+    false,
+  );
 });
 
 test("a run that wrote nothing carries neither evidence nor a total", () => {
