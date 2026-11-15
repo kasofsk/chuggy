@@ -199,6 +199,12 @@ export interface ExecutionRequestBundle {
     readonly repository: string;
     readonly targetRef?: string;
     readonly targetCommit: string;
+    /**
+     * The ref the forge holds the target commit on, which only an evaluation
+     * names: a work spawn's ref is where its work is observed, which may have
+     * moved past the commit or not exist yet.
+     */
+    readonly targetCommitRef?: string;
     readonly manifests: readonly string[];
     readonly changeBase?: string;
     /** The git tree an evaluation must be run against, which the terminal report is held to. */
