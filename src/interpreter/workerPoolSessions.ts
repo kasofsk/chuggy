@@ -34,9 +34,9 @@
  * own project, which its admission already answered for.
  *
  * A MEMBER'S OWN SESSION IS ITS OWNER'S CHAT HOST'S ALONE, and only while the
- * owner may still open unscoped chat and the host speaks a contract that runs
- * one: its partition is no project, so the tenant's permit is asked in place of
- * a project's read, and it is handed no repository, there being no binding to
+ * owner may still open unscoped chat and the host implements `UnscopedChat`:
+ * its partition is no project, so the tenant's permit is asked in place of a
+ * project's read, and it is handed no repository, there being no binding to
  * read.
  *
  * A CHAT HOST'S SESSION SITS IDLE AS LONG AS ITS HOST NAMED, AND WITHOUT
@@ -55,6 +55,11 @@
  * inquiry, a lead and any session a pool claims hold their roster.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
+import {
+  workerContractImplements,
+  type WorkerContractFeature,
+  type WorkerContractPeer,
+} from "../contract/workerContract.ts";
 import {
   workerPoolPollIdleSecsMax,
   type WorkerPoolSessionAssignment,
@@ -78,11 +83,6 @@ import {
   type SessionTaskInvocation,
 } from "./sessionScheduler.ts";
 import type { SessionAttemptMint } from "./sessionSchedulerRun.ts";
-import {
-  contractVersionAccepted,
-  workerContractChatSessionThreads,
-  workerContractUnscopedChat,
-} from "./workerPlane.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import {
   workerPoolImageHosted,
@@ -98,6 +98,17 @@ import {
   type SessionSiteBounds,
   type SessionTaskLaunch,
 } from "./workerTask.ts";
+
+/** Whether the peer a poll offered implements `feature`, a poll carrying none read as one whose request named nothing. */
+export function workerPoolPeerImplements(
+  feature: WorkerContractFeature,
+  contract: WorkerContractPeer | undefined,
+): boolean {
+  return workerContractImplements(
+    feature,
+    contract ?? { release: undefined, features: undefined },
+  );
+}
 
 /** What a site launches every session with, as its scheduler publishes it. */
 export interface SessionLaunchFacts {
@@ -368,14 +379,14 @@ export function workerPoolSessionBounds(
   return { mailboxPollMs, resultDrainMs, loadTimeoutMs, turnsMax, budgetUsd };
 }
 
-/** Whether a poll may be handed its owner's own sessions: a chat host's alone, offering a release that runs one. */
+/** Whether a poll may be handed its owner's own sessions: a chat host's alone, whose peer implements `UnscopedChat`. */
 function workerPoolSessionClaimsMemberScope(
   identity: PoolPlaneIdentity,
-  contract: string | undefined,
+  contract: WorkerContractPeer | undefined,
 ): boolean {
   return (
     identity.kind === "ChatHost" &&
-    contractVersionAccepted(workerContractUnscopedChat, contract)
+    workerPoolPeerImplements("UnscopedChat", contract)
   );
 }
 
@@ -443,7 +454,7 @@ export async function workerPoolSessionClaims(
     readonly wanted: number;
     readonly idleSecs?: number;
     readonly sessionCapabilities?: readonly SessionCapability[];
-    readonly contract?: string;
+    readonly contract?: WorkerContractPeer;
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const { wanted } = asked;
@@ -499,16 +510,16 @@ export async function workerPoolSessionClaims(
   return claimed;
 }
 
-/** The thread a claimed session is an attempt of, named only to a chat host whose poll's release reads it, and absent for an inquiry or a lead. */
+/** The thread a claimed session is an attempt of, named only to a chat host whose poll's peer implements `ChatSessionThreads`, and absent for an inquiry or a lead. */
 function workerPoolSessionThreadNamed(
   identity: WorkerPoolSessionClaimant,
-  contract: string | undefined,
+  contract: WorkerContractPeer | undefined,
   candidate: WorkerPoolSessionCandidate,
 ): Pick<WorkerPoolSessionAssignment, "thread"> {
   if (
     identity.kind !== "ChatHost" ||
     candidate.kind !== "Thread" ||
-    !contractVersionAccepted(workerContractChatSessionThreads, contract)
+    !workerPoolPeerImplements("ChatSessionThreads", contract)
   )
     return {};
   return { thread: { project: candidate.project, session: candidate.session } };

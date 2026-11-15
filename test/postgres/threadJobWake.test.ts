@@ -63,6 +63,7 @@ import {
   sessionRigSession,
   sessionRigTurn,
 } from "./sessionHarness.ts";
+import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await sessionRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -133,7 +134,12 @@ async function chatHostThread(
   const answered = await workerPoolPoll(
     ports,
     host,
-    { held: [], wanted: 0, wantedSessions: 1, contract: workerContractRelease },
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 1,
+      contract: workerContractPeerNaming(workerContractRelease),
+    },
     settings,
   );
   if (answered.polled !== "Answered")
@@ -311,7 +317,12 @@ async function ownChatHostThread(label: string): Promise<{
       owner: member,
       principal: registered,
     },
-    { held: [], wanted: 0, wantedSessions: 1, contract: workerContractRelease },
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 1,
+      contract: workerContractPeerNaming(workerContractRelease),
+    },
     settings,
   );
   if (answered.polled !== "Answered")

@@ -150,6 +150,7 @@ import {
   type SchedulerCapacity,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
+import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await schedulerRigOpen();
 const planePool = postgresHarnessRolePool(poolPlaneRole);
@@ -1531,7 +1532,7 @@ test("a poll's claims together fit the room it named, and it is told whether one
         wanted,
         wantedSessions: 0,
         memoryRoomMib,
-        contract: workerContractRelease,
+        contract: workerContractPeerNaming(workerContractRelease),
       },
       { ...settings, heldMax: 4 },
     );
