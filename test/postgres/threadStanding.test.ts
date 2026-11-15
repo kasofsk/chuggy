@@ -50,6 +50,7 @@ import {
   sessionRigSession,
   sessionRigTurn,
 } from "./sessionHarness.ts";
+import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await sessionRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -118,7 +119,12 @@ async function polled(
   const answered = await workerPoolPoll(
     ports,
     host,
-    { held, wanted: 0, wantedSessions, contract },
+    {
+      held,
+      wanted: 0,
+      wantedSessions,
+      contract: workerContractPeerNaming(contract),
+    },
     settings,
   );
   if (answered.polled !== "Answered")

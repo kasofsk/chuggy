@@ -135,6 +135,7 @@ import {
   workerPoolReportAgeMsMax,
   workerPoolReports,
 } from "../../src/interpreter/workerPoolReports.ts";
+import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await sessionRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -2130,7 +2131,12 @@ async function polledOffering(
   const answered = await workerPoolPoll(
     through,
     caller,
-    { held: [], wanted: 0, wantedSessions: 4, contract },
+    {
+      held: [],
+      wanted: 0,
+      wantedSessions: 4,
+      contract: workerContractPeerNaming(contract),
+    },
     settings,
   );
   if (answered.polled !== "Answered")
