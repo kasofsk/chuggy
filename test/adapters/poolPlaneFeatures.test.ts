@@ -76,6 +76,7 @@ import type {
 } from "../../src/interpreter/workerPoolSessions.ts";
 import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import { workerPoolAssignmentsIdle } from "../interpreter/workerPoolFixture.ts";
 
 /** The headers a probe sends beside its bearer, one of them sent more than once where its value is a list. */
 type PoolPlaneFeatureHeaders = Readonly<Record<string, string | string[]>>;
@@ -161,24 +162,6 @@ const allowing: ProjectAccess = {
   authorizeSite: projectAccessSiteRefused,
 };
 
-/** Claims nothing, holds nothing and renews nothing. */
-const assignmentsInert: WorkerPoolAssignments = {
-  claim: () => Promise.resolve(undefined),
-  ownersDeferredTo: () => Promise.resolve([]),
-  claimPersonal: () => Promise.resolve(undefined),
-  waiting: () => Promise.resolve(false),
-  waitingPersonal: () => Promise.resolve(false),
-  allowlisted: () => Promise.resolve([]),
-  credentialOutcomes: () => Promise.resolve([]),
-  credentialPauses: () => Promise.resolve([]),
-  polled: () => Promise.resolve(),
-  renew: () => Promise.resolve(false),
-  refuse: () => Promise.resolve(true),
-  release: () => Promise.resolve(true),
-  held: () => Promise.resolve(true),
-  heldImages: () => Promise.resolve([]),
-};
-
 /** Offers no session and has closed no thread. */
 const sessionsInert: WorkerPoolSessions = {
   launch: () => Promise.resolve(launch),
@@ -259,7 +242,7 @@ function poolPlaneFeatureApp(
       identify: (principal) =>
         Promise.resolve(principal === host.principal ? host : undefined),
     },
-    assignments: { ...assignmentsInert, ...over.assignments },
+    assignments: { ...workerPoolAssignmentsIdle, ...over.assignments },
     sessions: {
       store: { ...sessionsInert, ...over.sessions },
       bindings: { binding: () => Promise.resolve(undefined) },
@@ -373,6 +356,7 @@ const poolPlaneFeatureGates: readonly PoolPlaneFeatureGate[] = [
       const body = await poolPlaneFeaturePolled(
         poolPlaneFeatureApp({
           assignments: {
+            renew: () => Promise.resolve(false),
             credentialOutcomes: () =>
               Promise.resolve([
                 { assignment: "benched", outcome: "CreditsExhausted" },

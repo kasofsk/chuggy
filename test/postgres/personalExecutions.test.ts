@@ -1353,16 +1353,13 @@ test("each outcome a benching runner's job ended under is named for it alone: a 
   const runner = await runnerOf(project.partition, member);
   const bench = benchPorts();
   const taken: string[] = [];
+  const contract = workerContractPeerNaming(workerContractRelease);
   for (let claiming = 0; claiming < 4; claiming += 1) {
     const answered = await workerPoolReconcile(
       bench.ports,
       runner,
       { jobs: taken, sessions: [] },
-      {
-        wanted: 1,
-        wantedSessions: 0,
-        contract: workerContractPeerNaming(workerContractRelease),
-      },
+      { wanted: 1, wantedSessions: 0, contract },
       { ...benchSettings, heldMax: 4 },
     );
     const assignment = answered.assignments[0]?.assignment;

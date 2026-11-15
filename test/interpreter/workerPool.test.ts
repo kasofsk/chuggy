@@ -57,6 +57,7 @@ import {
   type WorkerPoolSessions,
 } from "../../src/interpreter/workerPoolSessions.ts";
 import { workerContractPeerNaming } from "./workerContractPeerFixture.ts";
+import { workerPoolAssignmentsIdle as idle } from "./workerPoolFixture.ts";
 
 const identity: PoolPlaneIdentity = {
   kind: "Dedicated",
@@ -116,24 +117,6 @@ const unaddressed: WorkerPoolPollSettings = {
 const settings: WorkerPoolPollSettings = {
   ...unaddressed,
   sessionApiUrl: "https://api.invalid/",
-};
-
-/** A durable side holding nothing, which is what a pool with no work to take meets. */
-const idle: WorkerPoolAssignments = {
-  claim: () => Promise.resolve(undefined),
-  ownersDeferredTo: () => Promise.resolve([]),
-  claimPersonal: () => Promise.resolve(undefined),
-  waiting: () => Promise.resolve(false),
-  waitingPersonal: () => Promise.resolve(false),
-  allowlisted: () => Promise.resolve([]),
-  credentialOutcomes: () => Promise.resolve([]),
-  credentialPauses: () => Promise.resolve([]),
-  polled: () => Promise.resolve(),
-  renew: () => Promise.resolve(true),
-  refuse: () => Promise.resolve(false),
-  release: () => Promise.resolve(false),
-  held: () => Promise.resolve(false),
-  heldImages: () => Promise.resolve([]),
 };
 
 const launch: SessionLaunchFacts = {
