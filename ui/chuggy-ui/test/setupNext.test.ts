@@ -151,42 +151,42 @@ const mends: {
       repository: "acme-org/widgets",
     },
     hand(
-      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Worker app missing · grant it on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
+      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/settings/repositories, press Add, and under the list find Worker app missing · grant it on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
       "once the person says the worker app is granted acme-org/widgets",
     ),
   ],
   Account: [
     { lacks: "Account" },
     hand(
-      `Open ${pages}/repositories and press Connect GitHub, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
+      `Open ${pages}/settings/repositories and press Connect GitHub, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
       "once the person says GitHub is connected",
     ),
   ],
   App: [
     { lacks: "App", app: "worker", account: "acme-org" },
     hand(
-      `Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
+      `Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
       "once the person says the worker app is installed on acme-org",
     ),
   ],
   Binding: [
     { lacks: "Binding" },
     hand(
-      `Open ${pages}/repositories, press Add and choose your repository. Tell me once it is added.`,
+      `Open ${pages}/settings/repositories, press Add and choose your repository. Tell me once it is added.`,
       "once the person says the repository is added",
     ),
   ],
   Configuration: [
     { lacks: "Configuration", repository: "acme-org/widgets" },
     hand(
-      `acme-org/widgets is added, but chuggy has not read its configuration. Open ${pages}/repositories and press Retry on the row for acme-org/widgets; if it still cannot, the row then says why. Tell me once Retry has answered.`,
+      `acme-org/widgets is added, but chuggy has not read its configuration. Open ${pages}/settings/repositories and press Retry on the row for acme-org/widgets; if it still cannot, the row then says why. Tell me once Retry has answered.`,
       "once the person says Retry has answered for acme-org/widgets",
     ),
   ],
   Runner: [
     { lacks: "Runner", chat: false },
     hand(
-      `Open ${pages}/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
+      `Open ${pages}/settings/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
       "once the person says the runner is running",
     ),
   ],
@@ -297,7 +297,7 @@ test("an app not granted the repository is mended from the line the Add picker d
   }
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     hand(
-      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Not listed · grant it on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
+      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/settings/repositories, press Add, and under the list find Not listed · grant it on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
       "once the person says the portal app is granted acme-org/widgets",
     ),
   );
@@ -306,7 +306,7 @@ test("an app not granted the repository is mended from the line the Add picker d
 test("the repository to add is named as this folder's where the folder has a remote", () => {
   const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
   expect(thing({ lacks: "Binding" }, { remote })).toMatchObject({
-    tell: `Open ${pages}/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
+    tell: `Open ${pages}/settings/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
   });
 });
 
@@ -323,7 +323,7 @@ test("a name is written into an address so that the address is still one address
     project: "a/b?c#d",
   };
   expect(told({ lacks: "Runner", chat: false }, { choice })).toContain(
-    `Open ${stoodSite}/two%20words/a%2Fb%3Fc%23d/runners and press`,
+    `Open ${stoodSite}/two%20words/a%2Fb%3Fc%23d/settings/runners and press`,
   );
   expect(told({ lacks: "Project" }, { choice })).toContain(
     `Open ${stoodSite}/projects/new?workspace=two%20words, the`,
@@ -521,7 +521,7 @@ const runnerIs =
 test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
   expect(here({ lacks: "Runner", chat: false }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
+      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/runners, where you press Add runner.`,
     ),
   );
   expect(here({ lacks: "Runner", chat: false }, roomy, true)).toEqual(
@@ -532,7 +532,7 @@ test("with no runner yet and a machine that could take one, the person is told o
 test("with neither a runner of the project nor the person's chat host, the offer says two services of theirs are put here: one for the work on the project's tickets, one their chat host", () => {
   expect(here({ lacks: "Runner", chat: true }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
+      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/runners, where you press Add runner.`,
     ),
   );
 });
@@ -577,7 +577,7 @@ test("where this machine could not take a runner the person is told why instead,
   const running = "once the person says the runner is running";
   expect(here({ lacks: "Runner", chat: false }, { room: "Mac" })).toEqual(
     hand(
-      `${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: open ${pages}/runners, press Add runner, choose Mac and do what it shows there. Tell me once the runner is running.`,
+      `${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: open ${pages}/settings/runners, press Add runner, choose Mac and do what it shows there. Tell me once the runner is running.`,
       running,
     ),
   );
@@ -585,7 +585,7 @@ test("where this machine could not take a runner the person is told why instead,
     here({ lacks: "Runner", chat: false }, { room: "Serviceless" }),
   ).toEqual(
     hand(
-      `${runnerIs}. chuggy setup runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. Open ${pages}/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
+      `${runnerIs}. chuggy setup runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. Open ${pages}/settings/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
       running,
     ),
   );
@@ -602,7 +602,7 @@ test("where this machine could not take a runner the person is told why instead,
     ),
   ).toEqual(
     hand(
-      `${runnerIs}, in containers. This machine cannot be one yet: neither Docker nor Podman answered here without a password. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once one answers you here. For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`,
+      `${runnerIs}, in containers. This machine cannot be one yet: neither Docker nor Podman answered here without a password. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once one answers you here. For a runner on another machine instead, open ${pages}/settings/runners there and press Add runner, and tell me once it is running.`,
       "once the person says a container engine answers them on this machine, or that a runner is running",
     ),
   );
@@ -613,7 +613,7 @@ test("a user the runner package bars from docker is told the package's reason an
     "Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are user 1001.";
   const podman =
     "The package's own answer for any other user is rootless podman";
-  const instead = `For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`;
+  const instead = `For a runner on another machine instead, open ${pages}/settings/runners there and press Add runner, and tell me once it is running.`;
   expect(
     here(
       { lacks: "Runner", chat: false },

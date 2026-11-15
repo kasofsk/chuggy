@@ -101,10 +101,11 @@ export type RunUsage = Readonly<
   Partial<Record<RunUsageWindow, RunUsageReading>>
 >;
 
-/** The limit a provider stopped a run at, each part where the provider said it: which window, and when it reopens in Unix seconds. */
+/** The limit a provider stopped a run at, each part where the provider said it: which window, and when it reopens in Unix seconds; and the credential it stopped, where the run named it. */
 export interface RunLimit {
   readonly window?: RunUsageWindow;
   readonly resetsAt?: number;
+  readonly credential?: string;
 }
 
 /** One assistant turn's usage, as the worker offers it before the server dates it, naming the subagent call it was made under where it was. */
@@ -213,12 +214,13 @@ export interface WorkerRunContextPort {
   ): Promise<RunContextStored>;
 }
 
-/** A run's totals, and the usage of the account it spent, which is kept with totals that were stored or already were. */
+/** A run's totals, and the usage of the account it spent under the credential the run named, which is kept with totals that were stored or already were. */
 export interface WorkerRunTotalPort {
   record(
     input: RunEvidenceWrite & {
       readonly totals: RunTotals;
       readonly usage?: RunUsage;
+      readonly credential?: string;
     },
   ): Promise<RunEvidenceStored>;
 }

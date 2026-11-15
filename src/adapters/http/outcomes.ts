@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import type { TicketId } from "../../domain/ids.ts";
 import type {
   ConfigurationPage,
   ConfigurationRevisionResource,
@@ -22,6 +23,7 @@ import type {
   ProjectInventoryPage,
   ProjectRead,
   TicketNativeAction,
+  TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
@@ -160,6 +162,7 @@ import {
   encodeInventoryCursor,
   encodeLatestExecutionCursor,
   encodeNativeActionCursor,
+  encodeNativeActionHistoryCursor,
   encodeTicketActivityCursor,
   encodeTicketNumberCursor,
 } from "./contract.ts";
@@ -203,10 +206,24 @@ import type {
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
+  AgentAccountRetired,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
+  OwnedTheme,
+  OwnedThemeCreated,
+  OwnedThemeDeleted,
+  OwnedThemeWritten,
+  ThemeChosen,
+  ThemeContrastRefused,
+} from "../../interpreter/appearance.ts";
+import type { ThemeChoice } from "../../contract/appearance.ts";
+import type {
   AgentAccountsResponse,
+  AgentPause,
+  OwnedThemeResponse,
+  OwnedThemesResponse,
+  ThemeChoiceResponse,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -220,6 +237,7 @@ import type {
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
+import { agentAccountCredentialInUseCode } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
@@ -458,7 +476,7 @@ export function submissionResponse(
         403,
         nativeHttpError(
           programSkipsPlannedEvaluationsCode,
-          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+          "The draft's program runs less than its configuration plans: it leaves out the plan's last stages, or an evaluator of a stage it keeps. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it. A program keeping a later stage of the plan and leaving out an earlier one is refused whoever releases it, as ProgramStageOutOfPosition.",
         ),
       );
     case "AnswerRefused":
@@ -602,6 +620,27 @@ export function nativeActionsResponse(
                 partition,
                 result.value.nextAfter,
               ),
+            }),
+      });
+}
+
+/** A ticket nobody may read and a ticket that does not exist answer alike, as the ticket's open actions do. */
+export function ticketNativeActionHistoryResponse(
+  partition: Partition,
+  ticket: TicketId,
+  page: TicketNativeActionHistoryPage | undefined,
+): NativeHttpResponse {
+  return page === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        actions: page.actions,
+        ...(page.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeNativeActionHistoryCursor(partition, {
+                ticket,
+                ...page.nextAfter,
+              }),
             }),
       });
 }
@@ -1474,6 +1513,10 @@ export function personalRunnerResponse(
             waitingTruncated,
           }),
         ),
+        pauses: result.value.pauses.map(({ agent, pause }) => ({
+          agent,
+          pause: { ...pause, reasons: [...pause.reasons] },
+        })),
       } satisfies PersonalRunnerResponse);
     default:
       return assertNever(result);
@@ -1499,6 +1542,30 @@ export function ownerFallbackBody(
   };
 }
 
+/** A credential's pause's copy, or no field where none holds. */
+function agentAccountsResponsePause(
+  pause: AgentAccountView["credentials"][number]["pause"],
+): { pause?: AgentPause } {
+  return pause === undefined
+    ? {}
+    : { pause: { ...pause, reasons: [...pause.reasons] } };
+}
+
+/** The agent's pause's copy with the credentials holding it, or no field where none holds. */
+function agentAccountsResponseHeldPause(
+  pause: AgentAccountView["pause"],
+): Pick<AgentAccountsResponse["accounts"][number], "pause"> {
+  return pause === undefined
+    ? {}
+    : {
+        pause: {
+          ...pause,
+          reasons: [...pause.reasons],
+          credentials: [...pause.credentials],
+        },
+      };
+}
+
 /** Every agent of the caller's own account. */
 export function agentAccountsResponse(
   accounts: readonly AgentAccountView[],
@@ -1509,11 +1576,12 @@ export function agentAccountsResponse(
       settings: { ...account.settings },
       readings: account.readings.map((reading) => ({ ...reading })),
       ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
-      ...(account.pause === undefined
-        ? {}
-        : {
-            pause: { ...account.pause, reasons: [...account.pause.reasons] },
-          }),
+      ...agentAccountsResponseHeldPause(account.pause),
+      credentials: account.credentials.map((credential) => ({
+        name: credential.name,
+        readings: credential.readings.map((reading) => ({ ...reading })),
+        ...agentAccountsResponsePause(credential.pause),
+      })),
     })),
   } satisfies AgentAccountsResponse);
 }
@@ -1538,9 +1606,155 @@ export function agentAccountPressedResponse(
   }
 }
 
+/** A credential retired, none held under its name, or refused because a live runner of the account still names it. */
+export function agentAccountRetiredResponse(
+  result: AgentAccountRetired,
+): NativeHttpResponse {
+  switch (result) {
+    case "Retired":
+      return noContent();
+    case "NotHeld":
+      return notFound();
+    case "CredentialInUse":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialInUseCode,
+          "A live runner of the account still names this credential.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
 /** One agent's settings written whole. */
 export function agentAccountWrittenResponse(): NativeHttpResponse {
   return noContent();
+}
+
+/** The most pairs a contrast refusal's message names, the rest counted. */
+const themeContrastRefusalPairsMax = 6;
+
+/** A document the contrast rule refuses, its message naming the pairs it draws too faintly. */
+function themeContrastRefusedResponse(
+  refused: ThemeContrastRefused,
+): NativeHttpResponse {
+  const named = refused.failures
+    .slice(0, themeContrastRefusalPairsMax)
+    .map(
+      (failure) =>
+        `${failure.foreground} on ${failure.background} in ${failure.scheme} is ${failure.ratio.toFixed(2)}, under ${String(failure.ratioMin)}`,
+    );
+  const unnamed = refused.failures.length - named.length;
+  return response(
+    422,
+    nativeHttpError(
+      "ThemeContrastInsufficient",
+      `The theme draws ${String(refused.failures.length)} pairs below the contrast they need: ${named.join("; ")}${unnamed > 0 ? `; and ${String(unnamed)} more` : ""}.`,
+    ),
+  );
+}
+
+function ownedThemeBody(theme: OwnedTheme): OwnedThemeResponse {
+  return { theme: theme.theme, document: theme.document };
+}
+
+/** Every theme of the caller's own. */
+export function ownedThemesResponse(
+  themes: readonly OwnedTheme[],
+): NativeHttpResponse {
+  return response(200, {
+    themes: themes.map(ownedThemeBody),
+  } satisfies OwnedThemesResponse);
+}
+
+/** One theme of the caller's own, or none of theirs by that number. */
+export function ownedThemeResponse(
+  theme: OwnedTheme | undefined,
+): NativeHttpResponse {
+  return theme === undefined
+    ? notFound()
+    : response(200, ownedThemeBody(theme));
+}
+
+/** A theme created, or refused at the caller's bound or by the contrast rule. */
+export function ownedThemeCreatedResponse(
+  result: OwnedThemeCreated,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Created":
+      return response(201, ownedThemeBody(result.theme));
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "ThemeLimitReached",
+          "The caller already owns their bound of themes.",
+        ),
+      );
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A theme written whole, or none of the caller's by that number, or refused by the contrast rule. */
+export function ownedThemeWrittenResponse(
+  result: OwnedThemeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Written":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "ContrastInsufficient":
+      return themeContrastRefusedResponse(result);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A theme deleted, or none of the caller's by that number. */
+export function ownedThemeDeletedResponse(
+  result: OwnedThemeDeleted,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deleted":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
+/** The caller's own global choice, absent where they hold none. */
+export function themeChoiceResponse(
+  choice: ThemeChoice | undefined,
+): NativeHttpResponse {
+  return response(200, {
+    ...(choice === undefined ? {} : { choice: { ...choice } }),
+  } satisfies ThemeChoiceResponse);
+}
+
+/** A choice written or cleared, or refused because the theme it names is none of the caller's. */
+export function themeChosenResponse(result: ThemeChosen): NativeHttpResponse {
+  switch (result) {
+    case "Chosen":
+      return noContent();
+    case "ThemeNotFound":
+      return response(
+        422,
+        nativeHttpError(
+          "ThemeNotFound",
+          "The choice names no theme the caller owns.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */
@@ -2576,6 +2790,9 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         handoffNote: handoffNotePreview(result.lead.handoffNote),
         turns: result.lead.turns.map(leadTurnBody),
         streams: result.streams,
+        ...(result.held === undefined
+          ? {}
+          : { held: { reason: result.held.reason } }),
         ...(result.refusal === undefined
           ? {}
           : { refusal: leadRefusalBody(result.refusal) }),

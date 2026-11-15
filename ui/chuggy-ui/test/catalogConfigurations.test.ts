@@ -1,7 +1,6 @@
 /**
  * The configurations the Catalog page chooses among: each name once with its
- * versions newest first, the page opening on a catalog, and the address read
- * back into a choice.
+ * versions newest first, and the address read back into a choice.
  */
 
 import { expect, test } from "vitest";
@@ -9,7 +8,6 @@ import { expect, test } from "vitest";
 import type { ConfigurationSummary } from "../../../src/contract/responses.ts";
 import {
   catalogConfigurationHolding,
-  catalogConfigurationOpening,
   catalogConfigurationsOf,
   catalogConfigurationVersionOf,
   catalogQueryOf,
@@ -70,18 +68,6 @@ test("each name is listed once, in the order it last changed, its versions newes
   ]);
 });
 
-test("the page opens on the newest catalog, and on the newest configuration where none is one", () => {
-  expect(catalogConfigurationOpening(catalogConfigurationsOf(listed))).toBe(
-    "r4",
-  );
-  expect(
-    catalogConfigurationOpening(
-      catalogConfigurationsOf([summary("r1", "basic", 1, false)]),
-    ),
-  ).toBe("r1");
-  expect(catalogConfigurationOpening([])).toBeUndefined();
-});
-
 test("an older version is found under the name it is a version of", () => {
   expect(
     catalogConfigurationHolding(catalogConfigurationsOf(listed), "r2")?.name,
@@ -127,4 +113,17 @@ test("the address keeps only the choices it names as text", () => {
     entry: "plans/review",
   });
   expect(catalogQueryOf({ configuration: "", entry: 7 })).toStrictEqual({});
+});
+
+test("the address keeps the repository chosen, beside a configuration or alone", () => {
+  expect(
+    catalogQueryOf({ repository: "https://forge.test/kasofsk/chuggy" }),
+  ).toStrictEqual({ repository: "https://forge.test/kasofsk/chuggy" });
+  expect(
+    catalogQueryOf({ repository: "https://forge.test/a", configuration: "r4" }),
+  ).toStrictEqual({ repository: "https://forge.test/a", configuration: "r4" });
+  expect(catalogQueryOf({ repository: "" })).toStrictEqual({});
+  expect(
+    catalogQueryOf({ repository: ["https://forge.test/a"] }),
+  ).toStrictEqual({});
 });

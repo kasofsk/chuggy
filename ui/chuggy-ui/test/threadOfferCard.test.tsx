@@ -2,7 +2,9 @@
  * An offer drawn as a card: a card that read its draft or ticket draws it,
  * Confirm runs the member's own operation at the version offered and then
  * replies, Decline replies and runs nothing, a card
- * whose subject moved past the version offered has no Confirm, a card the
+ * whose subject moved past the version offered has no Confirm, a release
+ * card waiting on a dependency still a draft names it and has no Confirm
+ * until the stream says it is released, a card the
  * mailbox holds a reply for is drawn settled and reads nothing, a card whose
  * reply could be in a mailbox page the read does not hold offers nothing, and
  * a reply the mailbox refused can be sent again.
@@ -22,7 +24,10 @@ import {
   useThreadOfferDrawn,
 } from "../app/browser/thread/ThreadOfferCard.tsx";
 import type { ConversationExchange } from "../app/core/conversation.ts";
-import { threadOfferUnreadSentence } from "../app/core/threadOffers.ts";
+import {
+  threadOfferUnreadSentence,
+  threadOfferWaitingSentence,
+} from "../app/core/threadOffers.ts";
 import type { ThreadOfferCall } from "../app/core/threadOffers.ts";
 import {
   answer,
@@ -35,6 +40,8 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
+import { frame } from "./streamDouble.ts";
+import type { StreamServer } from "./streamDouble.ts";
 import {
   creationCatalogCanonical,
   creationDigest,
@@ -85,14 +92,15 @@ function replyRefused(): Response {
 }
 
 /** The API as a card meets it: the draft and the ticket as a case names
- * them, the draft's configuration the fixture's catalog, every submission
- * accepted and settled done, and every reply taken but those a case refuses
- * first. */
+ * them, any other draft a case names by its ticket, the draft's configuration
+ * the fixture's catalog, every submission accepted and settled done, and
+ * every reply taken but those a case refuses first. */
 function served(
   draft: unknown = creationDraft,
   ticket: unknown = pendingTicket,
   replies: (() => Response)[] = [],
   canonical: string = creationCatalogCanonical,
+  drafts: ReadonlyMap<number, unknown> = new Map(),
 ) {
   return scriptedFetch((request: SentRequest) => {
     if (request.url.includes("/offer-replies"))
@@ -112,6 +120,8 @@ function served(
         digest: creationDigest,
       });
     if (request.url.includes("/drafts/12")) return answer(draft);
+    for (const [held, other] of drafts)
+      if (request.url.endsWith(`/drafts/${String(held)}`)) return answer(other);
     if (request.url.includes("/tickets/11")) return answer(ticket);
     return answer({
       partition: atlas,
@@ -127,13 +137,14 @@ async function drawn(
   answer: Parameters<typeof ThreadOfferCard>[0]["answer"] = {
     answer: "Unreplied",
   },
+  stream: StreamServer = openedStream(),
 ): Promise<void> {
   vi.stubGlobal("fetch", api.fetch);
   renderCopied(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}
-      transport={openedStream().ports.fetch}
+      transport={stream.ports.fetch}
     >
       <ThreadOfferCard
         partition={atlas}
@@ -221,6 +232,50 @@ test("Confirm releases exactly the version offered, as the member, and then repl
   ]);
   expect(screen.getByRole("status").textContent).toBe("Released");
   expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+});
+
+test("a release card waiting on a dependency still a draft names it and offers no Confirm, until the stream says it is released", async () => {
+  const dependency = { ...creationDraft, ticket: 7, authoringVersion: 1 };
+  const depending = {
+    ...creationDraft,
+    authoring: { ...creationDraft.authoring, dependencies: [7] },
+  };
+  const stream = openedStream();
+  await drawn(
+    release,
+    served(
+      depending,
+      pendingTicket,
+      [],
+      creationCatalogCanonical,
+      new Map([[7, dependency]]),
+    ),
+    { answer: "Unreplied" },
+    stream,
+  );
+
+  const waiting = screen.getByText(copyTextEn(threadOfferWaitingSentence));
+  expect(waiting.closest("p")?.textContent).toContain("#7");
+  expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
+
+  await turned(() => {
+    stream.push(
+      frame("Draft", "10", {
+        version: 1,
+        resource: "7",
+        representation: {
+          ...dependency,
+          state: "Released",
+          releasedAuthoringVersion: 1,
+        },
+      }),
+    );
+  });
+  await settled();
+
+  expect(screen.queryByText(copyTextEn(threadOfferWaitingSentence))).toBeNull();
+  expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
 });
 
 test("Decline replies and submits nothing", async () => {

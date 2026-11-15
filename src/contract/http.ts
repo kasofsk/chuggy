@@ -640,6 +640,7 @@ export const nativeHttpRoutes = {
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
+  ticketNativeActionHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-action-history`,
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
@@ -700,6 +701,10 @@ export const nativeHttpRoutes = {
   agentAccounts: `${nativeHttpBasePath}/agent-accounts`,
   agentAccountSettings: `${nativeHttpBasePath}/agent-accounts/:agent/settings`,
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,
+  agentAccountCredential: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential`,
+  ownThemes: `${nativeHttpBasePath}/appearance/themes`,
+  ownTheme: `${nativeHttpBasePath}/appearance/themes/:theme`,
+  themeChoice: `${nativeHttpBasePath}/appearance/choice`,
   chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
   chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
   chatAbilities: `${nativeHttpBasePath}/tenants/:tenant/chat/abilities`,
@@ -1049,6 +1054,20 @@ export const runUsageInstantSchema = z
   .int()
   .positive()
   .max(runUsageInstantSecsMax);
+/** The name of the agent credential a run spent, as its runner holds it: never the secret. */
+export const workerRunCredentialSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/u);
+
+/** The most credentials of one agent an account read names. */
+export const agentAccountCredentialsMax = 16;
+
+/** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
+export const workerRunCredentialDefaults = {
+  Claude: "claude",
+  Codex: "codex",
+} as const;
+
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
 /**

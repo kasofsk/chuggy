@@ -52,18 +52,16 @@ export function postgresSessionLaunchPrecondition(
       await pool.query(
         sql`INSERT INTO session_launch
               (singleton,image,authority,mirrors,bounds,model,deadline_secs,
-               backoff_secs,idle_secs_max,published_at)
+               backoff_secs,published_at)
             VALUES (1,${launch.image},${JSON.stringify(launch.authority)}::jsonb,
                     ${JSON.stringify(launch.mirrors)}::jsonb,
                     ${JSON.stringify(launch.bounds)}::jsonb,${launch.model},
-                    ${launch.deadlineSecs},${launch.placementBackoffSecs},
-                    ${launch.idleSecsMax ?? null}::bigint,now())
+                    ${launch.deadlineSecs},${launch.placementBackoffSecs},now())
             ON CONFLICT (singleton) DO UPDATE
               SET image=EXCLUDED.image,authority=EXCLUDED.authority,
                   mirrors=EXCLUDED.mirrors,bounds=EXCLUDED.bounds,
                   model=EXCLUDED.model,deadline_secs=EXCLUDED.deadline_secs,
                   backoff_secs=EXCLUDED.backoff_secs,
-                  idle_secs_max=EXCLUDED.idle_secs_max,
                   published_at=EXCLUDED.published_at`,
       );
       signal.throwIfAborted();
@@ -76,7 +74,7 @@ export function postgresSessionLaunchPrecondition(
 const sessionLaunchDocumentsSchema = z.strictObject({
   authority: sessionTaskDocumentSchema.shape.authority,
   mirrors: z.record(z.string(), z.string()),
-  bounds: sessionTaskDocumentSchema.shape.bounds,
+  bounds: sessionTaskDocumentSchema.shape.bounds.required(),
 });
 
 async function sessionLaunch(
@@ -90,12 +88,10 @@ async function sessionLaunch(
     model: string;
     deadline_secs: string;
     backoff_secs: string;
-    idle_secs_max: string | null;
   }>(
     sql`SELECT image,authority,mirrors,bounds,model,
                deadline_secs::text AS deadline_secs,
-               backoff_secs::text AS backoff_secs,
-               idle_secs_max::text AS idle_secs_max
+               backoff_secs::text AS backoff_secs
           FROM session_launch WHERE singleton=1`,
   );
   const row = found.rows[0];
@@ -124,14 +120,6 @@ async function sessionLaunch(
       row.backoff_secs,
       "session launch backoff",
     ),
-    ...(row.idle_secs_max === null
-      ? {}
-      : {
-          idleSecsMax: projectRowCounter(
-            row.idle_secs_max,
-            "session launch idle bound",
-          ),
-        }),
   };
 }
 

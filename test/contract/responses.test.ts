@@ -105,6 +105,7 @@ import {
   ticketAgenticRefusalsResponseSchema,
   ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
   ticketResponseSchema,
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
@@ -591,6 +592,47 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
       ],
     }),
   );
+});
+
+test("a ticket's action history carries an answer on a resolved action alone, of its kind, with its answerer whole", () => {
+  const answered = {
+    action: "approval",
+    kind: "EvaluationApproval",
+    authorizingSequence: 4,
+    state: "Resolved",
+    resolution: "Approve",
+    execution: "execution",
+    answeredBy: "person",
+    answeredAt: "2026-01-01T00:00:00.000000Z",
+  } as const;
+  assert.deepEqual(
+    ticketNativeActionHistoryResponseSchema
+      .parse({
+        actions: [
+          answered,
+          {
+            action: "withdrawn",
+            kind: "TicketEscalation",
+            authorizingSequence: 5,
+            state: "Withdrawn",
+          },
+        ],
+      })
+      .actions.map(({ action }) => action),
+    ["approval", "withdrawn"],
+  );
+  const unanswered = { ...answered, resolution: undefined };
+  const undated = { ...answered, answeredAt: undefined };
+  for (const refused of [
+    unanswered,
+    undated,
+    { ...answered, resolution: "Resume" },
+    { ...answered, state: "Withdrawn" },
+    { ...answered, state: "Open", resolution: undefined },
+  ])
+    assert.throws(() =>
+      ticketNativeActionHistoryResponseSchema.parse({ actions: [refused] }),
+    );
 });
 
 test("a project's selector settings parse as its overrides beside what they resolve to", () => {
@@ -2679,4 +2721,29 @@ test("a lead route's no-lead answer parses without its reason and with fields it
     }).success,
     false,
   );
+});
+
+/** A server that predates `held`, or a lead nothing holds, answers a lead without it, and a console reads that body rather than refusing it. */
+test("a lead route's lead answer parses with what holds it and without it", () => {
+  const lead = {
+    session: "lead-atlas",
+    state: "Open",
+    attention: "Monitoring",
+    notificationCursor: 4,
+    handoffNote: { bytes: 2, preview: "{}", truncated: false },
+    turns: [],
+    streams: [],
+  };
+  assert.deepEqual(leadReadResponseSchema.parse(lead), lead);
+  for (const reason of ["Paused", "SelectorNotGranted"] as const)
+    assert.deepEqual(
+      leadReadResponseSchema.parse({ ...lead, held: { reason } }),
+      { ...lead, held: { reason } },
+    );
+  for (const held of [{ reason: "NotNeeded" }, "Paused", true])
+    assert.equal(
+      leadReadResponseSchema.safeParse({ ...lead, held }).success,
+      false,
+      JSON.stringify(held),
+    );
 });

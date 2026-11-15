@@ -25,6 +25,7 @@ import {
 import { z } from "zod";
 
 import {
+  agentAccountCredentialsMax,
   imageMediaTypes,
   projectArtifactEncoding,
   sessionEfforts,
@@ -97,6 +98,7 @@ import {
   ticketLandingStacksAnsweredMax,
   ticketNumberSchema,
   landingQueueTicketsAnsweredMax,
+  workerRunCredentialSchema,
 } from "./http.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
@@ -152,6 +154,7 @@ import {
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
+  nativeActionStates,
   notificationKinds,
   type NativeActionKind,
   type NativeActionResolution,
@@ -162,6 +165,7 @@ import {
   outputContentEncodings,
   outputRenderers,
   ownerFallbacks,
+  personalRunnerWaits,
   personalRunnerPriorities,
   phaseRoster,
   placementRouteSources,
@@ -200,11 +204,18 @@ import {
   forgeApps,
   leadAbsencesUntimed,
   leadAdmissionRefusals,
+  leadHolds,
   projectRepositoryConfigurationDeferrals,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
+import {
+  themeChoiceSchema,
+  themeDocumentSchema,
+  themeNumberSchema,
+  themesOwnedMax,
+} from "./appearance.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
@@ -437,9 +448,10 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
- * Until when an account's agent is paused and each reason holding it, which is
- * what `agent_account_pause` answers at the read; `pressed` is whether a press
- * of the account's owner still lets one claim through the limit.
+ * Until when an agent is paused and each reason holding it, as
+ * `agent_account_pause` answers it of an account, or `agent_account_named_pause`
+ * of the credentials a runner named; `pressed` is whether a press of the
+ * account's owner still lets one claim through the limit.
  */
 export const agentPauseSchema = z.strictObject({
   until: instantSchema,
@@ -741,6 +753,48 @@ export type ProjectNativeActionsResponse = z.infer<
   typeof projectNativeActionsResponseSchema
 >;
 
+/**
+ * One action a ticket has had, in whatever state it stands: its resolution
+ * where it was answered, the finalization attempt or execution it asked about
+ * where it names one, and who answered it and when where that is recorded,
+ * which is on an answered EvaluationApproval alone.
+ */
+export const nativeActionRecordResponseSchema = z
+  .strictObject({
+    action: identitySchema,
+    kind: z.enum(nativeActionKinds),
+    authorizingSequence: countSchema,
+    state: z.enum(nativeActionStates),
+    resolution: z.enum(nativeActionResolutions).optional(),
+    attempt: identitySchema.optional(),
+    execution: identitySchema.optional(),
+    answeredBy: z.string().min(1).max(principalCharsMax).optional(),
+    answeredAt: instantSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      (value.state === "Resolved") === (value.resolution !== undefined) &&
+      (value.resolution === undefined ||
+        nativeActionKindResolutions[value.kind].some(
+          (resolution) => resolution === value.resolution,
+        )) &&
+      (value.answeredBy === undefined) === (value.answeredAt === undefined) &&
+      (value.answeredBy === undefined || value.state === "Resolved"),
+    "a native action's resolution, or who answered it, disagrees with its state or its kind",
+  );
+export type NativeActionRecordResponse = z.infer<
+  typeof nativeActionRecordResponseSchema
+>;
+
+/** Every action a ticket has had, open and settled, oldest fence first, one bounded page at a time. */
+export const ticketNativeActionHistoryResponseSchema = z.object({
+  actions: page(nativeActionRecordResponseSchema),
+  nextCursor: cursorSchema.optional(),
+});
+export type TicketNativeActionHistoryResponse = z.infer<
+  typeof ticketNativeActionHistoryResponseSchema
+>;
+
 export const operationalStatusResponseSchema = z.object({
   observedAt: instantSchema,
   schedulerFreshness: z.enum(schedulerFreshnesses),
@@ -1004,9 +1058,15 @@ export const executionSummarySchema = z.object({
    */
   mine: z.boolean().optional(),
   /**
-   * The pause the reader's own account holds on the agent this execution's
-   * waiting attempt spends, present only on the reader's own execution while
-   * it waits unclaimed and that agent is paused.
+   * What the reader's own execution, its attempt waiting unclaimed, waits on of
+   * their runners, absent where nothing of theirs holds it. Optional for the
+   * deployment window.
+   */
+  personalRunnerWait: z.enum(personalRunnerWaits).optional(),
+  /**
+   * The pause that ends first of those holding every `Live` runner it waits
+   * on, each runner's by the credentials it named, present only where every
+   * one of them is held.
    */
   paused: agentPauseSchema.optional(),
   /**
@@ -1795,8 +1855,9 @@ export const leadStoreStreamResponseSchema = z.object({
 /**
  * The admission refusal the last cycle that needed a lead met, which has been
  * the answer since `since`. A `UsagePaused` refusal names in `until` the
- * earliest instant one of the paused runner owners stops being paused, as the
- * pause stands at the read, and never whose account it is or why, and a
+ * earliest instant one of the live pools stops being paused, each on the
+ * Claude credentials it named or, where it named none, on the whole agent, as
+ * the pause stands at the read, and never whose account it is or why, and a
  * `SubsidyExhausted` one the first instant of the next calendar month in UTC.
  */
 export const leadRefusalResponseSchema = z.object({
@@ -1862,9 +1923,22 @@ export const leadNoneResponseSchema = z.object({
 });
 export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
 
+/**
+ * A project the reader may read that holds a lead session: the session, and
+ * `held`, where the lead stands but dispatches no ticket, the reason a project
+ * holding none would answer as its absence: `Paused` while its selector is
+ * paused, by the project or the whole installation, then `SelectorNotGranted`
+ * while the site's selector may not read the project. No `Session` frame
+ * carries it, and a server that predates it never answers it.
+ */
+export const leadFoundResponseSchema = leadResponseSchema.extend({
+  held: z.object({ reason: z.enum(leadHolds) }).optional(),
+});
+export type LeadFoundResponse = z.infer<typeof leadFoundResponseSchema>;
+
 /** What the lead route answers: the project's lead, or that it has none. */
 export const leadReadResponseSchema = z.union([
-  leadResponseSchema,
+  leadFoundResponseSchema,
   leadNoneResponseSchema,
 ]);
 export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
@@ -2957,12 +3031,27 @@ export const personalRunnerResponseSchema = z.strictObject({
       }),
     )
     .max(personalRunnerProjectsMax),
+  /**
+   * Each agent, in roster order, that every runner offered it is paused for by
+   * the credentials it named, of those polling for executions where any is,
+   * with the pause that ends first. Optional for the deployment window, and
+   * absent reads as none.
+   */
+  pauses: z
+    .array(
+      z.strictObject({
+        agent: z.enum(accountAgents),
+        pause: agentPauseSchema,
+      }),
+    )
+    .max(accountAgents.length)
+    .optional(),
 });
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
 >;
 
-/** One window's newest reading: how much of it was used, the whole window being one, when it reopens and when it was read. */
+/** One window's reading, of one credential or the newest across an agent's: how much of it was used, the whole window being one, when it reopens and when it was read. */
 const agentAccountReadingSchema = z.strictObject({
   window: z.enum(runUsageWindows),
   utilization: z.number().nonnegative(),
@@ -2970,11 +3059,30 @@ const agentAccountReadingSchema = z.strictObject({
   observedAt: instantSchema,
 });
 
+/** One credential of an agent of the caller's account by its name: each window's reading of it, and the pause holding it alone, absent where none holds. */
+const agentAccountCredentialSchema = z.strictObject({
+  name: workerRunCredentialSchema,
+  readings: z.array(agentAccountReadingSchema).max(runUsageWindows.length),
+  pause: agentPauseSchema.optional(),
+});
+
+/** The pause an agent of the caller's account comes to, and the names of the credentials holding it, in the order `credentials` lists them; optional for the deployment window. */
+const agentAccountPauseSchema = agentPauseSchema.extend({
+  credentials: z
+    .array(workerRunCredentialSchema)
+    .min(1)
+    .max(agentAccountCredentialsMax)
+    .optional(),
+});
+
 /**
  * One agent of the caller's own account: their settings, each window's newest
- * reading, the newest limit a provider stopped it at with the window and the
- * reopening where the run named them, and the pause they come to, absent
- * where none holds.
+ * reading across its credentials, the newest limit a provider stopped it at
+ * across them with the window and the reopening where the run named them, the
+ * pause they come to, absent where none holds and holding only while every
+ * credential its live runners name is paused, or while any is where they name
+ * none, and each credential it holds a reading or a limit of, by name. `credentials` is optional for the deployment window, and absent reads
+ * as none.
  */
 const agentAccountSchema = z.strictObject({
   agent: z.enum(accountAgents),
@@ -2987,15 +3095,49 @@ const agentAccountSchema = z.strictObject({
       observedAt: instantSchema,
     })
     .optional(),
-  pause: agentPauseSchema.optional(),
+  pause: agentAccountPauseSchema.optional(),
+  credentials: z
+    .array(agentAccountCredentialSchema)
+    .max(agentAccountCredentialsMax)
+    .optional(),
 });
 export type AgentAccount = z.infer<typeof agentAccountSchema>;
+export type AgentAccountCredential = z.infer<
+  typeof agentAccountCredentialSchema
+>;
 
 /** Every agent of the caller's own account, in roster order. */
 export const agentAccountsResponseSchema = z.strictObject({
   accounts: z.array(agentAccountSchema).length(accountAgents.length),
 });
 export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
+
+/** One theme of the caller's own: the number it is known by and its document. */
+export const ownedThemeSchema = z.strictObject({
+  theme: themeNumberSchema,
+  document: themeDocumentSchema,
+});
+export type OwnedThemeResponse = z.infer<typeof ownedThemeSchema>;
+
+/** Every theme of the caller's own, by number ascending. */
+export const ownedThemesResponseSchema = z.strictObject({
+  themes: z.array(ownedThemeSchema).max(themesOwnedMax),
+});
+export type OwnedThemesResponse = z.infer<typeof ownedThemesResponseSchema>;
+
+/** The caller's own global theme choice, absent where they hold none. */
+export const themeChoiceResponseSchema = z.strictObject({
+  choice: themeChoiceSchema.optional(),
+});
+export type ThemeChoiceResponse = z.infer<typeof themeChoiceResponseSchema>;
+
+/**
+ * What retiring a credential of the caller's own account is refused with while
+ * a live runner of theirs still names it, whose next run would report it
+ * again. It is named once because a console tells the member so in words of
+ * its own.
+ */
+export const agentAccountCredentialInUseCode = "CredentialInUse";
 
 /**
  * What redeeming a chat host's token answers, once: a runner's file with no

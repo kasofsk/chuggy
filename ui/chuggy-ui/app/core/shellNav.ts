@@ -1,7 +1,10 @@
 /**
- * The shell's navigation, derived: the project's screens, in the order the bar
- * above every page draws them, and the pages that set the project up, which
- * sit under the bar's gear because a reader visits them rarely.
+ * The shell's navigation, derived: the project's primary places, in the order
+ * the bar draws them, and the two places the account menu
+ * names, the settings and the reader's preferences among them, which
+ * `settingsNav.ts`'s roster holds with every other page a reader visits
+ * rarely. A place is primary only where a reader goes in the ordinary course
+ * of work.
  *
  * Every entry is a route and none is an action, so the renderer is a loop
  * rather than a switch over what each entry means. What a reader has said and
@@ -11,22 +14,38 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { Copy } from "./copy.ts";
-import type { Tone } from "./tones.ts";
+import {
+  settingsRootRoutes,
+  settingsRoutes,
+  settingsSection,
+} from "./settingsNav.ts";
+import type {
+  SettingsNavParams,
+  SettingsRootRoute,
+  SettingsRoute,
+} from "./settingsNav.ts";
 
 export const navRoutes = {
   overview: "/$tenant/$project",
   inbox: "/$tenant/$project/inbox",
   epics: "/$tenant/$project/epics",
-  lead: "/$tenant/$project/lead",
-  catalog: "/$tenant/$project/catalog",
-  settings: "/$tenant/$project/settings",
-  repositories: "/$tenant/$project/repositories",
-  runners: "/$tenant/$project/runners",
+  settings: settingsRootRoutes.project,
   ticketNew: "/$tenant/$project/tickets/new",
   thread: "/$tenant/$project/threads/$session",
 } as const;
 
 export type NavRoute = (typeof navRoutes)[keyof typeof navRoutes];
+
+/** Each address a page left for a settings section, and the section's: the
+ * old address redirects to the new, with whatever it carried. */
+export const navMoved = {
+  "/$tenant/$project/lead": settingsRoutes.project.leadSession,
+  "/$tenant/$project/catalog": settingsRoutes.project.catalog,
+  "/$tenant/$project/repositories": settingsRoutes.project.repositories,
+  "/$tenant/$project/repositories/$repository":
+    "/$tenant/$project/settings/repositories/$repository",
+  "/$tenant/$project/runners": settingsRoutes.project.runners,
+} as const;
 
 export interface NavParams {
   readonly tenant: string;
@@ -34,43 +53,23 @@ export interface NavParams {
   readonly session?: string | undefined;
 }
 
-/** One entry's standing, in its word and the hue it takes, so a dot is not
- * the only thing carrying it. */
-export interface NavStanding {
-  readonly word: Copy;
-  readonly tone: Tone;
-}
-
-/** Every entry the bar and its gear draw, and the inbox beside the gear, so
- * each is drawn with its own glyph. */
-export type NavEntryId =
-  | "overview"
-  | "inbox"
-  | "epics"
-  | "lead"
-  | "catalog"
-  | "settings"
-  | "repositories"
-  | "runners";
+/** Every entry the bar draws, so each is drawn with its own glyph. */
+export type NavEntryId = "overview" | "epics" | "inbox";
 
 export interface NavEntry {
   readonly id: NavEntryId;
   readonly label: Copy;
   readonly to: NavRoute;
   readonly params: NavParams;
-  readonly standing?: NavStanding | undefined;
 }
 
-export interface ShellNavInput {
-  readonly partition: PartitionIdentity;
-  readonly leadStanding?: NavStanding | undefined;
+function navParamsOf(partition: PartitionIdentity): NavParams {
+  return { tenant: partition.tenant, project: partition.project };
 }
 
-export function shellNav(input: ShellNavInput): readonly NavEntry[] {
-  const params: NavParams = {
-    tenant: input.partition.tenant,
-    project: input.partition.project,
-  };
+/** The project's primary places, in order. */
+export function shellNav(partition: PartitionIdentity): readonly NavEntry[] {
+  const params = navParamsOf(partition);
   return [
     {
       id: "overview",
@@ -84,47 +83,75 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       to: navRoutes.epics,
       params,
     },
-    {
-      id: "lead",
-      label: { id: "shell-nav-lead" },
-      to: navRoutes.lead,
-      params,
-      standing: input.leadStanding,
-    },
-    {
-      id: "catalog",
-      label: { id: "shell-nav-catalog" },
-      to: navRoutes.catalog,
-      params,
-    },
+    { id: "inbox", label: { id: "shell-inbox" }, to: navRoutes.inbox, params },
   ];
 }
 
-/** The pages that set the project up, in the order the gear's menu lists them. */
-export function shellSetupNav(
-  partition: PartitionIdentity,
-): readonly NavEntry[] {
-  const params: NavParams = {
-    tenant: partition.tenant,
-    project: partition.project,
-  };
+/** The most items a phone's bar holds, More among them where it is drawn. */
+export const shellNavPhoneItemsMax = 4;
+
+/** A phone's bar: the places with an item of their own, in order, and those
+ * behind More, none where every place has its own. */
+export interface ShellNavPhone {
+  readonly items: readonly NavEntry[];
+  readonly more: readonly NavEntry[];
+}
+
+/** The primary places laid along a phone's bar. Every place fits, or the last
+ * item is More and holds the rest, so no label is ever shrunk to make room. */
+export function shellNavPhone(
+  entries: readonly NavEntry[],
+  itemsMax: number = shellNavPhoneItemsMax,
+): ShellNavPhone {
+  if (!Number.isInteger(itemsMax) || itemsMax < 2)
+    throw new RangeError("a phone's bar holds a place and More at least");
+  if (entries.length <= itemsMax) return { items: entries, more: [] };
+  const kept = itemsMax - 1;
+  return { items: entries.slice(0, kept), more: entries.slice(kept) };
+}
+
+/** Where the account menu is drawn: in a project, in a workspace outside
+ * every project, or where no workspace is named, which has no settings. */
+export interface ShellAccountFrame {
+  readonly tenant: string | undefined;
+  readonly project: string | undefined;
+}
+
+export interface ShellAccountEntry {
+  readonly id: "settings" | "preferences";
+  readonly label: Copy;
+  readonly to: SettingsRootRoute | SettingsRoute;
+  readonly params: SettingsNavParams;
+}
+
+/** The account menu's places, in the order it lists them: the settings, then
+ * the reader's preferences, each at its address in the frame the menu is
+ * drawn in, and none where no workspace is named, since every settings page's
+ * address names one. */
+export function shellAccountNav(
+  frame: ShellAccountFrame,
+): readonly ShellAccountEntry[] {
+  const { tenant, project } = frame;
+  if (tenant === undefined) return [];
+  const preferences = settingsSection("preferences");
+  const settings = { id: "settings", label: { id: "settings-nav" } } as const;
+  if (project === undefined)
+    return [
+      { ...settings, to: settingsRootRoutes.workspace, params: { tenant } },
+      {
+        id: "preferences",
+        label: preferences.label,
+        to: settingsRoutes.workspace.preferences,
+        params: { tenant },
+      },
+    ];
+  const params = { tenant, project };
   return [
+    { ...settings, to: settingsRootRoutes.project, params },
     {
-      id: "settings",
-      label: { id: "shell-nav-settings" },
-      to: navRoutes.settings,
-      params,
-    },
-    {
-      id: "repositories",
-      label: { id: "shell-nav-repositories" },
-      to: navRoutes.repositories,
-      params,
-    },
-    {
-      id: "runners",
-      label: { id: "shell-nav-runners" },
-      to: navRoutes.runners,
+      id: "preferences",
+      label: preferences.label,
+      to: preferences.project,
       params,
     },
   ];

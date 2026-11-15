@@ -970,6 +970,8 @@ function operationRefusalBoundaryLabel(
       return { id: "codes-refusal-program-exceeds-plan" };
     case "ProgramSkipsBriefChecks":
       return { id: "codes-refusal-program-skips-checks" };
+    case "ProgramStageOutOfPosition":
+      return { id: "codes-refusal-program-stage-misplaced" };
     case "OverridesUnsupported":
       return { id: "codes-refusal-overrides-unsupported" };
     case "OverridesUnknown":

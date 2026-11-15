@@ -52,6 +52,7 @@ import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { creationMoreOpened } from "./creationMore.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -511,7 +512,7 @@ test.each([
         screen.getByRole("menuitemradio", { name: "development" }),
       );
     });
-    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    creationMoreOpened();
     expect(screen.queryAllByRole("button", { name: "Remove" })).toHaveLength(
       removes,
     );

@@ -7,6 +7,7 @@
 import type { z } from "zod";
 import { nativeHttpEndpoints } from "./endpoints.ts";
 
+import { themesOwnedMax } from "./appearance.ts";
 import {
   inboxPhases,
   nativeHttpBasePath,
@@ -101,9 +102,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.openThread.body,
     ),
     threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
-    agentAccountSettings: nativeHttpContractDocumentInput(
-      agentAccountSettingsSchema,
-    ),
+    ...nativeHttpContractDocumentSchemasPerson(),
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
@@ -121,6 +120,21 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.hideThread.body,
     ),
     ...nativeHttpContractDocumentSchemasMachine(),
+  };
+}
+
+/** The request bodies a person sends of what is theirs alone, in no workspace. */
+function nativeHttpContractDocumentSchemasPerson(): Record<string, unknown> {
+  return {
+    agentAccountSettings: nativeHttpContractDocumentInput(
+      agentAccountSettingsSchema,
+    ),
+    themeDocument: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.createOwnTheme.body,
+    ),
+    themeChoice: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.writeThemeChoice.body,
+    ),
   };
 }
 
@@ -144,6 +158,8 @@ function nativeHttpContractDocumentSchemasMachine(): Record<string, unknown> {
 const ticketSubReadNotes = {
   actionReach:
     "for each action a ticket's repository declares, whether what was reported of the action holds the commit the ticket landed at: Reached where its newest success does, Failed where its newest report is a failure that does, RolledBack where only a success beneath its newest, reported since the ticket landed, does, NotYet where none does, and Unknown where this server could not find out inside the time one read is given, which it answers rather than wait and a later read may answer otherwise; a mark read from a report shows it; a ticket that has landed nowhere, which one whose proposal a person is left to merge is, answers no repository, commit or actions; it is read as the ticket is and derived each time it is asked",
+  nativeActionHistory:
+    "every native action a ticket has had, open and settled, oldest fence first, resumed by the cursor a page answers, which names the ticket and no other read takes: its kind, its state, Open, Resolved or Withdrawn, the answer a Resolved one was given, the finalization attempt or execution it asked about where its kind names one, and who answered it and when where that is recorded, which is on an answered EvaluationApproval alone; it is read as the ticket is",
   ticketLandings:
     "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, AwaitingApproval while a person has an approval open, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
 };
@@ -155,12 +171,12 @@ const runnerNotes = {
   sessionPlacement:
     "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead: a thread and an inquiry to its member's chat host and the lead to any of the project's pools, so a member with no chat host for their thread or inquiry is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner or host is registered and has polled lately",
   ownerFallback:
-    "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
+    "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs offered its agent has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
   workerPoolRegistration:
     "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
-  personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read, each at a priority, High, Normal or Low, Normal where the addition names none; of the work they could take now, a ticket's that a runner has already started is taken first, then a higher project's; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live`,
+  personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read, each at a priority, High, Normal or Low, Normal where the addition names none; of the work they could take now, a ticket's that a runner has already started is taken first, then a higher project's; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, each of their runners' newest poll and whether it is live, and each agent their runners are paused for, which is one where every runner of theirs offered it, of those polling now where any is, holds the pause of the credentials it named, or the agent's own where it named none, with the one that ends first`,
   agentAccounts:
-    "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries pause with it, the lead of a pool they registered always pausing with it, each window's newest reading and when it was read, the newest limit a provider stopped it at, and the pause these come to now, which lasts until the latest reason holding it ends; a paused agent's work is taken by none of their runners and pools; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent",
+    "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries pause with it, the lead of a pool they registered always pausing with it, each window's newest reading across its credentials and when it was read, the newest limit a provider stopped it at across them, and the pause these come to now, which holds only while every credential their live runners name of it is paused and lasts until the earliest of those ends, or, where those runners name none, holds while any credential is paused and lasts until the latest reason holding it ends; and each credential it holds a reading or a limit of, by name, with each window's reading of that credential and the pause holding it alone, which a press of the agent lets one claim through as it does the agent's; a runner, pool or chat host of theirs that named credentials of a paused agent takes its work, a pool's lead and a chat host's threads and inquiries among it, while any of those is free, and one that named none takes none of it; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent; retiring a credential by its name drops its readings and its limit, so the account reads it no more until a run reports it again, is not found where none is held under that name, and is refused CredentialInUse while a live runner of theirs names it",
   chatHostRegistration:
     "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
 };
@@ -255,6 +271,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
     ...runnerNotes,
+    appearance: `a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most ${String(themesOwnedMax)}, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice`,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
     ...ticketSubReadNotes,

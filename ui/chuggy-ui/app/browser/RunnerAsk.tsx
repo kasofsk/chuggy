@@ -31,6 +31,8 @@ import { RunnerSteps, useFocusedUnheld } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
+import "./RunnerMint.css";
+
 const runnerPackageNames = Object.keys(runnerPackages) as RunnerPackageName[];
 
 /** The machine a runner is made of. */
@@ -221,7 +223,7 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
       ref={form}
       tabIndex={-1}
       aria-label={text({ id: "runners-ask-aria" })}
-      className="border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
+      className="runner-mint border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
       onSubmit={(event) => {
         event.preventDefault();
         const read = runnerAskRead(chosen, host, typed);

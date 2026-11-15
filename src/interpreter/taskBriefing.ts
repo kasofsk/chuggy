@@ -1244,6 +1244,27 @@ function briefingAuthorityRequests(
 }
 
 /**
+ * The credentials the requests list: what their fold would grant were every
+ * name granted, which is none where no request lists any. It is a record
+ * of what was asked for and never an authority, so it may name more than the
+ * grant.
+ */
+function briefingCredentialsListed(
+  requests: readonly AuthorityRequest[],
+): readonly string[] {
+  const listed = requests.reduce<readonly string[] | undefined>(
+    (held, { credentials }) =>
+      credentials === undefined
+        ? held
+        : held === undefined
+          ? credentials
+          : held.filter((name) => credentials.includes(name)),
+    undefined,
+  );
+  return Object.freeze([...new Set(listed ?? [])].sort());
+}
+
+/**
  * The worker configuration this stage runs under, which for a commanded stage
  * is the resolved command list rather than the authored agent mode. The
  * authored setup and files are kept, because a stage prepares its workspace the
@@ -1267,6 +1288,7 @@ function briefingWorker(
 export interface TaskInvocation {
   readonly briefing: RenderedBriefing;
   readonly authority: TaskAuthority;
+  readonly credentialsListed: readonly string[];
   readonly provenance: BriefingProvenance;
   readonly worker?: AuthoredTaskConfiguration["worker"];
 }
@@ -1290,6 +1312,7 @@ export function taskInvocationBytes(invocation: TaskInvocation): number {
         text: invocation.briefing.text,
       },
       authority: taskAuthorityGrant(invocation.authority),
+      credentialsListed: invocation.credentialsListed,
       ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
     }),
   ).byteLength;
@@ -1325,12 +1348,11 @@ export function composeTaskInvocation(
   }
   const briefing = renderBriefing(view, resolved.practices);
   const worker = briefingWorker(view, task);
+  const requests = briefingAuthorityRequests(task);
   const invocation: TaskInvocation = {
     briefing,
-    authority: resolveTaskAuthority(
-      view.grant,
-      briefingAuthorityRequests(task),
-    ),
+    authority: resolveTaskAuthority(view.grant, requests),
+    credentialsListed: briefingCredentialsListed(requests),
     provenance: briefingProvenance(
       briefing,
       view.pin,

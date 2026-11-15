@@ -41,7 +41,6 @@ export interface RepositoriesCopy {
   readonly "repositories-add": Record<never, never>;
   readonly "repositories-add-how": Record<never, never>;
   readonly "repositories-bound-caption": Record<never, never>;
-  readonly "repositories-col-repository": Record<never, never>;
   readonly "repositories-bound": Record<never, never>;
   readonly "repositories-unbind": Record<never, never>;
   readonly "repositories-offers-withheld": Record<never, never>;
@@ -52,6 +51,11 @@ export interface RepositoriesCopy {
   readonly "repositories-offers-worker-missing": {
     readonly account: unknown;
   };
+  readonly "repositories-steps": Record<never, never>;
+  readonly "repositories-step-connect": Record<never, never>;
+  readonly "repositories-step-install-worker": Record<never, never>;
+  readonly "repositories-step-add": Record<never, never>;
+  readonly "repositories-step-done": Record<never, never>;
   readonly "repositories-worker-missing": Record<never, never>;
   readonly "repositories-reach-unselected": {
     readonly installation: unknown;

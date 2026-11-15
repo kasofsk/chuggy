@@ -6,7 +6,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, expect, test } from "vitest";
 
+import { FormField } from "../app/browser/ui/FormField.tsx";
 import { Picker } from "../app/browser/ui/Picker.tsx";
+import { renderCopied } from "./copied.tsx";
 import { styleless } from "./styleless.ts";
 
 const projects = [
@@ -135,4 +137,27 @@ test("the trigger may be narrower than its text, which it clips, and focusing it
   );
   styleless();
   expect(view.container.querySelector("[style]")).toBeNull();
+});
+
+test("inside a field the trigger is bound to the drawn label, named by it and the chosen text, and described by the field's error", () => {
+  renderCopied(
+    <FormField label="Project" error="choose a project you belong to">
+      {(field) => (
+        <Picker
+          label="Project"
+          field={field}
+          value="acme/beta"
+          options={projects}
+          onChoose={() => undefined}
+        />
+      )}
+    </FormField>,
+  );
+  const trigger = screen.getByRole("button", { name: "Project acme / beta" });
+  expect(document.querySelector(`label[for="${trigger.id}"]`)).not.toBeNull();
+  expect(trigger.getAttribute("aria-invalid")).toBe("true");
+  expect(
+    document.getElementById(trigger.getAttribute("aria-describedby") ?? "")
+      ?.textContent,
+  ).toBe("choose a project you belong to");
 });

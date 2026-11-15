@@ -181,6 +181,10 @@ const nativeActionCursorSchema = inventoryCursorSchema.extend({
   action: z.string().min(1),
 });
 
+const nativeActionHistoryCursorSchema = nativeActionCursorSchema.extend({
+  ticket: z.number().int().safe().positive(),
+});
+
 import {
   personalRunnerRedemptionSchema,
   registrationTokenRequestSchema,
@@ -585,6 +589,33 @@ export const {
     action: cursor.action,
   }),
   (cursor) => ({
+    authorizingSequence: cursor.authorizingSequence,
+    action: cursor.action,
+  }),
+);
+
+/** Where a ticket's action history resumes, and the ticket that position is in. */
+export interface NativeActionHistoryPosition extends NativeActionPosition {
+  readonly ticket: TicketId;
+}
+
+/**
+ * A position in one ticket's action history, which names the ticket, so the
+ * history of another ticket and the project's open actions refuse it.
+ */
+export const {
+  encode: encodeNativeActionHistoryCursor,
+  parse: parseNativeActionHistoryCursor,
+} = projectCursorCodec(
+  "native action history",
+  nativeActionHistoryCursorSchema,
+  (cursor): NativeActionHistoryPosition => ({
+    ticket: asTicketId(cursor.ticket),
+    authorizingSequence: cursor.authorizingSequence,
+    action: cursor.action,
+  }),
+  (cursor) => ({
+    ticket: cursor.ticket,
     authorizingSequence: cursor.authorizingSequence,
     action: cursor.action,
   }),
