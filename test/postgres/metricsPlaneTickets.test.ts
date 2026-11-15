@@ -801,7 +801,7 @@ test("a landed ticket is observed once in every phase, zero where it spent none,
   const samples = await ticketsSamples();
   assert.ok(
     samples.includes(
-      `chuggy_ticket_phase_time_seconds_bucket{${bobTwo},phase="Escalated",le="0.0"} 1`,
+      `chuggy_ticket_phase_time_seconds_bucket{${bobTwo},phase="Escalated",le="0"} 1`,
     ),
   );
   const cyclesBounds = [1, 2, 3, 4, 5, 7, 10];
