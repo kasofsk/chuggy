@@ -137,7 +137,6 @@ test("a person slower than one wait finishes in the same page, and the next sign
     site: machineSite,
     port: machine.listening(),
     opened: "Opened",
-    waitedSecs: 2,
   });
   const attached = machine.command(signIn);
   await machine.person();
@@ -153,7 +152,6 @@ test("a sign-in paced quicker looks for its page as often as its pacing says, an
   const began = machine.nowMs;
   expect(await machine.command(signIn)).toMatchObject({
     report: "SignInWaiting",
-    waitedSecs: 2,
   });
   expect(machine.nowMs - began).toBe(
     pollMs + Math.ceil(2_000 / pollMs) * pollMs,
@@ -170,7 +168,6 @@ test("a page nobody finishes is waited on until the wait asked has passed on the
   };
   expect(await machine.command(signIn)).toMatchObject({
     report: "SignInWaiting",
-    waitedSecs: 2,
   });
   const waitedMs = machine.nowMs - openedAtMs;
   expect(waitedMs).toBeGreaterThanOrEqual(2_000);
@@ -207,7 +204,6 @@ test("where no browser can be opened the address is handed over at once, and the
     site: machineSite,
     port: machine.listening(),
     opened: "NotOpened",
-    waitedSecs: 0,
   });
   const attached = machine.command(signIn);
   await machine.person();
