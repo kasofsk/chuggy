@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 
+import { resultReportCharsMax } from "../../src/contract/http.ts";
+
 import {
   allBriefingCarriers,
   allTaskPurposes,
@@ -223,7 +225,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [18, "8fb575d88e9e95ebce1f46c2c6fbf3b6f7c873f962e9db91248fa33374e3aa1e"],
+    [19, "1bb0e4126dc4fad698a506951bc1147ae4b4ed4c8735b945e3e0fdce4dd22f3f"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -260,5 +262,26 @@ test("the digest reads every string the template states", () => {
     ...dependencyWording(),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);
+  }
+});
+
+test("an agent's required result says how long its report may be, and a commanded one does not", () => {
+  const bound = `at most ${String(resultReportCharsMax)} characters`;
+  const destinations = { Work: "commit messages", Review: "findings" };
+  for (const purpose of allTaskPurposes) {
+    const lines = briefingRequiredResult(purpose, "Agent").filter((line) =>
+      line.includes(bound),
+    );
+    assert.equal(lines.length, 1, `${purpose} states the bound once`);
+    assert.match(lines[0] ?? "", /refused/);
+    if (purpose !== "Check") {
+      assert.ok(lines[0]?.includes(destinations[purpose]), purpose);
+    }
+    assert.ok(
+      !briefingRequiredResult(purpose, "Commands").some((line) =>
+        line.includes("characters"),
+      ),
+      `a commanded ${purpose} writes no report of its own`,
+    );
   }
 });
