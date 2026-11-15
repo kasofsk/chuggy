@@ -234,3 +234,23 @@ test("the runtime is built only on the pins' lag behind npm, read again whenever
     "the runtime binds no agent-lag verdict",
   );
 });
+
+/** Catches a session's shell left without `chuggy`, and one handed the runtime's own `bin/` with it. */
+test("the image's PATH finds the core's chuggy command through a directory holding only it, and never the runtime's bin", () => {
+  const text = readFileSync(dockerfilePath, "utf8");
+  const path = (imageEnvironment(text).get("PATH") ?? "").split(":");
+  assert.equal(path[0], "${PATH}", "the image's PATH drops the base's own");
+  assert.ok(path.includes("/opt/chuggy/path"), "the image's PATH has no path/");
+  assert.ok(!path.includes("/opt/chuggy/bin"), "the image's PATH has bin/");
+  assert.ok(
+    dockerStageInstructions(text, "runtime").some((instruction) =>
+      / ln -s "\.\.\/lib\/chuggy\/\$bin" \/opt\/chuggy\/path\/chuggy( |$)/u.test(
+        instruction,
+      ),
+    ),
+    "the runtime links no chuggy into path/",
+  );
+  for (const instruction of dockerInstructions(text))
+    for (const [named] of instruction.matchAll(/\/opt\/chuggy\/path\/\S*/gu))
+      assert.equal(named, "/opt/chuggy/path/chuggy", instruction);
+});
