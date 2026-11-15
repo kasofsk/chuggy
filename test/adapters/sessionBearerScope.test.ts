@@ -55,6 +55,7 @@ import {
   type SessionKind,
   type SessionScope,
 } from "../../src/interpreter/agentSession.ts";
+import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import {
   asAuthorityKind,
@@ -68,6 +69,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
+import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import { routerServed } from "./routerFixtures.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
@@ -348,6 +350,8 @@ const chuggyToolCalls = {
   release_draft: [["operations", "POST"]],
   create_draft: [["drafts", "POST"]],
   revoke_ticket: [["operations", "POST"]],
+  take_ticket: [["ticketTake", "POST"]],
+  return_ticket: [["ticketReturn", "POST"]],
   update_ticket: [["operations", "POST"]],
   create_epic: [["epics", "POST"]],
   revise_epic: [
@@ -678,20 +682,40 @@ test("read_landing_queues's route reaches the project's landing queues under a l
   }
 });
 
-test("a session bearer holding every project capability is refused a ticket's take and return in its own partition, before any port", async () => {
-  for (const kind of ["Lead", "Thread"] as const) {
+test("take_ticket's and return_ticket's routes reach a ticket's take and return under a thread's own bearer, and a lead's is refused them before any port", async () => {
+  const routes = [chuggyToolRoutes.ticketTake, chuggyToolRoutes.ticketReturn];
+  assert.deepEqual(routes, [
+    nativeHttpRoutes.ticketTake,
+    nativeHttpRoutes.ticketReturn,
+  ]);
+  for (const route of routes) {
     const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    for (const route of [
-      nativeHttpRoutes.ticketTake,
-      nativeHttpRoutes.ticketReturn,
-    ]) {
-      const answered = await app.inject(
-        routeRequest(`POST ${route}`, own, sessionToken),
-      );
-      assert.ok(scopeRefused(answered), `${kind} ${route}`);
-    }
-    assert.deepEqual(reached, [], kind);
+    await using thread = scopedApp(
+      reached,
+      undefined,
+      "Thread",
+      "Project",
+      true,
+      threadCapabilitiesDefault,
+    );
+    await thread.inject(routeRequest(`POST ${route}`, own, sessionToken));
+    assert.deepEqual(reached, ["takes.write"], route);
+  }
+  for (const route of routes) {
+    const reached: string[] = [];
+    await using lead = scopedApp(
+      reached,
+      undefined,
+      "Lead",
+      "Project",
+      true,
+      leadSessionCapabilities,
+    );
+    const answered = await lead.inject(
+      routeRequest(`POST ${route}`, own, sessionToken),
+    );
+    assert.equal(answered.statusCode, 404, route);
+    assert.deepEqual(reached, [], route);
   }
 });
 
