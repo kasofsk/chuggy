@@ -35,6 +35,12 @@
 # which turns the timer off — because a timer that cannot apply the bound it
 # was handed has walked nothing and has found nothing.
 #
+# A WALK WHOSE NODE DIES OF A SIGNAL IS A COULD-NOT-RUN. A test file's process
+# ended by a signal reached no verdict, whatever sent it, so the run is neither
+# a finding nor a pass, and the gate names the signal and the node it ran on.
+# The spec reporter prints such a file as a bare failure, so the run also writes
+# TAP, which names the signal.
+#
 # Env:
 #   CHUG_WALK_SAMPLES    runs per instance; the default below matches the
 #                        model gate's --max-samples
@@ -112,16 +118,20 @@ fi
 
 # The reporter is `spec` rather than `dot` because `dot` drops the runner's
 # stderr, and a walk child that exits without reporting a test has nothing else
-# to say.
+# to say. The TAP copy is read for the signal that ended a file's process.
 set +e
 if [ -n "$timeout_cmd" ]; then
 	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
 		CHUG_WALK_TALLY="$work/tally" \
-		"$timeout_cmd" "$cap_secs" node --test --test-reporter=spec "$@" >"$work/out" 2>&1
+		"$timeout_cmd" "$cap_secs" node --test --test-reporter=spec --test-reporter-destination=stdout \
+		--test-reporter=tap --test-reporter-destination="$work/tap" \
+		"$@" >"$work/out" 2>&1
 else
 	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
 		CHUG_WALK_TALLY="$work/tally" \
-		node --test --test-reporter=spec "$@" >"$work/out" 2>&1
+		node --test --test-reporter=spec --test-reporter-destination=stdout \
+		--test-reporter=tap --test-reporter-destination="$work/tap" \
+		"$@" >"$work/out" 2>&1
 fi
 rc=$?
 set -e
@@ -146,6 +156,15 @@ if [ -n "$timeout_cmd" ]; then
 		exit 2
 		;;
 	esac
+fi
+
+signals="$(sed -n "s/^ *signal: '\(SIG[A-Z0-9]*\)'\$/\1/p" "$work/tap" 2>/dev/null | sort -u | tr '\n' ' ' || true)"
+if [ "$rc" -ne 0 ] && [ -n "$signals" ]; then
+	sed 's/^/    /' "$work/out"
+	echo "check-random: LINTER ERROR — a walk process was killed by ${signals% } under node $(node --version),"
+	echo "check-random: so this run reached no verdict: it is not a pass, and the output above is"
+	echo "check-random: what it printed before it died."
+	exit 2
 fi
 
 if [ "$rc" -ne 0 ]; then
