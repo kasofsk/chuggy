@@ -74,7 +74,10 @@ import {
   threadTurnInput,
   threadTurnInputCharsMax,
 } from "../../src/interpreter/thread.ts";
-import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
+import {
+  threadRefusalsHeading,
+  threadStandingRulesDefault,
+} from "../../src/contract/threadSeeding.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -277,10 +280,6 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
         }),
       drafts: () =>
         Promise.resolve([{ ticket: 42, summary: "the footer is wrong" }]),
-      refusals: (_partition, tickets) => {
-        doubles.calls.push(`refusals:${tickets.join(",")}`);
-        return Promise.resolve([{ ticket: 42, reason: "no dependency" }]);
-      },
     },
     rows: {
       batches: ({ session, stream, after, limit }) => {
@@ -1696,16 +1695,11 @@ test("the first turn is seeded and every later turn is the message alone", async
   assert.ok(first?.includes("Ship the console."));
   assert.ok(first?.includes(threadStandingRulesDefault));
   assert.ok(first?.includes("the footer is wrong"));
-  assert.ok(first?.includes("no dependency"));
+  assert.ok(!first?.includes(threadRefusalsHeading));
   assert.ok(first?.endsWith("what is blocking 42?"));
-  assert.ok(seeded.held.calls.includes("refusals:42"));
   assert.deepEqual(
     bound.held.calls.filter((call) => call.startsWith("enqueue:")),
     ["enqueue:thread-turn-1:what is blocking 42?"],
-  );
-  assert.equal(
-    bound.held.calls.filter((call) => call.startsWith("refusals:")).length,
-    0,
   );
 });
 

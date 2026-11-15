@@ -56,7 +56,6 @@ import {
   allThreadTicketWakeReasons,
   type ThreadProjectTexts,
   type ThreadSeededDraft,
-  type ThreadSeededRefusal,
 } from "../../interpreter/thread.ts";
 import type {
   ThreadJobWakeStore,
@@ -708,9 +707,8 @@ async function threadProjectTexts(
  * What a thread's first turn is seeded from. The project's two texts are read
  * as themselves rather than as the whole resolved settings record, so the
  * composition that uses them cannot hand a thread the lead's prompt or its
- * limits by accident; the drafts and the refusals are filtered to the member
- * the block is for, which is why an authority rather than a principal is what
- * they take.
+ * limits by accident; the drafts are filtered to the member the block is for,
+ * which is why an authority rather than a principal is what they take.
  */
 export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
   return {
@@ -739,25 +737,6 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
           "draft ticket",
         ),
         summary: row.intent ?? draftWithoutABrief,
-      }));
-    },
-
-    refusals: async (partition, tickets, limit) => {
-      const found = await pool.query<{
-        ticket: string | null;
-        reason: string | null;
-      }>(
-        sql`SELECT ticket::text AS ticket,reason
-              FROM read_thread_agentic_refusals(
-                     ${partition.tenant},${partition.project},
-                     ${[...tickets]}::bigint[],${limit})`,
-      );
-      return found.rows.map((row): ThreadSeededRefusal => ({
-        ticket: projectRowCounter(
-          sessionRowText(row.ticket, "refusal ticket"),
-          "refusal ticket",
-        ),
-        reason: sessionRowText(row.reason, "refusal reason"),
       }));
     },
   };

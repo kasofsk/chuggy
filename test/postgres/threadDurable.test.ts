@@ -1708,7 +1708,6 @@ test("both reads answer the first member message, seeding shed and bounded", asy
       northStar: "Ship the console.",
       standingRules: "- You draft, and nothing else.",
       drafts: [],
-      refusals: [],
     }),
     route: "InCluster",
   });

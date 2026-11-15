@@ -67,7 +67,6 @@ import {
   threadImagesHeading,
   threadNorthStarHeading,
   threadPageSection,
-  threadRefusalsHeading,
   threadStandingSection,
   threadTurnBoundaryHeading,
 } from "../contract/threadSeeding.ts";
@@ -230,7 +229,7 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
  * and the checkout is what makes the draft accurate.
  */
 export const threadPurposeStanding =
-  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and put it in front of your owner with `offer_release` rather than releasing it: release it yourself only on their explicit word, as when they ask you to file and release or to release it without asking. Releasing starts nothing: a released ticket runs once it is dispatched, by the project's lead unless read_lead answers a lead standing `paused`, or no lead for a reason other than `NotNeeded` or `AwaitingSelector`, and there only on someone's word, so say so when you release there. The fabric does the work; you never do the work yourself. You dispatch, revoke, take or return a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets. An instruction to dispatch can reach tickets not yet ready, as when they ask you to carry an epic through, but you are woken only for tickets filed from this thread, so say so when it reaches others. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
+  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and put it in front of your owner with `offer_release` rather than releasing it: release it yourself only on their explicit word, as when they ask you to file and release or to release it without asking. Releasing starts nothing: a released ticket runs only once someone who may dispatch dispatches it, so say so when you release, and dispatch only on your owner's word. The fabric does the work; you never do the work yourself. You dispatch, revoke, take or return a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets. An instruction to dispatch can reach tickets not yet ready, as when they ask you to carry an epic through, but you are woken only for tickets filed from this thread, so say so when it reaches others. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
 
 /**
  * What a thread is told of choosing a configuration, which is where a ticket's
@@ -397,17 +396,11 @@ export interface ThreadSeededDraft {
   readonly summary: string;
 }
 
-/** One standing refusal against a draft of the member's. */
-export interface ThreadSeededRefusal {
-  readonly ticket: number;
-  readonly reason: string;
-}
-
 /**
  * What a project binds its threads by — its two texts, and the model and effort
  * a thread opens under — each absent where the project has set none. They are
  * read together because opening a thread needs all of them, and narrow because
- * a thread is not the lead: no prompt, limit, model or effort of the lead's is
+ * they are a thread's own: no other session's prompt, limit, model or effort is
  * reachable through them.
  */
 export interface ThreadProjectTexts {
@@ -420,14 +413,13 @@ export interface ThreadProjectTexts {
 /**
  * The block a thread's first turn carries in front of the member's message, and
  * that no later turn carries: what the project is aiming at, what the member
- * already has open, what stands against it, and the standing rules it acts
- * under, which are resolved before they get here.
+ * already has open, and the standing rules it acts under, which are resolved
+ * before they get here.
  */
 export interface ThreadSeeding {
   readonly northStar?: string;
   readonly standingRules: string;
   readonly drafts: readonly ThreadSeededDraft[];
-  readonly refusals: readonly ThreadSeededRefusal[];
 }
 
 /** The seeding block as the mailbox holds it, sections it has nothing for omitted. */
@@ -441,13 +433,6 @@ export function threadSeedingText(seeding: ThreadSeeding): string {
       : [
           `${threadDraftsHeading}\n\n${seeding.drafts
             .map(({ ticket, summary }) => `- ${String(ticket)} — ${summary}`)
-            .join("\n")}`,
-        ]),
-    ...(seeding.refusals.length === 0
-      ? []
-      : [
-          `${threadRefusalsHeading}\n\n${seeding.refusals
-            .map(({ ticket, reason }) => `- ${String(ticket)} — ${reason}`)
             .join("\n")}`,
         ]),
     threadStandingSection(seeding.standingRules),
@@ -475,10 +460,10 @@ export const threadTurnInputCharsMax =
  * The whole of one turn's input: the seeding block where the turn has one, the
  * page section where the member sent it from a page, the images section where
  * the message names any, the boundary the console splits on, then the
- * member's message, with the drafts shed oldest-first and then the refusals
- * until the two fit together. The North Star, the standing rules, the page and
- * the images section are never shed, because they are what the turn is bound
- * by, and an input that will not fit without shedding one of them is refused
+ * member's message, with the drafts shed oldest-first until the two fit
+ * together. The North Star, the standing rules, the page and the images
+ * section are never shed, because they are what the turn is bound by, and an
+ * input that will not fit without shedding one of them is refused
  * instead.
  */
 export function threadTurnInput(
@@ -505,16 +490,13 @@ export function threadTurnInput(
     return input;
   }
   let drafts = seeding.drafts;
-  let refusals = seeding.refusals;
   for (;;) {
-    const block = [
-      threadSeedingText({ ...seeding, drafts, refusals }),
-      ...sections,
-    ].join("\n\n");
+    const block = [threadSeedingText({ ...seeding, drafts }), ...sections].join(
+      "\n\n",
+    );
     const input = `${block}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
     if (textCodePointsCount(input) <= threadTurnInputCharsMax) return input;
     if (drafts.length > 0) drafts = drafts.slice(1);
-    else if (refusals.length > 0) refusals = refusals.slice(1);
     else
       throw new RangeError(
         `a thread turn's input must be at most ${String(threadTurnInputCharsMax)} characters`,
