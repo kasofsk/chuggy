@@ -369,6 +369,50 @@ function inputBundleEvidenceReferences(
   ];
 }
 
+/** What a spawn's own source pins: its repository and commit, and whatever of the change and the work its observation knew. */
+function inputBundleSourceReferences(
+  source: NonNullable<ExecutionRequestBundle["source"]>,
+): readonly InputBundleReference[] {
+  return [
+    { kind: "Repository" as const, reference: source.repository },
+    { kind: "TargetCommit" as const, reference: source.targetCommit },
+    ...(source.targetCommitRef === undefined
+      ? []
+      : [
+          {
+            kind: "TargetCommitRef" as const,
+            reference: source.targetCommitRef,
+          },
+        ]),
+    ...(source.changeBase === undefined
+      ? []
+      : [{ kind: "ChangeBase" as const, reference: source.changeBase }]),
+    ...source.manifests.map((manifest) => ({
+      kind: "ResultManifest" as const,
+      reference: manifest,
+    })),
+    ...(source.expectedTree === undefined
+      ? []
+      : [
+          {
+            kind: "ExpectedTree" as const,
+            reference: source.expectedTree,
+          },
+        ]),
+    ...(source.changeIdentity === undefined
+      ? []
+      : [
+          {
+            kind: "ChangeIdentity" as const,
+            reference: source.changeIdentity,
+          },
+        ]),
+    ...(source.recheck === undefined
+      ? []
+      : [{ kind: "Recheck" as const, reference: source.recheck }]),
+  ];
+}
+
 /** What a dispatch pins of its ticket's dependencies: each accepted result, and the commits found in the dispatched history or not. */
 function inputBundleDependencyReferences(
   dependencies: DependencyPins,
@@ -415,46 +459,7 @@ export function inputBundleReferencesOf(
       reference: image.artifact,
       digest: image.digest,
     })),
-    ...(source === undefined
-      ? []
-      : [
-          { kind: "Repository" as const, reference: source.repository },
-          { kind: "TargetCommit" as const, reference: source.targetCommit },
-          ...(source.targetCommitRef === undefined
-            ? []
-            : [
-                {
-                  kind: "TargetCommitRef" as const,
-                  reference: source.targetCommitRef,
-                },
-              ]),
-          ...(source.changeBase === undefined
-            ? []
-            : [{ kind: "ChangeBase" as const, reference: source.changeBase }]),
-          ...source.manifests.map((manifest) => ({
-            kind: "ResultManifest" as const,
-            reference: manifest,
-          })),
-          ...(source.expectedTree === undefined
-            ? []
-            : [
-                {
-                  kind: "ExpectedTree" as const,
-                  reference: source.expectedTree,
-                },
-              ]),
-          ...(source.changeIdentity === undefined
-            ? []
-            : [
-                {
-                  kind: "ChangeIdentity" as const,
-                  reference: source.changeIdentity,
-                },
-              ]),
-          ...(source.recheck === undefined
-            ? []
-            : [{ kind: "Recheck" as const, reference: source.recheck }]),
-        ]),
+    ...(source === undefined ? [] : inputBundleSourceReferences(source)),
     ...(evidence === undefined ? [] : inputBundleEvidenceReferences(evidence)),
     ...(dependencies === undefined
       ? []

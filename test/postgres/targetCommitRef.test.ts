@@ -4,22 +4,14 @@
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { reportTaskTerminalCommand } from "../../src/actor/command.ts";
-import { workTaskIdentity } from "../../src/domain/task.ts";
 import type { ExecutionSourceObservationPort } from "../../src/interpreter/executionSource.ts";
 import { asGitRefName } from "../../src/interpreter/finalizer.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
 import {
-  postgresHarnessCompletion,
-  postgresHarnessHistory,
-  postgresHarnessJournal,
+  postgresHarnessEvaluationSpawned,
   postgresHarnessOpen,
-  postgresHarnessProject,
-  postgresHarnessReport,
   postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
@@ -48,38 +40,6 @@ function namingSources(): ExecutionSourceObservationPort {
   };
 }
 
-/** Passes the ticket's first work cycle and decides every input that follows. */
-async function evaluationSpawned(label: string): Promise<Partition> {
-  const partition = await postgresHarnessProject(harness.store, label);
-  const memory = await postgresHarnessHistory(
-    harness,
-    partition,
-    label,
-    postgresHarnessJournal().length,
-  );
-  await postgresHarnessCompletion(
-    harness,
-    partition,
-    `operation-ref-${randomUUID()}`,
-    reportTaskTerminalCommand(
-      postgresHarnessReport(memory.graph, workTaskIdentity(1, 1), "Pass"),
-    ),
-  );
-  const writer = {
-    ...postgresHarnessWriter(harness),
-    executionSources: namingSources(),
-  };
-  let carried = memory;
-  for (let pass = 0; pass < 20; pass += 1) {
-    const input = await harness.discovery.next(partition, 300);
-    if (input === undefined) break;
-    const step = await projectWriterDecide(writer, carried, input);
-    assert.equal(step.decided.decided, "Committed");
-    carried = step.memory;
-  }
-  return partition;
-}
-
 /** The refs the project's bundles of `kind` hold as the ref their commit is on. */
 async function refsStored(partition: Partition, kind: string) {
   return harness.query(
@@ -94,13 +54,21 @@ async function refsStored(partition: Partition, kind: string) {
 }
 
 test("an evaluation's bundle stores the ref its source names its commit on", async () => {
-  const partition = await evaluationSpawned("target-commit-ref");
+  const partition = await postgresHarnessEvaluationSpawned(
+    harness,
+    "target-commit-ref",
+    namingSources(),
+  );
   assert.deepEqual(await refsStored(partition, "SpawnEvaluation"), [
     { reference_id: ref },
   ]);
 });
 
 test("a work bundle stores no ref its commit is on", async () => {
-  const partition = await evaluationSpawned("target-commit-ref-work");
+  const partition = await postgresHarnessEvaluationSpawned(
+    harness,
+    "target-commit-ref-work",
+    namingSources(),
+  );
   assert.deepEqual(await refsStored(partition, "SpawnWork"), []);
 });
