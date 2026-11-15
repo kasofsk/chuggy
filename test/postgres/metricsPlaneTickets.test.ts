@@ -779,7 +779,7 @@ const landedPhases = [
 
 test("a landed ticket is observed once in every phase, zero where it spent none, and its work cycles counted", async () => {
   const bounds = [
-    60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
+    0, 60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
   ];
   const spent = (labels: string, secs: readonly number[]) =>
     landedPhases.flatMap((phase, index) =>
@@ -797,6 +797,12 @@ test("a landed ticket is observed once in every phase, zero where it spent none,
       ...spent(aliceWeb, [60, 434, 260, 6_430, 46]),
       ...spent(bobTwo, [60, 140, 100, 100, 0]),
     ].toSorted(),
+  );
+  const samples = await ticketsSamples();
+  assert.ok(
+    samples.includes(
+      `chuggy_ticket_phase_time_seconds_bucket{${bobTwo},phase="Escalated",le="0"} 1`,
+    ),
   );
   const cyclesBounds = [1, 2, 3, 4, 5, 7, 10];
   assert.deepEqual(
