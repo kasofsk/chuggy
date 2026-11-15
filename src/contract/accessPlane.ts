@@ -29,6 +29,9 @@
  * whether they administer it. It names nobody else, so there is nobody it is
  * hidden from, and a caller written into none is answered an empty list.
  *
+ * THE CALLER'S OWN ACCOUNT IS ANSWERED THE SAME WAY: their subject, their
+ * principal, and who the directory says they are, as a people list names them.
+ *
  * A TENANT IS NAMED TO A READER BY ITS DISPLAY NAME, which every answer naming
  * a tenant to a reader carries beside its id, and which its administrators
  * change. The id is what every path and every role names, and nothing changes
@@ -283,6 +286,7 @@ export const accessPlaneRoutes = {
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
   callerTenants: { method: "GET", path: `${accessPlaneBasePath}/workspaces` },
+  callerAccount: { method: "GET", path: `${accessPlaneBasePath}/account` },
   siteWorkspaceLinkCreation: {
     method: "POST",
     path: `${accessSitePath}/workspace-links`,
@@ -728,6 +732,13 @@ export const accessCallerTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** What the caller's own account answers: their subject, their principal encoded as a ticket's `creator` is, and the directory's fields. */
+export const accessCallerAccountSchema = z.strictObject({
+  subject: z.string().min(1),
+  principal: identitySchema,
+  ...accessAccountFields,
+});
+
 /** How long an invite link stands once made. */
 export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
@@ -955,6 +966,7 @@ export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
 export type AccessTenantDisplayNameChange = z.infer<
   typeof accessTenantDisplayNameChangeSchema
 >;
+export type AccessCallerAccount = z.infer<typeof accessCallerAccountSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

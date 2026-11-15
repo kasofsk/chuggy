@@ -25,11 +25,14 @@ repositories-return-partial = Partial
 repositories-return-requested = Requested
 # The forge spent the code before the api could read what it reaches.
 repositories-return-spent = Start again
-repositories-setup-title = Setup
-repositories-callback-title = { -github }
-repositories-connecting = Connecting
-repositories-setup-unexpected = Not expected
+repositories-connecting-title = Connecting { -github }
+repositories-connecting = Finishing the connection…
+repositories-setup-unexpected-title = { -github } sent you back unexpectedly
+repositories-setup-unexpected = This tab did not send you to { -github }, so it cannot tell where to take you.
+repositories-setup-unexpected-next = Go home and start again from there.
 repositories-setup-updated = Back from { -github }
+repositories-setup-updated-continue = Continue to go back to where you were.
+repositories-setup-updated-home = Go home to carry on.
 repositories-home = Home
 repositories-continue = Continue
 
@@ -50,7 +53,6 @@ repositories-none = No { -repository } bound
 repositories-add = Add
 repositories-add-how = Create one on { -github }, install both apps on it, then Add
 repositories-bound-caption = Bound { -repository(form: "plural") }
-repositories-col-repository = { -repository(case: "upper") }
 repositories-bound = Bound
 repositories-unbind = Unbind
 repositories-offers-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -repository(form: "plural") }
@@ -59,6 +61,14 @@ repositories-offers-not-configured = { -github } not configured · ask an operat
 repositories-offers-connect = Connect a { -github } account first
 repositories-offers-portal-missing = No account has the { -portal-app }
 repositories-offers-worker-missing = { -worker-app(case: "upper") } missing · { $account }
+
+## The numbered steps to a first repository.
+
+repositories-steps = Connecting a { -repository }
+repositories-step-connect = Connect a { -github } account
+repositories-step-install-worker = Install the { -worker-app }
+repositories-step-add = Add a { -repository }
+repositories-step-done = Done
 
 ## The worker app's reach on a bound row, and the picker's roster.
 

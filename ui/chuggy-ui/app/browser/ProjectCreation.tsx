@@ -70,6 +70,7 @@ import { usePanelState } from "./api.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
 import { copyOrDataText } from "../core/copy.ts";
 import type { CopyText } from "../core/copy.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import { clipboardWritten, drawBytes, persistentStore } from "./ports.ts";
@@ -297,7 +298,7 @@ function projectCreationWrite(
         queryKey: projectsInventoryQuery().queryKey,
       });
       void navigate({
-        to: "/$tenant/$project/repositories",
+        to: settingsRoutes.project.repositories,
         params: { tenant: created.tenant, project: created.project },
       });
     },
@@ -383,6 +384,7 @@ function ProjectCreation(props: {
     return (
       <EmptyState
         variant="page"
+        level={1}
         label={text(offer.label)}
         detail={text(offer.detail)}
       />

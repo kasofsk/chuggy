@@ -1,6 +1,7 @@
 /**
  * The page an invite link is opened at, drawn the same with a session and
- * without one: a card, one line, and at most one action.
+ * without one: a title for the state the link is in, one line, what to do next
+ * where a send was refused, and at most one action.
  *
  * It reads no router, because the tree's root draws it for a browser that
  * holds no session and has no router, and the route draws it for a reader.
@@ -10,7 +11,7 @@
  * root.
  *
  * NOTHING HERE LEAVES THE PAGE WITHOUT A PRESS but a redemption the plane
- * took. A person the sign-in service refused is drawn a card and not sent
+ * took. A person the sign-in service refused is drawn a page and not sent
  * round again.
  */
 
@@ -35,6 +36,18 @@ import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Locomotive } from "./ui/Locomotive.tsx";
 
+/** What each state of the page is for, said as its title. */
+const invitePageTitles = {
+  needed: { id: "settings-invite-needed-title" },
+  invited: { id: "settings-invite-invited-title" },
+  redeeming: { id: "settings-invite-joining-title" },
+  notValid: { id: "settings-invite-not-valid-title" },
+  failed: { id: "settings-invite-failed-title" },
+} as const satisfies Readonly<Record<string, Copy>>;
+
+/** What a reader whose send failed does next, said under why. */
+const inviteFailedNext: Copy = { id: "settings-invite-failed-next" };
+
 const InviteContext = createContext<InviteHolder | undefined>(undefined);
 
 export function InviteProvider(props: {
@@ -56,7 +69,9 @@ function useInviteHolder(): InviteHolder {
 }
 
 function InviteCard(props: {
+  readonly title: Copy;
   readonly line: CopyOrData;
+  readonly next?: Copy;
   readonly action?: Copy;
   readonly onAction?: () => void;
   readonly media?: ReactNode;
@@ -65,8 +80,9 @@ function InviteCard(props: {
   const text = useCopyText();
   return (
     <SessionCard
-      title={text(invitePageWords.brand)}
+      title={text(props.title)}
       detail={copyOrDataText(text, props.line)}
+      next={props.next === undefined ? undefined : text(props.next)}
       media={props.media}
       action={
         action === undefined || onAction === undefined ? undefined : (
@@ -91,6 +107,7 @@ function InviteNeeded(props: {
   }, [invite, domain]);
   return (
     <InviteCard
+      title={invitePageTitles.needed}
       line={invitePageWords.needed}
       action={invitePageWords.signIn}
       onAction={() => {
@@ -202,18 +219,27 @@ function InviteRedeeming(props: {
   if (refused !== null)
     return inviteRefusalOf(refused) === "NotValid" ? (
       <InviteCard
+        title={invitePageTitles.notValid}
         line={invitePageWords.notValid}
         action={invitePageWords.open}
         onAction={invite.elsewhere}
       />
     ) : (
       <InviteCard
+        title={invitePageTitles.failed}
         line={refused.message}
+        next={inviteFailedNext}
         action={invitePageWords.retry}
         onAction={retry}
       />
     );
-  return <InviteCard line={invitePageWords.redeeming} media={<Locomotive />} />;
+  return (
+    <InviteCard
+      title={invitePageTitles.redeeming}
+      line={invitePageWords.redeeming}
+      media={<Locomotive />}
+    />
+  );
 }
 
 export function InvitePage(): ReactNode {
@@ -232,6 +258,7 @@ export function InvitePage(): ReactNode {
     case "Invited":
       return (
         <InviteCard
+          title={invitePageTitles.invited}
           line={invitePageWords.invited}
           action={invitePageWords.signIn}
           onAction={() => {

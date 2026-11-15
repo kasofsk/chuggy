@@ -29,7 +29,7 @@ import type { PanelState } from "../../core/freshness.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ConfigurationBody } from "../TicketProvenance.tsx";
 import { Panel } from "../ui/Panel.tsx";
-import { CatalogLink, CatalogShown } from "./CatalogShown.tsx";
+import { CatalogLink, CatalogShown, CatalogSkeleton } from "./CatalogShown.tsx";
 
 function useCatalogHead(
   partition: PartitionIdentity,
@@ -90,6 +90,7 @@ export function CatalogHeadRevision(props: {
 }): ReactNode {
   const text = useCopyText();
   const state = useCatalogHead(props.partition, props.repository);
+  if (state.state === "Pending") return <CatalogSkeleton />;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const declaration = catalogHeadDeclaration(state.value.head, props.name);
   if (declaration === undefined) return props.imported;
@@ -111,6 +112,7 @@ export function CatalogHeadRevision(props: {
   return (
     <CatalogShown
       base={base}
+      repository={props.repository}
       canonical={declaration.canonical}
       entries={catalogEntriesOf(catalog, declaration.workloadPaths)}
       selected={entry}

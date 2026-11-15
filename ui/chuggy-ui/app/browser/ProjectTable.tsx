@@ -95,7 +95,7 @@ import {
   ListSearch,
   listFilterGlyph,
   listSortGlyph,
-} from "./ListControls.tsx";
+} from "./ui/ListControls.tsx";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";

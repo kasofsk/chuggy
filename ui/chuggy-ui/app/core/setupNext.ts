@@ -215,7 +215,7 @@ function setupGithubMend(
   lack: Extract<SetupLack, { readonly lacks: "Account" | "App" | "Grant" }>,
   at: SetupAt,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
+  const page = setupPage(at, settingsRoutes.project.repositories);
   const connected: Copy = { id: "setup-mend-github-when" };
   if (lack.lacks === "Grant") return setupGrantMend(lack, page);
   if (lack.lacks === "Account")
@@ -253,7 +253,7 @@ function setupRepositoryMend(
   at: SetupAt,
   mine: string | undefined,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
+  const page = setupPage(at, settingsRoutes.project.repositories);
   if (lack.lacks === "Binding")
     return setupHand(
       {

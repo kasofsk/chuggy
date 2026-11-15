@@ -10,9 +10,9 @@
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ComponentProps } from "react";
 
 import { ProjectCreationPage } from "../app/browser/ProjectCreation.tsx";
 import { ProjectSwitcher } from "../app/browser/shell/ProjectSwitcher.tsx";
@@ -67,8 +67,23 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof RouterModule>()),
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  /** A menu item draws its link through `asChild`, so the double keeps the
+   * role, focus and handlers the item hands it, and only the route is
+   * dropped. */
+  Link: (
+    props: ComponentProps<"a"> & {
+      readonly to?: unknown;
+      readonly params?: unknown;
+    },
+  ) => (
+    <a
+      {...Object.fromEntries(
+        Object.entries(props).filter(
+          ([key]) => !["to", "params"].includes(key),
+        ),
+      )}
+      href="/"
+    />
   ),
   useNavigate: () => held.navigate,
 }));
@@ -94,22 +109,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("the page draws the form, under a bar that signs out and sets the theme", async () => {
+test("the page draws the form, under a bar that signs out", async () => {
   served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<ProjectCreationPage />);
   expect(screen.getByRole("heading", { name: "New project" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
-  fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Account menu" }), {
     key: "ArrowDown",
   });
+  const menu = await screen.findByRole("menu");
   expect(
-    await screen.findByRole("menuitemradio", { name: "Dark" }),
-  ).toBeDefined();
-  expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeDefined();
-  expect(screen.queryByText("Chat position")).toBeNull();
-  expect(screen.queryByRole("menuitem", { name: "Runners" })).toBeNull();
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toStrictEqual(["Sign out"]);
 });
 
 test("the rule each name is held to stands under its field before anything is typed", async () => {
@@ -237,7 +252,7 @@ test("a created project is opened at its repositories and remembered", async () 
   expect(posted.map((one) => one.body)).toEqual([named]);
   expect(posted[0]?.key).toBeTruthy();
   expect(held.went).toEqual([
-    { to: "/$tenant/$project/repositories", params: partition },
+    { to: "/$tenant/$project/settings/repositories", params: partition },
   ]);
   expect(lastProjectRead(persistentStore)).toEqual(partition);
 });
@@ -257,7 +272,7 @@ test("a project created after its form was left is still opened at its repositor
   });
   await settled();
   expect(held.went).toEqual([
-    { to: "/$tenant/$project/repositories", params: partition },
+    { to: "/$tenant/$project/settings/repositories", params: partition },
   ]);
   expect(lastProjectRead(persistentStore)).toEqual(partition);
 });

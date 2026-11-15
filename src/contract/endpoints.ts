@@ -1,5 +1,6 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
+import { themeChoiceSchema, themeDocumentSchema } from "./appearance.ts";
 import {
   epicHistoryQuerySchema,
   epicListQuerySchema,
@@ -66,6 +67,9 @@ import {
   landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
   ticketTakeResponseSchema,
+  ownedThemeSchema,
+  ownedThemesResponseSchema,
+  themeChoiceResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -428,6 +432,45 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.ticketReturn,
     body: emptyBody,
     response: ticketTakeResponseSchema,
+  },
+  listOwnThemes: {
+    method: "GET",
+    path: nativeHttpRoutes.ownThemes,
+    response: ownedThemesResponseSchema,
+  },
+  createOwnTheme: {
+    method: "POST",
+    path: nativeHttpRoutes.ownThemes,
+    body: themeDocumentSchema,
+    response: ownedThemeSchema,
+  },
+  viewOwnTheme: {
+    method: "GET",
+    path: nativeHttpRoutes.ownTheme,
+    response: ownedThemeSchema,
+  },
+  writeOwnTheme: {
+    method: "PUT",
+    path: nativeHttpRoutes.ownTheme,
+    body: themeDocumentSchema,
+  },
+  deleteOwnTheme: {
+    method: "DELETE",
+    path: nativeHttpRoutes.ownTheme,
+  },
+  viewThemeChoice: {
+    method: "GET",
+    path: nativeHttpRoutes.themeChoice,
+    response: themeChoiceResponseSchema,
+  },
+  writeThemeChoice: {
+    method: "PUT",
+    path: nativeHttpRoutes.themeChoice,
+    body: themeChoiceSchema,
+  },
+  clearThemeChoice: {
+    method: "DELETE",
+    path: nativeHttpRoutes.themeChoice,
   },
 } as const;
 

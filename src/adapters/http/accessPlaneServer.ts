@@ -8,8 +8,9 @@
  * kind it needs. A tenant's invite links are made, listed and revoked the same
  * way, and so are the site's workspace links, and either is redeemed by any
  * caller signed in, who needs no kind because the link's maker held them. The
- * tenants a caller is written into are answered to any caller signed in, about
- * them alone, and a tenant's administrators change its display name.
+ * tenants a caller is written into, and their own account, are answered to any
+ * caller signed in, about them alone, and a tenant's administrators change its
+ * display name.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -82,6 +83,7 @@ import {
 } from "../../contract/http.ts";
 import type { AccessAbilities } from "../../interpreter/accessAbilities.ts";
 import type { AccessAuthorities } from "../../interpreter/accessAuthorities.ts";
+import type { AccessCallerAccountRead } from "../../interpreter/accessCallerAccount.ts";
 import type { AccessCallerTenantsList } from "../../interpreter/accessCallerTenants.ts";
 import type {
   AccessAuthorityHolders,
@@ -144,6 +146,7 @@ export interface AccessPlaneService {
   readonly siteTenants: AccessSiteTenantsList;
   readonly callerTenants: AccessCallerTenantsList;
   readonly tenantNames: AccessTenantNames;
+  readonly callerAccount: AccessCallerAccountRead;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -464,7 +467,7 @@ function accessUnscopedChatRoutes(
   );
 }
 
-/** What the caller may do, who holds each authority at each level and the site's tenants, each absent to a caller the authority does not answer, and the caller's own tenants, answered to every caller. */
+/** What the caller may do, who holds each authority at each level and the site's tenants, each absent to a caller the authority does not answer, and the caller's own tenants and account, answered to every caller. */
 function accessAnsweredRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -511,6 +514,10 @@ function accessAnsweredRoutes(
     [
       "callerTenants",
       (_request, caller) => service.callerTenants.callerTenants(caller),
+    ],
+    [
+      "callerAccount",
+      (_request, caller) => service.callerAccount.callerAccount(caller),
     ],
   ];
   for (const [name, abilities] of answered)

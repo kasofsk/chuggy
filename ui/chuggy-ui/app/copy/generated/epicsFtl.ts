@@ -173,6 +173,7 @@ epics-history-also = { $first } · { $rest }
 
 epics-edit = Edit the { -epic }
 epics-edit-save = Save
+epics-leave-question = Discard the unsaved changes to the { -epic } and leave?
 
 ## What a form has wrong before it is sent, and what a refused write says.
 

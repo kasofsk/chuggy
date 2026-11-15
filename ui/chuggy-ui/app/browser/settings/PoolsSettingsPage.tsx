@@ -21,12 +21,9 @@ import { RunnerVersion } from "../RunnerVersion.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { Table } from "../ui/Table.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
-import {
-  SettingsListing,
-  SettingsListingSection,
-  SettingsListingTable,
-} from "./SettingsListing.tsx";
+import { SettingsListing, SettingsListingSection } from "./SettingsListing.tsx";
 
 function PoolsSettingsTable(props: {
   readonly listed: WorkerPoolsResponse;
@@ -34,30 +31,35 @@ function PoolsSettingsTable(props: {
   const text = useCopyText();
   const nowMs = useNowMs();
   return (
-    <SettingsListingTable caption={text({ id: "runners-pools-title" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "runners-col-runner" })}</th>
-          <th scope="col">{text({ id: "runners-col-platforms" })}</th>
-          <th scope="col">{text({ id: "runners-col-version" })}</th>
-          <th scope="col">{text({ id: "runners-col-registered" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.listed.pools.map((pool) => (
-          <tr key={pool.pool}>
-            <th scope="row">{pool.pool}</th>
-            <td>{pool.capabilities.map(runnerCapabilityLabel).join(", ")}</td>
-            <td>
-              <RunnerVersion runner={pool.runner} />
-            </td>
-            <td>
+    <Table
+      caption={text({ id: "runners-pools-title" })}
+      stacked={{
+        columns: [
+          {
+            key: "runner",
+            label: text({ id: "runners-col-runner" }),
+            rowHeader: true,
+          },
+          { key: "platforms", label: text({ id: "runners-col-platforms" }) },
+          { key: "version", label: text({ id: "runners-col-version" }) },
+          {
+            key: "registered",
+            label: text({ id: "runners-col-registered" }),
+          },
+        ],
+        rows: props.listed.pools.map((pool) => ({
+          key: pool.pool,
+          cells: {
+            runner: pool.pool,
+            platforms: pool.capabilities.map(runnerCapabilityLabel).join(", "),
+            version: <RunnerVersion runner={pool.runner} />,
+            registered: (
               <Figure figure={instantFigure(pool.registeredAt, nowMs)} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </SettingsListingTable>
+            ),
+          },
+        })),
+      }}
+    />
   );
 }
 
@@ -71,7 +73,7 @@ export function PoolsSettingsPage(): ReactNode {
   const pools = usePanelState(workerPoolsQuery(partition));
   const title = text({ id: "runners-pools-title" });
   return (
-    <SettingsPage title={title}>
+    <SettingsPage title={title} headed>
       <SettingsListing>
         <SettingsListingSection
           heading={title}

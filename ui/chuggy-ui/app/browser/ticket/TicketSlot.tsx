@@ -10,7 +10,6 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { EscalationStep } from "../../core/codeLabels.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
-import { navRoutes } from "../../core/shellNav.ts";
 import type {
   NeedsYouRun,
   ReasonAttempt,
@@ -49,7 +48,7 @@ function NeedsYouStep(props: {
         to={
           props.step === "Runners"
             ? settingsRoutes.project.myRunner
-            : navRoutes.repositories
+            : settingsRoutes.project.repositories
         }
         params={props.partition}
       >
