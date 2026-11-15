@@ -6,8 +6,6 @@ epics-title = { -epic(case: "upper", form: "plural") }
 epics-page-title = { -epic(case: "upper") }
 epics-none = No { -epic(form: "plural") }
 epics-not-found = No such { -epic }
-epics-new = New { -epic }
-epics-create = Create { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
 epics-show-more = Show more
@@ -46,8 +44,6 @@ epics-field-summary = Summary
 epics-field-summary-count = { $count } / { $most }
 epics-field-description = Description
 epics-field-description-format = Markdown
-epics-field-tickets = { -ticket(case: "upper", form: "plural") }
-epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
 epics-faults-label = Faults
 
 ## The page's header and its tabs.
@@ -119,18 +115,31 @@ epics-graph-key-running = Running
 epics-graph-key-ready = Ready
 epics-graph-key-blocked = Blocked
 epics-graph-key-escalated = { -escalation(case: "upper") }
-# spells -run: to run is a verb here
-epics-graph-arrows = Arrows run from a { -ticket } to what waits on it
-epics-graph-unconnected = Unlinked { -ticket(form: "plural") }
+epics-graph-chain = Longest chain
+epics-graph-layer = Layer { $layer }: { $done } of { $count } done
+epics-graph-done = { $done } of { $count } done
 epics-card-untitled = Untitled
-epics-card = #{ $ticket } { $title }: { $state }
-epics-card-outside = #{ $ticket } { $title }: { $state }, outside the { -epic }
+epics-card-outside-tag = outside
+epics-card = #{ $ticket } { $title }: { $state }{ $count ->
+    [0] {""}
+    [one] , { $done } of 1 { -dependency } done
+   *[other] , { $done } of { $count } { -dependency(form: "plural") } done
+}
+epics-card-outside = #{ $ticket } { $title }: { $state }, outside the { -epic }{ $count ->
+    [0] {""}
+    [one] , { $done } of 1 { -dependency } done
+   *[other] , { $done } of { $count } { -dependency(form: "plural") } done
+}
 epics-side-label = Selected { -ticket }
+epics-side-summary = { -epic(case: "upper") } at a glance
+epics-side-layer = Layer { $layer } of { $layers }
+epics-side-step = Step { $step } of { $steps }
 epics-side-depends-on = Depends on
 epics-side-blocks = Blocks
 epics-side-none = None
 epics-side-open = Open { -ticket }
 epics-side-dispatch = { -dispatch(case: "upper") }
+epics-sheet-ticket = #{ $ticket } { $title }: { $state }
 
 ## The History tab.
 

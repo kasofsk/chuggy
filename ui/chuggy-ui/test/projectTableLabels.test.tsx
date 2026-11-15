@@ -418,9 +418,11 @@ test("nothing the project table draws is a runtime style element", async () => {
 
 /** A project with no ticket at all is one empty state offering the first,
  * with no section and no filter to choose between. */
-test("a project with no ticket draws one empty state that offers a new one", async () => {
+test("a project with no ticket draws one empty state that offers a new one, under the page's one top-level heading", async () => {
   await drawTableWith([], []);
-  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
+  expect(screen.getByText("No tickets").closest(".empty")).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   const offer = screen.getByText("New ticket");
   expect(offer.tagName).toBe("A");
   expect(offer.closest(".empty")).not.toBeNull();
@@ -472,7 +474,7 @@ test("a reader who may not mutate is offered no new ticket in the empty state", 
     [],
     abilitiesOver({ ...abilitiesEvery, mutate: false }),
   );
-  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
+  expect(screen.getByText("No tickets")).toBeDefined();
   expect(newTicketOffers()).toBe(0);
 });
 

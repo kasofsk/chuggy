@@ -2098,7 +2098,7 @@ test("the bare command, where a runner is next and this machine could take one, 
   expect(done.lines.slice(-5)).toEqual([
     "step: runner      todo",
     "step: ticket      todo",
-    `tell: ${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
+    `tell: ${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/runners, where you press Add runner.`,
     offer,
     stop,
   ]);
@@ -2129,7 +2129,7 @@ test("where the person's chats run on a chat host, the bare command offers two s
   const machine = await both();
   const offered = await ran(machine, []);
   expect(offered.lines.slice(-3)).toEqual([
-    `tell: ${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
+    `tell: ${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/runners, where you press Add runner.`,
     offer,
     stop,
   ]);
@@ -2160,7 +2160,7 @@ test("the bare command says why this machine cannot take a runner where it canno
     prepare(machine);
     const done = await ran(machine, []);
     expect(done.lines.join("\n")).not.toContain(" runner --workspace");
-    expect(done.lines.at(-3)).toContain(`${pages}/runners`);
+    expect(done.lines.at(-3)).toContain(`${pages}/settings/runners`);
     return [done.lines.at(-3)?.slice(0, tellHead), machine.box.acts];
   };
   expect(

@@ -12,7 +12,7 @@ import {
   executionPlacementQuery,
   ownerFallbackQuery,
 } from "../core/projectQueries.ts";
-import { navRoutes } from "../core/shellNav.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { workRunner } from "../core/workRunner.ts";
 import type { WorkRunner, WorkRunnerOwner } from "../core/workRunner.ts";
 import { usePanelState } from "./api.ts";
@@ -44,7 +44,7 @@ export function AddRunnerLink(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Link to={navRoutes.runners} params={props.partition}>
+    <Link to={settingsRoutes.project.runners} params={props.partition}>
       {text({ id: "runners-add" })}
     </Link>
   );

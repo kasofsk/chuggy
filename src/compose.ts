@@ -909,6 +909,7 @@ export function composeNativeWeb(
   leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
   usageResume?: TicketUsageResumeBounds,
+  memoryMibDefault?: number,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   const authoring = postgresAuthoring(apiPool);
@@ -922,7 +923,7 @@ export function composeNativeWeb(
     postgresDispatchViews(apiPool),
     inventory ??
       authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
-    postgresOperationalReads(apiPool),
+    postgresOperationalReads(apiPool, memoryMibDefault),
     outputContents,
     selectorContexts,
     repositories === undefined

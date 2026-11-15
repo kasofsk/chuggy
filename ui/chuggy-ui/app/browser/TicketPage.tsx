@@ -432,7 +432,11 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
 function TicketPageNotFound(): ReactNode {
   const text = useCopyText();
   return (
-    <EmptyState label={text({ id: "ticket-page-not-found" })} variant="page" />
+    <EmptyState
+      label={text({ id: "ticket-page-not-found" })}
+      variant="page"
+      level={1}
+    />
   );
 }
 

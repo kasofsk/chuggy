@@ -162,7 +162,6 @@ export interface TicketCopy {
     readonly doing: unknown;
   };
   readonly "ticket-now-aria-label": Record<never, never>;
-  readonly "ticket-now-personal-runners": Record<never, never>;
   readonly "ticket-run-time-running": Record<never, never>;
   readonly "ticket-needs-you-aria-label": Record<never, never>;
   readonly "ticket-situation-read-the": {

@@ -5,23 +5,31 @@
 export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-title": Record<never, never>;
   readonly "configuration-catalog-none": Record<never, never>;
-  readonly "configuration-catalog-none-detail": {
-    readonly directory: unknown;
-  };
   readonly "configuration-catalog-picker-configuration": Record<never, never>;
   readonly "configuration-catalog-picker-revision": Record<never, never>;
   readonly "configuration-catalog-version-one": Record<never, never>;
   readonly "configuration-catalog-authored": Record<never, never>;
   readonly "configuration-catalog-imported": Record<never, never>;
-  readonly "configuration-catalog-compare-head": Record<never, never>;
-  readonly "configuration-catalog-show-import": Record<never, never>;
-  readonly "configuration-catalog-show-head": Record<never, never>;
-  readonly "configuration-catalog-head-matches": {
-    readonly branch: unknown;
-    readonly commit: unknown;
-    readonly name: unknown;
+  readonly "configuration-catalog-search": Record<never, never>;
+  readonly "configuration-catalog-search-placeholder": Record<never, never>;
+  readonly "configuration-catalog-search-none": Record<never, never>;
+  readonly "configuration-catalog-count": {
+    readonly count: unknown;
   };
-  readonly "configuration-catalog-head-differs": {
+  readonly "configuration-catalog-count-configurations": {
+    readonly count: unknown;
+  };
+  readonly "configuration-catalog-picker-repository": Record<never, never>;
+  readonly "configuration-catalog-repository-back": {
+    readonly repository: unknown;
+  };
+  readonly "configuration-catalog-section-configurations": Record<never, never>;
+  readonly "configuration-catalog-incomplete": Record<never, never>;
+  readonly "configuration-catalog-written-in": Record<never, never>;
+  readonly "configuration-catalog-held-by": Record<never, never>;
+  readonly "configuration-catalog-fragments-partial": Record<never, never>;
+  readonly "configuration-catalog-show-import": Record<never, never>;
+  readonly "configuration-catalog-head-matches": {
     readonly branch: unknown;
     readonly commit: unknown;
     readonly name: unknown;

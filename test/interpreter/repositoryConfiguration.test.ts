@@ -120,12 +120,18 @@ function treeReferenced(): ReadonlyMap<
   );
 }
 
-test("every declaration this tree makes imports, each one releasable", () => {
-  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
+/** The name of every declaration this tree makes. */
+function treeDeclarationNames(): readonly string[] {
+  return readdirSync(repositoryConfigurationRoot).filter((name) =>
     name.endsWith(".json"),
   );
-  assert.ok(names.includes("basic-coding.json"));
-  const found = repositoryConfigurationImportReadiness({
+}
+
+/** An import of the named declarations of this tree, as a commit of it would be read. */
+function treeImported(
+  names: readonly string[],
+): ReturnType<typeof repositoryConfigurationImportReadiness> {
+  return repositoryConfigurationImportReadiness({
     repository,
     commit,
     files: names.map((name) => ({
@@ -135,25 +141,20 @@ test("every declaration this tree makes imports, each one releasable", () => {
     })),
     referenced: treeReferenced(),
   });
+}
+
+test("every declaration this tree makes imports, each one releasable", () => {
+  const names = treeDeclarationNames();
+  assert.ok(names.includes("basic-coding.json"));
+  const found = treeImported(names);
   assert.equal(found.readiness, "Ready", JSON.stringify(found));
   if (found.readiness !== "Ready") return;
   assert.equal(found.declarations.length, names.length);
 });
 
 test("every declaration this tree makes reevaluates its reviewers on change and reruns its commands on every tree", () => {
-  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
-    name.endsWith(".json"),
-  );
-  const found = repositoryConfigurationImportReadiness({
-    repository,
-    commit,
-    files: names.map((name) => ({
-      path: `${repositoryConfigurationRoot}${name}`,
-      kind: "File",
-      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
-    })),
-    referenced: treeReferenced(),
-  });
+  const names = treeDeclarationNames();
+  const found = treeImported(names);
   if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
   const evaluators = found.declarations.flatMap(({ name, configuration }) => {
     if (configuration.version === 1) return [];
@@ -173,6 +174,7 @@ test("every declaration this tree makes reevaluates its reviewers on change and 
   assert.deepEqual(evaluators.map(({ runner }) => runner).sort(), [
     "Agent",
     "Agent",
+    "Approval",
     "Commands",
     "Commands",
   ]);
@@ -180,7 +182,31 @@ test("every declaration this tree makes reevaluates its reviewers on change and 
     assert.equal(reevaluate, runner === "Agent" ? "OnChange" : undefined, at);
 });
 
-test("a ticket of the development catalog naming no finalization lands by a Stacked pull request merge", () => {
+test("a ticket of every catalog this tree declares, naming no finalization, lands by a Stacked pull request merge", () => {
+  const names = treeDeclarationNames();
+  assert.ok(names.includes("basic-coding.json"));
+  assert.ok(names.includes("chuggy-development.json"));
+  const found = treeImported(names);
+  if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
+  assert.equal(found.declarations.length, names.length);
+  for (const { name, configuration } of found.declarations) {
+    assert.deepEqual(
+      catalogSelectedFinalizer(configuration, undefined),
+      {
+        finalizer: {
+          finalization: {
+            kind: "GitMerge",
+            mode: "PullRequestMerge",
+            policy: "Stacked",
+          },
+        },
+      },
+      name,
+    );
+  }
+});
+
+test("the development catalog's approved plan is its standard plan, then one stage a Developer approves, and standard stays the default", () => {
   const path = `${repositoryConfigurationRoot}chuggy-development.json`;
   const found = repositoryConfigurationImportReadiness({
     repository,
@@ -188,20 +214,19 @@ test("a ticket of the development catalog naming no finalization lands by a Stac
     files: [{ path, kind: "File", content: readFileSync(path, "utf8") }],
     referenced: treeReferenced(),
   });
-  assert.equal(found.readiness, "Ready", JSON.stringify(found));
-  if (found.readiness !== "Ready") return;
-  assert.deepEqual(
-    catalogSelectedFinalizer(found.declarations[0]?.configuration, undefined),
-    {
-      finalizer: {
-        finalization: {
-          kind: "GitMerge",
-          mode: "PullRequestMerge",
-          policy: "Stacked",
-        },
-      },
-    },
-  );
+  if (found.readiness !== "Ready") assert.fail(JSON.stringify(found));
+  const configuration = found.declarations[0]?.configuration;
+  if (configuration === undefined || configuration.version === 1)
+    assert.fail("the development catalog is a catalog");
+  const { standard, approved } = configuration.plans;
+  assert.deepEqual(approved, [
+    ...(standard ?? []),
+    { name: "approval", evaluators: ["approval"] },
+  ]);
+  const approval = configuration.workloads["approval"];
+  assert.equal(approval?.runner, "Approval");
+  assert.ok(approval !== undefined && !("approvers" in approval));
+  assert.equal(configuration.defaults?.evaluation, "standard");
 });
 
 test("one bad declaration refuses the snapshot without partial output", () => {
