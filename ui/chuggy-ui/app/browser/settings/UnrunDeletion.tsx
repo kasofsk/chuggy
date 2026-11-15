@@ -39,6 +39,7 @@ import type { UnrunDeletionHolding } from "../../core/unrunDeletion.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { useProjectNamed } from "../projectNamed.ts";
+import { useWorkspaceNames } from "../workspaceNames.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -182,14 +183,15 @@ export function ProjectDeletion(props: {
 /** The workspace deleted, for the site's administrator, once it holds no project. */
 export function TenantDeletion(props: { readonly tenant: string }): ReactNode {
   const text = useCopyText();
-  const workspace = props.tenant;
-  const standing = usePanelState(tenantDeletionQuery(workspace));
+  const tenant = props.tenant;
+  const workspace = useWorkspaceNames()(tenant);
+  const standing = usePanelState(tenantDeletionQuery(tenant));
   return (
     <UnrunDeletionSection
       standing={standing}
       write={unrunDeletionWrite(
-        ["tenant", workspace],
-        (ports) => apiDeleteTenant(ports, workspace),
+        ["tenant", tenant],
+        (ports) => apiDeleteTenant(ports, tenant),
         tenantDeletionHeldParsed,
       )}
       title={text({ id: "settings-delete-workspace-title" })}
