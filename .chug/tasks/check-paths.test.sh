@@ -116,6 +116,20 @@ cite 'Compare `src/main/java/App.java`, and the read/write split, and and/or.'
 run_in "$R"
 check "a path that was never ours is not judged" 0 "$RC" "0 finding(s)"
 
+# A `node:` specifier names one of Node's own modules, even where its first
+# segment is a tracked top level here; the same token written bare still is a
+# claim.
+seeded_repo
+mkdir -p "$R/test"
+printf 'a suite\n' > "$R/test/a.test.ts"
+printf '%s\n' 'import type { TestEvent } from "node:test/reporters";' > "$R/.chug/tasks/report.ts"
+git -C "$R" add -A
+run_in "$R"
+check "a node: specifier is not a claim" 0 "$RC" "0 finding(s)"
+cite 'The reporter is in `test/reporters`.'
+run_in "$R"
+check "the same token written bare is a finding" 1 "$RC" "notes.md:1: test/reporters"
+
 # A glob's literal prefix is not a path claim.
 seeded_repo
 cite 'Handled by `.chug/nope/*.sh` and `.chug/nope/{a,b}.sh`.'

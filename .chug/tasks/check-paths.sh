@@ -28,7 +28,8 @@
 #
 # SKIPPED, deliberately: a glob or a placeholder, a token a glob character
 # immediately follows, a shell variable, a bracketed template, an absolute or
-# home-relative path, a URL, an elision, and any token whose first segment
+# home-relative path, a URL, an elision, a module specifier written after
+# `node:`, which names one of Node's own, and any token whose first segment
 # neither is nor ever was ours.
 #
 # Usage:
@@ -108,7 +109,9 @@ FNR == 1 {
 	while (match(s, "[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@/-]*")) {
 		t = substr(s, RSTART, RLENGTH)
 		after = substr(s, RSTART + RLENGTH, 1)
+		builtin = (substr(s, RSTART - 5, 5) == "node:")
 		s = substr(s, RSTART + RLENGTH)
+		if (builtin) continue
 		# A glob or a template immediately after the match means the match is
 		# the leading literal of a pattern, not a path.
 		if (index("*?{[<$", after) > 0 && after != "") continue
