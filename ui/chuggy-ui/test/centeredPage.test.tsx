@@ -1,6 +1,6 @@
 /**
- * The centred page: one level-one title, a `main` only where it is asked for
- * one, and actions that stack primary first where the page is narrow.
+ * The centred page: one level-one title, a `main` and the document's title
+ * only where it is asked for them, and actions that stack primary first where the page is narrow.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -103,4 +103,20 @@ test("a page with no actions draws no actions row", () => {
   render(<CenteredPage landmark title="Signed out" />);
   expect(document.querySelector(".centered-page-actions")).toBeNull();
   expect(screen.queryAllByRole("button")).toHaveLength(0);
+});
+
+test("a page that is the main landmark names the document while it is drawn, and gives the name back after", () => {
+  document.title = "chuggy";
+  const view = render(<CenteredPage landmark title="Sign in to chuggy" />);
+  expect(document.title).toBe("Sign in to chuggy");
+  view.rerender(<CenteredPage landmark title="Signed in from another tab" />);
+  expect(document.title).toBe("Signed in from another tab");
+  view.unmount();
+  expect(document.title).toBe("chuggy");
+});
+
+test("a page inside a landmark leaves the document's name alone", () => {
+  document.title = "chuggy";
+  render(<CenteredPage landmark={false} title="Accept the invitation" />);
+  expect(document.title).toBe("chuggy");
 });
