@@ -45,7 +45,7 @@ import { ticketLedger } from "../../core/ticketLedger.ts";
 import { ticketTaker } from "../../core/ticketOffers.ts";
 import { phaseIsRunning } from "../../core/ticketPageFacts.ts";
 import { ticketStepsOf } from "../../core/ticketSteps.ts";
-import { useCreatorEmails } from "../creatorEmails.ts";
+import { useCreatorNames } from "../creatorNames.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
@@ -68,8 +68,8 @@ function TicketFiledBy(props: {
   readonly partition: PartitionIdentity;
   readonly creator: string;
 }): ReactNode {
-  const emails = useCreatorEmails(props.partition);
-  return <Identity label={creatorLabel(props.creator, emails)} />;
+  const names = useCreatorNames(props.partition);
+  return <Identity label={creatorLabel(props.creator, names)} />;
 }
 
 /** Each dependency as a link to its ticket, with its state beside it where

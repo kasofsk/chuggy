@@ -25,8 +25,8 @@ export interface EpicPageHeld {
   /** The ticket list's rows under the epic's filter, which a member's card
    * and row are drawn from where they hold it. */
   readonly rowsState: PanelState<ProjectTicketRows>;
-  /** The emails a member row draws its creator by. */
-  readonly creatorEmails: ReadonlyMap<string, string>;
+  /** The names a member row draws its creator by. */
+  readonly creatorNames: ReadonlyMap<string, string>;
   /** The project's landing queues, nothing while the read is out or failed. */
   readonly queues: LandingQueuesResponse | undefined;
   /** Whether this reader may revise the epic. */
