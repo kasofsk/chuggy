@@ -57,6 +57,8 @@ export interface Rendered {
 export interface RenderedOpening {
   readonly route: string;
   readonly viewport: RenderedViewport;
+  /** Whether the screen is a phone's, touched with a coarse pointer. */
+  readonly touch?: boolean;
   /** Whether the console holds a member's session as it loads. */
   readonly signedIn: boolean;
   /** What is on the screen once it has drawn, waited for before returning. */
@@ -112,6 +114,8 @@ export async function renderedOpen(
 ): Promise<Rendered> {
   const context = await browser.newContext({
     viewport: renderedViewports[opening.viewport],
+    hasTouch: opening.touch === true,
+    isMobile: opening.touch === true,
     storageState: {
       cookies: [],
       origins: opening.signedIn
@@ -159,19 +163,30 @@ export function renderedNoViolations(
 }
 
 /** Wider than the viewport is a page a reader scrolls sideways; the finding
- * names the elements whose right edge is past it. */
-export async function renderedNoOverflow(page: Page): Promise<void> {
-  const overflow = await page.evaluate(() => {
-    const width = document.documentElement.clientWidth;
-    const past = [...document.querySelectorAll("body *")]
-      .filter((element) => element.getBoundingClientRect().right > width + 0.5)
-      .slice(0, 8)
-      .map(
-        (element) => `${element.tagName.toLowerCase()}.${element.className}`,
-      );
-    return { scrolled: document.documentElement.scrollWidth - width, past };
-  });
-  expect(overflow, "the page scrolls sideways").toEqual({
+ * names the elements whose right edge is past it, under `scope` where it is
+ * given, which leaves out a strip that scrolls inside itself elsewhere on the
+ * page but never the page's own scroll. */
+export async function renderedNoOverflow(
+  page: Page,
+  scope: Locator = page.locator("body"),
+): Promise<void> {
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  const scrolled = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  );
+  const past = await scope.evaluate(
+    (root, edge) =>
+      [...root.querySelectorAll("*")]
+        .filter((element) => element.getBoundingClientRect().right > edge + 0.5)
+        .slice(0, 8)
+        .map(
+          (element) => `${element.tagName.toLowerCase()}.${element.className}`,
+        ),
+    width,
+  );
+  expect({ scrolled, past }, "the page scrolls sideways").toEqual({
     scrolled: 0,
     past: [],
   });

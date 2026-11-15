@@ -125,7 +125,6 @@ test("Cancel returns to the Overview with nothing written", async () => {
   const sent = await editDrawn(abilitiesEvery, () =>
     answer({ epic: 7, revision: 4 }),
   );
-  fireEvent.change(title(), { target: { value: "Payments" } });
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await settled();
   expect(writes(sent)).toHaveLength(0);

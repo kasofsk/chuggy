@@ -208,6 +208,7 @@ export interface EpicsCopy {
   };
   readonly "epics-edit": Record<never, never>;
   readonly "epics-edit-save": Record<never, never>;
+  readonly "epics-leave-question": Record<never, never>;
   readonly "epics-fault-title-empty": Record<never, never>;
   readonly "epics-fault-title-long": Record<never, never>;
   readonly "epics-fault-summary-long": Record<never, never>;
