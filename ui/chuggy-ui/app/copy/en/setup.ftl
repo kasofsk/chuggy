@@ -43,14 +43,15 @@ setup-rule-ask-name = Run { $command } with the person's answer after it, quoted
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner } or as { $chatHost }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, and { $replace } with { $chatHost }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check } or as { $imported }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, and { $test } with { $configuration }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
 setup-asked-project = { $mcp } and { $runner } each take { $workspace } and { $project }, both: the { -project } each is for
 setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
 setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: the { -workspace } the { -project } is made in, and what it is called, on one line
+setup-asked-test = { $flag } takes the command that tests this { -repository }, on one line, as { $configuration } writes it
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 
 ## A machine the program is not served on, or a Node too old to run it.
@@ -261,8 +262,49 @@ setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
 setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
 setup-mend-binding-when = once the person says the { -repository } is added
-setup-mend-configuration-tell = { $repository } is added, but { -brand-name } has not read its { -configuration }. Open { $page } and press { $retry } on the row for { $repository }; if it still cannot, the row then says why. Tell me once { $retry } has answered.
-setup-mend-configuration-when = once the person says { $retry } has answered for { $repository }
+setup-mend-configuration-never = no import of it has finished yet
+setup-mend-configuration-last = its last import: { $word }
+setup-mend-configuration-last-file = its last import: { $word }, { $file }
+setup-mend-configuration-tell = { $repository } is added, but { -brand-name } holds no { -configuration } of its own for it ({ $last }). Next I write a starting one into this checkout, as { $path }, and fill in with you what it leaves for you to choose. I then test it as { -brand-name }'s import would, commit it and push it to the default branch of { $repository }, and have { -brand-name } import it, which says how that went.
+# spells -run: to run is a verb here
+setup-rule-configuration = Run { $with } with the command that tests this { -repository } after it, quoted as one word, where you know that command, and { $without } where you do not.
+
+## The repository's own configuration, which the configuration, check and
+## import commands write, judge and have imported.
+
+setup-configuration-written = wrote { $path }, a starting { -configuration } for this { -repository }
+setup-configuration-blank = { $field } is left blank: { $what }
+setup-configuration-blank-image = the container image every step of it uses, which holds what this { -repository } needs to build and test
+setup-configuration-blank-test = the command that tests this { -repository }, one line of shell at its root
+setup-configuration-written-tell = I fill in each field left blank with you, and change anything else in it you want otherwise; then I test it as { -brand-name }'s import would.
+setup-configuration-filled-when = once every field left blank is filled in with the person
+setup-configuration-kept-found = this checkout already declares { $paths }, which is left as it is
+setup-configuration-outside-found = this folder is in no git checkout
+setup-configuration-outside-tell = This folder is not in a git checkout, so there is no { -repository } here to hold a { -configuration }. Tell me the folder your clone of it is in.
+setup-configuration-outside-when = once the program is started in the folder of the person's clone of the { -repository }
+setup-check-fault = { $path }: { $fault }{ $detailed ->
+        [some] {" "}({ $detail })
+       *[none] {""}
+    }{ $at ->
+        [some] {" "}at { $fields }
+       *[none] {""}
+    }
+setup-check-faults-more = and { $more } more { $more ->
+        [one] fault
+       *[other] faults
+    }
+setup-check-refused-tell = { -brand-name }'s import would refuse the { -configuration } as it stands. I fix each fault above, asking you where a field is yours to choose, and test it again.
+setup-check-fixed-when = once each fault above is fixed
+setup-check-clean-found = { $count ->
+        [one] { $paths } imports as it stands
+       *[other] { $count } files import as they stand: { $paths }
+    }
+setup-check-clean-tell = The { -configuration } is ready. I commit it, with every file it names under .chug/, and push it to the default branch, then have { -brand-name } import it.
+setup-check-pushed-when = once the commit holding it is pushed to the default branch
+setup-check-absent-found = this checkout declares no { -configuration } under { $directory }
+setup-import-none = nothing to import: the next thing is not the { -configuration } of a { -repository }
+setup-import-did = asked { -brand-name } to import { $repository }
+setup-import-refused = { -brand-name } did not import { $repository }: { $refusal }
 
 ## The MCP step, which the mcp command does on this machine with the
 ## person's yes.

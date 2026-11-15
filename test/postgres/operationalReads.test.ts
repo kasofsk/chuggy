@@ -3,7 +3,11 @@ import { after, before, test } from "node:test";
 
 import type pg from "pg";
 
-import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import {
+  executionRunnerPause,
+  executionRunnerPausedEvery,
+  postgresOperationalReads,
+} from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresExecutionContextRead } from "../../src/adapters/postgres/schedulerContext.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
@@ -1422,4 +1426,25 @@ test("the latest executions of a whole page are read in two execution statements
   );
   assert.ok(heard.length <= 3);
   assert.deepEqual(heard.flatMap(postgresStatementCorrelated), []);
+});
+
+test("a runner's pause held off alone reads off with no end, and ranks after every pause that ends", () => {
+  const off = executionRunnerPause({
+    paused_until: null,
+    off: true,
+    reasons: ["off"],
+    admitted_by_press: false,
+  });
+  assert.deepEqual(off, { off: true, reasons: ["off"], pressed: false });
+  const ends = executionRunnerPause({
+    paused_until: "2026-11-03T15:00:00.000000Z",
+    off: false,
+    reasons: ["limit", "off"],
+    admitted_by_press: false,
+  });
+  assert.equal(ends?.until, "2026-11-03T15:00:00.000000Z");
+  assert.equal(executionRunnerPausedEvery([off, ends]), ends);
+  assert.equal(executionRunnerPausedEvery([ends, off]), ends);
+  assert.equal(executionRunnerPausedEvery([off, off]), off);
+  assert.equal(executionRunnerPausedEvery([off, undefined]), undefined);
 });

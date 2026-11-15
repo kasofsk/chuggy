@@ -3,10 +3,12 @@
  * each agent, each window's newest reading and the share it pauses at, and
  * whether their threads pause with it, edited behind one Edit; and the pause
  * holding it, named by the credentials holding it, with the press that tries
- * it once past a provider's limit. An agent holding several credentials reads
- * each current one's reading under its name instead, and the pause of each
- * one holding the agent's, and its press stays one, with each of those
- * credentials retired from the account once its reader confirms it.
+ * it once past a provider's limit. An agent holding several credentials, or
+ * any turned off, reads each current one's reading under its name instead,
+ * and the pause of each one on holding the agent's, and its press stays one,
+ * with each of those credentials marked Off where it is, turned off once its
+ * reader confirms it and on at a press, and retired from the account once its
+ * reader confirms it.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -21,6 +23,8 @@ import type {
 import type { AccountAgent } from "../../../../../src/contract/rosters.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
+  agentAccountCredentialOff,
+  agentAccountCredentialOffWord,
   agentAccountCredentialsDrawn,
   agentAccountDraftOf,
   agentAccountDraftRead,
@@ -33,6 +37,7 @@ import {
   agentAccountReadingStaleLine,
   agentAccountReadingStaleWord,
   agentAccountRetireRefusal,
+  agentAccountTurnOffRefusal,
   agentPausePressable,
   agentPausePressedLine,
   runUsageWindowLabel,
@@ -45,6 +50,8 @@ import type {
 import {
   apiPressAgentAccount,
   apiRetireAgentAccountCredential,
+  apiTurnOffAgentAccountCredential,
+  apiTurnOnAgentAccountCredential,
   apiWriteAgentAccountSettings,
 } from "../../core/apiRoutes.ts";
 import type { ApiResult } from "../../core/apiRequest.ts";
@@ -124,6 +131,28 @@ function usageSettingsRetireWrite(
   };
 }
 
+/** A credential turned off where the write is sent `true`, and on where `false`. */
+function usageSettingsTurnWrite(
+  agent: AccountAgent,
+  credential: string,
+): ConsoleWrite<boolean, undefined> {
+  return {
+    mutationKey: consoleWriteKey(
+      "agent-account-credential-off",
+      agent,
+      credential,
+    ),
+    write: (ports, off, client) =>
+      usageSettingsWritten(
+        client,
+        off
+          ? apiTurnOffAgentAccountCredential(ports, agent, credential)
+          : apiTurnOnAgentAccountCredential(ports, agent, credential),
+      ),
+    refusal: agentAccountTurnOffRefusal,
+  };
+}
+
 /** The write's line: under way, landed, or refused in the write's own words. */
 function UsageSettingsNotice(props: {
   readonly writing: ConsoleWriting<AgentAccountSettings, undefined>;
@@ -174,10 +203,11 @@ function UsageSettingsPauseLine(props: {
   );
 }
 
-/** The pause holding the agent, or each one holding a credential it is drawn
- * by among those the agent's pause names where it names them, and the press
- * that tries the agent once past a limit where no press is already waiting
- * to. */
+/** The pause holding the agent, or each one holding a credential that is on
+ * it is drawn by among those the agent's pause names where it names them, and
+ * the press that tries the agent once past a limit where no press is already
+ * waiting to. A pause that is `off` alone is the agent's line once, naming no
+ * credential, since each one off is marked so on its own row. */
 function UsageSettingsPause(props: {
   readonly agent: AccountAgent;
   readonly pause: NonNullable<AgentAccount["pause"]>;
@@ -189,11 +219,12 @@ function UsageSettingsPause(props: {
     drawn: true,
   });
   const pressable = agentPausePressable(props.pause);
-  const holding = props.pause.credentials;
+  const off = props.pause.off === true;
+  const holding = off ? undefined : props.pause.credentials;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        {props.credentials === undefined ? (
+        {props.credentials === undefined || off ? (
           <UsageSettingsPauseLine
             pause={props.pause}
             nowMs={props.nowMs}
@@ -203,6 +234,7 @@ function UsageSettingsPause(props: {
           <div className="grid justify-items-start gap-1">
             {props.credentials.map((credential) =>
               credential.pause === undefined ||
+              agentAccountCredentialOff(credential) ||
               holding?.includes(credential.name) === false ? null : (
                 <UsageSettingsPauseLine
                   key={credential.name}
@@ -309,59 +341,169 @@ function UsageSettingsReadings(props: {
   );
 }
 
-/** One credential the agent is drawn by, under its name, and its Retire,
- * which asks before it forgets the credential's readings and limit. */
-function UsageSettingsCredential(props: {
-  readonly agent: AccountAgent;
-  readonly credential: string;
+/** What a credential's press asks before it writes: retiring it, or turning it off. */
+type UsageSettingsAsking = "Retire" | "TurnOff";
+
+interface UsageSettingsAskedCopy {
+  readonly question: Copy;
+  readonly confirm: Copy;
+  readonly detail: Copy;
+}
+
+function usageSettingsAskedCopy(
+  asking: UsageSettingsAsking,
+  credential: string,
+): UsageSettingsAskedCopy {
+  const args = { credential };
+  switch (asking) {
+    case "Retire":
+      return {
+        question: { id: "usage-retire-question", args },
+        confirm: { id: "usage-retire" },
+        detail: { id: "usage-retirement", args },
+      };
+    case "TurnOff":
+      return {
+        question: { id: "usage-turn-off-question", args },
+        confirm: { id: "usage-turn-off" },
+        detail: { id: "usage-turned-off" },
+      };
+  }
+}
+
+/** A credential's presses: Turn on where it is off, else Turn off, and Retire
+ * where it is on or lists a reading, since a limit alone is hidden behind its
+ * `off` pause. */
+function UsageSettingsCredentialPresses(props: {
+  readonly credential: AgentAccountCredential;
+  readonly turning: boolean;
+  readonly retiring: boolean;
+  readonly onAsk: (asking: UsageSettingsAsking) => void;
+  readonly onTurnOn: () => void;
 }): ReactNode {
   const text = useCopyText();
-  const [asking, setAsking] = useState(false);
-  const retiring = useConsoleWrite(
-    usageSettingsRetireWrite(props.agent, props.credential),
-    { drawn: true },
+  const off = agentAccountCredentialOff(props.credential);
+  const named = { credential: props.credential.name };
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Button
+        size="sm"
+        variant="quiet"
+        busy={props.turning}
+        disabled={props.turning}
+        named={text({
+          id: off ? "usage-turn-on-named" : "usage-turn-off-named",
+          args: named,
+        })}
+        onClick={() => {
+          if (off) props.onTurnOn();
+          else props.onAsk("TurnOff");
+        }}
+      >
+        {text({ id: off ? "usage-turn-on" : "usage-turn-off" })}
+      </Button>
+      {off && props.credential.readings.length === 0 ? null : (
+        <Button
+          size="sm"
+          variant="quiet"
+          busy={props.retiring}
+          disabled={props.retiring}
+          named={text({ id: "usage-retire-named", args: named })}
+          onClick={() => {
+            props.onAsk("Retire");
+          }}
+        >
+          {text({ id: "usage-retire" })}
+        </Button>
+      )}
+    </span>
   );
-  const named = { credential: props.credential };
+}
+
+/** What a credential's press asked, confirmed or cancelled. */
+function UsageSettingsCredentialAsked(props: {
+  readonly asking: UsageSettingsAsking;
+  readonly credential: string;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}): ReactNode {
+  const text = useCopyText();
+  const asked = usageSettingsAskedCopy(props.asking, props.credential);
+  return (
+    <Confirm
+      question={text(asked.question)}
+      confirm={text(asked.confirm)}
+      busy={false}
+      onConfirm={props.onConfirm}
+      onCancel={props.onCancel}
+    >
+      {text(asked.detail)}
+    </Confirm>
+  );
+}
+
+/** One credential the agent is drawn by, under its name and marked Off where
+ * it is, and its presses, each of which asks first but Turn on. */
+function UsageSettingsCredential(props: {
+  readonly agent: AccountAgent;
+  readonly credential: AgentAccountCredential;
+}): ReactNode {
+  const text = useCopyText();
+  const name = props.credential.name;
+  const [asking, setAsking] = useState<UsageSettingsAsking | undefined>();
+  const retiring = useConsoleWrite(
+    usageSettingsRetireWrite(props.agent, name),
+    {
+      drawn: true,
+    },
+  );
+  const turning = useConsoleWrite(usageSettingsTurnWrite(props.agent, name), {
+    drawn: true,
+  });
   return (
     <span className="grid justify-items-start gap-1">
       <span className="inline-flex flex-wrap items-center gap-2">
-        <span className="font-medium">{props.credential}</span>
-        {asking ? null : (
-          <Button
-            size="sm"
-            variant="quiet"
-            busy={retiring.isPending}
-            disabled={retiring.isPending}
-            named={text({ id: "usage-retire-named", args: named })}
-            onClick={() => {
+        <span className="font-medium">{name}</span>
+        {agentAccountCredentialOff(props.credential) ? (
+          <Pill tone="parked">{text(agentAccountCredentialOffWord)}</Pill>
+        ) : null}
+        {asking === undefined ? (
+          <UsageSettingsCredentialPresses
+            credential={props.credential}
+            turning={turning.isPending}
+            retiring={retiring.isPending}
+            onAsk={(asked) => {
               retiring.reset();
-              setAsking(true);
+              turning.reset();
+              setAsking(asked);
             }}
-          >
-            {text({ id: "usage-retire" })}
-          </Button>
-        )}
+            onTurnOn={() => {
+              retiring.reset();
+              turning.mutate(false);
+            }}
+          />
+        ) : null}
       </span>
-      {asking ? (
-        <Confirm
-          question={text({ id: "usage-retire-question", args: named })}
-          confirm={text({ id: "usage-retire" })}
-          busy={false}
+      {asking === undefined ? null : (
+        <UsageSettingsCredentialAsked
+          asking={asking}
+          credential={name}
           onConfirm={() => {
-            setAsking(false);
-            retiring.mutate(undefined);
+            setAsking(undefined);
+            if (asking === "Retire") retiring.mutate(undefined);
+            else turning.mutate(true);
           }}
           onCancel={() => {
-            setAsking(false);
+            setAsking(undefined);
           }}
-        >
-          {text({ id: "usage-retirement", args: named })}
-        </Confirm>
-      ) : null}
-      {retiring.error === null ? null : (
-        <Notice tone="danger" inline>
-          <ConsoleWriteRefusedWords refused={retiring.error} />
-        </Notice>
+        />
+      )}
+      {[retiring.error, turning.error].map((error, index) =>
+        error === null ? null : (
+          <Notice key={index} tone="danger" inline>
+            <ConsoleWriteRefusedWords refused={error} />
+          </Notice>
+        ),
       )}
     </span>
   );
@@ -416,7 +558,7 @@ function UsageSettingsRead(props: {
               <UsageSettingsCredential
                 key={credential.name}
                 agent={props.account.agent}
-                credential={credential.name}
+                credential={credential}
               />
             ))}
           </span>

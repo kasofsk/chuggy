@@ -380,8 +380,8 @@ async function listedAs(
 }
 
 /** Minutes from now until `pause` ends, to the nearest. */
-function pauseMinutes(pause: { readonly until: string } | undefined): number {
-  assert.ok(pause !== undefined, "a pause is answered");
+function pauseMinutes(pause: { readonly until?: string } | undefined): number {
+  assert.ok(pause?.until !== undefined, "a pause with an end is answered");
   return Math.round((Date.parse(pause.until) - Date.now()) / 60_000);
 }
 
@@ -582,6 +582,39 @@ test("a live runner's pause is answered only while every credential it named is 
   );
   await limited(["first", 7_200], ["third", 1_800]);
   assert.equal(pauseMinutes((await listedAs(project, member))?.paused), 30);
+});
+
+test("a live runner whose named credentials are all off holds its owner's run off with no end, and one with a credential on beside it holds nothing", async () => {
+  const member = principal("member");
+  const project = await waitingProject("named-off", member, "Strict");
+  await runnerPolledOf(project, member, {
+    live: true,
+    credentials: ["first", "second"],
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    off: ["first", "second"],
+  });
+  assert.deepEqual((await listedAs(project, member))?.paused, {
+    off: true,
+    reasons: ["off"],
+    pressed: false,
+  });
+  await runnerPolledOf(project, member, {
+    live: true,
+    credentials: ["third"],
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limits: [{ credential: "third", observedSecs: -60, resetsSecs: 1_800 }],
+  });
+  assert.equal(
+    pauseMinutes((await listedAs(project, member))?.paused),
+    30,
+    "a pause with an end ranks before one held off alone",
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    off: [],
+  });
+  assert.equal((await listedAs(project, member))?.paused, undefined);
 });
 
 test("a run waiting on offline runners says so and no pause", async () => {

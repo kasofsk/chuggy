@@ -128,8 +128,8 @@ import type {
   ExecutionRequirement,
   ExecutionTaskKind,
   RequirementSource,
-} from "./executionRequirement.ts";
-export type { ExecutionTaskKind } from "./executionRequirement.ts";
+} from "../contract/executionRequirement.ts";
+export type { ExecutionTaskKind } from "../contract/executionRequirement.ts";
 export {
   asAttemptId,
   asCapacityAccountId,
@@ -1173,6 +1173,7 @@ export type WorkTaskInvocation = Pick<
   | "worker"
   | "targetRef"
   | "targetMerge"
+  | "pushPathsRefused"
 >;
 
 /**
@@ -1203,6 +1204,8 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly targetRef?: GitRefName;
   /** What the work task's core merges in, where it merges anything. */
   readonly targetMerge?: WorkTaskTargetMerge;
+  /** The paths a work task's push may not change, where its binding withholds pipelines and its forge names some. */
+  readonly pushPathsRefused?: readonly string[];
   readonly capability: AttemptCapability;
 }
 

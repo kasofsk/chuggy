@@ -54,6 +54,9 @@ export interface SetupCopy {
     readonly mcp: unknown;
     readonly runner: unknown;
     readonly chatHost: unknown;
+    readonly configuration: unknown;
+    readonly check: unknown;
+    readonly imported: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
@@ -64,6 +67,8 @@ export interface SetupCopy {
     readonly made: unknown;
     readonly replace: unknown;
     readonly chatHost: unknown;
+    readonly test: unknown;
+    readonly configuration: unknown;
   };
   readonly "setup-asked-site": {
     readonly flag: unknown;
@@ -91,6 +96,10 @@ export interface SetupCopy {
     readonly made: unknown;
     readonly workspace: unknown;
     readonly name: unknown;
+  };
+  readonly "setup-asked-test": {
+    readonly flag: unknown;
+    readonly configuration: unknown;
   };
   readonly "setup-asked-replace": {
     readonly flag: unknown;
@@ -452,14 +461,69 @@ export interface SetupCopy {
     readonly repository: unknown;
   };
   readonly "setup-mend-binding-when": Record<never, never>;
+  readonly "setup-mend-configuration-never": Record<never, never>;
+  readonly "setup-mend-configuration-last": {
+    readonly word: unknown;
+  };
+  readonly "setup-mend-configuration-last-file": {
+    readonly word: unknown;
+    readonly file: unknown;
+  };
   readonly "setup-mend-configuration-tell": {
     readonly repository: unknown;
-    readonly page: unknown;
-    readonly retry: unknown;
+    readonly last: unknown;
+    readonly path: unknown;
   };
-  readonly "setup-mend-configuration-when": {
-    readonly retry: unknown;
+  readonly "setup-rule-configuration": {
+    readonly with: unknown;
+    readonly without: unknown;
+  };
+  readonly "setup-configuration-written": {
+    readonly path: unknown;
+  };
+  readonly "setup-configuration-blank": {
+    readonly field: unknown;
+    readonly what: unknown;
+  };
+  readonly "setup-configuration-blank-image": Record<never, never>;
+  readonly "setup-configuration-blank-test": Record<never, never>;
+  readonly "setup-configuration-written-tell": Record<never, never>;
+  readonly "setup-configuration-filled-when": Record<never, never>;
+  readonly "setup-configuration-kept-found": {
+    readonly paths: unknown;
+  };
+  readonly "setup-configuration-outside-found": Record<never, never>;
+  readonly "setup-configuration-outside-tell": Record<never, never>;
+  readonly "setup-configuration-outside-when": Record<never, never>;
+  readonly "setup-check-fault": {
+    readonly path: unknown;
+    readonly fault: unknown;
+    readonly detailed: unknown;
+    readonly detail: unknown;
+    readonly at: unknown;
+    readonly fields: unknown;
+  };
+  readonly "setup-check-faults-more": {
+    readonly more: unknown;
+  };
+  readonly "setup-check-refused-tell": Record<never, never>;
+  readonly "setup-check-fixed-when": Record<never, never>;
+  readonly "setup-check-clean-found": {
+    readonly count: unknown;
+    readonly paths: unknown;
+  };
+  readonly "setup-check-clean-tell": Record<never, never>;
+  readonly "setup-check-pushed-when": Record<never, never>;
+  readonly "setup-check-absent-found": {
+    readonly directory: unknown;
+  };
+  readonly "setup-import-none": Record<never, never>;
+  readonly "setup-import-did": {
     readonly repository: unknown;
+  };
+  readonly "setup-import-refused": {
+    readonly repository: unknown;
+    readonly refusal: unknown;
   };
   readonly "setup-offer-mcp-when": Record<never, never>;
   readonly "setup-mend-mcp-serves": Record<never, never>;

@@ -19,9 +19,8 @@
  * read, and a prompt file names nothing.
  */
 
-import { configurationReferencePathSchema } from "../contract/configurationDocument.ts";
-import { textCodePointsCount } from "../contract/http.ts";
-import { assertNever } from "../domain/assertNever.ts";
+import { configurationReferencePathSchema } from "./configurationDocument.ts";
+import { textCodePointsCount } from "./http.ts";
 import { repositoryDeclarationFileCharsMax } from "./repositoryDeclaration.ts";
 import { declaredConfigurationIsCatalog } from "./workloadConfiguration.ts";
 
@@ -104,8 +103,6 @@ function repositoryConfigurationReferencedText(
       return { reference, fault: "ContentTooLarge" };
     case "Absent":
       return { reference, fault: "ReferenceAbsent" };
-    default:
-      return assertNever(file);
   }
 }
 

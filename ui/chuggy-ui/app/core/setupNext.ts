@@ -3,11 +3,14 @@
  *
  * The first step that is not done decides it. This program does three steps
  * itself, the project's, the MCP step's and the runner's, and it never prints
- * a `next:` it cannot run, so for every other step what it names is a page of
- * the console by its full address and what is pressed there, and the
+ * a `next:` it cannot run, so for every other step but one what it names is a
+ * page of the console by its full address and what is pressed there, and the
  * checklist is read again only once the person says the step is done. A
  * project is made by `project` once the person has said what to call it, so
- * where one is lacking the next thing is that question. The MCP step and the
+ * where one is lacking the next thing is that question. A repository holding
+ * no configuration of its own is the one other: its configuration is written
+ * in the checkout by the person's agent with them, through `configuration`,
+ * `check` and `import`, and no page is pressed for it. The MCP step and the
  * runner's change the machine, so each is offered and never run unasked: the
  * person is told what `mcp` would do, the runner package installed where it
  * is not here and its server named in their agent, and for the runner's step
@@ -26,6 +29,7 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
@@ -36,7 +40,13 @@ import {
 import { ownerFallbackLabel } from "./myRunner.ts";
 import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
+import {
+  repositoryImportRefusedFile,
+  repositoryImportWord,
+  repositoryImportWordLabel,
+} from "./repositoryImport.ts";
 import { setupNameFlag } from "./setupArguments.ts";
+import { setupConfigurationPath } from "./setupConfiguration.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
@@ -63,7 +73,6 @@ export const setupPressed = {
   save: { id: "ui-save" },
   connect: { id: "repositories-connect-github" },
   add: { id: "repositories-add" },
-  retry: { id: "repositories-retry" },
   runner: { id: "runners-register" },
   runnerProject: { id: "runners-personal-project-add" },
   fallback: { id: "runners-fallback-title" },
@@ -260,17 +269,44 @@ function setupRepositoryMend(
       },
       { id: "setup-mend-binding-when" },
     );
-  const { repository } = lack;
-  return setupHand(
-    {
+  return setupConfigurationMend(lack, at);
+}
+
+/** What the import of the repository last came to, as the line on the repositories page says it, where one finished. */
+function setupLastImport(
+  lastImport: RepositoryConfigurationImportAttemptResponse | undefined,
+): Copy {
+  if (lastImport === undefined) return { id: "setup-mend-configuration-never" };
+  const word = repositoryImportWordLabel(repositoryImportWord(lastImport));
+  const file = repositoryImportRefusedFile(lastImport);
+  return file === undefined
+    ? { id: "setup-mend-configuration-last", args: { word } }
+    : { id: "setup-mend-configuration-last-file", args: { word, file } };
+}
+
+/**
+ * The repository holding no configuration of its own: written, filled in,
+ * checked, committed and pushed by the person's agent with the person, then
+ * imported by `import`, which reads the checklist again. What the site said
+ * of the last import is said with it.
+ */
+function setupConfigurationMend(
+  lack: Extract<SetupLack, { readonly lacks: "Configuration" }>,
+  at: SetupAt,
+): SetupThing {
+  return {
+    thing: "Configure",
+    tell: {
       id: "setup-mend-configuration-tell",
-      args: { repository, page, retry: setupPressed.retry },
+      args: {
+        repository: lack.repository,
+        last: setupLastImport(lack.lastImport),
+        path: setupConfigurationPath,
+      },
     },
-    {
-      id: "setup-mend-configuration-when",
-      args: { repository, retry: setupPressed.retry },
-    },
-  );
+    workspace: at.workspace,
+    project: at.project,
+  };
 }
 
 /** Something `runner` would do on this machine for the checklist's project, which waits on the person's yes. */
@@ -784,6 +820,19 @@ export function setupRunnerDue(
   standing: SetupStanding,
 ): PartitionIdentity | undefined {
   return setupDue(standing, setupRunnerLacks);
+}
+
+/** The project and the repository, as its binding names it, whose configuration is the one next thing, which is when `import` asks the site to import it. */
+export function setupConfigurationDue(
+  standing: SetupStanding,
+):
+  | { readonly partition: PartitionIdentity; readonly repository: string }
+  | undefined {
+  const partition = setupDue(standing, ["Configuration"]);
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  return partition === undefined || lack?.lacks !== "Configuration"
+    ? undefined
+    : { partition, repository: lack.bound };
 }
 
 /** The project whose MCP step is the one next, which is when the runner package here is looked for before the next thing is named. */

@@ -261,6 +261,8 @@ export interface ExecutionSchedulerService {
   /** The binding a ticket's brief names, which is what its finalization lands through. */
   readonly bindings: ProjectRepositoryBindingRead;
   readonly practices: PracticeCatalog;
+  /** The pathspecs the deployment's forge treats as pipeline definitions, which a task whose binding withholds pipelines may not push a change to. */
+  readonly pipelinePaths: readonly string[];
   /** The image chuggy's runtime is copied from, which every attempt a pass opens keeps. */
   readonly workerRuntime: string;
   /** The memory, in MiB, a pool runs an execution naming none with, which is the size a pass reads one routed to pools as. */
@@ -613,8 +615,9 @@ async function schedulerRuntimeFacts(
 
 /**
  * Reads the repositories this execution's project binds beside its own, which
- * its pod reads and never delivers to, and whether its own binding lets
- * pipelines be written.
+ * its pod reads and never delivers to, whether its own binding lets pipelines
+ * be written, and the paths its push may not change: the forge's pipeline
+ * definitions, where that binding withholds pipelines and the forge names any.
  */
 async function schedulerReadOnlyRepositories(
   service: ExecutionSchedulerService,
@@ -623,6 +626,7 @@ async function schedulerReadOnlyRepositories(
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
       readonly pipelinesWritable?: boolean;
+      readonly pushPathsRefused?: readonly string[];
     }
   | BriefingUnready
 > {
@@ -637,6 +641,9 @@ async function schedulerReadOnlyRepositories(
         ...(read.pipelinesWritable === undefined
           ? {}
           : { pipelinesWritable: read.pipelinesWritable }),
+        ...(read.pipelinesWritable === false && service.pipelinePaths.length > 0
+          ? { pushPathsRefused: service.pipelinePaths }
+          : {}),
       };
     case "Unavailable":
       return { gathered: "Unavailable" };
@@ -663,7 +670,7 @@ async function schedulerDependencyDeliveries(
   }
 }
 
-/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, and what its dependencies delivered. */
+/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, the paths its push may not change, and what its dependencies delivered. */
 async function schedulerProjectContext(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
@@ -671,6 +678,7 @@ async function schedulerProjectContext(
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
       readonly pipelinesWritable?: boolean;
+      readonly pushPathsRefused?: readonly string[];
       readonly dependencyDeliveries: readonly DependencyDelivery[];
     }
   | BriefingUnready
@@ -799,6 +807,7 @@ interface TaskLaunch {
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
   readonly targetMerge?: WorkTaskTargetMerge;
+  readonly pushPathsRefused?: readonly string[];
 }
 
 /**
@@ -876,8 +885,9 @@ async function schedulerPrepared(
     return schedulerUnready(service, configuration);
   const runtime = await schedulerRuntimeFacts(service, execution);
   if ("gathered" in runtime) return schedulerUnready(service, runtime);
-  const project = await schedulerProjectContext(service, execution);
-  if ("gathered" in project) return schedulerUnready(service, project);
+  const context = await schedulerProjectContext(service, execution);
+  if ("gathered" in context) return schedulerUnready(service, context);
+  const { pipelinesWritable, ...project } = context;
   const priorWorkReports = await schedulerPriorWorkReports(service, execution);
   if ("gathered" in priorWorkReports)
     return schedulerUnready(service, priorWorkReports);
@@ -894,7 +904,7 @@ async function schedulerPrepared(
   );
   const targetMerge = schedulerTargetMerge(
     baseRef,
-    project.pipelinesWritable,
+    pipelinesWritable,
     rework.failedLanding,
   );
   const composed = composeTaskInvocation(service.practices, {
@@ -918,6 +928,9 @@ async function schedulerPrepared(
         invocation: composed.invocation,
         ...(targetRef === undefined ? {} : { targetRef }),
         ...(targetMerge === undefined ? {} : { targetMerge }),
+        ...(project.pushPathsRefused === undefined
+          ? {}
+          : { pushPathsRefused: project.pushPathsRefused }),
       };
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
@@ -982,6 +995,9 @@ async function schedulerPlace(
     ...(launch.targetMerge === undefined
       ? {}
       : { targetMerge: launch.targetMerge }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: launch.pushPathsRefused }),
     capability: attempt.capability,
   });
   recordScheduler(service.metrics, (metrics) => {

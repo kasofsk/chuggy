@@ -746,7 +746,7 @@ async function workerAttemptTaskCaller(
   return task?.live === true ? { task, secret } : undefined;
 }
 
-/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref and its target merge each only to a peer that reads it. */
+/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref, its target merge and the paths its push may not change each only to a peer that reads it. */
 async function workerTaskOf(
   service: WorkerPlaneServerService,
   secret: AttemptCapabilitySecret,
@@ -755,7 +755,8 @@ async function workerTaskOf(
   const found = await service.tasks.work(secret);
   if (found === undefined || !found.live) return undefined;
   if (found.invocation === undefined) return "TaskNotRecorded";
-  const { targetRef, targetMerge, ...unnamed } = found.invocation;
+  const { targetRef, targetMerge, pushPathsRefused, ...unnamed } =
+    found.invocation;
   return {
     kind: "Work",
     ...workTask(found.identity, {
@@ -766,6 +767,10 @@ async function workerTaskOf(
       ...(targetMerge !== undefined &&
       workerContractImplements("TargetMerge", peer)
         ? { targetMerge }
+        : {}),
+      ...(pushPathsRefused !== undefined &&
+      workerContractImplements("PushPathsRefused", peer)
+        ? { pushPathsRefused }
         : {}),
     }),
   };

@@ -142,7 +142,7 @@ import { filesystemAccessOrder } from "../../src/interpreter/taskAuthority.ts";
 import type {
   WorkerConfiguration,
   WorkerMode,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/taskConfiguration.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,
@@ -560,6 +560,23 @@ const workTaskRosterCases: readonly WorkerPlaneCase[] = [
       invocation: { ...liveInvocation, targetMerge },
     }),
   })),
+  {
+    name: "a work task naming the paths its push may not change, to a pod that lists reading them",
+    call: {
+      headers: {
+        [workerContractFeaturesHeader]: workerContractFeaturesText([
+          "PushPathsRefused",
+        ]),
+      },
+    },
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: {
+        ...liveInvocation,
+        pushPathsRefused: [".forgejo/workflows/"],
+      },
+    }),
+  },
   {
     name: "a work task listing a credential its grant does not carry",
     service: workerPlaneTask({

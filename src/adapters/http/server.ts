@@ -246,6 +246,8 @@ import {
   personalRunnerAllowedResponse,
   agentAccountPressedResponse,
   agentAccountRetiredResponse,
+  agentAccountTurnedOffResponse,
+  agentAccountTurnedOnResponse,
   agentAccountsResponse,
   agentAccountWrittenResponse,
   personalRunnerDeregisteredResponse,
@@ -1730,11 +1732,22 @@ function agentAccountCredentialOf(request: FastifyRequest): string | undefined {
 
 /**
  * The caller's own agent accounts: read whole, one agent's settings written
- * whole, a press of one agent, and one credential of an agent retired. Each is
- * handed the request's own principal, and no route names another, so no caller
- * reaches anyone else's.
+ * whole, a press of one agent, one credential of an agent retired, and one
+ * turned off and on. Each is handed the request's own principal, and no route
+ * names another, so no caller reaches anyone else's.
  */
 function registerAgentAccounts(
+  app: FastifyInstance,
+  accounts: AgentAccountService,
+): void {
+  registerAgentAccountWrites(app, accounts);
+  registerBodylessRoutes(app, (scope) => {
+    registerAgentAccountBodyless(scope, accounts);
+  });
+}
+
+/** The caller's own accounts read whole, one agent's settings written, and one credential retired. */
+function registerAgentAccountWrites(
   app: FastifyInstance,
   accounts: AgentAccountService,
 ): void {
@@ -1773,19 +1786,54 @@ function registerAgentAccounts(
       );
     },
   );
-  registerBodylessRoutes(app, (scope) => {
-    scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
+}
+
+/** A press of one agent, and one credential turned off by a put and on by a delete, none of which takes a body. */
+function registerAgentAccountBodyless(
+  scope: FastifyInstance,
+  accounts: AgentAccountService,
+): void {
+  scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
+    const agent = accountAgentOf(request);
+    nativeHttpSend(
+      reply,
+      agent === undefined
+        ? notFound()
+        : agentAccountPressedResponse(
+            await accounts.press(principalOf(request), agent),
+          ),
+    );
+  });
+  scope.put(
+    nativeHttpRoutes.agentAccountCredentialOff,
+    async (request, reply) => {
       const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
       nativeHttpSend(
         reply,
-        agent === undefined
+        agent === undefined || credential === undefined
           ? notFound()
-          : agentAccountPressedResponse(
-              await accounts.press(principalOf(request), agent),
+          : agentAccountTurnedOffResponse(
+              await accounts.turnOff(principalOf(request), agent, credential),
             ),
       );
-    });
-  });
+    },
+  );
+  scope.delete(
+    nativeHttpRoutes.agentAccountCredentialOff,
+    async (request, reply) => {
+      const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
+      nativeHttpSend(
+        reply,
+        agent === undefined || credential === undefined
+          ? notFound()
+          : agentAccountTurnedOnResponse(
+              await accounts.turnOn(principalOf(request), agent, credential),
+            ),
+      );
+    },
+  );
 }
 
 /**

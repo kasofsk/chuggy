@@ -8,6 +8,7 @@ lead-session-open = Open
 lead-session-closed = Closed
 lead-absence-since = { $label } · since { $time }
 lead-absence-until = { $label } · until { $time }
+lead-absence-off = { $label } · credentials off
 lead-absence-manual = { -ticket(case: "upper", form: "plural") } are { -dispatch(form: "ed") } by hand
 
 lead-attention-monitoring = Monitoring

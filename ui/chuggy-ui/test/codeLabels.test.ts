@@ -924,6 +924,12 @@ test("an escalation the scheduler resumes once its usage pauses end says so, and
   }
 });
 
+test("an escalation credentials turned off hold says so, and never that it resumes by itself", () => {
+  const said = copyTextEn(usageResumeLine({ off: true }, 0));
+  expect(said).toBe("Credentials off");
+  expect(said).not.toMatch(/automatically/iu);
+});
+
 /** Each switch over a roster, walked whole, and whether each member has a
  * message of its own: a landing's two waits are one word to a reader, and
  * nothing else is. */

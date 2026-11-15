@@ -14,6 +14,14 @@
 import { randomUUID } from "node:crypto";
 
 import { workerRunCredentialDefaults } from "../../src/contract/workerPlane.ts";
+import type {
+  AgentAccountService,
+  AgentAccountView,
+} from "../../src/interpreter/agentAccount.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import type { PostgresHarness, PostgresTransaction } from "./harness.ts";
 
 export type AgentAccountHarnessAgent = "Claude" | "Codex";
@@ -58,6 +66,8 @@ export interface AgentAccountHarnessState {
   };
   /** The account's runners, replacing every one it held, and left as they are where absent. */
   readonly runners?: readonly AgentAccountHarnessRunner[];
+  /** The agent's credentials turned off, replacing every one it held off, and left as they are where absent. */
+  readonly off?: readonly string[];
 }
 
 /** A weekly reading over the default threshold of each credential `ends` names, each resetting that many seconds from now. */
@@ -208,6 +218,17 @@ export async function agentAccountHarnessPlanted(
       ],
     );
   await agentAccountHarnessChosen(transaction, principal, agent, state);
+  if (state.off !== undefined) {
+    await transaction.query(
+      "DELETE FROM agent_account_credential_off WHERE principal=$1 AND agent=$2",
+      [principal, agent],
+    );
+    for (const credential of state.off)
+      await transaction.query(
+        "INSERT INTO agent_account_credential_off(principal,agent,credential) VALUES($1,$2,$3)",
+        [principal, agent, credential],
+      );
+  }
   if (state.runners !== undefined)
     await agentAccountHarnessRunners(transaction, principal, state.runners);
 }
@@ -240,4 +261,22 @@ export async function agentAccountHarnessPressed(
      ON CONFLICT (principal,agent) DO UPDATE SET pressed_at=EXCLUDED.pressed_at,spent_at=NULL`,
     [principal, agent],
   );
+}
+
+/** A person no case has planted anything for. */
+export function agentAccountHarnessMember(): Principal {
+  return asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+}
+
+/** `principal`'s Claude as `accounts` reads it. */
+export async function agentAccountHarnessClaude(
+  accounts: AgentAccountService,
+  principal: Principal,
+): Promise<AgentAccountView> {
+  const found = (await accounts.accounts(principal)).find(
+    (account) => account.agent === "Claude",
+  );
+  if (found === undefined)
+    throw new Error("agent account harness: no Claude was read");
+  return found;
 }

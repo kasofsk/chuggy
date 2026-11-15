@@ -421,11 +421,13 @@ export function runnerLossLine(lost: RunnerLoss): Copy {
 }
 
 /** That the scheduler resumes the escalation by itself, and when the latest
- * pause holding it ends where one still does, in the reader's own zone. */
+ * pause holding it ends where one still does, in the reader's own zone, or
+ * that credentials turned off hold it, which it never resumes past by itself. */
 export function usageResumeLine(
   usageResume: NonNullable<TicketEscalation["usageResume"]>,
   nowMs: number,
 ): Copy {
+  if (usageResume.off === true) return { id: "codes-usage-off" };
   const until =
     usageResume.until === undefined
       ? undefined

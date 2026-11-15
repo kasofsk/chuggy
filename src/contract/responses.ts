@@ -454,19 +454,29 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
- * Until when an agent is paused and each reason holding it, as
- * `agent_account_pause` answers it of an account, or `agent_account_named_pause`
- * of the credentials a runner named; `pressed` is whether a press of the
- * account's owner still lets one claim through the limit.
+ * Until when an agent is paused, or `off` where only credentials its owner
+ * turned off hold it and it never ends by itself, exactly one of the two
+ * present, and each reason holding it, as `agent_account_pause` answers it of
+ * an account, or `agent_account_named_pause` of the credentials a runner named;
+ * `pressed` is whether a press of the account's owner still lets one claim
+ * through the limit.
  */
-export const agentPauseSchema = z.strictObject({
-  until: instantSchema,
-  reasons: z
-    .array(z.enum(agentPauseReasons))
-    .min(1)
-    .max(agentPauseReasons.length),
-  pressed: z.boolean(),
-});
+export const agentPauseSchema = z
+  .strictObject({
+    until: instantSchema.optional(),
+    off: z.literal(true).optional(),
+    reasons: z
+      .array(z.enum(agentPauseReasons))
+      .min(1)
+      .max(agentPauseReasons.length),
+    pressed: z.boolean(),
+  })
+  .refine(
+    (pause) => (pause.until === undefined) !== (pause.off === undefined),
+    {
+      message: "a pause names exactly one of until and off",
+    },
+  );
 export type AgentPause = z.infer<typeof agentPauseSchema>;
 
 /** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
@@ -545,11 +555,23 @@ export const ticketEscalationSchema = z.object({
   /** Present where the wall is a task whose run stopped at a failed step. */
   failed: runStepFailureSchema.optional(),
   /**
-   * Present where the scheduler resumes the escalation by itself once the
-   * usage pauses holding its rate-limited tasks end: `until` the latest of
-   * them, absent where none holds any longer.
+   * Present where usage pauses hold its rate-limited tasks: `until` the latest
+   * of them, which the scheduler resumes it by itself at, or `off` where a task
+   * waits only on credentials its owner turned off, which it never resumes by
+   * itself while they stay off. Both absent means none holds any longer.
    */
-  usageResume: z.strictObject({ until: instantSchema.optional() }).optional(),
+  usageResume: z
+    .strictObject({
+      until: instantSchema.optional(),
+      off: z.literal(true).optional(),
+    })
+    .refine(
+      (resume) => resume.until === undefined || resume.off === undefined,
+      {
+        message: "a usage resume names at most one of until and off",
+      },
+    )
+    .optional(),
 });
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 
@@ -1881,13 +1903,16 @@ export const leadStoreStreamResponseSchema = z.object({
  * the answer since `since`. A `UsagePaused` refusal names in `until` the
  * earliest instant one of the live pools stops being paused, each on the
  * Claude credentials it named or, where it named none, on the whole agent, as
- * the pause stands at the read, and never whose account it is or why, and a
- * `SubsidyExhausted` one the first instant of the next calendar month in UTC.
+ * the pause stands at the read, and never whose account it is or why, or
+ * `off` in its place where every live pool is held only by credentials turned
+ * off; a `SubsidyExhausted` one names the first instant of the next calendar
+ * month in UTC.
  */
 export const leadRefusalResponseSchema = z.object({
   reason: z.enum(leadAdmissionRefusals),
   since: instantSchema,
   until: instantSchema.optional(),
+  off: z.literal(true).optional(),
 });
 export type LeadRefusalResponse = z.infer<typeof leadRefusalResponseSchema>;
 
@@ -3140,14 +3165,14 @@ const agentAccountReadingSchema = z.strictObject({
   observedAt: instantSchema,
 });
 
-/** One credential of an agent of the caller's account by its name: each window's reading of it, and the pause holding it alone, absent where none holds. */
+/** One credential of an agent of the caller's account by its name, held a reading or a limit of or turned off: each window's reading of it, and the pause holding it alone, absent where none holds. */
 const agentAccountCredentialSchema = z.strictObject({
   name: workerRunCredentialSchema,
   readings: z.array(agentAccountReadingSchema).max(runUsageWindows.length),
   pause: agentPauseSchema.optional(),
 });
 
-/** The pause an agent of the caller's account comes to, and the names of the credentials holding it, in the order `credentials` lists them; optional for the deployment window. */
+/** The pause an agent of the caller's account comes to, `off` where only credentials turned off hold it, and the names of the credentials holding it, in the order `credentials` lists them; optional for the deployment window. */
 const agentAccountPauseSchema = agentPauseSchema.extend({
   credentials: z
     .array(workerRunCredentialSchema)
@@ -3162,8 +3187,9 @@ const agentAccountPauseSchema = agentPauseSchema.extend({
  * across them with the window and the reopening where the run named them, the
  * pause they come to, absent where none holds and holding only while every
  * credential its live runners name is paused, or while any is where they name
- * none, and each credential it holds a reading or a limit of, by name. `credentials` is optional for the deployment window, and absent reads
- * as none.
+ * none, and each credential it holds a reading or a limit of or turned off,
+ * by name. `credentials` is optional for the deployment window, and absent
+ * reads as none.
  */
 const agentAccountSchema = z.strictObject({
   agent: z.enum(accountAgents),
@@ -3200,6 +3226,14 @@ export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
  * its own.
  */
 export const agentAccountCredentialInUseCode = "CredentialInUse";
+
+/**
+ * What turning a credential of the caller's own account off is refused with
+ * while as many of that agent's credentials as the account holds off are
+ * already off. It is named once because a console tells the member so in
+ * words of its own.
+ */
+export const agentAccountCredentialsOffFullCode = "OffFull";
 
 /**
  * What redeeming a chat host's token answers, once: a runner's file with no

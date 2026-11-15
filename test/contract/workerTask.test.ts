@@ -17,6 +17,7 @@ import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import {
   filesystemAccesses,
   poolEnvelopeSchema,
+  pushPathsRefusedMax,
   sessionTaskDocumentSchema,
   workerTaskAnswerSchema,
   workTaskCredentialsListed,
@@ -35,7 +36,7 @@ import {
 import type {
   WorkerConfiguration,
   WorkerMode,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/taskConfiguration.ts";
 import { sessionPodDocuments } from "../adapters/sessionPodDocumentFixture.ts";
 import { workerPodDocuments } from "../adapters/workerPodDocumentFixture.ts";
 import {
@@ -206,6 +207,24 @@ test("a task names what its core merges in, or nothing, and never an empty ref o
       assert.ok(
         !workTaskDocumentSchema.safeParse({ ...document, targetMerge }).success,
         JSON.stringify(targetMerge),
+      );
+  }
+});
+
+test("a task names the paths its push may not change, or none, and never an empty list or an empty path", () => {
+  for (const pod of workPods()) {
+    const document = carried(pod, workerTaskVariable);
+    const named = { ...document, pushPathsRefused: [".forgejo/workflows/"] };
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(named), named);
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(document), document);
+    for (const pushPathsRefused of [
+      [],
+      [""],
+      Array.from({ length: pushPathsRefusedMax + 1 }, () => ".forge/"),
+    ])
+      assert.ok(
+        !workTaskDocumentSchema.safeParse({ ...document, pushPathsRefused })
+          .success,
       );
   }
 });

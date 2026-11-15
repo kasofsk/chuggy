@@ -48,6 +48,8 @@ import {
   apiPersonalRunnerPermit,
   apiPressAgentAccount,
   apiRetireAgentAccountCredential,
+  apiTurnOffAgentAccountCredential,
+  apiTurnOnAgentAccountCredential,
   apiPersonalRunnerServes,
   apiProject,
   apiProjectAbilities,
@@ -805,6 +807,8 @@ test("the reader's agent accounts are read, set, pressed and retired from at the
   });
   await apiPressAgentAccount(held.ports, "Claude");
   await apiRetireAgentAccountCredential(held.ports, "Codex", "old-work");
+  await apiTurnOffAgentAccountCredential(held.ports, "Claude", "work");
+  await apiTurnOnAgentAccountCredential(held.ports, "Claude", "work");
   expect(read.outcome).toBe("Ok");
   expect(
     held.requests.map(
@@ -816,6 +820,8 @@ test("the reader's agent accounts are read, set, pressed and retired from at the
     `PUT ${nativeHttpBasePath}/agent-accounts/Codex/settings {"fiveHourPercent":70,"sevenDayPercent":95,"pausesThreads":true}`,
     `POST ${nativeHttpBasePath}/agent-accounts/Claude/presses undefined`,
     `DELETE ${nativeHttpBasePath}/agent-accounts/Codex/credentials/old-work undefined`,
+    `PUT ${nativeHttpBasePath}/agent-accounts/Claude/credentials/work/off undefined`,
+    `DELETE ${nativeHttpBasePath}/agent-accounts/Claude/credentials/work/off undefined`,
   ]);
 });
 
