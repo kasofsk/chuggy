@@ -23,6 +23,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import {
   setupAskNamesMax,
+  setupBindDue,
   setupConfigurationDue,
   setupMcpDue,
   setupNext,
@@ -180,7 +181,7 @@ const mends: {
     ),
   ],
   Binding: [
-    { lacks: "Binding" },
+    { lacks: "Binding", reach: undefined },
     hand(
       `Open ${pages}/repositories, press Add and choose your repository. Tell me once it is added.`,
       "once the person says the repository is added",
@@ -415,7 +416,9 @@ test("an app not granted the repository is mended from the line the Add picker d
 
 test("the repository to add is named as this folder's where the folder has a remote", () => {
   const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
-  expect(thing({ lacks: "Binding" }, { remote })).toMatchObject({
+  expect(
+    thing({ lacks: "Binding", reach: undefined }, { remote }),
+  ).toMatchObject({
     tell: `Open ${pages}/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
   });
 });
@@ -1073,4 +1076,52 @@ test("a project that was named or proposed is carried by name with its workspace
   expect(named.carried).toEqual({ workspace: "acme", project: "widgets" });
   const only = await nextSaid(site, { answers: { workspace: "acme" } });
   expect(only.carried).toEqual({ workspace: "acme", project: "widgets" });
+});
+
+test("the folder's repository both apps are granted is offered to bind for the project, and is what bind is due to add", () => {
+  const lack: SetupLack = {
+    lacks: "Binding",
+    reach: {
+      reach: "Granted",
+      repository: "acme-org/widgets",
+      url: "https://github.com/acme-org/widgets",
+    },
+  };
+  expect(thing(lack)).toEqual({
+    thing: "Offer",
+    command: "Bind",
+    tell: "The portal app and the worker app are both let into acme-org/widgets, this folder's repository, and acme/widgets does not have it yet. With your yes I will add it to acme/widgets, as the repositories page's Add does. Tell me yes to go ahead.",
+    when: "once the person says yes to adding acme-org/widgets to the project",
+    workspace: "acme",
+    project: "widgets",
+  });
+  expect(setupBindDue(lacking(lack))).toEqual({
+    partition: { tenant: "acme", project: "widgets" },
+    repository: "acme-org/widgets",
+    url: "https://github.com/acme-org/widgets",
+  });
+});
+
+test("every app the folder's repository is not granted to is named in one tell, each with its own page, and nothing is due to bind", () => {
+  const lack: SetupLack = {
+    lacks: "Binding",
+    reach: {
+      reach: "Ungranted",
+      repository: "acme-org/widgets",
+      apps: [
+        { app: "portal", installed: true, page: "https://forge/settings" },
+        { app: "worker", installed: false, page: "https://forge/install" },
+      ],
+    },
+  };
+  expect(thing(lack)).toEqual(
+    hand(
+      "GitHub does not let these apps into acme-org/widgets, this folder's repository: the portal app, on its settings page https://forge/settings; and the worker app, which is not installed there yet, on its install page https://forge/install. On each page choose acme-org/widgets among the repositories the app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.",
+      "once the person says each app named is given acme-org/widgets on GitHub",
+    ),
+  );
+  expect(setupBindDue(lacking(lack))).toBeUndefined();
+  expect(
+    setupBindDue(lacking({ lacks: "Binding", reach: undefined })),
+  ).toBeUndefined();
 });

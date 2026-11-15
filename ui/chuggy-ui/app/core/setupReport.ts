@@ -18,7 +18,8 @@
  * one stops short it is that shape again, after everything it found and did.
  * `configuration`, `check` and `import` are each named under a rule that waits
  * on what the agent and the person do between them: the blanks filled in, the
- * faults fixed, the commit pushed.
+ * faults fixed, the commit pushed. `bind` adds a repository to the project at
+ * the site, and is named only under a rule that waits on her yes.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
@@ -139,8 +140,8 @@ export interface SetupStepSaid {
  * The one next thing a checklist ends on: nothing, where setup is done;
  * something the person does by hand, and the condition the checklist may be
  * read again under; something `mcp` or `runner` would do on this machine for
- * the project named, or `chat-host` for the workspace where no project is, and
- * the yes it waits on; a question only she answers, and the
+ * the project named, or `chat-host` for the workspace where no project is, or
+ * `bind` at the site for the project named, and the yes it waits on; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; the repository's own
  * configuration, which `configuration` starts and `import` has imported; or a
@@ -152,7 +153,7 @@ export type SetupThing =
   | { readonly thing: "Hand"; readonly tell: Copy; readonly when: Copy }
   | {
       readonly thing: "Offer";
-      readonly command: SetupMachineCommand;
+      readonly command: SetupOfferCommand;
       readonly tell: Copy;
       readonly when: Copy;
       readonly workspace: string;
@@ -180,6 +181,11 @@ export type SetupThing =
       readonly found: Copy;
       readonly stale: boolean;
     };
+
+/** What the site answered a bind, in the words the console's Add dialog says it in: added, or already, or refused. */
+export type SetupBindAnswered =
+  | { readonly answered: "Bound"; readonly said: Copy }
+  | { readonly answered: "Refused"; readonly refusal: Copy };
 
 /**
  * How a run of `project` ended: the project the site answered as made, which
@@ -315,6 +321,16 @@ export type SetupReport =
       >;
     }
   | {
+      /** A run of `bind`: the repository it asked the site to add and what the site answered, where the checklist's next thing was that, and the checklist read after. */
+      readonly report: "Bind";
+      readonly repository: string | undefined;
+      readonly answered: SetupBindAnswered | undefined;
+      readonly checklist: Extract<
+        SetupReport,
+        { readonly report: "Checklist" }
+      >;
+    }
+  | {
       /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
@@ -328,6 +344,10 @@ export type SetupMachineCommand = Extract<
   SetupCommand,
   "Mcp" | "Runner" | "ChatHost"
 >;
+
+/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, and `bind`, which adds a repository at the site. */
+export type SetupOfferCommand =
+  SetupMachineCommand | Extract<SetupCommand, "Bind">;
 
 /** The command a run of the runner package's service is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
 function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
@@ -416,6 +436,7 @@ function setupCommandWords() {
     configuration = "",
     check = "",
     imported = "",
+    bound = "",
   ] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("Project"),
@@ -425,6 +446,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Configuration"),
     ...setupCommandArguments("Check"),
     ...setupCommandArguments("Import"),
+    ...setupCommandArguments("Bind"),
   ];
   return {
     signIn,
@@ -435,6 +457,7 @@ function setupCommandWords() {
     configuration,
     check,
     imported,
+    bound,
   };
 }
 
@@ -1238,6 +1261,44 @@ function setupImportSaid(
       ];
 }
 
+/** What `bind` asked of the site and what it answered, said where the checklist read after it says the site. */
+function setupBindSaid(
+  report: Extract<SetupReport, { readonly report: "Bind" }>,
+): readonly SetupLine[] {
+  const repository = report.repository ?? "";
+  const answered = report.answered;
+  if (answered === undefined) return [["found", { id: "setup-bind-none" }]];
+  return answered.answered === "Bound"
+    ? [
+        [
+          "did",
+          { id: "setup-bind-did", args: { repository, said: answered.said } },
+        ],
+      ]
+    : [
+        [
+          "found",
+          {
+            id: "setup-bind-refused",
+            args: { repository, refusal: answered.refusal },
+          },
+        ],
+      ];
+}
+
+/** A run of `bind`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
+function setupBindLines(
+  report: Extract<SetupReport, { readonly report: "Bind" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const [site, ...rest] = setupLines(report.checklist, saying);
+  return [
+    ...(site === undefined ? [] : [site]),
+    ...setupBindSaid(report),
+    ...rest,
+  ];
+}
+
 /** A run of `import`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
 function setupImportLines(
   report: Extract<SetupReport, { readonly report: "Import" }>,
@@ -1479,6 +1540,8 @@ function setupLines(
       return setupCheckLines(report.ended, saying);
     case "Import":
       return setupImportLines(report, saying);
+    case "Bind":
+      return setupBindLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
     case "Runner":
@@ -1567,6 +1630,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
         ? 1
         : 0;
     case "Import":
+    case "Bind":
       return setupReportExit(report.checklist);
     case "Mcp":
     case "Runner":

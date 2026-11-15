@@ -12,7 +12,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import type { CopyOrData } from "../app/core/copy.ts";
 import type {
-  SetupMachineCommand,
+  SetupOfferCommand,
   SetupNext,
   SetupStepSaid,
   SetupStepState,
@@ -47,7 +47,7 @@ export type SaidThing =
   | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
   | {
       readonly thing: "Offer";
-      readonly command: SetupMachineCommand;
+      readonly command: SetupOfferCommand;
       readonly tell: string;
       readonly when: string;
       readonly workspace: string;

@@ -10,7 +10,10 @@
  * where one is lacking the next thing is that question. A repository holding
  * no configuration of its own is the one other: its configuration is written
  * in the checkout by the person's agent with them, through `configuration`,
- * `check` and `import`, and no page is pressed for it. The MCP step and the
+ * `check` and `import`, and no page is pressed for it. Where the project
+ * holds no repository and both apps are granted the folder's own, `bind`
+ * adds it on the person's yes, and where an app is not, the tell names that
+ * app's page on the forge and no page of the console. The MCP step and the
  * runner's change the machine, so each is offered and never run unasked: the
  * person is told what `mcp` would do, the runner package installed where it
  * is not here and its server named in their agent, and for the runner's step
@@ -59,7 +62,12 @@ import {
   setupEnginesNone,
 } from "./setupRunnerSaid.ts";
 import { setupAppNames, setupPhaseSaid, setupSeen } from "./setupStanding.ts";
-import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
+import type {
+  SetupAppPage,
+  SetupLack,
+  SetupStanding,
+  SetupStep,
+} from "./setupStanding.ts";
 import { setupFlat } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
 
@@ -248,28 +256,83 @@ function setupGithubMend(
   );
 }
 
+/** An app as a line of the tell names it, with its page on the forge. */
+function setupAppPageSaid(page: SetupAppPage): Copy {
+  return {
+    id: page.installed
+      ? "setup-mend-reach-settings"
+      : "setup-mend-reach-install",
+    args: { app: setupAppNames[page.app], page: page.page },
+  };
+}
+
+/**
+ * The folder's repository before it is added: where both apps are granted it,
+ * `bind` adds it on the person's yes, as the console's Add does; where an app
+ * is not, every such app is named in the one tell with its page on the forge,
+ * and the checklist is read again once the person says they are done there.
+ * Where what the apps grant was not read, the console's Add is the way.
+ */
+function setupBindingMend(
+  lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
+  at: SetupAt,
+  mine: string | undefined,
+): SetupThing {
+  const reach = lack.reach;
+  if (reach?.reach === "Granted")
+    return {
+      thing: "Offer",
+      command: "Bind",
+      tell: {
+        id: "setup-mend-bind-offer",
+        args: { repository: reach.repository, project: setupNamed(at) },
+      },
+      when: {
+        id: "setup-offer-bind-when",
+        args: { repository: reach.repository },
+      },
+      workspace: at.workspace,
+      project: at.project,
+    };
+  if (reach?.reach === "Ungranted") {
+    const [first, second] = reach.apps.map(setupAppPageSaid);
+    return setupHand(
+      {
+        id: "setup-mend-reach-tell",
+        args: {
+          repository: reach.repository,
+          count: second === undefined ? "one" : "two",
+          first: first ?? "",
+          second: second ?? "",
+        },
+      },
+      { id: "setup-mend-reach-when", args: { repository: reach.repository } },
+    );
+  }
+  return setupHand(
+    {
+      id: "setup-mend-binding-tell",
+      args: {
+        page: setupPage(at, navRoutes.repositories),
+        add: setupPressed.add,
+        repository:
+          mine === undefined
+            ? { id: "setup-mend-binding-yours" }
+            : { id: "setup-mend-binding-mine", args: { repository: mine } },
+      },
+    },
+    { id: "setup-mend-binding-when" },
+  );
+}
+
 function setupRepositoryMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" | "Configuration" }>,
   at: SetupAt,
   mine: string | undefined,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
-  if (lack.lacks === "Binding")
-    return setupHand(
-      {
-        id: "setup-mend-binding-tell",
-        args: {
-          page,
-          add: setupPressed.add,
-          repository:
-            mine === undefined
-              ? { id: "setup-mend-binding-yours" }
-              : { id: "setup-mend-binding-mine", args: { repository: mine } },
-        },
-      },
-      { id: "setup-mend-binding-when" },
-    );
-  return setupConfigurationMend(lack, at);
+  return lack.lacks === "Binding"
+    ? setupBindingMend(lack, at, mine)
+    : setupConfigurationMend(lack, at);
 }
 
 /** What the import of the repository last came to, as the line on the repositories page says it, where one finished. */
@@ -833,6 +896,23 @@ export function setupConfigurationDue(
   return partition === undefined || lack?.lacks !== "Configuration"
     ? undefined
     : { partition, repository: lack.bound };
+}
+
+/** The project and the folder's repository, by the address the portal app lists it by, where adding it is the one next thing, which is when `bind` asks the site to add it. */
+export function setupBindDue(standing: SetupStanding):
+  | {
+      readonly partition: PartitionIdentity;
+      readonly repository: string;
+      readonly url: string;
+    }
+  | undefined {
+  const partition = setupDue(standing, ["Binding"]);
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  if (partition === undefined || lack?.lacks !== "Binding") return undefined;
+  const reach = lack.reach;
+  return reach?.reach === "Granted"
+    ? { partition, repository: reach.repository, url: reach.url }
+    : undefined;
 }
 
 /** The project whose MCP step is the one next, which is when the runner package here is looked for before the next thing is named. */

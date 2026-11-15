@@ -57,6 +57,7 @@ export interface SetupCopy {
     readonly configuration: unknown;
     readonly check: unknown;
     readonly imported: unknown;
+    readonly bound: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
@@ -451,6 +452,30 @@ export interface SetupCopy {
     readonly connect: unknown;
     readonly account: unknown;
   };
+  readonly "setup-mend-reach-settings": {
+    readonly app: unknown;
+    readonly page: unknown;
+  };
+  readonly "setup-mend-reach-install": {
+    readonly app: unknown;
+    readonly page: unknown;
+  };
+  readonly "setup-mend-reach-tell": {
+    readonly count: unknown;
+    readonly repository: unknown;
+    readonly first: unknown;
+    readonly second: unknown;
+  };
+  readonly "setup-mend-reach-when": {
+    readonly repository: unknown;
+  };
+  readonly "setup-mend-bind-offer": {
+    readonly repository: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-offer-bind-when": {
+    readonly repository: unknown;
+  };
   readonly "setup-mend-binding-yours": Record<never, never>;
   readonly "setup-mend-binding-mine": {
     readonly repository: unknown;
@@ -522,6 +547,15 @@ export interface SetupCopy {
     readonly repository: unknown;
   };
   readonly "setup-import-refused": {
+    readonly repository: unknown;
+    readonly refusal: unknown;
+  };
+  readonly "setup-bind-none": Record<never, never>;
+  readonly "setup-bind-did": {
+    readonly repository: unknown;
+    readonly said: unknown;
+  };
+  readonly "setup-bind-refused": {
     readonly repository: unknown;
     readonly refusal: unknown;
   };

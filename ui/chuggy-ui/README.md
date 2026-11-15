@@ -293,6 +293,16 @@ asks the site anything. Once the commit is pushed, `import` asks the site to
 import the repository at the head of its default branch, its one write, says
 what the site answered, and reads the checklist again.
 
+Where the project holds no repository and the folder's `origin` names one, the
+repository step is held to what the two apps on the account that owns it are
+granted. Where both are granted it, the `rule:` names `bind` for once she says
+yes; `bind` adds it to the project with the request the console's Add sends,
+its one write, says what the site answered, and reads the checklist again.
+Where an app is not granted it, one `tell:` names every such app with its own
+page on GitHub, the installation's settings where it is installed on that
+account and its install page where it is not. Where what an app is granted
+was not read, the `tell:` names the console's Add instead.
+
 ## The session
 
 OIDC authorization code with PKCE against the issuer `/config.json` names, with

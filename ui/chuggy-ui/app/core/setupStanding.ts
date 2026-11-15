@@ -14,9 +14,13 @@
  * repository from and the worker app is what a ticket's work is given its
  * credential under; and a runner is waited on only where the project's work
  * goes to runners, and the person's chat host only where their chats in it
- * do. Which repositories the worker app lacks and whether work or a chat
- * waits on a runner are the console's own deciders, so this program and the
- * pages do not say different things. Beside its few words each step that is
+ * do. Before any repository is added, the repository step carries what the
+ * apps on the account that owns the folder's remote grant it, where every
+ * read that says so was got: both granted it, which is the repository the
+ * program may add itself, or each app that is not, with the page on the
+ * forge it is given it on. Which repositories the worker app lacks and
+ * whether work or a chat waits on a runner are the console's own deciders,
+ * so this program and the pages do not say different things. Beside its few words each step that is
  * not done carries what it lacks as a member of a closed set, which is what
  * the next thing is decided from. Nothing is remembered between runs: the
  * server is the record.
@@ -30,6 +34,7 @@ import type {
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type {
   ForgeAppName,
   PlacementRoute,
@@ -51,6 +56,7 @@ import {
   setupLanding,
   setupPartition,
   setupProjectListed,
+  setupRemoteOwner,
 } from "./setupReads.ts";
 import type {
   SetupChoice,
@@ -116,7 +122,8 @@ export type SetupLack =
       readonly repository: string;
     }
   | { readonly lacks: "Mcp" }
-  | { readonly lacks: "Binding" }
+  /** `reach` is what the apps grant the folder's remote, where every read that says so was got. */
+  | { readonly lacks: "Binding"; readonly reach: SetupReach | undefined }
   /** `bound` is the repository as the binding names it, and `lastImport` the import of it that finished last, where one did. */
   | {
       readonly lacks: "Configuration";
@@ -145,6 +152,30 @@ export type SetupLack =
   | { readonly lacks: "Decision"; readonly ticket: number };
 
 type TicketPhase = TicketResponse["phase"];
+
+/** One app that is not granted the folder's repository, and the forge's page it is given it on: its installation's settings where the app is installed on that account, and its install page where it is not. */
+export interface SetupAppPage {
+  readonly app: ForgeAppName;
+  readonly installed: boolean;
+  readonly page: string;
+}
+
+/**
+ * What both apps grant the folder's repository before any is added: both
+ * granted it, with the address the portal app lists it by, which is what a
+ * bind names; or the apps that are not, each with its page.
+ */
+export type SetupReach =
+  | {
+      readonly reach: "Granted";
+      readonly repository: string;
+      readonly url: string;
+    }
+  | {
+      readonly reach: "Ungranted";
+      readonly repository: string;
+      readonly apps: readonly SetupAppPage[];
+    };
 
 export interface SetupStep extends SetupStepSaid {
   /** Present exactly where the step is not done. */
@@ -612,13 +643,104 @@ function setupGithubStep(
   }
 }
 
-/** Done where the repository meant is configured; waiting where it is added and is not. */
+/** One app as it stands on the remote's owner: granted it, the page it is given it on, or nothing where a read that would say was not got or was cut short. */
+type SetupAppReach =
+  | { readonly app: "Granted"; readonly entry: ForgeRepositoryResponse }
+  | { readonly app: "Lacking"; readonly page: SetupAppPage }
+  | undefined;
+
+/**
+ * The worker app's listing held to the portal app's entry by the console's
+ * own decider, so this program and the Add dialog do not say different
+ * things of it; and where the portal app lists nothing for it, by what two
+ * addresses of one repository have in common.
+ */
+function setupWorkerEntry(
+  owner: string,
+  listed: readonly ForgeRepositoryResponse[],
+  whole: boolean,
+  portal: ForgeRepositoryResponse | undefined,
+  address: string,
+): ForgeRepositoryResponse | "Lacking" | undefined {
+  if (portal === undefined)
+    return setupGrantEntry(listed, address) ?? (whole ? "Lacking" : undefined);
+  const lacked = repositoriesWorkerless(
+    [{ account: owner, repositories: [portal], truncated: false }],
+    [{ account: owner, repositories: listed, truncated: !whole }],
+  );
+  if (lacked.includes(portal.url)) return "Lacking";
+  return listed.find((held) => held.url === portal.url);
+}
+
+function setupAppReach(
+  reads: SetupReads,
+  remote: SetupRemote,
+  owner: string,
+  app: ForgeAppName,
+  portal: ForgeRepositoryResponse | undefined,
+): SetupAppReach {
+  const installations = reads.installations;
+  if (installations.read !== "Got") return undefined;
+  const claim = installations.value.find(
+    (held) => held.app === app && held.account === owner,
+  );
+  if (claim === undefined) {
+    const apps = reads.apps;
+    const offered =
+      apps.read === "Got"
+        ? apps.value.apps.find((held) => held.app === app)
+        : undefined;
+    return installations.whole && offered !== undefined
+      ? {
+          app: "Lacking",
+          page: { app, installed: false, page: offered.installUrl },
+        }
+      : undefined;
+  }
+  const grant = reads.grants.find((held) => held.app === app);
+  const listed = grant?.listed;
+  if (listed?.read !== "Got") return undefined;
+  const address = `https://${remote.said}`;
+  const entry =
+    app === "portal"
+      ? (setupGrantEntry(listed.value, address) ??
+        (listed.whole ? "Lacking" : undefined))
+      : setupWorkerEntry(owner, listed.value, listed.whole, portal, address);
+  if (entry === undefined) return undefined;
+  if (entry !== "Lacking") return { app: "Granted", entry };
+  const settings = grant?.settings;
+  return settings?.read === "Got"
+    ? { app: "Lacking", page: { app, installed: true, page: settings.value } }
+    : undefined;
+}
+
+/** What both apps grant the folder's remote, where it names a repository of one owner and every read that says so was got. */
+function setupReachOf(reads: SetupReads): SetupReach | undefined {
+  const remote = reads.remote;
+  const owner = remote === undefined ? undefined : setupRemoteOwner(remote);
+  if (remote === undefined || owner === undefined) return undefined;
+  const repository = repositoryLabel(`https://${remote.said}`);
+  const pages: SetupAppPage[] = [];
+  let portal: ForgeRepositoryResponse | undefined;
+  for (const app of forgeApps) {
+    const one = setupAppReach(reads, remote, owner, app, portal);
+    if (one === undefined) return undefined;
+    if (one.app === "Lacking") pages.push(one.page);
+    else portal ??= one.entry;
+  }
+  if (pages.length > 0) return { reach: "Ungranted", repository, apps: pages };
+  return portal === undefined
+    ? undefined
+    : { reach: "Granted", repository, url: portal.url };
+}
+
+/** Done where the repository meant is configured; waiting where it is added and is not; to do where none is, with what the apps grant the folder's remote. */
 function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
   const mine: Copy | undefined =
     reads.remote === undefined
       ? undefined
       : { id: "setup-step-remote", args: { remote: reads.remote.said } };
-  const lacking: SetupLack = { lacks: "Binding" };
+  const lacking: SetupLack = { lacks: "Binding", reach: undefined };
   const meant = setupMeant(reads.repositories);
   switch (meant.meant) {
     case "Unread":
@@ -626,7 +748,10 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
         ? setupUndone("repository", "todo", mine, lacking)
         : setupUnread("repository", "repositories", meant.fate);
     case "None":
-      return setupUndone("repository", "todo", mine, lacking);
+      return setupUndone("repository", "todo", mine, {
+        lacks: "Binding",
+        reach: none ? undefined : setupReachOf(reads),
+      });
     case "Repository": {
       const repository = repositoryLabel(meant.binding.repository);
       return meant.binding.configured
