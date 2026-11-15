@@ -7,7 +7,10 @@ export interface SentencesCopy {
   readonly "sentences-escalation-evaluation-failure": Record<never, never>;
   readonly "sentences-escalation-work-unavailable": Record<never, never>;
   readonly "sentences-escalation-evaluation-blocked": Record<never, never>;
-  readonly "sentences-escalation-finalization-unavailable": Record<never, never>;
+  readonly "sentences-escalation-finalization-unavailable": Record<
+    never,
+    never
+  >;
   readonly "sentences-native-escalation": Record<never, never>;
   readonly "sentences-native-evaluation-approval": Record<never, never>;
   readonly "sentences-native-evaluation-approval-awaited": Record<never, never>;
@@ -102,7 +105,10 @@ export interface SentencesCopy {
   readonly "sentences-refusal-overrides-unsupported": Record<never, never>;
   readonly "sentences-refusal-overrides-unknown": Record<never, never>;
   readonly "sentences-refusal-capacity-reached": Record<never, never>;
-  readonly "sentences-refusal-finalization-request-closed": Record<never, never>;
+  readonly "sentences-refusal-finalization-request-closed": Record<
+    never,
+    never
+  >;
   readonly "sentences-refusal-overrides-move-definition": Record<never, never>;
   readonly "sentences-refusal-approval-as-work": Record<never, never>;
   readonly "sentences-refusal-overrides-change-approval": Record<never, never>;

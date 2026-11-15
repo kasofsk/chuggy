@@ -68,7 +68,10 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-commands": Record<never, never>;
   readonly "configuration-catalog-prompt-inline": Record<never, never>;
   readonly "configuration-catalog-prompt-written-inline": Record<never, never>;
-  readonly "configuration-catalog-repository-finalization": Record<never, never>;
+  readonly "configuration-catalog-repository-finalization": Record<
+    never,
+    never
+  >;
   readonly "configuration-catalog-stage": {
     readonly number: unknown;
     readonly name: unknown;
