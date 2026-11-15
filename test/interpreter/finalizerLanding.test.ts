@@ -1,6 +1,6 @@
 /**
- * The ref a ticket's finalization lands on, as its brief and its binding name
- * it, which a work task is told and the finalizer gathers its view from.
+ * Where a ticket's finalization lands, as its brief and its binding name it,
+ * and the ref its work task merges from that.
  */
 
 import assert from "node:assert/strict";
@@ -14,7 +14,6 @@ import {
 import {
   finalizerLandingBaseRef,
   finalizerLandingOf,
-  finalizerLandingRef,
   finalizerRemoteDefaultRef,
 } from "../../src/interpreter/finalizerLanding.ts";
 import {
@@ -37,24 +36,27 @@ const boundToMain: RepositoryBinding = {
 
 const intent = { intent: "Land the change.", links: [] };
 
-test("a push lands on the reference its finalization names, before the brief's branch and the binding's", () => {
+test("a push's work task merges the reference its finalization names, before the brief's branch and the binding's", () => {
   const brief = asDraftBrief({
     ...intent,
     branch: "refs/heads/work",
     finalization: { mode: "Push", target: "refs/heads/release" },
   });
-  assert.equal(finalizerLandingRef(brief, boundToMain), "refs/heads/release");
+  assert.equal(
+    finalizerLandingBaseRef(brief, boundToMain),
+    "refs/heads/release",
+  );
 });
 
-test("a push naming no reference lands on the brief's branch, before the binding's", () => {
+test("a push naming no reference merges the brief's branch, before the binding's", () => {
   const brief = asDraftBrief({
     ...intent,
     branch: "refs/heads/work",
     finalization: { mode: "Push" },
   });
-  assert.equal(finalizerLandingRef(brief, boundToMain), "refs/heads/work");
+  assert.equal(finalizerLandingBaseRef(brief, boundToMain), "refs/heads/work");
   assert.equal(
-    finalizerLandingRef(
+    finalizerLandingBaseRef(
       asDraftBrief({ ...intent, branch: "refs/heads/work" }),
       binding,
     ),
@@ -62,39 +64,36 @@ test("a push naming no reference lands on the brief's branch, before the binding
   );
 });
 
-test("a brief naming neither lands on the binding's reference", () => {
+test("a brief naming neither merges the binding's reference", () => {
   assert.equal(
-    finalizerLandingRef(asDraftBrief(intent), boundToMain),
+    finalizerLandingBaseRef(asDraftBrief(intent), boundToMain),
     "refs/heads/main",
   );
-  assert.equal(finalizerLandingRef(undefined, boundToMain), "refs/heads/main");
-});
-
-test("a proposal lands on the branch it is opened from, not the base it opens into", () => {
-  const brief = asDraftBrief({
-    ...intent,
-    branch: "refs/heads/work",
-    finalization: { mode: "PullRequest", target: "refs/heads/release" },
-  });
-  assert.equal(finalizerLandingRef(brief, boundToMain), "refs/heads/work");
-});
-
-test("a ticket that lands on no ref its brief or binding names has none", () => {
   assert.equal(
-    finalizerLandingRef(
+    finalizerLandingBaseRef(undefined, boundToMain),
+    "refs/heads/main",
+  );
+});
+
+test("a ticket that lands on no ref its brief or binding names merges none", () => {
+  assert.equal(
+    finalizerLandingBaseRef(
       asDraftBrief({ ...intent, finalization: { mode: "None" } }),
       boundToMain,
     ),
     undefined,
   );
   assert.equal(
-    finalizerLandingRef(
+    finalizerLandingBaseRef(
       asDraftBrief({ ...intent, branch: "refs/heads/work" }),
       undefined,
     ),
     undefined,
   );
-  assert.equal(finalizerLandingRef(asDraftBrief(intent), binding), undefined);
+  assert.equal(
+    finalizerLandingBaseRef(asDraftBrief(intent), binding),
+    undefined,
+  );
 });
 
 test("where the ticket lands is read in the finalizer's order: `None` before an absent binding, and an absent binding before a proposal naming no branch", () => {
@@ -136,26 +135,4 @@ test("a proposal's work task merges the base it opens into: the reference its fi
       );
     }
   }
-});
-
-test("a push's work task merges the ref the push lands on", () => {
-  for (const brief of [
-    asDraftBrief({
-      ...intent,
-      branch: "refs/heads/work",
-      finalization: { mode: "Push", target: "refs/heads/release" },
-    }),
-    asDraftBrief({ ...intent, branch: "refs/heads/work" }),
-    asDraftBrief(intent),
-    asDraftBrief({ ...intent, finalization: { mode: "None" } }),
-  ]) {
-    assert.equal(
-      finalizerLandingBaseRef(brief, boundToMain),
-      finalizerLandingRef(brief, boundToMain),
-    );
-  }
-  assert.equal(
-    finalizerLandingBaseRef(asDraftBrief(intent), binding),
-    undefined,
-  );
 });

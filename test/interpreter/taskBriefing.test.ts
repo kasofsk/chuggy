@@ -2760,7 +2760,7 @@ test("a work stage run as commands is not told of a failed landing", () => {
   assert.equal(composed(view).briefing.text.includes(changeCommit), false);
 });
 
-test("a review, a check and a commanded work stage render the sections they did before the core merged the target", () => {
+test("a review, a check and a commanded work stage render no failed-landing or target-merge section, even beside a failed landing", () => {
   for (const [parts, sections] of [
     [
       { purpose: "Review" as const },

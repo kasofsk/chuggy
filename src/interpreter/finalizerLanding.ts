@@ -88,19 +88,6 @@ export function finalizerLandingOf(
 }
 
 /**
- * The ref the ticket lands on, where its brief or its binding names one. A
- * landing on whatever branch the remote defaults to names none, because only
- * the finalizer's own read of the remote at landing says which branch that is.
- */
-export function finalizerLandingRef(
-  brief: DraftBrief | undefined,
-  binding: RepositoryBinding | undefined,
-): GitRefName | undefined {
-  const landing = finalizerLandingOf(brief, binding);
-  return landing.landing === "Lands" ? landing.repository.targetRef : undefined;
-}
-
-/**
  * The binding a proposal's base is read through: the reference its
  * finalization names, read as itself rather than through the binding's own, or
  * the branch the remote defaults to where it names none.
