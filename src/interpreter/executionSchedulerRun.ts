@@ -193,11 +193,8 @@ import {
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 import type { WorkTaskTargetMerge } from "../contract/workerTask.ts";
-import type { FinalizerConfig, GitRefName, RepositoryId } from "./finalizer.ts";
-import {
-  finalizerLandingBaseRef,
-  finalizerLandingRef,
-} from "./finalizerLanding.ts";
+import type { FinalizerConfig, RepositoryId } from "./finalizer.ts";
+import { finalizerLandingBaseRef } from "./finalizerLanding.ts";
 import { runEndedLoss } from "./runEvidence.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
@@ -805,32 +802,25 @@ interface TaskLaunch {
   readonly profile: ExecutionProfile;
   readonly image?: string;
   readonly invocation: TaskInvocation;
-  readonly targetRef?: GitRefName;
   readonly targetMerge?: WorkTaskTargetMerge;
   readonly pushPathsRefused?: readonly string[];
 }
 
 /**
- * The ref the ticket's finalization lands on and the base a work task merges
- * in, each resolved from its brief and the binding it names as the finalizer
- * resolves it.
+ * The base a work task merges in, resolved from its brief and the binding it
+ * names as the finalizer resolves it.
  */
 async function schedulerLanding(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   brief: DraftBrief | undefined,
-): Promise<{ readonly targetRef?: GitRefName; readonly baseRef?: string }> {
-  if (brief?.repository === undefined) return {};
+): Promise<string | undefined> {
+  if (brief?.repository === undefined) return undefined;
   const binding = await service.bindings.binding(
     execution.partition,
     brief.repository,
   );
-  const targetRef = finalizerLandingRef(brief, binding);
-  const baseRef = finalizerLandingBaseRef(brief, binding);
-  return {
-    ...(targetRef === undefined ? {} : { targetRef }),
-    ...(baseRef === undefined ? {} : { baseRef }),
-  };
+  return finalizerLandingBaseRef(brief, binding);
 }
 
 /**
@@ -897,11 +887,7 @@ async function schedulerPrepared(
     execution.partition,
     execution.ticket,
   );
-  const { targetRef, baseRef } = await schedulerLanding(
-    service,
-    execution,
-    brief,
-  );
+  const baseRef = await schedulerLanding(service, execution, brief);
   const targetMerge = schedulerTargetMerge(
     baseRef,
     pipelinesWritable,
@@ -916,7 +902,6 @@ async function schedulerPrepared(
     ...project,
     priorWorkReports,
     ...rework,
-    ...(baseRef === undefined ? {} : { targetRef: baseRef }),
     ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });
@@ -926,7 +911,6 @@ async function schedulerPrepared(
         profile: policy.profile,
         ...(policy.image === undefined ? {} : { image: policy.image }),
         invocation: composed.invocation,
-        ...(targetRef === undefined ? {} : { targetRef }),
         ...(targetMerge === undefined ? {} : { targetMerge }),
         ...(project.pushPathsRefused === undefined
           ? {}
@@ -991,7 +975,6 @@ async function schedulerPlace(
     profile: launch.profile,
     ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,
-    ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
     ...(launch.targetMerge === undefined
       ? {}
       : { targetMerge: launch.targetMerge }),
