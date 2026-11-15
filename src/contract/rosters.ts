@@ -308,8 +308,8 @@ export type RunContextCategoryKind = (typeof runContextCategoryKinds)[number];
 export const accountAgents = ["Claude", "Codex"] as const;
 export type AccountAgent = (typeof accountAgents)[number];
 
-/** What holds an account's agent paused: a window's reading at or over its threshold, or the limit a provider stopped it at. */
-export const agentPauseReasons = [...runUsageWindows, "limit"] as const;
+/** What holds an account's agent paused: a window's reading at or over its threshold, the limit a provider stopped it at, or its owner turning a credential off. */
+export const agentPauseReasons = [...runUsageWindows, "limit", "off"] as const;
 export type AgentPauseReason = (typeof agentPauseReasons)[number];
 
 /** What a cost figure is: the agent runtime's published list price, never a bill. */

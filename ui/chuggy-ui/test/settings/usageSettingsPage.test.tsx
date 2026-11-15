@@ -184,6 +184,22 @@ test("a paused agent says why and until when in the reader's own zone, and a pro
   ).toBeNull();
 });
 
+test("a pause held only by credentials turned off says so and no until, and offers no press", async () => {
+  drawing.claude = {
+    limit: undefined,
+    pause: { off: true, reasons: ["off"], pressed: false },
+  };
+  await drawUsage();
+  const line = sectionOf("Claude").textContent ?? "";
+  expect(line).toContain("Paused · Off");
+  expect(line).not.toContain("until");
+  expect(
+    within(sectionOf("Claude")).queryByRole("button", {
+      name: "Try Claude again now",
+    }),
+  ).toBeNull();
+});
+
 test("a press tries the agent once and reads the account again, after which it says so and offers no second press", async () => {
   const sent = await drawUsage();
   const before = reads(sent);

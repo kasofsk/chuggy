@@ -48,7 +48,12 @@ test("every reason a pause gives is a noun, and a pause reads as its status and 
     agentPauseReasons.map((reason) =>
       copyTextEn(agentPauseReasonLabel(reason)),
     ),
-  ).toStrictEqual(["Five-hour window", "Weekly window", "Provider limit"]);
+  ).toStrictEqual([
+    "Five-hour window",
+    "Weekly window",
+    "Provider limit",
+    "Off",
+  ]);
   expect(
     agentPauseParts({
       until: "2026-10-03T14:00:00Z",
@@ -56,6 +61,11 @@ test("every reason a pause gives is a noun, and a pause reads as its status and 
       pressed: false,
     }).map(copyTextEn),
   ).toStrictEqual(["Paused", "Weekly window", "Provider limit"]);
+  expect(
+    agentPauseParts({ off: true, reasons: ["off"], pressed: false }).map(
+      copyTextEn,
+    ),
+  ).toStrictEqual(["Paused", "Off"]);
 });
 
 test("a press is offered only where a provider's limit holds the agent and no press is waiting to try it", () => {

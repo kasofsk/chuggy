@@ -46,6 +46,7 @@ import {
   workerRunCredentialDefaults,
 } from "../../src/contract/workerPlane.ts";
 import { agentAccountCredentialsKeptMaxAt163 } from "../../src/adapters/postgres/schema/migrations/163-agent-account-credential.ts";
+import { agentAccountCredentialsOffMaxAt191 } from "../../src/adapters/postgres/schema/migrations/191-agent-account-credential-off.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
@@ -677,8 +678,11 @@ test("a poll names no more credentials of an agent than the plane keeps of one a
   );
 });
 
-test("an account read may name every credential the plane keeps of one account's agent, so none kept is dropped from the wire", () => {
-  assert.equal(agentAccountCredentialsMax, agentAccountCredentialsKeptMaxAt163);
+test("an account read may name every credential the plane keeps of one account's agent and every one turned off beside them, so none is dropped from the wire", () => {
+  assert.equal(
+    agentAccountCredentialsMax,
+    agentAccountCredentialsKeptMaxAt163 + agentAccountCredentialsOffMaxAt191,
+  );
 });
 
 test("a reconciliation may name a credential's pause by its agent, its name and its end, and a runner of a release before the pauses range refuses a whole answer naming one", async () => {

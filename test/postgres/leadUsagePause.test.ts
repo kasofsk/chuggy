@@ -413,3 +413,56 @@ test("a pool that named credentials takes its lead while one is free and is paus
     );
   }
 });
+
+/** The refusal `read_lead_refusal` answers of the project, its end as seconds from now. */
+async function usagePauseRefusalRead(partition: Partition) {
+  return rig.sessions.harness.query(
+    `SELECT refusal,extract(epoch FROM paused_until-now())::int AS until_secs,off
+       FROM read_lead_refusal($1,$2,60)`,
+    [partition.tenant, partition.project],
+  );
+}
+
+test("a lead refused UsagePaused reads off with no end where every live pool is held only by credentials turned off, and the other pools' earliest end beside one that is not", async () => {
+  const partition = await usagePauseProject("usage-off");
+  const owner = usagePauseOwner("off");
+  await leadRigNamed(
+    rig,
+    partition,
+    await leadRigPooled(rig, partition, owner),
+    ["work", "home"],
+  );
+  await agentAccountHarnessCommitted(rig.sessions.harness, owner, "Claude", {
+    off: ["work", "home"],
+  });
+  const pass = usagePausePass(partition);
+  try {
+    assert.deepEqual((await pass.passed).failures, [
+      { phase: "UsagePaused", partition },
+    ]);
+  } finally {
+    await pass.close();
+  }
+  assert.deepEqual(await usagePauseRefusalRead(partition), [
+    { refusal: "UsagePaused", until_secs: null, off: true },
+  ]);
+  const other = usagePauseOwner("limited");
+  await leadRigNamed(
+    rig,
+    partition,
+    await leadRigPooled(rig, partition, other),
+    ["work"],
+  );
+  await agentAccountHarnessCommitted(
+    rig.sessions.harness,
+    other,
+    "Claude",
+    agentAccountHarnessCredentialsOver({ work: 1800 }),
+  );
+  const [read] = await usagePauseRefusalRead(partition);
+  assert.equal(read?.["off"], false);
+  assert.ok(
+    Math.abs(Number(read?.["until_secs"]) - 1800) <= 2,
+    "the end of the pool not held off alone",
+  );
+});
