@@ -1,7 +1,7 @@
 /**
  * The documents a pod is launched with, held against what the launchers build
  * and against the interpreter's grant, worker configuration and execution
- * profile they restate, and read by each older release a plane still serves.
+ * profile they restate, and read by each release replayed on a plane.
  */
 
 import assert from "node:assert/strict";
@@ -42,6 +42,7 @@ import {
   workerContractReleaseExport,
   workerContractReleaseSchema,
   workerContractReplayed,
+  workerContractWireOf,
 } from "./workerContractReleases.ts";
 
 /** Every key any member of a union names, the optional ones included. */
@@ -293,7 +294,7 @@ test("a pool-held session's bounds may name no idle limit, and any other bound t
 for (const release of workerContractReplayed("session")) {
   const launches = contractVersionAccepted(
     workerContractRunnerSessions,
-    release,
+    workerContractWireOf(release),
   );
   test(`a ${release} harness reads a pod-placed session's answer as it did, and a pool-held one ${launches ? "whole" : "less what it does not name"}`, async () => {
     const answer = await workerContractReleaseExport(
