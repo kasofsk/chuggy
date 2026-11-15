@@ -71,10 +71,7 @@ import {
   type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import {
-  asGitRefName,
-  asRepositoryId,
-} from "../../src/interpreter/finalizer.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
 import {
@@ -855,16 +852,20 @@ test("every worker configuration reaches a document the contract names in full",
     { mode: { type: "Commands", commands: ["just check"] }, ...preparation },
   ];
   for (const worker of workers)
-    for (const [stage, targetRef, pushPathsRefused] of [
+    for (const [stage, targetMerge, pushPathsRefused] of [
       [undefined, undefined, undefined],
-      [1, asGitRefName("refs/heads/main"), [".forgejo/workflows/"]],
+      [
+        1,
+        { ref: "refs/heads/main", pipelinesWritable: false },
+        [".forgejo/workflows/"],
+      ],
     ] as const) {
       const document = JSON.parse(
         JSON.stringify(
           kubernetesWorkerTask(config, {
             ...placement,
             ...(stage === undefined ? {} : { stage }),
-            ...(targetRef === undefined ? {} : { targetRef }),
+            ...(targetMerge === undefined ? {} : { targetMerge }),
             ...(pushPathsRefused === undefined ? {} : { pushPathsRefused }),
             invocation: {
               ...placement.invocation,
@@ -879,9 +880,10 @@ test("every worker configuration reaches a document the contract names in full",
       );
       assert.equal(Object.hasOwn(document, "worker"), worker !== undefined);
       assert.equal(Object.hasOwn(document, "stage"), stage !== undefined);
-      assert.equal(
-        (document as { readonly targetRef?: string }).targetRef,
-        targetRef,
+      assert.equal(Object.hasOwn(document, "targetRef"), false);
+      assert.deepEqual(
+        (document as { readonly targetMerge?: object }).targetMerge,
+        targetMerge,
       );
       assert.deepEqual(
         (document as { readonly pushPathsRefused?: readonly string[] })

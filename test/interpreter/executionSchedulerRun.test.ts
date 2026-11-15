@@ -3194,29 +3194,7 @@ test("a pass observes after admission and before the reaper, asking for the boun
 async function landingTargetMerge(
   service: ExecutionSchedulerService,
 ): Promise<WorkTaskInvocation["targetMerge"]> {
-  const placements: AttemptPlacement[] = [];
-  const recorded: WorkTaskInvocation[] = [];
-  const recording: ExecutionSchedulerService = {
-    ...service,
-    store: {
-      ...service.store,
-      attemptInvoked: (_invoked, invocation) => {
-        recorded.push(invocation);
-        return Promise.resolve(true);
-      },
-    },
-    placement: {
-      ...service.placement,
-      place: (placement) => {
-        placements.push(placement);
-        return Promise.resolve(placedOk);
-      },
-    },
-  };
-  assert.equal(await executionSchedulerLaunch(recording, epoch), 1);
-  const [placed] = placements;
-  const [invoked] = recorded;
-  assert.ok(placed !== undefined && invoked !== undefined);
+  const { placed, invoked } = await landingLaunched(service);
   assert.equal(
     Object.hasOwn(invoked, "targetMerge"),
     placed.targetMerge !== undefined,
