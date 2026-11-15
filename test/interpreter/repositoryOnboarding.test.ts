@@ -121,7 +121,7 @@ import type {
   RepositoryConfigurationSnapshotRead,
   RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import type { RepositoryDeclarationSnapshotRequest } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 

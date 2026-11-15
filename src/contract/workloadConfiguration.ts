@@ -31,7 +31,7 @@ import type { z } from "zod";
 import {
   briefFinalizationForward,
   type BriefFinalizationBody,
-} from "../contract/brief.ts";
+} from "./brief.ts";
 import {
   type agentWorkloadSchema,
   type approvalApproversSchema,
@@ -46,12 +46,12 @@ import {
   type finalizerSchema,
   workloadConfigurationSchema,
   workloadConfigurationVersion,
-} from "../contract/configurationDocument.ts";
+} from "./configurationDocument.ts";
 import {
   type ConfigurationOverrides,
   configurationWithOverrides,
-} from "../contract/configurationOverrides.ts";
-import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
+} from "./configurationOverrides.ts";
+import type { ConfigurationSelection } from "./configurationSelection.ts";
 
 type WorkloadReadonly<Value> = Value extends object
   ? { readonly [Key in keyof Value]: WorkloadReadonly<Value[Key]> }

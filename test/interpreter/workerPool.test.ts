@@ -7,7 +7,7 @@ import {
   asSessionBearerSecret,
   asSessionId,
 } from "../../src/interpreter/agentSession.ts";
-import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
   asPrincipal,

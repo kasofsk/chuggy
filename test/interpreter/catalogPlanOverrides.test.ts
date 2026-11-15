@@ -19,7 +19,7 @@ import {
   ticketRunsLessThanPlanned,
 } from "../../src/interpreter/authoring.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
-import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
+import { catalogSelectedFinalizer } from "../../src/contract/workloadConfiguration.ts";
 import { catalogNamedWorkloadTask } from "../../src/interpreter/workloadTask.ts";
 
 const claude = {

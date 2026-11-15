@@ -220,7 +220,7 @@ import type {
   ExecutionRequirement,
   OperatingSystem as RequiredOperatingSystem,
   RequirementSource as MaterializedRequirementSource,
-} from "../../src/interpreter/executionRequirement.ts";
+} from "../../src/contract/executionRequirement.ts";
 import { executionRequirementSchema } from "../../src/contract/responses.ts";
 import { allBriefingCarriers } from "../../src/interpreter/briefingTemplate.ts";
 import {

@@ -55,7 +55,7 @@ import {
   type RepositoryActionStore,
 } from "../../src/interpreter/repositoryAction.ts";
 import { repositoryBindingsPerImportMax } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryDeclarationsMax } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationsMax } from "../../src/contract/repositoryDeclaration.ts";
 import {
   postgresHarnessDenial,
   postgresHarnessNewEpoch,

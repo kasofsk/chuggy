@@ -52,7 +52,7 @@ import {
 import {
   repositoryConfigurationReferences,
   type RepositoryConfigurationReferenced,
-} from "../../src/interpreter/repositoryConfigurationReference.ts";
+} from "../../src/contract/repositoryConfigurationReference.ts";
 import { pickFrom, randomOf, type Random } from "../random/random.ts";
 
 const schemaTakes = new Ajv2020({ strict: true, allErrors: true }).compile(

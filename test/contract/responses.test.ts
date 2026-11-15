@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 
 import {
   agentAccountsResponse,

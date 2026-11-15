@@ -9,7 +9,7 @@
  * kept its own would hold a copy to keep in step with its reader's.
  */
 
-import { textCodePointsCount } from "../contract/http.ts";
+import { textCodePointsCount, textWellFormed } from "./http.ts";
 
 /** One blob a tree holds under a declaration directory, as its reader found it. */
 export interface RepositoryDeclarationFile {
@@ -49,7 +49,7 @@ export function isRepositoryDeclarationPath(
   return (
     path.startsWith(root) &&
     textCodePointsCount(path) <= repositoryDeclarationPathCharsMax &&
-    path.isWellFormed() &&
+    textWellFormed(path) &&
     !path.includes("\\") &&
     !path.includes("\0") &&
     file.endsWith(".json") &&

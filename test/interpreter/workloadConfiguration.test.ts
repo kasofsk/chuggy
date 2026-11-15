@@ -23,7 +23,7 @@ import { refinementInstance } from "../actor/harness.ts";
 import {
   catalogSelectedFinalizer,
   declaredConfigurationIsCatalog,
-} from "../../src/interpreter/workloadConfiguration.ts";
+} from "../../src/contract/workloadConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asTicketId } from "../../src/domain/ids.ts";

@@ -45,8 +45,7 @@ type SetupPressedCatalogued =
   | "fallback"
   | "chatHost"
   | "connect"
-  | "add"
-  | "retry";
+  | "add";
 
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
@@ -84,10 +83,6 @@ const drawnFromCatalog: Readonly<
   },
   connect: { page: connectButton, id: "repositories-connect-github" },
   add: { page: addPicker, id: "repositories-add" },
-  retry: {
-    page: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
-    id: "repositories-retry",
-  },
 };
 
 const leadTextSection =

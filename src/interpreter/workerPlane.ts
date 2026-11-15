@@ -25,7 +25,7 @@ import type {
   AttemptSubmission,
   ReportIngested,
 } from "./executionSchedulerReport.ts";
-import type { ExecutionTaskKind } from "./executionRequirement.ts";
+import type { ExecutionTaskKind } from "../contract/executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { SessionTaskInvocation } from "./sessionScheduler.ts";
 import type {
