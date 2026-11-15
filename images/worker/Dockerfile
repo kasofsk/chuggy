@@ -274,8 +274,9 @@ RUN case "$TARGETARCH" in \
 # What the core needs, read off the tree rather than off this file. Each import
 # runs from the directory the core's modules live in, because what finds a
 # package is the `node_modules` walk up from there. The contract installed is the
-# release a pod names in every request, so it is held to the one `core.json`
-# names, and the tree to sitting where that release starts a job from.
+# package the core was tested with, so its version is held to the one
+# `core.json` names, and the tree to sitting where that contract starts a job
+# from.
 #
 # Both probes resolve the runtime through `session.mjs`'s own `sessionSdk`, so
 # what they prove is the resolution a turn will make. `sdkProbe.mjs` holds the
@@ -307,11 +308,11 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
     import { accessSync, constants, readFileSync } from "node:fs"; \
-    import { workerContractRelease } from "@chuggy/worker-contract/workerContract"; \
     import { workerJobCommand, workerRuntimeDirectory } from "@chuggy/worker-contract/workerEnvironment"; \
     const { contractRelease } = JSON.parse(readFileSync("/tmp/core.json", "utf8")); \
-    if (workerContractRelease !== contractRelease) { \
-      console.error(`core.json names contract ${contractRelease} and the core installs ${workerContractRelease}`); \
+    const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.resolve("@chuggy/worker-contract/workerContract")), "utf8")); \
+    if (version !== contractRelease) { \
+      console.error(`core.json names contract ${contractRelease} and the core installs ${version}`); \
       process.exit(1); \
     } \
     if (workerRuntimeDirectory !== "/opt/chuggy") { \
