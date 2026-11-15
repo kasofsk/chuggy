@@ -43,6 +43,7 @@ export interface ProjectCopy {
   readonly "project-table-creator-label": Record<never, never>;
   readonly "project-table-creator-anyone": Record<never, never>;
   readonly "project-table-creator-me": Record<never, never>;
+  readonly "project-table-owner-label": Record<never, never>;
   readonly "project-table-sort-label": Record<never, never>;
   readonly "project-table-filter-label": Record<never, never>;
   readonly "project-table-filter-all": Record<never, never>;
