@@ -226,6 +226,7 @@ const liveInvocation: WorkTaskInvocation = {
 /** A work task's recorded identity and invocation, carrying neither a stage nor a worker configuration. */
 const liveTask: WorkerTaskRead = {
   live: true,
+  inputs: liveAuthority.inputs,
   identity: {
     partition: liveAuthority.partition,
     execution: liveAuthority.execution,
@@ -799,7 +800,11 @@ const heldCredentialCases: readonly WorkerPlaneCase[] = [
   { ...workerPlaneMalformed, service: workerPlaneTask(heldGrantedTask) },
   {
     name: "an attempt not yet invoked",
-    service: workerPlaneTask({ live: true, identity: liveTask.identity }),
+    service: workerPlaneTask({
+      live: true,
+      identity: liveTask.identity,
+      inputs: liveTask.inputs,
+    }),
     status: 409,
   },
   {
@@ -1090,7 +1095,11 @@ const workerPlaneCases: Readonly<
     },
     {
       name: "an attempt not yet invoked",
-      service: workerPlaneTask({ live: true, identity: liveTask.identity }),
+      service: workerPlaneTask({
+        live: true,
+        identity: liveTask.identity,
+        inputs: liveTask.inputs,
+      }),
     },
     { name: "a work task", service: workerPlaneTask(liveTask) },
     ...workTaskRosterCases,

@@ -269,7 +269,7 @@ database, artifact-root and session variables.
 
 | Variable | | |
 |---|---|---|
-| `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the id of the worker App, which is the one a pod's git credential is minted under |
+| `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the id of the worker App, which is the one a pod's git credential and its workflow runs credential are minted under |
 | `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding the worker App's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
@@ -291,9 +291,17 @@ again on every request, so a rotated Secret needs no restart, and one that
 cannot be read is a 503 to retry. `variable` is what a job's environment names
 the file by: it ends `_FILE` and starts with none of `CHUG_`, `CLAUDE_` and
 `GIT_`. A pod whose release reads bundles is also told why each listed name it
-asked for is not served: not granted, or not held. A pod of an older release
-is served each credential as the one secret it reads, never one that is more
-than that, and told nothing of the rest.
+asked for is not served: not granted, not held, not enabled, or refused by its
+issuer. A pod of an older release is served each credential as the one secret
+it reads, never one that is more than that, and told nothing of the rest.
+
+**A plane naming the forge app also issues `chuggy.github-workflow-runs`**: a
+token that starts and reads workflow runs in the one repository the attempt's
+input bundle pins, minted fresh for every ask and served as a bundle of one
+file, `token`, whose path `GH_TOKEN_FILE` names. It is not enabled unless the
+project binds that repository live with its "Workflow runs" setting on, and
+refused where the bundle pins no one repository or the forge refuses the mint.
+A plane naming no forge app holds no such credential.
 
 **The key is the worker App's, and deliberately not the one the API mints
 with.** The branch ruleset admits the portal App to update protected `main`, so
