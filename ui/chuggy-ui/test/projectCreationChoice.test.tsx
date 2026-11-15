@@ -1,7 +1,6 @@
 /**
  * The form's workspace as each answer of its two reads draws it, on the page
- * a project is made at and on the landing a reader with no project meets: the
- * choice and where it stands, which among several is on none until the reader
+ * a project is made at: the choice and where it stands, which among several is on none until the reader
  * says, the name field the making of a workspace shows, the loading field
  * nothing is sent from, the typed name a failed or cut-short read leaves, and
  * the empty state that stands in for the form.
@@ -23,7 +22,6 @@ import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ProjectCreationPage } from "../app/browser/ProjectCreation.tsx";
-import { Landing } from "../app/browser/routes.tsx";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { projectNameRule } from "../app/core/projectCreation.ts";
 import {
@@ -733,28 +731,24 @@ const unheld = {
 
 const unadministered = {
   access: accessHolding([joined("harbour"), joined("zephyr")]),
-  label: "No workspace to add to",
+  label: "Not a workspace admin",
   detail: "A workspace admin adds projects",
 };
 
 test.each([
-  ["the page a project is made at", "no workspace", "page", unheld],
-  ["the page a project is made at", "none to add to", "page", unadministered],
-  ["the no-project landing", "no workspace", "landing", unheld],
-  ["the no-project landing", "none to add to", "landing", unadministered],
+  ["no workspace", unheld],
+  ["none to add to", unadministered],
 ] as const)(
-  "%s draws one empty state and no form for a reader with %s",
-  async (_page, _reader, page, withheld) => {
+  "the page a project is made at draws one empty state and no form for a reader with %s",
+  async (_reader, withheld) => {
     const posted = served([], created, withheld.access);
-    await drawn(page === "page" ? <ProjectCreationPage /> : <Landing />);
+    await drawn(<ProjectCreationPage />);
     expect(
       screen
         .getAllByRole("heading", { level: 1 })
         .map((heading) => heading.textContent),
     ).toStrictEqual([withheld.label]);
     expect(screen.getByText(withheld.detail)).toBeDefined();
-    expect(screen.queryByText("No projects")).toBeNull();
-    expect(screen.queryByText("Create one to start")).toBeNull();
     expect(screen.queryByText("New project")).toBeNull();
     expect(screen.queryAllByRole("textbox")).toStrictEqual([]);
     expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
@@ -762,18 +756,3 @@ test.each([
     expect(posted).toStrictEqual([]);
   },
 );
-
-test("the no-project landing leads the choice with its own empty state", async () => {
-  served([], created, accessHolding([administered("mimage")]));
-  await drawn(<Landing />);
-  expect(
-    screen
-      .getAllByRole("heading", { level: 1 })
-      .map((heading) => heading.textContent),
-  ).toStrictEqual(["No projects"]);
-  expect(screen.getByText("Create one to start")).toBeDefined();
-  expect(
-    screen.getByRole("button", { name: "Workspace mimage" }),
-  ).toBeDefined();
-  expect(submit()).toBeDefined();
-});

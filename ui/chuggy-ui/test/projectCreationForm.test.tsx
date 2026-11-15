@@ -1,7 +1,8 @@
 /**
- * The landing a reader with no project meets, and the switcher entry that
- * reaches the same form, mounted over a plane that answers neither of the
- * form's reads, so its workspace is the free text a failed read leaves.
+ * The page a project is made at, and the switcher entry that reaches it, or
+ * the welcome page for a reader with no project, mounted over a plane that
+ * answers neither of the form's reads, so its workspace is the free text a
+ * failed read leaves.
  *
  * What is asserted is the traffic as well as the words: a name the wire would
  * refuse sends nothing, and a press repeated after an answer that never arrived
@@ -13,7 +14,7 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { Landing } from "../app/browser/routes.tsx";
+import { ProjectCreationPage } from "../app/browser/ProjectCreation.tsx";
 import { ProjectSwitcher } from "../app/browser/shell/ProjectSwitcher.tsx";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
@@ -93,10 +94,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("a reader with no project meets the form, under a bar that signs out and sets the theme", async () => {
+test("the page draws the form, under a bar that signs out and sets the theme", async () => {
   served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
-  expect(screen.getByText("No projects")).toBeDefined();
+  await drawn(<ProjectCreationPage />);
+  expect(screen.getByRole("heading", { name: "New project" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
@@ -113,7 +114,7 @@ test("a reader with no project meets the form, under a bar that signs out and se
 
 test("the rule each name is held to stands under its field before anything is typed", async () => {
   served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   expect(copyTextEn(projectNameRule)).toBe(
     "Lowercase letters, digits, inner hyphens",
   );
@@ -136,7 +137,7 @@ test("a project is named as the reader calls it, and sent at the address that na
       ),
     ),
   );
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", "Acme");
   expect(ruleUnder("Project").textContent).toBe("Address: acme");
@@ -151,7 +152,7 @@ test("a project is named as the reader calls it, and sent at the address that na
 
 test("an address the reader edits stops following the name", async () => {
   const posted = served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", "Acme Billing");
   await turned(() => {
@@ -175,7 +176,7 @@ test("an address the reader edits stops following the name", async () => {
 
 test("a name that makes no address asks for one, and nothing is sent until it is typed", async () => {
   const posted = served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", "!!!");
   expect(ruleUnder("Project").textContent).toBe(
@@ -193,7 +194,7 @@ test("a name that makes no address asks for one, and nothing is sent until it is
 
 test("a name the wire would refuse turns the line under it, and nothing is sent", async () => {
   const posted = served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", "n".repeat(projectDisplayNameCharsMax + 1));
   expect(ruleUnder("Project").textContent).toBe(
@@ -210,7 +211,7 @@ test("a name the wire would refuse turns the line under it, and nothing is sent"
 
 test("a name the wire refuses turns its own rule line, and nothing is sent", async () => {
   const posted = served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", "Vteng");
   typed("Project", "chuggy");
   expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
@@ -229,7 +230,7 @@ test("a name the wire refuses turns its own rule line, and nothing is sent", asy
 
 test("a created project is opened at its repositories and remembered", async () => {
   const posted = served([], () => Promise.resolve(answer(named, 201)));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
@@ -246,7 +247,7 @@ test("a created project is opened at its repositories and remembered", async () 
 test("a project created after its form was left is still opened at its repositories", async () => {
   const creating = heldAnswer();
   served([], () => creating.answered);
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
@@ -266,7 +267,7 @@ test("a project created after its form was left is still opened at its repositor
 test("a creation refused after its form was drawn again empty is a toast and no line", async () => {
   const creating = heldAnswer();
   served([], () => creating.answered);
-  const shown = await redrawable(<Landing />, consoleQueryClient());
+  const shown = await redrawable(<ProjectCreationPage />, consoleQueryClient());
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
@@ -295,7 +296,7 @@ test("a refusal is one short line, and the form stays where it was", async () =>
       answer({ error: { code: "TenantTaken", message: "taken" } }, 409),
     ),
   );
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
@@ -312,7 +313,7 @@ test("a workspace the reader may not make says what a new one needs, and the for
       ),
     ),
   );
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
@@ -325,7 +326,7 @@ test("a workspace the reader may not make says what a new one needs, and the for
 
 test("a press repeated after no answer spends the same identity, and an edit draws a new one", async () => {
   const posted = served([], () => Promise.reject(new Error("offline")));
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
@@ -404,6 +405,24 @@ test("the switcher offers a new project beside every project, and it opens the f
   expect(held.went).toStrictEqual([
     { to: projectCreationRoutePath, search: { workspace: partition.tenant } },
   ]);
+});
+
+test("an empty switcher offers the welcome page and not the form", async () => {
+  served([], () => Promise.resolve(answer(named, 201)));
+  await drawn(<ProjectSwitcher partition={undefined} />);
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Project/ }), {
+    key: "ArrowDown",
+  });
+  const item = await screen.findByRole("menuitem", {
+    name: copyTextEn({ id: "shell-project-welcome" }),
+  });
+  expect(
+    screen.queryByRole("menuitem", {
+      name: copyTextEn({ id: "shell-project-new" }),
+    }),
+  ).toBeNull();
+  fireEvent.click(item);
+  expect(held.went).toStrictEqual([{ to: "/" }]);
 });
 
 test("the switcher names each workspace by the display name the reader's own list answers, and one it does not by its id, while a pick still goes to the id's address", async () => {
