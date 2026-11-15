@@ -3240,6 +3240,37 @@ test("a push's work task merges in the ref it pushes to, the brief's branch wher
   );
 });
 
+test("a push rework whose brief and binding name no reference merges the remote's default and then its change, so its briefing's account of that merge is true", async () => {
+  const changeCommit = "2".repeat(40);
+  const brief = asDraftBrief({
+    intent: "Fix the importer.",
+    links: [],
+    repository: landingRepository,
+    finalization: { mode: "Push" },
+  });
+  assert.deepEqual(
+    await landingTargetMerge({
+      ...landingService(brief, [], []),
+      failedLanding: {
+        landing: () =>
+          Promise.resolve({
+            read: "Landing" as const,
+            landing: {
+              targetCommit: "1".repeat(40),
+              changeCommit,
+              conflicted: true,
+            },
+          }),
+      },
+    }),
+    {
+      ref: finalizerRemoteDefaultRef,
+      pipelinesWritable: true,
+      change: changeCommit,
+    },
+  );
+});
+
 for (const [name, finalization] of [
   ["PullRequest", { kind: "PullRequest" }],
   [

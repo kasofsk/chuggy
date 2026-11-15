@@ -105,7 +105,8 @@ export const finalizerRemoteDefaultRef = "HEAD";
 /**
  * The ref a work task merges in to meet the change it lands beside: where the
  * ticket lands, for a push, and for a proposal the base it opens into rather
- * than the branch it opens from. A base the remote defaults to is named as
+ * than the branch it opens from. A base the remote defaults to, which is where
+ * a push naming no reference lands as well, is named as
  * `finalizerRemoteDefaultRef`, because only the finalizer's own read of the
  * remote says which branch that is.
  */
@@ -117,7 +118,7 @@ export function finalizerLandingBaseRef(
   if (landing.landing !== "Lands") return undefined;
   const finalization = landing.branches.brief?.finalization;
   if (!briefFinalizationOpensProposal(finalization))
-    return landing.repository.targetRef;
+    return landing.repository.targetRef ?? finalizerRemoteDefaultRef;
   return (
     finalizerProposalBaseBinding(
       landing.binding,

@@ -75,7 +75,7 @@ test("a brief naming neither merges the binding's reference", () => {
   );
 });
 
-test("a ticket that lands on no ref its brief or binding names merges none", () => {
+test("a ticket that lands nowhere, or that no binding answers for, merges none", () => {
   assert.equal(
     finalizerLandingBaseRef(
       asDraftBrief({ ...intent, finalization: { mode: "None" } }),
@@ -90,9 +90,16 @@ test("a ticket that lands on no ref its brief or binding names merges none", () 
     ),
     undefined,
   );
+});
+
+test("a push onto no reference its brief or binding names merges the remote's default, which is where it lands", () => {
   assert.equal(
     finalizerLandingBaseRef(asDraftBrief(intent), binding),
-    undefined,
+    finalizerRemoteDefaultRef,
+  );
+  assert.equal(
+    finalizerLandingBaseRef(undefined, binding),
+    finalizerRemoteDefaultRef,
   );
 });
 
