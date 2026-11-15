@@ -122,7 +122,7 @@ const mends: {
   Workspace: [
     { lacks: "Workspace", workspace: undefined },
     hand(
-      `You are not in a chuggy workspace yet. A new workspace is made from an invite link: open the one you were sent (it starts ${stoodSite}/invite), and under New workspace name the workspace and press Create. Tell me once it is made.`,
+      `You are not in a chuggy workspace yet. A new workspace is made from an invite link: open the one you were sent (it starts ${stoodSite}/invite) and sign in, and the workspace is made for you. Tell me once it is made.`,
       "once the person says their workspace is made",
     ),
   ],

@@ -20,7 +20,7 @@
  * have failed for its own reasons. The composition is exported taking the
  * authentication, which is what lets a suite start it without an issuer.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import type { FastifyInstance } from "fastify";
@@ -117,6 +117,7 @@ function accessPlaneLinks(url: string) {
       draw: () => randomBytes(32).toString("base64url"),
       digest: (token: string) =>
         createHash("sha256").update(token).digest("hex"),
+      workspace: () => randomUUID(),
     },
     ready: async () => {
       try {
