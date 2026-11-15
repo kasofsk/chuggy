@@ -1061,7 +1061,7 @@ async function readTicketsByActivity(
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               ticket_owner(t.tenant,t.project,t.ticket) AS owner,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner,
                  to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                  to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1130,7 +1130,7 @@ async function readTicketsByIdentity(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               ticket_owner(${partition.tenant},${partition.project},t.ticket) AS owner,
+               ticket_owner(${partition.tenant},${partition.project},t.ticket)::text AS owner,
                to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1191,7 +1191,7 @@ async function readTicketRow(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               ticket_owner(t.tenant,t.project,t.ticket) AS owner, b.brief::text AS brief,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner, b.brief::text AS brief,
                b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,

@@ -514,7 +514,7 @@ async function schedulerCreateExecutions(
        d.overrides::text AS configuration_overrides,
        d.selection::text AS configuration_selection,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster,
-       ticket_owner(q.tenant,q.project,q.ticket) AS owner,f.fallback AS owner_fallback
+       ticket_owner(q.tenant,q.project,q.ticket)::text AS owner,f.fallback AS owner_fallback
      FROM execution_request q
      JOIN execution_request_task t
        ON t.tenant=q.tenant AND t.project=q.project AND t.request=q.request
