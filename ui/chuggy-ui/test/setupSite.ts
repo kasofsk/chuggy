@@ -31,6 +31,7 @@
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
 import { projectRepositoriesAnsweredMax } from "../../../src/contract/http.ts";
+import { projectDisplayNameSchema } from "../../../src/contract/requests.ts";
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
@@ -89,6 +90,9 @@ export interface SetupSiteProject {
   /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
   pools: string[];
   tokens: string[];
+  /** What the project is called, where it is other than its address, and whether the caller made it. */
+  name?: string;
+  made?: true;
 }
 
 /** The reads of the bare command a case can move to another fate, by what each is of. */
@@ -973,13 +977,59 @@ function inventory(site: SetupSite, cursor: string | null): SetupSiteAnswer {
         .map((held) => ({
           tenant: held.tenant,
           project: held.project,
-          name: held.project,
+          name: held.name ?? held.project,
         })),
       ...(at < last || cut(site, "inventory")
         ? { nextCursor: String(at + 1) }
         : {}),
     })
   );
+}
+
+function conflict(code: string): SetupSiteAnswer {
+  return { status: 409, body: { error: { code, message: "Conflict." } } };
+}
+
+/** Whether a name is one the site takes as what a project is called. */
+const calledWhole = (name: string): boolean =>
+  projectDisplayNameSchema.safeParse(name).success;
+
+/**
+ * A creation, as the site answers it: a project made in a workspace the caller
+ * administers, the same project answered to the caller who made it asking
+ * again under any operation, one another made refused as there, and a
+ * workspace the caller does not administer refused as taken.
+ */
+function projectCreated(
+  site: SetupSite,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly tenant: string;
+    readonly project: string;
+    readonly name: string;
+  };
+  const { tenant, project, name } = asked;
+  if (!calledWhole(name))
+    return {
+      status: 400,
+      body: { error: { code: "ProjectDisplayNameInvalid", message: "No." } },
+    };
+  if (!site.tenants.some((held) => held.tenant === tenant && held.administer))
+    return conflict("TenantTaken");
+  const held = site.projects.find(
+    (one) => one.tenant === tenant && one.project === project,
+  );
+  if (held !== undefined)
+    return held.made === true
+      ? answered({ tenant, project, name: held.name ?? project })
+      : conflict("ProjectExists");
+  site.projects.push({
+    ...setupSiteProject(tenant, project),
+    name: name.trim(),
+    made: true,
+  });
+  return answered({ tenant, project, name: name.trim() });
 }
 
 /**
@@ -996,6 +1046,8 @@ export function setupSiteAnswered(
   const url = new URL(target, "http://site.invalid");
   if (sent.method === "POST" && url.pathname === redeemPath)
     return redeemed(site, sent.body);
+  if (sent.method === "POST" && url.pathname === "/api/v1/projects")
+    return projectCreated(site, sent.body);
   if (sent.method === "POST" && url.pathname === chatRedeemPath)
     return setupSiteChatRedeemed(
       site,

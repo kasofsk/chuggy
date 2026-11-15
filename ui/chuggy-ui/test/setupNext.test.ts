@@ -7,7 +7,9 @@
  * address, what is pressed there, and the condition the checklist may be read
  * again under. The runner's step is the one this program does, so where the
  * machine was looked at and could take a runner it is offered, under a rule
- * that waits on her yes. Nothing here is ever a command to run unasked.
+ * that waits on her yes. The project's step is done by this program too, once
+ * she has said what to call the project. Nothing here is ever a command to run
+ * unasked.
  */
 
 import { expect, test } from "vitest";
@@ -113,10 +115,9 @@ const create = `Open ${pages}/tickets/new, say what you want done and press Crea
 
 /** Every thing a step can lack, the lack as it is found, and what the person is told to do about it. */
 const mends: {
-  readonly [Kind in Exclude<SetupLack["lacks"], "Read" | "Mcp">]: readonly [
-    Extract<SetupLack, { readonly lacks: Kind }>,
-    SaidThing,
-  ];
+  readonly [
+    Kind in Exclude<SetupLack["lacks"], "Read" | "Mcp" | "Project">
+  ]: readonly [Extract<SetupLack, { readonly lacks: Kind }>, SaidThing];
 } = {
   Workspace: [
     { lacks: "Workspace", workspace: undefined },
@@ -130,13 +131,6 @@ const mends: {
     hand(
       `Setting chuggy up takes an admin of the workspace, and you are not one in acme. Ask an admin of acme to make you one on its People page, ${stoodSite}/tenants/acme/settings/people. Tell me once you are an admin.`,
       "once the person says they are an admin of acme",
-    ),
-  ],
-  Project: [
-    { lacks: "Project" },
-    hand(
-      `Open ${stoodSite}/projects/new?workspace=acme, the New project page, name the project and press Create project. Tell me once it is made.`,
-      "once the person says the project is made",
     ),
   ],
   NorthStar: [
@@ -386,9 +380,24 @@ test("a name is written into an address so that the address is still one address
   ).toContain(
     `Open ${stoodSite}/two%20words/a%2Fb%3Fc%23d/settings/workspace/runner, press`,
   );
-  expect(told({ lacks: "Project" }, { choice })).toContain(
-    `Open ${stoodSite}/projects/new?workspace=two%20words, the`,
-  );
+});
+
+test("a project lacking is asked a name for, to be made by project in the workspace chosen, at the address the person named where she named one", () => {
+  expect(
+    thing({ lacks: "Project" }, { choice: { ...chosen, project: undefined } }),
+  ).toEqual({
+    thing: "Name",
+    ask: "What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    workspace: "acme",
+    project: undefined,
+  });
+  const named: SetupChoice = { ...chosen, by: "Named", project: "atlas" };
+  expect(thing({ lacks: "Project" }, { choice: named })).toEqual({
+    thing: "Name",
+    ask: "What should the new project in acme be called? Its address will be atlas. Pass the name as --name.",
+    workspace: "acme",
+    project: "atlas",
+  });
 });
 
 const unread = (fate: SetupFate): SetupLack => ({
@@ -778,6 +787,13 @@ test("what the machine showed moves no step but the runner's", () => {
       expect(here(lack, roomy, true), kind).toEqual(told);
 });
 
+test("a project lacking is asked for the same whatever the machine showed, and has the machine looked at for nothing", () => {
+  const lack: SetupLack = { lacks: "Project" };
+  expect(here(lack, roomy, true)).toEqual(thing(lack));
+  expect(setupRunnerDue(lacking(lack))).toBeUndefined();
+  expect(setupMcpDue(lacking(lack))).toBeUndefined();
+});
+
 test("the machine is looked at only where the runner's step is the first not done and the project is chosen", () => {
   const due = (lack: SetupLack, given?: Partial<SetupStanding>) =>
     setupRunnerDue(lacking(lack, given));
@@ -832,22 +848,23 @@ test("the machine is looked at only where the runner's step is the first not don
 });
 
 /** The step that decides what is next at each stage of a site set up one thing at a time: the first that is not done. */
-const deciding: Readonly<Record<SetupSiteStage, keyof typeof mends | "Done">> =
-  {
-    Nothing: "Workspace",
-    Workspace: "Project",
-    Project: "NorthStar",
-    NorthStar: "Account",
-    Portal: "App",
-    Apps: "Binding",
-    Added: "Configuration",
-    Configured: "Runner",
-    Offline: "RunnerLive",
-    Live: "Ticket",
-    Draft: "Release",
-    Moving: "Landing",
-    Landed: "Done",
-  };
+const deciding: Readonly<
+  Record<SetupSiteStage, keyof typeof mends | "Project" | "Done">
+> = {
+  Nothing: "Workspace",
+  Workspace: "Project",
+  Project: "NorthStar",
+  NorthStar: "Account",
+  Portal: "App",
+  Apps: "Binding",
+  Added: "Configuration",
+  Configured: "Runner",
+  Offline: "RunnerLive",
+  Live: "Ticket",
+  Draft: "Release",
+  Moving: "Landing",
+  Landed: "Done",
+};
 
 test("at each stage of a site the first step that is not done decides what is next, and with one workspace and one project no command carries a name", async () => {
   for (const stage of setupSiteStages) {
@@ -855,6 +872,12 @@ test("at each stage of a site the first step that is not done decides what is ne
     const kind = deciding[stage];
     expect(next.carried, stage).toEqual(setupAnswersNone);
     if (kind === "Done") expect(next.thing.thing, stage).toBe("Done");
+    else if (kind === "Project")
+      expect(next.thing, stage).toMatchObject({
+        thing: "Name",
+        workspace: "acme",
+        project: undefined,
+      });
     else {
       const { when } = mends[kind][1] as { readonly when: string };
       expect(next.thing, stage).toMatchObject({ thing: "Hand", when });

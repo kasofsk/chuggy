@@ -189,7 +189,9 @@ failed or sent only part of leaves its own step not read and is said as that.
 Once a repository is added the github step is held to it: done only where both
 apps on the account that owns it are granted that repository, which is read
 from each of the two installations' own listings and from no other.
-The runner's step is the one the program does. For any other step that is the
+The project's step and the runner's are ones the program does. Where the
+project is lacking, an `ask:` line asks what to call it and the `rule:` names
+`project` with the answer. For any other step that is the
 first not done, a `tell:` line says what mends it, a console page and what to
 press there wherever a page is what does, and `next:` is `stop`. The runner's
 step is done once the project's work has a runner the site sees live, or runs
@@ -220,6 +222,13 @@ renewal token in the person's home directory and never prints the token. The
 issuer hands a new token back for each one it is shown, so before one is shown
 the program keeps room in that directory for the next: a home that will not
 take it is said as that, with its path, and the sign-in is not spent.
+
+`project --workspace <w> --name <name>` makes a project in that workspace by
+the request the console's New project form sends, at the address the form
+makes from the name or the one `--project` gives, and names the checklist for
+it next. A refusal is said in the form's own words. The site answers its maker
+asking again with the same project, so running it again after an answer that
+never arrived makes no second one.
 
 `runner --workspace <w> --project <p>` sets a runner up for that project on the
 Linux machine it is run on, and is done once the site sees the runner live;
