@@ -1456,9 +1456,10 @@ function sessionSettled(
 }
 
 /**
- * The capabilities a session's facts name to the pod asking: all of them, or
- * none of `TicketDispatch`, `MemberRead` and `ThreadOffer` to a pod whose
- * release predates the one, which holds no tool it admits.
+ * The capabilities a session's facts name to the pod asking: each of
+ * `TicketDispatch`, `MemberRead` and `ThreadOffer` only to a pod implementing
+ * `TicketDispatch`, `UnscopedChat` and `ThreadOffer` respectively, since a pod
+ * that does not holds no tool it admits.
  */
 function sessionFactsCapabilities(
   request: FastifyRequest,
@@ -1478,7 +1479,7 @@ function sessionFactsCapabilities(
 
 /**
  * The kind a turn is handed to the pod asking as: its own, or an `OfferReply`
- * as the `UserMessage` a pod whose release predates it has for a turn its
+ * as the `UserMessage` a pod not implementing `ThreadOffer` has for a turn its
  * member put in the mailbox.
  */
 function sessionTurnKindTold(
@@ -1492,9 +1493,9 @@ function sessionTurnKindTold(
 }
 
 /**
- * A session's facts, or a refusal of the release asked with where the session
- * runs on its own system prompt and the release predates the field: a pod that
- * dropped it would load its project's settings, so it is never answered the
+ * A session's facts, or a refusal where the session runs on its own system
+ * prompt and the pod does not implement `SystemPromptOwn`: a pod that dropped
+ * the field would load its project's settings, so it is never answered the
  * facts without it.
  */
 function sessionFactsRoute(register: SessionRegistrar): void {
@@ -1755,8 +1756,8 @@ const sessionLiveRetryAfterSeconds = 1;
 /**
  * Whether a live post of `turn`, which the caller's session does not hold
  * claimed, is answered with the stop its member put on it. It is where there
- * was one and the runner names a release that reads the answer: an earlier
- * runner is told nothing, because nothing says what it would make of it.
+ * was one and the runner implements `LiveStops`: any other runner is told
+ * nothing, because nothing says what it would make of it.
  */
 async function sessionLiveStopTold(
   sessions: SessionPlaneService,
