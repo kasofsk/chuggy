@@ -10,7 +10,7 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { projectDisplayNameCharsMax } from "../../src/contract/requests.ts";
-import { tenantDisplayNameCharsMaxAt185 } from "../../src/adapters/postgres/schema/migrations/185-tenant-display-name.ts";
+import { tenantDisplayNameCharsMaxAt186 } from "../../src/adapters/postgres/schema/migrations/186-tenant-display-name.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresTenantNames } from "../../src/adapters/postgres/tenantNames.ts";
 import type { AccessTenantNameStore } from "../../src/interpreter/accessTenantNames.ts";
@@ -71,7 +71,7 @@ test("names are read for the tenants asked, a tenant no row names left out", asy
 });
 
 test("the row holds a display name to the contract's bound, in code points, and refuses one past it", async () => {
-  assert.equal(tenantDisplayNameCharsMaxAt185, projectDisplayNameCharsMax);
+  assert.equal(tenantDisplayNameCharsMaxAt186, projectDisplayNameCharsMax);
   const widest = "\u{1F600}".repeat(projectDisplayNameCharsMax);
   await names.renamed(asTenantId("names-bound"), widest);
   assert.deepEqual(await tenantRow("names-bound"), [
