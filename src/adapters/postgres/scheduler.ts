@@ -140,7 +140,6 @@ import type {
   Partition,
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
-import { memberAuthorityKind } from "../../interpreter/projectAccess.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -406,9 +405,9 @@ async function schedulerRegistrationConflict(
 
 /**
  * One task of a request as registration reads it, with what its execution
- * copies out: its owner pinned as its route is, the member whose authority
- * wrote the ticket's first draft revision or nobody, and the fallback its
- * project names at registration.
+ * copies out: its owner pinned as its route is, the member who took the
+ * ticket, else the member whose authority wrote its first draft revision, else
+ * nobody, and the fallback its project names at registration.
  */
 interface ExecutionCreateInput {
   task: string;
@@ -515,7 +514,7 @@ async function schedulerCreateExecutions(
        d.overrides::text AS configuration_overrides,
        d.selection::text AS configuration_selection,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster,
-       r.authority_subject AS owner,f.fallback AS owner_fallback
+       ticket_owner(q.tenant,q.project,q.ticket) AS owner,f.fallback AS owner_fallback
      FROM execution_request q
      JOIN execution_request_task t
        ON t.tenant=q.tenant AND t.project=q.project AND t.request=q.request
@@ -525,9 +524,6 @@ async function schedulerCreateExecutions(
      JOIN ticket_definition d
        ON d.tenant=q.tenant AND d.project=q.project AND d.ticket=q.ticket
      JOIN capacity_account a ON a.account=q.capacity_account
-     LEFT JOIN draft_revision r
-       ON r.tenant=q.tenant AND r.project=q.project AND r.ticket=q.ticket
-      AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
      LEFT JOIN project_owner_fallback f
        ON f.tenant=q.tenant AND f.project=q.project
      WHERE q.tenant=${claim.partition.tenant} AND q.project=${claim.partition.project}

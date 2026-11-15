@@ -200,6 +200,7 @@ function scopedApp(
       projects: recorded(reached, "projectDeletion"),
       tenants: recorded(reached, "tenantDeletion"),
     },
+    recorded(reached, "takes"),
   );
 }
 
@@ -674,6 +675,23 @@ test("read_landing_queues's route reaches the project's landing queues under a l
       routeRequest(`GET ${chuggyToolRoutes.landingQueues}`, own, sessionToken),
     );
     assert.deepEqual(reached, ["landingQueues.read"], kind);
+  }
+});
+
+test("a session bearer holding every project capability is refused a ticket's take and return in its own partition, before any port", async () => {
+  for (const kind of ["Lead", "Thread"] as const) {
+    const reached: string[] = [];
+    await using app = scopedApp(reached, undefined, kind);
+    for (const route of [
+      nativeHttpRoutes.ticketTake,
+      nativeHttpRoutes.ticketReturn,
+    ]) {
+      const answered = await app.inject(
+        routeRequest(`POST ${route}`, own, sessionToken),
+      );
+      assert.ok(scopeRefused(answered), `${kind} ${route}`);
+    }
+    assert.deepEqual(reached, [], kind);
   }
 });
 

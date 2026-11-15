@@ -1055,6 +1055,28 @@ export const nativeActionAnswerRefusalCodes = [
 export type NativeActionAnswerRefusalCode =
   (typeof nativeActionAnswerRefusalCodes)[number];
 
+/** What a take or a return of a ticket did: made the caller its owner, gave it back to its creator, or found the caller its owner already. */
+export const ticketTakeOutcomes = [
+  "Taken",
+  "Returned",
+  "AlreadyOwner",
+] as const;
+export type TicketTakeOutcomeKind = (typeof ticketTakeOutcomes)[number];
+
+/**
+ * Why a take or a return of a ticket wrote nothing. An agent takes nothing, a
+ * draft never released is its author's, a Done or Revoked ticket runs nothing
+ * more, and only its taker returns a ticket.
+ */
+export const ticketTakeRefusalCodes = [
+  "TakerNotAPerson",
+  "Unreleased",
+  "TicketDone",
+  "TicketRevoked",
+  "NotTaker",
+] as const;
+export type TicketTakeRefusalCode = (typeof ticketTakeRefusalCodes)[number];
+
 /**
  * What the project-artifact routes answer while the store cannot, and what the
  * message door answers when it cannot ask the store whether an image it was

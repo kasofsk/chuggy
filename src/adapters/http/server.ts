@@ -251,6 +251,7 @@ import {
   personalRunnerDeregisteredResponse,
   unrunDeletedResponse,
   unrunDeletionStandingResponse,
+  ticketTakeResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -282,6 +283,7 @@ import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
+import type { TicketTakes } from "../../interpreter/ticketTake.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -782,6 +784,7 @@ function projectReadQueryOf(
     "limit",
     "minimumSequence",
     "order",
+    "owner",
     "phase",
     "q",
   ]);
@@ -816,6 +819,9 @@ function projectReadQueryOf(
     ...(query["creator"] === undefined
       ? {}
       : { creator: asPrincipal(textField(query, "creator")) }),
+    ...(query["owner"] === undefined
+      ? {}
+      : { owner: asPrincipal(textField(query, "owner")) }),
     ...(query["active"] !== undefined && activeField(query["active"])
       ? { active: true }
       : {}),
@@ -2662,6 +2668,26 @@ function registerTicketLandings(
   );
 }
 
+/** A ticket taken by its caller, and returned by its taker. */
+function registerTicketTakes(app: FastifyInstance, takes: TicketTakes): void {
+  for (const [endpoint, kind] of [
+    [nativeHttpEndpoints.ticketTake, "Take"],
+    [nativeHttpEndpoints.ticketReturn, "Return"],
+  ] as const)
+    registerEndpoint(
+      app,
+      endpoint,
+      (request, principal, partition) =>
+        takes.write(
+          principal,
+          partition,
+          asTicketIdField(record(request.params), "ticket"),
+          kind,
+        ),
+      ticketTakeResponse,
+    );
+}
+
 function registerLandingQueues(
   app: FastifyInstance,
   queues: LandingQueueReads,
@@ -2695,13 +2721,16 @@ function registerActions(
 }
 
 /** Where a project's work is landing: each ticket's landings, and the project's queues. */
-function registerLandingReads(
+/** What a ticket landed and the queues it waits in, and the doors a member takes and returns it through. */
+function registerTicketDoors(
   app: FastifyInstance,
   landings: TicketLandingReads | undefined,
   landingQueues: LandingQueueReads | undefined,
+  takes: TicketTakes | undefined,
 ): void {
   if (landings !== undefined) registerTicketLandings(app, landings);
   if (landingQueues !== undefined) registerLandingQueues(app, landingQueues);
+  if (takes !== undefined) registerTicketTakes(app, takes);
 }
 
 function registerEndpointSession(request: FastifyRequest): SessionId {
@@ -3447,6 +3476,9 @@ function registerFailures(app: FastifyInstance): void {
   });
 }
 
+/** The path every project route is under. */
+const nativeHttpPartitionRoot = "/api/v1/tenants/:tenant/projects/:project";
+
 export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
@@ -3475,9 +3507,9 @@ export function createNativeHttpApp(
   runnerReleases?: WorkerRunnerReleases,
   landingQueues?: LandingQueueReads,
   deletions?: UnrunDeletions,
+  takes?: TicketTakes,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
-  const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication, chat);
   registerPublic(app, readiness, authority, runnerReleases);
@@ -3488,7 +3520,7 @@ export function createNativeHttpApp(
   registerProjectAbilities(app, web);
   registerLead(app, web);
   registerSelectorContext(app, web);
-  registerSelectorHistory(app, web, partitionRoot);
+  registerSelectorHistory(app, web, nativeHttpPartitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   registerReviewsAndInbox(app, proposalReviews, inbox);
@@ -3509,10 +3541,10 @@ export function createNativeHttpApp(
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
   registerLeadInquiries(app, web);
   registerProjectViews(app, web);
-  registerRunners(app, partitionRoot, workerPools, personalRunners);
+  registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   registerActions(app, actionReports, actionReach);
-  registerLandingReads(app, landings, landingQueues);
+  registerTicketDoors(app, landings, landingQueues, takes);
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
   registerFailures(app);
   return app;
