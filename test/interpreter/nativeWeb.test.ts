@@ -558,6 +558,7 @@ function repositoryImportLanding(
           policy: "Direct",
         }),
         pipelinesWritable: false,
+        pipelinesRunnable: false,
         ...(retiredAt === undefined ? {} : { retiredAt }),
       });
     },

@@ -2567,8 +2567,9 @@ export type ProjectRepositoryAlreadyBoundResponse = z.infer<
 
 /**
  * One repository a project binds, when it was bound, how a ticket in it lands,
- * as its `finalization` and as the mode alone in `landing`, and whether its jobs
- * may write its pipeline definitions. `retiredAt` is
+ * as its `finalization` and as the mode alone in `landing`, whether its jobs
+ * may write its pipeline definitions, and whether they may start and read its
+ * pipeline runs. `retiredAt` is
  * present only on a binding that has been retired, which is one no longer
  * bound or elected, kept so its history reads by name.
  */
@@ -2578,6 +2579,7 @@ export const projectRepositoryResponseSchema = z.object({
   landing: repositoryLandingSchema,
   finalization: repositoryFinalizationSchema,
   pipelinesWritable: z.boolean(),
+  pipelinesRunnable: z.boolean(),
   retiredAt: instantSchema.optional(),
 });
 export type ProjectRepositoryResponse = z.infer<

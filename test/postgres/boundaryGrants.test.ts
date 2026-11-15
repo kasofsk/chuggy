@@ -274,7 +274,7 @@ test("the landing doors migrate without exposing the relation they read", async 
   await migratedDatabase("i90grants", async (subject) => {
     for (const signature of [
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
     ])
       assert.equal(
         (
@@ -325,7 +325,7 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryRetirementWriteFunction}(text,text,text)`,
       `${repositoryBindingListFunction}(text,text,bigint)`,
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
       `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
@@ -796,7 +796,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [],
   ),
   boundaryGrantsDoor(
-    `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
+    `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean,boolean,boolean)`,
     [apiRole],
     [],
   ),
@@ -1040,6 +1040,13 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   [
     "project_repository",
     "pipelines_writable",
+    "UPDATE",
+    boundaryOwnerRole,
+    true,
+  ],
+  [
+    "project_repository",
+    "pipelines_runnable",
     "UPDATE",
     boundaryOwnerRole,
     true,
