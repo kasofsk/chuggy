@@ -180,8 +180,6 @@ import {
   briefingReworkPreface,
   briefingRoleInstructions,
   briefingSectionOrder,
-  briefingTargetMergeFirstLines,
-  briefingTargetMergeLastLines,
   briefingTemplateVersion,
   type BriefingCarrier,
   type BriefingSectionId,
@@ -577,8 +575,6 @@ export interface BriefingView {
   readonly priorWorkReports: PriorWorkReports;
   readonly priorEvaluationReports: PriorEvaluationReports;
   readonly failedLanding?: FailedLanding;
-  /** The ref a work task merges in: where the ticket's change lands, or the base its proposal opens into, absent where nothing names one. */
-  readonly targetRef?: string;
   readonly brief?: DraftBrief;
   readonly grant: PolicyAuthorityGrant;
 }
@@ -1050,9 +1046,6 @@ function briefingBodies(
   const commands = briefingStageCommands(view, task);
   const carrier = briefingCarrier(task);
   const briefed = carrier === "Agent";
-  const target =
-    briefed && view.purpose === "Work" ? view.targetRef : undefined;
-  const pushPathsRefused = view.pushPathsRefused ?? [];
   return {
     Prompt: task.prompt === undefined ? [] : [task.prompt],
     RoleInstructions: task.framed
@@ -1070,10 +1063,6 @@ function briefingBodies(
     AcceptanceAndConstraints:
       task.brief === undefined ? [] : briefingCriteriaLines(task.brief),
     DependencyDeliveries: briefed ? briefingDependencyDeliveryLines(view) : [],
-    TargetMergeFirst:
-      target === undefined
-        ? []
-        : briefingTargetMergeFirstLines(target, pushPathsRefused),
     FailedLanding:
       briefed && view.purpose === "Work" && view.failedLanding !== undefined
         ? briefingFailedLandingLines(view.failedLanding)
@@ -1095,10 +1084,6 @@ function briefingBodies(
       briefingBullet(practice.instruction),
     ),
     RuntimeContext: briefingRuntimeLines(view),
-    TargetMergeLast:
-      target === undefined
-        ? []
-        : briefingTargetMergeLastLines(target, pushPathsRefused),
     RequiredResult: task.framed
       ? briefingRequiredResult(view.purpose, carrier)
       : [],
@@ -1332,7 +1317,6 @@ export function composeTaskInvocation(
     briefingListsFault([
       [view.readOnlyRepositories, readOnlyRepositoriesMax],
       [view.pushPathsRefused, pushPathsRefusedMax],
-      [view.targetRef === undefined ? [] : [view.targetRef], 1],
     ]) ??
     briefingReportsFault(view.priorWorkReports.reports, priorWorkReportsMax) ??
     briefingReportsFault(

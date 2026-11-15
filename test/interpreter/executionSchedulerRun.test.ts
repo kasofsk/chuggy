@@ -46,7 +46,10 @@ import {
   type WaitingAttemptRecord,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
-import { workTaskInvocation } from "../../src/interpreter/workerTask.ts";
+import {
+  workTask,
+  workTaskInvocation,
+} from "../../src/interpreter/workerTask.ts";
 import {
   executionSchedulerAdmit,
   executionSchedulerCancel,
@@ -1987,22 +1990,35 @@ function landingService(
   };
 }
 
-/** The ref a launched attempt's invocation recorded and its placement carried, each of which must name the same one. */
-async function landingTargetRef(
-  service: ExecutionSchedulerService,
-  placements: AttemptPlacement[],
-  recorded: readonly WorkTaskInvocation[],
-): Promise<string | undefined> {
-  assert.equal(await executionSchedulerLaunch(service, epoch), 1);
+/** What one launched work task's invocation recorded and its placement carried. */
+async function landingLaunched(service: ExecutionSchedulerService): Promise<{
+  readonly placed: AttemptPlacement;
+  readonly invoked: WorkTaskInvocation;
+}> {
+  const placements: AttemptPlacement[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  const recording: ExecutionSchedulerService = {
+    ...service,
+    store: {
+      ...service.store,
+      attemptInvoked: (_invoked, invocation) => {
+        recorded.push(invocation);
+        return Promise.resolve(true);
+      },
+    },
+    placement: {
+      ...service.placement,
+      place: (placement) => {
+        placements.push(placement);
+        return Promise.resolve(placedOk);
+      },
+    },
+  };
+  assert.equal(await executionSchedulerLaunch(recording, epoch), 1);
   const [placed] = placements;
   const [invoked] = recorded;
   assert.ok(placed !== undefined && invoked !== undefined);
-  assert.equal(
-    Object.hasOwn(invoked, "targetRef"),
-    placed.targetRef !== undefined,
-  );
-  assert.equal(invoked.targetRef, placed.targetRef);
-  return placed.targetRef;
+  return { placed, invoked };
 }
 
 const landingBrief = asDraftBrief({
@@ -2012,95 +2028,6 @@ const landingBrief = asDraftBrief({
   branch: "refs/heads/rt/ticket-brief",
   finalization: { mode: "Push", target: "refs/heads/release" },
 });
-
-test("a launched work task is told the ref its finalization lands on, as its invocation records it", async () => {
-  const placements: AttemptPlacement[] = [];
-  const recorded: WorkTaskInvocation[] = [];
-  assert.equal(
-    await landingTargetRef(
-      landingService(landingBrief, placements, recorded),
-      placements,
-      recorded,
-    ),
-    "refs/heads/release",
-  );
-});
-
-test("a rework after a failed landing is told the ref its finalization lands on, not where its source was observed", async () => {
-  const placements: AttemptPlacement[] = [];
-  const recorded: WorkTaskInvocation[] = [];
-  const service = landingService(landingBrief, placements, recorded);
-  const rework: ExecutionSchedulerService = {
-    ...service,
-    failedLanding: {
-      landing: () =>
-        Promise.resolve({
-          read: "Landing" as const,
-          landing: {
-            targetCommit: "1".repeat(40),
-            changeCommit: "2".repeat(40),
-            conflicted: true,
-          },
-        }),
-    },
-  };
-  assert.equal(
-    await landingTargetRef(rework, placements, recorded),
-    "refs/heads/release",
-  );
-});
-
-test("a launched work task's briefing names the ref its finalization lands on as the one to merge", async () => {
-  const placements: AttemptPlacement[] = [];
-  const recorded: WorkTaskInvocation[] = [];
-  await landingTargetRef(
-    landingService(landingBrief, placements, recorded),
-    placements,
-    recorded,
-  );
-  const [placed] = placements;
-  assert.ok(placed !== undefined);
-  assert.ok(
-    placed.invocation.briefing.text.includes(
-      "git fetch origin refs/heads/release",
-    ),
-  );
-});
-
-/** What a launched work task's briefing says the change lands on, the fetch each target-merge section runs, first and last, and the ref its launch carried. */
-async function landingMerges(brief: DraftBrief): Promise<{
-  readonly lands?: string;
-  readonly fetches: readonly string[];
-  readonly launched?: string;
-}> {
-  const placements: AttemptPlacement[] = [];
-  const recorded: WorkTaskInvocation[] = [];
-  const launched = await landingTargetRef(
-    landingService(brief, placements, recorded),
-    placements,
-    recorded,
-  );
-  const [placed] = placements;
-  assert.ok(placed !== undefined);
-  const fetches = ["TargetMergeFirst", "TargetMergeLast"].map((id) => {
-    const section = placed.invocation.briefing.sections.find(
-      (each) => each.section === id,
-    );
-    const fetch = /`git fetch origin ([^`]+)`/.exec(
-      section?.lines.join("\n") ?? "",
-    );
-    assert.ok(fetch?.[1] !== undefined, `${id} fetches nothing`);
-    return fetch[1];
-  });
-  const lands = placed.invocation.briefing.sections.find(
-    (each) => each.section === "TargetMergeFirst",
-  )?.lines[0];
-  return {
-    ...(lands === undefined ? {} : { lands }),
-    fetches,
-    ...(launched === undefined ? {} : { launched }),
-  };
-}
 
 /** The landing brief, finalized as `finalization` says instead. */
 function landingBriefFinalized(finalization: {
@@ -2116,64 +2043,123 @@ function landingBriefFinalized(finalization: {
   });
 }
 
-for (const mode of ["PullRequestMerge", "PullRequest"] as const) {
-  test(`a work task whose brief lands by ${mode} naming no target merges the remote's default branch, first and last, not its own branch`, async () => {
-    assert.deepEqual(await landingMerges(landingBriefFinalized({ mode })), {
-      lands: "This change lands on origin's default branch.",
-      fetches: ["HEAD", "HEAD"],
-      launched: "refs/heads/rt/ticket-brief",
-    });
-  });
-
-  test(`a work task whose brief lands by ${mode} into a named target merges that target, first and last`, async () => {
-    assert.deepEqual(
-      await landingMerges(
-        landingBriefFinalized({ mode, target: "refs/heads/release" }),
-      ),
-      {
-        lands: "This change lands on refs/heads/release.",
-        fetches: ["refs/heads/release", "refs/heads/release"],
-        launched: "refs/heads/rt/ticket-brief",
-      },
-    );
-  });
+/** The landing brief's service, its task following a failed landing that recorded `changeCommit` where one is given. */
+function landingReworkService(
+  changeCommit?: string,
+): ExecutionSchedulerService {
+  return {
+    ...landingService(landingBrief, [], []),
+    failedLanding: {
+      landing: () =>
+        Promise.resolve({
+          read: "Landing" as const,
+          landing: {
+            targetCommit: "1".repeat(40),
+            ...(changeCommit === undefined ? {} : { changeCommit }),
+            conflicted: true,
+          },
+        }),
+    },
+  };
 }
 
-test("a work task whose brief pushes merges the ref it pushes to, first and last", async () => {
-  assert.deepEqual(await landingMerges(landingBrief), {
-    lands: "This change lands on refs/heads/release.",
-    fetches: ["refs/heads/release", "refs/heads/release"],
-    launched: "refs/heads/release",
-  });
-  assert.deepEqual(
-    await landingMerges(landingBriefFinalized({ mode: "Push" })),
-    {
-      lands: "This change lands on refs/heads/rt/ticket-brief.",
-      fetches: ["refs/heads/rt/ticket-brief", "refs/heads/rt/ticket-brief"],
-      launched: "refs/heads/rt/ticket-brief",
-    },
-  );
+test("a work task's document carries no target ref, whichever way its ticket lands, since its core reads the target merge", async () => {
+  for (const brief of [
+    landingBrief,
+    landingBriefFinalized({ mode: "Push" }),
+    landingBriefFinalized({ mode: "PullRequest" }),
+    landingBriefFinalized({
+      mode: "PullRequestMerge",
+      target: "refs/heads/release",
+    }),
+    asDraftBrief({ intent: "Fix the importer.", links: [] }),
+  ]) {
+    const { placed, invoked } = await landingLaunched(
+      landingService(brief, [], []),
+    );
+    const document = workTask(placed, invoked);
+    assert.equal(Object.hasOwn(invoked, "targetRef"), false);
+    assert.equal(Object.hasOwn(document, "targetRef"), false);
+  }
 });
 
-test("a work task whose ticket names no repository, or one no binding answers for, is told no ref", async () => {
-  for (const brief of [
-    asDraftBrief({ intent: "Fix the importer.", links: [] }),
+test("a first work task, a rework after a failed evaluation and one after a failed landing name no fetch or merge, though their core merges the target", async () => {
+  const service = landingService(landingBrief, [], []);
+  for (const each of [
+    service,
     {
-      ...landingBrief,
-      repository: asRepositoryId("https://example.test/other.git"),
+      ...service,
+      priorEvaluationReports: {
+        reports: () =>
+          Promise.resolve({
+            read: "Reports" as const,
+            reports: { reports: ["ci.sh exited 1"] },
+          }),
+      },
     },
+    landingReworkService("2".repeat(40)),
+    landingReworkService(),
   ]) {
-    const placements: AttemptPlacement[] = [];
-    const recorded: WorkTaskInvocation[] = [];
-    assert.equal(
-      await landingTargetRef(
-        landingService(brief, placements, recorded),
-        placements,
-        recorded,
-      ),
-      undefined,
-    );
+    const { placed } = await landingLaunched(each);
+    assert.equal(placed.targetMerge?.ref, "refs/heads/release");
+    const text = placed.invocation.briefing.text;
+    for (const command of [
+      /git fetch/,
+      /git merge\b/,
+      / merge --/,
+      /FETCH_HEAD/,
+    ])
+      assert.equal(command.test(text), false, String(command));
   }
+});
+
+test("a work task that lands on a target and whose binding writes no pipelines is told its push may not change them, and given no check of the target's", async () => {
+  const forgejo = [".forgejo/workflows/"];
+  const { placed } = await landingLaunched({
+    ...landingService(landingBrief, [], []),
+    pipelinePaths: forgejo,
+    readOnlyRepositories: {
+      repositories: () =>
+        Promise.resolve({
+          read: "Repositories" as const,
+          repositories: [],
+          pipelinesWritable: false,
+        }),
+    },
+  });
+  assert.equal(placed.targetMerge?.pipelinesWritable, false);
+  const runtime = placed.invocation.briefing.sections.find(
+    (section) => section.section === "RuntimeContext",
+  );
+  for (const line of briefingPipelinesUnwritable(forgejo))
+    assert.ok(runtime?.lines.includes(line), line);
+  assert.equal(placed.invocation.briefing.text.includes("git diff"), false);
+});
+
+test("a rework after a failed landing is told the core merged the target and then the change, or only the target where the change's commit is not recorded", async () => {
+  const failedLanding = async (changeCommit?: string): Promise<string> => {
+    const { placed } = await landingLaunched(
+      landingReworkService(changeCommit),
+    );
+    return (
+      placed.invocation.briefing.sections
+        .find((section) => section.section === "FailedLanding")
+        ?.lines.join("\n") ?? ""
+    );
+  };
+  const recorded = await failedLanding("2".repeat(40));
+  assert.ok(
+    recorded.includes(
+      "Before you started, the core merged the target into this workspace and then that change.",
+    ),
+  );
+  const unrecorded = await failedLanding();
+  assert.ok(unrecorded.includes("The commit of that change is not recorded."));
+  assert.ok(
+    unrecorded.includes(
+      "Before you started, the core merged only the target into this workspace.",
+    ),
+  );
 });
 
 const ticketBrief = asDraftBrief({

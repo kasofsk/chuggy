@@ -23,8 +23,6 @@ import { test } from "node:test";
 
 import {
   allTaskPurposes,
-  briefingFailedLandingBaseCommand,
-  briefingFailedLandingCommand,
   briefingLabels,
   briefingPipelinesUnwritable,
   briefingReworkPreface,
@@ -510,7 +508,6 @@ function viewOf(parts: {
   readonly priorWorkReports?: readonly string[];
   readonly priorEvaluationReports?: readonly string[];
   readonly failedLanding?: FailedLanding;
-  readonly targetRef?: string;
   readonly ticketBrief?: DraftBrief;
   readonly grant?: PolicyAuthorityGrant;
 }): BriefingView & { readonly configuration: PinnedTaskConfiguration } {
@@ -543,7 +540,6 @@ function viewOf(parts: {
     ...(parts.failedLanding === undefined
       ? {}
       : { failedLanding: parts.failedLanding }),
-    ...(parts.targetRef === undefined ? {} : { targetRef: parts.targetRef }),
     ...(parts.ticketBrief === undefined ? {} : { brief: parts.ticketBrief }),
     grant: parts.grant ?? grant,
   };
@@ -2578,7 +2574,11 @@ function failedLandingLines(view: BriefingView): readonly string[] {
   );
 }
 
-test("a rework after a landing that conflicted is told both commits, the conflict and the command", () => {
+/** What the worker's core is said to have merged before the agent started, where the change's commit is recorded. */
+const coreMergedChange =
+  "Before you started, the core merged the target into this workspace and then that change.";
+
+test("a rework after a landing that conflicted is told both commits, the conflict, and that the core merged the target and then the change", () => {
   const lines = failedLandingLines(
     viewOf({ failedLanding: conflictedLanding }),
   );
@@ -2586,22 +2586,27 @@ test("a rework after a landing that conflicted is told both commits, the conflic
   assert.ok(text.includes(targetCommit));
   assert.ok(text.includes(changeCommit));
   assert.ok(text.includes("merge conflict"));
-  assert.ok(text.includes(briefingFailedLandingCommand(changeCommit)));
-  assert.ok(text.includes("rather than writing it again"));
-  assert.ok(text.includes("leave no conflict marker"));
+  assert.ok(lines.includes(coreMergedChange));
+  assert.ok(
+    text.includes(
+      "A merge that stopped on a conflict is left in progress, with its files listed in the section the core adds. Where the target's own merge stopped, the change is not merged yet, and that section says so.",
+    ),
+  );
+  assert.equal(text.includes("does not hold that change"), false);
   assert.equal(text.includes("main"), false, "the target is never called main");
   assert.equal(text.includes("refs/"), false, "the change is named by commit");
 });
 
-test("a rework after a landing that pinned no conflict manifest is told no reason and nothing of conflicts", () => {
-  const text = failedLandingLines(
+test("a rework after a landing that pinned no conflict manifest is told no reason, and that the core merged the change", () => {
+  const lines = failedLandingLines(
     viewOf({ failedLanding: { ...conflictedLanding, conflicted: false } }),
-  ).join("\n");
+  );
+  const text = lines.join("\n");
   assert.ok(text.includes(targetCommit));
   assert.ok(text.includes(changeCommit));
   assert.ok(text.includes("not carried"));
-  assert.ok(text.includes(briefingFailedLandingCommand(changeCommit)));
-  assert.equal(/conflict/i.test(text), false);
+  assert.ok(lines.includes(coreMergedChange));
+  assert.equal(text.includes("merge conflict"), false);
 });
 
 /** A landing its pull request's forge refused, the base read when the failure was routed. */
@@ -2632,17 +2637,9 @@ test("a rework after the merge queue's checks failed twice is told the base, the
   assert.ok(text.includes("Which check failed is not carried"));
   assert.ok(text.includes("pull request stays open"));
   assert.ok(text.includes("adopted onto it"));
-  assert.ok(
-    text.includes(briefingFailedLandingBaseCommand(proposalBase.commit)),
-  );
-  assert.ok(text.includes(`git fetch origin ${proposalBase.ref}`));
-  assert.ok(text.includes(briefingFailedLandingCommand(changeCommit)));
+  assert.ok(text.includes(coreMergedChange));
   assert.ok(text.includes("reproduce the failure there"));
-  assert.ok(
-    text.indexOf(briefingFailedLandingBaseCommand(proposalBase.commit)) <
-      text.indexOf(briefingFailedLandingCommand(changeCommit)),
-    "the base is brought in before the change, onto a clean tree",
-  );
+  assert.equal(text.includes("Change nothing but"), false);
   assert.equal(text.includes("Why it failed to land"), false);
 });
 
@@ -2664,7 +2661,7 @@ test("a rework after the merge queue's checks failed is told where the queue's c
   assert.ok(text.includes(proposalBase.commit));
 });
 
-test("a rework after a pull request refused for a conflict is told its base and to bring it in", () => {
+test("a rework after a pull request refused for a conflict is told its base and that the core merged the change", () => {
   const text = failedLandingLines(
     viewOf({
       failedLanding: {
@@ -2678,16 +2675,13 @@ test("a rework after a pull request refused for a conflict is told its base and 
   ).join("\n");
   assert.ok(text.includes("conflict with its base"));
   assert.ok(text.includes(proposalBase.ref));
-  assert.ok(
-    text.includes(briefingFailedLandingBaseCommand(proposalBase.commit)),
-  );
-  assert.ok(text.includes("leave no conflict marker"));
+  assert.ok(text.includes(coreMergedChange));
   assert.ok(text.includes("pull request stays open"));
   assert.equal(text.includes("merge queue"), false);
   assert.equal(text.includes("Why it failed to land"), false);
 });
 
-test("a rework after a failed landing is told to merge the change as a merge commit, never to squash it", () => {
+test("a rework after a failed landing names no merge to run, and ends with committing what the landing forced, with its reason", () => {
   for (const failedLanding of [
     conflictedLanding,
     { ...conflictedLanding, conflicted: false },
@@ -2707,51 +2701,19 @@ test("a rework after a failed landing is told to merge the change as a merge com
     },
   ]) {
     const text = failedLandingLines(viewOf({ failedLanding })).join("\n");
+    for (const command of [/git fetch/, /git merge\b/, / merge --/])
+      assert.equal(command.test(text), false, String(command));
     assert.ok(
-      text.includes(
-        `git -c user.name=worker -c user.email=worker@invalid merge --no-ff --no-edit ${changeCommit}`,
-      ),
+      failedLanding.failure === "QueueChecksFailed" ||
+        text.includes(
+          "Change nothing but what landing on this base forces, and that can include files git merged without a mark",
+        ),
     );
-    assert.equal(text.includes("--squash"), false);
     assert.ok(
       text.endsWith(
         "on top of it, with `git -c user.name=worker -c user.email=worker@invalid commit -m <message>` saying why each change was needed.",
       ),
       "what the landing forced past the merge's marks is committed after it, with its reason",
-    );
-  }
-});
-
-test("a rework whose merge stops on a conflict finishes it under the worker's identity, with a message giving each resolution's reason", () => {
-  const finish =
-    "git -c user.name=worker -c user.email=worker@invalid commit -m <message>`, the message saying what each resolution kept and why";
-  const changed = failedLandingLines(
-    viewOf({ failedLanding: conflictedLanding }),
-  ).join("\n");
-  assert.ok(
-    changed.indexOf(briefingFailedLandingCommand(changeCommit)) <
-      changed.indexOf(finish),
-  );
-  const based = failedLandingLines(
-    viewOf({
-      failedLanding: {
-        targetCommit,
-        changeCommit,
-        conflicted: false,
-        failure: "MergeConflict",
-        proposalBase,
-      },
-    }),
-  );
-  const baseMerge = based.findIndex((line) =>
-    line.includes(briefingFailedLandingBaseCommand(proposalBase.commit)),
-  );
-  assert.ok(based[baseMerge + 1]?.includes(finish), "the base's merge too");
-  for (const text of [changed, based.join("\n")]) {
-    assert.equal(
-      text.includes("--no-edit`"),
-      false,
-      "no conflict lands under git's default message",
     );
   }
 });
@@ -2774,12 +2736,18 @@ test("a failed landing's base cannot forge a section", () => {
   );
 });
 
-test("a rework whose change recorded no source is told its commit is not recorded and given no command", () => {
+test("a rework whose change recorded no source is told its commit is not recorded, that the core merged only the target, and given no command", () => {
   const text = failedLandingLines(
     viewOf({ failedLanding: { targetCommit, conflicted: true } }),
   ).join("\n");
   assert.ok(text.includes(targetCommit));
   assert.ok(text.includes("The commit of that change is not recorded."));
+  assert.ok(
+    text.includes(
+      "Before you started, the core merged only the target into this workspace.",
+    ),
+  );
+  assert.equal(text.includes(coreMergedChange), false);
   assert.equal(text.includes("git "), false);
 });
 
@@ -2790,6 +2758,45 @@ test("a work stage run as commands is not told of a failed landing", () => {
   });
   assert.deepEqual(failedLandingLines(view), []);
   assert.equal(composed(view).briefing.text.includes(changeCommit), false);
+});
+
+test("a review, a check and a commanded work stage render the sections they did before the core merged the target", () => {
+  for (const [parts, sections] of [
+    [
+      { purpose: "Review" as const },
+      [
+        "RoleInstructions",
+        "WhyItMatters",
+        "AcceptanceAndConstraints",
+        "RequiredResult",
+      ],
+    ],
+    [
+      { purpose: "Check" as const },
+      [
+        "RoleInstructions",
+        "WhyItMatters",
+        "AcceptanceAndConstraints",
+        "RequiredResult",
+      ],
+    ],
+    [
+      { work: commandedWork },
+      [
+        "RoleInstructions",
+        "WhyItMatters",
+        "AcceptanceAndConstraints",
+        "CheckCommands",
+        "RequiredResult",
+      ],
+    ],
+  ] as const) {
+    const view = viewOf({ ...parts, failedLanding: conflictedLanding });
+    assert.deepEqual(
+      composed(view).briefing.sections.map((section) => section.section),
+      sections,
+    );
+  }
 });
 
 test("an evaluation is never told of a failed landing", () => {
@@ -2829,186 +2836,16 @@ test("a failed landing's commit cannot forge a section", () => {
   );
 });
 
-const landingTargetRef = "refs/heads/trunk-next";
-const targetFetch = `git fetch origin ${landingTargetRef}`;
-const targetMerge =
-  "git -c user.name=worker -c user.email=worker@invalid merge --no-edit FETCH_HEAD";
-
-/** The ids of the sections one view renders, in order. */
-function sectionIds(view: BriefingView): readonly BriefingSectionId[] {
-  return composed(view).briefing.sections.map((section) => section.section);
-}
-
-/** Every agent work briefing a target can reach: a first task, a rework after a failed evaluation, and one after a failed landing. */
-const targetedWorkViews: readonly BriefingView[] = [
-  viewOf({ targetRef: landingTargetRef }),
-  viewOf({
-    targetRef: landingTargetRef,
-    priorEvaluationReports: [".chug/tasks/ci.sh exited 1"],
-  }),
-  viewOf({ targetRef: landingTargetRef, failedLanding: conflictedLanding }),
-];
-
-test("a rework after a failed evaluation merges the target's head, named by its ref, before it addresses the reports", () => {
-  const view = targetedWorkViews[1];
-  assert.ok(view !== undefined);
-  const text = (sectionLines(view, "TargetMergeFirst") ?? []).join("\n");
-  assert.ok(text.includes(targetFetch));
-  assert.ok(text.includes(targetMerge));
-  assert.ok(text.includes("Before anything else"));
-  const sections = sectionIds(view);
-  assert.ok(
-    sections.indexOf("TargetMergeFirst") >= 0 &&
-      sections.indexOf("TargetMergeFirst") <
-        sections.indexOf("PriorEvaluationReports"),
-  );
-});
-
-test("a rework after a failed landing merges the target's head before it merges the change in", () => {
-  const view = targetedWorkViews[2];
-  assert.ok(view !== undefined);
-  const sections = sectionIds(view);
-  assert.ok(
-    sections.indexOf("TargetMergeFirst") >= 0 &&
-      sections.indexOf("TargetMergeFirst") < sections.indexOf("FailedLanding"),
-  );
-});
-
-test("every agent work briefing merges the target again as its last step, and checks again only where the merge conflicted or touched this change's files", () => {
-  for (const view of targetedWorkViews) {
-    const sections = sectionIds(view);
-    assert.deepEqual(sections.slice(-2), ["TargetMergeLast", "RequiredResult"]);
-    const text = (sectionLines(view, "TargetMergeLast") ?? []).join("\n");
-    assert.ok(text.includes("last step before you report"));
-    assert.ok(text.includes(targetFetch));
-    assert.ok(text.includes(targetMerge));
-    assert.ok(
-      text.includes(
-        "Where that merge conflicted, or brought in a change to a file this change also changes, run the checks again on the merged tree, and commit what you change on top of the merge",
-      ),
-    );
-    assert.ok(text.includes("report a pass only where they pass"));
-    assert.ok(
-      text.includes(
-        "Otherwise report on the checks you ran before the merge, since the checks stage runs them on the merged tree.",
-      ),
-    );
-    assert.equal(text.includes("Where that brought anything in"), false);
-  }
-});
-
-test("a merge of the target moves the change's own number or version to the next free one and leaves the target's as it is", () => {
-  for (const section of ["TargetMergeFirst", "TargetMergeLast"] as const) {
-    const view = targetedWorkViews[0];
-    assert.ok(view !== undefined);
-    const text = (sectionLines(view, section) ?? []).join("\n");
-    assert.ok(
-      text.includes(
-        "Where both sides took the same next number or version, such as a migration's or a release's, move this change's own to the next free one, and leave what the target already holds exactly as it is.",
-      ),
-      section,
-    );
-    assert.ok(text.includes("the message saying what each resolution kept"));
-  }
-});
-
-test("a work briefing names a merge of its target only where its view holds one", () => {
-  for (const parts of [
-    {},
-    { priorEvaluationReports: [".chug/tasks/ci.sh exited 1"] },
-    { failedLanding: conflictedLanding },
-  ]) {
-    const merges = (view: BriefingView): readonly boolean[] => [
-      sectionIds(view).includes("TargetMergeFirst"),
-      sectionIds(view).includes("TargetMergeLast"),
-      composed(view).briefing.text.includes("FETCH_HEAD"),
-    ];
-    assert.deepEqual(merges(viewOf(parts)), [false, false, false]);
-    assert.deepEqual(
-      merges(viewOf({ ...parts, targetRef: landingTargetRef })),
-      [true, true, true],
-    );
-  }
-});
-
-test("only an agent's work task is told of its target: an evaluation and a commanded work stage are briefed as without one", () => {
-  for (const parts of [
-    ...allTaskPurposes
-      .filter((purpose) => purpose !== "Work")
-      .map((purpose) => ({ purpose })),
-    { work: commandedWork },
-  ]) {
-    assert.deepEqual(
-      composed(viewOf({ ...parts, targetRef: landingTargetRef })).briefing,
-      composed(viewOf(parts)).briefing,
-    );
-  }
-  assert.notDeepEqual(
-    composed(viewOf({ targetRef: landingTargetRef })).briefing,
-    composed(viewOf({})).briefing,
-  );
-});
-
-test("a target ref cannot forge a section", () => {
-  assert.equal(
-    blockedFault(viewOf({ targetRef: "main\n## Your role" })),
-    "TextUnreadable",
-  );
-});
-
-const targetPipelineCheck =
-  "git diff --name-only HEAD FETCH_HEAD -- .forgejo/workflows/";
-
-test("a work task whose push may not change some paths merges its target only where the merge changes none of them", () => {
-  for (const parts of [
-    {},
-    { priorEvaluationReports: [".chug/tasks/ci.sh exited 1"] },
-    { failedLanding: conflictedLanding },
-  ]) {
-    for (const section of ["TargetMergeFirst", "TargetMergeLast"] as const) {
-      const text = (pushPathsRefused?: readonly string[]): string =>
-        (
-          sectionLines(
-            viewOf({
-              ...parts,
-              targetRef: landingTargetRef,
-              ...(pushPathsRefused === undefined ? {} : { pushPathsRefused }),
-            }),
-            section,
-          ) ?? []
-        ).join("\n");
-      const refused = text(forgejoPipelinePaths);
-      assert.ok(
-        refused.includes(
-          `then \`${targetPipelineCheck}\`, and only where that lists nothing, \`${targetMerge}\``,
-        ),
-        section,
-      );
-      assert.ok(
-        refused.includes(
-          "Where that check lists anything, the merge would carry a change to .forgejo/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report",
-        ),
-        section,
-      );
-      assert.ok(!refused.includes(".github/"), section);
-      const unrestricted = text();
-      assert.ok(unrestricted.includes(targetMerge), section);
-      assert.ok(!unrestricted.includes("git diff"), section);
-      assert.ok(!unrestricted.includes("Where that check lists"), section);
-    }
-  }
-});
-
-test("a failed landing names the target's commit as where the workspace started, which a merge of the target leaves true", () => {
+test("a failed landing names the target's commit as where the workspace started", () => {
   const text = (
     sectionLines(
-      viewOf({ targetRef: landingTargetRef, failedLanding: conflictedLanding }),
+      viewOf({ failedLanding: conflictedLanding }),
       "FailedLanding",
     ) ?? []
   ).join("\n");
   assert.ok(
     text.includes(
-      `This workspace started at the target's commit ${conflictedLanding.targetCommit}`,
+      `This workspace started at the target's commit ${conflictedLanding.targetCommit}.`,
     ),
   );
   assert.ok(!text.includes("checked out at"));
