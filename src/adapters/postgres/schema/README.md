@@ -746,6 +746,18 @@ every delete but of a project standing `Deleting`. Its identity is `(tenant, pro
 `project`. Its newest row per epic is the content `epic` holds, which is why a
 save writes both in one transaction. It has no unfinished work.
 
+`ticket_take` — every take and return of a released ticket: who acted, under
+which authority, and when. Owned by the boundary owner, which `take_ticket` runs
+as and which is granted INSERT and SELECT; the API and the scheduler are granted
+SELECT, and `ticket_take_is_immutable` refuses every change and every delete but
+of a project standing `Deleting`. Its identity is `(tenant, project, ticket,
+number)` and it points at `project`; numbers run from 1 per ticket without a gap
+because the door takes the project row's lock and allocates `max(number) + 1`.
+The taker is its newest row where that row is a take, and `ticket_taker` and
+`ticket_owner` derive it and the owner from it, so neither is stored. It is
+changed by `take_ticket` alone. It has no unfinished work: a take is committed
+or it was rolled back.
+
 `evaluation_stack` — the stack one ticket's work cycle was first evaluated over:
 the tip of its reference, and the commit and tree of the stack. Owned by the
 migration owner and granted SELECT and INSERT to the finalizer, which writes it

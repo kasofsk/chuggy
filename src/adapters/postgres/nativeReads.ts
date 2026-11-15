@@ -153,6 +153,8 @@ interface TicketProjectionRow {
    * under, where that authority is a member's; null where it is not.
    */
   readonly creator: string | null;
+  /** The member the ticket's next execution is placed for, as `ticket_owner` answers it; null where none is. */
+  readonly owner: string | null;
   readonly phase: string;
   readonly seq: string;
   readonly escalation: string;
@@ -640,6 +642,7 @@ function ticketResource(
       : { repository: row.ticket_repository }),
     revision: projectRowCounter(row.revision, "ticket revision"),
     ...(row.creator === null ? {} : { creator: row.creator }),
+    ...(row.owner === null ? {} : { owner: row.owner }),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -885,7 +888,7 @@ async function readProject(
 }
 
 /**
- * A read naming no search, no creator, no activity and no order by number is the page it
+ * A read naming no search, no creator, no owner, no activity and no order by number is the page it
  * always was. Any other is picked as positions first and its rows read after,
  * in that order, by identity.
  */
@@ -898,6 +901,7 @@ async function readProjectTickets(
     query.search === undefined &&
     query.epic === undefined &&
     query.creator === undefined &&
+    query.owner === undefined &&
     query.active !== true &&
     (query.order === undefined ||
       query.order === "Identity" ||
@@ -921,7 +925,7 @@ interface TicketPositionsRow {
 
 /**
  * The positions of one more than a page, in the order the read names, with
- * how many tickets its search, creator, epic, phases and activity select
+ * how many tickets its search, creator, owner, epic, phases and activity select
  * across the project.
  * The count is over the selection before any cursor, so every page of one
  * walk answers the same count.
@@ -958,6 +962,8 @@ async function readTicketPositions(
                              AND e.ticket=t.ticket AND e.epic=${query.epic ?? null}::bigint))
              AND (${query.creator ?? null}::text IS NULL
                OR m.authority_subject = ${query.creator ?? null}::text)
+             AND (${query.owner ?? null}::text IS NULL
+               OR ticket_owner(${partition.tenant},${partition.project},t.ticket) = ${query.owner ?? null}::text)
              AND (${query.active === true}::boolean IS FALSE
                OR t.phase NOT IN ('Done','Revoked')
                OR (SELECT c.committed_at FROM journal_entry c
@@ -1034,7 +1040,9 @@ async function readTicketsByPosition(
     }),
     next: positions.length > query.limit ? page.at(-1) : undefined,
     matched:
-      query.search === undefined && query.creator === undefined
+      query.search === undefined &&
+      query.creator === undefined &&
+      query.owner === undefined
         ? undefined
         : matched,
   };
@@ -1053,6 +1061,7 @@ async function readTicketsByActivity(
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner,
                  to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                  to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1121,6 +1130,7 @@ async function readTicketsByIdentity(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               ticket_owner(${partition.tenant},${partition.project},t.ticket)::text AS owner,
                to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1181,7 +1191,7 @@ async function readTicketRow(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               b.brief::text AS brief,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner, b.brief::text AS brief,
                b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,

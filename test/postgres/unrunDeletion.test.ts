@@ -87,6 +87,7 @@ const unrunDeletionBeneath: Readonly<Record<string, string>> = {
   evaluation_stack_dead: "ReleasedTicket",
   evaluation_stack_none: "ReleasedTicket",
   evaluation_stack_removal: "ReleasedTicket",
+  ticket_take: "ReleasedTicket",
   execution: "Execution",
   execution_attempt: "Execution",
   execution_attempt_limit: "Execution",

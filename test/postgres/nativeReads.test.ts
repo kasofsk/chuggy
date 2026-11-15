@@ -17,6 +17,8 @@ import type {
 } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import { postgresTicketTakes } from "../../src/adapters/postgres/ticketTake.ts";
 import { id } from "../domain/fixtures.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
 import { plainDefinitionOf } from "../actor/harness.ts";
@@ -1471,6 +1473,79 @@ test("a creator's list is the tickets that member filed, paged in every order wi
       { tickets: expected, matched: [3, 3, 3] },
       `the ${order ?? "default"} order`,
     );
+});
+
+test("a ticket's detail read answers the member who took it as its owner and keeps its creator, and one nobody took is owned by its creator", async () => {
+  const partition = await seedCreators("native-owner-detail");
+  const reads = postgresNativeReads(subject.pool);
+  const ownerOf = async (ticket: number) => {
+    const own = await reads.ticket(partition, id(ticket));
+    assert.ok(own !== undefined);
+    assert.equal("owner" in own, own.owner !== undefined);
+    return [own.creator, own.owner];
+  };
+  assert.deepEqual(await ownerOf(1), ["filer", "filer"]);
+  assert.deepEqual(await ownerOf(2), [undefined, undefined]);
+  await postgresTicketTakes(subject.pool).write(
+    partition,
+    id(1),
+    "Take",
+    memberAuthority(asPrincipal("taker")),
+  );
+  assert.deepEqual(await ownerOf(1), ["filer", "taker"]);
+});
+
+test("a ticket's owner is the member who took it, else its creator, on both pages and under the owner filter", async () => {
+  const partition = await seedFiled("native-owners");
+  const alice = asPrincipal("alice");
+  const bob = asPrincipal("bob");
+  const dave = asPrincipal("dave");
+  const takes = postgresTicketTakes(subject.pool);
+  for (const [ticket, taker] of [
+    [1, bob],
+    [4, dave],
+  ] as const)
+    assert.deepEqual(
+      await takes.write(partition, id(ticket), "Take", memberAuthority(taker)),
+      { stored: "Taken", owner: taker },
+    );
+  const reads = postgresNativeReads(subject.pool);
+  const owners = [
+    [1, "alice", "bob"],
+    [2, "bob", "bob"],
+    [3, "alice", "alice"],
+    [4, undefined, "dave"],
+    [5, undefined, undefined],
+    [12, "alice", "alice"],
+    [121, "bob", "bob"],
+  ];
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const page = await reads.project(partition, { limit: 10, order });
+    assert.deepEqual(
+      page.result === "Found"
+        ? page.project.tickets
+            .map((each) => [each.ticket, each.creator, each.owner])
+            .sort(([left], [right]) => Number(left) - Number(right))
+        : undefined,
+      owners,
+      `the ${order} page answers what the detail read does`,
+    );
+  }
+  for (const [owner, expected] of [
+    [bob, [1, 2, 121]],
+    [alice, [3, 12]],
+    [dave, [4]],
+  ] as const)
+    assert.deepEqual(
+      await searchWalked(partition, { owner }, 1),
+      { tickets: expected, matched: expected.map(() => expected.length) },
+      owner,
+    );
+  assert.deepEqual(
+    await searchWalked(partition, { owner: bob, creator: alice }, 100),
+    { tickets: [1], matched: [1] },
+    "an owner composes with a creator",
+  );
 });
 
 test("a creator composes with a phase filter and a search, and one who filed nothing lists nothing", async () => {

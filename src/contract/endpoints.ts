@@ -65,6 +65,7 @@ import {
   ticketNativeActionHistoryResponseSchema,
   landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
+  ticketTakeResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -415,6 +416,18 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.landingQueues,
     response: landingQueuesResponseSchema,
+  },
+  ticketTake: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketTake,
+    body: emptyBody,
+    response: ticketTakeResponseSchema,
+  },
+  ticketReturn: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketReturn,
+    body: emptyBody,
+    response: ticketTakeResponseSchema,
   },
 } as const;
 

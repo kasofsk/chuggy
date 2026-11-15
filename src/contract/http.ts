@@ -646,6 +646,8 @@ export const nativeHttpRoutes = {
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
+  ticketTake: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/take`,
+  ticketReturn: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/return`,
   landingQueues: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/landing-queues`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,

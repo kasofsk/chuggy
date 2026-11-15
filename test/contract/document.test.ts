@@ -141,6 +141,8 @@ const documentRouteNames = [
   "ticketLandings",
   "ticketNativeActionHistory",
   "ticketNativeActions",
+  "ticketReturn",
+  "ticketTake",
   "tickets",
   "workerPoolRegistrationTokens",
   "workerPoolRegistrations",
