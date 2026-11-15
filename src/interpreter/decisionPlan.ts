@@ -163,6 +163,7 @@ function executionRequestBundle(
   input: DecisionInput,
   entry: Entry,
   index: number,
+  kind: ExecutionRequestPlan["kind"],
   { source, images, dependencies }: SpawnSources,
 ): ExecutionRequestBundle {
   const evidence =
@@ -182,6 +183,9 @@ function executionRequestBundle(
               ? {}
               : { targetRef: source.target.ref }),
             targetCommit: source.target.commit,
+            ...(source.target.ref === undefined || kind !== "SpawnEvaluation"
+              ? {}
+              : { targetCommitRef: source.target.ref }),
             manifests: source.manifests,
             ...(source.changeBase === undefined
               ? {}
@@ -221,14 +225,15 @@ function executeRequest(
   if (identities.some((task) => task.type !== phase))
     throw new Error("decision plan: one decision owes tasks of two phases");
   const ticket = eventTicket(entry.event);
+  const kind = phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation";
   return [
     {
       request: identity(entry, first.index, "ExecuteTask"),
       effectPosition: first.index,
       ticket,
       ticketVersion: entry.seq,
-      kind: phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation",
-      bundle: executionRequestBundle(input, entry, first.index, spawn),
+      kind,
+      bundle: executionRequestBundle(input, entry, first.index, kind, spawn),
       tasks: requestTasks(post, ticket, identities),
     },
   ];
@@ -415,6 +420,14 @@ export function inputBundleReferencesOf(
       : [
           { kind: "Repository" as const, reference: source.repository },
           { kind: "TargetCommit" as const, reference: source.targetCommit },
+          ...(source.targetCommitRef === undefined
+            ? []
+            : [
+                {
+                  kind: "TargetCommitRef" as const,
+                  reference: source.targetCommitRef,
+                },
+              ]),
           ...(source.changeBase === undefined
             ? []
             : [{ kind: "ChangeBase" as const, reference: source.changeBase }]),

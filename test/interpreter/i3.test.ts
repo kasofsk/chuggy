@@ -629,6 +629,34 @@ test("a spawn bundle pins the change identity its source observed, and only that
   assert.deepEqual(kinds(), []);
 });
 
+/**
+ * A bundle pins the ref its target commit is on where its source names one,
+ * and no bundle pins one it was not given. Catches the ref dropped between
+ * the source and the references.
+ */
+test("a spawn bundle pins the ref its target commit is on, and only that", () => {
+  const configuration = {
+    configurationRevision: "revision",
+    configurationDigest: "d".repeat(64),
+  };
+  const source = {
+    repository: asRepositoryId("repository"),
+    targetCommit: asGitObjectId("a".repeat(40)),
+    manifests: [],
+  };
+  const ref = "refs/heads/chuggy/stack/1/2";
+  const kinds = (targetCommitRef?: string) =>
+    inputBundleReferencesOf(configuration, {
+      bundle: "bundle",
+      source: {
+        ...source,
+        ...(targetCommitRef === undefined ? {} : { targetCommitRef }),
+      },
+    }).filter((reference) => reference.kind === "TargetCommitRef");
+  assert.deepEqual(kinds(ref), [{ kind: "TargetCommitRef", reference: ref }]);
+  assert.deepEqual(kinds(), []);
+});
+
 /** Catches a base named where nothing knew one, which a check would narrow to. */
 test("a spawn bundle whose source knows no change base names none", () => {
   const references = inputBundleReferencesOf(

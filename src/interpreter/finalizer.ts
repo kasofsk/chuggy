@@ -377,6 +377,7 @@ export type InputBundleReferenceKind =
   | "FinalizationAttempt"
   | "ConflictManifest"
   | "TargetCommit"
+  | "TargetCommitRef"
   | "ProjectArtifact"
   | "ChangeBase"
   | "DependencyResult"
@@ -395,6 +396,7 @@ export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
     "FinalizationAttempt",
     "ConflictManifest",
     "TargetCommit",
+    "TargetCommitRef",
     "ProjectArtifact",
     "ChangeBase",
     "DependencyResult",
