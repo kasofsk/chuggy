@@ -20,11 +20,11 @@ import {
   renderedNoOverflow,
   renderedNoViolations,
   renderedOpen,
-  renderedTokenPixels,
   renderedTouchTargets,
+  renderedTypedUnzoomed,
   test,
 } from "./driver.ts";
-import type { Browser, Locator, Page } from "@playwright/test";
+import type { Browser } from "@playwright/test";
 
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
@@ -47,28 +47,6 @@ const creationReads = [
     manageAuthorities: false,
   }),
 ];
-
-/** Each typed box is drawn at no less than the unzoomed size, and focusing it
- * leaves the page at its own scale and no wider than the screen. */
-async function creationUnzoomed(page: Page, scope: Locator): Promise<void> {
-  const least = await renderedTokenPixels(page, "--text-unzoomed");
-  expect(least, "the root states no --text-unzoomed").toBeGreaterThan(0);
-  const boxes = await scope.locator("input").all();
-  expect(boxes.length).toBeGreaterThan(0);
-  for (const box of boxes) {
-    const pixels = await box.evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).fontSize),
-    );
-    expect(pixels, await box.evaluate((element) => element.outerHTML)).toBe(
-      Math.max(pixels, least),
-    );
-    await box.focus();
-    expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(
-      1,
-    );
-    await renderedNoOverflow(page);
-  }
-}
 
 test("the new-project page fits a phone, each control a finger's height, and focusing a box zooms nothing, on a choice and on a new workspace", async ({
   browser,
@@ -102,7 +80,7 @@ async function creationOnPhone(
   ]);
   await renderedNoOverflow(page);
   await renderedTouchTargets(page, main);
-  await creationUnzoomed(page, main);
+  await renderedTypedUnzoomed(page, main.locator("input"));
 
   await page.getByRole("button", { name: /^Workspace /u }).click();
   await page.getByRole("menuitemradio", { name: "New workspace" }).click();
@@ -111,7 +89,7 @@ async function creationOnPhone(
   ).toBeVisible();
   await renderedNoOverflow(page);
   await renderedTouchTargets(page, main);
-  await creationUnzoomed(page, main);
+  await renderedTypedUnzoomed(page, main.locator("input"));
   renderedNoViolations(rendered, [zodProbeViolation]);
   expect(served.unanswered).toEqual([]);
 }

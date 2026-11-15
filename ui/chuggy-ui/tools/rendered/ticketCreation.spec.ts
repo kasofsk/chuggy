@@ -19,11 +19,11 @@ import {
   renderedNoOverflow,
   renderedNoViolations,
   renderedOpen,
-  renderedTokenPixels,
   renderedTouchTargets,
+  renderedTypedUnzoomed,
   test,
 } from "./driver.ts";
-import type { Browser, Locator, Page } from "@playwright/test";
+import type { Browser, Locator } from "@playwright/test";
 
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
@@ -62,28 +62,6 @@ function creationTyped(form: Locator): Locator {
   return form.locator("input:not([type=file]), textarea");
 }
 
-/** Each typed box is drawn at no less than the unzoomed size, and focusing it
- * leaves the page at its own scale and no wider than the screen. */
-async function creationUnzoomed(page: Page, form: Locator): Promise<void> {
-  const least = await renderedTokenPixels(page, "--text-unzoomed");
-  expect(least, "the root states no --text-unzoomed").toBeGreaterThan(0);
-  const boxes = await creationTyped(form).all();
-  expect(boxes.length).toBeGreaterThan(0);
-  for (const box of boxes) {
-    const pixels = await box.evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).fontSize),
-    );
-    expect(pixels, await box.evaluate((element) => element.outerHTML)).toBe(
-      Math.max(pixels, least),
-    );
-    await box.focus();
-    expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(
-      1,
-    );
-    await renderedNoOverflow(page);
-  }
-}
-
 test("the new-ticket form fits a phone, each control a finger's height, and focusing a box zooms nothing, closed and open", async ({
   browser,
 }) => {
@@ -115,7 +93,7 @@ async function creationOnPhone(
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await renderedNoOverflow(page);
   await renderedTouchTargets(page, form);
-  await creationUnzoomed(page, form);
+  await renderedTypedUnzoomed(page, creationTyped(form));
 
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
@@ -127,7 +105,7 @@ async function creationOnPhone(
   await expect(page.getByRole("button", { name: /^Epic/u })).toBeVisible();
   await renderedNoOverflow(page);
   await renderedTouchTargets(page, form);
-  await creationUnzoomed(page, form);
+  await renderedTypedUnzoomed(page, creationTyped(form));
   renderedNoViolations(rendered, [zodProbeViolation]);
   expect(served.unanswered).toEqual([]);
 }

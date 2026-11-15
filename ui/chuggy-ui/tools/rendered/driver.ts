@@ -197,6 +197,32 @@ export async function renderedTokenPixels(
   }, property);
 }
 
+/** Each box in `boxes` is drawn at no less than `--text-unzoomed`, the size
+ * a phone types in without zooming, and focusing it leaves the page at its
+ * own scale and no wider than the screen. */
+export async function renderedTypedUnzoomed(
+  page: Page,
+  boxes: Locator,
+): Promise<void> {
+  const least = await renderedTokenPixels(page, "--text-unzoomed");
+  expect(least, "the root states no --text-unzoomed").toBeGreaterThan(0);
+  const all = await boxes.all();
+  expect(all.length).toBeGreaterThan(0);
+  for (const box of all) {
+    const pixels = await box.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize),
+    );
+    expect(pixels, await box.evaluate((element) => element.outerHTML)).toBe(
+      Math.max(pixels, least),
+    );
+    await box.focus();
+    expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(
+      1,
+    );
+    await renderedNoOverflow(page);
+  }
+}
+
 export interface RenderedInsets {
   readonly top: number;
   readonly right: number;
