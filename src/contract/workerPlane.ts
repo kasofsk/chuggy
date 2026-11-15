@@ -51,6 +51,7 @@ import {
   isHeldCredentialValueVariable,
   isHeldCredentialVariable,
 } from "./workerEnvironment.ts";
+import type { WorkerContractFeature } from "./workerContract.ts";
 import { workerTaskAnswerSchema } from "./workerTask.ts";
 
 /** One route as the plane registers it, a trailing `*` standing for the rest of the path. */
@@ -76,6 +77,31 @@ export const workerPlaneRoutes = {
   heldCredentials: { method: "POST", path: "/v1/credentials/held" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type WorkerPlaneRouteName = keyof typeof workerPlaneRoutes;
+
+/**
+ * The feature each job plane route belongs to, so a client is held only to the
+ * routes of the features it lists.
+ * A new route names the feature it belongs to, and `null` is for a route every
+ * client of the plane must speak.
+ */
+export const workerPlaneRouteFeatures: Readonly<
+  Record<WorkerPlaneRouteName, WorkerContractFeature | null>
+> = {
+  input: null,
+  inputArtifact: null,
+  task: null,
+  heartbeat: null,
+  artifact: null,
+  report: null,
+  runConfiguration: null,
+  runTranscript: null,
+  runTurns: null,
+  runTotals: null,
+  runContext: null,
+  runEnded: null,
+  credential: null,
+  heldCredentials: null,
+};
 
 /**
  * The media type an artifact, a configuration snapshot, a transcript batch
