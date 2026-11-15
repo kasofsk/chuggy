@@ -127,6 +127,7 @@ function awkward(): SetupSite {
   const world = setupSiteAt("Landed");
   world.tenants.push({
     tenant: "two words",
+    displayName: "two words",
     roles: ["Admin"],
     administer: true,
   });

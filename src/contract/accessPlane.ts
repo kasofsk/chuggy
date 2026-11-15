@@ -29,6 +29,11 @@
  * whether they administer it. It names nobody else, so there is nobody it is
  * hidden from, and a caller written into none is answered an empty list.
  *
+ * A TENANT IS NAMED TO A READER BY ITS DISPLAY NAME, which every answer naming
+ * a tenant to a reader carries beside its id, and which its administrators
+ * change. The id is what every path and every role names, and nothing changes
+ * it.
+ *
  * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
  * no workspace: whoever presents it signed in names the workspace they will
  * administer, at the route every invite link is redeemed at.
@@ -46,6 +51,7 @@ import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "./http.ts";
 import {
+  projectDisplayNameSchema,
   projectNameCharsMax,
   projectNameSchema,
   tenantNameReserved,
@@ -244,6 +250,10 @@ export const accessPlaneRoutes = {
     path: `${accessPlaneBasePath}/invite-links/redemptions`,
   },
   tenantAbilities: { method: "GET", path: `${accessTenantPath}/abilities` },
+  tenantDisplayNameChange: {
+    method: "POST",
+    path: `${accessTenantPath}/display-name`,
+  },
   projectPeople: { method: "GET", path: `${accessProjectPath}/people` },
   projectRoleGrant: {
     method: "POST",
@@ -383,6 +393,24 @@ export const accessTenantRoleGrantSchema = z.strictObject({
 export const accessProjectRoleGrantSchema = z.strictObject({
   role: accessProjectRoleSchema,
 });
+
+/**
+ * What a tenant is named to a reader: the display name it was given, or its id,
+ * which is what it is named until it is given one and may be longer than a
+ * display name is.
+ */
+export const accessTenantDisplayNameSchema = z.union([
+  projectDisplayNameSchema,
+  identitySchema,
+]);
+
+/** What a tenant's display name is changed to. */
+export const accessTenantDisplayNameChangeSchema = z.strictObject({
+  displayName: projectDisplayNameSchema,
+});
+
+/** The refusal of a display name's change on a plane composed with no store. */
+export const accessTenantNamesNotConfiguredCode = "TenantNamesNotConfigured";
 
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
@@ -664,11 +692,13 @@ export const accessProjectAuthoritiesSchema = z.strictObject({
 });
 
 /**
- * One of the site's tenants: the people administering it, how many of its
- * administrators no person names, and whether they may make accounts.
+ * One of the site's tenants: its display name, the people administering it,
+ * how many of its administrators no person names, and whether they may make
+ * accounts.
  */
 export const accessSiteTenantSchema = z.strictObject({
   tenant: identitySchema,
+  displayName: accessTenantDisplayNameSchema,
   administrators: z.array(accessAuthorityPersonSchema),
   unnamed: z.number().int().nonnegative(),
   createAccounts: z.boolean(),
@@ -681,12 +711,13 @@ export const accessSiteTenantsSchema = z.strictObject({
 });
 
 /**
- * One tenant a role names the caller in: the roles their own tuples give, and
- * whether they hold `AdministerTenant` there, which the authority answers and
- * no role decides.
+ * One tenant a role names the caller in: its display name, the roles their own
+ * tuples give, and whether they hold `AdministerTenant` there, which the
+ * authority answers and no role decides.
  */
 export const accessCallerTenantSchema = z.strictObject({
   tenant: identitySchema,
+  displayName: accessTenantDisplayNameSchema,
   roles: z.array(accessTenantRoleSchema),
   administer: z.boolean(),
 });
@@ -916,6 +947,9 @@ export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
 export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
 export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
+export type AccessTenantDisplayNameChange = z.infer<
+  typeof accessTenantDisplayNameChangeSchema
+>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

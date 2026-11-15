@@ -52,6 +52,7 @@ import {
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   accessTenantRoles,
+  accessTenantNamesNotConfiguredCode,
   accessTenantTakenCode,
   accessWorkspaceLinkNameWantedCode,
   accessWorkspaceLinkNoteCharsMax,
@@ -59,6 +60,7 @@ import {
   type AccessPlaneRouteName,
 } from "../../src/contract/accessPlane.ts";
 import {
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../src/contract/requests.ts";
@@ -130,8 +132,10 @@ import {
   accessMemoryHolders,
   accessMemoryPlane,
   accessMemorySiteTenants,
+  tenantNameMemory,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
+import { accessTenantNames } from "../../src/interpreter/accessTenantNames.ts";
 
 const web = accessFixturePartition("acme/co", "web");
 const tenant = web.tenant;
@@ -187,6 +191,21 @@ function servedKinds(memory: AccessMemory): void {
   ]);
 }
 
+/** The fake issuer, which knows each of `tokens` as the subject it names. */
+const servedAuthentication = {
+  authenticateBearer: (token: string): Promise<BearerAuthentication> => {
+    const subject = tokens[token];
+    return Promise.resolve(
+      subject === undefined
+        ? { authenticated: "InvalidToken" }
+        : {
+            authenticated: "Bearer",
+            bearer: { principal: accessFixturePrincipal(subject) },
+          },
+    );
+  },
+};
+
 /**
  * A tenant alice administers with one linked project priya administers, each
  * holding what the defaults give them and alice `CreateAccount`. Mo may only
@@ -209,6 +228,7 @@ async function served(
 ) {
   const memory = accessMemory();
   const links = stored ? inviteLinkMemory() : undefined;
+  const names = stored ? tenantNameMemory() : undefined;
   for (const grant of [
     projectTenantGrant(web),
     tenantPrincipalGrant({
@@ -228,25 +248,19 @@ async function served(
   memory.changes.length = 0;
   servedKinds(memory);
   const app = createAccessPlaneApp({
-    authentication: {
-      authenticateBearer: (token): Promise<BearerAuthentication> => {
-        const subject = tokens[token];
-        return Promise.resolve(
-          subject === undefined
-            ? { authenticated: "InvalidToken" }
-            : {
-                authenticated: "Bearer",
-                bearer: { principal: accessFixturePrincipal(subject) },
-              },
-        );
-      },
-    },
+    authentication: servedAuthentication,
     plane: accessMemoryPlane(memory, accessPlaneBoundsDefault, directory),
     invitations: invitations.tenant(memory),
     ownerInvitations: invitations.owner(memory),
     inviteLinks: accessMemoryInviteLinks(memory, links, directory),
     abilities: accessMemoryAbilities(memory),
-    callerTenants: accessMemoryCallerTenants(memory),
+    callerTenants: accessMemoryCallerTenants(
+      memory,
+      accessPlaneBoundsDefault,
+      memory.access,
+      names,
+    ),
+    tenantNames: accessTenantNames({ access: memory.access, names }),
     authorities: accessMemoryAuthorities(
       memory,
       accessPlaneBoundsDefault,
@@ -257,10 +271,11 @@ async function served(
       memory,
       accessPlaneBoundsDefault,
       directory,
+      names,
     ),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
-  return { memory, app, links };
+  return { memory, app, links, names };
 }
 
 /** The path one route is asked at for `web`, its subject, role, authority, group and link where it names them. */
@@ -898,7 +913,9 @@ test("an authority that cannot answer is retryable on every route and unready on
             ? { token: open.token }
             : name === "siteWorkspaceLinkCreation"
               ? { createAccounts: true, note: "for octo-cat" }
-              : { role: "Admin" };
+              : name === "tenantDisplayNameChange"
+                ? { displayName: "Acme" }
+                : { role: "Admin" };
     const answered = await app.inject({
       method: route.method,
       url: pathOf(name, "zed", "Admin", undefined, undefined, open.link),
@@ -1463,12 +1480,13 @@ test("the site's tenants read as their strict schema to a caller who may make on
       .parse(listed.json())
       .tenants.map((one) => [
         one.tenant,
+        one.displayName,
         one.administrators.map((person) => person.subject),
         one.createAccounts,
       ]),
     [
-      [tenant, ["alice"], false],
-      [invited.tenant, [invited.subject], true],
+      [tenant, tenant, ["alice"], false],
+      [invited.tenant, invited.tenant, [invited.subject], true],
     ],
   );
   for (const token of ["alice-token", "hal-token"]) {
@@ -1492,7 +1510,9 @@ test("the caller's own tenants read as their strict schema to any caller signed 
   const held = await get("alice-token");
   assert.equal(held.statusCode, 200, held.body);
   assert.deepEqual(accessCallerTenantsSchema.parse(held.json()), {
-    tenants: [{ tenant, roles: ["Admin"], administer: true }],
+    tenants: [
+      { tenant, displayName: tenant, roles: ["Admin"], administer: true },
+    ],
     truncated: false,
   });
   const none = await get("priya-token");
@@ -1504,6 +1524,122 @@ test("the caller's own tenants read as their strict schema to any caller signed 
   const unauthenticated = await get();
   assert.equal(unauthenticated.statusCode, 401);
   enveloped(unauthenticated, "Unauthenticated");
+});
+
+/** A change of `web`'s tenant's display name to `displayName`, sent with `token`. */
+function renamed(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  token: string,
+  displayName: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("tenantDisplayNameChange"),
+    headers: { ...as(token), ...typed },
+    payload: JSON.stringify({ displayName }),
+  });
+}
+
+test("a tenant's administrator renames it 204, trimmed, and the caller's list and the site's then name it so under the same id", async () => {
+  const { app, names } = await served();
+  const changed = await renamed(app, "alice-token", "  Acme Co.  ");
+  assert.equal(changed.statusCode, 204, changed.body);
+  assert.equal(names?.rows.get(tenant), "Acme Co.");
+  const held = await app.inject({
+    method: "GET",
+    url: pathOf("callerTenants"),
+    headers: as("alice-token"),
+  });
+  assert.deepEqual(accessCallerTenantsSchema.parse(held.json()).tenants, [
+    { tenant, displayName: "Acme Co.", roles: ["Admin"], administer: true },
+  ]);
+  const site = await app.inject({
+    method: "GET",
+    url: pathOf("siteTenants"),
+    headers: as("sita-token"),
+  });
+  assert.deepEqual(
+    accessSiteTenantsSchema
+      .parse(site.json())
+      .tenants.map((one) => [one.tenant, one.displayName]),
+    [[tenant, "Acme Co."]],
+  );
+});
+
+test("a rename is refused to a caller the tenant's list answers who does not administer it, absent to one it does not answer, and refused without a credential, each changing nothing", async () => {
+  const { app, names } = await served();
+  const refused = await renamed(app, "mo-token", "Mo's");
+  assert.equal(refused.statusCode, 403, refused.body);
+  assert.equal(
+    errorEnvelopeSchema.parse(refused.json()).error.code,
+    accessNotPermittedCode,
+  );
+  for (const token of ["priya-token", "sam-token"])
+    enveloped(await renamed(app, token, "Theirs"), "Absent");
+  const unauthenticated = await app.inject({
+    method: "POST",
+    url: pathOf("tenantDisplayNameChange"),
+    headers: typed,
+    payload: JSON.stringify({ displayName: "Nobody's" }),
+  });
+  assert.equal(unauthenticated.statusCode, 401);
+  assert.deepEqual([...(names?.rows ?? [])], []);
+});
+
+test("a rename to a name empty once trimmed, past its bound, holding a control character or naming more than the name is rejected and changes nothing", async () => {
+  const { app, names } = await served();
+  for (const displayName of [
+    "",
+    "   ",
+    "n".repeat(projectDisplayNameCharsMax + 1),
+    "two\nlines",
+    "tab\tbed",
+    "\u0000",
+    7,
+  ])
+    enveloped(
+      await renamed(app, "alice-token", displayName),
+      "Rejected",
+      "InvalidRequest",
+    );
+  enveloped(
+    await app.inject({
+      method: "POST",
+      url: pathOf("tenantDisplayNameChange"),
+      headers: { ...as("alice-token"), ...typed },
+      payload: JSON.stringify({ displayName: "Acme", tenant: "other" }),
+    }),
+    "Rejected",
+    "InvalidRequest",
+  );
+  assert.deepEqual([...(names?.rows ?? [])], []);
+  const longest = await renamed(
+    app,
+    "alice-token",
+    "€".repeat(projectDisplayNameCharsMax),
+  );
+  assert.equal(longest.statusCode, 204, longest.body);
+});
+
+test("a plane with no store answers a rename not configured and names every tenant by its id", async () => {
+  const { app } = await served(true, undefined, undefined, false);
+  const answered = await renamed(app, "alice-token", "Acme");
+  enveloped(answered, "Absent");
+  assert.equal(
+    errorEnvelopeSchema.parse(answered.json()).error.code,
+    accessTenantNamesNotConfiguredCode,
+  );
+  const held = await app.inject({
+    method: "GET",
+    url: pathOf("callerTenants"),
+    headers: as("alice-token"),
+  });
+  assert.deepEqual(
+    accessCallerTenantsSchema
+      .parse(held.json())
+      .tenants.map((one) => one.displayName),
+    [tenant],
+  );
 });
 
 test("a site's invitation naming a tenant outside its shape, past its bound or reserved is rejected before GitHub, the directory or the authority is asked anything", async () => {

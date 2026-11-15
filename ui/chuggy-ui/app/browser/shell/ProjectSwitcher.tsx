@@ -9,6 +9,9 @@
  * opens where this one left off. An inventory that has not answered says so
  * rather than offering an empty list.
  *
+ * A WORKSPACE IS NAMED BY ITS DISPLAY NAME, and every value and address the
+ * picker makes by its id.
+ *
  * NO PROJECT IS A CHOICE IN THE WORKSPACE SHOWN, where it lets the reader chat
  * outside a project, and picking it opens their own chat there.
  */
@@ -28,6 +31,8 @@ import { projectNamed } from "../../core/projectNaming.ts";
 import { usePanelState } from "../api.ts";
 import { persistentStore } from "../ports.ts";
 import { useChatAbilities } from "../thread/threadRead.ts";
+import type { WorkspaceNamed } from "../../core/workspaceNames.ts";
+import { useWorkspaceNames } from "../workspaceNames.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
 
@@ -87,10 +92,11 @@ function ProjectSwitcherAt(props: {
 function projectSwitcherHint(
   partition: PartitionIdentity | undefined,
   inventory: readonly NamedProject[],
+  named: WorkspaceNamed,
 ): string | undefined {
   return partition === undefined
     ? undefined
-    : `${partition.tenant} / ${projectNamed(inventory, partition)}`;
+    : `${named(partition.tenant)} / ${projectNamed(inventory, partition)}`;
 }
 
 /** The workspace's own chat, as the picker offers it where it may be had. */
@@ -98,13 +104,14 @@ function projectSwitcherChat(
   tenant: string | undefined,
   chats: boolean,
   text: CopyText,
+  named: WorkspaceNamed,
 ): readonly { readonly value: string; readonly text: string }[] {
   return tenant === undefined || !chats
     ? []
     : [
         {
           value: projectSwitcherNone(tenant),
-          text: `${tenant} / ${text({ id: "shell-project-none" })}`,
+          text: `${named(tenant)} / ${text({ id: "shell-project-none" })}`,
         },
       ];
 }
@@ -119,6 +126,7 @@ function ProjectSwitcherPicker(props: {
   const navigate = useNavigate();
   const text = useCopyText();
   const state = usePanelState(projectsInventoryQuery());
+  const named = useWorkspaceNames();
   if (state.state !== "Ready")
     return (
       <Notice
@@ -128,12 +136,12 @@ function ProjectSwitcherPicker(props: {
       />
     );
   const { tenant } = props;
-  const none = projectSwitcherChat(tenant, props.chats, text);
+  const none = projectSwitcherChat(tenant, props.chats, text, named);
   return (
     <Picker
       label={text({ id: "shell-project" })}
       glyph={projectGlyph}
-      hint={projectSwitcherHint(props.partition, state.value)}
+      hint={projectSwitcherHint(props.partition, state.value, named)}
       value={
         props.partition !== undefined
           ? `${props.partition.tenant}/${props.partition.project}`
@@ -146,7 +154,7 @@ function ProjectSwitcherPicker(props: {
         ...none,
         ...state.value.map((candidate) => ({
           value: `${candidate.tenant}/${candidate.project}`,
-          text: `${candidate.tenant} / ${candidate.name}`,
+          text: `${named(candidate.tenant)} / ${candidate.name}`,
         })),
       ]}
       onChoose={(picked) => {

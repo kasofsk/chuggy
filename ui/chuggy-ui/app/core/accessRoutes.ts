@@ -169,6 +169,20 @@ export function apiCallerTenants(
   );
 }
 
+/** The workspace's display name changed, for a caller who administers it. */
+export function apiRenameTenant(
+  ports: ApiPorts,
+  tenant: string,
+  displayName: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(
+    ports,
+    "tenantDisplayNameChange",
+    { tenant },
+    { displayName },
+  );
+}
+
 export function apiGrantTenantRole(
   ports: ApiPorts,
   tenant: string,
