@@ -6,10 +6,10 @@
  * Each row carries its ticket's latest execution, so a `Ticket` frame moves a
  * row and an `Execution` frame changes what one row says it is running, both
  * folded into the one entry the rows are read under. The filter, the creator,
- * the search and the order a sort reads in are asked of the wire, and the rows
- * on screen stand until the read under a new choice answers; the search, the
- * sort, the filter and the creator are the page's address, so a link holds
- * the view. Each state's
+ * the owner, the search and the order a sort reads in are asked of the wire,
+ * and the rows on screen stand until the read under a new choice answers; the
+ * search, the sort, the filter, the creator and the owner are the page's
+ * address, so a link holds the view. Each state's
  * count above the rows, read under every filter, chooses the filter as the
  * picker does. A project
  * holding no ticket at all offers the first instead.
@@ -38,7 +38,7 @@ import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiFailure } from "../core/apiRequest.ts";
-import type { CopyText } from "../core/copy.ts";
+import type { Copy, CopyText } from "../core/copy.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { landingQueuePlaceOf } from "../core/landingQueues.ts";
@@ -52,6 +52,7 @@ import {
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
   ticketFilterStandings,
+  ticketListAskNarrowed,
 } from "../core/projectTableFilters.ts";
 import type {
   TicketFilter,
@@ -266,17 +267,40 @@ export function TicketListDependencies(props: {
   );
 }
 
-/** Who filed the row, drawn in the meta where the list is wide and in the
- * foot where it is narrow; the sheet shows one of the two. */
+/** The row's owner where it is not its creator, after an arrow from them. */
+function TicketListOwner(props: {
+  readonly owner: string | undefined;
+  readonly creatorEmails: ReadonlyMap<string, string>;
+}): ReactNode {
+  const text = useCopyText();
+  if (props.owner === undefined) return null;
+  return (
+    <>
+      <span aria-hidden="true">{" → "}</span>
+      <span className="visually-hidden">
+        {` ${text({ id: "project-table-owner-label" })} `}
+      </span>
+      <Identity label={creatorLabel(props.owner, props.creatorEmails)} />
+    </>
+  );
+}
+
+/** Who filed the row and who owns it where that is someone else, drawn in the
+ * meta where the list is wide and in the foot where it is narrow; the sheet
+ * shows one of the two. */
 function TicketListCreator(props: {
   readonly row: ProjectTableRow;
   readonly creatorEmails: ReadonlyMap<string, string>;
   readonly className: string;
 }): ReactNode {
-  if (props.row.creator === undefined) return null;
+  const { creator, owner } = props.row;
+  if (creator === undefined && owner === undefined) return null;
   return (
     <span className={props.className}>
-      <Identity label={creatorLabel(props.row.creator, props.creatorEmails)} />
+      {creator === undefined ? null : (
+        <Identity label={creatorLabel(creator, props.creatorEmails)} />
+      )}
+      <TicketListOwner owner={owner} creatorEmails={props.creatorEmails} />
     </span>
   );
 }
@@ -403,6 +427,13 @@ const ticketListCreatorGlyph = (
   </ListGlyph>
 );
 
+const ticketListOwnerGlyph = (
+  <ListGlyph>
+    <circle cx="10" cy="5" r="2.5" />
+    <path d="M5.5 14c0-2.6 2-4.25 4.5-4.25s4.5 1.65 4.5 4.25M1.5 8h4M4 6l2 2-2 2" />
+  </ListGlyph>
+);
+
 const ticketListDependencyGlyph = (
   <ListGlyph>
     <circle cx="4.5" cy="3.5" r="1.75" />
@@ -482,18 +513,34 @@ function ticketListFilterText(
   return ticketFilterIsStanding(filter) ? filter : text(phaseLabel(filter));
 }
 
-/** Anyone, as the Creator picker holds it, which no principal is. */
-const ticketListCreatorAnyone = "";
+/** Anyone, as the Creator and Owner pickers hold it, which no principal is. */
+const ticketListMemberAnyone = "";
 
-/** Who filed the tickets the list holds: anyone, the reader, or one of the
- * project's people, each drawn as their row's creator is. */
-function TicketListCreatorPicker(props: {
+/** The member a picker narrows the list to, and how it is named and drawn. */
+const ticketListMemberPickers = {
+  creator: {
+    label: { id: "project-table-creator-label" },
+    glyph: ticketListCreatorGlyph,
+  },
+  owner: {
+    label: { id: "project-table-owner-label" },
+    glyph: ticketListOwnerGlyph,
+  },
+} as const satisfies Record<
+  "creator" | "owner",
+  { readonly label: Copy; readonly glyph: ReactNode }
+>;
+
+/** Who filed, or who owns, the tickets the list holds: anyone, the reader,
+ * or one of the project's people, each drawn as their row's creator is. */
+function TicketListMemberPicker(props: {
+  readonly member: keyof typeof ticketListMemberPickers;
   readonly partition: PartitionIdentity;
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const text = useCopyText();
-  const creator = props.query.creator;
+  const chosen = props.query[props.member];
   const reader = useProjectAbilities(props.partition)?.principal;
   const people = useProjectPeople(props.partition);
   const creatorEmails = useCreatorEmails(props.partition);
@@ -502,17 +549,18 @@ function TicketListCreatorPicker(props: {
     people.state === "Ready"
       ? people.value.people.map((person) => person.subject)
       : [],
-    creator,
+    chosen,
   );
+  const picker = ticketListMemberPickers[props.member];
   return (
     <Picker
-      label={text({ id: "project-table-creator-label" })}
+      label={text(picker.label)}
       iconOnly
-      glyph={ticketListCreatorGlyph}
-      value={creator ?? ticketListCreatorAnyone}
+      glyph={picker.glyph}
+      value={chosen ?? ticketListMemberAnyone}
       options={[
         {
-          value: ticketListCreatorAnyone,
+          value: ticketListMemberAnyone,
           text: text({ id: "project-table-creator-anyone" }),
         },
         ...(reader === undefined
@@ -525,11 +573,15 @@ function TicketListCreatorPicker(props: {
           text: creatorLabel(principal, creatorEmails).text,
         })),
       ]}
-      onChoose={(chosen) => {
+      onChoose={(picked) => {
+        const member = picked === ticketListMemberAnyone ? undefined : picked;
         props.onQuery(
-          ticketListQueryWith(props.query, {
-            creator: chosen === ticketListCreatorAnyone ? undefined : chosen,
-          }),
+          ticketListQueryWith(
+            props.query,
+            props.member === "creator"
+              ? { creator: member }
+              : { owner: member },
+          ),
         );
       }}
       align="end"
@@ -620,7 +672,14 @@ function TicketListControls(props: {
       />
       <TicketListSortPicker sort={props.sort} onSort={props.onSort} />
       <TicketListFilterPicker filter={props.filter} onFilter={props.onFilter} />
-      <TicketListCreatorPicker
+      <TicketListMemberPicker
+        member="creator"
+        partition={props.partition}
+        query={props.query}
+        onQuery={props.onQuery}
+      />
+      <TicketListMemberPicker
+        member="owner"
         partition={props.partition}
         query={props.query}
         onQuery={props.onQuery}
@@ -645,7 +704,7 @@ function ticketListStatusMatched(
 }
 
 /** One line under the controls where the list needs one: how many tickets a
- * search or a creator matched, across the project or, under a standing the server cannot
+ * search, a creator or an owner matched, across the project or, under a standing the server cannot
  * count, among the rows drawn; or that the list draws none, of the tickets
  * there are or, while pages remain, of those read so far. */
 function ticketListStatus(
@@ -680,7 +739,7 @@ function TicketListRows(props: {
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly sort: TicketListSort;
-  /** The server narrowed the read, by a search or a creator. */
+  /** The server narrowed the read, by a search, a creator or an owner. */
   readonly narrowed: boolean;
   readonly readMore: (() => void) | undefined;
 }): ReactNode {
@@ -855,6 +914,7 @@ function useProjectTableState(props: {
     order: ticketListSortOrder(sort),
     search: props.query.q,
     creator: props.query.creator,
+    owner: props.query.owner,
   };
   const tickets = useTicketRows(partition, ask);
   const unfiltered = useTicketRows(partition, {
@@ -950,7 +1010,7 @@ export function ProjectTable(props: {
         partition={partition}
         nowMs={nowMs}
         sort={sort}
-        narrowed={ask.search !== undefined || ask.creator !== undefined}
+        narrowed={ticketListAskNarrowed(ask)}
         readMore={tickets.readMore}
       />
       {tickets.reading ? (

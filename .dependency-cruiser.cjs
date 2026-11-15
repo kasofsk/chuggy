@@ -144,23 +144,24 @@ module.exports = {
       to: { reachable: true, path: "^src/adapters/hydra/" },
     },
     {
-      name: "access-plane-reaches-only-its-link-store",
+      name: "access-plane-reaches-only-its-link-and-name-stores",
       comment:
         "The access plane answers who holds what from the authority and from " +
         "nothing else: every role it lists or changes is a tuple there. Its " +
         "database keeps invite links, which are not roles until redeemed and " +
-        "then are tuples, so a PostgreSQL adapter reached from its root " +
-        "other than the link store and what opening a pool reaches would be " +
-        "a second store of who holds what. Reachability rather than an " +
-        "import, because the shape that breaks it is a shared composition " +
-        "helper that opens a pool and composes some other store beside it.",
+        "then are tuples, and tenants' display names, which grant nothing, so " +
+        "a PostgreSQL adapter reached from its root other than those two " +
+        "stores and what opening a pool reaches would be a second store of " +
+        "who holds what. Reachability rather than an import, because the " +
+        "shape that breaks it is a shared composition helper that opens a " +
+        "pool and composes some other store beside it.",
       severity: "error",
       from: { path: "^src/roots/accessPlane[.]ts$" },
       to: {
         reachable: true,
         path: "^src/adapters/postgres/",
         pathNot:
-          "^src/adapters/postgres/((inviteLinks|pool|schema)[.]ts$|schema/)",
+          "^src/adapters/postgres/((inviteLinks|tenantNames|pool|schema)[.]ts$|schema/)",
       },
     },
     {

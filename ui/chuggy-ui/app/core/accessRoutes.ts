@@ -171,6 +171,20 @@ export function apiCallerTenants(
   );
 }
 
+/** The workspace's display name changed, for a caller who administers it. */
+export function apiRenameTenant(
+  ports: ApiPorts,
+  tenant: string,
+  displayName: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(
+    ports,
+    "tenantDisplayNameChange",
+    { tenant },
+    { displayName },
+  );
+}
+
 /** The caller's own account, answered to anyone signed in about themself. */
 export function apiCallerAccount(
   ports: ApiPorts,
@@ -465,18 +479,17 @@ export function apiRevokeTenantInviteLink(
   return accessSent(ports, "tenantInviteLinkRevocation", { tenant, link });
 }
 
-/** An invite link used by the caller, with the name of the workspace it makes where one is given, answered with what it granted them. */
+/** An invite link used by the caller, answered with what it granted them. */
 export function apiRedeemInviteLink(
   ports: ApiPorts,
   token: string,
-  workspace?: string,
 ): Promise<ApiResult<AccessInviteLinkRedeemed>> {
   return apiRead(
     ports,
     {
       method: accessPlaneRoutes.inviteLinkRedemption.method,
       path: accessPlanePath("inviteLinkRedemption", {}),
-      body: workspace === undefined ? { token } : { token, workspace },
+      body: { token },
     },
     (value) => accessInviteLinkRedeemedSchema.parse(value),
   );

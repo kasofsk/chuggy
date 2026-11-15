@@ -12,8 +12,11 @@ import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerCon
 import {
   createNativeHttpApp,
   nativeHttpLimitsDefault,
+  type NativeHttpLimits,
   type PrincipalAuthentication,
+  type UnrunDeletions,
 } from "../adapters/http/server.ts";
+import type { TicketTakes } from "../interpreter/ticketTake.ts";
 import {
   projectResourceReader,
   threadLiveFramed,
@@ -55,9 +58,11 @@ import {
   composeExecutionPlacement,
   composeProjectInbox,
   composeProjectOwnerFallback,
+  composeTicketTakes,
   composeThreadLimits,
   composeMemberChat,
   composeProjectCreation,
+  composeUnrunDeletions,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
   composeSelectorProposalReviews,
@@ -174,6 +179,8 @@ import {
 } from "../interpreter/workerPool.ts";
 import { runnerReleasesPinned } from "./runnerReleases.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
+import { ketoAccessErasure } from "../adapters/keto/accessErasure.ts";
+import type { AccessErasure } from "../interpreter/unrunDeletion.ts";
 import {
   checkedProjectGrantSettings,
   type ProjectGrantWriter,
@@ -503,11 +510,51 @@ function nativeProjectInbox(
   );
 }
 
+/** The server's default limits, but for the largest project artifact upload, which `nativeArtifacts` reads. */
+function nativeHttpLimitsUploading(uploadBytesMax: number): NativeHttpLimits {
+  return {
+    ...nativeHttpLimitsDefault,
+    projectArtifactUploadBytesMax: uploadBytesMax,
+  };
+}
+
+/** A ticket's takes and returns, refusing the site's selector under this API's issuer. */
+function nativeTicketTakes(
+  pool: pg.Pool,
+  access: ProjectAccess,
+  issuer: string,
+): TicketTakes {
+  return composeTicketTakes(pool, access, nativeSelectorPrincipal(issuer));
+}
+
 /** What writes the authority's tuples, or nothing where this deployment names no write port. */
 function nativeProjectGrants(): ProjectGrantWriter | undefined {
   const writeUrl = process.env[ketoWriteUrlVariable];
   if (writeUrl === undefined) return undefined;
   return ketoProjectGrants(checkedProjectGrantSettings({ writeUrl }));
+}
+
+/** What erases the authority's tuples, or nothing where this deployment names no write port. */
+function nativeAccessErasure(
+  accessSettings: ProjectAccessSettings,
+): AccessErasure | undefined {
+  const writeUrl = process.env[ketoWriteUrlVariable];
+  if (writeUrl === undefined) return undefined;
+  return ketoAccessErasure(
+    accessSettings,
+    checkedProjectGrantSettings({ writeUrl }),
+  );
+}
+
+/** Deleting what never ran, or nothing where this deployment names no write port to erase its tuples through. */
+function nativeUnrunDeletions(
+  pool: pg.Pool,
+  access: ProjectAccess,
+  erasure: AccessErasure | undefined,
+): UnrunDeletions | undefined {
+  return erasure === undefined
+    ? undefined
+    : composeUnrunDeletions(pool, access, erasure);
 }
 
 function requiredEnvironment(name: string): string {
@@ -1612,6 +1659,7 @@ async function main(): Promise<void> {
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
   const grants = nativeProjectGrants();
+  const erasure = nativeAccessErasure(accessSettings);
   const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
   const threads = nativeThreadPorts(pools, artifacts);
@@ -1629,10 +1677,7 @@ async function main(): Promise<void> {
     authentication,
     nativeReadiness(pool, selectorReviewPool, accessSettings),
     postgresInstallationAuthority(pool),
-    {
-      ...nativeHttpLimitsDefault,
-      projectArtifactUploadBytesMax: uploadBytesMax,
-    },
+    nativeHttpLimitsUploading(uploadBytesMax),
     hub,
     composeSelectorProjectSettings(pool, access),
     forge.minting,
@@ -1642,7 +1687,9 @@ async function main(): Promise<void> {
       pool,
       access,
       ketoTenantClaims(accessSettings),
-      grants,
+      grants === undefined || erasure === undefined
+        ? undefined
+        : { grants, erasure },
       nativeSelectorPrincipal(authenticationConfig.issuer),
     ),
     composeExecutionPlacement(pool, access),
@@ -1660,6 +1707,8 @@ async function main(): Promise<void> {
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),
+    nativeUnrunDeletions(pool, access, erasure),
+    nativeTicketTakes(pool, access, authenticationConfig.issuer),
     appearanceService(postgresAppearance(pool)),
   );
   nativeStopping(app, pools, [hub, threadLive]);

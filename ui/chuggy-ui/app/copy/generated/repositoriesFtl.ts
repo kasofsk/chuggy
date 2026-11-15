@@ -2,8 +2,8 @@
  * Do not edit by hand; run `node ui/chuggy-ui/tools/copyCatalog.ts`. */
 
 export const repositoriesFtl = `## The repositories page, a repository's page, adding one, and connecting
-## GitHub: \`RepositoriesPage.tsx\`, \`repositories/\`, the forge's two landings,
-## and the core modules they draw from.
+## GitHub: \`RepositoriesPage.tsx\`, \`repositories/\`, the two pages the forge
+## returns to, and the core modules they draw from.
 
 ## The words a refusal that says nothing about the repository is drawn as.
 
@@ -21,7 +21,7 @@ repositories-not-installed = Not installed
 repositories-github-unavailable = { -github } unavailable
 repositories-more = { $count } more
 
-## What a person brings back from the forge, and the two landings it returns to.
+## What a person brings back from the forge, and the two pages it returns to.
 
 repositories-return-declined = Declined
 repositories-return-partial = Partial
@@ -126,10 +126,14 @@ repositories-unbind-line = New { -ticket(form: "plural") } can't name { $reposit
 repositories-not-bound = Not bound
 repositories-writing = Writing
 repositories-written = Written
-repositories-landing-title = { -landing(case: "upper") }
-repositories-landing-about = How a finished { -ticket } { -landing(form: "s") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
+repositories-finalization-title = { -finalization(case: "upper") }
+repositories-finalization-about = How a finished { -ticket } is { -finalization(form: "ed") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
 repositories-workflow-files = Workflow files
 repositories-workflow-files-about = Lets { -run(form: "plural") } change workflow files · App needs Workflows
+# spells -run: a GitHub Actions run, not a stage's
+repositories-workflow-runs = Workflow runs
+# spells -run: a GitHub Actions run, not a stage's
+repositories-workflow-runs-about = Lets { -run(form: "plural") } start and read workflow runs · App needs Actions
 repositories-off = Off
 repositories-on = On
 repositories-configurations-title = { -configuration(case: "upper", form: "plural") }
@@ -141,7 +145,6 @@ repositories-col-configuration = { -configuration(case: "upper") }
 # The worker a workload runs on, never the worker app.
 repositories-col-worker = { -workload(case: "upper") } worker
 repositories-col-stages = { -stage(case: "upper", form: "plural") }
-repositories-col-approval = { -approval(case: "upper") }
 repositories-incomplete = Incomplete
 repositories-catalog-work = { $work } of { $count ->
     [one] { $count } { -workload }
@@ -177,6 +180,7 @@ repositories-fault-duplicate-name = Name declared twice
 repositories-fault-duplicate-path = File listed twice
 repositories-fault-reference-absent = Referenced file missing
 repositories-fault-too-many-references = Too many referenced files
+repositories-fault-approval-outside-plan = { -approval(case: "upper") } outside { -evaluation-plan(form: "a") }
 repositories-fault-chars = { $chars } of { $charsMax } characters
 repositories-fault-reference-named = Missing { $reference }
 `;

@@ -1,5 +1,5 @@
 /**
- * What the Runners page draws, derived: the words for where a project's work
+ * What the runner pages draw, derived: the words for where a project's work
  * and sessions run and what decided it, the draft a placement is chosen in,
  * what a refused write is drawn as, and the package a machine is made a runner with, from
  * the command that installs it to the one that registers the machine.
@@ -9,7 +9,6 @@ import type {
   ExecutionPlacementResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
-  WorkerPoolsResponse,
 } from "../../../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
 import {
@@ -25,7 +24,6 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
-import type { PanelState } from "./freshness.ts";
 
 /** A runner package as the console hands it to a reader. */
 export interface RunnerPackage {
@@ -37,8 +35,10 @@ export interface RunnerPackage {
   readonly needs: Copy;
   /** The command that installs the release chuggy pins for the package. */
   readonly installCommand: string;
-  /** Where the package says what is left to do after registering. */
+  /** Where the package says what is left to do after registering a runner. */
   readonly guideAddress: string;
+  /** Where the package says what is left to do after registering a chat host. */
+  readonly chatHostGuideAddress: string;
 }
 
 const runnerReleasePattern =
@@ -71,16 +71,18 @@ export const runnerPackages = {
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.51.0/chuggy-linux-0.51.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.53.0/chuggy-linux-0.53.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   },
   darwin: {
     label: { id: "runners-package-darwin" },
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.21.0/chuggy-darwin-0.21.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.23.0/chuggy-darwin-0.23.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
+    chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
   },
 } as const satisfies Record<string, RunnerPackage>;
 
@@ -191,6 +193,20 @@ export function runnerCapabilityLabel(capability: string): string {
 /** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
 export type RunnerKind = "Pool" | "Personal" | "ChatHost";
 
+/** Where a package says what is left to do once a machine is registered as `kind`. */
+export function runnerGuideAddress(
+  offered: RunnerPackage,
+  kind: RunnerKind,
+): string {
+  switch (kind) {
+    case "Pool":
+    case "Personal":
+      return offered.guideAddress;
+    case "ChatHost":
+      return offered.chatHostGuideAddress;
+  }
+}
+
 /** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
   chosen: RunnerPackageName,
@@ -217,27 +233,6 @@ export function runnerRegisterCommand(
     .map((capability) => ` --capability ${capability}`)
     .join("");
   return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
-}
-
-/** Where `Add runner` is drawn: in the panel's head, or under the line an empty roster is said in. */
-export type RunnerAddPlace = "Head" | "Empty";
-
-/**
- * Where a reader who may add a runner is drawn the control: under an empty
- * roster's line, where it is the one thing to do, and in the head otherwise.
- * Nowhere while the roster is unread, so it is not drawn in one place and then
- * the other, and nowhere under the ask or steps an empty roster's control
- * opened.
- */
-export function runnerAddPlace(view: {
-  readonly administers: boolean;
-  readonly roster: PanelState<WorkerPoolsResponse>;
-  readonly opened: boolean;
-}): RunnerAddPlace | undefined {
-  if (!view.administers || view.roster.state === "Pending") return undefined;
-  if (view.roster.state !== "Ready" || view.roster.value.pools.length > 0)
-    return "Head";
-  return view.opened ? undefined : "Empty";
 }
 
 /** Where the lead runs and as which offering: its route, and whether it is

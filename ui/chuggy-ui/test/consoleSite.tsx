@@ -83,6 +83,8 @@ import {
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  projectDeletionResponseSchema,
+  tenantDeletionResponseSchema,
   sessionPlacementResponseSchema,
   threadResponseSchema,
   threadsResponseSchema,
@@ -327,7 +329,9 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt("/api/v1/projects"),
     schema: projectInventoryResponseSchema,
-    body: () => ({ projects: [consolePartition] }),
+    body: () => ({
+      projects: [{ ...consolePartition, name: consolePartition.project }],
+    }),
   },
   {
     path: consoleReadAt(projectPath),
@@ -415,6 +419,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/owner-fallback`),
     schema: projectOwnerFallbackResponseSchema,
     body: () => ({ administers: false }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/deletion`),
+    schema: projectDeletionResponseSchema,
+    body: () => ({ held: ["ReleasedTicket"] }),
   },
   {
     path: consoleReadAt(`${projectPath}/hosted-runs`),
@@ -613,6 +622,11 @@ const consoleReads: readonly ConsoleRead[] = [
         readings: [],
       })),
     }),
+  },
+  {
+    path: consoleReadAt(`${tenantPath}/deletion`),
+    schema: tenantDeletionResponseSchema,
+    body: () => ({ held: ["Project"] }),
   },
   {
     path: consoleReadAt(`${tenantPath}/chat-host`),

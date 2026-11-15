@@ -34,9 +34,9 @@
  * own project, which its admission already answered for.
  *
  * A MEMBER'S OWN SESSION IS ITS OWNER'S CHAT HOST'S ALONE, and only while the
- * owner may still open unscoped chat and the host speaks a contract that runs
- * one: its partition is no project, so the tenant's permit is asked in place of
- * a project's read, and it is handed no repository, there being no binding to
+ * owner may still open unscoped chat and the host implements `UnscopedChat`:
+ * its partition is no project, so the tenant's permit is asked in place of a
+ * project's read, and it is handed no repository, there being no binding to
  * read.
  *
  * A CHAT HOST'S SESSION SITS IDLE AS LONG AS ITS HOST NAMED, AND WITHOUT
@@ -46,11 +46,24 @@
  * the host and the reaper read one figure. A pool's claim records nothing and
  * launches with the site's bounds, so its attempt is reaped at the
  * scheduler's window as a placed one is.
+ *
+ * A CHAT HOST'S THREAD HOLDS ITS ROSTER INTERSECTED WITH WHAT ITS HOST NAMED,
+ * and the whole of its roster where the host named nothing: the claim records
+ * the host's set on the attempt and builds the invocation from the
+ * intersection, and the API confines the attempt's bearer to the same
+ * intersection, taken from the session's roster as it reads it then. An
+ * inquiry, a lead and any session a pool claims hold their roster.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
+  workerContractImplements,
+  type WorkerContractFeature,
+  type WorkerContractPeer,
+} from "../contract/workerContract.ts";
+import {
   workerPoolPollIdleSecsMax,
   type WorkerPoolSessionAssignment,
+  type WorkerPoolThreadClosed,
 } from "../contract/workerPool.ts";
 import type {
   SessionAttemptId,
@@ -70,16 +83,13 @@ import {
   type SessionTaskInvocation,
 } from "./sessionScheduler.ts";
 import type { SessionAttemptMint } from "./sessionSchedulerRun.ts";
-import {
-  contractVersionAccepted,
-  workerContractUnscopedChat,
-} from "./workerPlane.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import {
   workerPoolImageHosted,
   type WorkerPoolImageHosts,
 } from "./workerPoolImagePull.ts";
 import type {
+  ChatHostIdentity,
   PoolPlaneIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
@@ -88,6 +98,17 @@ import {
   type SessionSiteBounds,
   type SessionTaskLaunch,
 } from "./workerTask.ts";
+
+/** Whether the peer a poll offered implements `feature`, a poll carrying none read as one whose request named nothing. */
+export function workerPoolPeerImplements(
+  feature: WorkerContractFeature,
+  contract: WorkerContractPeer | undefined,
+): boolean {
+  return workerContractImplements(
+    feature,
+    contract ?? { release: undefined, features: undefined },
+  );
+}
 
 /** What a site launches every session with, as its scheduler publishes it. */
 export interface SessionLaunchFacts {
@@ -132,6 +153,8 @@ export interface WorkerPoolSessionOpening {
   readonly launch: SessionTaskLaunch;
   /** How long a chat host's attempt may sit idle, absent where its host named no bound; a pool's attempt is reaped at the scheduler's window whatever this says. */
   readonly idleSecs?: number;
+  /** The capabilities a chat host named for the thread this opens, absent where it named none or this opens no chat host's thread. */
+  readonly hostCapabilities?: readonly SessionCapability[];
 }
 
 /** `NotClaimable` skips one session; `PoolFull` ends the claims. */
@@ -192,6 +215,11 @@ export interface WorkerPoolSessionRows<Identity> {
 /** The durable side of a runner-held session attempt, for whichever claimant the pool plane admitted. */
 export interface WorkerPoolSessions extends WorkerPoolSessionRows<WorkerPoolSessionClaimant> {
   launch(): Promise<SessionLaunchFacts | undefined>;
+  /** The threads whose last attempt `identity` ran that have since closed, the most recently closed first, at most `max` of them. */
+  threadsClosed(
+    identity: ChatHostIdentity,
+    max: number,
+  ): Promise<readonly WorkerPoolThreadClosed[]>;
 }
 
 /** Everything a session claim reaches beyond its rows and the authority: each project's binding, and where a bearer is drawn. */
@@ -212,14 +240,15 @@ export interface WorkerPoolSessionTerms {
   readonly imageHosts: WorkerPoolImageHosts;
 }
 
-/** The invocation a claimed session's runner fetches, built as `sessionPlaceOne` builds a pod's. */
+/** The invocation a claimed session's runner fetches, built as `sessionPlaceOne` builds a pod's, under the capabilities its claim holds. */
 function workerPoolSessionInvocation(
   candidate: WorkerPoolSessionCandidate,
+  capabilities: readonly SessionCapability[],
   launch: SessionLaunchFacts,
   repository: RepositoryId | undefined,
 ): SessionTaskInvocation {
   return sessionTaskInvocation({
-    capabilities: candidate.capabilities,
+    capabilities,
     ...(candidate.agentReference === undefined
       ? {}
       : { agentReference: candidate.agentReference }),
@@ -313,6 +342,27 @@ export function workerPoolSessionIdleSecs(
   return idleSecs;
 }
 
+/** The set a claim records of what a chat host named: its own for a thread, and none for any other session or caller. */
+export function workerPoolSessionHostCapabilities(
+  identity: PoolPlaneIdentity,
+  kind: SessionKind,
+  hostCapabilities: readonly SessionCapability[] | undefined,
+): readonly SessionCapability[] | undefined {
+  return identity.kind === "ChatHost" && kind === "Thread"
+    ? hostCapabilities
+    : undefined;
+}
+
+/** The capabilities a claimed session holds: its roster, less whatever its host's set leaves out. */
+export function workerPoolSessionCapabilitiesHeld(
+  roster: readonly SessionCapability[],
+  hostCapabilities: readonly SessionCapability[] | undefined,
+): readonly SessionCapability[] {
+  if (hostCapabilities === undefined) return roster;
+  const named = new Set(hostCapabilities);
+  return roster.filter((capability) => named.has(capability));
+}
+
 const millisecondsPerSecond = 1_000;
 
 /** The bounds a claimed session is launched under: the site's, and for a chat host's its idle limit the host's own bound or none. */
@@ -329,15 +379,65 @@ export function workerPoolSessionBounds(
   return { mailboxPollMs, resultDrainMs, loadTimeoutMs, turnsMax, budgetUsd };
 }
 
-/** Whether a poll may be handed its owner's own sessions: a chat host's alone, offering a release that runs one. */
+/** Whether a poll may be handed its owner's own sessions: a chat host's alone, whose peer implements `UnscopedChat`. */
 function workerPoolSessionClaimsMemberScope(
   identity: PoolPlaneIdentity,
-  contract: string | undefined,
+  contract: WorkerContractPeer | undefined,
 ): boolean {
   return (
     identity.kind === "ChatHost" &&
-    contractVersionAccepted(workerContractUnscopedChat, contract)
+    workerPoolPeerImplements("UnscopedChat", contract)
   );
+}
+
+/** What claiming `candidate` asks the durable side to open, under the capabilities its claim holds. */
+function workerPoolSessionOpeningOf(
+  identity: WorkerPoolSessionClaimant,
+  candidate: WorkerPoolSessionCandidate,
+  claim: {
+    readonly terms: WorkerPoolSessionTerms;
+    readonly launch: SessionLaunchFacts;
+    readonly binding: RepositoryBinding | undefined;
+    readonly minted: ReturnType<SessionAttemptMint["mint"]>;
+    readonly assignment: string;
+    readonly idleSecs?: number;
+    readonly sessionCapabilities?: readonly SessionCapability[];
+  },
+): WorkerPoolSessionOpening {
+  const { terms, launch, minted, idleSecs } = claim;
+  const hostCapabilities = workerPoolSessionHostCapabilities(
+    identity,
+    candidate.kind,
+    claim.sessionCapabilities,
+  );
+  const held = workerPoolSessionCapabilitiesHeld(
+    candidate.capabilities,
+    hostCapabilities,
+  );
+  return {
+    candidate,
+    attempt: minted.attempt,
+    assignment: claim.assignment,
+    bearer: minted.bearer.id,
+    bearerSecretDigest: minted.bearerSecretDigest,
+    leaseSecs: terms.leaseSecs,
+    placementBackoffSecs: launch.placementBackoffSecs,
+    heldMax: terms.heldMax,
+    invocation: workerPoolSessionInvocation(
+      candidate,
+      held,
+      launch,
+      sessionRepositoryPlaced(claim.binding, held, launch.mirrors),
+    ),
+    image: launch.image,
+    launch: {
+      api: { url: terms.apiUrl },
+      bounds: workerPoolSessionBounds(identity, launch, idleSecs),
+      model: launch.model,
+    },
+    ...(idleSecs === undefined ? {} : { idleSecs }),
+    ...(hostCapabilities === undefined ? {} : { hostCapabilities }),
+  };
 }
 
 /**
@@ -353,7 +453,8 @@ export async function workerPoolSessionClaims(
   asked: {
     readonly wanted: number;
     readonly idleSecs?: number;
-    readonly contract?: string;
+    readonly sessionCapabilities?: readonly SessionCapability[];
+    readonly contract?: WorkerContractPeer;
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const { wanted } = asked;
@@ -380,39 +481,48 @@ export async function workerPoolSessionClaims(
     if (!served.has(candidate.project)) continue;
     const minted = ports.bearers.mint();
     const assignment = mint();
-    const opened = await ports.store.open(identity, {
-      candidate,
-      attempt: minted.attempt,
-      assignment,
-      bearer: minted.bearer.id,
-      bearerSecretDigest: minted.bearerSecretDigest,
-      leaseSecs: terms.leaseSecs,
-      placementBackoffSecs: launch.placementBackoffSecs,
-      heldMax: terms.heldMax,
-      invocation: workerPoolSessionInvocation(
-        candidate,
+    const opened = await ports.store.open(
+      identity,
+      workerPoolSessionOpeningOf(identity, candidate, {
+        terms,
         launch,
-        sessionRepositoryPlaced(
-          served.get(candidate.project),
-          candidate.capabilities,
-          launch.mirrors,
-        ),
-      ),
-      image: launch.image,
-      launch: {
-        api: { url: terms.apiUrl },
-        bounds: workerPoolSessionBounds(identity, launch, idleSecs),
-        model: launch.model,
-      },
-      ...(idleSecs === undefined ? {} : { idleSecs }),
-    });
+        binding: served.get(candidate.project),
+        minted,
+        assignment,
+        ...(idleSecs === undefined ? {} : { idleSecs }),
+        ...(asked.sessionCapabilities === undefined
+          ? {}
+          : { sessionCapabilities: asked.sessionCapabilities }),
+      }),
+    );
     if (opened === "PoolFull") break;
     if (opened === "NotClaimable") continue;
-    claimed.push(
-      workerPoolSessionHanded(terms, launch, assignment, minted.bearer.secret),
-    );
+    claimed.push({
+      ...workerPoolSessionHanded(
+        terms,
+        launch,
+        assignment,
+        minted.bearer.secret,
+      ),
+      ...workerPoolSessionThreadNamed(identity, asked.contract, candidate),
+    });
   }
   return claimed;
+}
+
+/** The thread a claimed session is an attempt of, named only to a chat host whose poll's peer implements `ChatSessionThreads`, and absent for an inquiry or a lead. */
+function workerPoolSessionThreadNamed(
+  identity: WorkerPoolSessionClaimant,
+  contract: WorkerContractPeer | undefined,
+  candidate: WorkerPoolSessionCandidate,
+): Pick<WorkerPoolSessionAssignment, "thread"> {
+  if (
+    identity.kind !== "ChatHost" ||
+    candidate.kind !== "Thread" ||
+    !workerPoolPeerImplements("ChatSessionThreads", contract)
+  )
+    return {};
+  return { thread: { project: candidate.project, session: candidate.session } };
 }
 
 /** A session a claim opened, as the pool is handed it on the plane's terms. */

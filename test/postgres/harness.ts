@@ -37,6 +37,7 @@ import {
 import {
   createTicketCommand,
   dispatchTicketCommand,
+  reportTaskTerminalCommand,
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { encodeTicketCommand } from "../../src/generated/model-api.ts";
@@ -65,7 +66,7 @@ export const postgresHarnessBrief = asDraftBrief({
 import { id, reportedAt } from "../domain/fixtures.ts";
 import { liveObligations } from "../../src/domain/ticket.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import { taskIdentityEquals } from "../../src/domain/task.ts";
+import { taskIdentityEquals, workTaskIdentity } from "../../src/domain/task.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type {
   TaskIdentity,
@@ -82,7 +83,10 @@ import { postgresDependencyResults } from "../../src/adapters/postgres/dependenc
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { dependencyPinning } from "../../src/interpreter/dependencyDelivery.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
-import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
+import {
+  unsourcedTicketReference,
+  type ExecutionSourceObservationPort,
+} from "../../src/interpreter/executionSource.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
@@ -1110,8 +1114,12 @@ export async function postgresHarnessDrain(
   partition: Partition,
   memory: ProjectMemory,
   config: Config = refinementInstance,
+  executionSources?: ExecutionSourceObservationPort,
 ): Promise<PostgresHarnessDrained> {
-  const writer = postgresHarnessWriter(harness, config);
+  const writer = {
+    ...postgresHarnessWriter(harness, config),
+    ...(executionSources === undefined ? {} : { executionSources }),
+  };
   let carried = memory;
   const decided: string[] = [];
   for (let drained = 0; drained < postgresHarnessDecisionsMax; drained++) {
@@ -1124,6 +1132,45 @@ export async function postgresHarnessDrain(
   throw new Error(
     "postgres harness: the project queue did not drain within its bound",
   );
+}
+
+/**
+ * A fixture project whose ticket's first work cycle passed, with every input
+ * that followed decided at `executionSources`, which is the spawn of the
+ * evaluation that judges it.
+ */
+export async function postgresHarnessEvaluationSpawned(
+  harness: PostgresHarness,
+  label: string,
+  executionSources: ExecutionSourceObservationPort,
+): Promise<Partition> {
+  const partition = await postgresHarnessProject(harness.store, label);
+  const memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    label,
+    postgresHarnessJournal().length,
+  );
+  await postgresHarnessCompletion(
+    harness,
+    partition,
+    `operation-${label}-${randomUUID()}`,
+    reportTaskTerminalCommand(
+      postgresHarnessReport(memory.graph, workTaskIdentity(1, 1), "Pass"),
+    ),
+  );
+  const { decided } = await postgresHarnessDrain(
+    harness,
+    partition,
+    memory,
+    refinementInstance,
+    executionSources,
+  );
+  if (decided.some((each) => each !== "Committed"))
+    throw new Error(
+      `postgres harness: an input after the work cycle was ${decided.join(", ")}`,
+    );
+  return partition;
 }
 
 /** The operational context a selector case supplies, which no case is about. */

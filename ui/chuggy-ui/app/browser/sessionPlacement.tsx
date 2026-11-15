@@ -74,10 +74,10 @@ function SessionRunnerAddLink(props: {
           {text({ id: "runners-personal-link" })}
         </Link>
       );
-    case "Runners":
+    case "Pools":
       return (
-        <Link to={settingsRoutes.project.runners} params={props.partition}>
-          {text({ id: "runners-title" })}
+        <Link to={settingsRoutes.project.pools} params={props.partition}>
+          {text({ id: "runners-pools-title" })}
         </Link>
       );
   }

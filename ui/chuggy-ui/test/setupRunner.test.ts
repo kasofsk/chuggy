@@ -30,23 +30,24 @@ import { setupPacing } from "../app/core/setupPacing.ts";
 import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
+  setupChatHostWrites,
   setupLivePollMs,
   setupMintLifetimeSecs,
+  setupRunnerWrites,
   setupWritePorts,
 } from "../app/core/setupRunner.ts";
 import {
   setupChatPackageLeast,
   setupPackageLeast,
 } from "../app/core/setupRunnerMachine.ts";
+import { setupSignInNoteWritten } from "../app/core/setupStore.ts";
+import { signInStoreLockWord } from "../../../src/contract/signInStore.ts";
 import {
-  setupLockWord,
-  setupSignInNoteWritten,
-} from "../app/core/setupStore.ts";
-import {
-  machineKept,
   machineScript,
   machineSignedIn,
   machineSite,
+  machineStore,
+  machineTokenFile,
   setupMachine,
 } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
@@ -54,6 +55,8 @@ import {
   boxActOf,
   boxChatFile,
   boxChatUnitName,
+  boxFolder,
+  boxHome,
   boxLogin,
   boxLoginSecret,
   boxOwn,
@@ -80,6 +83,10 @@ import {
 import type { SetupSite } from "./setupSite.ts";
 
 const runner = ["runner", "--workspace", "acme", "--project", "widgets"];
+const mcp = ["mcp", "--workspace", "acme", "--project", "widgets"];
+/** The first line of a run of `mcp`, which names the site and needs no sign-in. */
+const sited = `site: ${machineSite}`;
+const serverFound = `found: Claude Code in this folder runs chuggy's MCP server for acme/widgets, as ${boxHome}/.claude.json names it`;
 const flags = "--workspace acme --project widgets";
 const signedIn = `site: ${machineSite}, signed in`;
 const next = `next: node ${machineScript} ${flags}`;
@@ -111,7 +118,10 @@ function secrets(machine: SetupMachine): readonly string[] {
 }
 
 /** One command as the entry prints it: it holds no secret whatever the run met, and where it says a thing was done it does not say nothing was. */
-async function ran(machine: SetupMachine, argv = runner): Promise<Ran> {
+async function ran(
+  machine: SetupMachine,
+  argv: readonly string[] = runner,
+): Promise<Ran> {
   const report = await machine.command(argv);
   const lines = setupReportLines(
     report,
@@ -136,6 +146,11 @@ function projectOnly(site: SetupSite): SetupSite {
 /** A machine signed in to a site set up as far as a runner, with nothing of a runner on it but an engine and a Claude login, where the project's runner is all the site lacks. */
 function fresh(): Promise<SetupMachine> {
   return machineSignedIn(projectOnly(setupSiteAt("Configured")));
+}
+
+/** The same machine before `mcp` was run there: no runner package, and no server named for the project. */
+function bare(): Promise<SetupMachine> {
+  return machineSignedIn(projectOnly(setupSiteAt("Configured")), false);
 }
 
 /** The same machine and site, where the person's chats in the project run on a chat host and they have none. */
@@ -176,7 +191,7 @@ const projectFound = [
   live,
 ];
 
-test("on a machine with an engine and a Claude login and nothing else, runner installs, writes the settings, registers, checks, installs and starts the service, and ends on the checklist once the site sees the runner live", async () => {
+test("on a machine with an engine, a Claude login and the runner package and nothing else, runner writes the settings, registers, checks, installs and starts the service, and ends on the checklist once the site sees the runner live", async () => {
   const machine = await fresh();
   expect(await ran(machine)).toEqual({
     exit: 0,
@@ -184,7 +199,7 @@ test("on a machine with an engine and a Claude login and nothing else, runner in
       signedIn,
       found.engine,
       found.login,
-      did.package,
+      found.package,
       did.settings,
       did.pool,
       found.check,
@@ -198,7 +213,6 @@ test("on a machine with an engine and a Claude login and nothing else, runner in
   expect(machine.box.acts).toEqual([
     "services",
     "docker",
-    "install",
     "register",
     "doctor",
     "service",
@@ -262,7 +276,7 @@ test("where the person's chats run on a chat host and they have none, runner mak
       signedIn,
       found.engine,
       found.login,
-      did.package,
+      found.package,
       did.settings,
       did.pool,
       found.check,
@@ -274,7 +288,7 @@ test("where the person's chats run on a chat host and they have none, runner mak
       next,
     ],
   });
-  expect(times(machine, "install")).toBe(1);
+  expect(times(machine, "install")).toBe(0);
   expect(times(machine, "register")).toBe(2);
   expect(times(machine, "doctor")).toBe(2);
   expect(writes(machine)).toEqual([mint, chatMint]);
@@ -331,7 +345,7 @@ test("a second run where the project's runner and the person's chat host are bot
   expect(times(machine, "restart")).toBe(0);
 });
 
-test("a package older than the first that updates itself, or of a version that cannot be read, is installed again by the same command, the service written before it, whose unit the new one writes the same, is restarted onto the new one, and the run goes on to the person's chat host", async () => {
+test("a package older than the person's chat host needs, or of a version that cannot be read, is installed again by mcp with the console's own command, and runner then finds it and goes on to the person's chat host", async () => {
   const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
   const words = runnerPackageOffered.installCommand.split(" ");
   for (const [held, said] of [
@@ -343,34 +357,29 @@ test("a package older than the first that updates itself, or of a version that c
     machine.box.paths.set(manifest, held);
     for (const project of machine.world.projects) project.threads = "Pool";
     machine.box.acts.length = 0;
-    expect((await ran(machine)).lines, said).toEqual([
-      signedIn,
-      found.engine,
-      found.settings,
-      found.login,
+    expect((await ran(machine, mcp)).lines, said).toEqual([
+      sited,
       `found: the runner package is installed: ${said}, at ${command}, and chuggy setup needs ${setupChatPackageLeast} or later${held === "{" ? " and could not read its version" : ""}`,
       did.package,
-      found.pool,
-      found.check,
-      found.unit,
-      found.linger,
-      did.restarted,
-      live,
-      ...chatMade,
+      serverFound,
       next,
     ]);
     expect(
       machine.box.ran.filter((run) => boxActOf(run) === "install"),
-    ).toEqual([words, words]);
-    expect(times(machine, "restart"), said).toBe(1);
+    ).toEqual([words]);
+    expect((await ran(machine)).lines, said).toEqual([
+      ...projectFound,
+      ...chatMade,
+      next,
+    ]);
   }
 });
 
-test("settings naming claudeCredential have a package older than the first that updates itself replaced before anything is registered, and an install that leaves one older stops the run with nothing registered", async () => {
+test("settings naming claudeCredential with a package older than the runner needs stop runner before anything is changed, naming mcp, which replaces it; and an install that leaves one older stops mcp with nothing named", async () => {
   const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
   const key = "/srv/secrets/anthropic-api-key";
   const held = async (release: string) => {
-    const machine = await fresh();
+    const machine = await bare();
     machine.box.release = release;
     machine.box.paths.set(key, boxLoginSecret);
     machine.box.paths.set(command, "#!/usr/bin/env node");
@@ -386,13 +395,31 @@ test("settings naming claudeCredential have a package older than the first that 
     found.engine,
     found.settings,
     `found: the runner's Anthropic API key is in ${key}`,
-    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs ${setupPackageLeast} or later`,
   ];
 
-  const replaced = await held(setupPackageLeast);
+  const replaced = await held(boxVersion);
+  const unpackaged = await ran(replaced);
+  expect(unpackaged.exit).toBe(0);
+  expect(unpackaged.lines).toEqual([
+    ...head,
+    `found: the runner package here is chuggy-linux 0.13.0, and chuggy setup needs ${setupPackageLeast} or later`,
+    expect.stringMatching(
+      /^tell: The runner package, chuggy-linux, is installed by the MCP step/u,
+    ) as unknown,
+    expect.stringMatching(
+      new RegExp(`^rule: Run node ${machineScript} mcp ${flags} only `, "u"),
+    ) as unknown,
+    stop,
+  ]);
+  expect(replaced.box.acts).toEqual(["services", "docker"]);
+  expect(writes(replaced)).toEqual([]);
+  expect((await ran(replaced, mcp)).lines.slice(1, 3)).toEqual([
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs ${setupChatPackageLeast} or later`,
+    did.package,
+  ]);
   expect((await ran(replaced)).lines).toEqual([
     ...head,
-    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${command}`,
+    found.package,
     did.pool,
     found.check,
     did.unit,
@@ -401,38 +428,50 @@ test("settings naming claudeCredential have a package older than the first that 
     live,
     next,
   ]);
-  expect(replaced.box.acts.slice(2, 4)).toEqual(["install", "register"]);
 
   const behind = await held("0.13.0");
-  const stopped = await ran(behind);
+  const stopped = await ran(behind, mcp);
   expect(stopped.exit).toBe(1);
-  expect(stopped.lines.slice(0, 7)).toEqual([
-    ...head,
-    `found: installing the runner package left chuggy-linux 0.13.0 at ${command}, and chuggy setup needs ${setupPackageLeast} or later`,
-    `tell: Installing the runner package left chuggy-linux 0.13.0, and chuggy setup needs ${setupPackageLeast} or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.`,
-  ]);
+  expect(stopped.lines[2]).toBe(
+    `found: installing the runner package left chuggy-linux 0.13.0 at ${command}, and chuggy setup needs ${setupChatPackageLeast} or later`,
+  );
   expect(behind.box.acts.at(-1)).toBe("install");
+  expect(times(behind, "mcpAdd")).toBe(0);
   expect(writes(behind)).toEqual([]);
-  expect(
-    [...behind.box.paths.keys()].filter((path) => path.startsWith(boxPools)),
-  ).toEqual([]);
 });
 
-test("beside a machine-wide package too old under a prefix not the person's to write, setup takes a current one under the person's own prefix where there is one, has one installed there where there is none, and with no npm stops before anything is changed", async () => {
+test("runner on a machine with no runner package, or one older than it needs, changes nothing, sends the site nothing but reads, and names mcp to install it", async () => {
+  const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
+  for (const version of [undefined, "0.13.0"]) {
+    const machine = await bare();
+    if (version !== undefined) {
+      machine.box.paths.set(command, "#!/usr/bin/env node");
+      machine.box.paths.set(manifest, JSON.stringify({ version }));
+    }
+    const stopped = await ran(machine);
+    const said = String(version);
+    expect(stopped.exit, said).toBe(0);
+    expect(stopped.lines.slice(3), said).toEqual([
+      version === undefined
+        ? "found: the runner package, chuggy-linux, is not installed here"
+        : `found: the runner package here is chuggy-linux ${version}, and chuggy setup needs ${setupPackageLeast} or later`,
+      expect.stringMatching(/nothing was changed on this machine/u) as unknown,
+      `rule: Run node ${machineScript} mcp ${flags} only once the person says yes to chuggy-linux and chuggy's MCP server on this machine.`,
+      stop,
+    ]);
+    expect(machine.box.acts, said).toEqual(["services", "docker"]);
+    expect(writes(machine), said).toEqual([]);
+  }
+});
+
+test("beside a machine-wide package too old under a prefix not the person's to write, mcp takes a current one under the person's own prefix where there is one, has one installed there where there is none, names the server run by it, and with no npm stops before anything is changed; and runner then registers with it", async () => {
   const machineWide = `${boxPrefix}/bin/chuggy-linux`;
   const mine = `${boxOwn}/bin/chuggy-linux`;
-  const key = "/srv/secrets/anthropic-api-key";
   const manifest = (prefix: string) =>
     `${prefix}/lib/node_modules/chuggy-linux/package.json`;
   const held = async (ownVersion: string | undefined) => {
-    const machine = await fresh();
-    machine.box.release = setupPackageLeast;
+    const machine = await bare();
     machine.box.sealed.add(`${boxPrefix}/bin`);
-    machine.box.paths.set(key, boxLoginSecret);
-    machine.box.paths.set(
-      boxSettings,
-      JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
-    );
     machine.box.paths.set(machineWide, "#!/usr/bin/env node");
     machine.box.paths.set(
       manifest(boxPrefix),
@@ -449,23 +488,28 @@ test("beside a machine-wide package too old under a prefix not the person's to w
   };
   const registeredBy = (machine: SetupMachine) =>
     machine.box.ran.find((run) => boxActOf(run) === "register")?.[0];
+  const servedBy = (machine: SetupMachine) =>
+    machine.box.ran.find((run) => boxActOf(run) === "mcpAdd")?.[7];
 
-  const current = await held(setupPackageLeast);
-  const kept = await ran(current);
-  expect(kept.lines[4]).toBe(
-    `found: the runner package is installed: chuggy-linux ${setupPackageLeast}, at ${mine}`,
+  const current = await held(boxVersion);
+  const kept = await ran(current, mcp);
+  expect(kept.lines[1]).toBe(
+    `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${mine}`,
   );
-  expect(kept.lines.slice(-2)).toEqual([live, next]);
+  expect(kept.lines.at(-1)).toBe(next);
   expect(times(current, "install")).toBe(0);
+  expect(servedBy(current)).toBe(mine);
+  expect((await ran(current)).lines.slice(-2)).toEqual([live, next]);
   expect(registeredBy(current)).toBe(mine);
 
   const none = await held(undefined);
-  const installed = await ran(none);
-  expect(installed.lines.slice(4, 6)).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.13.0, at ${machineWide}, and chuggy setup needs ${setupPackageLeast} or later`,
-    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}, and chuggy-linux 0.13.0 is still at ${machineWide}`,
+  const installed = await ran(none, mcp);
+  expect(installed.lines.slice(1, 3)).toEqual([
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${machineWide}, and chuggy setup needs ${setupChatPackageLeast} or later`,
+    `did: installed the runner package, chuggy-linux ${boxVersion}, at ${mine}, and chuggy-linux 0.13.0 is still at ${machineWide}`,
   ]);
-  expect(installed.lines.slice(-2)).toEqual([live, next]);
+  expect(servedBy(none)).toBe(mine);
+  expect((await ran(none)).lines.slice(-2)).toEqual([live, next]);
   expect(registeredBy(none)).toBe(mine);
 
   const gone = await held(undefined);
@@ -474,23 +518,24 @@ test("beside a machine-wide package too old under a prefix not the person's to w
     gone.box.paths.set(mine, "#!/usr/bin/env node");
     gone.box.paths.set(
       manifest(boxOwn),
-      JSON.stringify({ version: setupPackageLeast }),
+      JSON.stringify({ version: boxVersion }),
     );
     return exited(0, "done\n");
   });
-  expect((await ran(gone)).lines[5]).toBe(
-    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}`,
+  expect((await ran(gone, mcp)).lines[2]).toBe(
+    `did: installed the runner package, chuggy-linux ${boxVersion}, at ${mine}`,
   );
 
   const npmless = await held("0.13.0");
   npmless.box.prefix = undefined;
-  const stopped = await ran(npmless);
+  const stopped = await ran(npmless, mcp);
   expect(stopped.exit).toBe(0);
-  expect(stopped.lines.slice(4, 6)).toEqual([
+  expect(stopped.lines.slice(1, 3)).toEqual([
     "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
     "tell: The runner package is installed with npm, and npm did not answer on this machine, so nothing was changed on this machine. npm comes with Node. Tell me once npm runs here.",
   ]);
   expect(times(npmless, "install")).toBe(0);
+  expect(times(npmless, "mcpAdd")).toBe(0);
 });
 
 test("a workspace that does not let the person register a chat host stops the run once the project's runner is live, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
@@ -704,7 +749,7 @@ test("a project whose work the cluster runs and whose chats run on a chat host g
       "found: hosted runs take the work of acme/widgets, so that work needs no runner",
       found.engine,
       found.login,
-      did.package,
+      found.package,
       did.settings,
       did.chat,
       found.chatCheck,
@@ -752,28 +797,30 @@ test("the registration token is one word of register's arguments, which are the 
   expect([...machine.files.values()].join("\n")).not.toContain(token);
 });
 
-test("the package is installed by the console's own command word for word where the machine's prefix is this person's to write, and under their own prefix where it is not", async () => {
+test("mcp installs the package by the console's own command word for word where the machine's prefix is this person's to write, and under their own prefix where it is not, where runner then finds it", async () => {
   const words = runnerPackageOffered.installCommand.split(" ");
   const installs = (machine: SetupMachine) =>
     machine.box.ran.filter((run) => boxActOf(run) === "install");
-  const mine = await fresh();
-  await ran(mine);
+  const mine = await bare();
+  await ran(mine, mcp);
   expect(installs(mine)).toEqual([words]);
 
   for (const sealed of [`${boxPrefix}/bin`, `${boxPrefix}/lib/node_modules`]) {
-    const machine = await fresh();
+    const machine = await bare();
     machine.box.sealed.add(sealed);
-    const done = await ran(machine);
+    const done = await ran(machine, mcp);
     expect(installs(machine), sealed).toEqual([
       [...words.slice(0, -1), "--prefix", boxOwn, ...words.slice(-1)],
     ]);
-    expect(done.lines[3], sealed).toBe(
+    expect(done.lines[1], sealed).toBe(
       `did: installed the runner package, chuggy-linux ${boxVersion}, at ${boxOwn}/bin/chuggy-linux`,
     );
-    expect(done.lines.slice(-2), sealed).toEqual([live, next]);
-    expect((await ran(machine)).lines[4], sealed).toBe(
+    expect(done.lines.at(-1), sealed).toBe(next);
+    const after = await ran(machine);
+    expect(after.lines[3], sealed).toBe(
       `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${boxOwn}/bin/chuggy-linux`,
     );
+    expect(after.lines.slice(-2), sealed).toEqual([live, next]);
   }
 });
 
@@ -980,14 +1027,14 @@ test("a user the runner package bars from docker is never asked docker: podman i
     signedIn,
     lines.found.engine,
     found.login,
-    did.package,
+    found.package,
     lines.did.settings,
   ]);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(machine.box.acts.slice(0, 3)).toEqual([
     "services",
     "podman",
-    "install",
+    "register",
   ]);
   expect(times(machine, "docker")).toBe(0);
   expect(JSON.parse(machine.box.paths.get(boxSettings) ?? "")).toMatchObject({
@@ -1058,13 +1105,13 @@ test("a settings file that does not read as the runner's stops the run before an
   }
 });
 
-test("settings that cannot be written stop the run with the package installed and nothing registered, and the next run writes them", async () => {
+test("settings that cannot be written stop the run with nothing registered, and the next run writes them", async () => {
   const machine = await fresh();
   machine.box.sealed.add(boxSettings);
   const done = await ran(machine);
   expect(done.exit).toBe(1);
   expect(done.lines.slice(-5)).toEqual([
-    did.package,
+    found.package,
     `found: chuggy setup could not make ${boxSettings}`,
     `tell: chuggy setup could not write the runner's settings to ${boxSettings} on this machine, so the runner is not set up yet. ${pickedUp}`,
     again(`once ${boxSettings} can be made`),
@@ -1077,29 +1124,24 @@ test("settings that cannot be written stop the run with the package installed an
   expect(second.lines.slice(-2)).toEqual([live, next]);
 });
 
-test("with no package, or one older than chuggy setup needs, and an npm that does not answer the run stops before anything is changed, and a package under the person's own prefix is found without npm", async () => {
-  const machine = await fresh();
+test("runner asks nothing of npm: with no npm it names mcp where no package it can use is found, and a package under the person's own prefix is found without npm", async () => {
+  const machine = await bare();
   machine.box.prefix = undefined;
   const stopped = await ran(machine);
-  expect(stopped).toEqual({
-    exit: 0,
-    lines: [
-      signedIn,
-      found.engine,
-      found.login,
-      "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
-      "tell: The runner package is installed with npm, and npm did not answer on this machine, so nothing was changed on this machine. npm comes with Node. Tell me once npm runs here.",
-      again("once the person says npm runs on this machine"),
-      stop,
-    ],
-  });
+  expect(stopped.exit).toBe(0);
+  expect(stopped.lines[3]).toBe(
+    "found: the runner package, chuggy-linux, is not installed here",
+  );
+  expect(stopped.lines.at(-2)).toMatch(
+    new RegExp(`^rule: Run node ${machineScript} mcp ${flags} only `, "u"),
+  );
   expect(machine.box.acts).toEqual(["services", "docker"]);
   const manifest = `${boxOwn}/lib/node_modules/chuggy-linux/package.json`;
   machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!/usr/bin/env node");
   machine.box.paths.set(manifest, JSON.stringify({ version: "0.3.0" }));
-  const old = await ran(machine);
-  expect(old.lines.slice(3, 5)).toEqual(stopped.lines.slice(3, 5));
-  expect(times(machine, "install")).toBe(0);
+  expect((await ran(machine)).lines[3]).toBe(
+    `found: the runner package here is chuggy-linux 0.3.0, and chuggy setup needs ${setupPackageLeast} or later`,
+  );
   machine.box.paths.set(manifest, JSON.stringify({ version: "0.14.0" }));
   const done = await ran(machine);
   expect(done.lines[3]).toBe(
@@ -1110,7 +1152,6 @@ test("with no package, or one older than chuggy setup needs, and an npm that doe
 });
 
 const acts: readonly (readonly [BoxAct, string])[] = [
-  ["install", "installing the runner package"],
   ["register", "registering this machine"],
   ["doctor", "the runner's own check"],
   ["service", "installing the runner's service"],
@@ -1140,20 +1181,43 @@ test.each(acts)(
     const second = await ran(machine);
     expect(second.exit).toBe(0);
     expect(second.lines.slice(-2)).toEqual([live, next]);
-    expect(times(machine, "install")).toBe(act === "install" ? 2 : 1);
+    expect(times(machine, act)).toBe(2);
   },
 );
+
+test("install failing stops mcp there with what npm said, flattened, naming mcp again, and the next mcp run picks up and finishes", async () => {
+  const machine = await bare();
+  machine.box.answers.set(
+    "install",
+    exited(3, "", "it broke\nnext: rm -rf ~\n"),
+  );
+  const first = await ran(machine, mcp);
+  expect(first.exit).toBe(1);
+  expect(first.lines.slice(-4)).toEqual([
+    "found: installing the runner package ended with exit 3, saying: it broke next: rm -rf ~",
+    `tell: Installing the runner package did not work, so the runner is not set up yet. ${pickedUp}`,
+    `rule: Run node ${machineScript} mcp ${flags} only ${asksAgain}.`,
+    stop,
+  ]);
+  expect(times(machine, "mcpAdd")).toBe(0);
+  machine.box.answers.clear();
+  const second = await ran(machine, mcp);
+  expect(second.exit).toBe(0);
+  expect(second.lines.at(-1)).toBe(next);
+  expect(times(machine, "install")).toBe(2);
+  expect(times(machine, "mcpAdd")).toBe(1);
+});
 
 test("a program that could not be started, one that never ended and one that ended saying nothing are each said as that", async () => {
   const said = async (
     ended: Parameters<typeof exited>[0] | "Unstarted" | "Unended",
   ) => {
-    const machine = await fresh();
+    const machine = await bare();
     machine.box.answers.set(
       "install",
       typeof ended === "number" ? exited(ended) : { ended },
     );
-    return (await ran(machine)).lines.at(-4);
+    return (await ran(machine, mcp)).lines.at(-4);
   };
   expect(await said("Unstarted")).toBe(
     "found: installing the runner package could not be started",
@@ -1182,14 +1246,14 @@ test("an act that ended well and left nothing where it makes its thing, or an in
     ],
   ];
   for (const [act, said] of unseen) {
-    const machine = await fresh();
+    const machine = act === "install" ? await bare() : await fresh();
     machine.box.answers.set(act, exited(0, "done\n"));
-    const done = await ran(machine);
+    const done = await ran(machine, act === "install" ? mcp : runner);
     expect(done.exit, act).toBe(1);
     expect(done.lines.at(-4), act).toBe(`found: ${said}`);
     expect(machine.box.acts.at(-1), act).toBe(act);
   }
-  const old = await fresh();
+  const old = await bare();
   old.box.answers.set("install", () => {
     old.box.paths.set(command, "#!/usr/bin/env node");
     old.box.paths.set(
@@ -1198,16 +1262,15 @@ test("an act that ended well and left nothing where it makes its thing, or an in
     );
     return exited(0, "done\n");
   });
-  const done = await ran(old);
+  const done = await ran(old, mcp);
   expect(done.exit).toBe(1);
   expect(done.lines.at(-4)).toBe(
-    `found: installing the runner package left chuggy-linux 0.3.0 at ${command}, and chuggy setup needs ${setupPackageLeast} or later`,
+    `found: installing the runner package left chuggy-linux 0.3.0 at ${command}, and chuggy setup needs ${setupChatPackageLeast} or later`,
   );
   expect(old.box.acts.at(-1)).toBe("install");
 });
 
 const killed: readonly BoxAct[] = [
-  "install",
   "register",
   "doctor",
   "service",
@@ -1237,7 +1300,7 @@ test.each(killed)(
         (done) => times(machine, done),
       ),
     ).toEqual([
-      1,
+      0,
       1,
       killed.indexOf(act) < killed.indexOf("service") ? 1 : 2,
       1,
@@ -1460,17 +1523,22 @@ test("the registration a run goes on with is the file register said it wrote, al
   expect(other.lines.slice(-2)).toEqual([live, next]);
 });
 
-test("a package gone from a machine that was set up is installed again where it was, which writes the unit as it was, and its service is restarted onto it", async () => {
+test("a package gone from a machine that was set up stops runner naming mcp, which installs it again where it was, and runner then finds the unit as it was and registers nothing", async () => {
   const machine = await fresh();
   await ran(machine);
   machine.box.paths.delete(command);
+  const stopped = await ran(machine);
+  expect(stopped.lines[4]).toBe(
+    "found: the runner package, chuggy-linux, is not installed here",
+  );
+  expect((await ran(machine, mcp)).lines.slice(1, 3)).toEqual([
+    did.package,
+    serverFound,
+  ]);
   machine.box.acts.length = 0;
   machine.sent.length = 0;
   const done = await ran(machine);
-  expect(done.lines.filter((line) => line.startsWith("did: "))).toEqual([
-    did.package,
-    did.restarted,
-  ]);
+  expect(done.lines.filter((line) => line.startsWith("did: "))).toEqual([]);
   expect(done.lines).toContain(found.unit);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(times(machine, "service")).toBe(1);
@@ -1883,16 +1951,16 @@ test("a read the site hides once the run has acted is the person's to take up as
     did.started,
     ...hidden("how its runners stand"),
   ]);
-  expect(unseen.lines.slice(3, 5)).toEqual([did.package, did.settings]);
+  expect(unseen.lines.slice(3, 5)).toEqual([found.package, did.settings]);
 
   const machine = await fresh();
   await ran(machine);
-  machine.box.paths.delete(command);
+  machine.box.paths.delete(boxSettings);
   machine.world.fates.set("pools", "Refused");
   const unlisted = await ran(machine);
   expect(unlisted.exit).toBe(0);
   expect(unlisted.lines.slice(-5)).toEqual([
-    did.package,
+    did.settings,
     ...hidden("which runners it has"),
   ]);
 });
@@ -1940,7 +2008,7 @@ test("runner is not read without both names, and takes the wait the sign-in take
     ["runner", "--project", "widgets"],
   ])
     expect((await ran(machine, argv)).lines, argv.join(" ")).toEqual([
-      "found: runner takes --workspace and --project, both: the project the runner is for",
+      "found: mcp and runner each take --workspace and --project, both: the project each is for",
       `next: node ${machineScript}`,
     ]);
   expect((await ran(machine, [...runner, "--wait-secs", "601"])).exit).toBe(2);
@@ -1979,7 +2047,7 @@ test("a sign-in that cannot be entered again ends the run as not signed in, afte
   expect(done.lines.slice(0, 5)).toEqual([
     found.engine,
     found.login,
-    did.package,
+    found.package,
     did.settings,
     `site: ${machineSite}, not signed in`,
   ]);
@@ -1991,7 +2059,7 @@ test("a sign-in that cannot be entered again ends the run as not signed in, afte
   );
   expect(machine.world.mints).toEqual([]);
   expect([times(machine, "install"), times(machine, "register")]).toEqual([
-    1, 0,
+    0, 0,
   ]);
 });
 
@@ -2006,10 +2074,10 @@ async function lapsedAt(then: (machine: SetupMachine) => void): Promise<Ran> {
   return ran(machine);
 }
 
-const byMint = [found.engine, found.login, did.package, did.settings];
+const byMint = [found.engine, found.login, found.package, did.settings];
 
 test("a sign-in entered again part-way that this machine does not keep ends the run on that fault after everything the run had found and done by then, and the same fault at the first entry is said alone as it always was", async () => {
-  const session = `${machineKept}/session.json`;
+  const session = `${machineStore}/${machineTokenFile()}`;
   const fault = [
     `found: the sign-in was renewed and could not be kept: chuggy setup could not write ${session}`,
     `tell: chuggy setup renewed your sign-in and then could not write it to ${session} on this machine, so it was not kept and you may have to sign in again. Tell me once that path can be written.`,
@@ -2033,7 +2101,7 @@ test("a sign-in entered again part-way that this machine does not keep ends the 
 test("a run ended part-way by another command holding the lock, or by a site that no longer answers as one, says it went no further after what it had done, and never that it did nothing", async () => {
   const busy = await lapsedAt((machine) => {
     machine.alive.add(4242);
-    machine.lock = setupLockWord(4242, machine.nowMs);
+    machine.lock = signInStoreLockWord(4242, machine.nowMs);
   });
   expect(busy.lines).toEqual([
     ...byMint,
@@ -2098,13 +2166,16 @@ test("the bare command, where a runner is next and this machine could take one, 
   expect(done.lines.slice(-5)).toEqual([
     "step: runner      todo",
     "step: ticket      todo",
-    `tell: ${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/runners, where you press Add runner.`,
+    `tell: ${runnerIs}. I can make this machine one. That puts here a background service of yours, run by the runner package, chuggy-linux, that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, and on ${pages}/settings/placement set Personal runners to Strict or Preferred, so the runner takes its work.`,
     offer,
     stop,
   ]);
   expect(machine.box.acts).toEqual(["services", "docker"]);
   expect(machine.box.paths).toEqual(before);
-  expect(machine.box.read).toEqual([]);
+  expect(machine.box.read).toEqual([
+    `${boxHome}/.claude.json`,
+    `${boxFolder}/.mcp.json`,
+  ]);
   expect(writes(machine)).toEqual([]);
 });
 
@@ -2129,7 +2200,7 @@ test("where the person's chats run on a chat host, the bare command offers two s
   const machine = await both();
   const offered = await ran(machine, []);
   expect(offered.lines.slice(-3)).toEqual([
-    `tell: ${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/runners, where you press Add runner.`,
+    `tell: ${runnerIs}. I can make this machine one. That puts here two background services of yours, run by the runner package, chuggy-linux, that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, and on ${pages}/settings/placement set Personal runners to Strict or Preferred, so the runner takes its work.`,
     offer,
     stop,
   ]);
@@ -2160,7 +2231,7 @@ test("the bare command says why this machine cannot take a runner where it canno
     prepare(machine);
     const done = await ran(machine, []);
     expect(done.lines.join("\n")).not.toContain(" runner --workspace");
-    expect(done.lines.at(-3)).toContain(`${pages}/settings/runners`);
+    expect(done.lines.at(-3)).toContain(`${pages}/settings/workspace/runner`);
     return [done.lines.at(-3)?.slice(0, tellHead), machine.box.acts];
   };
   expect(
@@ -2223,7 +2294,7 @@ test("a runner registered and not running is offered to be started here only whe
   const offered = await ran(here, []);
   expect(offered.lines.slice(-2)).toEqual([offer, stop]);
   const holds =
-    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.";
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.";
   expect(offered.lines.at(-3)).toBe(holds);
   const started = await ran(here);
   expect(started.lines.slice(-3)).toEqual([did.started, live, next]);
@@ -2280,7 +2351,7 @@ function reaching(): { readonly api: ApiPorts; readonly reached: string[] } {
 test("the ports the writes go out through pass the mint for this project's runner, the mint for the person's chat host, and any read, and refuse every other write having reached nothing", async () => {
   const { api, reached } = reaching();
   const partition = { tenant: "two words", project: "a/b" };
-  const ports = setupWritePorts(api, "the run's", partition);
+  const ports = setupWritePorts(api, "the run's", setupRunnerWrites(partition));
   const tenant = "/api/v1/tenants/two%20words";
   const path = `${tenant}/projects/a%2Fb/worker-pool-registration-tokens`;
   const hosting = `${tenant}/chat-host-registration-tokens`;
@@ -2328,4 +2399,328 @@ test("the ports the writes go out through pass the mint for this project's runne
     "GET /api/v1/projects",
   ]);
   expect(await ports.bearer()).toBe("the run's");
+});
+
+test("the ports chat-host's writes go out through pass the mint for the person's chat host in the workspace and any read, and refuse the mint of a project's runner and every other write having reached nothing", async () => {
+  const { api, reached } = reaching();
+  const ports = setupWritePorts(
+    api,
+    "the run's",
+    setupChatHostWrites("two words"),
+  );
+  const tenant = "/api/v1/tenants/two%20words";
+  const init = (method: string) => ({
+    method,
+    headers: {},
+    signal: new AbortController().signal,
+  });
+  expect(
+    (await apiMintChatHostToken(ports, "two words", { lifetimeSecs: 1 }))
+      .outcome,
+  ).toBe("Ok");
+  await ports.fetch("/api/v1/projects", init("GET"));
+  for (const url of [
+    `${tenant}/projects/a%2Fb/worker-pool-registration-tokens`,
+    "/api/v1/tenants/acme/chat-host-registration-tokens",
+    `${tenant}/personal-runner-registration-tokens`,
+  ])
+    await expect(ports.fetch(url, init("POST")), url).rejects.toThrow(
+      "the checklist sends nothing but reads",
+    );
+  expect(reached).toEqual([
+    `POST ${tenant}/chat-host-registration-tokens`,
+    "GET /api/v1/projects",
+  ]);
+});
+
+const chatHost = ["chat-host", "--workspace", "acme"];
+const chatNext = `next: node ${machineScript} --workspace acme`;
+const chatLiveHere =
+  "found: the site sees this machine live as your chat host, so your chats in every project of acme can run on it";
+
+function chatAgain(when: string, replace?: string): string {
+  const replacing = replace === undefined ? "" : ` --replace ${replace}`;
+  return `rule: Run node ${machineScript} chat-host --workspace acme${replacing} only ${when}.`;
+}
+
+/** Whether a run asked the site anything of a project. */
+function projectAsked(machine: SetupMachine): boolean {
+  return machine.sent.some((asked) => asked.includes("/projects/"));
+}
+
+/** What a first run of chat-host does on a machine with an engine and a Claude login and nothing else. */
+const chatHostMade = [
+  signedIn,
+  found.engine,
+  found.login,
+  did.package,
+  did.settings,
+  did.chat,
+  found.chatCheck,
+  did.chatUnit,
+  did.linger,
+  did.chatStarted,
+  chatLiveHere,
+  chatNext,
+];
+
+test("chat-host makes this machine the person's chat host in the workspace on the runner walk's own acts in their order, the package's install among them, reads nothing of any project, needs no admin of one whose work runs on runners, and makes the chat host's mint its one write", async () => {
+  const machine = await bare();
+  for (const held of machine.world.projects) held.administer = false;
+  expect(await ran(machine, chatHost)).toEqual({
+    exit: 0,
+    lines: chatHostMade,
+  });
+  expect(machine.box.acts).toEqual([
+    "services",
+    "docker",
+    "install",
+    "register",
+    "doctor",
+    "service",
+    "linger",
+    "lingerOn",
+    "linger",
+    "enabled",
+    "active",
+    "reload",
+    "start",
+    "active",
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+  expect(projectAsked(machine)).toBe(false);
+  expect(machine.box.paths.has(pool)).toBe(false);
+  expect([...machine.box.units.keys()]).toEqual([chatUnit]);
+  expect(machine.world.chat.get("acme")).toEqual({
+    id: "chuggy-chat-1",
+    live: true,
+  });
+});
+
+test("a repeat run of chat-host on the machine that is the person's chat host keeps it, checks it, finds it running, and changes nothing at the site or on the machine", async () => {
+  const machine = await fresh();
+  await ran(machine, chatHost);
+  const before = new Map(machine.box.paths);
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  expect(await ran(machine, chatHost)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      found.engine,
+      found.settings,
+      found.login,
+      found.package,
+      found.chat,
+      found.chatCheck,
+      found.chatUnit,
+      found.linger,
+      found.chatRunning,
+      chatLiveHere,
+      chatNext,
+    ],
+  });
+  expect(writes(machine)).toEqual([]);
+  expect(times(machine, "register")).toBe(0);
+  expect(times(machine, "restart")).toBe(0);
+  expect(times(machine, "start")).toBe(0);
+  expect(machine.box.paths).toEqual(before);
+});
+
+test("a chat host of the person's on another machine, live or not, stops chat-host naming it by its short id and whether it is live, registers nothing, and names chat-host again with --replace and that id on the person's yes", async () => {
+  for (const live of [true, false]) {
+    const machine = await fresh();
+    const elsewhere = setupSiteChatAdded(machine.world, "acme", live);
+    const state = live ? "live" : "registered and not running";
+    const stopped = await ran(machine, chatHost);
+    expect(stopped.exit).toBe(0);
+    expect(stopped.lines.slice(-4)).toEqual([
+      `found: your chat host is another machine, ${elsewhere}, ${state}`,
+      `tell: Your chat host is another machine, ${elsewhere}, ${state}, and your chats run only on it. A member has one chat host, so registering this machine ends the sessions of ${elsewhere}. With your yes I will register this machine in its place, running this command again with --replace ${elsewhere}. Tell me if you want this machine to be it.`,
+      chatAgain(
+        `once the person says yes to this machine as their chat host in place of ${elsewhere}, ending its sessions`,
+        elsewhere,
+      ),
+      stop,
+    ]);
+    expect(writes(machine)).toEqual([]);
+    expect(times(machine, "register")).toBe(0);
+    expect(machine.world.chat.get("acme")).toEqual({ id: elsewhere, live });
+    expect(machine.box.paths.has(chat)).toBe(false);
+  }
+});
+
+test("a chat host's id the console shows short is the one a stop names and --replace is matched against", async () => {
+  const machine = await fresh();
+  const id = "chuggy-chat-0f3a9c21-4b5d-4e6f-8a9b-0c1d2e3f4a5b";
+  machine.world.chat.set("acme", { id, live: true });
+  const stopped = await ran(machine, chatHost);
+  expect(stopped.lines.at(-2)).toBe(
+    chatAgain(
+      "once the person says yes to this machine as their chat host in place of 0f3a9c21, ending its sessions",
+      "0f3a9c21",
+    ),
+  );
+  expect(stopped.lines.join("\n")).not.toContain(id);
+  const replaced = await ran(machine, [...chatHost, "--replace", "0f3a9c21"]);
+  expect(replaced.lines.at(-1)).toBe(chatNext);
+});
+
+test("chat-host with --replace naming the person's chat host on another machine registers this machine in its place, saying which it replaced, and with any other id stops on that, replacing nothing", async () => {
+  const machine = await fresh();
+  const elsewhere = setupSiteChatAdded(machine.world, "acme", true);
+  const wrong = await ran(machine, [...chatHost, "--replace", "chuggy-chat-9"]);
+  expect(wrong.exit).toBe(0);
+  expect(wrong.lines.slice(-4)).toEqual([
+    `found: the chat host --replace names is not your chat host, ${elsewhere}, so nothing was replaced`,
+    `tell: The chat host --replace names is not the one the site holds for you, so nothing was replaced. Your chat host is another machine, ${elsewhere}, live, and registering this machine ends its sessions. With your yes I will register this machine in its place, running this command again with --replace ${elsewhere}. Tell me if you want this machine to be it.`,
+    chatAgain(
+      `once the person says yes to this machine as their chat host in place of ${elsewhere}, ending its sessions`,
+      elsewhere,
+    ),
+    stop,
+  ]);
+  expect(wrong.lines.join("\n")).not.toContain("chuggy-chat-9");
+  expect(writes(machine)).toEqual([]);
+  expect(machine.world.chat.get("acme")).toEqual({ id: elsewhere, live: true });
+
+  const right = await ran(machine, [...chatHost, "--replace", elsewhere]);
+  expect(right.lines.slice(-7)).toEqual([
+    `did: registered this machine as your chat host, in ${chat}, in place of ${elsewhere}, whose sessions end`,
+    found.chatCheck,
+    did.chatUnit,
+    did.linger,
+    did.chatStarted,
+    chatLiveHere,
+    chatNext,
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+  expect(machine.world.chat.get("acme")).toEqual({
+    id: "chuggy-chat-2",
+    live: true,
+  });
+});
+
+test("runner keeps its rule of never replacing a chat host of the person's on another machine, and does not read --replace", async () => {
+  const machine = await both();
+  setupSiteChatAdded(machine.world, "acme", false);
+  expect(
+    (await ran(machine, [...runner, "--replace", "chuggy-chat-1"])).lines,
+  ).toEqual([
+    "found: chuggy setup takes --site, --workspace, --project and --wait-secs, --name with project, --replace with chat-host, and --test with configuration, each once with a value, and no other flag",
+    `next: node ${machineScript}`,
+  ]);
+  expect(machine.box.ran).toEqual([]);
+});
+
+test("a workspace that does not let the person register a chat host stops chat-host before anything is minted, saying where an admin turns it on and nothing of a project's work, and the run named again finishes the job", async () => {
+  const machine = await fresh();
+  machine.world.withheld.add("acme");
+  const withheld = await ran(machine, chatHost);
+  expect(withheld.exit).toBe(0);
+  expect(withheld.lines.slice(-4)).toEqual([
+    "found: the workspace does not let you register a chat host",
+    `tell: The workspace does not let you register a chat host yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${machineSite}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
+    chatAgain(
+      "once the person says Personal runners is on for them in the workspace",
+    ),
+    stop,
+  ]);
+  expect(writes(machine)).toEqual([]);
+  expect(times(machine, "register")).toBe(0);
+  machine.world.withheld.delete("acme");
+  const granted = await ran(machine, chatHost);
+  expect(granted.lines.slice(-7)).toEqual([
+    did.chat,
+    found.chatCheck,
+    did.chatUnit,
+    did.linger,
+    did.chatStarted,
+    chatLiveHere,
+    chatNext,
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+});
+
+test("off Linux chat-host says so before it asks a site anything or looks at the machine, and gives the by-hand steps from the workspace's personal runners page at the site named or remembered", async () => {
+  const page = `${machineSite}/tenants/acme/settings/runner`;
+  const lines = [
+    "found: this machine is a Mac, and chuggy setup makes a machine your chat host only on Linux",
+    `tell: chuggy setup makes a machine your chat host only on Linux and cannot make this one it, so nothing was changed on this machine. To make it your chat host by hand, open ${page}, press Register chat host, choose the machine and run the commands it shows. Tell me once it is running.`,
+    `rule: Run node ${machineScript} --workspace acme only once the person says their chat host is running.`,
+    stop,
+  ];
+  const signed = await fresh();
+  const stranger = setupMachine();
+  for (const [machine, argv] of [
+    [signed, chatHost],
+    [stranger, [...chatHost, "--site", machineSite]],
+  ] as const) {
+    machine.platform = "darwin";
+    expect(await ran(machine, argv)).toEqual({ exit: 2, lines });
+    expect(machine.asked).toEqual([]);
+    expect(machine.box.ran).toEqual([]);
+    expect(machine.box.read).toEqual([]);
+    expect(machine.lock).toBeUndefined();
+  }
+  expect(lines.join("\n")).not.toContain("/acme/widgets/");
+});
+
+test("chat-host is not read without a workspace, with a project, or with --replace that is no id a line could carry back", async () => {
+  const machine = await fresh();
+  for (const [argv, said] of [
+    [
+      ["chat-host"],
+      "found: chat-host takes --workspace: the workspace the chat host is for",
+    ],
+    [
+      [...chatHost, "--project", "widgets"],
+      "found: chuggy setup takes --site, --workspace, --project and --wait-secs, --name with project, --replace with chat-host, and --test with configuration, each once with a value, and no other flag",
+    ],
+    [
+      [...chatHost, "--replace", ".."],
+      "found: --replace takes the short id of your chat host, as your Personal runners page shows it",
+    ],
+  ] as const)
+    expect(await ran(machine, argv), argv.join(" ")).toEqual({
+      exit: 2,
+      lines: [said, `next: node ${machineScript}`],
+    });
+  expect(machine.box.ran).toEqual([]);
+  expect(machine.sent).toEqual([]);
+});
+
+test("where the project's runner is live and the person's chat host is all that is lacking, the bare command offers chat-host for the workspace and never runner, and the command its rule names makes this machine their chat host again with no runner of the project registered", async () => {
+  const machine = await both();
+  await ran(machine);
+  machine.world.chat.delete("acme");
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  const offered = await ran(machine, []);
+  expect(offered.lines.slice(-3)).toEqual([
+    "tell: Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet. I can make this machine it: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Tell me yes to go ahead.",
+    chatAgain("once the person says yes to this machine as their chat host"),
+    stop,
+  ]);
+  const ruled = /^rule: Run node \S+ (.+) only once /u.exec(
+    offered.lines.at(-2) ?? "",
+  );
+  expect(ruled?.[1]?.split(" ")).toEqual(chatHost);
+  const made = await ran(machine, ruled?.[1]?.split(" "));
+  expect(made.lines.slice(-8)).toEqual([
+    found.chatGone,
+    did.chat,
+    found.chatCheck,
+    found.chatUnit,
+    found.linger,
+    did.chatRestarted,
+    chatLiveHere,
+    chatNext,
+  ]);
+  expect(writes(machine)).toEqual([chatMint]);
+  expect(times(machine, "register")).toBe(1);
+  const after = await ran(machine, []);
+  expect(after.lines.find((line) => line.startsWith("step: runner "))).toBe(
+    "step: runner      done     live",
+  );
 });

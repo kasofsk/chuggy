@@ -248,9 +248,9 @@ const projectGroups = [
       "Lead /acme-co/atlas-web/settings/lead",
       "Lead session /acme-co/atlas-web/settings/lead-session",
       "Placement /acme-co/atlas-web/settings/placement",
+      "Pools /acme-co/atlas-web/settings/pools",
       "Permissions /acme-co/atlas-web/settings/permissions",
       "Repositories /acme-co/atlas-web/settings/repositories",
-      "Runners /acme-co/atlas-web/settings/runners",
       "Catalog /acme-co/atlas-web/settings/catalog",
     ],
   ],
@@ -328,6 +328,24 @@ test("in a project the workspace's bare address is replaced by its first page, a
   expect(router.history.length).toBe(2);
 });
 
+test("the project's group is headed by its display name, its links at its address", async () => {
+  await drawnSettings("/acme-co/atlas-web/settings/permissions", (request) =>
+    request.url.startsWith("/api/v1/projects")
+      ? answer({
+          projects: [
+            { tenant: "acme-co", project: "atlas-web", name: "Atlas Web" },
+          ],
+        })
+      : undefined,
+  );
+  const [project, ...rest] = projectGroups;
+  expect(groupsDrawn()).toStrictEqual([
+    ["Project Atlas Web", project?.[1]],
+    ...rest,
+    projectPersonGroup,
+  ]);
+});
+
 /** Each list the navigation draws, by the heading that names it, and each of
  * its rows as its link's name and the line that describes it. */
 function indexDrawn(): readonly (readonly [string, readonly string[]])[] {
@@ -358,7 +376,9 @@ test.each(settingsRoots)(
     expect(router.state.location.pathname).toBe(bare);
     const model = settingsNav({
       tenant: "acme-co",
-      project,
+      tenantName: "acme-co",
+      project:
+        project === undefined ? undefined : { address: project, name: project },
       site: { workspaces: false, permissions: false },
     });
     expect(indexDrawn()).toStrictEqual(
@@ -425,16 +445,13 @@ test.each([
     address: "/acme-co/atlas-web/settings/placement",
     group: "Project atlas-web",
   },
+  { address: "/acme-co/atlas-web/settings/pools", group: "Project atlas-web" },
   {
     address: "/acme-co/atlas-web/settings/permissions",
     group: "Project atlas-web",
   },
   {
     address: "/acme-co/atlas-web/settings/repositories",
-    group: "Project atlas-web",
-  },
-  {
-    address: "/acme-co/atlas-web/settings/runners",
     group: "Project atlas-web",
   },
   {
@@ -639,7 +656,9 @@ function linksKept(request: SentRequest): Response {
 async function linkCopied(opener: string): Promise<void> {
   await press(opener);
   await turned(() => {
-    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /^(Signup link|Link)$/u }),
+    );
   });
   await press("Create link");
   await press("Copy link");

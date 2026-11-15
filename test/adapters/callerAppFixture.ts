@@ -3,7 +3,10 @@
  * that names one caller.
  */
 
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import {
+  createNativeHttpApp,
+  type UnrunDeletions,
+} from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import type { AgentAccountService } from "../../src/interpreter/agentAccount.ts";
 import type { AppearanceService } from "../../src/interpreter/appearance.ts";
@@ -14,6 +17,7 @@ import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/p
 import type { TicketActionReaches } from "../../src/interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
+import type { TicketTakes } from "../../src/interpreter/ticketTake.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
 /** The services one app serves, each absent where its suite composes none. */
@@ -25,6 +29,8 @@ export interface CallerAppServices {
   readonly chat?: MemberChat;
   readonly agentAccounts?: AgentAccountService;
   readonly landingQueues?: LandingQueueReads;
+  readonly deletions?: UnrunDeletions;
+  readonly takes?: TicketTakes;
   readonly appearance?: AppearanceService;
 }
 
@@ -72,6 +78,8 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.agentAccounts,
     undefined,
     services.landingQueues,
+    services.deletions,
+    services.takes,
     services.appearance,
   );
 }

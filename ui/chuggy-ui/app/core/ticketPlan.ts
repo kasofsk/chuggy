@@ -4,7 +4,8 @@
  *
  * THE STAGES ARE THE PROGRAM THE TICKET WAS RELEASED WITH, or the one a draft
  * never released holds, and the names are its catalog's selected plan's, laid
- * over that program by position, as the catalog initializes one. A version 1 configuration names no stages, so its
+ * over that program by position, as the catalog initializes one, under the
+ * plans and workloads the ticket overrides. A version 1 configuration names no stages, so its
  * stages and evaluators are named by their numbers; a configuration not read
  * yet is the same.
  *
@@ -17,7 +18,7 @@ import type { BriefFinalizationOf } from "../../../../src/contract/brief.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { finalizationMethodLabel } from "./codeLabels.ts";
 import {
-  configurationCatalogOf,
+  configurationCatalogOverridden,
   configurationCatalogSelected,
   configurationCatalogWorkload,
 } from "./configurationCatalog.ts";
@@ -122,7 +123,7 @@ function ticketPlanProgram(
  * authoring as it stands. */
 export type TicketPlanned = Pick<
   TicketResponse,
-  "selection" | "brief" | "program"
+  "selection" | "brief" | "program" | "overrides"
 >;
 
 export function ticketPlanOf(
@@ -131,7 +132,9 @@ export function ticketPlanOf(
   text: CopyText,
 ): TicketPlan {
   const catalog =
-    canonical === undefined ? undefined : configurationCatalogOf(canonical);
+    canonical === undefined
+      ? undefined
+      : configurationCatalogOverridden(canonical, ticket?.overrides);
   const selected =
     catalog === undefined
       ? undefined

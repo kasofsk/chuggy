@@ -23,10 +23,9 @@ import {
   type CanonicalConfiguration,
   type ReleaseConfigurationFault,
 } from "../../src/interpreter/authoring.ts";
-import { allTaskConfigurationFaults } from "../../src/interpreter/taskConfiguration.ts";
+import { allTaskConfigurationFaults } from "../../src/contract/taskConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
-import { approvalRequiredField } from "../../src/interpreter/finalizerPreparation.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import {
   plainAuthoring,
@@ -617,7 +616,6 @@ test("configuration summaries expose registry fields without canonical content",
       practices: [],
       workInstructionsCount: 0,
       reviewInstructionsCount: 0,
-      finalization: { approvalRequired: false },
       evaluationStagesCount: 0,
     },
   );
@@ -642,7 +640,7 @@ test("configuration summaries expose registry fields without canonical content",
   );
 });
 
-/** The ready document with whichever of its fields a finalization case varies. */
+/** The ready document with whichever of its fields a case varies. */
 function summaryOf(fields: Record<string, unknown>) {
   const summary = configurationRevisionSummary({
     revision: asConfigurationRevisionId("revision"),
@@ -656,42 +654,17 @@ function summaryOf(fields: Record<string, unknown>) {
   });
   return summary.readiness === "Ready"
     ? {
-        finalization: summary.finalization,
+        finalization: "finalization" in summary,
         evaluationStagesCount: summary.evaluationStagesCount,
       }
     : summary.readiness;
 }
 
-/**
- * What a page says about finishing one revision. An approval policy this tree
- * cannot read is answered as an approval, because that is what the finalizer
- * does with it: a candidate under one is refused rather than promoted.
- */
-test("a summary answers what its revision decides about finishing and evaluating", () => {
-  assert.deepEqual(summaryOf({ [approvalRequiredField]: true }), {
-    finalization: { approvalRequired: true },
+test("a summary answers how many evaluation stages its revision runs", () => {
+  assert.deepEqual(summaryOf({}), {
+    finalization: false,
     evaluationStagesCount: 0,
   });
-  assert.deepEqual(summaryOf({ [approvalRequiredField]: false }), {
-    finalization: { approvalRequired: false },
-    evaluationStagesCount: 0,
-  });
-  assert.deepEqual(
-    summaryOf({}),
-    {
-      finalization: { approvalRequired: false },
-      evaluationStagesCount: 0,
-    },
-    "a revision saying nothing about approval asks for none",
-  );
-  assert.deepEqual(
-    summaryOf({ [approvalRequiredField]: "yes" }),
-    {
-      finalization: { approvalRequired: true },
-      evaluationStagesCount: 0,
-    },
-    "a policy this tree cannot read is a person in the way",
-  );
   assert.deepEqual(
     summaryOf({
       evaluations: [
@@ -699,11 +672,17 @@ test("a summary answers what its revision decides about finishing and evaluating
         { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
       ],
     }),
-    {
-      finalization: { approvalRequired: false },
-      evaluationStagesCount: 2,
-    },
+    { finalization: false, evaluationStagesCount: 2 },
   );
+});
+
+test("a stored version 1 revision naming finalizationApprovalRequired reads Ready and says nothing of approval", () => {
+  for (const asked of [true, false, "yes"])
+    assert.deepEqual(
+      summaryOf({ finalizationApprovalRequired: asked }),
+      { finalization: false, evaluationStagesCount: 0 },
+      String(asked),
+    );
 });
 
 test("a raw CreateTicket is not a public Decide command", () => {

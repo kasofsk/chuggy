@@ -66,6 +66,7 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
+import { workerHeldCredentialAbsences } from "../../contract/rosters.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -83,11 +84,8 @@ import {
   configurationFollowingRead,
   type ConfigurationFollowingTicket,
 } from "../../interpreter/configurationFollowing.ts";
-import {
-  asFinalizationAttemptId,
-  asRepositoryId,
-} from "../../interpreter/finalizer.ts";
-import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import { approvalWorkloadApprovers } from "../../contract/workloadConfiguration.ts";
 import type { NativeActionAsked } from "../../interpreter/nativeActionAnswer.ts";
 import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
 import {
@@ -155,6 +153,8 @@ interface TicketProjectionRow {
    * under, where that authority is a member's; null where it is not.
    */
   readonly creator: string | null;
+  /** The member the ticket's next execution is placed for, as `ticket_owner` answers it; null where none is. */
+  readonly owner: string | null;
   readonly phase: string;
   readonly seq: string;
   readonly escalation: string;
@@ -222,7 +222,6 @@ interface NativeActionHistoryRow {
   readonly authorizing_seq: string | null;
   readonly state: string | null;
   readonly resolution: string | null;
-  readonly attempt: string | null;
   readonly execution: string | null;
   readonly answered_by: string | null;
   readonly answered_at: string | null;
@@ -539,6 +538,8 @@ interface StoredRunStepFailure {
   readonly attempt?: unknown;
   readonly evidence?: unknown;
   readonly error_bytes?: unknown;
+  readonly credential_absent?: unknown;
+  readonly credential_absent_reason?: unknown;
 }
 
 /** The task a parked ticket waits on, where `ticket_run_step_failure` reads its run as stopped at a failed step. */
@@ -568,7 +569,23 @@ function projectionRunStepFailure(
             ),
           },
         }),
+    ...projectionRunStepAbsent(failed),
   };
+}
+
+/** The credential a failed step names not delivered and why, which the row holds both or neither of. */
+function projectionRunStepAbsent(
+  failed: StoredRunStepFailure,
+): Pick<RunStepFailureResource, "absent"> {
+  const credential = failed.credential_absent;
+  const reason = workerHeldCredentialAbsences.find(
+    (each) => each === failed.credential_absent_reason,
+  );
+  if (credential === null && failed.credential_absent_reason === null)
+    return {};
+  if (typeof credential !== "string" || reason === undefined)
+    throw new Error("native read: a run step's absent credential is not whole");
+  return { absent: { credential, reason } };
 }
 
 function ticketUsageResumeTicket(ticket: string | null): string {
@@ -581,8 +598,9 @@ function ticketUsageResumeTicket(ticket: string | null): string {
  * What `ticket_usage_resume` reads of each of `rows` under the scheduler's
  * `bounds`, by ticket: the instant the last of its limited tasks is free,
  * each free at the earliest end among its account's pauses as its runners
- * would claim it, or none where each is free already, and nothing for a
- * ticket the scheduler does not resume so.
+ * would claim it, or none where each is free already, `off` where one waits
+ * only on credentials turned off, and nothing for a ticket no usage pause
+ * holds so.
  */
 async function ticketUsageResumes(
   client: pg.Pool | pg.PoolClient,
@@ -595,9 +613,11 @@ async function ticketUsageResumes(
   const found = await client.query<{
     ticket: string | null;
     paused_until: string | null;
+    off: boolean;
   }>(
     sql`SELECT t.ticket::text AS ticket,
-               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until
+               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+               COALESCE(x.off,false) AS off
           FROM unnest(${tickets}::bigint[]) AS t(ticket)
          CROSS JOIN LATERAL ticket_usage_resume(${partition.tenant},${partition.project},
                t.ticket,${bounds.lossesMax},${bounds.rateLimitsMax}) x`,
@@ -605,9 +625,11 @@ async function ticketUsageResumes(
   return new Map(
     found.rows.map((row) => [
       ticketUsageResumeTicket(row.ticket),
-      row.paused_until === null
-        ? {}
-        : { until: nativeReadInstant(row.paused_until) },
+      row.off === true
+        ? { off: true }
+        : row.paused_until === null
+          ? {}
+          : { until: nativeReadInstant(row.paused_until) },
     ]),
   );
 }
@@ -625,6 +647,7 @@ function ticketResource(
       : { repository: row.ticket_repository }),
     revision: projectRowCounter(row.revision, "ticket revision"),
     ...(row.creator === null ? {} : { creator: row.creator }),
+    ...(row.owner === null ? {} : { owner: row.owner }),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -870,7 +893,7 @@ async function readProject(
 }
 
 /**
- * A read naming no search, no creator, no activity and no order by number is the page it
+ * A read naming no search, no creator, no owner, no activity and no order by number is the page it
  * always was. Any other is picked as positions first and its rows read after,
  * in that order, by identity.
  */
@@ -883,6 +906,7 @@ async function readProjectTickets(
     query.search === undefined &&
     query.epic === undefined &&
     query.creator === undefined &&
+    query.owner === undefined &&
     query.active !== true &&
     (query.order === undefined ||
       query.order === "Identity" ||
@@ -906,7 +930,7 @@ interface TicketPositionsRow {
 
 /**
  * The positions of one more than a page, in the order the read names, with
- * how many tickets its search, creator, epic, phases and activity select
+ * how many tickets its search, creator, owner, epic, phases and activity select
  * across the project.
  * The count is over the selection before any cursor, so every page of one
  * walk answers the same count.
@@ -943,6 +967,8 @@ async function readTicketPositions(
                              AND e.ticket=t.ticket AND e.epic=${query.epic ?? null}::bigint))
              AND (${query.creator ?? null}::text IS NULL
                OR m.authority_subject = ${query.creator ?? null}::text)
+             AND (${query.owner ?? null}::text IS NULL
+               OR ticket_owner(${partition.tenant},${partition.project},t.ticket) = ${query.owner ?? null}::text)
              AND (${query.active === true}::boolean IS FALSE
                OR t.phase NOT IN ('Done','Revoked')
                OR (SELECT c.committed_at FROM journal_entry c
@@ -1019,7 +1045,9 @@ async function readTicketsByPosition(
     }),
     next: positions.length > query.limit ? page.at(-1) : undefined,
     matched:
-      query.search === undefined && query.creator === undefined
+      query.search === undefined &&
+      query.creator === undefined &&
+      query.owner === undefined
         ? undefined
         : matched,
   };
@@ -1038,6 +1066,7 @@ async function readTicketsByActivity(
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner,
                  to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                  to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1106,6 +1135,7 @@ async function readTicketsByIdentity(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               ticket_owner(${partition.tenant},${partition.project},t.ticket)::text AS owner,
                to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1166,7 +1196,7 @@ async function readTicketRow(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               b.brief::text AS brief,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner, b.brief::text AS brief,
                b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
@@ -1411,9 +1441,6 @@ function nativeActionRecord(
       row.authorizing_seq,
       "native action authorizing sequence",
     ),
-    ...(row.attempt === null
-      ? {}
-      : { attempt: asFinalizationAttemptId(row.attempt) }),
     ...(row.execution === null
       ? {}
       : { execution: asExecutionId(row.execution) }),
@@ -1459,7 +1486,7 @@ async function nativeReadsActionHistory(
 ): Promise<TicketNativeActionHistoryPage | undefined> {
   const found = await pool.query<NativeActionHistoryRow>(
     sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
-               a.state,a.resolution,a.attempt,a.execution,a.answered_by,
+               a.state,a.resolution,a.execution,a.answered_by,
                to_char(a.answered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS answered_at
           FROM ticket_projection t
           LEFT JOIN native_action a
@@ -1607,8 +1634,8 @@ async function readInboxPositions(
 }
 
 /**
- * The open actions of the page's tickets. A ticket holds one escalation or
- * finalization approval, or an evaluation approval for each approval evaluator
+ * The open actions of the page's tickets. A ticket holds one escalation, or an
+ * evaluation approval for each approval evaluator
  * of the stage it evaluates, and a stage lists no more evaluators than a draft
  * may.
  */

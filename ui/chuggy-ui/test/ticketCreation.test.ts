@@ -27,10 +27,10 @@ import {
   creationBranchOf,
   creationFormFrom,
   creationFinalizationDefault,
-  creationLandingBranchSentence,
+  creationFinalizationBranchSentence,
   creationTargetBranchFieldHint,
   creationTargetBranchHint,
-  creationLandingWholeSentence,
+  creationFinalizationWholeSentence,
   creationRepositoryChosen,
   creationRepositories,
   creationRepositoryDefault,
@@ -811,9 +811,9 @@ test("a pull request names a branch, and a target that is not it", () => {
           targetBranchName: "release/next",
         }),
       ),
-    ).toStrictEqual([copyTextEn(creationLandingBranchSentence)]);
+    ).toStrictEqual([copyTextEn(creationFinalizationBranchSentence)]);
     expect(faultReasons(creationForm({ finalization }))).toStrictEqual([
-      copyTextEn(creationLandingBranchSentence),
+      copyTextEn(creationFinalizationBranchSentence),
     ]);
     expect(
       faultReasons(
@@ -823,7 +823,7 @@ test("a pull request names a branch, and a target that is not it", () => {
           targetBranchName: "topic/one",
         }),
       ),
-    ).toStrictEqual([copyTextEn(creationLandingWholeSentence)]);
+    ).toStrictEqual([copyTextEn(creationFinalizationWholeSentence)]);
     expect(
       faultFields(
         creationForm({

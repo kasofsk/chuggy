@@ -86,6 +86,10 @@ test("a route is the page the contract names for it, with what its address carri
   expect(
     consolePageOf(matched("/$tenant/$project/settings/placement")),
   ).toEqual({ page: "Settings", section: "ProjectPlacement" });
+  expect(consolePageOf(matched("/$tenant/$project/settings/pools"))).toEqual({
+    page: "Settings",
+    section: "ProjectPools",
+  });
   expect(
     consolePageOf(matched("/$tenant/$project/settings/workspace/runner")),
   ).toEqual({ page: "Settings", section: "WorkspaceRunners" });
@@ -148,6 +152,14 @@ test("every tab of a ticket, a run and its landing are that ticket's page, so a 
         }),
       ),
     ).toEqual({ page: "Ticket", ticket: 41 });
+});
+
+test("a Runners page a thread still names moves the console to the old runners address, which is named no page", () => {
+  const { leaf } = consolePageLeaf({ page: "Runners" });
+  const runnersRouteId = `${partitionRouteId}/runners`;
+  expect(runnersRouteId in navMoved).toBe(true);
+  expect(leaf?.routeId).toBe(runnersRouteId);
+  expect(consolePageOf(matched(runnersRouteId))).toBeUndefined();
 });
 
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
@@ -218,6 +230,7 @@ test("a page is named in the console's own words for it", () => {
     "Repository acme/atlas",
     "Settings · Project · Lead",
     "Settings · Project · Placement",
+    "Settings · Project · Pools",
     "Settings · Project · Permissions",
     "Settings · Workspace · People",
     "Settings · Workspace · GitHub accounts",
@@ -241,7 +254,8 @@ test("a settings page is named by the group and the page the side navigation dra
   const drawnAt = new Map(
     settingsNav({
       tenant: "acme",
-      project: "atlas",
+      tenantName: "acme",
+      project: { address: "atlas", name: "atlas" },
       site: { workspaces: true, permissions: true },
     }).flatMap((group) =>
       group.entries.map((entry) => [
@@ -260,12 +274,19 @@ test("a settings page is named by the group and the page the side navigation dra
 
 /** The address a thread's `navigate` moves the console to is the page it
  * named, read back by the router the console runs. */
+/** The route a page's address is matched as, by the console's router. */
+function consolePageLeaf(page: ConsolePage) {
+  const href = consolePageHref({ tenant: "acme", project: "at las" }, page);
+  const [path = "", query = ""] = href.split("?");
+  const search = consoleRouter.options.parseSearch(`?${query}`);
+  return { href, search, leaf: consoleRouter.matchRoutes(path, search).at(-1) };
+}
+
 test("every page's address is matched by the console's router as that page", () => {
-  for (const page of consolePagesEvery) {
-    const href = consolePageHref({ tenant: "acme", project: "at las" }, page);
-    const [path = "", query = ""] = href.split("?");
-    const search = consoleRouter.options.parseSearch(`?${query}`);
-    const leaf = consoleRouter.matchRoutes(path, search).at(-1);
+  for (const page of consolePagesEvery.filter(
+    (named) => named.page !== "Runners",
+  )) {
+    const { href, search, leaf } = consolePageLeaf(page);
     expect(leaf?.params, href).toMatchObject({
       tenant: "acme",
       project: "at las",

@@ -54,15 +54,15 @@ configuration-catalog-head-snapshot-refused = The { -repository } refused a read
 
 configuration-catalog-group-workloads = { -workload(case: "upper", form: "plural") }
 configuration-catalog-group-plans = { -evaluation-plan(case: "upper", form: "plural") }
-configuration-catalog-group-landings = { -landing(case: "upper", form: "plural") }
+configuration-catalog-group-finalizers = { -finalizer(case: "upper", form: "plural") }
 configuration-catalog-group-prompts = Prompts
 configuration-catalog-kind-workload = { -workload(case: "upper") }
 configuration-catalog-kind-plan = Plan
-configuration-catalog-kind-landing = { -landing(case: "upper") }
+configuration-catalog-kind-finalizer = { -finalizer(case: "upper") }
 configuration-catalog-kind-prompt = Prompt
 configuration-catalog-default-work = Default { -work-stage }
 configuration-catalog-default-evaluation = Default { -evaluation }
-configuration-catalog-default-landing = Default { -landing }
+configuration-catalog-default-finalization = Default { -finalization }
 configuration-catalog-model-default = Default
 configuration-catalog-unread = Unread
 configuration-catalog-runner-unknown = Unknown
@@ -73,8 +73,7 @@ configuration-catalog-plan-approved = { $stages } · waits on a person's { -appr
 configuration-catalog-commands = Commands
 configuration-catalog-prompt-inline = inline prompt
 configuration-catalog-prompt-written-inline = Written inline
-configuration-catalog-approved-first = Approved first
-configuration-catalog-lands-unapproved = { -landing(case: "upper", form: "s") } unapproved
+configuration-catalog-repository-finalization = The { -repository }'s { -finalization }
 configuration-catalog-stage = { -stage(case: "upper") } { $number } · { $name }
 configuration-catalog-stage-field = { -stage } { $number } · { $name }
 configuration-catalog-field-file = File
@@ -86,8 +85,7 @@ configuration-catalog-field-model = Model
 configuration-catalog-field-prompt = Prompt
 configuration-catalog-field-approvers = Answered by
 configuration-catalog-field-instructions = Instructions
-configuration-catalog-field-approval = { -approval(case: "upper") }
-configuration-catalog-field-landing = { -landing(case: "upper") }
+configuration-catalog-field-finalization = { -finalization(case: "upper") }
 configuration-catalog-field-policy = Policy
 configuration-catalog-field-path = Path
 configuration-catalog-uses = Uses
@@ -100,8 +98,6 @@ configuration-catalog-entry-absent = Nothing in this { -catalog } is { $entry }.
 
 configuration-catalog-choice = { $name } · { $detail }
 configuration-catalog-choice-default = { $name } (default) · { $detail }
-configuration-catalog-choice-approved-first = approved first
-configuration-catalog-choice-unapproved = { -landing(form: "s") } unapproved
 
 ## What a configuration's run is given: `core/configurationView.ts`.
 

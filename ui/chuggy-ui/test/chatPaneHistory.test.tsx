@@ -29,7 +29,13 @@ import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
 import { Routed } from "./routed.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { holderDouble, settled, turned } from "./screenHarness.tsx";
+import {
+  answer,
+  drawnStrict,
+  holderDouble,
+  settled,
+  turned,
+} from "./screenHarness.tsx";
 import {
   threadEntry,
   threadHome,
@@ -226,6 +232,37 @@ test("under the pseudo wording the history's words are altered and a title is no
   expect(screen.queryByText("Everyone else's")).toBeNull();
   for (const row of screen.getAllByRole("menuitemradio"))
     expect(row.getAttribute("aria-label")).not.toMatch(/Open|ago/);
+});
+
+test("a thread another project keeps is named by that project's name, and linked by its address", async () => {
+  await drawnStrict(
+    <Routed>
+      <ChatPaneHistory
+        threads={[]}
+        session={undefined}
+        onChoose={() => undefined}
+        elsewhere={[
+          {
+            partition: threadPartition,
+            thread: threadEntry({ session: threadOtherSession, title: "kept" }),
+          },
+        ]}
+      />
+    </Routed>,
+    (request) =>
+      request.url === "/api/v1/projects"
+        ? answer({ projects: [{ ...threadPartition, name: "Atlas Billing" }] })
+        : answer({}, 404),
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "ArrowDown",
+  });
+  const row = await screen.findByRole("menuitem", {
+    name: /^Atlas Billing · kept, /u,
+  });
+  expect(row.getAttribute("href")).toBe(
+    `/${threadPartition.tenant}/${threadPartition.project}/threads/${threadOtherSession}`,
+  );
 });
 
 test("a listing still being read draws the control, loading in its menu", async () => {

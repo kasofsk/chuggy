@@ -99,7 +99,7 @@ test.each([
     "/acme/atlas/repositories/github.com%2Facme%2Fatlas",
     "/acme/atlas/settings/repositories/github.com%2Facme%2Fatlas",
   ],
-  ["/acme/atlas/runners", "/acme/atlas/settings/runners"],
+  ["/acme/atlas/runners", "/acme/atlas/settings/workspace/runner"],
 ])("%s redirects to %s", async (from, to) => {
   expect((await followed(from)).pathname).toBe(to);
 });

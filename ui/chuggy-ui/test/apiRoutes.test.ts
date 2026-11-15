@@ -48,6 +48,8 @@ import {
   apiPersonalRunnerPermit,
   apiPressAgentAccount,
   apiRetireAgentAccountCredential,
+  apiTurnOffAgentAccountCredential,
+  apiTurnOnAgentAccountCredential,
   apiPersonalRunnerServes,
   apiProject,
   apiProjectAbilities,
@@ -289,9 +291,9 @@ test("a project's bindings are read without reach by saying reach=false, and wit
 test("the inventory carries its cursor and stops when there is none", async () => {
   const held = recording((url) =>
     url.includes("cursor=next")
-      ? { projects: [{ tenant: "acme", project: "beta" }] }
+      ? { projects: [{ tenant: "acme", project: "beta", name: "Beta" }] }
       : {
-          projects: [{ tenant: "acme", project: "atlas" }],
+          projects: [{ tenant: "acme", project: "atlas", name: "Atlas" }],
           nextCursor: "next",
         },
   );
@@ -302,7 +304,7 @@ test("the inventory carries its cursor and stops when there is none", async () =
 
 test("an inventory that never stops is stopped by the page budget", async () => {
   const held = recording(() => ({
-    projects: [{ tenant: "acme", project: "atlas" }],
+    projects: [{ tenant: "acme", project: "atlas", name: "Atlas" }],
     nextCursor: "again",
   }));
   const result = await apiProjectInventoryAll(held.ports);
@@ -805,6 +807,8 @@ test("the reader's agent accounts are read, set, pressed and retired from at the
   });
   await apiPressAgentAccount(held.ports, "Claude");
   await apiRetireAgentAccountCredential(held.ports, "Codex", "old-work");
+  await apiTurnOffAgentAccountCredential(held.ports, "Claude", "work");
+  await apiTurnOnAgentAccountCredential(held.ports, "Claude", "work");
   expect(read.outcome).toBe("Ok");
   expect(
     held.requests.map(
@@ -816,6 +820,8 @@ test("the reader's agent accounts are read, set, pressed and retired from at the
     `PUT ${nativeHttpBasePath}/agent-accounts/Codex/settings {"fiveHourPercent":70,"sevenDayPercent":95,"pausesThreads":true}`,
     `POST ${nativeHttpBasePath}/agent-accounts/Claude/presses undefined`,
     `DELETE ${nativeHttpBasePath}/agent-accounts/Codex/credentials/old-work undefined`,
+    `PUT ${nativeHttpBasePath}/agent-accounts/Claude/credentials/work/off undefined`,
+    `DELETE ${nativeHttpBasePath}/agent-accounts/Claude/credentials/work/off undefined`,
   ]);
 });
 
@@ -839,6 +845,7 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
     landing: { mode: "PullRequest" },
     finalization: { kind: "PullRequest" },
     pipelinesWritable: false,
+    pipelinesRunnable: false,
   };
   const held = recordingRequests(() => ({ repository: row }));
   const answered = await apiWriteProjectRepositoryLanding(

@@ -34,9 +34,9 @@ export const settingsRoutes = {
     lead: "/$tenant/$project/settings/lead",
     leadSession: "/$tenant/$project/settings/lead-session",
     placement: "/$tenant/$project/settings/placement",
+    pools: "/$tenant/$project/settings/pools",
     permissions: "/$tenant/$project/settings/permissions",
     repositories: "/$tenant/$project/settings/repositories",
-    runners: "/$tenant/$project/settings/runners",
     catalog: "/$tenant/$project/settings/catalog",
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
@@ -77,9 +77,9 @@ export type SettingsSectionId =
   | "lead"
   | "lead-session"
   | "placement"
+  | "pools"
   | "permissions"
   | "repositories"
-  | "runners"
   | "catalog"
   | "people"
   | "accounts"
@@ -108,9 +108,9 @@ const settingsSectionLabels = {
   lead: { id: "settings-nav-lead" },
   "lead-session": { id: "settings-nav-lead-session" },
   placement: { id: "settings-nav-placement" },
+  pools: { id: "settings-nav-pools" },
   permissions: { id: "settings-nav-permissions" },
   repositories: { id: "settings-nav-repositories" },
-  runners: { id: "settings-nav-runners" },
   catalog: { id: "settings-nav-catalog" },
   people: { id: "settings-nav-people" },
   accounts: { id: "settings-nav-accounts" },
@@ -127,9 +127,9 @@ const settingsSectionSummaries = {
   lead: { id: "settings-nav-lead-summary" },
   "lead-session": { id: "settings-nav-lead-session-summary" },
   placement: { id: "settings-nav-placement-summary" },
+  pools: { id: "settings-nav-pools-summary" },
   permissions: { id: "settings-nav-permissions-summary" },
   repositories: { id: "settings-nav-repositories-summary" },
-  runners: { id: "settings-nav-runners-summary" },
   catalog: { id: "settings-nav-catalog-summary" },
   people: { id: "settings-nav-people-summary" },
   accounts: { id: "settings-nav-accounts-summary" },
@@ -171,9 +171,9 @@ export const settingsSections: readonly SettingsSection[] = [
   settingsSectionOf("lead", "project", "lead"),
   settingsSectionOf("lead-session", "project", "leadSession"),
   settingsSectionOf("placement", "project", "placement"),
+  settingsSectionOf("pools", "project", "pools"),
   settingsSectionOf("permissions", "project", "permissions"),
   settingsSectionOf("repositories", "project", "repositories"),
-  settingsSectionOf("runners", "project", "runners"),
   settingsSectionOf("catalog", "project", "catalog"),
   settingsSectionOf("people", "workspace", "people"),
   settingsSectionOf("accounts", "workspace", "accounts"),
@@ -234,9 +234,17 @@ export interface SettingsNavSite {
   readonly permissions: boolean;
 }
 
+/** The open project: its address, which every entry's link carries, and the name its group is headed by. */
+export interface SettingsNavProject {
+  readonly address: string;
+  readonly name: string;
+}
+
 export interface SettingsNavInput {
   readonly tenant: string;
-  readonly project: string | undefined;
+  /** What the workspace's group is headed with, which its addresses are not. */
+  readonly tenantName: string;
+  readonly project: SettingsNavProject | undefined;
   readonly site: SettingsNavSite;
 }
 
@@ -289,10 +297,10 @@ export function settingsNav(
 ): readonly SettingsNavGroup[] {
   const { tenant, project } = input;
   const params: SettingsNavParams =
-    project === undefined ? { tenant } : { tenant, project };
+    project === undefined ? { tenant } : { tenant, project: project.address };
   const names: Readonly<Record<SettingsGroupId, string | undefined>> = {
-    project,
-    workspace: tenant,
+    project: project?.name,
+    workspace: input.tenantName,
     site: undefined,
     person: undefined,
   };

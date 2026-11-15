@@ -72,11 +72,11 @@ export function LandingRecheckField(props: {
   const text = useCopyText();
   if (recheck === undefined) return null;
   return (
-    <Field name={text({ id: "ticket-landing-rechecked" })}>
+    <Field name={text({ id: "ticket-finalization-rechecked" })}>
       {recheck.base === undefined
         ? recheck.reason
         : text({
-            id: "ticket-landing-recheck-against",
+            id: "ticket-finalization-recheck-against",
             args: { reason: recheck.reason, base: recheck.base },
           })}
     </Field>
@@ -94,7 +94,7 @@ function LandingFragment(props: {
   const text = useCopyText();
   if (!ticketLandingFragmentSays(fragment)) return null;
   return (
-    <span className="ticket-landing-fragment">
+    <span className="ticket-finalization-fragment">
       {fragment.text === undefined ? null : copyOrDataText(text, fragment.text)}
       {fragment.link === undefined ? null : (
         <a href={fragment.link.href} rel="noopener noreferrer" target="_blank">
@@ -102,7 +102,7 @@ function LandingFragment(props: {
         </a>
       )}
       {fragment.commit === undefined ? null : (
-        <span className="ticket-landing-part">
+        <span className="ticket-finalization-part">
           {fragment.commit.name === undefined
             ? null
             : text(fragment.commit.name)}
@@ -110,7 +110,7 @@ function LandingFragment(props: {
         </span>
       )}
       {fragment.caveat === undefined ? null : (
-        <span className="ticket-landing-part">
+        <span className="ticket-finalization-part">
           <span aria-hidden="true">·</span>
           {text(fragment.caveat)}
         </span>
@@ -125,14 +125,14 @@ function LandingProposalFields(props: {
   const proposal = props.proposal;
   const text = useCopyText();
   const labelled: readonly (readonly [string, string | undefined])[] = [
-    [text({ id: "ticket-landing-head" }), branchName(proposal.head)],
-    [text({ id: "ticket-landing-base" }), branchName(proposal.base)],
-    [text({ id: "ticket-landing-creation" }), proposal.creation],
-    [text({ id: "ticket-landing-status" }), proposal.status],
-    [text({ id: "ticket-landing-merge" }), proposal.merge],
-    [text({ id: "ticket-landing-reason" }), proposal.mergeReason],
-    [text({ id: "ticket-landing-mergeability" }), proposal.mergeability],
-    [text({ id: "ticket-landing-merge-state" }), proposal.mergeState],
+    [text({ id: "ticket-finalization-head" }), branchName(proposal.head)],
+    [text({ id: "ticket-finalization-base" }), branchName(proposal.base)],
+    [text({ id: "ticket-finalization-creation" }), proposal.creation],
+    [text({ id: "ticket-finalization-status" }), proposal.status],
+    [text({ id: "ticket-finalization-merge" }), proposal.merge],
+    [text({ id: "ticket-finalization-reason" }), proposal.mergeReason],
+    [text({ id: "ticket-finalization-mergeability" }), proposal.mergeability],
+    [text({ id: "ticket-finalization-merge-state" }), proposal.mergeState],
   ];
   return (
     <>
@@ -144,16 +144,16 @@ function LandingProposalFields(props: {
         ),
       )}
       {proposal.mergeCommit === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-merge-commit" })}>
+        <Field name={text({ id: "ticket-finalization-merge-commit" })}>
           <Identity label={proposal.mergeCommit} />
         </Field>
       )}
       {proposal.heads === undefined ? null : (
         <>
-          <Field name={text({ id: "ticket-landing-merged-head" })}>
+          <Field name={text({ id: "ticket-finalization-merged-head" })}>
             <Identity label={proposal.heads.merged} />
           </Field>
-          <Field name={text({ id: "ticket-landing-evaluated-head" })}>
+          <Field name={text({ id: "ticket-finalization-evaluated-head" })}>
             <Identity label={proposal.heads.evaluated} />
           </Field>
         </>
@@ -169,8 +169,8 @@ function LandingConflicts(props: {
   const text = useCopyText();
   if (detail.conflicts.length === 0 && !detail.conflictsCut) return null;
   return (
-    <Field name={text({ id: "ticket-landing-conflicts" })}>
-      <ul className="ticket-landing-conflicts">
+    <Field name={text({ id: "ticket-finalization-conflicts" })}>
+      <ul className="ticket-finalization-conflicts">
         {detail.conflicts.map((path) => (
           <li key={path}>
             <code>{path}</code>
@@ -178,8 +178,8 @@ function LandingConflicts(props: {
         ))}
       </ul>
       {detail.conflictsCut ? (
-        <p className="ticket-landing-cut">
-          {text({ id: "ticket-landing-more-not-shown" })}
+        <p className="ticket-finalization-cut">
+          {text({ id: "ticket-finalization-more-not-shown" })}
         </p>
       ) : null}
     </Field>
@@ -195,7 +195,7 @@ function LandingDetail(props: {
   return (
     <Fields>
       {detail.targetRef === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-target" })}>
+        <Field name={text({ id: "ticket-finalization-target" })}>
           {branchName(detail.targetRef)}{" "}
           {detail.targetCommit === undefined ? null : (
             <Identity label={detail.targetCommit} />
@@ -203,16 +203,16 @@ function LandingDetail(props: {
         </Field>
       )}
       {detail.candidateCommit === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-candidate" })}>
+        <Field name={text({ id: "ticket-finalization-candidate" })}>
           <Identity label={detail.candidateCommit} />
         </Field>
       )}
       {detail.preparedAt === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-prepared" })}>
+        <Field name={text({ id: "ticket-finalization-prepared" })}>
           <Figure figure={sinceFigure(detail.preparedAt, props.nowMs)} />
         </Field>
       )}
-      <Field name={text({ id: "ticket-landing-attempts" })}>
+      <Field name={text({ id: "ticket-finalization-attempts" })}>
         {runCountLabel(detail.attempts)}
       </Field>
       <LandingConflicts detail={detail} />
@@ -221,7 +221,7 @@ function LandingDetail(props: {
         <LandingProposalFields proposal={detail.proposal} />
       )}
       {detail.checkedAt === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-checked" })}>
+        <Field name={text({ id: "ticket-finalization-checked" })}>
           <Figure figure={sinceFigure(detail.checkedAt, props.nowMs)} />
         </Field>
       )}
@@ -248,8 +248,8 @@ function LandingRow(props: {
       }
       expands={[
         {
-          label: text({ id: "ticket-landing-details-label" }),
-          hide: text({ id: "ticket-landing-details-hide" }),
+          label: text({ id: "ticket-finalization-details-label" }),
+          hide: text({ id: "ticket-finalization-details-hide" }),
           open,
           onToggle: () => {
             setOpen((held) => !held);
@@ -264,7 +264,7 @@ function LandingRow(props: {
 }
 
 /**
- * The block of landings under the eyebrow "Landing", drawn for none at all.
+ * The block of landings under the eyebrow "Finalization", drawn for none at all.
  * A row names its cycle where the block stands apart from the cycles.
  */
 export function LandingBlock(props: {
@@ -274,14 +274,16 @@ export function LandingBlock(props: {
 }): ReactNode {
   const text = useCopyText();
   if (props.landings.length === 0) return null;
-  const landingWord = text({ id: "ticket-landing-heading" });
+  const finalizationWord = text({ id: "ticket-finalization-heading" });
   return (
-    <LedgerBlock eyebrow={landingWord}>
+    <LedgerBlock eyebrow={finalizationWord}>
       {props.landings.map((landing) => (
         <LandingRow
           key={landing.key}
           label={
-            props.cycleNamed ? text(cycleLabel(landing.cycle)) : landingWord
+            props.cycleNamed
+              ? text(cycleLabel(landing.cycle))
+              : finalizationWord
           }
           landing={landing}
           nowMs={props.nowMs}

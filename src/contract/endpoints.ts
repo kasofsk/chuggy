@@ -66,6 +66,7 @@ import {
   ticketNativeActionHistoryResponseSchema,
   landingQueuesResponseSchema,
   repositoryConfigurationHeadResponseSchema,
+  ticketTakeResponseSchema,
   ownedThemeSchema,
   ownedThemesResponseSchema,
   themeChoiceResponseSchema,
@@ -419,6 +420,18 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.landingQueues,
     response: landingQueuesResponseSchema,
+  },
+  ticketTake: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketTake,
+    body: emptyBody,
+    response: ticketTakeResponseSchema,
+  },
+  ticketReturn: {
+    method: "POST",
+    path: nativeHttpRoutes.ticketReturn,
+    body: emptyBody,
+    response: ticketTakeResponseSchema,
   },
   listOwnThemes: {
     method: "GET",

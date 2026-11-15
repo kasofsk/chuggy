@@ -105,7 +105,6 @@ function listed(
     readiness: "Ready",
     image: "an-image",
     practices: [],
-    finalization: { approvalRequired: false },
     evaluationStagesCount: 1,
     ...(catalog
       ? {
@@ -257,7 +256,7 @@ test("with no configuration in the address, the page draws the repository import
     "Configurations 2 configurations",
     "Workloads 4 entries",
     "Evaluation plans 2 entries",
-    "Landings 2 entries",
+    "Finalizers 2 entries",
     "Prompts 1 entry",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });
@@ -345,7 +344,7 @@ test("a configuration chosen in the address is drawn with its entries, and links
   expectHeadings(2, [
     "Workloads 4 entries",
     "Evaluation plans 2 entries",
-    "Landings 2 entries",
+    "Finalizers 2 entries",
     "Prompts 1 entry",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });

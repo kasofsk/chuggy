@@ -367,13 +367,17 @@ async function personalRunnersPaused(
     agent: string | null;
     live: boolean | null;
     paused_until: string | null;
+    off: boolean;
     reasons: string[] | null;
     admitted_by_press: boolean | null;
   }>(
     sql`SELECT g.agent,
           r.executions_polled_at
             > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
-          to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+          CASE WHEN held.reasons='{off}'::text[] THEN NULL
+               ELSE to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text
+          END AS paused_until,
+          COALESCE(held.reasons='{off}'::text[],false) AS off,
           held.reasons,held.admitted_by_press
         FROM personal_runner r
         CROSS JOIN unnest(${[...accountAgents]}::text[]) g(agent)

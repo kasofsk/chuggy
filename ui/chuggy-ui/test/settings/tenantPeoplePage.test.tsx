@@ -206,6 +206,33 @@ test("removing a project role sends that removal alone, and a project admin asks
   expect(listReads(drawn)).toBeGreaterThan(read);
 });
 
+test("a project is named by its name in a row and in the editor's grid, and addressed by its slug", async () => {
+  const drawn = await drawPeople({
+    inventory: () =>
+      answer({
+        projects: [
+          { tenant: peopleTenant, project: "atlas-web", name: "Atlas Web" },
+        ],
+      }),
+  });
+  await settled();
+  expect(projectsIn(personRow("ada@example.com"))).toStrictEqual([
+    "Atlas Web: Admin, Developer",
+  ]);
+  const editor = await editorOf("ada@example.com");
+  expect(boxesIn(editor, "Atlas Web")).toStrictEqual([
+    "Atlas Web Admin+",
+    "Atlas Web Developer+",
+    "Atlas Web Dispatcher",
+    "Atlas Web Viewer",
+  ]);
+  expect(boxesIn(editor, "beacon-api")[0]).toBe("beacon-api Admin");
+  await boxPressed(editor, "Atlas Web Admin");
+  expect(changesSent(drawn).map((sent) => sent.url)).toStrictEqual([
+    `/access/v1/tenants/${peopleTenant}/projects/atlas-web/people/s-ada/roles/Admin`,
+  ]);
+});
+
 test("granting a project role sends that grant alone", async () => {
   const drawn = await drawPeople();
   await boxPressed(await editorOf("s-bob"), "beacon-api Dispatcher");

@@ -29,6 +29,7 @@ import { tenantInviteLinksReread } from "./tenantPeopleResource.ts";
 import { TenantHeldProjects, TenantHeldWords } from "./TenantPersonRow.tsx";
 
 function TenantInviteLinkAccess(props: {
+  readonly tenant: string;
   readonly link: AccessInviteLink;
 }): ReactNode {
   const access = inviteLinkAccess(props.link);
@@ -36,7 +37,11 @@ function TenantInviteLinkAccess(props: {
     <div className="grid min-w-0 justify-items-start gap-1">
       <TenantHeldWords held={access.held} />
       {access.every || access.lines.length > 0 ? (
-        <TenantHeldProjects every={access.every} lines={access.lines} />
+        <TenantHeldProjects
+          tenant={props.tenant}
+          every={access.every}
+          lines={access.lines}
+        />
       ) : null}
     </div>
   );
@@ -55,7 +60,7 @@ export function TenantInviteLinks(props: {
       links={props.links}
       first={{
         heading: inviteLinksWords.access,
-        cell: (link) => <TenantInviteLinkAccess link={link} />,
+        cell: (link) => <TenantInviteLinkAccess tenant={tenant} link={link} />,
       }}
       third={{
         heading: inviteLinksWords.usedBy,

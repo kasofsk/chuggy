@@ -34,8 +34,11 @@ import {
   workerRunnerPollWaitHeader,
   workerRunnerReportBytesMax,
   workerRunnerReportRoute,
+  workerPoolPollSessionCapabilitiesText,
+  type WorkerPoolThreadClosed,
 } from "../../src/contract/workerPool.ts";
 import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
+import type { SessionKind } from "../../src/contract/rosters.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
@@ -253,11 +256,14 @@ const launch: SessionLaunchFacts = {
 
 /**
  * Records every call a route made of the session side, which holds `holding`
- * and offers `offered`, each opened as the claim asks.
+ * and offers `offered` as sessions of `kind`, each opened as the claim asks,
+ * and answers `closed` as the threads a chat host ran that have since closed.
  */
 function sessionCalls(
   holding: readonly string[] = [],
   offered: readonly string[] = [],
+  closed: readonly WorkerPoolThreadClosed[] = [],
+  kind: SessionKind = "Lead",
 ): { readonly made: unknown[]; readonly store: WorkerPoolSessions } {
   const made: unknown[] = [];
   const answer = <T>(call: unknown[], value: T): Promise<T> =>
@@ -266,6 +272,7 @@ function sessionCalls(
     made,
     store: {
       launch: () => answer(["launch"], launch),
+      threadsClosed: () => answer(["threadsClosed"], closed),
       among: (_identity, named) =>
         answer(
           ["among", [...named]],
@@ -277,7 +284,7 @@ function sessionCalls(
           offered.slice(0, max).map((session) => ({
             project: partition.project,
             session: asSessionId(session),
-            kind: "Lead" as const,
+            kind,
             capabilities: [],
           })),
         ),
@@ -351,6 +358,7 @@ function runnerCalls(): {
   readonly ceilings: unknown[];
   readonly agents: unknown[];
   readonly credentials: unknown[];
+  readonly hosted: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
@@ -358,12 +366,14 @@ function runnerCalls(): {
   const ceilings: unknown[] = [];
   const agents: unknown[] = [];
   const credentials: unknown[] = [];
+  const hosted: unknown[] = [];
   return {
     named,
     advertised,
     ceilings,
     agents,
     credentials,
+    hosted,
     runners: {
       named: (
         caller: PoolPlaneIdentity,
@@ -372,7 +382,9 @@ function runnerCalls(): {
         ceiling,
         agentsAdvertised,
         credentialsNamed,
+        sessionCapabilities,
       ) => {
+        hosted.push([caller.kind, sessionCapabilities]);
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
         ceilings.push([caller.kind, ceiling]);
@@ -948,7 +960,7 @@ test("a poll of this release naming its room is told a job it fits is waiting, a
       "1.20.0",
       {
         ...speaking,
-        [workerContractHeader]: earlier.release,
+        [workerContractHeader]: earlier.wire,
         [workerRunnerMemoryRoomHeader]: "4096",
       },
       earlier.reconciliation,
@@ -1460,11 +1472,16 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
     ] of poolReplayPolls.filter(
       ([, token]) =>
         token !== hostToken ||
-        contractVersionAccepted(workerContractChatHost, older.release),
+        contractVersionAccepted(workerContractChatHost, older.wire),
     )) {
       const recorded = calls();
       const ports = poolReplayPorts(recorded.ports, claimed);
-      const offering = sessionCalls([], ["session-waiting"]);
+      const offering = sessionCalls(
+        [],
+        ["session-waiting"],
+        [{ project: partition.project, session: "thread-closed" }],
+        token === hostToken ? "Thread" : "Lead",
+      );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
         [older.pollQuery.wanted, String(wanted)],
@@ -1477,7 +1494,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         url: `${older.pollRoute}?${query.toString()}`,
         headers: {
           authorization: `Bearer ${token}`,
-          [workerContractHeader]: older.release,
+          [workerContractHeader]: older.wire,
           ...(older.runnerHeader === undefined || named === undefined
             ? {}
             : { [older.runnerHeader]: named }),
@@ -1626,7 +1643,7 @@ function poolReplaySettled(older: WorkerContractReleasePool): void {
         url: older.settlementPath(outcome, "one"),
         headers: {
           authorization: `Bearer ${poolToken}`,
-          [workerContractHeader]: older.release,
+          [workerContractHeader]: older.wire,
         },
         payload: body,
       });
@@ -2318,6 +2335,45 @@ test("a chat host's declared idle bound is recorded on its claim as named and la
       named,
     );
   }
+});
+
+test("a chat host's poll names the capabilities its threads may hold as it wrote them, a pool's is not read, and a set naming one twice is refused", async () => {
+  const set = ["RunCommands", "ProjectRead"] as const;
+  const query = `&${workerPoolPollQuery.sessionCapabilities}=`;
+  for (const [headers, suffix, kept] of [
+    [
+      hostSpeaking,
+      `${query}${workerPoolPollSessionCapabilitiesText(set)}`,
+      ["ChatHost", set],
+    ],
+    [hostSpeaking, query, ["ChatHost", []]],
+    [hostSpeaking, "", ["ChatHost", undefined]],
+    [
+      speaking,
+      `${query}${workerPoolPollSessionCapabilitiesText(set)}`,
+      ["Dedicated", undefined],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(
+        calls().ports,
+        authority("Allow"),
+        openingsRecorded().store,
+        recorded.runners,
+      ),
+    ).inject({ method: "GET", url: `${polling([], 0, 1)}${suffix}`, headers });
+    assert.equal(answered.statusCode, 200, suffix);
+    assert.deepEqual(recorded.hosted, [kept], suffix);
+  }
+  const refused = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), openingsRecorded().store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}${query}ProjectRead,ProjectRead`,
+    headers: hostSpeaking,
+  });
+  assert.equal(refused.statusCode, 400);
 });
 
 test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {

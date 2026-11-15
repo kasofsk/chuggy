@@ -44,7 +44,7 @@ export const navMoved = {
   "/$tenant/$project/repositories": settingsRoutes.project.repositories,
   "/$tenant/$project/repositories/$repository":
     "/$tenant/$project/settings/repositories/$repository",
-  "/$tenant/$project/runners": settingsRoutes.project.runners,
+  "/$tenant/$project/runners": settingsRoutes.project.myRunner,
 } as const;
 
 export interface NavParams {

@@ -38,6 +38,7 @@ import {
   runTurnSeriesMax,
 } from "../contract/http.ts";
 import { runTurnsPageLimitMax } from "../contract/runTurns.ts";
+import type { WorkerHeldCredentialAbsent } from "../contract/workerPlane.ts";
 import type { RunContextOffered } from "../contract/responses.ts";
 import type { RunCostBasis, RunUsageWindow } from "../contract/rosters.ts";
 
@@ -87,6 +88,7 @@ export interface RunTotals extends RunTokens {
   readonly permissionDenials: number;
   readonly resultSubtype?: string;
   readonly stopReason?: string;
+  readonly credential?: string;
 }
 
 /** How much of one window an agent account had used, where one is the whole window, when the window reopens and when the runtime read it, each instant in Unix seconds. */
@@ -214,36 +216,43 @@ export interface WorkerRunContextPort {
   ): Promise<RunContextStored>;
 }
 
-/** A run's totals, and the usage of the account it spent under the credential the run named, which is kept with totals that were stored or already were. */
+/** A run's totals with the credential the run named inside them, and the usage of the account it spent under that credential, which is kept with totals that were stored or already were. */
 export interface WorkerRunTotalPort {
   record(
     input: RunEvidenceWrite & {
       readonly totals: RunTotals;
       readonly usage?: RunUsage;
-      readonly credential?: string;
     },
   ): Promise<RunEvidenceStored>;
+}
+
+/** A credential a run's job lists that was not delivered, and why, which a run ended `RunCredentialAbsent` names and no other does. */
+export interface RunCredentialAbsence {
+  readonly credential: string;
+  readonly reason: WorkerHeldCredentialAbsent["reason"];
 }
 
 /**
  * Narrowing a live attempt to the label its own run knows it ended under, and
  * under `RunRateLimited` alone keeping that a provider refused its account,
- * with the limit where the run names one. The lease sweep ends it either way,
- * so a refusal here costs promptness alone.
+ * with the limit where the run names one, and under `RunCredentialAbsent`
+ * keeping the credential it was not delivered and why. The lease sweep ends it
+ * either way, so a refusal here costs promptness alone.
  */
 export interface WorkerRunEndedPort {
   end(
     input: RunEvidenceWrite & {
       readonly evidence: RunEndedEvidence;
       readonly limit?: RunLimit;
+      readonly absent?: RunCredentialAbsence;
     },
   ): Promise<boolean>;
 }
 
 /**
- * The labels a run ends under when one of its own steps failed, or it was
- * killed at its deadline or because its runner's disk ran low: a failure
- * another attempt would repeat.
+ * The labels a run ends under when one of its own steps failed, it was killed
+ * at its deadline or because its runner's disk ran low, or a credential its job
+ * lists was not delivered: a failure another attempt would repeat.
  */
 export const runStepEvidences = [
   "RunCloneFailed",
@@ -252,6 +261,7 @@ export const runStepEvidences = [
   "RunPushFailed",
   "RunTimedOut",
   "RunDiskLow",
+  "RunCredentialAbsent",
 ] as const;
 export type RunStepEvidence = (typeof runStepEvidences)[number];
 
@@ -287,6 +297,7 @@ export function runEndedLoss(evidence: RunEndedEvidence): AttemptLoss {
     case "RunPushFailed":
     case "RunTimedOut":
     case "RunDiskLow":
+    case "RunCredentialAbsent":
       return "Lost";
     default:
       return assertNever(evidence);

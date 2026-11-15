@@ -111,7 +111,7 @@ import {
   briefRepositoryCharsMax,
 } from "../../src/contract/brief.ts";
 import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
@@ -522,11 +522,12 @@ test("notification authorization and reset remain visible without SSE", () => {
 });
 
 test("inventory exposes only an opaque continuation cursor", () => {
+  const named = { ...partition, name: "Acme Atlas" };
   const found = inventoryResponse({
-    projects: [partition],
+    projects: [named],
     nextAfter: partition,
   });
-  assert.deepEqual((found.body as { projects: unknown }).projects, [partition]);
+  assert.deepEqual((found.body as { projects: unknown }).projects, [named]);
   assert.equal(
     typeof (found.body as { nextCursor: unknown }).nextCursor,
     "string",

@@ -9,6 +9,7 @@ import type {
   SessionTaskAnswer,
   SessionTaskDocument,
   WorkTaskDocument,
+  WorkTaskTargetMerge,
 } from "../contract/workerTask.ts";
 import type {
   AttemptPlacement,
@@ -19,7 +20,6 @@ import type {
   SessionPlacement,
   SessionTaskInvocation,
 } from "./sessionScheduler.ts";
-import type { GitRefName } from "./finalizer.ts";
 import { taskAuthorityGrant } from "./taskAuthority.ts";
 import type { TaskInvocation } from "./taskBriefing.ts";
 
@@ -50,7 +50,8 @@ export type WorkTask = Omit<WorkTaskDocument, "workerPlane">;
 export function workTaskInvocation(launch: {
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
-  readonly targetRef?: GitRefName;
+  readonly targetMerge?: WorkTaskTargetMerge;
+  readonly pushPathsRefused?: readonly string[];
 }): WorkTaskInvocation {
   const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
@@ -66,7 +67,12 @@ export function workTaskInvocation(launch: {
     authority: taskAuthorityGrant(authority),
     credentialsListed,
     ...(worker === undefined ? {} : { worker }),
-    ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.targetMerge === undefined
+      ? {}
+      : { targetMerge: launch.targetMerge }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: [...launch.pushPathsRefused] }),
   };
 }
 
@@ -102,6 +108,12 @@ export function workTask(
     ...(invocation.targetRef === undefined
       ? {}
       : { targetRef: invocation.targetRef }),
+    ...(invocation.targetMerge === undefined
+      ? {}
+      : { targetMerge: invocation.targetMerge }),
+    ...(invocation.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: invocation.pushPathsRefused }),
   };
 }
 

@@ -266,7 +266,7 @@ test("the landing's address draws under the Runs tab, and says when the ticket h
   runServed();
   await mountedAt(`${ticketPath}/landing`);
   expect(tabCurrent()).toMatch(/^Runs/u);
-  expect(screen.getByText("No landing")).toBeDefined();
+  expect(screen.getByText("No finalization")).toBeDefined();
   const rail = screen.getByRole("navigation", { name: "Runs" });
   expect(
     within(rail)
@@ -289,7 +289,7 @@ test("the landing's address says its read has not answered rather than that the 
   landingsServed(() => new Promise(() => undefined));
   await mountedAt(`${ticketPath}/landing`);
   expect(screen.getByText("Loading…")).toBeDefined();
-  expect(screen.queryByText("No landing")).toBeNull();
+  expect(screen.queryByText("No finalization")).toBeNull();
 });
 
 test("the landing's address says its read failed rather than that the ticket has no landing", async () => {
@@ -300,5 +300,5 @@ test("the landing's address says its read failed rather than that the ticket has
   );
   await mountedAt(`${ticketPath}/landing`);
   expect(document.querySelector(".read-failed")).not.toBeNull();
-  expect(screen.queryByText("No landing")).toBeNull();
+  expect(screen.queryByText("No finalization")).toBeNull();
 });

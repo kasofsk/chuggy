@@ -164,10 +164,15 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #                 modules start a chat session by and import it by, and the
 #                 packages it imports in a `node_modules` of its own
 #   lib/codex/    Codex's platform package, as below
+#   path/chuggy   a link to the core's `chuggy` command, its package's `bin`,
+#                 and nothing else in `path/`
 #   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
 #   check.sh      what a job's container runs first, in the job's own image
 #
-# The core finds `bin/` from where it sits, and nothing puts it on PATH.
+# The core finds `bin/` from where it sits, and nothing puts it on PATH. The
+# `worker-base` stage puts `path/` there instead, last, so a chat session's
+# shell, which is handed the supervisor's PATH, finds `chuggy` and runs it on
+# the image's own node.
 #
 # A SITE COPIES THE TREE OUT OF THIS IMAGE with this image's `cp`, as the user a
 # job runs as. So `/opt/chuggy` is a directory and not a link, and every file in
@@ -261,6 +266,20 @@ RUN case "$TARGETARCH" in \
 COPY --from=core /shipped/ /opt/chuggy/lib/chuggy/
 COPY --from=core /check.sh /opt/chuggy/check.sh
 COPY --from=runtime-node /usr/local/bin/node /opt/chuggy/bin/node
+RUN --mount=type=bind,from=core,source=/core/package.json,target=/tmp/core-package.json \
+  mkdir /opt/chuggy/path \
+  && /opt/chuggy/bin/node -e ' \
+    const { bin } = require("/tmp/core-package.json"); \
+    if (typeof bin?.chuggy !== "string") throw new Error("the core names no chuggy bin"); \
+    console.log(bin.chuggy); \
+  ' > /tmp/chuggy-bin.txt \
+  && read -r bin < /tmp/chuggy-bin.txt \
+  && rm /tmp/chuggy-bin.txt \
+  && if [ ! -x "/opt/chuggy/lib/chuggy/$bin" ]; then \
+       echo "the core's chuggy bin, $bin, is not an executable it ships"; \
+       exit 1; \
+     fi \
+  && ln -s "../lib/chuggy/$bin" /opt/chuggy/path/chuggy
 RUN case "$TARGETARCH" in \
        amd64) platform=linux-x64 ;; \
        arm64) platform=linux-arm64 ;; \
@@ -274,8 +293,9 @@ RUN case "$TARGETARCH" in \
 # What the core needs, read off the tree rather than off this file. Each import
 # runs from the directory the core's modules live in, because what finds a
 # package is the `node_modules` walk up from there. The contract installed is the
-# release a pod names in every request, so it is held to the one `core.json`
-# names, and the tree to sitting where that release starts a job from.
+# package the core was tested with, so its version is held to the one
+# `core.json` names, and the tree to sitting where that contract starts a job
+# from.
 #
 # Both probes resolve the runtime through `session.mjs`'s own `sessionSdk`, so
 # what they prove is the resolution a turn will make. `sdkProbe.mjs` holds the
@@ -307,11 +327,11 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
     import { accessSync, constants, readFileSync } from "node:fs"; \
-    import { workerContractRelease } from "@chuggy/worker-contract/workerContract"; \
     import { workerJobCommand, workerRuntimeDirectory } from "@chuggy/worker-contract/workerEnvironment"; \
     const { contractRelease } = JSON.parse(readFileSync("/tmp/core.json", "utf8")); \
-    if (workerContractRelease !== contractRelease) { \
-      console.error(`core.json names contract ${contractRelease} and the core installs ${workerContractRelease}`); \
+    const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.resolve("@chuggy/worker-contract/workerContract")), "utf8")); \
+    if (version !== contractRelease) { \
+      console.error(`core.json names contract ${contractRelease} and the core installs ${version}`); \
       process.exit(1); \
     } \
     if (workerRuntimeDirectory !== "/opt/chuggy") { \
@@ -498,7 +518,24 @@ RUN /opt/chuggy/bin/node --input-type=module --eval ' \
 
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \
+    PATH=${PATH}:/opt/chuggy/path \
     TMPDIR=/tmp
+
+# A SESSION'S SHELL FINDS `chuggy` ON PATH AND RUNS IT. Run as the last session
+# user with none of its shell credential's variables set, the command answers
+# that they are unset and exits 2, which it does only once its modules load.
+RUN last="$(getent passwd | awk -F: '$1 ~ /^chat-/ { uid = $3 } END { print uid }')" \
+  && [ "$(command -v chuggy)" = /opt/chuggy/path/chuggy ] \
+  && [ "$(ls -A /opt/chuggy/path)" = chuggy ] \
+  && { setpriv --reuid "$last" --regid "$last" --clear-groups \
+      env -i PATH="$PATH" chuggy read_ticket > /tmp/chuggy.out 2>&1; \
+    status=$?; } \
+  && if [ "$status" != 2 ] || ! grep -q ' unset' /tmp/chuggy.out; then \
+       echo "chuggy on PATH exited $status:"; \
+       cat /tmp/chuggy.out; \
+       exit 1; \
+     fi \
+  && rm /tmp/chuggy.out
 
 USER 1000:1000
 WORKDIR /workspace

@@ -47,6 +47,7 @@ import {
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
 import { RepositoryFinalizationSection } from "./RepositoryFinalizationSection.tsx";
 import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection.tsx";
+import { RepositoryWorkflowRunsSection } from "./RepositoryWorkflowRunsSection.tsx";
 
 import "./Repositories.css";
 
@@ -150,6 +151,10 @@ export function RepositoryPage(): ReactNode {
             binding={binding}
           />
           <RepositoryWorkflowFilesSection
+            partition={partition}
+            binding={binding}
+          />
+          <RepositoryWorkflowRunsSection
             partition={partition}
             binding={binding}
           />

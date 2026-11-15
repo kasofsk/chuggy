@@ -200,6 +200,15 @@ export const agentAccountPressFunction = "press_agent_account";
 /** One person's credential of an agent of their account retired: its readings and its limit dropped, refused while a live runner of theirs names it. */
 export const agentAccountCredentialRetireFunction =
   "retire_agent_account_credential";
+/** Each hold on each credential of an account's agent, one row per reason with its end: a window at its threshold, a limit, or the person's turning it off. */
+export const agentAccountCredentialHoldsFunction =
+  "agent_account_credential_holds";
+/** One person's credential of an agent of their account turned off by name, so every runner of theirs is held off it. */
+export const agentAccountCredentialOffFunction =
+  "turn_off_agent_account_credential";
+/** One person's credential of an agent of their account turned on again. */
+export const agentAccountCredentialOnFunction =
+  "turn_on_agent_account_credential";
 export const runEvidenceImmutableFunction =
   "execution_run_evidence_is_immutable";
 export const runConfigurationImmutableFunction =
@@ -349,7 +358,6 @@ export const configurationFollowingMoveFunction =
 export const ticketRunStepFailureFunction = "ticket_run_step_failure";
 /** The dependencies a ticket's last update named. */
 export const ticketUpdatedDependenciesFunction = "ticket_updated_dependencies";
-export const approvalRequestFunction = "request_finalization_approval";
 /** Whether an evaluation sent a ticket back to work after a journal position. */
 export const ticketEvaluationReworkedSinceFunction =
   "ticket_evaluation_reworked_since";
@@ -396,6 +404,51 @@ export const epicSaveFunction = "save_epic";
 /** The door a draft is created into an epic through. */
 export const draftInEpicFunction = "create_draft_in_epic";
 
+/** What a project holds that keeps it from deletion, read by the API. */
+export const projectDeletionHoldsFunction = "project_deletion_holds";
+
+/** The door a project that never ran work is deleted through. */
+export const projectDeleteFunction = "delete_unrun_project";
+
+/** Whether a deleted project's name is vacant, read by the API before it grants on a project made under it. */
+export const projectVacatedFunction = "project_vacated";
+
+/** The door a vacancy is filled through, once a project made under the name has its predecessor's tuples erased. */
+export const projectVacancyFillFunction = "fill_project_vacancy";
+
+/** What a tenant holds that keeps it from deletion, read by the API. */
+export const tenantDeletionHoldsFunction = "tenant_deletion_holds";
+
+/** The door a tenant that holds no project is deleted through. */
+export const tenantDeleteFunction = "delete_unrun_tenant";
+
+/** The door a chat host's thread attempt reports through whether its thread is standing. */
+export const sessionStandingReportFunction = "report_session_standing";
+
+/** What a chat host's thread attempt is, read by the worker plane before the attempt wakes its own thread. */
+export const threadJobWakeViewFunction = "thread_job_wake_view";
+
+/** The door a chat host's thread attempt wakes its own thread through. */
+export const threadJobWakeFunction = "wake_thread_job";
+
+/** The threads a chat host last ran that have since closed, read by the pool plane. */
+export const chatHostThreadsClosedFunction = "chat_host_threads_closed";
+
+/** Whether a thread is standing, read by the API. */
+export const threadStandingFunction = "thread_jobs_standing";
+
+/** The capabilities a thread holds while a chat host holds it, read by the API. */
+export const threadChatHostCapabilitiesFunction =
+  "thread_chat_host_capabilities";
+
+/** The door a member takes a released ticket and returns it through. */
+export const ticketTakeFunction = "take_ticket";
+
+/** The member who took a ticket and has not returned it, or none. */
+export const ticketTakerFunction = "ticket_taker";
+
+/** The member a ticket's next execution is placed for: its taker, else its creator, else none. */
+export const ticketOwnerFunction = "ticket_owner";
 /** Every theme one person owns, by number. */
 export const ownedThemesFunction = "owned_themes";
 /** One theme created for one person, refused past the bound they are held to. */

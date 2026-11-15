@@ -18,6 +18,7 @@ import {
 } from "./adapters/credentials/credentialFiles.ts";
 import { githubChangeProposals } from "./adapters/forge/githubChangeProposals.ts";
 import { githubRepositoryHost } from "./adapters/forge/githubAddress.ts";
+import { githubPipelinePaths } from "./adapters/forge/githubPipelines.ts";
 import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
@@ -100,6 +101,18 @@ import {
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
+import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
+import {
+  postgresProjectDeletion,
+  postgresTenantDeletion,
+} from "./adapters/postgres/unrunDeletion.ts";
+import type { UnrunDeletions } from "./adapters/http/server.ts";
+import {
+  projectDeletion,
+  tenantDeletion,
+  type AccessErasure,
+} from "./interpreter/unrunDeletion.ts";
 import { postgresThreadLimits } from "./adapters/postgres/threadLimit.ts";
 import {
   threadLimitAdministration,
@@ -126,9 +139,9 @@ import { postgresProjectCreation } from "./adapters/postgres/projectCreation.ts"
 import {
   projectCreation,
   type ProjectCreation,
+  type ProjectCreationAuthority,
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
-import type { ProjectGrantWriter } from "./interpreter/projectGrant.ts";
 import type { Principal } from "./interpreter/principal.ts";
 import {
   postgresSelectorProjectSettings,
@@ -297,21 +310,34 @@ export interface SelectorLeadRuntime {
   readonly controlDeadlineMs: number;
 }
 
-/** Project creation over the API role's door, answering `NotConfigured` where no grant writer is composed. */
+/** Project creation over the API role's door, answering `NotConfigured` where no authority to write to is composed. */
 export function composeProjectCreation(
   apiPool: pg.Pool,
   access: ProjectAccess,
   claims: TenantClaims,
-  grants: ProjectGrantWriter | undefined,
+  authority: ProjectCreationAuthority | undefined,
   selector?: Principal,
 ): ProjectCreation {
   return projectCreation({
     access,
     claims,
     store: postgresProjectCreation(apiPool),
-    ...(grants === undefined ? {} : { grants }),
+    ...(authority === undefined ? {} : { authority }),
     ...(selector === undefined ? {} : { selector }),
   });
+}
+
+/** Deleting a project that never ran work and a workspace that holds no project, over the API role's doors and the authority they erase. */
+export function composeUnrunDeletions(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  erasure: AccessErasure,
+): UnrunDeletions {
+  const ports = { access, erasure };
+  return {
+    projects: projectDeletion(ports, postgresProjectDeletion(apiPool)),
+    tenants: tenantDeletion(ports, postgresTenantDeletion(apiPool)),
+  };
 }
 
 /** Wires where a project's sessions run to API-role credentials and the access that gates choosing it. */
@@ -333,6 +359,19 @@ export function composeProjectOwnerFallback(
   return projectOwnerFallbackAdministration(
     access,
     postgresProjectOwnerFallback(apiPool),
+  );
+}
+
+/** Wires a ticket's takes and returns to API-role credentials, the access that gates them, and the site's selector they refuse. */
+export function composeTicketTakes(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  selector: Principal | undefined,
+): TicketTakes {
+  return ticketTakes(
+    access,
+    postgresTicketTakes(apiPool),
+    selector === undefined ? {} : { selector },
   );
 }
 
@@ -664,6 +703,8 @@ export function composeRepositoryOnboarding(
 export interface FinalizerServiceRuntime {
   readonly git: GitPromotionPort;
   readonly forges: ChangeProposalForges;
+  /** The paths the forge says a job's push may not change where its binding withholds pipelines. */
+  readonly pipelinePaths: readonly string[];
   readonly artifactRoot: string;
   readonly artifacts?: ArtifactStoreOptions;
 }
@@ -756,6 +797,7 @@ export function composeFinalizerService(
     stacks: postgresEvaluationStack(finalizerPool),
     handoffs: artifacts,
     artifacts,
+    pipelinePaths: runtime.pipelinePaths,
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(config),
@@ -877,6 +919,7 @@ function finalizerServiceRuntime(
         ? {}
         : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
     }),
+    pipelinePaths: githubPipelinePaths,
     artifactRoot: settings.artifactRoot,
   };
 }

@@ -22,11 +22,10 @@ import type { TableRow } from "../ui/Table.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
-type RepositoryConfigurationColumn =
-  "configuration" | "worker" | "stages" | "approval";
+type RepositoryConfigurationColumn = "configuration" | "worker" | "stages";
 
 /** A row's cells: the facts, or where the revision is not ready, that word
- * under the worker and nothing under the two it decides with it. */
+ * under the worker and nothing under the stages it decides with it. */
 function repositoryConfigurationCells(
   row: RepositoryConfigurationRow,
   text: CopyText,
@@ -44,7 +43,6 @@ function repositoryConfigurationCells(
         <Pill tone="neutral">{text({ id: "repositories-incomplete" })}</Pill>
       ),
       stages: null,
-      approval: null,
     };
   return {
     configuration: name,
@@ -54,7 +52,6 @@ function repositoryConfigurationCells(
       </Tooltip>
     ),
     stages: facts.stages,
-    approval: text(facts.approval),
   };
 }
 
@@ -93,10 +90,6 @@ export function RepositoryConfigurationTable(props: {
               key: "stages",
               label: text({ id: "repositories-col-stages" }),
               numeric: true,
-            },
-            {
-              key: "approval",
-              label: text({ id: "repositories-col-approval" }),
             },
           ],
           rows: props.rows.map((row) => ({

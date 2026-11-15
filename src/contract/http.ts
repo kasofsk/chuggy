@@ -23,6 +23,11 @@ export function textCodePointsCount(text: string): number {
  */
 const unpairedSurrogate = /\p{Cs}/u;
 
+/** Whether text holds no unpaired surrogate. */
+export function textWellFormed(text: string): boolean {
+  return !unpairedSurrogate.test(text);
+}
+
 /** Why one string is not text a bounded column holds, or nothing where it is. */
 export type BoundedTextRefusal =
   | { readonly refused: "Empty" }
@@ -44,7 +49,7 @@ export function boundedTextRefusal(
   charsMax: number,
 ): BoundedTextRefusal | undefined {
   if (value.length === 0) return { refused: "Empty" };
-  if (unpairedSurrogate.test(value)) return { refused: "Unpaired" };
+  if (!textWellFormed(value)) return { refused: "Unpaired" };
   if (value.includes("\u0000")) return { refused: "Nul" };
   const chars = textCodePointsCount(value);
   return chars > charsMax ? { refused: "TooLong", chars } : undefined;
@@ -637,6 +642,8 @@ export const nativeHttpRoutes = {
   forgeInstallationPermissions: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/permissions`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
+  projectDeletion: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/deletion`,
+  tenantDeletion: `${nativeHttpBasePath}/tenants/:tenant/deletion`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
@@ -644,6 +651,8 @@ export const nativeHttpRoutes = {
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
+  ticketTake: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/take`,
+  ticketReturn: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/return`,
   landingQueues: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/landing-queues`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
@@ -702,6 +711,7 @@ export const nativeHttpRoutes = {
   agentAccountSettings: `${nativeHttpBasePath}/agent-accounts/:agent/settings`,
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,
   agentAccountCredential: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential`,
+  agentAccountCredentialOff: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential/off`,
   ownThemes: `${nativeHttpBasePath}/appearance/themes`,
   ownTheme: `${nativeHttpBasePath}/appearance/themes/:theme`,
   themeChoice: `${nativeHttpBasePath}/appearance/choice`,
@@ -1059,8 +1069,8 @@ export const workerRunCredentialSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/u);
 
-/** The most credentials of one agent an account read names. */
-export const agentAccountCredentialsMax = 16;
+/** The most credentials of one agent an account read names: those kept of its readings and limits, and those turned off beside them. */
+export const agentAccountCredentialsMax = 32;
 
 /** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
 export const workerRunCredentialDefaults = {

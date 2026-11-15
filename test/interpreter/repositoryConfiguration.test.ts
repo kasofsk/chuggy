@@ -30,7 +30,7 @@ import {
   repositoryDeclarationRoot,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
-} from "../../src/interpreter/repositoryDeclaration.ts";
+} from "../../src/contract/repositoryDeclaration.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -40,7 +40,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
-import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
+import { catalogSelectedFinalizer } from "../../src/contract/workloadConfiguration.ts";
 
 const repository = asRepositoryId("repository-one");
 const commit = asGitObjectId("a".repeat(40));
@@ -227,6 +227,78 @@ test("the development catalog's approved plan is its standard plan, then one sta
   assert.equal(approval?.runner, "Approval");
   assert.ok(approval !== undefined && !("approvers" in approval));
   assert.equal(configuration.defaults?.evaluation, "standard");
+});
+
+/** A catalog of either version, its one finalizer landing by a pull request and carrying `extra`. */
+function landingCatalog(version: 2 | 3, extra: object = {}): object {
+  const worker = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  };
+  return {
+    version,
+    image: "worker:v2",
+    workloads: {
+      build: { runner: "Agent", prompt: { text: "Build it." }, worker },
+      review: { runner: "Agent", prompt: { text: "Review it." }, worker },
+    },
+    plans: { standard: [{ name: "review", evaluators: ["review"] }] },
+    finalizers: {
+      proposed: {
+        ...(version === 2
+          ? { landing: { mode: "PullRequest" } }
+          : { finalization: { kind: "PullRequest" } }),
+        ...extra,
+      },
+    },
+    defaults: { work: "build", evaluation: "standard" },
+  };
+}
+
+/** What importing one declaration of `declared` comes to: ready, or the faults it was refused for. */
+function importedOne(declared: object): string | readonly string[] {
+  const found = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [
+      {
+        path: `${repositoryConfigurationRoot}one.json`,
+        kind: "File",
+        content: JSON.stringify({
+          version: 1,
+          name: "one",
+          configuration: declared,
+        }),
+      },
+    ],
+  });
+  return found.readiness === "Ready"
+    ? found.readiness
+    : found.faults.map(({ fault }) => fault);
+}
+
+test("an import naming a landing approval is refused ApprovalOutsidePlan, and the same configuration without it imports", () => {
+  for (const asked of [true, false])
+    assert.deepEqual(
+      importedOne({ ...configuration, finalizationApprovalRequired: asked }),
+      ["ApprovalOutsidePlan"],
+      `version 1 asking ${String(asked)}`,
+    );
+  assert.equal(importedOne(configuration), "Ready");
+  for (const version of [2, 3] as const) {
+    for (const asked of [true, false])
+      assert.deepEqual(
+        importedOne(landingCatalog(version, { approvalRequired: asked })),
+        ["ApprovalOutsidePlan"],
+        `version ${String(version)} asking ${String(asked)}`,
+      );
+    assert.equal(
+      importedOne(landingCatalog(version)),
+      "Ready",
+      `version ${String(version)}`,
+    );
+  }
 });
 
 test("one bad declaration refuses the snapshot without partial output", () => {
