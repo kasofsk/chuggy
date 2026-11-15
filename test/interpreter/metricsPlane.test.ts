@@ -3,13 +3,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { genesis } from "../../src/actor/journal.ts";
+import { eventTicket, evolve } from "../../src/domain/evolve.ts";
+import {
+  ticketEventTags,
+  type TicketEvent,
+} from "../../src/domain/generated/modelTypes.ts";
+import { phaseOf } from "../../src/domain/phase.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type { MetricsFamily } from "../../src/interpreter/metricsFamily.ts";
 import {
   metricsPlane,
+  metricsPlaneAttemptWaitBoundsSecs,
+  metricsPlaneCycleBoundsSecs,
   metricsPlaneDurationBoundsSecs,
   metricsPlaneEscalationBoundsSecs,
+  metricsPlaneEventPhases,
   metricsPlaneFamilies,
   metricsPlaneOwner,
+  metricsPlanePhaseTimeBoundsSecs,
+  metricsPlaneSeriesMaxDefault,
+  metricsPlaneWorkCycleBounds,
   metricsPlaneTicketCostBoundsUsd,
   metricsPlaneTicketReworkBounds,
   metricsPlaneTicketTimeBoundsSecs,
@@ -20,6 +34,7 @@ import {
   type MetricsPlaneTurnRow,
 } from "../../src/interpreter/metricsPlane.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
+import { journalOf, loadCorpus } from "../golden/corpus.ts";
 
 const issuer = "https://issuer.test";
 
@@ -36,6 +51,7 @@ const task: MetricsPlaneTask = {
 
 const empty: MetricsPlaneRows = {
   attempts: [],
+  attemptWaits: [],
   runs: [],
   models: [],
   turns: [],
@@ -46,6 +62,10 @@ const empty: MetricsPlaneRows = {
   reworks: [],
   costs: [],
   escalations: [],
+  workCycleDurations: [],
+  evaluationCycleDurations: [],
+  phaseTimes: [],
+  workCycles: [],
   agentPauses: [],
 };
 
@@ -622,5 +642,184 @@ test("the paused gauge counts each owner's paused accounts per agent and trigger
   assert.deepEqual(
     family(metricsPlaneFamilies(empty), "chuggy_agent_paused").samples,
     [],
+  );
+});
+
+test("every golden entry leaves its ticket in the phase the roster names for its event, and every event is checked", () => {
+  const checked = new Set<string>();
+  for (const row of loadCorpus().rows) {
+    let graph = genesis;
+    for (const { event } of journalOf(row)) {
+      graph = evolve(graph, event);
+      assert.equal(
+        phaseOf(ticketAt(graph, eventTicket(event)).state),
+        metricsPlaneEventPhases[event.type],
+        `${row.name}: ${event.type}`,
+      );
+      checked.add(event.type);
+    }
+  }
+  assert.deepEqual(
+    ticketEventTags.filter((tag) => !checked.has(tag)),
+    [],
+  );
+});
+
+test("a page carries up to twenty-five thousand series where the deployment names no cap", () => {
+  assert.equal(metricsPlaneSeriesMaxDefault, 25_000);
+});
+
+/** The samples of the histogram `name` among `families`, and the bounds it is counted under. */
+function histogramOf(families: readonly MetricsFamily[], name: string) {
+  const found = family(families, name);
+  assert.equal(found.type, "histogram", name);
+  return found.type === "histogram"
+    ? { bounds: found.bounds, samples: found.samples }
+    : undefined;
+}
+
+test("the cycle, phase time and work cycle families are counted under the bounds the board reads", () => {
+  assert.deepEqual(
+    metricsPlaneCycleBoundsSecs,
+    [
+      60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200, 10800, 14400,
+      28800,
+    ],
+  );
+  assert.deepEqual(
+    metricsPlanePhaseTimeBoundsSecs,
+    [60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800],
+  );
+  assert.deepEqual(metricsPlaneWorkCycleBounds, [1, 2, 3, 4, 5, 7, 10]);
+});
+
+/** A cycle of `owned`'s, began and ended by the events named, with two observations in its second bucket. */
+const ownedCycle = (
+  began: TicketEvent["type"],
+  ended: TicketEvent["type"],
+  createdSecs: number,
+) => ({
+  ...owned,
+  began,
+  ended,
+  buckets: boundedAt(metricsPlaneCycleBoundsSecs, 1, 2),
+  sum: 150_500,
+  createdSecs,
+});
+
+test("a ticket's work and evaluation cycles are seconds, each labelled by the events that began and ended it", () => {
+  const families = metricsPlaneFamilies({
+    ...empty,
+    workCycleDurations: [
+      ownedCycle("TicketDispatched", "TicketWorkResultAccepted", 3),
+    ],
+    evaluationCycleDurations: [
+      ownedCycle("TicketWorkResultAccepted", "TicketEvaluationPassed", 4),
+    ],
+  });
+  for (const [name, began, ended, createdSecs] of [
+    [
+      "chuggy_ticket_work_cycle_duration_seconds",
+      "TicketDispatched",
+      "TicketWorkResultAccepted",
+      3,
+    ],
+    [
+      "chuggy_ticket_evaluation_cycle_duration_seconds",
+      "TicketWorkResultAccepted",
+      "TicketEvaluationPassed",
+      4,
+    ],
+  ] as const)
+    assert.deepEqual(histogramOf(families, name), {
+      bounds: metricsPlaneCycleBoundsSecs,
+      samples: [
+        {
+          labels: { ...owned, began, ended },
+          bucketCounts: boundedAt(metricsPlaneCycleBoundsSecs, 1, 2),
+          sum: 150.5,
+          createdSecs,
+        },
+      ],
+    });
+});
+
+test("a landed ticket's phase times are seconds by phase and its work cycles counts", () => {
+  const families = metricsPlaneFamilies({
+    ...empty,
+    phaseTimes: [
+      {
+        ...owned,
+        phase: "Escalated",
+        buckets: boundedAt(metricsPlanePhaseTimeBoundsSecs, 0, 1),
+        sum: 0,
+        createdSecs: 5,
+      },
+    ],
+    workCycles: [
+      {
+        ...owned,
+        buckets: boundedAt(metricsPlaneWorkCycleBounds, 3, 1),
+        sum: 4,
+        createdSecs: 6,
+      },
+    ],
+  });
+  assert.deepEqual(histogramOf(families, "chuggy_ticket_phase_time_seconds"), {
+    bounds: metricsPlanePhaseTimeBoundsSecs,
+    samples: [
+      {
+        labels: { ...owned, phase: "Escalated" },
+        bucketCounts: boundedAt(metricsPlanePhaseTimeBoundsSecs, 0, 1),
+        sum: 0,
+        createdSecs: 5,
+      },
+    ],
+  });
+  assert.deepEqual(histogramOf(families, "chuggy_ticket_work_cycles"), {
+    bounds: metricsPlaneWorkCycleBounds,
+    samples: [
+      {
+        labels: owned,
+        bucketCounts: boundedAt(metricsPlaneWorkCycleBounds, 3, 1),
+        sum: 4,
+        createdSecs: 6,
+      },
+    ],
+  });
+});
+
+test("a claimed attempt's wait is seconds, by its owner, phase and placement alone", () => {
+  assert.deepEqual(
+    metricsPlaneAttemptWaitBoundsSecs,
+    [10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400],
+  );
+  const waited = {
+    ...owned,
+    phase: "Work" as const,
+    placement: "Pool" as const,
+    buckets: boundedAt(metricsPlaneAttemptWaitBoundsSecs, 2, 1),
+    sum: 45_250,
+    createdSecs: 9,
+  };
+  assert.deepEqual(
+    histogramOf(
+      metricsPlaneFamilies({
+        ...empty,
+        attemptWaits: [waited, { ...waited, createdSecs: 2 }],
+      }),
+      "chuggy_attempt_wait_seconds",
+    ),
+    {
+      bounds: metricsPlaneAttemptWaitBoundsSecs,
+      samples: [
+        {
+          labels: { ...owned, phase: "Work", placement: "Pool" },
+          bucketCounts: boundedAt(metricsPlaneAttemptWaitBoundsSecs, 2, 2),
+          sum: 90.5,
+          createdSecs: 2,
+        },
+      ],
+    },
   );
 });

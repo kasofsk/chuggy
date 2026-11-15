@@ -1,9 +1,11 @@
 /**
  * The metrics plane's ticket families against a real server, read as the
  * plane's own role: every journal entry counted by its event and the stage its
- * report names, a landed ticket's lead and run times and its reworks, an ended
- * ticket's settled cost, each ended escalation by who ended it, and the tickets
- * where they stand, each under the member who first wrote the ticket's draft.
+ * report names, a landed ticket's lead and run times, its reworks, its time in
+ * each phase and its work cycles, every ended work and evaluation cycle, an
+ * ended ticket's settled cost, each ended escalation by who ended it, each
+ * claimed attempt's wait, and the tickets where they stand, each under the
+ * member who first wrote the ticket's draft.
  *
  * THE ROWS ARE WRITTEN DIRECTLY, AS THE OWNER, WITH REFERENTIAL CHECKS AND
  * TRIGGERS SET ASIDE FOR THE SEEDING TRANSACTION, as the plane's other suite
@@ -172,7 +174,7 @@ const landedEntries: readonly TicketsEntry[] = [
   ...(operation === undefined ? {} : { operation: operation as string }),
 }));
 
-/** The rest: project one's ticket still escalated and its ticket whose creator owns no execution, and project two's revoked tickets, one revoked moments before the scrape. */
+/** The rest: project one's ticket still escalated and its ticket whose creator owns no execution, project two's revoked tickets, one revoked moments before the scrape, and its ticket landed without escalating. */
 const otherEntries: readonly TicketsEntry[] = [
   {
     partition: one,
@@ -253,6 +255,19 @@ const otherEntries: readonly TicketsEntry[] = [
     event: ticketsEvent("TicketRevoked", 1),
     at: { past: 5_000 },
   },
+  ...[
+    ["TicketCreated", 10_000],
+    ["TicketDispatched", 10_060],
+    ["TicketWorkResultAccepted", 10_200],
+    [ticketsEvaluated("TicketEvaluationPassed", 3, 1), 10_300],
+    ["TicketFinalizationSucceeded", 10_400],
+  ].map(([event, past]) => ({
+    partition: two,
+    ticket: 3,
+    event:
+      typeof event === "string" ? ticketsEvent(event, 3) : (event as unknown),
+    at: { past: past as number },
+  })),
   {
     partition: two,
     ticket: 2,
@@ -322,13 +337,13 @@ async function ticketsJournalled(query: TicketsQuery): Promise<void> {
   }
 }
 
-/** One execution of `ticket`'s `task` and its one attempt, ended `endedSecs` past the base and costing `costMicros`. */
+/** One execution of `ticket`'s `task` and its one attempt, ended `endedSecs` past the base and costing `costMicros`, claimed as it ended after waiting `waitSecs` or claimed by nothing. */
 async function ticketsRun(
   query: TicketsQuery,
   partition: TicketsPartition,
   [ticket, task]: readonly [number, number],
   execution: string,
-  endedSecs: number,
+  [endedSecs, waitSecs]: readonly [number, number | undefined],
   costMicros: number,
 ): Promise<void> {
   const keys = [partition.tenant, partition.project, execution];
@@ -353,9 +368,10 @@ async function ticketsRun(
   );
   await query(
     `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,recovery_epoch,
-       state,opened_at,ended_at,capability,manifest,personal)
-     VALUES ($1,$2,$3,$3,1,'epoch','Reported',to_timestamp($4),to_timestamp($4),$3,$3,false)`,
-    [...keys, baseSecs + endedSecs],
+       state,opened_at,claimed_at,ended_at,capability,manifest,personal)
+     VALUES ($1,$2,$3,$3,1,'epoch','Reported',to_timestamp($4::float8-coalesce($5::float8,0)),
+       CASE WHEN $5::float8 IS NOT NULL THEN to_timestamp($4) END,to_timestamp($4),$3,$3,false)`,
+    [...keys, baseSecs + endedSecs, waitSecs ?? null],
   );
   await query(
     `INSERT INTO execution_run_model_usage (tenant,project,execution,attempt,model,tokens_input,
@@ -382,6 +398,7 @@ async function ticketsSeeded(query: TicketsQuery): Promise<void> {
     [one, 3, 1, dana],
     [two, 1, 1, bob],
     [two, 2, 1, bob],
+    [two, 3, 1, bob],
   ] as const)
     await query(
       `INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,
@@ -407,10 +424,17 @@ async function ticketsSeeded(query: TicketsQuery): Promise<void> {
       [one.tenant, one.project, operation, kind, subject],
     );
   await ticketsJournalled(query);
-  await ticketsRun(query, one, [1, 1], "execution-make", 100, 1_500_000);
-  await ticketsRun(query, one, [1, 2], "execution-lint", 200, 250_000);
-  await ticketsRun(query, two, [1, 1], "execution-early", 3_000, 400_000);
-  await ticketsRun(query, two, [1, 2], "execution-late", 9_000, 7_000_000);
+  await ticketsRun(query, one, [1, 1], "execution-make", [100, 45], 1_500_000);
+  await ticketsRun(query, one, [1, 2], "execution-lint", [200, 200], 250_000);
+  await ticketsRun(
+    query,
+    two,
+    [1, 1],
+    "execution-early",
+    [3_000, undefined],
+    400_000,
+  );
+  await ticketsRun(query, two, [1, 2], "execution-late", [9_000, 5], 7_000_000);
   await query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,escalation)
      VALUES ($1,$2,1,'Done',18,'NoEscalation'),($1,$2,2,'Escalated',22,'EvaluationBlockedEscalated'),
@@ -503,10 +527,12 @@ test("every journal entry is counted by its event, an evaluation report's under 
       counted(aliceOne, "TicketEvaluationBlocked", "lint", 1),
       counted(danaOne, "TicketCreated", "", 1),
       counted(danaOne, "TicketDispatched", "", 1),
-      counted(bobTwo, "TicketCreated", "", 2),
-      counted(bobTwo, "TicketDispatched", "", 1),
-      counted(bobTwo, "TicketWorkResultAccepted", "", 1),
+      counted(bobTwo, "TicketCreated", "", 3),
+      counted(bobTwo, "TicketDispatched", "", 2),
+      counted(bobTwo, "TicketWorkResultAccepted", "", 2),
       counted(bobTwo, "TicketEvaluationProgressed", "1", 1),
+      counted(bobTwo, "TicketEvaluationPassed", "1", 1),
+      counted(bobTwo, "TicketFinalizationSucceeded", "", 1),
       counted(bobTwo, "TicketRevoked", "", 2),
     ].toSorted(),
   );
@@ -515,36 +541,63 @@ test("every journal entry is counted by its event, an evaluation report's under 
 test("a landed ticket's lead time runs from its release and its run time from its first dispatch", async () => {
   assert.deepEqual(
     await ticketsFamily("chuggy_ticket_lead_time_seconds"),
-    ticketsHistogram(
-      "chuggy_ticket_lead_time_seconds",
-      aliceOne,
-      timeBounds,
-      [7_230],
-      7_230,
-    ).toSorted(),
+    [
+      ...ticketsHistogram(
+        "chuggy_ticket_lead_time_seconds",
+        aliceOne,
+        timeBounds,
+        [7_230],
+        7_230,
+      ),
+      ...ticketsHistogram(
+        "chuggy_ticket_lead_time_seconds",
+        bobTwo,
+        timeBounds,
+        [400],
+        400,
+      ),
+    ].toSorted(),
   );
   assert.deepEqual(
     await ticketsFamily("chuggy_ticket_run_time_seconds"),
-    ticketsHistogram(
-      "chuggy_ticket_run_time_seconds",
-      aliceOne,
-      timeBounds,
-      [7_170],
-      7_170,
-    ).toSorted(),
+    [
+      ...ticketsHistogram(
+        "chuggy_ticket_run_time_seconds",
+        aliceOne,
+        timeBounds,
+        [7_170],
+        7_170,
+      ),
+      ...ticketsHistogram(
+        "chuggy_ticket_run_time_seconds",
+        bobTwo,
+        timeBounds,
+        [340],
+        340,
+      ),
+    ].toSorted(),
   );
 });
 
 test("a landed ticket's reworks are the results that sent it back, not the work cycles it entered", async () => {
   assert.deepEqual(
     await ticketsFamily("chuggy_ticket_reworks"),
-    ticketsHistogram(
-      "chuggy_ticket_reworks",
-      aliceOne,
-      [0, 1, 2, 3, 4, 5, 7, 10],
-      [3],
-      3,
-    ).toSorted(),
+    [
+      ...ticketsHistogram(
+        "chuggy_ticket_reworks",
+        aliceOne,
+        [0, 1, 2, 3, 4, 5, 7, 10],
+        [3],
+        3,
+      ),
+      ...ticketsHistogram(
+        "chuggy_ticket_reworks",
+        bobTwo,
+        [0, 1, 2, 3, 4, 5, 7, 10],
+        [0],
+        0,
+      ),
+    ].toSorted(),
   );
 });
 
@@ -566,6 +619,13 @@ test("an ended ticket costs what its attempts ended by its end cost, once that e
         bounds,
         [0.4],
         0.4,
+      ),
+      ...ticketsHistogram(
+        "chuggy_ticket_cost_usd",
+        `${bobTwo},end="Done"`,
+        bounds,
+        [0],
+        0,
       ),
     ].toSorted(),
     "the attempt ended after its ticket's revoke is not its cost, and the ticket revoked moments ago is not observed",
@@ -597,6 +657,183 @@ test("each ended escalation is timed to the ticket's next entry and labelled by 
   );
 });
 
+const cycleBounds = [
+  60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200, 10800, 14400,
+  28800,
+];
+
+test("each ended work cycle runs from the entry that left its ticket in work to the ticket's next entry, and an open one is not observed", async () => {
+  const cycle = (
+    labels: string,
+    began: string,
+    ended: string,
+    observed: readonly number[],
+  ) =>
+    ticketsHistogram(
+      "chuggy_ticket_work_cycle_duration_seconds",
+      `${labels},began="${began}",ended="${ended}"`,
+      cycleBounds,
+      observed,
+      observed.reduce((total, value) => total + value, 0),
+    );
+  assert.deepEqual(
+    await ticketsFamily("chuggy_ticket_work_cycle_duration_seconds"),
+    [
+      ...cycle(
+        aliceOne,
+        "TicketDispatched",
+        "TicketWorkResultAccepted",
+        [60, 40],
+      ),
+      ...cycle(
+        aliceOne,
+        "TicketEvaluationReworkStarted",
+        "TicketWorkProcessFailed",
+        [120],
+      ),
+      ...cycle(
+        aliceOne,
+        "TicketWorkResumed",
+        "TicketWorkResultAccepted",
+        [99, 55],
+      ),
+      ...cycle(
+        aliceOne,
+        "TicketFinalizationNeedsWork",
+        "TicketWorkResultAccepted",
+        [100],
+      ),
+      ...cycle(
+        bobTwo,
+        "TicketDispatched",
+        "TicketWorkResultAccepted",
+        [60, 140],
+      ),
+    ].toSorted(),
+    "the dispatch of the ticket with no entry after it began a cycle still open",
+  );
+});
+
+test("each ended evaluation cycle runs from the first of its consecutive entries leaving the ticket in evaluation to the next that does not", async () => {
+  const cycle = (labels: string, ended: string, observed: readonly number[]) =>
+    ticketsHistogram(
+      "chuggy_ticket_evaluation_cycle_duration_seconds",
+      `${labels},began="TicketWorkResultAccepted",ended="${ended}"`,
+      cycleBounds,
+      observed,
+      observed.reduce((total, value) => total + value, 0),
+    );
+  assert.deepEqual(
+    await ticketsFamily("chuggy_ticket_evaluation_cycle_duration_seconds"),
+    [
+      ...cycle(aliceOne, "TicketEvaluationReworkStarted", [60]),
+      ...cycle(aliceOne, "TicketEvaluationFailureEscalated", [100]),
+      ...cycle(aliceOne, "TicketEvaluationPassed", [50, 50]),
+      ...cycle(aliceOne, "TicketEvaluationBlocked", [100]),
+      ...cycle(bobTwo, "TicketRevoked", [4_880]),
+      ...cycle(bobTwo, "TicketEvaluationPassed", [100]),
+    ].toSorted(),
+  );
+});
+
+const landedPhases = [
+  "Pending",
+  "Work",
+  "Evaluation",
+  "Finalization",
+  "Escalated",
+] as const;
+
+test("a landed ticket is observed once in every phase, zero where it spent none, and its work cycles counted", async () => {
+  const bounds = [
+    60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
+  ];
+  const spent = (labels: string, secs: readonly number[]) =>
+    landedPhases.flatMap((phase, index) =>
+      ticketsHistogram(
+        "chuggy_ticket_phase_time_seconds",
+        `${labels},phase="${phase}"`,
+        bounds,
+        [secs[index] ?? 0],
+        secs[index] ?? 0,
+      ),
+    );
+  assert.deepEqual(
+    await ticketsFamily("chuggy_ticket_phase_time_seconds"),
+    [
+      ...spent(aliceOne, [60, 434, 260, 6_430, 46]),
+      ...spent(bobTwo, [60, 140, 100, 100, 0]),
+    ].toSorted(),
+  );
+  const cyclesBounds = [1, 2, 3, 4, 5, 7, 10];
+  assert.deepEqual(
+    await ticketsFamily("chuggy_ticket_work_cycles"),
+    [
+      ...ticketsHistogram(
+        "chuggy_ticket_work_cycles",
+        aliceOne,
+        cyclesBounds,
+        [5],
+        5,
+      ),
+      ...ticketsHistogram(
+        "chuggy_ticket_work_cycles",
+        bobTwo,
+        cyclesBounds,
+        [1],
+        1,
+      ),
+    ].toSorted(),
+  );
+});
+
+test("a landed ticket's phase times add up to its lead time", async () => {
+  const samples = await ticketsSamples();
+  const summed = (name: string, labels: string) =>
+    Number(
+      samples
+        .find((line) => line.startsWith(`${name}_sum{${labels}} `))
+        ?.split(" ")[1],
+    );
+  for (const labels of [aliceOne, bobTwo])
+    assert.equal(
+      landedPhases
+        .map((phase) =>
+          summed(
+            "chuggy_ticket_phase_time_seconds",
+            `${labels},phase="${phase}"`,
+          ),
+        )
+        .reduce((total, value) => total + value, 0),
+      summed("chuggy_ticket_lead_time_seconds", labels),
+      labels,
+    );
+});
+
+test("each claimed attempt waited from its opening to its claim, and an attempt nothing claimed has no wait", async () => {
+  const bounds = [10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400];
+  const cluster = `phase="Work",placement="Cluster"`;
+  assert.deepEqual(
+    await ticketsFamily("chuggy_attempt_wait_seconds"),
+    [
+      ...ticketsHistogram(
+        "chuggy_attempt_wait_seconds",
+        `${aliceOne},${cluster}`,
+        bounds,
+        [45, 200],
+        245,
+      ),
+      ...ticketsHistogram(
+        "chuggy_attempt_wait_seconds",
+        `${bobTwo},${cluster}`,
+        bounds,
+        [5],
+        5,
+      ),
+    ].toSorted(),
+  );
+});
+
 test("the tickets gauge counts each owner's tickets by phase and escalation, the owner the first draft's member however many revised it", async () => {
   assert.deepEqual(
     await ticketsFamily("chuggy_tickets"),
@@ -619,6 +856,11 @@ test("each ticket counter and histogram series began at the earliest entry it su
     `chuggy_ticket_lead_time_seconds_created{${aliceOne}} ${String(baseSecs + 7_230)}`,
     `chuggy_ticket_cost_usd_created{${bobTwo},end="Revoked"} ${String(baseSecs + 5_000)}`,
     `chuggy_ticket_escalation_duration_seconds_created{${aliceOne},event="TicketEvaluationFailureEscalated",by="Member"} ${String(baseSecs + 545)}`,
+    `chuggy_ticket_work_cycle_duration_seconds_created{${aliceOne},began="TicketWorkResumed",ended="TicketWorkResultAccepted"} ${String(baseSecs + 400)}`,
+    `chuggy_ticket_evaluation_cycle_duration_seconds_created{${aliceOne},began="TicketWorkResultAccepted",ended="TicketEvaluationPassed"} ${String(baseSecs + 650)}`,
+    `chuggy_ticket_phase_time_seconds_created{${bobTwo},phase="Escalated"} ${String(baseSecs + 10_400)}`,
+    `chuggy_ticket_work_cycles_created{${aliceOne}} ${String(baseSecs + 7_230)}`,
+    `chuggy_attempt_wait_seconds_created{${aliceOne},phase="Work",placement="Cluster"} ${String(baseSecs + 100)}`,
   ])
     assert.ok(samples.includes(expected), expected);
 });

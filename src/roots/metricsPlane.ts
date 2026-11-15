@@ -21,7 +21,10 @@ import {
   postgresPool,
 } from "../adapters/postgres/pool.ts";
 import { metricsPlaneRole } from "../adapters/postgres/schema/shared.ts";
-import { metricsPlane } from "../interpreter/metricsPlane.ts";
+import {
+  metricsPlane,
+  metricsPlaneSeriesMaxDefault,
+} from "../interpreter/metricsPlane.ts";
 import {
   planeEnvironmentPositive,
   planeEnvironmentRequired,
@@ -33,7 +36,7 @@ async function main(): Promise<void> {
     issuer: planeEnvironmentRequired("CHUG_METRICS_PLANE_OIDC_ISSUER"),
     seriesMax: planeEnvironmentPositive(
       "CHUG_METRICS_PLANE_SERIES_MAX",
-      10_000,
+      metricsPlaneSeriesMaxDefault,
     ),
   };
   const readTimeoutMs = planeEnvironmentPositive(
