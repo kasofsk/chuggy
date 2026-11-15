@@ -2,24 +2,23 @@
  * A person retires a credential of their own agent account, against a real
  * server and under the API's role: its readings and its limit go from the
  * read, a name none is held under is not held, a credential a live runner of
- * the account names is refused until that runner stops being live, and another
- * person's credential of the same name is untouched.
+ * the account names is refused until that runner stops being live unless it is
+ * off, which it stays, and another person's credential of the same name is
+ * untouched.
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { postgresAgentAccounts } from "../../src/adapters/postgres/agentAccount.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { agentAccountRunnerPolledSecsMaxAt171 } from "../../src/adapters/postgres/schema/migrations/171-agent-account-credential-retire.ts";
 import type { AgentAccountView } from "../../src/interpreter/agentAccount.ts";
+import type { Principal } from "../../src/interpreter/principal.ts";
 import {
-  asPrincipal,
-  type Principal,
-} from "../../src/interpreter/principal.ts";
-import {
+  agentAccountHarnessClaude,
   agentAccountHarnessCommitted,
+  agentAccountHarnessMember,
   type AgentAccountHarnessRunner,
   type AgentAccountHarnessState,
 } from "./agentAccountHarness.ts";
@@ -35,17 +34,10 @@ after(async () => {
 
 const accounts = postgresAgentAccounts(apiPool);
 
-function member(): Principal {
-  return asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
-}
+const member = agentAccountHarnessMember;
 
-async function claudeOf(principal: Principal): Promise<AgentAccountView> {
-  const found = (await accounts.accounts(principal)).find(
-    (account) => account.agent === "Claude",
-  );
-  assert.ok(found !== undefined);
-  return found;
-}
+const claudeOf = (principal: Principal): Promise<AgentAccountView> =>
+  agentAccountHarnessClaude(accounts, principal);
 
 /** Each credential of Claude by its name, with each window it holds a reading of. */
 async function credentialsOf(
@@ -181,4 +173,26 @@ test("retiring a credential leaves another person's credential of the same name 
     "five_hour",
     "limit",
   ]);
+});
+
+test("an off credential a live runner names retires, and stays off", async () => {
+  const owner = member();
+  await agentAccountHarnessCommitted(harness, owner, "Claude", {
+    ...kept([{ kind: "Pool", polledSecs: -5, named: { Claude: ["work"] } }]),
+    off: ["work"],
+  });
+  assert.equal(await accounts.retire(owner, "Claude", "work"), "Retired");
+  assert.deepEqual(await credentialsOf(owner), [
+    ["home", ["five_hour"]],
+    ["work", []],
+  ]);
+  const work = (await claudeOf(owner)).credentials.find(
+    (credential) => credential.name === "work",
+  );
+  assert.equal(work?.pause?.off, true);
+  assert.equal(
+    await accounts.retire(owner, "Claude", "work"),
+    "NotHeld",
+    "an off name holding no reading or limit is not held",
+  );
 });

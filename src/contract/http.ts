@@ -711,6 +711,7 @@ export const nativeHttpRoutes = {
   agentAccountSettings: `${nativeHttpBasePath}/agent-accounts/:agent/settings`,
   agentAccountPresses: `${nativeHttpBasePath}/agent-accounts/:agent/presses`,
   agentAccountCredential: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential`,
+  agentAccountCredentialOff: `${nativeHttpBasePath}/agent-accounts/:agent/credentials/:credential/off`,
   chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
   chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
   chatAbilities: `${nativeHttpBasePath}/tenants/:tenant/chat/abilities`,
@@ -1065,8 +1066,8 @@ export const workerRunCredentialSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/u);
 
-/** The most credentials of one agent an account read names. */
-export const agentAccountCredentialsMax = 16;
+/** The most credentials of one agent an account read names: those kept of its readings and limits, and those turned off beside them. */
+export const agentAccountCredentialsMax = 32;
 
 /** The name a run naming no credential is kept under, by the agent it spent: what a runner holding one credential of that agent names it. */
 export const workerRunCredentialDefaults = {

@@ -1,8 +1,12 @@
 /**
  * PostgreSQL side of a person's own agent accounts: the read of each agent of
  * one account and of each credential it holds, in one snapshot, and the doors
- * its settings, its press and a credential's retirement are written through,
- * all five granted to the API and each handed the one principal it serves.
+ * its settings, its press, a credential's retirement and a credential's
+ * turning off and on are written through, all seven granted to the API and
+ * each handed the one principal it serves.
+ *
+ * A pause held only by credentials turned off is marked `off` in each read's
+ * SQL by its reasons, and answers no end, since it never ends by itself.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -23,6 +27,8 @@ import type {
   AgentAccountReading,
   AgentAccountRetired,
   AgentAccountService,
+  AgentAccountTurnedOff,
+  AgentAccountTurnedOn,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 
@@ -41,6 +47,7 @@ interface AgentAccountRow {
   readonly limit_resets_at: Date | null;
   readonly limit_observed_at: Date | null;
   readonly paused_until: Date | null;
+  readonly off: boolean;
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
   readonly pause_credentials: string[] | null;
@@ -56,6 +63,7 @@ interface AgentAccountCredentialRow {
   readonly seven_day_resets_at: Date | null;
   readonly seven_day_observed_at: Date | null;
   readonly paused_until: Date | null;
+  readonly off: boolean;
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
 }
@@ -121,14 +129,15 @@ function agentAccountLimit(
 function agentAccountPause(
   row: AgentAccountHeld,
 ): AgentAccountPause | undefined {
-  if (row.paused_until === null) return undefined;
-  return {
-    until: row.paused_until.toISOString(),
+  const held = {
     reasons: agentAccountRequired(row.reasons, "pause reasons").map((reason) =>
       agentAccountKnown(reason, agentPauseReasons, "pause reason"),
     ),
     pressed: row.admitted_by_press === true,
   };
+  if (row.off === true) return { off: true, ...held };
+  if (row.paused_until === null) return undefined;
+  return { until: row.paused_until.toISOString(), ...held };
 }
 
 function agentAccountReadings(
@@ -246,14 +255,18 @@ async function agentAccountSnapshot(
                  s.five_hour_utilization,s.five_hour_resets_at,s.five_hour_observed_at,
                  s.seven_day_utilization,s.seven_day_resets_at,s.seven_day_observed_at,
                  s.limit_window,s.limit_resets_at,s.limit_observed_at,
-                 s.paused_until,s.reasons,s.admitted_by_press,s.pause_credentials
+                 s.paused_until,
+                 COALESCE(s.reasons='{off}'::text[],false) AS off,
+                 s.reasons,s.admitted_by_press,s.pause_credentials
             FROM agent_account_standing(${principal}) s`,
     );
     const held = await client.query<AgentAccountCredentialRow>(
       sql`SELECT c.agent,c.credential,
                  c.five_hour_utilization,c.five_hour_resets_at,c.five_hour_observed_at,
                  c.seven_day_utilization,c.seven_day_resets_at,c.seven_day_observed_at,
-                 c.paused_until,c.reasons,c.admitted_by_press
+                 c.paused_until,
+                 COALESCE(c.reasons='{off}'::text[],false) AS off,
+                 c.reasons,c.admitted_by_press
             FROM agent_account_credential_standing(${principal}) c`,
     );
     await client.query("COMMIT");
@@ -281,7 +294,14 @@ const agentAccountRetirements: readonly AgentAccountRetired[] = [
   "CredentialInUse",
 ];
 
-/** The API's read of one person's agent accounts and the doors their settings, press and retirements are written through. */
+const agentAccountTurnsOff: readonly AgentAccountTurnedOff[] = [
+  "Off",
+  "OffFull",
+];
+
+const agentAccountTurnsOn: readonly AgentAccountTurnedOn[] = ["On", "NotOff"];
+
+/** The API's read of one person's agent accounts and the doors their settings, press, retirements and credentials turned off and on are written through. */
 export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
   return {
     accounts: async (principal) => {
@@ -311,6 +331,26 @@ export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
         found.rows[0]?.retired ?? null,
         agentAccountRetirements,
         "retirement",
+      );
+    },
+    turnOff: async (principal, agent, credential) => {
+      const found = await pool.query<{ turned: string | null }>(
+        sql`SELECT turn_off_agent_account_credential(${principal},${agent},${credential})::text AS turned`,
+      );
+      return agentAccountKnown(
+        found.rows[0]?.turned ?? null,
+        agentAccountTurnsOff,
+        "turning off",
+      );
+    },
+    turnOn: async (principal, agent, credential) => {
+      const found = await pool.query<{ turned: string | null }>(
+        sql`SELECT turn_on_agent_account_credential(${principal},${agent},${credential})::text AS turned`,
+      );
+      return agentAccountKnown(
+        found.rows[0]?.turned ?? null,
+        agentAccountTurnsOn,
+        "turning on",
       );
     },
   };

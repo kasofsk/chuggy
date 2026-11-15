@@ -35,6 +35,7 @@ const documentRouteNames = [
   "abilities",
   "actionReports",
   "agentAccountCredential",
+  "agentAccountCredentialOff",
   "agentAccountPresses",
   "agentAccountSettings",
   "agentAccounts",

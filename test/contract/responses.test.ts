@@ -13,6 +13,7 @@ import test from "node:test";
 import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 
 import {
+  agentAccountsResponse,
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
@@ -55,6 +56,7 @@ import {
 } from "../../src/adapters/http/outcomes.ts";
 import { operationResponseSchema as decodedOperationResponseSchema } from "../../src/adapters/http/codecs.ts";
 import {
+  agentAccountsResponseSchema,
   configurationResponseSchema,
   configurationsResponseSchema,
   dispatchViewResponseSchema,
@@ -2840,5 +2842,58 @@ test("a lead route's lead answer parses with what holds it and without it", () =
       leadReadResponseSchema.safeParse({ ...lead, held }).success,
       false,
       JSON.stringify(held),
+    );
+});
+
+test("a pause names exactly one of until and off, on an agent's own pause and on a credential's", () => {
+  const until = "2026-11-03T15:00:00.000Z";
+  const body = (pause: object) =>
+    agentAccountsResponse([
+      {
+        agent: "Claude",
+        settings: {
+          fiveHourPercent: 80,
+          sevenDayPercent: 90,
+          pausesThreads: false,
+        },
+        readings: [],
+        pause: {
+          ...(pause as { until: string }),
+          reasons: ["off"],
+          pressed: false,
+          credentials: ["work"],
+        },
+        credentials: [
+          {
+            name: "work",
+            readings: [],
+            pause: {
+              ...(pause as { until: string }),
+              reasons: ["off"],
+              pressed: false,
+            },
+          },
+        ],
+      },
+      {
+        agent: "Codex",
+        settings: {
+          fiveHourPercent: 80,
+          sevenDayPercent: 90,
+          pausesThreads: false,
+        },
+        readings: [],
+        credentials: [],
+      },
+    ]).body;
+  for (const admitted of [{ until }, { off: true }])
+    assert.ok(
+      agentAccountsResponseSchema.safeParse(body(admitted)).success,
+      JSON.stringify(admitted),
+    );
+  for (const refused of [{}, { until, off: true }])
+    assert.ok(
+      !agentAccountsResponseSchema.safeParse(body(refused)).success,
+      JSON.stringify(refused),
     );
 });

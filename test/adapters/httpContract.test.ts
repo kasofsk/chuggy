@@ -117,6 +117,7 @@ const routesInOrder = [
   "/api/v1/agent-accounts/:agent/settings",
   "/api/v1/agent-accounts/:agent/presses",
   "/api/v1/agent-accounts/:agent/credentials/:credential",
+  "/api/v1/agent-accounts/:agent/credentials/:credential/off",
   "/api/v1/tenants/:tenant/chat-host-registration-tokens",
   "/api/v1/tenants/:tenant/chat-host",
   "/api/v1/tenants/:tenant/chat/abilities",

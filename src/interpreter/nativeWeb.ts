@@ -371,9 +371,10 @@ export interface RunStepFailureResource {
   readonly absent?: RunCredentialAbsence;
 }
 
-/** An escalation the scheduler resumes by itself once its usage pauses end, and when the latest ends where one still holds. */
+/** An escalation usage pauses hold: when the latest ends where one still holds, which the scheduler resumes it by itself at, or `off` where a task waits only on credentials turned off and it never resumes by itself. */
 export interface TicketUsageResumeResource {
   readonly until?: PublicInstant;
+  readonly off?: true;
 }
 
 /**
@@ -390,7 +391,7 @@ export interface TicketEscalationResource {
   readonly lost?: RunnerLossResource;
   /** Present where the wall is a task whose run stopped at a failed step. */
   readonly failed?: RunStepFailureResource;
-  /** Present where the scheduler resumes it by itself once its usage pauses end. */
+  /** Present where usage pauses hold its rate-limited tasks. */
   readonly usageResume?: TicketUsageResumeResource;
 }
 

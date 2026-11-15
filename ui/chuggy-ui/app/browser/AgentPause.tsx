@@ -1,7 +1,8 @@
 /**
  * One pause of the reader's own agent, or of one credential of it, as a line:
- * the status, each reason and the instant it ends in the reader's own zone,
- * then whatever its caller offers beside it, each a `LinePart`.
+ * the status, each reason and the instant it ends in the reader's own zone
+ * where it ends by itself, then whatever its caller offers beside it, each a
+ * `LinePart`.
  */
 
 import type { ReactNode } from "react";
@@ -32,10 +33,12 @@ export function AgentPause(props: {
         </LinePart>
       ))}
       <span className="text-ink-3">
-        <LinePart>
-          {`${text({ id: "usage-until" })} `}
-          <Figure figure={instantFigure(props.pause.until, props.nowMs)} />
-        </LinePart>
+        {props.pause.until === undefined ? null : (
+          <LinePart>
+            {`${text({ id: "usage-until" })} `}
+            <Figure figure={instantFigure(props.pause.until, props.nowMs)} />
+          </LinePart>
+        )}
         {props.children}
       </span>
     </Notice>

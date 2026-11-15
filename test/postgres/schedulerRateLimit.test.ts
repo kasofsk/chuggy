@@ -84,8 +84,12 @@ interface Runner {
   readonly account: Principal | undefined;
 }
 
-/** Registers a pool in the ticket's project, by a member of its own unless `registered` is false, and grants it `Execute`. */
-async function runnerOf(routed: Routed, registered = true): Promise<Runner> {
+/** Registers a pool `named` in the ticket's project, by a member of its own unless `registered` is false, and grants it `Execute`. */
+async function runnerOf(
+  routed: Routed,
+  registered = true,
+  named = "runner-a",
+): Promise<Runner> {
   const { partition } = routed.project;
   const principal = asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`);
   const account = registered
@@ -94,7 +98,7 @@ async function runnerOf(routed: Routed, registered = true): Promise<Runner> {
   assert.equal(
     await postgresWorkerPoolRegistry(resume.apiPool).register({
       partition,
-      pool: "runner-a",
+      pool: named,
       capabilities: ["Platform:Linux:Amd64"],
       class: "Dedicated",
       clientId: `chuggy-pool-${randomUUID()}`,
@@ -104,9 +108,9 @@ async function runnerOf(routed: Routed, registered = true): Promise<Runner> {
     true,
   );
   resume.access.grant({ partition, principal, access: new Set(["Execute"]) });
-  const [pool] = (
+  const pool = (
     await postgresWorkerPoolRoster(rig.pool).registered(partition)
-  ).pools;
+  ).pools.find((registered) => registered.pool === named);
   assert.ok(pool !== undefined);
   return { pool, account };
 }
@@ -225,12 +229,13 @@ async function limitReset(runner: Runner): Promise<void> {
 /**
  * What the ticket's read says of the scheduler resuming its escalation once its
  * usage pauses end, read as the API under the scheduler's own bounds: absent
- * where it will not, and how many seconds from now the latest pause ends where
- * one still holds, rounded to the minute.
+ * where it will not, how many seconds from now the latest pause ends where one
+ * still holds, rounded to the minute, and `off` where a task waits only on
+ * credentials turned off.
  */
 async function usageResumeRead(
   routed: Routed,
-): Promise<{ readonly untilMins?: number } | undefined> {
+): Promise<{ readonly untilMins?: number; readonly off?: true } | undefined> {
   const { partition, ticket } = routed.project;
   const read = await postgresNativeReads(resume.apiPool, {
     lossesMax: service.config.attemptRetriesMax,
@@ -238,6 +243,10 @@ async function usageResumeRead(
   }).ticket(partition, asTicketId(ticket));
   const usageResume = read?.escalation?.usageResume;
   if (usageResume === undefined) return undefined;
+  if (usageResume.off === true) {
+    assert.equal(usageResume.until, undefined);
+    return { off: true };
+  }
   return usageResume.until === undefined
     ? {}
     : {
@@ -882,4 +891,71 @@ test("a runner naming no credential of the agent leaves the ticket waiting for t
   assert.equal(await steps.resumedByScheduler(routed), 0);
   await limitReset(runner);
   assert.equal(await steps.resumedByScheduler(routed), 1);
+});
+
+/** Turns each of `credentials` of the account's Claude off, beside whatever else it holds, its pools polling now so their names count toward its pause. */
+async function turnedOff(
+  account: Principal,
+  credentials: readonly string[],
+): Promise<void> {
+  await rig.harness.query(
+    "UPDATE worker_pool SET last_polled_at=now() WHERE registered_by=$1",
+    [account],
+  );
+  await rig.harness.query(
+    `DELETE FROM agent_account_credential_off WHERE principal=$1 AND agent='Claude'`,
+    [account],
+  );
+  for (const credential of credentials)
+    await rig.harness.query(
+      `INSERT INTO agent_account_credential_off(principal,agent,credential)
+       VALUES($1,'Claude',$2)`,
+      [account, credential],
+    );
+}
+
+test("a ticket whose limited task waits only on credentials turned off reads off with no end and is not resumed until one is on", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-named-off");
+  const runner = await runnerOf(routed);
+  const claimant = poolClaimant(runner);
+  await claimant.named({ Claude: ["first", "second"] });
+  await rateLimited(
+    routed,
+    await claimant.claimed(routed, execution),
+    3_600,
+    "first",
+  );
+  await limitReset(runner);
+  await turnedOff(claimant.account, ["first", "second"]);
+  assert.deepEqual(await usageResumeRead(routed), { off: true });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
+  await turnedOff(claimant.account, ["first"]);
+  assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+  assert.equal((await steps.standing(routed))?.["phase"], "Work");
+});
+
+test("one task waiting only on credentials turned off, beside one a limit holds until an end, reads off", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-mixed-off");
+  const named = await runnerOf(routed);
+  const unnamed = await runnerOf(routed, false, "runner-b");
+  const claimant = poolClaimant(named);
+  await claimant.named({ Claude: ["first"] });
+  const work = await claimed(routed, execution, named);
+  await steps.reported(routed, work.attempt, "Pass");
+  const first = await claimed(routed, await secondEvaluator(routed), unnamed);
+  await rateLimited(routed, first.bearer);
+  assert.deepEqual(await steps.standing(routed), evaluationEscalated);
+  const limited = await claimedWaiting(named);
+  await endedUndecided(routed, limited, "RunRateLimited", 1_800, "first");
+  await postgresHarnessDrain(
+    rig.harness,
+    routed.project.partition,
+    routed.memory,
+  );
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
+  await turnedOff(claimant.account, ["first"]);
+  assert.deepEqual(await usageResumeRead(routed), { off: true });
+  assert.equal(await steps.resumedByScheduler(routed), 0);
 });

@@ -526,6 +526,7 @@ interface ExecutionRunnerRow {
   readonly live: boolean | null;
   readonly offered: boolean | null;
   readonly paused_until: string | null;
+  readonly off: boolean;
   readonly reasons: string[] | null;
   readonly admitted_by_press: boolean | null;
 }
@@ -559,7 +560,10 @@ async function executionsRunnerRows(
                r.executions_polled_at
                  > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
                worker_pool_agent_offered(a.agent,r.capabilities,r.agents_advertised)::boolean AS offered,
-               to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+               CASE WHEN held.reasons='{off}'::text[] THEN NULL
+                    ELSE to_char(held.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text
+               END AS paused_until,
+               COALESCE(held.reasons='{off}'::text[],false) AS off,
                held.reasons,held.admitted_by_press
           FROM execution e
           JOIN execution_attempt a
@@ -588,30 +592,39 @@ async function executionsRunnerRows(
   return found.rows;
 }
 
-/** A runner's pause as its function answered it, or nothing where it is free. */
+/** A runner's pause as its function answered it, `off` where only credentials turned off hold it, or nothing where it is free. */
 export function executionRunnerPause(
   row: Pick<
     ExecutionRunnerRow,
-    "paused_until" | "reasons" | "admitted_by_press"
+    "paused_until" | "off" | "reasons" | "admitted_by_press"
   >,
 ): AgentAccountPause | undefined {
-  if (row.paused_until === null) return undefined;
-  return {
-    until: projectRowInstant(row.paused_until, "pause end"),
+  const held = {
     reasons: (row.reasons ?? []).map((reason) =>
       known(reason, agentPauseReasons, "pause reason"),
     ),
     pressed: row.admitted_by_press === true,
   };
+  if (row.off === true) return { off: true, ...held };
+  if (row.paused_until === null) return undefined;
+  return { until: projectRowInstant(row.paused_until, "pause end"), ...held };
 }
 
-/** The pause of `pauses` that ends first where every one is held, and nothing where any is free or there are none. */
+/** The pause of `pauses` that ends first where every one is held, one held off alone after every one that ends, and nothing where any is free or there are none. */
 export function executionRunnerPausedEvery(
   pauses: readonly (AgentAccountPause | undefined)[],
 ): AgentAccountPause | undefined {
   const held = pauses.filter((pause) => pause !== undefined);
   if (held.length !== pauses.length) return undefined;
-  return held.toSorted((one, other) => one.until.localeCompare(other.until))[0];
+  return held.toSorted((one, other) =>
+    one.until === undefined
+      ? other.until === undefined
+        ? 0
+        : 1
+      : other.until === undefined
+        ? -1
+        : one.until.localeCompare(other.until),
+  )[0];
 }
 
 /**
