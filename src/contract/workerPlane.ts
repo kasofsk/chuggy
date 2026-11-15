@@ -199,7 +199,7 @@ export {
   workerRunCredentialSchema,
 } from "./http.ts";
 
-/** A run's totals as a worker offers them, the same figures a reader is answered with, the usage of the account it spent, and the credential that usage was read of. */
+/** A run's totals as a worker offers them, the same figures and credential a reader is answered with, and the usage of the account it spent, read of that credential. */
 export const workerRunTotalsSchema = z.strictObject({
   ...runTotalsSchema.shape,
   models: z

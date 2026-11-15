@@ -471,10 +471,10 @@ export function postgresWorkerRunContext(pool: pg.Pool): WorkerRunContextPort {
 }
 
 /**
- * A run's totals, and in the same transaction the account usage they arrived
- * with, under the credential the run named, wherever the totals are stored or
- * already were, so a repeated post offers its readings again and the boundary
- * keeps whichever was observed later.
+ * A run's totals with the credential the run named, and in the same
+ * transaction the account usage they arrived with under that credential,
+ * wherever the totals are stored or already were, so a repeated post offers
+ * its readings again and the boundary keeps whichever was observed later.
  */
 export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
   return {
@@ -490,7 +490,8 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
             ${totals.tokensCacheRead},${totals.costUsdMicros},${totals.costBasis},
             ${totals.permissionDenials},${totals.resultSubtype ?? null},
             ${totals.stopReason ?? null},
-            ${JSON.stringify(totals.models)}::jsonb)::text AS stored`,
+            ${JSON.stringify(totals.models)}::jsonb,
+            ${totals.credential ?? null})::text AS stored`,
         );
         const stored = workerRunStored(found.rows[0]?.stored, "a run total");
         if (
@@ -500,7 +501,7 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
           await client.query<{ recorded: string | null }>(
             sql`SELECT record_worker_run_usage(${digest},${input.generation},
               ${JSON.stringify(input.usage)}::jsonb,
-              ${input.credential ?? null})::text AS recorded`,
+              ${totals.credential ?? null})::text AS recorded`,
           );
         return stored;
       }),

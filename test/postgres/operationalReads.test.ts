@@ -266,6 +266,7 @@ test("an execution reads back empty until its run writes evidence", async () => 
           models: [],
           permissionDenials: 0,
           stopReason: "end_turn",
+          credential: "max-2",
         },
       }),
       "Stored",
@@ -275,10 +276,12 @@ test("an execution reads back empty until its run writes evidence", async () => 
   }
   const written = await read();
   assert.equal(written?.runTotals?.costUsdMicros, 11);
+  assert.equal(written?.runTotals?.credential, undefined);
   const run = written?.attempts[0]?.run;
   assert.equal(run?.transcript?.highWaterBatch, 1);
   assert.equal(run?.transcript?.bytes, 12);
   assert.equal(run?.totals?.stopReason, "end_turn");
+  assert.equal(run?.totals?.credential, "max-2");
   assert.equal(run?.configuration, undefined);
   assert.equal(run?.turnsRecorded, 0);
 });
