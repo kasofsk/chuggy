@@ -3,8 +3,8 @@
  * steps that add one, from installing a runner package to registering the
  * machine with a token minted here.
  *
- * ADD IS DRAWN WHERE IT IS THE NEXT THING TO DO: under the line an empty
- * roster is said in, and in the panel's head once a runner is registered.
+ * ADD IS DRAWN WHERE IT IS THE NEXT THING TO DO: beside the line an empty
+ * roster is said in, and in the page's head once a runner is registered.
  * `ui/chuggy-ui/app/core/runners.ts` decides which.
  */
 
@@ -28,11 +28,14 @@ import {
 import {
   runnerAddPlace,
   runnerCapabilityLabel,
+  runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
 import type { RunnerAsk } from "../core/runners.ts";
+import { runnerStandingTone } from "../core/tones.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import {
@@ -43,18 +46,19 @@ import {
 import type { RunnerMinting } from "./RunnerAsk.tsx";
 import { RunnerVersion } from "./RunnerVersion.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { PageHeader } from "./ui/PageHeader.tsx";
 import { Panel } from "./ui/Panel.tsx";
+import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 
 /** This page's own address, which its reads are from. */
-export const runnersRoutePath = "/$tenant/$project/runners";
+export const runnersRoutePath = settingsRoutes.project.runners;
 
-/** The registered runners, or the line that says there are none, with the one thing to do about it under it. */
+/** The registered runners, or the line that says there are none with the one thing to do about it beside it. */
 function RunnerRoster(props: {
   readonly listed: WorkerPoolsResponse;
   readonly action: ReactNode;
@@ -63,36 +67,61 @@ function RunnerRoster(props: {
   const nowMs = useNowMs();
   if (props.listed.pools.length === 0)
     return (
-      <div className="grid justify-items-start gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <EmptyState label={text({ id: "runners-none" })} />
         {props.action}
       </div>
     );
   return (
-    <Table caption={text({ id: "runners-caption" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "runners-col-runner" })}</th>
-          <th scope="col">{text({ id: "runners-col-platforms" })}</th>
-          <th scope="col">{text({ id: "runners-col-version" })}</th>
-          <th scope="col">{text({ id: "runners-col-registered" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.listed.pools.map((pool) => (
-          <tr key={pool.pool}>
-            <th scope="row">{pool.pool}</th>
-            <td>{pool.capabilities.map(runnerCapabilityLabel).join(", ")}</td>
-            <td>
-              <RunnerVersion runner={pool.runner} />
-            </td>
-            <td>
-              <Figure figure={instantFigure(pool.registeredAt, nowMs)} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+    <Table
+      caption={text({ id: "runners-caption" })}
+      stacked={{
+        columns: [
+          {
+            key: "runner",
+            label: text({ id: "runners-col-runner" }),
+            rowHeader: true,
+          },
+          { key: "status", label: text({ id: "runners-col-status" }) },
+          { key: "version", label: text({ id: "runners-col-version" }) },
+          { key: "polled", label: text({ id: "runners-col-last-polled" }) },
+        ],
+        rows: props.listed.pools.map((pool) => ({
+          key: pool.pool,
+          cells: {
+            runner: (
+              <>
+                <span className="block font-medium text-ink-1">
+                  {pool.pool}
+                </span>
+                <span className="block text-sm font-regular text-ink-3">
+                  {pool.capabilities.map(runnerCapabilityLabel).join(", ")}
+                </span>
+              </>
+            ),
+            status: <RunnerStanding live={pool.live} />,
+            version: <RunnerVersion runner={pool.runner} />,
+            polled:
+              pool.polledAt === undefined ? (
+                text({ id: "runners-never" })
+              ) : (
+                <Figure figure={instantFigure(pool.polledAt, nowMs)} />
+              ),
+          },
+        })),
+      }}
+    />
+  );
+}
+
+/** Whether a runner is taking work, as a word with its mark. */
+function RunnerStanding(props: { readonly live: boolean }): ReactNode {
+  const text = useCopyText();
+  const standing = props.live ? "Live" : "Offline";
+  return (
+    <Pill tone={runnerStandingTone(standing)}>
+      {text(runnerStandingLabel(standing))}
+    </Pill>
   );
 }
 
@@ -115,17 +144,15 @@ function runnersPoolTokenWrite(
   };
 }
 
-/** The press that opens the ask a registration token is minted for, which only an administrator is offered. */
-function AddRunner(props: {
-  readonly minting: RunnerMinting;
-  /** Drawn as the one thing to do, which it is under an empty roster. */
-  readonly leading: boolean;
-}): ReactNode {
+/** The press that opens the ask a registration token is minted for, which
+ * only an administrator is offered, drawn as the one thing to do under an
+ * empty roster. */
+function AddRunner(props: { readonly minting: RunnerMinting }): ReactNode {
   const text = useCopyText();
   return (
     <Button
       size="sm"
-      variant={props.leading ? "primary" : "default"}
+      variant="primary"
       disabled={props.minting.opened}
       onClick={props.minting.open}
     >
@@ -134,6 +161,8 @@ function AddRunner(props: {
   );
 }
 
+/** The page's head, holding Add where the roster has runners, and the panel
+ * the roster, the ask and the steps are drawn in. */
 function RunnersSection(props: {
   readonly partition: PartitionIdentity;
   readonly roster: PanelState<WorkerPoolsResponse>;
@@ -151,40 +180,50 @@ function RunnersSection(props: {
     roster,
     opened: minting.opened,
   });
-  const add = <AddRunner minting={minting} leading={place === "Empty"} />;
   return (
-    <Panel
-      variant="section"
-      title={text({ id: "runners-title" })}
-      about={text({ id: "runners-about" })}
-      {...(place === "Head" ? { meta: add } : {})}
-    >
-      <RunnerMintOpened
-        minting={minting}
-        kind="Pool"
-        onDone={() => {
-          minting.close();
-          void client.invalidateQueries({
-            queryKey: workerPoolsQuery(partition).queryKey,
-          });
-        }}
+    <>
+      <PageHeader
+        title={text({ id: "runners-title" })}
+        description={text({ id: "runners-about" })}
+        primary={
+          place === "Head"
+            ? {
+                label: text({ id: "runners-add" }),
+                onPress: minting.open,
+                disabled: minting.opened,
+              }
+            : undefined
+        }
       />
-      <PanelUnready state={roster} />
-      {roster.state === "Ready" ? (
-        <RunnerRoster
-          listed={roster.value}
-          action={place === "Empty" ? add : undefined}
+      <Panel variant="section" title={text({ id: "runners-caption" })}>
+        <RunnerMintOpened
+          minting={minting}
+          kind="Pool"
+          onDone={() => {
+            minting.close();
+            void client.invalidateQueries({
+              queryKey: workerPoolsQuery(partition).queryKey,
+            });
+          }}
         />
-      ) : null}
-      {roster.state === "Ready" && roster.value.truncated ? (
-        <Notice tone="info" inline detail={text({ id: "runners-more" })} />
-      ) : null}
-    </Panel>
+        <PanelUnready state={roster} />
+        {roster.state === "Ready" ? (
+          <RunnerRoster
+            listed={roster.value}
+            action={
+              place === "Empty" ? <AddRunner minting={minting} /> : undefined
+            }
+          />
+        ) : null}
+        {roster.state === "Ready" && roster.value.truncated ? (
+          <Notice tone="info" inline detail={text({ id: "runners-more" })} />
+        ) : null}
+      </Panel>
+    </>
   );
 }
 
 export function RunnersPage(): ReactNode {
-  const text = useCopyText();
   const params = useParams({ from: runnersRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -193,8 +232,7 @@ export function RunnersPage(): ReactNode {
   const placement = usePanelState(executionPlacementQuery(partition));
   const pools = usePanelState(workerPoolsQuery(partition));
   return (
-    <div className="grid min-w-0 max-w-settings gap-4">
-      <ScreenTitle>{text({ id: "runners-title" })}</ScreenTitle>
+    <div className="grid min-w-0 max-w-settings gap-4" data-fills-width>
       <RunnersSection
         partition={partition}
         roster={pools}

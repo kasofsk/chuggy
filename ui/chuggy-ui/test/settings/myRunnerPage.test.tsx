@@ -39,6 +39,9 @@ import {
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "../sheet.ts";
+import myRunnerSheet from "../../app/browser/settings/MyRunnerPage.css?raw";
+import listingSheet from "../../app/browser/settings/tenantPeople.css?raw";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -116,8 +119,6 @@ interface Drawing {
   removal?: number;
   /** The chat host every read answers; absent where the reader has none. */
   host?: unknown;
-  /** The reader's agent accounts; none paused where absent. */
-  accounts?: unknown;
 }
 
 /** A chat host of the reader's whose id ends in `tail`, never polled. */
@@ -126,22 +127,6 @@ function hostListed(tail: string): unknown {
     id: `chuggy-personal-${tail}-0000-4000-8000-000000000000`,
     registeredAt: "2026-10-01T00:00:00Z",
     live: false,
-  };
-}
-
-/** Both agents of the reader's account, Codex held by `pause` where one is given. */
-function agentAccounts(pause: unknown): unknown {
-  return {
-    accounts: ["Claude", "Codex"].map((agent) => ({
-      agent,
-      settings: {
-        fiveHourPercent: 90,
-        sevenDayPercent: 90,
-        pausesThreads: false,
-      },
-      readings: [],
-      ...(agent === "Codex" && pause !== undefined ? { pause } : {}),
-    })),
   };
 }
 
@@ -175,8 +160,6 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
         ? answer(undefined, 204)
         : answer({ error: { code: "NotFound" } }, drawing.removal);
     if (path === `${nativeHttpBasePath}/projects`) return answer(inventory);
-    if (path === `${nativeHttpBasePath}/agent-accounts`)
-      return answer(drawing.accounts ?? agentAccounts(undefined));
     if (path === `${tenantPath}/chat-host`) {
       if (request.method !== "GET") return answer(undefined, 204);
       return drawing.host === undefined
@@ -557,25 +540,115 @@ test("a chat host is drawn though its owner may no longer register one, and taki
   expect(screen.getByText("No chat host yet")).toBeTruthy();
 });
 
-test("each agent of the reader's account a pause holds is said above their runners, with where it is set, and none is said where none is paused", async () => {
-  drawing = { granted: true, runner: runnerHeld };
-  await drawMyRunner();
-  expect(screen.queryByRole("group", { name: "Paused agents" })).toBeNull();
-  cleanup();
+test("no agent is said paused above a member's runners where their read answers none paused, or answers no pauses at all", async () => {
+  for (const runner of [runnerHeld, { ...runnerHeld, pauses: [] }]) {
+    drawing = { granted: true, runner };
+    await drawMyRunner();
+    expect(screen.queryByRole("group", { name: "Paused agents" })).toBeNull();
+    cleanup();
+  }
+});
+
+test("each agent the read of a member's runners answers paused is said above them, by its agent, with where it is set", async () => {
   drawing = {
     granted: true,
-    runner: runnerHeld,
-    accounts: agentAccounts({
-      until: "2026-10-01T05:00:00Z",
-      reasons: ["seven_day", "limit"],
-      pressed: false,
-    }),
+    runner: {
+      ...runnerHeld,
+      pauses: [
+        {
+          agent: "Claude",
+          pause: {
+            until: "2026-10-01T03:00:00Z",
+            reasons: ["five_hour"],
+            pressed: false,
+          },
+        },
+        {
+          agent: "Codex",
+          pause: {
+            until: "2026-10-01T05:00:00Z",
+            reasons: ["seven_day", "limit"],
+            pressed: false,
+          },
+        },
+      ],
+    },
   };
   await drawMyRunner();
   const paused = screen.getByRole("group", { name: "Paused agents" });
   expect(paused.textContent).toContain(
+    "Claude · Paused · Five-hour window · until ",
+  );
+  expect(paused.textContent).toContain(
     "Codex · Paused · Weekly window · Provider limit · until ",
   );
-  expect(paused.textContent).not.toContain("Claude");
-  expect(within(paused).getByRole("link", { name: "Usage" })).toBeTruthy();
+  expect(within(paused).getAllByRole("link", { name: "Usage" })).toHaveLength(
+    2,
+  );
+});
+
+test("the page is headed by its one h1, drawn by the page head", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  const titles = screen.getAllByRole("heading", { level: 1 });
+  expect(titles).toHaveLength(1);
+  expect(titles[0]?.textContent).toBe(
+    copyTextEn({ id: "runners-personal-title" }),
+  );
+  expect(titles[0]?.closest("header.page-header")).not.toBeNull();
+});
+
+test("each runner is a stacked row: its name first, then its status, version and last poll, each labelled, and its removal unlabelled", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  const table = screen.getByRole("table", { name: "Runners" });
+  expect(table.classList.contains("tabular-stacked")).toBe(true);
+  const row = within(table).getAllByRole("row")[1];
+  const cells = Array.from(row?.children ?? []);
+  expect(
+    cells.map((cell) => cell.querySelector(".tabular-label")?.textContent),
+  ).toStrictEqual([
+    "Runner",
+    "Status",
+    "Version",
+    "Last polled",
+    "Running",
+    "Registered",
+    undefined,
+  ]);
+  expect(cells[0]?.textContent).toContain("3f2a9c1e");
+  expect(cells[1]?.textContent).toContain("Live");
+  expect(
+    within(table).getByRole("columnheader", { name: "Remove" }),
+  ).toBeTruthy();
+});
+
+test("the question a runner's removal waits on stands under the roster, outside the table", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  await press("Remove runner a81c04d2");
+  const asked = screen.getByRole("group", { name: "Remove runner a81c04d2?" });
+  expect(asked.closest("table")).toBeNull();
+  expect(screen.getByRole("table", { name: "Runners" })).toBeTruthy();
+});
+
+test("narrow, a listing table's hidden head stacks its cells, and every press, menu and link on the page is a finger's height", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  const narrow = sheetRules(listingSheet, [sheetNarrowCondition]);
+  const projects = screen.getByRole("table", { name: "Projects" });
+  for (const head of within(projects).getAllByRole("columnheader"))
+    expect(sheetDeclared(narrow, head, "display")).toBe("block");
+  const touch = sheetRules(myRunnerSheet, [sheetNarrowCondition]);
+  const wide = sheetRules(myRunnerSheet, []);
+  for (const control of [
+    screen.getByRole("button", { name: "Remove runner 3f2a9c1e" }),
+    screen.getByRole("button", { name: "Register runner" }),
+    screen.getByRole("button", { name: /^Priority of atlas/u }),
+  ]) {
+    expect(sheetDeclared(touch, control, "min-height")).toBe(
+      "var(--height-touch)",
+    );
+    expect(sheetDeclared(wide, control, "min-height")).toBe("");
+  }
 });

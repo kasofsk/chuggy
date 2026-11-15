@@ -159,6 +159,19 @@ import { migration158 } from "./158-carried-verdict-read.ts";
 import { migration159 } from "./159-lead-reads-landing-queues.ts";
 import { migration160 } from "./160-recheck-reason.ts";
 import { migration161 } from "./161-ticket-evaluation-stacks.ts";
+import { migration162 } from "./162-chat-host-idle-unbounded.ts";
+import { migration163 } from "./163-agent-account-credential.ts";
+import { migration164 } from "./164-personal-runner-credentials-named.ts";
+import { migration165 } from "./165-worker-pool-credentials-named.ts";
+import { migration166 } from "./166-rate-limit-resume-named-credentials.ts";
+import { migration167 } from "./167-session-pause-named-credentials.ts";
+import { migration168 } from "./168-agent-account-credential-standing.ts";
+import { migration169 } from "./169-native-action-history.ts";
+import { migration170 } from "./170-agent-account-pause-live-credentials.ts";
+import { migration171 } from "./171-agent-account-credential-retire.ts";
+import { migration172 } from "./172-agent-account-pause-holding-credentials.ts";
+import { migration173 } from "./173-program-stage-out-of-position.ts";
+import { migration174 } from "./174-owned-themes.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -323,4 +336,17 @@ export const migrations: readonly Migration[] = [
   migration159,
   migration160,
   migration161,
+  migration162,
+  migration163,
+  migration164,
+  migration165,
+  migration166,
+  migration167,
+  migration168,
+  migration169,
+  migration170,
+  migration171,
+  migration172,
+  migration173,
+  migration174,
 ];

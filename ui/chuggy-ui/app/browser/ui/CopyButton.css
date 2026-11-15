@@ -34,6 +34,13 @@
     color: var(--ink-1);
   }
 
+  @media (max-width: 40em) {
+    .copy-button {
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+  }
+
   .copy-mark {
     width: 1em;
     height: 1em;

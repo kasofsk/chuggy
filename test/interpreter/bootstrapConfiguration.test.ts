@@ -367,6 +367,28 @@ test("its reviewer and the one its worker is told to declare are reevaluated on 
   );
 });
 
+test("its agent workloads and the ones its worker is told to declare list the credential their agent runs on, and the checks list none", () => {
+  const imported = declaredTo(atEveryBound);
+  if (imported.readiness !== "Ready") assert.fail(JSON.stringify(imported));
+  const [declaration] = imported.declarations;
+  assert.ok(declaration !== undefined);
+  const declared = catalogOf(declaration.configuration);
+  for (const name of ["work", "review"]) {
+    assert.deepEqual(bootstrapWorkload(name).authority, {
+      credentials: ["claude-code"],
+    });
+    assert.deepEqual(bootstrapWorkload(name, declared).authority, {
+      credentials: ["claude-code"],
+    });
+  }
+  const checks = declared.workloads["checks"];
+  assert.equal(checks?.runner, "Commands");
+  assert.equal(
+    checks.runner === "Commands" ? checks.authority : "absent",
+    undefined,
+  );
+});
+
 test("one past any bound its worker is told is refused for that bound", () => {
   for (const [past, fault] of [
     [{ ...atEveryBound, lines: atEveryBound.lines + 1 }, "ReleaseShapeInvalid"],

@@ -35,7 +35,7 @@ export interface RunnerPackage {
   readonly program: string;
   /** What a machine needs before the install, in one line. */
   readonly needs: Copy;
-  /** The command that installs the package's current release. */
+  /** The command that installs the release chuggy pins for the package. */
   readonly installCommand: string;
   /** Where the package says what is left to do after registering. */
   readonly guideAddress: string;
@@ -71,7 +71,7 @@ export const runnerPackages = {
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.51.0/chuggy-linux-0.51.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
   },
   darwin: {
@@ -79,7 +79,7 @@ export const runnerPackages = {
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.21.0/chuggy-darwin-0.21.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
   },
 } as const satisfies Record<string, RunnerPackage>;

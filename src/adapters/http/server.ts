@@ -100,6 +100,7 @@ import {
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
+  workerRunCredentialSchema,
 } from "../../contract/http.ts";
 import {
   workerRunnerReleasesPinnedRoute,
@@ -114,6 +115,7 @@ import {
   parseLatestExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
+  parseNativeActionHistoryCursor,
   parseTicketActivityCursor,
   parseTicketNumberCursor,
   parseForgeAuthorization,
@@ -187,6 +189,7 @@ import {
   projectResponse,
   projectEntryResponse,
   ticketNativeActionsResponse,
+  ticketNativeActionHistoryResponse,
   ticketResponse,
   executionResponse,
   executionsResponse,
@@ -242,8 +245,16 @@ import {
   workerPoolsResponse,
   personalRunnerAllowedResponse,
   agentAccountPressedResponse,
+  agentAccountRetiredResponse,
   agentAccountsResponse,
   agentAccountWrittenResponse,
+  ownedThemeCreatedResponse,
+  ownedThemeDeletedResponse,
+  ownedThemeResponse,
+  ownedThemesResponse,
+  ownedThemeWrittenResponse,
+  themeChoiceResponse,
+  themeChosenResponse,
   personalRunnerDeregisteredResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
@@ -273,6 +284,8 @@ import type { LandingQueueReads } from "../../interpreter/landingQueues.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
+import type { AppearanceService } from "../../interpreter/appearance.ts";
+import { themeNumberSchema } from "../../contract/appearance.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
@@ -347,6 +360,7 @@ type InitialNativeWeb = Pick<
   | "submit"
   | "ticket"
   | "ticketNativeActions"
+  | "ticketNativeActionHistory"
   | "nativeActions"
   | "execution"
   | "executions"
@@ -1194,6 +1208,7 @@ function registerNativeActions(
     );
     nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
+  registerNativeActionHistory(app, web);
   app.get(`${root}/native-actions`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
     const partition = partitionOf(request);
@@ -1215,6 +1230,52 @@ function registerNativeActions(
     );
     nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
+}
+
+/** Every action a ticket has had, behind a cursor that names the ticket it pages. */
+function registerNativeActionHistory(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketNativeActionHistory,
+    async (request, principal, partition) => {
+      const ticket = asTicketIdField(record(request.params), "ticket");
+      const query = nativeHttpEndpoints.ticketNativeActionHistory.query.parse(
+        request.query,
+      );
+      const after =
+        query.cursor === undefined
+          ? undefined
+          : parseNativeActionHistoryCursor(query.cursor, partition);
+      if (after !== undefined && after.ticket !== ticket)
+        throw new RangeError(
+          "native action history cursor belongs to another ticket",
+        );
+      return {
+        ticket,
+        page: await web.ticketNativeActionHistory(
+          principal,
+          partition,
+          ticket,
+          {
+            ...(after === undefined
+              ? {}
+              : {
+                  after: {
+                    authorizingSequence: after.authorizingSequence,
+                    action: after.action,
+                  },
+                }),
+            limit: query.limit,
+          },
+        ),
+      };
+    },
+    ({ ticket, page }, partition) =>
+      ticketNativeActionHistoryResponse(partition, ticket, page),
+  );
 }
 
 function registerOperationalRoutes(
@@ -1654,10 +1715,19 @@ function accountAgentOf(request: FastifyRequest): AccountAgent | undefined {
   return parseAccountAgent(textField(record(request.params), "agent"));
 }
 
+/** The credential a route names, or none where its name is not one a credential is written in. */
+function agentAccountCredentialOf(request: FastifyRequest): string | undefined {
+  const named = workerRunCredentialSchema.safeParse(
+    record(request.params)["credential"],
+  );
+  return named.success ? named.data : undefined;
+}
+
 /**
  * The caller's own agent accounts: read whole, one agent's settings written
- * whole, and a press of one agent. Each is handed the request's own principal,
- * and no route names another, so no caller reaches anyone else's.
+ * whole, a press of one agent, and one credential of an agent retired. Each is
+ * handed the request's own principal, and no route names another, so no caller
+ * reaches anyone else's.
  */
 function registerAgentAccounts(
   app: FastifyInstance,
@@ -1683,6 +1753,21 @@ function registerAgentAccounts(
       nativeHttpSend(reply, agentAccountWrittenResponse());
     },
   );
+  app.delete(
+    nativeHttpRoutes.agentAccountCredential,
+    async (request, reply) => {
+      const agent = accountAgentOf(request);
+      const credential = agentAccountCredentialOf(request);
+      nativeHttpSend(
+        reply,
+        agent === undefined || credential === undefined
+          ? notFound()
+          : agentAccountRetiredResponse(
+              await accounts.retire(principalOf(request), agent, credential),
+            ),
+      );
+    },
+  );
   registerBodylessRoutes(app, (scope) => {
     scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
       const agent = accountAgentOf(request);
@@ -1696,6 +1781,123 @@ function registerAgentAccounts(
       );
     });
   });
+}
+
+/** The number a route names of one of the caller's own themes. */
+function ownThemeOf(request: FastifyRequest): number {
+  return themeNumberSchema.parse(integerField(record(request.params), "theme"));
+}
+
+/**
+ * The caller's own themes, created, read, written whole and deleted, and
+ * their one global choice among the built-ins and those themes. Each is
+ * handed the request's own principal, and no route names another.
+ */
+function registerAppearance(
+  app: FastifyInstance,
+  appearance: AppearanceService,
+): void {
+  const versioned = { preValidation: requireVersionedJson };
+  app.get(nativeHttpRoutes.ownThemes, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemesResponse(await appearance.themes(principalOf(request))),
+    );
+  });
+  app.post(nativeHttpRoutes.ownThemes, versioned, async (request, reply) => {
+    const document = nativeHttpEndpoints.createOwnTheme.body.parse(
+      request.body,
+    );
+    nativeHttpSend(
+      reply,
+      ownedThemeCreatedResponse(
+        await appearance.create(principalOf(request), document),
+      ),
+    );
+  });
+  app.get(nativeHttpRoutes.ownTheme, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemeResponse(
+        await appearance.theme(principalOf(request), ownThemeOf(request)),
+      ),
+    );
+  });
+  app.put(nativeHttpRoutes.ownTheme, versioned, async (request, reply) => {
+    const theme = ownThemeOf(request);
+    const document = nativeHttpEndpoints.writeOwnTheme.body.parse(request.body);
+    nativeHttpSend(
+      reply,
+      ownedThemeWrittenResponse(
+        await appearance.write(principalOf(request), theme, document),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.ownTheme, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      ownedThemeDeletedResponse(
+        await appearance.delete(principalOf(request), ownThemeOf(request)),
+      ),
+    );
+  });
+  registerThemeChoice(app, appearance);
+}
+
+/** The caller's own global theme choice: read, written whole, and cleared. */
+function registerThemeChoice(
+  app: FastifyInstance,
+  appearance: AppearanceService,
+): void {
+  app.get(nativeHttpRoutes.themeChoice, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      themeChoiceResponse(await appearance.choice(principalOf(request))),
+    );
+  });
+  app.put(
+    nativeHttpRoutes.themeChoice,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const choice = nativeHttpEndpoints.writeThemeChoice.body.parse(
+        request.body,
+      );
+      nativeHttpSend(
+        reply,
+        themeChosenResponse(
+          await appearance.choose(principalOf(request), choice),
+        ),
+      );
+    },
+  );
+  app.delete(nativeHttpRoutes.themeChoice, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      themeChosenResponse(
+        await appearance.choose(principalOf(request), undefined),
+      ),
+    );
+  });
+}
+
+/** What a declared action reported, and how far each ticket's landing has reached through the actions. */
+function registerActions(
+  app: FastifyInstance,
+  actionReports: ActionReports | undefined,
+  actionReach: TicketActionReaches | undefined,
+): void {
+  if (actionReports !== undefined) registerActionReports(app, actionReports);
+  if (actionReach !== undefined) registerActionReach(app, actionReach);
+}
+
+/** What a person keeps of their own in no workspace: their agent accounts and their appearance. */
+function registerOwnSettings(
+  app: FastifyInstance,
+  agentAccounts: AgentAccountService | undefined,
+  appearance: AppearanceService | undefined,
+): void {
+  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  if (appearance !== undefined) registerAppearance(app, appearance);
 }
 
 /**
@@ -3312,6 +3514,7 @@ export function createNativeHttpApp(
   agentAccounts?: AgentAccountService,
   runnerReleases?: WorkerRunnerReleases,
   landingQueues?: LandingQueueReads,
+  appearance?: AppearanceService,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -3348,10 +3551,9 @@ export function createNativeHttpApp(
   registerProjectViews(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
-  if (actionReports !== undefined) registerActionReports(app, actionReports);
-  if (actionReach !== undefined) registerActionReach(app, actionReach);
+  registerActions(app, actionReports, actionReach);
   registerLandingReads(app, landings, landingQueues);
-  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  registerOwnSettings(app, agentAccounts, appearance);
   registerFailures(app);
   return app;
 }

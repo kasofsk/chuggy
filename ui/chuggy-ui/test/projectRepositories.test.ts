@@ -43,6 +43,8 @@ import {
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
+  repositoryStepCurrent,
+  repositoryHost,
   repositoryPage,
   repositoryRosterPolledMs,
   repositoryRosterRereadMs,
@@ -111,6 +113,35 @@ test("a repository's page is nothing for an address that is not an https clone U
   ).toBeUndefined();
   expect(repositoryPage("git@github.com:kasofsk/chuggy.git")).toBeUndefined();
   expect(repositoryPage("not a url")).toBeUndefined();
+});
+
+test("a repository is hosted where its address names a host, and nowhere for one that names none", () => {
+  expect(repositoryHost("https://github.com/kasofsk/chuggy.git")).toBe(
+    "github.com",
+  );
+  expect(
+    repositoryHost("http://git.chuggy-git.svc.cluster.local./chuggy.git"),
+  ).toBe("git.chuggy-git.svc.cluster.local.");
+  expect(repositoryHost("ssh://git@forge.test:2222/kasofsk/chuggy")).toBe(
+    "forge.test:2222",
+  );
+  expect(repositoryHost("git@github.com:kasofsk/chuggy.git")).toBeUndefined();
+  expect(repositoryHost("not a url")).toBeUndefined();
+});
+
+test("the step being taken is the line's own, else Add where the empty roster leads, else none", () => {
+  const status = { id: "repositories-offers-connect" } as const;
+  expect(repositoryStepCurrent({ status, step: "Connect" }, false)).toBe(
+    "Connect",
+  );
+  expect(repositoryStepCurrent({ status, step: "InstallWorker" }, true)).toBe(
+    "InstallWorker",
+  );
+  expect(repositoryStepCurrent(undefined, true)).toBe("Add");
+  expect(repositoryStepCurrent({ status, step: undefined }, false)).toBe(
+    undefined,
+  );
+  expect(repositoryStepCurrent(undefined, false)).toBe(undefined);
 });
 
 test("a row is marked bound by the address the binding names", () => {

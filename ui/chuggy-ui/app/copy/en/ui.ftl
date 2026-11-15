@@ -15,4 +15,5 @@ ui-refusals = Refusal
 # The landmark the refusals arrive in, with the keys that move focus to it.
 ui-refusals-held = Refusals ({ $hotkey })
 ui-reload = Reload
+ui-required = Required
 ui-save = Save changes

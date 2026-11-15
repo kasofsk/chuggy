@@ -67,6 +67,7 @@ import type {
 import type {
   LeadAbsenceUntimed,
   LeadAdmissionRefusal,
+  LeadHold,
 } from "../contract/rosters.ts";
 import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
@@ -171,14 +172,19 @@ export interface LeadRefused {
  * selector keeps. */
 export type LeadAbsence = { readonly reason: LeadAbsenceUntimed } | LeadRefused;
 
+/** What holds a lead from dispatching whether or not it stands, outranking any refusal kept. */
+export interface LeadHeld {
+  readonly reason: LeadHold;
+}
+
 /** The absence of a project no refusal stands for and no released ticket waits in. */
 export const leadNotNeeded: LeadAbsence = { reason: "NotNeeded" };
 
 /** The absence of a project whose selector is paused, whatever refusal it keeps. */
-export const leadPaused: LeadAbsence = { reason: "Paused" };
+export const leadPaused: LeadHeld = { reason: "Paused" };
 
 /** The absence of a project the site's selector may not read, whatever refusal it keeps. */
-export const leadSelectorNotGranted: LeadAbsence = {
+export const leadSelectorNotGranted: LeadHeld = {
   reason: "SelectorNotGranted",
 };
 
@@ -196,8 +202,10 @@ export interface HandoffNotePreview {
 }
 
 /**
- * A lead that holds a session carries the refusal the selector keeps for it,
- * where one stands, and a subsidized one its tenant's spend this month.
+ * A lead that holds a session carries what holds it from dispatching, where a
+ * project holding none would answer `Paused` or `SelectorNotGranted`, the
+ * refusal the selector keeps for it, where one stands and nothing holds it, and
+ * a subsidized one its tenant's spend this month.
  */
 export type LeadRead =
   | { readonly result: "NotFound" }
@@ -206,6 +214,7 @@ export type LeadRead =
       readonly result: "Found";
       readonly lead: LeadStanding;
       readonly streams: readonly SessionStoreStreamRow[];
+      readonly held?: LeadHeld;
       readonly refusal?: LeadRefused;
       readonly subsidy?: LeadSubsidy;
     };
