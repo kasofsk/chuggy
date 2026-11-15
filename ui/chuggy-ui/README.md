@@ -280,6 +280,19 @@ live, since registering this machine ends that host's sessions; the same
 command with `--replace <id>` naming it registers this machine in its place, and
 naming any other id is a stop of its own. On a Mac it gives the steps by hand.
 
+Where the repository holds no configuration of its own, the checklist names
+`configuration`, which writes a starting one into the checkout it is run in,
+under `.chug/configurations/`, where nothing is declared there yet: a catalog
+with a build workload, a checks workload running the command `--test` gives, a
+review, and a plan its defaults name. The image, and the test command where
+none was given, are left blank for the agent to fill in with the person.
+`check` reads that directory, and every file its catalogs name, in the working
+tree as an import reads them at a commit, judges them with the import's own
+judgment from `src/contract/`, and says each fault by file and field. Neither
+asks the site anything. Once the commit is pushed, `import` asks the site to
+import the repository at the head of its default branch, its one write, says
+what the site answered, and reads the checklist again.
+
 ## The session
 
 OIDC authorization code with PKCE against the issuer `/config.json` names, with

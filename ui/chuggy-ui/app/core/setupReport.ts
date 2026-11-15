@@ -16,13 +16,17 @@
  * a rule that waits on her saying what to call it. `runner` and `chat-host` are the commands that change the
  * machine, so each is named only under a rule that waits on her yes, and where
  * one stops short it is that shape again, after everything it found and did.
+ * `configuration`, `check` and `import` are each named under a rule that waits
+ * on what the agent and the person do between them: the blanks filled in, the
+ * faults fixed, the commit pushed.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
  * descriptors made in `ui/chuggy-ui/app/core/setupStanding.ts` and
  * `ui/chuggy-ui/app/core/setupNext.ts` from the names a site and the folder's
- * remote gave. A report of either holds paths, names and members of closed
- * sets, and of what another program printed at most an excerpt the redactor
+ * remote gave. A report of the repository's configuration holds paths and
+ * fields of the checkout's files and the import's own words for its faults.
+ * A report of any of them holds paths, names and members of closed sets, and of what another program printed at most an excerpt the redactor
  * has been through. None has a field a token, a code or a message of another
  * system's is put in, and every line is flattened where it is printed. A
  * line's words are the catalog's; its word, a step's name and state, and its
@@ -41,6 +45,7 @@ import {
   setupAnswersNone,
   setupCommandArguments,
   setupNameFlag,
+  setupTestFlag,
   setupWaitSecsMax,
 } from "./setupArguments.ts";
 import type {
@@ -48,6 +53,13 @@ import type {
   SetupAskFault,
   SetupCommand,
 } from "./setupArguments.ts";
+import type {
+  SetupBlank,
+  SetupCheckEnded,
+  SetupCheckFault,
+  SetupConfigurationEnded,
+  SetupImportAnswered,
+} from "./setupConfigurationEnded.ts";
 import { setupPlatforms } from "./setupPorts.ts";
 import type { SetupMachineFault, SetupPlatform } from "./setupPorts.ts";
 import {
@@ -130,8 +142,10 @@ export interface SetupStepSaid {
  * the project named, or `chat-host` for the workspace where no project is, and
  * the yes it waits on; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
- * the workspace, at the address named where one is; or a read that failed, `stale` where this copy
- * of the program could not read what the site sent.
+ * the workspace, at the address named where one is; the repository's own
+ * configuration, which `configuration` starts and `import` has imported; or a
+ * read that failed, `stale` where this copy of the program could not read what
+ * the site sent.
  */
 export type SetupThing =
   | { readonly thing: "Done"; readonly tell: Copy }
@@ -154,6 +168,12 @@ export type SetupThing =
       readonly ask: Copy;
       readonly workspace: string;
       readonly project: string | undefined;
+    }
+  | {
+      readonly thing: "Configure";
+      readonly tell: Copy;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "Failed";
@@ -275,6 +295,26 @@ export type SetupReport =
       readonly ended: SetupServerEnded;
     }
   | {
+      /** A run of `configuration`: what it wrote into the checkout, or why it wrote nothing. */
+      readonly report: "Configuration";
+      readonly ended: SetupConfigurationEnded;
+    }
+  | {
+      /** A run of `check`: what the checkout's configuration comes to, judged as an import of it would. */
+      readonly report: "Check";
+      readonly ended: SetupCheckEnded;
+    }
+  | {
+      /** A run of `import`: the repository it asked the site to import and what the site answered, where the checklist's next thing was that, and the checklist read after. */
+      readonly report: "Import";
+      readonly repository: string | undefined;
+      readonly answered: SetupImportAnswered | undefined;
+      readonly checklist: Extract<
+        SetupReport,
+        { readonly report: "Checklist" }
+      >;
+    }
+  | {
       /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
@@ -365,20 +405,48 @@ const setupFlagProject = "--project";
 /** The address a line names where it shows what a site's address looks like. */
 const setupSiteExample = "https://chuggy.example";
 
-function setupAskFaultSaid(fault: SetupAskFault): Copy {
-  const [signIn = "", made = "", mcp = "", runner = "", chatHost = ""] = [
+/** The word each command is asked by, as a line names it. */
+function setupCommandWords() {
+  const [
+    signIn = "",
+    made = "",
+    mcp = "",
+    runner = "",
+    chatHost = "",
+    configuration = "",
+    check = "",
+    imported = "",
+  ] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("Project"),
     ...setupCommandArguments("Mcp"),
     ...setupCommandArguments("Runner"),
     ...setupCommandArguments("ChatHost"),
+    ...setupCommandArguments("Configuration"),
+    ...setupCommandArguments("Check"),
+    ...setupCommandArguments("Import"),
   ];
+  return {
+    signIn,
+    made,
+    mcp,
+    runner,
+    chatHost,
+    configuration,
+    check,
+    imported,
+  };
+}
+
+function setupAskFaultSaid(fault: SetupAskFault): Copy {
+  const words = setupCommandWords();
+  const { made, mcp, runner, chatHost, configuration } = words;
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
       return {
         id: "setup-asked-command",
-        args: { signIn, made, mcp, runner, chatHost },
+        args: words,
       };
     case "Flag":
       return {
@@ -391,6 +459,8 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
           chatHost,
           name: setupNameFlag,
           made,
+          test: setupTestFlag,
+          configuration,
         },
       };
     case "Site":
@@ -418,6 +488,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       return {
         id: "setup-asked-project-name",
         args: { made, workspace: setupFlagWorkspace, name: setupNameFlag },
+      };
+    case "Test":
+      return {
+        id: "setup-asked-test",
+        args: { flag: setupTestFlag, configuration },
       };
   }
 }
@@ -967,9 +1042,213 @@ function setupThingLines(
         ["next", setupNextStop],
       ];
     }
+    case "Configure":
+      return [
+        ["tell", thing.tell],
+        ...setupConfigureRule(setupSayingOf(saying, thing)),
+      ];
     case "Failed":
       return setupFailedLines(report.site, thing, saying);
   }
+}
+
+/** The rule `configuration` is named under: with the repository's test command where the agent knows it, and bare where it does not. */
+function setupConfigureRule(saying: SetupSaying): readonly SetupLine[] {
+  return [
+    [
+      "rule",
+      {
+        id: "setup-rule-configuration",
+        args: {
+          with: setupCommandOf(saying, "Configuration", [setupTestFlag]),
+          without: setupCommandOf(saying, "Configuration"),
+        },
+      },
+    ],
+    ["next", setupNextStop],
+  ];
+}
+
+const setupBlankSaid: Readonly<Record<SetupBlank, Copy>> = {
+  Image: { id: "setup-configuration-blank-image" },
+  Test: { id: "setup-configuration-blank-test" },
+};
+
+/** A checkout the program was not run in, as a stop whose rule names `command` again. */
+function setupOutsideLines(
+  saying: SetupSaying,
+  command: "Configuration" | "Check",
+): readonly SetupLine[] {
+  const stop: SetupStop = {
+    found: { id: "setup-configuration-outside-found" },
+    tell: { id: "setup-configuration-outside-tell" },
+    when: { id: "setup-configuration-outside-when" },
+  };
+  return [
+    ...setupStopSaid(stop),
+    ...setupStopRule(stop, setupCommandOf(saying, command)),
+  ];
+}
+
+/**
+ * A run of `configuration`: the file written and each field it leaves blank,
+ * with `check` named once they are filled in; the declarations already there,
+ * left as they are, with `check` next; or no checkout.
+ */
+function setupConfigurationLines(
+  ended: SetupConfigurationEnded,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  switch (ended.ended) {
+    case "Written":
+      return [
+        [
+          "did",
+          { id: "setup-configuration-written", args: { path: ended.path } },
+        ],
+        ...ended.blanks.map(({ blank, field }): SetupLine => [
+          "tell",
+          {
+            id: "setup-configuration-blank",
+            args: { field, what: setupBlankSaid[blank] },
+          },
+        ]),
+        ["tell", { id: "setup-configuration-written-tell" }],
+        ...setupStopRule(
+          { when: { id: "setup-configuration-filled-when" } },
+          setupCommandOf(saying, "Check"),
+        ),
+      ];
+    case "Kept":
+      return [
+        [
+          "found",
+          {
+            id: "setup-configuration-kept-found",
+            args: { paths: ended.paths.join(", ") },
+          },
+        ],
+        setupNextLine(saying, "Check"),
+      ];
+    case "Outside":
+      return setupOutsideLines(saying, "Configuration");
+  }
+}
+
+/** One fault `check` found, by its file, its fault and the fields it is about. */
+function setupCheckFaultSaid(fault: SetupCheckFault): Copy {
+  return {
+    id: "setup-check-fault",
+    args: {
+      path: fault.path,
+      fault: fault.fault,
+      detail: fault.detail ?? "",
+      detailed: fault.detail === undefined ? "none" : "some",
+      fields: fault.fields.join(", "),
+      at: fault.fields.length === 0 ? "none" : "some",
+    },
+  };
+}
+
+/**
+ * A run of `check`: clean, with `import` named once the configuration is
+ * committed and pushed; each fault by file and field, with `check` named again
+ * once they are fixed; nothing declared, with `configuration` named; or no
+ * checkout.
+ */
+function setupCheckLines(
+  ended: SetupCheckEnded,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  switch (ended.ended) {
+    case "Clean":
+      return [
+        [
+          "found",
+          {
+            id: "setup-check-clean-found",
+            args: { count: ended.paths.length, paths: ended.paths.join(", ") },
+          },
+        ],
+        ["tell", { id: "setup-check-clean-tell" }],
+        ...setupStopRule(
+          { when: { id: "setup-check-pushed-when" } },
+          setupCommandOf(saying, "Import"),
+        ),
+      ];
+    case "Refused": {
+      const more = ended.count - ended.faults.length;
+      return [
+        ...ended.faults.map((fault): SetupLine => [
+          "found",
+          setupCheckFaultSaid(fault),
+        ]),
+        ...(more > 0
+          ? [
+              [
+                "found",
+                { id: "setup-check-faults-more", args: { more } },
+              ] as const,
+            ]
+          : []),
+        ["tell", { id: "setup-check-refused-tell" }],
+        ...setupStopRule(
+          { when: { id: "setup-check-fixed-when" } },
+          setupCommandOf(saying, "Check"),
+        ),
+      ];
+    }
+    case "Absent":
+      return [
+        [
+          "found",
+          {
+            id: "setup-check-absent-found",
+            args: { directory: ended.directory },
+          },
+        ],
+        ...setupConfigureRule(saying),
+      ];
+    case "Outside":
+      return setupOutsideLines(saying, "Check");
+  }
+}
+
+/** What `import` asked of the site and what it answered, each file it refused among that, said where the checklist read after it says the site. */
+function setupImportSaid(
+  report: Extract<SetupReport, { readonly report: "Import" }>,
+): readonly SetupLine[] {
+  const repository = report.repository ?? "";
+  const answered = report.answered;
+  if (answered === undefined) return [["found", { id: "setup-import-none" }]];
+  return answered.answered === "Imported"
+    ? [["did", { id: "setup-import-did", args: { repository } }]]
+    : [
+        [
+          "found",
+          {
+            id: "setup-import-refused",
+            args: { repository, refusal: answered.refusal },
+          },
+        ],
+        ...answered.faults.map((fault): SetupLine => [
+          "found",
+          setupCheckFaultSaid(fault),
+        ]),
+      ];
+}
+
+/** A run of `import`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
+function setupImportLines(
+  report: Extract<SetupReport, { readonly report: "Import" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const [site, ...rest] = setupLines(report.checklist, saying);
+  return [
+    ...(site === undefined ? [] : [site]),
+    ...setupImportSaid(report),
+    ...rest,
+  ];
 }
 
 function setupChecklistLines(
@@ -1134,6 +1413,24 @@ function setupNodeOldSaid(
   ];
 }
 
+/** No site remembered or named: the bare command is named with the site's address after it. */
+function setupSiteUnknownLines(saying: SetupSaying): readonly SetupLine[] {
+  return [
+    ["found", { id: "setup-site-unknown" }],
+    [
+      "rule",
+      {
+        id: "setup-rule-site",
+        args: {
+          command: setupCommandOf(saying, "Status", [setupFlagSite]),
+          example: setupSiteExample,
+        },
+      },
+    ],
+    ["next", setupNextStop],
+  ];
+}
+
 function setupLines(
   report: SetupReport,
   saying: SetupSaying,
@@ -1150,20 +1447,7 @@ function setupLines(
         setupNextLine(bare, "Status"),
       ];
     case "SiteUnknown":
-      return [
-        ["found", { id: "setup-site-unknown" }],
-        [
-          "rule",
-          {
-            id: "setup-rule-site",
-            args: {
-              command: setupCommandOf(saying, "Status", [setupFlagSite]),
-              example: setupSiteExample,
-            },
-          },
-        ],
-        ["next", setupNextStop],
-      ];
+      return setupSiteUnknownLines(saying);
     case "Busy":
     case "Faulted":
       return setupStoppedLines(report, saying);
@@ -1189,6 +1473,12 @@ function setupLines(
       });
     case "Project":
       return setupProjectLines(report, saying);
+    case "Configuration":
+      return setupConfigurationLines(report.ended, saying);
+    case "Check":
+      return setupCheckLines(report.ended, saying);
+    case "Import":
+      return setupImportLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
     case "Runner":
@@ -1269,6 +1559,15 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
       return report.next.thing.thing === "Failed" ? 1 : 0;
     case "Project":
       return report.ended.ended === "Made" ? 0 : 1;
+    case "Configuration":
+      return report.ended.ended === "Outside" ? 1 : 0;
+    case "Check":
+      return report.ended.ended === "Refused" ||
+        report.ended.ended === "Outside"
+        ? 1
+        : 0;
+    case "Import":
+      return setupReportExit(report.checklist);
     case "Mcp":
     case "Runner":
       return report.ended.ended === "Stopped"

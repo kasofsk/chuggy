@@ -27,11 +27,22 @@
  * runners, the session placement says their chat host as it stands. Their
  * personal runners in a workspace are held apart from it, with the projects
  * they serve, and are not found where they hold none.
+ *
+ * It imports a repository's configuration as the server does: from what was
+ * pushed to the repository's default branch, judged by the contract's own
+ * judgment of a configuration directory, kept as the binding's last import,
+ * and refused with the files it refused.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
 import { projectRepositoriesAnsweredMax } from "../../../src/contract/http.ts";
+import { repositoryConfigurationRoot } from "../../../src/contract/configurationDocument.ts";
 import { projectDisplayNameSchema } from "../../../src/contract/requests.ts";
+import {
+  repositoryConfigurationFilesReadiness,
+  repositoryConfigurationImportReferences,
+} from "../../../src/contract/repositoryConfigurationReadiness.ts";
+import type { RepositoryConfigurationReferenced } from "../../../src/contract/repositoryConfigurationReference.ts";
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
@@ -39,6 +50,7 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsHeldResponse,
   ProjectRepositoryListedResponse,
+  RepositoryConfigurationImportAttemptResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
   TicketLandingResponse,
@@ -57,6 +69,8 @@ export interface SetupSiteRepository {
   readonly configured: boolean;
   readonly retired?: boolean;
   readonly bootstrapped?: boolean;
+  /** The import of it that finished last, where one did. */
+  readonly lastImport?: RepositoryConfigurationImportAttemptResponse;
 }
 
 export interface SetupSiteTicket {
@@ -161,6 +175,8 @@ export interface SetupSite {
   readonly personal: Map<string, SetupSitePersonalRunners>;
   /** What each mint that was answered asked for. */
   readonly mints: SetupSiteMint[];
+  /** What each repository's default branch holds at its head, by repository and then path, where something was pushed to it. */
+  readonly pushed: Map<string, ReadonlyMap<string, string>>;
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
   letters: string;
 }
@@ -222,6 +238,7 @@ export function setupSiteEmpty(): SetupSite {
     chatMade: 0,
     personal: new Map(),
     mints: [],
+    pushed: new Map(),
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
   };
 }
@@ -471,6 +488,9 @@ function binding(
     ...(repository.configured
       ? { configurationsHeld: configurations(repository) }
       : {}),
+    ...(repository.lastImport === undefined
+      ? {}
+      : { lastImport: repository.lastImport }),
   };
 }
 
@@ -887,6 +907,97 @@ function grant(
   );
 }
 
+const importsPath = "/configurations/imports";
+
+/** The import of a repository at the head of what was pushed to it, each file its catalogs name read as the server reads them, then judged by the contract's judgment. */
+function importedAt(
+  site: SetupSite,
+  repository: SetupSiteRepository,
+): RepositoryConfigurationImportAttemptResponse["outcome"] {
+  const tree =
+    site.pushed.get(repository.repository) ?? new Map<string, string>();
+  const files = [...tree.keys()]
+    .filter(
+      (path) =>
+        path.startsWith(repositoryConfigurationRoot) && path.endsWith(".json"),
+    )
+    .map((path) => ({
+      path,
+      kind: "File" as const,
+      content: tree.get(path) ?? "",
+    }));
+  if (files.length === 0)
+    return { result: "SnapshotAbsent", absent: "ConfigurationDirectory" };
+  const referenced = new Map<string, RepositoryConfigurationReferenced>();
+  const unread = () =>
+    repositoryConfigurationImportReferences(files, referenced).filter(
+      (path) => !referenced.has(path),
+    );
+  for (let paths = unread(); paths.length > 0; paths = unread())
+    for (const path of paths) {
+      const content = tree.get(path);
+      referenced.set(
+        path,
+        content === undefined
+          ? { path, found: "Absent" }
+          : { path, found: "File", content },
+      );
+    }
+  const readiness = repositoryConfigurationFilesReadiness({
+    files,
+    referenced,
+  });
+  return readiness.readiness === "Ready"
+    ? { result: "Imported" }
+    : {
+        result: "DeclarationsRefused",
+        refusals: readiness.faults.map((fault) => fault.refusal),
+        refusalCount: readiness.faults.length,
+      };
+}
+
+/** What the site answers an import: the outcome kept on the binding, and the refusal the server answers it with. */
+function imported(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const asked = (JSON.parse(body ?? "{}") as { readonly repository?: string })
+    .repository;
+  const at = project.repositories.findIndex(
+    (held) => held.repository.toLowerCase() === asked?.toLowerCase(),
+  );
+  const repository = project.repositories[at];
+  if (repository === undefined) return refused();
+  const outcome = importedAt(site, repository);
+  project.repositories[at] = {
+    ...repository,
+    configured: repository.configured || outcome.result === "Imported",
+    lastImport: { attemptedAt: "2026-11-15T00:00:00Z", outcome },
+  };
+  if (outcome.result === "Imported") return answered({ imported: true });
+  return outcome.result === "DeclarationsRefused"
+    ? {
+        status: 422,
+        body: {
+          error: {
+            code: "RepositoryConfigurationsRefused",
+            message: "The repository configurations were refused.",
+          },
+          faults: outcome.refusals,
+        },
+      }
+    : {
+        status: 422,
+        body: {
+          error: {
+            code: "RepositoryConfigurationsAbsent",
+            message: "The commit declares no configurations.",
+          },
+        },
+      };
+}
+
 function projectOf(
   site: SetupSite,
   tenant: string,
@@ -909,6 +1020,12 @@ function tenantWritten(
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
+  if (sent.method === "POST" && within?.[2] === importsPath) {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : imported(site, project, sent.body);
+  }
   if (sent.method !== "POST" || within?.[2] !== mintPath) return undefined;
   const project = projectOf(site, tenant, within[1]);
   return project === undefined ? refused() : minted(site, project, sent.body);

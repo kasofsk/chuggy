@@ -223,11 +223,11 @@ export type RepositoryConfigurationReferencesRead<Stopped> =
   | Stopped;
 
 /**
- * Every file the declarations name, read until what they name is read. Each
- * round reads at least one path not yet read, so one more round than an
- * import reads paths is as many as it can take, and declarations naming more
- * than that stop reading for readiness to refuse. A path `read` does not
- * answer is absent.
+ * Every file the declarations name, read until what they name is read, a
+ * path `read` does not answer being absent. Each round reads at least one
+ * path not yet read, so one more round than an import reads paths is as many
+ * as it can take, and declarations naming more than that stop reading for
+ * readiness to refuse.
  */
 export async function repositoryConfigurationReferencedRead<Stopped>(
   files: readonly RepositoryDeclarationFile[],
@@ -308,19 +308,54 @@ function repositoryConfigurationEnvelopeFaults(
   return wrong.sort();
 }
 
-/** An issue's path as a field of the file: dotted from the envelope's top. */
-function repositoryConfigurationIssueField(issue: z.core.$ZodIssue): string {
-  return ["configuration", ...issue.path.map(String)].join(".");
+/** How deep into the branches of a union an issue is followed for the field it is about. */
+const repositoryConfigurationIssueDepthMax = 16;
+
+/** Whether a union branch refused its value only for being another type at its top, which is a branch the value was never written as. */
+function repositoryConfigurationIssuesOtherType(
+  issues: readonly z.core.$ZodIssue[],
+): boolean {
+  return issues.every(
+    (issue) => issue.code === "invalid_type" && issue.path.length === 0,
+  );
 }
 
-/** The fields of a configuration the schema refuses, each once, in the order it found them. */
+/**
+ * The paths an issue is about, under `path`: a union no branch took is
+ * followed into the one branch the value was written as where only one was,
+ * so a field is named rather than the entry holding it.
+ */
+function repositoryConfigurationIssuePaths(
+  issue: z.core.$ZodIssue,
+  path: readonly PropertyKey[],
+  depth: number,
+): readonly (readonly PropertyKey[])[] {
+  const at = [...path, ...issue.path];
+  if (
+    issue.code !== "invalid_union" ||
+    depth >= repositoryConfigurationIssueDepthMax
+  )
+    return [at];
+  const written = issue.errors.filter(
+    (branch) => !repositoryConfigurationIssuesOtherType(branch),
+  );
+  const [branch] = written;
+  if (written.length !== 1 || branch === undefined) return [at];
+  return branch.flatMap((inner) =>
+    repositoryConfigurationIssuePaths(inner, at, depth + 1),
+  );
+}
+
+/** The fields of a configuration the schema refuses, each once and dotted from the envelope's top, in the order it found them. */
 function repositoryConfigurationShapeFields(
   configuration: unknown,
 ): readonly string[] {
   const parsed = declaredConfigurationSchema.safeParse(configuration);
-  return parsed.success
-    ? []
-    : [...new Set(parsed.error.issues.map(repositoryConfigurationIssueField))];
+  if (parsed.success) return [];
+  const paths = parsed.error.issues.flatMap((issue) =>
+    repositoryConfigurationIssuePaths(issue, ["configuration"], 0),
+  );
+  return [...new Set(paths.map((path) => path.map(String).join(".")))];
 }
 
 function repositoryConfigurationFileRefusal(

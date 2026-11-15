@@ -46,8 +46,7 @@ type SetupPressedCatalogued =
   | "fallback"
   | "chatHost"
   | "connect"
-  | "add"
-  | "retry";
+  | "add";
 
 /** The names the invite page draws from the catalog, as its card's words. */
 type SetupPressedInvite = "workspaceCreate";
@@ -92,10 +91,6 @@ const drawnFromCatalog: Readonly<
   },
   connect: { page: connectButton, id: "repositories-connect-github" },
   add: { page: addPicker, id: "repositories-add" },
-  retry: {
-    page: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
-    id: "repositories-retry",
-  },
 };
 
 const leadTextSection =
