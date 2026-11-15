@@ -104,7 +104,7 @@ export function landingQueuePlaceReference(place: LandingQueuePlace): Copy {
 }
 
 /** The place in words, naming the reference and the ticket that holds it. */
-export function finalizationQueuePlaceWords(place: LandingQueuePlace): Copy {
+export function landingQueuePlaceWords(place: LandingQueuePlace): Copy {
   const args = {
     position: String(place.position),
     total: String(place.total),

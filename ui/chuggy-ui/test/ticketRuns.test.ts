@@ -14,7 +14,7 @@ import type { RunTimed } from "../app/core/runTotals.ts";
 import { runTranscriptStepsCut } from "../app/core/runTranscript.ts";
 import type { ConversationExchange } from "../app/core/conversation.ts";
 import {
-  ticketFinalizationLinkLabel,
+  ticketLandingLinkLabel,
   ticketLandingOf,
   ticketLandingsJoined,
 } from "../app/core/ticketLandings.ts";
@@ -533,13 +533,13 @@ test("a report's opening is read as words, without the marks it was set in", () 
 
 test("a pull request is named as its forge names it, and by its host otherwise", () => {
   expect(
-    ticketFinalizationLinkLabel({
+    ticketLandingLinkLabel({
       href: "https://github.com/kasofsk/chuggy-common/pull/138",
       host: "github.com",
     }),
   ).toBe("kasofsk/chuggy-common#138");
   expect(
-    ticketFinalizationLinkLabel({
+    ticketLandingLinkLabel({
       href: "https://forge.example.test/merge/7",
       host: "forge.example.test",
     }),

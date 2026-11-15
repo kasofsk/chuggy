@@ -84,7 +84,7 @@ import {
   runStepLine,
   ticketActionEffect,
   ticketActionLabel,
-  ticketFinalizationStateLabel,
+  ticketLandingStateLabel,
   usageResumeLine,
 } from "../app/core/codeLabels.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -162,7 +162,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
 
 test("every landing state is one word", () => {
   for (const state of ticketLandingStates)
-    expect(copyTextEn(ticketFinalizationStateLabel(state))).toMatch(
+    expect(copyTextEn(ticketLandingStateLabel(state))).toMatch(
       /^[A-Z][a-z]+$/u,
     );
 });
@@ -822,7 +822,7 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
     briefGitMergePolicies.map((each) => copyTextEn(gitMergePolicyEffect(each))),
   ).toStrictEqual([
     "Finalizes as soon as it is accepted",
-    "Finalizes alone on its reference, evaluated as finalized",
+    "Finalizes alone on its reference, evaluated on the result",
     "Evaluated over the tickets ahead, finalizes if its base held",
   ]);
 });
@@ -952,11 +952,7 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
     [...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
     true,
   ],
-  [
-    "landing states",
-    ticketLandingStates.map(ticketFinalizationStateLabel),
-    true,
-  ],
+  ["landing states", ticketLandingStates.map(ticketLandingStateLabel), true],
   [
     "landing failures",
     finalizationFailureKinds.map(finalizationFailureKindLabel),

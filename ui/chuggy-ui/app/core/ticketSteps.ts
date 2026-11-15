@@ -31,7 +31,7 @@ import type {
 } from "./ticketLedger.ts";
 import {
   ticketLandingFragment,
-  ticketFinalizationPullLabel,
+  ticketLandingPullLabel,
 } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 import { ticketPlanEvaluatorNumber } from "./ticketPlan.ts";
@@ -341,7 +341,7 @@ function ticketStepsFinalizationWords(
     case "Proposed":
       return landing.link === undefined
         ? landing.word
-        : ticketFinalizationPullLabel(landing.link, text);
+        : ticketLandingPullLabel(landing.link, text);
     case "Held":
     case "AwaitingMerge":
     case "Unavailable":

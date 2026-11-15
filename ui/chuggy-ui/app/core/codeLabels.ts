@@ -226,7 +226,7 @@ export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
 }
 
 /** Where one landing stands, as the one word its pill says. */
-export function ticketFinalizationStateLabel(state: TicketLandingState): Copy {
+export function ticketLandingStateLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
       return { id: "codes-finalization-running" };

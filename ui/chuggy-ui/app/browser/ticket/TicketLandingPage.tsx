@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { sinceFigure } from "../../core/figures.ts";
 import { branchName } from "../../core/labels.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
-import { ticketFinalizationLinkLabel } from "../../core/ticketLandings.ts";
+import { ticketLandingLinkLabel } from "../../core/ticketLandings.ts";
 import type {
   TicketLanding,
   TicketLandingsState,
@@ -87,7 +87,7 @@ function TicketLandingFields(props: {
               rel="noopener noreferrer"
               target="_blank"
             >
-              {ticketFinalizationLinkLabel(landing.link)}
+              {ticketLandingLinkLabel(landing.link)}
             </a>
             {` · ${proposal?.status ?? landing.word}`}
           </>

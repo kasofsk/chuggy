@@ -17,7 +17,7 @@ import {
   ticketLandingsJoined,
   ticketLandingsPolledMs,
   ticketLandingsRead,
-  ticketFinalizationSummary,
+  ticketLandingSummary,
 } from "../app/core/ticketLandings.ts";
 import {
   landingAwaitingMerge,
@@ -73,7 +73,7 @@ test("a landing that failed on a conflict says so and how many files it names", 
     commit: undefined,
     caveat: undefined,
   });
-  expect(ticketFinalizationSummary(landing)).toBe("Finalization failed");
+  expect(ticketLandingSummary(landing)).toBe("Finalization failed");
 });
 
 test("a held landing says how long it has been held and on what", () => {
@@ -201,7 +201,7 @@ test("a landed landing offers its pull request under its host and its commit sho
   });
   expect(fragment.caveat).toBeUndefined();
   expect(
-    ticketFinalizationSummary(ticketLandingOf(landingLanded(2), copyTextEn)),
+    ticketLandingSummary(ticketLandingOf(landingLanded(2), copyTextEn)),
   ).toBe("Finalized");
 });
 

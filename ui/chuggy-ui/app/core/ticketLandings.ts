@@ -39,7 +39,7 @@ import {
   finalizationFailureKindLabel,
   finalizationRecheckReasonLabel,
   finalizationUnavailableKindLabel,
-  ticketFinalizationStateLabel,
+  ticketLandingStateLabel,
 } from "./codeLabels.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { agoText } from "./figures.ts";
@@ -234,7 +234,7 @@ type TicketLandingHoldRead = NonNullable<
 >;
 
 /** The forge's reason for a removal from a merge queue, and who removed the pull request where it names them. */
-function ticketFinalizationRemovalText(
+function ticketLandingRemovalText(
   removal: NonNullable<TicketLandingHoldRead["removal"]>,
   text: CopyText,
 ): string {
@@ -263,7 +263,7 @@ function ticketLandingHoldOf(
   const removal =
     hold.removal === undefined
       ? undefined
-      : ticketFinalizationRemovalText(hold.removal, text);
+      : ticketLandingRemovalText(hold.removal, text);
   const label =
     hold.kind === "ProposalAbsent" && read.proposal?.status === "Closed"
       ? changeProposalStatusLabel(read.proposal.status)
@@ -357,8 +357,8 @@ export function ticketLandingOf(
     key: `${String(read.cycle)}/${String(read.generation)}`,
     cycle: read.cycle,
     state: read.state,
-    word: text(ticketFinalizationStateLabel(read.state)),
-    summary: text(ticketFinalizationSummaryLabel(read.state)),
+    word: text(ticketLandingStateLabel(read.state)),
+    summary: text(ticketLandingSummaryLabel(read.state)),
     tone: ticketLandingTone(read.state),
     failure: ticketLandingFailureOf(read, text),
     conflictCount: read.conflict?.paths.length ?? 0,
@@ -463,10 +463,7 @@ export function ticketLandingsHeld(
 }
 
 /** How long a held landing has been held, in the age every page reads. */
-function ticketFinalizationHeldFor(
-  hold: TicketLandingHold,
-  nowMs: number,
-): Copy {
+function ticketLandingHeldFor(hold: TicketLandingHold, nowMs: number): Copy {
   const sinceMs = Date.parse(hold.since);
   return Number.isFinite(sinceMs)
     ? {
@@ -480,7 +477,7 @@ function ticketFinalizationHeldFor(
  * What a landing's merge waits on, the forge's own word where it adds to it,
  * and how long ago the forge was asked.
  */
-function ticketFinalizationWaitText(
+function ticketLandingWaitText(
   wait: TicketLandingWait,
   nowMs: number,
 ): CopyOrData {
@@ -578,7 +575,7 @@ export function ticketLandingFragment(
         text:
           landing.hold === undefined
             ? undefined
-            : ticketFinalizationHeldFor(landing.hold, nowMs),
+            : ticketLandingHeldFor(landing.hold, nowMs),
         link: landing.link,
         commit: undefined,
         caveat: undefined,
@@ -588,7 +585,7 @@ export function ticketLandingFragment(
         text:
           landing.wait === undefined
             ? undefined
-            : ticketFinalizationWaitText(landing.wait, nowMs),
+            : ticketLandingWaitText(landing.wait, nowMs),
         link: landing.link,
         commit: undefined,
         caveat: undefined,
@@ -630,11 +627,11 @@ export function ticketLandingFragmentSays(
 }
 
 /** What a cycle's header says of its newest landing. */
-export function ticketFinalizationSummary(landing: TicketLanding): string {
+export function ticketLandingSummary(landing: TicketLanding): string {
   return landing.summary;
 }
 
-function ticketFinalizationSummaryLabel(state: TicketLandingState): Copy {
+function ticketLandingSummaryLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
       return { id: "ticket-finalization-summary-running" };
@@ -647,7 +644,7 @@ function ticketFinalizationSummaryLabel(state: TicketLandingState): Copy {
     case "Unavailable":
       return { id: "ticket-finalization-summary-escalated" };
     case "Landed":
-      return ticketFinalizationStateLabel(state);
+      return ticketLandingStateLabel(state);
     case "Proposed":
       return { id: "ticket-finalization-summary-proposed" };
     case "Invalidated":
@@ -738,7 +735,7 @@ function ticketLandingLive(state: TicketLandingState): boolean {
 
 /** A pull request as a short label: its number where a forge's `…/pull/<n>`
  * address names it, and its host otherwise. */
-export function ticketFinalizationPullLabel(
+export function ticketLandingPullLabel(
   link: TicketDeliveryLink,
   text: CopyText,
 ): string {
@@ -753,7 +750,7 @@ export function ticketFinalizationPullLabel(
 
 /** A pull request's address as a forge names it, `owner/repository#number`,
  * and its host where the address has no such shape. */
-export function ticketFinalizationLinkLabel(link: TicketDeliveryLink): string {
+export function ticketLandingLinkLabel(link: TicketDeliveryLink): string {
   const named = /^\/([^/]+)\/([^/]+)\/pulls?\/([0-9]+)/u.exec(
     new URL(link.href).pathname,
   );

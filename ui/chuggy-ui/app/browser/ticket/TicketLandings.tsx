@@ -264,7 +264,7 @@ function LandingRow(props: {
 }
 
 /**
- * The block of landings under the eyebrow "Landing", drawn for none at all.
+ * The block of landings under the eyebrow "Finalization", drawn for none at all.
  * A row names its cycle where the block stands apart from the cycles.
  */
 export function LandingBlock(props: {

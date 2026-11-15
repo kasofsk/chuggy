@@ -35,7 +35,7 @@ import { digestShortened } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { runTimeOf } from "./runTotals.ts";
 import type { RunSpend } from "./runTotals.ts";
-import { ticketFinalizationSummary } from "./ticketLandings.ts";
+import { ticketLandingSummary } from "./ticketLandings.ts";
 import type { TicketLanding, TicketLandingsJoined } from "./ticketLandings.ts";
 import {
   cycleLastSet,
@@ -227,7 +227,7 @@ export function ticketRunsCycleOutcome(
     case "Passed":
       return landing === undefined
         ? text({ id: "ticket-verdict-passed" })
-        : ticketFinalizationSummary(landing);
+        : ticketLandingSummary(landing);
   }
 }
 
