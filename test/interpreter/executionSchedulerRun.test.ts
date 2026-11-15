@@ -82,6 +82,7 @@ import {
   asRepositoryId,
   finalizerDefaults,
 } from "../../src/interpreter/finalizer.ts";
+import { finalizerRemoteDefaultRef } from "../../src/interpreter/finalizerLanding.ts";
 import {
   briefingLabels,
   briefingPipelinesUnwritable,
@@ -3165,4 +3166,174 @@ test("a pass observes after admission and before the reaper, asking for the boun
     "refused",
     "reaped",
   ]);
+});
+
+/** What a launched attempt's invocation recorded and its placement carried of what its core merges in, each of which must name the same. */
+async function landingTargetMerge(
+  service: ExecutionSchedulerService,
+): Promise<WorkTaskInvocation["targetMerge"]> {
+  const placements: AttemptPlacement[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  const recording: ExecutionSchedulerService = {
+    ...service,
+    store: {
+      ...service.store,
+      attemptInvoked: (_invoked, invocation) => {
+        recorded.push(invocation);
+        return Promise.resolve(true);
+      },
+    },
+    placement: {
+      ...service.placement,
+      place: (placement) => {
+        placements.push(placement);
+        return Promise.resolve(placedOk);
+      },
+    },
+  };
+  assert.equal(await executionSchedulerLaunch(recording, epoch), 1);
+  const [placed] = placements;
+  const [invoked] = recorded;
+  assert.ok(placed !== undefined && invoked !== undefined);
+  assert.equal(
+    Object.hasOwn(invoked, "targetMerge"),
+    placed.targetMerge !== undefined,
+  );
+  assert.deepEqual(invoked.targetMerge, placed.targetMerge);
+  return placed.targetMerge;
+}
+
+/** The ref a launched work task's core merges in, for a brief finalized as `finalization` says. */
+async function landingTargetMergeRef(finalization: {
+  readonly kind: string;
+  readonly mode?: string;
+  readonly target?: string;
+  readonly policy?: string;
+}): Promise<string | undefined> {
+  const brief = asDraftBrief({
+    intent: "Fix the importer.",
+    links: [],
+    repository: landingRepository,
+    branch: "refs/heads/rt/ticket-brief",
+    finalization,
+  });
+  return (await landingTargetMerge(landingService(brief, [], [])))?.ref;
+}
+
+test("a push's work task merges in the ref it pushes to, the brief's branch where it names none", async () => {
+  assert.equal(
+    await landingTargetMergeRef({
+      kind: "GitMerge",
+      mode: "Push",
+      target: "refs/heads/release",
+      policy: "Direct",
+    }),
+    "refs/heads/release",
+  );
+  assert.equal(
+    await landingTargetMergeRef({
+      kind: "GitMerge",
+      mode: "Push",
+      policy: "Direct",
+    }),
+    "refs/heads/rt/ticket-brief",
+  );
+});
+
+for (const [name, finalization] of [
+  ["PullRequest", { kind: "PullRequest" }],
+  [
+    "PullRequestMerge",
+    { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+  ],
+] as const)
+  test(`a ${name} work task merges in the base its proposal opens into, the remote's default where it names none, and never its own branch`, async () => {
+    assert.equal(
+      await landingTargetMergeRef({
+        ...finalization,
+        target: "refs/heads/release",
+      }),
+      "refs/heads/release",
+    );
+    assert.equal(
+      await landingTargetMergeRef(finalization),
+      finalizerRemoteDefaultRef,
+    );
+  });
+
+test("a work task whose ticket lands nothing, or whose brief names no bound repository, merges nothing in", async () => {
+  assert.equal(await landingTargetMergeRef({ kind: "None" }), undefined);
+  const unbound = asDraftBrief({
+    intent: "Fix the importer.",
+    links: [],
+    repository: asRepositoryId("https://example.test/unbound.git"),
+    branch: "refs/heads/rt/ticket-brief",
+    finalization: { mode: "Push", target: "refs/heads/release" },
+  });
+  assert.equal(
+    await landingTargetMerge(landingService(unbound, [], [])),
+    undefined,
+  );
+});
+
+test("a work task merges a target's pipeline change in only where its own binding is not read as writing no pipelines", async () => {
+  const writable = async (pipelinesWritable: boolean | undefined) => {
+    const service = landingService(landingBrief, [], []);
+    const merged = await landingTargetMerge({
+      ...service,
+      readOnlyRepositories: {
+        repositories: () =>
+          Promise.resolve({
+            read: "Repositories" as const,
+            repositories: [],
+            ...(pipelinesWritable === undefined ? {} : { pipelinesWritable }),
+          }),
+      },
+    });
+    return merged?.pipelinesWritable;
+  };
+  assert.equal(await writable(false), false);
+  assert.equal(await writable(true), true);
+  assert.equal(await writable(undefined), true);
+});
+
+test("a rework after a failed landing merges in the change that landing recorded, and a first task and a rework after a failed evaluation merge in none", async () => {
+  const changeCommit = "2".repeat(40);
+  const service = landingService(landingBrief, [], []);
+  assert.deepEqual(
+    await landingTargetMerge({
+      ...service,
+      failedLanding: {
+        landing: () =>
+          Promise.resolve({
+            read: "Landing" as const,
+            landing: {
+              targetCommit: "1".repeat(40),
+              changeCommit,
+              conflicted: false,
+            },
+          }),
+      },
+    }),
+    {
+      ref: "refs/heads/release",
+      pipelinesWritable: true,
+      change: changeCommit,
+    },
+  );
+  const unchanged = { ref: "refs/heads/release", pipelinesWritable: true };
+  assert.deepEqual(await landingTargetMerge(service), unchanged);
+  assert.deepEqual(
+    await landingTargetMerge({
+      ...service,
+      priorEvaluationReports: {
+        reports: () =>
+          Promise.resolve({
+            read: "Reports" as const,
+            reports: { reports: ["ci.sh exited 1"] },
+          }),
+      },
+    }),
+    unchanged,
+  );
 });

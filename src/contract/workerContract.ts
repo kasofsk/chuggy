@@ -167,6 +167,7 @@ export const workerContractFeatures = {
   RunCredentialAbsent: workerContractRunCredentialAbsent,
   SessionCapabilitiesNamed: workerContractSessionCapabilitiesNamed,
   ChatSessionThreads: { major: 1, minor: 98 },
+  TargetMerge: undefined,
 } as const satisfies Readonly<
   Record<string, WorkerContractVersion | undefined>
 >;
