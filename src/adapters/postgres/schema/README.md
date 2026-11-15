@@ -207,7 +207,8 @@ because an update re-resolves them; the boundary owner reads it, the scheduler
 reads it for the requirement each execution is created at, and the finalizer
 reads the brief a landing is bound by. Neither of the last two reads the draft's
 brief. The API reads the brief and the key and nothing else, so a ticket's page
-shows the brief the ticket runs. Its composite key is `(tenant, project)` and its identity is `(tenant, project,
+shows the brief the ticket runs. Its `repository` is generated from the brief, and the
+metrics plane reads that and the key, and not the brief. Its composite key is `(tenant, project)` and its identity is `(tenant, project,
 ticket)`. It is written by the release and by each update, in the transaction
 that journals it, so unfinished work does not exist for it.
 
