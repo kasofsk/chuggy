@@ -205,9 +205,11 @@ async function rereadReachable(
     : undefined;
 }
 
+/** A row, `busy` while any bind is unanswered and `binding` while its own is. */
 function RepositoryChoiceRow(props: {
   readonly choice: RepositoryChoice;
   readonly busy: boolean;
+  readonly binding: boolean;
   readonly onChoose: (choice: RepositoryChoice) => void;
 }): ReactNode {
   const text = useCopyText();
@@ -218,6 +220,7 @@ function RepositoryChoiceRow(props: {
         size="sm"
         variant="quiet"
         disabled={props.busy || !choice.listed}
+        busy={props.binding}
         onClick={() => {
           props.onChoose(choice);
         }}
@@ -453,6 +456,11 @@ function AddRepositoryBody(props: {
             <RepositoryChoiceRow
               choice={choice}
               busy={binding.isPending}
+              binding={
+                binding.isPending &&
+                binding.variables?.choice.repository.url ===
+                  choice.repository.url
+              }
               onChoose={bind}
             />
           )}

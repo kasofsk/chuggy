@@ -72,6 +72,8 @@ export interface TicketYamlAuthoringProps {
   readonly submitEffect?: string | undefined;
   readonly submitStep?: ReactNode;
   readonly busy: boolean;
+  /** The submit was pressed and is unanswered. */
+  readonly sending: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }
 
@@ -115,6 +117,7 @@ function YamlSubmit(props: {
   readonly effect: string | undefined;
   readonly step: ReactNode;
   readonly busy: boolean;
+  readonly sending: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }): ReactNode {
   const text = useCopyText();
@@ -131,6 +134,7 @@ function YamlSubmit(props: {
       triggerVariant="primary"
       triggerSize="md"
       triggerDisabled={props.busy}
+      triggerBusy={props.sending}
       open={open}
       onOpenChange={setOpen}
     >
@@ -283,6 +287,7 @@ export default function TicketYamlAuthoring(
           effect={props.submitEffect}
           step={props.submitStep}
           busy={props.busy}
+          sending={props.sending}
           onSubmit={props.onSubmit}
         />
       </div>

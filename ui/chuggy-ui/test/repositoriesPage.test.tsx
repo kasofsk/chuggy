@@ -664,6 +664,29 @@ test("choosing a repository binds it by address under an idempotency key", async
   ).toBeTruthy();
 });
 
+function rowsBusy(): readonly string[] {
+  return within(screen.getByRole("dialog"))
+    .queryAllByRole("button")
+    .filter((row) => row.getAttribute("aria-busy") === "true")
+    .map((row) => row.textContent);
+}
+
+test("the pressed row is busy from its press until the bind is answered, and no other row is", async () => {
+  const bind = heldAnswer();
+  await drawPage({ posted: () => bind.answered });
+  await chooseFree();
+  expect(rowsBusy()).toStrictEqual(["gdoteof/scratch"]);
+  const rows = within(
+    screen.getByRole("dialog"),
+  ).getAllByRole<HTMLButtonElement>("button", {
+    name: /^(kasofsk\/chuggy|gdoteof\/scratch)$/u,
+  });
+  expect(rows.map((row) => row.disabled)).toStrictEqual([true, true]);
+  bind.release(accepted());
+  await settled();
+  expect(rowsBusy()).toStrictEqual([]);
+});
+
 function pickerRows(): readonly (string | null)[] {
   return within(screen.getByRole("dialog"))
     .queryAllByRole("listitem")
