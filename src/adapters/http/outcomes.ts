@@ -214,6 +214,8 @@ import type {
 import type {
   AgentAccountPressed,
   AgentAccountRetired,
+  AgentAccountTurnedOff,
+  AgentAccountTurnedOn,
   AgentAccountView,
 } from "../../interpreter/agentAccount.ts";
 import type {
@@ -234,6 +236,7 @@ import type {
 } from "../../contract/responses.ts";
 import {
   agentAccountCredentialInUseCode,
+  agentAccountCredentialsOffFullCode,
   deletionHeldCode,
   projectCreatedSchema,
   type ProjectCreatedResponse,
@@ -1635,6 +1638,40 @@ export function agentAccountRetiredResponse(
   }
 }
 
+/** A credential off, or refused because as many of the agent's credentials as the account holds off are off. */
+export function agentAccountTurnedOffResponse(
+  result: AgentAccountTurnedOff,
+): NativeHttpResponse {
+  switch (result) {
+    case "Off":
+      return noContent();
+    case "OffFull":
+      return response(
+        409,
+        nativeHttpError(
+          agentAccountCredentialsOffFullCode,
+          "As many credentials of this agent as the account holds off are off.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A credential on again, or none of its name was off. */
+export function agentAccountTurnedOnResponse(
+  result: AgentAccountTurnedOn,
+): NativeHttpResponse {
+  switch (result) {
+    case "On":
+      return noContent();
+    case "NotOff":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
 /** One agent's settings written whole. */
 export function agentAccountWrittenResponse(): NativeHttpResponse {
   return noContent();
@@ -2694,6 +2731,7 @@ function leadRefusalBody(refused: LeadRefused): unknown {
     reason: refused.reason,
     since: refused.since,
     ...(refused.until === undefined ? {} : { until: refused.until }),
+    ...(refused.off === undefined ? {} : { off: refused.off }),
   };
 }
 

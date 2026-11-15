@@ -829,6 +829,39 @@ test("a lead refused for usage on a pool that named credentials answers the earl
   assert.equal(absence.until, (reset?.["resets_at"] as Date).toISOString());
 });
 
+/** A pool held only by credentials its owner turned off is paused with no end of its own, which the refusal's body says as `off`. */
+test("a lead refused for usage on a pool whose named credentials are all off answers off and no end", async () => {
+  const partition = await readableProject("http-usage-off");
+  const owner = oidcPrincipal(issuer, `owner-${randomUUID()}`);
+  const pool = await leadRigPooled(rig, partition, owner);
+  await leadRigNamed(rig, partition, pool, ["work", "home"]);
+  await agentAccountHarnessCommitted(rig.sessions.harness, owner, "Claude", {
+    off: ["work", "home"],
+  });
+  await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+    partition,
+    "UsagePaused",
+  );
+  const absence = await leadAbsence("http-usage-off", partition);
+  assert.ok(absence?.reason === "UsagePaused" && "since" in absence);
+  assert.equal(absence.until, undefined);
+  assert.equal(absence.off, true);
+  await sessionRigSession(rig.sessions, partition, "http-usage-off", {
+    kind: "Lead",
+  });
+  await using app = leadApp("http-usage-off");
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(leadResponseSchema.parse(found.json()).refusal, {
+    reason: "UsagePaused",
+    since: absence.since,
+    off: true,
+  });
+});
+
 /** A project whose lead runs in cluster as `offering`, its lead opened on `slot` with one answered turn of `costMicros`. */
 async function subsidizedLeadSpent(
   label: string,

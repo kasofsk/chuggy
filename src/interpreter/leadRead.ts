@@ -159,13 +159,15 @@ export interface LeadSubsidy {
  * What the last selector cycle that needed a project's lead was refused
  * admission for, kept only until a cycle is admitted or has nothing to decide,
  * and since when that has been the answer. `until` is when a `UsagePaused`
- * refusal's pause ends as it stands at the read, absent where none holds now,
- * and the next month's first instant for `SubsidyExhausted`.
+ * refusal's pause ends as it stands at the read, absent where none holds now
+ * or where `off` says only credentials turned off hold every live pool, and
+ * the next month's first instant for `SubsidyExhausted`.
  */
 export interface LeadRefused {
   readonly reason: LeadAdmissionRefusal;
   readonly since: string;
   readonly until?: string;
+  readonly off?: true;
 }
 
 /** Why a project holds no lead: a reason no refusal dates, or the refusal the

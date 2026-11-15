@@ -11,6 +11,7 @@ export interface UsageCopy {
   readonly "usage-window-five-hour": Record<never, never>;
   readonly "usage-window-seven-day": Record<never, never>;
   readonly "usage-provider-limit": Record<never, never>;
+  readonly "usage-reason-off": Record<never, never>;
   readonly "usage-until": Record<never, never>;
   readonly "usage-held-by": {
     readonly credentials: unknown;
