@@ -646,6 +646,15 @@ test("each project and the chat host is a card titled by its name, its values la
   ]);
 });
 
+test("the projects and the chat host are drawn in the people listings' frame", async () => {
+  drawing = { granted: true, runner: runnerHeld, host: hostListed("5be0d7aa") };
+  await drawMyRunner();
+  for (const name of ["Projects", "Chat host"])
+    expect(
+      screen.getByRole("table", { name }).closest(".people-table"),
+    ).not.toBeNull();
+});
+
 test("the question a runner's removal waits on stands under the roster, outside the table", async () => {
   drawing = { granted: true, runner: runnersTwo };
   await drawMyRunner();

@@ -9,7 +9,8 @@
  * the element its head is in.
  *
  * A member's own runners page is held to the same, with its roster and then
- * the question a runner's removal waits on.
+ * the question a runner's removal waits on. On the desk its projects keep the
+ * settings listings' fixed columns and light no row under the pointer.
  */
 
 import {
@@ -83,7 +84,17 @@ for (const viewport of runnersViewports)
     );
     const cardLabel = page.locator("tbody .tabular-label").first();
     if (viewport === "phone") await expect(cardLabel).toBeVisible();
-    else await expect(cardLabel).toBeHidden();
+    else {
+      await expect(cardLabel).toBeHidden();
+      const projects = page.getByRole("table", { name: "Projects" });
+      await expect(projects).toHaveCSS("table-layout", "fixed");
+      const row = projects.locator("tbody tr").first();
+      const resting = await row.evaluate(
+        (tr) => getComputedStyle(tr).backgroundColor,
+      );
+      await row.hover();
+      await expect(row).toHaveCSS("background-color", resting);
+    }
     await renderedNoOverflow(page);
     if (viewport === "phone") await renderedTouchTargets(page, column);
     await page.getByRole("button", { name: "Remove runner a81c04d2" }).click();

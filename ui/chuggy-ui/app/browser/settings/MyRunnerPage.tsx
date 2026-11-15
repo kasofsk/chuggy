@@ -570,6 +570,7 @@ function MyRunnerProjectsTable(props: {
   const text = useCopyText();
   return (
     <SettingsListingStacked
+      className="people-table"
       caption={text({ id: "runners-personal-projects" })}
       columns={[
         {
