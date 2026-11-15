@@ -81,6 +81,7 @@ function lacking(
     site: stoodSite,
     choice: chosen,
     remote: undefined,
+    workspaces: [],
     found: [],
     steps,
     unmerged: undefined,

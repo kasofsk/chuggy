@@ -277,10 +277,11 @@ export type SetupReport =
       readonly ended: SetupRunnerEnded;
     }
   | {
-      /** A run of `project`: the workspace, the address it was given where it was given one, the name, and how it ended. */
+      /** A run of `project`: the workspace, and its display name where the sign-in read one, the address it was given where it was given one, the name, and how it ended. */
       readonly report: "Project";
       readonly site: string;
       readonly workspace: string;
+      readonly workspaceName?: string;
       readonly project: string | undefined;
       readonly name: string;
       readonly ended: SetupProjectEnded;
@@ -1370,7 +1371,10 @@ function setupProjectLines(
         "did",
         {
           id: "setup-project-made",
-          args: { project: `${workspace}/${ended.project}`, name: ended.name },
+          args: {
+            project: setupRunnerNamed({ ...report, project: ended.project }),
+            name: ended.name,
+          },
         },
       ],
       setupNextLine(

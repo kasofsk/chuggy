@@ -62,6 +62,8 @@ import { setupAppNames, setupPhaseSaid, setupSeen } from "./setupStanding.ts";
 import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
 import { setupFlat } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
+import { workspaceNamesListed } from "./workspaceNames.ts";
+import type { WorkspaceNamed } from "./workspaceNames.ts";
 
 /**
  * What is pressed on the console's pages, by the message each page draws it
@@ -84,11 +86,12 @@ export const setupPressed = {
 /** How many names a question lists before it says how many more there are. */
 export const setupAskNamesMax = 12;
 
-/** Where the pages a step is done on are: the site, and the workspace and project as far as the checklist is of one. */
+/** Where the pages a step is done on are: the site, and the workspace and project as far as the checklist is of one; `named` is what a sentence calls a workspace. */
 interface SetupAt {
   readonly site: string;
   readonly workspace: string;
   readonly project: string;
+  readonly named: WorkspaceNamed;
 }
 
 function setupPage(at: SetupAt, route: string): string {
@@ -102,7 +105,7 @@ function setupTicketPage(at: SetupAt, ticket: number): string {
 }
 
 function setupNamed(at: SetupAt): string {
-  return `${at.workspace}/${at.project}`;
+  return `${at.named(at.workspace)}/${at.project}`;
 }
 
 function setupHand(tell: Copy, when: Copy): SetupThing {
@@ -116,7 +119,7 @@ function setupWorkspaceMend(
   at: SetupAt,
 ): SetupThing {
   if (lack.lacks === "Administration") {
-    const { workspace } = lack;
+    const workspace = at.named(lack.workspace);
     return setupHand(
       {
         id: "setup-mend-admin-tell",
@@ -159,7 +162,7 @@ function setupProjectMend(
       ask: {
         id: "setup-ask-project-name",
         args: {
-          workspace,
+          workspace: at.named(workspace),
           address: address === undefined ? "made" : "given",
           project: address ?? "",
           flag: setupNameFlag,
@@ -728,13 +731,17 @@ function setupListed(names: readonly string[]): CopyArgument {
 /** The question a choice still open is put as, with the names it is among as far as the site sent them. */
 function setupAsk(
   choice: Extract<SetupChoice, { readonly choice: "Open" }>,
+  named: WorkspaceNamed,
 ): SetupThing {
   const of: Copy =
     choice.open === "workspace"
       ? { id: "setup-ask-workspace" }
       : {
           id: "setup-ask-project",
-          args: { workspace: choice.workspace ?? "" },
+          args: {
+            workspace:
+              choice.workspace === undefined ? "" : named(choice.workspace),
+          },
         };
   const shown = choice.among.slice(0, setupAskNamesMax);
   const more = choice.among.length - shown.length;
@@ -847,11 +854,14 @@ function setupThing(
   here: SetupRunnerHere | undefined,
   packaged: boolean,
 ): SetupThing {
-  if (standing.choice.choice === "Open") return setupAsk(standing.choice);
+  const named = workspaceNamesListed(standing.workspaces);
+  if (standing.choice.choice === "Open")
+    return setupAsk(standing.choice, named);
   const at: SetupAt = {
     site: standing.site,
     workspace: standing.choice.workspace ?? "",
     project: standing.choice.project ?? "",
+    named,
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
   if (undone?.lacks === undefined) return setupDoneThing(standing, at);

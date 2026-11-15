@@ -22,6 +22,7 @@
  * server is the record.
  */
 
+import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ForgeRepositoryResponse,
@@ -62,6 +63,8 @@ import type {
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import { workRunnerStanding } from "./workRunner.ts";
+import { workspaceNamesListed } from "./workspaceNames.ts";
+import type { WorkspaceNamed } from "./workspaceNames.ts";
 import type {
   SetupStepName,
   SetupStepSaid,
@@ -155,6 +158,8 @@ export interface SetupStanding {
   readonly site: string;
   readonly choice: SetupChoice;
   readonly remote: SetupRemote | undefined;
+  /** The person's own workspaces, whose display names are what a line names each by. */
+  readonly workspaces: readonly AccessCallerTenant[];
   /** What the folder's remote came to, where it was looked for. */
   readonly found: readonly Copy[];
   /** One a step in order, or none where which project is meant is still open. */
@@ -278,6 +283,7 @@ function setupFateOf(
 function setupWorkspaceStep(
   reads: SetupReads,
   workspace: string | undefined,
+  named: WorkspaceNamed,
 ): SetupStep {
   const { tenants, truncated } = reads.workspaces;
   const lacking: SetupLack = { lacks: "Workspace", workspace };
@@ -291,7 +297,8 @@ function setupWorkspaceStep(
           lacking,
         );
   const held = tenants.find((tenant) => tenant.tenant === workspace);
-  if (held?.administer === true) return setupDone("workspace", workspace);
+  if (held?.administer === true)
+    return setupDone("workspace", named(workspace));
   const seen =
     reads.inventory.read === "Got" &&
     reads.inventory.value.some((partition) => partition.tenant === workspace);
@@ -304,7 +311,7 @@ function setupWorkspaceStep(
           held === undefined
             ? "setup-step-workspace-seen"
             : "setup-step-workspace-member",
-        args: { workspace },
+        args: { workspace: named(workspace) },
       },
       { lacks: "Administration", workspace },
     );
@@ -323,19 +330,20 @@ function setupProjectless(
   workspace: string,
   project: string | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): Copy {
   if (project === undefined)
     return {
       id: administers
         ? "setup-step-projectless"
         : "setup-step-projectless-unshown",
-      args: { workspace },
+      args: { workspace: named(workspace) },
     };
   return {
     id: administers
       ? "setup-step-projectless-named"
       : "setup-step-projectless-unshown-named",
-    args: { workspace, project },
+    args: { workspace: named(workspace), project },
   };
 }
 
@@ -344,6 +352,7 @@ function setupProjectUnnamed(
   reads: SetupReads,
   workspace: string | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   const inventory = reads.inventory;
   if (inventory.read !== "Got")
@@ -357,7 +366,7 @@ function setupProjectUnnamed(
     ? setupUndone(
         "project",
         "todo",
-        setupProjectless(workspace, project, administers),
+        setupProjectless(workspace, project, administers, named),
         lacking,
       )
     : setupUnread("project", "inventory", setupCut);
@@ -381,17 +390,18 @@ function setupProjectStep(
   workspace: string | undefined,
   partition: PartitionIdentity | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   if (partition === undefined)
-    return setupProjectUnnamed(reads, workspace, administers);
+    return setupProjectUnnamed(reads, workspace, administers, named);
   if (setupProjectAbsent(reads, partition))
     return setupUndone(
       "project",
       "todo",
-      setupProjectless(partition.tenant, partition.project, administers),
+      setupProjectless(partition.tenant, partition.project, administers, named),
       { lacks: "Project" },
     );
-  const name = `${partition.tenant}/${partition.project}`;
+  const name = setupNamed(partition, named);
   const settings = reads.settings;
   if (settings.read !== "Got") {
     const unread = setupUnread("project", "settings", setupFateOf(settings));
@@ -893,12 +903,19 @@ function setupTicketStep(
   return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
 }
 
-function setupNamed(partition: PartitionIdentity): string {
-  return `${partition.tenant}/${partition.project}`;
+/** A project as a line names it: by its workspace's display name, and its own address. */
+function setupNamed(
+  partition: PartitionIdentity,
+  named: WorkspaceNamed,
+): string {
+  return `${named(partition.tenant)}/${partition.project}`;
 }
 
 /** What the folder's remote came to among the projects it was looked for in, said of those and of no others, whether or not it proposed one. */
-function setupRemoteFound(reads: SetupReads): readonly Copy[] {
+function setupRemoteFound(
+  reads: SetupReads,
+  named: WorkspaceNamed,
+): readonly Copy[] {
   const proposal = reads.proposal;
   if (reads.remote === undefined || proposal.proposal === "Unsought") return [];
   const remote = reads.remote.said;
@@ -907,7 +924,7 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
       ? { id: "setup-remote-among" }
       : {
           id: "setup-remote-among-within",
-          args: { workspace: proposal.within },
+          args: { workspace: named(proposal.within) },
         };
   switch (proposal.proposal) {
     case "Unbound":
@@ -919,7 +936,7 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
           args: {
             remote,
             among,
-            project: setupNamed(proposal.partition),
+            project: setupNamed(proposal.partition, named),
             workspaceFlag: "--workspace",
             projectFlag: "--project",
           },
@@ -932,7 +949,9 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
           args: {
             remote,
             among,
-            projects: proposal.partitions.map(setupNamed).join(", "),
+            projects: proposal.partitions
+              .map((partition) => setupNamed(partition, named))
+              .join(", "),
           },
         },
       ];
@@ -945,12 +964,13 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
 function setupMcpStep(
   partition: PartitionIdentity | undefined,
   none: boolean,
-  named: boolean,
+  served: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   if (partition === undefined || none)
     return setupUndone("mcp", "todo", undefined, { lacks: "Mcp" });
-  const project = setupNamed(partition);
-  return named
+  const project = setupNamed(partition, named);
+  return served
     ? setupDone("mcp", { id: "setup-step-mcp-named", args: { project } })
     : setupUndone(
         "mcp",
@@ -968,21 +988,29 @@ function setupMcpStep(
  * chosen, is the machine's to say and no read's.
  */
 export function setupStanding(reads: SetupReads, named = false): SetupStanding {
+  const workspaces = reads.workspaces.tenants;
+  const workspaceNamed = workspaceNamesListed(workspaces);
   const standing = {
     site: reads.site,
     choice: reads.choice,
     remote: reads.remote,
-    found: setupRemoteFound(reads),
+    workspaces,
+    found: setupRemoteFound(reads, workspaceNamed),
   };
   if (reads.choice.choice === "Open")
     return { ...standing, steps: [], unmerged: undefined };
-  const workspace = setupWorkspaceStep(reads, reads.choice.workspace);
+  const workspace = setupWorkspaceStep(
+    reads,
+    reads.choice.workspace,
+    workspaceNamed,
+  );
   const partition = setupPartition(reads.choice, reads.inventory);
   const project = setupProjectStep(
     reads,
     reads.choice.workspace,
     partition,
     workspace.state === "done",
+    workspaceNamed,
   );
   const none = workspace.state === "todo" || project.state === "todo";
   const done = setupTicketDone(reads);
@@ -991,7 +1019,7 @@ export function setupStanding(reads: SetupReads, named = false): SetupStanding {
     steps: [
       workspace,
       project,
-      setupMcpStep(partition, none, named),
+      setupMcpStep(partition, none, named, workspaceNamed),
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),
       setupRunnerStep(reads, none),
