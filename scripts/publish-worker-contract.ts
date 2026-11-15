@@ -15,6 +15,11 @@
  * tag would name, and a label already released or already tagged is one GitHub
  * or git would refuse halfway through. `--dry-run` does everything but the
  * release and the tag.
+ *
+ * THE BUILD SYSTEM PUBLISHES, AT MERGE. When a merge that moves
+ * `workerContractRelease` lands on `main`, the build system runs this script
+ * there. A ticket's job never runs it; a person runs it by hand only where that
+ * release did not happen.
  */
 
 import { spawnSync } from "node:child_process";

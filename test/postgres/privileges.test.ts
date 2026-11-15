@@ -1576,12 +1576,12 @@ test("no runtime role but the API writes a binding's settings or retires one, an
   const calls = [
     [
       repositoryLandingReadFunction,
-      `SELECT landing_kind,landing_mode,landing_policy,pipelines_writable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+      `SELECT landing_kind,landing_mode,landing_policy,pipelines_writable,pipelines_runnable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
       [apiRole, workerPlaneRole, finalizerRole],
     ],
     [
       repositoryLandingWriteFunction,
-      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','GitMerge','Push','Direct','GitMerge','Push','Direct',false,false)`,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','GitMerge','Push','Direct','GitMerge','Push','Direct',false,false,NULL,NULL)`,
       [apiRole],
     ],
     [
