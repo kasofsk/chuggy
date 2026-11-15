@@ -72,11 +72,13 @@ setup-node-when = once node on this machine is { $needs }
 
 setup-waiting-finish = Sign in with { -github } there and allow { setup-program }. If the page is gone, open { $address } on this machine.
 setup-waiting-opened = opened { $address } in a browser
-setup-waiting-unfinished = nobody finished signing in within { $secs } s
-setup-waiting-open-tell = A sign-in page is open in your browser. { $finish }
+setup-waiting-open = the sign-in page is open and still waiting for someone to sign in
+setup-waiting-open-tell = A sign-in page is open in your browser and is waiting for you. { $finish }
 setup-waiting-attached = the sign-in page opened earlier is still waiting
 setup-waiting-unopened = no browser could be opened from here
 setup-waiting-unopened-tell = Open { $address } in a browser on this machine, sign in with { -github } and allow { setup-program }.
+# spells -run: to run is a verb here
+setup-waiting-rule = Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.
 
 ## How a sign-in ended, where nothing is run after it until the person asks.
 
@@ -440,12 +442,15 @@ setup-done = { -brand-name } is set up for { $project }{ $how ->
    *[merged] { "" }
 } The next { -ticket } is made at { $page }.
 
-## The page a sign-in returns to, in the person's browser.
+## The page a sign-in returns to, in the person's browser: the program's name,
+## what happened as its heading, and what to do next under it.
 
-setup-page-signed-in = Signed in to { -brand-name }. You can close this tab and go back to your terminal.
-setup-page-unfinished = This sign-in did not finish. Close this tab and go back to your terminal.
-setup-page-answered = This sign-in page has already been answered.
-setup-page-nothing = There is nothing here.
+setup-page-brand = { -brand-name }
+setup-page-signed-in = Signed in to { -brand-name }
+setup-page-unfinished = This sign-in did not finish
+setup-page-answered = This sign-in page has already been answered
+setup-page-nothing = There is nothing here
+setup-page-next = Go back to your { -agent }. You can close this tab.
 
 ## The build's last step, which starts the program it built. A first run is
 ## this program's, not a stage's.

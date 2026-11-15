@@ -70,7 +70,8 @@ test("a sign-in the person finishes is exchanged, remembered and said, on this m
     address = opened;
     const page = await person(opened);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /^Signed in to chuggy\./u);
+    assert.equal(page.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.match(await page.text(), /<h1>Signed in to chuggy<\/h1>/u);
   });
   assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/$/u);
   assert.deepEqual(done.lines.slice(0, -1), [
@@ -409,7 +410,7 @@ test("a person slower than one wait finishes in the same page, and the next sign
   assert.deepEqual(first.lines.slice(0, 3), [
     `site: ${installation.site}, not signed in`,
     `did: opened ${address} in a browser`,
-    "found: nobody finished signing in within 1 s",
+    "found: the sign-in page is open and still waiting for someone to sign in",
   ]);
   assert.match(first.lines.at(-1) ?? "", /^next: node \S+ sign-in$/u);
   const second = machine.run(["sign-in"]);

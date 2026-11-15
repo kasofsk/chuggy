@@ -491,21 +491,18 @@ const roster: {
       site,
       port: 41001,
       opened: "Opened",
-      waitedSecs: 90,
     },
     {
       report: "SignInWaiting",
       site,
       port: 41001,
       opened: "Attached",
-      waitedSecs: 90,
     },
     {
       report: "SignInWaiting",
       site,
       port: 41001,
       opened: "NotOpened",
-      waitedSecs: 0,
     },
   ],
   SignInEnded: setupSignInEndings.map((ended) => ({
@@ -1496,6 +1493,11 @@ function signedOutAs(answers: SetupAnswers): readonly string[] {
   );
 }
 
+const waitingTell =
+  "tell: A sign-in page is open in your browser and is waiting for you. Sign in with GitHub there and allow chuggy setup. If the page is gone, open http://127.0.0.1:41001/ on this machine.";
+const waitingRule =
+  "rule: Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.";
+
 test("a page that is waiting is said with the address the person can open, and sign-in is next", () => {
   const lines = (at: number) =>
     setupReportLines(
@@ -1506,8 +1508,16 @@ test("a page that is waiting is said with the address the person can open, and s
   expect(lines(0)).toEqual([
     `site: ${site}, not signed in`,
     "did: opened http://127.0.0.1:41001/ in a browser",
-    "found: nobody finished signing in within 90 s",
-    "tell: A sign-in page is open in your browser. Sign in with GitHub there and allow chuggy setup. If the page is gone, open http://127.0.0.1:41001/ on this machine.",
+    "found: the sign-in page is open and still waiting for someone to sign in",
+    waitingTell,
+    waitingRule,
+    `${next} sign-in`,
+  ]);
+  expect(lines(1)).toEqual([
+    `site: ${site}, not signed in`,
+    "found: the sign-in page opened earlier is still waiting",
+    waitingTell,
+    waitingRule,
     `${next} sign-in`,
   ]);
   expect(lines(2)).toEqual([
@@ -1516,6 +1526,21 @@ test("a page that is waiting is said with the address the person can open, and s
     "tell: Open http://127.0.0.1:41001/ in a browser on this machine, sign in with GitHub and allow chuggy setup.",
     `${next} sign-in`,
   ]);
+});
+
+test("a page opened or found waiting is said as a wait in progress, with no failure and no figure", () => {
+  for (const report of roster.SignInWaiting.filter(
+    (waiting) => waiting.opened !== "NotOpened",
+  )) {
+    const said = setupReportLines(report, machineScript, copyTextEn)
+      .filter((line) => !line.startsWith("next:") && !line.startsWith("site:"))
+      .join("\n")
+      .replaceAll("http://127.0.0.1:41001/", "");
+    expect(said, report.opened).not.toMatch(/\d/u);
+    expect(said, report.opened).not.toMatch(
+      /nobody|within|gave up|timed? ?out/iu,
+    );
+  }
 });
 
 function endedLines(ended: (typeof setupSignInEndings)[number]) {
