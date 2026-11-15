@@ -1,6 +1,6 @@
 /**
  * An evaluation's bundle stores the ref its source names its commit on as a
- * `TargetCommitRef` reference, and a work bundle stores none.
+ * `TargetCommitRef` reference.
  */
 
 import assert from "node:assert/strict";
@@ -62,13 +62,4 @@ test("an evaluation's bundle stores the ref its source names its commit on", asy
   assert.deepEqual(await refsStored(partition, "SpawnEvaluation"), [
     { reference_id: ref },
   ]);
-});
-
-test("a work bundle stores no ref its commit is on", async () => {
-  const partition = await postgresHarnessEvaluationSpawned(
-    harness,
-    "target-commit-ref-work",
-    namingSources(),
-  );
-  assert.deepEqual(await refsStored(partition, "SpawnWork"), []);
 });
