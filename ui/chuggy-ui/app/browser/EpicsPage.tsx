@@ -107,6 +107,13 @@ function EpicRowsPage(props: {
   ));
 }
 
+/** Whether an empty page under the address is no match rather than no epic:
+ * a search, or the archived epics alone. The default view and every epic are
+ * empty only where the project has no epic to show. */
+function epicsQueryNarrows(query: EpicsQuery): boolean {
+  return query.q !== undefined || query.visibility === "Archived";
+}
+
 const epicsSkeletonRowsCount = 3;
 
 /** Rows standing where a page's rows will be, until it is read. */
@@ -138,7 +145,15 @@ function EpicRows(props: {
   if (first && !pending && newest.state !== "Ready")
     return <PanelUnready state={newest} />;
   if (first && newest.state === "Ready" && newest.value.epics.length === 0)
-    return <EmptyState label={text({ id: "epics-none" })} />;
+    return (
+      <EmptyState
+        label={text({
+          id: epicsQueryNarrows(props.query)
+            ? "epics-none-matching"
+            : "epics-none",
+        })}
+      />
+    );
   const nextAfter =
     newest.state === "Ready" ? newest.value.nextAfter : undefined;
   return (

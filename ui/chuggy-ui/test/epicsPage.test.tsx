@@ -259,6 +259,32 @@ test("a project with no epic says so in one line, that one is made by asking in 
   ).toStrictEqual([]);
 });
 
+test.each<[string, EpicsQuery]>([
+  ["a search", { q: "zzz" }],
+  ["the archived view", { visibility: "Archived" }],
+])(
+  "%s that matches no epic says nothing matches, not that the project has none",
+  async (_, query) => {
+    await drawn(abilitiesNone, { first: { epics: [] } }, query);
+    const line = screen.getByText("No epic matches this search or filter.");
+    expect(line.tagName).toBe("P");
+    expect(screen.queryByText(/Ask in a chat/u)).toBeNull();
+  },
+);
+
+test.each<[string, EpicsQuery]>([
+  ["a sort", { sort: "oldest" }],
+  ["every visibility", { visibility: "All" }],
+])(
+  "%s with no search leaves an empty project saying it has no epics yet",
+  async (_, query) => {
+    await drawn(abilitiesNone, { first: { epics: [] } }, query);
+    expect(
+      screen.getByText("No epics yet. Ask in a chat to make one."),
+    ).toBeDefined();
+  },
+);
+
 test("show more reads the page after the cursor and draws its rows in the one list, under the first's", async () => {
   const { asked } = await drawn(abilitiesNone, {
     first: { epics: [summary(7, "Billing")], nextAfter: 7 },

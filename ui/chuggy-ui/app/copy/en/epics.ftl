@@ -5,6 +5,7 @@
 epics-title = { -epic(case: "upper", form: "plural") }
 epics-page-title = { -epic(case: "upper") }
 epics-none = No { -epic(form: "plural") } yet. Ask in a { -thread } to make one.
+epics-none-matching = No { -epic } matches this search or filter.
 epics-not-found = No such { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
