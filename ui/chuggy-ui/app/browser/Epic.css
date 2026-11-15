@@ -1,4 +1,4 @@
-/* The epic list's page, and the chips a ticket names its epics in. */
+/* The epic list's page and a row's summary, and the chips a ticket names its epics in. */
 
 @layer page {
   .epic-list-page {
@@ -6,6 +6,11 @@
     display: grid;
     gap: var(--space-3);
     min-width: 0;
+  }
+
+  /* A row's summary takes only what its progress leaves of the line. */
+  .epic-list-summary {
+    flex: 1 1 0;
   }
 
   .epic-chips {
