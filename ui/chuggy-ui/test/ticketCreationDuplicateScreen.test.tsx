@@ -40,6 +40,7 @@ import {
   draftPanelText,
 } from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { creationMoreOpened, disclosed } from "./creationMore.ts";
 
 const waiting = vi.hoisted(() => ({ held: true }));
 
@@ -220,8 +221,8 @@ async function drawDuplicate(
 }
 
 function title(): string {
-  return screen.getByPlaceholderText<HTMLInputElement>(
-    "what this ticket is called",
+  return disclosed(() =>
+    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called"),
   ).value;
 }
 
@@ -265,9 +266,12 @@ test("an original that carried everything draws no line about it", async () => {
 
 test("a second duplicate, a reload and a plain new ticket each start their own form", async () => {
   const { redraw } = await drawDuplicate(11);
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: "typed over" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: "typed over" },
+    },
+  );
   await redraw(13);
   expect(title()).toBe("Another one");
   expect(
@@ -307,6 +311,7 @@ test("an upload in flight is drawn by the form it attaches to and by no other", 
           ? new Promise<Response>(() => undefined)
           : served(url, init)) as typeof fetch,
   );
+  creationMoreOpened();
   await turned(() => {
     fireEvent.change(screen.getByLabelText("Attach images"), {
       target: {
@@ -323,6 +328,7 @@ test("an upload in flight is drawn by the form it attaches to and by no other", 
     expect(uploading(), String(other)).toBe(false);
   }
   await redraw(11);
+  creationMoreOpened();
   expect(uploading()).toBe(true);
 });
 
@@ -364,7 +370,9 @@ test("an original whose configuration is gone asks for one and keeps what it car
     ),
   ).toBeTruthy();
   expect(configurationChosen()).toContain("Choose");
-  expect(screen.queryByRole("group", { name: "Checks" })).toBeNull();
+  expect(
+    disclosed(() => screen.queryByRole("group", { name: "Checks" })),
+  ).toBeNull();
   await turned(() => {
     fireEvent.keyDown(screen.getByRole("button", { name: /^Configuration/u }), {
       key: "ArrowDown",

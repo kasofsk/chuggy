@@ -20,6 +20,8 @@ import {
 import buttonSheet from "../app/browser/ui/Button.css?raw";
 import menuSheet from "../app/browser/ui/Menu.css?raw";
 import radioSheet from "../app/browser/ui/RadioGroup.css?raw";
+import checkboxSheet from "../app/browser/ui/Checkbox.css?raw";
+import inputSheet from "../app/browser/ui/Input.css?raw";
 import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
@@ -274,4 +276,32 @@ test("a radio keeps its drawn size and is pressed through a control's height und
     expect(
       sheetDeclared(sheetRules(radioSheet, conditions), item, "height"),
     ).toBe("1em");
+});
+
+test("a checkbox keeps its drawn size and is pressed through a control's height under a coarse pointer", () => {
+  const area = (conditions: readonly string[]): CSSStyleRule | undefined =>
+    sheetRules(checkboxSheet, conditions)
+      .filter((rule) => rule.selectorText === ".checkbox::after")
+      .at(-1);
+  expect(area([])?.style.getPropertyValue("width")).toBe("");
+  const coarse = area(buttonCoarse);
+  expect(coarse?.style.getPropertyValue("height")).toBe(
+    "var(--height-control)",
+  );
+  expect(coarse?.style.getPropertyValue("width")).toBe("var(--height-control)");
+  const box = document.createElement("button");
+  box.className = "checkbox";
+  for (const conditions of [[], buttonCoarse])
+    expect(
+      sheetDeclared(sheetRules(checkboxSheet, conditions), box, "height"),
+    ).toBe("1em");
+});
+
+test("the box a finger types into is itself a control's height under a coarse pointer, and unbounded otherwise", () => {
+  const box = document.createElement("input");
+  box.className = "input-box";
+  expect(sheetDeclared(sheetRules(inputSheet, []), box, "min-height")).toBe("");
+  expect(
+    sheetDeclared(sheetRules(inputSheet, buttonCoarse), box, "min-height"),
+  ).toBe("var(--height-control)");
 });
