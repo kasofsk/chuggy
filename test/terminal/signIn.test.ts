@@ -70,7 +70,8 @@ test("a sign-in the person finishes is exchanged, remembered and said, on this m
     address = opened;
     const page = await person(opened);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /^Signed in to chuggy\./u);
+    assert.equal(page.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.match(await page.text(), /<h1>Signed in to chuggy<\/h1>/u);
   });
   assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/$/u);
   assert.deepEqual(done.lines.slice(0, -1), [
