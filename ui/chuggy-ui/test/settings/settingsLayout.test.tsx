@@ -494,7 +494,9 @@ function linksKept(request: SentRequest): Response {
 async function linkCopied(opener: string): Promise<void> {
   await press(opener);
   await turned(() => {
-    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /^(Signup link|Link)$/u }),
+    );
   });
   await press("Create link");
   await press("Copy link");

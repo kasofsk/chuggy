@@ -77,7 +77,7 @@ test("the links are a section under the workspaces, a row a link in the plane's 
   await drawWorkspaces(listed);
   expect(
     screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
-  ).toStrictEqual(["4 workspaces", "Invite links"]);
+  ).toStrictEqual(["4 workspaces", "Signup links"]);
   expect(linkStatuses()).toStrictEqual(["Open", "Used", "Revoked", "Expired"]);
   expect(linkHeadings()).toStrictEqual([
     "Note",
@@ -277,6 +277,6 @@ test("a revocation the plane refuses draws its line under that link's row", asyn
 
 test("a site that keeps links and has none draws no section of them", async () => {
   await drawWorkspaces({ links: () => answer({ links: [] }) });
-  expect(screen.queryByText("Invite links")).toBeNull();
-  expect(screen.queryByRole("table", { name: "Invite links" })).toBeNull();
+  expect(screen.queryByText("Signup links")).toBeNull();
+  expect(screen.queryByRole("table", { name: "Signup links" })).toBeNull();
 });

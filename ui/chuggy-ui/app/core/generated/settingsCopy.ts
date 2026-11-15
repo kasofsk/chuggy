@@ -96,6 +96,9 @@ export interface SettingsCopy {
   readonly "settings-invitation-title": {
     readonly tenant: unknown;
   };
+  readonly "settings-invitation-joins": {
+    readonly tenant: unknown;
+  };
   readonly "settings-invite-link-create": Record<never, never>;
   readonly "settings-invite-link-made": Record<never, never>;
   readonly "settings-invite-link-copy": Record<never, never>;
@@ -174,6 +177,9 @@ export interface SettingsCopy {
   readonly "settings-workspaces-create": Record<never, never>;
   readonly "settings-workspaces-note": Record<never, never>;
   readonly "settings-workspaces-note-lines": Record<never, never>;
+  readonly "settings-workspaces-link-mode": Record<never, never>;
+  readonly "settings-workspaces-link-about": Record<never, never>;
+  readonly "settings-workspaces-links": Record<never, never>;
   readonly "settings-accounts-title": Record<never, never>;
   readonly "settings-accounts-about": Record<never, never>;
   readonly "settings-accounts-table": Record<never, never>;

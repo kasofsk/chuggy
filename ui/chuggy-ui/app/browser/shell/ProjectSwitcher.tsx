@@ -3,7 +3,8 @@
  * each by its workspace and the name it was given, and the way to make
  * another. That names the workspace of the one shown to
  * the form that makes it, whose choice starts there only where the reader
- * administers that workspace.
+ * administers that workspace. A reader with no project is offered the
+ * welcome page instead, where their agent is set to make the first.
  *
  * A pick is a navigation, and the picked project is remembered so the next tab
  * opens where this one left off. An inventory that has not answered says so
@@ -17,6 +18,7 @@
  */
 
 import { useNavigate } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -116,6 +118,32 @@ function projectSwitcherChat(
       ];
 }
 
+/** The action under the list: the welcome page for a reader with no project,
+ * and otherwise the form that makes another, in the workspace shown. */
+function projectSwitcherAction(
+  inventory: readonly NamedProject[],
+  tenant: string | undefined,
+  text: CopyText,
+  navigate: UseNavigateResult<string>,
+): { readonly text: string; readonly onSelect: () => void } {
+  if (inventory.length === 0)
+    return {
+      text: text({ id: "shell-project-welcome" }),
+      onSelect: () => {
+        void navigate({ to: "/" });
+      },
+    };
+  return {
+    text: text({ id: "shell-project-new" }),
+    onSelect: () => {
+      void navigate({
+        to: projectCreationRoutePath,
+        search: { workspace: tenant },
+      });
+    },
+  };
+}
+
 function ProjectSwitcherPicker(props: {
   readonly partition: PartitionIdentity | undefined;
   readonly chat?: string;
@@ -172,17 +200,7 @@ function ProjectSwitcherPicker(props: {
           params: { tenant: chosen.tenant, project: chosen.project },
         });
       }}
-      actions={[
-        {
-          text: text({ id: "shell-project-new" }),
-          onSelect: () => {
-            void navigate({
-              to: projectCreationRoutePath,
-              search: { workspace: tenant },
-            });
-          },
-        },
-      ]}
+      actions={[projectSwitcherAction(state.value, tenant, text, navigate)]}
     />
   );
 }

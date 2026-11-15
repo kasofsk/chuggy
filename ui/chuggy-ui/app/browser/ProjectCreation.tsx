@@ -1,22 +1,18 @@
 /**
  * Making a project: the workspace it belongs to, what it is called, the address
- * that makes, and one submit, on the landing a reader with no project meets and
- * at its own address, where the address may name the workspace the form starts
- * on. The workspace is a choice among the ones the reader may add a project
+ * that makes, and one submit, at its own address, where the address may name
+ * the workspace the form starts on. The workspace is a choice among the ones the reader may add a project
  * to, and a typed name's rule stands under its field before anything is typed.
  *
  * The project's address stands under its name as the name makes it, with the
  * control that edits it, and is a box of its own once that is pressed or the
  * name makes none.
  *
- * Over the form stands the line a reader pastes into Claude Code to have this
- * site's setup program run in their repository, in a box with the control that
- * copies it. It is built from the console's own address alone, so it is drawn
- * before either read has answered and does not move when one does.
+ * The page is the welcome page's column: a centred heading, and under it a
+ * framed card holding the folded setup prompt over the form.
  *
  * A reader with nothing to choose is drawn an empty state where the form
- * would be, and neither the line nor what its page leads the form with is
- * drawn over it.
+ * would be, and neither the prompt nor the page's heading is drawn over it.
  *
  * The last press's operation identity belongs to the names it sent. A press
  * while the form holds those repeats that creation, as after an answer that
@@ -32,11 +28,6 @@ import type { ProjectCreatedResponse } from "../../../../src/contract/responses.
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { apiCreateProject } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
-import {
-  claudeCodeLine,
-  claudeCodeLineAbout,
-  claudeCodeLineCopy,
-} from "../core/claudeCodeLine.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
@@ -81,15 +72,10 @@ import { copyOrDataText } from "../core/copy.ts";
 import type { CopyText } from "../core/copy.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
-import {
-  clipboardWritten,
-  currentOrigin,
-  drawBytes,
-  persistentStore,
-} from "./ports.ts";
+import { clipboardWritten, drawBytes, persistentStore } from "./ports.ts";
+import { SetupPrompt } from "./SetupPrompt.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import { Button } from "./ui/Button.tsx";
-import { CopyBox } from "./ui/CopyBox.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Input } from "./ui/Input.tsx";
@@ -356,7 +342,7 @@ function ProjectCreationForm(props: {
   const send = useProjectCreationSend(fields);
   const text = useCopyText();
   return (
-    <div className="grid w-full max-w-aside gap-3">
+    <div className="grid gap-3">
       <ProjectCreationWorkspace
         offer={props.offer}
         said={workspace}
@@ -380,29 +366,12 @@ function ProjectCreationForm(props: {
   );
 }
 
-/** The line for this console's own site, as wide as the form it stands over. */
-function ProjectCreationClaudeCode(): ReactNode {
-  const text = useCopyText();
-  return (
-    <div className="w-full max-w-aside">
-      <CopyBox
-        about={text(claudeCodeLineAbout)}
-        text={claudeCodeLine(currentOrigin())}
-        copyLabel={text(claudeCodeLineCopy)}
-        breaks="words"
-      />
-    </div>
-  );
-}
-
 /**
- * The line and the form under what their page leads them with, the form
- * starting on the workspace it is given, or the empty state that stands in
- * for all of it.
+ * The prompt and the form under the page's heading, the form starting on the
+ * workspace it is given, or the empty state that stands in for all of it.
  */
-export function ProjectCreation(props: {
-  readonly workspace?: string | undefined;
-  readonly lead?: ReactNode;
+function ProjectCreation(props: {
+  readonly workspace: string | undefined;
 }): ReactNode {
   const text = useCopyText();
   const offer = projectCreationWorkspaceOffer(
@@ -419,11 +388,10 @@ export function ProjectCreation(props: {
       />
     );
   return (
-    <>
-      {props.lead}
-      <ProjectCreationClaudeCode />
+    <ProjectlessColumn title={text({ id: "project-creation-new-title" })}>
+      <SetupPrompt />
       <ProjectCreationForm offer={offer} />
-    </>
+    </ProjectlessColumn>
   );
 }
 
@@ -445,20 +413,30 @@ export function ProjectlessFrame(props: {
   );
 }
 
+/** A page outside every project as one column centred under the bar: its
+ * heading, and under it a framed card holding the rest. */
+export function ProjectlessColumn(props: {
+  readonly title: string;
+  readonly children: ReactNode;
+}): ReactNode {
+  return (
+    <div className="mx-auto grid w-full max-w-measure gap-4">
+      <h1 className="text-md font-strong text-ink-1 text-center">
+        {props.title}
+      </h1>
+      <div className="bg-surface-1 border-edge rounded-3 grid gap-4 border p-5">
+        {props.children}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectCreationPage(props: {
   readonly workspace?: string | undefined;
 }): ReactNode {
-  const text = useCopyText();
   return (
     <ProjectlessFrame>
-      <ProjectCreation
-        workspace={props.workspace}
-        lead={
-          <h1 className="text-md font-strong text-ink-1">
-            {text({ id: "project-creation-new-title" })}
-          </h1>
-        }
-      />
+      <ProjectCreation workspace={props.workspace} />
     </ProjectlessFrame>
   );
 }

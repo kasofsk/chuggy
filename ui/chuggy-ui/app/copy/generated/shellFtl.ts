@@ -34,6 +34,7 @@ shell-project = { -project(case: "upper") }
 shell-projects-unavailable = { -project(case: "upper", form: "plural") } unavailable
 shell-project-new = New { -project }
 shell-project-none = No { -project }
+shell-project-welcome = Set up { -brand-name }
 shell-stream-reconnecting = Reconnecting
 shell-stream-not-live = Not live
 shell-version = New version
@@ -42,10 +43,20 @@ shell-reload = Reload
 shell-chat-size = { -thread(case: "upper") } size
 shell-footer = Copyright 2026. { -brand-name }
 shell-projects = { -project(form: "plural") }
-shell-projects-none = No { -project(form: "plural") }
-shell-projects-none-detail = Create one to start
 shell-projects-loading = Loading…
 shell-page-failed = Page failed
 shell-page-reload = Reload
 shell-page-absent = Not found
+
+## The welcome page a reader with no project lands on: who they are signed in
+## as, where they stand, and the setup prompt for their agent.
+
+shell-welcome-title = Welcome to { -brand-name }
+shell-welcome-account = Signed in as { $login } on { -github }
+shell-welcome-next = Paste it into { -claude-code } in the { -repository } you want { -brand-name } on. It walks you through the rest.
+shell-welcome-admin = You are { -role-admin(form: "a") } of { $workspace }.
+shell-welcome-member = In { $workspace } as { $roles }
+shell-welcome-member-detail = { -workspace(case: "upper", form: "a") } { -role-admin } adds you to { -project(form: "a") }.
+shell-welcome-admins = { -role-admin(case: "upper", form: "plural") }: { $admins }
+shell-welcome-none-detail = A signup link from { -site(form: "a") } { -role-admin } makes you one.
 `;
