@@ -110,7 +110,9 @@
   }
 
   @container (max-width: 40em) {
-    .people-table :is(table, tbody) {
+    /* The hidden head's cells stack too, inside its one pixel, rather than
+       laying out side by side past the card's edge. */
+    .people-table :is(table, tbody, thead th) {
       display: block;
     }
 
@@ -121,7 +123,6 @@
       overflow: hidden;
       clip-path: inset(50%);
     }
-
     .people-table tbody tr {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;

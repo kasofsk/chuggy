@@ -1,30 +1,40 @@
 /**
  * The project the bar is showing, every other project this reader may read,
- * and the way to make another. That names the workspace of the one shown to
+ * each by its workspace and the name it was given, and the way to make
+ * another. That names the workspace of the one shown to
  * the form that makes it, whose choice starts there only where the reader
- * administers that workspace.
+ * administers that workspace. A reader with no project is offered the
+ * welcome page instead, where their agent is set to make the first.
  *
  * A pick is a navigation, and the picked project is remembered so the next tab
  * opens where this one left off. An inventory that has not answered says so
  * rather than offering an empty list.
+ *
+ * A WORKSPACE IS NAMED BY ITS DISPLAY NAME, and every value and address the
+ * picker makes by its id.
  *
  * NO PROJECT IS A CHOICE IN THE WORKSPACE SHOWN, where it lets the reader chat
  * outside a project, and picking it opens their own chat there.
  */
 
 import { useNavigate } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { NamedProject } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import { projectsInventoryQuery } from "../../core/tenantQueries.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
 import { memberChatOpens, memberChatRoutes } from "../../core/memberChat.ts";
 import { projectCreationRoutePath } from "../../core/projectCreation.ts";
+import { projectNamed } from "../../core/projectNaming.ts";
 import { usePanelState } from "../api.ts";
 import { persistentStore } from "../ports.ts";
 import { useChatAbilities } from "../thread/threadRead.ts";
+import type { WorkspaceNamed } from "../../core/workspaceNames.ts";
+import { useWorkspaceNames } from "../workspaceNames.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
 
@@ -83,10 +93,12 @@ function ProjectSwitcherAt(props: {
 /** The project's whole name, which is what the trigger says where it is a folder. */
 function projectSwitcherHint(
   partition: PartitionIdentity | undefined,
+  inventory: readonly NamedProject[],
+  named: WorkspaceNamed,
 ): string | undefined {
   return partition === undefined
     ? undefined
-    : `${partition.tenant} / ${partition.project}`;
+    : `${named(partition.tenant)} / ${projectNamed(inventory, partition)}`;
 }
 
 /** The workspace's own chat, as the picker offers it where it may be had. */
@@ -94,15 +106,42 @@ function projectSwitcherChat(
   tenant: string | undefined,
   chats: boolean,
   text: CopyText,
+  named: WorkspaceNamed,
 ): readonly { readonly value: string; readonly text: string }[] {
   return tenant === undefined || !chats
     ? []
     : [
         {
           value: projectSwitcherNone(tenant),
-          text: `${tenant} / ${text({ id: "shell-project-none" })}`,
+          text: `${named(tenant)} / ${text({ id: "shell-project-none" })}`,
         },
       ];
+}
+
+/** The action under the list: the welcome page for a reader with no project,
+ * and otherwise the form that makes another, in the workspace shown. */
+function projectSwitcherAction(
+  inventory: readonly NamedProject[],
+  tenant: string | undefined,
+  text: CopyText,
+  navigate: UseNavigateResult<string>,
+): { readonly text: string; readonly onSelect: () => void } {
+  if (inventory.length === 0)
+    return {
+      text: text({ id: "shell-project-welcome" }),
+      onSelect: () => {
+        void navigate({ to: "/" });
+      },
+    };
+  return {
+    text: text({ id: "shell-project-new" }),
+    onSelect: () => {
+      void navigate({
+        to: projectCreationRoutePath,
+        search: { workspace: tenant },
+      });
+    },
+  };
 }
 
 function ProjectSwitcherPicker(props: {
@@ -115,6 +154,7 @@ function ProjectSwitcherPicker(props: {
   const navigate = useNavigate();
   const text = useCopyText();
   const state = usePanelState(projectsInventoryQuery());
+  const named = useWorkspaceNames();
   if (state.state !== "Ready")
     return (
       <Notice
@@ -124,12 +164,12 @@ function ProjectSwitcherPicker(props: {
       />
     );
   const { tenant } = props;
-  const none = projectSwitcherChat(tenant, props.chats, text);
+  const none = projectSwitcherChat(tenant, props.chats, text, named);
   return (
     <Picker
       label={text({ id: "shell-project" })}
       glyph={projectGlyph}
-      hint={projectSwitcherHint(props.partition)}
+      hint={projectSwitcherHint(props.partition, state.value, named)}
       value={
         props.partition !== undefined
           ? `${props.partition.tenant}/${props.partition.project}`
@@ -142,7 +182,7 @@ function ProjectSwitcherPicker(props: {
         ...none,
         ...state.value.map((candidate) => ({
           value: `${candidate.tenant}/${candidate.project}`,
-          text: `${candidate.tenant} / ${candidate.project}`,
+          text: `${named(candidate.tenant)} / ${candidate.name}`,
         })),
       ]}
       onChoose={(picked) => {
@@ -160,17 +200,7 @@ function ProjectSwitcherPicker(props: {
           params: { tenant: chosen.tenant, project: chosen.project },
         });
       }}
-      actions={[
-        {
-          text: text({ id: "shell-project-new" }),
-          onSelect: () => {
-            void navigate({
-              to: projectCreationRoutePath,
-              search: { workspace: tenant },
-            });
-          },
-        },
-      ]}
+      actions={[projectSwitcherAction(state.value, tenant, text, navigate)]}
     />
   );
 }

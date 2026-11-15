@@ -159,6 +159,38 @@ import { migration158 } from "./158-carried-verdict-read.ts";
 import { migration159 } from "./159-lead-reads-landing-queues.ts";
 import { migration160 } from "./160-recheck-reason.ts";
 import { migration161 } from "./161-ticket-evaluation-stacks.ts";
+import { migration162 } from "./162-chat-host-idle-unbounded.ts";
+import { migration163 } from "./163-agent-account-credential.ts";
+import { migration164 } from "./164-personal-runner-credentials-named.ts";
+import { migration165 } from "./165-worker-pool-credentials-named.ts";
+import { migration166 } from "./166-rate-limit-resume-named-credentials.ts";
+import { migration167 } from "./167-session-pause-named-credentials.ts";
+import { migration168 } from "./168-agent-account-credential-standing.ts";
+import { migration169 } from "./169-native-action-history.ts";
+import { migration170 } from "./170-agent-account-pause-live-credentials.ts";
+import { migration171 } from "./171-agent-account-credential-retire.ts";
+import { migration172 } from "./172-agent-account-pause-holding-credentials.ts";
+import { migration173 } from "./173-program-stage-out-of-position.ts";
+import { migration174 } from "./174-unrun-deletion.ts";
+import { migration175 } from "./175-restack.ts";
+import { migration176 } from "./176-thread-standing.ts";
+import { migration177 } from "./177-run-credential-absent.ts";
+import { migration178 } from "./178-session-bearer-capabilities.ts";
+import { migration179 } from "./179-thread-job-wake.ts";
+import { migration180 } from "./180-chat-host-session-capabilities.ts";
+import { migration181 } from "./181-finalizer-approval-retired.ts";
+import { migration182 } from "./182-session-shell-credential.ts";
+import { migration183 } from "./183-project-display-name.ts";
+import { migration184 } from "./184-ticket-take.ts";
+import { migration185 } from "./185-metrics-plane-ticket-repository.ts";
+import { migration186 } from "./186-tenant-display-name.ts";
+import { migration187 } from "./187-pipelines-runnable.ts";
+import { migration188 } from "./188-target-commit-ref.ts";
+import { migration189 } from "./189-worker-task-inputs.ts";
+import { migration190 } from "./190-run-total-credential.ts";
+import { migration191 } from "./191-agent-account-credential-off.ts";
+import { migration192 } from "./192-target-paths-refused.ts";
+import { migration193 } from "./193-owned-themes.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -323,4 +355,36 @@ export const migrations: readonly Migration[] = [
   migration159,
   migration160,
   migration161,
+  migration162,
+  migration163,
+  migration164,
+  migration165,
+  migration166,
+  migration167,
+  migration168,
+  migration169,
+  migration170,
+  migration171,
+  migration172,
+  migration173,
+  migration174,
+  migration175,
+  migration176,
+  migration177,
+  migration178,
+  migration179,
+  migration180,
+  migration181,
+  migration182,
+  migration183,
+  migration184,
+  migration185,
+  migration186,
+  migration187,
+  migration188,
+  migration189,
+  migration190,
+  migration191,
+  migration192,
+  migration193,
 ];

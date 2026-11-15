@@ -3,12 +3,12 @@
  * reading width, and beside it the members running, the ones next, the graph
  * in small as a link to the Graph tab, and the details: the tickets outside
  * the epic it waits on, its revision, and when and by whom it was updated.
- * Where the reader is narrow, that side comes first and the small graph is
- * left out.
+ * Where the reader is narrow, that side comes first, and the small graph
+ * spans it at its own size.
  */
 
 import { Link } from "@tanstack/react-router";
-import { Suspense, useMemo } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -18,10 +18,18 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { EpicGraphTicket } from "../../core/epicGraph.ts";
+import { epicGraphLayeredOf } from "../../core/epicGraphLayers.ts";
 import { epicActorLabel } from "../../core/epicHistory.ts";
 import {
   epicOverviewGraphOf,
+  epicOverviewGraphSpine,
+  epicOverviewGraphWidth,
   epicOverviewListsOf,
+} from "../../core/epicOverview.ts";
+import type {
+  EpicOverviewGraph as EpicOverviewGraphSmall,
+  EpicOverviewLink,
+  EpicOverviewTile,
 } from "../../core/epicOverview.ts";
 import { epicGraphTicketsOf } from "../../core/epics.ts";
 import { epicTicketsMembersOf } from "../../core/epicTickets.ts";
@@ -34,7 +42,6 @@ import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { TicketStateMark } from "../ticket/TicketStateLabel.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
-import { EpicGraphLaidLazy } from "./EpicGraphLaidLazy.ts";
 import { EpicActor } from "./EpicHistoryTab.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
@@ -118,68 +125,119 @@ function EpicOverviewList(props: {
   );
 }
 
-/** The graph in small: blocks filled by state and numbered, edges lines. */
-function EpicOverviewGraphDrawn(props: {
-  readonly graph: EpicGraphResponse;
-  readonly tickets: ReadonlyMap<number, EpicGraphTicket>;
+/** A link of the longest chain, leaving and arriving upright. */
+function epicOverviewLinkPath(link: EpicOverviewLink): string {
+  const { from, to } = link;
+  const middle = (from.y + to.y) / 2;
+  return `M${String(from.x)} ${String(from.y)}C${String(from.x)} ${String(middle)} ${String(to.x)} ${String(middle)} ${String(to.x)} ${String(to.y)}`;
+}
+
+/** A tile in its group's form, its number on it where the tiles are large
+ * enough and a dot on a Ready one where they are not. */
+function EpicOverviewGraphTile(props: {
+  readonly tile: EpicOverviewTile;
+  readonly small: EpicOverviewGraphSmall;
 }): ReactNode {
+  const { tile, small } = props;
+  const middle = { x: tile.x + small.size / 2, y: tile.y + small.size / 2 };
   return (
-    <EpicGraphLaidLazy
-      graph={props.graph}
-      tickets={props.tickets}
-      outsideShown={false}
+    <g
+      className="epic-overview-graph-tile"
+      data-ticket={tile.ticket}
+      data-group={tile.group}
+      data-step={tile.step ? "" : undefined}
     >
-      {(drawn) => {
-        const small = epicOverviewGraphOf(drawn);
-        return (
-          <svg
-            className="epic-overview-graph-canvas"
-            aria-hidden="true"
-            width="100%"
-            viewBox={`0 0 ${String(small.width)} ${String(small.height)}`}
-          >
-            {small.lines.map((line) => (
-              <polyline
-                key={`${String(line.from)}-${String(line.to)}`}
-                className="epic-overview-graph-line"
-                points={line.points
-                  .map((point) => `${String(point.x)},${String(point.y)}`)
-                  .join(" ")}
-              />
-            ))}
-            {small.blocks.map((block) => (
-              <rect
-                key={block.ticket}
-                className="epic-overview-graph-block"
-                data-ticket={block.ticket}
-                data-tone={block.tone}
-                data-form={block.form}
-                x={block.x}
-                y={block.y}
-                width={block.width}
-                height={block.height}
-                rx={14}
-              />
-            ))}
-            {small.blocks.map((block) => (
-              <text
-                key={block.ticket}
-                className="epic-overview-graph-number"
-                data-tone={block.tone}
-                data-form={block.form}
-                x={block.x + block.width / 2}
-                y={block.y + block.height / 2}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={30}
-              >
-                #{block.ticket}
-              </text>
-            ))}
-          </svg>
-        );
-      }}
-    </EpicGraphLaidLazy>
+      <rect
+        x={tile.x}
+        y={tile.y}
+        width={small.size}
+        height={small.size}
+        rx={small.size / 5}
+      />
+      {small.numbered ? (
+        <text
+          x={middle.x}
+          y={middle.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={9}
+        >
+          {tile.ticket}
+        </text>
+      ) : tile.group === "Ready" ? (
+        <circle cx={middle.x} cy={middle.y} r={small.size / 7} />
+      ) : null}
+    </g>
+  );
+}
+
+/** The graph in small: a spine for each layer, the tiles, the goal's bar and
+ * the longest chain threaded through. */
+function EpicOverviewGraphDrawn(props: {
+  readonly small: EpicOverviewGraphSmall;
+}): ReactNode {
+  const { small } = props;
+  const { goal } = small;
+  return (
+    <svg
+      className="epic-overview-graph-canvas"
+      aria-hidden="true"
+      width={small.width}
+      height={small.height}
+      viewBox={`0 0 ${String(small.width)} ${String(small.height)}`}
+    >
+      {small.spines.map((spine) => (
+        <g key={spine.y} className="epic-overview-graph-spine">
+          <rect
+            x={0}
+            y={spine.y}
+            width={epicOverviewGraphSpine}
+            height={spine.height}
+          />
+          <rect
+            className="epic-overview-graph-spine-done"
+            x={0}
+            y={spine.y}
+            width={epicOverviewGraphSpine}
+            height={spine.height * spine.filled}
+          />
+        </g>
+      ))}
+      {small.links.map((link) => (
+        <path
+          key={`${String(link.from.x)},${String(link.from.y)}`}
+          className="epic-overview-graph-link"
+          d={epicOverviewLinkPath(link)}
+        />
+      ))}
+      {small.tiles.map((tile) => (
+        <EpicOverviewGraphTile key={tile.ticket} tile={tile} small={small} />
+      ))}
+      {goal === undefined ? null : (
+        <g
+          className="epic-overview-graph-goal"
+          data-ticket={goal.ticket}
+          data-group={goal.group}
+          data-step={goal.step ? "" : undefined}
+        >
+          <rect
+            x={goal.x}
+            y={goal.y}
+            width={goal.width}
+            height={goal.height}
+            rx={goal.height / 2}
+          />
+          <rect
+            className="epic-overview-graph-goal-done"
+            x={goal.x + 2}
+            y={goal.y + 2}
+            width={(goal.width - 4) * goal.filled}
+            height={goal.height - 4}
+            rx={(goal.height - 4) / 2}
+          />
+        </g>
+      )}
+    </svg>
   );
 }
 
@@ -189,9 +247,18 @@ function EpicOverviewGraph(props: {
   readonly tickets: ReadonlyMap<number, EpicGraphTicket>;
 }): ReactNode {
   const text = useCopyText();
-  const { graph } = props;
-  if (graph === undefined || !graph.nodes.some((node) => node.member))
-    return null;
+  const { graph, tickets } = props;
+  const small = useMemo(
+    () =>
+      graph === undefined
+        ? undefined
+        : epicOverviewGraphOf(
+            epicGraphLayeredOf(graph, tickets, false),
+            epicOverviewGraphWidth,
+          ),
+    [graph, tickets],
+  );
+  if (small === undefined || small.height === 0) return null;
   return (
     <section className="epic-overview-part" data-part="graph">
       <h2 className="epic-overview-heading">
@@ -203,9 +270,7 @@ function EpicOverviewGraph(props: {
         params={{ ...props.held.partition, epic: String(props.held.epic) }}
         aria-label={text({ id: "epics-overview-graph-open" })}
       >
-        <Suspense fallback={null}>
-          <EpicOverviewGraphDrawn graph={graph} tickets={props.tickets} />
-        </Suspense>
+        <EpicOverviewGraphDrawn small={small} />
       </Link>
     </section>
   );

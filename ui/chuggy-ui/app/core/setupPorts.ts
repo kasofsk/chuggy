@@ -2,13 +2,14 @@
  * What the setup program needs of the machine it runs on, each a port the
  * terminal implements and a suite fakes.
  *
- * The files are the program's own, in a directory of the person's that nothing
- * else reads: the remembered sign-in, and the note a sign-in page in flight
- * leaves for the command waiting on it. They are read and written whole and at
- * once, because the session holder's store is synchronous. The lock a run
- * holds while it uses the remembered sign-in is beside them and is not a file
- * to read and write: it is one word, changed only by a call that names what it
- * says now.
+ * The program's own files are in a directory of the person's that nothing
+ * else reads: the site it remembers, and the note a sign-in page in flight
+ * leaves for the command waiting on it. The sign-in itself is in the store the
+ * worker contract's `signInStore.ts` defines, which the runner packages' `mcp`
+ * reads too, under that store's lock. Files of either are read and written
+ * whole and at once, because the session holder's store is synchronous. The
+ * lock is not a file to read and write: it is one word, changed only by a call
+ * that names what it says now.
  *
  * The runner command needs more of the machine than files of its own: other
  * programs run to their end and read on both streams, and paths that are the
@@ -28,9 +29,6 @@ export const setupFiles = {
   session: "session.json",
   signIn: "sign-in.json",
 } as const;
-
-/** The lock's name in the directory, beside the files. */
-export const setupLockName = "lock";
 
 export type SetupFile = (typeof setupFiles)[keyof typeof setupFiles];
 
@@ -70,6 +68,16 @@ export interface SetupFilesPort {
   readonly remove: (file: SetupFile) => void;
   /** Removes every copy of the file a write left unfinished. Only a caller that is the file's one writer may ask, since a write under way is such a copy. */
   readonly sweep: (file: SetupFile) => void;
+}
+
+/** The shared sign-in store, a file a site by the name the contract gives it. Only the lock's holder writes or sweeps it. */
+export interface SetupStorePort {
+  readonly read: (name: string) => string | undefined;
+  readonly write: (name: string, text: string) => void;
+  readonly reserve: (name: string, bytes: number) => void;
+  readonly remove: (name: string) => void;
+  /** Removes every copy of any file a write left unfinished, whichever program's. */
+  readonly sweep: () => void;
 }
 
 export interface SetupLockPort {
@@ -183,12 +191,16 @@ export interface SetupSurroundings {
   readonly platform: string;
   /** The command the person has named for opening an address, where they named one. */
   readonly browser: string | undefined;
-  /** The program's own directory, as a person would write it. */
+  /** The sign-in store's directory, as a person would write it. */
   readonly directory: string;
+  /** The folder the program was run in, as a whole path. */
+  readonly folder: string;
   /** The person's home as the machine names it, or nothing where it names none. */
   readonly home: string | undefined;
   /** What the person set their configuration directory to, where they set one. */
   readonly configHome: string | undefined;
+  /** Where the person set Claude Code to keep its configuration, where they set that. */
+  readonly claudeHome: string | undefined;
   /** The person as the machine numbers its users, or nothing where it numbers none. */
   readonly user: string | undefined;
 }
@@ -203,6 +215,8 @@ export interface SetupPorts {
   /** Sends one request to an absolute address. */
   readonly apiFetch: ApiFetchPort;
   readonly files: SetupFilesPort;
+  readonly store: SetupStorePort;
+  /** The sign-in store's lock. */
   readonly lock: SetupLockPort;
   readonly listen: SetupListenPort;
   readonly process: SetupProcessPort;

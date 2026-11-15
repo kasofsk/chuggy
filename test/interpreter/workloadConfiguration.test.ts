@@ -7,13 +7,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { configurationFollowings } from "../../src/contract/configurationDocument.ts";
-import { configurationsResponseSchema } from "../../src/contract/responses.ts";
 import {
-  asConfigurationRevisionId,
   canonicalConfigurationOf,
-  configurationRevisionSummary,
   draftInitializationPolicy,
   draftReleaseReadiness,
+  draftReleaseRefusalCode,
   releaseConfigurationReadiness,
   ticketCommandedCheckStage,
   ticketConfigurationReadiness,
@@ -22,16 +20,14 @@ import {
   type TicketConfiguration,
 } from "../../src/interpreter/authoring.ts";
 import { refinementInstance } from "../actor/harness.ts";
-import { handoffApprovalRequired } from "../../src/interpreter/finalizerPreparation.ts";
 import {
   catalogSelectedFinalizer,
   declaredConfigurationIsCatalog,
-} from "../../src/interpreter/workloadConfiguration.ts";
+} from "../../src/contract/workloadConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
-import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
+import { releasedTicketBounded } from "../../src/domain/config.ts";
 import {
   materialDigest,
   releasedTicketDefinition,
@@ -267,7 +263,7 @@ test("a selection is resolved against the catalog, each absent name the default,
     ),
     [["tests", "review"], ["review"]],
   );
-  assert.equal(chosen.selection.finalizer?.finalizer.approvalRequired, true);
+  assert.deepEqual(chosen.selection.finalizer?.finalizer, {});
   for (const selection of [
     { work: "absent" },
     { evaluation: "absent" },
@@ -279,7 +275,7 @@ test("a selection is resolved against the catalog, each absent name the default,
     );
 });
 
-test("a catalog takes overrides of its workloads alone, and a document takes no selection and no workload overrides", () => {
+test("a catalog takes overrides of its workloads and plans alone, and a document takes no selection and no workload or plan overrides", () => {
   assert.deepEqual(
     draftReleaseReadiness(canonical, brief, undefined, {
       work: { instructions: ["Something else."] },
@@ -313,12 +309,14 @@ test("a catalog takes overrides of its workloads alone, and a document takes no 
       { readiness: "Incomplete", fault: "SelectionUnsupported" },
       configuration,
     );
-  assert.deepEqual(
-    draftReleaseReadiness(document, brief, undefined, {
-      workloads: { build: { practices: [] } },
-    }),
-    { readiness: "Incomplete", fault: "OverridesUnsupported" },
-  );
+  for (const overrides of [
+    { workloads: { build: { practices: [] } } },
+    { plans: { standard: [{ name: "review", evaluators: ["review"] }] } },
+  ])
+    assert.deepEqual(
+      draftReleaseReadiness(document, brief, undefined, overrides),
+      { readiness: "Incomplete", fault: "OverridesUnsupported" },
+    );
   assert.equal(
     draftReleaseReadiness(document, brief, undefined, undefined, {}).readiness,
     "Ready",
@@ -344,7 +342,7 @@ test("a catalog ticket runs the workload its overrides make, each field in place
   );
 });
 
-test("overrides naming a workload or a prompt file the catalog does not hold are refused under their own code", () => {
+test("overrides naming a workload no plan names or a prompt file the catalog does not hold are refused under their own code", () => {
   for (const workloads of [
     { absent: { practices: [] } },
     { build: { prompt: { path: ".chug/configurations/basic-coding.json" } } },
@@ -417,6 +415,73 @@ function programOf(stages: readonly (readonly number[])[]) {
     evaluators: evaluators.map((key) => ({ key })),
   }));
 }
+
+test("a program whose stages are not keyed by their place in it is refused under its own fault, which a trailing stage left out is not", () => {
+  const fault = (program: Parameters<typeof draftReleaseReadiness>[5]) => {
+    const readiness = draftReleaseReadiness(
+      canonical,
+      brief,
+      undefined,
+      undefined,
+      { evaluation: "thorough" },
+      program,
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  assert.equal(
+    fault([{ key: 2, evaluators: [{ key: 1 }] }]),
+    "ProgramStageOutOfPosition",
+    "a later stage kept and an earlier one left out",
+  );
+  assert.equal(
+    fault([
+      { key: 2, evaluators: [{ key: 1 }] },
+      { key: 1, evaluators: [{ key: 1 }] },
+    ]),
+    "ProgramStageOutOfPosition",
+    "the plan's stages out of order",
+  );
+  assert.equal(fault([{ key: 1, evaluators: [{ key: 2 }] }]), "Ready");
+  assert.equal(
+    draftReleaseRefusalCode("ProgramStageOutOfPosition"),
+    "ProgramStageOutOfPosition",
+    "a revision of the draft mends it, so it is not the configuration's",
+  );
+});
+
+test("every program a catalog release readies releases a plan the machine takes", () => {
+  const config = { ...refinementInstance, maxStages: 4, nTasks: 4 };
+  const stageKeys = [[1], [2], [1, 2], [2, 1], [3], [1, 3]] as const;
+  let readied = 0;
+  for (const keys of stageKeys) {
+    const authoring: ReleaseAuthoring = {
+      deps: new Set(),
+      prog: keys.map((key) => ({ key, evaluators: [{ key: 1 }] })),
+    };
+    const readiness = draftReleaseReadiness(
+      canonical,
+      brief,
+      undefined,
+      undefined,
+      { evaluation: "thorough" },
+      authoring.prog,
+    );
+    if (readiness.readiness !== "Ready") continue;
+    readied += 1;
+    const material = ticketDefinitionMaterial({
+      authoring,
+      ticket: readiness.ticket,
+    });
+    assert.ok(
+      releasedTicketBounded(
+        config,
+        releasedTicketDefinition(asTicketId(1), authoring, material),
+      ),
+      `program ${JSON.stringify(keys)} readied a plan outside the machine's bounds`,
+    );
+  }
+  assert.equal(readied, 2, "[1] and [1, 2] ready");
+});
 
 test("a program runs less than its selected plan where it leaves out a stage, or an evaluator of a stage, each alone", () => {
   const short = (stages: readonly (readonly number[])[]) =>
@@ -528,92 +593,30 @@ test("a stored catalog release is read back per evaluator, and a stored document
   assert.equal(ticketTaskKey(document, "Evaluation", 1, 2), "Evaluation:1");
 });
 
-test("a catalog asks for approval only where the finalizer its ticket selects does", () => {
-  assert.equal(handoffApprovalRequired(canonical), false);
-  assert.equal(
-    handoffApprovalRequired(canonical, { finalization: "gated" }),
-    true,
-  );
-  assert.equal(
-    handoffApprovalRequired(canonical, { finalization: "absent" }),
-    undefined,
-    "a selection the catalog does not hold is a policy finalization cannot read",
-  );
-  assert.deepEqual(catalogSelectedFinalizer(catalog, undefined), {});
-});
-
-test("a catalog's default revision is Pinned or Latest, and any other is no catalog", () => {
-  for (const configuration of configurationFollowings)
+test("a stored catalog whose finalizer names approvalRequired reads Ready, and its finalizer is read without it", () => {
+  const landing = {
+    2: { landing: { mode: "PullRequest" } },
+    3: { finalization: { kind: "PullRequest" } },
+  } as const;
+  for (const version of [2, 3] as const) {
+    const stored = {
+      ...catalog,
+      version,
+      finalizers: { gated: { ...landing[version], approvalRequired: true } },
+      defaults: { ...catalog.defaults, finalization: "gated" },
+    };
     assert.equal(
-      releaseConfigurationReadiness(
-        canonicalConfigurationOf({
-          ...catalog,
-          defaults: { ...catalog.defaults, configuration },
-        }),
-      ).readiness,
+      releaseConfigurationReadiness(canonicalConfigurationOf(stored)).readiness,
       "Ready",
+      String(version),
     );
-  assert.deepEqual(
-    releaseConfigurationReadiness(
-      canonicalConfigurationOf({
-        ...catalog,
-        defaults: { ...catalog.defaults, configuration: "Newest" },
-      }),
-    ),
-    { readiness: "Incomplete", fault: "ReleaseShapeInvalid" },
-  );
-});
-
-test("the revision a ticket follows is no part of what its release resolves, and a catalog naming none digests as it did", () => {
-  const digestOf = (
-    selection: Parameters<typeof ticketConfigurationReadiness>[3],
-  ) =>
-    materialDigest(
-      ticketDefinitionMaterial({
-        authoring: thoroughAuthoring,
-        ticket: ticketOf(selection),
-      }),
+    assert.deepEqual(
+      catalogSelectedFinalizer(stored, undefined),
+      { finalizer: { finalization: { kind: "PullRequest" } } },
+      String(version),
     );
-  const unchosen = digestOf({ evaluation: "thorough" });
-  assert.equal(
-    unchosen,
-    "79e402366fde6e252e89fbd275b93f4b43ae86d7272109e5fea5b25c7c84087f",
-  );
-  for (const configuration of configurationFollowings)
-    assert.equal(
-      digestOf({ evaluation: "thorough", configuration }),
-      unchosen,
-      configuration,
-    );
-  assert.equal(
-    configurationRevisionDigest(canonical),
-    "1534185d9edf8ef65ab3c8b7ebb0635697ccc57213f8cf258e47c4b2b6dda35f",
-  );
-});
-
-test("a configuration summary names the revision its catalog's tickets follow, and none where the catalog names none", () => {
-  const defaultsOf = (defaults: object) => {
-    const summary = configurationsResponseSchema.parse({
-      configurations: [
-        configurationRevisionSummary({
-          revision: asConfigurationRevisionId("revision"),
-          digest: "digest",
-          createdAt: asPublicInstant("2026-10-31T12:00:00Z"),
-          provenance: { source: "Authored" },
-          canonical: canonicalConfigurationOf({ ...catalog, defaults }),
-        }),
-      ],
-    }).configurations[0];
-    return summary?.readiness === "Ready"
-      ? summary.catalog?.defaults
-      : undefined;
-  };
-  for (const configuration of configurationFollowings)
-    assert.deepEqual(defaultsOf({ ...catalog.defaults, configuration }), {
-      ...catalog.defaults,
-      configuration,
-    });
-  assert.deepEqual(defaultsOf(catalog.defaults), catalog.defaults);
+  }
+  assert.deepEqual(catalogSelectedFinalizer(catalog, undefined), {});
 });
 
 test("a version 2 finalizer's landing mode is read forward as the finalization it names, ordered Direct, and a version 3 one names its finalization whole", () => {
@@ -627,20 +630,13 @@ test("a version 2 finalizer's landing mode is read forward as the finalization i
       },
       undefined,
     )?.finalizer;
-  assert.deepEqual(
-    finalizing(2, {
-      landing: { mode: "PullRequestMerge" },
-      approvalRequired: true,
-    }),
-    {
-      finalization: {
-        kind: "GitMerge",
-        mode: "PullRequestMerge",
-        policy: "Direct",
-      },
-      approvalRequired: true,
+  assert.deepEqual(finalizing(2, { landing: { mode: "PullRequestMerge" } }), {
+    finalization: {
+      kind: "GitMerge",
+      mode: "PullRequestMerge",
+      policy: "Direct",
     },
-  );
+  });
   assert.deepEqual(
     finalizing(2, {
       landing: { mode: "PullRequest", target: "refs/heads/main" },

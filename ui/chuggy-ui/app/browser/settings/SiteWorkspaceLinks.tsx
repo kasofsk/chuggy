@@ -90,6 +90,7 @@ export function SiteWorkspaceLinks(props: {
   return (
     <InviteLinksListing
       links={props.links}
+      heading={siteWorkspaceLinkWords.heading}
       first={{
         heading: siteWorkspaceLinkWords.note,
         cell: (link) => <SiteWorkspaceLinkNote link={link} />,

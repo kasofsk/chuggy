@@ -1,36 +1,21 @@
-## The bar above every page, its gear and its project switcher.
+## The bar above every page, the bar along a phone's foot, its account menu and its project switcher.
 
 shell-nav = Console
 shell-nav-tickets = { -ticket(case: "upper", form: "plural") }
 shell-nav-epics = { -epic(case: "upper", form: "plural") }
-shell-nav-lead = { -lead(case: "upper") }
-shell-nav-catalog = { -catalog(case: "upper") }
-shell-nav-settings = { -project(case: "upper") } settings
-shell-nav-repositories = { -repository(case: "upper", form: "plural") }
-shell-nav-runners = { -runner(case: "upper", form: "plural") }
+shell-nav-more = More
 shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread
 shell-crumbs = Breadcrumb
 shell-details = Details
-shell-settings = Settings
-shell-settings-theme = Theme
-shell-settings-theme-system = System
-shell-settings-theme-light = Light
-shell-settings-theme-dark = Dark
-shell-settings-wording = Wording
-shell-settings-wording-standard = Standard
-shell-settings-wording-pseudo = Pseudo
-shell-settings-wording-vernacular = { $name }
-shell-settings-chat = { -thread(case: "upper") } position
-shell-settings-chat-right = Right
-shell-settings-chat-left = Left
-shell-settings-chat-bottom = Bottom
+shell-account = Account menu
 shell-sign-out = Sign out
 shell-project = { -project(case: "upper") }
 shell-projects-unavailable = { -project(case: "upper", form: "plural") } unavailable
 shell-project-new = New { -project }
 shell-project-none = No { -project }
+shell-project-welcome = Set up { -brand-name }
 shell-stream-reconnecting = Reconnecting
 shell-stream-not-live = Not live
 shell-version = New version
@@ -39,9 +24,19 @@ shell-reload = Reload
 shell-chat-size = { -thread(case: "upper") } size
 shell-footer = Copyright 2026. { -brand-name }
 shell-projects = { -project(form: "plural") }
-shell-projects-none = No { -project(form: "plural") }
-shell-projects-none-detail = Create one to start
 shell-projects-loading = Loading…
 shell-page-failed = Page failed
 shell-page-reload = Reload
 shell-page-absent = Not found
+
+## The welcome page a reader with no project lands on: who they are signed in
+## as, where they stand, and the setup prompt for their agent.
+
+shell-welcome-title = Welcome to { -brand-name }
+shell-welcome-account = Signed in as { $login } on { -github }
+shell-welcome-next = Paste it into { -claude-code } in the { -repository } you want { -brand-name } on. It walks you through the rest.
+shell-welcome-admin = You are { -role-admin(form: "a") } of { $workspace }.
+shell-welcome-member = In { $workspace } as { $roles }
+shell-welcome-member-detail = { -workspace(case: "upper", form: "a") } { -role-admin } adds you to { -project(form: "a") }.
+shell-welcome-admins = { -role-admin(case: "upper", form: "plural") }: { $admins }
+shell-welcome-none-detail = A signup link from { -site(form: "a") } { -role-admin } makes you one.

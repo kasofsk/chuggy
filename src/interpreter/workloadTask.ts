@@ -31,7 +31,7 @@ import {
   workloadConfigurationReadiness,
   type PlacedWorkload,
   type Workload,
-} from "./workloadConfiguration.ts";
+} from "../contract/workloadConfiguration.ts";
 
 /** One task of a catalog: the workload it runs, and whether the ticket's own check lines join it. */
 export interface WorkloadTask {
@@ -98,7 +98,10 @@ export function catalogNamedWorkloadTask(
   position: WorkloadTaskPosition,
 ): NamedWorkloadTask | undefined {
   const ready = workloadConfigurationReadiness(
-    configurationWithOverrides(value, { workloads: overrides?.workloads }),
+    configurationWithOverrides(value, {
+      workloads: overrides?.workloads,
+      plans: overrides?.plans,
+    }),
   );
   if (ready.readiness !== "Ready") return undefined;
   const selected = selectedCatalogEntries(ready.configuration, selection);

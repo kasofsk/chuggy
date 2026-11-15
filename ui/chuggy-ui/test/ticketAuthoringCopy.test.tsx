@@ -22,6 +22,7 @@ import { answeringApi } from "./answeringApi.ts";
 import { renderCopied } from "./copied.tsx";
 import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { creationCatalogOffer } from "./ticketCreationFixture.ts";
+import { creationMoreOpened } from "./creationMore.ts";
 
 afterEach(() => {
   cleanup();
@@ -31,7 +32,8 @@ const ports = answeringApi(() => ({ status: 200, body: {} })).ports;
 
 test("a catalog form names its pickers Work, Evaluation and Landing", () => {
   renderCopied(creationFormDrawn(ports, [creationCatalogOffer()]));
-  for (const picker of ["Work", "Evaluation", "Landing"])
+  creationMoreOpened();
+  for (const picker of ["Work", "Evaluation", "Finalization"])
     expect(screen.getAllByText(picker).length).toBeGreaterThan(0);
   expect(screen.queryByText("Finalizer")).toBeNull();
 });
@@ -66,7 +68,7 @@ test("under the pseudo wording the form draws none of its own English", () => {
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Create ticket" })).toBeNull();
   expect(screen.queryByPlaceholderText("what this ticket is for")).toBeNull();
-  expect(screen.queryByText("Landing")).toBeNull();
+  expect(screen.queryByText("Finalization")).toBeNull();
   expect(screen.queryByText("Title")).toBeNull();
 });
 

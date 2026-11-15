@@ -7,7 +7,7 @@ codes-escalation-work-failure = { -work-stage(case: "upper") } failed
 codes-escalation-evaluation-failure = { -rework-budget(case: "upper") } exhausted
 codes-escalation-work-unavailable = { -run(case: "upper") } unavailable
 codes-escalation-evaluation-blocked = { -evaluation(case: "upper") } blocked
-codes-escalation-landing-unavailable = { -landing(case: "upper") } unavailable
+codes-escalation-finalization-unavailable = { -finalization(case: "upper") } unavailable
 codes-escalation-lost = Lost on { -runner }
 
 ## Which agent an account is lent for.
@@ -39,7 +39,7 @@ codes-git-promotion-timed-out = Promotion timed out
 codes-git-remote-declined = Remote declined
 codes-git-workflows-refused = Workflows refused
 
-## Which hold a landing is stuck on.
+## Which hold a finalization is stuck on.
 
 codes-hold-repository-unbound = { -repository(case: "upper") } unbound
 codes-hold-target-unreadable = Target unreadable
@@ -63,6 +63,7 @@ codes-hold-queue-timed-out = Merge queue checks timed out again
 codes-hold-dequeued = Removed from merge queue
 # spells -brief-check: to re-check is to evaluate again
 codes-hold-rechecks-exhausted = Re-checks exhausted
+codes-hold-target-paths-refused = Target changed files no { -run } may push
 
 ## Why a project holds no lead.
 
@@ -76,27 +77,28 @@ codes-lead-absence-runner-offline = No live { -runner }
 codes-lead-absence-usage-paused = Paused for usage
 codes-lead-absence-subsidy-exhausted = Month's allowance spent · Resumes next month or on { -runner(form: "plural") }
 
-## Where one landing stands.
+## Where one finalization stands.
 
-codes-landing-running = Running
-codes-landing-held = Held
-codes-landing-waiting = Waiting
-codes-landing-failed = Failed
-codes-landing-escalated = { -escalation(case: "upper") }
-codes-landing-landed = { -landing(case: "upper", form: "ed") }
-codes-landing-proposed = Proposed
-codes-landing-invalidated = Invalidated
+codes-finalization-running = Running
+codes-finalization-held = Held
+codes-finalization-waiting = Waiting
+codes-finalization-failed = Failed
+codes-finalization-escalated = { -escalation(case: "upper") }
+codes-finalization-finalized = { -finalization(case: "upper", form: "ed") }
+codes-finalization-proposed = Proposed
+codes-finalization-invalidated = Invalidated
 
-## Why one landing attempt failed.
+## Why one finalization attempt failed.
 
-codes-landing-failure-conflict = Merge conflict
-codes-landing-failure-preparation = Preparation failed
+codes-finalization-failure-conflict = Merge conflict
+codes-finalization-failure-preparation = Preparation failed
 # spells -brief-check: the forge's checks
-codes-landing-failure-queue-checks = Merge queue checks failed
+codes-finalization-failure-queue-checks = Merge queue checks failed
 # spells -brief-check: to re-check is to evaluate again
-codes-landing-failure-recheck = Target moved, re-check required
+codes-finalization-failure-recheck = Target moved, re-check required
+codes-finalization-failure-restack = Sent back to stack on the queue ahead
 
-## Why one landing attempt was sent back to re-check.
+## Why one finalization attempt was sent back to re-check.
 
 codes-recheck-target-moved = The target moved past the commit it was evaluated on
 codes-recheck-stack-tree-differs = Its merge onto the target differs from the stack evaluated
@@ -108,7 +110,7 @@ codes-unstacked-unchosen = No stack could be chosen beneath it
 codes-unstacked-conflicted = It conflicts with the { -ticket(form: "plural") } ahead of it in the queue
 codes-unstacked-unpublished = Its stack could not be built and published
 
-## What a landing's pull request came to, and what the forge says of it.
+## What a finalization's pull request came to, and what the forge says of it.
 
 codes-creation-created = Opened
 codes-creation-exists = Already open
@@ -145,19 +147,27 @@ codes-runner-losses = { $losses ->
 } resumed automatically
 codes-usage-resumes = Resumes automatically
 codes-usage-resumes-at = Resumes automatically · { $until }
+codes-usage-off = Credentials off
 codes-step-clone-failed = Clone failed
 codes-step-setup-failed = Setup failed
 codes-step-commit-failed = Commit failed
 codes-step-push-failed = Push failed
 codes-step-timed-out = Timed out
 codes-step-disk-low = Disk low
+codes-step-credential-absent = Credential missing
 codes-step-setup-line = Fix it under { -override(case: "upper", form: "plural") } · Setup, then Resume
 codes-step-disk-line = Free space on its { -runner }, then Resume
+codes-step-credential-not-granted-line = Let its { -workload } mint { $credential }, then Resume
+codes-step-credential-not-held-line = Have { $credential } held or issued here, then Resume
+codes-step-credential-not-enabled-line = Enable { $credential } for its { -project } or { -repository }
+codes-step-credential-issuer-refused-line = See why { $credential }'s issuer refused it, then Resume
+codes-step-credential-worker-too-old-line = Update its worker to take { $credential }, then Resume
 # spells -turn: to turn on is a verb here
 codes-evidence-workflows-line = Turn on Workflow files and the App's Workflows, then Resume
 # spells -brief-check: to check is a verb here
 codes-evidence-declined-line = Check the branch's rules and hooks, then Resume
 codes-evidence-unreadable-line = Restore the branch or the App's access, then Resume
+codes-evidence-target-paths-line = Merge its branch into the target yourself, then Resume
 codes-stage-failed = { $stage } failed
 codes-detail-work-failure = Failed { -work-stage } is not reworked
 codes-detail-work-unavailable = { -work-stage(case: "upper") } cancelled
@@ -166,22 +176,21 @@ codes-detail-evaluation-blocked = Resume asks it again
 ## What an open native action asks, and what a revoked dependency leaves.
 
 codes-native-escalation = { -escalation(case: "upper") }
-codes-native-approval = Awaiting { -approval }
 codes-native-evaluation-approval = Awaiting { -evaluation } { -approval }
 codes-revoked-dependencies = Blocked by { -revoke(form: "ed") } { $count ->
     [one] { -dependency }
    *[other] { -dependency(form: "plural") }
 } { $tickets }
 
-## How a finished ticket lands, and what each choice does.
+## How a finished ticket is finalized, and what each choice does.
 
-codes-landing-kind-git-merge = Git merge
-codes-landing-kind-pull-request = { -pull-request(case: "upper") }
-codes-landing-kind-none = None
+codes-finalization-kind-git-merge = Git merge
+codes-finalization-kind-pull-request = { -pull-request(case: "upper") }
+codes-finalization-kind-none = None
 # spells -work-stage: the work in general
-codes-landing-kind-git-merge-effect = Merges the work into the target branch
-codes-landing-kind-pull-request-effect = Opens { -pull-request(form: "a") } a person merges
-codes-landing-kind-none-effect = { -landing(case: "upper", form: "s") } nothing
+codes-finalization-kind-git-merge-effect = Merges the work into the target branch
+codes-finalization-kind-pull-request-effect = Opens { -pull-request(form: "a") } a person merges
+codes-finalization-kind-none-effect = { -finalization(case: "upper", form: "s") } onto nothing
 codes-merge-mode-push = Push
 codes-merge-mode-pull-request = { -pull-request(case: "upper") }, then merge
 codes-merge-mode-push-effect = Commits straight onto the target branch
@@ -189,14 +198,12 @@ codes-merge-mode-pull-request-effect = Opens { -pull-request(form: "a") } into t
 codes-merge-policy-direct = Direct
 codes-merge-policy-serialized = Serialized
 codes-merge-policy-stacked = Stacked
-codes-merge-policy-direct-effect = { -landing(case: "upper", form: "s") } as soon as it is accepted
-codes-merge-policy-serialized-effect = { -landing(case: "upper", form: "s") } alone on its reference, evaluated on what it { -landing(form: "s") }
-codes-merge-policy-stacked-effect = Evaluated over the { -ticket(form: "plural") } ahead, { -landing(form: "s") } if its base held
-codes-landing-onto = { $method } · { -landing(form: "s") } on { $target }
-codes-landing-into = { $method } · into { $target }
-codes-landing-default-branch = the default branch
-codes-approval-required = Required
-codes-approval-not-required = Not required
+codes-merge-policy-direct-effect = { -finalization(case: "upper", form: "s") } as soon as it is accepted
+codes-merge-policy-serialized-effect = { -finalization(case: "upper", form: "s") } alone on its reference, evaluated on the result
+codes-merge-policy-stacked-effect = Evaluated over the { -ticket(form: "plural") } ahead, { -finalization(form: "s") } if its base held
+codes-finalization-onto = { $method } · { -finalization(form: "s") } onto { $target }
+codes-finalization-into = { $method } · into { $target }
+codes-finalization-default-branch = the default branch
 
 ## The answers a ticket offers, and what each does.
 
@@ -204,7 +211,6 @@ codes-action-dispatch = { -dispatch(case: "upper") }
 codes-action-resume = Resume
 codes-action-revoke = { -revoke(case: "upper") }
 codes-action-approve = Approve
-codes-action-decline = Decline
 codes-action-reject = Reject
 codes-action-release = { -release(case: "upper") }
 # spells -run: to re-run is a verb here
@@ -215,15 +221,13 @@ codes-resume-rework = Reworks · new { -artifact }
 # spells -run: to re-run is a verb here
 codes-resume-evaluation = Re-runs { -evaluation } from { -stage } 1
 # spells -run: to re-run is a verb here
-codes-resume-landing = Re-runs { -landing }
+codes-resume-finalization = Re-runs { -finalization }
 codes-resume-nothing = Nothing to resume
 codes-wall-exit-one = only { $action } exits this wall
 codes-wall-exit-two = only { $action } or { $other } exit this wall
 codes-edit-effect = Revises the { -draft } · { -release(form: "s") } a new { -revision }
 codes-action-dispatch-effect = { -dispatch(case: "upper", form: "s") } the observed version
 codes-action-revoke-effect = { -revoke(case: "upper", form: "ing") } blocks its { -dependent(form: "plural") }
-codes-action-approve-effect = Lets { -landing } proceed
-codes-action-decline-effect = Holds { -landing } back
 codes-action-approve-evaluation-effect = Passes this { -evaluator }
 codes-action-reject-effect = Sends the { -work-stage } back with your note
 codes-action-release-effect = Makes the { -draft } { -ticket(form: "a") }
@@ -250,7 +254,7 @@ codes-refusal-not-revocable = Not revocable
 codes-refusal-not-resumable = Nothing to resume
 codes-refusal-run-not-current = { -run(case: "upper") } not current
 codes-refusal-evaluation-not-current = { -evaluation(case: "upper") } not current
-codes-refusal-landing-not-current = { -landing(case: "upper") } not current
+codes-refusal-finalization-not-current = { -finalization(case: "upper") } not current
 codes-refusal-authoring-changed = Authoring changed
 codes-refusal-configuration-invalid = { -configuration(case: "upper") } not runnable
 codes-refusal-ticket-changed = { -ticket(case: "upper") } changed
@@ -264,10 +268,11 @@ codes-refusal-selection-unknown = Selection names no { -catalog } entry
 codes-refusal-selection-unsupported = { -configuration(case: "upper") } cannot take this selection
 codes-refusal-program-exceeds-plan = Program exceeds the { -evaluation-plan }
 codes-refusal-program-skips-checks = Program skips the { -brief }'s { -brief-check(form: "plural") }
+codes-refusal-program-stage-misplaced = Program { -stage } out of position
 codes-refusal-overrides-unsupported = { -configuration(case: "upper") } cannot take these { -override(form: "plural") }
 codes-refusal-overrides-unknown = { -override(case: "upper", form: "plural") } name no { -catalog } { -workload }
 codes-refusal-capacity-reached = { -ticket(case: "upper") } capacity reached
-codes-refusal-landing-request-closed = { -landing(case: "upper") } request closed
+codes-refusal-finalization-request-closed = { -finalization(case: "upper") } request closed
 codes-refusal-overrides-move-definition = { -override(case: "upper", form: "plural") } would change the definition
 codes-refusal-approval-as-work = { -approval(case: "upper") } selected as the { -work-stage }
 codes-refusal-overrides-change-approval = { -override(case: "upper", form: "plural") } make or unmake { -approval(form: "a") }

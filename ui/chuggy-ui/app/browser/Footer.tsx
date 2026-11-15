@@ -1,5 +1,5 @@
-/** The line a page outside every project ends on: the landing, a new project
- * and the forge's two returns. The shell around a project draws none. */
+/** The line a page outside every project ends on: the landing and a new
+ * project. The shell around a project draws none. */
 
 import type { ReactNode } from "react";
 

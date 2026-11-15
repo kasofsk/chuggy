@@ -67,12 +67,20 @@ test("a row whose run stopped at a failed step names the step", () => {
     ["RunPushFailed", "Push failed"],
     ["RunTimedOut", "Timed out"],
     ["RunDiskLow", "Disk low"],
+    ["RunCredentialAbsent", "Credential missing"],
   ] as const) {
     expect(
       badgeText("Escalated", {
         kind: "WorkFailureEscalated",
         resumeAt: "ResumeWork",
-        failed: { evidence, execution: "execution-1", attempt: "attempt-1" },
+        failed: {
+          evidence,
+          execution: "execution-1",
+          attempt: "attempt-1",
+          ...(evidence === "RunCredentialAbsent"
+            ? { absent: { credential: "chuggy.github", reason: "NotHeld" } }
+            : {}),
+        },
       }),
     ).toBe(badge);
   }

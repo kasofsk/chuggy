@@ -51,7 +51,6 @@ type Pairing = {
 
 const namedByKind: Pairing = {
   TicketEscalation: { Resume: "Resume", Revoke: "Revoke" },
-  FinalizationApproval: { Approve: "Approve", Decline: "Decline" },
   EvaluationApproval: { Approve: "ApproveEvaluation", Reject: "Reject" },
 };
 
@@ -67,7 +66,7 @@ function namedBy(
 test("every answer a kind admits has a word of its own, an approval's by what it passes", () => {
   const named = nativeActionKinds.flatMap((kind) =>
     nativeActionKindResolutions[kind].map((resolution) =>
-      nativeActionAnswerName(kind, resolution),
+      nativeActionAnswerName(resolution),
     ),
   );
   expect(named).toStrictEqual(
@@ -105,14 +104,6 @@ test("a kind offers its own answers and no other kind's", () => {
   }
 });
 
-test("a finalization approval offers approve before decline", () => {
-  expect(
-    nativeActionAnswers(openAction("FinalizationApproval")).map(
-      (answer) => answer.action,
-    ),
-  ).toStrictEqual(["Approve", "Decline"]);
-});
-
 test("every answer resolves the action it was built from, at its own fence", () => {
   for (const kind of nativeActionKinds)
     for (const answer of nativeActionAnswers(openAction(kind)))
@@ -140,11 +131,11 @@ test("an action admitting one answer offers exactly that one", () => {
 
 test("the answers over a list are every action's, in the order it listed them", () => {
   const listed = nativeActionsAnswers([
-    openAction("FinalizationApproval", ["Decline"]),
+    openAction("EvaluationApproval", ["Reject"]),
     { ...openAction("TicketEscalation"), action: "action-two" },
   ]);
   expect(listed.map((answer) => answer.action)).toStrictEqual([
-    "Decline",
+    "Reject",
     "Resume",
     "Revoke",
   ]);
@@ -165,11 +156,13 @@ test("an evaluation approval is offered approve before reject where its caller m
   ).toStrictEqual([]);
 });
 
-test("the flag withholds no other kind's answers, which the abilities gate instead", () => {
-  for (const kind of ["TicketEscalation", "FinalizationApproval"] as const)
-    expect(
-      nativeActionAnswers({ ...openAction(kind), answerable: false }).length,
-    ).toBe(nativeActionKindResolutions[kind].length);
+test("the flag withholds no escalation's answers, which the abilities gate instead", () => {
+  expect(
+    nativeActionAnswers({
+      ...openAction("TicketEscalation"),
+      answerable: false,
+    }).length,
+  ).toBe(nativeActionKindResolutions.TicketEscalation.length);
 });
 
 test("a rejection is sendable only with feedback the wire admits, and an approval with or without it", () => {

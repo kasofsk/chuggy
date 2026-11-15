@@ -1,14 +1,15 @@
 /**
  * The ticket form's sheet, as far as a suite with no layout can follow it:
  * read rule by rule and matched against what the form draws. What it holds is
- * that under the narrow width every row, field and hint the form draws can be
- * as narrow as its pane, and that at either width a link or a check is its box
- * and its Remove alone; whether the form then fits is a browser's to say, and
- * no suite here runs one.
+ * that under the narrow width every grid, fieldset, block and hint the form
+ * draws can be as narrow as its pane, and that at either width a link or a
+ * check is its box and its Remove alone; whether the form then fits is a
+ * browser's to say, and one runs in
+ * `ui/chuggy-ui/tools/rendered/ticketCreation.spec.ts`.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -26,6 +27,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { holderDouble } from "./screenHarness.tsx";
+import { creationMoreOpened } from "./creationMore.ts";
 
 beforeEach(resizeObserverStubbed);
 
@@ -62,7 +64,7 @@ function tracks(template: string): readonly string[] {
 }
 
 /** The form with every row it can draw: a repository, a link and a check, and
- * the Advanced section open on two stages. */
+ * the disclosure open on two stages. */
 function drawEveryRow(): HTMLElement {
   const binding = creationBinding("https://forge.test/acme/atlas.git");
   const form = creationForm(
@@ -97,7 +99,7 @@ function drawEveryRow(): HTMLElement {
       </QueryClientProvider>
     </SessionProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  creationMoreOpened();
   return container;
 }
 
@@ -106,11 +108,16 @@ test("every grid the sheet lays the form out in can narrow to its pane", () => {
   const gridded = Array.from(container.querySelectorAll("*")).filter(
     (element) => narrowDeclared(element, "grid-template-columns") !== "",
   );
-  const title = screen.getByRole("textbox", { name: "Title" });
   const link = screen.getByRole("textbox", { name: "Link 1" });
   const stage = screen.getAllByRole("combobox")[0];
-  for (const field of [title, link, stage])
-    expect(gridded).toContain(field?.parentElement);
+  for (const field of [link, stage])
+    expect(gridded).toContain(
+      field?.closest(".creation-line, .creation-stage"),
+    );
+  for (const column of container.querySelectorAll(
+    ".creation-fields, .creation-at, .creation-group",
+  ))
+    expect(gridded).not.toContain(column);
   for (const element of gridded)
     for (const track of tracks(
       narrowDeclared(element, "grid-template-columns"),
@@ -118,18 +125,18 @@ test("every grid the sheet lays the form out in can narrow to its pane", () => {
       expect(tracksShrinkable, element.className).toContain(track);
 });
 
-test("every field, and every fieldset of fields, may be narrower than its own default", () => {
+test("every fieldset, and every block a column of the form holds, may be narrower than its own default", () => {
   const container = drawEveryRow();
-  const fields = Array.from(
+  const blocks = Array.from(
     container.querySelectorAll(
-      "input:not([type=checkbox]), select, textarea, fieldset",
+      "fieldset, :is(.creation-fields, .creation-at, .creation-groups, .creation-group) > *",
     ),
   );
-  expect(fields.map((field) => field.tagName)).toEqual(
-    expect.arrayContaining(["INPUT", "SELECT", "TEXTAREA", "FIELDSET"]),
+  expect(blocks.map((block) => block.tagName)).toEqual(
+    expect.arrayContaining(["FIELDSET", "DIV", "SECTION"]),
   );
-  for (const field of fields)
-    expect(narrowDeclared(field, "min-width"), field.outerHTML).toBe("0px");
+  for (const block of blocks)
+    expect(narrowDeclared(block, "min-width"), block.outerHTML).toBe("0px");
 });
 
 test("a hint stands in the one column a narrow row keeps", () => {
@@ -150,7 +157,9 @@ test.each([
   ({ rules }) => {
     drawEveryRow();
     for (const name of ["Link 1", "Check 1"]) {
-      const line = screen.getByRole("textbox", { name }).parentElement;
+      const line = screen
+        .getByRole("textbox", { name })
+        .closest(".creation-line");
       expect(line).not.toBeNull();
       if (line === null) continue;
       expect(

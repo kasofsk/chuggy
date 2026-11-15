@@ -9,11 +9,15 @@
  * Every command any line names is split as a shell splits it and read back by
  * the program's own argument reader, with the workspace and project the run
  * was about. A run asked as `runner` is one that named both, since the program
- * reads no other, so its reports are printed with both.
+ * reads no other, so its reports are printed with both; one asked as
+ * `chat-host` named the workspace alone, and one asked as `project` the
+ * workspace and the name.
  */
 
 import { expect, test } from "vitest";
 
+import { repositoryConfigurationRoot as root } from "../../../src/contract/configurationDocument.ts";
+import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
 import { setupAnswersNone, setupAsked } from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import {
@@ -32,16 +36,29 @@ import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { Copy } from "../app/core/copy.ts";
 import type {
   SetupFault,
+  SetupProjectEnded,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
   SetupThing,
 } from "../app/core/setupReport.ts";
+import type {
+  SetupCheckEnded,
+  SetupCheckFault,
+  SetupConfigurationEnded,
+  SetupImportAnswered,
+} from "../app/core/setupConfigurationEnded.ts";
 import { setupPressed } from "../app/core/setupNext.ts";
 import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
 import { setupSeen } from "../app/core/setupStanding.ts";
 import { machineScript } from "./setupMachine.ts";
-import { runnerNotesAll, runnerStopsAll } from "./setupRunnerRoster.ts";
+import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
+import {
+  rosterChatHostStops,
+  rosterRunnerStops,
+  runnerNotesAll,
+  runnerStopsAll,
+} from "./setupRunnerRoster.ts";
 
 const site = "https://chuggy.example";
 const next = `next: node ${machineScript}`;
@@ -76,6 +93,11 @@ const steps: readonly SetupStepSaid[] = [
     },
   },
   {
+    step: "mcp",
+    state: "todo",
+    detail: { id: "setup-step-mcp-none", args: { project: "acme/widgets" } },
+  },
+  {
     step: "github",
     state: "unread",
     detail: {
@@ -93,6 +115,14 @@ const steps: readonly SetupStepSaid[] = [
 
 const offerTell: Copy = { id: "setup-mend-runner-live-tell" };
 const offerWhen: Copy = { id: "setup-offer-when" };
+const configureTell: Copy = {
+  id: "setup-mend-configuration-tell",
+  args: {
+    repository: "acme-org/widgets",
+    last: { id: "setup-mend-configuration-never" },
+    path: `${setupConfigurationPath}`,
+  },
+};
 const unreadFound: Copy = {
   id: "setup-mend-unread-found",
   args: { step: "github", detail: "its GitHub accounts were not answered" },
@@ -162,6 +192,7 @@ const things: {
   Offer: [
     {
       thing: "Offer",
+      command: "Runner",
       tell: offerTell,
       when: offerWhen,
       workspace: "acme",
@@ -169,10 +200,19 @@ const things: {
     },
     {
       thing: "Offer",
+      command: "Runner",
       tell: offerTell,
       when: offerWhen,
       workspace: "two words",
       project: "it's --site",
+    },
+    {
+      thing: "Offer",
+      command: "ChatHost",
+      tell: offerTell,
+      when: offerWhen,
+      workspace: "two words",
+      project: undefined,
     },
   ],
   Ask: [
@@ -185,6 +225,50 @@ const things: {
       thing: "Ask",
       ask: asking("project", ["gadgets", "widgets"]),
       flag: "project",
+    },
+  ],
+  Name: [
+    {
+      thing: "Name",
+      ask: {
+        id: "setup-ask-project-name",
+        args: {
+          workspace: "acme",
+          address: "made",
+          project: "",
+          flag: "--name",
+        },
+      },
+      workspace: "acme",
+      project: undefined,
+    },
+    {
+      thing: "Name",
+      ask: {
+        id: "setup-ask-project-name",
+        args: {
+          workspace: "two words",
+          address: "given",
+          project: "it's --site",
+          flag: "--name",
+        },
+      },
+      workspace: "two words",
+      project: "it's --site",
+    },
+  ],
+  Configure: [
+    {
+      thing: "Configure",
+      tell: configureTell,
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Configure",
+      tell: configureTell,
+      workspace: "two words",
+      project: "it's --site",
     },
   ],
   Failed: [
@@ -202,11 +286,104 @@ const choices: readonly SetupAnswers[] = [
   { workspace: "two words", project: "it's --site" },
 ];
 
-/** The projects a run of `runner` is about: one plainly named, and one a shell would not read whole. */
-const pairs = [
+/** The projects a run of `runner` is about, and the workspaces one of `chat-host` is: one plainly named, and one a shell would not read whole. */
+const pairs: readonly SetupRunnerAt[] = [
   { workspace: "acme", project: "widgets" },
   { workspace: "two words", project: "it's --site" },
-] as const;
+  { workspace: "acme", project: undefined },
+  { workspace: "two words", project: undefined },
+];
+
+/** What a run of `project` can be asked to call a project: a name plainly written, and one a shell would not read whole. */
+const projectNames: readonly string[] = ["Atlas Web", "it's --site"];
+
+/** How a run of `project` can end: made, refused where trying again could be answered otherwise, and refused where it could not. */
+const projectEndings: readonly SetupProjectEnded[] = [
+  { ended: "Made", project: "atlas-web", name: "Atlas Web" },
+  {
+    ended: "Refused",
+    refusal: { id: "project-creation-refusal-unavailable" },
+    again: true,
+  },
+  {
+    ended: "Refused",
+    refusal: { id: "project-creation-refusal-taken" },
+    again: false,
+  },
+];
+
+const developmentPath = setupConfigurationPath;
+
+/** How a run of `configuration` can end: written with both fields blank or one, declarations kept, and no checkout. */
+const configurationEndings: readonly SetupConfigurationEnded[] = [
+  {
+    ended: "Written",
+    path: developmentPath,
+    blanks: [
+      { blank: "Image", field: "configuration.image" },
+      { blank: "Test", field: "configuration.workloads.checks.commands" },
+    ],
+  },
+  {
+    ended: "Written",
+    path: developmentPath,
+    blanks: [{ blank: "Image", field: "configuration.image" }],
+  },
+  { ended: "Kept", paths: [developmentPath] },
+  { ended: "Outside" },
+];
+
+const refusedFault: SetupCheckFault = {
+  path: developmentPath,
+  fault: { id: "repositories-fault-configuration-invalid" },
+  detail: undefined,
+  fields: ["configuration.image", "configuration.workloads.checks.commands"],
+};
+
+/** How a run of `check` can end: clean for one file and for two, refused with faults said and with more than are said, nothing declared, and no checkout. */
+const checkEndings: readonly SetupCheckEnded[] = [
+  { ended: "Clean", paths: [developmentPath] },
+  { ended: "Clean", paths: [developmentPath, `${root}b.json`] },
+  { ended: "Refused", faults: [refusedFault], count: 1 },
+  {
+    ended: "Refused",
+    faults: [
+      refusedFault,
+      {
+        path: `${root}b.json`,
+        fault: { id: "repositories-fault-document-unreadable" },
+        detail: "BriefChecksUncommanded",
+        fields: [],
+      },
+    ],
+    count: 5,
+  },
+  { ended: "Absent", directory: `${root}` },
+  { ended: "Outside" },
+];
+
+/** What a run of `import` can have had answered: nothing asked, imported, and refused. */
+const importAnswers: readonly (SetupImportAnswered | undefined)[] = [
+  undefined,
+  { answered: "Imported" },
+  {
+    answered: "Refused",
+    refusal: { id: "repositories-import-invalid" },
+    faults: [{ ...refusedFault, fields: [] }],
+  },
+];
+
+/** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
+function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
+  const others =
+    at.project === undefined ? rosterRunnerStops : rosterChatHostStops;
+  return runnerStopsAll.filter((one) => !others.includes(one.stop));
+}
+
+/** Whether a stop is said before any site is asked. */
+function siteless(stop: (typeof runnerStopsAll)[number]): boolean {
+  return stop.stop === "Mac" || stop.stop === "MacChatHost";
+}
 
 function checklist(
   thing: SetupThing,
@@ -221,16 +398,20 @@ function checklist(
   };
 }
 
-/** What ends a run of `runner` whose sign-in the site stopped taking: a report a sign-in entered again comes back with. */
-const outs: readonly SetupReport[] = [
-  { report: "SignedOut", site, directory, ended: undefined },
-  { report: "SiteUnusable", site, phase: "Unreachable", asked: "Runner" },
-  { report: "IssuerUnanswered", site, asked: "Runner" },
-  { report: "SiteUnusable", site, phase: "Unconfigured", asked: "Runner" },
-  { report: "Busy", asked: "Runner", site, pid: 4242 },
-  { report: "Faulted", asked: "Runner", site, fault: faults.Unkept },
-  { report: "SignedOut", site, directory, ended: "Declined" },
-];
+/** What ends a run of `runner` or `chat-host` whose sign-in the site stopped taking: a report a sign-in entered again comes back with. */
+function outsOf(asked: "Runner" | "ChatHost"): readonly SetupReport[] {
+  return [
+    { report: "SignedOut", site, directory, ended: undefined },
+    { report: "SiteUnusable", site, phase: "Unreachable", asked },
+    { report: "IssuerUnanswered", site, asked },
+    { report: "SiteUnusable", site, phase: "Unconfigured", asked },
+    { report: "Busy", asked, site, pid: 4242 },
+    { report: "Faulted", asked, site, fault: faults.Unkept },
+    { report: "SignedOut", site, directory, ended: "Declined" },
+  ];
+}
+
+const outs = outsOf("Runner");
 
 const roster: {
   readonly [Kind in SetupReport["report"]]: readonly Extract<
@@ -250,17 +431,25 @@ const roster: {
     { report: "AskedWrongly", fault: "WaitSecs" },
     { report: "AskedWrongly", fault: "Name" },
     { report: "AskedWrongly", fault: "Project" },
+    { report: "AskedWrongly", fault: "Workspace" },
+    { report: "AskedWrongly", fault: "Replace" },
+    { report: "AskedWrongly", fault: "ProjectName" },
+    { report: "AskedWrongly", fault: "Test" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
     { report: "Busy", asked: "SignIn", site: undefined, pid: 4242 },
     { report: "Busy", asked: "Status", site, pid: undefined },
     { report: "Busy", asked: "Runner", site: undefined, pid: 4242 },
+    { report: "Busy", asked: "ChatHost", site, pid: 4242 },
+    { report: "Busy", asked: "Project", site, pid: 4242 },
   ],
   Faulted: Object.values(faults).flatMap((fault) => [
     { report: "Faulted", asked: "Status", site: undefined, fault },
     { report: "Faulted", asked: "SignIn", site, fault },
     { report: "Faulted", asked: "Runner", site, fault },
+    { report: "Faulted", asked: "ChatHost", site, fault },
+    { report: "Faulted", asked: "Project", site: undefined, fault },
   ]),
   SiteUnusable: [
     { report: "SiteUnusable", site, phase: "Unreachable", asked: "Status" },
@@ -326,23 +515,67 @@ const roster: {
   })),
   Runner: pairs.flatMap(({ workspace, project }) =>
     [
-      ...runnerStopsAll.map((stop) => ({ ended: "Stopped" as const, stop })),
+      ...stopsOf({ workspace, project }).map((stop) => ({
+        ended: "Stopped" as const,
+        stop,
+      })),
       { ended: "Live" as const },
-      { ended: "Hosted" as const },
+      ...(project === undefined ? [] : [{ ended: "Hosted" as const }]),
     ].map((ended) => ({
       report: "Runner",
       site:
-        ended.ended === "Stopped" && ended.stop.stop === "Mac"
-          ? undefined
-          : site,
+        ended.ended === "Stopped" && siteless(ended.stop) ? undefined : site,
       workspace,
       project,
       notes: runnerNotesAll,
       ended,
     })),
   ),
+  Project: pairs.flatMap(({ workspace, project }) =>
+    projectNames.flatMap((name) =>
+      projectEndings.map((ended) => ({
+        report: "Project",
+        site,
+        workspace,
+        project,
+        name,
+        ended,
+      })),
+    ),
+  ),
+  Mcp: pairs.flatMap(({ workspace, project }) =>
+    project === undefined
+      ? []
+      : [
+          ...stopsOf({ workspace, project }).map((stop) => ({
+            ended: "Stopped" as const,
+            stop,
+          })),
+          { ended: "Served" as const },
+        ].map((ended) => ({
+          report: "Mcp",
+          site,
+          workspace,
+          project,
+          notes: runnerNotesAll,
+          ended,
+        })),
+  ),
+  Configuration: configurationEndings.map((ended) => ({
+    report: "Configuration",
+    ended,
+  })),
+  Check: checkEndings.map((ended) => ({ report: "Check", ended })),
+  Import: importAnswers.flatMap((answered) =>
+    (things.Configure as readonly SetupThing[]).map((thing) => ({
+      report: "Import",
+      repository: answered === undefined ? undefined : "Acme-Org/Widgets",
+      answered,
+      checklist: checklist(thing),
+    })),
+  ),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
-    outs.map((out) => ({
+    outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
       workspace,
       project,
@@ -354,22 +587,52 @@ const roster: {
 
 const every: readonly SetupReport[] = Object.values(roster).flat();
 
-/** Every report but a checklist and a run of `runner`, which is every report a run that is not signed in can make. */
+/** What a stop's rule names where it names no run of the same command again. */
+const setupAskedOfAgain = { Status: "Status", Mcp: "Mcp" } as const;
+
+/** The reports of the repository's own configuration, which are said apart from the rest below. */
+const configuring: ReadonlySet<SetupReport["report"]> = new Set([
+  "Configuration",
+  "Check",
+  "Import",
+]);
+
+/** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
 const sessions = every.filter(
   (report) =>
     report.report !== "Checklist" &&
+    report.report !== "Project" &&
     report.report !== "Runner" &&
-    report.report !== "RunnerOut",
+    report.report !== "Mcp" &&
+    report.report !== "RunnerOut" &&
+    !configuring.has(report.report),
 );
 
-/** The choices a run that made a report can have been given: any, and for a run asked as `runner` only those naming both. */
+/** The choices a run that made a report can have been given: any, and for a run asked as `mcp` or `runner` only those naming both. */
 function given(report: SetupReport): readonly SetupAnswers[] {
-  return report.report === "RunnerOut" ||
-    ("asked" in report && report.asked === "Runner")
-    ? choices.filter(
-        (held) => held.workspace !== undefined && held.project !== undefined,
-      )
-    : choices;
+  const asked =
+    report.report === "RunnerOut"
+      ? report.project === undefined
+        ? "ChatHost"
+        : "Runner"
+      : report.report === "Mcp" || report.report === "Project"
+        ? report.report
+        : "asked" in report
+          ? report.asked
+          : undefined;
+  if (asked === "Project")
+    return choices
+      .filter((held) => held.workspace !== undefined)
+      .flatMap((held) => projectNames.map((name) => ({ ...held, name })));
+  if (asked === "Runner" || asked === "Mcp")
+    return choices.filter(
+      (held) => held.workspace !== undefined && held.project !== undefined,
+    );
+  if (asked === "ChatHost")
+    return choices.filter(
+      (held) => held.workspace !== undefined && held.project === undefined,
+    );
+  return choices;
 }
 
 /** A report as a run given the first of those choices prints it. */
@@ -495,22 +758,37 @@ test("every command any line of any report names, on next: or in a rule:, is one
 
 /** The names a report's commands carry: the project's where it is `runner` that is named or was run, a checklist's own, and otherwise the ones the run was given, which a run that could not read its arguments or its Node has none of. */
 function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
-  if (report.report === "Runner") return project(report);
+  if (report.report === "Runner" || report.report === "Mcp")
+    return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
+  if (report.report === "Project") return projectCarried(report);
+  if (report.report === "Import") return carried(report.checklist, answers);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
-    return thing.thing === "Offer" ? project(thing) : report.next.carried;
+    return thing.thing === "Offer" ||
+      thing.thing === "Name" ||
+      thing.thing === "Configure"
+      ? project(thing)
+      : report.next.carried;
   }
   return report.report === "NodeOld" || report.report === "AskedWrongly"
     ? setupAnswersNone
     : answers;
 }
 
-function project(of: {
-  readonly workspace: string;
-  readonly project: string;
-}): SetupAnswers {
+function project(of: SetupRunnerAt): SetupAnswers {
   return { workspace: of.workspace, project: of.project };
+}
+
+/** The names a run of `project` carries on: the project made, the same command where it could be tried again, and otherwise the workspace alone. */
+function projectCarried(
+  report: Extract<SetupReport, { readonly report: "Project" }>,
+): SetupAnswers {
+  const { workspace, ended } = report;
+  if (ended.ended === "Made") return { workspace, project: ended.project };
+  return ended.again
+    ? { workspace, project: report.project, name: report.name }
+    : { workspace, project: undefined };
 }
 
 test("every command a report names carries the workspace and project the run was about, so the conversation holds the choice", () => {
@@ -531,6 +809,11 @@ test("every command a report names carries the workspace and project the run was
           answers: {
             workspace: open === "--workspace" ? site : held.workspace,
             project: open === "--project" ? site : held.project,
+            ...(open === "--name"
+              ? { name: site }
+              : held.name === undefined
+                ? {}
+                : { name: held.name }),
           },
         });
       }
@@ -640,7 +923,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -748,6 +1031,7 @@ test("signed in, the bare command prints what was found, each step in columns, a
     "found: this folder's remote github.com/acme-org/widgets is added to no project the site shows you, so it proposes none",
     "step: workspace   done     acme",
     "step: project     waiting  acme/widgets has no North Star yet",
+    "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
     "step: runner      todo",
@@ -874,6 +1158,104 @@ test("whatever the person answers a question with, passed after the flag the rul
   }
 });
 
+test("a project lacking is asked a name for, and the rule names project for the workspace, with the address only where one is held, and the name last", () => {
+  const [made, given] = things.Name;
+  expect(ended(made as SetupThing)).toEqual([
+    "ask: What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    `rule: Run node ${machineScript} project --workspace acme --name with the person's answer after it, quoted as one word, only once the person has answered.`,
+    stop,
+  ]);
+  expect(ended(given as SetupThing)).toEqual([
+    "ask: What should the new project in two words be called? Its address will be it's --site. Pass the name as --name.",
+    `rule: Run node ${machineScript} project --workspace 'two words' --project 'it'\\''s --site' --name with the person's answer after it, quoted as one word, only once the person has answered.`,
+    stop,
+  ]);
+});
+
+test("whatever the person calls the project, passed after the flag the rule names, is read as project for that workspace with that name", () => {
+  const answers = ["Atlas Web", "it's", "--project", "sign-in"];
+  for (const report of roster.Checklist) {
+    const thing = report.next.thing;
+    if (thing.thing !== "Name") continue;
+    const [named] = commands(
+      setupReportLines(report, machineScript, copyTextEn),
+    );
+    expect(named?.open).toBe(true);
+    for (const answer of answers)
+      expect(setupAsked([...(named?.argv ?? []), answer])).toMatchObject({
+        asked: "Project",
+        workspace: thing.workspace,
+        name: answer,
+        answers: { project: thing.project },
+      });
+  }
+});
+
+/** A run of `project` for acme called Atlas Web, at the address it was given where it was given one. */
+function projectRun(
+  ended: SetupProjectEnded,
+  project?: string,
+): Extract<SetupReport, { readonly report: "Project" }> {
+  return {
+    report: "Project",
+    site,
+    workspace: "acme",
+    project,
+    name: "Atlas Web",
+    ended,
+  };
+}
+
+test("a project made is said with its address and name, and the checklist for it is next", () => {
+  const made = projectRun({
+    ended: "Made",
+    project: "atlas-web",
+    name: "Atlas Web",
+  });
+  expect(setupReportLines(made, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "did: made acme/atlas-web, called Atlas Web",
+    `${next} --workspace acme --project atlas-web`,
+  ]);
+  expect(setupReportExit(made)).toBe(0);
+});
+
+test("a project refused is said in the console form's words, and is tried again only where the site did not answer, and otherwise the checklist for the workspace is named under the person's say-so", () => {
+  const unanswered = projectRun(
+    {
+      ended: "Refused",
+      refusal: { id: "project-creation-refusal-unavailable" },
+      again: true,
+    },
+    "atlas",
+  );
+  expect(setupReportLines(unanswered, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "found: the project was not made: Unavailable",
+    "tell: The project was not made: Unavailable. Tell me what to do instead.",
+    `rule: Run node ${machineScript} project --workspace acme --project atlas --name 'Atlas Web' only if the person asks to try again.`,
+    stop,
+  ]);
+  const taken = projectRun(
+    {
+      ended: "Refused",
+      refusal: { id: "project-creation-refusal-exists" },
+      again: false,
+    },
+    "atlas",
+  );
+  expect(setupReportLines(taken, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "found: the project was not made: Exists",
+    "tell: The project was not made: Exists. Tell me what to do instead.",
+    `rule: Run node ${machineScript} --workspace acme only if the person asks to look again.`,
+    stop,
+  ]);
+  expect([unanswered, taken].map((one) => setupReportExit(one))).toEqual([
+    1, 1,
+  ]);
+});
+
 test("a read that failed is a stop, and looking again waits on the person's say-so", () => {
   expect(ended(things.Failed[0] as SetupThing, both)).toEqual([
     "found: the github step is not read: its GitHub accounts were not answered",
@@ -898,13 +1280,16 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Done")).toEqual([0]);
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0]);
+  expect(exits("Name")).toEqual([0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
 test("a run of runner that stopped says what it found and did, then the stop as every stop is said: what was found, one tell, and one command under a rule, which is runner or the checklist for that project", () => {
   const stops = roster.Runner.filter((one) => one.ended.ended === "Stopped");
-  expect(stops).toHaveLength(pairs.length * runnerStopsAll.length);
+  expect(stops).toHaveLength(
+    pairs.reduce((count, at) => count + stopsOf(at).length, 0),
+  );
   for (const report of stops) {
     const lines = setupReportLines(
       report,
@@ -927,12 +1312,19 @@ test("a run of runner that stopped says what it found and did, then the stop as 
     ).toEqual([]);
     const [again, ...more] = ruled(lines);
     expect(more, said).toEqual([]);
+    const ruling =
+      report.ended.ended === "Stopped"
+        ? setupRunnerStopSaid(report.ended.stop, report)
+        : undefined;
     expect(setupAsked(again ?? ["?"]), said).toMatchObject({
       asked:
-        report.ended.ended === "Stopped"
-          ? setupRunnerStopSaid(report.ended.stop, "p").again
-          : "Runner",
+        ruling?.again === "Status" || ruling?.again === "Mcp"
+          ? setupAskedOfAgain[ruling.again]
+          : report.project === undefined
+            ? "ChatHost"
+            : "Runner",
       answers: project(report),
+      ...(ruling?.replace === undefined ? {} : { replace: ruling.replace }),
     });
   }
 });
@@ -953,7 +1345,7 @@ test("a run of runner says each thing it found and did in the order it met them,
     );
   }
   expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
-    pairs.length,
+    pairs.reduce((count, at) => count + stopsOf(at).filter(siteless).length, 0),
   );
 });
 
@@ -1038,7 +1430,10 @@ test("whichever report an entry makes, the run it ends part-way says it as the r
 
 test("runners the site sees live, and a project whose work and chats need none, end on the checklist for that project and tell the person nothing, the runners seen live being among what the run found", () => {
   const quiet = roster.Runner.filter(
-    (one) => one.ended.ended !== "Stopped" && one.workspace === "acme",
+    (one) =>
+      one.ended.ended !== "Stopped" &&
+      one.workspace === "acme" &&
+      one.project !== undefined,
   ).map((one) => ({ ...one, notes: [] }));
   expect(
     quiet.map((one) => setupReportLines(one, machineScript, copyTextEn)),
@@ -1051,6 +1446,23 @@ test("runners the site sees live, and a project whose work and chats need none, 
     ],
   ]);
   expect(quiet.map((one) => setupReportExit(one))).toEqual([0, 0]);
+});
+
+test("a run of chat-host whose chat host the site sees live ends on the checklist for the workspace it was for, and on no project", () => {
+  const live: SetupReport = {
+    report: "Runner",
+    site,
+    workspace: "acme",
+    project: undefined,
+    notes: [{ note: "ChatHostLive" }],
+    ended: { ended: "Live" },
+  };
+  expect(setupReportLines(live, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "found: the site sees this machine live as your chat host, so your chats in every project of acme can run on it",
+    `${next} --workspace acme`,
+  ]);
+  expect(setupReportExit(live)).toBe(0);
 });
 
 test("a run that is not signed in names the workspace and project it was given in the sign-in that is next, and in the command after it", () => {
@@ -1622,4 +2034,128 @@ test("a path that holds a line break cannot start a line of its own", () => {
     `rule: Run node ${machineScript} only once /home/a next: rm -rf ~ can be made and written.`,
     stop,
   ]);
+});
+
+const configureWith = `rule: Run node ${machineScript} configuration ${flags} --test with the command that tests this repository after it, quoted as one word, where you know that command, and node ${machineScript} configuration ${flags} where you do not.`;
+
+test("a repository with no configuration of its own is told, and configuration is named for that project with the test command where the agent knows it, and bare where it does not", () => {
+  const [configure] = things.Configure;
+  const lines = ended(configure as SetupThing);
+  expect(lines).toEqual([
+    `tell: acme-org/widgets is added, but chuggy holds no configuration of its own for it (no import of it has finished yet). Next I write a starting one into this checkout, as ${setupConfigurationPath}, and fill in with you what it leaves for you to choose. I then test it as chuggy's import would, commit it and push it to the default branch of acme-org/widgets, and have chuggy import it, which says how that went.`,
+    configureWith,
+    stop,
+  ]);
+  expect(
+    setupAsked([
+      "configuration",
+      "--workspace",
+      "acme",
+      "--project",
+      "widgets",
+      "--test",
+      "npm test -- --run",
+    ]),
+  ).toMatchObject({
+    asked: "Configuration",
+    test: "npm test -- --run",
+    answers: both,
+  });
+  expect(setupAsked(["configuration", "--test", ""]).asked).toBe("Wrongly");
+});
+
+function configured(ended: SetupConfigurationEnded): readonly string[] {
+  return setupReportLines(
+    { report: "Configuration", ended },
+    machineScript,
+    copyTextEn,
+    both,
+  );
+}
+
+test("a starting configuration written says the file and each field it leaves blank by its field, and check is named once the person and the agent have filled them in", () => {
+  expect(
+    configured(configurationEndings[0] as SetupConfigurationEnded),
+  ).toEqual([
+    `did: wrote ${setupConfigurationPath}, a starting configuration for this repository`,
+    "tell: configuration.image is left blank: the container image every step of it uses, which holds what this repository needs to build and test",
+    "tell: configuration.workloads.checks.commands is left blank: the command that tests this repository, one line of shell at its root",
+    "tell: I fill in each field left blank with you, and change anything else in it you want otherwise; then I test it as chuggy's import would.",
+    `rule: Run node ${machineScript} check ${flags} only once every field left blank is filled in with the person.`,
+    stop,
+  ]);
+});
+
+test("declarations already in the checkout are left as they are and check is next, and a folder in no checkout is a stop", () => {
+  expect(configured({ ended: "Kept", paths: [developmentPath] })).toEqual([
+    `found: this checkout already declares ${setupConfigurationPath}, which is left as it is`,
+    `${next} check ${flags}`,
+  ]);
+  expect(configured({ ended: "Outside" }).at(-2)).toBe(
+    `rule: Run node ${machineScript} configuration ${flags} only once the program is started in the folder of the person's clone of the repository.`,
+  );
+  expect(roster.Configuration.map((report) => setupReportExit(report))).toEqual(
+    [0, 0, 0, 1],
+  );
+});
+
+function checked(ended: SetupCheckEnded): readonly string[] {
+  return setupReportLines(
+    { report: "Check", ended },
+    machineScript,
+    copyTextEn,
+    both,
+  );
+}
+
+test("a check that passes says so, and import is named once the commit holding the configuration is pushed", () => {
+  expect(checked({ ended: "Clean", paths: [developmentPath] })).toEqual([
+    `found: ${setupConfigurationPath} imports as it stands`,
+    "tell: The configuration is ready. I commit it, with every file it names under .chug/, and push it to the default branch, then have chuggy import it.",
+    `rule: Run node ${machineScript} import ${flags} only once the commit holding it is pushed to the default branch.`,
+    stop,
+  ]);
+});
+
+test("a check that refuses says each fault by its file and its fields, how many more there are, and names check again once they are fixed", () => {
+  expect(checkEndings[3] && checked(checkEndings[3])).toEqual([
+    `found: ${setupConfigurationPath}: Configuration invalid at configuration.image, configuration.workloads.checks.commands`,
+    `found: ${root}b.json: Not JSON (BriefChecksUncommanded)`,
+    "found: and 3 more faults",
+    "tell: chuggy's import would refuse the configuration as it stands. I fix each fault above, asking you where a field is yours to choose, and test it again.",
+    `rule: Run node ${machineScript} check ${flags} only once each fault above is fixed.`,
+    stop,
+  ]);
+  expect(checked({ ended: "Absent", directory: `${root}` })).toEqual([
+    `found: this checkout declares no configuration under ${root}`,
+    configureWith,
+    stop,
+  ]);
+  expect(roster.Check.map((report) => setupReportExit(report))).toEqual([
+    0, 0, 1, 1, 0, 1,
+  ]);
+});
+
+test("a run of import says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, , imported, , refused] = roster.Import;
+  const [, after] = (none && printed(none)) ?? [];
+  expect(after).toBe(
+    "found: nothing to import: the next thing is not the configuration of a repository",
+  );
+  for (const [report, said] of [
+    [imported, ["did: asked chuggy to import Acme-Org/Widgets"]],
+    [
+      refused,
+      [
+        "found: chuggy did not import Acme-Org/Widgets: Invalid",
+        `found: ${setupConfigurationPath}: Configuration invalid`,
+      ],
+    ],
+  ] as const) {
+    if (report === undefined) throw new Error("no import report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
 });

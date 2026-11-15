@@ -163,6 +163,7 @@ function executionRequestBundle(
   input: DecisionInput,
   entry: Entry,
   index: number,
+  kind: ExecutionRequestPlan["kind"],
   { source, images, dependencies }: SpawnSources,
 ): ExecutionRequestBundle {
   const evidence =
@@ -182,6 +183,9 @@ function executionRequestBundle(
               ? {}
               : { targetRef: source.target.ref }),
             targetCommit: source.target.commit,
+            ...(source.target.ref === undefined || kind !== "SpawnEvaluation"
+              ? {}
+              : { targetCommitRef: source.target.ref }),
             manifests: source.manifests,
             ...(source.changeBase === undefined
               ? {}
@@ -221,14 +225,15 @@ function executeRequest(
   if (identities.some((task) => task.type !== phase))
     throw new Error("decision plan: one decision owes tasks of two phases");
   const ticket = eventTicket(entry.event);
+  const kind = phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation";
   return [
     {
       request: identity(entry, first.index, "ExecuteTask"),
       effectPosition: first.index,
       ticket,
       ticketVersion: entry.seq,
-      kind: phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation",
-      bundle: executionRequestBundle(input, entry, first.index, spawn),
+      kind,
+      bundle: executionRequestBundle(input, entry, first.index, kind, spawn),
       tasks: requestTasks(post, ticket, identities),
     },
   ];
@@ -327,7 +332,8 @@ function nativeActions(
  * What a failed finalization's evidence pins: the identities it named, and
  * where the change starts again — the base the proposal failed on where the
  * attempt recorded one, since the rework is told to bring it in, and the
- * target's commit otherwise.
+ * target's commit otherwise — and the accepted commit a re-check or a re-stack
+ * reports again.
  */
 function inputBundleEvidenceReferences(
   evidence: NonNullable<ExecutionRequestBundle["evidence"]>,
@@ -344,7 +350,8 @@ function inputBundleEvidenceReferences(
       kind: "ChangeBase",
       reference: evidence.proposalBase ?? evidence.targetCommit,
     },
-    ...(evidence.failureKind === "RecheckRequired" &&
+    ...((evidence.failureKind === "RecheckRequired" ||
+      evidence.failureKind === "Restack") &&
     evidence.recheckCommit !== undefined
       ? [{ kind: "Recheck" as const, reference: evidence.recheckCommit }]
       : []),
@@ -359,6 +366,50 @@ function inputBundleEvidenceReferences(
               : { digest: evidence.conflictManifestDigest }),
           },
         ]),
+  ];
+}
+
+/** What a spawn's own source pins: its repository and commit, and whatever of the change and the work its observation knew. */
+function inputBundleSourceReferences(
+  source: NonNullable<ExecutionRequestBundle["source"]>,
+): readonly InputBundleReference[] {
+  return [
+    { kind: "Repository" as const, reference: source.repository },
+    { kind: "TargetCommit" as const, reference: source.targetCommit },
+    ...(source.targetCommitRef === undefined
+      ? []
+      : [
+          {
+            kind: "TargetCommitRef" as const,
+            reference: source.targetCommitRef,
+          },
+        ]),
+    ...(source.changeBase === undefined
+      ? []
+      : [{ kind: "ChangeBase" as const, reference: source.changeBase }]),
+    ...source.manifests.map((manifest) => ({
+      kind: "ResultManifest" as const,
+      reference: manifest,
+    })),
+    ...(source.expectedTree === undefined
+      ? []
+      : [
+          {
+            kind: "ExpectedTree" as const,
+            reference: source.expectedTree,
+          },
+        ]),
+    ...(source.changeIdentity === undefined
+      ? []
+      : [
+          {
+            kind: "ChangeIdentity" as const,
+            reference: source.changeIdentity,
+          },
+        ]),
+    ...(source.recheck === undefined
+      ? []
+      : [{ kind: "Recheck" as const, reference: source.recheck }]),
   ];
 }
 
@@ -408,38 +459,7 @@ export function inputBundleReferencesOf(
       reference: image.artifact,
       digest: image.digest,
     })),
-    ...(source === undefined
-      ? []
-      : [
-          { kind: "Repository" as const, reference: source.repository },
-          { kind: "TargetCommit" as const, reference: source.targetCommit },
-          ...(source.changeBase === undefined
-            ? []
-            : [{ kind: "ChangeBase" as const, reference: source.changeBase }]),
-          ...source.manifests.map((manifest) => ({
-            kind: "ResultManifest" as const,
-            reference: manifest,
-          })),
-          ...(source.expectedTree === undefined
-            ? []
-            : [
-                {
-                  kind: "ExpectedTree" as const,
-                  reference: source.expectedTree,
-                },
-              ]),
-          ...(source.changeIdentity === undefined
-            ? []
-            : [
-                {
-                  kind: "ChangeIdentity" as const,
-                  reference: source.changeIdentity,
-                },
-              ]),
-          ...(source.recheck === undefined
-            ? []
-            : [{ kind: "Recheck" as const, reference: source.recheck }]),
-        ]),
+    ...(source === undefined ? [] : inputBundleSourceReferences(source)),
     ...(evidence === undefined ? [] : inputBundleEvidenceReferences(evidence)),
     ...(dependencies === undefined
       ? []
@@ -461,10 +481,11 @@ export function inputBundleReferencesOf(
 }
 
 /**
- * The phases this plan withdraws an open native action for, `Escalated`'s desk
- * task and `Finalization`'s approval, one open row of either per ticket, which a
- * ticket leaving the phase must take with it or the next cannot open. An
- * evaluation approval stands in `Evaluation` and migration 148's
+ * The phases this plan withdraws an open native action for: `Escalated`'s desk
+ * task, one open row per ticket, which a ticket leaving the phase must take with
+ * it or the next cannot open, and `Finalization`, where none stands but a stored
+ * journal derives the withdrawal it always did. An evaluation approval stands in
+ * `Evaluation` and migration 148's
  * `ticket_leaving_evaluation_closes_its_approvals` withdraws it in the database.
  */
 const materializationActionablePhases: readonly Phase[] = [

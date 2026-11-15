@@ -25,6 +25,7 @@ import {
 import { z } from "zod";
 
 import {
+  agentAccountCredentialsMax,
   imageMediaTypes,
   projectArtifactEncoding,
   sessionEfforts,
@@ -97,6 +98,7 @@ import {
   ticketLandingStacksAnsweredMax,
   ticketNumberSchema,
   landingQueueTicketsAnsweredMax,
+  workerRunCredentialSchema,
 } from "./http.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
@@ -117,6 +119,7 @@ import {
 } from "./workerPool.ts";
 import {
   agentAccountSettingsSchema,
+  projectDisplayNameCharsMax,
   repositoryFinalizationSchema,
   repositoryLandingSchema,
   selectorProjectOverridesSchema,
@@ -152,6 +155,7 @@ import {
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
+  nativeActionStates,
   notificationKinds,
   type NativeActionKind,
   type NativeActionResolution,
@@ -162,6 +166,7 @@ import {
   outputContentEncodings,
   outputRenderers,
   ownerFallbacks,
+  personalRunnerWaits,
   personalRunnerPriorities,
   phaseRoster,
   placementRouteSources,
@@ -183,6 +188,7 @@ import {
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
+  sessionCapabilities,
   sessionRunnerStandings,
   sessionScopes,
   sessionStates,
@@ -200,11 +206,20 @@ import {
   forgeApps,
   leadAbsencesUntimed,
   leadAdmissionRefusals,
+  leadHolds,
   projectRepositoryConfigurationDeferrals,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
+  workerHeldCredentialAbsences,
+  ticketTakeOutcomes,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
+import {
+  themeChoiceSchema,
+  themeDocumentSchema,
+  themeNumberSchema,
+  themesOwnedMax,
+} from "./appearance.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
@@ -218,16 +233,23 @@ export const installationResponseSchema = z.object({
 });
 export type InstallationResponse = z.infer<typeof installationResponseSchema>;
 
+/** A project as it is listed and created: the partition that addresses it, and what it is called. */
+export const namedProjectSchema = z.strictObject({
+  ...partitionSchema.shape,
+  name: z.string().min(1).max(projectDisplayNameCharsMax),
+});
+export type NamedProject = z.infer<typeof namedProjectSchema>;
+
 export const projectInventoryResponseSchema = z.strictObject({
-  projects: page(partitionSchema),
+  projects: page(namedProjectSchema),
   nextCursor: z.string().optional(),
 });
 export type ProjectInventoryResponse = z.infer<
   typeof projectInventoryResponseSchema
 >;
 
-/** A project created, or the one the same request already created: the partition that addresses it. */
-export const projectCreatedSchema = partitionSchema;
+/** A project created, or the one the same request already created, named as its creation named it. */
+export const projectCreatedSchema = namedProjectSchema;
 export type ProjectCreatedResponse = z.infer<typeof projectCreatedSchema>;
 
 /** Tokens by kind, as the agent runtime counts them. */
@@ -258,6 +280,7 @@ export const runTotalsSchema = runTokensSchema.extend({
   permissionDenials: countSchema,
   resultSubtype: z.string().min(1).max(runOutcomeLabelCharsMax).optional(),
   stopReason: z.string().min(1).max(runOutcomeLabelCharsMax).optional(),
+  credential: workerRunCredentialSchema.optional(),
 });
 export type RunTotals = z.infer<typeof runTotalsSchema>;
 
@@ -437,18 +460,29 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
- * Until when an account's agent is paused and each reason holding it, which is
- * what `agent_account_pause` answers at the read; `pressed` is whether a press
- * of the account's owner still lets one claim through the limit.
+ * Until when an agent is paused, or `off` where only credentials its owner
+ * turned off hold it and it never ends by itself, exactly one of the two
+ * present, and each reason holding it, as `agent_account_pause` answers it of
+ * an account, or `agent_account_named_pause` of the credentials a runner named;
+ * `pressed` is whether a press of the account's owner still lets one claim
+ * through the limit.
  */
-export const agentPauseSchema = z.strictObject({
-  until: instantSchema,
-  reasons: z
-    .array(z.enum(agentPauseReasons))
-    .min(1)
-    .max(agentPauseReasons.length),
-  pressed: z.boolean(),
-});
+export const agentPauseSchema = z
+  .strictObject({
+    until: instantSchema.optional(),
+    off: z.literal(true).optional(),
+    reasons: z
+      .array(z.enum(agentPauseReasons))
+      .min(1)
+      .max(agentPauseReasons.length),
+    pressed: z.boolean(),
+  })
+  .refine(
+    (pause) => (pause.until === undefined) !== (pause.off === undefined),
+    {
+      message: "a pause names exactly one of until and off",
+    },
+  );
 export type AgentPause = z.infer<typeof agentPauseSchema>;
 
 /** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
@@ -478,15 +512,29 @@ export type RunnerLoss = z.infer<typeof runnerLossSchema>;
 
 /**
  * The task a parked ticket waits on where its run stopped at a failed step:
- * the step, the attempt it stopped on, and the size of the text its worker
- * kept, which is read on that attempt's own route.
+ * the step, the attempt it stopped on, the size of the text its worker kept,
+ * which is read on that attempt's own route, and, with `RunCredentialAbsent`
+ * and no other step, the credential its job lists that was not delivered and
+ * why.
  */
-export const runStepFailureSchema = z.strictObject({
-  evidence: z.enum(runStepEvidences),
-  execution: identitySchema,
-  attempt: identitySchema,
-  error: z.object({ bytes: countSchema }).optional(),
-});
+export const runStepFailureSchema = z
+  .strictObject({
+    evidence: z.enum(runStepEvidences),
+    execution: identitySchema,
+    attempt: identitySchema,
+    error: z.object({ bytes: countSchema }).optional(),
+    absent: z
+      .strictObject({
+        credential: identitySchema,
+        reason: z.enum(workerHeldCredentialAbsences),
+      })
+      .optional(),
+  })
+  .refine(
+    (failed) =>
+      (failed.evidence === "RunCredentialAbsent") ===
+      (failed.absent !== undefined),
+  );
 export type RunStepFailure = z.infer<typeof runStepFailureSchema>;
 
 /**
@@ -513,11 +561,23 @@ export const ticketEscalationSchema = z.object({
   /** Present where the wall is a task whose run stopped at a failed step. */
   failed: runStepFailureSchema.optional(),
   /**
-   * Present where the scheduler resumes the escalation by itself once the
-   * usage pauses holding its rate-limited tasks end: `until` the latest of
-   * them, absent where none holds any longer.
+   * Present where usage pauses hold its rate-limited tasks: `until` the latest
+   * of them, which the scheduler resumes it by itself at, or `off` where a task
+   * waits only on credentials its owner turned off, which it never resumes by
+   * itself while they stay off. Both absent means none holds any longer.
    */
-  usageResume: z.strictObject({ until: instantSchema.optional() }).optional(),
+  usageResume: z
+    .strictObject({
+      until: instantSchema.optional(),
+      off: z.literal(true).optional(),
+    })
+    .refine(
+      (resume) => resume.until === undefined || resume.off === undefined,
+      {
+        message: "a usage resume names at most one of until and off",
+      },
+    )
+    .optional(),
 });
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 
@@ -580,6 +640,12 @@ export const ticketResponseSchema = z.object({
    * revision carries no member's authority.
    */
   creator: identitySchema.optional(),
+  /**
+   * The member the ticket's next execution is placed for, encoded as
+   * `creator` is: the member who took it, else its creator. It is absent
+   * where neither is a member.
+   */
+  owner: identitySchema.optional(),
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   /**
@@ -739,6 +805,47 @@ export const projectNativeActionsResponseSchema = z.object({
 });
 export type ProjectNativeActionsResponse = z.infer<
   typeof projectNativeActionsResponseSchema
+>;
+
+/**
+ * One action a ticket has had, in whatever state it stands: its resolution
+ * where it was answered, the execution an EvaluationApproval asked about, and
+ * who answered it and when where that is recorded, which is on an answered
+ * EvaluationApproval alone.
+ */
+export const nativeActionRecordResponseSchema = z
+  .strictObject({
+    action: identitySchema,
+    kind: z.enum(nativeActionKinds),
+    authorizingSequence: countSchema,
+    state: z.enum(nativeActionStates),
+    resolution: z.enum(nativeActionResolutions).optional(),
+    execution: identitySchema.optional(),
+    answeredBy: z.string().min(1).max(principalCharsMax).optional(),
+    answeredAt: instantSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      (value.state === "Resolved") === (value.resolution !== undefined) &&
+      (value.resolution === undefined ||
+        nativeActionKindResolutions[value.kind].some(
+          (resolution) => resolution === value.resolution,
+        )) &&
+      (value.answeredBy === undefined) === (value.answeredAt === undefined) &&
+      (value.answeredBy === undefined || value.state === "Resolved"),
+    "a native action's resolution, or who answered it, disagrees with its state or its kind",
+  );
+export type NativeActionRecordResponse = z.infer<
+  typeof nativeActionRecordResponseSchema
+>;
+
+/** Every action a ticket has had, open and settled, oldest fence first, one bounded page at a time. */
+export const ticketNativeActionHistoryResponseSchema = z.object({
+  actions: page(nativeActionRecordResponseSchema),
+  nextCursor: cursorSchema.optional(),
+});
+export type TicketNativeActionHistoryResponse = z.infer<
+  typeof ticketNativeActionHistoryResponseSchema
 >;
 
 export const operationalStatusResponseSchema = z.object({
@@ -1004,9 +1111,15 @@ export const executionSummarySchema = z.object({
    */
   mine: z.boolean().optional(),
   /**
-   * The pause the reader's own account holds on the agent this execution's
-   * waiting attempt spends, present only on the reader's own execution while
-   * it waits unclaimed and that agent is paused.
+   * What the reader's own execution, its attempt waiting unclaimed, waits on of
+   * their runners, absent where nothing of theirs holds it. Optional for the
+   * deployment window.
+   */
+  personalRunnerWait: z.enum(personalRunnerWaits).optional(),
+  /**
+   * The pause that ends first of those holding every `Live` runner it waits
+   * on, each runner's by the credentials it named, present only where every
+   * one of them is held.
    */
   paused: agentPauseSchema.optional(),
   /**
@@ -1056,7 +1169,7 @@ export const projectResponseSchema = z.object({
   tickets: page(projectTicketSchema),
   nextAfter: ticketNumberSchema.optional(),
   nextCursor: cursorSchema.optional(),
-  /** How many tickets a search or creator matched across the project, its phases and activity included; only a read naming `q` or `creator` carries it. */
+  /** How many tickets a search, creator or owner matched across the project, its phases and activity included; only a read naming `q`, `creator` or `owner` carries it. */
   matched: countSchema.optional(),
 });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
@@ -1457,7 +1570,6 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     practices: page(z.string().min(1)),
     workInstructionsCount: countSchema.optional(),
     reviewInstructionsCount: countSchema.optional(),
-    finalization: z.strictObject({ approvalRequired: z.boolean() }),
     evaluationStagesCount: countSchema,
     catalog: z
       .object({
@@ -1795,14 +1907,18 @@ export const leadStoreStreamResponseSchema = z.object({
 /**
  * The admission refusal the last cycle that needed a lead met, which has been
  * the answer since `since`. A `UsagePaused` refusal names in `until` the
- * earliest instant one of the paused runner owners stops being paused, as the
- * pause stands at the read, and never whose account it is or why, and a
- * `SubsidyExhausted` one the first instant of the next calendar month in UTC.
+ * earliest instant one of the live pools stops being paused, each on the
+ * Claude credentials it named or, where it named none, on the whole agent, as
+ * the pause stands at the read, and never whose account it is or why, or
+ * `off` in its place where every live pool is held only by credentials turned
+ * off; a `SubsidyExhausted` one names the first instant of the next calendar
+ * month in UTC.
  */
 export const leadRefusalResponseSchema = z.object({
   reason: z.enum(leadAdmissionRefusals),
   since: instantSchema,
   until: instantSchema.optional(),
+  off: z.literal(true).optional(),
 });
 export type LeadRefusalResponse = z.infer<typeof leadRefusalResponseSchema>;
 
@@ -1862,9 +1978,22 @@ export const leadNoneResponseSchema = z.object({
 });
 export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
 
+/**
+ * A project the reader may read that holds a lead session: the session, and
+ * `held`, where the lead stands but dispatches no ticket, the reason a project
+ * holding none would answer as its absence: `Paused` while its selector is
+ * paused, by the project or the whole installation, then `SelectorNotGranted`
+ * while the site's selector may not read the project. No `Session` frame
+ * carries it, and a server that predates it never answers it.
+ */
+export const leadFoundResponseSchema = leadResponseSchema.extend({
+  held: z.object({ reason: z.enum(leadHolds) }).optional(),
+});
+export type LeadFoundResponse = z.infer<typeof leadFoundResponseSchema>;
+
 /** What the lead route answers: the project's lead, or that it has none. */
 export const leadReadResponseSchema = z.union([
-  leadResponseSchema,
+  leadFoundResponseSchema,
   leadNoneResponseSchema,
 ]);
 export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
@@ -2149,6 +2278,14 @@ export const threadResponseSchema = z.object({
   streams: z
     .array(leadStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
+  /**
+   * Present where the thread holds jobs its chat host restarts with each
+   * attempt, so the plane keeps an attempt placed for it until its owner
+   * closes it or its jobs stop.
+   */
+  jobsStanding: z.literal(true).optional(),
+  /** The capabilities in force while its owner's chat host holds it, which is its roster less whatever that host's setting leaves out; absent while no chat host holds it. */
+  chatHostCapabilities: z.array(z.enum(sessionCapabilities)).optional(),
 });
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 
@@ -2462,8 +2599,9 @@ export type ProjectRepositoryAlreadyBoundResponse = z.infer<
 
 /**
  * One repository a project binds, when it was bound, how a ticket in it lands,
- * as its `finalization` and as the mode alone in `landing`, and whether its jobs
- * may write its pipeline definitions. `retiredAt` is
+ * as its `finalization` and as the mode alone in `landing`, whether its jobs
+ * may write its pipeline definitions, and whether they may start and read its
+ * pipeline runs. `retiredAt` is
  * present only on a binding that has been retired, which is one no longer
  * bound or elected, kept so its history reads by name.
  */
@@ -2473,6 +2611,7 @@ export const projectRepositoryResponseSchema = z.object({
   landing: repositoryLandingSchema,
   finalization: repositoryFinalizationSchema,
   pipelinesWritable: z.boolean(),
+  pipelinesRunnable: z.boolean(),
   retiredAt: instantSchema.optional(),
 });
 export type ProjectRepositoryResponse = z.infer<
@@ -2628,6 +2767,42 @@ export type ProjectOwnerFallbackResponse = z.infer<
   typeof projectOwnerFallbackResponseSchema
 >;
 
+/** What keeps a project from deletion: a released ticket, or work run in it. */
+export const projectDeletionHoldings = [
+  "ReleasedTicket",
+  "Execution",
+  "Session",
+  "WorkerPool",
+  "ActionObservation",
+] as const;
+
+/** What keeps a workspace from deletion: a project, or a member's runner, chat host or session in it. */
+export const tenantDeletionHoldings = [
+  "Project",
+  "PersonalRunner",
+  "ChatHost",
+  "Session",
+] as const;
+
+/** The code a deletion refused because of what it holds is answered under, beside `held`. */
+export const deletionHeldCode = "DeletionHeld";
+
+/** What holds a project its tenant's administrator asks to delete, nothing where it may be deleted now; a refused deletion answers the same. */
+export const projectDeletionResponseSchema = z.strictObject({
+  held: z.array(z.enum(projectDeletionHoldings)),
+});
+export type ProjectDeletionResponse = z.infer<
+  typeof projectDeletionResponseSchema
+>;
+
+/** What holds a workspace the site's administrator asks to delete, nothing where it may be deleted now; a refused deletion answers the same. */
+export const tenantDeletionResponseSchema = z.strictObject({
+  held: z.array(z.enum(tenantDeletionHoldings)),
+});
+export type TenantDeletionResponse = z.infer<
+  typeof tenantDeletionResponseSchema
+>;
+
 /** How many threads one member may hold open in the project, and whether this caller may change it. */
 export const threadLimitResponseSchema = z.strictObject({
   threadsMax: z.number().int().min(1),
@@ -2745,6 +2920,17 @@ export const epicWriteResponseSchema = z.strictObject({
   revision: ticketNumberSchema,
 });
 export type EpicWriteResponse = z.infer<typeof epicWriteResponseSchema>;
+
+/**
+ * What a take or a return of a ticket answers where it was not refused: what
+ * it did, and the member the ticket's next execution is placed for now,
+ * encoded as a ticket's `owner` is, absent where none is.
+ */
+export const ticketTakeResponseSchema = z.strictObject({
+  outcome: z.enum(ticketTakeOutcomes),
+  owner: identitySchema.optional(),
+});
+export type TicketTakeResponse = z.infer<typeof ticketTakeResponseSchema>;
 
 /** The error envelope a refused write answers with, carrying what the reason names. */
 export const epicRefusalResponseSchema = z.strictObject({
@@ -2957,12 +3143,27 @@ export const personalRunnerResponseSchema = z.strictObject({
       }),
     )
     .max(personalRunnerProjectsMax),
+  /**
+   * Each agent, in roster order, that every runner offered it is paused for by
+   * the credentials it named, of those polling for executions where any is,
+   * with the pause that ends first. Optional for the deployment window, and
+   * absent reads as none.
+   */
+  pauses: z
+    .array(
+      z.strictObject({
+        agent: z.enum(accountAgents),
+        pause: agentPauseSchema,
+      }),
+    )
+    .max(accountAgents.length)
+    .optional(),
 });
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
 >;
 
-/** One window's newest reading: how much of it was used, the whole window being one, when it reopens and when it was read. */
+/** One window's reading, of one credential or the newest across an agent's: how much of it was used, the whole window being one, when it reopens and when it was read. */
 const agentAccountReadingSchema = z.strictObject({
   window: z.enum(runUsageWindows),
   utilization: z.number().nonnegative(),
@@ -2970,11 +3171,31 @@ const agentAccountReadingSchema = z.strictObject({
   observedAt: instantSchema,
 });
 
+/** One credential of an agent of the caller's account by its name, held a reading or a limit of or turned off: each window's reading of it, and the pause holding it alone, absent where none holds. */
+const agentAccountCredentialSchema = z.strictObject({
+  name: workerRunCredentialSchema,
+  readings: z.array(agentAccountReadingSchema).max(runUsageWindows.length),
+  pause: agentPauseSchema.optional(),
+});
+
+/** The pause an agent of the caller's account comes to, `off` where only credentials turned off hold it, and the names of the credentials holding it, in the order `credentials` lists them; optional for the deployment window. */
+const agentAccountPauseSchema = agentPauseSchema.extend({
+  credentials: z
+    .array(workerRunCredentialSchema)
+    .min(1)
+    .max(agentAccountCredentialsMax)
+    .optional(),
+});
+
 /**
  * One agent of the caller's own account: their settings, each window's newest
- * reading, the newest limit a provider stopped it at with the window and the
- * reopening where the run named them, and the pause they come to, absent
- * where none holds.
+ * reading across its credentials, the newest limit a provider stopped it at
+ * across them with the window and the reopening where the run named them, the
+ * pause they come to, absent where none holds and holding only while every
+ * credential its live runners name is paused, or while any is where they name
+ * none, and each credential it holds a reading or a limit of or turned off,
+ * by name. `credentials` is optional for the deployment window, and absent
+ * reads as none.
  */
 const agentAccountSchema = z.strictObject({
   agent: z.enum(accountAgents),
@@ -2987,15 +3208,57 @@ const agentAccountSchema = z.strictObject({
       observedAt: instantSchema,
     })
     .optional(),
-  pause: agentPauseSchema.optional(),
+  pause: agentAccountPauseSchema.optional(),
+  credentials: z
+    .array(agentAccountCredentialSchema)
+    .max(agentAccountCredentialsMax)
+    .optional(),
 });
 export type AgentAccount = z.infer<typeof agentAccountSchema>;
+export type AgentAccountCredential = z.infer<
+  typeof agentAccountCredentialSchema
+>;
 
 /** Every agent of the caller's own account, in roster order. */
 export const agentAccountsResponseSchema = z.strictObject({
   accounts: z.array(agentAccountSchema).length(accountAgents.length),
 });
 export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
+
+/** One theme of the caller's own: the number it is known by and its document. */
+export const ownedThemeSchema = z.strictObject({
+  theme: themeNumberSchema,
+  document: themeDocumentSchema,
+});
+export type OwnedThemeResponse = z.infer<typeof ownedThemeSchema>;
+
+/** Every theme of the caller's own, by number ascending. */
+export const ownedThemesResponseSchema = z.strictObject({
+  themes: z.array(ownedThemeSchema).max(themesOwnedMax),
+});
+export type OwnedThemesResponse = z.infer<typeof ownedThemesResponseSchema>;
+
+/** The caller's own global theme choice, absent where they hold none. */
+export const themeChoiceResponseSchema = z.strictObject({
+  choice: themeChoiceSchema.optional(),
+});
+export type ThemeChoiceResponse = z.infer<typeof themeChoiceResponseSchema>;
+
+/**
+ * What retiring a credential of the caller's own account is refused with while
+ * a live runner of theirs still names it, whose next run would report it
+ * again. It is named once because a console tells the member so in words of
+ * its own.
+ */
+export const agentAccountCredentialInUseCode = "CredentialInUse";
+
+/**
+ * What turning a credential of the caller's own account off is refused with
+ * while as many of that agent's credentials as the account holds off are
+ * already off. It is named once because a console tells the member so in
+ * words of its own.
+ */
+export const agentAccountCredentialsOffFullCode = "OffFull";
 
 /**
  * What redeeming a chat host's token answers, once: a runner's file with no
@@ -3029,6 +3292,8 @@ export const chatHostResponseSchema = z.strictObject({
   live: z.boolean(),
   /** What its newest poll named, absent where it named none. */
   runner: runnerListedSchema.optional(),
+  /** The capabilities its newest poll named for the threads it hosts, each of which holds no more of its roster; absent where it named none, and each keeps its roster. */
+  sessionCapabilities: z.array(z.enum(sessionCapabilities)).optional(),
 });
 export type ChatHostResponse = z.infer<typeof chatHostResponseSchema>;
 
@@ -3106,7 +3371,11 @@ const ticketLandingFields = {
   proposal: ticketLandingProposalSchema.optional(),
 };
 
-/** A hold a landing was recorded at, with the forge's reason and the login it names where it escalates a removal from a merge queue. */
+/**
+ * A hold a landing was recorded at, with the forge's reason and the login it
+ * names where it escalates a removal from a merge queue, and at
+ * `TargetPathsRefused` the files a job may not push that the target changed.
+ */
 const ticketLandingHoldSchema = z.strictObject({
   kind: z.enum(finalizationUnavailableKinds),
   passes: ticketNumberSchema,
@@ -3117,6 +3386,7 @@ const ticketLandingHoldSchema = z.strictObject({
       actor: z.string().min(1).max(proposalQueueWordCharsMax).optional(),
     })
     .optional(),
+  refused: ticketLandingConflictSchema.optional(),
 });
 
 /**
@@ -3163,11 +3433,13 @@ export type TicketLandingResponse = z.infer<typeof ticketLandingSchema>;
  * What the finalizer prepared one work cycle's evaluation over: a stack, with
  * the tickets beneath it bottom first, each with the commit it must land, the
  * reference it was built on and that reference's tip; or the decision to
- * evaluate it unstacked, with why.
+ * evaluate it unstacked, with why. `restacked` marks a cycle whose previous
+ * cycle was sent back to re-stack over the queue ahead of it.
  */
 export const ticketLandingStackSchema = z.discriminatedUnion("prepared", [
   z.strictObject({
     cycle: ticketNumberSchema,
+    restacked: z.literal(true).optional(),
     prepared: z.literal("Stacked"),
     beneath: z
       .array(
@@ -3183,6 +3455,7 @@ export const ticketLandingStackSchema = z.discriminatedUnion("prepared", [
   }),
   z.strictObject({
     cycle: ticketNumberSchema,
+    restacked: z.literal(true).optional(),
     prepared: z.literal("Unstacked"),
     reason: z.enum(evaluationUnstackedReasons),
   }),

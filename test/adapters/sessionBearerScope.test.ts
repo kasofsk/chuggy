@@ -12,6 +12,12 @@
  *
  * EVERY PORT RECORDS THAT IT WAS REACHED, so a refusal the hook sent is told
  * apart from a `404` some port answered.
+ *
+ * WHAT EACH TOOL CALLS IS WRITTEN OUT HERE, from chuggy-common's
+ * `chuggyTools.mjs`, because the tools run in the image and this tree holds
+ * only their roster and routes. The table's requirements are compared with
+ * what that relation and the roster derive, so a requirement that refuses a
+ * tool its capability admits, or admits a write no tool makes, fails here.
  */
 
 import assert from "node:assert/strict";
@@ -22,20 +28,34 @@ import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
   sessionBearerAdmission,
+  sessionBearerMethodClasses,
   sessionBearerRouteScopes,
+  type SessionBearerConfinement,
+  type SessionBearerMethod,
 } from "../../src/adapters/http/sessionBearerScope.ts";
 import {
   nativeHttpMediaType,
   nativeHttpRoutes,
 } from "../../src/contract/http.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
-import { chuggyToolRoutes } from "../../src/contract/sessionTools.ts";
+import {
+  personalAgentCapabilities,
+  sessionCapabilities,
+  sessionKinds,
+  type SessionCapability,
+} from "../../src/contract/rosters.ts";
+import {
+  chuggyToolCapabilities,
+  chuggyToolRoutes,
+  type ChuggyTool,
+} from "../../src/contract/sessionTools.ts";
 import {
   asSessionId,
   memberScopePartition,
   type SessionKind,
   type SessionScope,
 } from "../../src/interpreter/agentSession.ts";
+import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import {
   asAuthorityKind,
@@ -49,6 +69,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
+import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import { routerServed } from "./routerFixtures.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
@@ -58,6 +79,12 @@ type ServedNativeWeb = Parameters<typeof createNativeHttpApp>[0];
 /** The one principal both bearers name, readable in every project these cases ask about. */
 const principal = asPrincipal("issuer subject");
 
+/** Every capability a project's session may hold, and the one a member's own may. */
+const projectCapabilities = sessionCapabilities.filter(
+  (capability) => capability !== "MemberRead",
+);
+const memberCapabilities = ["MemberRead"] as const;
+
 /** The partition the session authority answers for the session bearer. */
 const own: Partition = {
   tenant: asTenantId("acme"),
@@ -65,7 +92,12 @@ const own: Partition = {
 };
 
 /** What the session bearer is confined by, as the hook reads it. */
-const ownSession = { partition: own, scope: "Project" as const, principal };
+const ownSession = {
+  partition: own,
+  scope: "Project" as const,
+  principal,
+  capabilities: projectCapabilities,
+};
 
 /** The partition reserved for the principal in `own`'s tenant, which a member's own session bearer is confined to. */
 const ownMember: Partition = memberScopePartition(own.tenant, principal);
@@ -111,6 +143,9 @@ function scopedApp(
   kind: SessionKind = "Lead",
   scope: SessionScope = "Project",
   granted = true,
+  capabilities: readonly SessionCapability[] = scope === "Member"
+    ? memberCapabilities
+    : projectCapabilities,
 ) {
   return createNativeHttpApp(
     web ?? recorded(reached, "web"),
@@ -133,6 +168,7 @@ function scopedApp(
                   kind,
                   principal,
                   scope,
+                  capabilities,
                 }
               : undefined,
           ),
@@ -162,6 +198,12 @@ function scopedApp(
     recorded(reached, "agentAccounts"),
     undefined,
     recorded(reached, "landingQueues"),
+    {
+      projects: recorded(reached, "projectDeletion"),
+      tenants: recorded(reached, "tenantDeletion"),
+    },
+    recorded(reached, "takes"),
+    recorded(reached, "appearance"),
   );
 }
 
@@ -265,39 +307,325 @@ test("in its own partition a session bearer passes every partition route and no 
   }
 });
 
-/** The routes a member's own session's tools call, each at its owner's tenant. */
-const memberToolRoutes: ReadonlySet<string> = new Set([
-  chuggyToolRoutes.chatAbilities,
-  chuggyToolRoutes.chatProjects,
-  chuggyToolRoutes.chatThreads,
-  chuggyToolRoutes.chatThread,
-  chuggyToolRoutes.personalRunner,
-  chuggyToolRoutes.chatHost,
+/** One call a tool makes: the route, by its name among the tools' routes, and the method. */
+type ChuggyToolCall = readonly [
+  route: keyof typeof chuggyToolRoutes,
+  method: SessionBearerMethod,
+];
+
+/** What each tool calls, as chuggy-common's `chuggyTools.mjs` calls it; a tool that reaches no route calls nothing. */
+const chuggyToolCalls = {
+  list_tickets: [["project", "GET"]],
+  read_ticket: [["ticket", "GET"]],
+  read_draft: [["draft", "GET"]],
+  list_drafts: [["drafts", "GET"]],
+  list_configurations: [["configurations", "GET"]],
+  read_configuration: [["configuration", "GET"]],
+  read_decision_log: [["selectorHistory", "GET"]],
+  read_refusals: [["agenticRefusals", "GET"]],
+  read_ticket_refusals: [["ticketAgenticRefusals", "GET"]],
+  read_ticket_landings: [["ticketLandings", "GET"]],
+  read_landing_queues: [["landingQueues", "GET"]],
+  read_lead: [["lead", "GET"]],
+  read_lead_transcript: [["leadTranscript", "GET"]],
+  list_executions: [["executions", "GET"]],
+  read_execution: [["execution", "GET"]],
+  read_run_transcript: [["runTranscript", "GET"]],
+  read_run_error: [["runError", "GET"]],
+  read_operation: [["operation", "GET"]],
+  list_threads: [["threads", "GET"]],
+  read_thread: [["thread", "GET"]],
+  read_thread_transcript: [["threadTranscript", "GET"]],
+  list_repositories: [["projectRepositories", "GET"]],
+  fetch_image: [["projectArtifact", "GET"]],
+  read_docs: [],
+  read_abilities: [["abilities", "GET"]],
+  list_epics: [["epics", "GET"]],
+  read_epic: [["epic", "GET"]],
+  read_epic_history: [["epicHistory", "GET"]],
+  read_epic_graph: [["epicGraph", "GET"]],
+  initialize_draft: [["draftInitialization", "GET"]],
+  file_dependent: [["drafts", "POST"]],
+  revise_draft: [["draft", "PUT"]],
+  delete_draft: [["draft", "DELETE"]],
+  release_draft: [["operations", "POST"]],
+  create_draft: [["drafts", "POST"]],
+  revoke_ticket: [["operations", "POST"]],
+  take_ticket: [["ticketTake", "POST"]],
+  return_ticket: [["ticketReturn", "POST"]],
+  update_ticket: [["operations", "POST"]],
+  create_epic: [["epics", "POST"]],
+  revise_epic: [
+    ["epic", "GET"],
+    ["epics", "POST"],
+  ],
+  add_epic_tickets: [
+    ["epic", "GET"],
+    ["epics", "POST"],
+  ],
+  remove_epic_tickets: [
+    ["epic", "GET"],
+    ["epics", "POST"],
+  ],
+  dispatch_ticket: [
+    ["dispatchView", "GET"],
+    ["operations", "POST"],
+  ],
+  dispatch: [],
+  refuse: [],
+  lift: [],
+  set_attention: [],
+  set_handoff_note: [],
+  set_planning_intent: [],
+  read_my_abilities: [["chatAbilities", "GET"]],
+  list_projects: [["chatProjects", "GET"]],
+  list_my_threads: [["chatThreads", "GET"]],
+  read_my_thread: [["chatThread", "GET"]],
+  list_my_runners: [["personalRunner", "GET"]],
+  read_chat_host: [["chatHost", "GET"]],
+  navigate: [],
+  offer_release: [],
+  offer_revoke: [],
+  read_lead_settings: [["selectorSettings", "GET"]],
+  update_lead_settings: [
+    ["selectorSettings", "GET"],
+    ["selectorSettings", "PUT"],
+  ],
+  read_placement: [["sessionPlacement", "GET"]],
+  update_placement: [
+    ["sessionPlacement", "GET"],
+    ["sessionPlacement", "PUT"],
+  ],
+  read_usage: [["agentAccounts", "GET"]],
+  update_usage_settings: [
+    ["agentAccounts", "GET"],
+    ["agentAccountSettings", "PUT"],
+  ],
+  retry_paused_agent: [["agentAccountPresses", "POST"]],
+  retire_credential: [["agentAccountCredential", "DELETE"]],
+} as const satisfies Readonly<Record<ChuggyTool, readonly ChuggyToolCall[]>>;
+
+/** The routes the account tools call, each the caller's own at no tenant and no project, which no session bearer reaches. */
+const accountToolRoutes: ReadonlySet<keyof typeof chuggyToolRoutes> = new Set([
+  "agentAccounts",
+  "agentAccountSettings",
+  "agentAccountPresses",
+  "agentAccountCredential",
 ]);
 
-test("every route a tool calls admits the session bearer of its scope, and list_repositories's reaches the project's repositories", async () => {
+/** The capabilities a session may hold, each beside every call the tools it admits make, keyed as the scope table keys a route. */
+const sessionToolCalls: readonly (readonly [SessionCapability, string])[] =
+  sessionCapabilities.flatMap((capability) =>
+    chuggyToolCapabilities[capability].flatMap((tool) =>
+      chuggyToolCalls[tool].map(
+        ([route, method]) =>
+          [capability, `${method} ${chuggyToolRoutes[route]}`] as const,
+      ),
+    ),
+  );
+
+/** A session holding `capabilities` alone, in the scope `capability`'s tools are called from. */
+function sessionHolding(
+  capabilities: readonly SessionCapability[],
+  scope: SessionScope,
+): SessionBearerConfinement {
+  return {
+    partition: scope === "Member" ? ownMember : own,
+    scope,
+    principal,
+    capabilities,
+  };
+}
+
+/** The scope a capability's tools are called from: a member's own session's for `MemberRead`, and a project's for every other. */
+function sessionToolScope(capability: SessionCapability): SessionScope {
+  return capability === "MemberRead" ? "Member" : "Project";
+}
+
+test("a session holding one capability alone is admitted to every route each tool it admits calls", () => {
+  assert.ok(sessionToolCalls.length > 0);
+  for (const [capability, route] of sessionToolCalls) {
+    const [method = "", pattern = ""] = route.split(" ");
+    const scope = sessionToolScope(capability);
+    assert.equal(
+      sessionBearerAdmission(
+        sessionHolding([capability], scope),
+        method,
+        pattern,
+        scope === "Member"
+          ? { tenant: own.tenant }
+          : { tenant: own.tenant, project: own.project },
+      ),
+      "Admitted",
+      `${capability} is refused ${route}`,
+    );
+  }
+});
+
+test("each admitted method requires the capabilities whose tools call it and, for a read, its scope's read, and a write no session's tool makes is refused", () => {
+  const derived = new Map<string, Set<SessionCapability>>();
+  for (const [capability, route] of sessionToolCalls)
+    derived.set(route, (derived.get(route) ?? new Set()).add(capability));
+  for (const [route, admitted] of sessionBearerMethodClasses) {
+    const called = [...(derived.get(route) ?? [])];
+    if (admitted === "Refused") {
+      assert.deepEqual(called, [], `${route} is refused and a tool calls it`);
+      continue;
+    }
+    const read: SessionCapability =
+      admitted.scope === "Member" ? "MemberRead" : "ProjectRead";
+    const expected = new Set<SessionCapability>([
+      ...called,
+      ...(route.startsWith("GET ") ? [read] : []),
+    ]);
+    assert.deepEqual(
+      [...admitted.requires].sort(),
+      [...expected].sort(),
+      route,
+    );
+  }
+});
+
+test("every call the account tools make is to an account route, which a project's and a member's session bearer are both refused, holding every capability its scope may", () => {
+  const called: readonly ChuggyToolCall[] =
+    chuggyToolCapabilities.AgentAccounts.flatMap(
+      (tool): readonly ChuggyToolCall[] => chuggyToolCalls[tool],
+    );
+  assert.deepEqual(
+    new Set(called.map(([route]) => route)),
+    new Set(accountToolRoutes),
+  );
+  for (const [route, method] of called) {
+    const pattern = chuggyToolRoutes[route];
+    assert.equal(
+      sessionBearerMethodClasses.get(`${method} ${pattern}`),
+      "Refused",
+      `${method} ${pattern}`,
+    );
+    for (const [scope, capabilities] of [
+      ["Project", projectCapabilities],
+      ["Member", memberCapabilities],
+    ] as const)
+      assert.equal(
+        sessionBearerAdmission(
+          sessionHolding(capabilities, scope),
+          method,
+          pattern,
+          { tenant: own.tenant, project: own.project },
+        ),
+        "Refused",
+        `${scope} is admitted to ${method} ${pattern}`,
+      );
+  }
+  for (const [, route] of sessionToolCalls)
+    for (const account of accountToolRoutes)
+      assert.ok(
+        !route.endsWith(` ${chuggyToolRoutes[account]}`),
+        `a session's tool calls ${route}`,
+      );
+});
+
+test("turning a credential off and on is refused a project's and a member's session bearer, holding every capability its scope may", () => {
+  const pattern = nativeHttpRoutes.agentAccountCredentialOff;
+  for (const method of ["PUT", "DELETE"] as const) {
+    assert.equal(
+      sessionBearerMethodClasses.get(`${method} ${pattern}`),
+      "Refused",
+      method,
+    );
+    for (const [scope, capabilities] of [
+      ["Project", projectCapabilities],
+      ["Member", memberCapabilities],
+    ] as const)
+      assert.equal(
+        sessionBearerAdmission(
+          sessionHolding(capabilities, scope),
+          method,
+          pattern,
+          { tenant: own.tenant, project: own.project },
+        ),
+        "Refused",
+        `${scope} is admitted to ${method} ${pattern}`,
+      );
+  }
+});
+
+test("no session capability admits a tool the person's own agent alone may call", () => {
+  for (const capability of personalAgentCapabilities)
+    for (const tool of chuggyToolCapabilities[capability])
+      assert.ok(
+        !sessionCapabilities.some((held) =>
+          chuggyToolCapabilities[held].includes(tool),
+        ),
+        tool,
+      );
+});
+
+test("a session bearer is answered as an unauthorized read is, before any port, on every route its session holds no capability for, whatever its kind", async () => {
+  for (const kind of sessionKinds)
+    for (const scope of ["Project", "Member"] as const) {
+      if (scope === "Member" && kind !== "Thread") continue;
+      const partition = scope === "Member" ? ownMember : own;
+      const reached: string[] = [];
+      await using app = scopedApp(reached, undefined, kind, scope, true, []);
+      for (const [route, admitted] of sessionBearerMethodClasses) {
+        if (
+          admitted === "Refused" ||
+          admitted.scope !== sessionBearerAdmissionScopeOf(scope)
+        )
+          continue;
+        reached.length = 0;
+        const answered = await app.inject(
+          routeRequest(route, partition, sessionToken),
+        );
+        const where = `${route} under a ${kind} bearer holding nothing`;
+        assert.deepEqual(reached, [], `${where} reached a port`);
+        assert.equal(answered.statusCode, 404, where);
+        assert.deepEqual(answered.json(), {
+          error: { code: "NotFound", message: "Resource not found." },
+        });
+      }
+    }
+});
+
+/** The route scope a session scope is confined to. */
+function sessionBearerAdmissionScopeOf(
+  scope: SessionScope,
+): "Partition" | "Member" {
+  return scope === "Member" ? "Member" : "Partition";
+}
+
+test("a lead's bearer holding only reads reads its project, and its draft and revocation writes are answered as unauthorized", async () => {
+  const reached: string[] = [];
+  await using app = scopedApp(reached, undefined, "Lead", "Project", true, [
+    "ProjectRead",
+  ]);
+  await app.inject(
+    routeRequest(
+      `GET ${chuggyToolRoutes.projectRepositories}`,
+      own,
+      sessionToken,
+    ),
+  );
+  assert.deepEqual(reached, ["onboarding.projectRepositories"]);
+  for (const route of [
+    `POST ${chuggyToolRoutes.drafts}`,
+    `POST ${chuggyToolRoutes.operations}`,
+    `PUT ${chuggyToolRoutes.draft}`,
+  ]) {
+    reached.length = 0;
+    const answered = await app.inject(routeRequest(route, own, sessionToken));
+    assert.equal(answered.statusCode, 404, route);
+    assert.deepEqual(reached, [], `${route} reached a port`);
+  }
+});
+
+test("list_repositories's route reaches the project's repositories under a lead's and a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.projectRepositories,
     nativeHttpRoutes.projectRepositories,
     "list_repositories calls no route",
   );
-  const memberSession = {
-    partition: ownMember,
-    scope: "Member" as const,
-    principal,
-  };
-  for (const [tool, route] of Object.entries(chuggyToolRoutes)) {
-    const [session, params] = memberToolRoutes.has(route)
-      ? [memberSession, { tenant: own.tenant }]
-      : [ownSession, { tenant: own.tenant, project: own.project }];
-    assert.ok(
-      (["GET", "POST", "PUT", "DELETE"] as const).some(
-        (method) =>
-          sessionBearerAdmission(session, method, route, params) === "Admitted",
-      ),
-      `${tool} admits no session bearer`,
-    );
-  }
   for (const kind of ["Lead", "Thread"] as const) {
     const reached: string[] = [];
     await using app = scopedApp(reached, undefined, kind);
@@ -377,6 +705,43 @@ test("read_landing_queues's route reaches the project's landing queues under a l
       routeRequest(`GET ${chuggyToolRoutes.landingQueues}`, own, sessionToken),
     );
     assert.deepEqual(reached, ["landingQueues.read"], kind);
+  }
+});
+
+test("take_ticket's and return_ticket's routes reach a ticket's take and return under a thread's own bearer, and a lead's is refused them before any port", async () => {
+  const routes = [chuggyToolRoutes.ticketTake, chuggyToolRoutes.ticketReturn];
+  assert.deepEqual(routes, [
+    nativeHttpRoutes.ticketTake,
+    nativeHttpRoutes.ticketReturn,
+  ]);
+  for (const route of routes) {
+    const reached: string[] = [];
+    await using thread = scopedApp(
+      reached,
+      undefined,
+      "Thread",
+      "Project",
+      true,
+      threadCapabilitiesDefault,
+    );
+    await thread.inject(routeRequest(`POST ${route}`, own, sessionToken));
+    assert.deepEqual(reached, ["takes.write"], route);
+  }
+  for (const route of routes) {
+    const reached: string[] = [];
+    await using lead = scopedApp(
+      reached,
+      undefined,
+      "Lead",
+      "Project",
+      true,
+      leadSessionCapabilities,
+    );
+    const answered = await lead.inject(
+      routeRequest(`POST ${route}`, own, sessionToken),
+    );
+    assert.equal(answered.statusCode, 404, route);
+    assert.deepEqual(reached, [], route);
   }
 });
 
@@ -514,7 +879,7 @@ test("a session bearer reads its own project's held proposals and may not answer
   assert.deepEqual(reached, ["proposalReviews.pending"]);
 });
 
-test("a thread's own session bearer may write to its thread and may not reply to an offer in its member's name", async () => {
+test("a thread's own session bearer neither replies to an offer in its member's name nor writes to its thread", async () => {
   const reached: string[] = [];
   await using app = scopedApp(reached, undefined, "Thread");
   const replied = await app.inject({
@@ -530,8 +895,7 @@ test("a thread's own session bearer may write to its thread and may not reply to
     },
   });
   assert.ok(scopeRefused(replied));
-  assert.deepEqual(reached, []);
-  await app.inject({
+  const sent = await app.inject({
     method: "POST",
     url: `${projectPath(own)}/threads/Thread/messages`,
     headers: {
@@ -540,7 +904,8 @@ test("a thread's own session bearer may write to its thread and may not reply to
     },
     payload: { turn: "turn-1", message: "hello" },
   });
-  assert.deepEqual(reached, ["web.sendThreadMessage"]);
+  assert.ok(scopeRefused(sent));
+  assert.deepEqual(reached, []);
 });
 
 /**
@@ -763,7 +1128,12 @@ test("a member's own session is admitted only from the partition reserved for it
   const route = nativeHttpRoutes.chatThreads;
   assert.equal(
     sessionBearerAdmission(
-      { partition: ownMember, scope: "Member", principal },
+      {
+        partition: ownMember,
+        scope: "Member",
+        principal,
+        capabilities: memberCapabilities,
+      },
       "GET",
       route,
       params,
@@ -776,6 +1146,7 @@ test("a member's own session is admitted only from the partition reserved for it
         partition: memberScopePartition(own.tenant, asPrincipal("someone")),
         scope: "Member",
         principal,
+        capabilities: memberCapabilities,
       },
       "GET",
       route,
@@ -789,7 +1160,12 @@ test("a member's own session is admitted only from the partition reserved for it
   );
   assert.equal(
     sessionBearerAdmission(
-      { partition: own, scope: "Member", principal },
+      {
+        partition: own,
+        scope: "Member",
+        principal,
+        capabilities: memberCapabilities,
+      },
       "GET",
       nativeHttpRoutes.project,
       { tenant: own.tenant, project: own.project },
