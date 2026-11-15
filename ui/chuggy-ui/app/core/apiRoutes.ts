@@ -888,6 +888,8 @@ export interface ProjectPage {
   readonly limit?: number | undefined;
   readonly minimumSequence?: number | undefined;
   readonly order?: "RecentActivity" | "Newest" | "Oldest" | undefined;
+  /** The member whose owned tickets alone the page holds. */
+  readonly owner?: string | undefined;
   readonly phase?: readonly string[] | undefined;
   readonly q?: string | undefined;
 }
@@ -909,6 +911,7 @@ export function apiProject(
       limit: page.limit,
       minimumSequence: page.minimumSequence,
       order: page.order,
+      owner: page.owner,
       phase: page.phase,
       q: page.q,
     }),
@@ -989,6 +992,24 @@ export const apiRepositoryConfigurationHead = apiProjectEndpoint(
 export const apiTicketLandings = apiProjectEndpoint(
   nativeHttpEndpoints.ticketLandings,
   (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
+);
+
+/** The ticket taken by the caller, who becomes its owner. */
+export const apiTakeTicket = apiProjectEndpoint(
+  nativeHttpEndpoints.ticketTake,
+  (partition, ticket: number) => ({
+    parameters: { ...partition, ticket },
+    body: {},
+  }),
+);
+
+/** The ticket returned by its taker to its creator. */
+export const apiReturnTicket = apiProjectEndpoint(
+  nativeHttpEndpoints.ticketReturn,
+  (partition, ticket: number) => ({
+    parameters: { ...partition, ticket },
+    body: {},
+  }),
 );
 
 /** Who holds and who waits on each reference the project's tickets land on. */

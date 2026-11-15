@@ -21,6 +21,8 @@ export interface TicketCopy {
   readonly "ticket-cancel": Record<never, never>;
   readonly "ticket-edit": Record<never, never>;
   readonly "ticket-duplicate": Record<never, never>;
+  readonly "ticket-take": Record<never, never>;
+  readonly "ticket-return": Record<never, never>;
   readonly "ticket-copy-link": Record<never, never>;
   readonly "ticket-copy-link-copied": Record<never, never>;
   readonly "ticket-cant-be-undone": Record<never, never>;
@@ -127,6 +129,7 @@ export interface TicketCopy {
     readonly target: unknown;
   };
   readonly "ticket-overview-filed-by": Record<never, never>;
+  readonly "ticket-overview-owner": Record<never, never>;
   readonly "ticket-overview-depends-on": Record<never, never>;
   readonly "ticket-overview-configuration": Record<never, never>;
   readonly "ticket-overview-revision": {

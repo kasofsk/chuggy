@@ -99,7 +99,7 @@ function useRepositoryFinalizationDraft(
   const [draft, setDraft] = useState<RepositoryFinalizationDraft>(() =>
     repositoryFinalizationDraft(binding),
   );
-  const standing = `${finalizationChoiceKey(binding.finalization)}/${String(binding.pipelinesWritable)}`;
+  const standing = `${finalizationChoiceKey(binding.finalization)}/${String(binding.pipelinesWritable)}/${String(binding.pipelinesRunnable)}`;
   const [seen, setSeen] = useState(standing);
   if (seen !== standing) {
     setSeen(standing);
