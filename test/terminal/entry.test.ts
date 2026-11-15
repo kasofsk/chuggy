@@ -241,7 +241,7 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
     sessionEndings(installation.site),
   );
   assert.equal(
-    runs.at(-2)?.lines[4],
+    runs.at(-2)?.lines[5],
     "step: repository  todo     github.com/acme-org/widgets (this folder's remote)",
   );
   assert.deepEqual(
@@ -259,11 +259,12 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
   ];
   assert.ok(installation.issued.size >= 9, String(installation.issued.size));
   assert.ok(secrets.length > installation.issued.size);
-  const kept = readdirSync(machine.directory, {
-    recursive: true,
-    withFileTypes: true,
-  })
-    .filter((entry) => entry.name !== "session.json")
+  const token = encodeURIComponent(installation.site);
+  const kept = [machine.directory, machine.store]
+    .flatMap((directory) =>
+      readdirSync(directory, { recursive: true, withFileTypes: true }),
+    )
+    .filter((entry) => entry.name !== "session.json" && entry.name !== token)
     .map((entry) =>
       entry.isFile()
         ? `${entry.name}\n${readFileSync(join(entry.parentPath, entry.name), "utf8")}`
@@ -279,17 +280,16 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
   }
 });
 
-test("the file that holds the sign-in holds the site and the renewal token, and nothing else", async () => {
+test("the program's own file remembers the site and nothing else, and the shared store holds the renewal token alone", async () => {
   const { installation, machine } = await sessionRun();
-  const stored = JSON.parse(machine.file("session.json") ?? "{}") as Record<
-    string,
-    unknown
-  >;
-  assert.deepEqual(Object.keys(stored).toSorted(), ["refreshToken", "site"]);
-  assert.equal(stored["site"], installation.site);
-  assert.ok(stored["refreshToken"] === installation.renewal());
-  assert.deepEqual(readdirSync(machine.directory).toSorted(), [
+  assert.equal(
+    machine.file("session.json"),
+    JSON.stringify({ site: installation.site }),
+  );
+  assert.ok(machine.held(installation.site) === installation.renewal());
+  assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+  assert.deepEqual(readdirSync(machine.store).toSorted(), [
+    encodeURIComponent(installation.site),
     "lock",
-    "session.json",
   ]);
 });

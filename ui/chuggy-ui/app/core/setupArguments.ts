@@ -5,10 +5,10 @@
  * value, written `--name value` or `--name=value`, each at most once. Anything
  * else is asked wrongly, and which way is all that is kept of it, so nothing a
  * person typed is ever printed back. `listen` is the command a sign-in starts
- * for itself and no person runs. `runner` and `chat-host` are the commands
- * that change the machine, so `runner` is run for a project named whole and
- * `chat-host` for a workspace named whole, never for one the program would
- * have to choose. `--workspace` and `--project` say which project a run is
+ * for itself and no person runs. `mcp`, `runner` and `chat-host` are the
+ * commands that change the machine, so `mcp` and `runner` are run for a
+ * project named whole and `chat-host` for a workspace named whole, never for
+ * one the program would have to choose. `--workspace` and `--project` say which project a run is
  * about where more than one could be meant; every command the program prints
  * carries them, so the conversation holds that choice and no file does.
  * `--replace` is the person's yes to `chat-host` registering this machine in
@@ -36,7 +36,7 @@ export type SetupAskFault =
   | "Replace";
 
 /** The commands a person or an agent runs, as a report names them. */
-export type SetupCommand = "Status" | "SignIn" | "Runner" | "ChatHost";
+export type SetupCommand = "Status" | "SignIn" | "Mcp" | "Runner" | "ChatHost";
 
 /** Which workspace and project a run is about, as far as its arguments named them. */
 export interface SetupAnswers {
@@ -60,6 +60,14 @@ export type SetupAsked =
       readonly site: string | undefined;
       readonly waitSecs: number;
       readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "Mcp";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+      /** The project the agent's server is for, which the command is not run without. */
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly asked: "Runner";
@@ -91,6 +99,7 @@ type SetupRun = Exclude<SetupAsked["asked"], "Wrongly">;
 
 const setupCommandWords = {
   "sign-in": "SignIn",
+  mcp: "Mcp",
   runner: "Runner",
   "chat-host": "ChatHost",
   listen: "Listen",
@@ -113,6 +122,7 @@ type SetupFlag = (typeof setupFlags)[number];
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Status: ["site", "workspace", "project"],
   SignIn: ["site", "wait-secs", "workspace", "project"],
+  Mcp: ["site", "workspace", "project"],
   Runner: ["site", "wait-secs", "workspace", "project"],
   ChatHost: ["site", "wait-secs", "workspace", "replace"],
   Listen: ["site", "life-secs"],
@@ -241,10 +251,13 @@ function setupAskedOf(
       return { asked, site, answers };
     case "SignIn":
       return { asked, site, waitSecs: wait, answers };
+    case "Mcp":
     case "Runner": {
       const { workspace, project } = answers;
-      return workspace === undefined || project === undefined
-        ? { asked: "Wrongly", fault: "Project" }
+      if (workspace === undefined || project === undefined)
+        return { asked: "Wrongly", fault: "Project" };
+      return asked === "Mcp"
+        ? { asked, site, answers, workspace, project }
         : { asked, site, waitSecs: wait, answers, workspace, project };
     }
     case "ChatHost":
@@ -276,6 +289,8 @@ export function setupCommandArguments(
       return [];
     case "SignIn":
       return ["sign-in"];
+    case "Mcp":
+      return ["mcp"];
     case "Runner":
       return ["runner"];
     case "ChatHost":

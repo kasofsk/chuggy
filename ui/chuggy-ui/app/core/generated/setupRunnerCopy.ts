@@ -101,6 +101,14 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-note-unit-written": {
     readonly unit: unknown;
   };
+  readonly "setup-runner-note-server-found": {
+    readonly project: unknown;
+    readonly path: unknown;
+  };
+  readonly "setup-runner-note-server-added": {
+    readonly project: unknown;
+    readonly path: unknown;
+  };
   readonly "setup-runner-note-linger": Record<never, never>;
   readonly "setup-runner-note-linger-on": Record<never, never>;
   readonly "setup-runner-note-linger-on-unread": Record<never, never>;
@@ -307,6 +315,12 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-act-install": {
     readonly case: unknown;
   };
+  readonly "setup-runner-act-server-removed": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-server-added": {
+    readonly case: unknown;
+  };
   readonly "setup-runner-act-register": {
     readonly case: unknown;
   };
@@ -361,6 +375,23 @@ export interface SetupRunnerCopy {
   };
   readonly "setup-runner-act-tell": {
     readonly act: unknown;
+  };
+  readonly "setup-runner-act-tell-server": {
+    readonly act: unknown;
+  };
+  readonly "setup-runner-unpackaged-found-none": {
+    readonly program: unknown;
+  };
+  readonly "setup-runner-unpackaged-found": {
+    readonly versioned: unknown;
+    readonly least: unknown;
+  };
+  readonly "setup-runner-unpackaged-tell": {
+    readonly program: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-runner-unpackaged-when": {
+    readonly program: unknown;
   };
   readonly "setup-runner-service-refused-tell": {
     readonly act: unknown;

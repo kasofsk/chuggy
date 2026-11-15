@@ -291,10 +291,10 @@ const cuts: readonly (readonly [
   number,
   string,
 ])[] = [
-  ["installations", () => setupSiteAt("Portal"), 2, "its GitHub accounts were"],
-  ["repositories", () => setupSiteAt("Added"), 3, "its repositories were"],
-  ["moving", saidLandingSite, 5, "its tickets were"],
-  ["landings", saidLandingSite, 5, "a ticket's landings were"],
+  ["installations", () => setupSiteAt("Portal"), 3, "its GitHub accounts were"],
+  ["repositories", () => setupSiteAt("Added"), 4, "its repositories were"],
+  ["moving", saidLandingSite, 6, "its tickets were"],
+  ["landings", saidLandingSite, 6, "a ticket's landings were"],
 ];
 
 test("each list cut short leaves its step not read where what was sent does not settle it, and is never read as all there is: no name is taken from a list of projects that did not end, and a project named in full is read without one", async () => {

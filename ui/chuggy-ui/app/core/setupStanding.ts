@@ -114,6 +114,7 @@ export type SetupLack =
       readonly account: string;
       readonly repository: string;
     }
+  | { readonly lacks: "Mcp" }
   | { readonly lacks: "Binding" }
   | { readonly lacks: "Configuration"; readonly repository: string }
   /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner; `named` where the project names an owner fallback, so a personal runner of the person's serving it would take its work. */
@@ -928,12 +929,33 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
   }
 }
 
+/** Done where the agent's configuration for this folder names chuggy's server for the project; it is to do while the project is, since no server can serve one that is not there. */
+function setupMcpStep(
+  partition: PartitionIdentity | undefined,
+  none: boolean,
+  named: boolean,
+): SetupStep {
+  if (partition === undefined || none)
+    return setupUndone("mcp", "todo", undefined, { lacks: "Mcp" });
+  const project = setupNamed(partition);
+  return named
+    ? setupDone("mcp", { id: "setup-step-mcp-named", args: { project } })
+    : setupUndone(
+        "mcp",
+        "todo",
+        { id: "setup-step-mcp-none", args: { project } },
+        { lacks: "Mcp" },
+      );
+}
+
 /**
- * One state a step, in the order the steps are done. A step whose reads were
+ * One state a step, in the order the steps are done; a step whose reads were
  * never asked is to do where the workspace or the project it belongs to is
- * itself to do, since a read that was got is what said so.
+ * itself to do, since a read that was got is what said so. `named`, whether
+ * the agent's configuration here names chuggy's server for the project
+ * chosen, is the machine's to say and no read's.
  */
-export function setupStanding(reads: SetupReads): SetupStanding {
+export function setupStanding(reads: SetupReads, named = false): SetupStanding {
   const standing = {
     site: reads.site,
     choice: reads.choice,
@@ -943,10 +965,11 @@ export function setupStanding(reads: SetupReads): SetupStanding {
   if (reads.choice.choice === "Open")
     return { ...standing, steps: [], unmerged: undefined };
   const workspace = setupWorkspaceStep(reads, reads.choice.workspace);
+  const partition = setupPartition(reads.choice, reads.inventory);
   const project = setupProjectStep(
     reads,
     reads.choice.workspace,
-    setupPartition(reads.choice, reads.inventory),
+    partition,
     workspace.state === "done",
   );
   const none = workspace.state === "todo" || project.state === "todo";
@@ -956,6 +979,7 @@ export function setupStanding(reads: SetupReads): SetupStanding {
     steps: [
       workspace,
       project,
+      setupMcpStep(partition, none, named),
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),
       setupRunnerStep(reads, none),

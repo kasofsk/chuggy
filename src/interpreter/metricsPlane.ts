@@ -42,6 +42,7 @@ import {
   type TicketEvent,
 } from "../domain/generated/modelTypes.ts";
 import type { WorkloadRunner } from "../contract/rosters.ts";
+import type { Phase } from "../domain/phase.ts";
 import { oidcPrincipalSubject } from "./principal.ts";
 
 /** The bounds, in seconds, an attempt's and a session turn's duration is counted under. */
@@ -78,6 +79,63 @@ export const metricsPlaneEscalatingEvents = [
   "TicketFinalizationUnavailable",
 ] as const satisfies readonly TicketEvent["type"][];
 
+/** The phase each event leaves its ticket in, as `evolve` leaves it; every event left in Work begins a work cycle. */
+export const metricsPlaneEventPhases = {
+  TicketCreated: "Pending",
+  TicketUpdated: "Pending",
+  TicketDispatched: "Work",
+  TicketWorkResumed: "Work",
+  TicketEvaluationReworkStarted: "Work",
+  TicketEvaluationFailureInvalidated: "Work",
+  TicketEvaluationInvalidated: "Work",
+  TicketFinalizationNeedsWork: "Work",
+  TicketWorkResultAccepted: "Evaluation",
+  TicketEvaluationProgressed: "Evaluation",
+  TicketEvaluationResumed: "Evaluation",
+  TicketEvaluationPassed: "Finalization",
+  TicketFinalizationResumed: "Finalization",
+  TicketWorkProcessFailed: "Escalated",
+  TicketWorkExecutionUnavailable: "Escalated",
+  TicketEvaluationFailureEscalated: "Escalated",
+  TicketEvaluationBlocked: "Escalated",
+  TicketFinalizationUnavailable: "Escalated",
+  TicketFinalizationSucceeded: "Done",
+  TicketRevoked: "Revoked",
+} as const satisfies Record<TicketEvent["type"], Phase>;
+
+/** The phases a landed ticket's time before its landing is spent in. */
+export const metricsPlaneLandedPhases = [
+  "Pending",
+  "Work",
+  "Evaluation",
+  "Finalization",
+  "Escalated",
+] as const satisfies readonly Phase[];
+
+/** The bounds, in seconds, a work or evaluation cycle's duration is counted under. */
+export const metricsPlaneCycleBoundsSecs: readonly number[] = [
+  60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200, 10800, 14400,
+  28800,
+];
+
+/** The bounds, in seconds, a landed ticket's time in one phase is counted under. */
+export const metricsPlanePhaseTimeBoundsSecs: readonly number[] = [
+  60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
+];
+
+/** The bounds a landed ticket's work cycles are counted under. */
+export const metricsPlaneWorkCycleBounds: readonly number[] = [
+  1, 2, 3, 4, 5, 7, 10,
+];
+
+/** The bounds, in seconds, a claimed attempt's wait for its runner is counted under. */
+export const metricsPlaneAttemptWaitBoundsSecs: readonly number[] = [
+  10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400,
+];
+
+/** The series a page may carry where the deployment names no cap. */
+export const metricsPlaneSeriesMaxDefault = 25_000;
+
 /** What a ticket's stored escalation may be: one of the model's, or none. */
 export const metricsPlaneTicketEscalations = [
   "NoEscalation",
@@ -97,6 +155,18 @@ export interface MetricsPlaneTask {
   readonly runner: WorkloadRunner | "";
   readonly workload: string;
   readonly placement: "Cluster" | "Pool" | "Personal";
+}
+
+/** Claimed attempts of one owner, phase and placement: how many waited in each bucket of the bounds and the one past them, the milliseconds they waited, and when the first was claimed. */
+export interface MetricsPlaneAttemptWaitRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly owner: string;
+  readonly phase: MetricsPlaneTask["phase"];
+  readonly placement: MetricsPlaneTask["placement"];
+  readonly buckets: readonly number[];
+  readonly sum: number;
+  readonly createdSecs: number;
 }
 
 /** Ended attempts of one task and end state, how many fell in each bucket of the bounds and the one past them, and when the first ended. */
@@ -182,6 +252,17 @@ export interface MetricsPlaneEscalationRow extends MetricsPlaneTicketObservedRow
   readonly by: string;
 }
 
+/** Ended work or evaluation cycles, by the event that began each and the one that ended it. */
+export interface MetricsPlaneCycleRow extends MetricsPlaneTicketObservedRow {
+  readonly began: TicketEvent["type"];
+  readonly ended: TicketEvent["type"];
+}
+
+/** Landed tickets' time in one phase before their landing. */
+export interface MetricsPlanePhaseTimeRow extends MetricsPlaneTicketObservedRow {
+  readonly phase: (typeof metricsPlaneLandedPhases)[number];
+}
+
 /** What paused an account's agent: a reading at its threshold, or a limit a provider stopped it at. */
 export const metricsPlaneAgentPauseTriggers = ["soft", "hard"] as const;
 
@@ -195,6 +276,7 @@ export interface MetricsPlaneAgentPausedRow {
 
 export interface MetricsPlaneRows {
   readonly attempts: readonly MetricsPlaneAttemptRow[];
+  readonly attemptWaits: readonly MetricsPlaneAttemptWaitRow[];
   readonly runs: readonly MetricsPlaneRunRow[];
   readonly models: readonly MetricsPlaneModelRow[];
   readonly turns: readonly MetricsPlaneTurnRow[];
@@ -205,6 +287,10 @@ export interface MetricsPlaneRows {
   readonly reworks: readonly MetricsPlaneTicketObservedRow[];
   readonly costs: readonly MetricsPlaneTicketCostRow[];
   readonly escalations: readonly MetricsPlaneEscalationRow[];
+  readonly workCycleDurations: readonly MetricsPlaneCycleRow[];
+  readonly evaluationCycleDurations: readonly MetricsPlaneCycleRow[];
+  readonly phaseTimes: readonly MetricsPlanePhaseTimeRow[];
+  readonly workCycles: readonly MetricsPlaneTicketObservedRow[];
   readonly agentPauses: readonly MetricsPlaneAgentPausedRow[];
 }
 
@@ -328,6 +414,7 @@ function metricsPlaneTaskLabels(task: MetricsPlaneTask): MetricsLabels {
 
 function metricsPlaneAttemptFamilies(
   rows: readonly MetricsPlaneAttemptRow[],
+  waitRows: readonly MetricsPlaneAttemptWaitRow[],
 ): readonly MetricsFamily[] {
   const ended = metricsPlaneSummed(
     rows,
@@ -362,6 +449,32 @@ function metricsPlaneAttemptFamilies(
       samples: metricsPlaneHistogram(
         durations,
         metricsPlaneDurationBoundsSecs,
+        1_000,
+      ),
+    },
+    {
+      type: "histogram",
+      name: "chuggy_attempt_wait_seconds",
+      help: "How long each claimed execution attempt waited for a runner, from its opening to its claim.",
+      bounds: metricsPlaneAttemptWaitBoundsSecs,
+      samples: metricsPlaneHistogram(
+        metricsPlaneSummed(
+          waitRows,
+          (row) => ({
+            tenant: row.tenant,
+            project: row.project,
+            owner: row.owner,
+            phase: row.phase,
+            placement: row.placement,
+          }),
+          (row) =>
+            metricsPlaneBucketed(
+              metricsPlaneAttemptWaitBoundsSecs,
+              row.buckets,
+              row.sum,
+            ),
+        ),
+        metricsPlaneAttemptWaitBoundsSecs,
         1_000,
       ),
     },
@@ -641,6 +754,54 @@ function metricsPlaneTicketHistoryFamilies(
   ];
 }
 
+/** A cycle's labels: its ticket's owner, and the events that began and ended it. */
+function metricsPlaneCycleLabels(row: MetricsPlaneCycleRow): MetricsLabels {
+  return {
+    ...metricsPlaneTicketOwnerLabels(row),
+    began: row.began,
+    ended: row.ended,
+  };
+}
+
+function metricsPlaneTicketCycleFamilies(
+  rows: MetricsPlaneRows,
+): readonly MetricsFamily[] {
+  return [
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_work_cycle_duration_seconds",
+      "How long each ended work cycle took, from the entry that began it to the ticket's next entry.",
+      rows.workCycleDurations,
+      metricsPlaneCycleLabels,
+      metricsPlaneCycleBoundsSecs,
+      1_000,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_evaluation_cycle_duration_seconds",
+      "How long each ended evaluation cycle took, from the first of its consecutive entries leaving the ticket in evaluation to the next that did not.",
+      rows.evaluationCycleDurations,
+      metricsPlaneCycleLabels,
+      metricsPlaneCycleBoundsSecs,
+      1_000,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_phase_time_seconds",
+      "How long each landed ticket spent in each phase between its release and landing, zero where it spent none.",
+      rows.phaseTimes,
+      (row) => ({ ...metricsPlaneTicketOwnerLabels(row), phase: row.phase }),
+      metricsPlanePhaseTimeBoundsSecs,
+      1_000,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_work_cycles",
+      "How many work cycles each landed ticket started.",
+      rows.workCycles,
+      metricsPlaneTicketOwnerLabels,
+      metricsPlaneWorkCycleBounds,
+      1,
+    ),
+  ];
+}
+
 /** How many accounts each owner has paused per agent and trigger, rows an owner label cannot tell apart summed. */
 function metricsPlaneAgentPausedFamily(
   rows: readonly MetricsPlaneAgentPausedRow[],
@@ -673,12 +834,13 @@ export function metricsPlaneFamilies(
   rows: MetricsPlaneRows,
 ): readonly MetricsFamily[] {
   return [
-    ...metricsPlaneAttemptFamilies(rows.attempts),
+    ...metricsPlaneAttemptFamilies(rows.attempts, rows.attemptWaits),
     ...metricsPlaneRunFamilies(rows.runs),
     ...metricsPlaneModelFamilies(rows.models),
     ...metricsPlaneTurnFamilies(rows.turns),
     metricsPlaneTicketFamily(rows.tickets),
     ...metricsPlaneTicketHistoryFamilies(rows),
+    ...metricsPlaneTicketCycleFamilies(rows),
     metricsPlaneAgentPausedFamily(rows.agentPauses),
   ];
 }
