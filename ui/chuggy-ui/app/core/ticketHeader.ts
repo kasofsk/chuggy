@@ -17,7 +17,7 @@ import { ticketFilterStandings } from "./projectTableFilters.ts";
 import { nativeActionAnswerApproval } from "./nativeActionAnswers.ts";
 import type { RunTimed } from "./runTotals.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
-import { ticketLandingPullLabel } from "./ticketLandings.ts";
+import { ticketFinalizationPullLabel } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 import type { TicketListStanding } from "./ticketListView.ts";
 import type { TicketOffers } from "./ticketOffers.ts";
@@ -194,7 +194,7 @@ function ticketHeaderLinkOf(
 ): TicketHeaderLink | undefined {
   return link === undefined
     ? undefined
-    : { href: link.href, label: ticketLandingPullLabel(link, text) };
+    : { href: link.href, label: ticketFinalizationPullLabel(link, text) };
 }
 
 /** What the newest landing came to: merged into its base, or proposed. */
@@ -213,7 +213,7 @@ function ticketHeaderLanded(
       newest.state === "Proposed"
         ? newest.word
         : base === undefined
-          ? text({ id: "ticket-landing-merged" })
+          ? text({ id: "ticket-finalization-merged" })
           : text({ id: "ticket-header-merged-into", args: { base } }),
     link: ticketHeaderLinkOf(newest.link, text),
   };

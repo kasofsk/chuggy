@@ -360,7 +360,7 @@ a fresh run of the program against it, so the tab lists the cycles newest
 first, a row per step as the plan names it. A stage the program short-circuited
 is a row saying so, which is what tells "not reached" from "not on this page".
 Every run is a page at its task's number, with its Summary, Transcript and
-Details each at an address of their own, and so is the ticket's landing.
+Details each at an address of their own, and so is the ticket's finalization.
 
 Every row, cycle and run carries what it spent and how long it ran, and every
 dollar carries the basis the wire gave it, so a list price is never read as a

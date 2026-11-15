@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { sinceFigure } from "../../core/figures.ts";
 import { branchName } from "../../core/labels.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
-import { ticketLandingLinkLabel } from "../../core/ticketLandings.ts";
+import { ticketFinalizationLinkLabel } from "../../core/ticketLandings.ts";
 import type {
   TicketLanding,
   TicketLandingsState,
@@ -46,7 +46,7 @@ function TicketLandingHead(props: {
     <div className="ticket-run-head">
       <div className="ticket-run-heading">
         <TicketRunMarkDrawn mark={marked.mark} tone={marked.tone} />
-        <h2>{text({ id: "ticket-landing-heading" })}</h2>
+        <h2>{text({ id: "ticket-finalization-heading" })}</h2>
         <span className="ticket-run-cycle">
           {text(cycleLabel(landing.cycle))}
         </span>
@@ -75,7 +75,7 @@ function TicketLandingFields(props: {
   return (
     <Fields>
       <Field
-        name={text({ id: "ticket-landing-pull-request-field" })}
+        name={text({ id: "ticket-finalization-pull-request-field" })}
         absent={landing.link === undefined}
       >
         {landing.link === undefined ? (
@@ -87,7 +87,7 @@ function TicketLandingFields(props: {
               rel="noopener noreferrer"
               target="_blank"
             >
-              {ticketLandingLinkLabel(landing.link)}
+              {ticketFinalizationLinkLabel(landing.link)}
             </a>
             {` · ${proposal?.status ?? landing.word}`}
           </>
@@ -95,25 +95,25 @@ function TicketLandingFields(props: {
       </Field>
       {proposal === undefined ? null : (
         <>
-          <Field name={text({ id: "ticket-landing-from" })}>
+          <Field name={text({ id: "ticket-finalization-from" })}>
             <code title={proposal.head}>{branchName(proposal.head)}</code>
           </Field>
-          <Field name={text({ id: "ticket-landing-into" })}>
+          <Field name={text({ id: "ticket-finalization-into" })}>
             <code title={proposal.base}>{branchName(proposal.base)}</code>
           </Field>
         </>
       )}
       {landing.detail.candidateCommit === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-head" })}>
+        <Field name={text({ id: "ticket-finalization-head" })}>
           <Identity label={landing.detail.candidateCommit} />
         </Field>
       )}
       {merge === undefined ? null : (
-        <Field name={text({ id: "ticket-landing-merge-commit" })}>
+        <Field name={text({ id: "ticket-finalization-merge-commit" })}>
           <Identity label={merge} />
         </Field>
       )}
-      <Field name={text({ id: "ticket-landing-attempts" })}>
+      <Field name={text({ id: "ticket-finalization-attempts" })}>
         {landing.detail.attempts}
       </Field>
       <LandingRecheckField recheck={landing.detail.recheck} />
@@ -131,7 +131,7 @@ function TicketLandingOf(props: {
   const landings = props.state.value;
   const landing = landings.at(-1);
   if (landing === undefined)
-    return <EmptyState label={text({ id: "ticket-landing-none" })} />;
+    return <EmptyState label={text({ id: "ticket-finalization-none" })} />;
   return (
     <>
       <TicketLandingHead landing={landing} nowMs={props.held.nowMs} />

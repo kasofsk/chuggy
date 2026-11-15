@@ -239,7 +239,7 @@ export function saidLandingSite(): SetupSite {
 
 export const saidLanding: readonly Said[] = [
   ...saidReady,
-  ["waiting", "ticket 1 is in Landing"],
+  ["waiting", "ticket 1 is in Finalization"],
 ];
 
 /** The step each read leaves unread, and what the read is called there. The
@@ -263,7 +263,7 @@ export const saidUnread: Readonly<
   landed: [6, "its tickets were"],
   moving: [6, "its tickets were"],
   drafts: [6, "its drafts were"],
-  landings: [6, "a ticket's landings were"],
+  landings: [6, "a ticket's finalizations were"],
 };
 
 /** Where the GitHub step is said, which the project's repositories leave unread as they do their own step: it is held to the account that owns one. */

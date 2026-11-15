@@ -14,7 +14,7 @@ import type { RunTimed } from "../app/core/runTotals.ts";
 import { runTranscriptStepsCut } from "../app/core/runTranscript.ts";
 import type { ConversationExchange } from "../app/core/conversation.ts";
 import {
-  ticketLandingLinkLabel,
+  ticketFinalizationLinkLabel,
   ticketLandingOf,
   ticketLandingsJoined,
 } from "../app/core/ticketLandings.ts";
@@ -107,7 +107,7 @@ function rowsSaid(cycles: readonly TicketRunsCycle[]) {
         ? `${row.name} ${String(row.task)}`
         : row.kind === "Gap"
           ? `${row.name} ${row.words}`
-          : `Landing ${row.lands ? (row.landing?.word ?? "Not reached") : "None"}`,
+          : `Finalization ${row.lands ? (row.landing?.word ?? "Not reached") : "None"}`,
     ),
   ]);
 }
@@ -117,7 +117,7 @@ test("cycles are newest first, each a run per step the plan names, the current o
     [
       2,
       "Failed at review",
-      ["Work 4", "checks 5", "review 6", "Landing Not reached"],
+      ["Work 4", "checks 5", "review 6", "Finalization Not reached"],
     ],
     [1, "Sent back by review", ["Work 1", "checks 2", "review 3"]],
   ]);
@@ -133,7 +133,7 @@ test("a stage the program never reached is a step not reached, and a landing is 
     [
       1,
       "Failed at checks",
-      ["Work 1", "checks 2", "review Not reached", "Landing Not reached"],
+      ["Work 1", "checks 2", "review Not reached", "Finalization Not reached"],
     ],
   ]);
   const landed = runsOf(twoCycles.slice(0, 2), [
@@ -142,8 +142,8 @@ test("a stage the program never reached is a step not reached, and a landing is 
   expect(rowsSaid(landed)).toEqual([
     [
       1,
-      "Landed",
-      ["Work 1", "checks 2", "review Not reached", "Landing Landed"],
+      "Finalized",
+      ["Work 1", "checks 2", "review Not reached", "Finalization Finalized"],
     ],
   ]);
 });
@@ -162,14 +162,14 @@ test("a cycle still running says which step it is at, and one its landing failed
       ),
     [ticketLandingOf(landingConflicted(1), copyTextEn)],
   );
-  expect(conflicted[0]?.outcome).toBe("Landing failed");
+  expect(conflicted[0]?.outcome).toBe("Finalization failed");
 });
 
 test("a ticket that lands nothing has a Landing row that waits on none", () => {
   const rows = runsOf(twoCycles, [], ticket21Program, false)[0]?.rows ?? [];
   expect(rows.at(-1)).toEqual({
     kind: "Landing",
-    name: "Landing",
+    name: "Finalization",
     landing: undefined,
     lands: false,
   });
@@ -533,13 +533,13 @@ test("a report's opening is read as words, without the marks it was set in", () 
 
 test("a pull request is named as its forge names it, and by its host otherwise", () => {
   expect(
-    ticketLandingLinkLabel({
+    ticketFinalizationLinkLabel({
       href: "https://github.com/kasofsk/chuggy-common/pull/138",
       host: "github.com",
     }),
   ).toBe("kasofsk/chuggy-common#138");
   expect(
-    ticketLandingLinkLabel({
+    ticketFinalizationLinkLabel({
       href: "https://forge.example.test/merge/7",
       host: "forge.example.test",
     }),

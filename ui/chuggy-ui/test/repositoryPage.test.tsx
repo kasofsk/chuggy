@@ -305,10 +305,10 @@ function chosenWorkflowFiles(): string | undefined {
 
 test("the page reads its own binding, and says what it lands as", async () => {
   await drawPage({ bound: [binding(proposal)] });
-  const finalization = sectionOf("Landing");
+  const finalization = sectionOf("Finalization");
   expect(
     within(finalization).getByText(
-      "How a finished ticket lands. A ticket may choose otherwise.",
+      "How a finished ticket is finalized. A ticket may choose otherwise.",
     ),
   ).toBeTruthy();
   expect(screen.getByRole("heading", { name: "kasofsk/chuggy" })).toBeTruthy();
@@ -329,7 +329,7 @@ test("the page reads its own binding, and says what it lands as", async () => {
 test("a repository this project does not bind draws nothing but Not bound", async () => {
   await drawPage({ repository: "https://forge.test/kasofsk/none" });
   expect(screen.getByText("Not bound")).toBeTruthy();
-  expect(screen.queryByRole("region", { name: /^Landing/u })).toBeNull();
+  expect(screen.queryByRole("region", { name: /^Finalization/u })).toBeNull();
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
 
@@ -366,7 +366,7 @@ test("a saved finalization is written against the one the page read", async () =
   const sent = await drawPage({
     written: [answer({ repository: binding(proposal) })],
   });
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -383,7 +383,7 @@ test("a saved finalization is written against the one the page read", async () =
   expect(screen.getByText("Written")).toBeTruthy();
   expect(chosenFinalization()).toBe("Pull request");
   expect(
-    within(sectionOf("Landing")).getByRole("button", { name: "Edit" }),
+    within(sectionOf("Finalization")).getByRole("button", { name: "Edit" }),
   ).toBeTruthy();
 });
 
@@ -395,8 +395,8 @@ test("a git merge's policy is offered only under a git merge, and is written wit
   const sent = await drawPage({
     written: [answer({ repository: binding(serialized) })],
   });
-  await edit("Landing");
-  const section = sectionOf("Landing");
+  await edit("Finalization");
+  const section = sectionOf("Finalization");
   await turned(() => {
     fireEvent.click(within(section).getByRole("radio", { name: "None" }));
   });
@@ -427,8 +427,8 @@ test("a git merge's policy can be Stacked, and is written as chosen", async () =
   const sent = await drawPage({
     written: [answer({ repository: binding(stacked) })],
   });
-  await edit("Landing");
-  const section = sectionOf("Landing");
+  await edit("Finalization");
+  const section = sectionOf("Finalization");
   await turned(() => {
     fireEvent.click(within(section).getByRole("radio", { name: "Stacked" }));
   });
@@ -463,7 +463,7 @@ test("a finalization that moved under the write says so, and rebases onto what s
       answer({ repository: binding(push) }),
     ],
   });
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -575,7 +575,7 @@ test("a finalization saved after workflow files were allowed keeps them allowed"
   });
   await switchedOn("Workflow files");
   await press("Save changes");
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -605,7 +605,7 @@ test("a refused write says so and leaves the edit open", async () => {
       answer({ error: { code: "RepositoryLocked", message: "no" } }, 403),
     ],
   });
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -617,7 +617,7 @@ test("a refused write says so and leaves the edit open", async () => {
 
 test("cancelling a choice leaves the finalization the page read", async () => {
   await drawPage();
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -666,7 +666,7 @@ test("a walk the budget stopped says so under the rows it did read", async () =>
   styleless();
 });
 
-function finalizationEditOffered(title = "Landing"): boolean {
+function finalizationEditOffered(title = "Finalization"): boolean {
   return (
     within(sectionOf(title)).queryByRole("button", { name: "Edit" }) !== null
   );

@@ -263,7 +263,7 @@ export interface SetupCopy {
   readonly "setup-read-personal": Record<never, never>;
   readonly "setup-read-tickets": Record<never, never>;
   readonly "setup-read-drafts": Record<never, never>;
-  readonly "setup-read-landings": Record<never, never>;
+  readonly "setup-read-finalizations": Record<never, never>;
   readonly "setup-fate-refused": Record<never, never>;
   readonly "setup-fate-cut": Record<never, never>;
   readonly "setup-fate-unasked": Record<never, never>;
@@ -351,7 +351,7 @@ export interface SetupCopy {
   readonly "setup-step-ticket-done": {
     readonly ticket: unknown;
   };
-  readonly "setup-step-ticket-landed": {
+  readonly "setup-step-ticket-finalized": {
     readonly ticket: unknown;
   };
   readonly "setup-step-ticket-proposed": {
@@ -673,7 +673,7 @@ export interface SetupCopy {
   readonly "setup-mend-dispatch-when": {
     readonly ticket: unknown;
   };
-  readonly "setup-mend-landing-tell": {
+  readonly "setup-mend-finalization-tell": {
     readonly ticket: unknown;
     readonly phase: unknown;
     readonly page: unknown;

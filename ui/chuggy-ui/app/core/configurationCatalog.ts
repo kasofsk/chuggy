@@ -463,9 +463,9 @@ export interface CatalogChoice {
 }
 
 /** How a finalizer lands, as the line beside its name: its own method, or the repository's landing where it names none. */
-export function catalogFinalizerLanding(finalizer: CatalogFinalizer): Copy {
+export function catalogFinalizerLabel(finalizer: CatalogFinalizer): Copy {
   return finalizer.finalization === undefined
-    ? { id: "configuration-catalog-repository-landing" }
+    ? { id: "configuration-catalog-repository-finalization" }
     : finalizationMethodLabel(finalizer.finalization);
 }
 
@@ -520,7 +520,7 @@ export function configurationCatalogChoices(
       configurationCatalogChoice(
         text,
         finalizer.name,
-        catalogFinalizerLanding(finalizer),
+        catalogFinalizerLabel(finalizer),
         defaults.finalization,
       ),
     ),

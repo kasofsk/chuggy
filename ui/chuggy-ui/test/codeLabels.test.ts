@@ -84,7 +84,7 @@ import {
   runStepLine,
   ticketActionEffect,
   ticketActionLabel,
-  ticketLandingStateLabel,
+  ticketFinalizationStateLabel,
   usageResumeLine,
 } from "../app/core/codeLabels.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -162,7 +162,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
 
 test("every landing state is one word", () => {
   for (const state of ticketLandingStates)
-    expect(copyTextEn(ticketLandingStateLabel(state))).toMatch(
+    expect(copyTextEn(ticketFinalizationStateLabel(state))).toMatch(
       /^[A-Z][a-z]+$/u,
     );
 });
@@ -549,7 +549,7 @@ test("the escalation's one line names the finalization wall where the read carri
         resumeAt: "ResumeFinalization",
       }),
     ),
-  ).toBe("Landing unavailable");
+  ).toBe("Finalization unavailable");
 });
 
 /**
@@ -657,7 +657,7 @@ test("every resume point draws the effect the machine gives it", () => {
     ["ResumeWork", "Re-runs the work · new artifact"],
     ["ResumeRework", "Reworks · new artifact"],
     ["ResumeEvaluation", "Re-runs evaluation from stage 1"],
-    ["ResumeFinalization", "Re-runs landing"],
+    ["ResumeFinalization", "Re-runs finalization"],
   ]);
 });
 
@@ -804,7 +804,7 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
   ).toStrictEqual([
     "Merges the work into the target branch",
     "Opens a pull request a person merges",
-    "Lands nothing",
+    "Finalizes onto nothing",
   ]);
   expect(
     briefGitMergeModes.map((each) => copyTextEn(gitMergeModeLabel(each))),
@@ -821,9 +821,9 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
   expect(
     briefGitMergePolicies.map((each) => copyTextEn(gitMergePolicyEffect(each))),
   ).toStrictEqual([
-    "Lands as soon as it is accepted",
-    "Lands alone on its reference, evaluated on what it lands",
-    "Evaluated over the tickets ahead, lands if its base held",
+    "Finalizes as soon as it is accepted",
+    "Finalizes alone on its reference, evaluated as finalized",
+    "Evaluated over the tickets ahead, finalizes if its base held",
   ]);
 });
 
@@ -840,7 +840,7 @@ test("a finalization read back names its reference, and a proposal names the def
     policy: "Serialized",
   } as const;
   expect(copyTextEn(finalizationLine({ ...push, target }))).toBe(
-    "Push · lands on refs/heads/main",
+    "Push · finalizes onto refs/heads/main",
   );
   expect(copyTextEn(finalizationLine(push))).toBe("Push");
   expect(copyTextEn(finalizationLine({ kind: "PullRequest", target }))).toBe(
@@ -868,7 +868,7 @@ const labelOfKind: Readonly<Record<EscalationKind, string>> = {
   EvaluationFailureEscalated: "Rework budget exhausted",
   WorkExecutionUnavailableEscalated: "Run unavailable",
   EvaluationBlockedEscalated: "Evaluation blocked",
-  FinalizationUnavailableEscalated: "Landing unavailable",
+  FinalizationUnavailableEscalated: "Finalization unavailable",
 };
 
 test.each(escalationKinds)("the label for %s says what it says", (kind) => {
@@ -952,7 +952,11 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
     [...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
     true,
   ],
-  ["landing states", ticketLandingStates.map(ticketLandingStateLabel), true],
+  [
+    "landing states",
+    ticketLandingStates.map(ticketFinalizationStateLabel),
+    true,
+  ],
   [
     "landing failures",
     finalizationFailureKinds.map(finalizationFailureKindLabel),

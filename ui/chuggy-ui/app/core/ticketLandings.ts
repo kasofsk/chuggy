@@ -39,7 +39,7 @@ import {
   finalizationFailureKindLabel,
   finalizationRecheckReasonLabel,
   finalizationUnavailableKindLabel,
-  ticketLandingStateLabel,
+  ticketFinalizationStateLabel,
 } from "./codeLabels.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { agoText } from "./figures.ts";
@@ -234,14 +234,14 @@ type TicketLandingHoldRead = NonNullable<
 >;
 
 /** The forge's reason for a removal from a merge queue, and who removed the pull request where it names them. */
-function ticketLandingRemovalText(
+function ticketFinalizationRemovalText(
   removal: NonNullable<TicketLandingHoldRead["removal"]>,
   text: CopyText,
 ): string {
   return removal.actor === undefined
     ? removal.reason
     : text({
-        id: "ticket-landing-removal-by",
+        id: "ticket-finalization-removal-by",
         args: { reason: removal.reason, actor: removal.actor },
       });
 }
@@ -263,7 +263,7 @@ function ticketLandingHoldOf(
   const removal =
     hold.removal === undefined
       ? undefined
-      : ticketLandingRemovalText(hold.removal, text);
+      : ticketFinalizationRemovalText(hold.removal, text);
   const label =
     hold.kind === "ProposalAbsent" && read.proposal?.status === "Closed"
       ? changeProposalStatusLabel(read.proposal.status)
@@ -273,7 +273,10 @@ function ticketLandingHoldOf(
     label: text(
       removal === undefined
         ? label
-        : { id: "ticket-landing-hold-removal", args: { hold: label, removal } },
+        : {
+            id: "ticket-finalization-hold-removal",
+            args: { hold: label, removal },
+          },
     ),
     since: hold.since,
     removal,
@@ -313,7 +316,7 @@ function ticketLandingFailureOf(
   return attempt.failureKind === "RecheckRequired" &&
     attempt.recheck !== undefined
     ? text({
-        id: "ticket-landing-recheck-required",
+        id: "ticket-finalization-recheck-required",
         args: {
           reason: finalizationRecheckReasonLabel(attempt.recheck.reason),
         },
@@ -354,8 +357,8 @@ export function ticketLandingOf(
     key: `${String(read.cycle)}/${String(read.generation)}`,
     cycle: read.cycle,
     state: read.state,
-    word: text(ticketLandingStateLabel(read.state)),
-    summary: text(ticketLandingSummaryLabel(read.state)),
+    word: text(ticketFinalizationStateLabel(read.state)),
+    summary: text(ticketFinalizationSummaryLabel(read.state)),
     tone: ticketLandingTone(read.state),
     failure: ticketLandingFailureOf(read, text),
     conflictCount: read.conflict?.paths.length ?? 0,
@@ -460,21 +463,24 @@ export function ticketLandingsHeld(
 }
 
 /** How long a held landing has been held, in the age every page reads. */
-function ticketLandingHeldFor(hold: TicketLandingHold, nowMs: number): Copy {
+function ticketFinalizationHeldFor(
+  hold: TicketLandingHold,
+  nowMs: number,
+): Copy {
   const sinceMs = Date.parse(hold.since);
   return Number.isFinite(sinceMs)
     ? {
-        id: "ticket-landing-held-for",
+        id: "ticket-finalization-held-for",
         args: { age: agoText(nowMs, sinceMs), hold: hold.label },
       }
-    : { id: "ticket-landing-held", args: { hold: hold.label } };
+    : { id: "ticket-finalization-held", args: { hold: hold.label } };
 }
 
 /**
  * What a landing's merge waits on, the forge's own word where it adds to it,
  * and how long ago the forge was asked.
  */
-function ticketLandingWaitText(
+function ticketFinalizationWaitText(
   wait: TicketLandingWait,
   nowMs: number,
 ): CopyOrData {
@@ -484,12 +490,12 @@ function ticketLandingWaitText(
     wait.mergeState.toLowerCase() === wait.label.toLowerCase()
       ? wait.label
       : {
-          id: "ticket-landing-wait-state",
+          id: "ticket-finalization-wait-state",
           args: { wait: wait.label, state: wait.mergeState },
         };
   return Number.isFinite(checkedMs)
     ? {
-        id: "ticket-landing-wait-checked",
+        id: "ticket-finalization-wait-checked",
         args: {
           wait: waits,
           checked: {
@@ -535,10 +541,10 @@ function ticketLandingLandedAt(
       }
     : {
         commit: {
-          name: { id: "ticket-landing-merged" },
+          name: { id: "ticket-finalization-merged" },
           label: landing.landedCommit,
         },
-        caveat: { id: "ticket-landing-unevaluated-head" },
+        caveat: { id: "ticket-finalization-unevaluated-head" },
       };
 }
 
@@ -554,7 +560,7 @@ export function ticketLandingFragment(
           landing.failure === undefined || landing.conflictCount === 0
             ? landing.failure
             : {
-                id: "ticket-landing-failure-files",
+                id: "ticket-finalization-failure-files",
                 args: {
                   failure: landing.failure,
                   files: {
@@ -572,7 +578,7 @@ export function ticketLandingFragment(
         text:
           landing.hold === undefined
             ? undefined
-            : ticketLandingHeldFor(landing.hold, nowMs),
+            : ticketFinalizationHeldFor(landing.hold, nowMs),
         link: landing.link,
         commit: undefined,
         caveat: undefined,
@@ -582,7 +588,7 @@ export function ticketLandingFragment(
         text:
           landing.wait === undefined
             ? undefined
-            : ticketLandingWaitText(landing.wait, nowMs),
+            : ticketFinalizationWaitText(landing.wait, nowMs),
         link: landing.link,
         commit: undefined,
         caveat: undefined,
@@ -624,28 +630,28 @@ export function ticketLandingFragmentSays(
 }
 
 /** What a cycle's header says of its newest landing. */
-export function ticketLandingSummary(landing: TicketLanding): string {
+export function ticketFinalizationSummary(landing: TicketLanding): string {
   return landing.summary;
 }
 
-function ticketLandingSummaryLabel(state: TicketLandingState): Copy {
+function ticketFinalizationSummaryLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
-      return { id: "ticket-landing-summary-running" };
+      return { id: "ticket-finalization-summary-running" };
     case "Held":
-      return { id: "ticket-landing-summary-held" };
+      return { id: "ticket-finalization-summary-held" };
     case "AwaitingMerge":
-      return { id: "ticket-landing-summary-waiting" };
+      return { id: "ticket-finalization-summary-waiting" };
     case "Failed":
-      return { id: "ticket-landing-summary-failed" };
+      return { id: "ticket-finalization-summary-failed" };
     case "Unavailable":
-      return { id: "ticket-landing-summary-escalated" };
+      return { id: "ticket-finalization-summary-escalated" };
     case "Landed":
-      return ticketLandingStateLabel(state);
+      return ticketFinalizationStateLabel(state);
     case "Proposed":
-      return { id: "ticket-landing-summary-proposed" };
+      return { id: "ticket-finalization-summary-proposed" };
     case "Invalidated":
-      return { id: "ticket-landing-summary-invalidated" };
+      return { id: "ticket-finalization-summary-invalidated" };
   }
 }
 
@@ -662,7 +668,10 @@ export function ticketLandingEscalatedRemoval(
   const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
   return hold?.removal === undefined || hold.kind !== evidence
     ? undefined
-    : { id: "ticket-landing-queue-removal", args: { removal: hold.removal } };
+    : {
+        id: "ticket-finalization-queue-removal",
+        args: { removal: hold.removal },
+      };
 }
 
 /**
@@ -679,7 +688,7 @@ export function ticketLandingEscalatedRefused(
   return hold?.refused === undefined || hold.kind !== evidence
     ? undefined
     : {
-        id: "ticket-landing-target-paths-refused",
+        id: "ticket-finalization-target-paths-refused",
         args: { paths: hold.refused.join(", ") },
       };
 }
@@ -729,7 +738,7 @@ function ticketLandingLive(state: TicketLandingState): boolean {
 
 /** A pull request as a short label: its number where a forge's `…/pull/<n>`
  * address names it, and its host otherwise. */
-export function ticketLandingPullLabel(
+export function ticketFinalizationPullLabel(
   link: TicketDeliveryLink,
   text: CopyText,
 ): string {
@@ -737,14 +746,14 @@ export function ticketLandingPullLabel(
   return numbered === null
     ? link.host
     : text({
-        id: "ticket-landing-pull-number",
+        id: "ticket-finalization-pull-number",
         args: { number: numbered[1] ?? "" },
       });
 }
 
 /** A pull request's address as a forge names it, `owner/repository#number`,
  * and its host where the address has no such shape. */
-export function ticketLandingLinkLabel(link: TicketDeliveryLink): string {
+export function ticketFinalizationLinkLabel(link: TicketDeliveryLink): string {
   const named = /^\/([^/]+)\/([^/]+)\/pulls?\/([0-9]+)/u.exec(
     new URL(link.href).pathname,
   );

@@ -13,7 +13,7 @@ import {
   landingQueuePlaceOf,
   landingQueuePlaceReference,
   landingQueuePlaceTone,
-  landingQueuePlaceWords,
+  finalizationQueuePlaceWords,
 } from "../app/core/landingQueues.ts";
 
 const repository = "https://github.com/acme/widgets.git";
@@ -95,8 +95,8 @@ test("the holder is toned and worded as landing next, a waiter as waiting", () =
     id: "ticket-queue-place",
     args: { position: "3", total: "3" },
   });
-  expect(landingQueuePlaceWords(holder).id).toBe("ticket-queue-holding");
-  expect(landingQueuePlaceWords(waiter)).toStrictEqual({
+  expect(finalizationQueuePlaceWords(holder).id).toBe("ticket-queue-holding");
+  expect(finalizationQueuePlaceWords(waiter)).toStrictEqual({
     id: "ticket-queue-waiting",
     args: {
       position: "3",
@@ -128,8 +128,12 @@ test("a read cut by rank gives each total as the least its queue holds, in figur
     id: "ticket-queue-place-cut",
     args: { position: "2", total: "3" },
   });
-  expect(landingQueuePlaceWords(waiter).id).toBe("ticket-queue-waiting-cut");
-  expect(landingQueuePlaceWords(holder).id).toBe("ticket-queue-holding-cut");
+  expect(finalizationQueuePlaceWords(waiter).id).toBe(
+    "ticket-queue-waiting-cut",
+  );
+  expect(finalizationQueuePlaceWords(holder).id).toBe(
+    "ticket-queue-holding-cut",
+  );
 });
 
 test("a queue with a target is worded as that target in its repository, and one without as the repository's default branch", () => {
@@ -145,7 +149,7 @@ test("a queue with a target is worded as that target in its repository, and one 
     id: "ticket-queue-reference-default",
     args: { repository },
   });
-  expect(landingQueuePlaceWords(onTarget)).toMatchObject({
+  expect(finalizationQueuePlaceWords(onTarget)).toMatchObject({
     args: { reference: landingQueuePlaceReference(onTarget) },
   });
 });

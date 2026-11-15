@@ -13,7 +13,7 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   landingQueuePlaceFigure,
   landingQueuePlaceTone,
-  landingQueuePlaceWords,
+  finalizationQueuePlaceWords,
 } from "../../core/landingQueues.ts";
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
 import { landingQueuesQuery } from "../../core/ticketQueries.ts";
@@ -44,10 +44,10 @@ export function LandingQueueChip(props: {
   const place = props.place;
   if (place === undefined) return null;
   const tone = landingQueuePlaceTone(place);
-  const words = text(landingQueuePlaceWords(place));
+  const words = text(finalizationQueuePlaceWords(place));
   const chip = (
     <span
-      className={`${pillLookClassName({ tone })} landing-queue-chip`}
+      className={`${pillLookClassName({ tone })} finalization-queue-chip`}
       role="img"
       aria-label={words}
       title={props.inLink === true ? words : undefined}

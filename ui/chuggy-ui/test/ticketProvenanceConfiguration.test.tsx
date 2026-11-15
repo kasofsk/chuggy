@@ -484,7 +484,7 @@ test("a catalog draws what the ticket selected of it: its work, its plan's stage
   const gates = row("gates");
   expect(cell(gates, "workload")).toBeUndefined();
   expect(cell(gates, "runs")).toBe("Commands · npm test");
-  expect(details(row("Landing", group("Finalization")))).toStrictEqual(
+  expect(details(row("Finalization", group("Finalization")))).toStrictEqual(
     new Map(),
   );
   expect(screen.queryByText("Do it fast.")).toBeNull();
@@ -554,7 +554,7 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
   const cases = [
     [
       { verdict: "Held", code: "SelectionUnknown" },
-      "Stays on this revision · Workload, plan or landing not in the catalog",
+      "Stays on this revision · Workload, plan or finalizer not in the catalog",
     ],
     [
       { verdict: "Held", code: "ConfigurationInvalid" },
@@ -633,7 +633,7 @@ const briefFinalized = {
 
 /** The landing a brief's finalization is drawn as. */
 function landing(): HTMLElement {
-  return row("Landing", group("Finalization"));
+  return row("Finalization", group("Finalization"));
 }
 
 test("a version 1 ticket's landing is the one its brief names, and no Finalization is drawn where it names none", async () => {

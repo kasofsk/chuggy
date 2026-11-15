@@ -93,7 +93,7 @@ export function escalationKindLabel(kind: EscalationKind): Copy {
     case "EvaluationBlockedEscalated":
       return { id: "codes-escalation-evaluation-blocked" };
     case "FinalizationUnavailableEscalated":
-      return { id: "codes-escalation-landing-unavailable" };
+      return { id: "codes-escalation-finalization-unavailable" };
   }
 }
 
@@ -226,24 +226,24 @@ export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
 }
 
 /** Where one landing stands, as the one word its pill says. */
-export function ticketLandingStateLabel(state: TicketLandingState): Copy {
+export function ticketFinalizationStateLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
-      return { id: "codes-landing-running" };
+      return { id: "codes-finalization-running" };
     case "Held":
-      return { id: "codes-landing-held" };
+      return { id: "codes-finalization-held" };
     case "AwaitingMerge":
-      return { id: "codes-landing-waiting" };
+      return { id: "codes-finalization-waiting" };
     case "Failed":
-      return { id: "codes-landing-failed" };
+      return { id: "codes-finalization-failed" };
     case "Unavailable":
-      return { id: "codes-landing-escalated" };
+      return { id: "codes-finalization-escalated" };
     case "Landed":
-      return { id: "codes-landing-landed" };
+      return { id: "codes-finalization-finalized" };
     case "Proposed":
-      return { id: "codes-landing-proposed" };
+      return { id: "codes-finalization-proposed" };
     case "Invalidated":
-      return { id: "codes-landing-invalidated" };
+      return { id: "codes-finalization-invalidated" };
   }
 }
 
@@ -253,15 +253,15 @@ export function finalizationFailureKindLabel(
 ): Copy {
   switch (kind) {
     case "MergeConflict":
-      return { id: "codes-landing-failure-conflict" };
+      return { id: "codes-finalization-failure-conflict" };
     case "PreparationFailed":
-      return { id: "codes-landing-failure-preparation" };
+      return { id: "codes-finalization-failure-preparation" };
     case "QueueChecksFailed":
-      return { id: "codes-landing-failure-queue-checks" };
+      return { id: "codes-finalization-failure-queue-checks" };
     case "RecheckRequired":
-      return { id: "codes-landing-failure-recheck" };
+      return { id: "codes-finalization-failure-recheck" };
     case "Restack":
-      return { id: "codes-landing-failure-restack" };
+      return { id: "codes-finalization-failure-restack" };
   }
 }
 
@@ -654,11 +654,11 @@ export function revokedDependencyLine(
 export function finalizationKindLabel(kind: BriefFinalizationKind): Copy {
   switch (kind) {
     case "GitMerge":
-      return { id: "codes-landing-kind-git-merge" };
+      return { id: "codes-finalization-kind-git-merge" };
     case "PullRequest":
-      return { id: "codes-landing-kind-pull-request" };
+      return { id: "codes-finalization-kind-pull-request" };
     case "None":
-      return { id: "codes-landing-kind-none" };
+      return { id: "codes-finalization-kind-none" };
   }
 }
 
@@ -667,11 +667,11 @@ export function finalizationKindLabel(kind: BriefFinalizationKind): Copy {
 export function finalizationKindEffect(kind: BriefFinalizationKind): Copy {
   switch (kind) {
     case "GitMerge":
-      return { id: "codes-landing-kind-git-merge-effect" };
+      return { id: "codes-finalization-kind-git-merge-effect" };
     case "PullRequest":
-      return { id: "codes-landing-kind-pull-request-effect" };
+      return { id: "codes-finalization-kind-pull-request-effect" };
     case "None":
-      return { id: "codes-landing-kind-none-effect" };
+      return { id: "codes-finalization-kind-none-effect" };
   }
 }
 
@@ -747,14 +747,16 @@ export function finalizationLine(finalization: FinalizationOfTarget): Copy {
     return finalization.target === undefined
       ? method
       : {
-          id: "codes-landing-onto",
+          id: "codes-finalization-onto",
           args: { method, target: finalization.target },
         };
   return {
-    id: "codes-landing-into",
+    id: "codes-finalization-into",
     args: {
       method,
-      target: finalization.target ?? { id: "codes-landing-default-branch" },
+      target: finalization.target ?? {
+        id: "codes-finalization-default-branch",
+      },
     },
   };
 }
@@ -795,7 +797,7 @@ function resumeEffect(point: ResumePoint): Copy {
     case "ResumeEvaluation":
       return { id: "codes-resume-evaluation" };
     case "ResumeFinalization":
-      return { id: "codes-resume-landing" };
+      return { id: "codes-resume-finalization" };
   }
 }
 
@@ -951,7 +953,7 @@ export function operationRefusalLabel(code: OperationRefusalCode): Copy {
     case "EvaluationNotCurrent":
       return { id: "codes-refusal-evaluation-not-current" };
     case "FinalizationNotCurrent":
-      return { id: "codes-refusal-landing-not-current" };
+      return { id: "codes-refusal-finalization-not-current" };
   }
 }
 
@@ -995,7 +997,7 @@ function operationRefusalBoundaryLabel(
     case "TicketCapacityReached":
       return { id: "codes-refusal-capacity-reached" };
     case "FinalizationRequestClosed":
-      return { id: "codes-refusal-landing-request-closed" };
+      return { id: "codes-refusal-finalization-request-closed" };
     case "OverridesMoveDefinition":
       return { id: "codes-refusal-overrides-move-definition" };
     case "ApprovalAsWork":
