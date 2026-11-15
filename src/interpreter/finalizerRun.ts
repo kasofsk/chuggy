@@ -39,12 +39,25 @@
  * each time it runs, under the permit's own fence rather than under a claim,
  * because the permit is the authority for the act and therefore for reading it.
  *
- * EVERY PASS IS BOUNDED AND HAS NO LOOP OF ITS OWN. Each step takes its ceiling
- * from the configuration it re-checks, advances at most one decision per claimed
- * request, and returns; the loop that calls it again is a deployment's. What it
- * reports is what it moved, and a held count is every finalization it left
- * exactly where it found it — a hold the view decided, a ref it could not read,
- * a permit it was refused, and a request the pass had no budget left for.
+ * EVERY PASS IS BOUNDED, AND A CLAIM IS ADVANCED UNTIL IT STOPS. A claimed
+ * request is gathered, decided and stepped again while its last step moved it,
+ * at most `claimStepsPerPassMax` times, every step priced against the ceilings
+ * the configuration names and each keeping its own durable order, so a crash
+ * between two steps is one pass stopping early. The lease is renewed before
+ * each step after the first, and a renewal refused ends the chain, the claim
+ * being somebody else's. A hold, a conclusion and a re-preparation, which is a
+ * refused update's answer, each end it too; the loop that calls the pass again
+ * is a deployment's. What it reports is what it moved, and a held count is
+ * every finalization it left where its last step found it — a hold the view
+ * decided, a ref it could not read, a permit it was refused, and a request the
+ * pass had no budget left for.
+ *
+ * A CLAIM STOPPED SHORT IS GIVEN BACK UNLESS THE LEASE IS WHAT PACES IT. A
+ * chain that ran out of steps or budget, re-prepares, or waits on a merge the
+ * forge is asked about on the store's own cadence reopens its request, so the
+ * next pass draws it. Every other hold keeps its claim until the lease lapses:
+ * the dwell is counted in passes that find the request, and a port that just
+ * failed would otherwise be asked again on every pass.
  *
  * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
  * ticket pending unstacked that could now stack over the queue ahead of it has
@@ -163,7 +176,7 @@
  * about the proposal, and readings that reached the forge and found nothing
  * spend the create they were taken about, after which another one is what
  * `proposalCreationsMax` authorizes. Every act is bounded by the pass as well: one
- * proposal act per claimed request, and no more of them in a pass than
+ * proposal act per step, and no more of them in a pass than
  * `proposalsPerPassMax`. Escalating or aborting a request whose proposal may be
  * queued adds one dequeue and the read after it beyond that act, counted with
  * the proposals but never refused by their ceiling, because a dequeue skipped
@@ -183,8 +196,8 @@
  * answer and never asks for it.
  *
  * A MERGE WAITING ON THE FORGE IS ASKED AGAIN ON A CADENCE, NEVER EVERY PASS.
- * The request is redrawn whenever its claim lapses, as every held one is, and
- * the store ages the wait by the database's clock, so a pass that finds it read
+ * The request gives its claim back and is redrawn by the next pass, and the
+ * store ages the wait by the database's clock, so a pass that finds it read
  * too recently holds without reaching the forge and one that finds it due
  * spends a proposal act like any other reading.
  *
@@ -273,6 +286,7 @@ import {
   type FinalizationAttempt,
   type FinalizationClaim,
   type FinalizationConclusion,
+  type FinalizationDecision,
   type FinalizationOffer,
   type FinalizationRecheckReason,
   type FinalizationReconciliation,
@@ -408,8 +422,8 @@ interface FinalizerTally {
    * Why the request being advanced right now was left where it was found, or
    * nothing where it moved. A hold is counted inside whatever act reached it
    * and the record of it is written where the advance ends, so the reason
-   * travels back up the path the count came down; `finalizerAdvance` clears it
-   * before each request, so it never answers for the one before.
+   * travels back up the path the count came down; `finalizerAdvanceStep` clears
+   * it before each step, so it never answers for the one before.
    */
   heldReason: FinalizerHoldReason | undefined;
   /** The files a `TargetPathsRefused` hold is over, travelling beside `heldReason` and cleared with it. */
@@ -2918,33 +2932,122 @@ async function finalizerRecordHold(
 }
 
 /**
- * Advances one claimed request by at most one decision, or by none at all, and
- * leaves the request holding what that advance found. A pass that reached a
- * result records nothing: the request is answered, and the columns it carries
- * are the evidence of what answered it, though the sink is told either way
- * which request this was and the hold it was left at, if any.
+ * The holds whose asking again something other than the lease already paces,
+ * which give their claim back: a merge waiting on the forge is read again on
+ * the store's own cadence, and a ceiling is this pass's budget rather than
+ * anything about the request.
+ */
+const finalizerHoldsReleased: readonly FinalizerHoldReason[] = [
+  "ProposalMergeBlocked",
+  "ProposalHeadMoved",
+  "ProposalQueued",
+  "PassCeilingReached",
+];
+
+/** What one step of a claim's chain came to: another step due, or where it stopped and whether that gives the claim back. */
+type FinalizerStepped =
+  | { readonly stepped: "Gone" }
+  | { readonly stepped: "Moved"; readonly view: FinalizationView }
+  | {
+      readonly stepped: "Stopped";
+      readonly view: FinalizationView | undefined;
+      readonly reopened: boolean;
+    };
+
+/**
+ * Decides and performs one step of a claimed request. Only a step that spent
+ * a move and was neither held nor concluded leaves another due, and a
+ * preparation past the chain's first step is a refusal re-preparing, which
+ * waits for the next pass.
+ */
+async function finalizerAdvanceStep(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  tally: FinalizerTally,
+  first: boolean,
+): Promise<FinalizerStepped> {
+  tally.heldReason = undefined;
+  tally.heldRefused = undefined;
+  const gathered = await finalizerGather(service, claim);
+  if (gathered === undefined) return { stepped: "Gone" };
+  if (gathered.gathered === "Held") {
+    finalizerHold(service, tally, gathered.hold);
+    return {
+      stepped: "Stopped",
+      view: undefined,
+      reopened: finalizerHoldsReleased.includes(gathered.hold),
+    };
+  }
+  const view = gathered.view;
+  const decision = finalizationNext(
+    checkedFinalizerConfig(service.config),
+    view,
+  );
+  if (!first && decision.decide === "Prepare")
+    return { stepped: "Stopped", view, reopened: true };
+  const moves = finalizerMovesOf(tally);
+  const concluded = tally.conclusions;
+  await finalizerAdvanceDecided(service, view, decision, tally);
+  const held = tally.heldReason;
+  if (tally.conclusions !== concluded || held !== undefined)
+    return {
+      stepped: "Stopped",
+      view,
+      reopened:
+        tally.conclusions === concluded &&
+        held !== undefined &&
+        finalizerHoldsReleased.includes(held),
+    };
+  return finalizerMovesOf(tally) > moves
+    ? { stepped: "Moved", view }
+    : { stepped: "Stopped", view, reopened: false };
+}
+
+/** Every move a step can spend, which is what says the step did something. */
+function finalizerMovesOf(tally: FinalizerTally): number {
+  return (
+    tally.preparations +
+    tally.promotions +
+    tally.reconciliations +
+    tally.proposals
+  );
+}
+
+/**
+ * Advances one claimed request step by step, renewing the lease before each
+ * step after the first and stopping at a refused renewal, a hold, a
+ * conclusion, a re-preparation or `claimStepsPerPassMax`, and leaves the
+ * request holding what the last step found. A pass that reached a result
+ * records nothing: the request is answered, and the columns it carries are the
+ * evidence of what answered it, though the sink is told either way which
+ * request this was and the hold it was left at, if any.
  */
 async function finalizerAdvance(
   service: FinalizerService,
   claim: FinalizationClaim,
   tally: FinalizerTally,
 ): Promise<void> {
-  tally.heldReason = undefined;
-  tally.heldRefused = undefined;
-  const gathered = await finalizerGather(service, claim);
-  if (gathered === undefined) return;
+  const config = checkedFinalizerConfig(service.config);
   const spent = tally.conclusions;
-  if (gathered.gathered === "Held")
-    finalizerHold(service, tally, gathered.hold);
-  else await finalizerAdvanceDecided(service, gathered.view, tally);
+  let stepped = await finalizerAdvanceStep(service, claim, tally, true);
+  for (
+    let step = 1;
+    step < config.claimStepsPerPassMax && stepped.stepped === "Moved";
+    step += 1
+  ) {
+    if (!(await service.store.extendClaim(claim, config.requestClaimLeaseSecs)))
+      return;
+    stepped = await finalizerAdvanceStep(service, claim, tally, false);
+  }
+  if (stepped.stepped === "Gone") return;
   if (tally.conclusions === spent)
-    await finalizerRecordHold(
-      service,
-      claim,
-      gathered.gathered === "Held" ? undefined : gathered.view,
-      tally,
-    );
+    await finalizerRecordHold(service, claim, stepped.view, tally);
   const held = tally.conclusions === spent ? tally.heldReason : undefined;
+  if (
+    tally.conclusions === spent &&
+    (stepped.stepped === "Moved" || stepped.reopened)
+  )
+    await service.store.releaseClaim(claim);
   recordFinalizer(service.metrics, (metrics) => {
     metrics.advanced(claim.request, held);
   });
@@ -2954,11 +3057,11 @@ async function finalizerAdvance(
 async function finalizerAdvanceDecided(
   service: FinalizerService,
   view: FinalizationView,
+  decision: FinalizationDecision,
   tally: FinalizerTally,
 ): Promise<void> {
   const config = checkedFinalizerConfig(service.config);
   const claim = view.claim;
-  const decision = finalizationNext(config, view);
   const ceilingReached = (spent: FinalizerCeiling, ceiling: number): boolean =>
     finalizerCeilingReached(service, tally, spent, ceiling);
   switch (decision.decide) {

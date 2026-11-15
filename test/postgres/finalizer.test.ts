@@ -127,6 +127,60 @@ test("the finalizer claims a request, holds it, and releases a lapsed claim", as
   assert.deepEqual(released, [{ state: "Open" }]);
 });
 
+test("a claim its holder stopped short of settling is reopened by that holder alone, and a settled one never", async () => {
+  const store = postgresFinalizer(rig.pool);
+  const project = await finalizerProject(rig, "release");
+  const claim = await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity("owner-release"),
+  );
+  const row = (): Promise<readonly Record<string, unknown>[]> =>
+    rig.harness.query(
+      `SELECT state, claim_owner, claim_generation::text AS generation, recovery_epoch
+         FROM finalization_request WHERE tenant=$1 AND project=$2 AND request=$3`,
+      [project.partition.tenant, project.partition.project, project.request],
+    );
+  assert.equal(
+    await store.releaseClaim({
+      ...claim,
+      claimGeneration: claim.claimGeneration + 1,
+    }),
+    false,
+  );
+  assert.equal(
+    await store.releaseClaim({
+      ...claim,
+      recoveryEpoch: asRecoveryEpoch("epoch-release-superseded"),
+    }),
+    false,
+  );
+  assert.equal(await store.releaseClaim(claim), true);
+  assert.deepEqual(await row(), [
+    {
+      state: "Open",
+      claim_owner: null,
+      generation: "2",
+      recovery_epoch: null,
+    },
+  ]);
+  assert.equal(await store.releaseClaim(claim), false);
+  assert.equal(await store.extendClaim(claim, 60), false);
+
+  const again = await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity("owner-release-again"),
+  );
+  await rig.harness.query(
+    `UPDATE finalization_request SET state='Fulfilled'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+  assert.equal(await store.releaseClaim(again), false);
+  assert.equal((await row())[0]?.["state"], "Fulfilled");
+});
+
 test("the finalizer prepares, permits, reconciles and concludes without the owner's help", async () => {
   const project = await finalizerProject(rig, "moves");
   await finalizerClaim(rig, project, finalizerIdentity("owner-moves"));

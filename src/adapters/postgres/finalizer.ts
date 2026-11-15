@@ -15,13 +15,15 @@
  * release nor reopen: the epoch it holds is not the epoch the database is in,
  * and no statement below matches on any other.
  *
- * A CLAIM MOVES THE REQUEST OUT OF THE OPEN SET, AND ONLY RECOVERY MOVES IT
- * BACK. `Registered` is what a held request is, so the claimable index offers
- * only work nobody holds and two passes never draw the same row. A lease that
- * lapses is not self-healing, for the same reason a permit is not: the row still
- * says it is held. Reopening is a durable move a fresh process asks for by name,
- * and it bumps the claim generation, which is what stops the previous holder's
- * later moves from matching anything.
+ * A CLAIM MOVES THE REQUEST OUT OF THE OPEN SET, AND ONLY ITS HOLDER OR
+ * RECOVERY MOVES IT BACK. `Registered` is what a held request is, so the
+ * claimable index offers only work nobody holds and two passes never draw the
+ * same row. A lease that lapses is not self-healing, for the same reason a
+ * permit is not: the row still says it is held. Reopening is a durable move
+ * asked for by name — by the holder releasing a claim it stopped short of
+ * settling, or by a fresh process condemning one — and it bumps the claim
+ * generation, which is what stops the previous holder's later moves from
+ * matching anything.
  *
  * NOTHING HERE CONCLUDES A TICKET. The role holds no privilege on `operation`,
  * `decision_input`, `journal_entry` or `ticket_projection`, so the only way a
@@ -446,6 +448,30 @@ async function finalizerSettleClaim(
         AND request = ${claim.request}
         AND claim_owner = ${claim.owner} AND claim_generation = ${claim.claimGeneration}
         AND state IN ('Fulfilled', 'Invalidated')`,
+  );
+  return released.rowCount === 1;
+}
+
+/**
+ * Reopens a request its holder stopped short of settling, at a later claim
+ * generation and under the epoch it was taken in, so the next draw finds it
+ * open; a settled request is `finalizerSettleClaim`'s.
+ */
+async function finalizerReleaseClaim(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<boolean> {
+  if ((await postgresOwnershipEpoch(client)) !== claim.recoveryEpoch)
+    return false;
+  const released = await client.query(
+    sql`UPDATE finalization_request
+        SET state = 'Open', claim_owner = NULL, claim_expires_at = NULL,
+            recovery_epoch = NULL, claim_generation = claim_generation + 1
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND claim_owner = ${claim.owner} AND claim_generation = ${claim.claimGeneration}
+        AND recovery_epoch = ${claim.recoveryEpoch}
+        AND state = 'Registered'`,
   );
   return released.rowCount === 1;
 }
@@ -936,13 +962,18 @@ function postgresFinalizerProposalQueue(
   };
 }
 
-/** The durable finalization authority for one installation, over a finalizer-role pool. */
-export function postgresFinalizer(
+/** The moves one holder makes on its own claims: taking, renewing and giving them back. */
+function postgresFinalizerClaims(
   pool: pg.Pool,
-): FinalizerStore & FinalizerPreparationStore & FinalizerProposalStore {
+): Pick<
+  FinalizerStore,
+  | "claimRequests"
+  | "claimUnattempted"
+  | "extendClaim"
+  | "settleClaim"
+  | "releaseClaim"
+> {
   return {
-    ...postgresFinalizerPreparation(pool),
-    ...postgresFinalizerProposals(pool),
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),
@@ -962,6 +993,25 @@ export function postgresFinalizer(
       postgresTransaction(pool, (client) =>
         finalizerExtendClaim(client, claim, leaseSecs),
       ),
+    settleClaim: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerSettleClaim(client, claim),
+      ),
+    releaseClaim: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerReleaseClaim(client, claim),
+      ),
+  };
+}
+
+/** The durable finalization authority for one installation, over a finalizer-role pool. */
+export function postgresFinalizer(
+  pool: pg.Pool,
+): FinalizerStore & FinalizerPreparationStore & FinalizerProposalStore {
+  return {
+    ...postgresFinalizerPreparation(pool),
+    ...postgresFinalizerProposals(pool),
+    ...postgresFinalizerClaims(pool),
     durableView: (claim) =>
       postgresTransaction(pool, (client) =>
         finalizerDurableView(client, claim),
@@ -987,10 +1037,6 @@ export function postgresFinalizer(
     submitResult: (offer) =>
       postgresTransaction(pool, (client) =>
         finalizerSubmitResult(client, offer),
-      ),
-    settleClaim: (claim) =>
-      postgresTransaction(pool, (client) =>
-        finalizerSettleClaim(client, claim),
       ),
     reclaimLapsed: (epoch, requestsMax) =>
       postgresTransaction(pool, (client) =>

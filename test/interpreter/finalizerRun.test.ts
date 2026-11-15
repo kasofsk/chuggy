@@ -277,6 +277,10 @@ interface FinalizerRecorder
   readonly grants: PermitRequest[];
   readonly readings: ReconciliationRecord[];
   readonly settled: string[];
+  /** Every request whose claim a pass gave back short of settling it, in order. */
+  readonly released: string[];
+  /** Whether every lease renewal is refused, which is what the pass sees of a claim it no longer holds. */
+  extensionsRefused?: boolean;
   /** Every hold this store was asked to record, in order, a cleared one naming no kind. */
   readonly holds: (FinalizationUnavailableKind | undefined)[];
   /** The files each of those records named, beside it. */
@@ -991,7 +995,7 @@ function recordingStore(
     },
     claimRequests: () => Promise.resolve(views.map((view) => view.claim)),
     ...recordingWaiting(views, () => own),
-    extendClaim: () => Promise.resolve(true),
+    extendClaim: () => Promise.resolve(own.extensionsRefused !== true),
     grantPermit: (request): Promise<PermitGranted> => {
       own.grants.push(request);
       return Promise.resolve(
@@ -1021,6 +1025,11 @@ function recordingStore(
     },
     settleClaim: (claim) => {
       own.settled.push(claim.request);
+      return Promise.resolve(true);
+    },
+    released: [],
+    releaseClaim: (claim) => {
+      own.released.push(claim.request);
       return Promise.resolve(true);
     },
     reclaimLapsed: () => Promise.resolve(0),
@@ -1551,7 +1560,11 @@ function proposedRequestOf(own: ForgeRecorder): ChangeProposalRequest {
   return request;
 }
 
-/** The service a case drives, over the ceilings it names. */
+/**
+ * The service a case drives, over the ceilings it names. A claim takes one
+ * step per pass unless the case names more, because most views here stand
+ * still whatever the pass writes, and a chain over one would repeat its step.
+ */
 function serviceOf(
   store: FinalizerRecorder,
   git: GitPromotionPort,
@@ -1569,7 +1582,7 @@ function serviceOf(
     pipelinePaths: [".github/workflows/"],
     identities: countingIdentities(),
     digestOf,
-    config: { ...finalizerDefaults, ...bounds },
+    config: { ...finalizerDefaults, claimStepsPerPassMax: 1, ...bounds },
     metrics,
   };
 }
@@ -6099,4 +6112,224 @@ test("a waiting request someone else claimed first is left for the next pass", a
   await passOver(service);
   assert.deepEqual(store.unattemptedClaims, [asTicketId(1)]);
   assert.deepEqual(store.attempts, []);
+});
+
+/**
+ * The view the durable rows of a chaining case hold at each gathering: the
+ * attempt the store recorded, the permit it granted and the reading that
+ * concluded it, so a pass that keeps advancing one claim decides from what its
+ * own last step wrote, as the durable authority's view does.
+ */
+function chainedViewOf(
+  store: FinalizerRecorder,
+  start: FinalizationView,
+): FinalizationView {
+  const request = start.claim.request;
+  const recorded = store.attempts.at(-1);
+  const reading = store.readings.find(
+    (each) => each.reconciliation.verdict !== "Unreadable",
+  );
+  return {
+    ...start,
+    ...(recorded === undefined
+      ? {}
+      : {
+          attempt: {
+            ...attemptOf(request),
+            target: recorded.target,
+            ...(recorded.candidate === undefined
+              ? {}
+              : { candidate: recorded.candidate }),
+          },
+          attemptsMade: store.attempts.length,
+        }),
+    ...(store.grants.length === 0 && start.permit === undefined
+      ? {}
+      : {
+          permit: {
+            ...permitOf(request),
+            state: reading === undefined ? "Granted" : "Concluded",
+          },
+        }),
+    ...(reading === undefined
+      ? {}
+      : { reconciliation: reading.reconciliation }),
+  };
+}
+
+/** A store whose one request's view follows what the pass writes to it. */
+function chainingStore(start: FinalizationView): FinalizerRecorder {
+  const store = recordingStore([start]);
+  store.durableView = () => Promise.resolve(chainedViewOf(store, start));
+  return store;
+}
+
+/** The chain the defaults allow one claim, which a deployment naming no bound runs. */
+const chainedDefaults = {
+  claimStepsPerPassMax: finalizerDefaults.claimStepsPerPassMax,
+};
+
+test("a push with nothing in its way is prepared, promoted, read and concluded in one pass", async () => {
+  const store = chainingStore(preparableView("request-one"));
+  const git = recordingGit();
+  const report = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.promotions, 1);
+  assert.equal(store.readings.length, 1, "the promotion's reading is its own");
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.holds, 0);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  assert.equal(git.promotions.length, 1);
+  assert.deepEqual(store.released, [], "a concluded request is not reopened");
+});
+
+test("a pass that stops between any two steps of a push is finished by the next, with one promotion", async () => {
+  for (const steps of [1, 2]) {
+    const store = chainingStore(preparableView("request-one"));
+    const git = recordingGit();
+    const stopped = await passOver(
+      serviceOf(store, git, { claimStepsPerPassMax: steps }),
+    );
+    assert.equal(stopped.conclusions, 0, `stopped after ${String(steps)}`);
+    assert.deepEqual(store.released, ["request-one"]);
+
+    const resumed = await passOver(serviceOf(store, git, chainedDefaults));
+    assert.equal(resumed.conclusions, 1, `resumed after ${String(steps)}`);
+    assert.equal(store.attempts.length, 1);
+    assert.equal(store.grants.length, 1);
+    assert.equal(git.promotions.length, 1, "the permit is promoted once");
+    assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  }
+});
+
+test("a permit a stopped pass granted and never read is reconciled and concluded in one pass, and promoted no second time", async () => {
+  const store = chainingStore({
+    ...promotableView("request-one"),
+    permit: permitOf("request-one"),
+  });
+  const git = recordingGit();
+  const report = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(report.reconciliations, 1);
+  assert.equal(report.conclusions, 1);
+  assert.equal(git.proofs.length, 1);
+  assert.deepEqual(git.promotions, []);
+  assert.deepEqual(store.grants, []);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a lease the store will not renew stops the chain, and the claim is neither recorded on nor released", async () => {
+  const store = chainingStore(preparableView("request-one"));
+  store.extensionsRefused = true;
+  const git = recordingGit();
+  const report = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.promotions, 0);
+  assert.deepEqual(git.promotions, []);
+  assert.deepEqual(store.grants, []);
+  assert.deepEqual(store.holds, []);
+  assert.deepEqual(store.released, []);
+});
+
+test("each step of a chain is priced against the pass's own ceilings, and the request it ran out for is released", async () => {
+  const { store, forge, service, emitted } = blockedCase({
+    ...chainedDefaults,
+    proposalsPerPassMax: 1,
+  });
+  const report = await passOver(service);
+
+  assert.equal(report.proposals, 1);
+  assert.equal(forge.creates.length, 1);
+  assert.deepEqual(forge.merges, [], "the merge is a second proposal act");
+  assert.deepEqual(emitted, ["PassCeilingReached"]);
+  assert.deepEqual(store.released, ["request-one"]);
+});
+
+test("a hold whose dwell is counted in leases keeps its claim, and a merge waiting on the forge gives it back", async () => {
+  const unbound = recordingStore([unboundView("request-one")]);
+  await passOver(serviceOf(unbound, recordingGit(), chainedDefaults));
+  assert.deepEqual(unbound.holds, ["RepositoryUnbound"]);
+  assert.deepEqual(unbound.released, []);
+
+  const { store, service } = blockedCase(chainedDefaults);
+  await passOver(service);
+  assert.equal(proposalMergingOf(store).merging, "Waiting");
+  assert.deepEqual(store.released, ["request-one"]);
+});
+
+test("a merging brief goes as far as its forge allows in one pass and finishes on the pass that finds the forge's answer changed", async () => {
+  const { store, forge, service, emitted } = blockedCase(chainedDefaults);
+  const blocked = await passOver(service);
+
+  assert.equal(forge.creates.length, 1);
+  assert.equal(forge.merges.length, 1);
+  assert.equal(blocked.conclusions, 0);
+  assert.deepEqual(emitted, ["ProposalMergeBlocked"]);
+
+  const waited = await passOver(service);
+  assert.equal(
+    waited.conclusions,
+    0,
+    "the forge is not asked before its cadence",
+  );
+  assert.equal(forge.merges.length, 1);
+
+  forge.numberEvidence = { mergeability: "Mergeable" };
+  forge.merged = {
+    merged: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
+  };
+  rereadDue(store);
+  const merged = await passOver(service);
+
+  assert.equal(merged.conclusions, 1);
+  assert.equal(forge.creates.length, 1, "the proposal is opened once");
+  assert.equal(forge.merges.length, 2);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a pass that stops between any two steps of a merging brief is finished by the next, with one proposal", async () => {
+  for (const steps of [1, 2]) {
+    const store = recordingStore([proposedView("request-one", proposalMerged)]);
+    const forge = recordingForge(store);
+    forge.created = "Created";
+    forge.merged = {
+      merged: "Merged",
+      mergeCommit: asGitObjectId(commitOf("e")),
+    };
+    const stopped = await passOver(
+      mergingService(store, forge, { claimStepsPerPassMax: steps }),
+    );
+    assert.equal(stopped.conclusions, 0, `stopped after ${String(steps)}`);
+
+    const resumed = await passOver(
+      mergingService(store, forge, chainedDefaults),
+    );
+    assert.equal(resumed.conclusions, 1, `resumed after ${String(steps)}`);
+    assert.equal(forge.creates.length, 1, "the proposal is opened once");
+    assert.equal(forge.merges.length, 1, "the proposal is merged once");
+    assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  }
+});
+
+test("a refused update stops the chain at the re-preparation it authorizes, which the next pass makes", async () => {
+  const store = chainingStore(preparableView("request-one"));
+  const git = recordingGit();
+  git.promoted = {
+    promoted: "Rejected",
+    observed: asGitObjectId(commitOf("f")),
+  };
+  const refused = await passOver(serviceOf(store, git, chainedDefaults));
+
+  assert.equal(refused.preparations, 1);
+  assert.equal(refused.promotions, 1);
+  assert.equal(refused.conclusions, 0);
+  assert.equal(store.readings[0]?.reconciliation.verdict, "NotPromoted");
+  assert.deepEqual(store.released, ["request-one"]);
+
+  const prepared = await passOver(serviceOf(store, git, chainedDefaults));
+  assert.equal(prepared.preparations, 1);
+  assert.equal(git.preparations.length, 2);
 });
