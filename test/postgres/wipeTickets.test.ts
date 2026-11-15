@@ -30,6 +30,7 @@ function wipeTruncated(script: string): readonly string[] {
 const wipeKept = [
   "action_observation",
   "admitted_worker",
+  "agent_account_credential_off",
   "agent_account_press",
   "agent_account_setting",
   "capacity_account",

@@ -7,7 +7,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   accessPlaneRole,
+  agentAccountCredentialHoldsFunction,
   agentAccountCredentialKeptFunction,
+  agentAccountCredentialOffFunction,
+  agentAccountCredentialOnFunction,
   agentAccountCredentialRetireFunction,
   agentAccountCredentialStandingFunction,
   agentAccountCredentialPauseFunction,
@@ -868,6 +871,12 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [poolPlaneRole, apiRole, metricsPlaneRole],
   },
   {
+    signature: `${agentAccountCredentialHoldsFunction}(text,text)`,
+    definer: false,
+    callers: [],
+    strangers: [poolPlaneRole, apiRole, metricsPlaneRole],
+  },
+  {
     signature: `${agentAccountCredentialKeptFunction}(text,text,text)`,
     definer: false,
     callers: [],
@@ -923,6 +932,16 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${agentAccountCredentialRetireFunction}(text,text,text)`,
+    [apiRole],
+    [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountCredentialOffFunction}(text,text,text)`,
+    [apiRole],
+    [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${agentAccountCredentialOnFunction}(text,text,text)`,
     [apiRole],
     [metricsPlaneRole, workerPlaneRole, poolPlaneRole],
   ),
@@ -1084,6 +1103,13 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["agent_account_setting", null, "SELECT", apiRole, false],
   ["agent_account_setting", null, "INSERT", boundaryOwnerRole, true],
   ["agent_account_press", null, "UPDATE", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "SELECT", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "INSERT", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "DELETE", boundaryOwnerRole, true],
+  ["agent_account_credential_off", null, "UPDATE", boundaryOwnerRole, false],
+  ["agent_account_credential_off", null, "SELECT", apiRole, false],
+  ["agent_account_credential_off", null, "SELECT", poolPlaneRole, false],
+  ["agent_account_credential_off", null, "SELECT", metricsPlaneRole, false],
   ["personal_runner_project", "priority", "UPDATE", apiRole, true],
   ["personal_runner_project", "priority", "SELECT", poolPlaneRole, true],
   ["personal_runner_project", "priority", "UPDATE", poolPlaneRole, false],

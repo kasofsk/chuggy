@@ -412,7 +412,9 @@ async function pausedMinutes(
   );
   return read?.pauses.map(({ agent, pause }) => [
     agent,
-    Math.round((Date.parse(pause.until) - Date.now()) / 60_000),
+    pause.until === undefined
+      ? Infinity
+      : Math.round((Date.parse(pause.until) - Date.now()) / 60_000),
   ]);
 }
 
@@ -432,6 +434,25 @@ test("a runner naming credentials is paused only while every one it named is, un
     [["Claude", 60]],
     "the whole agent's pause holds a runner naming none",
   );
+});
+
+test("a runner whose named credentials are all off is paused off with no end, and one with a credential on beside them is not", async () => {
+  const key = await pausedKey("paused-off");
+  await pausedRunner(key, 1, { live: true, credentials: ["one", "two"] });
+  await agentAccountHarnessCommitted(harness, key.owner, "Claude", {
+    off: ["one", "two"],
+  });
+  const read = await postgresPersonalRunnerRegistry(api).runners(
+    key,
+    everyProject,
+  );
+  assert.deepEqual(read?.pauses, [
+    { agent: "Claude", pause: { off: true, reasons: ["off"], pressed: false } },
+  ]);
+  await agentAccountHarnessCommitted(harness, key.owner, "Claude", {
+    off: ["one"],
+  });
+  assert.deepEqual(await pausedMinutes(key), []);
 });
 
 test("of a member's runners offered an agent, one free leaves it unpaused, and those polling now are the ones asked where any is", async () => {

@@ -200,6 +200,15 @@ export const agentAccountPressFunction = "press_agent_account";
 /** One person's credential of an agent of their account retired: its readings and its limit dropped, refused while a live runner of theirs names it. */
 export const agentAccountCredentialRetireFunction =
   "retire_agent_account_credential";
+/** Each hold on each credential of an account's agent, one row per reason with its end: a window at its threshold, a limit, or the person's turning it off. */
+export const agentAccountCredentialHoldsFunction =
+  "agent_account_credential_holds";
+/** One person's credential of an agent of their account turned off by name, so every runner of theirs is held off it. */
+export const agentAccountCredentialOffFunction =
+  "turn_off_agent_account_credential";
+/** One person's credential of an agent of their account turned on again. */
+export const agentAccountCredentialOnFunction =
+  "turn_on_agent_account_credential";
 export const runEvidenceImmutableFunction =
   "execution_run_evidence_is_immutable";
 export const runConfigurationImmutableFunction =

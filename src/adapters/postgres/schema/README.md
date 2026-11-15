@@ -696,7 +696,13 @@ pause, `agent_account_named_pause` of its one name.
 `agent_account_pause`'s columns for the credentials a runner, a pool or a chat
 host named:
 paused only while every one of them is, until the earliest of those ends, a
-name that never reported being free. `agent_account_named_credential_pauses`
+name that never reported being free. A credential in
+`agent_account_credential_off` is paused by `off` alone, whatever its readings
+and limit say, until `agentAccountCredentialOffSecsAt191` past each read, so it
+never ends by itself and ranks after every real end; where no live runner names
+a credential of the agent, an off credential pauses it by its own readings and
+limit alone. A pause held by `off` alone also holds a thread or an inquiry,
+whatever the setting says. `agent_account_named_credential_pauses`
 answers the pool plane each of them that is paused, and until when.
 `ticket_rate_limit_resumable` asks for the scheduler, and `ticket_usage_resume`
 for the API, `agent_account_pause` of the agent a limited task spent, and
@@ -711,6 +717,23 @@ composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived
 from it at each claim, each scheduler pass and each read, so a changed row is
 the answer at the next.
+
+`agent_account_credential_off` — each credential of an agent account its owner
+turned off by name, so every runner of theirs is held off it. Owned by the
+boundary owner, the only role granted it, which
+`turn_off_agent_account_credential` and `turn_on_agent_account_credential` run
+as; the API turns one person's credential off and on through those doors alone,
+under the lock `agent_account_credential_kept` takes, and reads it only through
+the pause functions and `agent_account_credential_standing`, which lists every
+off name among the person's credentials. Its key and identity are
+`(principal, agent, credential)`, held to `agent_account_usage`'s account key
+and name pattern, and it departs from #180's composite project key as that
+relation does. It points at nothing: a name needs no reading or limit to be
+turned off, and `retire_agent_account_credential` leaves its row. The names
+off of one account's agent are bounded by `agentAccountCredentialsOffMaxAt191`,
+apart from the credentials `agentAccountCredentialsKeptMaxAt163` bounds, so no
+reading evicts one. It has no unfinished work: a credential is off or it is
+not, and the pause is derived from it at each read.
 
 `agent_account_press` — a person's latest press to try an agent account again
 after a provider refused it, and when the claim it let through spent it. The API

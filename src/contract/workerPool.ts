@@ -507,7 +507,7 @@ export const workerPoolCredentialOutcomeSchema = z.discriminatedUnion(
   ],
 );
 
-/** A credential a poll named that is paused for the runner's owner, and when that pause ends, in whole Unix seconds. */
+/** A credential a poll named that is paused for the runner's owner, and when that pause ends, in whole Unix seconds; one its owner turned off ends past every usage window and moves again at each poll, so it never comes. */
 export const workerPoolCredentialPauseSchema = z.strictObject({
   agent: z.enum(workerRunnerCredentialAgents),
   credential: workerRunCredentialSchema,
