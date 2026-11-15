@@ -260,6 +260,8 @@ export interface ExecutionSchedulerService {
   /** The binding a ticket's brief names, which is what its finalization lands through. */
   readonly bindings: ProjectRepositoryBindingRead;
   readonly practices: PracticeCatalog;
+  /** The pathspecs the deployment's forge treats as pipeline definitions, which a task whose binding withholds pipelines may not push a change to. */
+  readonly pipelinePaths: readonly string[];
   /** The image chuggy's runtime is copied from, which every attempt a pass opens keeps. */
   readonly workerRuntime: string;
   /** The memory, in MiB, a pool runs an execution naming none with, which is the size a pass reads one routed to pools as. */
@@ -612,8 +614,9 @@ async function schedulerRuntimeFacts(
 
 /**
  * Reads the repositories this execution's project binds beside its own, which
- * its pod reads and never delivers to, and whether its own binding lets
- * pipelines be written.
+ * its pod reads and never delivers to, and the paths its push may not change:
+ * the forge's pipeline definitions, where its own binding withholds pipelines
+ * and the forge names any.
  */
 async function schedulerReadOnlyRepositories(
   service: ExecutionSchedulerService,
@@ -621,7 +624,7 @@ async function schedulerReadOnlyRepositories(
 ): Promise<
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
-      readonly pipelinesWritable?: boolean;
+      readonly pushPathsRefused?: readonly string[];
     }
   | BriefingUnready
 > {
@@ -633,9 +636,9 @@ async function schedulerReadOnlyRepositories(
     case "Repositories":
       return {
         readOnlyRepositories: read.repositories,
-        ...(read.pipelinesWritable === undefined
-          ? {}
-          : { pipelinesWritable: read.pipelinesWritable }),
+        ...(read.pipelinesWritable === false && service.pipelinePaths.length > 0
+          ? { pushPathsRefused: service.pipelinePaths }
+          : {}),
       };
     case "Unavailable":
       return { gathered: "Unavailable" };
@@ -662,14 +665,14 @@ async function schedulerDependencyDeliveries(
   }
 }
 
-/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, and what its dependencies delivered. */
+/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, the paths its push may not change, and what its dependencies delivered. */
 async function schedulerProjectContext(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
-      readonly pipelinesWritable?: boolean;
+      readonly pushPathsRefused?: readonly string[];
       readonly dependencyDeliveries: readonly DependencyDelivery[];
     }
   | BriefingUnready
@@ -797,6 +800,7 @@ interface TaskLaunch {
   readonly image?: string;
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
+  readonly pushPathsRefused?: readonly string[];
 }
 
 /**
@@ -890,6 +894,9 @@ async function schedulerPrepared(
         ...(policy.image === undefined ? {} : { image: policy.image }),
         invocation: composed.invocation,
         ...(targetRef === undefined ? {} : { targetRef }),
+        ...(project.pushPathsRefused === undefined
+          ? {}
+          : { pushPathsRefused: project.pushPathsRefused }),
       };
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
@@ -951,6 +958,9 @@ async function schedulerPlace(
     ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,
     ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: launch.pushPathsRefused }),
     capability: attempt.capability,
   });
   recordScheduler(service.metrics, (metrics) => {

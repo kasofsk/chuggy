@@ -541,6 +541,10 @@ test("every gate the pool plane asks a feature of is driven here, each once", ()
 
 for (const { feature, range, given } of poolPlaneFeatureGates) {
   const first = workerContractFeatures[feature];
+  if (first === undefined)
+    throw new Error(
+      `${feature} first shipped in no release, so no range floors at it`,
+    );
   const below = poolPlaneFeatureRelease({
     major: first.major,
     minor: first.minor - 1,

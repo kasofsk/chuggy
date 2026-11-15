@@ -108,9 +108,12 @@ test("each range that floors itself has its floor as the version of the feature 
     assert.deepEqual(features[name], floor, name);
 });
 
-test("every feature is named after a version constant or a range, and none after both", () => {
+test("every feature that first shipped in a release is named after a version constant or a range, none after both, and one that shipped in none after neither", () => {
   assert.deepEqual(
-    Object.keys(workerContractFeatures).sort(),
+    Object.entries(workerContractFeatures)
+      .filter(([, version]) => version !== undefined)
+      .map(([name]) => name)
+      .sort(),
     [...versioned, ...ranged].map(([name]) => name).sort(),
   );
 });

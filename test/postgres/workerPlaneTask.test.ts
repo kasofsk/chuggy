@@ -4,7 +4,12 @@
  * worker plane's own role, and no other role reads it.
  */
 
-import { workerContractRelease } from "../../src/contract/workerContract.ts";
+import { githubPipelinePaths } from "../../src/adapters/forge/githubPipelines.ts";
+import {
+  workerContractFeatures,
+  workerContractRelease,
+  type WorkerContractFeature,
+} from "../../src/contract/workerContract.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
@@ -214,9 +219,14 @@ async function storedInvocation(attempt: FencedAttempt): Promise<unknown> {
   return rows[0]?.invocation;
 }
 
-/** The task a bearer is answered with, as a pod of this release reads it. */
+/** Every feature a pod of this tree lists. */
+const workerFeaturesAll = Object.keys(
+  workerContractFeatures,
+) as WorkerContractFeature[];
+
+/** The task a bearer is answered with, as a pod of this tree reads it. */
 const fetchedTask = (bearer: string) =>
-  taskFetched(plane, bearer, workerContractRelease);
+  taskFetched(plane, bearer, workerContractRelease, workerFeaturesAll);
 
 /** The pod document a placement is launched with, less the plane, as the fetch answers it. */
 function pushedTask(placement: AttemptPlacement): unknown {
@@ -275,6 +285,7 @@ function launching(
         }),
     },
     practices: blessedPracticeCatalog,
+    pipelinePaths: githubPipelinePaths,
     workerRuntime: schedulerRuntime,
     poolMemoryMib: workerPoolMemoryMibDefault,
     config: executionSchedulerDefaults,
@@ -317,6 +328,7 @@ test("a worker fetches the task its pod is launched with, less the plane", async
   const document = kubernetesWorkerTask(goldenConfig, placement);
   assert.ok(document.worker !== undefined);
   assert.equal(document.targetRef, postgresHarnessBrief.branch);
+  assert.deepEqual(document.pushPathsRefused, githubPipelinePaths);
   assert.deepEqual(await storedInvocation(placement), {
     profile: document.profile,
     briefing: document.briefing,
@@ -324,6 +336,7 @@ test("a worker fetches the task its pod is launched with, less the plane", async
     credentialsListed: document.credentialsListed,
     worker: document.worker,
     targetRef: document.targetRef,
+    pushPathsRefused: document.pushPathsRefused,
   });
 });
 
@@ -688,6 +701,35 @@ test("an invocation naming the ref its finalization lands on is recorded with it
     named.push((fetched.body as { readonly targetRef?: string }).targetRef);
   }
   assert.deepEqual(named, ["refs/heads/release", undefined, undefined]);
+});
+
+test("an invocation naming the paths its push may not change is recorded with them, and fetched with them only by a pod that lists reading them", async () => {
+  const attempt = await openedAttempt("task-push-paths");
+  const invocation: WorkTaskInvocation = {
+    ...schedulerInvocation,
+    pushPathsRefused: [".forgejo/workflows/"],
+  };
+  assert.equal(await rig.store.attemptInvoked(attempt, invocation), true);
+  assert.deepEqual(await storedInvocation(attempt), invocation);
+  const named = [];
+  for (const features of [
+    workerFeaturesAll,
+    workerFeaturesAll.filter((feature) => feature !== "PushPathsRefused"),
+    undefined,
+  ]) {
+    const fetched = await taskFetched(
+      plane,
+      attempt.capability.secret,
+      workerContractRelease,
+      features,
+    );
+    assert.equal(fetched.status, 200);
+    named.push(
+      (fetched.body as { readonly pushPathsRefused?: readonly string[] })
+        .pushPathsRefused,
+    );
+  }
+  assert.deepEqual(named, [[".forgejo/workflows/"], undefined, undefined]);
 });
 
 test("an invocation's listed credentials are recorded with it and fetched by every release, and one recorded without them lists its granted ones", async () => {

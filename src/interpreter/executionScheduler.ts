@@ -1169,6 +1169,7 @@ export type WorkTaskInvocation = Pick<
   | "credentialsListed"
   | "worker"
   | "targetRef"
+  | "pushPathsRefused"
 >;
 
 /**
@@ -1197,6 +1198,8 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly invocation: TaskInvocation;
   /** The ref the ticket's finalization lands on, where its brief or binding names one. */
   readonly targetRef?: GitRefName;
+  /** The paths a work task's push may not change, where its binding withholds pipelines and its forge names some. */
+  readonly pushPathsRefused?: readonly string[];
   readonly capability: AttemptCapability;
 }
 

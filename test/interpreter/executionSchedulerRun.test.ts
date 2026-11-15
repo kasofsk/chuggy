@@ -46,6 +46,7 @@ import {
   type WaitingAttemptRecord,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
+import { workTaskInvocation } from "../../src/interpreter/workerTask.ts";
 import {
   executionSchedulerAdmit,
   executionSchedulerCancel,
@@ -383,6 +384,7 @@ function serviceWith(
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     bindings: { binding: () => Promise.resolve(undefined) },
     practices: blessedPracticeCatalog,
+    pipelinePaths: [".forgejo/workflows/"],
     workerRuntime,
     poolMemoryMib: workerPoolMemoryMibDefault,
     config: executionSchedulerDefaults,
@@ -1605,30 +1607,64 @@ test("the project's other repositories read for this execution reach its briefin
   );
 });
 
-test("a work task's own binding read as writing no pipelines reaches its briefing, and one that writes them does not", async () => {
-  const briefed = async (pipelinesWritable: boolean): Promise<string> => {
-    const placements: AttemptPlacement[] = [];
-    await executionSchedulerLaunch(
-      {
-        ...placingService([], placements),
-        readOnlyRepositories: {
-          repositories: () =>
-            Promise.resolve({
-              read: "Repositories" as const,
-              repositories: [],
-              pipelinesWritable,
-            }),
-        },
+/** What one launch is placed with where its own binding is read as `pipelinesWritable` and its forge names `pipelinePaths`. */
+async function pushPathsPlaced(
+  pipelinesWritable: boolean | undefined,
+  pipelinePaths: readonly string[],
+): Promise<AttemptPlacement> {
+  const placements: AttemptPlacement[] = [];
+  await executionSchedulerLaunch(
+    {
+      ...placingService([], placements),
+      pipelinePaths,
+      readOnlyRepositories: {
+        repositories: () =>
+          Promise.resolve({
+            read: "Repositories" as const,
+            repositories: [],
+            ...(pipelinesWritable === undefined ? {} : { pipelinesWritable }),
+          }),
       },
-      epoch,
-    );
-    assert.equal(placements.length, 1);
-    return placements[0]?.invocation.briefing.text ?? "";
-  };
-  const [line] = briefingPipelinesUnwritable;
+    },
+    epoch,
+  );
+  assert.equal(placements.length, 1);
+  const [placed] = placements;
+  assert.ok(placed !== undefined);
+  return placed;
+}
+
+test("a work task whose binding withholds pipelines names its forge's pipeline paths in its task and its briefing", async () => {
+  const forgejo = [".forgejo/workflows/"];
+  const placed = await pushPathsPlaced(false, forgejo);
+  assert.deepEqual(placed.pushPathsRefused, forgejo);
+  assert.deepEqual(workTaskInvocation(placed).pushPathsRefused, forgejo);
+  const [line] = briefingPipelinesUnwritable(forgejo);
   assert.ok(line !== undefined);
-  assert.ok((await briefed(false)).includes(line));
-  assert.ok(!(await briefed(true)).includes(line));
+  assert.ok(placed.invocation.briefing.text.includes(line));
+  assert.ok(!placed.invocation.briefing.text.includes(".github/"));
+});
+
+test("a work task whose binding allows pipelines, is not bound live, or whose forge names no pipeline path names no path and is told of none", async () => {
+  for (const [pipelinesWritable, pipelinePaths] of [
+    [true, [".forgejo/workflows/"]],
+    [undefined, [".forgejo/workflows/"]],
+    [false, []],
+  ] as const) {
+    const placed = await pushPathsPlaced(pipelinesWritable, pipelinePaths);
+    const at = `${String(pipelinesWritable)} with ${String(pipelinePaths.length)} paths`;
+    assert.ok(!Object.hasOwn(placed, "pushPathsRefused"), at);
+    assert.ok(
+      !Object.hasOwn(workTaskInvocation(placed), "pushPathsRefused"),
+      at,
+    );
+    assert.ok(
+      !placed.invocation.briefing.text.includes(
+        "its repository's binding does not let it write pipelines",
+      ),
+      at,
+    );
+  }
 });
 
 test("what the dependencies delivered, when it cannot be read, holds the attempt instead", async () => {

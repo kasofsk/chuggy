@@ -51,6 +51,7 @@ export function workTaskInvocation(launch: {
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
+  readonly pushPathsRefused?: readonly string[];
 }): WorkTaskInvocation {
   const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
@@ -67,6 +68,9 @@ export function workTaskInvocation(launch: {
     credentialsListed,
     ...(worker === undefined ? {} : { worker }),
     ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: [...launch.pushPathsRefused] }),
   };
 }
 
@@ -102,6 +106,9 @@ export function workTask(
     ...(invocation.targetRef === undefined
       ? {}
       : { targetRef: invocation.targetRef }),
+    ...(invocation.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: invocation.pushPathsRefused }),
   };
 }
 

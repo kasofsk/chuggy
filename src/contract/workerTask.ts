@@ -13,6 +13,9 @@ import { workerPoolAssignmentSchema } from "./workerPool.ts";
 /** The longest single briefing line, which is one criterion, constraint or instruction. */
 export const briefingLineCharsMax = 512;
 
+/** The most paths one work task's push may be refused a change to. */
+export const pushPathsRefusedMax = 8;
+
 /** The most command lines one stage may name, whichever stage it is. */
 export const commandLinesMax = 8;
 
@@ -104,6 +107,12 @@ export const workTaskDocumentSchema = z.object({
   worker: workerConfigurationSchema.exactOptional(),
   /** The ref the ticket's finalization lands on, absent where it lands on none its brief or binding names. */
   targetRef: z.string().min(1).exactOptional(),
+  /** The pathspecs a push of this task's may change nothing under, absent where its binding allows pipelines or its forge names no such path. */
+  pushPathsRefused: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(pushPathsRefusedMax)
+    .exactOptional(),
   workerPlane: z.object({
     url: z.string(),
     capabilityFile: z.string(),

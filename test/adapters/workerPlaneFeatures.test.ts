@@ -434,6 +434,10 @@ function workerPlaneFeatureRelease(version: {
 
 for (const { feature, range, given } of workerPlaneFeatureGates) {
   const first = workerContractFeatures[feature];
+  if (first === undefined)
+    throw new Error(
+      `${feature} first shipped in no release, so no range floors at it`,
+    );
   const below = workerPlaneFeatureRelease({
     major: first.major,
     minor: first.minor - 1,
@@ -489,6 +493,90 @@ for (const { feature, range, given } of workerPlaneFeatureGates) {
     }
   });
 }
+
+/** The task a read naming its target ref and the paths its push may not change is answered with to a request sending `headers`. */
+async function workerPlaneFeaturePushPathsTask(
+  headers: WorkerPlaneFeatureHeaders,
+): Promise<Record<string, unknown>> {
+  const named: WorkerTaskRead = {
+    ...workTaskFound,
+    invocation: {
+      ...workInvocation,
+      targetRef: "refs/heads/release",
+      pushPathsRefused: [".forgejo/workflows/"],
+    },
+  };
+  const answered = await workerPlaneFeatureAsked(
+    workerPlaneFeatureAttempt({
+      tasks: { ...inertTasks, work: () => Promise.resolve(named) },
+    }),
+    {
+      method: "GET",
+      url: "/v1/task",
+      headers: { ...attemptHeld, ...headers },
+    },
+  );
+  return answered.json<Record<string, unknown>>();
+}
+
+/** Whether that task names the paths, which it names only as they were read. */
+async function workerPlaneFeaturePushPathsGiven(
+  headers: WorkerPlaneFeatureHeaders,
+): Promise<boolean> {
+  const task = await workerPlaneFeaturePushPathsTask(headers);
+  if (!Object.hasOwn(task, "pushPathsRefused")) return false;
+  assert.deepEqual(task["pushPathsRefused"], [".forgejo/workflows/"]);
+  return true;
+}
+
+test("a task names the paths its push may not change only to a request listing PushPathsRefused, whatever release it names", async () => {
+  for (const release of [undefined, "1.0.0", workerContractRelease]) {
+    const named =
+      release === undefined ? {} : { [workerContractHeader]: release };
+    assert.equal(
+      await workerPlaneFeaturePushPathsGiven({
+        ...named,
+        [workerContractFeaturesHeader]: workerContractFeaturesText([
+          "PushPathsRefused",
+        ]),
+      }),
+      true,
+      `listed at ${release ?? "no release"}`,
+    );
+    assert.equal(
+      await workerPlaneFeaturePushPathsGiven(named),
+      false,
+      `no list at ${release ?? "no release"}`,
+    );
+    assert.equal(
+      await workerPlaneFeaturePushPathsGiven({
+        ...named,
+        [workerContractFeaturesHeader]: workerContractFeaturesText(
+          workerPlaneFeaturesAll.filter(
+            (feature) => feature !== "PushPathsRefused",
+          ),
+        ),
+      }),
+      false,
+      `every other listed at ${release ?? "no release"}`,
+    );
+  }
+});
+
+test("a task's target ref and the paths its push may not change are each named by their own feature", async () => {
+  const pathsOnly = await workerPlaneFeaturePushPathsTask({
+    [workerContractFeaturesHeader]: workerContractFeaturesText([
+      "PushPathsRefused",
+    ]),
+  });
+  assert.ok(Object.hasOwn(pathsOnly, "pushPathsRefused"));
+  assert.ok(!Object.hasOwn(pathsOnly, "targetRef"));
+  const refOnly = await workerPlaneFeaturePushPathsTask({
+    [workerContractHeader]: workerContractRelease,
+  });
+  assert.equal(refOnly["targetRef"], "refs/heads/release");
+  assert.ok(!Object.hasOwn(refOnly, "pushPathsRefused"));
+});
 
 test("a features header sent more than once is read as one list", async () => {
   const [gate] = workerPlaneFeatureGates;

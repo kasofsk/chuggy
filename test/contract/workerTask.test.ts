@@ -17,6 +17,7 @@ import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import {
   filesystemAccesses,
   poolEnvelopeSchema,
+  pushPathsRefusedMax,
   sessionTaskDocumentSchema,
   workerTaskAnswerSchema,
   workTaskCredentialsListed,
@@ -180,6 +181,24 @@ test("a task names the ref its finalization lands on, or none, and never an empt
     assert.ok(
       !workTaskDocumentSchema.safeParse({ ...document, targetRef: "" }).success,
     );
+  }
+});
+
+test("a task names the paths its push may not change, or none, and never an empty list or an empty path", () => {
+  for (const pod of workPods()) {
+    const document = carried(pod, workerTaskVariable);
+    const named = { ...document, pushPathsRefused: [".forgejo/workflows/"] };
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(named), named);
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(document), document);
+    for (const pushPathsRefused of [
+      [],
+      [""],
+      Array.from({ length: pushPathsRefusedMax + 1 }, () => ".forge/"),
+    ])
+      assert.ok(
+        !workTaskDocumentSchema.safeParse({ ...document, pushPathsRefused })
+          .success,
+      );
   }
 });
 
