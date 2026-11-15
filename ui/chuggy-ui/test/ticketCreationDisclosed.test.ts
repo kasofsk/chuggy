@@ -140,14 +140,32 @@ test("an override marks the disclosure under a configuration that is no catalog"
 });
 
 test("a refusal is answered at the first field the form draws, the essentials first", () => {
-  expect(creationFieldFirstFaulted(["title", "intent"])).toBe("intent");
-  expect(creationFieldFirstFaulted(["target", "branch"])).toBe("branch");
-  expect(creationFieldFirstFaulted(["fence"])).toBe("fence");
-  expect(creationFieldFirstFaulted([])).toBeUndefined();
+  for (const catalog of [false, true]) {
+    expect(creationFieldFirstFaulted(["title", "intent"], catalog)).toBe(
+      "intent",
+    );
+    expect(creationFieldFirstFaulted(["target", "branch"], catalog)).toBe(
+      "branch",
+    );
+    expect(creationFieldFirstFaulted(["fence"], catalog)).toBe("fence");
+    expect(creationFieldFirstFaulted([], catalog)).toBeUndefined();
+  }
+});
+
+test("a catalog's selection is answered before the authoring, and overrides set by hand after it", () => {
+  expect(creationFieldFirstFaulted(["authoring", "overrides"], true)).toBe(
+    "overrides",
+  );
+  expect(creationFieldFirstFaulted(["authoring", "overrides"], false)).toBe(
+    "authoring",
+  );
 });
 
 test("only the essentials and the fence are said outside the disclosure", () => {
-  expect(
-    creationFieldsDrawn.filter((field) => !creationFieldDisclosed(field)),
-  ).toStrictEqual(["configuration", "intent", "repository", "fence"]);
+  for (const catalog of [false, true])
+    expect(
+      creationFieldsDrawn(catalog).filter(
+        (field) => !creationFieldDisclosed(field),
+      ),
+    ).toStrictEqual(["configuration", "intent", "repository", "fence"]);
 });

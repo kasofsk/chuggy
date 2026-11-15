@@ -7,25 +7,32 @@
  * body the core assembles from the same form.
  */
 
+import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { SessionProvider } from "../app/browser/session.tsx";
+import { CreationFields } from "../app/browser/TicketCreation.tsx";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   creationBodyFrom,
   creationBranchPrefixedSentence,
   creationFaultSentence,
+  creationFormFrom,
 } from "../app/core/ticketCreation.ts";
 import { answeringApi } from "./answeringApi.ts";
 import { renderCopied } from "./copied.tsx";
 import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { creationMoreOpened, creationMoreTrigger } from "./creationMore.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { holderDouble, queryClientUnretried } from "./screenHarness.tsx";
 import {
   creationBinding,
+  creationCatalogOffer,
   creationDraft,
   creationForm,
   creationOffers,
+  creationPartition,
 } from "./ticketCreationFixture.ts";
 
 beforeEach(() => {
@@ -170,6 +177,44 @@ test("a refusal at the intent and inside the disclosure is answered at the inten
   submit();
   expect(document.activeElement).toBe(intentBox());
   expect(creationMoreTrigger().getAttribute("aria-expanded")).toBe("false");
+});
+
+test("a catalog's form refused at its selection and its authoring is answered at the selection, drawn first", () => {
+  const offer = creationCatalogOffer();
+  const { container } = renderCopied(
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider client={queryClientUnretried()}>
+        <CreationFields
+          form={creationFormFrom([offer], [])}
+          onChange={() => undefined}
+          faults={[
+            { field: "authoring", reason: creationFaultSentence("authoring") },
+            { field: "overrides", reason: creationFaultSentence("overrides") },
+          ]}
+          offers={[offer]}
+          repositories={[]}
+          api={{
+            ports: api().ports,
+            partition: creationPartition,
+            storeKey: "chug.ticket-yaml.essentials",
+          }}
+        />
+      </QueryClientProvider>
+    </SessionProvider>,
+  );
+  expect(creationMoreTrigger().getAttribute("aria-expanded")).toBe("true");
+  const selection = container.querySelector(
+    '[data-creation-field="overrides"]',
+  );
+  const authoring = container.querySelector(
+    '[data-creation-field="authoring"]',
+  );
+  expect(
+    (selection?.compareDocumentPosition(authoring ?? document.body) ?? 0) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(document.activeElement).not.toBe(document.body);
+  expect(selection?.contains(document.activeElement)).toBe(true);
 });
 
 test("the disclosure is marked while a field under it holds a value a fresh form would not", () => {

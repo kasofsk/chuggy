@@ -1,7 +1,7 @@
 /* The ticket form, shared by creating and editing: one column of fields, each
    its label over its control, the essentials first and the rest in groups
    under the disclosure. A field takes the width its column gives it, never
-   its own default. A row of the images and the overrides is still its label
+   its own default. A row of the images and the overrides is its label
    beside its field, and under the narrow width the label stands above it. */
 
 @layer page {

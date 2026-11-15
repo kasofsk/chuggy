@@ -5,9 +5,9 @@
  * What is visible is what a ticket cannot be filed without: which configuration
  * does the work, where there is a choice, its intent, and the repository the
  * work happens in, where the project binds one. Everything else is under one
- * disclosure, closed until it is opened or a refused submit faults a field in
- * it, and marked while it holds a value a fresh form would not. A refused
- * submit moves the focus to the first field at fault. Submit
+ * disclosure, closed until it is opened or a refused submit's first field at
+ * fault is in it, and marked while it holds a value a fresh form would not. A
+ * refused submit moves the focus to the first field at fault. Submit
  * creates the draft, releases it and, for a reader who may dispatch, starts
  * the ticket in one motion, and the navigation happens on a settled release
  * alone, so a screen never hands a reader a ticket the projection has not got
@@ -952,16 +952,22 @@ function CreationStages(props: CreationFieldsProps): ReactNode {
 
 /**
  * Whether the disclosure is open: as the reader leaves it, and open over a
- * refusal that faults a field inside it until the reader closes it over that
- * same refusal.
+ * refusal whose first field at fault is inside it until the reader closes it
+ * over that same refusal.
  */
-function useCreationMoreOpen(faults: readonly CreationFault[]): {
+function useCreationMoreOpen(
+  faults: readonly CreationFault[],
+  catalog: boolean,
+): {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 } {
   const [chosen, setChosen] = useState(false);
   const [closedOver, setClosedOver] = useState<readonly CreationFault[]>();
-  const faulted = creationFieldFirstFaulted(faults.map((fault) => fault.field));
+  const faulted = creationFieldFirstFaulted(
+    faults.map((fault) => fault.field),
+    catalog,
+  );
   const forced =
     faulted !== undefined &&
     creationFieldDisclosed(faulted) &&
@@ -983,18 +989,26 @@ const creationFocusable = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-/** On each refusal, the focus on the first control of the first field at
- * fault, the disclosure having been opened over it where it is inside. */
+/** On each refusal, and only once for it, the focus on the first control of
+ * the first field at fault, the disclosure having been opened over it where it
+ * is inside. */
 function useCreationFaultFocus(
   root: RefObject<HTMLElement | null>,
   faults: readonly CreationFault[],
+  catalog: boolean,
 ): void {
+  const answered = useRef<readonly CreationFault[]>(undefined);
   useEffect(() => {
-    const first = creationFieldFirstFaulted(faults.map((fault) => fault.field));
+    if (answered.current === faults) return;
+    answered.current = faults;
+    const first = creationFieldFirstFaulted(
+      faults.map((fault) => fault.field),
+      catalog,
+    );
     if (first === undefined) return;
     const at = root.current?.querySelector(`[data-creation-field="${first}"]`);
     at?.querySelector<HTMLElement>(creationFocusable)?.focus();
-  }, [root, faults]);
+  }, [root, faults, catalog]);
 }
 
 /** Everything a ticket can be filed without, under the one disclosure, which
@@ -1040,8 +1054,11 @@ function CreationMore(
 
 export function CreationFields(props: CreationFieldsProps): ReactNode {
   const root = useRef<HTMLDivElement>(null);
-  const more = useCreationMoreOpen(props.faults);
-  useCreationFaultFocus(root, props.faults);
+  const catalog =
+    creationCatalogOf(creationOfferDrawn(props.offers, props.form)) !==
+    undefined;
+  const more = useCreationMoreOpen(props.faults, catalog);
+  useCreationFaultFocus(root, props.faults, catalog);
   return (
     <div className="creation-fields" ref={root}>
       <CreationEssentials {...props} />

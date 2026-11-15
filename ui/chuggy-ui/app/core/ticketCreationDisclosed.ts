@@ -38,32 +38,40 @@ export const creationFieldsEssential: readonly CreationField[] = [
 
 /** Every field a fault can name, in the order the form draws them: the
  * essentials, then the disclosed ones, then the fence, which is no field and
- * is said beside the submit. */
-export const creationFieldsDrawn: readonly CreationField[] = [
-  ...creationFieldsEssential,
-  "title",
-  "links",
-  "images",
-  "checks",
-  "branch",
-  "finalization",
-  "target",
-  "authoring",
-  "overrides",
-  "fence",
-];
+ * is said beside the submit. A catalog's selection is the overrides, and is
+ * drawn before the authoring; overrides set by hand are drawn after it. */
+export function creationFieldsDrawn(
+  catalog: boolean,
+): readonly CreationField[] {
+  const stages: readonly CreationField[] = catalog
+    ? ["overrides", "authoring"]
+    : ["authoring", "overrides"];
+  return [
+    ...creationFieldsEssential,
+    "title",
+    "links",
+    "images",
+    "checks",
+    "branch",
+    "finalization",
+    "target",
+    ...stages,
+    "fence",
+  ];
+}
 
 /** Whether a fault on this field is said inside the disclosure. */
 export function creationFieldDisclosed(field: CreationField): boolean {
   return !creationFieldsEssential.includes(field) && field !== "fence";
 }
 
-/** The field a refused submit is answered at: the first the form draws that
- * a fault names, none where no fault names one. */
+/** The field a refused submit is answered at: the first the form draws, under
+ * a catalog or not, that a fault names, none where no fault names one. */
 export function creationFieldFirstFaulted(
   faulted: readonly CreationField[],
+  catalog: boolean,
 ): CreationField | undefined {
-  return creationFieldsDrawn.find((field) => faulted.includes(field));
+  return creationFieldsDrawn(catalog).find((field) => faulted.includes(field));
 }
 
 /** What the form draws of the disclosed fields, beyond what the form holds. */
