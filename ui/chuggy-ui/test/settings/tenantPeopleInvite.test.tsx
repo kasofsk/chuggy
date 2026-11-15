@@ -310,14 +310,19 @@ test("a reader who may grant on one project of two is offered that project alone
   expect(projectsOffered(dialog())).toStrictEqual(["beacon-api"]);
 });
 
-/** What each role's cell of a project's row draws as text, in the roles' order. */
+/** The role's word each of a project's cells draws in its card, in the
+ * roles' order, and an empty word for a cell the card leaves out. */
 function roleWords(project: string): readonly string[] {
   const row = within(dialog()).getByRole("row", {
     name: new RegExp(`^${project}`, "u"),
   });
   return within(row)
     .getAllByRole("cell")
-    .map((cell) => cell.textContent);
+    .map((cell) =>
+      cell.hasAttribute("data-empty")
+        ? ""
+        : (cell.querySelector(".tabular-label")?.textContent ?? ""),
+    );
 }
 
 /** The reader may grant Viewer alone on atlas and every role on beacon. */
@@ -336,7 +341,7 @@ function invitedGrantingViewerOnAtlas(): Promise<DrawnStrict> {
   });
 }
 
-test("a box stands with its role's word, and a role the reader may not grant draws neither", async () => {
+test("a box stands with its role's word in a project's card, and a role the reader may not grant draws neither", async () => {
   await invitedGrantingViewerOnAtlas();
   expect(roleWords("atlas-web")).toStrictEqual(["", "", "", "Viewer"]);
   expect(boxesIn(dialog(), "atlas-web")).toStrictEqual(["atlas-web Viewer"]);
@@ -353,18 +358,6 @@ test("a role's word is not read out beside its box's own name", async () => {
   expect(
     within(dialog()).getAllByRole("cell", { name: "atlas-web Viewer" }),
   ).toHaveLength(1);
-});
-
-test("a press on a role's word is a press on its box", async () => {
-  await invitedGrantingViewerOnAtlas();
-  const box = within(dialog()).getByRole("checkbox", {
-    name: "atlas-web Viewer",
-  });
-  expect(box.getAttribute("aria-checked")).toBe("false");
-  await turned(() => {
-    fireEvent.click(within(box.closest("td") ?? box).getByText("Viewer"));
-  });
-  expect(box.getAttribute("aria-checked")).toBe("true");
 });
 
 test("the dialog's actions are Cancel then Invite, and Cancel closes it with nothing sent", async () => {

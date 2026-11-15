@@ -216,7 +216,7 @@ test("the page is headed by one title, with what its runners are under it", asyn
   );
 });
 
-test("a registered pool is a card of its name and platforms, then its state, its version and when it last polled, each labelled", async () => {
+test("a registered pool is a card titled by its name and platforms, then its state, its version and when it last polled, each labelled", async () => {
   await drawPage();
   const table = screen.getByRole("table", { name: "Registered runners" });
   const row = within(table).getAllByRole("row")[1];
@@ -225,7 +225,7 @@ test("a registered pool is a card of its name and platforms, then its state, its
       row?.children ?? [],
       (cell) => cell.querySelector(".tabular-label")?.textContent,
     ),
-  ).toStrictEqual(["Runner", "Status", "Version", "Last polled"]);
+  ).toStrictEqual([undefined, "Status", "Version", "Last polled"]);
   expect(row?.firstElementChild?.getAttribute("role")).toBe("rowheader");
   expect(rosterValues()).toStrictEqual([
     ["shameLinux Amd64", "Offline", "—", "Never"],

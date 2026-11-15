@@ -42,7 +42,7 @@ function SiteWorkspaceLinkNote(props: {
         <span className="wrap-anywhere">{link.note}</span>
       )}
       {link.createAccounts ? (
-        <span className="text-sm text-ink-3">
+        <span className="text-sm font-regular text-ink-3">
           {text(siteWorkspaceCreateAccountsLabel)}
         </span>
       ) : null}
@@ -55,15 +55,11 @@ function SiteWorkspaceLinkMade(props: {
   readonly link: Extract<AccessWorkspaceLink, { state: "Used" }>;
   readonly nowMs: number;
 }): ReactNode {
-  const text = useCopyText();
   const link = props.link;
   return (
     <div className="grid min-w-0">
-      <span className="people-stacked-label">
-        {text(siteWorkspaceLinkWords.workspace)}
-      </span>
       <span
-        className="people-name font-strong text-ink-1"
+        className="tabular-cut font-strong text-ink-1"
         title={link.workspace}
       >
         {link.workspace}

@@ -5,9 +5,9 @@
  * read.
  *
  * Written once so a page drawn in this frame stands as the People page does
- * without being a copy of it. The sheet is the People page's own, whose table
- * this is: it sets a row for lines read down a column, and stacks the row
- * where the page is narrow, which is why the whole listing is a container.
+ * without being a copy of it. Its table is the primitive's stacked one, drawn
+ * to the card's edges, so where the listing is narrow each row is a card of
+ * its own.
  */
 
 import { useId } from "react";
@@ -20,8 +20,6 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Table } from "../ui/Table.tsx";
 import type { TableColumn, TableRow } from "../ui/Table.tsx";
-
-import "./tenantPeople.css";
 
 const cardClassName = "bg-surface-1 border-edge rounded-2 min-w-0 border";
 
@@ -59,30 +57,25 @@ export function SettingsListingSection(props: {
   );
 }
 
-/** The card a listing's table is drawn in, the columns and rows its caller's own. */
-export function SettingsListingTable(props: {
-  readonly caption: string;
-  readonly children: ReactNode;
-}): ReactNode {
-  return (
-    <div className={`people-table ${cardClassName}`}>
-      <Table caption={props.caption}>{props.children}</Table>
-    </div>
-  );
-}
-
-/** The card a listing's stacked table is drawn in, each row a card of its own
- * on a narrow container. */
+/** The card a listing's table is drawn in, each row a card of its own on a
+ * narrow container. `className` is the caller's sheet's, for its columns. */
 export function SettingsListingStacked<Key extends string>(props: {
   readonly caption: string;
   readonly columns: readonly TableColumn<Key>[];
   readonly rows: readonly TableRow<Key>[];
+  readonly className?: string;
 }): ReactNode {
   return (
-    <div className={cardClassName}>
+    <div
+      className={
+        props.className === undefined
+          ? cardClassName
+          : `${props.className} ${cardClassName}`
+      }
+    >
       <Table
         caption={props.caption}
-        stacked={{ columns: props.columns, rows: props.rows }}
+        stacked={{ columns: props.columns, rows: props.rows, framed: true }}
       />
     </div>
   );
@@ -97,12 +90,6 @@ export function SettingsListingNone(): ReactNode {
       <span className="visually-hidden">{text({ id: "settings-none" })}</span>
     </span>
   );
-}
-
-/** An empty attribute where a cell holds nothing, which is how the stacked
- * row leaves that cell out. */
-export function settingsListingNone(empty: boolean): "" | undefined {
-  return empty ? "" : undefined;
 }
 
 /** The line under a list the plane cut short. */

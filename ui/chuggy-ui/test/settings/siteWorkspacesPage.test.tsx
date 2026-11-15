@@ -24,6 +24,7 @@ import {
   workspacesWithheld,
 } from "./siteWorkspacesFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
+import { tableCards } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -70,6 +71,19 @@ test("a workspace is a row, in the order answered: its name, its admins a line e
   styleless();
 });
 
+test("each workspace is a card titled by its name, its admins and whom they may invite labelled under it", async () => {
+  await drawWorkspaces();
+  expect(
+    tableCards(screen.getByRole("table", { name: "Workspaces" })),
+  ).toStrictEqual(
+    ["globex-co", "acme-co", "umbrella-co", "initech-co"].map((title) => ({
+      title,
+      labels: ["Admins", "Invites"],
+      actionsLast: false,
+    })),
+  );
+});
+
 test("an admin with no account, and one no directory answered for, is their subject in the identity's face", async () => {
   await drawWorkspaces();
   for (const subject of ["s-robot", "s-dan"])
@@ -79,22 +93,24 @@ test("an admin with no account, and one no directory answered for, is their subj
   ).toBe(false);
 });
 
-test("a workspace whose admins may make no account says so quietly, one whose may does not, and a stacked row keeps either beside its name", async () => {
+test("a workspace whose admins may make no account says so quietly, and one whose may does not", async () => {
   await drawWorkspaces();
   const invites = (name: string): readonly string[] => [
-    ...(workspaceRow(name).lastElementChild?.classList ?? []),
+    ...(workspaceRow(name).lastElementChild?.querySelector(
+      ".tabular-value > span",
+    )?.classList ?? []),
   ];
-  expect(invites("globex-co")).toStrictEqual(["people-beside", "text-ink-3"]);
-  expect(invites("acme-co")).toStrictEqual(["people-beside"]);
+  expect(invites("globex-co")).toStrictEqual(["text-ink-3"]);
+  expect(invites("acme-co")).toStrictEqual([]);
 });
 
-test("a workspace with no admin draws a dash its stacked row leaves out, and no other row does", async () => {
+test("a workspace with no admin draws a dash its card leaves out, and no other row does", async () => {
   await drawWorkspaces();
   const none = within(workspaceRow("initech-co")).getByText("None");
-  expect(none.closest("td")?.getAttribute("data-none")).toBe("");
+  expect(none.closest("td")?.getAttribute("data-empty")).toBe("");
   expect(screen.getAllByText("None")).toStrictEqual([none]);
   expect(
-    [...document.querySelectorAll("td[data-none]")].map(
+    [...document.querySelectorAll("td[data-empty]")].map(
       (cell) => cell.closest("tr")?.firstElementChild?.textContent,
     ),
   ).toStrictEqual(["initech-co"]);

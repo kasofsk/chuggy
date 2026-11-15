@@ -47,6 +47,8 @@ import {
   unscopedChatPath,
 } from "./tenantPeopleFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
+import { tableCards } from "../tableText.ts";
+import type { TableCard } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -97,6 +99,36 @@ test("the people are counted over their table, and a subject that is no account 
   ).toBeTruthy();
   expect(namedIn("Other identities")).toStrictEqual(["s-bob", "s-selector"]);
   expect(screen.queryByText("No account")).toBeNull();
+});
+
+test("each person is a card titled by their name, what they hold labelled under it, their Edit last, and what they hold none of left out", async () => {
+  await drawPeople();
+  const cards = (table: string): readonly TableCard[] =>
+    tableCards(screen.getByRole("table", { name: table }));
+  expect(cards("People")).toStrictEqual([
+    {
+      title: "ada@example.comYouada-l",
+      labels: ["Workspace", "Projects", undefined],
+      actionsLast: true,
+    },
+  ]);
+  expect(cards("Other identities").map((card) => card.title)).toStrictEqual([
+    "s-bob",
+    "s-selector",
+  ]);
+  const left = (name: string): readonly (string | null)[] =>
+    Array.from(
+      personRow(name).querySelectorAll("[data-empty]"),
+      (cell) => cell.querySelector(".tabular-label")?.textContent ?? null,
+    );
+  expect(left("ada@example.com")).toStrictEqual([]);
+  expect(left("s-bob")).toStrictEqual(["Projects"]);
+  expect(
+    within(personRow("ada@example.com"))
+      .getByRole("button", { name: "Edit ada@example.com" })
+      .closest("td")
+      ?.classList.contains("tabular-actions"),
+  ).toBe(true);
 });
 
 test("an answer with no account field draws its subjects among the people", async () => {

@@ -41,8 +41,9 @@ import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "../sheet.ts";
 import myRunnerSheet from "../../app/browser/settings/MyRunnerPage.css?raw";
-import listingSheet from "../../app/browser/settings/tenantPeople.css?raw";
+import tableSheet from "../../app/browser/ui/Table.css?raw";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
+import { tableCards } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -598,7 +599,7 @@ test("the page is headed by its one h1, drawn by the page head", async () => {
   expect(titles[0]?.closest("header.page-header")).not.toBeNull();
 });
 
-test("each runner is a stacked row: its name first, then its status, version and last poll, each labelled, and its removal unlabelled", async () => {
+test("each runner is a card titled by its name, then its status, version and last poll, each labelled, and its removal last and unlabelled", async () => {
   drawing = { granted: true, runner: runnersTwo };
   await drawMyRunner();
   const table = screen.getByRole("table", { name: "Runners" });
@@ -608,7 +609,7 @@ test("each runner is a stacked row: its name first, then its status, version and
   expect(
     cells.map((cell) => cell.querySelector(".tabular-label")?.textContent),
   ).toStrictEqual([
-    "Runner",
+    undefined,
     "Status",
     "Version",
     "Last polled",
@@ -616,11 +617,33 @@ test("each runner is a stacked row: its name first, then its status, version and
     "Registered",
     undefined,
   ]);
+  expect(cells[0]?.getAttribute("role")).toBe("rowheader");
   expect(cells[0]?.textContent).toContain("3f2a9c1e");
   expect(cells[1]?.textContent).toContain("Live");
   expect(
     within(table).getByRole("columnheader", { name: "Remove" }),
   ).toBeTruthy();
+});
+
+test("each project and the chat host is a card titled by its name, its values labelled, and its Remove last", async () => {
+  drawing = { granted: true, runner: runnerHeld, host: hostListed("5be0d7aa") };
+  await drawMyRunner();
+  expect(
+    tableCards(screen.getByRole("table", { name: "Projects" }))[0],
+  ).toStrictEqual({
+    title: "atlas",
+    labels: ["Priority", "Waiting", undefined],
+    actionsLast: true,
+  });
+  expect(
+    tableCards(screen.getByRole("table", { name: "Chat host" })),
+  ).toStrictEqual([
+    {
+      title: "5be0d7aa",
+      labels: ["Version", "Registered", "Last polled", "Status", undefined],
+      actionsLast: true,
+    },
+  ]);
 });
 
 test("the question a runner's removal waits on stands under the roster, outside the table", async () => {
@@ -635,7 +658,7 @@ test("the question a runner's removal waits on stands under the roster, outside 
 test("narrow, a listing table's hidden head stacks its cells, and every press, menu and link on the page is a finger's height", async () => {
   drawing = { granted: true, runner: runnerHeld };
   await drawMyRunner();
-  const narrow = sheetRules(listingSheet, [sheetNarrowCondition]);
+  const narrow = sheetRules(tableSheet, [sheetNarrowCondition]);
   const projects = screen.getByRole("table", { name: "Projects" });
   for (const head of within(projects).getAllByRole("columnheader"))
     expect(sheetDeclared(narrow, head, "display")).toBe("block");

@@ -30,7 +30,7 @@ import type {
   ConsoleWriteRefused,
 } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
-import type { Copy } from "../../core/copy.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { myRunnerShort } from "../../core/myRunner.ts";
@@ -53,11 +53,12 @@ import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import {
-  settingsListingNone,
   SettingsListingSection,
-  SettingsListingTable,
+  SettingsListingStacked,
   SettingsListingUnread,
 } from "./SettingsListing.tsx";
+
+import "./tenantPeople.css";
 
 /** Answered as absent where the reader registers none. */
 export function useChatHost(tenant: string): PanelState<ChatHostResponse> {
@@ -111,93 +112,48 @@ function chatHostRemovalWrite(
   };
 }
 
-function ChatHostRow(props: {
-  readonly host: ChatHostResponse;
-  readonly busy: boolean;
-  readonly onRemove: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  const { host } = props;
-  const nowMs = useNowMs();
+type ChatHostColumn =
+  "host" | "version" | "registered" | "polled" | "status" | "remove";
+
+function chatHostCells(
+  host: ChatHostResponse,
+  removal: { readonly busy: boolean; readonly onRemove: () => void },
+  nowMs: number,
+  text: CopyText,
+): Readonly<Record<ChatHostColumn, ReactNode>> {
   const short = myRunnerShort(host.id);
   const standing = host.live ? "Live" : "Offline";
-  return (
-    <tr>
-      <th scope="row">
-        <span className="people-name block font-strong text-ink-1">
-          <span title={host.id}>{short}</span>
-        </span>
-      </th>
-      <td data-none={settingsListingNone(host.runner === undefined)}>
-        <span className="people-stacked-label">
-          {text({ id: "runners-col-version" })}
-        </span>
-        <RunnerVersion runner={host.runner} named />
-      </td>
-      <td>
-        <span className="people-stacked-label">
-          {text({ id: "runners-col-registered" })}
-        </span>
-        <Figure figure={instantFigure(host.registeredAt, nowMs)} />
-      </td>
-      <td>
-        <span className="people-stacked-label">
-          {text({ id: "runners-col-last-polled" })}
-        </span>
-        {host.polledAt === undefined ? (
-          text({ id: "runners-never" })
-        ) : (
-          <Figure figure={instantFigure(host.polledAt, nowMs)} />
-        )}
-      </td>
-      <td>
-        <Pill tone={runnerStandingTone(standing)}>
-          {text(runnerStandingLabel(standing))}
-        </Pill>
-      </td>
-      <td className="people-edit">
-        <Button
-          variant="quiet"
-          size="sm"
-          named={text({
-            id: "runners-chat-host-remove-named",
-            args: { short },
-          })}
-          disabled={props.busy}
-          onClick={props.onRemove}
-        >
-          {text({ id: "runners-remove" })}
-        </Button>
-      </td>
-    </tr>
-  );
-}
-
-/** The head of a listing of a member's registered hosts: runners, or a chat host. */
-function HostListingHead(props: { readonly name: string }): ReactNode {
-  const text = useCopyText();
-  return (
-    <thead>
-      <tr>
-        <th scope="col">{props.name}</th>
-        <th scope="col">{text({ id: "runners-col-version" })}</th>
-        <th scope="col" className="w-[9em]">
-          {text({ id: "runners-col-registered" })}
-        </th>
-        <th scope="col" className="w-[9em]">
-          {text({ id: "runners-col-last-polled" })}
-        </th>
-        <th scope="col" className="people-col-status">
-          {text({ id: "runners-col-status" })}
-        </th>
-        <th scope="col" className="w-[8em]">
-          <span className="visually-hidden">
-            {text({ id: "runners-col-remove" })}
-          </span>
-        </th>
-      </tr>
-    </thead>
-  );
+  return {
+    host: (
+      <span className="tabular-cut block font-strong text-ink-1">
+        <span title={host.id}>{short}</span>
+      </span>
+    ),
+    version: <RunnerVersion runner={host.runner} named />,
+    registered: <Figure figure={instantFigure(host.registeredAt, nowMs)} />,
+    polled:
+      host.polledAt === undefined ? (
+        text({ id: "runners-never" })
+      ) : (
+        <Figure figure={instantFigure(host.polledAt, nowMs)} />
+      ),
+    status: (
+      <Pill tone={runnerStandingTone(standing)}>
+        {text(runnerStandingLabel(standing))}
+      </Pill>
+    ),
+    remove: (
+      <Button
+        variant="quiet"
+        size="sm"
+        named={text({ id: "runners-chat-host-remove-named", args: { short } })}
+        disabled={removal.busy}
+        onClick={removal.onRemove}
+      >
+        {text({ id: "runners-remove" })}
+      </Button>
+    ),
+  };
 }
 
 function ChatHostTable(props: {
@@ -206,18 +162,46 @@ function ChatHostTable(props: {
   readonly onRemove: () => void;
 }): ReactNode {
   const text = useCopyText();
+  const nowMs = useNowMs();
+  const { host } = props;
   const title = text({ id: "runners-chat-host-title" });
   return (
-    <SettingsListingTable caption={title}>
-      <HostListingHead name={title} />
-      <tbody>
-        <ChatHostRow
-          host={props.host}
-          busy={props.busy}
-          onRemove={props.onRemove}
-        />
-      </tbody>
-    </SettingsListingTable>
+    <SettingsListingStacked
+      className="people-table"
+      caption={title}
+      columns={[
+        { key: "host", label: title, rowHeader: true },
+        { key: "version", label: text({ id: "runners-col-version" }) },
+        {
+          key: "registered",
+          label: text({ id: "runners-col-registered" }),
+          headClassName: "w-[9em]",
+        },
+        {
+          key: "polled",
+          label: text({ id: "runners-col-last-polled" }),
+          headClassName: "w-[9em]",
+        },
+        {
+          key: "status",
+          label: text({ id: "runners-col-status" }),
+          headClassName: "people-col-status",
+        },
+        {
+          key: "remove",
+          label: text({ id: "runners-col-remove" }),
+          actions: true,
+          headClassName: "w-[8em]",
+        },
+      ]}
+      rows={[
+        {
+          key: host.id,
+          cells: chatHostCells(host, props, nowMs, text),
+          empty: host.runner === undefined ? ["version"] : [],
+        },
+      ]}
+    />
   );
 }
 

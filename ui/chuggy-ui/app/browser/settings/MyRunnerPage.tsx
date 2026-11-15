@@ -101,12 +101,12 @@ import {
   SettingsListing,
   SettingsListingSection,
   SettingsListingStacked,
-  SettingsListingTable,
   SettingsListingUnread,
   SettingsListingWithheld,
 } from "./SettingsListing.tsx";
 
 import "./MyRunnerPage.css";
+import "./tenantPeople.css";
 
 type PersonalRunnerListed = PersonalRunnerResponse["runners"][number];
 
@@ -438,7 +438,7 @@ function MyRunnersTable(props: {
           {
             key: "remove",
             label: text({ id: "runners-col-remove" }),
-            labelHidden: true,
+            actions: true,
           },
         ]}
         rows={runners.map((runner) => ({
@@ -511,19 +511,48 @@ function MyRunnerProjectPriority(props: {
   );
 }
 
-/** How many attempts wait in a project for the reader's runners. */
-function MyRunnerProjectWaiting(props: {
-  readonly served: PersonalRunnerProjectListed;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <td>
-      <span className="people-stacked-label">
-        {text({ id: "runners-personal-project-waiting-col" })}
-      </span>
-      {copyOrDataText(text, myRunnerWaitingLabel(props.served))}
-    </td>
-  );
+function myRunnerProjectCells(
+  served: PersonalRunnerProjectListed,
+  props: {
+    readonly busy: boolean;
+    readonly onPrioritize: (
+      project: string,
+      priority: PersonalRunnerPriority,
+    ) => void;
+    readonly onRemove: (project: string) => void;
+  },
+  text: ReturnType<typeof useCopyText>,
+): Readonly<Record<"project" | "priority" | "waiting" | "remove", ReactNode>> {
+  return {
+    project: (
+      <span className="tabular-cut block text-ink-1">{served.project}</span>
+    ),
+    priority: (
+      <MyRunnerProjectPriority
+        served={served}
+        onPrioritize={(priority) => {
+          props.onPrioritize(served.project, priority);
+        }}
+      />
+    ),
+    waiting: copyOrDataText(text, myRunnerWaitingLabel(served)),
+    remove: (
+      <Button
+        variant="quiet"
+        size="sm"
+        named={text({
+          id: "runners-personal-project-remove",
+          args: { project: served.project },
+        })}
+        disabled={props.busy}
+        onClick={() => {
+          props.onRemove(served.project);
+        }}
+      >
+        {text({ id: "runners-remove" })}
+      </Button>
+    ),
+  };
 }
 
 /** The projects every runner of the reader's takes work in, each with the
@@ -540,60 +569,34 @@ function MyRunnerProjectsTable(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <SettingsListingTable caption={text({ id: "runners-personal-projects" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "runners-personal-project-col" })}</th>
-          <th scope="col">
-            {text({ id: "runners-personal-project-priority-col" })}
-          </th>
-          <th scope="col">
-            {text({ id: "runners-personal-project-waiting-col" })}
-          </th>
-          <th scope="col" className="w-[8em]">
-            <span className="visually-hidden">
-              {text({ id: "runners-col-remove" })}
-            </span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.projects.map((served) => (
-          <tr key={served.project}>
-            <th scope="row">
-              <span className="people-name block text-ink-1">
-                {served.project}
-              </span>
-            </th>
-            <td>
-              <MyRunnerProjectPriority
-                served={served}
-                onPrioritize={(priority) => {
-                  props.onPrioritize(served.project, priority);
-                }}
-              />
-            </td>
-            <MyRunnerProjectWaiting served={served} />
-            <td className="people-edit">
-              <Button
-                variant="quiet"
-                size="sm"
-                named={text({
-                  id: "runners-personal-project-remove",
-                  args: { project: served.project },
-                })}
-                disabled={props.busy}
-                onClick={() => {
-                  props.onRemove(served.project);
-                }}
-              >
-                {text({ id: "runners-remove" })}
-              </Button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </SettingsListingTable>
+    <SettingsListingStacked
+      caption={text({ id: "runners-personal-projects" })}
+      columns={[
+        {
+          key: "project",
+          label: text({ id: "runners-personal-project-col" }),
+          rowHeader: true,
+        },
+        {
+          key: "priority",
+          label: text({ id: "runners-personal-project-priority-col" }),
+        },
+        {
+          key: "waiting",
+          label: text({ id: "runners-personal-project-waiting-col" }),
+        },
+        {
+          key: "remove",
+          label: text({ id: "runners-col-remove" }),
+          actions: true,
+          headClassName: "w-[8em]",
+        },
+      ]}
+      rows={props.projects.map((served) => ({
+        key: served.project,
+        cells: myRunnerProjectCells(served, props, text),
+      }))}
+    />
   );
 }
 

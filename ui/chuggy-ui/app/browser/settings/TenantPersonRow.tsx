@@ -28,10 +28,8 @@ import {
 import type { TenantHeldProjectLine } from "../../core/tenantPeople.ts";
 import { Identity } from "../ui/Identity.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import {
-  SettingsListingNone,
-  settingsListingNone,
-} from "./SettingsListing.tsx";
+import type { TableRow } from "../ui/Table.tsx";
+import { SettingsListingNone } from "./SettingsListing.tsx";
 import { TenantPersonEditor } from "./TenantPersonEditor.tsx";
 
 import "./tenantPeople.css";
@@ -78,25 +76,27 @@ function TenantPersonNamed(props: {
     <span className="grid min-w-0">
       <span className="flex min-w-0 items-baseline gap-2">
         {named.subject ? (
-          <span className="people-name">
+          <span className="tabular-cut">
             <Identity label={{ text: named.name, title: named.name }} />
           </span>
         ) : (
           <span
-            className="people-name font-strong text-ink-1"
+            className="tabular-cut font-strong text-ink-1"
             title={named.name}
           >
             {named.name}
           </span>
         )}
         {props.person.mine ? (
-          <span className="shrink-0 text-sm text-ink-3">
+          <span className="shrink-0 text-sm font-regular text-ink-3">
             {text({ id: "permissions-person-mine" })}
           </span>
         ) : null}
       </span>
       {named.githubLogin === undefined ? null : (
-        <span className="truncate text-sm text-ink-3">{named.githubLogin}</span>
+        <span className="truncate text-sm font-regular text-ink-3">
+          {named.githubLogin}
+        </span>
       )}
     </span>
   );
@@ -129,7 +129,7 @@ export function TenantHeldProjects(props: {
   const lines = props.lines;
   if (!props.every && lines.length === 0) return <SettingsListingNone />;
   return (
-    <div className="grid min-w-0">
+    <div className="grid min-w-0 font-regular">
       {props.every ? <span>{text(tenantHeldEveryProjectLine)}</span> : null}
       {lines.length === 0 ? null : (
         <dl className="people-projects">
@@ -145,39 +145,40 @@ export function TenantHeldProjects(props: {
   );
 }
 
-export function TenantPersonRow(props: {
+/** The columns of a table of people, the editor's last where the reader has one. */
+export type TenantPersonColumn = "person" | "held" | "projects" | "edit";
+
+/** One person's row, its editor drawn only where the table has a column of
+ * them, which is the reader's to have and not this person's. */
+export function tenantPersonRow(props: {
   readonly tenant: string;
   readonly person: AccessTenantPerson;
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
-  /** Whether the table has a column of editors, which is the reader's to have and not this person's. */
   readonly editable: boolean;
-}): ReactNode {
+}): TableRow<TenantPersonColumn> {
   const person = props.person;
   const held = tenantHeldWords(person);
   const every = tenantHeldEveryProject(person);
   const lines = tenantHeldProjectLines(person, props.projects);
-  return (
-    <tr>
-      <th scope="row">
-        <TenantPersonNamed person={person} />
-      </th>
-      <td data-none={settingsListingNone(held.length === 0)}>
-        <TenantHeldWords held={held} />
-      </td>
-      <td data-none={settingsListingNone(!every && lines.length === 0)}>
-        <TenantHeldProjects every={every} lines={lines} />
-      </td>
-      {props.editable ? (
-        <td className="people-edit">
-          <TenantPersonEditor
-            tenant={props.tenant}
-            person={person}
-            projects={props.projects}
-            abilities={props.abilities}
-          />
-        </td>
-      ) : null}
-    </tr>
-  );
+  const empty: TenantPersonColumn[] = [];
+  if (held.length === 0) empty.push("held");
+  if (!every && lines.length === 0) empty.push("projects");
+  return {
+    key: person.subject,
+    cells: {
+      person: <TenantPersonNamed person={person} />,
+      held: <TenantHeldWords held={held} />,
+      projects: <TenantHeldProjects every={every} lines={lines} />,
+      edit: props.editable ? (
+        <TenantPersonEditor
+          tenant={props.tenant}
+          person={person}
+          projects={props.projects}
+          abilities={props.abilities}
+        />
+      ) : null,
+    },
+    empty,
+  };
 }
