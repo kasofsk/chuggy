@@ -201,8 +201,8 @@ git -C "$R" checkout -- test/random
 
 # --- A walk process killed by a signal is a could-not-run, not a finding -----
 #
-# JavaScript cannot end its own runtime by a signal, so a file whose process
-# was ended by one reached no verdict, and the gate names the signal.
+# A file whose process was ended by a signal reached no verdict, whatever sent
+# it, so the run is a could-not-run and the gate names the signal.
 
 cat >"$R/test/random/walk.test.ts" <<'FIXTURE'
 process.kill(process.pid, "SIGKILL")
@@ -210,6 +210,7 @@ FIXTURE
 run_gate "$R"
 check "a walk process killed by a signal exits 2, not 1" 2 "$RC" \
 	"killed by SIGKILL"
+check "a killed walk names the node it ran on" 2 "$RC" "under node $(node --version)"
 git -C "$R" checkout -- test/random
 
 # --- A cap the timer cannot apply is a could-not-run, not a finding ----------
