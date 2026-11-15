@@ -3918,11 +3918,12 @@ test("a job's conflict with a target that changed paths no job may push holds at
   ]);
 });
 
-test("a conflict stays a MergeConflict where no refused path differs, jobs may write pipelines, or the finalizer built the candidate", async () => {
+test("a conflict stays a MergeConflict where no refused path differs, jobs may write pipelines, the forge names no paths, or the finalizer built the candidate", async () => {
   const cases: readonly {
     readonly name: string;
     readonly store: FinalizerRecorder;
     readonly asked: boolean;
+    readonly pipelinePaths?: readonly string[];
   }[] = [
     {
       name: "no refused path differs",
@@ -3936,6 +3937,12 @@ test("a conflict stays a MergeConflict where no refused path differs, jobs may w
     },
     { name: "no binding was read", store: refusingStore(), asked: false },
     {
+      name: "the forge names no paths",
+      store: refusingStore(false),
+      asked: false,
+      pipelinePaths: [],
+    },
+    {
       name: "the finalizer built the candidate",
       store: recordingStore([
         { ...preparableView("request-one"), pipelinesWritable: false },
@@ -3943,13 +3950,16 @@ test("a conflict stays a MergeConflict where no refused path differs, jobs may w
       asked: false,
     },
   ];
-  for (const { name, store, asked } of cases) {
+  for (const { name, store, asked, pipelinePaths } of cases) {
     const git = refusingGit({
       read: "Paths",
       differing: { paths: [], truncated: false },
     });
+    const service = serviceOf(store, git);
 
-    await passOver(serviceOf(store, git));
+    await passOver(
+      pipelinePaths === undefined ? service : { ...service, pipelinePaths },
+    );
 
     assert.equal(git.differingQuestions.length, asked ? 1 : 0, name);
     assert.equal(store.attempts[0]?.failureKind, "MergeConflict", name);
