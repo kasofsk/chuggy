@@ -700,7 +700,7 @@ test("the cycle, phase time and work cycle families are counted under the bounds
   );
   assert.deepEqual(
     metricsPlanePhaseTimeBoundsSecs,
-    [60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800],
+    [0, 60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800],
   );
   assert.deepEqual(metricsPlaneWorkCycleBounds, [1, 2, 3, 4, 5, 7, 10]);
 });

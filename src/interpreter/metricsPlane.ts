@@ -120,9 +120,9 @@ export const metricsPlaneCycleBoundsSecs: readonly number[] = [
   28800,
 ];
 
-/** The bounds, in seconds, a landed ticket's time in one phase is counted under. */
+/** The bounds, in seconds, a landed ticket's time in one phase is counted under, the first of which counts the tickets that spent none. */
 export const metricsPlanePhaseTimeBoundsSecs: readonly number[] = [
-  60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
+  0, 60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
 ];
 
 /** The bounds a landed ticket's work cycles are counted under. */
