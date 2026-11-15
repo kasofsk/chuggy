@@ -229,7 +229,7 @@ test("with no configuration in the address, the page draws the repository import
     "Configurations 2",
     "Workloads 4",
     "Evaluation plans 2",
-    "Landings 2",
+    "Finalizers 2",
     "Prompts 1",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });
@@ -321,7 +321,7 @@ test("a configuration chosen in the address is drawn with its entries, and links
   ).toStrictEqual([
     "Workloads 4",
     "Evaluation plans 2",
-    "Landings 2",
+    "Finalizers 2",
     "Prompts 1",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });

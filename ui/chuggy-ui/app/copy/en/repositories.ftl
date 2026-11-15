@@ -1,6 +1,6 @@
 ## The repositories page, a repository's page, adding one, and connecting
-## GitHub: `RepositoriesPage.tsx`, `repositories/`, the forge's two landings,
-## and the core modules they draw from.
+## GitHub: `RepositoriesPage.tsx`, `repositories/`, the two pages the forge
+## returns to, and the core modules they draw from.
 
 ## The words a refusal that says nothing about the repository is drawn as.
 
@@ -18,7 +18,7 @@ repositories-not-installed = Not installed
 repositories-github-unavailable = { -github } unavailable
 repositories-more = { $count } more
 
-## What a person brings back from the forge, and the two landings it returns to.
+## What a person brings back from the forge, and the two pages it returns to.
 
 repositories-return-declined = Declined
 repositories-return-partial = Partial
@@ -113,8 +113,8 @@ repositories-unbind-line = New { -ticket(form: "plural") } can't name { $reposit
 repositories-not-bound = Not bound
 repositories-writing = Writing
 repositories-written = Written
-repositories-landing-title = { -landing(case: "upper") }
-repositories-landing-about = How a finished { -ticket } { -landing(form: "s") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
+repositories-finalization-title = { -finalization(case: "upper") }
+repositories-finalization-about = How a finished { -ticket } is { -finalization(form: "ed") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
 repositories-workflow-files = Workflow files
 repositories-workflow-files-about = Lets { -run(form: "plural") } change workflow files · App needs Workflows
 # spells -run: a GitHub Actions run, not a stage's

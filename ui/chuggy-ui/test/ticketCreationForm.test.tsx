@@ -419,7 +419,7 @@ test("both branch fields reach the wire, the target as the finalization", async 
   fireEvent.change(screen.getByPlaceholderText("the branch name"), {
     target: { value: "topic/one" },
   });
-  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
+  fireEvent.change(screen.getByPlaceholderText("the branch to finalize onto"), {
     target: { value: "release/next" },
   });
   submit();
@@ -965,7 +965,7 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
   expect(drafts(held.sent).length).toBe(0);
 });
 
-function finalizationGroup(name = "Landing"): HTMLElement | null {
+function finalizationGroup(name = "Finalization"): HTMLElement | null {
   return screen.queryByRole("radiogroup", { name });
 }
 
@@ -987,7 +987,7 @@ function chosenIn(
 
 /** The kind the Finalization group draws as chosen. */
 function finalizationChosen(): string | undefined {
-  return chosenIn("Landing", ["Git merge", "Pull request", "None"]);
+  return chosenIn("Finalization", ["Git merge", "Pull request", "None"]);
 }
 
 async function chooseRepository(name: string): Promise<void> {
@@ -1011,7 +1011,9 @@ test("a form finalized by None still asks for a finalization, and asks for no ta
   ]);
   expect(finalizationGroup()).toBeTruthy();
   expect(finalizationChosen()).toBe("None");
-  expect(screen.queryByPlaceholderText("the branch to land on")).toBeNull();
+  expect(
+    screen.queryByPlaceholderText("the branch to finalize onto"),
+  ).toBeNull();
   expect(finalizationGroup("Merge")).toBeNull();
   expect(finalizationGroup("Policy")).toBeNull();
 });
@@ -1238,7 +1240,7 @@ test("changing the finalization to None releases a ticket the target box would h
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "Push"),
   ]);
-  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
+  fireEvent.change(screen.getByPlaceholderText("the branch to finalize onto"), {
     target: { value: "refs/heads/release/next" },
   });
   typeIntent("ship it");

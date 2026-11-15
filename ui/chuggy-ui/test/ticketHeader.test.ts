@@ -48,7 +48,7 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
     ["Blocked", "queued", "Tinted", "Slash"],
     ["Working", "live", "Filled", "Spin"],
     ["Evaluating", "evaluation", "Filled", "Spin"],
-    ["Landing", "finalization", "Filled", "Spin"],
+    ["Finalizing", "finalization", "Filled", "Spin"],
     ["Escalated", "parked", "Filled", "Alert"],
     ["Done", "pass", "Filled", "Check"],
     ["Revoked", "retired", "Filled", "Cross"],

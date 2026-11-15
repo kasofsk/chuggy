@@ -186,7 +186,7 @@ export function setupPhaseSaid(phase: TicketPhase): Copy {
     case "Evaluation":
       return { id: "ticket-steps-phase-evaluation" };
     case "Finalization":
-      return { id: "ticket-steps-phase-landing" };
+      return { id: "ticket-steps-phase-finalization" };
     case "Pending":
       return { id: "standing-pending" };
     case "Done":
@@ -227,7 +227,7 @@ const setupReadSubjects: Readonly<Record<SetupReadName, Copy>> = {
   personal: { id: "setup-read-personal" },
   tickets: { id: "setup-read-tickets" },
   drafts: { id: "setup-read-drafts" },
-  landings: { id: "setup-read-landings" },
+  landings: { id: "setup-read-finalizations" },
 };
 
 function setupFateSaid(fate: SetupFate): Copy {
@@ -801,7 +801,7 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
     const args = { ticket: String(held.ticket) };
     if (held.landings.value.some((landing) => landing.state === "Landed"))
       return {
-        detail: { id: "setup-step-ticket-landed", args },
+        detail: { id: "setup-step-ticket-finalized", args },
         unmerged: undefined,
       };
     if (held.landings.value.some(setupProposed))

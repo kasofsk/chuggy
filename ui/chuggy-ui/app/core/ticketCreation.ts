@@ -928,13 +928,13 @@ export function creationImageUploadSentence(failure: ApiFailure): Copy {
 }
 
 /** What a proposal is opened from, which is the one box a push may leave empty. */
-export const creationLandingBranchSentence: Copy = {
-  id: "ticket-authoring-landing-branch",
+export const creationFinalizationBranchSentence: Copy = {
+  id: "ticket-authoring-finalization-branch",
 };
 
 /** What `briefLandingIsWhole` refuses, said as the two boxes that fix it. */
-export const creationLandingWholeSentence: Copy = {
-  id: "ticket-authoring-landing-whole",
+export const creationFinalizationWholeSentence: Copy = {
+  id: "ticket-authoring-finalization-whole",
 };
 
 /**
@@ -985,7 +985,7 @@ export function creationFaultSentence(field: CreationField): Copy {
         },
       };
     case "finalization":
-      return { id: "ticket-authoring-fault-landing" };
+      return { id: "ticket-authoring-fault-finalization" };
     case "repository":
       return { id: "ticket-authoring-fault-repository" };
     case "authoring":
@@ -1132,7 +1132,7 @@ function creationBranchesOf(form: TicketCreationForm): CreationBranches {
  * its prefix earns no second fault, because the prefix is the edit to make
  * first and the pairing is decided on what the fixed box would name.
  */
-function creationLandingFault(
+function creationFinalizationFault(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): CreationFault | undefined {
@@ -1140,14 +1140,14 @@ function creationLandingFault(
   if (branches.branch.named === "Prefixed") return undefined;
   if (branches.target.named === "Prefixed") return undefined;
   if (branches.branch.named !== "Ref")
-    return { field: "branch", reason: creationLandingBranchSentence };
+    return { field: "branch", reason: creationFinalizationBranchSentence };
   if (branches.target.named !== "Ref") return undefined;
   return briefLandingIsWhole({
     branch: branches.branch.ref,
     finalization: { ...form.finalization, target: branches.target.ref },
   })
     ? undefined
-    : { field: "target", reason: creationLandingWholeSentence };
+    : { field: "target", reason: creationFinalizationWholeSentence };
 }
 
 /**
@@ -1174,7 +1174,7 @@ function creationStatedFaults(
   if (form.finalization.kind === "None") return stated;
   if (branches.target.named === "Prefixed")
     stated.push({ field: "target", reason: creationBranchPrefixedSentence });
-  const landing = creationLandingFault(form, branches);
+  const landing = creationFinalizationFault(form, branches);
   if (landing !== undefined) stated.push(landing);
   return stated;
 }

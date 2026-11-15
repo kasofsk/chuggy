@@ -23,7 +23,7 @@ ticket-authoring-choose = Choose
 ticket-authoring-none = None
 ticket-authoring-selection-work = { -work-stage(case: "upper") }
 ticket-authoring-selection-evaluation = { -evaluation(case: "upper") }
-ticket-authoring-selection-landing = { -landing(case: "upper") }
+ticket-authoring-selection-finalization = { -finalization(case: "upper") }
 ticket-authoring-title = Title
 ticket-authoring-title-placeholder = what this { -ticket } is called
 ticket-authoring-intent = Intent
@@ -39,7 +39,7 @@ ticket-authoring-add-check = Add { -brief-check }
 ticket-authoring-branch = Branch
 ticket-authoring-branch-placeholder = the branch name
 ticket-authoring-target-branch = Target branch
-ticket-authoring-target-branch-placeholder = the branch to { -landing(form: "base") } on
+ticket-authoring-target-branch-placeholder = the branch to { -finalization(form: "base") } onto
 ticket-authoring-repository = { -repository(case: "upper") }
 ticket-authoring-epic = { -epic(case: "upper") }
 ticket-authoring-epics-more = More { -epic(form: "plural") }
@@ -107,27 +107,27 @@ ticket-authoring-file-content = { $field } { $number } content
 ticket-authoring-file-path-placeholder = a path in the working directory
 ticket-authoring-add-file = Add file
 
-## Where the work happens and where it lands.
+## Where the work happens and where it is finalized.
 
 ticket-authoring-configuration-line = { -configuration(case: "upper") } · { $name }
 ticket-authoring-configuration-line-commit = { -configuration(case: "upper") } · { $name } · { $commit }
 ticket-authoring-bootstrap = First { -ticket } · writes this { -repository }'s { -configuration }
 # spells -work-stage: the work in general, not the stage
-ticket-authoring-branch-hint = the branch this work starts from, and { -landing(form: "s") } on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as { $prefix }<name>
+ticket-authoring-branch-hint = the branch this work starts from, and is { -finalization(form: "ed") } onto unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as { $prefix }<name>
 # spells -work-stage: the work in general, not the stage
-ticket-authoring-target-hint = where the finished work { -landing(form: "s") }, created if it does not exist yet: a name, not a reference, which this console sends as { $prefix }<name>, and { $unnamed } where it is left empty
-ticket-authoring-target-unnamed-none = nowhere; { -landing(form: "a") } that { -landing(form: "s") } nothing names no reference
+ticket-authoring-target-hint = where the finished work is { -finalization(form: "ed") }, created if it does not exist yet: a name, not a reference, which this console sends as { $prefix }<name>, and { $unnamed } where it is left empty
+ticket-authoring-target-unnamed-none = nowhere; { -finalization(form: "a") } onto nothing names no reference
 ticket-authoring-target-unnamed-default = the { -repository }'s default branch
 # spells -work-stage: the work in general, not the stage
 ticket-authoring-target-unnamed-worked = the branch the work happened on
 # spells -work-stage: the work in general, not the stage
 ticket-authoring-branch-field-hint = Where the work happens · created if missing
-ticket-authoring-target-field-none = { -landing(case: "upper", form: "s") } nothing
+ticket-authoring-target-field-none = { -finalization(case: "upper", form: "s") } onto nothing
 ticket-authoring-target-field-default = Empty means the { -repository }'s default branch
 ticket-authoring-target-field-above = Empty means the branch above
 ticket-authoring-branch-prefixed = enter the branch name, not the ref: this console adds { $prefix } itself
-ticket-authoring-landing-branch = { -pull-request(form: "a") } is opened from a branch of its own, so name one above
-ticket-authoring-landing-whole = { -pull-request(form: "a") } opens from the branch above into a different target branch
+ticket-authoring-finalization-branch = { -pull-request(form: "a") } is opened from a branch of its own, so name one above
+ticket-authoring-finalization-whole = { -pull-request(form: "a") } opens from the branch above into a different target branch
 
 ## What the form refuses, field by field.
 
@@ -139,7 +139,7 @@ ticket-authoring-fault-intent = state what this { -ticket } is for, in at most {
 ticket-authoring-fault-links = each link is an { $scheme } URL of at most { $chars } characters, and one { -ticket } carries at most { $count }
 ticket-authoring-fault-checks = each { -brief-check } is one command line of at most { $chars } characters, and one { -ticket } adds at most { $count }
 ticket-authoring-fault-branch = a branch is named here without its { $prefix } prefix, and the whole reference is at most { $chars } characters
-ticket-authoring-fault-landing = this { -landing } is not one the API will accept
+ticket-authoring-fault-finalization = this { -finalization } is not one the API will accept
 ticket-authoring-fault-repository = this { -project } binds { -repository(form: "a") }, so { -ticket(form: "a") } in it names which one
 ticket-authoring-fault-authoring = one advanced setting is not one this { -project } offers
 ticket-authoring-fault-overrides = { -override(form: "a") } is not one { -ticket(form: "a") } may write
@@ -262,7 +262,7 @@ ticket-authoring-discard = Discard it
 ticket-authoring-fragment-ticket = { -ticket } { $name }
 ticket-authoring-fragment-workload = { -workload } { $name }
 ticket-authoring-fragment-plan = plan { $name }
-ticket-authoring-fragment-landing = { -landing } { $name }
+ticket-authoring-fragment-finalizer = { -finalizer } { $name }
 ticket-authoring-fragment-prompt = prompt { $name }
 ticket-authoring-fragment-look-through = Look through { $name }
 ticket-authoring-fragment-close = Close { $name }
@@ -276,12 +276,12 @@ ticket-authoring-yaml-list = write this as a list, one entry a line
 ticket-authoring-yaml-member = { $refusal } one of { $members }
 ticket-authoring-yaml-merge-by = merge by
 ticket-authoring-yaml-order-as = order the merge as
-ticket-authoring-yaml-land-by = { -landing(form: "base") } by
+ticket-authoring-yaml-finalize-by = { -finalization(form: "base") } by
 ticket-authoring-yaml-kind-names-field = a { $kind } names its { $field }
-ticket-authoring-yaml-landing-map = write the { -landing } as a map of { $fields }
-ticket-authoring-yaml-landing-fields = { -landing(form: "a") } names { $fields }
-ticket-authoring-yaml-landing-kind = { -landing(form: "a") } names its kind: one of { $kinds }
-ticket-authoring-yaml-none-target = { $none } { -landing(form: "s") } nothing, so it names no target
+ticket-authoring-yaml-finalization-map = write the { -finalization } as a map of { $fields }
+ticket-authoring-yaml-finalization-fields = { -finalization(form: "a") } names { $fields }
+ticket-authoring-yaml-finalization-kind = { -finalization(form: "a") } names its kind: one of { $kinds }
+ticket-authoring-yaml-none-target = { $none } { -finalization(form: "s") } onto nothing, so it names no target
 ticket-authoring-yaml-kind-names-no = a { $kind } names no { $field }; only a { $merge } does
 ticket-authoring-yaml-name-one = name one of { $names }
 ticket-authoring-yaml-selection-map = write the selection as a map of { $fields }
@@ -317,7 +317,7 @@ ticket-authoring-workload-refused = this { -workload } is not one { -ticket(form
 
 ticket-authoring-hint-images = the images attached in the form, by identity: { $bound }
 # spells -work-stage: the work in general, not the stage
-ticket-authoring-hint-landing = how the finished work { -landing(form: "s") }: its kind, a { $merge }'s mode and policy, and its target where it { -landing(form: "s") } somewhere
+ticket-authoring-hint-finalization = how the finished work is { -finalization(form: "ed") }: its kind, a { $merge }'s mode and policy, and its target where it is { -finalization(form: "ed") } onto one
 ticket-authoring-hint-dependencies = the { -ticket(form: "plural") } this one waits for, by number
 ticket-authoring-dependency-candidate = { -ticket } { $ticket }
 ticket-authoring-hint-program = the { -evaluation } program: at most { $count } { -stage(form: "plural") }, each judged by the { -evaluator(form: "plural") } it counts
@@ -333,11 +333,11 @@ ticket-authoring-hint-selection-work = the { -workload } that does the work
 # spells -work-stage: the work in general, not the stage
 ticket-authoring-hint-selection-evaluation = the plan whose { -stage(form: "plural") } judge the work
 # spells -work-stage: the work in general, not the stage
-ticket-authoring-hint-selection-landing = the { -landing } that { -landing(form: "s") } the work
+ticket-authoring-hint-selection-finalization = the { -finalizer } that { -finalization(form: "s") } the work
 # spells -run: the verb
 ticket-authoring-hint-selection-revision = the { -revision } it runs on: the one it was { -release(form: "ed") } on, or the newest
 # spells -work-stage: the work in general, not the stage
-ticket-authoring-hint-kind = how the finished work { -landing(form: "s") }: merged, proposed, or not at all
+ticket-authoring-hint-kind = how the finished work is { -finalization(form: "ed") }: merged, proposed, or not at all
 ticket-authoring-hint-mode = how a { $merge } advances its target, which only a { $merge } names
 ticket-authoring-hint-policy = how a { $merge } is ordered against the others on its target, which only a { $merge } names
 ticket-authoring-hint-evaluators = how many { -evaluator(form: "plural") } judge this { -stage }, from one to { $count }

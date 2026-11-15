@@ -5,7 +5,7 @@
 ## Every term but a brand takes `case`: "upper" for the title-case form, the
 ## lower-case one otherwise. A noun takes `form`: "plural", "a" for the form
 ## with its article, the singular otherwise; a verb takes "s", "ed" or "ing",
-## its base otherwise, and `-landing` takes both, "base" being to land. A plural is a variant of its term, never a term of its
+## its base otherwise, and `-finalization` takes both, "base" being to finalize. A plural is a variant of its term, never a term of its
 ## own. Fluent hands a term literals only, so a message that counts one
 ## selects on its own count:
 ##
@@ -517,27 +517,43 @@
 ## What a finished ticket becomes.
 
 # Putting the accepted work onto its target, and that act's record.
-# rejects: finalization, finalizations, finalizing, finalizer, finalizers, finalize, finalizes, finalized
--landing = { $case ->
+# rejects: landing, landings, land, lands, landed
+-finalization = { $case ->
     [upper] { $form ->
-        [plural] Landings
-        [a] A landing
-        [base] Land
-        [s] Lands
-        [ed] Landed
-       *[one] Landing
+        [plural] Finalizations
+        [a] A finalization
+        [base] Finalize
+        [s] Finalizes
+        [ed] Finalized
+        [ing] Finalizing
+       *[one] Finalization
     }
    *[lower] { $form ->
-        [plural] landings
-        [a] a landing
-        [base] land
-        [s] lands
-        [ed] landed
-       *[one] landing
+        [plural] finalizations
+        [a] a finalization
+        [base] finalize
+        [s] finalizes
+        [ed] finalized
+        [ing] finalizing
+       *[one] finalization
     }
 }
 
-# The forge's request a landing opens.
+# A catalog entry naming how a ticket it selects is finalized.
+-finalizer = { $case ->
+    [upper] { $form ->
+        [plural] Finalizers
+        [a] A finalizer
+       *[one] Finalizer
+    }
+   *[lower] { $form ->
+        [plural] finalizers
+        [a] a finalizer
+       *[one] finalizer
+    }
+}
+
+# The forge's request a finalization opens.
 -pull-request = { $case ->
     [upper] { $form ->
         [plural] Pull requests
@@ -551,7 +567,7 @@
     }
 }
 
-# What a landed ticket's repository does with it.
+# What a finalized ticket's repository does with it.
 -delivery = { $case ->
     [upper] { $form ->
         [plural] Deliveries

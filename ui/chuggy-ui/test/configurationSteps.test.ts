@@ -66,7 +66,7 @@ test("a catalog is grouped as its work, its plan's stages in order and its landi
     ["gates", undefined],
   ]);
   expect(rowsOf(read, "Finalization").map((row) => row.step)).toEqual([
-    "Landing",
+    "Finalization",
   ]);
 });
 

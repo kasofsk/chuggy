@@ -624,7 +624,7 @@ function setupTicketMend(
     case "Landing":
       return setupHand(
         {
-          id: "setup-mend-landing-tell",
+          id: "setup-mend-finalization-tell",
           args: { ticket, phase: setupPhaseSaid(lack.phase), page },
         },
         setupLookAgain,

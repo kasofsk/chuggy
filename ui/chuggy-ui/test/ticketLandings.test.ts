@@ -73,7 +73,7 @@ test("a landing that failed on a conflict says so and how many files it names", 
     commit: undefined,
     caveat: undefined,
   });
-  expect(ticketLandingSummary(landing)).toBe("Landing failed");
+  expect(ticketLandingSummary(landing)).toBe("Finalization failed");
 });
 
 test("a held landing says how long it has been held and on what", () => {
@@ -202,12 +202,12 @@ test("a landed landing offers its pull request under its host and its commit sho
   expect(fragment.caveat).toBeUndefined();
   expect(
     ticketLandingSummary(ticketLandingOf(landingLanded(2), copyTextEn)),
-  ).toBe("Landed");
+  ).toBe("Finalized");
 });
 
 test("a pull request a person merged at a head it was not opened at names its merge commit as the row always does, says the head was not evaluated, and names both heads in its detail", () => {
   const landing = ticketLandingOf(landingMergedElsewhere(2), copyTextEn);
-  expect(landing.word).toBe("Landed");
+  expect(landing.word).toBe("Finalized");
   const fragment = fragmentWords(landing, nowMs);
   expect(fragment.commit).toEqual({
     name: "Merged",

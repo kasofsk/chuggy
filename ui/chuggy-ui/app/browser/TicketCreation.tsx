@@ -251,7 +251,7 @@ const selectionLabels: Readonly<
 > = {
   work: { id: "ticket-authoring-selection-work" },
   evaluation: { id: "ticket-authoring-selection-evaluation" },
-  finalization: { id: "ticket-authoring-selection-landing" },
+  finalization: { id: "ticket-authoring-selection-finalization" },
 };
 
 /**

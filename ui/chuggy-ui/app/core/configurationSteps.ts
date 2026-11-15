@@ -595,7 +595,7 @@ function stepsLandingOf(
     overridden: false,
   });
   return stepsRow({
-    step: { id: "ticket-steps-phase-landing" },
+    step: { id: "ticket-steps-phase-finalization" },
     runs:
       finalization === undefined
         ? undefined

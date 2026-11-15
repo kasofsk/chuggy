@@ -13,7 +13,7 @@ sentences-escalation-work-unavailable = { -work-stage(case: "upper") } could not
 # spells -run: to run is a verb here
 sentences-escalation-evaluation-blocked = { -evaluation(case: "upper") } could not run or finish
 # spells -run: to run is a verb here
-sentences-escalation-landing-unavailable = { -landing(case: "upper") } could not run
+sentences-escalation-finalization-unavailable = { -finalization(case: "upper") } could not run
 sentences-native-escalation = { -escalation }
 sentences-native-evaluation-approval = awaiting your { -evaluation } { -approval }
 sentences-native-evaluation-approval-awaited = awaiting { -evaluation } { -approval }
@@ -48,7 +48,7 @@ sentences-refusal-not-revocable = { $ticket } can no longer be { -revoke(form: "
 sentences-refusal-not-resumable = { $ticket } has nothing to resume
 sentences-refusal-task-not-current = Report for { $task } of { $ticket } · Not current
 sentences-refusal-evaluation-not-current = { -evaluation(case: "upper") } of { -cycle } { $cycle } of { $ticket } · Not current
-sentences-refusal-landing-not-current = { -landing(case: "upper") } result for { -cycle } { $cycle } of { $ticket } · Not current
+sentences-refusal-finalization-not-current = { -finalization(case: "upper") } result for { -cycle } { $cycle } of { $ticket } · Not current
 
 ## Why the actor declined a submitted mutation, and what to do about it.
 
@@ -62,7 +62,7 @@ sentences-refusal-source-denied = Remote refused this { -project }'s credential
 sentences-refusal-brief-no-repository = { -brief(case: "upper") } names no { -repository } · Name a bound one
 sentences-refusal-brief-checks-uncommanded = No { -brief-check } { -stage } · Drop the { -brief }'s { -brief-check(form: "plural") }
 sentences-refusal-configuration-elsewhere = { -configuration(case: "upper") } not from the { -brief }'s { -repository }
-sentences-refusal-selection-unknown = { -workload(case: "upper") }, plan or { -landing } not in the { -catalog }
+sentences-refusal-selection-unknown = { -workload(case: "upper") }, plan or { -finalizer } not in the { -catalog }
 sentences-refusal-selection-unsupported = Selection needs a version 2 { -configuration }
 sentences-refusal-program-exceeds-plan = Program goes past the plan's { -stage(form: "plural") }
 sentences-refusal-program-skips-checks = Program skips the { -brief }'s { -brief-check(form: "plural") } · Restore them
@@ -70,7 +70,7 @@ sentences-refusal-program-stage-misplaced = Program keeps a later { -stage } wit
 sentences-refusal-overrides-unsupported = { -override(case: "upper", form: "plural") } do not fit this { -configuration }
 sentences-refusal-overrides-unknown = { -override(case: "upper", form: "plural") } name an unknown { -workload } or prompt
 sentences-refusal-capacity-reached = { -project(case: "upper") } full · Finish or { -revoke } { -ticket(form: "a") }
-sentences-refusal-landing-request-closed = { -landing(case: "upper") } request closed · { -ticket(case: "upper") } still waiting
+sentences-refusal-finalization-request-closed = { -finalization(case: "upper") } request closed · { -ticket(case: "upper") } still waiting
 sentences-refusal-overrides-move-definition = Only start settings can change while { -escalation }
 sentences-refusal-approval-as-work = { -approval(case: "upper", form: "a") } cannot be the { -work-stage } · Select another { -workload }
 sentences-refusal-overrides-change-approval = { -override(case: "upper", form: "plural") } cannot make or unmake { -approval(form: "a") }

@@ -31,7 +31,7 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-none": Record<never, never>;
   readonly "ticket-authoring-selection-work": Record<never, never>;
   readonly "ticket-authoring-selection-evaluation": Record<never, never>;
-  readonly "ticket-authoring-selection-landing": Record<never, never>;
+  readonly "ticket-authoring-selection-finalization": Record<never, never>;
   readonly "ticket-authoring-title": Record<never, never>;
   readonly "ticket-authoring-title-placeholder": Record<never, never>;
   readonly "ticket-authoring-intent": Record<never, never>;
@@ -144,8 +144,8 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-branch-prefixed": {
     readonly prefix: unknown;
   };
-  readonly "ticket-authoring-landing-branch": Record<never, never>;
-  readonly "ticket-authoring-landing-whole": Record<never, never>;
+  readonly "ticket-authoring-finalization-branch": Record<never, never>;
+  readonly "ticket-authoring-finalization-whole": Record<never, never>;
   readonly "ticket-authoring-fault-configuration": Record<never, never>;
   readonly "ticket-authoring-fault-title": {
     readonly chars: unknown;
@@ -166,7 +166,7 @@ export interface TicketAuthoringCopy {
     readonly prefix: unknown;
     readonly chars: unknown;
   };
-  readonly "ticket-authoring-fault-landing": Record<never, never>;
+  readonly "ticket-authoring-fault-finalization": Record<never, never>;
   readonly "ticket-authoring-fault-repository": Record<never, never>;
   readonly "ticket-authoring-fault-authoring": Record<never, never>;
   readonly "ticket-authoring-fault-overrides": Record<never, never>;
@@ -311,7 +311,7 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-fragment-plan": {
     readonly name: unknown;
   };
-  readonly "ticket-authoring-fragment-landing": {
+  readonly "ticket-authoring-fragment-finalizer": {
     readonly name: unknown;
   };
   readonly "ticket-authoring-fragment-prompt": {
@@ -337,18 +337,18 @@ export interface TicketAuthoringCopy {
   };
   readonly "ticket-authoring-yaml-merge-by": Record<never, never>;
   readonly "ticket-authoring-yaml-order-as": Record<never, never>;
-  readonly "ticket-authoring-yaml-land-by": Record<never, never>;
+  readonly "ticket-authoring-yaml-finalize-by": Record<never, never>;
   readonly "ticket-authoring-yaml-kind-names-field": {
     readonly kind: unknown;
     readonly field: unknown;
   };
-  readonly "ticket-authoring-yaml-landing-map": {
+  readonly "ticket-authoring-yaml-finalization-map": {
     readonly fields: unknown;
   };
-  readonly "ticket-authoring-yaml-landing-fields": {
+  readonly "ticket-authoring-yaml-finalization-fields": {
     readonly fields: unknown;
   };
-  readonly "ticket-authoring-yaml-landing-kind": {
+  readonly "ticket-authoring-yaml-finalization-kind": {
     readonly kinds: unknown;
   };
   readonly "ticket-authoring-yaml-none-target": {
@@ -415,7 +415,7 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-hint-images": {
     readonly bound: unknown;
   };
-  readonly "ticket-authoring-hint-landing": {
+  readonly "ticket-authoring-hint-finalization": {
     readonly merge: unknown;
   };
   readonly "ticket-authoring-hint-dependencies": Record<never, never>;
@@ -440,7 +440,7 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-hint-plans": Record<never, never>;
   readonly "ticket-authoring-hint-selection-work": Record<never, never>;
   readonly "ticket-authoring-hint-selection-evaluation": Record<never, never>;
-  readonly "ticket-authoring-hint-selection-landing": Record<never, never>;
+  readonly "ticket-authoring-hint-selection-finalization": Record<never, never>;
   readonly "ticket-authoring-hint-selection-revision": Record<never, never>;
   readonly "ticket-authoring-hint-kind": Record<never, never>;
   readonly "ticket-authoring-hint-mode": {

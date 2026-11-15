@@ -117,7 +117,7 @@ async function ticketed(
 test.each([
   ["Work", "Work"],
   ["Evaluation", "Evaluation"],
-  ["Finalization", "Landing"],
+  ["Finalization", "Finalization"],
 ] as const)(
   "a ticket in %s is waited on, by its number and its phase as the ticket page names its step",
   async (phase, step) => {
@@ -178,14 +178,14 @@ test("a ticket being landed is done once a landing of it landed or opened a pull
     ticketed([saidLandingTicket(6)], (project) => {
       project.landings.set(6, landings);
     });
-  expect(await landed([])).toEqual(["waiting", "ticket 6 is in Landing"]);
+  expect(await landed([])).toEqual(["waiting", "ticket 6 is in Finalization"]);
   expect(await landed([setupSiteHeld])).toEqual([
     "waiting",
-    "ticket 6 is in Landing",
+    "ticket 6 is in Finalization",
   ]);
   expect(await landed([setupSiteHeld, setupSiteLanded])).toEqual([
     "done",
-    "ticket 6 landed",
+    "ticket 6 is finalized",
   ]);
   expect(
     await landed([
@@ -235,7 +235,7 @@ test("a pull request counts only on a landing that has neither failed nor been i
   ]);
   expect(await landed([proposedIn("Failed")])).toEqual([
     "waiting",
-    "ticket 6 is in Landing",
+    "ticket 6 is in Finalization",
   ]);
   expect(await landed([proposedIn("Failed"), proposedIn("Running")])).toEqual([
     "done",
@@ -269,7 +269,7 @@ test("landings are read for a bounded few of the tickets being landed, and past 
   ]);
   expect(await ticketed(many.slice(1))).toEqual([
     "waiting",
-    "ticket 2 is in Landing",
+    "ticket 2 is in Finalization",
   ]);
 });
 

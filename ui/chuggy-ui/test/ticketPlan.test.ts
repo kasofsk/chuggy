@@ -112,7 +112,10 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
       ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
       copyTextEn,
     ),
-  ).toMatchObject({ lands: false, landing: { id: "codes-landing-kind-none" } });
+  ).toMatchObject({
+    lands: false,
+    landing: { id: "codes-finalization-kind-none" },
+  });
   expect(
     ticketPlanOf(
       catalog,
@@ -131,7 +134,7 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
     ),
   ).toMatchObject({
     lands: true,
-    landing: { id: "codes-landing-kind-pull-request" },
+    landing: { id: "codes-finalization-kind-pull-request" },
   });
   expect(ticketPlanOf(undefined, ticket(), copyTextEn)).toMatchObject({
     lands: true,

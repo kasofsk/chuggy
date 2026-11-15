@@ -236,8 +236,8 @@ export function RepositoryFinalizationSection(props: {
     <RepositorySettingSection
       partition={props.partition}
       binding={props.binding}
-      title={{ id: "repositories-landing-title" }}
-      about={{ id: "repositories-landing-about" }}
+      title={{ id: "repositories-finalization-title" }}
+      about={{ id: "repositories-finalization-about" }}
       body={(held, editing) => (
         <div className="flex flex-col gap-3">
           <FinalizationChoiceFields

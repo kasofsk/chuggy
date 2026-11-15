@@ -122,8 +122,8 @@ export interface RepositoriesCopy {
   readonly "repositories-not-bound": Record<never, never>;
   readonly "repositories-writing": Record<never, never>;
   readonly "repositories-written": Record<never, never>;
-  readonly "repositories-landing-title": Record<never, never>;
-  readonly "repositories-landing-about": Record<never, never>;
+  readonly "repositories-finalization-title": Record<never, never>;
+  readonly "repositories-finalization-about": Record<never, never>;
   readonly "repositories-workflow-files": Record<never, never>;
   readonly "repositories-workflow-files-about": Record<never, never>;
   readonly "repositories-workflow-runs": Record<never, never>;

@@ -364,7 +364,7 @@ test("the current cycle draws its work, its stages, where it stopped and its rol
   expect(rows[1]).toContain("$0.35");
   expect(rows[2]).toContain("Stage 2");
   expect(rows[2]).toContain("Not reached");
-  expect(rows[3]).toContain("Landing");
+  expect(rows[3]).toContain("Finalization");
   expect(rows[3]).toContain("Not reached");
   expect(outcomeOf(current)).toBe("Failed at Stage 1");
   expect(current.querySelector(".ticket-runs-rollup")?.textContent).toContain(
@@ -684,7 +684,7 @@ test("a ticket read carrying no program still groups its runs by cycle, and numb
   ).toEqual([
     "Work",
     "Stage 1",
-    "Landing",
+    "Finalization",
     "Work",
     "Stage 1",
     "Stage 2",

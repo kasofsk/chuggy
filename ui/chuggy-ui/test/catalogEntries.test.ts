@@ -228,10 +228,10 @@ test("a finalizer's entry says how it lands, and a git merge's policy beside it"
   expect(
     catalogEntryFields(entryOf(finalized, "finalizers/land"), copyTextEn),
   ).toStrictEqual([
-    ["Landing", "Push · lands on refs/heads/release"],
+    ["Finalization", "Push · finalizes onto refs/heads/release"],
     ["Policy", "Serialized"],
   ]);
   expect(
     catalogEntryFields(entryOf(finalized, "finalizers/proposed"), copyTextEn),
-  ).toStrictEqual([["Landing", "Pull request · into the default branch"]]);
+  ).toStrictEqual([["Finalization", "Pull request · into the default branch"]]);
 });

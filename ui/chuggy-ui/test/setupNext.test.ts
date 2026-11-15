@@ -238,7 +238,7 @@ const mends: {
   Landing: [
     { lacks: "Landing", ticket: 4, phase: "Evaluation" },
     hand(
-      `Ticket 4 is in Evaluation, and setup is done when it lands. ${pages}/tickets/4 shows where it is. Tell me when you want me to look again.`,
+      `Ticket 4 is in Evaluation, and setup is done when it is finalized. ${pages}/tickets/4 shows where it is. Tell me when you want me to look again.`,
       "if the person asks to look again",
     ),
   ],
@@ -514,7 +514,10 @@ test("a step the site would not show, or sent only part of, is a state the perso
 });
 
 test("with every step done, setup is said to be done in the ticket step's own words, and nothing is named but where the next ticket is made", () => {
-  for (const detail of ["ticket 4 landed", "ticket 4 opened a pull request"]) {
+  for (const detail of [
+    "ticket 4 is finalized",
+    "ticket 4 opened a pull request",
+  ]) {
     const steps: readonly SetupStep[] = [
       ...lacking({ lacks: "Runner", chat: false, named: true }).steps.slice(
         0,
@@ -621,7 +624,7 @@ test("where the repository holds only the bootstrap and no pull request of the t
     ).toEqual(closing("ticket 1 is done"));
   expect(
     (await nextSaid(landingWith([{ ...setupSiteLanded, proposal }]))).thing,
-  ).toEqual(closing("ticket 6 landed"));
+  ).toEqual(closing("ticket 6 is finalized"));
 });
 
 test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(

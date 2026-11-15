@@ -152,7 +152,7 @@ const repositoryFinalizationMovedCode = "RepositoryLandingMoved";
 
 /** What a refusal of the write moved for says. */
 export const repositoryFinalizationMovedLine: Copy = {
-  id: "repository-landing-moved",
+  id: "repository-finalization-moved",
 };
 
 /** The binding as it stands, where the write was refused because a setting

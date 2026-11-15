@@ -125,7 +125,7 @@ test("a person fully set up is shown every step done, and nothing is named to ru
   });
 });
 
-test("a first ticket that opened a pull request is said to have done that, in the step and in the closing line, and is nowhere said to have landed", async () => {
+test("a first ticket that opened a pull request is said to have done that, in the step and in the closing line, and is nowhere said to have been finalized", async () => {
   const world = setupSiteAt("Live");
   const [project] = world.projects;
   project?.tickets.push({ ticket: 1, phase: "Finalization" });
@@ -137,12 +137,12 @@ test("a first ticket that opened a pull request is said to have done that, in th
     `tell: chuggy is set up for acme/widgets: ticket 1 opened a pull request. The next ticket is made at ${pages}/tickets/new.`,
     "next: stop",
   ]);
-  expect(done.lines.join("\n")).not.toContain("landed");
+  expect(done.lines.join("\n")).not.toContain("finalized");
   project?.landings.set(1, [{ ...setupSiteProposed(url), state: "Failed" }]);
   const failed = await printed(await machineSignedIn(world));
   expect(failed.lines.slice(-4, -2)).toEqual([
-    "step: ticket      waiting  ticket 1 is in Landing",
-    `tell: Ticket 1 is in Landing, and setup is done when it lands. ${pages}/tickets/1 shows where it is. Tell me when you want me to look again.`,
+    "step: ticket      waiting  ticket 1 is in Finalization",
+    `tell: Ticket 1 is in Finalization, and setup is done when it is finalized. ${pages}/tickets/1 shows where it is. Tell me when you want me to look again.`,
   ]);
 });
 

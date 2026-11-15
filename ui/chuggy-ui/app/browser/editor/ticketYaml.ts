@@ -540,7 +540,7 @@ function ticketYamlFinalizationOf(
 ): TicketYamlTook<TicketYamlFinalization> {
   if (!isMap(node))
     return ticketYamlRefused({
-      id: "ticket-authoring-yaml-landing-map",
+      id: "ticket-authoring-yaml-finalization-map",
       args: { fields: ticketYamlFinalizationFields.join(", ") },
     });
   const pairs = new Map<TicketYamlFinalizationField, TicketYamlPair>();
@@ -551,7 +551,7 @@ function ticketYamlFinalizationOf(
     if (field === undefined)
       return ticketYamlRefused(
         {
-          id: "ticket-authoring-yaml-landing-fields",
+          id: "ticket-authoring-yaml-finalization-fields",
           args: { fields: ticketYamlFinalizationFields.join(", ") },
         },
         ticketYamlSpanOf(pair.key),
@@ -561,12 +561,12 @@ function ticketYamlFinalizationOf(
   const kindPair = pairs.get("kind");
   if (kindPair === undefined)
     return ticketYamlRefused({
-      id: "ticket-authoring-yaml-landing-kind",
+      id: "ticket-authoring-yaml-finalization-kind",
       args: { kinds: briefFinalizationKinds.join(", ") },
     });
   const kind = ticketYamlFinalizationFieldOf("kind", pairs, (value) =>
     ticketYamlMemberOf(value, briefFinalizationKinds, {
-      id: "ticket-authoring-yaml-land-by",
+      id: "ticket-authoring-yaml-finalize-by",
     }),
   );
   if (kind.took === "Problem") return kind;
@@ -1363,7 +1363,7 @@ function ticketYamlSelectionKeys(
   const hints = {
     work: { id: "ticket-authoring-hint-selection-work" },
     evaluation: { id: "ticket-authoring-hint-selection-evaluation" },
-    finalization: { id: "ticket-authoring-hint-selection-landing" },
+    finalization: { id: "ticket-authoring-hint-selection-finalization" },
     configuration: { id: "ticket-authoring-hint-selection-revision" },
   } as const satisfies Record<(typeof ticketYamlSelectionFields)[number], Copy>;
   return ticketYamlSelectionFields.map((field) => ({
@@ -1409,7 +1409,7 @@ function ticketYamlDescribed(
     },
     finalization: {
       hint: text({
-        id: "ticket-authoring-hint-landing",
+        id: "ticket-authoring-hint-finalization",
         args: { merge: "GitMerge" },
       }),
       values: [],

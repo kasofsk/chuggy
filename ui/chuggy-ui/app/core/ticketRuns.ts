@@ -177,7 +177,7 @@ function ticketRunsStageRows(
         {
           kind: "Gap",
           name,
-          words: text({ id: "ticket-landing-not-reached" }),
+          words: text({ id: "ticket-finalization-not-reached" }),
         },
       ];
     case "Missing":
@@ -249,7 +249,7 @@ function ticketRunsCycleOf(
       ? [
           {
             kind: "Landing",
-            name: text({ id: "ticket-steps-phase-landing" }),
+            name: text({ id: "ticket-steps-phase-finalization" }),
             landing,
             lands: plan.lands,
           },

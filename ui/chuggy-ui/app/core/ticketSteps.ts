@@ -113,7 +113,7 @@ export interface TicketStepsReads {
   readonly nowMs: number;
 }
 
-const ticketStepsNotReached: Copy = { id: "ticket-landing-not-reached" };
+const ticketStepsNotReached: Copy = { id: "ticket-finalization-not-reached" };
 const ticketStepsNotStarted: Copy = { id: "ticket-steps-not-started" };
 
 function ticketStepsWords(words: string): TicketStepLine {
@@ -329,7 +329,7 @@ function ticketStepsStages(
 /** What a landing's box says: its pull request once it merged or was
  * proposed, why it failed where it did, what holds it while it waits, and its
  * state otherwise. */
-function ticketStepsLandingWords(
+function ticketStepsFinalizationWords(
   landing: TicketLanding,
   nowMs: number,
   text: CopyText,
@@ -362,7 +362,7 @@ function ticketStepsLanding(
   nowMs: number,
   text: CopyText,
 ): TicketStepBox {
-  const name = text({ id: "ticket-steps-phase-landing" });
+  const name = text({ id: "ticket-steps-phase-finalization" });
   if (!plan.lands)
     return {
       name,
@@ -382,7 +382,7 @@ function ticketStepsLanding(
   return {
     name,
     ...ticketRunLandingMarked(landing),
-    line: ticketStepsWords(ticketStepsLandingWords(landing, nowMs, text)),
+    line: ticketStepsWords(ticketStepsFinalizationWords(landing, nowMs, text)),
     address: { to: "Landing" },
     evaluators: [],
   };

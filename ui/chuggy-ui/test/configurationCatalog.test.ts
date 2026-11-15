@@ -274,7 +274,7 @@ test("each choice marks the catalog's default", () => {
     "proposed",
   ]);
   expect(choices.finalization.map((choice) => choice.text)).toStrictEqual([
-    "land (default) · The repository's landing",
+    "land (default) · The repository's finalization",
     "proposed · Pull request",
   ]);
 });

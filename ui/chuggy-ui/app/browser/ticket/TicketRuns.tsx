@@ -189,7 +189,7 @@ function ticketRunsRowWords(
 ): string {
   if (row.kind === "Gap") return row.words;
   if (!row.lands) return text({ id: "ticket-value-none" });
-  return row.landing?.word ?? text({ id: "ticket-landing-not-reached" });
+  return row.landing?.word ?? text({ id: "ticket-finalization-not-reached" });
 }
 
 type TicketRunsParams = PartitionIdentity & { readonly ticket: string };
