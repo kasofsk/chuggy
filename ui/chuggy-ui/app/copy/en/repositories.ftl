@@ -117,6 +117,10 @@ repositories-landing-title = { -landing(case: "upper") }
 repositories-landing-about = How a finished { -ticket } { -landing(form: "s") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
 repositories-workflow-files = Workflow files
 repositories-workflow-files-about = Lets { -run(form: "plural") } change workflow files · App needs Workflows
+# spells -run: a GitHub Actions run, not a stage's
+repositories-workflow-runs = Workflow runs
+# spells -run: a GitHub Actions run, not a stage's
+repositories-workflow-runs-about = Lets { -run(form: "plural") } start and read workflow runs · App needs Actions
 repositories-off = Off
 repositories-on = On
 repositories-configurations-title = { -configuration(case: "upper", form: "plural") }
