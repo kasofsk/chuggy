@@ -18,9 +18,9 @@
  * optional field a status's schema names must be present in some case of that
  * route and absent in another.
  *
- * AN OLDER RELEASE A PLANE STILL SERVES IS DRIVEN THE SAME WAY. Every case is
- * driven again naming that release, and read by that release's own answer map,
- * which is how a pod built with it reads the answer. Every body that release's
+ * EACH RELEASE REPLAYED ON A PLANE IS DRIVEN THE SAME WAY. Every case is
+ * driven again naming the release its contract names, and read by that
+ * release's own answer map, which is how a pod built with it reads the answer. Every body that release's
  * request schemas build, each roster value in turn, is offered at its route and
  * must not be refused. The releases are `workerContractReleases.ts`'s.
  */
@@ -2003,13 +2003,13 @@ function workerPlaneReplayed<Name extends string>(
       for (const driven of plane.cases[name]) {
         if (
           driven.sent !== undefined &&
-          !contractVersionAccepted(driven.sent, older.release)
+          !contractVersionAccepted(driven.sent, older.wire)
         )
           continue;
         const answered = await workerPlaneDriven(
           plane,
           name,
-          { ...driven, release: driven.release ?? older.release },
+          { ...driven, release: driven.release ?? older.wire },
           route,
         );
         workerPlaneReadBy(older, called, driven.name, answered);
@@ -2026,7 +2026,7 @@ function workerPlaneReplayed<Name extends string>(
     if (
       request !== "Unparsed" &&
       (request.sent === undefined ||
-        contractVersionAccepted(request.sent, older.release))
+        contractVersionAccepted(request.sent, older.wire))
     )
       test(`${route.method} ${route.path} takes every body a ${older.release} pod builds`, () =>
         workerPlaneBodiesTaken(plane, name, route, older, request));
@@ -2069,7 +2069,7 @@ async function workerPlaneBodiesTaken<Name extends string>(
         {
           name: what,
           call: { headers: json, payload: offered as object },
-          release: older.release,
+          release: older.wire,
         },
         route,
       );

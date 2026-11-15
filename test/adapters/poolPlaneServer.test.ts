@@ -960,7 +960,7 @@ test("a poll of this release naming its room is told a job it fits is waiting, a
       "1.20.0",
       {
         ...speaking,
-        [workerContractHeader]: earlier.release,
+        [workerContractHeader]: earlier.wire,
         [workerRunnerMemoryRoomHeader]: "4096",
       },
       earlier.reconciliation,
@@ -1472,7 +1472,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
     ] of poolReplayPolls.filter(
       ([, token]) =>
         token !== hostToken ||
-        contractVersionAccepted(workerContractChatHost, older.release),
+        contractVersionAccepted(workerContractChatHost, older.wire),
     )) {
       const recorded = calls();
       const ports = poolReplayPorts(recorded.ports, claimed);
@@ -1494,7 +1494,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         url: `${older.pollRoute}?${query.toString()}`,
         headers: {
           authorization: `Bearer ${token}`,
-          [workerContractHeader]: older.release,
+          [workerContractHeader]: older.wire,
           ...(older.runnerHeader === undefined || named === undefined
             ? {}
             : { [older.runnerHeader]: named }),
@@ -1643,7 +1643,7 @@ function poolReplaySettled(older: WorkerContractReleasePool): void {
         url: older.settlementPath(outcome, "one"),
         headers: {
           authorization: `Bearer ${poolToken}`,
-          [workerContractHeader]: older.release,
+          [workerContractHeader]: older.wire,
         },
         payload: body,
       });
