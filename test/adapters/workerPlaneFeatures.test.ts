@@ -1,8 +1,8 @@
 /**
  * The job and session planes asked by feature. Each gate is driven by a
  * request whose features header lists its feature, lists every other, or is
- * not sent, and one sending none is answered by its release exactly as the
- * range that gate used to ask answers it.
+ * not sent, and one sending none is answered by its release exactly as
+ * `contractVersionAccepted` answers for that feature's range.
  */
 
 import assert from "node:assert/strict";
@@ -68,7 +68,7 @@ import {
 /** The headers a probe sends beside its bearer, one of them sent more than once where its value is a list. */
 type WorkerPlaneFeatureHeaders = Readonly<Record<string, string | string[]>>;
 
-/** One gate: the feature it asks for, the range it asked before, and whether a request sending `headers` was given what the feature carries. */
+/** One gate: the feature it asks for, the range whose floor is that feature's version, and whether a request sending `headers` was given what the feature carries. */
 interface WorkerPlaneFeatureGate {
   readonly feature: WorkerContractFeature;
   readonly range: WorkerContractRange;
