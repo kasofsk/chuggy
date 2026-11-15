@@ -20,9 +20,10 @@ export type ThreadTicketWakeReason =
   (typeof allThreadTicketWakeReasons)[number];
 
 /**
- * `AttemptEnded` is a new attempt having restored the thread's jobs: it names
- * what ended them, because the restore is the same jobs started again and the
- * thread did not end them itself.
+ * `AttemptEnded` is a new attempt's restore having found jobs that were running
+ * and that it did not start again, because they were not started with
+ * `restart`. It names those jobs; a restore that only restarted jobs offers no
+ * wake.
  */
 export const allThreadJobWakeReasons = [
   "JobExited",
