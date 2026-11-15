@@ -51,6 +51,9 @@ import {
 import { allChangeProposalStatuses } from "../../src/interpreter/changeProposal.ts";
 import { finalizerRemoteDefaultRef } from "../../src/interpreter/finalizerLanding.ts";
 
+/** A path a forge might name for its pipeline definitions, fixed so only the wording moves the digest. */
+const pushPathsRefused: readonly string[] = [".forge/pipelines/"];
+
 /** Every shape a failed landing is told in, its commits fixed so only the wording moves the digest. */
 const failedLandings: readonly FailedLanding[] = [
   ...[true, false].flatMap((conflicted) => [
@@ -185,14 +188,14 @@ function templateWording(): readonly string[] {
     ...briefingSectionOrder,
     ...briefingTemplateSections,
     ...briefingReworkPreface,
-    ...briefingPipelinesUnwritable,
+    ...briefingPipelinesUnwritable(pushPathsRefused),
     ...failedLandings.flatMap(briefingFailedLandingLines),
-    ...briefingTargetMergeFirstLines("refs/heads/target", true),
-    ...briefingTargetMergeFirstLines("refs/heads/target", false),
-    ...briefingTargetMergeLastLines("refs/heads/target", true),
-    ...briefingTargetMergeLastLines("refs/heads/target", false),
-    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, true),
-    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, true),
+    ...briefingTargetMergeFirstLines("refs/heads/target", []),
+    ...briefingTargetMergeFirstLines("refs/heads/target", pushPathsRefused),
+    ...briefingTargetMergeLastLines("refs/heads/target", []),
+    ...briefingTargetMergeLastLines("refs/heads/target", pushPathsRefused),
+    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, []),
+    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, []),
     ...dependencyWording(),
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
@@ -225,7 +228,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [19, "8fedaafd6460335501fff3c770c9be7dbc286eaaaf225270828f84049abf3606"],
+    [20, "4f66544d94ccb7d7b5c32f9793842e0a37ea1e716de342af0801af1a1d8665f1"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -251,14 +254,14 @@ test("the digest reads every string the template states", () => {
   for (const text of [
     ...Object.values(briefingLabels),
     ...briefingReworkPreface,
-    ...briefingPipelinesUnwritable,
+    ...briefingPipelinesUnwritable(pushPathsRefused),
     ...failedLandings.flatMap(briefingFailedLandingLines),
-    ...briefingTargetMergeFirstLines("refs/heads/target", true),
-    ...briefingTargetMergeFirstLines("refs/heads/target", false),
-    ...briefingTargetMergeLastLines("refs/heads/target", true),
-    ...briefingTargetMergeLastLines("refs/heads/target", false),
-    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, true),
-    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, true),
+    ...briefingTargetMergeFirstLines("refs/heads/target", []),
+    ...briefingTargetMergeFirstLines("refs/heads/target", pushPathsRefused),
+    ...briefingTargetMergeLastLines("refs/heads/target", []),
+    ...briefingTargetMergeLastLines("refs/heads/target", pushPathsRefused),
+    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, []),
+    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, []),
     ...dependencyWording(),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);

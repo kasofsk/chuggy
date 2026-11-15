@@ -561,6 +561,23 @@ const workTaskRosterCases: readonly WorkerPlaneCase[] = [
     }),
   })),
   {
+    name: "a work task naming the paths its push may not change, to a pod that lists reading them",
+    call: {
+      headers: {
+        [workerContractFeaturesHeader]: workerContractFeaturesText([
+          "PushPathsRefused",
+        ]),
+      },
+    },
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: {
+        ...liveInvocation,
+        pushPathsRefused: [".forgejo/workflows/"],
+      },
+    }),
+  },
+  {
     name: "a work task listing a credential its grant does not carry",
     service: workerPlaneTask({
       ...liveTask,

@@ -168,6 +168,8 @@ export const workerContractFeatures = {
   SessionCapabilitiesNamed: workerContractSessionCapabilitiesNamed,
   ChatSessionThreads: { major: 1, minor: 98 },
   TargetMerge: undefined,
+  /** A work task may name the paths its push may not change, a field a pod that does not implement it refuses its whole answer over. */
+  PushPathsRefused: undefined,
 } as const satisfies Readonly<
   Record<string, WorkerContractVersion | undefined>
 >;

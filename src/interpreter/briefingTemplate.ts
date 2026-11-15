@@ -132,7 +132,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 19;
+export const briefingTemplateVersion = 20;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -198,11 +198,20 @@ export const briefingLabels = {
   evaluationReports: "Evaluation reports:",
 } as const;
 
-/** What a work task is told where its own repository's binding does not let pipelines be written. */
-export const briefingPipelinesUnwritable: readonly string[] = [
-  "This job cannot change .github/workflows/: its repository's binding does not let it write pipelines, and a push carrying such a change is refused whole.",
-  "If the ticket needs a change there, report that rather than making it.",
-];
+/** The paths a push may not change, as a line names them. */
+function briefingPushPathsText(pushPathsRefused: readonly string[]): string {
+  return pushPathsRefused.join(", ");
+}
+
+/** What a work task is told of the paths its push may not change, which are the pipeline definitions its binding withholds. */
+export function briefingPipelinesUnwritable(
+  pushPathsRefused: readonly string[],
+): readonly string[] {
+  return [
+    `This job cannot change ${briefingPushPathsText(pushPathsRefused)}: its repository's binding does not let it write pipelines, and a push carrying such a change is refused whole.`,
+    "If the ticket needs a change there, report that rather than making it.",
+  ];
+}
 
 /**
  * What a work task is told before the failed reports of the evaluation before
@@ -327,35 +336,43 @@ export function briefingFailedLandingLines(
   ];
 }
 
-/** The command that lists what a merge of the fetched target would change under .github/workflows/. */
-const briefingTargetMergePipelineCheck =
-  "git diff --name-only HEAD FETCH_HEAD -- .github/workflows/";
+/** The command that lists what a merge of the fetched target would change under the paths a push may not change. */
+function briefingTargetMergePipelineCheck(
+  pushPathsRefused: readonly string[],
+): string {
+  return `git diff --name-only HEAD FETCH_HEAD -- ${pushPathsRefused.join(" ")}`;
+}
 
 /**
  * The commands that fetch the ref a change lands on and merge its head into
- * the workspace, checking first, where pipelines are unwritable, that the
- * merge would change nothing under .github/workflows/.
+ * the workspace, checking first, where the task names paths its push may not
+ * change, that the merge would change none of them.
  */
 function briefingTargetMergeCommands(
   targetRef: string,
-  pipelinesWritable: boolean,
+  pushPathsRefused: readonly string[],
 ): string {
   const merge = `\`${briefingWorkerGit} merge --no-edit FETCH_HEAD\``;
-  return pipelinesWritable
+  return pushPathsRefused.length === 0
     ? `run \`git fetch origin ${targetRef}\`, then ${merge}`
-    : `run \`git fetch origin ${targetRef}\`, then \`${briefingTargetMergePipelineCheck}\`, and only where that lists nothing, ${merge}`;
+    : `run \`git fetch origin ${targetRef}\`, then \`${briefingTargetMergePipelineCheck(pushPathsRefused)}\`, and only where that lists nothing, ${merge}`;
 }
 
-/** What a work task that cannot write pipelines does with a target whose merge would change one. */
-const briefingTargetMergePipelineSkip =
-  "Where that check lists anything, the merge would carry a change to .github/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report that it holds a pipeline change this job cannot push.";
+/** What a work task whose push may not change some paths does with a target whose merge would change one. */
+function briefingTargetMergePipelineSkip(
+  pushPathsRefused: readonly string[],
+): string {
+  return `Where that check lists anything, the merge would carry a change to ${briefingPushPathsText(pushPathsRefused)} and its push would be refused: do not merge, go on without the target, and say in your report that it holds a pipeline change this job cannot push.`;
+}
 
 /** How a merge of the target that conflicts is resolved, the target's own side never rewritten. */
 function briefingTargetMergeResolution(
-  pipelinesWritable: boolean,
+  pushPathsRefused: readonly string[],
 ): readonly string[] {
   return [
-    ...(pipelinesWritable ? [] : [briefingTargetMergePipelineSkip]),
+    ...(pushPathsRefused.length === 0
+      ? []
+      : [briefingTargetMergePipelineSkip(pushPathsRefused)]),
     `Where a merge stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree.`,
     "Where both sides took the same next number or version, such as a migration's or a release's, move this change's own to the next free one, and leave what the target already holds exactly as it is.",
   ];
@@ -371,25 +388,25 @@ function briefingTargetName(targetRef: string): string {
 /** What a work task does before anything else: merge the head of the ref its change lands on. */
 export function briefingTargetMergeFirstLines(
   targetRef: string,
-  pipelinesWritable: boolean,
+  pushPathsRefused: readonly string[],
 ): readonly string[] {
   return [
     `This change lands on ${briefingTargetName(targetRef)}.`,
-    `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
+    `Before anything else the ticket asks for, and before any change named below is merged in, bring that target's head into this workspace as one merge commit: ${briefingTargetMergeCommands(targetRef, pushPathsRefused)}.`,
     "Where the workspace is already at that head, git says it is already up to date and nothing changes.",
-    ...briefingTargetMergeResolution(pipelinesWritable),
+    ...briefingTargetMergeResolution(pushPathsRefused),
   ];
 }
 
 /** What a work task does as its last step: merge the target's head again, and verify the merged tree where that conflicted or touched this change's files. */
 export function briefingTargetMergeLastLines(
   targetRef: string,
-  pipelinesWritable: boolean,
+  pushPathsRefused: readonly string[],
 ): readonly string[] {
   return [
-    `As your last step before you report, bring ${briefingTargetName(targetRef)} in again: ${briefingTargetMergeCommands(targetRef, pipelinesWritable)}.`,
+    `As your last step before you report, bring ${briefingTargetName(targetRef)} in again: ${briefingTargetMergeCommands(targetRef, pushPathsRefused)}.`,
     `Where that merge conflicted, or brought in a change to a file this change also changes, run the checks again on the merged tree, and commit what you change on top of the merge with \`${briefingWorkerGit} commit -m <message>\`; report a pass only where they pass on that merged tree. Otherwise report on the checks you ran before the merge, since the checks stage runs them on the merged tree.`,
-    ...briefingTargetMergeResolution(pipelinesWritable),
+    ...briefingTargetMergeResolution(pushPathsRefused),
   ];
 }
 

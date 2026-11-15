@@ -53,6 +53,7 @@ export function workTaskInvocation(launch: {
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
   readonly targetMerge?: WorkTaskTargetMerge;
+  readonly pushPathsRefused?: readonly string[];
 }): WorkTaskInvocation {
   const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
@@ -72,6 +73,9 @@ export function workTaskInvocation(launch: {
     ...(launch.targetMerge === undefined
       ? {}
       : { targetMerge: launch.targetMerge }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: [...launch.pushPathsRefused] }),
   };
 }
 
@@ -110,6 +114,9 @@ export function workTask(
     ...(invocation.targetMerge === undefined
       ? {}
       : { targetMerge: invocation.targetMerge }),
+    ...(invocation.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: invocation.pushPathsRefused }),
   };
 }
 
