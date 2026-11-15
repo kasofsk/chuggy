@@ -85,7 +85,7 @@ import {
   type ConfigurationFollowingTicket,
 } from "../../interpreter/configurationFollowing.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
-import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
+import { approvalWorkloadApprovers } from "../../contract/workloadConfiguration.ts";
 import type { NativeActionAsked } from "../../interpreter/nativeActionAnswer.ts";
 import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
 import {

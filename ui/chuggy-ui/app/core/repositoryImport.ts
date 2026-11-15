@@ -196,13 +196,16 @@ export function repositoryImportNote(
     : repositoryImportRefusalLabel(refusal);
 }
 
+/** The word a refused import is refused with. */
+export function repositoryImportRefusedWord(failure: ApiFailure): Copy {
+  return repositoryImportRefusalLabel(repositoryImportRefusal(failure));
+}
+
 /** What a refused Import now says under the line, where it says anything. */
 export function repositoryImportRefused(failure: ApiFailure): Copy {
   return {
     id: "repositories-import-refused-now",
-    args: {
-      word: repositoryImportRefusalLabel(repositoryImportRefusal(failure)),
-    },
+    args: { word: repositoryImportRefusedWord(failure) },
   };
 }
 

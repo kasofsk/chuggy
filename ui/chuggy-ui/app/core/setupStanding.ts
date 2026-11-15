@@ -26,6 +26,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
+  RepositoryConfigurationImportAttemptResponse,
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -116,7 +117,14 @@ export type SetupLack =
     }
   | { readonly lacks: "Mcp" }
   | { readonly lacks: "Binding" }
-  | { readonly lacks: "Configuration"; readonly repository: string }
+  /** `bound` is the repository as the binding names it, and `lastImport` the import of it that finished last, where one did. */
+  | {
+      readonly lacks: "Configuration";
+      readonly repository: string;
+      readonly bound: string;
+      readonly lastImport:
+        RepositoryConfigurationImportAttemptResponse | undefined;
+    }
   /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner; `named` where the project names an owner fallback, so a personal runner of the person's serving it would take its work. */
   | {
       readonly lacks: "Runner";
@@ -627,7 +635,12 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
             "repository",
             "waiting",
             { id: "setup-step-unconfigured", args: { repository } },
-            { lacks: "Configuration", repository },
+            {
+              lacks: "Configuration",
+              repository,
+              bound: meant.binding.repository,
+              lastImport: meant.binding.lastImport,
+            },
           );
     }
   }

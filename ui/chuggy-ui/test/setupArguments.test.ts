@@ -348,3 +348,42 @@ test("the arguments a report names for project carry its name, and those it name
   ]);
   expect(setupAnswerArguments(answers, "Runner")).not.toContain("--name");
 });
+
+test("configuration and check read the workspace and project and no site, configuration a test command on one line too, and import a site besides; --test is read by no other command", () => {
+  const both = { workspace: "acme", project: "widgets" };
+  const flags = ["--workspace", "acme", "--project", "widgets"];
+  expect(setupAsked(["configuration", ...flags, "--test", "npm test"])).toEqual(
+    {
+      asked: "Configuration",
+      site: undefined,
+      answers: both,
+      test: "npm test",
+    },
+  );
+  expect(setupAsked(["configuration"])).toMatchObject({
+    asked: "Configuration",
+    test: undefined,
+  });
+  for (const test of ["", "two\nlines"])
+    expect(setupAsked(["configuration", "--test", test]), test).toEqual(
+      wrongly("Test"),
+    );
+  expect(setupAsked(["check", ...flags])).toEqual({
+    asked: "Check",
+    site: undefined,
+    answers: both,
+  });
+  expect(setupAsked(["import", "--site", site, ...flags])).toEqual({
+    asked: "Import",
+    site,
+    answers: both,
+  });
+  for (const argv of [
+    ["configuration", "--site", site],
+    ["check", "--site", site],
+    ["check", "--test", "make"],
+    ["import", "--test", "make"],
+    ["--test", "make"],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Flag"));
+});

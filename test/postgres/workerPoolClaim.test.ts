@@ -82,7 +82,7 @@ import {
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
-import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 import type { WorkTaskInvocation } from "../../src/interpreter/executionScheduler.ts";
 import {
   asPrincipal,

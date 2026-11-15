@@ -6,8 +6,8 @@ import {
   executionRequirementSchema,
   releaseConfigurationHeaderSchema,
   type executionRequirementsSchema,
-} from "../contract/configurationDocument.ts";
-import type { workerPoolCapabilitySchema } from "../contract/workerPool.ts";
+} from "./configurationDocument.ts";
+import type { workerPoolCapabilitySchema } from "./workerPool.ts";
 
 /** The platform rosters, surfaced where a requirement is materialized. */
 export { allArchitectures, allOperatingSystems };
