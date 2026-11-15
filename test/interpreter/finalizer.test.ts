@@ -29,6 +29,8 @@ import {
   asRepositoryCredential,
   asRepositoryId,
   checkedFinalizerConfig,
+  finalizationHoldPassesMax,
+  finalizationHoldsUnwaited,
   finalizationNext,
   finalizerDefaults,
   finalizerIdentityCharsMax,
@@ -56,6 +58,7 @@ import type { BriefFinalizationOf } from "../../src/contract/brief.ts";
 import {
   briefGitMergeModes,
   briefGitMergePolicies,
+  finalizationUnavailableKinds,
 } from "../../src/contract/rosters.ts";
 import { asSafeInteger } from "../../src/domain/ids.ts";
 import { assertBoundsAreRefused } from "./configBounds.ts";
@@ -1213,4 +1216,15 @@ test("a view whose durable rows contradict each other is refused rather than dec
     () => finalizationNext(finalizerDefaults, viewWith({ attemptsMade: -1 })),
     /is not a count/u,
   );
+});
+
+test("a hold no wait can clear is reported on its first pass, and every other after the configured dwell", () => {
+  const config = { ...finalizerDefaults, holdPassesMax: 7 };
+  assert.deepEqual(finalizationHoldsUnwaited, ["TargetPathsRefused"]);
+  for (const kind of finalizationUnavailableKinds)
+    assert.equal(
+      finalizationHoldPassesMax(config, kind),
+      kind === "TargetPathsRefused" ? 1 : 7,
+      kind,
+    );
 });

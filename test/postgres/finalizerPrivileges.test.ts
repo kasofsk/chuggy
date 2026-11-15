@@ -471,7 +471,7 @@ test("the finalizer's four doors are its own and no prior role may open them", a
       finalizationFunction,
     ],
     [
-      `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e')`,
+      `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e',NULL,NULL)`,
       holdFunction,
     ],
     [

@@ -63,7 +63,8 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * the same pinned input, reaching the repository, the target, the proposal or
  * its base a second time and counting the finalizer's own budgets afresh, a
  * push the repository declined among them once its rules or settings allow
- * it; the wire owns the list outright as `notificationKinds` is owned here, so
+ * it, and a target no job may merge in once a person has landed the branch;
+ * the wire owns the list outright as `notificationKinds` is owned here, so
  * the finalizer recording a hold, the door admitting a result and the desk
  * reading one all name the same kinds, and `test/contract/rosters.test.ts`
  * holds it against the interpreter's `allFinalizationHoldKinds` as
@@ -99,6 +100,7 @@ export const finalizationUnavailableKinds = [
   "ProposalQueueTimedOut",
   "ProposalDequeued",
   "RecheckReworksExhausted",
+  "TargetPathsRefused",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];

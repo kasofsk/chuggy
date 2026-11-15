@@ -990,6 +990,27 @@ test("a concluded landing whose hold columns are still set answers how it conclu
   assert.equal("removal" in unavailable.hold, false);
 });
 
+test("a landing escalated because the target changed paths no job may push answers the files its hold names", async () => {
+  const project = await finalizing("refused", "Push");
+  const claim = await finalizerClaim(rig, project, finalizerIdentity("owner"));
+  const refused = { paths: [".github/workflows/ci.yml"], truncated: true };
+  await postgresFinalizer(rig.pool).recordHold({
+    claim,
+    kind: "TargetPathsRefused",
+    refused,
+  });
+  await concluded(
+    project,
+    { outcome: "FinalizationResultUnavailable", kind: "TargetPathsRefused" },
+    undefined,
+    claim,
+  );
+  const [landing] = (await landingsOf(project))?.landings ?? [];
+  assert.equal(landing?.state, "Unavailable");
+  assert.equal(landing.hold?.kind, "TargetPathsRefused");
+  assert.deepEqual(landing.hold.refused, refused);
+});
+
 test("a pull request found by reading it back answers the link its reading recorded, and a link that is not an https one that parses is left out", async () => {
   const found = await finalizing("read-back", "PullRequest");
   const foundPromoted = await promotion(found, "read-back");

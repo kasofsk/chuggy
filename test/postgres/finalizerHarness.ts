@@ -105,6 +105,7 @@ import {
   type FinalizationClaim,
   type GitPromotionPort,
   type ObservedTarget,
+  type PathsDiffering,
   type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
@@ -1167,6 +1168,7 @@ export interface FinalizerGitFake extends GitPromotionPort {
   integration?: CandidateIntegrated;
   held: CandidateHeld;
   contained: TargetContained;
+  differing: PathsDiffering;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1179,6 +1181,11 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     ancestry: { proved: "Ancestor", observed: target.commit },
     held: "Unheld",
     contained: "Contained",
+    differing: { read: "Paths", differing: { paths: [], truncated: false } },
+    readPathsDiffering: () => {
+      fake.acts.push("differing");
+      return Promise.resolve(fake.differing);
+    },
     observeTarget: () => {
       fake.acts.push("observe");
       return Promise.resolve(fake.target);
@@ -1272,6 +1279,7 @@ export function finalizerService(
     stacks: postgresEvaluationStack(rig.pool),
     handoffs: artifacts,
     artifacts,
+    pipelinePaths: [".github/workflows/"],
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(finalizerDefaults),

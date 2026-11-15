@@ -63,6 +63,16 @@
  * nothing, so a finalizer's own re-preparations stay invisible to
  * `TicketGraph`.
  *
+ * A CONFLICT NO JOB CAN RESOLVE IS A HOLD AND NOT A FAILURE. Where a job
+ * pushed the candidate, its repository's binding withholds pipelines, and the
+ * target differs from the candidate in the paths the forge says such a push may
+ * not change, the job could not have merged the target in, and another round
+ * would push the same commit and conflict again. Such a conflict holds at
+ * `TargetPathsRefused`, naming the files, and is reported unavailable on the
+ * first pass that records it, because waiting cannot clear it either: what
+ * does is a person merging the ticket's branch into the target, after which a
+ * resume finds the candidate held and lands nothing.
+ *
  * A CLOSING PROJECT ABORTS BEFORE THE PERMIT AND RECONCILES AFTER IT. A
  * lifecycle that will never authorize the act again makes another preparation
  * pointless, so a finalization holding no permit records the failure it aborted
@@ -635,6 +645,8 @@ export interface FinalizationView {
   readonly observedWorkBranch?: ObservedTarget;
   /** What reading the branch the remote defaults to found, present only for a proposing brief that names no base of its own. */
   readonly proposalBase?: TargetObserved;
+  /** Whether the bound repository's jobs may write its pipelines, absent where no binding was read. */
+  readonly pipelinesWritable?: boolean;
   readonly attempt?: FinalizationAttempt;
   readonly permit?: CommitPermit;
   readonly reconciliation?: FinalizationReconciliation;
@@ -670,7 +682,9 @@ export type FinalizationHoldKind =
   | "ProposalQueueTimedOut"
   | "ProposalDequeued"
   /** Reached by no pass, a moved target's re-check never being held; holds and results already recorded at it are still read. */
-  | "RecheckReworksExhausted";
+  | "RecheckReworksExhausted"
+  /** A conflict with a target that changed paths a job of this repository may not push, which no job's merge can bring in. */
+  | "TargetPathsRefused";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -698,6 +712,7 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalQueueTimedOut",
   "ProposalDequeued",
   "RecheckReworksExhausted",
+  "TargetPathsRefused",
 ];
 
 /**
@@ -1178,6 +1193,16 @@ export interface CandidateHeldQuestion {
   readonly candidate: GitObjectId;
 }
 
+/** Which files under `paths` a target differs from a candidate in, `paths` naming at least one. */
+export interface PathsDifferingQuestion extends CandidateHeldQuestion {
+  readonly paths: readonly string[];
+}
+
+/** The files that comparison found, as many as one summary carries, or `Unread` where git could not answer. */
+export type PathsDiffering =
+  | { readonly read: "Paths"; readonly differing: ConflictSummary }
+  | { readonly read: "Unread" };
+
 /**
  * What git proved of that target. `Held` is a candidate the target already
  * reaches, or one whose clean merge with the target is the target's own tree;
@@ -1242,6 +1267,9 @@ export interface GitPromotionPort {
   proveTargetContained(
     question: CandidateHeldQuestion,
   ): Promise<TargetContained>;
+
+  /** Reads which files under some paths the observed target differs from the candidate in. */
+  readPathsDiffering(question: PathsDifferingQuestion): Promise<PathsDiffering>;
 
   /** Integrates one candidate against one observed target, deterministically. */
   integrateCandidate(
@@ -1383,6 +1411,18 @@ export function checkedFinalizerConfig(
   return config;
 }
 
+/** The holds no wait can clear, which are reported on the first pass that records them. */
+export const finalizationHoldsUnwaited: readonly FinalizationUnavailableKind[] =
+  ["TargetPathsRefused"];
+
+/** How many consecutive passes held at `kind` report it as the result. */
+export function finalizationHoldPassesMax(
+  config: FinalizerConfig,
+  kind: FinalizationUnavailableKind,
+): number {
+  return finalizationHoldsUnwaited.includes(kind) ? 1 : config.holdPassesMax;
+}
+
 /** One permit asked for, naming the claim that fences it and the attempt it would authorize. */
 export interface PermitRequest {
   readonly claim: FinalizationClaim;
@@ -1452,6 +1492,8 @@ export interface HeldPermit {
 export interface FinalizationHoldRecord {
   readonly claim: FinalizationClaim;
   readonly kind?: FinalizationUnavailableKind;
+  /** The files a `TargetPathsRefused` hold is over, present at that kind and no other. */
+  readonly refused?: ConflictSummary;
 }
 
 /**

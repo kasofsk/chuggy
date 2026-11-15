@@ -115,13 +115,15 @@ export interface TicketLandingDetail {
 /**
  * The hold a landing waits on or escalated from, and since when, with the
  * forge's reason and who removed its pull request where it escalates a removal
- * from a merge queue.
+ * from a merge queue, and the files no run may push that the target changed
+ * where it names them, a cut list ending in an ellipsis.
  */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
   readonly label: string;
   readonly since: string;
   readonly removal: string | undefined;
+  readonly refused: readonly string[] | undefined;
 }
 
 /**
@@ -275,6 +277,10 @@ function ticketLandingHoldOf(
     ),
     since: hold.since,
     removal,
+    refused:
+      hold.refused === undefined
+        ? undefined
+        : [...hold.refused.paths, ...(hold.refused.truncated ? ["…"] : [])],
   };
 }
 
@@ -657,6 +663,25 @@ export function ticketLandingEscalatedRemoval(
   return hold?.removal === undefined || hold.kind !== evidence
     ? undefined
     : { id: "ticket-landing-queue-removal", args: { removal: hold.removal } };
+}
+
+/**
+ * The files no run may push that the target changed, and the landing by hand
+ * a resume finds, for an escalation at the hold the newest landing escalated
+ * from where that hold names them.
+ */
+export function ticketLandingEscalatedRefused(
+  landings: readonly TicketLanding[],
+  evidence: TicketEscalation["evidence"],
+): Copy | undefined {
+  const newest = landings.at(-1);
+  const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
+  return hold?.refused === undefined || hold.kind !== evidence
+    ? undefined
+    : {
+        id: "ticket-landing-target-paths-refused",
+        args: { paths: hold.refused.join(", ") },
+      };
 }
 
 /** The landings joined to the cycles the ledger holds, and those it does not. */

@@ -71,6 +71,8 @@ interface TicketLandingRow {
   readonly hold_kind: string | null;
   readonly hold_passes: number | null;
   readonly held_since: string | null;
+  readonly hold_paths: readonly string[] | null;
+  readonly hold_paths_truncated: boolean | null;
   readonly attempts: number | null;
   readonly outcome: string | null;
   readonly failure_kind: string | null;
@@ -151,6 +153,17 @@ function ticketLandingHold(
     passes: finalizerRowPresent(row.hold_passes, "hold passes"),
     since: asPublicInstant(finalizerRowPresent(row.held_since, "held since")),
     ...(removal === undefined ? {} : { removal }),
+    ...(row.hold_paths === null
+      ? {}
+      : {
+          refused: {
+            paths: row.hold_paths,
+            truncated: finalizerRowPresent(
+              row.hold_paths_truncated,
+              "hold paths truncated",
+            ),
+          },
+        }),
   };
 }
 
@@ -361,7 +374,8 @@ async function ticketLandingsRead(
                to_char(l.merge_heard_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS merge_heard_at,
                l.head_commit,l.merged_head,l.proposal_status,
                l.queue_removal_reason,l.queue_removal_actor,
-               l.recheck_reason,l.recheck_base_ref
+               l.recheck_reason,l.recheck_base_ref,
+               l.hold_paths,l.hold_paths_truncated
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true
