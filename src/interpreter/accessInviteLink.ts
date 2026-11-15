@@ -26,8 +26,8 @@
  * A SPEND IS GIVEN BACK WHERE THE GRANT FAULTS. The grants are written as one
  * request, all or none, so a link given back is open again and nothing was
  * granted; the fault is then raised as the authority's outage is everywhere.
- * A workspace's name is written before its grants and given back with them,
- * so a workspace is granted only where it is named.
+ * A workspace's name is written before its grants, and a fault in either
+ * gives the link back, so a workspace is granted only where it is named.
  *
  * A USED LINK ANSWERS ITS USER AGAIN WHAT IT GAVE, and nothing is written, so
  * a person whose answer was lost and who sends again is told what they hold
