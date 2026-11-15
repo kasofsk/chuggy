@@ -3,7 +3,12 @@
  * on the landing a reader with no project meets and at its own address, where
  * the address may name the workspace the form starts on. The workspace is a
  * choice among the ones the reader may add a project to, and a typed name's
- * rule stands under its field before anything is typed.
+ * rule stands under its field before anything is typed. Both are asked on the
+ * first screen because the wire takes nothing else.
+ *
+ * A refusal about one of the names is drawn under that name's field, and the
+ * focus moves there once for it; any other is drawn beside the submit, which
+ * says the project is being made while it is.
  *
  * Over the form stands the line a reader pastes into Claude Code to have this
  * site's setup program run in their repository, in a box with the control that
@@ -22,8 +27,8 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import type { UseNavigateResult } from "@tanstack/react-router";
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import type { ProjectCreatedResponse } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
@@ -35,7 +40,10 @@ import {
   claudeCodeLineCopy,
 } from "../core/claudeCodeLine.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../core/consoleWrite.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import {
@@ -49,6 +57,8 @@ import type {
   ProjectCreationForm as ProjectCreationFields,
   ProjectCreationSent,
 } from "../core/projectCreation.ts";
+import { projectCreationRefusalField } from "../core/projectCreationRefusalField.ts";
+import type { ProjectCreationField } from "../core/projectCreationRefusalField.ts";
 import {
   projectCreationWorkspaceChosen,
   projectCreationWorkspaceEntryText,
@@ -70,7 +80,7 @@ import {
 import { usePanelState } from "./api.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
 import { copyOrDataText } from "../core/copy.ts";
-import type { CopyText } from "../core/copy.ts";
+import type { Copy, CopyText } from "../core/copy.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
@@ -85,63 +95,57 @@ import { Button } from "./ui/Button.tsx";
 import { CopyBox } from "./ui/CopyBox.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { FormField } from "./ui/FormField.tsx";
 import { Input } from "./ui/Input.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { PageHeader } from "./ui/PageHeader.tsx";
 import { Picker } from "./ui/Picker.tsx";
-
-const fieldClassName = "grid gap-1 text-sm text-ink-2";
 
 function drawnOperation(): string {
   return base64urlFromBytes(drawBytes(operationIdBytesCount));
 }
 
 interface ProjectCreationNameProps {
+  readonly field: ProjectCreationField;
   readonly label: string;
+  readonly hint: Copy;
   readonly value: string;
   readonly onChange: (value: string) => void;
+  /** The line a refusal of this name left, drawn while the name holds no
+   * fault of its own. */
+  readonly refused: string | undefined;
 }
 
-/** A name's box and, under it, the rule or the name's fault against it. */
-function ProjectCreationNameBox(props: ProjectCreationNameProps): ReactNode {
+/** A name's field: its hint under it, or the name's fault against the rule,
+ * or the refusal the name was answered with. */
+function ProjectCreationName(props: ProjectCreationNameProps): ReactNode {
   const text = useCopyText();
-  const ruleId = useId();
   const fault = projectCreationNameFault(props.value);
+  const error = fault === undefined ? props.refused : text(fault);
   return (
-    <>
+    <div data-project-creation-field={props.field}>
       <Input
+        labelShown
+        required
         label={props.label}
         value={props.value}
         onChange={props.onChange}
-        invalid={fault !== undefined}
-        describedBy={ruleId}
+        {...(error === undefined ? { hint: text(props.hint) } : { error })}
       />
-      <span
-        id={ruleId}
-        className={`text-xs ${fault === undefined ? "text-ink-3" : "text-tone-fail"}`}
-      >
-        {text(fault ?? projectNameRule)}
-      </span>
-    </>
-  );
-}
-
-function ProjectCreationName(props: ProjectCreationNameProps): ReactNode {
-  return (
-    <label className={fieldClassName}>
-      {props.label}
-      <ProjectCreationNameBox {...props} />
-    </label>
+    </div>
   );
 }
 
 interface ProjectCreationWorkspaceProps {
   readonly said: ProjectCreationWorkspaceSaid;
   readonly onSay: (said: ProjectCreationWorkspaceSaid) => void;
+  readonly refused: string | undefined;
 }
 
 /** The choice, its entries told apart by their place in it because a
  * workspace may be called what another entry is, and the name field under it
- * while the making of a workspace is chosen. With no entry chosen it asks. */
+ * while the making of a workspace is chosen, which is then what a refusal of
+ * the workspace is drawn under. With no entry chosen it asks. */
 function ProjectCreationWorkspaceChoice(
   props: ProjectCreationWorkspaceProps & {
     readonly offer: Extract<
@@ -153,42 +157,58 @@ function ProjectCreationWorkspaceChoice(
   const text = useCopyText();
   const { offer, said, onSay } = props;
   const chosen = projectCreationWorkspaceChosen(offer, said);
+  const making = chosen?.entry === "New";
   const workspaceLabel = text({ id: "project-creation-workspace-label" });
   return (
-    <div className={fieldClassName}>
-      <span>{workspaceLabel}</span>
-      <div className="min-w-0">
-        <Picker
+    <>
+      <div data-project-creation-field={making ? undefined : "tenant"}>
+        <FormField
           label={workspaceLabel}
-          align="start"
-          value={
-            chosen === undefined ? "" : String(offer.entries.indexOf(chosen))
-          }
-          placeholder={text({ id: "project-creation-workspace-choose" })}
-          options={offer.entries.map((entry, at) => ({
-            value: String(at),
-            text: copyOrDataText(
-              text,
-              projectCreationWorkspaceEntryText(entry),
-            ),
-          }))}
-          onChoose={(at) => {
-            const picked = offer.entries[Number(at)];
-            if (picked !== undefined)
-              onSay(projectCreationWorkspacePicked(offer, said, picked));
-          }}
-        />
+          required
+          {...(making || props.refused === undefined
+            ? {}
+            : { error: props.refused })}
+        >
+          {(field) => (
+            <Picker
+              label={workspaceLabel}
+              field={field}
+              align="start"
+              value={
+                chosen === undefined
+                  ? ""
+                  : String(offer.entries.indexOf(chosen))
+              }
+              placeholder={text({ id: "project-creation-workspace-choose" })}
+              options={offer.entries.map((entry, at) => ({
+                value: String(at),
+                text: copyOrDataText(
+                  text,
+                  projectCreationWorkspaceEntryText(entry),
+                ),
+              }))}
+              onChoose={(at) => {
+                const picked = offer.entries[Number(at)];
+                if (picked !== undefined)
+                  onSay(projectCreationWorkspacePicked(offer, said, picked));
+              }}
+            />
+          )}
+        </FormField>
       </div>
-      {chosen?.entry === "New" ? (
-        <ProjectCreationNameBox
-          label={workspaceLabel}
+      {making ? (
+        <ProjectCreationName
+          field="tenant"
+          label={text({ id: "project-creation-workspace-name-label" })}
+          hint={projectNameRule}
           value={projectCreationWorkspaceTenant(offer, said)}
           onChange={(name) => {
             onSay(projectCreationWorkspaceNamed(offer, name));
           }}
+          refused={props.refused}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -203,29 +223,26 @@ function ProjectCreationWorkspace(
   switch (offer.offer) {
     case "Pending":
       return (
-        <div className={fieldClassName}>
-          <span>{workspaceLabel}</span>
+        <div className="form-field">
+          <span className="form-field-label">{workspaceLabel}</span>
           <PanelUnready state={{ state: "Pending" }} />
         </div>
       );
     case "Typed":
       return (
         <ProjectCreationName
+          field="tenant"
           label={workspaceLabel}
+          hint={projectNameRule}
           value={projectCreationWorkspaceTenant(offer, said)}
           onChange={(name) => {
             onSay(projectCreationWorkspaceNamed(offer, name));
           }}
+          refused={props.refused}
         />
       );
     case "Choice":
-      return (
-        <ProjectCreationWorkspaceChoice
-          offer={offer}
-          said={said}
-          onSay={onSay}
-        />
-      );
+      return <ProjectCreationWorkspaceChoice {...props} offer={offer} />;
   }
 }
 
@@ -254,11 +271,18 @@ function projectCreationWrite(
   };
 }
 
-/** The press that sends these two names, and the line a refusal of them left,
- * which is drawn only while the form holds the names it answered. */
+/** What a refusal of the names the form holds left: the line it is drawn
+ * as, and the field it is drawn under, none where it is about neither. */
+interface ProjectCreationRefusal {
+  readonly refused: ConsoleWriteRefused;
+  readonly field: ProjectCreationField | undefined;
+}
+
+/** The press that sends these two names, and the refusal of them, which is
+ * drawn only while the form holds the names it answered. */
 function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly busy: boolean;
-  readonly status: string | undefined;
+  readonly refusal: ProjectCreationRefusal | undefined;
   readonly create: () => void;
 } {
   const navigate = useNavigate();
@@ -271,16 +295,55 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
     const operation = standing?.operation ?? drawnOperation();
     creating.mutate({ fields, operation });
   };
+  const refused = standing === undefined ? null : creating.error;
   return {
     busy: creating.isPending,
-    status: standing === undefined ? undefined : creating.error?.message,
+    refusal:
+      refused === null
+        ? undefined
+        : { refused, field: projectCreationRefusalField(refused.failure) },
     create,
   };
+}
+
+const projectCreationFocusable = [
+  "input:not(:disabled)",
+  "button:not(:disabled)",
+].join(",");
+
+/** On each refusal about a field, and only once for it, the focus on that
+ * field's control. */
+function useProjectCreationRefusalFocus(
+  root: RefObject<HTMLElement | null>,
+  refusal: ProjectCreationRefusal | undefined,
+): void {
+  const answered = useRef<ConsoleWriteRefused>(undefined);
+  useEffect(() => {
+    if (refusal === undefined || answered.current === refusal.refused) return;
+    answered.current = refusal.refused;
+    if (refusal.field === undefined) return;
+    root.current
+      ?.querySelector(`[data-project-creation-field="${refusal.field}"]`)
+      ?.querySelector<HTMLElement>(projectCreationFocusable)
+      ?.focus();
+  }, [root, refusal]);
+}
+
+/** The line beside the submit: that the project is being made, or a refusal
+ * about neither name. */
+function projectCreationStatusLine(
+  busy: boolean,
+  refusal: ProjectCreationRefusal | undefined,
+  text: CopyText,
+): string | undefined {
+  if (busy) return text({ id: "project-creation-creating" });
+  return refusal?.field === undefined ? refusal?.refused.message : undefined;
 }
 
 function ProjectCreationForm(props: {
   readonly offer: ProjectCreationWorkspaceDrawn;
 }): ReactNode {
+  const root = useRef<HTMLDivElement>(null);
   const [workspace, setWorkspace] =
     useState<ProjectCreationWorkspaceSaid>(undefined);
   const [project, setProject] = useState("");
@@ -289,18 +352,26 @@ function ProjectCreationForm(props: {
     project,
   };
   const send = useProjectCreationSend(fields);
+  useProjectCreationRefusalFocus(root, send.refusal);
   const text = useCopyText();
+  const refusedAt = (field: ProjectCreationField): string | undefined =>
+    send.refusal?.field === field ? send.refusal.refused.message : undefined;
+  const status = projectCreationStatusLine(send.busy, send.refusal, text);
   return (
-    <div className="grid w-full max-w-aside gap-3">
+    <div className="grid w-full max-w-aside gap-3" ref={root}>
       <ProjectCreationWorkspace
         offer={props.offer}
         said={workspace}
         onSay={setWorkspace}
+        refused={refusedAt("tenant")}
       />
       <ProjectCreationName
+        field="project"
         label={text({ id: "project-creation-project-label" })}
+        hint={{ id: "project-creation-project-hint" }}
         value={project}
         onChange={setProject}
+        refused={refusedAt("project")}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
@@ -311,8 +382,8 @@ function ProjectCreationForm(props: {
         >
           {text({ id: "project-creation-submit" })}
         </Button>
-        {send.status === undefined ? null : (
-          <Notice tone="info" inline role="status" detail={send.status} />
+        {status === undefined ? null : (
+          <Notice tone="info" inline role="status" detail={status} />
         )}
       </div>
     </div>
@@ -394,9 +465,9 @@ export function ProjectCreationPage(props: {
       <ProjectCreation
         workspace={props.workspace}
         lead={
-          <h1 className="text-md font-strong text-ink-1">
-            {text({ id: "project-creation-new-title" })}
-          </h1>
+          <div className="w-full max-w-aside">
+            <PageHeader title={text({ id: "project-creation-new-title" })} />
+          </div>
         }
       />
     </ProjectlessFrame>

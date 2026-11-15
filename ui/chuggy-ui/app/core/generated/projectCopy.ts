@@ -22,6 +22,9 @@ export interface ProjectCopy {
   readonly "project-creation-refusal-unreadable": Record<never, never>;
   readonly "project-creation-refusal-refused": Record<never, never>;
   readonly "project-creation-workspace-new": Record<never, never>;
+  readonly "project-creation-workspace-name-label": Record<never, never>;
+  readonly "project-creation-project-hint": Record<never, never>;
+  readonly "project-creation-creating": Record<never, never>;
   readonly "project-creation-workspace-unheld-label": Record<never, never>;
   readonly "project-creation-workspace-unheld-detail": Record<never, never>;
   readonly "project-creation-workspace-unadmin-label": Record<never, never>;

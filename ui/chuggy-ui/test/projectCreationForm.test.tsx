@@ -27,6 +27,8 @@ import { persistentStore } from "../app/browser/ports.ts";
 import {
   answerLine,
   drawn,
+  errorUnder,
+  faulted,
   pressed,
   redrawable,
   ruleUnder,
@@ -120,18 +122,18 @@ test("a reader with no project meets the form, under a bar that signs out", asyn
   ).toStrictEqual(["Sign out"]);
 });
 
-test("the rule both names are held to stands under each field before anything is typed", async () => {
+test("the rule both names are held to stands under each field before anything is typed, the project's with where it is shown", async () => {
   served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
   expect(copyTextEn(projectNameRule)).toBe(
     "Lowercase letters, digits, inner hyphens",
   );
-  for (const label of ["Workspace", "Project"]) {
-    expect(ruleUnder(label).textContent, label).toBe(
-      copyTextEn(projectNameRule),
-    );
-    expect(ruleUnder(label).className, label).not.toContain("text-tone-fail");
-  }
+  expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
+  expect(ruleUnder("Project").textContent).toBe(
+    `${copyTextEn(projectNameRule)}. Shown in its address and the project menu`,
+  );
+  for (const label of ["Workspace", "Project"])
+    expect(faulted(label), label).toBe(false);
   expect(screen.queryByText("Tenant")).toBeNull();
 });
 
@@ -141,8 +143,8 @@ test("a name the wire refuses turns its own rule line, and nothing is sent", asy
   typed("Workspace", "Vteng");
   typed("Project", "chuggy");
   expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
-  expect(ruleUnder("Workspace").className).toContain("text-tone-fail");
-  expect(ruleUnder("Project").className).not.toContain("text-tone-fail");
+  expect(faulted("Workspace")).toBe(true);
+  expect(faulted("Project")).toBe(false);
   expect(
     screen
       .getByRole("textbox", { name: "Workspace" })
@@ -216,7 +218,7 @@ test("a creation refused after its form was drawn again empty is a toast and no 
   ).toStrictEqual(["Taken"]);
 });
 
-test("a refusal is one short line, and the form stays where it was", async () => {
+test("a refusal is one short line under the name it is about, and the form stays where it was", async () => {
   served([], () =>
     Promise.resolve(
       answer({ error: { code: "TenantTaken", message: "taken" } }, 409),
@@ -226,7 +228,8 @@ test("a refusal is one short line, and the form stays where it was", async () =>
   typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
-  expect(answerLine()?.textContent).toBe("Taken");
+  expect(errorUnder("Workspace")).toBe("Taken");
+  expect(answerLine()).toBeNull();
   expect(held.went).toEqual([]);
 });
 
@@ -243,7 +246,7 @@ test("a workspace the reader may not make says what a new one needs, and the for
   typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
-  expect(answerLine()?.textContent).toBe("New workspace needs an invite link");
+  expect(errorUnder("Workspace")).toBe("New workspace needs an invite link");
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Workspace" }).value,
   ).toBe(partition.tenant);
@@ -330,5 +333,76 @@ test("the switcher offers a new project beside every project, and it opens the f
   fireEvent.click(item);
   expect(held.went).toStrictEqual([
     { to: projectCreationRoutePath, search: { workspace: partition.tenant } },
+  ]);
+});
+
+test("each name is a field whose visible label is bound to its box, marked required, and described by its hint", async () => {
+  served([], () => Promise.resolve(answer(partition, 201)));
+  await drawn(<Landing />);
+  for (const label of ["Workspace", "Project"]) {
+    const box = screen.getByRole("textbox", { name: label });
+    const caption = document.querySelector(`label[for="${box.id}"]`);
+    expect(caption?.firstChild?.textContent, label).toBe(label);
+    expect(box.getAttribute("aria-required"), label).toBe("true");
+    expect(ruleUnder(label).className, label).toBe("form-field-hint");
+  }
+});
+
+test.each([
+  ["TenantTaken", 409, "Workspace", "Taken"],
+  ["ProjectExists", 409, "Project", "Exists"],
+  ["ProjectNameInvalid", 422, "Project", copyTextEn(projectNameRule)],
+] as const)(
+  "a %s refusal, answered %i, is drawn under %s alone, and the focus moves to its box",
+  async (code, status, label, line) => {
+    served([], () =>
+      Promise.resolve(answer({ error: { code, message: code } }, status)),
+    );
+    await drawn(<Landing />);
+    typed("Workspace", partition.tenant);
+    typed("Project", partition.project);
+    await pressed();
+    const box = screen.getByRole("textbox", { name: label });
+    expect(document.activeElement).toBe(box);
+    expect(errorUnder(label)).toBe(line);
+    expect(box.getAttribute("aria-invalid")).toBe("true");
+    const other = label === "Workspace" ? "Project" : "Workspace";
+    expect(errorUnder(other)).toBeNull();
+    expect(answerLine()).toBeNull();
+  },
+);
+
+test("a refusal about neither name is the line beside the submit, and moves the focus to no field", async () => {
+  served([], () => Promise.reject(new Error("offline")));
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", partition.project);
+  submit().focus();
+  await pressed();
+  expect(answerLine()?.textContent).toBe("Unreachable");
+  expect(document.activeElement).toBe(submit());
+  expect(errorUnder("Workspace")).toBeNull();
+  expect(errorUnder("Project")).toBeNull();
+});
+
+test("while the project is being made the page says so and a second press sends nothing", async () => {
+  const creating = heldAnswer();
+  const posted = served([], () => creating.answered);
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", partition.project);
+  await pressed();
+  expect(answerLine()?.textContent).toBe("Creating project…");
+  expect(submit()).toHaveProperty("disabled", true);
+  expect(submit().getAttribute("aria-busy")).toBe("true");
+  await pressed();
+  expect(posted.map((one) => one.body)).toStrictEqual([partition]);
+  await turned(() => {
+    creating.release(answer(partition, 201));
+  });
+  await settled();
+  expect(posted).toHaveLength(1);
+  expect(held.went).toEqual([
+    { to: "/$tenant/$project/settings/repositories", params: partition },
   ]);
 });
