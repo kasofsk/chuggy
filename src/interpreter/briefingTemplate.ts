@@ -45,7 +45,7 @@
  * have to be kept in step.
  */
 
-import { textCodePointsCount } from "../contract/http.ts";
+import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
 import { briefingLineCharsMax } from "../contract/workerTask.ts";
 import type { ChangeProposalStatus } from "./changeProposal.ts";
 import type { FinalizationFailureKind } from "./finalizer.ts";
@@ -132,7 +132,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 18;
+export const briefingTemplateVersion = 19;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -568,6 +568,9 @@ export function briefingRoleInstructions(
   }
 }
 
+/** The bound a manifest's report is held to, told from the constant that holds it. */
+const briefingRequiredResultReportBound = `Keep the manifest's report to at most ${String(resultReportCharsMax)} characters; a longer one is refused`;
+
 /** What the role must report, which is what the scheduler will read back as a result. */
 export function briefingRequiredResult(
   purpose: TaskPurpose,
@@ -580,17 +583,20 @@ export function briefingRequiredResult(
         "Report one result manifest: a verdict, and a handoff for anything the reviewer will need.",
         "Report a pass only for work you have verified running; an unverified pass is a false verdict.",
         "Report a failure plainly, with the criterion you could not satisfy and what stopped you.",
+        `${briefingRequiredResultReportBound}, and detail that does not fit belongs in the commit messages.`,
       ];
     case "Review":
       return [
         "Report one result manifest: a verdict, and one finding for each criterion or constraint the change fails.",
         "Give every finding a file, a line and the criterion or constraint it fails.",
         "Report a pass only when every criterion above is met by the change as it stands.",
+        `${briefingRequiredResultReportBound}; the findings are the report, so state each finding briefly, and leave out notes on what was checked and not flagged before leaving out a finding.`,
       ];
     case "Check":
       return [
         "Report one result manifest with the command and its actual exit status.",
         "Report a pass only when every requested command exits cleanly.",
+        `${briefingRequiredResultReportBound}.`,
       ];
   }
 }
