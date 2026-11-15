@@ -16,7 +16,6 @@ export interface ProjectCopy {
   readonly "project-creation-address-made": {
     readonly address: unknown;
   };
-  readonly "project-creation-address-edit": Record<never, never>;
   readonly "project-creation-address-none": Record<never, never>;
   readonly "project-creation-tenant-reserved": Record<never, never>;
   readonly "project-creation-tenant-needs-invite": Record<never, never>;
@@ -30,6 +29,11 @@ export interface ProjectCopy {
   readonly "project-creation-refusal-unreadable": Record<never, never>;
   readonly "project-creation-refusal-refused": Record<never, never>;
   readonly "project-creation-workspace-new": Record<never, never>;
+  readonly "project-creation-workspace-name-label": Record<never, never>;
+  readonly "project-creation-address-hint": Record<never, never>;
+  readonly "project-creation-more": Record<never, never>;
+  readonly "project-creation-more-about": Record<never, never>;
+  readonly "project-creation-creating": Record<never, never>;
   readonly "project-creation-workspace-unheld-label": Record<never, never>;
   readonly "project-creation-workspace-unheld-detail": Record<never, never>;
   readonly "project-creation-workspace-unadmin-label": Record<never, never>;

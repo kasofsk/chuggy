@@ -32,6 +32,8 @@ import {
   accessHolding,
   answerLine,
   drawn,
+  errorUnder,
+  faulted,
   pressed,
   redrawable,
   ruleUnder,
@@ -127,7 +129,7 @@ test("the page draws the form, under a bar that signs out", async () => {
   ).toStrictEqual(["Sign out"]);
 });
 
-test("the rule each name is held to stands under its field before anything is typed", async () => {
+test("the rule each name is held to stands under its field before anything is typed, the project's with where it is shown", async () => {
   served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<ProjectCreationPage />);
   expect(copyTextEn(projectNameRule)).toBe(
@@ -137,11 +139,26 @@ test("the rule each name is held to stands under its field before anything is ty
   expect(ruleUnder("Project").textContent).toBe(
     copyTextEn(projectDisplayNameRule),
   );
+  expect(copyTextEn(projectDisplayNameRule)).toBe(
+    "Any name, shown in the project menu; its address is made from it",
+  );
   for (const label of ["Workspace", "Project"])
-    expect(ruleUnder(label).className, label).not.toContain("text-tone-fail");
+    expect(faulted(label), label).toBe(false);
+  expect(more().getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("textbox", { name: "Address" })).toBeNull();
   expect(screen.queryByText("Tenant")).toBeNull();
 });
+
+/** The form's one disclosure, which holds what a project is made without. */
+function more(): HTMLElement {
+  return screen.getByRole("button", { name: "More options" });
+}
+
+async function moreToggled(): Promise<void> {
+  await turned(() => {
+    fireEvent.click(more());
+  });
+}
 
 test("a project is named as the reader calls it, and sent at the address that name makes, shown under it as it is typed", async () => {
   const posted = served([], () =>
@@ -170,18 +187,18 @@ test("an address the reader edits stops following the name", async () => {
   await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
   typed("Project", "Acme Billing");
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Edit address" }));
-  });
+  await moreToggled();
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Address" }).value,
   ).toBe("acme-billing");
-  expect(screen.queryByRole("button", { name: "Edit address" })).toBeNull();
   typed("Address", "billing");
   typed("Project", "Acme Billing, the second");
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Address" }).value,
   ).toBe("billing");
+  expect(ruleUnder("Project").textContent).toBe("Address: billing");
+  await moreToggled();
+  expect(screen.queryByRole("textbox", { name: "Address" })).toBeNull();
   expect(ruleUnder("Project").textContent).toBe("Address: billing");
   await pressed();
   expect(posted.map((one) => one.body)).toEqual([
@@ -189,7 +206,7 @@ test("an address the reader edits stops following the name", async () => {
   ]);
 });
 
-test("a name that makes no address asks for one, and nothing is sent until it is typed", async () => {
+test("a name that makes no address opens the disclosure on the box that asks for one, and nothing is sent until it is typed", async () => {
   const posted = served([], () => Promise.resolve(answer(named, 201)));
   await drawn(<ProjectCreationPage />);
   typed("Workspace", partition.tenant);
@@ -197,8 +214,10 @@ test("a name that makes no address asks for one, and nothing is sent until it is
   expect(ruleUnder("Project").textContent).toBe(
     copyTextEn({ id: "project-creation-address-none" }),
   );
-  expect(ruleUnder("Address").textContent).toBe(copyTextEn(projectNameRule));
-  expect(screen.queryByRole("button", { name: "Edit address" })).toBeNull();
+  expect(more().getAttribute("aria-expanded")).toBe("true");
+  expect(ruleUnder("Address").textContent).toBe(
+    copyTextEn({ id: "project-creation-address-hint" }),
+  );
   expect(submit()).toHaveProperty("disabled", true);
   typed("Address", "bang");
   await pressed();
@@ -215,7 +234,7 @@ test("a name the wire would refuse turns the line under it, and nothing is sent"
   expect(ruleUnder("Project").textContent).toBe(
     copyTextEn(projectNameLengthFault),
   );
-  expect(ruleUnder("Project").className).toContain("text-tone-fail");
+  expect(faulted("Project")).toBe(true);
   expect(submit()).toHaveProperty("disabled", true);
   typed("Project", "   ");
   expect(submit()).toHaveProperty("disabled", true);
@@ -230,8 +249,8 @@ test("a name the wire refuses turns its own rule line, and nothing is sent", asy
   typed("Workspace", "Vteng");
   typed("Project", "chuggy");
   expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
-  expect(ruleUnder("Workspace").className).toContain("text-tone-fail");
-  expect(ruleUnder("Project").className).not.toContain("text-tone-fail");
+  expect(faulted("Workspace")).toBe(true);
+  expect(faulted("Project")).toBe(false);
   expect(
     screen
       .getByRole("textbox", { name: "Workspace" })
@@ -305,7 +324,7 @@ test("a creation refused after its form was drawn again empty is a toast and no 
   ).toStrictEqual(["Taken"]);
 });
 
-test("a refusal is one short line, and the form stays where it was", async () => {
+test("a refusal is one short line under the name it is about, and the form stays where it was", async () => {
   served([], () =>
     Promise.resolve(
       answer({ error: { code: "TenantTaken", message: "taken" } }, 409),
@@ -315,7 +334,8 @@ test("a refusal is one short line, and the form stays where it was", async () =>
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
-  expect(answerLine()?.textContent).toBe("Taken");
+  expect(errorUnder("Workspace")).toBe("Taken");
+  expect(answerLine()).toBeNull();
   expect(held.went).toEqual([]);
 });
 
@@ -332,7 +352,7 @@ test("a workspace the reader may not make says what a new one needs, and the for
   typed("Workspace", partition.tenant);
   typed("Project", named.name);
   await pressed();
-  expect(answerLine()?.textContent).toBe("New workspace needs an invite link");
+  expect(errorUnder("Workspace")).toBe("New workspace needs an invite link");
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Workspace" }).value,
   ).toBe(partition.tenant);
@@ -464,5 +484,121 @@ test("the switcher names each workspace by the display name the reader's own lis
   );
   expect(held.went).toStrictEqual([
     { to: "/$tenant/$project", params: partition },
+  ]);
+});
+
+test("each name is a field whose visible label is bound to its box, marked required, and described by its hint", async () => {
+  served([], () => Promise.resolve(answer(named, 201)));
+  await drawn(<ProjectCreationPage />);
+  for (const label of ["Workspace", "Project"]) {
+    const box = screen.getByRole("textbox", { name: label });
+    const caption = document.querySelector(`label[for="${box.id}"]`);
+    expect(caption?.firstChild?.textContent, label).toBe(label);
+    expect(box.getAttribute("aria-required"), label).toBe("true");
+    expect(ruleUnder(label).className, label).toBe("form-field-hint");
+  }
+});
+
+test.each([
+  ["TenantTaken", 409, "Workspace", "Taken"],
+  ["ProjectExists", 409, "Address", "Exists"],
+  ["ProjectNameInvalid", 422, "Address", copyTextEn(projectNameRule)],
+  [
+    "ProjectDisplayNameInvalid",
+    422,
+    "Project",
+    copyTextEn({ id: "project-creation-display-name-control" }),
+  ],
+] as const)(
+  "a %s refusal, answered %i, is drawn under %s alone, and the focus moves to its box",
+  async (code, status, label, line) => {
+    served([], () =>
+      Promise.resolve(answer({ error: { code, message: code } }, status)),
+    );
+    await drawn(<ProjectCreationPage />);
+    typed("Workspace", partition.tenant);
+    typed("Project", named.name);
+    await pressed();
+    const box = screen.getByRole("textbox", { name: label });
+    expect(document.activeElement).toBe(box);
+    expect(errorUnder(label)).toBe(line);
+    expect(box.getAttribute("aria-invalid")).toBe("true");
+    for (const other of ["Workspace", "Project", "Address"])
+      if (other !== label && screen.queryByRole("textbox", { name: other }))
+        expect(errorUnder(other), other).toBeNull();
+    expect(answerLine()).toBeNull();
+  },
+);
+
+test("the first screen asks for the workspace and the name alone, under one primary action, and its one disclosure holds the address", async () => {
+  served([], () => Promise.resolve(answer(named, 201)));
+  await drawn(<ProjectCreationPage />);
+  expect(
+    screen
+      .getAllByRole("textbox")
+      .map((box) => box.getAttribute("aria-label") ?? box.id),
+  ).toHaveLength(2);
+  expect(document.querySelectorAll(".btn-primary")).toHaveLength(1);
+  expect(document.querySelector(".btn-primary")).toBe(submit());
+  expect(screen.getAllByRole("button", { expanded: false })).toContain(more());
+  await moreToggled();
+  expect(screen.getAllByRole("textbox")).toHaveLength(3);
+  expect(
+    screen
+      .getByRole("textbox", { name: "Address" })
+      .getAttribute("aria-required"),
+  ).toBeNull();
+});
+
+test("a refusal about the address opens the disclosure a reader closed, once for that refusal", async () => {
+  served([], () =>
+    Promise.resolve(
+      answer({ error: { code: "ProjectExists", message: "exists" } }, 409),
+    ),
+  );
+  await drawn(<ProjectCreationPage />);
+  typed("Workspace", partition.tenant);
+  typed("Project", named.name);
+  await pressed();
+  expect(document.activeElement).toBe(
+    screen.getByRole("textbox", { name: "Address" }),
+  );
+  await moreToggled();
+  expect(screen.queryByRole("textbox", { name: "Address" })).toBeNull();
+  expect(more().getAttribute("aria-expanded")).toBe("false");
+});
+
+test("a refusal about neither name is the line beside the submit, and moves the focus to no field", async () => {
+  served([], () => Promise.reject(new Error("offline")));
+  await drawn(<ProjectCreationPage />);
+  typed("Workspace", partition.tenant);
+  typed("Project", named.name);
+  submit().focus();
+  await pressed();
+  expect(answerLine()?.textContent).toBe("Unreachable");
+  expect(document.activeElement).toBe(submit());
+  expect(errorUnder("Workspace")).toBeNull();
+  expect(errorUnder("Project")).toBeNull();
+});
+
+test("while the project is being made the page says so and a second press sends nothing", async () => {
+  const creating = heldAnswer();
+  const posted = served([], () => creating.answered);
+  await drawn(<ProjectCreationPage />);
+  typed("Workspace", partition.tenant);
+  typed("Project", named.name);
+  await pressed();
+  expect(answerLine()?.textContent).toBe("Creating project…");
+  expect(submit()).toHaveProperty("disabled", true);
+  expect(submit().getAttribute("aria-busy")).toBe("true");
+  await pressed();
+  expect(posted.map((one) => one.body)).toStrictEqual([named]);
+  await turned(() => {
+    creating.release(answer(named, 201));
+  });
+  await settled();
+  expect(posted).toHaveLength(1);
+  expect(held.went).toEqual([
+    { to: "/$tenant/$project/settings/repositories", params: partition },
   ]);
 });
