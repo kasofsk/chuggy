@@ -103,7 +103,7 @@ import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
 import { checkedFinalizerConfig } from "./finalizer.ts";
-import type { FinalizerConfig, GitRefName } from "./finalizer.ts";
+import type { FinalizerConfig } from "./finalizer.ts";
 import type { OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
@@ -1200,8 +1200,6 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly profile: ExecutionProfile;
   readonly image?: string;
   readonly invocation: TaskInvocation;
-  /** The ref the ticket's finalization lands on, where its brief or binding names one. */
-  readonly targetRef?: GitRefName;
   /** What the work task's core merges in, where it merges anything. */
   readonly targetMerge?: WorkTaskTargetMerge;
   /** The paths a work task's push may not change, where its binding withholds pipelines and its forge names some. */

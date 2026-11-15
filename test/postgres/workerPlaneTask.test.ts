@@ -80,7 +80,6 @@ import {
 } from "../adapters/workerPlaneFixtures.ts";
 import { goldenConfig } from "../adapters/workerPodDocumentFixture.ts";
 import {
-  postgresHarnessBrief,
   postgresHarnessConfiguration,
   postgresHarnessDrain,
   postgresHarnessNewEpoch,
@@ -329,7 +328,7 @@ test("a worker fetches the task its pod is launched with, less the plane", async
   assert.deepEqual(fetched.body, pushed);
   const document = kubernetesWorkerTask(goldenConfig, placement);
   assert.ok(document.worker !== undefined);
-  assert.equal(document.targetRef, postgresHarnessBrief.branch);
+  assert.equal(Object.hasOwn(document, "targetRef"), false);
   assert.ok(document.targetMerge !== undefined);
   assert.deepEqual(document.pushPathsRefused, githubPipelinePaths);
   assert.deepEqual(await storedInvocation(placement), {
@@ -338,7 +337,6 @@ test("a worker fetches the task its pod is launched with, less the plane", async
     authority: document.authority,
     credentialsListed: document.credentialsListed,
     worker: document.worker,
-    targetRef: document.targetRef,
     targetMerge: document.targetMerge,
     pushPathsRefused: document.pushPathsRefused,
   });
