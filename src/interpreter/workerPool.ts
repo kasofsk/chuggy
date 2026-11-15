@@ -114,7 +114,7 @@ import {
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { SessionCapability } from "./agentSession.ts";
-import type { ExecutionRequirement } from "./executionRequirement.ts";
+import type { ExecutionRequirement } from "../contract/executionRequirement.ts";
 import type { TaskResources } from "./taskResources.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";

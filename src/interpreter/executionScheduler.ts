@@ -128,8 +128,8 @@ import type {
   ExecutionRequirement,
   ExecutionTaskKind,
   RequirementSource,
-} from "./executionRequirement.ts";
-export type { ExecutionTaskKind } from "./executionRequirement.ts";
+} from "../contract/executionRequirement.ts";
+export type { ExecutionTaskKind } from "../contract/executionRequirement.ts";
 export {
   asAttemptId,
   asCapacityAccountId,

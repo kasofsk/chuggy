@@ -23,7 +23,7 @@ import {
   type CanonicalConfiguration,
   type ReleaseConfigurationFault,
 } from "../../src/interpreter/authoring.ts";
-import { allTaskConfigurationFaults } from "../../src/interpreter/taskConfiguration.ts";
+import { allTaskConfigurationFaults } from "../../src/contract/taskConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";

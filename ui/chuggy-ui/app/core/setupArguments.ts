@@ -15,7 +15,11 @@
  * carries them, so the conversation holds that choice and no file does.
  * `--name` is carried only by `project`, which is what it is read for.
  * `--replace` is the person's yes to `chat-host` registering this machine in
- * place of the chat host of theirs it names.
+ * place of the chat host of theirs it names. `configuration` writes a starting
+ * configuration into the checkout, its check running the command `--test`
+ * gives where it gives one; `check` judges the checkout's configuration as an
+ * import would; neither asks the site anything. `import` asks the site to
+ * import the repository the checklist means, and reads the checklist again.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
@@ -26,6 +30,9 @@ export const setupWaitSecsMax = 600;
 
 /** The flag `project` is told what the project is called in. */
 export const setupNameFlag = "--name";
+
+/** The flag `configuration` is told the repository's test command in. */
+export const setupTestFlag = "--test";
 
 /** How long a sign-in page stays answerable where the command starting it names no other life. */
 export const setupListenSecsDefault = 600;
@@ -40,11 +47,20 @@ export type SetupAskFault =
   | "Project"
   | "Workspace"
   | "Replace"
-  | "ProjectName";
+  | "ProjectName"
+  | "Test";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
-  "Status" | "SignIn" | "Project" | "Mcp" | "Runner" | "ChatHost";
+  | "Status"
+  | "SignIn"
+  | "Project"
+  | "Mcp"
+  | "Runner"
+  | "ChatHost"
+  | "Configuration"
+  | "Check"
+  | "Import";
 
 /** Which workspace and project a run is about, as far as its arguments named them, and what `project` was asked to call the one it makes. */
 export interface SetupAnswers {
@@ -107,6 +123,23 @@ export type SetupAsked =
       readonly replace: string | undefined;
     }
   | {
+      readonly asked: "Configuration";
+      readonly site: undefined;
+      readonly answers: SetupAnswers;
+      /** The command that runs the repository's tests, where the agent said one. */
+      readonly test: string | undefined;
+    }
+  | {
+      readonly asked: "Check";
+      readonly site: undefined;
+      readonly answers: SetupAnswers;
+    }
+  | {
+      readonly asked: "Import";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+    }
+  | {
       readonly asked: "Listen";
       readonly site: string;
       readonly lifeSecs: number;
@@ -121,6 +154,9 @@ const setupCommandWords = {
   mcp: "Mcp",
   runner: "Runner",
   "chat-host": "ChatHost",
+  configuration: "Configuration",
+  check: "Check",
+  import: "Import",
   listen: "Listen",
 } as const;
 
@@ -134,6 +170,7 @@ const setupFlags = [
   "project",
   "name",
   "replace",
+  "test",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
@@ -146,6 +183,9 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Mcp: ["site", "workspace", "project"],
   Runner: ["site", "wait-secs", "workspace", "project"],
   ChatHost: ["site", "wait-secs", "workspace", "replace"],
+  Configuration: ["workspace", "project", "test"],
+  Check: ["workspace", "project"],
+  Import: ["site", "workspace", "project"],
   Listen: ["site", "life-secs"],
 };
 
@@ -261,6 +301,16 @@ function setupChatHostAsked(
   };
 }
 
+/** A test command is carried back in the command that writes it, so it is one a line prints as it is. */
+function setupConfigurationAsked(
+  answers: SetupAnswers,
+  test: string | undefined,
+): SetupAsked {
+  if (test !== undefined && !setupSayable(test))
+    return { asked: "Wrongly", fault: "Test" };
+  return { asked: "Configuration", site: undefined, answers, test };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -299,6 +349,12 @@ function setupAskedOf(
     }
     case "ChatHost":
       return setupChatHostAsked(site, wait, answers, flags.get("replace"));
+    case "Configuration":
+      return setupConfigurationAsked(answers, flags.get("test"));
+    case "Check":
+      return { asked, site: undefined, answers };
+    case "Import":
+      return { asked, site, answers };
     case "Listen":
       return site === undefined
         ? { asked: "Wrongly", fault: "Site" }
@@ -334,6 +390,12 @@ export function setupCommandArguments(
       return ["runner"];
     case "ChatHost":
       return ["chat-host"];
+    case "Configuration":
+      return ["configuration"];
+    case "Check":
+      return ["check"];
+    case "Import":
+      return ["import"];
   }
 }
 

@@ -54,7 +54,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
+import { asExecutionRequirement } from "../../contract/executionRequirement.ts";
 import { asProjectId, type ProjectId } from "../../interpreter/projectStore.ts";
 import type { WorkerPoolCredentialOutcome } from "../../contract/workerPool.ts";
 import type {

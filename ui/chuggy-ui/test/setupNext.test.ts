@@ -1,25 +1,29 @@
 /**
  * The one next thing the setup program names, for every standing.
  *
- * Where the machine was not looked at, each thing a step can lack is mended
- * by the person on a page of the console: the table below holds every lack
- * there is, and will not compile with one missing, against the page's full
+ * Where the machine was not looked at, each thing a step can lack but the
+ * repository's configuration is mended by the person on a page of the
+ * console: the table below holds every such lack, and will not compile with
+ * one missing, against the page's full
  * address, what is pressed there, and the condition the checklist may be read
  * again under. The runner's step is the one this program does, so where the
  * machine was looked at and could take a runner it is offered, under a rule
  * that waits on her yes. The project's step is done by this program too, once
- * she has said what to call the project. Nothing here is ever a command to run
- * unasked.
+ * she has said what to call the project. The repository's configuration is
+ * the agent's to write with her, from `configuration` on. Nothing here is ever
+ * a command to run unasked.
  */
 
 import { expect, test } from "vitest";
 
+import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import {
   setupAskNamesMax,
+  setupConfigurationDue,
   setupMcpDue,
   setupNext,
   setupRunnerDue,
@@ -101,6 +105,12 @@ function told(lack: SetupLack, given?: Partial<SetupStanding>): string {
   return next.thing === "Hand" ? next.tell : "";
 }
 
+/** What a thing for the agent and the person tells, which is nothing where it is the person's alone. */
+function told_(lack: SetupLack): string {
+  const next = thing(lack);
+  return next.thing === "Configure" ? next.tell : "";
+}
+
 const hand = (tell: string, when: string): SaidThing => ({
   thing: "Hand",
   tell,
@@ -116,7 +126,10 @@ const create = `Open ${pages}/tickets/new, say what you want done and press Crea
 /** Every thing a step can lack, the lack as it is found, and what the person is told to do about it. */
 const mends: {
   readonly [
-    Kind in Exclude<SetupLack["lacks"], "Read" | "Mcp" | "Project">
+    Kind in Exclude<
+      SetupLack["lacks"],
+      "Read" | "Mcp" | "Project" | "Configuration"
+    >
   ]: readonly [Extract<SetupLack, { readonly lacks: Kind }>, SaidThing];
 } = {
   Workspace: [
@@ -171,13 +184,6 @@ const mends: {
     hand(
       `Open ${pages}/repositories, press Add and choose your repository. Tell me once it is added.`,
       "once the person says the repository is added",
-    ),
-  ],
-  Configuration: [
-    { lacks: "Configuration", repository: "acme-org/widgets" },
-    hand(
-      `acme-org/widgets is added, but chuggy has not read its configuration. Open ${pages}/repositories and press Retry on the row for acme-org/widgets; if it still cannot, the row then says why. Tell me once Retry has answered.`,
-      "once the person says Retry has answered for acme-org/widgets",
     ),
   ],
   Runner: [
@@ -283,6 +289,73 @@ test("the MCP step is the one next only while it is the first step not done, whi
   });
   expect(setupMcpDue(lacking_({ lacks: "Ticket" }))).toBeUndefined();
   expect(setupRunnerDue(lacking_({ lacks: "Mcp" }))).toBeUndefined();
+});
+
+/** The repository holding no configuration, with what its last import came to. */
+function unconfigured(
+  lastImport?: Extract<
+    SetupLack,
+    { readonly lacks: "Configuration" }
+  >["lastImport"],
+): Extract<SetupLack, { readonly lacks: "Configuration" }> {
+  return {
+    lacks: "Configuration",
+    repository: "acme-org/widgets",
+    bound: "Acme-Org/Widgets",
+    lastImport,
+  };
+}
+
+const configureTell = (last: string) =>
+  `acme-org/widgets is added, but chuggy holds no configuration of its own for it (${last}). Next I write a starting one into this checkout, as ${setupConfigurationPath}, and fill in with you what it leaves for you to choose. I then test it as chuggy's import would, commit it and push it to the default branch of acme-org/widgets, and have chuggy import it, which says how that went.`;
+
+test("a repository with no configuration is the agent's to configure with the person, for the project it is bound in, and no page is pressed for it", () => {
+  expect(thing(unconfigured())).toEqual({
+    thing: "Configure",
+    tell: configureTell("no import of it has finished yet"),
+    workspace: "acme",
+    project: "widgets",
+  });
+});
+
+test("what the last import of the repository came to is said in the words of the repositories page, with the first file it refused", () => {
+  const at = "2026-11-15T10:00:00Z";
+  expect(
+    told_(
+      unconfigured({
+        attemptedAt: at,
+        outcome: { result: "SnapshotAbsent", absent: "ConfigurationDirectory" },
+      }),
+    ),
+  ).toBe(configureTell("its last import: Undeclared"));
+  expect(
+    told_(
+      unconfigured({
+        attemptedAt: at,
+        outcome: {
+          result: "DeclarationsRefused",
+          refusals: [
+            {
+              path: `${setupConfigurationPath}`,
+              fault: "ConfigurationInvalid",
+            },
+          ],
+          refusalCount: 1,
+        },
+      }),
+    ),
+  ).toMatch(
+    /\(its last import: Invalid, \.chug\/configurations\/development\.json\b[^)]*\)/u,
+  );
+});
+
+test("the import is due only while the configuration is the first step not done, and is of the repository as its binding names it", () => {
+  expect(setupConfigurationDue(lacking_(unconfigured()))).toEqual({
+    partition: { tenant: "acme", project: "widgets" },
+    repository: "Acme-Org/Widgets",
+  });
+  expect(setupConfigurationDue(lacking_({ lacks: "Ticket" }))).toBeUndefined();
+  expect(setupRunnerDue(lacking_(unconfigured()))).toBeUndefined();
 });
 
 test.each(Object.entries(mends))(
@@ -849,7 +922,10 @@ test("the machine is looked at only where the runner's step is the first not don
 
 /** The step that decides what is next at each stage of a site set up one thing at a time: the first that is not done. */
 const deciding: Readonly<
-  Record<SetupSiteStage, keyof typeof mends | "Project" | "Done">
+  Record<
+    SetupSiteStage,
+    keyof typeof mends | "Project" | "Configuration" | "Done"
+  >
 > = {
   Nothing: "Workspace",
   Workspace: "Project",
@@ -877,6 +953,12 @@ test("at each stage of a site the first step that is not done decides what is ne
         thing: "Name",
         workspace: "acme",
         project: undefined,
+      });
+    else if (kind === "Configuration")
+      expect(next.thing, stage).toMatchObject({
+        thing: "Configure",
+        workspace: "acme",
+        project: "widgets",
       });
     else {
       const { when } = mends[kind][1] as { readonly when: string };

@@ -19,7 +19,18 @@ import type {
   SetupAsked,
   SetupCommand,
 } from "./setupArguments.ts";
-import { setupMcpDue, setupNext, setupRunnerDue } from "./setupNext.ts";
+import {
+  setupConfigurationChecked,
+  setupConfigurationWritten,
+  setupImportAsked,
+  setupImportWrites,
+} from "./setupConfiguration.ts";
+import {
+  setupConfigurationDue,
+  setupMcpDue,
+  setupNext,
+  setupRunnerDue,
+} from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
 import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
@@ -29,7 +40,7 @@ import { setupProject } from "./setupProject.ts";
 import type { SetupProjectAsked } from "./setupProject.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
-import { setupChatHost, setupRunner } from "./setupRunner.ts";
+import { setupChatHost, setupRunner, setupWritePorts } from "./setupRunner.ts";
 import type {
   SetupChatHostAsked,
   SetupRunnerAsked,
@@ -50,6 +61,7 @@ import {
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
 import { setupStanding } from "./setupStanding.ts";
+import type { SetupStanding } from "./setupStanding.ts";
 import {
   setupLockHeldBy,
   setupLockReleased,
@@ -198,21 +210,8 @@ async function setupChecklist(
   signed: Extract<SetupSigned, { readonly signed: "In" }>,
   answers: SetupAnswers,
   pacing: SetupPacing,
-): Promise<SetupReport> {
-  const site = signed.opened.site;
-  const reads = await readSetup(
-    setupReadPorts(signed.opened.api, signed.bearer),
-    {
-      site,
-      answers,
-      remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
-      workspaces: signed.workspaces,
-    },
-  );
-  const standing = setupStanding(
-    reads,
-    await setupChecklistNamed(ports, reads),
-  );
+): Promise<Extract<SetupReport, { readonly report: "Checklist" }>> {
+  const standing = await setupStandingRead(ports, signed, answers, pacing);
   const due = setupRunnerDue(standing);
   const here =
     due === undefined ? undefined : await setupRunnerHere(ports, due);
@@ -220,7 +219,7 @@ async function setupChecklist(
     setupMcpDue(standing) !== undefined && (await setupMcpPackaged(ports));
   return {
     report: "Checklist",
-    site,
+    site: standing.site,
     found: standing.found,
     steps: standing.steps.map(({ step, state, detail }) => ({
       step,
@@ -229,6 +228,25 @@ async function setupChecklist(
     })),
     next: setupNext(standing, answers, here, packaged),
   };
+}
+
+/** Where the person stands, from one bundle of reads sent through ports that can only read. */
+async function setupStandingRead(
+  ports: SetupPorts,
+  signed: Extract<SetupSigned, { readonly signed: "In" }>,
+  answers: SetupAnswers,
+  pacing: SetupPacing,
+): Promise<SetupStanding> {
+  const reads = await readSetup(
+    setupReadPorts(signed.opened.api, signed.bearer),
+    {
+      site: signed.opened.site,
+      answers,
+      remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
+      workspaces: signed.workspaces,
+    },
+  );
+  return setupStanding(reads, await setupChecklistNamed(ports, reads));
 }
 
 /** Whether the agent's configuration for this folder names chuggy's server for the project the reads chose, where they chose one. */
@@ -282,6 +300,44 @@ async function setupStatus(
   return held.signed === "Out"
     ? held.report
     : setupChecklist(ports, held, asked.answers, pacing);
+}
+
+/**
+ * `import` works under the remembered sign-in as the bare command does. Where
+ * the checklist's next thing is the repository's configuration, it asks the
+ * site to import that repository, the one write its ports let through, and
+ * reads the checklist again, which says what the import came to as the site
+ * keeps it; where it is not, it imports nothing and says the checklist.
+ */
+async function setupImport(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Import" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Import");
+  if (held === undefined) return setupBusy(ports, "Import", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupConfigurationDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupImportAsked(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupImportWrites(due.partition),
+          ),
+          due.partition,
+          due.repository,
+        );
+  return {
+    report: "Import",
+    repository: due?.repository,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
 }
 
 /**
@@ -431,6 +487,18 @@ export async function setupRun(
       case "Runner":
       case "ChatHost":
         return await setupRunnerRun(ports, asked, pacing);
+      case "Configuration":
+        return {
+          report: "Configuration",
+          ended: await setupConfigurationWritten(ports, asked.test),
+        };
+      case "Check":
+        return {
+          report: "Check",
+          ended: await setupConfigurationChecked(ports),
+        };
+      case "Import":
+        return await setupImport(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

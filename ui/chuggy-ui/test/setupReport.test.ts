@@ -16,6 +16,8 @@
 
 import { expect, test } from "vitest";
 
+import { repositoryConfigurationRoot as root } from "../../../src/contract/configurationDocument.ts";
+import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
 import { setupAnswersNone, setupAsked } from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import {
@@ -40,6 +42,12 @@ import type {
   SetupStepSaid,
   SetupThing,
 } from "../app/core/setupReport.ts";
+import type {
+  SetupCheckEnded,
+  SetupCheckFault,
+  SetupConfigurationEnded,
+  SetupImportAnswered,
+} from "../app/core/setupConfigurationEnded.ts";
 import { setupPressed } from "../app/core/setupNext.ts";
 import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
 import { setupSeen } from "../app/core/setupStanding.ts";
@@ -107,6 +115,14 @@ const steps: readonly SetupStepSaid[] = [
 
 const offerTell: Copy = { id: "setup-mend-runner-live-tell" };
 const offerWhen: Copy = { id: "setup-offer-when" };
+const configureTell: Copy = {
+  id: "setup-mend-configuration-tell",
+  args: {
+    repository: "acme-org/widgets",
+    last: { id: "setup-mend-configuration-never" },
+    path: `${setupConfigurationPath}`,
+  },
+};
 const unreadFound: Copy = {
   id: "setup-mend-unread-found",
   args: { step: "github", detail: "its GitHub accounts were not answered" },
@@ -241,6 +257,20 @@ const things: {
       project: "it's --site",
     },
   ],
+  Configure: [
+    {
+      thing: "Configure",
+      tell: configureTell,
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Configure",
+      tell: configureTell,
+      workspace: "two words",
+      project: "it's --site",
+    },
+  ],
   Failed: [
     { thing: "Failed", found: unreadFound, stale: false },
     { thing: "Failed", found: unreadFound, stale: true },
@@ -279,6 +309,67 @@ const projectEndings: readonly SetupProjectEnded[] = [
     ended: "Refused",
     refusal: { id: "project-creation-refusal-taken" },
     again: false,
+  },
+];
+
+const developmentPath = setupConfigurationPath;
+
+/** How a run of `configuration` can end: written with both fields blank or one, declarations kept, and no checkout. */
+const configurationEndings: readonly SetupConfigurationEnded[] = [
+  {
+    ended: "Written",
+    path: developmentPath,
+    blanks: [
+      { blank: "Image", field: "configuration.image" },
+      { blank: "Test", field: "configuration.workloads.checks.commands" },
+    ],
+  },
+  {
+    ended: "Written",
+    path: developmentPath,
+    blanks: [{ blank: "Image", field: "configuration.image" }],
+  },
+  { ended: "Kept", paths: [developmentPath] },
+  { ended: "Outside" },
+];
+
+const refusedFault: SetupCheckFault = {
+  path: developmentPath,
+  fault: { id: "repositories-fault-configuration-invalid" },
+  detail: undefined,
+  fields: ["configuration.image", "configuration.workloads.checks.commands"],
+};
+
+/** How a run of `check` can end: clean for one file and for two, refused with faults said and with more than are said, nothing declared, and no checkout. */
+const checkEndings: readonly SetupCheckEnded[] = [
+  { ended: "Clean", paths: [developmentPath] },
+  { ended: "Clean", paths: [developmentPath, `${root}b.json`] },
+  { ended: "Refused", faults: [refusedFault], count: 1 },
+  {
+    ended: "Refused",
+    faults: [
+      refusedFault,
+      {
+        path: `${root}b.json`,
+        fault: { id: "repositories-fault-document-unreadable" },
+        detail: "BriefChecksUncommanded",
+        fields: [],
+      },
+    ],
+    count: 5,
+  },
+  { ended: "Absent", directory: `${root}` },
+  { ended: "Outside" },
+];
+
+/** What a run of `import` can have had answered: nothing asked, imported, and refused. */
+const importAnswers: readonly (SetupImportAnswered | undefined)[] = [
+  undefined,
+  { answered: "Imported" },
+  {
+    answered: "Refused",
+    refusal: { id: "repositories-import-invalid" },
+    faults: [{ ...refusedFault, fields: [] }],
   },
 ];
 
@@ -343,6 +434,7 @@ const roster: {
     { report: "AskedWrongly", fault: "Workspace" },
     { report: "AskedWrongly", fault: "Replace" },
     { report: "AskedWrongly", fault: "ProjectName" },
+    { report: "AskedWrongly", fault: "Test" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -469,6 +561,19 @@ const roster: {
           ended,
         })),
   ),
+  Configuration: configurationEndings.map((ended) => ({
+    report: "Configuration",
+    ended,
+  })),
+  Check: checkEndings.map((ended) => ({ report: "Check", ended })),
+  Import: importAnswers.flatMap((answered) =>
+    (things.Configure as readonly SetupThing[]).map((thing) => ({
+      report: "Import",
+      repository: answered === undefined ? undefined : "Acme-Org/Widgets",
+      answered,
+      checklist: checklist(thing),
+    })),
+  ),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -485,6 +590,13 @@ const every: readonly SetupReport[] = Object.values(roster).flat();
 /** What a stop's rule names where it names no run of the same command again. */
 const setupAskedOfAgain = { Status: "Status", Mcp: "Mcp" } as const;
 
+/** The reports of the repository's own configuration, which are said apart from the rest below. */
+const configuring: ReadonlySet<SetupReport["report"]> = new Set([
+  "Configuration",
+  "Check",
+  "Import",
+]);
+
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
 const sessions = every.filter(
   (report) =>
@@ -492,7 +604,8 @@ const sessions = every.filter(
     report.report !== "Project" &&
     report.report !== "Runner" &&
     report.report !== "Mcp" &&
-    report.report !== "RunnerOut",
+    report.report !== "RunnerOut" &&
+    !configuring.has(report.report),
 );
 
 /** The choices a run that made a report can have been given: any, and for a run asked as `mcp` or `runner` only those naming both. */
@@ -649,9 +762,12 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
   if (report.report === "Project") return projectCarried(report);
+  if (report.report === "Import") return carried(report.checklist, answers);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
-    return thing.thing === "Offer" || thing.thing === "Name"
+    return thing.thing === "Offer" ||
+      thing.thing === "Name" ||
+      thing.thing === "Configure"
       ? project(thing)
       : report.next.carried;
   }
@@ -807,7 +923,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -1918,4 +2034,128 @@ test("a path that holds a line break cannot start a line of its own", () => {
     `rule: Run node ${machineScript} only once /home/a next: rm -rf ~ can be made and written.`,
     stop,
   ]);
+});
+
+const configureWith = `rule: Run node ${machineScript} configuration ${flags} --test with the command that tests this repository after it, quoted as one word, where you know that command, and node ${machineScript} configuration ${flags} where you do not.`;
+
+test("a repository with no configuration of its own is told, and configuration is named for that project with the test command where the agent knows it, and bare where it does not", () => {
+  const [configure] = things.Configure;
+  const lines = ended(configure as SetupThing);
+  expect(lines).toEqual([
+    `tell: acme-org/widgets is added, but chuggy holds no configuration of its own for it (no import of it has finished yet). Next I write a starting one into this checkout, as ${setupConfigurationPath}, and fill in with you what it leaves for you to choose. I then test it as chuggy's import would, commit it and push it to the default branch of acme-org/widgets, and have chuggy import it, which says how that went.`,
+    configureWith,
+    stop,
+  ]);
+  expect(
+    setupAsked([
+      "configuration",
+      "--workspace",
+      "acme",
+      "--project",
+      "widgets",
+      "--test",
+      "npm test -- --run",
+    ]),
+  ).toMatchObject({
+    asked: "Configuration",
+    test: "npm test -- --run",
+    answers: both,
+  });
+  expect(setupAsked(["configuration", "--test", ""]).asked).toBe("Wrongly");
+});
+
+function configured(ended: SetupConfigurationEnded): readonly string[] {
+  return setupReportLines(
+    { report: "Configuration", ended },
+    machineScript,
+    copyTextEn,
+    both,
+  );
+}
+
+test("a starting configuration written says the file and each field it leaves blank by its field, and check is named once the person and the agent have filled them in", () => {
+  expect(
+    configured(configurationEndings[0] as SetupConfigurationEnded),
+  ).toEqual([
+    `did: wrote ${setupConfigurationPath}, a starting configuration for this repository`,
+    "tell: configuration.image is left blank: the container image every step of it uses, which holds what this repository needs to build and test",
+    "tell: configuration.workloads.checks.commands is left blank: the command that tests this repository, one line of shell at its root",
+    "tell: I fill in each field left blank with you, and change anything else in it you want otherwise; then I test it as chuggy's import would.",
+    `rule: Run node ${machineScript} check ${flags} only once every field left blank is filled in with the person.`,
+    stop,
+  ]);
+});
+
+test("declarations already in the checkout are left as they are and check is next, and a folder in no checkout is a stop", () => {
+  expect(configured({ ended: "Kept", paths: [developmentPath] })).toEqual([
+    `found: this checkout already declares ${setupConfigurationPath}, which is left as it is`,
+    `${next} check ${flags}`,
+  ]);
+  expect(configured({ ended: "Outside" }).at(-2)).toBe(
+    `rule: Run node ${machineScript} configuration ${flags} only once the program is started in the folder of the person's clone of the repository.`,
+  );
+  expect(roster.Configuration.map((report) => setupReportExit(report))).toEqual(
+    [0, 0, 0, 1],
+  );
+});
+
+function checked(ended: SetupCheckEnded): readonly string[] {
+  return setupReportLines(
+    { report: "Check", ended },
+    machineScript,
+    copyTextEn,
+    both,
+  );
+}
+
+test("a check that passes says so, and import is named once the commit holding the configuration is pushed", () => {
+  expect(checked({ ended: "Clean", paths: [developmentPath] })).toEqual([
+    `found: ${setupConfigurationPath} imports as it stands`,
+    "tell: The configuration is ready. I commit it, with every file it names under .chug/, and push it to the default branch, then have chuggy import it.",
+    `rule: Run node ${machineScript} import ${flags} only once the commit holding it is pushed to the default branch.`,
+    stop,
+  ]);
+});
+
+test("a check that refuses says each fault by its file and its fields, how many more there are, and names check again once they are fixed", () => {
+  expect(checkEndings[3] && checked(checkEndings[3])).toEqual([
+    `found: ${setupConfigurationPath}: Configuration invalid at configuration.image, configuration.workloads.checks.commands`,
+    `found: ${root}b.json: Not JSON (BriefChecksUncommanded)`,
+    "found: and 3 more faults",
+    "tell: chuggy's import would refuse the configuration as it stands. I fix each fault above, asking you where a field is yours to choose, and test it again.",
+    `rule: Run node ${machineScript} check ${flags} only once each fault above is fixed.`,
+    stop,
+  ]);
+  expect(checked({ ended: "Absent", directory: `${root}` })).toEqual([
+    `found: this checkout declares no configuration under ${root}`,
+    configureWith,
+    stop,
+  ]);
+  expect(roster.Check.map((report) => setupReportExit(report))).toEqual([
+    0, 0, 1, 1, 0, 1,
+  ]);
+});
+
+test("a run of import says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, , imported, , refused] = roster.Import;
+  const [, after] = (none && printed(none)) ?? [];
+  expect(after).toBe(
+    "found: nothing to import: the next thing is not the configuration of a repository",
+  );
+  for (const [report, said] of [
+    [imported, ["did: asked chuggy to import Acme-Org/Widgets"]],
+    [
+      refused,
+      [
+        "found: chuggy did not import Acme-Org/Widgets: Invalid",
+        `found: ${setupConfigurationPath}: Configuration invalid`,
+      ],
+    ],
+  ] as const) {
+    if (report === undefined) throw new Error("no import report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
 });

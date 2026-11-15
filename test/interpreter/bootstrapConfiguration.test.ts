@@ -44,7 +44,7 @@ import {
   bootstrapPublicOriginFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type { BriefingSectionId } from "../../src/interpreter/briefingTemplate.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -69,7 +69,7 @@ import {
 import type {
   AgentWorkload,
   WorkloadConfiguration,
-} from "../../src/interpreter/workloadConfiguration.ts";
+} from "../../src/contract/workloadConfiguration.ts";
 import { pinnedWorkloadTask } from "../../src/interpreter/workloadTask.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");

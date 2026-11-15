@@ -30,7 +30,7 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { NativeActionResolution } from "./projectCommand.ts";
 import type { Partition } from "./projectStore.ts";
-import type { ApprovalApprovers } from "./workloadConfiguration.ts";
+import type { ApprovalApprovers } from "../contract/workloadConfiguration.ts";
 
 /** Who is asking: the principal a request authenticated as, and the session that carried it where one did. */
 export interface NativeActionCaller {

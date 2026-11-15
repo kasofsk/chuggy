@@ -64,7 +64,7 @@ function steps(done: Ran): readonly (readonly [string, string])[] {
   return printed.map(([, state, detail]) => [state, detail]);
 }
 
-test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name", async () => {
+test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project", async () => {
   const session = await signed();
   for (const stage of setupSiteStages) {
     const done = await read(session, setupSiteAt(stage));
@@ -78,6 +78,17 @@ test("a site set up one thing further at a time, from nothing to a landed first 
         "--workspace",
         "acme",
         "--name",
+      ]);
+      continue;
+    }
+    if (stage === "Added") {
+      assert.deepEqual(await ruled(done), [
+        "configuration",
+        "--workspace",
+        "acme",
+        "--project",
+        "widgets",
+        "--test",
       ]);
       continue;
     }

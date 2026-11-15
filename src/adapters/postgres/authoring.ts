@@ -50,7 +50,7 @@ import {
   asRepositoryConfigurationName,
   asRepositoryConfigurationPath,
 } from "../../interpreter/repositoryConfigurationIdentity.ts";
-import { repositoryDeclarationsMax } from "../../interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationsMax } from "../../contract/repositoryDeclaration.ts";
 import type {
   RepositoryConfigurationsHeld,
   RepositoryConfigurationsHeldRead,

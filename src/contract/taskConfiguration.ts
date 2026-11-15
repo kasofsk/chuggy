@@ -48,7 +48,7 @@ import {
   type ConfigurationContentFault,
   type configurationLegacyWorkerSchema,
   type configurationWorkerModeSchema,
-} from "../contract/configurationDocument.ts";
+} from "./configurationDocument.ts";
 
 /** The practice roster and the list bounds, surfaced where a configuration is read. */
 export {
@@ -56,7 +56,7 @@ export {
   briefingLinesMax,
   evaluationBlocksMax,
   type PracticeId,
-} from "../contract/configurationDocument.ts";
+} from "./configurationDocument.ts";
 
 /** The claim a ticket makes about itself, which both roles are briefed with unchanged. */
 export type TicketBrief = TaskConfigurationReadonly<

@@ -30,7 +30,7 @@ import {
   repositoryDeclarationRoot,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
-} from "../../src/interpreter/repositoryDeclaration.ts";
+} from "../../src/contract/repositoryDeclaration.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -40,7 +40,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
-import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
+import { catalogSelectedFinalizer } from "../../src/contract/workloadConfiguration.ts";
 
 const repository = asRepositoryId("repository-one");
 const commit = asGitObjectId("a".repeat(40));
