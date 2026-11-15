@@ -147,13 +147,14 @@ export async function setupCheckoutTop(
 /** The most bytes a declaration's text takes in UTF-8, which is four for each code point its bound allows. */
 const setupDeclarationBytesMax = repositoryDeclarationFileCharsMax * 4;
 
-/** How deep below `.chug/configurations/` the listing looks, as the import's recursive listing of it does. */
-const setupDeclarationDepthMax = 8;
+/** How deep below `.chug/configurations/` the listing looks; the import's listing has no such bound, and refuses any path below the directory itself. */
+export const setupDeclarationDepthMax = 8;
 
-/** One path found under the directory an import reads, as the import's listing would hold it. */
+/** One path found under the directory an import reads, as the import's listing would hold it, or a directory past the listing's bound, which is refused unread. */
 type SetupDeclarationFound =
   | { readonly found: "File"; readonly file: RepositoryDeclarationFile }
-  | { readonly found: "TooLarge"; readonly path: string };
+  | { readonly found: "TooLarge"; readonly path: string }
+  | { readonly found: "Unlisted"; readonly path: string };
 
 /** Whether some directory between the top and `path` is a link, which a commit holds as a file and never as a directory to look in. */
 function setupThroughLink(
@@ -189,7 +190,8 @@ function setupDeclarationRead(
  * Every `.json` path under `.chug/configurations/`, nested ones included, as
  * a commit's recursive listing of it holds them; no more than one past what
  * an import takes, since that one is enough to refuse the directory. A
- * directory that is a link is not looked in.
+ * directory that is a link is not looked in, and one past the depth bound is
+ * found as `Unlisted` rather than looked in.
  */
 function setupDeclarationsListed(
   disk: SetupDiskPort,
@@ -212,6 +214,8 @@ function setupDeclarationsListed(
         ) {
           if (next.depth < setupDeclarationDepthMax)
             directories.push({ path, depth: next.depth + 1 });
+          else found.push({ found: "Unlisted", path: `${path}/` });
+          if (found.length > repositoryDeclarationsMax) return found;
           continue;
         }
         if (!name.endsWith(".json")) continue;
@@ -305,10 +309,12 @@ export async function setupConfigurationChecked(
   const files = found.flatMap((held) =>
     held.found === "File" ? [held.file] : [],
   );
-  const large = found.flatMap((held): RepositoryConfigurationFileRefused[] =>
+  const unread = found.flatMap((held): RepositoryConfigurationFileRefused[] =>
     held.found === "TooLarge"
       ? [{ refusal: { path: held.path, fault: "ContentTooLarge" }, fields: [] }]
-      : [],
+      : held.found === "Unlisted"
+        ? [{ refusal: { path: held.path, fault: "PathInvalid" }, fields: [] }]
+        : [],
   );
   const read = await repositoryConfigurationReferencedRead<never>(
     files,
@@ -323,9 +329,9 @@ export async function setupConfigurationChecked(
     files,
     referenced,
   });
-  if (readiness.readiness === "Refused" || large.length > 0)
+  if (readiness.readiness === "Refused" || unread.length > 0)
     return setupCheckRefused([
-      ...large,
+      ...unread,
       ...(readiness.readiness === "Refused" ? readiness.faults : []),
     ]);
   return {

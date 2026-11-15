@@ -18,6 +18,7 @@ import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import {
   setupConfigurationPath,
   setupConfigurationStarting,
+  setupDeclarationDepthMax,
 } from "../app/core/setupConfiguration.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
@@ -198,6 +199,26 @@ test("configuration never writes over a configuration already declared, anywhere
     expect(machine.box.paths.get(`${top}/${path}`)).toBe("held");
     expect(machine.box.paths, path).toEqual(before);
   }
+});
+
+test("a directory past the listing's depth bound is refused by check and kept by configuration, as the import refuses any file below it", async () => {
+  const levels = Array.from({ length: setupDeclarationDepthMax + 1 }, (_, at) =>
+    String.fromCharCode(97 + at),
+  );
+  const unlisted = `${repositoryConfigurationRoot}${levels.join("/")}/`;
+  const files = {
+    [setupConfigurationPath]: filled("make"),
+    [`${unlisted}x.json`]: "held",
+  };
+  expect(bare(await checkout(files).command(["check"]))[0]).toBe(
+    `found: ${unlisted}: Path not allowed`,
+  );
+  const deep = checkout({ [`${unlisted}x.json`]: "held" });
+  const before = new Map(deep.box.paths);
+  expect(bare(await deep.command(["configuration", "--test", "make"]))[0]).toBe(
+    `found: this checkout already declares ${unlisted}, which is left as it is`,
+  );
+  expect(deep.box.paths).toEqual(before);
 });
 
 test("outside a checkout neither configuration nor check reads or writes anything, and each is a stop", async () => {
