@@ -35,6 +35,9 @@ import {
   configurationResponseSchema,
   configurationsResponseSchema,
   dispatchViewResponseSchema,
+  epicGraphResponseSchema,
+  epicHistoryResponseSchema,
+  epicViewResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeInstallationsResponseSchema,
@@ -448,6 +451,53 @@ const ticketPageReads: readonly StubApiRead[] = [
   }),
 ];
 
+/** The project's one epic, holding its one ticket, at its first revision. */
+const epic = {
+  number: 1,
+  revision: 1,
+  title: "Billing",
+  summary: "All of billing",
+  visibility: "Active",
+  progress: {
+    byPhase: {
+      Pending: 1,
+      Work: 0,
+      Evaluation: 0,
+      Finalization: 0,
+      Done: 0,
+      Escalated: 0,
+      Revoked: 0,
+    },
+    drafts: 0,
+    done: 0,
+    total: 1,
+  },
+  status: "not_started",
+  waitingOnOutside: [],
+  description: "The **whole** of billing",
+  tickets: [ticket.ticket],
+};
+
+const epicReads: readonly StubApiRead[] = [
+  stubApiRead(`${projectPath}/epics/1`, epicViewResponseSchema, epic),
+  stubApiRead(`${projectPath}/epics/1/graph`, epicGraphResponseSchema, {
+    nodes: [{ ticket: ticket.ticket, phase: ticket.phase, member: true }],
+    edges: [],
+  }),
+  stubApiRead(`${projectPath}/epics/1/history`, epicHistoryResponseSchema, {
+    revisions: [
+      {
+        revision: 1,
+        changedAt: "2026-10-01T00:00:00Z",
+        actor: { kind: "user", subject: "member" },
+        title: epic.title,
+        visibility: "Active",
+        changes: { kind: "Created" },
+      },
+    ],
+  }),
+];
+
 /** The reads every case is answered, a route to a row. */
 export const stubApiReads: readonly StubApiRead[] = [
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
@@ -460,6 +510,7 @@ export const stubApiReads: readonly StubApiRead[] = [
   }),
   stubApiStream(`${projectPath}/events`),
   ...ticketPageReads,
+  ...epicReads,
   stubApiRead(`${projectPath}/abilities`, projectAbilitiesResponseSchema, {
     principal,
     mutate: true,
