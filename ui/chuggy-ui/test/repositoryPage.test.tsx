@@ -77,6 +77,7 @@ function binding(
   finalization: FinalizationChoice,
   repository = chuggy,
   pipelinesWritable = false,
+  pipelinesRunnable = false,
 ): unknown {
   return {
     repository,
@@ -89,7 +90,7 @@ function binding(
     },
     finalization,
     pipelinesWritable,
-    pipelinesRunnable: false,
+    pipelinesRunnable,
     configured: true,
   };
 }
@@ -277,14 +278,29 @@ async function edit(title: string): Promise<void> {
   await settled();
 }
 
-/** Whether the workflow files section draws them allowed. */
-function chosenWorkflowFiles(): string | undefined {
+/** Which of Off and On a setting's section draws chosen. */
+function chosenSwitch(title: string): string | undefined {
   return ["Off", "On"].find(
     (name) =>
-      within(sectionOf("Workflow files"))
+      within(sectionOf(title))
         .getByRole("radio", { name })
         .getAttribute("aria-checked") === "true",
   );
+}
+
+/** One setting's section opened and its On chosen. */
+async function switchedOn(title: string): Promise<void> {
+  await edit(title);
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf(title)).getByRole("radio", { name: "On" }),
+    );
+  });
+}
+
+/** Whether the workflow files section draws them allowed. */
+function chosenWorkflowFiles(): string | undefined {
+  return chosenSwitch("Workflow files");
 }
 
 test("the page reads its own binding, and says what it lands as", async () => {
@@ -362,6 +378,7 @@ test("a saved finalization is written against the one the page read", async () =
     expected: push,
     landing: proposal,
     pipelinesWritable: { expected: false, wanted: false },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
   expect(screen.getByText("Written")).toBeTruthy();
   expect(chosenFinalization()).toBe("Pull request");
@@ -401,6 +418,7 @@ test("a git merge's policy is offered only under a git merge, and is written wit
     expected: push,
     landing: serialized,
     pipelinesWritable: { expected: false, wanted: false },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
 });
 
@@ -420,6 +438,7 @@ test("a git merge's policy can be Stacked, and is written as chosen", async () =
     expected: push,
     landing: stacked,
     pipelinesWritable: { expected: false, wanted: false },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
 });
 
@@ -462,6 +481,7 @@ test("a finalization that moved under the write says so, and rebases onto what s
     expected: proposal,
     landing: push,
     pipelinesWritable: { expected: false, wanted: false },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
 });
 
@@ -491,12 +511,7 @@ test("allowing workflow files writes them against what the page read, the finali
     bound: [binding(proposal)],
     written: [answer({ repository: binding(proposal, chuggy, true) })],
   });
-  await edit("Workflow files");
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
-    );
-  });
+  await switchedOn("Workflow files");
   await press("Save changes");
   const wrote = sent.find((one) => one.method === "PUT");
   expect(wrote?.url.endsWith("/repositories/landing")).toBe(true);
@@ -505,6 +520,7 @@ test("allowing workflow files writes them against what the page read, the finali
     expected: proposal,
     landing: proposal,
     pipelinesWritable: { expected: false, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
   expect(within(sectionOf("Workflow files")).getByText("Written")).toBeTruthy();
   expect(chosenWorkflowFiles()).toBe("On");
@@ -529,12 +545,7 @@ test("workflow files the binding moved under say so, and the retry fences on wha
       answer({ repository: binding(nothing, chuggy, true) }),
     ],
   });
-  await edit("Workflow files");
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
-    );
-  });
+  await switchedOn("Workflow files");
   await press("Save changes");
   expect(
     within(sectionOf("Workflow files")).getByText("Settings moved"),
@@ -548,6 +559,7 @@ test("workflow files the binding moved under say so, and the retry fences on wha
     expected: nothing,
     landing: nothing,
     pipelinesWritable: { expected: false, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
 });
 
@@ -561,12 +573,7 @@ test("a finalization saved after workflow files were allowed keeps them allowed"
       answer({ repository: binding(proposal, chuggy, true) }),
     ],
   });
-  await edit("Workflow files");
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
-    );
-  });
+  await switchedOn("Workflow files");
   await press("Save changes");
   await edit("Landing");
   await turned(() => {
@@ -580,18 +587,14 @@ test("a finalization saved after workflow files were allowed keeps them allowed"
     expected: push,
     landing: proposal,
     pipelinesWritable: { expected: true, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
   expect(chosenWorkflowFiles()).toBe("On");
 });
 
 test("cancelling workflow files leaves the setting the page read", async () => {
   await drawPage();
-  await edit("Workflow files");
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
-    );
-  });
+  await switchedOn("Workflow files");
   await press("Cancel");
   expect(chosenWorkflowFiles()).toBe("Off");
 });
@@ -692,8 +695,128 @@ test.each(abilitiesUnrefusing)(
     await drawPage({ over: abilitiesOver(abilities) });
     expect(finalizationEditOffered()).toBe(true);
     expect(finalizationEditOffered("Workflow files")).toBe(true);
+    expect(finalizationEditOffered("Workflow runs")).toBe(true);
   },
 );
+
+test("the workflow runs section follows workflow files, off until a binding allows them", async () => {
+  await drawPage();
+  const section = sectionOf("Workflow runs");
+  expect(
+    within(section).getByText(
+      "Lets runs start and read workflow runs · App needs Actions",
+    ),
+  ).toBeTruthy();
+  expect(chosenSwitch("Workflow runs")).toBe("Off");
+  expect(
+    within(section)
+      .getByRole("radio", { name: "On" })
+      .getAttribute("data-disabled"),
+  ).not.toBe(null);
+  const regions = screen.getAllByRole("region");
+  const files = regions.indexOf(sectionOf("Workflow files"));
+  expect(regions.indexOf(section)).toBe(files + 1);
+  cleanup();
+  await drawPage({ bound: [binding(push, chuggy, false, true)] });
+  expect(chosenSwitch("Workflow runs")).toBe("On");
+  expect(chosenWorkflowFiles()).toBe("Off");
+});
+
+/** The section moves its own setting and writes the others as the page read
+ * them, so the settings it did not touch are fenced rather than written over. */
+test("allowing workflow runs writes them against what the page read, the other settings unchanged", async () => {
+  const sent = await drawPage({
+    bound: [binding(proposal, chuggy, true)],
+    written: [answer({ repository: binding(proposal, chuggy, true, true) })],
+  });
+  await switchedOn("Workflow runs");
+  await press("Save changes");
+  const wrote = sent.find((one) => one.method === "PUT");
+  expect(wrote?.url.endsWith("/repositories/landing")).toBe(true);
+  expect(wrote?.body).toStrictEqual({
+    repository: chuggy,
+    expected: proposal,
+    landing: proposal,
+    pipelinesWritable: { expected: true, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: true },
+  });
+  expect(within(sectionOf("Workflow runs")).getByText("Written")).toBeTruthy();
+  expect(chosenSwitch("Workflow runs")).toBe("On");
+  expect(chosenWorkflowFiles()).toBe("On");
+});
+
+test("workflow runs the binding moved under say so, and the retry fences on what stands", async () => {
+  const sent = await drawPage({
+    written: [
+      answer(
+        {
+          error: {
+            code: "RepositoryLandingMoved",
+            message: "the settings moved under this write",
+          },
+          repository: binding(push, chuggy, true),
+        },
+        409,
+      ),
+      answer({ repository: binding(push, chuggy, true, true) }),
+    ],
+  });
+  await switchedOn("Workflow runs");
+  await press("Save changes");
+  expect(
+    within(sectionOf("Workflow runs")).getByText("Settings moved"),
+  ).toBeTruthy();
+  expect(chosenSwitch("Workflow runs")).toBe("On");
+  await press("Save changes");
+  const writes = sent.filter((one) => one.method === "PUT");
+  expect(writes.length).toBe(2);
+  expect(writes[1]?.body).toStrictEqual({
+    repository: chuggy,
+    expected: push,
+    landing: push,
+    pipelinesWritable: { expected: true, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: true },
+  });
+});
+
+test("workflow files saved after workflow runs were allowed keep them allowed", async () => {
+  const sent = await drawPage({
+    written: [
+      answer({ repository: binding(push, chuggy, false, true) }),
+      answer({ repository: binding(push, chuggy, true, true) }),
+    ],
+  });
+  await switchedOn("Workflow runs");
+  await press("Save changes");
+  await switchedOn("Workflow files");
+  await press("Save changes");
+  const writes = sent.filter((one) => one.method === "PUT");
+  expect(writes.length).toBe(2);
+  expect(writes[1]?.body).toStrictEqual({
+    repository: chuggy,
+    expected: push,
+    landing: push,
+    pipelinesWritable: { expected: false, wanted: true },
+    pipelinesRunnable: { expected: true, wanted: true },
+  });
+  expect(chosenSwitch("Workflow runs")).toBe("On");
+});
+
+test("cancelling workflow runs leaves the setting the page read", async () => {
+  await drawPage();
+  await switchedOn("Workflow runs");
+  await press("Cancel");
+  expect(chosenSwitch("Workflow runs")).toBe("Off");
+});
+
+test("a reader who may not administer reads the workflow runs and is offered no Edit", async () => {
+  await drawPage({
+    bound: [binding(push, chuggy, false, true)],
+    over: abilitiesOver({ ...abilitiesEvery, administer: false }),
+  });
+  expect(chosenSwitch("Workflow runs")).toBe("On");
+  expect(finalizationEditOffered("Workflow runs")).toBe(false);
+});
 
 /** The bound repository as the listing answers it, carrying the last import where one is given. */
 function attempted(lastImport?: unknown): unknown {

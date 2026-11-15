@@ -46,6 +46,7 @@ project-table-waits-on = Waits on
 project-table-creator-label = Creator
 project-table-creator-anyone = Anyone
 project-table-creator-me = Me
+project-table-owner-label = Owner
 project-table-sort-label = Sort
 project-table-filter-label = Filter
 project-table-filter-all = All states

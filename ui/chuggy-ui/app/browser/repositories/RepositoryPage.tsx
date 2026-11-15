@@ -47,6 +47,7 @@ import {
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
 import { RepositoryFinalizationSection } from "./RepositoryFinalizationSection.tsx";
 import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection.tsx";
+import { RepositoryWorkflowRunsSection } from "./RepositoryWorkflowRunsSection.tsx";
 
 /** This page's own address, which its reads take their partition from. */
 export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
@@ -143,6 +144,10 @@ export function RepositoryPage(): ReactNode {
             binding={binding}
           />
           <RepositoryWorkflowFilesSection
+            partition={partition}
+            binding={binding}
+          />
+          <RepositoryWorkflowRunsSection
             partition={partition}
             binding={binding}
           />

@@ -19,6 +19,7 @@ import {
   repositoryFinalizationDraft,
   repositoryFinalizationMoved,
   repositoryFinalizationPipelinesChosen,
+  repositoryFinalizationRunsChosen,
   repositoryFinalizationRefusal,
   repositoryFinalizationRebased,
   repositoryFinalizationRestored,
@@ -41,6 +42,7 @@ function binding(
   repository: string,
   finalization: FinalizationChoice,
   pipelinesWritable = false,
+  pipelinesRunnable = false,
 ): ProjectRepositoryResponse {
   return {
     repository,
@@ -53,7 +55,7 @@ function binding(
     },
     finalization,
     pipelinesWritable,
-    pipelinesRunnable: false,
+    pipelinesRunnable,
   };
 }
 
@@ -64,6 +66,8 @@ test("a draft starts on what the page read, and saves nothing until a setting mo
     read: push,
     pipelinesWritable: false,
     pipelinesWritableRead: false,
+    pipelinesRunnable: false,
+    pipelinesRunnableRead: false,
   });
   expect(repositoryFinalizationSavable(draft)).toBe(false);
   const moved = repositoryFinalizationChosen(draft, proposal);
@@ -83,6 +87,14 @@ test("a draft starts on what the page read, and saves nothing until a setting mo
     ),
   ).toBe(false);
   expect(repositoryFinalizationRestored(allowed)).toStrictEqual(draft);
+  const runnable = repositoryFinalizationRunsChosen(draft, true);
+  expect(repositoryFinalizationSavable(runnable)).toBe(true);
+  expect(
+    repositoryFinalizationSavable(
+      repositoryFinalizationRunsChosen(runnable, false),
+    ),
+  ).toBe(false);
+  expect(repositoryFinalizationRestored(runnable)).toStrictEqual(draft);
 });
 
 /** The write fences on each setting as the page read it and not on the value
@@ -98,6 +110,7 @@ test("the write carries the binding, and each setting as read and as wanted", ()
     expected: push,
     landing: proposal,
     pipelinesWritable: { expected: true, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: false },
   });
   const ordered = repositoryFinalizationChosen(
     repositoryFinalizationDraft(binding(chuggy, push)),
@@ -116,6 +129,18 @@ test("the write carries the binding, and each setting as read and as wanted", ()
     expected: push,
     landing: push,
     pipelinesWritable: { expected: false, wanted: true },
+    pipelinesRunnable: { expected: false, wanted: false },
+  });
+  const runnable = repositoryFinalizationRunsChosen(
+    repositoryFinalizationDraft(binding(chuggy, push, true, true)),
+    false,
+  );
+  expect(repositoryFinalizationWrite(runnable, chuggy)).toStrictEqual({
+    repository: chuggy,
+    expected: push,
+    landing: push,
+    pipelinesWritable: { expected: true, wanted: true },
+    pipelinesRunnable: { expected: true, wanted: false },
   });
 });
 
@@ -133,6 +158,8 @@ test("a rebase takes each arriving setting, and only an untouched choice with it
     read: proposal,
     pipelinesWritable: true,
     pipelinesWritableRead: true,
+    pipelinesRunnable: false,
+    pipelinesRunnableRead: false,
   });
   const touched = repositoryFinalizationChosen(untouched, proposal);
   expect(
@@ -142,6 +169,8 @@ test("a rebase takes each arriving setting, and only an untouched choice with it
     read: push,
     pipelinesWritable: true,
     pipelinesWritableRead: true,
+    pipelinesRunnable: false,
+    pipelinesRunnableRead: false,
   });
   const allowed = repositoryFinalizationPipelinesChosen(untouched, true);
   expect(
@@ -151,6 +180,25 @@ test("a rebase takes each arriving setting, and only an untouched choice with it
     read: proposal,
     pipelinesWritable: true,
     pipelinesWritableRead: false,
+    pipelinesRunnable: false,
+    pipelinesRunnableRead: false,
+  });
+  expect(
+    repositoryFinalizationRebased(
+      untouched,
+      binding(chuggy, push, false, true),
+    ),
+  ).toMatchObject({ pipelinesRunnable: true, pipelinesRunnableRead: true });
+  const runnable = repositoryFinalizationRunsChosen(untouched, true);
+  expect(
+    repositoryFinalizationRebased(runnable, binding(chuggy, push, true)),
+  ).toStrictEqual({
+    finalization: push,
+    read: push,
+    pipelinesWritable: true,
+    pipelinesWritableRead: true,
+    pipelinesRunnable: true,
+    pipelinesRunnableRead: false,
   });
 });
 

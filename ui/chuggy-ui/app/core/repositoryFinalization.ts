@@ -1,6 +1,7 @@
 /**
- * A binding's settings as one section edits them: its default finalization and
- * whether its jobs may write its pipeline definitions, the choice a reader
+ * A binding's settings as one section edits them: its default finalization,
+ * whether its jobs may write its pipeline definitions and whether they may
+ * start and read its pipeline runs, the choice a reader
  * holds, the write it becomes, and what a refusal of that write says.
  *
  * A WRITE A SETTING MOVED UNDER IS NOT RETRIED. Every write carries each
@@ -9,7 +10,7 @@
  * answers `409` with the binding as it stands and the draft is rebased onto it,
  * an untouched choice taking what now stands and a touched one standing while
  * the next write fences against the arriving value. A section edits one
- * setting and writes the other as it read it.
+ * setting and writes the others as it read them.
  */
 
 import type { projectRepositoryLandingSchema } from "../../../../src/contract/requests.ts";
@@ -35,6 +36,8 @@ export interface RepositoryFinalizationDraft {
   readonly read: FinalizationChoice;
   readonly pipelinesWritable: boolean;
   readonly pipelinesWritableRead: boolean;
+  readonly pipelinesRunnable: boolean;
+  readonly pipelinesRunnableRead: boolean;
 }
 
 export function repositoryFinalizationDraft(
@@ -45,6 +48,8 @@ export function repositoryFinalizationDraft(
     read: binding.finalization,
     pipelinesWritable: binding.pipelinesWritable,
     pipelinesWritableRead: binding.pipelinesWritable,
+    pipelinesRunnable: binding.pipelinesRunnable,
+    pipelinesRunnableRead: binding.pipelinesRunnable,
   };
 }
 
@@ -62,6 +67,13 @@ export function repositoryFinalizationPipelinesChosen(
   return { ...draft, pipelinesWritable };
 }
 
+export function repositoryFinalizationRunsChosen(
+  draft: RepositoryFinalizationDraft,
+  pipelinesRunnable: boolean,
+): RepositoryFinalizationDraft {
+  return { ...draft, pipelinesRunnable };
+}
+
 /** The draft with the reader's choices given up, which is what Cancel leaves. */
 export function repositoryFinalizationRestored(
   draft: RepositoryFinalizationDraft,
@@ -70,6 +82,7 @@ export function repositoryFinalizationRestored(
     ...draft,
     finalization: draft.read,
     pipelinesWritable: draft.pipelinesWritableRead,
+    pipelinesRunnable: draft.pipelinesRunnableRead,
   };
 }
 
@@ -80,7 +93,8 @@ export function repositoryFinalizationSavable(
   return (
     finalizationChoiceKey(draft.finalization) !==
       finalizationChoiceKey(draft.read) ||
-    draft.pipelinesWritable !== draft.pipelinesWritableRead
+    draft.pipelinesWritable !== draft.pipelinesWritableRead ||
+    draft.pipelinesRunnable !== draft.pipelinesRunnableRead
   );
 }
 
@@ -91,6 +105,7 @@ export function repositoryFinalizationRebased(
 ): RepositoryFinalizationDraft {
   const arriving = binding.finalization;
   const arrivingPipelines = binding.pipelinesWritable;
+  const arrivingRuns = binding.pipelinesRunnable;
   const untouched =
     finalizationChoiceKey(draft.finalization) ===
     finalizationChoiceKey(draft.read);
@@ -102,6 +117,11 @@ export function repositoryFinalizationRebased(
         ? arrivingPipelines
         : draft.pipelinesWritable,
     pipelinesWritableRead: arrivingPipelines,
+    pipelinesRunnable:
+      draft.pipelinesRunnable === draft.pipelinesRunnableRead
+        ? arrivingRuns
+        : draft.pipelinesRunnable,
+    pipelinesRunnableRead: arrivingRuns,
   };
 }
 
@@ -118,6 +138,10 @@ export function repositoryFinalizationWrite(
     pipelinesWritable: {
       expected: draft.pipelinesWritableRead,
       wanted: draft.pipelinesWritable,
+    },
+    pipelinesRunnable: {
+      expected: draft.pipelinesRunnableRead,
+      wanted: draft.pipelinesRunnable,
     },
   };
 }

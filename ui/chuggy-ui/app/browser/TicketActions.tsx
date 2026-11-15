@@ -83,7 +83,7 @@ import {
   ticketOffersAllowed,
   ticketOffersStartable,
 } from "../core/ticketOffers.ts";
-import type { TicketOffers } from "../core/ticketOffers.ts";
+import type { TicketOffers, TicketTakeOffer } from "../core/ticketOffers.ts";
 import { useApiOnline } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
@@ -101,6 +101,7 @@ import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import { TicketActionConfirm } from "./ticket/TicketActionConfirm.tsx";
 import { ApprovalRejectDialog } from "./ticket/TicketApprovals.tsx";
 import { TicketHeaderMenu } from "./ticket/TicketHeaderMenu.tsx";
+import { TicketTake } from "./ticket/TicketTake.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -689,6 +690,8 @@ export interface TicketHeaderActionsProps {
   readonly byHand: boolean;
   /** Whether a Dispatch gave way because the project's work has no runner. */
   readonly noRunner: boolean;
+  /** The one of Take and Return the reader is offered, for themselves. */
+  readonly take: TicketTakeOffer;
 }
 
 /** Where Dispatch would be drawn in a project whose work has no runner to go
@@ -767,6 +770,11 @@ export function TicketHeaderActions(
       {laid.editable ? (
         <TicketEditOffer partition={props.partition} ticket={props.ticket} />
       ) : null}
+      <TicketTake
+        partition={props.partition}
+        ticket={props.ticket}
+        offer={props.take}
+      />
       <TicketHeaderMenu
         partition={props.partition}
         ticket={props.ticket}
