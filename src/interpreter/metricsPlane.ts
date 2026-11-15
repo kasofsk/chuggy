@@ -24,7 +24,9 @@
  * A LABEL IS A CLOSED ROSTER OR A BOUNDED NAME. The owner is the bare subject
  * a principal carries under the deployment's issuer, which is the login a
  * person signed in through that issuer holds, and empty where there is no
- * principal or it is another issuer's. No ticket, execution, attempt or
+ * principal or it is another issuer's. The repository is the one a ticket's
+ * brief names, one of those its project has bound, and empty where it names
+ * none; an execution's is its ticket's. No ticket, execution, attempt or
  * session is ever a label. A member's own session names no project, and its
  * turns carry `metricsPlaneMemberProject` rather than the partition reserved
  * for them, so no digest of a principal is a label.
@@ -149,6 +151,7 @@ export const metricsPlaneMemberProject = "@member";
 export interface MetricsPlaneTask {
   readonly tenant: string;
   readonly project: string;
+  readonly repository: string;
   readonly owner: string;
   readonly phase: "Work" | "Evaluation";
   readonly stage: string;
@@ -161,6 +164,7 @@ export interface MetricsPlaneTask {
 export interface MetricsPlaneAttemptWaitRow {
   readonly tenant: string;
   readonly project: string;
+  readonly repository: string;
   readonly owner: string;
   readonly phase: MetricsPlaneTask["phase"];
   readonly placement: MetricsPlaneTask["placement"];
@@ -218,6 +222,7 @@ export interface MetricsPlaneTurnRow {
 export interface MetricsPlaneTicketOwner {
   readonly tenant: string;
   readonly project: string;
+  readonly repository: string;
   readonly owner: string;
 }
 
@@ -403,6 +408,7 @@ function metricsPlaneTaskLabels(task: MetricsPlaneTask): MetricsLabels {
   return {
     tenant: task.tenant,
     project: task.project,
+    repository: task.repository,
     owner: task.owner,
     phase: task.phase,
     stage: task.stage,
@@ -463,6 +469,7 @@ function metricsPlaneAttemptFamilies(
           (row) => ({
             tenant: row.tenant,
             project: row.project,
+            repository: row.repository,
             owner: row.owner,
             phase: row.phase,
             placement: row.placement,
@@ -646,7 +653,12 @@ function metricsPlaneTurnFamilies(
 function metricsPlaneTicketOwnerLabels(
   row: MetricsPlaneTicketOwner,
 ): MetricsLabels {
-  return { tenant: row.tenant, project: row.project, owner: row.owner };
+  return {
+    tenant: row.tenant,
+    project: row.project,
+    repository: row.repository,
+    owner: row.owner,
+  };
 }
 
 function metricsPlaneTicketFamily(
