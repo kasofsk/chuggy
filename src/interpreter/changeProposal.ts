@@ -1274,6 +1274,8 @@ export type ChangeProposalMergingNext =
         | "Queued"
         | "QueueTimedOut"
         | "Dequeued";
+      /** How many seconds from now the wait's reading falls due, present where the hold is a wait on the cadence the forge is asked again at. */
+      readonly rereadInSecs?: number;
     };
 
 /** What a merge is offered under, before this boundary has checked it addresses one proposal. */
@@ -1489,7 +1491,18 @@ function proposalMergeRereadOr(
 ): ChangeProposalMergingNext {
   return proposalMergeRereadDue(heardAgeSecs)
     ? { next: "ReadByNumber" }
-    : { next: "Held", reason };
+    : proposalMergeRereadHeld(heardAgeSecs, reason);
+}
+
+/** The hold a wait on the cadence is, carrying how long until its reading falls due. */
+function proposalMergeRereadHeld(
+  heardAgeSecs: number,
+  reason: "Blocked" | "HeadMoved" | "Closed" | "Queued",
+): ChangeProposalMergingNext {
+  const rereadInSecs = proposalMergeRereadSecs - heardAgeSecs;
+  if (rereadInSecs <= 0)
+    throw new RangeError("proposal merging: a wait already due was held");
+  return { next: "Held", reason, rereadInSecs };
 }
 
 /**
@@ -1607,7 +1620,7 @@ function proposalMergeQueueRereadOr(
 ): ChangeProposalMergingNext {
   return proposalMergeRereadDue(heardAgeSecs)
     ? { next: "ReadQueue" }
-    : { next: "Held", reason };
+    : proposalMergeRereadHeld(heardAgeSecs, reason);
 }
 
 /**

@@ -1050,7 +1050,7 @@ test("a merge the forge answered is concluded from the row", () => {
 test("a merge waiting on the forge's own rules is read again only once the cadence has passed", () => {
   assert.deepEqual(
     changeProposalMergeNext(request, waiting(1, 0), pinned, mergeBounds),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: proposalMergeRereadSecs },
     "a reading just taken is not taken again",
   );
   assert.deepEqual(
@@ -1060,7 +1060,7 @@ test("a merge waiting on the forge's own rules is read again only once the caden
       pinned,
       mergeBounds,
     ),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: 1 },
   );
   assert.deepEqual(
     changeProposalMergeNext(
@@ -1155,7 +1155,7 @@ test("a waiting merge somebody else made or closed is settled by the reading tha
   for (const merging of [waiting(1, 0, closed), moved(0, closed)])
     assert.deepEqual(
       changeProposalMergeNext(request, merging, pinned, mergeBounds),
-      { next: "Held", reason: "Closed" },
+      { next: "Held", reason: "Closed", rereadInSecs: proposalMergeRereadSecs },
       merging.merging,
     );
   for (const merging of [
@@ -1184,6 +1184,7 @@ test("a moved head waits on whoever moved it and is never merged again", () => {
     {
       next: "Held",
       reason: "HeadMoved",
+      rereadInSecs: proposalMergeRereadSecs,
     },
   );
   assert.deepEqual(
@@ -1204,7 +1205,11 @@ test("a moved head waits on whoever moved it and is never merged again", () => {
   ]) {
     assert.deepEqual(
       changeProposalMergeNext(request, moved(0, reading), pinned, mergeBounds),
-      { next: "Held", reason: "HeadMoved" },
+      {
+        next: "Held",
+        reason: "HeadMoved",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
       String(reading.evidence.mergeability),
     );
     assert.deepEqual(
@@ -1357,7 +1362,7 @@ test("a reading finding the proposal behind its base brings it up to date", () =
       updating({ updates: 1, unread: true }),
       mergeBounds,
     ),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: proposalMergeRereadSecs },
     "an update no reading has seen is waited out",
   );
   assert.deepEqual(
@@ -1423,7 +1428,7 @@ test("a proposal behind waits while another on its base holds the turn", () => {
       updating({ turn: false }),
       mergeBounds,
     ),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: proposalMergeRereadSecs },
   );
   assert.deepEqual(
     changeProposalMergeNext(
@@ -1491,6 +1496,13 @@ test("a head git proved the pinned one brought up to date is adopted and then me
   );
 });
 
+/** A moved head heard just now, waiting the whole cadence on whoever moved it. */
+const headMoved = {
+  next: "Held",
+  reason: "HeadMoved",
+  rereadInSecs: proposalMergeRereadSecs,
+} as const;
+
 test("no merge is spent on a head that is neither the pinned one nor adoptable", () => {
   for (const adoption of ["Unadoptable", "Unread"] as const) {
     for (const [merging, due] of [
@@ -1517,7 +1529,7 @@ test("no merge is spent on a head that is neither the pinned one nor adoptable",
           adopting(adoption),
           mergeBounds,
         ),
-        { next: "Held", reason: "HeadMoved" },
+        headMoved,
         `${adoption} ${merging.merging}`,
       );
       assert.deepEqual(
@@ -1534,7 +1546,7 @@ test("no merge is spent on a head that is neither the pinned one nor adoptable",
       pinned,
       mergeBounds,
     ),
-    { next: "Held", reason: "HeadMoved" },
+    headMoved,
     "a head git was never asked about is not merged either",
   );
   assert.throws(
@@ -1812,7 +1824,7 @@ test("a refused enqueue waits as a blocked merge does, and is read by number onc
       queueing(standing(), { refused: true }),
       mergeBounds,
     ),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: proposalMergeRereadSecs },
   );
   assert.deepEqual(
     changeProposalMergeNext(
@@ -1871,7 +1883,7 @@ test("a reading after a refused enqueue enqueues again where the forge's rules a
       queueing(standing(), { refused: true }),
       mergeBounds,
     ),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: proposalMergeRereadSecs },
   );
   assert.deepEqual(
     changeProposalMergeNext(
@@ -1919,7 +1931,7 @@ test("after a refused enqueue the standing decides: queued waits in the queue, a
         queueing(read, { refused: true }),
         mergeBounds,
       ),
-      { next: "Held", reason },
+      { next: "Held", reason, rereadInSecs: proposalMergeRereadSecs },
     );
     assert.deepEqual(
       changeProposalMergeNext(
@@ -2018,7 +2030,11 @@ test("a failed or timed-out check enqueues the same head once more, and the remo
         }),
         mergeBounds,
       ),
-      { next: "Held", reason: "Blocked" },
+      {
+        next: "Held",
+        reason: "Blocked",
+        rereadInSecs: proposalMergeRereadSecs,
+      },
       "the removal a second enqueue answered is that enqueue still waiting to be taken",
     );
   }
@@ -2101,7 +2117,7 @@ test("a reading by number finding the proposal still open goes back to the queue
       queueing(removedBy("Merged", "merged"), { entered: true }),
       mergeBounds,
     ),
-    { next: "Held", reason: "Blocked" },
+    { next: "Held", reason: "Blocked", rereadInSecs: proposalMergeRereadSecs },
   );
   assert.deepEqual(
     changeProposalMergeNext(

@@ -1359,12 +1359,14 @@ export interface RepositoryCredentialPort {
 export interface FinalizerConfig {
   readonly requestClaimLeaseSecs: number;
   readonly requestsPerPassMax: number;
+  /** How many decisions one claimed request is advanced by in one pass, each of them priced against the ceilings below as well. */
+  readonly claimStepsPerPassMax: number;
   /**
    * How many consecutive passes may find a request held at the same
    * unavailable kind before the finalizer reports that kind as the result. It
    * is counted in passes and not in time because nothing here reads a clock,
-   * and a held request is redrawn once its claim lease lapses, so
-   * `requestClaimLeaseSecs` is what the dwell is as long as; a dwell of one
+   * and a request held at one of those kinds is redrawn once its claim lease
+   * lapses, so `requestClaimLeaseSecs` is what the dwell is as long as; a dwell of one
    * pass would escalate the first blip the forge has.
    */
   readonly holdPassesMax: number;
@@ -1387,6 +1389,7 @@ export interface FinalizerConfig {
 export const finalizerDefaults: FinalizerConfig = {
   requestClaimLeaseSecs: 30,
   requestsPerPassMax: 32,
+  claimStepsPerPassMax: 8,
   holdPassesMax: 10,
   preparationRestartsMax: 3,
   preparationsPerPassMax: 8,
@@ -1579,7 +1582,7 @@ export interface FinalizerStore {
     leaseSecs: number,
   ): Promise<FinalizationClaim | undefined>;
 
-  /** Extends a claim still held at its own generation under the current epoch. */
+  /** Sets a claim still held at its own generation under the current epoch to run out `leaseSecs` from now. */
   extendClaim(claim: FinalizationClaim, leaseSecs: number): Promise<boolean>;
 
   /** Everything the pure pass reads of the durable rows, gathered before it runs. */
@@ -1619,6 +1622,9 @@ export interface FinalizerStore {
 
   /** Gives back the claim on a request that has settled, so no lease outlives its work. */
   settleClaim(claim: FinalizationClaim): Promise<boolean>;
+
+  /** Reopens a request its holder stopped short of settling, so the next pass may draw it without waiting out the lease. */
+  releaseClaim(claim: FinalizationClaim): Promise<boolean>;
 
   /** Reopens at most `requestsMax` claims whose lease has run out, and drops the leases on settled rows. */
   reclaimLapsed(epoch: RecoveryEpoch, requestsMax: number): Promise<number>;

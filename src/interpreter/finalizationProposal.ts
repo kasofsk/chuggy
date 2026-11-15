@@ -212,7 +212,11 @@ export type FinalizationProposalDecision =
     }
   | { readonly decide: "Abort"; readonly dequeue?: ChangeProposalMergeRequest }
   | { readonly decide: "Conclude"; readonly merged?: GitObjectId }
-  | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
+  | {
+      readonly decide: "Hold";
+      readonly hold: FinalizationHoldKind;
+      readonly rereadInSecs?: number;
+    };
 
 /** What the finalization itself brings to this step: how its brief lands, and what its project will still admit. */
 export interface FinalizationProposalStanding {
@@ -320,6 +324,16 @@ function finalizationProposalMergeHeld(
     default:
       return assertNever(reason);
   }
+}
+
+/** The hold a held merge is, carrying when its reading falls due wherever it waits on the cadence. */
+function finalizationProposalMergeHold(
+  next: Extract<ReturnType<typeof changeProposalMergeNext>, { next: "Held" }>,
+): FinalizationProposalDecision {
+  const hold = finalizationProposalMergeHeld(next.reason);
+  return next.rereadInSecs === undefined
+    ? { decide: "Hold", hold }
+    : { decide: "Hold", hold, rereadInSecs: next.rereadInSecs };
 }
 
 /** What one concluded merge leaves the finalization to do, a conflict recorded against the base it was refused onto. */
@@ -501,7 +515,7 @@ function finalizationProposalMergeNext(
     case "Held":
       return closing && next.reason === "Queued"
         ? finalizationProposalAborted(request, evidence, merge)
-        : { decide: "Hold", hold: finalizationProposalMergeHeld(next.reason) };
+        : finalizationProposalMergeHold(next);
     default:
       return assertNever(next);
   }
