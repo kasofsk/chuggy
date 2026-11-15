@@ -132,7 +132,7 @@ function ChatHostThreadsMay(props: {
   const text = useCopyText();
   const named = props.host.sessionCapabilities;
   return (
-    <span className="block text-sm text-ink-3">
+    <span className="block text-sm font-regular text-ink-3">
       {named === undefined
         ? text({ id: "runners-chat-host-threads-whole" })
         : text({
