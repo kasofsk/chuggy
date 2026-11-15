@@ -46,7 +46,11 @@ import {
   sessionTurnStoppedSchema,
   type SessionPlaneRouteName,
 } from "../../contract/sessionPlane.ts";
-import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
+import {
+  contractVersionRefusalStatus,
+  workerContractImplements,
+  type WorkerContractPeer,
+} from "../../contract/workerContract.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
 import {
   workTaskCredentialsListed,
@@ -154,19 +158,9 @@ import {
   type ManifestRejection,
 } from "../../interpreter/resultManifest.ts";
 import {
-  contractVersionAccepted,
   contractVersionRefusal,
   workerContractAccepted,
-  workerContractCredentialBundlesServed,
-  workerContractEvaluatedTrees,
-  workerContractLiveStops,
-  workerContractProjectReads,
-  workerContractRunnerSessions,
   workerContractSystemPromptsOwn,
-  workerContractTargetRefs,
-  workerContractThreadOffer,
-  workerContractTicketDispatch,
-  workerContractUnscopedChat,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
   type WorkerArtifactUploadPort,
@@ -192,7 +186,7 @@ import {
 import {
   workerContractChecked,
   workerContractNamed,
-  workerContractOffered,
+  workerContractPeer,
 } from "./workerContractVersion.ts";
 
 /** The probes the cluster sends, which no worker calls and so the worker contract does not name. */
@@ -753,30 +747,29 @@ async function workerAttemptTaskCaller(
   return task?.live === true ? { task, secret } : undefined;
 }
 
-/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref only to a release that reads one. */
+/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref only to a peer that reads one. */
 async function workerTaskOf(
   service: WorkerPlaneServerService,
   secret: AttemptCapabilitySecret,
-  release: string | undefined,
+  peer: WorkerContractPeer,
 ): Promise<WorkTaskAnswer | "TaskNotRecorded" | undefined> {
   const found = await service.tasks.work(secret);
   if (found === undefined || !found.live) return undefined;
   if (found.invocation === undefined) return "TaskNotRecorded";
   const { targetRef, ...unnamed } = found.invocation;
   const named =
-    targetRef !== undefined &&
-    contractVersionAccepted(workerContractTargetRefs, release);
+    targetRef !== undefined && workerContractImplements("TargetRef", peer);
   return {
     kind: "Work",
     ...workTask(found.identity, named ? found.invocation : unnamed),
   };
 }
 
-/** A session's task, read only once the session authority has found it live, and naming its launch only to a release in which a runner launches it. */
+/** A session's task, read only once the session authority has found it live, and naming its launch only to a peer whose runner launches it. */
 async function sessionTaskOf(
   service: WorkerPlaneServerService,
   secret: SessionBearerSecret,
-  release: string | undefined,
+  peer: WorkerContractPeer,
 ): Promise<
   (SessionTask & Partial<SessionTaskLaunch>) | "TaskNotRecorded" | undefined
 > {
@@ -785,9 +778,7 @@ async function sessionTaskOf(
   if (found.invocation === undefined) return "TaskNotRecorded";
   return {
     ...sessionTask(found.identity, found.invocation),
-    ...(contractVersionAccepted(workerContractRunnerSessions, release)
-      ? found.launch
-      : {}),
+    ...(workerContractImplements("RunnerSessions", peer) ? found.launch : {}),
   };
 }
 
@@ -806,12 +797,12 @@ function workerTaskRoute(
         ? await workerTaskOf(
             service,
             caller.secret,
-            workerContractOffered(request),
+            workerContractPeer(request),
           )
         : await sessionTaskOf(
             service,
             caller.secret,
-            workerContractOffered(request),
+            workerContractPeer(request),
           );
     if (found === undefined) return reply.code(401).send({ action: "stop" });
     if (found === "TaskNotRecorded")
@@ -1135,9 +1126,9 @@ function workerReportRoute(
       generation: authority.generation,
       manifest: authority.manifest,
       text: request.body,
-      treeHeld: contractVersionAccepted(
-        workerContractEvaluatedTrees,
-        workerContractOffered(request),
+      treeHeld: workerContractImplements(
+        "EvaluatedTree",
+        workerContractPeer(request),
       ),
     });
     switch (ingested.ingested) {
@@ -1229,19 +1220,16 @@ function workerCredentialAnswered(
 
 /**
  * The repository an attempt's credential request names, nothing where it names
- * none, or a refusal of a body that is no request. A pod speaking a release
- * before `workerContractProjectReads` names no repository whatever it sends,
- * so its body is not read and it is answered for its own repository.
+ * none, or a refusal of a body that is no request. A pod not implementing
+ * `ProjectReads` names no repository whatever it sends, so its body is not
+ * read and it is answered for its own repository.
  */
 function workerCredentialNamed(
   request: FastifyRequest,
 ): RepositoryId | undefined | "Malformed" {
   if (
     request.body === undefined ||
-    !contractVersionAccepted(
-      workerContractProjectReads,
-      workerContractOffered(request),
-    )
+    !workerContractImplements("ProjectReads", workerContractPeer(request))
   )
     return undefined;
   const offered = workerCredentialSchema.safeParse(request.body);
@@ -1280,7 +1268,7 @@ function workerCredentialRoute(
 const workerHeldCredentialRetryAfterSeconds = 1;
 
 /**
- * `bundle` as a release before `workerContractCredentialBundles` reads a
+ * `bundle` as a peer not implementing `CredentialBundles` reads a
  * credential: one secret file whose path one variable names, within the
  * secret's bound. Nothing where the bundle is more than that.
  */
@@ -1309,14 +1297,14 @@ function workerHeldCredentialOneSecret(
 
 /**
  * The answer to an attempt whose ask resolved to `resolved`: its bundles and
- * its absences to a release that reads them, and to any other only the
+ * its absences to a peer that reads them, and to any other only the
  * bundles it can read as one secret, naming nothing absent.
  */
 function workerHeldCredentialsAnswer(
   resolved: Extract<CredentialsResolved, { resolved: "Credentials" }>,
-  release: string | undefined,
+  peer: WorkerContractPeer,
 ): z.infer<typeof workerHeldCredentialsAnswerSchema> {
-  if (contractVersionAccepted(workerContractCredentialBundlesServed, release))
+  if (workerContractImplements("CredentialBundles", peer))
     return {
       credentials: [...resolved.credentials],
       absent: [...resolved.absent],
@@ -1358,7 +1346,7 @@ function workerHeldCredentialsRoute(
       asked: offered.data.credentials,
     });
     return resolved.resolved === "Credentials"
-      ? workerHeldCredentialsAnswer(resolved, workerContractOffered(request))
+      ? workerHeldCredentialsAnswer(resolved, workerContractPeer(request))
       : workerPlaneRefused(reply, {
           status: 503,
           body: { action: "retry" },
@@ -1468,29 +1456,30 @@ function sessionSettled(
 }
 
 /**
- * The capabilities a session's facts name to the pod asking: all of them, or
- * none of `TicketDispatch`, `MemberRead` and `ThreadOffer` to a pod whose
- * release predates the one, which holds no tool it admits.
+ * The capabilities a session's facts name to the pod asking: each of
+ * `TicketDispatch`, `MemberRead` and `ThreadOffer` only to a pod implementing
+ * `TicketDispatch`, `UnscopedChat` and `ThreadOffer` respectively, since a pod
+ * that does not holds no tool it admits.
  */
 function sessionFactsCapabilities(
   request: FastifyRequest,
   capabilities: readonly SessionCapability[],
 ): readonly SessionCapability[] {
-  const offered = workerContractOffered(request);
+  const peer = workerContractPeer(request);
   return capabilities.filter(
     (capability) =>
       (capability !== "TicketDispatch" ||
-        contractVersionAccepted(workerContractTicketDispatch, offered)) &&
+        workerContractImplements("TicketDispatch", peer)) &&
       (capability !== "MemberRead" ||
-        contractVersionAccepted(workerContractUnscopedChat, offered)) &&
+        workerContractImplements("UnscopedChat", peer)) &&
       (capability !== "ThreadOffer" ||
-        contractVersionAccepted(workerContractThreadOffer, offered)),
+        workerContractImplements("ThreadOffer", peer)),
   );
 }
 
 /**
  * The kind a turn is handed to the pod asking as: its own, or an `OfferReply`
- * as the `UserMessage` a pod whose release predates it has for a turn its
+ * as the `UserMessage` a pod not implementing `ThreadOffer` has for a turn its
  * member put in the mailbox.
  */
 function sessionTurnKindTold(
@@ -1498,28 +1487,22 @@ function sessionTurnKindTold(
   kind: SessionTurnInputKind,
 ): SessionTurnInputKind {
   return kind === "OfferReply" &&
-    !contractVersionAccepted(
-      workerContractThreadOffer,
-      workerContractOffered(request),
-    )
+    !workerContractImplements("ThreadOffer", workerContractPeer(request))
     ? "UserMessage"
     : kind;
 }
 
 /**
- * A session's facts, or a refusal of the release asked with where the session
- * runs on its own system prompt and the release predates the field: a pod that
- * dropped it would load its project's settings, so it is never answered the
+ * A session's facts, or a refusal where the session runs on its own system
+ * prompt and the pod does not implement `SystemPromptOwn`: a pod that dropped
+ * the field would load its project's settings, so it is never answered the
  * facts without it.
  */
 function sessionFactsRoute(register: SessionRegistrar): void {
   register("facts", (request, reply, { identity }) => {
     if (
       identity.systemPromptOwn === true &&
-      !contractVersionAccepted(
-        workerContractSystemPromptsOwn,
-        workerContractOffered(request),
-      )
+      !workerContractImplements("SystemPromptOwn", workerContractPeer(request))
     )
       return Promise.resolve(
         reply
@@ -1773,8 +1756,8 @@ const sessionLiveRetryAfterSeconds = 1;
 /**
  * Whether a live post of `turn`, which the caller's session does not hold
  * claimed, is answered with the stop its member put on it. It is where there
- * was one and the runner names a release that reads the answer: an earlier
- * runner is told nothing, because nothing says what it would make of it.
+ * was one and the runner implements `LiveStops`: any other runner is told
+ * nothing, because nothing says what it would make of it.
  */
 async function sessionLiveStopTold(
   sessions: SessionPlaneService,
@@ -1782,12 +1765,7 @@ async function sessionLiveStopTold(
   caller: SessionCaller,
   turn: SessionTurnId,
 ): Promise<boolean> {
-  if (
-    !contractVersionAccepted(
-      workerContractLiveStops,
-      workerContractOffered(request),
-    )
-  )
+  if (!workerContractImplements("LiveStops", workerContractPeer(request)))
     return false;
   const watched = await sessions.watches.watched({
     secret: caller.secret,
