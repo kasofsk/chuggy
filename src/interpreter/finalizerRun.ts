@@ -53,11 +53,14 @@
  * pass had no budget left for.
  *
  * A CLAIM STOPPED SHORT IS GIVEN BACK UNLESS THE LEASE IS WHAT PACES IT. A
- * chain that ran out of steps or budget, re-prepares, or waits on a merge the
- * forge is asked about on the store's own cadence reopens its request, so the
- * next pass draws it. Every other hold keeps its claim until the lease lapses:
- * the dwell is counted in passes that find the request, and a port that just
- * failed would otherwise be asked again on every pass.
+ * chain that ran out of steps or budget, or re-prepares, reopens its request,
+ * so the next pass draws it. Every other hold keeps its claim until the lease
+ * lapses: the dwell is counted in passes that find the request, a port that
+ * just failed would otherwise be asked again on every pass, and a request
+ * reopened while it can only hold is drawn ahead of every newer one, so enough
+ * of them would take every claim a pass makes. A merge waiting on the forge is
+ * read again on the store's own cadence, so its lease is cut to run out when
+ * that reading falls due, if that is sooner.
  *
  * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
  * ticket pending unstacked that could now stack over the queue ahead of it has
@@ -196,10 +199,10 @@
  * answer and never asks for it.
  *
  * A MERGE WAITING ON THE FORGE IS ASKED AGAIN ON A CADENCE, NEVER EVERY PASS.
- * The request gives its claim back and is redrawn by the next pass, and the
- * store ages the wait by the database's clock, so a pass that finds it read
- * too recently holds without reaching the forge and one that finds it due
- * spends a proposal act like any other reading.
+ * The request keeps its claim until the reading falls due or the lease lapses,
+ * whichever is sooner, and the store ages the wait by the database's clock, so
+ * a pass that finds it read too recently holds without reaching the forge and
+ * one that finds it due spends a proposal act like any other reading.
  *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, and every age is one the store reads, both from the database's clock.
@@ -428,12 +431,14 @@ interface FinalizerTally {
   heldReason: FinalizerHoldReason | undefined;
   /** The files a `TargetPathsRefused` hold is over, travelling beside `heldReason` and cleared with it. */
   heldRefused: ConflictSummary | undefined;
+  /** How many seconds from now a hold on the forge's cadence falls due to be read again, travelling beside `heldReason` and cleared with it. */
+  heldRereadInSecs: number | undefined;
 }
 
 /** Every count a pass prices a move against, which is every count it keeps. */
 type FinalizerCeiling = Exclude<
   keyof FinalizerTally,
-  "heldReason" | "heldRefused"
+  "heldReason" | "heldRefused" | "heldRereadInSecs"
 >;
 
 /**
@@ -478,6 +483,7 @@ function finalizerHold(
   tally.holds += 1;
   tally.heldReason = reason;
   tally.heldRefused = undefined;
+  tally.heldRereadInSecs = undefined;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
@@ -2692,6 +2698,7 @@ async function finalizerProposalDecided(
   switch (decision.decide) {
     case "Hold":
       finalizerHold(service, tally, decision.hold);
+      tally.heldRereadInSecs = decision.rereadInSecs;
       return;
     case "Conclude":
       await finalizerProposalConcluded(service, view, decision.merged, tally);
@@ -2931,17 +2938,16 @@ async function finalizerRecordHold(
   );
 }
 
-/**
- * The holds whose asking again something other than the lease already paces,
- * which give their claim back: a merge waiting on the forge is read again on
- * the store's own cadence, and a ceiling is this pass's budget rather than
- * anything about the request.
- */
+/** The one hold that gives its claim back, a ceiling being this pass's budget rather than anything about the request. */
 const finalizerHoldsReleased: readonly FinalizerHoldReason[] = [
+  "PassCeilingReached",
+];
+
+/** The holds a merge waits on the forge at, whose claim runs out when the reading falls due rather than being given back. */
+const finalizerHoldsOnForge: readonly FinalizerHoldReason[] = [
   "ProposalMergeBlocked",
   "ProposalHeadMoved",
   "ProposalQueued",
-  "PassCeilingReached",
 ];
 
 /** What one step of a claim's chain came to: another step due, or where it stopped and whether that gives the claim back. */
@@ -2968,6 +2974,7 @@ async function finalizerAdvanceStep(
 ): Promise<FinalizerStepped> {
   tally.heldReason = undefined;
   tally.heldRefused = undefined;
+  tally.heldRereadInSecs = undefined;
   const gathered = await finalizerGather(service, claim);
   if (gathered === undefined) return { stepped: "Gone" };
   if (gathered.gathered === "Held") {
@@ -3048,9 +3055,33 @@ async function finalizerAdvance(
     (stepped.stepped === "Moved" || stepped.reopened)
   )
     await service.store.releaseClaim(claim);
+  else await finalizerAdvanceDue(service, claim, held, tally);
   recordFinalizer(service.metrics, (metrics) => {
     metrics.advanced(claim.request, held);
   });
+}
+
+/**
+ * Lets the claim on a merge waiting on the forge run out when its reading
+ * falls due, where that is sooner than the lease, so the request is drawn on
+ * the pass its reading is due rather than once the lease lapses after it.
+ */
+async function finalizerAdvanceDue(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  held: FinalizerHoldReason | undefined,
+  tally: FinalizerTally,
+): Promise<void> {
+  const rereadInSecs = tally.heldRereadInSecs;
+  if (
+    held === undefined ||
+    !finalizerHoldsOnForge.includes(held) ||
+    rereadInSecs === undefined
+  )
+    return;
+  const config = checkedFinalizerConfig(service.config);
+  if (rereadInSecs < config.requestClaimLeaseSecs)
+    await service.store.extendClaim(claim, rereadInSecs);
 }
 
 /** Performs the one move the pure pass named, every arm of it a durable move or a hold. */
@@ -3348,6 +3379,7 @@ export async function finalizerPass(
     holds: 0,
     heldReason: undefined,
     heldRefused: undefined,
+    heldRereadInSecs: undefined,
   };
   await finalizerReadHolds(service, epoch, tally);
   const claims = await service.store.claimRequests(

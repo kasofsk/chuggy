@@ -281,6 +281,11 @@ interface FinalizerRecorder
   readonly released: string[];
   /** Whether every lease renewal is refused, which is what the pass sees of a claim it no longer holds. */
   extensionsRefused?: boolean;
+  /** Every lease renewal a pass asked for, in order: the request and how many seconds from then it was to run out. */
+  readonly extensions: {
+    readonly request: string;
+    readonly leaseSecs: number;
+  }[];
   /** Every hold this store was asked to record, in order, a cleared one naming no kind. */
   readonly holds: (FinalizationUnavailableKind | undefined)[];
   /** The files each of those records named, beside it. */
@@ -995,7 +1000,11 @@ function recordingStore(
     },
     claimRequests: () => Promise.resolve(views.map((view) => view.claim)),
     ...recordingWaiting(views, () => own),
-    extendClaim: () => Promise.resolve(own.extensionsRefused !== true),
+    extensions: [],
+    extendClaim: (claim, leaseSecs) => {
+      own.extensions.push({ request: claim.request, leaseSecs });
+      return Promise.resolve(own.extensionsRefused !== true);
+    },
     grantPermit: (request): Promise<PermitGranted> => {
       own.grants.push(request);
       return Promise.resolve(
@@ -6247,16 +6256,70 @@ test("each step of a chain is priced against the pass's own ceilings, and the re
   assert.deepEqual(store.released, ["request-one"]);
 });
 
-test("a hold whose dwell is counted in leases keeps its claim, and a merge waiting on the forge gives it back", async () => {
+test("a hold whose dwell is counted in leases keeps its claim and its lease", async () => {
   const unbound = recordingStore([unboundView("request-one")]);
   await passOver(serviceOf(unbound, recordingGit(), chainedDefaults));
   assert.deepEqual(unbound.holds, ["RepositoryUnbound"]);
   assert.deepEqual(unbound.released, []);
+  assert.deepEqual(unbound.extensions, []);
+});
 
+test("a merge waiting on the forge keeps its claim, its lease cut to run out when its reading falls due", async () => {
   const { store, service } = blockedCase(chainedDefaults);
   await passOver(service);
   assert.equal(proposalMergingOf(store).merging, "Waiting");
-  assert.deepEqual(store.released, ["request-one"]);
+  assert.deepEqual(store.released, []);
+  const lease = finalizerDefaults.requestClaimLeaseSecs;
+  assert.ok(
+    store.extensions.every((extension) => extension.leaseSecs === lease),
+    "a reading due later than the lease leaves the lease as it was renewed",
+  );
+
+  const dueInSecs = 5;
+  assert.ok(dueInSecs < lease);
+  store.proposalMergeHeardAgeSecs = proposalMergeRereadSecs - dueInSecs;
+  store.extensions.length = 0;
+  await passOver(service);
+  assert.deepEqual(store.released, []);
+  assert.deepEqual(store.extensions, [
+    { request: "request-one", leaseSecs: dueInSecs },
+  ]);
+});
+
+test("merges waiting on the forge leave the claims of the next pass to newer requests", async () => {
+  const { store, service } = blockedCase(chainedDefaults);
+  await passOver(service);
+  assert.equal(proposalMergingOf(store).merging, "Waiting");
+
+  const newer = unboundView("request-two");
+  const views = [proposedView("request-one", proposalMerged), newer];
+  const held = new Set<string>();
+  const drawn: string[] = [];
+  store.claimRequests = (_owner, _epoch, requestsMax) => {
+    const open = views
+      .filter((view) => !held.has(view.claim.request))
+      .slice(0, requestsMax);
+    for (const view of open) {
+      held.add(view.claim.request);
+      drawn.push(view.claim.request);
+    }
+    return Promise.resolve(open.map((view) => view.claim));
+  };
+  store.releaseClaim = (claim) => {
+    held.delete(claim.request);
+    return Promise.resolve(true);
+  };
+  store.durableView = (claim) =>
+    Promise.resolve(views.find((view) => view.claim.request === claim.request));
+  const narrow = {
+    ...service,
+    config: { ...service.config, requestsPerPassMax: 1 },
+  };
+  await passOver(narrow);
+  await passOver(narrow);
+
+  assert.deepEqual(drawn, ["request-one", "request-two"]);
+  assert.deepEqual(store.holds, ["RepositoryUnbound"]);
 });
 
 test("a merging brief goes as far as its forge allows in one pass and finishes on the pass that finds the forge's answer changed", async () => {

@@ -1582,7 +1582,7 @@ export interface FinalizerStore {
     leaseSecs: number,
   ): Promise<FinalizationClaim | undefined>;
 
-  /** Extends a claim still held at its own generation under the current epoch. */
+  /** Sets a claim still held at its own generation under the current epoch to run out `leaseSecs` from now. */
   extendClaim(claim: FinalizationClaim, leaseSecs: number): Promise<boolean>;
 
   /** Everything the pure pass reads of the durable rows, gathered before it runs. */
