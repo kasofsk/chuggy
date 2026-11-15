@@ -35,8 +35,9 @@
  * it.
  *
  * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
- * no workspace: whoever presents it signed in names the workspace they will
- * administer, at the route every invite link is redeemed at.
+ * no workspace: whoever presents it signed in, at the route every invite link
+ * is redeemed at, is made the administrator of a workspace the plane makes and
+ * names for them, asking them nothing.
  *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
@@ -52,7 +53,6 @@ import { z } from "zod";
 import { identitySchema, textCodePointsCount } from "./http.ts";
 import {
   projectDisplayNameSchema,
-  projectNameCharsMax,
   projectNameSchema,
   tenantNameReserved,
 } from "./requests.ts";
@@ -819,7 +819,7 @@ export const accessWorkspaceLinkNoteSchema = z
 /**
  * What a workspace link is sent: whether the workspace's administrators may
  * make accounts, and a note the site's list alone shows. It names nobody and
- * no workspace: whoever uses it names the workspace then.
+ * no workspace.
  */
 export const accessWorkspaceLinkCreationSchema = z.strictObject({
   createAccounts: z.boolean(),
@@ -856,18 +856,19 @@ export const accessWorkspaceLinksSchema = z.strictObject({
   links: z.array(accessWorkspaceLinkSchema),
 });
 
-/**
- * What a redemption is sent: the token, and the name of the workspace a
- * workspace link is to make. The name is bounded and nothing more here,
- * because what it must be depends on the link the token names.
- */
+/** What a redemption is sent: the token, and nothing a workspace link makes. */
 export const accessInviteLinkRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
-  workspace: z.string().max(projectNameCharsMax).optional(),
 });
 
-/** The conflict a workspace link presented without a workspace's name is refused with. */
-export const accessWorkspaceLinkNameWantedCode = "WorkspaceLinkNameWanted";
+/** What a workspace a workspace link made is first named, for whoever used it: by their GitHub login, where the directory records one. */
+export function accessWorkspaceLinkDisplayName(
+  githubLogin: string | undefined,
+): string {
+  return githubLogin === undefined
+    ? "My Workspace"
+    : `${githubLogin}'s Workspace`;
+}
 
 /**
  * Where the directory asks, before it makes an account, whether to make it.
@@ -903,9 +904,15 @@ export const accessRegistrationGateRefusal = {
   ],
 } as const;
 
-/** What a redemption answers: what it granted the caller, and where. */
+/**
+ * What a redemption answers: what it granted the caller, where, what that
+ * tenant is named to a reader, and whether the link was a workspace link,
+ * whose use made the tenant.
+ */
 export const accessInviteLinkRedeemedSchema = z.strictObject({
   tenant: identitySchema,
+  displayName: accessTenantDisplayNameSchema,
+  workspaceMade: z.boolean(),
   role: accessTenantRoleSchema,
   projects: z.array(accessInvitationProjectSchema),
 });
