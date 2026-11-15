@@ -39,6 +39,7 @@ import {
   projectNativeActionsResponseSchema,
   selectorSettingsConflictResponseSchema,
   ticketNativeActionsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
   asAuthorityKind,
@@ -185,6 +186,48 @@ function fakeNativeActions(calls: string[]): NativeWeb["nativeActions"] {
           ? { nextAfter: { authorizingSequence: 13, action: "approval" } }
           : {}),
       },
+    });
+  };
+}
+
+/**
+ * Ticket 1's actions, an escalation resumed, one withdrawn and one open, with a
+ * further page where none was resumed; any other ticket is one its caller may
+ * not read.
+ */
+function fakeNativeActionHistory(
+  calls: string[],
+): NativeWeb["ticketNativeActionHistory"] {
+  return (_principal, _partition, ticket, query) => {
+    calls.push(
+      `nativeActionHistory:${String(ticket)}:${String(query.limit)}:${query.after?.action ?? ""}`,
+    );
+    if (ticket !== 1) return Promise.resolve(undefined);
+    return Promise.resolve({
+      actions: [
+        {
+          action: "resumed",
+          kind: "TicketEscalation",
+          authorizingSequence: 3,
+          state: "Resolved",
+          resolution: "Resume",
+        },
+        {
+          action: "withdrawn",
+          kind: "TicketEscalation",
+          authorizingSequence: 5,
+          state: "Withdrawn",
+        },
+        {
+          action: "open",
+          kind: "TicketEscalation",
+          authorizingSequence: 8,
+          state: "Open",
+        },
+      ],
+      ...(query.after === undefined
+        ? { nextAfter: { authorizingSequence: 8, action: "open" } }
+        : {}),
     });
   };
 }
@@ -466,6 +509,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
     ticket: fakeTicket(calls),
     ticketNativeActions: fakeTicketNativeActions(calls),
     nativeActions: fakeNativeActions(calls),
+    ticketNativeActionHistory: fakeNativeActionHistory(calls),
   };
 }
 
@@ -1388,6 +1432,96 @@ test("an unreadable ticket's actions are a not-found, and a bad identity a fault
     401,
   );
   assert.deepEqual(calls, ["nativeActions:9"]);
+});
+
+test("a ticket's settled actions read back oldest first behind a cursor bound to that ticket", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const first = await app.inject({
+    url: `${root}/1/native-action-history?limit=3`,
+    headers,
+  });
+  assert.equal(first.statusCode, 200);
+  const page = ticketNativeActionHistoryResponseSchema.parse(first.json());
+  assert.deepEqual(
+    page.actions.map(({ action, state, resolution }) => [
+      action,
+      state,
+      resolution,
+    ]),
+    [
+      ["resumed", "Resolved", "Resume"],
+      ["withdrawn", "Withdrawn", undefined],
+      ["open", "Open", undefined],
+    ],
+  );
+  const cursor = page.nextCursor;
+  assert.ok(cursor !== undefined);
+  const next = await app.inject({
+    url: `${root}/1/native-action-history?cursor=${encodeURIComponent(cursor)}`,
+    headers,
+  });
+  assert.equal(next.statusCode, 200);
+  assert.equal(
+    ticketNativeActionHistoryResponseSchema.parse(next.json()).nextCursor,
+    undefined,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/2/native-action-history?cursor=${encodeURIComponent(cursor)}`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `/api/v1/tenants/tenant/projects/project/native-actions?cursor=${encodeURIComponent(cursor)}`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, [
+    "nativeActionHistory:1:3:",
+    "nativeActionHistory:1:50:open",
+  ]);
+});
+
+test("an unreadable ticket's action history is a not-found, and a bad identity a fault", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const concealed = await app.inject({
+    url: `${root}/9/native-action-history`,
+    headers,
+  });
+  assert.equal(concealed.statusCode, 404);
+  assert.equal(concealed.json<HttpErrorEnvelope>().error.code, "NotFound");
+  assert.equal(
+    (await app.inject({ url: `${root}/0/native-action-history`, headers }))
+      .statusCode,
+    400,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/9/native-action-history?cursor=not-a-cursor`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}/9/native-action-history` })).statusCode,
+    401,
+  );
+  assert.deepEqual(calls, ["nativeActionHistory:9:50:"]);
 });
 
 test("a project's open actions page behind an opaque cursor of its own", async () => {

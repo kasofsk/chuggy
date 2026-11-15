@@ -754,6 +754,27 @@ export function apiPressAgentAccount(
   );
 }
 
+/** One credential of the reader's own agent forgotten, its readings and its
+ * limit with it; refused `CredentialInUse` while a live runner of theirs
+ * names it. */
+export function apiRetireAgentAccountCredential(
+  ports: ApiPorts,
+  agent: AccountAgent,
+  credential: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiFilled(nativeHttpRoutes.agentAccountCredential, {
+        agent,
+        credential,
+      }),
+    },
+    () => undefined,
+  );
+}
+
 export function apiProjectInventory(
   ports: ApiPorts,
   page: { readonly cursor?: string | undefined } = {},

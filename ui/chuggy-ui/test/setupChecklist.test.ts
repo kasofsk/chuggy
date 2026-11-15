@@ -94,7 +94,7 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       "step: repository  todo",
       "step: runner      todo",
       "step: ticket      todo",
-      `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
+      `tell: Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
       `rule: Run node ${machineScript} only once the person says the worker app is installed on acme-org.`,
       "next: stop",
     ],
@@ -181,7 +181,7 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     "step: repository  done     acme-org/widgets",
   ]);
   expect(done.lines.slice(-3)).toEqual([
-    `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
+    `tell: Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
     `rule: Run node ${machineScript} only once the person says the worker app is installed on acme-org.`,
     "next: stop",
   ]);

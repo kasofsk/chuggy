@@ -26,7 +26,8 @@
  * A POLL MAY NAME ITS RUNNER, and is answered with the release pinned for that
  * runner's package where its release reads one. A header that does not name a
  * runner is a poll naming none, never a refusal, since the cluster's own pool
- * and every earlier runner send none.
+ * and every earlier runner send none. The credentials a poll may name are read
+ * the same way: a header this side does not read names none.
  *
  * A POLL MAY NAME THE CAPABILITIES ITS RUNNER HAS, and one whose header names
  * no set this side reads is refused with a 400, as a query this side cannot
@@ -64,6 +65,8 @@ import {
   workerRunnerCapabilitiesHeader,
   workerRunnerCapabilitiesOf,
   workerRunnerCountOf,
+  workerRunnerCredentialsHeader,
+  workerRunnerCredentialsOf,
   workerRunnerHeader,
   workerRunnerMemoryCeilingHeader,
   workerRunnerMemoryRoomHeader,
@@ -76,6 +79,7 @@ import {
   type WorkerRunner,
   type WorkerRunnerCapabilitiesNamed,
   type WorkerRunnerCountNamed,
+  type WorkerRunnerCredentials,
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import {
@@ -179,6 +183,16 @@ function poolCapabilitiesNamed(
 ): WorkerRunnerCapabilitiesNamed {
   const named = request.headers[workerRunnerCapabilitiesHeader];
   return workerRunnerCapabilitiesOf(
+    Array.isArray(named) ? named.join(", ") : named,
+  );
+}
+
+/** The credentials a request names, a header sent more than once read as one list, as HTTP joins a list's lines. */
+function poolCredentialsNamed(
+  request: FastifyRequest,
+): WorkerRunnerCredentials {
+  const named = request.headers[workerRunnerCredentialsHeader];
+  return workerRunnerCredentialsOf(
     Array.isArray(named) ? named.join(", ") : named,
   );
 }
@@ -365,6 +379,7 @@ function poolAssignmentsRoute(
             ...(capabilities.named === "Set"
               ? { capabilities: capabilities.capabilities }
               : {}),
+            credentials: poolCredentialsNamed(request),
             ...(ceiling.named === "Count"
               ? { memoryCeilingMib: ceiling.count }
               : {}),

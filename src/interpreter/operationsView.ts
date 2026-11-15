@@ -36,6 +36,7 @@ import type { Worker } from "./workerCatalog.ts";
 import type { BriefingCarrier } from "./briefingTemplate.ts";
 import type { TaskResources } from "./taskResources.ts";
 import { checkOutputName, checkOutputPath } from "../contract/checkOutput.ts";
+import type { PersonalRunnerWait } from "../contract/rosters.ts";
 import {
   configurationOutputSchema,
   type releaseConfigurationSchema,
@@ -182,11 +183,9 @@ export interface ExecutionSummary {
   readonly ownerFallback?: WorkerPoolOwnerFallback;
   /** Whether the reader is the member who owns it. */
   readonly mine: boolean;
-  /**
-   * The pause the reader's own account holds on the agent its waiting attempt
-   * spends, present only on the reader's own execution while that attempt is
-   * unclaimed and the agent paused.
-   */
+  /** What the reader's own execution, its attempt waiting unclaimed, waits on of their runners, absent where nothing of theirs holds it. */
+  readonly personalRunnerWait?: PersonalRunnerWait;
+  /** The pause that ends first of those holding every `Live` runner it waits on, present only where every one of them is held. */
   readonly paused?: AgentAccountPause;
   /** The earlier execution of the ticket whose passing verdict settled this one rather than a run, its task and the work cycle it ran in. */
   readonly carriedFrom?: ExecutionCarrySource;

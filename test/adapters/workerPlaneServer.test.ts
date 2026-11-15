@@ -1161,6 +1161,9 @@ const workerRunReadingHeaviest = {
   observedAt: runUsageInstantSecsMax,
 };
 
+/** A credential's name as long as `workerRunCredentialSchema` takes one. */
+const workerRunCredentialHeaviest = "c".repeat(64);
+
 /** A page of turns or of model usages, as full as a page may be. */
 function workerRunPageHeaviest(item: object): readonly object[] {
   return Array.from({ length: nativeHttpPageItemsMax }, () => item);
@@ -1305,6 +1308,7 @@ const workerPlaneHeaviest: Readonly<
       usage: Object.fromEntries(
         runUsageWindows.map((window) => [window, workerRunReadingHeaviest]),
       ),
+      credential: workerRunCredentialHeaviest,
     }),
     status: 204,
   },
@@ -1330,6 +1334,7 @@ const workerPlaneHeaviest: Readonly<
       limit: {
         window: workerRunWindowLongest,
         resetsAt: runUsageInstantSecsMax,
+        credential: workerRunCredentialHeaviest,
       },
     }),
     status: 204,
@@ -1663,6 +1668,71 @@ test("a run's usage reaches the boundary beside its totals and never inside them
     [runTotalsBody, usage],
     ["RunRateLimited", limit],
     ["RunFailed", {}],
+  ]);
+  await app.close();
+});
+
+test("a run's credential reaches the boundary beside its usage and its limit, never inside its totals, and a name outside the pattern reaches nothing", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    totals: {
+      record: (input) => {
+        offered.push([input.totals, input.usage, input.credential]);
+        return Promise.resolve("Stored");
+      },
+    },
+    endings: {
+      end: (input) => {
+        offered.push([input.evidence, input.limit]);
+        return Promise.resolve(true);
+      },
+    },
+  });
+  const usage = {
+    five_hour: { utilization: 0.5, resetsAt: 1_800_000_000, observedAt: 1 },
+  };
+  const limit = { window: "five_hour", credential: "work_2" } as const;
+  for (const [url, payload] of [
+    ["/v1/run/totals", { ...runTotalsBody, usage, credential: "work-1" }],
+    ["/v1/run/totals", { ...runTotalsBody, credential: "work-1" }],
+    ["/v1/run/ended", { evidence: "RunRateLimited", limit }],
+  ] as const)
+    assert.equal(
+      (await app.inject({ method: "POST", url, headers: held, payload }))
+        .statusCode,
+      204,
+      JSON.stringify(payload),
+    );
+  for (const [url, payload] of [
+    ["/v1/run/totals", { ...runTotalsBody, credential: "" }],
+    ["/v1/run/totals", { ...runTotalsBody, credential: "work 1" }],
+    ["/v1/run/totals", { ...runTotalsBody, credential: "w".repeat(65) }],
+    [
+      "/v1/run/totals",
+      {
+        ...runTotalsBody,
+        usage: { ...usage, credential: "work-1" },
+      },
+    ],
+    [
+      "/v1/run/ended",
+      { evidence: "RunRateLimited", credential: "work-1", limit: {} },
+    ],
+    [
+      "/v1/run/ended",
+      { evidence: "RunRateLimited", limit: { credential: "work/1" } },
+    ],
+  ] as const)
+    assert.equal(
+      (await app.inject({ method: "POST", url, headers: held, payload }))
+        .statusCode,
+      400,
+      JSON.stringify(payload),
+    );
+  assert.deepEqual(offered, [
+    [runTotalsBody, usage, "work-1"],
+    [runTotalsBody, undefined, "work-1"],
+    ["RunRateLimited", limit],
   ]);
   await app.close();
 });

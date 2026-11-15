@@ -162,6 +162,7 @@ function scopedApp(
     recorded(reached, "agentAccounts"),
     undefined,
     recorded(reached, "landingQueues"),
+    recorded(reached, "appearance"),
   );
 }
 

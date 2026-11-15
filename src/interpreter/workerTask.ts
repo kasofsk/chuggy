@@ -5,6 +5,7 @@
  */
 
 import type {
+  SessionBounds,
   SessionTaskAnswer,
   SessionTaskDocument,
   WorkTaskDocument,
@@ -51,7 +52,7 @@ export function workTaskInvocation(launch: {
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
 }): WorkTaskInvocation {
-  const { briefing, authority, worker } = launch.invocation;
+  const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
     profile: {
       profile: launch.profile.profile,
@@ -63,6 +64,7 @@ export function workTaskInvocation(launch: {
       text: briefing.text,
     },
     authority: taskAuthorityGrant(authority),
+    credentialsListed,
     ...(worker === undefined ? {} : { worker }),
     ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
   };
@@ -93,6 +95,9 @@ export function workTask(
     requirementDigest: identity.requirementDigest,
     briefing: invocation.briefing,
     authority: invocation.authority,
+    ...(invocation.credentialsListed === undefined
+      ? {}
+      : { credentialsListed: invocation.credentialsListed }),
     ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
     ...(invocation.targetRef === undefined
       ? {}
@@ -111,6 +116,9 @@ export type SessionTask = Omit<
   SessionTaskDocument,
   "workerPlane" | "api" | "bounds"
 >;
+
+/** The bounds a site launches its sessions under, which name an idle limit where a launched document may name none. */
+export type SessionSiteBounds = Required<SessionBounds>;
 
 /** What a pool's harness is told of its site, which a pod is launched with beside its task instead. */
 export type SessionTaskLaunch = Required<

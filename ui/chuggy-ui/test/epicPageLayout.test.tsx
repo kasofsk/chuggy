@@ -75,7 +75,7 @@ test("a tab switch reads nothing again, since the layout made every read", async
   rerender(<EpicTicketsTab />);
   await settled();
   rerender(<EpicGraphTab ticket={undefined} onTicket={() => undefined} />);
-  await screen.findByRole("group", {
+  await screen.findByRole("list", {
     name: "Tickets of the epic and what they wait on",
   });
   rerender(<EpicHistoryTab />);

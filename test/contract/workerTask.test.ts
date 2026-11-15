@@ -19,6 +19,7 @@ import {
   poolEnvelopeSchema,
   sessionTaskDocumentSchema,
   workerTaskAnswerSchema,
+  workTaskCredentialsListed,
   workTaskDocumentSchema,
   type WorkTaskDocument,
 } from "../../src/contract/workerTask.ts";
@@ -181,6 +182,47 @@ test("a task names the ref its finalization lands on, or none, and never an empt
   }
 });
 
+test("a task lists the credentials its configuration named beside its grant, and one listing none lists its granted ones", () => {
+  for (const pod of workPods()) {
+    const document = without(carried(pod, workerTaskVariable), [
+      "credentialsListed",
+    ]);
+    const granted = workTaskDocumentSchema.parse(document);
+    assert.deepEqual(
+      workTaskCredentialsListed(granted),
+      granted.authority.credentials,
+    );
+    const listed = { ...document, credentialsListed: ["absent", "workspace"] };
+    const parsed = workTaskDocumentSchema.strict().parse(listed);
+    assert.deepEqual(parsed, listed);
+    assert.deepEqual(workTaskCredentialsListed(parsed), [
+      "absent",
+      "workspace",
+    ]);
+    assert.ok(
+      !workTaskDocumentSchema.safeParse({ ...document, credentialsListed: [1] })
+        .success,
+    );
+  }
+});
+
+for (const release of workerContractReplayed("job"))
+  test(`a ${release} image reads a task that lists credentials beside its grant`, async () => {
+    const document = await workerContractReleaseExport(
+      release,
+      "workerTask",
+      "workTaskDocumentSchema",
+      workerContractReleaseSchema,
+    );
+    for (const pod of workPods())
+      assert.ok(
+        document.safeParse({
+          ...carried(pod, workerTaskVariable),
+          credentialsListed: ["absent"],
+        }).success,
+      );
+  });
+
 /** `document` less the fields `keys` names. */
 function without(document: object, keys: readonly string[]): object {
   return Object.fromEntries(
@@ -224,6 +266,27 @@ test("a pool-held session's answer names its site's API, bounds and model togeth
       workerTaskAnswerSchema.safeParse({ ...poolHeld, model: "" }).success,
       false,
     );
+  }
+});
+
+test("a pool-held session's bounds may name no idle limit, and any other bound they leave out is refused", () => {
+  for (const { poolHeld } of sessionAnswers()) {
+    const { bounds } = z
+      .object({ bounds: z.record(z.string(), z.number()) })
+      .parse(poolHeld);
+    const unbounded = { ...poolHeld, bounds: without(bounds, ["idleMs"]) };
+    assert.deepEqual(workerTaskAnswerSchema.parse(unbounded), unbounded);
+    for (const missing of Object.keys(bounds).filter(
+      (bound) => bound !== "idleMs",
+    ))
+      assert.equal(
+        workerTaskAnswerSchema.safeParse({
+          ...poolHeld,
+          bounds: without(bounds, [missing]),
+        }).success,
+        false,
+        missing,
+      );
   }
 });
 

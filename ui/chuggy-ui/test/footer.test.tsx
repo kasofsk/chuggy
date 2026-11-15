@@ -93,7 +93,7 @@ function mount(children: ReactNode): void {
 test("the shell around a project draws no footer, in its bar or anywhere", async () => {
   mount(<Shell partition={atlas} />);
   await settled();
-  expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Account menu" })).toBeDefined();
   expect(screen.queryByText(footerText)).toBeNull();
 });
 

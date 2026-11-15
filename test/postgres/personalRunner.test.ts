@@ -35,6 +35,10 @@ import {
   type TenantId,
 } from "../../src/interpreter/projectStore.ts";
 import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessPressed,
+} from "./agentAccountHarness.ts";
+import {
   postgresHarnessAdvisoryWaiting,
   postgresHarnessDenial,
   postgresHarnessHeldAtCommit,
@@ -45,6 +49,11 @@ import {
   postgresHarnessTokenDigest,
   type PostgresHarness,
 } from "./harness.ts";
+import {
+  personalRunnerHarnessPlatform,
+  personalRunnerHarnessPolled,
+  type PersonalRunnerHarnessPolled,
+} from "./personalRunnerHarness.ts";
 
 const member = asPrincipal("https://issuer.invalid#a-member");
 
@@ -357,6 +366,131 @@ test("each runner is read with the runner its own registration's newest poll nam
     ),
     /personal_runner_runner_is_named_whole/u,
   );
+});
+
+/** A member of their own, in a tenant of its own, whose account no other case plants. */
+async function pausedKey(label: string): Promise<PersonalRunnerKey> {
+  const { tenant } = await project(label);
+  return { tenant, owner: asPrincipal(`https://issuer.invalid#${tenant}`) };
+}
+
+/** One more of the member's runners, its client numbered `count`, as `polled` left it, by its principal. */
+async function pausedRunner(
+  key: PersonalRunnerKey,
+  count: number,
+  polled: PersonalRunnerHarnessPolled,
+): Promise<string> {
+  const registered = registration(key, clientNumbered(key.tenant, count), [
+    personalRunnerHarnessPlatform,
+  ]);
+  await postgresPersonalRunnerRegistry(api).register(registered);
+  await personalRunnerHarnessPolled(harness, registered.principal, polled);
+  return registered.principal;
+}
+
+/** A limit of each credential `ends` names on the member's Claude, each ending that many seconds from now, replacing what it held. */
+async function claudeLimited(
+  key: PersonalRunnerKey,
+  ends: Readonly<Record<string, number>>,
+): Promise<void> {
+  await agentAccountHarnessCommitted(harness, key.owner, "Claude", {
+    limits: Object.entries(ends).map(([credential, resetsSecs]) => ({
+      observedSecs: -60,
+      resetsSecs,
+      credential,
+    })),
+  });
+}
+
+/** Each agent the member's read answers paused, with the minutes from now until its pause ends, to the nearest. */
+async function pausedMinutes(
+  key: PersonalRunnerKey,
+): Promise<readonly (readonly [string, number])[] | undefined> {
+  const read = await postgresPersonalRunnerRegistry(api).runners(
+    key,
+    everyProject,
+  );
+  return read?.pauses.map(({ agent, pause }) => [
+    agent,
+    Math.round((Date.parse(pause.until) - Date.now()) / 60_000),
+  ]);
+}
+
+test("a runner naming credentials is paused only while every one it named is, until the earliest of them ends, and one naming none while any is", async () => {
+  const named = await pausedKey("paused-named");
+  await pausedRunner(named, 1, { live: true, credentials: ["one", "two"] });
+  await claudeLimited(named, { one: 3_600 });
+  assert.deepEqual(await pausedMinutes(named), [], "the free one is taken");
+  await claudeLimited(named, { one: 7_200, two: 1_800 });
+  assert.deepEqual(await pausedMinutes(named), [["Claude", 30]]);
+  const unnamed = await pausedKey("paused-unnamed");
+  await pausedRunner(unnamed, 1, { live: true });
+  assert.deepEqual(await pausedMinutes(unnamed), []);
+  await claudeLimited(unnamed, { one: 3_600 });
+  assert.deepEqual(
+    await pausedMinutes(unnamed),
+    [["Claude", 60]],
+    "the whole agent's pause holds a runner naming none",
+  );
+});
+
+test("of a member's runners offered an agent, one free leaves it unpaused, and those polling now are the ones asked where any is", async () => {
+  const key = await pausedKey("paused-two");
+  const first = await pausedRunner(key, 1, {
+    live: true,
+    credentials: ["one"],
+  });
+  const second = await pausedRunner(key, 2, {
+    live: true,
+    credentials: ["two"],
+  });
+  await claudeLimited(key, { one: 3_600 });
+  assert.deepEqual(await pausedMinutes(key), [], "the second runner is free");
+  await personalRunnerHarnessPolled(harness, second, {
+    live: false,
+    credentials: ["two"],
+  });
+  assert.deepEqual(
+    await pausedMinutes(key),
+    [["Claude", 60]],
+    "a free runner not polling does not free the one that is",
+  );
+  await personalRunnerHarnessPolled(harness, first, {
+    live: false,
+    credentials: ["one"],
+  });
+  assert.deepEqual(await pausedMinutes(key), [], "offline, every one is asked");
+  await claudeLimited(key, { one: 3_600, two: 1_800 });
+  assert.deepEqual(
+    await pausedMinutes(key),
+    [["Claude", 30]],
+    "runners none of which is polling are still read paused",
+  );
+});
+
+test("an agent no runner of the member's is offered is answered unpaused, and a pause a press admits is answered pressed", async () => {
+  const key = await pausedKey("paused-offered");
+  const runner = await pausedRunner(key, 1, { live: true, offered: false });
+  await claudeLimited(key, { one: 3_600 });
+  await agentAccountHarnessCommitted(harness, key.owner, "Codex", {
+    limit: { observedSecs: -60, resetsSecs: 3_600 },
+  });
+  assert.deepEqual(await pausedMinutes(key), []);
+  await personalRunnerHarnessPolled(harness, runner, { live: true });
+  const pauses = async () =>
+    (await postgresPersonalRunnerRegistry(api).runners(key, everyProject))
+      ?.pauses;
+  assert.deepEqual(
+    (await pauses())?.map(({ agent, pause }) => [
+      agent,
+      pause.reasons,
+      pause.pressed,
+    ]),
+    [["Claude", ["limit"], false]],
+    "Codex is offered to none of them",
+  );
+  await agentAccountHarnessPressed(harness, key.owner, "Claude");
+  assert.equal((await pauses())?.[0]?.pause.pressed, true);
 });
 
 test("deregistering deletes the member's runner naming the client alone, and the allowlist with the last of them", async () => {

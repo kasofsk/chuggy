@@ -23,6 +23,7 @@ import {
 } from "../../src/contract/http.ts";
 import {
   agenticRefusalsResponseSchema,
+  leadFoundResponseSchema,
   leadNoneResponseSchema,
   leadResponseSchema,
   leadTranscriptResponseSchema,
@@ -62,10 +63,14 @@ import {
   postgresHarnessRolePool,
 } from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
-import { agentAccountHarnessCommitted } from "./agentAccountHarness.ts";
+import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessCredentialsOver,
+} from "./agentAccountHarness.ts";
 import {
   leadRigDecision,
   leadRigOpen,
+  leadRigNamed,
   leadRigPooled,
   leadRigProject,
   type LeadRig,
@@ -703,6 +708,50 @@ test("a project holding a lead answers it over the refusal kept beside it", asyn
   assert.equal(leadResponseSchema.safeParse(found.json()).success, true);
 });
 
+/** What the lead route says holds one project's standing lead from dispatching. */
+async function leadHeld(
+  label: string,
+  partition: Partition,
+): Promise<string | undefined> {
+  await using app = leadApp(label);
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  return leadFoundResponseSchema.parse(found.json()).held?.reason;
+}
+
+/**
+ * A lead opened before its selector was paused still stands and dispatches
+ * nothing, so its read says the pause holds it while the project's own override
+ * stands, read over the API's own credential as the selector resolves it, and
+ * says nothing holds it once the selector runs again.
+ */
+test("a project holding a lead answers Paused as what holds it while its selector is paused, and nothing while it runs", async () => {
+  const partition = await readableProject("http-paused-lead");
+  await sessionRigSession(rig.sessions, partition, "http-paused-lead", {
+    kind: "Lead",
+  });
+  assert.equal(await leadHeld("http-paused-lead", partition), undefined);
+  const administrator = {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("selector-admin"),
+  };
+  const project = postgresSelectorProjectSettings(rig.apiPool);
+  assert.equal(
+    (await project.write(partition, 0, { mode: "Paused" }, administrator))
+      .written,
+    "Settings",
+  );
+  assert.equal(await leadHeld("http-paused-lead", partition), "Paused");
+  assert.equal(
+    (await project.write(partition, 1, {}, administrator)).written,
+    "Settings",
+  );
+  assert.equal(await leadHeld("http-paused-lead", partition), undefined);
+});
+
 /**
  * A lead paused for usage names when the pause ends to any reader of the
  * project, whether or not a session stands, read from the pause rule at the
@@ -753,6 +802,31 @@ test("a lead refused for usage answers when the pause ends, and never whose acco
   const carried = found.json<{ refusal: object }>().refusal;
   assert.deepEqual(Object.keys(carried).sort(), ["reason", "since", "until"]);
   assert.ok(!found.body.includes(owner), "the read names the owner");
+});
+
+/** A pool that named credentials is paused until the earliest of its own ends, not the whole agent's latest nor a credential it did not name. */
+test("a lead refused for usage on a pool that named credentials answers the earliest end among the pauses of those it named", async () => {
+  const partition = await readableProject("http-usage-named");
+  const owner = oidcPrincipal(issuer, `owner-${randomUUID()}`);
+  const pool = await leadRigPooled(rig, partition, owner);
+  await leadRigNamed(rig, partition, pool, ["work", "home"]);
+  await agentAccountHarnessCommitted(
+    rig.sessions.harness,
+    owner,
+    "Claude",
+    agentAccountHarnessCredentialsOver({ work: 7200, home: 3600, spare: 1800 }),
+  );
+  await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+    partition,
+    "UsagePaused",
+  );
+  const [reset] = await rig.sessions.harness.query(
+    `SELECT resets_at FROM agent_account_usage WHERE principal=$1 AND credential='home'`,
+    [owner],
+  );
+  const absence = await leadAbsence("http-usage-named", partition);
+  assert.ok(absence?.reason === "UsagePaused");
+  assert.equal(absence.until, (reset?.["resets_at"] as Date).toISOString());
 });
 
 /** A project whose lead runs in cluster as `offering`, its lead opened on `slot` with one answered turn of `costMicros`. */
