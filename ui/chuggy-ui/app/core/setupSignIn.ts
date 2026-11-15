@@ -344,7 +344,6 @@ async function setupSignInWaited(
         site,
         port: waiting.port,
         opened,
-        waitedSecs: waitSecs,
       };
     await ports.sleepMs(pollMs);
   }
@@ -378,7 +377,6 @@ export async function setupSignInAwaited(
     site,
     port: waiting.port,
     opened: "NotOpened",
-    waitedSecs: 0,
   };
 }
 
