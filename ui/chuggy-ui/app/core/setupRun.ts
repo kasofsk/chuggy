@@ -25,6 +25,8 @@ import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
 import type { SetupReads } from "./setupReads.ts";
+import { setupProject } from "./setupProject.ts";
+import type { SetupProjectAsked } from "./setupProject.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
 import { setupChatHost, setupRunner } from "./setupRunner.ts";
@@ -283,14 +285,14 @@ async function setupStatus(
 }
 
 /**
- * One entry of the sign-in `runner` or `chat-host` works under. Whatever does
+ * One entry of the sign-in `project`, `runner` or `chat-host` works under. Whatever does
  * not end signed in is answered as a report, a fault of this machine's among
  * them, so a run that enters again part-way has one way out and says what it
  * had done ahead of it.
  */
 async function setupRunnerEntry(
   ports: SetupPorts,
-  asked: SetupRunnerAsked | SetupChatHostAsked,
+  asked: SetupProjectAsked | SetupRunnerAsked | SetupChatHostAsked,
 ): Promise<SetupRunnerEntered> {
   try {
     const held = await setupEntered(ports, asked.site, asked.asked);
@@ -418,6 +420,12 @@ export async function setupRun(
         return await setupStatus(ports, asked, pacing);
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
+      case "Project":
+        return await setupProject(
+          ports,
+          asked,
+          await setupRunnerEntry(ports, asked),
+        );
       case "Mcp":
         return await setupServer(ports, asked);
       case "Runner":

@@ -278,3 +278,73 @@ test("chat-host is read for a workspace named whole and no project, with --repla
     answers,
   );
 });
+
+test("project is read for a workspace named whole and a name on one line, with an address only where one is given, and --name is read by no other command", () => {
+  expect(
+    setupAsked(["project", "--workspace", "acme", "--name", "Atlas Web"]),
+  ).toEqual({
+    asked: "Project",
+    site: undefined,
+    answers: { workspace: "acme", project: undefined, name: "Atlas Web" },
+    workspace: "acme",
+    name: "Atlas Web",
+  });
+  expect(
+    setupAsked([
+      "project",
+      "--site",
+      site,
+      "--workspace=acme",
+      "--project",
+      "atlas",
+      "--name=it's --site",
+    ]),
+  ).toMatchObject({
+    asked: "Project",
+    site,
+    answers: { workspace: "acme", project: "atlas", name: "it's --site" },
+  });
+  expect(setupAsked(["project", "--name", "Atlas"])).toEqual(
+    wrongly("Workspace"),
+  );
+  for (const name of [undefined, "", "two\nlines", " Atlas", "Atlas  Web"])
+    expect(
+      setupAsked([
+        "project",
+        "--workspace",
+        "acme",
+        ...(name === undefined ? [] : ["--name", name]),
+      ]),
+      String(name),
+    ).toEqual(wrongly("ProjectName"));
+  for (const command of [[], ["sign-in"], ["mcp"], ["runner"], ["chat-host"]])
+    expect(
+      setupAsked([
+        ...command,
+        "--workspace",
+        "acme",
+        "--project",
+        "widgets",
+        "--name",
+        "Atlas",
+      ]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+});
+
+test("the arguments a report names for project carry its name, and those it names for any other command carry none", () => {
+  const answers = { workspace: "acme", project: "atlas", name: "Atlas Web" };
+  expect(
+    setupAsked([
+      ...setupCommandArguments("Project"),
+      ...setupAnswerArguments(answers, "Project"),
+    ]),
+  ).toMatchObject({ asked: "Project", answers });
+  expect(setupAnswerArguments(answers)).toEqual([
+    "--workspace",
+    "acme",
+    "--project",
+    "atlas",
+  ]);
+  expect(setupAnswerArguments(answers, "Runner")).not.toContain("--name");
+});
