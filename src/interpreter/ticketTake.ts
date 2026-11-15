@@ -7,8 +7,9 @@
  * door here makes anyone but the caller an owner. The site's selector is the
  * lead's identity, a developer on every project with a lead and authorized as
  * a member, so its kind cannot refuse it; it is refused by name before its
- * permit is asked. A session bearer never reaches this door: its routes are
- * refused to every session.
+ * permit is asked. A thread's bearer reaches this door as its owner, since a
+ * thread's session acts under its member's own principal; every other session
+ * bearer is refused at the route.
  *
  * THE PERMIT IS `Mutate`, the one filing a draft asks, since filing is what
  * makes a member an owner and a take is that same ownership of work already
