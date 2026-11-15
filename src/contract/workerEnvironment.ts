@@ -109,11 +109,14 @@ export const sessionModelVariable = "CHUG_SESSION_MODEL";
 
 /**
  * What a chat host's session hands its shell: the origin of the API its bearer
- * is honoured at, and that bearer, which the API confines to the session's
- * capabilities as its host narrowed them.
+ * is honoured at, that bearer, which the API confines to the session's
+ * capabilities as its host narrowed them, and the session's tenant and
+ * project, as its facts answer them.
  */
 export const sessionApiOriginVariable = "CHUG_SESSION_API_ORIGIN";
 export const sessionBearerVariable = "CHUG_SESSION_BEARER";
+export const sessionTenantVariable = "CHUG_SESSION_TENANT";
+export const sessionProjectVariable = "CHUG_SESSION_PROJECT";
 
 /** The agent runtime's own variable for the directory it writes its local copy to. */
 export const sessionConfigDirectoryVariable = "CLAUDE_CONFIG_DIR";
