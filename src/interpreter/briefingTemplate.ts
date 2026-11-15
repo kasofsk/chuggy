@@ -590,7 +590,7 @@ export function briefingRequiredResult(
         "Report one result manifest: a verdict, and one finding for each criterion or constraint the change fails.",
         "Give every finding a file, a line and the criterion or constraint it fails.",
         "Report a pass only when every criterion above is met by the change as it stands.",
-        `${briefingRequiredResultReportBound}, and detail that does not fit belongs in the findings.`,
+        `${briefingRequiredResultReportBound}; the findings are the report, so state each finding briefly, and leave out notes on what was checked and not flagged before leaving out a finding.`,
       ];
     case "Check":
       return [

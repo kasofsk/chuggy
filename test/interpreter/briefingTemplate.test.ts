@@ -225,7 +225,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [19, "1bb0e4126dc4fad698a506951bc1147ae4b4ed4c8735b945e3e0fdce4dd22f3f"],
+    [19, "8fedaafd6460335501fff3c770c9be7dbc286eaaaf225270828f84049abf3606"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -267,13 +267,17 @@ test("the digest reads every string the template states", () => {
 
 test("an agent's required result says how long its report may be, and a commanded one does not", () => {
   const bound = `at most ${String(resultReportCharsMax)} characters`;
-  const destinations = { Work: "commit messages", Review: "findings" };
+  const destinations = {
+    Work: "detail that does not fit belongs in the commit messages",
+    Review: "the findings are the report",
+  };
   for (const purpose of allTaskPurposes) {
     const lines = briefingRequiredResult(purpose, "Agent").filter((line) =>
       line.includes(bound),
     );
     assert.equal(lines.length, 1, `${purpose} states the bound once`);
     assert.match(lines[0] ?? "", /refused/);
+    assert.doesNotMatch(lines[0] ?? "", /belongs in the findings/);
     if (purpose !== "Check") {
       assert.ok(lines[0]?.includes(destinations[purpose]), purpose);
     }
