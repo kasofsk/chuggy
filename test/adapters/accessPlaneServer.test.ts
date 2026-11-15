@@ -6,7 +6,7 @@
  * relation but the ones the role rosters and the authority rosters name,
  * hosted runs, personal runners, unscoped chat, and the `site` link a site's invitation
  * writes on a new tenant, which the site's tenant list then reads back, the
- * caller's own tenants, and a tenant's invite links made, listed, revoked and
+ * caller's own tenants and account, and a tenant's invite links made, listed, revoked and
  * redeemed, each route's refusals among them, and the directory's registration
  * gate, which holds no bearer and is answered in the directory's own shape.
  */
@@ -47,6 +47,7 @@ import {
   accessSiteAuthorities,
   accessSiteAuthoritiesSchema,
   accessSiteTenantsSchema,
+  accessCallerAccountSchema,
   accessCallerTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
@@ -90,6 +91,7 @@ import {
   tenantPrincipalGrant,
   tenantSiteRelation,
 } from "../../src/interpreter/projectGrant.ts";
+import { accessCallerAccount } from "../../src/interpreter/accessCallerAccount.ts";
 import {
   checkedAccessDirectorySettings,
   type AccessDirectory,
@@ -145,6 +147,7 @@ const tokens: Readonly<Record<string, string>> = {
   "hal-token": "hal",
   "sam-token": "sam",
   "sita-token": "sita",
+  "una-token": directorySubject(41),
 };
 
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -247,6 +250,10 @@ async function served(
     inviteLinks: accessMemoryInviteLinks(memory, links, directory),
     abilities: accessMemoryAbilities(memory),
     callerTenants: accessMemoryCallerTenants(memory),
+    callerAccount: accessCallerAccount(
+      { directory },
+      { issuer: accessFixtureIssuer },
+    ),
     authorities: accessMemoryAuthorities(
       memory,
       accessPlaneBoundsDefault,
@@ -880,7 +887,7 @@ test("a tenant's administrators are added to the site's account creators once th
   );
 });
 
-test("an authority that cannot answer is retryable on every route and unready on readiness", async () => {
+test("an authority that cannot answer is retryable on every route but the caller's own account, which asks it nothing, and unready on readiness", async () => {
   const { memory, app } = await served();
   const open = accessInviteLinkMintedSchema.parse(
     (await linkMinted(app, "alice-token", { role: "Member" })).json(),
@@ -908,6 +915,10 @@ test("an authority that cannot answer is retryable on every route and unready on
       },
       ...(route.method === "POST" ? { payload: JSON.stringify(body) } : {}),
     });
+    if (name === "callerAccount") {
+      assert.equal(answered.statusCode, 200, answered.body);
+      continue;
+    }
     enveloped(answered, "Retryable", "AuthorityUnavailable");
     assert.equal(answered.headers["retry-after"], "1", name);
   }
@@ -1504,6 +1515,65 @@ test("the caller's own tenants read as their strict schema to any caller signed 
   const unauthenticated = await get();
   assert.equal(unauthenticated.statusCode, 401);
   enveloped(unauthenticated, "Unauthenticated");
+});
+
+test("the caller's own account reads as its strict schema with their own email and login and nobody else's, and is refused without a credential", async () => {
+  const una = directorySubject(41);
+  const directory = directoryMemory([
+    { subject: una, email: "una@example.com", githubLogin: "Una-Cat" },
+    {
+      subject: directorySubject(42),
+      email: "other@example.com",
+      githubLogin: "Other",
+    },
+  ]);
+  const { app } = await served(true, undefined, directory.directory);
+  const get = (token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf("callerAccount"),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const own = await get("una-token");
+  assert.equal(own.statusCode, 200, own.body);
+  assert.deepEqual(accessCallerAccountSchema.parse(own.json()), {
+    subject: una,
+    principal: accessFixturePrincipal(una),
+    account: true,
+    email: "una@example.com",
+    githubLogin: "Una-Cat",
+  });
+  assert.deepEqual(directory.asked, [`accounts:${una}`]);
+  const none = await get("alice-token");
+  assert.equal(none.statusCode, 200, none.body);
+  assert.deepEqual(accessCallerAccountSchema.parse(none.json()), {
+    subject: "alice",
+    principal: accessFixturePrincipal("alice"),
+    account: false,
+  });
+  directory.unavailable = true;
+  enveloped(
+    await get("una-token"),
+    "Retryable",
+    accessInvitationCodes.DirectoryUnavailable,
+  );
+  const unauthenticated = await get();
+  assert.equal(unauthenticated.statusCode, 401);
+  enveloped(unauthenticated, "Unauthenticated");
+});
+
+test("a plane with no directory answers the caller's own account as their subject and principal alone", async () => {
+  const { app } = await served();
+  const answered = await app.inject({
+    method: "GET",
+    url: pathOf("callerAccount"),
+    headers: as("una-token"),
+  });
+  assert.equal(answered.statusCode, 200, answered.body);
+  assert.deepEqual(accessCallerAccountSchema.parse(answered.json()), {
+    subject: directorySubject(41),
+    principal: accessFixturePrincipal(directorySubject(41)),
+  });
 });
 
 test("a site's invitation naming a tenant outside its shape, past its bound or reserved is rejected before GitHub, the directory or the authority is asked anything", async () => {

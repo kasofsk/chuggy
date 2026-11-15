@@ -337,10 +337,7 @@ module.exports = {
         "query cache's own renderer-free core, whose types are what tag a " +
         "query key with the data under it — a closed list, so React, the " +
         "router, the cache's React bindings and the platform's own globals " +
-        "are all outside it. Dagre is on it because it is layout and " +
-        "nothing else: it takes sizes and edges and answers coordinates, " +
-        "rendering nothing, so an epic's graph is laid out where a suite " +
-        "with no renderer can test it. What it buys is that the " +
+        "are all outside it. What it buys is that the " +
         "client, the parsers, the authorization flow, the stream and the " +
         "cache decisions are all reachable from a suite with no renderer: a " +
         "decision that reached a component would need one mounted to be " +
@@ -359,7 +356,7 @@ module.exports = {
         reachable: true,
         path: "^(?!ui/chuggy-ui/app/core/)",
         pathNot:
-          "^src/contract/|node_modules/zod/|node_modules/@tanstack/query-core/|node_modules/@dagrejs/",
+          "^src/contract/|node_modules/zod/|node_modules/@tanstack/query-core/",
       },
     },
     {

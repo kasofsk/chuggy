@@ -19,9 +19,14 @@
  * execution larger than the room the terms name, which chooses among what
  * that allows as the order does rather than being a term of it. Its account
  * is its owner, and it passes over an attempt whose agent that account has
- * paused as a pool's claim does. It records on the attempt whether its runner
- * benches the credential it hands the job, which is what keeps the job's
- * usage limit off that account.
+ * paused as a pool's claim does for its registrant: of an agent its newest
+ * poll named credentials of, the account is paused only while every one of
+ * them is, as `agent_account_named_pause` answers, so a credential at its
+ * threshold leaves the runner's others to take the job; of any other agent,
+ * `agent_account_pause` answers. Either way a press admits one claim and is
+ * spent by it. It records on the attempt whether its runner benches the
+ * credential it hands the job, which is what keeps the job's usage limit off
+ * that account.
  *
  * OF WHAT IT MAY TAKE, IT TAKES A STARTED TICKET'S FIRST, then a higher
  * project's, then the oldest ticket's: `execution_attempt_started`, the
@@ -80,6 +85,15 @@ async function personalExecutionClaimLocked(
   );
 }
 
+/** What a claim's statement returns of the attempt it took. */
+interface PersonalExecutionClaimedRow {
+  readonly requirement: unknown;
+  readonly runtime: string | null;
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
+  readonly project: string;
+}
+
 /** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, in the order the header states, serialized with every other claim and fence of their runners, and the project it is in. */
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
@@ -89,13 +103,7 @@ export async function personalExecutionClaimed(
 ): Promise<WorkerPoolPersonalClaimed | undefined> {
   const room = terms.memoryRoomMib ?? null;
   await personalExecutionClaimLocked(client, identity);
-  const found = await client.query<{
-    requirement: unknown;
-    runtime: string | null;
-    cpu_millis: number | null;
-    memory_mib: number | null;
-    project: string;
-  }>(
+  const found = await client.query<PersonalExecutionClaimedRow>(
     sql`WITH chosen AS (
         SELECT q.tenant,q.project,q.execution,q.attempt,q.agent,held.admitted_by_press
         FROM execution_attempt q
@@ -104,7 +112,11 @@ export async function personalExecutionClaimed(
         JOIN personal_runner r ON r.tenant=q.tenant
         JOIN personal_runner_project l
           ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
-        CROSS JOIN LATERAL agent_account_pause(r.owner,q.agent) held
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h
+            WHERE r.credentials_named->q.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(r.owner,q.agent,
+            ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->q.agent))) h
+            WHERE r.credentials_named->q.agent IS NOT NULL) held
         WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
           AND r.principal=${identity.principal}
           AND q.project=ANY(${[...claim.projects] as string[]}::text[])
@@ -174,7 +186,11 @@ export async function personalExecutionWaiting(
         JOIN personal_runner r ON r.tenant=q.tenant
         JOIN personal_runner_project l
           ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
-        CROSS JOIN LATERAL agent_account_pause(r.owner,q.agent) held
+        CROSS JOIN LATERAL (SELECT h.paused_until,h.admitted_by_press FROM agent_account_pause(r.owner,q.agent) h
+            WHERE r.credentials_named->q.agent IS NULL
+          UNION ALL SELECT h.paused_until,h.admitted_by_press FROM agent_account_named_pause(r.owner,q.agent,
+            ARRAY(SELECT jsonb_array_elements_text(r.credentials_named->q.agent))) h
+            WHERE r.credentials_named->q.agent IS NOT NULL) held
         WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
           AND r.principal=${identity.principal}
           AND q.project=ANY(${[...projects] as string[]}::text[])

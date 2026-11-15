@@ -40,12 +40,18 @@ import {
   sessionTurnClaimedSchema,
 } from "../../src/contract/sessionPlane.ts";
 import { resultManifestDocumentSchema } from "../../src/contract/workerDocuments.ts";
+import {
+  workerPoolReconciliationSchema,
+  workerRunnerCredentialsHeader,
+} from "../../src/contract/workerPool.ts";
 import { workTaskDocumentSchema } from "../../src/contract/workerTask.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,
   workerContractEvaluatedTrees,
   workerContractRunContexts,
+  workerContractRunCredentials,
+  workerContractRunnerCredentialPauses,
   workerContractRunUsages,
   workerContractSessionContexts,
   workerContractTargetRefs,
@@ -235,6 +241,59 @@ test("a run sends its account's usage and its limit from the version a runner ho
       );
 });
 
+/** Whether the limit a release's run end takes may name the credential it stopped, read through the end because early releases export no limit schema of its own. */
+function workerRunLimitNamesCredential(schema: z.ZodType): boolean {
+  if (!(schema instanceof z.ZodObject)) return false;
+  const limit: unknown = schema.shape["limit"];
+  const held =
+    limit instanceof z.ZodOptional || limit instanceof z.ZodExactOptional
+      ? limit.unwrap()
+      : limit;
+  return held instanceof z.ZodObject && Object.hasOwn(held.shape, "credential");
+}
+
+test("a run names the credential of its usage and its limit from the version a runner holds a plane's release to, and no release below it takes either", async () => {
+  assert.ok(Object.hasOwn(workerRunTotalsSchema.shape, "credential"));
+  assert.ok(workerRunLimitNamesCredential(workerRunEndedSchema));
+  assert.ok(!Object.hasOwn(workerRunEndedSchema.shape, "credential"));
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunCredentials,
+      workerContractRelease,
+    ),
+  );
+  for (const release of workerContractReplayed("job")) {
+    const taken = contractVersionAccepted(
+      workerContractRunCredentials,
+      release,
+    );
+    const totalsSchema = await workerContractReleaseExport(
+      release,
+      "workerPlane",
+      "workerRunTotalsSchema",
+      workerContractReleaseSchema,
+    );
+    assert.equal(
+      totalsSchema instanceof z.ZodObject &&
+        Object.hasOwn(totalsSchema.shape, "credential"),
+      taken,
+      `${release} totals`,
+    );
+    assert.equal(
+      workerRunLimitNamesCredential(
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "workerRunEndedSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      taken,
+      `${release} limit`,
+    );
+  }
+});
+
 /** Whether a turn page's schema lets a turn name the subagent call it was made under. */
 function workerRunTurnNamesParent(schema: z.ZodType): boolean {
   if (!(schema instanceof z.ZodObject)) return false;
@@ -245,6 +304,47 @@ function workerRunTurnNamesParent(schema: z.ZodType): boolean {
     Object.hasOwn(turns.element.shape, "parentToolUseId")
   );
 }
+
+test("a runner or a pool names its credentials and is answered their pauses from the version whose plane reads them, and no release below it names the header or reads the key", async () => {
+  const pausesRead = (schema: z.ZodType) =>
+    schema instanceof z.ZodObject &&
+    Object.hasOwn(schema.shape, "credentialPauses");
+  assert.ok(pausesRead(workerPoolReconciliationSchema));
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunnerCredentialPauses,
+      workerContractRelease,
+    ),
+  );
+  for (const release of workerContractReplayed("pool")) {
+    const taken = contractVersionAccepted(
+      workerContractRunnerCredentialPauses,
+      release,
+    );
+    assert.equal(
+      pausesRead(
+        await workerContractReleaseExport(
+          release,
+          "workerPool",
+          "workerPoolReconciliationSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      taken,
+      release,
+    );
+    assert.equal(
+      await workerContractReleaseExport(
+        release,
+        "workerPool",
+        "workerRunnerCredentialsHeader",
+        z.string().optional(),
+      ),
+      taken ? workerRunnerCredentialsHeader : undefined,
+      release,
+    );
+  }
+});
 
 test("a run offers its context readings and a turn its subagent call from the version a runner holds a plane's release to, and no release below it takes either", async () => {
   assert.ok(Object.hasOwn(workerPlaneRoutes, "runContext"));

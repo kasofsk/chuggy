@@ -45,10 +45,16 @@ ticket-authoring-epic = { -epic(case: "upper") }
 ticket-authoring-epics-more = More { -epic(form: "plural") }
 ticket-authoring-epics-first = First { -epic(form: "plural") }
 ticket-authoring-overrides = { -override(case: "upper", form: "plural") }
+ticket-authoring-chat-line = You can also ask for { -ticket(form: "a") } in the { -thread }.
 
-## What the advanced settings offer.
+## What the form keeps under its one disclosure, by the heading of each group.
 
-ticket-authoring-advanced = Advanced
+ticket-authoring-more = More options
+ticket-authoring-more-about = Title, { -epic }, links, images, branches, { -landing }, { -stage(form: "plural") } and { -dependency(form: "plural") }
+ticket-authoring-more-held = Not default
+ticket-authoring-group-details = Details
+ticket-authoring-group-landing = Branches and { -landing }
+ticket-authoring-group-stages = { -stage(case: "upper", form: "plural") } and { -dependency(form: "plural") }
 ticket-authoring-dependencies = { -dependency(case: "upper", form: "plural") }
 ticket-authoring-dependencies-none = No { -ticket(form: "plural") } to depend on
 ticket-authoring-dependencies-truncated = Not every { -ticket } is listed

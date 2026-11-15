@@ -66,6 +66,11 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { holderDouble, settled } from "./screenHarness.tsx";
+import {
+  creationMoreOpened,
+  creationMoreTrigger,
+  disclosed,
+} from "./creationMore.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
  * and starts in a browser that remembers no choice. */
@@ -226,9 +231,12 @@ function typeIntent(text: string): void {
 }
 
 function typeTitle(text: string): void {
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: text },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: text },
+    },
+  );
 }
 
 function submit(): void {
@@ -267,11 +275,17 @@ test("the configuration line keeps the revision behind the name it draws", async
 test("each field is named by its label, and a line beside one describes it", () => {
   const commanding = { ...creationInitialization, commandedCheckStage: 1 };
   draw(api({ state: "Succeeded" }).ports, [], commanding);
-  fireEvent.click(screen.getByText("Add link"));
-  fireEvent.click(screen.getByText("Add check"));
-  expect(screen.getByRole("textbox", { name: "Link 1" })).toBeDefined();
-  expect(screen.getByRole("textbox", { name: "Check 1" })).toBeDefined();
-  expect(screen.getByRole("textbox", { name: "Title" })).toBeDefined();
+  fireEvent.click(disclosed(() => screen.getByText("Add link")));
+  fireEvent.click(disclosed(() => screen.getByText("Add check")));
+  expect(
+    disclosed(() => screen.getByRole("textbox", { name: "Link 1" })),
+  ).toBeDefined();
+  expect(
+    disclosed(() => screen.getByRole("textbox", { name: "Check 1" })),
+  ).toBeDefined();
+  expect(
+    disclosed(() => screen.getByRole("textbox", { name: "Title" })),
+  ).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Intent" })).toBeDefined();
   expect(
     screen.getByRole("textbox", {
@@ -382,16 +396,22 @@ test("what was typed survives a re-render and a fresh initialization", async () 
   const drawn = draw(held.ports, []);
   typeTitle("Ship it");
   typeIntent("ship it");
-  fireEvent.change(screen.getByPlaceholderText("the branch name"), {
-    target: { value: "topic/one" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("the branch name")),
+    {
+      target: { value: "topic/one" },
+    },
+  );
   drawn.rerender({
     ...creationInitialization,
     fence: { ...creationInitialization.fence, projectSequence: 99 },
   });
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Ship it");
   expect(
     screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
@@ -404,7 +424,9 @@ test("what was typed survives a re-render and a fresh initialization", async () 
       .value,
   ).toBe("ship it");
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("the branch name").value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>("the branch name"),
+    ).value,
   ).toBe("topic/one");
 });
 
@@ -417,12 +439,18 @@ test("both branch fields reach the wire, the target as the finalization", async 
   draw(held.ports, []);
   typeTitle("Ship it");
   typeIntent("ship it");
-  fireEvent.change(screen.getByPlaceholderText("the branch name"), {
-    target: { value: "topic/one" },
-  });
-  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
-    target: { value: "release/next" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("the branch name")),
+    {
+      target: { value: "topic/one" },
+    },
+  );
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("the branch to land on")),
+    {
+      target: { value: "release/next" },
+    },
+  );
   submit();
   await waitFor(() => {
     expect(drafts(held.sent).length).toBe(1);
@@ -733,7 +761,7 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     },
   };
   draw(api({ state: "Succeeded" }).ports, [], chosen);
-  const disclosure = screen.getByRole("button", { name: "Advanced" });
+  const disclosure = creationMoreTrigger();
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByLabelText("Stage 1")).toBeNull();
   fireEvent.click(disclosure);
@@ -770,11 +798,14 @@ test("a two-stage pick sends positional stage keys and evaluators keyed 1..n", a
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
   typeIntent("ship it");
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-  fireEvent.click(screen.getByText("Add stage"));
-  fireEvent.change(screen.getByLabelText("Stage 2"), {
-    target: { value: "3" },
-  });
+  creationMoreOpened();
+  fireEvent.click(disclosed(() => screen.getByText("Add stage")));
+  fireEvent.change(
+    disclosed(() => screen.getByLabelText("Stage 2")),
+    {
+      target: { value: "3" },
+    },
+  );
   const authoring = await submittedAuthoring(held);
   expect(authoring).toStrictEqual({
     dependencies: [],
@@ -790,8 +821,8 @@ test("adding a stage without touching its count sends it keyed to its position",
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
   typeIntent("ship it");
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-  fireEvent.click(screen.getByText("Add stage"));
+  creationMoreOpened();
+  fireEvent.click(disclosed(() => screen.getByText("Add stage")));
   const authoring = await submittedAuthoring(held);
   expect(authoring).toStrictEqual({
     dependencies: [],
@@ -807,11 +838,14 @@ test("removing the first stage sends the remaining stage keyed to its new positi
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
   typeIntent("ship it");
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-  fireEvent.click(screen.getByText("Add stage"));
-  fireEvent.change(screen.getByLabelText("Stage 2"), {
-    target: { value: "2" },
-  });
+  creationMoreOpened();
+  fireEvent.click(disclosed(() => screen.getByText("Add stage")));
+  fireEvent.change(
+    disclosed(() => screen.getByLabelText("Stage 2")),
+    {
+      target: { value: "2" },
+    },
+  );
   fireEvent.click(screen.getAllByText("Remove")[0] as HTMLElement);
   const authoring = await submittedAuthoring(held);
   expect(authoring).toStrictEqual({
@@ -825,7 +859,7 @@ test("the checks editor is drawn only where the configuration commands a stage f
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], commanding);
   typeIntent("ship it");
-  fireEvent.click(screen.getByText("Add check"));
+  fireEvent.click(disclosed(() => screen.getByText("Add check")));
   fireEvent.change(screen.getByPlaceholderText("a command line"), {
     target: { value: "npm test" },
   });
@@ -843,7 +877,7 @@ test("the checks editor is drawn only where the configuration commands a stage f
 
 test("a configuration commanding no check stage offers no checks editor", () => {
   draw(api({ state: "Succeeded" }).ports, []);
-  expect(screen.queryByText("Add check")).toBeNull();
+  expect(disclosed(() => screen.queryByText("Add check"))).toBeNull();
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this form
@@ -851,7 +885,7 @@ test("a configuration commanding no check stage offers no checks editor", () => 
 test("nothing the form draws is a runtime style element", () => {
   draw(api({ state: "Succeeded" }).ports, []);
   expect(document.querySelectorAll("style").length).toBe(0);
-  fireEvent.click(screen.getByText("Advanced"));
+  creationMoreOpened();
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
@@ -866,7 +900,7 @@ test("each list editor stops adding rows exactly at the bound the wire states", 
     ["Add link", briefLinksMax],
     ["Add check", briefChecksMax],
   ] as const) {
-    const add = screen.getByText<HTMLButtonElement>(control);
+    const add = disclosed(() => screen.getByText<HTMLButtonElement>(control));
     for (let added = 0; added < bound; added += 1) {
       expect(add.disabled).toBe(false);
       fireEvent.click(add);
@@ -967,7 +1001,7 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
 });
 
 function finalizationGroup(name = "Landing"): HTMLElement | null {
-  return screen.queryByRole("radiogroup", { name });
+  return disclosed(() => screen.queryByRole("radiogroup", { name }));
 }
 
 /** What one group draws as chosen of the options it is named with, read by
@@ -1012,7 +1046,9 @@ test("a form finalized by None still asks for a finalization, and asks for no ta
   ]);
   expect(finalizationGroup()).toBeTruthy();
   expect(finalizationChosen()).toBe("None");
-  expect(screen.queryByPlaceholderText("the branch to land on")).toBeNull();
+  expect(
+    disclosed(() => screen.queryByPlaceholderText("the branch to land on")),
+  ).toBeNull();
   expect(finalizationGroup("Merge")).toBeNull();
   expect(finalizationGroup("Policy")).toBeNull();
 });
@@ -1042,7 +1078,7 @@ test("a git merge is offered its mode and its policy, and sends the policy chose
   expect(chosenIn("Policy", ["Direct", "Serialized", "Stacked"])).toBe(
     "Direct",
   );
-  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  fireEvent.click(disclosed(() => screen.getByRole("radio", { name: "Push" })));
   fireEvent.click(screen.getByRole("radio", { name: "Serialized" }));
   typeIntent("ship it");
   submit();
@@ -1061,8 +1097,10 @@ test("a git merge's Stacked policy is sent as chosen", async () => {
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "PullRequestMerge"),
   ]);
-  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
-  fireEvent.click(screen.getByRole("radio", { name: "Stacked" }));
+  fireEvent.click(disclosed(() => screen.getByRole("radio", { name: "Push" })));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("radio", { name: "Stacked" })),
+  );
   typeIntent("ship it");
   submit();
   await waitFor(() => {
@@ -1091,7 +1129,9 @@ test("changing repositories re-seeds an untouched finalization and leaves a touc
   expect(finalizationChosen()).toBe("Git merge");
   await chooseRepository("gdoteof/scratch");
   expect(finalizationChosen()).toBe("Pull request");
-  fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("radio", { name: "Git merge" })),
+  );
   await chooseRepository("kasofsk/chuggy-fabric");
   expect(finalizationChosen()).toBe("Git merge");
 });
@@ -1125,7 +1165,9 @@ test("a pull request without a branch is refused before the wire sees it", () =>
 });
 
 function branchBox(): HTMLInputElement {
-  return screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" });
+  return disclosed(() =>
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" }),
+  );
 }
 
 /** The words an empty branch box draws where the form proposes nothing. */
@@ -1201,7 +1243,9 @@ test("a title with no name in it proposes nothing, and the refusal stands", () =
 test("a finalization that opens no pull request proposes no branch and sends none", async () => {
   const held = drawProposing();
   typeTitle("Fix the login page");
-  fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("radio", { name: "Git merge" })),
+  );
   expect(branchBox().placeholder).toBe(branchAsked);
   submit();
   await waitFor(() => {
@@ -1216,9 +1260,12 @@ test("a pull request without a target reaches the wire, into the default branch"
     creationBinding(chuggy, "PullRequest"),
   ]);
   typeIntent("ship it");
-  fireEvent.change(screen.getByPlaceholderText("the branch name"), {
-    target: { value: "topic/one" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("the branch name")),
+    {
+      target: { value: "topic/one" },
+    },
+  );
   submit();
   await waitFor(() => {
     expect(drafts(held.sent).length).toBe(1);
@@ -1239,11 +1286,14 @@ test("changing the finalization to None releases a ticket the target box would h
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "Push"),
   ]);
-  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
-    target: { value: "refs/heads/release/next" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("the branch to land on")),
+    {
+      target: { value: "refs/heads/release/next" },
+    },
+  );
   typeIntent("ship it");
-  fireEvent.click(screen.getByRole("radio", { name: "None" }));
+  fireEvent.click(disclosed(() => screen.getByRole("radio", { name: "None" })));
   submit();
   await waitFor(() => {
     expect(drafts(held.sent).length).toBe(1);
@@ -1364,8 +1414,11 @@ test("a chosen configuration pins and fences the ticket, and what was typed is k
   typeIntent("ship it");
   await chooseConfiguration("development-sonnet");
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Ship it");
   fireEvent.focus(configurationPicker());
   expect((await screen.findByRole("tooltip")).textContent).toBe("n-sonnet");
@@ -1384,12 +1437,12 @@ test("a chosen configuration pins and fences the ticket, and what was typed is k
 
 test("what a configuration decides for the form follows the one chosen", async () => {
   drawOffered(api({ state: "Succeeded" }).ports, [], several);
-  expect(screen.queryByText("Add check")).toBeNull();
+  expect(disclosed(() => screen.queryByText("Add check"))).toBeNull();
   await chooseConfiguration("development");
-  expect(screen.getByText("Add check")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Advanced" })).toBeTruthy();
+  expect(disclosed(() => screen.getByText("Add check"))).toBeTruthy();
+  expect(screen.getByText("Evaluators per stage")).toBeTruthy();
   await chooseConfiguration("development-sonnet");
-  expect(screen.queryByText("Add check")).toBeNull();
+  expect(disclosed(() => screen.queryByText("Add check"))).toBeNull();
 });
 
 test("the next new ticket here starts on the configuration chosen last, while it is offered", async () => {

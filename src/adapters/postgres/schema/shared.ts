@@ -171,16 +171,35 @@ export const workerRunUsageFunction = "record_worker_run_usage";
 export const workerRunLimitFunction = "record_worker_run_limit";
 /** Whether an account's agent is paused, until when and why, from its readings, its limit, its settings and its presses at the database's own time. */
 export const agentAccountPauseFunction = "agent_account_pause";
+/** `agent_account_pause`'s answer and the names of the credentials holding it, in the order `agent_account_credential_standing` lists them. */
+export const agentAccountPauseHoldingFunction = "agent_account_pause_holding";
+/** Each credential of an account's agent that is paused, until when and why, by the rule `agent_account_pause` answers the agent by. */
+export const agentAccountCredentialPauseFunction =
+  "agent_account_credential_pause";
+/** Whether an account's agent is paused for a runner naming some of its credentials: only while every one named is, until the earliest of those ends. */
+export const agentAccountNamedPauseFunction = "agent_account_named_pause";
+/** Each of the credentials named of an account's agent that is paused, and until when. */
+export const agentAccountNamedCredentialPausesFunction =
+  "agent_account_named_credential_pauses";
+/** The credential a reading or a limit is kept under, its agent's default where the run named none, with room made for it among the credentials kept. */
+export const agentAccountCredentialKeptFunction =
+  "agent_account_credential_kept";
 /** A person's thresholds and session options for one agent account, their defaults where they wrote none. */
 export const agentAccountSettingsFunction = "agent_account_settings";
-/** Whether an account's pause holds back a session of one kind: always a lead, and a thread or an inquiry as its owner's option says. */
+/** Whether an account's pause holds back a session of one kind, for a runner that gave Claude the names it is handed: always a lead, and a thread or an inquiry as its owner's option says. */
 export const agentAccountSessionPausedFunction = "agent_account_session_paused";
-/** Each agent of one person's account: their settings, each window's newest reading, the newest limit and the pause they come to. */
+/** Each agent of one person's account: their settings, each window's newest reading across its credentials, the newest limit across them and the pause they come to, `agent_account_pause`'s, with the credentials holding it. */
 export const agentAccountStandingFunction = "agent_account_standing";
+/** Each credential of one person's account an agent holds a reading or a limit of: its readings and the pause holding that credential alone. */
+export const agentAccountCredentialStandingFunction =
+  "agent_account_credential_standing";
 /** One person's settings for one agent of their account, written whole. */
 export const agentAccountSettingWriteFunction = "write_agent_account_setting";
 /** One person's press to try an agent of their account again, recorded only while a limit holds it paused. */
 export const agentAccountPressFunction = "press_agent_account";
+/** One person's credential of an agent of their account retired: its readings and its limit dropped, refused while a live runner of theirs names it. */
+export const agentAccountCredentialRetireFunction =
+  "retire_agent_account_credential";
 export const runEvidenceImmutableFunction =
   "execution_run_evidence_is_immutable";
 export const runConfigurationImmutableFunction =
@@ -312,13 +331,13 @@ export const ticketRunnerLossFunction = "ticket_runner_loss";
 export const runnerLostTicketsFunction = "runner_lost_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
-/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again. */
+/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again: a limited one where its account's agent, or a credential a runner of that account names, would let a claim through. */
 export const ticketRateLimitResumableFunction = "ticket_rate_limit_resumable";
-/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts. */
+/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts, as a runner of each would claim it. */
 export const rateLimitedTicketsFunction = "rate_limited_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const rateLimitResumeFunction = "submit_rate_limit_resume";
-/** When the latest usage pause ends that holds an escalation the scheduler will resume by itself once none does. */
+/** When an escalation the scheduler will resume by itself is free: the latest, across its limited tasks, of the earliest end among the pauses holding each. */
 export const ticketUsageResumeFunction = "ticket_usage_resume";
 /** The Pending tickets the importer may move onto a repository head's revision. */
 export const configurationFollowingCandidatesFunction =
@@ -376,3 +395,16 @@ export const epicSaveFunction = "save_epic";
 
 /** The door a draft is created into an epic through. */
 export const draftInEpicFunction = "create_draft_in_epic";
+
+/** Every theme one person owns, by number. */
+export const ownedThemesFunction = "owned_themes";
+/** One theme created for one person, refused past the bound they are held to. */
+export const ownedThemeCreateFunction = "create_owned_theme";
+/** One theme of one person's written whole. */
+export const ownedThemeWriteFunction = "write_owned_theme";
+/** One theme of one person's deleted, with the choice that names it. */
+export const ownedThemeDeleteFunction = "delete_owned_theme";
+/** One person's global theme choice, none where they hold none. */
+export const themeChoiceReadFunction = "read_theme_choice";
+/** One person's global theme choice written whole, or cleared. */
+export const themeChoiceWriteFunction = "write_theme_choice";

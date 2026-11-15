@@ -174,11 +174,7 @@ function MemberChatThread(props: {
         {state.state === "Ready" ? (
           <>
             <div className="flex min-w-0 flex-1 flex-wrap items-center">
-              <ChatPaneThreadActions
-                home={home}
-                thread={state.value}
-                at="Page"
-              />
+              <ChatPaneThreadActions home={home} thread={state.value} />
             </div>
             <ContextToggle open={context} onToggle={setContext} />
           </>

@@ -98,6 +98,9 @@ export const workTaskDocumentSchema = z.object({
     text: z.string(),
   }),
   authority: policyAuthorityGrantSchema,
+  /** The credentials the job's configuration listed, which may name more than `authority` grants; a task without it lists the granted ones. */
+  credentialsListed:
+    policyAuthorityGrantSchema.shape.credentials.exactOptional(),
   worker: workerConfigurationSchema.exactOptional(),
   /** The ref the ticket's finalization lands on, absent where it lands on none its brief or binding names. */
   targetRef: z.string().min(1).exactOptional(),
@@ -114,10 +117,10 @@ export const workTaskAnswerSchema = workTaskDocumentSchema
   .omit({ workerPlane: true })
   .extend({ kind: z.literal("Work") });
 
-/** Every bound a session pod runs under, each one the deployment named. */
+/** Every bound a session pod runs under, each one the deployment named; `idleMs` is absent where the session has no idle limit. */
 const sessionBoundsSchema = z.object({
   mailboxPollMs: z.number(),
-  idleMs: z.number(),
+  idleMs: z.number().exactOptional(),
   resultDrainMs: z.number(),
   loadTimeoutMs: z.number(),
   turnsMax: z.number(),
@@ -189,6 +192,13 @@ type LaunchedDocument<Value> = Value extends object
 export type WorkTaskDocument = LaunchedDocument<
   z.infer<typeof workTaskDocumentSchema>
 >;
+/** The credentials a work task's configuration listed, which a task from before `credentialsListed` reads as its granted ones. */
+export function workTaskCredentialsListed(
+  task: Pick<WorkTaskDocument, "authority" | "credentialsListed">,
+): readonly string[] {
+  return task.credentialsListed ?? task.authority.credentials;
+}
+
 export type WorkTaskAnswer = LaunchedDocument<
   z.infer<typeof workTaskAnswerSchema>
 >;

@@ -902,8 +902,9 @@ function metricsPlaneEndingFamily<Schema extends z.ZodType>(
 
 /**
  * Whether each account's agent is paused by each trigger, as `agent_account_pause`
- * answers it at the snapshot's own time: soft where a window's reading holds it,
- * hard where a limit does. An account is one a reading or a limit names.
+ * answers it at the snapshot's own time, paused only while every credential the
+ * account's live runners name is, or while any is where they name none: soft
+ * where a window's reading holds it, hard where a limit does. An account is one a reading or a limit names.
  */
 async function metricsPlaneAgentPauseQuery(
   client: pg.PoolClient,

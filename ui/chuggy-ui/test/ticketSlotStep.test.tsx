@@ -83,7 +83,7 @@ test("a ticket parked with nowhere to run says so, with the way to Runners after
   expect(head.textContent).toBe("Nowhere to run this workRunners");
   expect(
     within(head).getByRole("link", { name: "Runners" }).getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/runners`);
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/settings/runners`);
   expect(within(card).queryByRole("button")).toBeNull();
 });
 
