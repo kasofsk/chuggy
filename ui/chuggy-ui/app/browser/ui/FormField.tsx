@@ -21,6 +21,9 @@ import "./FormField.css";
  * the control names itself with its own `aria-label`. */
 export interface FormFieldBinding {
   readonly id: string | undefined;
+  /** The drawn label's own id, for a control whose name is the label and
+   * more besides. */
+  readonly labelId: string | undefined;
   readonly describedBy: string | undefined;
   readonly invalid: boolean;
   readonly required: boolean;
@@ -66,7 +69,7 @@ export function FormField(
   const required = props.required === true;
   return (
     <div className="form-field">
-      <label className="form-field-label" htmlFor={id}>
+      <label className="form-field-label" id={`${id}-label`} htmlFor={id}>
         {props.label}
         {required ? (
           <span className="form-field-required" aria-hidden="true">
@@ -76,6 +79,7 @@ export function FormField(
       </label>
       {props.children({
         id,
+        labelId: `${id}-label`,
         describedBy: formFieldDescribedBy([props.describedBy, hintId, errorId]),
         invalid: errorId !== undefined || props.invalid === true,
         required,
@@ -109,6 +113,7 @@ export function FormFieldControl(
   if (props.labelShown !== true) {
     return props.children({
       id: undefined,
+      labelId: undefined,
       describedBy: props.describedBy,
       invalid: props.invalid === true,
       required: false,

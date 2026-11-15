@@ -59,6 +59,9 @@ export interface RenderedOpening {
   readonly viewport: RenderedViewport;
   /** Whether the console holds a member's session as it loads. */
   readonly signedIn: boolean;
+  /** Whether the screen is a phone's own, pressed by a finger: a coarse
+   * pointer, and touch. */
+  readonly touch?: boolean;
   /** What is on the screen once it has drawn, waited for before returning. */
   readonly ready: (page: Page) => Locator;
 }
@@ -112,6 +115,7 @@ export async function renderedOpen(
 ): Promise<Rendered> {
   const context = await browser.newContext({
     viewport: renderedViewports[opening.viewport],
+    ...(opening.touch === true ? { hasTouch: true, isMobile: true } : {}),
     storageState: {
       cookies: [],
       origins: opening.signedIn
@@ -227,7 +231,9 @@ const renderedInteractive = [
 
 /** Every interactive element drawn on the page, or under `scope` where it is
  * given, is at least `--height-touch` on each side; one drawn with no box is
- * not a target. */
+ * not a target. A control drawn smaller than a finger and pressed through an
+ * absolutely placed `::after` of its own, as a radio and a checkbox are under
+ * a coarse pointer, is measured by the larger of the two. */
 export async function renderedTouchTargets(
   page: Page,
   scope: Locator = page.locator("body"),
@@ -237,7 +243,21 @@ export async function renderedTouchTargets(
   const small = await scope.evaluate(
     (root, { selector, pixels }) =>
       [...root.querySelectorAll(selector)]
-        .map((element) => ({ element, box: element.getBoundingClientRect() }))
+        .map((element) => {
+          const drawn = element.getBoundingClientRect();
+          const area = getComputedStyle(element, "::after");
+          const pressed =
+            area.content !== "none" && area.position === "absolute";
+          const side = (length: string): number =>
+            pressed ? Number.parseFloat(length) || 0 : 0;
+          return {
+            element,
+            box: {
+              width: Math.max(drawn.width, side(area.width)),
+              height: Math.max(drawn.height, side(area.height)),
+            },
+          };
+        })
         .filter(({ box }) => box.width > 0 && box.height > 0)
         .filter(({ box }) => Math.min(box.width, box.height) < pixels - 0.5)
         .map(

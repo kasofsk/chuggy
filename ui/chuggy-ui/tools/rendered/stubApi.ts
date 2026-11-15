@@ -57,6 +57,7 @@ import {
   threadsResponseSchema,
   ticketLandingsResponseSchema,
   ticketNativeActionsResponseSchema,
+  draftInitializationResponseSchema,
   ticketResponseSchema,
   workerPoolsResponseSchema,
   workerPoolTokenResponseSchema,
@@ -303,6 +304,21 @@ const repositoryConfigurationCoding = {
   }),
 };
 
+/** What a new ticket under the ready configuration is drawn from: its
+ * catalog's defaults, a check stage, and the stub's one ticket to depend on. */
+const draftInitializationCoding = {
+  configuration: repositoryConfigurationCoding,
+  fence: { projectSequence: 1, configurationDigest: "a".repeat(64) },
+  defaults: {
+    dependencies: [],
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
+  },
+  choices: { programStagesMax: 4, evaluatorsMax: 3 },
+  dependencyCandidates: [1],
+  dependencyCandidatesTruncated: false,
+  commandedCheckStage: 1,
+};
+
 /** The repository's head, declaring the ready configuration as its newest
  * import stored it, so the catalog's head line offers the way back. */
 const repositoryConfigurationCodingProvenance =
@@ -501,6 +517,11 @@ export const stubApiReads: readonly StubApiRead[] = [
     `${projectPath}/configurations/revision-coding`,
     configurationResponseSchema,
     repositoryConfigurationCoding,
+  ),
+  stubApiRead(
+    `${projectPath}/draft-initializations/revision-coding`,
+    draftInitializationResponseSchema,
+    draftInitializationCoding,
   ),
   stubApiRead(
     `${projectPath}/configurations/imports/head`,

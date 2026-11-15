@@ -38,6 +38,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { holderDouble, settled } from "./screenHarness.tsx";
+import { creationMoreOpened, disclosed } from "./creationMore.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -137,15 +138,20 @@ function submit(): void {
 test("the form opens on the draft's current revision", () => {
   draw(api({ status: 200, body: draft }).ports, []);
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Ship it");
   expect(
     screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
       .value,
   ).toBe("ship the thing");
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("the branch name").value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>("the branch name"),
+    ).value,
   ).toBe("topic/one");
 });
 
@@ -160,17 +166,24 @@ test("the dependencies are offered to change, the held ones kept and the ticket 
   draw(held.ports, [], holding, [
     creationOffer(undefined, { dependencyCandidates: [7, 8, 12] }),
   ]);
-  fireEvent.click(screen.getByRole("button", { name: /Advanced/u }));
-  const offered = screen.getAllByRole<HTMLInputElement>("checkbox");
+  creationMoreOpened();
+  const offered = screen.getAllByRole("checkbox");
   expect(
-    offered.map((box) => [box.parentElement?.textContent, box.checked]),
+    offered.map((box) => [
+      box.parentElement?.textContent,
+      box.getAttribute("aria-checked") === "true",
+    ]),
   ).toStrictEqual([
     ["Ticket 3", true],
     ["Ticket 7", true],
     ["Ticket 8", false],
   ]);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Ticket 3" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: "Ticket 8" }));
+  fireEvent.click(
+    disclosed(() => screen.getByRole("checkbox", { name: "Ticket 3" })),
+  );
+  fireEvent.click(
+    disclosed(() => screen.getByRole("checkbox", { name: "Ticket 8" })),
+  );
   submit();
   await waitFor(() => {
     expect(held.sent.some((one) => one.method === "PUT")).toBe(true);
@@ -271,9 +284,12 @@ test("an edit of the title keeps the configuration the draft names", async () =>
   expect(
     screen.getByRole("button", { name: /^Configuration/u }).textContent,
   ).toContain("development");
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: "Renamed" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: "Renamed" },
+    },
+  );
   submit();
   await waitFor(() => {
     expect(updated).toStrictEqual(["updated"]);

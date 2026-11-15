@@ -57,7 +57,13 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-epics-more": Record<never, never>;
   readonly "ticket-authoring-epics-first": Record<never, never>;
   readonly "ticket-authoring-overrides": Record<never, never>;
-  readonly "ticket-authoring-advanced": Record<never, never>;
+  readonly "ticket-authoring-chat-line": Record<never, never>;
+  readonly "ticket-authoring-more": Record<never, never>;
+  readonly "ticket-authoring-more-about": Record<never, never>;
+  readonly "ticket-authoring-more-held": Record<never, never>;
+  readonly "ticket-authoring-group-details": Record<never, never>;
+  readonly "ticket-authoring-group-landing": Record<never, never>;
+  readonly "ticket-authoring-group-stages": Record<never, never>;
   readonly "ticket-authoring-dependencies": Record<never, never>;
   readonly "ticket-authoring-dependencies-none": Record<never, never>;
   readonly "ticket-authoring-dependencies-truncated": Record<never, never>;

@@ -1,6 +1,6 @@
 /**
  * The revision a catalog ticket follows, chosen behind the creation and edit
- * forms' Advanced disclosure: the catalog's default is shown as the choice of
+ * forms' disclosure: the catalog's default is shown as the choice of
  * none, and a choice is kept as made even where it equals that default.
  */
 
@@ -52,7 +52,6 @@ function drawn(defaulted: string | undefined, form?: TicketCreationForm) {
       initialization={offer.initialization}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
   return {
     picker: screen.getByLabelText<HTMLSelectElement>("Configuration version"),
     onChange,
@@ -105,6 +104,5 @@ test("a configuration that is no catalog offers no version", () => {
       initialization={offer.initialization}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
   expect(screen.queryByLabelText("Configuration version")).toBeNull();
 });
