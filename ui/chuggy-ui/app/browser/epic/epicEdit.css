@@ -1,32 +1,34 @@
-/* The epic's edit page: each field's name over it, with its count or its
-   format at the right, at reading width. */
+/* The epic's edit page at reading width: its actions in a row, and on a
+   narrow page stacked to its width, each press and box a finger's height. */
 
 @layer page {
   .epic-edit {
+    container-type: inline-size;
     max-width: var(--width-reading);
     min-width: 0;
   }
 
-  .epic-edit-field {
+  .epic-form {
     display: grid;
-    gap: var(--space-1);
+    gap: var(--space-3);
   }
 
-  .epic-edit-field-head {
+  .epic-form-refused,
+  .epic-form-actions {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    align-items: center;
     gap: var(--space-2);
-    font-size: var(--text-sm);
   }
 
-  .epic-edit-field-name {
-    color: var(--ink-1);
-    font-weight: var(--weight-medium);
-  }
+  @container (max-width: 40em) {
+    .epic-form-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
 
-  .epic-edit-field-aside {
-    color: var(--ink-3);
-    font-variant-numeric: tabular-nums;
+    .epic-form :is(.btn, .input-box) {
+      min-height: var(--height-touch);
+    }
   }
 }

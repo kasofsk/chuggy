@@ -18,6 +18,7 @@ import {
   inviteOpened as opened,
   inviteRedemptionsSent as redemptions,
 } from "./invitePageDrawn.tsx";
+import { centeredPageSaid } from "./centeredPageDrawn.ts";
 import { answer, heldAnswer, press, settled } from "./screenHarness.tsx";
 import { styleless } from "./styleless.ts";
 
@@ -34,7 +35,10 @@ test.each(["SignedOut", "SignedIn"] as const)(
       { search: "?flow=f-1", cookies: "chuggy_invite=crossed" },
       { configuration: inviteConfiguration("example.com") },
     );
-    expect(screen.getByText("Invite needed")).toBeTruthy();
+    expect(centeredPageSaid()).toStrictEqual({
+      title: "An invite is needed",
+      actions: ["Sign in"],
+    });
     expect(drawnButtons()).toStrictEqual(["Sign in"]);
     expect(new Set(browser.written)).toStrictEqual(
       new Set([inviteCookieCleared("example.com")]),
@@ -51,9 +55,12 @@ test.each(["SignedOut", "SignedIn"] as const)(
 
 test("a browser with no session and no link is drawn the ordinary signed-out card", async () => {
   const { browser, signIns } = await opened("SignedOut", {});
-  expect(screen.getByText("Signed out")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Sign in to chuggy",
+    actions: ["Sign in"],
+  });
   expect(drawnButtons()).toStrictEqual(["Sign in"]);
-  expect(screen.queryByText("Invited")).toBeNull();
+  expect(screen.queryByText("Sign in to accept.")).toBeNull();
   await press("Sign in");
   expect(signIns.length).toBe(1);
   expect(browser.written).toStrictEqual([]);
@@ -74,8 +81,11 @@ test("a link opened with no session is drawn Invited and goes nowhere without a 
     { anchor: "t0ken" },
     { configuration: inviteConfiguration("example.com") },
   );
-  expect(screen.getByText("Invited")).toBeTruthy();
-  expect(drawnButtons()).toStrictEqual(["Sign in"]);
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "You are invited to chuggy",
+    actions: ["Sign in"],
+  });
+  expect(screen.getByText("Sign in to accept.")).toBeTruthy();
   expect(browser.replaced).toStrictEqual(["/invite"]);
   expect(browser.written).toStrictEqual([]);
   expect(signIns).toStrictEqual([]);
@@ -126,6 +136,10 @@ test("a redemption unanswered is drawn as joining, with nothing to press", async
     { anchor: "t0ken" },
     { answered: () => held.answered },
   );
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Joining chuggy",
+    actions: [],
+  });
   expect(screen.getByText("Joining…")).toBeTruthy();
   expect(drawnButtons()).toStrictEqual([]);
   expect(browser.written).toStrictEqual([]);
@@ -141,20 +155,22 @@ test.each([
     () => answer({ error: { code: "InvalidRequest", message: "no" } }, 400),
   ],
 ])(
-  "a link that %s is drawn Link not valid, its cookie ended",
+  "a link that %s is drawn as no longer usable, its cookie ended",
   async (_named, answered) => {
     const { browser, sent, remount } = await opened(
       "SignedIn",
       { cookies: "chuggy_invite=crossed" },
       { answered },
     );
-    expect(screen.getByText("Link not valid")).toBeTruthy();
-    expect(drawnButtons()).toStrictEqual(["Open chuggy"]);
+    expect(centeredPageSaid()).toStrictEqual({
+      title: "This link can no longer be used",
+      actions: ["Open chuggy"],
+    });
     expect(browser.written).toStrictEqual([inviteCookieCleared(undefined)]);
     expect(browser.left).toStrictEqual([]);
     browser.cookies = "";
     await remount();
-    expect(screen.getByText("Link not valid")).toBeTruthy();
+    expect(centeredPageSaid().title).toBe("This link can no longer be used");
     expect(redemptions(sent).length).toBe(1);
     await press("Open chuggy");
     expect(browser.left).toStrictEqual(["/"]);
@@ -174,9 +190,14 @@ test("a redemption that failed keeps the cookie and says the fault, and Retry se
           : answer(granted),
     },
   );
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "The invite was not accepted",
+    actions: ["Retry"],
+  });
   expect(screen.getByText("Failed")).toBeTruthy();
-  expect(drawnButtons()).toStrictEqual(["Retry"]);
-  expect(screen.queryByText("Link not valid")).toBeNull();
+  expect(
+    screen.getByText("Retry. If it keeps failing, ask whoever sent the link."),
+  ).toBeTruthy();
   expect(browser.written).toStrictEqual([]);
   expect(browser.left).toStrictEqual([]);
   expect(redemptions(sent).length).toBe(1);

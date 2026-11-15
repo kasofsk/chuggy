@@ -283,6 +283,36 @@ test("a row names the member who filed it by subject where no email is read, the
   expect(unfiled?.querySelector(".identity")).toBeNull();
 });
 
+/** The members each place a row draws its creator holds, in order. */
+function membersDrawn(card: Element | null): readonly (readonly string[])[] {
+  return creatorPlaces.map((place) =>
+    [...(card?.querySelectorAll(`${place} .identity`) ?? [])].map(
+      (drawn) => drawn.textContent ?? "",
+    ),
+  );
+}
+
+test("a row names its owner after its creator in both places where they differ, and only its creator where they do not", async () => {
+  await drawTableWith(
+    [
+      { ...ticket, owner: "23:https://issuer.example/bob" },
+      { ...escalated, creator, owner: creator },
+    ],
+    [execution],
+  );
+  const taken = screen.getByText(title).closest("li");
+  expect(membersDrawn(taken)).toEqual([
+    ["alice", "bob"],
+    ["alice", "bob"],
+  ]);
+  expect(
+    taken?.querySelector(".ticket-list-creator .visually-hidden")?.textContent,
+  ).toContain("Owner");
+  expect(
+    membersDrawn(screen.getByText("Escalated ticket").closest("li")),
+  ).toEqual([["alice"], ["alice"]]);
+});
+
 const wideCondition = "(min-width: 53em)";
 const narrowCondition = "(max-width: 53em)";
 
@@ -418,9 +448,11 @@ test("nothing the project table draws is a runtime style element", async () => {
 
 /** A project with no ticket at all is one empty state offering the first,
  * with no section and no filter to choose between. */
-test("a project with no ticket draws one empty state that offers a new one", async () => {
+test("a project with no ticket draws one empty state that offers a new one, under the page's one top-level heading", async () => {
   await drawTableWith([], []);
-  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
+  expect(screen.getByText("No tickets").closest(".empty")).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   const offer = screen.getByText("New ticket");
   expect(offer.tagName).toBe("A");
   expect(offer.closest(".empty")).not.toBeNull();
@@ -472,7 +504,7 @@ test("a reader who may not mutate is offered no new ticket in the empty state", 
     [],
     abilitiesOver({ ...abilitiesEvery, mutate: false }),
   );
-  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
+  expect(screen.getByText("No tickets")).toBeDefined();
   expect(newTicketOffers()).toBe(0);
 });
 

@@ -44,7 +44,7 @@ import {
   bootstrapPublicOriginFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type { BriefingSectionId } from "../../src/interpreter/briefingTemplate.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -69,7 +69,7 @@ import {
 import type {
   AgentWorkload,
   WorkloadConfiguration,
-} from "../../src/interpreter/workloadConfiguration.ts";
+} from "../../src/contract/workloadConfiguration.ts";
 import { pinnedWorkloadTask } from "../../src/interpreter/workloadTask.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
@@ -364,6 +364,28 @@ test("its reviewer and the one its worker is told to declare are reevaluated on 
     checks.runner === "Commands" ? checks.reevaluate : "absent",
     undefined,
     "a commands workload reruns on every evaluated tree",
+  );
+});
+
+test("its agent workloads and the ones its worker is told to declare list the credential their agent runs on, and the checks list none", () => {
+  const imported = declaredTo(atEveryBound);
+  if (imported.readiness !== "Ready") assert.fail(JSON.stringify(imported));
+  const [declaration] = imported.declarations;
+  assert.ok(declaration !== undefined);
+  const declared = catalogOf(declaration.configuration);
+  for (const name of ["work", "review"]) {
+    assert.deepEqual(bootstrapWorkload(name).authority, {
+      credentials: ["claude-code"],
+    });
+    assert.deepEqual(bootstrapWorkload(name, declared).authority, {
+      credentials: ["claude-code"],
+    });
+  }
+  const checks = declared.workloads["checks"];
+  assert.equal(checks?.runner, "Commands");
+  assert.equal(
+    checks.runner === "Commands" ? checks.authority : "absent",
+    undefined,
   );
 });
 

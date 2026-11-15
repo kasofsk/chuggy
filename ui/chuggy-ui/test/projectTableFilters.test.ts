@@ -9,6 +9,7 @@ import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
+  ticketListAskNarrowed,
   ticketFilterOf,
   ticketFilterPage,
   ticketFilterPhases,
@@ -207,4 +208,27 @@ test("a creator's list is its own entry, read again on a frame, and asked of eve
     ).toMatchObject({ creator: "bob", q: "gate", order: "Oldest" });
     expect(ticketFilterProjectEmpty(ask, ended)).toBe(false);
   }
+});
+
+test("an owner's list is its own entry, apart from the same member's as creator, read again on a frame, and asked of every read", () => {
+  const asks: TicketListAsk[] = [
+    ticketListAskDefault,
+    { ...ticketListAskDefault, creator: "bob" },
+    { ...ticketListAskDefault, owner: "bob" },
+    { ...ticketListAskDefault, creator: "bob", owner: "bob" },
+  ];
+  const keys = asks.map((ask) =>
+    JSON.stringify(ticketFilterList(partition, ask).key),
+  );
+  expect(new Set(keys).size).toBe(keys.length);
+  for (const filter of filters) {
+    const ask = { ...filtered(filter), owner: "bob" };
+    expect(ticketFilterList(partition, ask).refresh.refresh).toBe("Reread");
+    expect(ticketFilterReadsCount(ask)).toBe(1);
+    expect(ticketFilterPage(ask, first)).toMatchObject({ owner: "bob" });
+    expect(ticketFilterPage(ask, first).creator).toBeUndefined();
+    expect(ticketFilterProjectEmpty(ask, ended)).toBe(false);
+    expect(ticketListAskNarrowed(ask)).toBe(true);
+  }
+  expect(ticketListAskNarrowed(ticketListAskDefault)).toBe(false);
 });

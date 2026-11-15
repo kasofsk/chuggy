@@ -27,7 +27,7 @@
  * between acceptance and decision.
  *
  * AN ANSWER NAMING NO TICKET COMMAND CARRIES NO `ticketCommand`. The two
- * answers a finalization approval admits change no `TicketGraph` state, so the
+ * answers an evaluation approval admits change no `TicketGraph` state, so the
  * source assembled for one carries the answer alone and there is nothing for a
  * decider to be offered.
  *

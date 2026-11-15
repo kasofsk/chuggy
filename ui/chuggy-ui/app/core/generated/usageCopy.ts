@@ -11,11 +11,11 @@ export interface UsageCopy {
   readonly "usage-window-five-hour": Record<never, never>;
   readonly "usage-window-seven-day": Record<never, never>;
   readonly "usage-provider-limit": Record<never, never>;
-  readonly "usage-joined": {
-    readonly lead: unknown;
-    readonly rest: unknown;
-  };
+  readonly "usage-reason-off": Record<never, never>;
   readonly "usage-until": Record<never, never>;
+  readonly "usage-held-by": {
+    readonly credentials: unknown;
+  };
   readonly "usage-try-again": Record<never, never>;
   readonly "usage-try-again-named": {
     readonly agent: unknown;
@@ -38,4 +38,29 @@ export interface UsageCopy {
   readonly "usage-threads-keep-running": Record<never, never>;
   readonly "usage-writing": Record<never, never>;
   readonly "usage-written": Record<never, never>;
+  readonly "usage-credentials": Record<never, never>;
+  readonly "usage-retire": Record<never, never>;
+  readonly "usage-retire-named": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retire-question": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retirement": {
+    readonly credential: unknown;
+  };
+  readonly "usage-retire-in-use": Record<never, never>;
+  readonly "usage-turn-off": Record<never, never>;
+  readonly "usage-turn-off-named": {
+    readonly credential: unknown;
+  };
+  readonly "usage-turn-off-question": {
+    readonly credential: unknown;
+  };
+  readonly "usage-turned-off": Record<never, never>;
+  readonly "usage-turn-off-full": Record<never, never>;
+  readonly "usage-turn-on": Record<never, never>;
+  readonly "usage-turn-on-named": {
+    readonly credential: unknown;
+  };
 }

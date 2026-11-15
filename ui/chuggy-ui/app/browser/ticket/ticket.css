@@ -156,7 +156,7 @@
   /* A landing: its fragment on a row, and the conflicting paths its detail
      lists. */
 
-  .ticket-landing-fragment {
+  .ticket-finalization-fragment {
     display: inline-flex;
     flex-wrap: wrap;
     align-items: baseline;
@@ -164,25 +164,25 @@
     min-width: 0;
   }
 
-  .ticket-landing-fragment a {
+  .ticket-finalization-fragment a {
     min-width: 0;
     overflow-wrap: anywhere;
   }
 
-  .ticket-landing-part {
+  .ticket-finalization-part {
     display: inline-flex;
     align-items: baseline;
     column-gap: var(--space-2);
   }
 
-  .ticket-landing-conflicts {
+  .ticket-finalization-conflicts {
     margin: 0;
     padding: 0;
     list-style: none;
     overflow-wrap: anywhere;
   }
 
-  .ticket-landing-cut {
+  .ticket-finalization-cut {
     margin: 0;
     color: var(--ink-3);
     font-size: var(--text-xs);
@@ -537,7 +537,7 @@
 
   /* A place in a landing queue: the merge mark and its figure, as wide as
      its figure whatever row or header it stands in. */
-  .landing-queue-chip {
+  .finalization-queue-chip {
     flex: none;
     font-variant-numeric: tabular-nums;
   }

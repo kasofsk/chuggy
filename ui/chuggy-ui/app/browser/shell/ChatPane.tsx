@@ -24,10 +24,8 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import {
   chatPaneDefaulted,
-  chatPaneFilled,
   chatPaneHeaderDoor,
   chatPaneHolding,
-  chatPaneRestored,
   chatPaneStripped,
   chatPaneToggled,
   chatPaneUnhosted,
@@ -78,12 +76,7 @@ import {
   ChatPaneIcon,
   ChatPaneIconButton,
 } from "./chatPaneIcons.tsx";
-import {
-  ChatPaneTitle,
-  ChatPaneHistory,
-  ChatPaneThreadActions,
-  ChatPaneThreadActionsIdle,
-} from "./ChatPaneHistory.tsx";
+import { ChatPaneHeader } from "./ChatPaneHeader.tsx";
 
 /** The listing the pane reads, which lists no lead session and so is not read
  * again on the frames of one. */
@@ -125,22 +118,32 @@ function ChatPaneStartDoor(props: {
  * the pane answers the thread.
  */
 function ChatPaneStartControl(props: {
+  readonly starting: ChatPaneStarting;
+}): ReactNode {
+  const text = useCopyText();
+  const { busy, started } = props.starting;
+  return (
+    <ChatPaneIconButton
+      glyph="new"
+      label={text({ id: "chat-start" })}
+      busy={busy}
+      disabled={busy}
+      onClick={started}
+    />
+  );
+}
+
+/** What New was answered and what the door would answer it, under the
+ * header's row. */
+function ChatPaneStartSaid(props: {
   readonly partition: PartitionIdentity;
   readonly starting: ChatPaneStarting;
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
-  const text = useCopyText();
-  const { busy, refused, started } = props.starting;
+  const { refused } = props.starting;
   return (
     <>
-      <ChatPaneIconButton
-        glyph="new"
-        label={text({ id: "chat-start" })}
-        busy={busy}
-        disabled={busy}
-        onClick={started}
-      />
       {refused === null ? null : (
         <ChatPaneHeaderRow>
           <Notice tone="danger" inline>
@@ -149,45 +152,6 @@ function ChatPaneStartControl(props: {
         </ChatPaneHeaderRow>
       )}
       <ChatPaneStartDoor partition={props.partition} header={props.header} />
-    </>
-  );
-}
-
-/** How much of the frame the pane takes, which is the move a reader makes
- * while reading, and only collapsing where the viewport does not divide. Where
- * it sits is set once and lives in the bar's settings menu instead. */
-function ChatPaneControls(props: {
-  readonly placement: ChatPanePlacement;
-}): ReactNode {
-  const text = useCopyText();
-  const held = useChatPane();
-  const state = held.state;
-  return (
-    <>
-      {!held.twoColumn ? null : state.presentation === "Full" ? (
-        <ChatPaneIconButton
-          glyph="restore"
-          label={text({ id: "chat-restore" })}
-          onClick={() => {
-            held.moveTo(chatPaneRestored(state));
-          }}
-        />
-      ) : (
-        <ChatPaneIconButton
-          glyph="fill"
-          label={text({ id: "chat-fill" })}
-          onClick={() => {
-            held.moveTo(chatPaneFilled(state));
-          }}
-        />
-      )}
-      <ChatPaneIconButton
-        glyph={`collapse${props.placement}`}
-        label={text({ id: "chat-collapse" })}
-        onClick={() => {
-          held.moveTo(chatPaneToggled(state));
-        }}
-      />
     </>
   );
 }
@@ -511,24 +475,6 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
   };
 }
 
-/** The thread the pane holds, at the start of its header's row, or the room
- * one would take. */
-function ChatPaneHeld(props: {
-  readonly partition: PartitionIdentity;
-  readonly thread: ThreadEntryResponse | undefined;
-  readonly viewOnly: boolean;
-}): ReactNode {
-  if (props.thread === undefined) return <ChatPaneThreadActionsIdle />;
-  return (
-    <ChatPaneThreadActions
-      home={threadHomeOf(props.partition)}
-      thread={props.thread}
-      viewOnly={props.viewOnly}
-      at="Pane"
-    />
-  );
-}
-
 interface ChatPaneOpenProps {
   readonly partition: PartitionIdentity;
   /** Where the pane is drawn, and whether it has the whole frame and so sets
@@ -578,29 +524,23 @@ function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
   });
   return (
     <ChatPaneSection reading={props.chat.presentation === "Full"}>
-      <header className="border-edge flex min-w-0 items-center border-b px-1 py-1">
-        <ChatPaneTitle thread={held} />
-        <div className="ml-auto flex chat-icons min-w-0 flex-wrap items-center">
-          {viewOnly ? null : (
-            <ChatPaneStartControl
+      <ChatPaneHeader
+        partition={props.partition}
+        thread={held}
+        viewOnly={viewOnly}
+        placement={props.chat.placement}
+        start={viewOnly ? null : <ChatPaneStartControl starting={starting} />}
+        said={
+          viewOnly ? null : (
+            <ChatPaneStartSaid
               partition={props.partition}
               starting={starting}
               header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
             />
-          )}
-          <ChatPaneHistory
-            threads={threads}
-            session={holding}
-            onChoose={pane.chose}
-          />
-          <ChatPaneHeld
-            partition={props.partition}
-            thread={held}
-            viewOnly={viewOnly}
-          />
-          <ChatPaneControls placement={props.chat.placement} />
-        </div>
-      </header>
+          )
+        }
+        history={{ threads, session: holding, onChoose: pane.chose }}
+      />
       <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
         <ChatPaneBody
           partition={props.partition}

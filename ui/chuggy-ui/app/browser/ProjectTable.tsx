@@ -6,10 +6,10 @@
  * Each row carries its ticket's latest execution, so a `Ticket` frame moves a
  * row and an `Execution` frame changes what one row says it is running, both
  * folded into the one entry the rows are read under. The filter, the creator,
- * the search and the order a sort reads in are asked of the wire, and the rows
- * on screen stand until the read under a new choice answers; the search, the
- * sort, the filter and the creator are the page's address, so a link holds
- * the view. Each state's
+ * the owner, the search and the order a sort reads in are asked of the wire,
+ * and the rows on screen stand until the read under a new choice answers; the
+ * search, the sort, the filter, the creator and the owner are the page's
+ * address, so a link holds the view. Each state's
  * count above the rows, read under every filter, chooses the filter as the
  * picker does. A project
  * holding no ticket at all offers the first instead.
@@ -28,7 +28,7 @@
 
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -38,7 +38,7 @@ import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiFailure } from "../core/apiRequest.ts";
-import type { CopyText } from "../core/copy.ts";
+import type { Copy, CopyText } from "../core/copy.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { landingQueuePlaceOf } from "../core/landingQueues.ts";
@@ -52,6 +52,7 @@ import {
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
   ticketFilterStandings,
+  ticketListAskNarrowed,
 } from "../core/projectTableFilters.ts";
 import type {
   TicketFilter,
@@ -88,6 +89,13 @@ import type {
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { EpicChips } from "./EpicChips.tsx";
 import { useCreatorEmails } from "./creatorEmails.ts";
+import {
+  ListControls,
+  ListGlyph,
+  ListSearch,
+  listFilterGlyph,
+  listSortGlyph,
+} from "./ui/ListControls.tsx";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
@@ -102,10 +110,9 @@ import {
   TicketTitleWords,
 } from "./TicketCells.tsx";
 import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
-import { Button, ButtonLink, buttonLookClassName } from "./ui/Button.tsx";
+import { Button, ButtonLink } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Identity } from "./ui/Identity.tsx";
-import { Input } from "./ui/Input.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
@@ -119,7 +126,6 @@ import {
   LandingQueueChip,
   useLandingQueues,
 } from "./ticket/LandingQueueChip.tsx";
-import { useHeadroom } from "./useHeadroom.ts";
 import "./ProjectTable.css";
 
 interface TicketRowsHeld {
@@ -261,17 +267,40 @@ export function TicketListDependencies(props: {
   );
 }
 
-/** Who filed the row, drawn in the meta where the list is wide and in the
- * foot where it is narrow; the sheet shows one of the two. */
+/** The row's owner where it is not its creator, after an arrow from them. */
+function TicketListOwner(props: {
+  readonly owner: string | undefined;
+  readonly creatorEmails: ReadonlyMap<string, string>;
+}): ReactNode {
+  const text = useCopyText();
+  if (props.owner === undefined) return null;
+  return (
+    <>
+      <span aria-hidden="true">{" → "}</span>
+      <span className="visually-hidden">
+        {` ${text({ id: "project-table-owner-label" })} `}
+      </span>
+      <Identity label={creatorLabel(props.owner, props.creatorEmails)} />
+    </>
+  );
+}
+
+/** Who filed the row and who owns it where that is someone else, drawn in the
+ * meta where the list is wide and in the foot where it is narrow; the sheet
+ * shows one of the two. */
 function TicketListCreator(props: {
   readonly row: ProjectTableRow;
   readonly creatorEmails: ReadonlyMap<string, string>;
   readonly className: string;
 }): ReactNode {
-  if (props.row.creator === undefined) return null;
+  const { creator, owner } = props.row;
+  if (creator === undefined && owner === undefined) return null;
   return (
     <span className={props.className}>
-      <Identity label={creatorLabel(props.row.creator, props.creatorEmails)} />
+      {creator === undefined ? null : (
+        <Identity label={creatorLabel(creator, props.creatorEmails)} />
+      )}
+      <TicketListOwner owner={owner} creatorEmails={props.creatorEmails} />
     </span>
   );
 }
@@ -391,49 +420,26 @@ export function TicketListRow(props: {
   );
 }
 
-/** The search, the sort and the filter, and the way to a new ticket. */
-function TicketListGlyph(props: { readonly children: ReactNode }): ReactNode {
-  return (
-    <svg
-      aria-hidden="true"
-      className="size-4"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {props.children}
-    </svg>
-  );
-}
-
-const ticketListSortGlyph = (
-  <TicketListGlyph>
-    <path d="M5 2.5v11M2.5 11 5 13.5 7.5 11M11 13.5v-11M8.5 5 11 2.5 13.5 5" />
-  </TicketListGlyph>
-);
-
-const ticketListFilterGlyph = (
-  <TicketListGlyph>
-    <path d="M2.5 3h11L9.5 8v4.5l-3 1.5V8z" />
-  </TicketListGlyph>
-);
-
 const ticketListCreatorGlyph = (
-  <TicketListGlyph>
+  <ListGlyph>
     <circle cx="8" cy="5" r="2.75" />
     <path d="M2.75 14c0-2.9 2.35-4.75 5.25-4.75s5.25 1.85 5.25 4.75" />
-  </TicketListGlyph>
+  </ListGlyph>
+);
+
+const ticketListOwnerGlyph = (
+  <ListGlyph>
+    <circle cx="10" cy="5" r="2.5" />
+    <path d="M5.5 14c0-2.6 2-4.25 4.5-4.25s4.5 1.65 4.5 4.25M1.5 8h4M4 6l2 2-2 2" />
+  </ListGlyph>
 );
 
 const ticketListDependencyGlyph = (
-  <TicketListGlyph>
+  <ListGlyph>
     <circle cx="4.5" cy="3.5" r="1.75" />
     <circle cx="11.5" cy="12" r="1.75" />
     <path d="M4.5 5.25v9.25M4.5 5.25c0 3.5 2.75 6.75 5.25 6.75" />
-  </TicketListGlyph>
+  </ListGlyph>
 );
 
 /** The standings that are not yet an end, in the order the State sort draws the rows, reversed. */
@@ -507,18 +513,34 @@ function ticketListFilterText(
   return ticketFilterIsStanding(filter) ? filter : text(phaseLabel(filter));
 }
 
-/** Anyone, as the Creator picker holds it, which no principal is. */
-const ticketListCreatorAnyone = "";
+/** Anyone, as the Creator and Owner pickers hold it, which no principal is. */
+const ticketListMemberAnyone = "";
 
-/** Who filed the tickets the list holds: anyone, the reader, or one of the
- * project's people, each drawn as their row's creator is. */
-function TicketListCreatorPicker(props: {
+/** The member a picker narrows the list to, and how it is named and drawn. */
+const ticketListMemberPickers = {
+  creator: {
+    label: { id: "project-table-creator-label" },
+    glyph: ticketListCreatorGlyph,
+  },
+  owner: {
+    label: { id: "project-table-owner-label" },
+    glyph: ticketListOwnerGlyph,
+  },
+} as const satisfies Record<
+  "creator" | "owner",
+  { readonly label: Copy; readonly glyph: ReactNode }
+>;
+
+/** Who filed, or who owns, the tickets the list holds: anyone, the reader,
+ * or one of the project's people, each drawn as their row's creator is. */
+function TicketListMemberPicker(props: {
+  readonly member: keyof typeof ticketListMemberPickers;
   readonly partition: PartitionIdentity;
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const text = useCopyText();
-  const creator = props.query.creator;
+  const chosen = props.query[props.member];
   const reader = useProjectAbilities(props.partition)?.principal;
   const people = useProjectPeople(props.partition);
   const creatorEmails = useCreatorEmails(props.partition);
@@ -527,17 +549,18 @@ function TicketListCreatorPicker(props: {
     people.state === "Ready"
       ? people.value.people.map((person) => person.subject)
       : [],
-    creator,
+    chosen,
   );
+  const picker = ticketListMemberPickers[props.member];
   return (
     <Picker
-      label={text({ id: "project-table-creator-label" })}
+      label={text(picker.label)}
       iconOnly
-      glyph={ticketListCreatorGlyph}
-      value={creator ?? ticketListCreatorAnyone}
+      glyph={picker.glyph}
+      value={chosen ?? ticketListMemberAnyone}
       options={[
         {
-          value: ticketListCreatorAnyone,
+          value: ticketListMemberAnyone,
           text: text({ id: "project-table-creator-anyone" }),
         },
         ...(reader === undefined
@@ -550,98 +573,21 @@ function TicketListCreatorPicker(props: {
           text: creatorLabel(principal, creatorEmails).text,
         })),
       ]}
-      onChoose={(chosen) => {
+      onChoose={(picked) => {
+        const member = picked === ticketListMemberAnyone ? undefined : picked;
         props.onQuery(
-          ticketListQueryWith(props.query, {
-            creator: chosen === ticketListCreatorAnyone ? undefined : chosen,
-          }),
+          ticketListQueryWith(
+            props.query,
+            props.member === "creator"
+              ? { creator: member }
+              : { owner: member },
+          ),
         );
       }}
       align="end"
     />
   );
 }
-
-/** How long the box takes to close, which the room it holds in the row outlasts. */
-const ticketListSearchCloseMs = 260;
-
-/** The search, which is a button until it is asked for and then the button
- * opened out to the box; closed over a search it holds, the button is marked. */
-function TicketListSearch(props: {
-  readonly search: string;
-  readonly onSearch: (search: string) => void;
-}): ReactNode {
-  const text = useCopyText();
-  const searchLabel = text({ id: "project-table-search" });
-  const [asked, setAsked] = useState(false);
-  const field = useRef<HTMLSpanElement>(null);
-  const [laidOut, setLaidOut] = useState(false);
-  const closing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const open = asked;
-  useEffect(() => {
-    if (asked) field.current?.querySelector("input")?.focus();
-  }, [asked]);
-  useEffect(
-    () => () => {
-      clearTimeout(closing.current);
-    },
-    [],
-  );
-  const show = (): void => {
-    clearTimeout(closing.current);
-    setAsked(true);
-    setLaidOut(true);
-  };
-  const close = (): void => {
-    setAsked(false);
-    clearTimeout(closing.current);
-    closing.current = setTimeout(() => {
-      setLaidOut(false);
-    }, ticketListSearchCloseMs);
-  };
-  return (
-    <span
-      className="ticket-list-search"
-      data-open={open || laidOut || undefined}
-      data-expanded={open || undefined}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") close();
-      }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) close();
-      }}
-    >
-      <button
-        type="button"
-        className={`${buttonLookClassName({ size: "sm" })} ticket-list-search-toggle`}
-        aria-label={searchLabel}
-        aria-expanded={open}
-        title={searchLabel}
-        data-active={props.search === "" ? undefined : ""}
-        onClick={() => {
-          if (open) close();
-          else show();
-        }}
-      >
-        {ticketListSearchGlyph}
-      </button>
-      <span className="ticket-list-search-field" ref={field} inert={!open}>
-        <Input
-          label={searchLabel}
-          placeholder={text({ id: "project-table-search-placeholder" })}
-          value={props.search}
-          onChange={props.onSearch}
-        />
-      </span>
-    </span>
-  );
-}
-
-const ticketListSearchGlyph = (
-  <TicketListGlyph>
-    <path d="M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10zM10.8 10.8l3 3" />
-  </TicketListGlyph>
-);
 
 function TicketListSortPicker(props: {
   readonly sort: TicketListSort;
@@ -652,7 +598,7 @@ function TicketListSortPicker(props: {
     <Picker
       label={text({ id: "project-table-sort-label" })}
       iconOnly
-      glyph={ticketListSortGlyph}
+      glyph={listSortGlyph}
       value={props.sort}
       options={ticketListSorts.map((sort) => ({
         value: sort,
@@ -675,7 +621,7 @@ function TicketListFilterPicker(props: {
     <Picker
       label={text({ id: "project-table-filter-label" })}
       iconOnly
-      glyph={ticketListFilterGlyph}
+      glyph={listFilterGlyph}
       value={props.filter}
       options={[
         {
@@ -707,34 +653,38 @@ function TicketListControls(props: {
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
-  const bar = useRef<HTMLDivElement>(null);
-  const hidden = useHeadroom(bar);
+  const text = useCopyText();
   return (
-    <div
-      className="ticket-list-controls"
-      ref={bar}
-      data-hidden={hidden || undefined}
-      inert={hidden}
-    >
-      <TicketListCounts
-        rows={props.rows}
-        filter={props.filter}
-        onFilter={props.onFilter}
-      />
-      <div className="ticket-list-selects">
-        <TicketListSearch search={props.search} onSearch={props.onSearch} />
-        <TicketListSortPicker sort={props.sort} onSort={props.onSort} />
-        <TicketListFilterPicker
+    <ListControls
+      start={
+        <TicketListCounts
+          rows={props.rows}
           filter={props.filter}
           onFilter={props.onFilter}
         />
-        <TicketListCreatorPicker
-          partition={props.partition}
-          query={props.query}
-          onQuery={props.onQuery}
-        />
-      </div>
-    </div>
+      }
+    >
+      <ListSearch
+        label={text({ id: "project-table-search" })}
+        placeholder={text({ id: "project-table-search-placeholder" })}
+        search={props.search}
+        onSearch={props.onSearch}
+      />
+      <TicketListSortPicker sort={props.sort} onSort={props.onSort} />
+      <TicketListFilterPicker filter={props.filter} onFilter={props.onFilter} />
+      <TicketListMemberPicker
+        member="creator"
+        partition={props.partition}
+        query={props.query}
+        onQuery={props.onQuery}
+      />
+      <TicketListMemberPicker
+        member="owner"
+        partition={props.partition}
+        query={props.query}
+        onQuery={props.onQuery}
+      />
+    </ListControls>
   );
 }
 
@@ -754,7 +704,7 @@ function ticketListStatusMatched(
 }
 
 /** One line under the controls where the list needs one: how many tickets a
- * search or a creator matched, across the project or, under a standing the server cannot
+ * search, a creator or an owner matched, across the project or, under a standing the server cannot
  * count, among the rows drawn; or that the list draws none, of the tickets
  * there are or, while pages remain, of those read so far. */
 function ticketListStatus(
@@ -789,7 +739,7 @@ function TicketListRows(props: {
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly sort: TicketListSort;
-  /** The server narrowed the read, by a search or a creator. */
+  /** The server narrowed the read, by a search, a creator or an owner. */
   readonly narrowed: boolean;
   readonly readMore: (() => void) | undefined;
 }): ReactNode {
@@ -964,6 +914,7 @@ function useProjectTableState(props: {
     order: ticketListSortOrder(sort),
     search: props.query.q,
     creator: props.query.creator,
+    owner: props.query.owner,
   };
   const tickets = useTicketRows(partition, ask);
   const unfiltered = useTicketRows(partition, {
@@ -1059,7 +1010,7 @@ export function ProjectTable(props: {
         partition={partition}
         nowMs={nowMs}
         sort={sort}
-        narrowed={ask.search !== undefined || ask.creator !== undefined}
+        narrowed={ticketListAskNarrowed(ask)}
         readMore={tickets.readMore}
       />
       {tickets.reading ? (

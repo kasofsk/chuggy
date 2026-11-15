@@ -691,6 +691,113 @@ test("a run's totals are written once and a different figure is refused", async 
   );
 });
 
+/** The credential one attempt's stored totals name, none where they name none. */
+async function runTotalsCredential(attempt: RunBearer) {
+  return rig.harness.query(
+    `SELECT credential FROM execution_run_total
+      WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4`,
+    [
+      attempt.partition.tenant,
+      attempt.partition.project,
+      attempt.execution,
+      attempt.attempt,
+    ],
+  );
+}
+
+test("a run's totals keep the credential they name, and a repeat naming another or none is refused", async () => {
+  const { attempt } = await placedAttempt("run-totals-credential");
+  const record = (credential?: string) =>
+    totals.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      totals: {
+        ...runTotalsFixture(4_200),
+        ...(credential === undefined ? {} : { credential }),
+      },
+    });
+  assert.equal(await record("max-2"), "Stored");
+  assert.equal(await record("max-2"), "AlreadyStored");
+  assert.equal(await record("max-1"), "Conflict");
+  assert.equal(await record(), "Conflict");
+  assert.deepEqual(await runTotalsCredential(attempt), [
+    { credential: "max-2" },
+  ]);
+  const { attempt: unnamed } = await placedAttempt("run-totals-unnamed");
+  const recordUnnamed = (credential?: string) =>
+    totals.record({
+      secret: unnamed.capability.secret,
+      generation: unnamed.generation,
+      totals: {
+        ...runTotalsFixture(4_200),
+        ...(credential === undefined ? {} : { credential }),
+      },
+    });
+  assert.equal(await recordUnnamed(), "Stored");
+  assert.equal(await recordUnnamed("max-1"), "Conflict");
+  assert.deepEqual(await runTotalsCredential(unnamed), [{ credential: null }]);
+});
+
+test("a credential name outside the pattern is refused by the relation itself", async () => {
+  const { attempt } = await placedAttempt("run-totals-credential-check");
+  await rig.harness.query(
+    `INSERT INTO execution_run (tenant,project,execution,attempt)
+     VALUES ($1,$2,$3,$4)`,
+    [
+      attempt.partition.tenant,
+      attempt.partition.project,
+      attempt.execution,
+      attempt.attempt,
+    ],
+  );
+  await assert.rejects(
+    rig.harness.query(
+      `INSERT INTO execution_run_total
+         (tenant,project,execution,attempt,turns,duration_ms,duration_api_ms,
+          tokens_input,tokens_output,tokens_cache_creation,tokens_cache_read,
+          cost_usd_micros,cost_basis,permission_denials,credential)
+       VALUES ($1,$2,$3,$4,0,0,0,0,0,0,0,0,'List',0,'max 1')`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.execution,
+        attempt.attempt,
+      ],
+    ),
+    /execution_run_total_credential_is_named/u,
+  );
+});
+
+test("the totals door called at its arity before the credential stores none", async () => {
+  const { attempt } = await placedAttempt("run-totals-old-arity");
+  const fixture = runTotalsFixture(4_200);
+  const found = await workerPool.query<{ stored: string }>(
+    `SELECT record_worker_run_total($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+       $13,$14,$15::jsonb)::text AS stored`,
+    [
+      createHash("sha256")
+        .update(attempt.capability.secret, "utf8")
+        .digest("hex"),
+      attempt.generation,
+      fixture.turns,
+      fixture.durationMs,
+      fixture.durationApiMs,
+      fixture.tokensInput,
+      fixture.tokensOutput,
+      fixture.tokensCacheCreation,
+      fixture.tokensCacheRead,
+      fixture.costUsdMicros,
+      fixture.costBasis,
+      fixture.permissionDenials,
+      fixture.resultSubtype,
+      fixture.stopReason,
+      JSON.stringify(fixture.models),
+    ],
+  );
+  assert.deepEqual(found.rows, [{ stored: "Stored" }]);
+  assert.deepEqual(await runTotalsCredential(attempt), [{ credential: null }]);
+});
+
 test("a run's configuration is recorded once and a second snapshot is refused", async () => {
   const { attempt } = await placedAttempt("run-configuration");
   const record = (seed: string, bytes = 64) =>

@@ -948,6 +948,60 @@ test("an evaluation's bundle carries the change identity its source observed", a
   assert.equal(spawn?.bundle?.source?.changeIdentity, identity);
 });
 
+/** Catches the ref an evaluation's commit is on dropped between the observation and the bundle. */
+test("an evaluation's bundle names the ref its source observed its commit on", async () => {
+  const pinned = pinnedSources([]);
+  const ref = asGitRefName("refs/heads/chuggy/tickets/1/attempts/abc");
+  const { offered } = await decidedWith(
+    dispatchedMemory(),
+    completionInput(workCompletion),
+    {
+      ...pinned,
+      spawnSource: async (request) => {
+        const source = await pinned.spawnSource(request);
+        return source === undefined
+          ? undefined
+          : { ...source, target: { ...source.target, ref } };
+      },
+    },
+  );
+  const spawn =
+    offered?.outcome.outcome === "Journaled"
+      ? offered.outcome.materialization.execution[0]
+      : undefined;
+  assert.equal(spawn?.kind, "SpawnEvaluation");
+  assert.equal(spawn?.bundle?.source?.targetCommitRef, ref);
+});
+
+/**
+ * A work spawn's ref is where its work is observed, which may have moved past
+ * its commit or not exist yet. Catches it named as the ref the commit is on.
+ */
+test("a work spawn's bundle names no ref its commit is on, though its source names a ref", async () => {
+  const decision = await planned(
+    releasedMemory(),
+    manualDispatch,
+    recordingSources([]),
+    {
+      brief: () =>
+        Promise.resolve(
+          asDraftBrief({
+            intent: "Fix the importer.",
+            links: [],
+            branch: "refs/heads/rt/ticket-brief",
+          }),
+        ),
+    },
+  );
+  const spawn =
+    decision.outcome.outcome === "Journaled"
+      ? decision.outcome.materialization.execution[0]
+      : undefined;
+  assert.equal(spawn?.kind, "SpawnWork");
+  assert.equal(spawn?.bundle?.source?.targetRef, "refs/heads/rt/ticket-brief");
+  assert.equal(spawn?.bundle?.source?.targetCommitRef, undefined);
+});
+
 /** A ticket dispatched into work, which is the phase a settled block interrupts. */
 function dispatchedState(): ActorState {
   const config = refinementInstance;

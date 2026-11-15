@@ -12,6 +12,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 import { z } from "zod";
 
+import type { WorkerPoolThreadClosed } from "../../contract/workerPool.ts";
 import { sessionTaskDocumentSchema } from "../../contract/workerTask.ts";
 import {
   allSessionKinds,
@@ -52,18 +53,16 @@ export function postgresSessionLaunchPrecondition(
       await pool.query(
         sql`INSERT INTO session_launch
               (singleton,image,authority,mirrors,bounds,model,deadline_secs,
-               backoff_secs,idle_secs_max,published_at)
+               backoff_secs,published_at)
             VALUES (1,${launch.image},${JSON.stringify(launch.authority)}::jsonb,
                     ${JSON.stringify(launch.mirrors)}::jsonb,
                     ${JSON.stringify(launch.bounds)}::jsonb,${launch.model},
-                    ${launch.deadlineSecs},${launch.placementBackoffSecs},
-                    ${launch.idleSecsMax ?? null}::bigint,now())
+                    ${launch.deadlineSecs},${launch.placementBackoffSecs},now())
             ON CONFLICT (singleton) DO UPDATE
               SET image=EXCLUDED.image,authority=EXCLUDED.authority,
                   mirrors=EXCLUDED.mirrors,bounds=EXCLUDED.bounds,
                   model=EXCLUDED.model,deadline_secs=EXCLUDED.deadline_secs,
                   backoff_secs=EXCLUDED.backoff_secs,
-                  idle_secs_max=EXCLUDED.idle_secs_max,
                   published_at=EXCLUDED.published_at`,
       );
       signal.throwIfAborted();
@@ -76,7 +75,7 @@ export function postgresSessionLaunchPrecondition(
 const sessionLaunchDocumentsSchema = z.strictObject({
   authority: sessionTaskDocumentSchema.shape.authority,
   mirrors: z.record(z.string(), z.string()),
-  bounds: sessionTaskDocumentSchema.shape.bounds,
+  bounds: sessionTaskDocumentSchema.shape.bounds.required(),
 });
 
 async function sessionLaunch(
@@ -90,12 +89,10 @@ async function sessionLaunch(
     model: string;
     deadline_secs: string;
     backoff_secs: string;
-    idle_secs_max: string | null;
   }>(
     sql`SELECT image,authority,mirrors,bounds,model,
                deadline_secs::text AS deadline_secs,
-               backoff_secs::text AS backoff_secs,
-               idle_secs_max::text AS idle_secs_max
+               backoff_secs::text AS backoff_secs
           FROM session_launch WHERE singleton=1`,
   );
   const row = found.rows[0];
@@ -124,14 +121,6 @@ async function sessionLaunch(
       row.backoff_secs,
       "session launch backoff",
     ),
-    ...(row.idle_secs_max === null
-      ? {}
-      : {
-          idleSecsMax: projectRowCounter(
-            row.idle_secs_max,
-            "session launch idle bound",
-          ),
-        }),
   };
 }
 
@@ -386,6 +375,10 @@ function postgresChatHostSessionClaims(
         opening.idleSecs === undefined
           ? null
           : workerPoolSessionBound(opening.idleSecs, "idle bound");
+      const hostCapabilities =
+        opening.hostCapabilities === undefined
+          ? null
+          : [...opening.hostCapabilities];
       return sessionOpenedOf(
         await pool.query<{ opened: string | null }>(
           sql`SELECT open_chat_host_session_attempt(
@@ -396,11 +389,32 @@ function postgresChatHostSessionClaims(
                 ${opening.bearerSecretDigest},${terms.leaseSecs},
                 ${opening.placementBackoffSecs},${terms.heldMax},
                 ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb,${idleSecs}::bigint)::text AS opened`,
+                ${terms.launch}::jsonb,${idleSecs}::bigint,
+                ${hostCapabilities}::text[])::text AS opened`,
         ),
       );
     },
   };
+}
+
+/** The threads a chat host last ran that have since closed, as its answer names them. */
+async function chatHostThreadsClosed(
+  pool: pg.Pool,
+  identity: ChatHostIdentity,
+  max: number,
+): Promise<readonly WorkerPoolThreadClosed[]> {
+  const found = await pool.query<{
+    project: string | null;
+    session: string | null;
+  }>(
+    sql`SELECT project,session FROM chat_host_threads_closed(
+          ${identity.tenant},${identity.owner},${identity.principal},
+          ${workerPoolSessionBound(max, "closed thread bound")})`,
+  );
+  return found.rows.map((row) => ({
+    project: sessionRowText(row.project, "project"),
+    session: sessionRowText(row.session, "session"),
+  }));
 }
 
 /** What a chat host holds, through the registration that claimed it. */
@@ -496,6 +510,8 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
   };
   return {
     launch: () => sessionLaunch(pool),
+    threadsClosed: (identity, max) =>
+      chatHostThreadsClosed(pool, identity, max),
     among: (identity, assignments) =>
       sessionsRouted(identity, sides, (side, held) =>
         side.among(held, assignments),

@@ -52,6 +52,8 @@ import {
   sessionTurnInputKinds,
 } from "./rosters.ts";
 import { sessionLiveEventSchema } from "./sessionLive.ts";
+import { allThreadJobWakeReasons } from "./threadWake.ts";
+import type { WorkerContractFeature } from "./workerContract.ts";
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
@@ -88,6 +90,7 @@ export {
   sessionContainerEnds,
   sessionContextCauses,
 } from "./rosters.ts";
+export { allThreadJobWakeReasons } from "./threadWake.ts";
 export {
   isSessionLiveText,
   sessionLiveBlockKinds,
@@ -105,6 +108,8 @@ export const sessionPlaneRoutes = {
   turnLive: { method: "POST", path: "/v1/session/turn/live" },
   turnStopped: { method: "POST", path: "/v1/session/turn/stopped" },
   held: { method: "POST", path: "/v1/session/held" },
+  standing: { method: "PUT", path: "/v1/session/standing" },
+  wake: { method: "POST", path: "/v1/session/wake" },
   storeStreams: { method: "GET", path: "/v1/session/store" },
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
   storePage: { method: "GET", path: "/v1/session/store/*" },
@@ -112,6 +117,33 @@ export const sessionPlaneRoutes = {
   ended: { method: "POST", path: "/v1/session/ended" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type SessionPlaneRouteName = keyof typeof sessionPlaneRoutes;
+
+/**
+ * The feature each session plane route belongs to, so a client is held only to
+ * the routes of the features it lists.
+ * A new route names the feature it belongs to, and `null` is for a route every
+ * client of the plane must speak.
+ */
+export const sessionPlaneRouteFeatures: Readonly<
+  Record<SessionPlaneRouteName, WorkerContractFeature | null>
+> = {
+  facts: null,
+  heartbeat: null,
+  reference: null,
+  turn: null,
+  turnAnswer: null,
+  turnFailure: null,
+  turnLive: null,
+  turnStopped: null,
+  held: null,
+  standing: null,
+  wake: null,
+  storeStreams: null,
+  storeBatch: null,
+  storePage: null,
+  credential: null,
+  ended: null,
+};
 
 /** What marks a token as a session bearer rather than an OIDC one, so the API never probes. */
 export const sessionBearerPrefix = "chgs_";
@@ -238,6 +270,39 @@ export const sessionTurnStoppedSchema = z.strictObject({
   turn: sessionIdentitySchema,
 });
 
+/**
+ * Whether a thread a chat host runs is standing: whether it holds jobs its
+ * host restarts with each attempt. The plane keeps the latest report on the
+ * thread rather than the attempt, and keeps an attempt placed for a standing
+ * thread on the host that ran its last one until the thread closes or an
+ * attempt reports it is not.
+ */
+export const sessionStandingSchema = z.strictObject({
+  standing: z.boolean(),
+});
+
+/**
+ * One wake a thread's attempt on its member's chat host offers its own thread:
+ * why, and the name of the job, watch or timer it is about, which is all the
+ * turn carries. `event` is the attempt's own identity for what happened, and
+ * the turn is derived from it and the session, so the same event posted again
+ * is the same turn.
+ */
+export const sessionWakeSchema = z.strictObject({
+  wake: z.enum(allThreadJobWakeReasons),
+  resource: sessionIdentitySchema,
+  event: sessionIdentitySchema,
+});
+
+/** What the thread's mailbox made of a wake: a turn, the same turn again, or no turn to put in it. */
+export const sessionWokenAnswerSchema = z.union([
+  z.object({
+    woken: z.enum(["Woken", "AlreadyWoken"]),
+    ordinal: z.number().int().positive().max(sessionTurnSeriesMax),
+  }),
+  z.object({ woken: z.enum(["NoThread", "Closed", "Backlogged"]) }),
+]);
+
 /** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
@@ -248,8 +313,14 @@ export const sessionEndedSchema = z.strictObject({
  * session has none, as `model` and `effort` are where it opened under the
  * site's session model and the runtime's own effort. `autoCompactWindow` is a
  * lead's alone: the context, in tokens, at which its runtime compacts the
- * conversation; and `systemPromptOwn` is present only where the session runs
- * on its own system prompt and loads nothing of its project's settings.
+ * conversation; `systemPromptOwn` is present only where the session runs
+ * on its own system prompt and loads nothing of its project's settings; and
+ * `shellCredentialHanded` is present only for a thread a chat host whose
+ * settings name its threads' capabilities holds, whose session hands its shell
+ * the API's origin, its bearer, its tenant and its project, in
+ * `sessionApiOriginVariable`, `sessionBearerVariable`, `sessionTenantVariable`
+ * and `sessionProjectVariable`, where a session told nothing hands its shell
+ * none of them.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
@@ -272,6 +343,7 @@ export const sessionFactsAnswerSchema = z.object({
   effort: z.enum(sessionEfforts).optional(),
   forkFrom: sessionIdentitySchema.optional(),
   systemPromptOwn: z.literal(true).optional(),
+  shellCredentialHanded: z.literal(true).optional(),
 });
 
 /** One turn as the mailbox hands it over, its input opaque to the plane. */
@@ -369,6 +441,24 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     204: "empty",
     401: workerPlaneStopSchema,
     409: workerPlaneRefusalSchema(["Fenced"]),
+  },
+  standing: {
+    204: "empty",
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["Fenced", "NotChatHostThread"]),
+  },
+  wake: {
+    200: sessionWokenAnswerSchema,
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    404: workerPlaneRefusalSchema(["NotConfigured"]),
+    409: workerPlaneRefusalSchema([
+      "Fenced",
+      "NotChatHostThread",
+      "NotAdmitted",
+    ]),
+    503: workerPlaneRetrySchema,
   },
   storeStreams: {
     200: sessionStoreStreamsAnswerSchema,
