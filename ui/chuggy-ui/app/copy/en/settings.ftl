@@ -102,6 +102,7 @@ settings-invitation-send = Invite
 settings-invitation-sending = Inviting…
 # spells -invite: to invite is a verb here
 settings-invitation-title = Invite to { $tenant }
+settings-invitation-joins = This adds them to { $tenant }. { -workspace(case: "upper", form: "a") } of their own comes from a signup link, under Settings → { -workspace(case: "upper", form: "plural") }.
 
 settings-invite-link-create = Create link
 settings-invite-link-made = { -invite(case: "upper") } link
@@ -184,6 +185,9 @@ settings-workspaces-owner = Owner
 settings-workspaces-create = Create
 settings-workspaces-note = Note
 settings-workspaces-note-lines = One line
+settings-workspaces-link-mode = Signup link
+settings-workspaces-link-about = Whoever opens it signs in with { -github } and gets { -workspace(form: "a") } of their own.
+settings-workspaces-links = Signup links
 
 ## The workspace's connected GitHub accounts.
 

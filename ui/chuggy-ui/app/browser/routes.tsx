@@ -70,11 +70,7 @@ import { InvitePage } from "./InvitePage.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { MemberChatPage } from "./MemberChatPage.tsx";
 import { persistentStore } from "./ports.ts";
-import {
-  ProjectCreation,
-  ProjectCreationPage,
-  ProjectlessFrame,
-} from "./ProjectCreation.tsx";
+import { ProjectCreationPage, ProjectlessFrame } from "./ProjectCreation.tsx";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
@@ -90,6 +86,7 @@ import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 import { TicketLandingTab } from "./ticket/TicketLandingPage.tsx";
 import { TicketRunTab } from "./ticket/TicketRunPage.tsx";
+import { Welcome } from "./Welcome.tsx";
 import {
   TicketConfigurationTab,
   TicketOverviewTab,
@@ -99,6 +96,8 @@ import {
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
+/** The root: the project last opened or else the first, and for a reader
+ * with none the welcome page. */
 export function Landing(): ReactNode {
   const text = useCopyText();
   const navigate = useNavigate();
@@ -115,22 +114,7 @@ export function Landing(): ReactNode {
       replace: true,
     });
   }, [navigate, chosen]);
-  if (state.state === "Ready" && state.value.length === 0)
-    return (
-      <ProjectlessFrame>
-        <div className="grid justify-items-center gap-4">
-          <ProjectCreation
-            lead={
-              <EmptyState
-                variant="page"
-                label={text({ id: "shell-projects-none" })}
-                detail={text({ id: "shell-projects-none-detail" })}
-              />
-            }
-          />
-        </div>
-      </ProjectlessFrame>
-    );
+  if (state.state === "Ready" && state.value.length === 0) return <Welcome />;
   return (
     <ProjectlessFrame>
       <DataPanel title={text({ id: "shell-projects" })} state={state}>
