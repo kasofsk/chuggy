@@ -102,7 +102,7 @@ import {
   authoredTaskConfigurationReadiness,
   briefingStageCarrier,
 } from "../../interpreter/taskBriefing.ts";
-import { declaredConfigurationIsCatalog } from "../../interpreter/workloadConfiguration.ts";
+import { declaredConfigurationIsCatalog } from "../../contract/workloadConfiguration.ts";
 import {
   catalogNamedWorkloadTask,
   workloadTaskPositionOf,

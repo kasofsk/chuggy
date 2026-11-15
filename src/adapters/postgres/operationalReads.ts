@@ -89,7 +89,7 @@ import {
 import {
   asExecutionRequirement,
   asRequirementSource,
-} from "../../interpreter/executionRequirement.ts";
+} from "../../contract/executionRequirement.ts";
 
 interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly execution: string;

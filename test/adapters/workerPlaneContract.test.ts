@@ -142,7 +142,7 @@ import { filesystemAccessOrder } from "../../src/interpreter/taskAuthority.ts";
 import type {
   WorkerConfiguration,
   WorkerMode,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/taskConfiguration.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,

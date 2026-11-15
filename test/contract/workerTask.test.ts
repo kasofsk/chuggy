@@ -35,7 +35,7 @@ import {
 import type {
   WorkerConfiguration,
   WorkerMode,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/taskConfiguration.ts";
 import { sessionPodDocuments } from "../adapters/sessionPodDocumentFixture.ts";
 import { workerPodDocuments } from "../adapters/workerPodDocumentFixture.ts";
 import {

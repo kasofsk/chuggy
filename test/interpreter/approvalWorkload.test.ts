@@ -30,7 +30,7 @@ import {
   approvalWorkloadApprovers,
   selectedFirstCommandsEvaluator,
   type ApprovalWorkload,
-} from "../../src/interpreter/workloadConfiguration.ts";
+} from "../../src/contract/workloadConfiguration.ts";
 import {
   catalogNamedWorkloadTask,
   pinnedWorkloadTask,

@@ -52,7 +52,7 @@ import {
   type NativeActionAsked,
 } from "./nativeActionAnswer.ts";
 import { assertNever } from "../domain/assertNever.ts";
-import type { ApprovalApprovers } from "./workloadConfiguration.ts";
+import type { ApprovalApprovers } from "../contract/workloadConfiguration.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type {
@@ -109,7 +109,7 @@ import {
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
-import { catalogSelectedFinalizer } from "./workloadConfiguration.ts";
+import { catalogSelectedFinalizer } from "../contract/workloadConfiguration.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   dispatchNeedsExecutionHeadroom,

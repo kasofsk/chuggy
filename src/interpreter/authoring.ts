@@ -45,20 +45,20 @@ import type {
   RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import type { Worker } from "./workerCatalog.ts";
-import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
+import {
+  canonicalJson,
+  releaseDocumentConfigurationReadiness,
+  type DeclaredConfiguration,
+  type DeclaredConfigurationFault,
+  type ReleaseConfiguration,
+} from "../contract/repositoryConfigurationReadiness.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type {
   BriefFinalization,
   DraftBrief,
   ReleaseBrief,
 } from "./ticketBrief.ts";
-import {
-  authoredTaskConfigurationReadiness,
-  briefsAnyAgent,
-  firstCommandedCheckStage,
-  type AuthoredTaskConfiguration,
-  type TaskConfigurationFault,
-} from "./taskConfiguration.ts";
+import { firstCommandedCheckStage } from "../contract/taskConfiguration.ts";
 import {
   catalogPlansCommanded,
   declaredConfigurationIsCatalog,
@@ -67,12 +67,11 @@ import {
   workloadConfigurationReadiness,
   type CatalogSelection,
   type WorkloadConfiguration,
-  type WorkloadConfigurationFault,
-} from "./workloadConfiguration.ts";
+} from "../contract/workloadConfiguration.ts";
 export {
   declaredConfigurationIsCatalog,
   declaredConfigurationVersion,
-} from "./workloadConfiguration.ts";
+} from "../contract/workloadConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
 
@@ -82,15 +81,7 @@ export type ConfigurationRevisionId = string & {
 
 export type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 
-/** A ready version 1 configuration: one document whose stages are its blocks. */
-export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
-  readonly version: 1;
-  readonly image: string;
-} & AuthoredTaskConfiguration;
-
-/** A ready configuration of either version, told apart by its own `version`. */
-export type DeclaredConfiguration =
-  ReleaseConfiguration | WorkloadConfiguration;
+export type { DeclaredConfiguration, ReleaseConfiguration };
 
 /**
  * What one ticket runs on: a version 1 configuration as it stands, or a catalog
@@ -113,11 +104,7 @@ export {
 
 /** Why one configuration is not releasable: a fault of the document, or of its pairing with a brief. */
 export type ReleaseConfigurationFault =
-  | "ReleaseShapeInvalid"
-  | "WorkerUndeclared"
-  | TaskConfigurationFault
-  | WorkloadConfigurationFault
-  | ReleasePairingFault;
+  DeclaredConfigurationFault | ReleasePairingFault;
 
 /**
  * What a release refused for one fault is answered with: a pairing fault under
@@ -295,25 +282,15 @@ function releaseDocumentReadiness(
   value: unknown,
   brief: ReleaseBrief | undefined,
 ): ReleaseDocumentReadiness {
-  const authored = authoredTaskConfigurationReadiness(value);
-  if (!executionRequirementConfigurationIsValid(value))
-    return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
-  if (authored.readiness === "Incomplete") return authored;
-  if (
-    authored.configuration.worker === undefined &&
-    briefsAnyAgent(authored.configuration)
-  )
-    return { readiness: "Incomplete", fault: "WorkerUndeclared" };
+  const readiness = releaseDocumentConfigurationReadiness(value);
+  if (readiness.readiness === "Incomplete") return readiness;
   if (
     brief !== undefined &&
     brief.checks.length > 0 &&
-    firstCommandedCheckStage(authored.configuration) === undefined
+    firstCommandedCheckStage(readiness.configuration) === undefined
   )
     return { readiness: "Incomplete", fault: "BriefChecksUncommanded" };
-  return {
-    readiness: "Ready",
-    configuration: value as ReleaseConfiguration,
-  };
+  return readiness;
 }
 
 /**
@@ -660,36 +637,6 @@ export function draftReleaseReadiness(
       fault: "ConfigurationFromAnotherRepository",
     };
   return readiness;
-}
-
-const prohibitedConfigurationKeys =
-  /(?:password|secret|token|credential(?!s$))/iu;
-
-function canonicalValue(value: unknown): unknown {
-  if (value === null || typeof value === "string" || typeof value === "boolean")
-    return value;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (typeof value !== "object")
-    throw new TypeError("canonical configuration: unsupported JSON value");
-  const record = value as Record<string, unknown>;
-  const result: Record<string, unknown> = {};
-  for (const key of Object.keys(record).sort()) {
-    if (prohibitedConfigurationKeys.test(key))
-      throw new RangeError(
-        `canonical configuration: prohibited secret-bearing field ${key}`,
-      );
-    result[key] = canonicalValue(record[key]);
-  }
-  return result;
-}
-
-/** One parsed configuration as JSON with its keys sorted and no whitespace, refusing what no configuration may hold. */
-export function canonicalJson(value: unknown): string {
-  const encoded = JSON.stringify(canonicalValue(value));
-  if (encoded === undefined)
-    throw new TypeError("canonical configuration: value is not JSON");
-  return encoded;
 }
 
 /**

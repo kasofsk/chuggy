@@ -20,8 +20,6 @@
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
-  canonicalJson,
-  releaseConfigurationReadiness,
   type CanonicalConfiguration,
   type ConfigurationRevisionId,
   type DeclaredConfiguration,
@@ -35,8 +33,13 @@ import type {
 } from "./finalizer.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import { configurationDocumentSchema } from "../contract/configurationDocument.ts";
-import { declaredConfigurationIsCatalog } from "./workloadConfiguration.ts";
+import {
+  repositoryConfigurationFilesReadiness,
+  repositoryConfigurationReferencedRead,
+  type RepositoryConfigurationFileReady,
+  type RepositoryConfigurationRefusal as JudgedRepositoryConfigurationRefusal,
+} from "../contract/repositoryConfigurationReadiness.ts";
+import type { RepositoryConfigurationFault } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   importRepositoryActions,
@@ -51,35 +54,27 @@ import {
   type RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import {
-  configurationCanonicalCharsMax,
   repositoryConfigurationIgnoredAnsweredMax,
   repositoryConfigurationImportRefusalsKeptMax,
   textCodePointsCount,
 } from "../contract/http.ts";
 import {
-  repositoryDeclarationContent,
   repositoryDeclarationPathCharsMax,
-  repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
   type RepositoryDeclarationListing,
-} from "./repositoryDeclaration.ts";
+} from "../contract/repositoryDeclaration.ts";
 import {
   repositoryDeclarationUnavailableOutcome,
   type RepositoryDeclarationSnapshotRequest,
   type RepositoryDeclarationUnavailable,
 } from "./repositoryDeclarationSnapshot.ts";
-import {
-  repositoryConfigurationReferences,
-  repositoryConfigurationReferencesMax,
-  repositoryConfigurationResolved,
-  type RepositoryConfigurationReferenced,
-} from "./repositoryConfigurationReference.ts";
+import type { RepositoryConfigurationReferenced } from "../contract/repositoryConfigurationReference.ts";
 import {
   repositoryReadEvidenceHeld,
   type RepositoryReadEvidence,
 } from "./repositoryReadEvidence.ts";
 export * from "./repositoryConfigurationIdentity.ts";
-export type { RepositoryConfigurationReferenced } from "./repositoryConfigurationReference.ts";
+export type { RepositoryConfigurationReferenced } from "../contract/repositoryConfigurationReference.ts";
 
 /**
  * What under `.chug/` an import that found no configuration read none of, a
@@ -218,34 +213,18 @@ export interface RepositoryConfigurationDeclaration {
   readonly workloadPaths: Readonly<Record<string, string>>;
 }
 
-export type RepositoryConfigurationFault =
-  | "TooManyDeclarations"
-  | "PathInvalid"
-  | "SymlinkRefused"
-  | "ContentTooLarge"
-  | "DocumentUnreadable"
-  | "EnvelopeInvalid"
-  | "NameInvalid"
-  | "ConfigurationInvalid"
-  | "ConfigurationTooLong"
-  | "DuplicateName"
-  | "DuplicatePath"
-  | "ReferenceAbsent"
-  | "TooManyReferences"
-  | "ApprovalOutsidePlan";
+export type { RepositoryConfigurationFault };
 
 /**
- * A file refused, the file it names by reference where that is what was
- * refused, and a `ConfigurationTooLong` configuration's canonical length
- * against the longest one may be.
+ * A file refused, as an import keeps it: the shared judgment's refusal, its
+ * configuration's fault being any a release names, since a kept attempt is read
+ * back as whatever was stored.
  */
-export interface RepositoryConfigurationRefusal {
-  readonly path: string;
-  readonly fault: RepositoryConfigurationFault;
+export interface RepositoryConfigurationRefusal extends Omit<
+  JudgedRepositoryConfigurationRefusal,
+  "configurationFault"
+> {
   readonly configurationFault?: ReleaseConfigurationFault;
-  readonly reference?: string;
-  readonly chars?: number;
-  readonly charsMax?: number;
 }
 
 export type RepositoryConfigurationImportReadiness =
@@ -607,7 +586,7 @@ export async function readRepositoryConfigurations(
         request,
         snapshot.files,
       );
-      if (!(referenced instanceof Map))
+      if ("read" in referenced)
         return readRepositoryConfigurationsUnread(referenced);
       const readiness = repositoryConfigurationImportReadiness({
         repository: request.repository.repository,
@@ -687,41 +666,25 @@ export async function readRepositoryConfigurationHead(input: {
   }
 }
 
-/**
- * Every file the snapshot's catalogs name, read until what they name is read.
- * Each round reads at least one path not yet read, so one more round than an
- * import reads paths is as many as it can take, and a snapshot naming more
- * than that stops reading for readiness to refuse.
- */
+/** Every file the snapshot's catalogs name, read at the snapshot's commit as the shared judgment reads them. */
 async function readRepositoryConfigurationsReferenced(
   snapshots: RepositoryConfigurationSnapshotPort,
   request: RepositoryDeclarationSnapshotRequest,
   files: readonly RepositoryDeclarationFile[],
 ): Promise<
-  | Map<string, RepositoryConfigurationReferenced>
+  | ReadonlyMap<string, RepositoryConfigurationReferenced>
   | Exclude<
       RepositoryConfigurationReferencedRead,
       { readonly read: "Referenced" }
     >
 > {
-  const referenced = new Map<string, RepositoryConfigurationReferenced>();
-  for (let round = 0; round <= repositoryConfigurationReferencesMax; round++) {
-    const named = repositoryConfigurationImportReferences(files, referenced);
-    const unread = named.filter((path) => !referenced.has(path));
-    if (
-      named.length > repositoryConfigurationReferencesMax ||
-      unread.length === 0
-    )
-      return referenced;
-    const read = await snapshots.referenced(request, unread);
-    if (read.read !== "Referenced") return read;
-    for (const file of read.files)
-      if (unread.includes(file.path)) referenced.set(file.path, file);
-    for (const path of unread)
-      if (!referenced.has(path))
-        referenced.set(path, { path, found: "Absent" });
-  }
-  return referenced;
+  const read = await repositoryConfigurationReferencedRead<
+    Exclude<
+      RepositoryConfigurationReferencedRead,
+      { readonly read: "Referenced" }
+    >
+  >(files, (paths) => snapshots.referenced(request, paths));
+  return read.read === "Referenced" ? read.referenced : read.stopped;
 }
 
 /** A reference read that found nothing to read, as the outcome a snapshot saying the same is. */
@@ -1185,149 +1148,25 @@ function repositoryConfigurationRevision(
   return asConfigurationRevisionId(`repository:${commit}:${name}`);
 }
 
-/** Every field a file's envelope holds, which is every field it may. */
-const repositoryConfigurationFields = Object.keys(
-  configurationDocumentSchema.shape,
-)
-  .sort()
-  .join(",");
-
-/** The configuration a declaration file holds where it holds an envelope, read for the files it names. */
-function repositoryConfigurationDeclared(
-  file: RepositoryDeclarationFile,
-): unknown {
-  const content = repositoryDeclarationContent(file);
-  if (content.content === "Refused") return undefined;
-  const record = content.document;
-  return typeof record === "object" && record !== null && !Array.isArray(record)
-    ? (record as Record<string, unknown>)["configuration"]
-    : undefined;
-}
-
-/** Every distinct path the snapshot's configurations name, given the files read so far. */
-function repositoryConfigurationImportReferences(
-  files: readonly RepositoryDeclarationFile[],
-  referenced: ReadonlyMap<string, RepositoryConfigurationReferenced>,
-): readonly string[] {
-  return [
-    ...new Set(
-      files.flatMap((file) =>
-        repositoryConfigurationReferences(
-          repositoryConfigurationDeclared(file),
-          referenced,
-        ),
-      ),
-    ),
-  ];
-}
-
-/** `value` as an object's fields, or nothing where it is no object. */
-function repositoryConfigurationEnvelopeFields(
-  value: unknown,
-): Readonly<Record<string, unknown>> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-/** Whether a declared configuration asks a person's approval at landing rather than in a plan. */
-function repositoryConfigurationEnvelopeAsksLandingApproval(
-  configuration: unknown,
-): boolean {
-  const fields = repositoryConfigurationEnvelopeFields(configuration);
-  if (fields === undefined) return false;
-  if (!declaredConfigurationIsCatalog(fields))
-    return Object.hasOwn(fields, "finalizationApprovalRequired");
-  const finalizers = repositoryConfigurationEnvelopeFields(
-    fields["finalizers"],
-  );
-  return Object.values(finalizers ?? {}).some((finalizer) => {
-    const named = repositoryConfigurationEnvelopeFields(finalizer);
-    return named !== undefined && Object.hasOwn(named, "approvalRequired");
-  });
-}
-
-/** The envelope's fields, when it is an object naming exactly its own and a version this tree reads. */
-function repositoryConfigurationEnvelopeRecord(
-  value: unknown,
-): Readonly<Record<string, unknown>> | undefined {
-  const record = repositoryConfigurationEnvelopeFields(value);
-  if (
-    record === undefined ||
-    Object.keys(record).sort().join(",") !== repositoryConfigurationFields ||
-    !configurationDocumentSchema.shape.version.safeParse(record["version"])
-      .success
-  )
-    return undefined;
-  return record;
-}
-
-function repositoryConfigurationEnvelope(
-  file: RepositoryDeclarationFile,
+/** One file the shared judgment found ready, as the declaration an import of `commit` stores. */
+function repositoryConfigurationDeclaration(
+  ready: RepositoryConfigurationFileReady,
   repository: RepositoryId,
   commit: GitObjectId,
-  referenced: ReadonlyMap<string, RepositoryConfigurationReferenced>,
-): RepositoryConfigurationDeclaration | RepositoryConfigurationRefusal {
-  const path = asRepositoryConfigurationPath(file.path);
-  if (path === undefined) return { path: file.path, fault: "PathInvalid" };
-  const content = repositoryDeclarationContent(file);
-  if (content.content === "Refused")
-    return { path: file.path, fault: content.fault };
-  const record = repositoryConfigurationEnvelopeRecord(content.document);
-  if (record === undefined)
-    return { path: file.path, fault: "EnvelopeInvalid" };
-  const name = asRepositoryConfigurationName(record["name"]);
-  if (name === undefined) return { path: file.path, fault: "NameInvalid" };
-  if (
-    repositoryConfigurationEnvelopeAsksLandingApproval(record["configuration"])
-  )
-    return { path: file.path, fault: "ApprovalOutsidePlan" };
-  const resolved = repositoryConfigurationResolved(
-    record["configuration"],
-    referenced,
-  );
-  if ("fault" in resolved)
-    return {
-      path: file.path,
-      fault: resolved.fault,
-      reference: resolved.reference,
-    };
-  let encoded: string;
-  let canonical: CanonicalConfiguration;
-  try {
-    encoded = canonicalJson(resolved.configuration);
-  } catch {
-    return { path: file.path, fault: "ConfigurationInvalid" };
-  }
-  // eslint-disable-next-line no-restricted-syntax -- this bound is in UTF-16 code units, as `asCanonicalConfiguration` measures it
-  if (encoded.length > configurationCanonicalCharsMax)
-    return {
-      path: file.path,
-      fault: "ConfigurationTooLong",
-      chars: encoded.length,
-      charsMax: configurationCanonicalCharsMax,
-    };
-  try {
-    canonical = asCanonicalConfiguration(encoded);
-  } catch {
-    return { path: file.path, fault: "ConfigurationInvalid" };
-  }
-  const readiness = releaseConfigurationReadiness(canonical);
-  if (readiness.readiness === "Incomplete")
-    return {
-      path: file.path,
-      fault: "ConfigurationInvalid",
-      configurationFault: readiness.fault,
-    };
+): RepositoryConfigurationDeclaration {
+  const name = asRepositoryConfigurationName(ready.name);
+  const path = asRepositoryConfigurationPath(ready.path);
+  if (name === undefined || path === undefined)
+    throw new TypeError("a ready declaration names no configuration");
   return {
     repository,
     commit,
     name,
     path,
     revision: repositoryConfigurationRevision(commit, name),
-    canonical,
-    configuration: readiness.configuration,
-    workloadPaths: resolved.workloadPaths,
+    canonical: asCanonicalConfiguration(ready.canonical),
+    configuration: ready.configuration,
+    workloadPaths: ready.workloadPaths,
   };
 }
 
@@ -1341,52 +1180,20 @@ export function repositoryConfigurationImportReadiness(input: {
   readonly files: readonly RepositoryDeclarationFile[];
   readonly referenced?: ReadonlyMap<string, RepositoryConfigurationReferenced>;
 }): RepositoryConfigurationImportReadiness {
-  const referenced = input.referenced ?? new Map();
-  if (input.files.length > repositoryDeclarationsMax)
-    return {
-      readiness: "Refused",
-      faults: [
-        { path: repositoryConfigurationRoot, fault: "TooManyDeclarations" },
-      ],
-    };
-  if (
-    repositoryConfigurationImportReferences(input.files, referenced).length >
-    repositoryConfigurationReferencesMax
-  )
-    return {
-      readiness: "Refused",
-      faults: [
-        { path: repositoryConfigurationRoot, fault: "TooManyReferences" },
-      ],
-    };
-  const declarations: RepositoryConfigurationDeclaration[] = [];
-  const faults: RepositoryConfigurationRefusal[] = [];
-  const names = new Set<string>();
-  const paths = new Set<string>();
-  for (const file of input.files) {
-    if (paths.has(file.path)) {
-      faults.push({ path: file.path, fault: "DuplicatePath" });
-      continue;
-    }
-    paths.add(file.path);
-    const parsed = repositoryConfigurationEnvelope(
-      file,
-      input.repository,
-      input.commit,
-      referenced,
-    );
-    if ("fault" in parsed) {
-      faults.push(parsed);
-      continue;
-    }
-    if (names.has(parsed.name)) {
-      faults.push({ path: file.path, fault: "DuplicateName" });
-      continue;
-    }
-    names.add(parsed.name);
-    declarations.push(parsed);
-  }
-  return faults.length === 0
-    ? { readiness: "Ready", declarations }
-    : { readiness: "Refused", faults };
+  const readiness = repositoryConfigurationFilesReadiness(input);
+  return readiness.readiness === "Refused"
+    ? {
+        readiness: "Refused",
+        faults: readiness.faults.map((fault) => fault.refusal),
+      }
+    : {
+        readiness: "Ready",
+        declarations: readiness.declarations.map((ready) =>
+          repositoryConfigurationDeclaration(
+            ready,
+            input.repository,
+            input.commit,
+          ),
+        ),
+      };
 }

@@ -111,7 +111,7 @@ import {
   briefRepositoryCharsMax,
 } from "../../src/contract/brief.ts";
 import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";

@@ -23,6 +23,11 @@ export function textCodePointsCount(text: string): number {
  */
 const unpairedSurrogate = /\p{Cs}/u;
 
+/** Whether text holds no unpaired surrogate. */
+export function textWellFormed(text: string): boolean {
+  return !unpairedSurrogate.test(text);
+}
+
 /** Why one string is not text a bounded column holds, or nothing where it is. */
 export type BoundedTextRefusal =
   | { readonly refused: "Empty" }
@@ -44,7 +49,7 @@ export function boundedTextRefusal(
   charsMax: number,
 ): BoundedTextRefusal | undefined {
   if (value.length === 0) return { refused: "Empty" };
-  if (unpairedSurrogate.test(value)) return { refused: "Unpaired" };
+  if (!textWellFormed(value)) return { refused: "Unpaired" };
   if (value.includes("\u0000")) return { refused: "Nul" };
   const chars = textCodePointsCount(value);
   return chars > charsMax ? { refused: "TooLong", chars } : undefined;

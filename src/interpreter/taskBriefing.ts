@@ -140,7 +140,7 @@ import {
   type TaskConfigurationReadFault,
   type TicketBrief,
   type WorkerConfiguration,
-} from "./taskConfiguration.ts";
+} from "../contract/taskConfiguration.ts";
 export {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
@@ -162,7 +162,7 @@ export {
   type WorkBlock,
   type WorkerConfiguration,
   type WorkerMode,
-} from "./taskConfiguration.ts";
+} from "../contract/taskConfiguration.ts";
 import {
   briefingDependencyLines,
   briefingDependencyName,

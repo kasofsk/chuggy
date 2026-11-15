@@ -27,7 +27,7 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
-import type { ExecutionTaskKind } from "./executionRequirement.ts";
+import type { ExecutionTaskKind } from "../contract/executionRequirement.ts";
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
 import type {
   ForgeInstallationToken,
