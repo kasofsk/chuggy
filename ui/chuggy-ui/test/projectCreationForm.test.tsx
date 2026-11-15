@@ -407,9 +407,9 @@ test("the switcher offers a new project beside every project, and it opens the f
 });
 
 test("the switcher names each workspace by the display name the reader's own list answers, and one it does not by its id, while a pick still goes to the id's address", async () => {
-  const elsewhere = { tenant: "globex", project: "web" };
+  const elsewhere = { tenant: "globex", project: "web", name: "Web" };
   served(
-    [partition, elsewhere],
+    [named, elsewhere],
     () => Promise.resolve(answer(partition, 201)),
     accessHolding([
       {
@@ -422,11 +422,11 @@ test("the switcher names each workspace by the display name the reader's own lis
   );
   await drawn(<ProjectSwitcher partition={partition} />);
   expect(await switcherOffers()).toEqual([
-    "Vantage Engineering / chuggy",
-    "globex / web",
+    "Vantage Engineering / Chuggy",
+    "globex / Web",
   ]);
   fireEvent.click(
-    screen.getByRole("menuitemradio", { name: "Vantage Engineering / chuggy" }),
+    screen.getByRole("menuitemradio", { name: "Vantage Engineering / Chuggy" }),
   );
   expect(held.went).toStrictEqual([
     { to: "/$tenant/$project", params: partition },

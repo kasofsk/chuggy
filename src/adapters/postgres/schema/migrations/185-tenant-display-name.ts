@@ -22,14 +22,14 @@
 import { accessPlaneRole, type Migration } from "../shared.ts";
 
 /** What this migration renders `projectDisplayNameCharsMax` as, in the row's bound. */
-export const tenantDisplayNameCharsMaxAt184 = 100;
+export const tenantDisplayNameCharsMaxAt185 = 100;
 
 const projectDeleting = `EXISTS(SELECT 1 FROM public.project p
                  WHERE p.tenant=OLD.tenant AND p.project=OLD.project
                    AND p.lifecycle='Deleting')`;
 
-export const migration184: Migration = {
-  version: 184,
+export const migration185: Migration = {
+  version: 185,
   name: "a tenant has a display name its administrators change",
   statements: [
     `ALTER TABLE public.tenant ADD COLUMN display_name text`,
@@ -68,7 +68,7 @@ export const migration184: Migration = {
     `ALTER TABLE public.tenant ALTER COLUMN display_name SET NOT NULL`,
     `ALTER TABLE public.tenant ADD CONSTRAINT tenant_display_name_is_bounded
        CHECK (display_name=tenant
-              OR char_length(display_name) BETWEEN 1 AND ${String(tenantDisplayNameCharsMaxAt184)})`,
+              OR char_length(display_name) BETWEEN 1 AND ${String(tenantDisplayNameCharsMaxAt185)})`,
     `GRANT SELECT (tenant, display_name) ON public.tenant TO ${accessPlaneRole}`,
     `GRANT INSERT (tenant, display_name) ON public.tenant TO ${accessPlaneRole}`,
     `GRANT UPDATE (display_name) ON public.tenant TO ${accessPlaneRole}`,
