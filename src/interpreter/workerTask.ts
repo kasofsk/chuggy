@@ -9,6 +9,7 @@ import type {
   SessionTaskAnswer,
   SessionTaskDocument,
   WorkTaskDocument,
+  WorkTaskTargetMerge,
 } from "../contract/workerTask.ts";
 import type {
   AttemptPlacement,
@@ -51,6 +52,7 @@ export function workTaskInvocation(launch: {
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
+  readonly targetMerge?: WorkTaskTargetMerge;
 }): WorkTaskInvocation {
   const { briefing, authority, credentialsListed, worker } = launch.invocation;
   return {
@@ -67,6 +69,9 @@ export function workTaskInvocation(launch: {
     credentialsListed,
     ...(worker === undefined ? {} : { worker }),
     ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.targetMerge === undefined
+      ? {}
+      : { targetMerge: launch.targetMerge }),
   };
 }
 
@@ -102,6 +107,9 @@ export function workTask(
     ...(invocation.targetRef === undefined
       ? {}
       : { targetRef: invocation.targetRef }),
+    ...(invocation.targetMerge === undefined
+      ? {}
+      : { targetMerge: invocation.targetMerge }),
   };
 }
 

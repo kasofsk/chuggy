@@ -192,6 +192,7 @@ import {
   type WaitingAttempt,
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
+import type { WorkTaskTargetMerge } from "../contract/workerTask.ts";
 import type { FinalizerConfig, GitRefName, RepositoryId } from "./finalizer.ts";
 import {
   finalizerLandingBaseRef,
@@ -797,6 +798,7 @@ interface TaskLaunch {
   readonly image?: string;
   readonly invocation: TaskInvocation;
   readonly targetRef?: GitRefName;
+  readonly targetMerge?: WorkTaskTargetMerge;
 }
 
 /**
@@ -819,6 +821,26 @@ async function schedulerLanding(
   return {
     ...(targetRef === undefined ? {} : { targetRef }),
     ...(baseRef === undefined ? {} : { baseRef }),
+  };
+}
+
+/**
+ * What a work task's core merges in: the base its landing resolves to, whether
+ * its own binding lets pipelines be written as its briefing reads it, and the
+ * change commit the failed landing it follows recorded. Nothing where the
+ * ticket lands on no base.
+ */
+function schedulerTargetMerge(
+  ref: string | undefined,
+  pipelinesWritable: boolean | undefined,
+  failedLanding: FailedLanding | undefined,
+): WorkTaskTargetMerge | undefined {
+  if (ref === undefined) return undefined;
+  const change = failedLanding?.changeCommit;
+  return {
+    ref,
+    pipelinesWritable: pipelinesWritable !== false,
+    ...(change === undefined ? {} : { change }),
   };
 }
 
@@ -870,6 +892,11 @@ async function schedulerPrepared(
     execution,
     brief,
   );
+  const targetMerge = schedulerTargetMerge(
+    baseRef,
+    project.pipelinesWritable,
+    rework.failedLanding,
+  );
   const composed = composeTaskInvocation(service.practices, {
     purpose: schedulerTaskPurpose(execution, configuration),
     ...(execution.stage === undefined ? {} : { stage: execution.stage }),
@@ -890,6 +917,7 @@ async function schedulerPrepared(
         ...(policy.image === undefined ? {} : { image: policy.image }),
         invocation: composed.invocation,
         ...(targetRef === undefined ? {} : { targetRef }),
+        ...(targetMerge === undefined ? {} : { targetMerge }),
       };
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
@@ -951,6 +979,9 @@ async function schedulerPlace(
     ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,
     ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.targetMerge === undefined
+      ? {}
+      : { targetMerge: launch.targetMerge }),
     capability: attempt.capability,
   });
   recordScheduler(service.metrics, (metrics) => {

@@ -202,6 +202,7 @@ const workerTaskInvocationSchema = workTaskDocumentSchema
     credentialsListed: true,
     worker: true,
     targetRef: true,
+    targetMerge: true,
   })
   .strict();
 
