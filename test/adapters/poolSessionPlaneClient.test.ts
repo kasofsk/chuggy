@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  workerContractFeatures,
+  workerContractFeaturesHeader,
+  workerContractFeaturesOf,
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
@@ -32,6 +35,12 @@ test("an end is told to the session's own plane under its own bearer, once, with
   const headers = new Headers(sent[0]?.init?.headers);
   assert.equal(headers.get("authorization"), "Bearer chgs_session");
   assert.equal(headers.get(workerContractHeader), workerContractRelease);
+  assert.deepEqual(
+    workerContractFeaturesOf(
+      headers.get(workerContractFeaturesHeader) ?? undefined,
+    ),
+    Object.keys(workerContractFeatures),
+  );
   assert.equal(sent[0]?.init?.body, JSON.stringify({ phase: "Failed" }));
 });
 

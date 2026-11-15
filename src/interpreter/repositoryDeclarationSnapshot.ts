@@ -5,7 +5,7 @@
  */
 
 import type { GitObjectId, RepositoryBinding } from "./finalizer.ts";
-import type { RepositoryDeclarationFile } from "./repositoryDeclaration.ts";
+import type { RepositoryDeclarationFile } from "../contract/repositoryDeclaration.ts";
 import type { RepositoryReadEvidence } from "./repositoryReadEvidence.ts";
 
 /** One commit of one bound repository, which is what a declaration directory is read at. */

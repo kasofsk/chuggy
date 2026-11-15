@@ -108,7 +108,7 @@ export function mintedRepositoryTokens(
   options: MintedRepositoryTokensOptions,
 ): ForgeRepositoryTokens {
   return {
-    token: async (repository, partition, permissions) => {
+    token: async (repository, partition, permissions, mint) => {
       const address = githubAddressOf(repository, options.repositoryHost);
       if (address === undefined)
         return { minted: "Denied", evidence: { mint: "Address" } };
@@ -138,6 +138,7 @@ export function mintedRepositoryTokens(
           repositories: [asForgeRepositoryName(address.name)],
           permissions,
           ...(pipelinesAllowed ? { pipelinesAllowed: true } : {}),
+          ...(mint?.unheld === true ? { unheld: true } : {}),
         })
         .catch(mintedRaisedMarked("MintRaised"));
       if (minted.minted !== "Denied") return minted;

@@ -74,11 +74,13 @@ test("the client authenticates and decodes inventory through its V1 codec", asyn
     responseBytesMax: 1_000,
     fetch: (input, init) => {
       request = new Request(input, init);
-      return Promise.resolve(jsonResponse({ projects: [partition] }));
+      return Promise.resolve(
+        jsonResponse({ projects: [{ ...partition, name: "Atlas" }] }),
+      );
     },
   });
   assert.deepEqual(await client.projectInventory(principal, undefined, 10), {
-    projects: [partition],
+    projects: [{ ...partition, name: "Atlas" }],
   });
   assert.equal(request?.headers.get("authorization"), "Bearer token");
   assert.equal(

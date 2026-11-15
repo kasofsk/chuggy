@@ -10,6 +10,8 @@ export interface ChatCopy {
   readonly "chat-fill": Record<never, never>;
   readonly "chat-restore": Record<never, never>;
   readonly "chat-collapse": Record<never, never>;
+  readonly "chat-back": Record<never, never>;
+  readonly "chat-more": Record<never, never>;
   readonly "chat-expand": Record<never, never>;
   readonly "chat-strip": Record<never, never>;
   readonly "chat-heading": Record<never, never>;
@@ -18,6 +20,23 @@ export interface ChatCopy {
   readonly "chat-standing-open": Record<never, never>;
   readonly "chat-standing-closed": Record<never, never>;
   readonly "chat-standing-orphaned": Record<never, never>;
+  readonly "chat-kept-running": Record<never, never>;
+  readonly "chat-kept-running-detail": Record<never, never>;
+  readonly "chat-host-capabilities": Record<never, never>;
+  readonly "chat-host-capabilities-detail": {
+    readonly capabilities: unknown;
+  };
+  readonly "chat-capability-repository-read": Record<never, never>;
+  readonly "chat-capability-repository-write": Record<never, never>;
+  readonly "chat-capability-run-commands": Record<never, never>;
+  readonly "chat-capability-project-read": Record<never, never>;
+  readonly "chat-capability-draft-author": Record<never, never>;
+  readonly "chat-capability-draft-originate": Record<never, never>;
+  readonly "chat-capability-ticket-dispatch": Record<never, never>;
+  readonly "chat-capability-lead-decision": Record<never, never>;
+  readonly "chat-capability-member-read": Record<never, never>;
+  readonly "chat-capability-thread-offer": Record<never, never>;
+  readonly "chat-capabilities-none": Record<never, never>;
   readonly "chat-history": Record<never, never>;
   readonly "chat-history-loading": Record<never, never>;
   readonly "chat-history-none": Record<never, never>;
@@ -43,7 +62,6 @@ export interface ChatCopy {
     readonly standing: unknown;
   };
   readonly "chat-actions": Record<never, never>;
-  readonly "chat-actions-none": Record<never, never>;
   readonly "chat-open": Record<never, never>;
   readonly "chat-copy-link": Record<never, never>;
   readonly "chat-copied": Record<never, never>;
@@ -70,6 +88,10 @@ export interface ChatCopy {
   readonly "chat-wake-escalated": Record<never, never>;
   readonly "chat-wake-done": Record<never, never>;
   readonly "chat-wake-revoked": Record<never, never>;
+  readonly "chat-wake-job-exited": Record<never, never>;
+  readonly "chat-wake-watch-matched": Record<never, never>;
+  readonly "chat-wake-timer-due": Record<never, never>;
+  readonly "chat-wake-attempt-ended": Record<never, never>;
   readonly "chat-limit": Record<never, never>;
   readonly "chat-start-refused-limit": Record<never, never>;
   readonly "chat-cause-signed-out": Record<never, never>;
@@ -149,6 +171,7 @@ export interface ChatCopy {
     readonly ticket: unknown;
     readonly phase: unknown;
   };
+  readonly "chat-offer-waiting": Record<never, never>;
   readonly "chat-offer-unsent": {
     readonly settled: unknown;
   };

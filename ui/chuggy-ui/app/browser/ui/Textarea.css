@@ -23,4 +23,14 @@
   .textarea::placeholder {
     color: var(--ink-3);
   }
+
+  /* Under a coarse pointer the box is at least a control's height, and its
+     text, mono or not, the size a phone types into without zooming the page. */
+  @media (pointer: coarse) {
+    .textarea,
+    .textarea[data-mono] {
+      min-height: var(--height-control);
+      font-size: var(--text-unzoomed);
+    }
+  }
 }

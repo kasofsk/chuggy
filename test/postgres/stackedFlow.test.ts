@@ -4,7 +4,8 @@
  * queue as it stands and mints over A. Where A lands, B lands by its merge
  * being the stack's tree and is never re-checked; where A's evaluation fails
  * instead, B's stack stops standing and B is re-checked at its rank, at the
- * front of the queue.
+ * front of the queue. Where B evaluated unstacked behind A pending, B is sent
+ * back to Work to re-stack over A, and lands after A the same way.
  *
  * B IS THE TICKET THE WRITER AND THE FINALIZER DRIVE, AND A IS WRITTEN BY HAND.
  * The harness drives one ticket through the writer, so A's definition, phase,
@@ -23,6 +24,12 @@ import { after, before, test } from "node:test";
 
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { ledgerAt } from "../../src/domain/ledger.ts";
+import { workTaskIdentity } from "../../src/domain/task.ts";
+import { evaluationFailureReworksStarted } from "../../src/domain/ticket.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
+import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
+import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import {
   asForgeBindingId,
   asForgeCredentialReference,
@@ -49,6 +56,7 @@ import {
   landingTarget,
   landingWrite,
   recordStack,
+  type Landing,
 } from "./evaluationStackLandings.ts";
 import { releasedEvaluatorDefinition } from "./migrationHarness.ts";
 import { seedJournalEntry } from "./nativeActionFixture.ts";
@@ -56,7 +64,10 @@ import type { FinalizerPassReport } from "../../src/interpreter/finalizerRun.ts"
 import {
   finalizerBriefLanding,
   finalizerBriefProposal,
+  finalizerAccept,
   finalizerDeclareSource,
+  finalizerDrain,
+  finalizerEvaluation,
   finalizerExpireClaim,
   finalizerRemoteCommit,
   finalizerGitVerb,
@@ -68,6 +79,7 @@ import {
   finalizerRigOpen,
   finalizerStoreReleasedBrief,
   finalizerSubject,
+  finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRemote,
   type FinalizerRig,
@@ -441,29 +453,7 @@ test("B evaluates over a stack holding A, and once A lands B lands as its merge 
     stack.stackCommit,
   );
 
-  finalizerGitVerb(
-    pair.remote.origin,
-    "update-ref",
-    landingTarget,
-    pair.aCommit,
-    pair.tip,
-  );
-  await landingWrite(
-    rig,
-    { ...pair.b, request: pair.aRequest },
-    pair.bWork,
-    "flow-lands-a",
-    {
-      ticket: pair.aTicket,
-      accepted: pair.aCommit,
-      onto: pair.tip,
-      candidate: pair.aCommit,
-    },
-  );
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [...keysOf(pair.b, pair.aTicket)],
-  );
+  await aLandedAt(pair, "flow-lands-a");
   assert.equal((await bStanding(pair)).stands, true, "A landed as stacked");
 
   await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), "flow-lands");
@@ -535,30 +525,10 @@ test("B evaluates over a stack holding A, and once A's evaluation fails B is re-
 
 /** A's proposal, from its own branch, merged into the reference at A's commit. */
 async function aProposalMerged(pair: Pair, label: string): Promise<void> {
-  finalizerGitVerb(
-    pair.remote.origin,
-    "update-ref",
-    landingTarget,
-    pair.aCommit,
-    pair.tip,
-  );
-  await landingWrite(
-    rig,
-    { ...pair.b, request: pair.aRequest },
-    pair.bWork,
-    label,
-    {
-      ticket: pair.aTicket,
-      accepted: pair.aCommit,
-      onto: pair.tip,
-      candidate: pair.aCommit,
-      proposal: { head: `refs/heads/${label}-a`, merged: pair.aCommit },
-    },
-  );
-  await rig.harness.query(
-    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [...keysOf(pair.b, pair.aTicket)],
-  );
+  await aLandedAt(pair, label, {
+    head: `refs/heads/${label}-a`,
+    merged: pair.aCommit,
+  });
 }
 
 test("B proposing from its own branch is stacked over A proposing from another while A is evaluated, on the base's tip, and lands on the stack's tree once A merges", async () => {
@@ -752,4 +722,256 @@ test("B's proposal stacked over A's, merged into the base at a commit recording 
   assert.equal(rechecked.length, 1);
   assert.equal(rechecked[0]?.["failure_kind"], "RecheckRequired");
   assert.equal(rechecked[0]?.["recheck_commit"], pair.bCommit);
+});
+
+async function bRestacks(pair: Pair) {
+  return rig.as(
+    `SELECT outcome, failure_kind, recheck_commit,
+            restack_tickets::text[] AS restack_tickets, restack_commits
+       FROM finalization_attempt WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.b.ticket)],
+  );
+}
+
+test("B pending unstacked behind A pending is sent back to re-stack over A on the next pass, keeping its rank, and its next claim concludes it", async () => {
+  const pair = await pairOpened("flow-restack", "Finalization");
+  assert.deepEqual(await queued(pair), [
+    [pair.aTicket, "Pending"],
+    [pair.b.ticket, "Pending"],
+  ]);
+  const rank = await rankOf(pair.b, pair.b.ticket);
+
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack",
+  );
+
+  const [attempt, ...rest] = await bRestacks(pair);
+  assert.deepEqual(rest, []);
+  assert.equal(attempt?.["outcome"], "Failed");
+  assert.equal(attempt?.["failure_kind"], "Restack");
+  assert.equal(attempt?.["recheck_commit"], pair.bCommit);
+  assert.deepEqual(attempt?.["restack_tickets"], [String(pair.aTicket)]);
+  assert.deepEqual(attempt?.["restack_commits"], [pair.aCommit]);
+  assert.equal(await rankOf(pair.b, pair.b.ticket), rank, "B keeps its rank");
+
+  const operations = async () => {
+    const [row] = await rig.harness.query(
+      `SELECT count(*)::int AS operations FROM operation WHERE tenant=$1 AND project=$2`,
+      [pair.b.partition.tenant, pair.b.partition.project],
+    );
+    return Number(row?.["operations"]);
+  };
+  const before = await operations();
+  await finalizerExpireClaim(rig, pair.b);
+  const concluded = await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack-concluded",
+  );
+  assert.ok(concluded.conclusions >= 1, "the waiting request is drawn");
+  assert.equal(await operations(), before + 1, "and its conclusion submitted");
+  assert.equal((await bRestacks(pair)).length, 1, "nothing more is attempted");
+});
+
+test("B already stacked over A is not sent back to re-stack", async () => {
+  const pair = await pairOpened("flow-restack-stacked", "Finalization");
+  await bStacked(pair);
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack-stacked",
+  );
+  assert.deepEqual(
+    (await bRestacks(pair)).map((row) => row["failure_kind"]),
+    [],
+  );
+});
+
+/** B's phase as the writer's projection holds it. */
+async function bPhase(pair: Pair): Promise<unknown> {
+  const [row] = await rig.harness.query(
+    `SELECT phase FROM ticket_projection WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.b.ticket)],
+  );
+  return row?.["phase"];
+}
+
+/** How many reworks the rework cap counts against B in this memory. */
+function bReworks(pair: Pair, memory: ProjectMemory): number {
+  return evaluationFailureReworksStarted(
+    ticketAt(memory.graph, asTicketId(pair.b.ticket)),
+    ledgerAt(memory.ledgers, pair.b.ticket),
+  );
+}
+
+/** Offers one of B's tasks passed and decides everything that enqueues. */
+async function bPassed(
+  pair: Pair,
+  memory: ProjectMemory,
+  label: string,
+  task: TaskIdentity,
+): Promise<ProjectMemory> {
+  assert.equal(
+    await finalizerAccept(
+      rig.harness,
+      pair.b.partition,
+      label,
+      finalizerTaskDone(memory.graph, task),
+    ),
+    "Accepted",
+  );
+  const drained = await finalizerDrain(rig.harness, pair.b.partition, memory);
+  assert.deepEqual(drained.decided, ["Committed"]);
+  return drained.memory;
+}
+
+/** The accepted commit B's latest work spawn names as its Recheck reference. */
+async function bRecheckReference(pair: Pair): Promise<unknown> {
+  const [recheck] = await rig.harness.query(
+    `SELECT r.reference_id FROM execution_request q
+       JOIN input_bundle_reference r
+         ON r.tenant = q.tenant AND r.project = q.project AND r.bundle = q.input_bundle
+      WHERE q.tenant=$1 AND q.project=$2 AND q.ticket=$3 AND q.kind='SpawnWork'
+        AND r.reference_kind='Recheck'`,
+    [...keysOf(pair.b, pair.b.ticket)],
+  );
+  return recheck?.["reference_id"];
+}
+
+/** B's second work cycle passed at its accepted commit, and the stack the next pass records for it. */
+async function bRestackedWork(
+  pair: Pair,
+  label: string,
+): Promise<EvaluationStack | undefined> {
+  const bRef = `refs/heads/chuggy/tickets/${String(pair.b.ticket)}/attempts/b`;
+  const rework = await finalizerPassedWork(rig, pair.b, `${label}-work`, []);
+  await finalizerDeclareSource(
+    rig,
+    pair.b,
+    rework,
+    bRef,
+    pair.bCommit,
+    pair.tip,
+  );
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    `${label}-stack`,
+  );
+  return postgresEvaluationStack(rig.pool).read(
+    pair.b.partition,
+    asTicketId(pair.b.ticket),
+    2,
+  );
+}
+
+/** A landed at its accepted commit onto the tip, by `proposal` where one is named, and Done. */
+async function aLandedAt(
+  pair: Pair,
+  label: string,
+  proposal?: Landing["proposal"],
+): Promise<void> {
+  finalizerGitVerb(
+    pair.remote.origin,
+    "update-ref",
+    landingTarget,
+    pair.aCommit,
+    pair.tip,
+  );
+  await landingWrite(
+    rig,
+    { ...pair.b, request: pair.aRequest },
+    pair.bWork,
+    label,
+    {
+      ticket: pair.aTicket,
+      accepted: pair.aCommit,
+      onto: pair.tip,
+      candidate: pair.aCommit,
+      ...(proposal === undefined ? {} : { proposal }),
+    },
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.aTicket)],
+  );
+}
+
+test("B sent back to re-stack re-reports its accepted commit, stacks over A, and once A lands B lands with no re-check and no rework counted", async () => {
+  const label = "flow-restack-lands";
+  const pair = await pairOpened(label, "Finalization");
+  const reworksBefore = bReworks(pair, pair.b.memory);
+  const port = finalizerRemotePort(rig);
+
+  await finalizerPassOnce(rig, pair.b, port, label);
+  await finalizerExpireClaim(rig, pair.b);
+  await finalizerPassOnce(rig, pair.b, port, `${label}-concluded`);
+  const sentBack = await finalizerDrain(
+    rig.harness,
+    pair.b.partition,
+    pair.b.memory,
+  );
+  assert.deepEqual(sentBack.decided, ["Committed"]);
+  assert.equal(await bPhase(pair), "Work");
+  assert.equal(
+    bReworks(pair, sentBack.memory),
+    reworksBefore,
+    "the send-back is no rework",
+  );
+  assert.equal(
+    await bRecheckReference(pair),
+    pair.bCommit,
+    "the new cycle re-reports B's accepted commit",
+  );
+
+  const stack = await bRestackedWork(pair, label);
+  assert.deepEqual(
+    stack?.beneath,
+    [{ ticket: pair.aTicket, commit: pair.aCommit }],
+    "the new cycle stacks over A",
+  );
+
+  const worked = await bPassed(
+    pair,
+    sentBack.memory,
+    `${label}-worked`,
+    workTaskIdentity(1, 2),
+  );
+  const evaluated = await bPassed(
+    pair,
+    worked,
+    `${label}-evaluated`,
+    finalizerEvaluation(2),
+  );
+  assert.equal(await bPhase(pair), "Finalization");
+  assert.equal(bReworks(pair, evaluated), reworksBefore);
+
+  await aLandedAt(pair, `${label}-a`);
+  await finalizerPassOnce(rig, pair.b, port, `${label}-lands`);
+
+  assert.deepEqual(
+    (await bAttempts(pair)).map((row) => [row["outcome"], row["failure_kind"]]),
+    [
+      ["Failed", "Restack"],
+      ["Prepared", null],
+    ],
+    "B is never re-checked",
+  );
+  assert.equal(
+    finalizerGitVerb(
+      pair.remote.origin,
+      "merge-tree",
+      "--write-tree",
+      landingTarget,
+      pair.bCommit,
+    ),
+    stack?.stackTree,
+    "what B lands on A is the tree it was re-evaluated over",
+  );
 });

@@ -157,7 +157,7 @@ test("before the first run every ticket's three phases say what will run, the pl
     [
       "Finalization",
       undefined,
-      [["Landing", "Open", "Pull request, then merge"]],
+      [["Finalization", "Open", "Pull request, then merge"]],
     ],
   ]);
   expect(
@@ -182,7 +182,7 @@ test("the current cycle is headed by its number and the cycle before it, each ru
     [
       "Finalization",
       undefined,
-      [["Landing", "Open", "Pull request, then merge"]],
+      [["Finalization", "Open", "Pull request, then merge"]],
     ],
   ]);
   expect(steps.columns[0]?.boxes[0]?.address).toEqual({ to: "Run", task: 5 });
@@ -237,7 +237,7 @@ test("a cycle that stopped at a failure parks its column, and what it never reac
   expect(said(steps)[2]).toEqual([
     "Finalization",
     undefined,
-    [["Landing", "Open", "Not reached"]],
+    [["Finalization", "Open", "Not reached"]],
   ]);
 });
 
@@ -245,7 +245,7 @@ test("a ticket that lands nothing has a Landing with no mark, no page and no wai
   const box = stepsOf(cycleOne, { plan: { ...plan, lands: false } }).columns[2]
     ?.boxes[0];
   expect(box).toMatchObject({
-    name: "Landing",
+    name: "Finalization",
     mark: undefined,
     line: { line: "Words", words: "None" },
     address: undefined,

@@ -177,7 +177,7 @@ function ticketRunsStageRows(
         {
           kind: "Gap",
           name,
-          words: text({ id: "ticket-landing-not-reached" }),
+          words: text({ id: "ticket-finalization-not-reached" }),
         },
       ];
     case "Missing":
@@ -249,7 +249,7 @@ function ticketRunsCycleOf(
       ? [
           {
             kind: "Landing",
-            name: text({ id: "ticket-steps-phase-landing" }),
+            name: text({ id: "ticket-steps-phase-finalization" }),
             landing,
             lands: plan.lands,
           },
@@ -416,6 +416,8 @@ export interface TicketRunDetails {
   readonly waited: Figure | undefined;
   readonly attempts: number;
   readonly model: string | undefined;
+  /** The distinct credentials its attempts' runs named, in attempt order. */
+  readonly credential: string | undefined;
   readonly turns: number | undefined;
   readonly apiTime: Figure | undefined;
   readonly tokens: string | undefined;
@@ -440,6 +442,16 @@ const ticketRunModeWords: Readonly<
   Container: { id: "ticket-run-mode-container" },
   Capability: { id: "ticket-run-mode-capability" },
 };
+
+/** The distinct credentials the run's attempts named, in attempt order, absent where none named one. */
+function ticketRunCredential(execution: ExecutionResponse): string | undefined {
+  const named = new Set<string>();
+  for (const attempt of execution.attempts) {
+    const credential = attempt.run?.totals?.credential;
+    if (credential !== undefined) named.add(credential);
+  }
+  return named.size === 0 ? undefined : [...named].join(", ");
+}
 
 /** The run's wait, counted to now while nothing has taken it. */
 function ticketRunWaited(execution: ExecutionResponse, nowMs: number): Figure {
@@ -482,6 +494,7 @@ export function ticketRunDetailsOf(
         : undefined,
     attempts: execution.attempts.length,
     model: models.length === 0 ? undefined : models.join(", "),
+    credential: ticketRunCredential(execution),
     turns: totals?.turns,
     apiTime:
       totals === undefined ? undefined : durationFigure(totals.durationApiMs),
@@ -534,7 +547,6 @@ export function ticketRunLandingMarked(
       return { mark: "Slash", tone: "retired" };
     case "Running":
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
     case "Proposed":
     case "Landed":

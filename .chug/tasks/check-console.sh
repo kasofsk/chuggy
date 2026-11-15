@@ -11,14 +11,23 @@
 # `check-boundaries.sh` is the whole of what can be said about. Until this tree
 # holds a console that builds, the gate has nothing to run and says so.
 #
-# THE SCRIPT NAMES ARE THE CONTRACT: `format`, `typecheck`, `lint`, `test` and
-# `build`, in that order. A console that declares none of `typecheck`, `lint`,
-# `test` or `build` is a finding rather than a skip — a gate that passed over
-# a missing script would report a clean console having asked it nothing, and
-# a build nothing typechecks is the thing this gate exists to refuse. `format`
-# alone is optional: it runs, and is failed by, only a console that declares
-# it, because a console does not have to format its own source through this
-# gate to be a console this gate can pass.
+# THE SCRIPT NAMES ARE THE CONTRACT: `format`, `typecheck`, `lint`, `test`,
+# `build` and `render`, in that order. A console that declares none of
+# `typecheck`, `lint`, `test` or `build` is a finding rather than a skip — a
+# gate that passed over a missing script would report a clean console having
+# asked it nothing, and a build nothing typechecks is the thing this gate
+# exists to refuse. `format` and `render` are optional: each runs, and is
+# failed by, only a console that declares it, because a console does not have
+# to format its own source or draw its build in a browser through this gate to
+# be a console this gate can pass.
+#
+# `render` IS THE ONE SCRIPT WHOSE 2 IS A COULD-NOT-RUN. It runs after `build`
+# because it draws what the build wrote, and what it needs beyond the console's
+# packages is a browser, which no install puts there; a console's `render`
+# exits 2 when it has none, and this gate then exits 2 with what it printed.
+# Every other script's non-zero is a finding, since a compiler's own 2 is. A
+# console with a finding from an earlier script has no `render` run, because
+# what it would draw is a build that failed or one left from before.
 #
 # WHY NOT `check-source.sh`. That gate holds this tree to one toolchain from
 # the manifest at the root. A console that builds pins its own, so what runs
@@ -102,12 +111,13 @@ trap 'rm -rf "$work"' EXIT
 
 # Every declared script runs; the order is cheapest first so that a
 # read-only format check fails before the production build has been waited
-# for. `format` alone is optional: a console that declares one has it run and
-# is failed by it, and a console that declares none is asked nothing and
-# stays quiet about it, unlike the mandatory ones below.
-optional="format"
+# for, and `render` last because it reads the build. An optional script is run
+# and failed by where a console declares it, and a console that declares none
+# is asked nothing and stays quiet about it, unlike the mandatory ones below.
+optional_first="format"
 mandatory="typecheck lint test build"
-required="$optional $mandatory"
+optional_last="render"
+required="$optional_first $mandatory $optional_last"
 
 # The declared subset in one call per console, because asking the manifest once
 # per script name is the same read repeated. An unparseable manifest answers
@@ -177,6 +187,7 @@ set +f
 findings=0
 clean=0
 consoles=0
+unrun=0
 
 for manifest in "$@"; do
 	consoles=$((consoles + 1))
@@ -196,6 +207,7 @@ for manifest in "$@"; do
 		continue
 		;;
 	esac
+	findings_before=$findings
 	for script in $required; do
 		if ! printf '%s\n' "$declared" | grep -qx "$script"; then
 			case " $mandatory " in
@@ -206,15 +218,27 @@ for manifest in "$@"; do
 			esac
 			continue
 		fi
+		if [ "$script" = "$optional_last" ] && [ "$findings" -gt "$findings_before" ]; then
+			echo "check-console: $dir $script not run, because a script before it failed"
+			continue
+		fi
 		started="$(date +%s)"
-		if (cd "$dir" && npm run --silent "$script") >"$work/out" 2>&1; then
+		status=0
+		(cd "$dir" && npm run --silent "$script") >"$work/out" 2>&1 || status=$?
+		if [ "$status" -eq 0 ]; then
 			outcome=ok
+		elif [ "$status" -eq 2 ] && [ "$script" = "$optional_last" ]; then
+			outcome="could not run"
 		else
 			outcome=failed
 		fi
 		echo "check-console: $dir $script took $(($(date +%s) - started))s, $outcome"
 		if [ "$outcome" = ok ]; then
 			clean=$((clean + 1))
+		elif [ "$outcome" = "could not run" ]; then
+			echo "check-console: LINTER ERROR — $dir: \`npm run $script\` could not run"
+			sed 's/^/    /' "$work/out"
+			unrun=$((unrun + 1))
 		else
 			echo "ERROR $dir: \`npm run $script\` failed"
 			sed 's/^/    /' "$work/out"
@@ -226,5 +250,9 @@ done
 if [ "$findings" -gt 0 ]; then
 	echo "check-console: $findings finding(s) across $consoles built console(s)"
 	exit 1
+fi
+if [ "$unrun" -gt 0 ]; then
+	echo "check-console: $unrun script(s) could not run across $consoles built console(s)"
+	exit 2
 fi
 echo "check-console: $clean script(s) clean across $consoles built console(s)"
