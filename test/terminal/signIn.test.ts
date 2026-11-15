@@ -409,7 +409,7 @@ test("a person slower than one wait finishes in the same page, and the next sign
   assert.deepEqual(first.lines.slice(0, 3), [
     `site: ${installation.site}, not signed in`,
     `did: opened ${address} in a browser`,
-    "found: nobody finished signing in within 1 s",
+    "found: the sign-in page is open and still waiting for someone to sign in",
   ]);
   assert.match(first.lines.at(-1) ?? "", /^next: node \S+ sign-in$/u);
   const second = machine.run(["sign-in"]);
