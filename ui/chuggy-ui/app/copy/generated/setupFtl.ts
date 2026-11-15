@@ -75,11 +75,13 @@ setup-node-when = once node on this machine is { $needs }
 
 setup-waiting-finish = Sign in with { -github } there and allow { setup-program }. If the page is gone, open { $address } on this machine.
 setup-waiting-opened = opened { $address } in a browser
-setup-waiting-unfinished = nobody finished signing in within { $secs } s
-setup-waiting-open-tell = A sign-in page is open in your browser. { $finish }
+setup-waiting-open = the sign-in page is open and still waiting for someone to sign in
+setup-waiting-open-tell = A sign-in page is open in your browser and is waiting for you. { $finish }
 setup-waiting-attached = the sign-in page opened earlier is still waiting
 setup-waiting-unopened = no browser could be opened from here
 setup-waiting-unopened-tell = Open { $address } in a browser on this machine, sign in with { -github } and allow { setup-program }.
+# spells -run: to run is a verb here
+setup-waiting-rule = Run the command on the next: line again, and go on running it while the sign-in page waits: it waits on the same page and opens no other. Nothing has failed, so do not tell the person that it did or give them a deadline. Once the page has closed, that command says what became of it.
 
 ## How a sign-in ended, where nothing is run after it until the person asks.
 
