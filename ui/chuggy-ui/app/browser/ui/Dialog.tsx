@@ -70,13 +70,15 @@ function DialogFoot(props: {
   );
 }
 
-export function Dialog(props: {
+interface DialogProps {
   readonly title: string;
   /** The button that opens it; absent where the caller opens it from elsewhere. */
   readonly trigger?: ReactNode;
   readonly triggerVariant?: ButtonVariant;
   readonly triggerSize?: ButtonSize;
   readonly triggerDisabled?: boolean;
+  /** What the trigger opened was sent and is unanswered. */
+  readonly triggerBusy?: boolean;
   /** The trigger's name where its word is one several triggers on a page say. */
   readonly triggerNamed?: string;
   /** The trigger is drawn as what it holds, without a button's look. */
@@ -94,7 +96,31 @@ export function Dialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
-}): ReactNode {
+}
+
+/** The button that opens the dialog, where its caller draws one. */
+function DialogTrigger(props: DialogProps): ReactNode {
+  if (props.trigger === undefined) return null;
+  return (
+    <RadixDialog.Trigger
+      disabled={props.triggerDisabled ?? false}
+      aria-busy={props.triggerBusy}
+      aria-label={props.triggerNamed}
+      className={
+        props.triggerBare === true
+          ? "dialog-trigger-bare block max-w-full"
+          : buttonLookClassName({
+              variant: props.triggerVariant,
+              size: props.triggerSize ?? "sm",
+            })
+      }
+    >
+      {props.trigger}
+    </RadixDialog.Trigger>
+  );
+}
+
+export function Dialog(props: DialogProps): ReactNode {
   const width = dialogSizeClassNames[props.size ?? "roster"];
   const busy = props.busy === true;
   return (
@@ -105,22 +131,7 @@ export function Dialog(props: {
         if (open || !busy) props.onOpenChange(open);
       }}
     >
-      {props.trigger === undefined ? null : (
-        <RadixDialog.Trigger
-          disabled={props.triggerDisabled ?? false}
-          aria-label={props.triggerNamed}
-          className={
-            props.triggerBare === true
-              ? "dialog-trigger-bare block max-w-full"
-              : buttonLookClassName({
-                  variant: props.triggerVariant,
-                  size: props.triggerSize ?? "sm",
-                })
-          }
-        >
-          {props.trigger}
-        </RadixDialog.Trigger>
-      )}
+      <DialogTrigger {...props} />
       <RadixDialog.Portal>
         <div
           aria-hidden="true"

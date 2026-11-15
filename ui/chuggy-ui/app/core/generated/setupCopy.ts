@@ -138,9 +138,7 @@ export interface SetupCopy {
   readonly "setup-waiting-opened": {
     readonly address: unknown;
   };
-  readonly "setup-waiting-unfinished": {
-    readonly secs: unknown;
-  };
+  readonly "setup-waiting-open": Record<never, never>;
   readonly "setup-waiting-open-tell": {
     readonly finish: unknown;
   };
@@ -149,6 +147,7 @@ export interface SetupCopy {
   readonly "setup-waiting-unopened-tell": {
     readonly address: unknown;
   };
+  readonly "setup-waiting-rule": Record<never, never>;
   readonly "setup-ended-no-renewal-found": Record<never, never>;
   readonly "setup-ended-no-renewal-tell": Record<never, never>;
   readonly "setup-ended-no-renewal-when": Record<never, never>;

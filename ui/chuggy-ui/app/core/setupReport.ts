@@ -259,7 +259,6 @@ export type SetupReport =
       readonly site: string;
       readonly port: number;
       readonly opened: SetupSignInOpened;
-      readonly waitedSecs: number;
     }
   | {
       readonly report: "SignInEnded";
@@ -551,21 +550,17 @@ function setupWaitingLines(
       args: { finish: { id: "setup-waiting-finish", args: { address } } },
     },
   ];
+  const waits: SetupLine = ["rule", { id: "setup-waiting-rule" }];
   switch (report.opened) {
     case "Opened":
       return [
         ["did", { id: "setup-waiting-opened", args: { address } }],
-        [
-          "found",
-          {
-            id: "setup-waiting-unfinished",
-            args: { secs: String(report.waitedSecs) },
-          },
-        ],
+        ["found", { id: "setup-waiting-open" }],
         open,
+        waits,
       ];
     case "Attached":
-      return [["found", { id: "setup-waiting-attached" }], open];
+      return [["found", { id: "setup-waiting-attached" }], open, waits];
     case "NotOpened":
       return [
         ["found", { id: "setup-waiting-unopened" }],
