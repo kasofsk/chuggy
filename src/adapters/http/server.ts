@@ -2720,7 +2720,6 @@ function registerActions(
   if (reach !== undefined) registerActionReach(app, reach);
 }
 
-/** Where a project's work is landing: each ticket's landings, and the project's queues. */
 /** What a ticket landed and the queues it waits in, and the doors a member takes and returns it through. */
 function registerTicketDoors(
   app: FastifyInstance,
