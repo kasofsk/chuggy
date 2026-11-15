@@ -77,6 +77,7 @@ import {
   type AncestryProved,
   type CandidateHeld,
   type CandidateHeldQuestion,
+  type ConflictSummary,
   type CandidateIntegrated,
   type CandidateIntegration,
   type CandidatePrepared,
@@ -106,6 +107,8 @@ import {
   type Reconciled,
   type ReconciliationRecord,
   type RepositoryBinding,
+  type PathsDiffering,
+  type PathsDifferingQuestion,
   type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
@@ -276,6 +279,8 @@ interface FinalizerRecorder
   readonly settled: string[];
   /** Every hold this store was asked to record, in order, a cleared one naming no kind. */
   readonly holds: (FinalizationUnavailableKind | undefined)[];
+  /** The files each of those records named, beside it. */
+  readonly refusals: (ConflictSummary | undefined)[];
   readonly submitted: string[];
   /** The conclusion each of those offers carried, which is what the request ends as. */
   readonly concluded: FinalizationConclusion[];
@@ -833,6 +838,7 @@ function recordingLedgers(): Pick<
   | "readings"
   | "settled"
   | "holds"
+  | "refusals"
   | "heldKind"
   | "heldPasses"
   | "submitted"
@@ -848,6 +854,7 @@ function recordingLedgers(): Pick<
     readings: [],
     settled: [],
     holds: [],
+    refusals: [],
     heldKind: undefined,
     heldPasses: 0,
     submitted: [],
@@ -913,6 +920,7 @@ function recordingHolds(
     recordHold: (record) => {
       const own = store();
       own.holds.push(record.kind);
+      own.refusals.push(record.refused);
       own.heldPasses =
         record.kind === undefined
           ? 0
@@ -1032,6 +1040,7 @@ interface GitRecorder extends GitPromotionPort {
   readonly adoptions: HeadAdoptionQuestion[];
   readonly heldQuestions: CandidateHeldQuestion[];
   readonly containedQuestions: CandidateHeldQuestion[];
+  readonly differingQuestions: PathsDifferingQuestion[];
   readonly stackRemovals: GitRefName[];
   readonly treeReads: GitObjectId[];
   /** The tree every commit is read as recording, absent where none could be read. */
@@ -1047,6 +1056,26 @@ interface GitRecorder extends GitPromotionPort {
   adoptable: HeadAdoption;
   held: CandidateHeld;
   contained: TargetContained;
+  /** What a comparison under the refused paths answers, no file differing until a case says otherwise. */
+  differing: PathsDiffering;
+}
+
+/** The half of that remote that compares a candidate with its target under some paths. */
+function recordingDiffering(
+  git: () => GitRecorder,
+): Pick<
+  GitRecorder,
+  "differingQuestions" | "differing" | "readPathsDiffering"
+> {
+  return {
+    differingQuestions: [],
+    differing: { read: "Paths", differing: { paths: [], truncated: false } },
+    readPathsDiffering: (question) => {
+      const own = git();
+      own.differingQuestions.push(question);
+      return Promise.resolve(own.differing);
+    },
+  };
 }
 
 /** The half of that remote that answers whether the target's tip is in a candidate's history, containing it until a case says otherwise. */
@@ -1107,6 +1136,7 @@ function recordingGit(): GitRecorder {
     adoptions: [],
     heldQuestions: [],
     ...recordingContainment(() => own),
+    ...recordingDiffering(() => own),
     ...recordingTrees(() => own),
     ...recordingStacks(() => own),
     adoptable: "Adoptable",
@@ -1536,6 +1566,7 @@ function serviceOf(
     ticketBriefs: briefsOf(),
     handoffs: artifacts,
     artifacts,
+    pipelinePaths: [".github/workflows/"],
     identities: countingIdentities(),
     digestOf,
     config: { ...finalizerDefaults, ...bounds },
@@ -3181,6 +3212,34 @@ test("a merge the forge refused for a conflict fails this finalization as a prep
   ]);
 });
 
+test("a merge the forge refused, over a base that changed paths no job may push, holds at TargetPathsRefused and is reported at once", async () => {
+  const store = recordingStore([
+    {
+      ...proposedView("request-one", proposalMerged),
+      pipelinesWritable: false,
+    },
+  ]);
+  store.gathering = sourcedStore().gathering;
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "NotMergeable", reason: "Conflict" };
+  const git = recordingGit();
+  git.differing = { read: "Paths", differing: refusedFiles };
+  const service = mergingService(store, forge, {}, git);
+
+  await passOver(service);
+  await passOver(service);
+  await passOver(service);
+
+  assert.deepEqual(store.attempts, []);
+  assert.equal(git.differingQuestions[0]?.candidate, commitOf("c"));
+  assert.equal(git.differingQuestions[0]?.target.commit, commitOf("a"));
+  assert.deepEqual(store.refusals.at(-1), refusedFiles);
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "TargetPathsRefused" },
+  ]);
+});
+
 /**
  * Replaces the views one store answers for with several of the same shape, which
  * is how a case fans one proved proposal row out over a pass's worth of claimed
@@ -3803,6 +3862,113 @@ function sourcedStore(): FinalizerRecorder {
   };
   return store;
 }
+
+/** The one file under the refused paths a case's target changed. */
+const refusedFiles: ConflictSummary = {
+  paths: [".github/workflows/ci.yml"],
+  truncated: false,
+};
+
+/** A store handing off a job's source, over a binding that does or does not let jobs write pipelines. */
+function refusingStore(pipelinesWritable?: boolean): FinalizerRecorder {
+  const store = recordingStore([
+    {
+      ...preparableView("request-one"),
+      ...(pipelinesWritable === undefined ? {} : { pipelinesWritable }),
+    },
+  ]);
+  store.gathering = sourcedStore().gathering;
+  return store;
+}
+
+/** A remote whose integration conflicts and whose target differs from the candidate as `differing` says. */
+function refusingGit(differing: PathsDiffering): GitRecorder {
+  const git = recordingGit();
+  git.integrated = {
+    integrated: "Conflicted",
+    conflict: { paths: ["one.txt"], truncated: false },
+  };
+  git.differing = differing;
+  return git;
+}
+
+test("a job's conflict with a target that changed paths no job may push holds at TargetPathsRefused, naming them, and is reported on that first pass", async () => {
+  const store = refusingStore(false);
+  const git = refusingGit({ read: "Paths", differing: refusedFiles });
+
+  await passOver(serviceOf(store, git));
+
+  assert.deepEqual(
+    store.attempts,
+    [],
+    "no failure is recorded to send it back to work",
+  );
+  assert.deepEqual(git.differingQuestions, [
+    {
+      repository: binding,
+      target: git.integrations[0]?.target,
+      candidate: asGitObjectId(commitOf("c")),
+      paths: [".github/workflows/"],
+    },
+  ]);
+  assert.deepEqual(store.holds, ["TargetPathsRefused"]);
+  assert.deepEqual(store.refusals, [refusedFiles]);
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "TargetPathsRefused" },
+  ]);
+});
+
+test("a conflict stays a MergeConflict where no refused path differs, jobs may write pipelines, or the finalizer built the candidate", async () => {
+  const cases: readonly {
+    readonly name: string;
+    readonly store: FinalizerRecorder;
+    readonly asked: boolean;
+  }[] = [
+    {
+      name: "no refused path differs",
+      store: refusingStore(false),
+      asked: true,
+    },
+    {
+      name: "jobs may write pipelines",
+      store: refusingStore(true),
+      asked: false,
+    },
+    { name: "no binding was read", store: refusingStore(), asked: false },
+    {
+      name: "the finalizer built the candidate",
+      store: recordingStore([
+        { ...preparableView("request-one"), pipelinesWritable: false },
+      ]),
+      asked: false,
+    },
+  ];
+  for (const { name, store, asked } of cases) {
+    const git = refusingGit({
+      read: "Paths",
+      differing: { paths: [], truncated: false },
+    });
+
+    await passOver(serviceOf(store, git));
+
+    assert.equal(git.differingQuestions.length, asked ? 1 : 0, name);
+    assert.equal(store.attempts[0]?.failureKind, "MergeConflict", name);
+    assert.deepEqual(store.holds, [undefined], name);
+    assert.deepEqual(store.concluded, [], name);
+  }
+});
+
+test("a refused-paths comparison git could not make holds rather than sending the conflict back to work", async () => {
+  const store = refusingStore(false);
+  const git = refusingGit({ read: "Unread" });
+
+  const report = await passOver(serviceOf(store, git));
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(store.holds, []);
+  assert.deepEqual(store.concluded, []);
+});
 
 /**
  * A source whose history no longer holds its base is a preparation that

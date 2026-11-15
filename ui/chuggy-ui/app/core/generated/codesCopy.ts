@@ -45,6 +45,7 @@ export interface CodesCopy {
   readonly "codes-hold-queue-timed-out": Record<never, never>;
   readonly "codes-hold-dequeued": Record<never, never>;
   readonly "codes-hold-rechecks-exhausted": Record<never, never>;
+  readonly "codes-hold-target-paths-refused": Record<never, never>;
   readonly "codes-lead-absence-not-needed": Record<never, never>;
   readonly "codes-lead-absence-paused": Record<never, never>;
   readonly "codes-lead-absence-not-granted": Record<never, never>;
@@ -136,6 +137,7 @@ export interface CodesCopy {
   readonly "codes-evidence-workflows-line": Record<never, never>;
   readonly "codes-evidence-declined-line": Record<never, never>;
   readonly "codes-evidence-unreadable-line": Record<never, never>;
+  readonly "codes-evidence-target-paths-line": Record<never, never>;
   readonly "codes-stage-failed": {
     readonly stage: unknown;
   };

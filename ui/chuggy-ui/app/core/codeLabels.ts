@@ -196,6 +196,8 @@ export function finalizationUnavailableKindLabel(
       return { id: "codes-hold-dequeued" };
     case "RecheckReworksExhausted":
       return { id: "codes-hold-rechecks-exhausted" };
+    case "TargetPathsRefused":
+      return { id: "codes-hold-target-paths-refused" };
   }
 }
 
@@ -536,7 +538,8 @@ export function escalationStep(
 }
 
 /** What has to change before a resume gets a push past, for an escalation
- * whose evidence is a declined push or a push whose branch would not read. */
+ * whose evidence is a declined push or a push whose branch would not read,
+ * and the landing by hand a resume finds for a target no run may merge in. */
 export function escalationEvidenceLine(
   evidence: TicketEscalation["evidence"],
 ): Copy | undefined {
@@ -546,6 +549,8 @@ export function escalationEvidenceLine(
     return { id: "codes-evidence-declined-line" };
   if (evidence === "ReconciliationUnreadable")
     return { id: "codes-evidence-unreadable-line" };
+  if (evidence === "TargetPathsRefused")
+    return { id: "codes-evidence-target-paths-line" };
   return undefined;
 }
 

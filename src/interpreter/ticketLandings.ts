@@ -92,12 +92,17 @@ export interface TicketLandingQueueRemoval {
   readonly actor?: ProposalQueueWord;
 }
 
-/** The hold a request was last recorded at, and the removal it escalates where it is a queue's. */
+/**
+ * The hold a request was last recorded at, the removal it escalates where it
+ * is a queue's, and the files a job may not push that the target changed where
+ * it is `TargetPathsRefused`.
+ */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
   readonly passes: number;
   readonly since: PublicInstant;
   readonly removal?: TicketLandingQueueRemoval;
+  readonly refused?: ConflictSummary;
 }
 
 /**
@@ -378,6 +383,20 @@ export function ticketLandingProposal(
   return url !== undefined && isActionReportLink(url) ? { url, ...rest } : rest;
 }
 
+/** A standing whose hold names refused files, those files cut as a conflict's are. */
+function ticketLandingRefusedBounded(
+  standing: TicketLandingStanding,
+): TicketLandingStanding {
+  if (standing.state !== "Held" && standing.state !== "Unavailable")
+    return standing;
+  const refused = standing.hold?.refused;
+  if (standing.hold === undefined || refused === undefined) return standing;
+  return {
+    ...standing,
+    hold: { ...standing.hold, refused: ticketLandingConflictBounded(refused) },
+  };
+}
+
 async function ticketLanding(
   ports: TicketLandingPorts,
   partition: Partition,
@@ -389,7 +408,7 @@ async function ticketLanding(
       ? undefined
       : await ticketLandingConflict(ports, partition, conflictManifest);
   return {
-    ...ticketLandingState(record),
+    ...ticketLandingRefusedBounded(ticketLandingState(record)),
     cycle: record.cycle,
     generation: record.generation,
     attempts: record.attempts,

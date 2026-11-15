@@ -306,6 +306,7 @@ ticket-landing-checked = Checked
 ticket-landing-details-label = Details
 ticket-landing-details-hide = Hide
 ticket-landing-queue-removal = Queue removal: { $removal }
+ticket-landing-target-paths-refused = The target changed { $paths }, which no { -run } may push: merge its branch into the target yourself, then Resume
 # spells -attempt: tries at the landing, not at a run
 ticket-landing-attempts = Attempts
 ticket-landing-rechecked = Re-checked

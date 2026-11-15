@@ -63,6 +63,7 @@ codes-hold-queue-timed-out = Merge queue checks timed out again
 codes-hold-dequeued = Removed from merge queue
 # spells -brief-check: to re-check is to evaluate again
 codes-hold-rechecks-exhausted = Re-checks exhausted
+codes-hold-target-paths-refused = Target changed files no { -run } may push
 
 ## Why a project holds no lead.
 
@@ -166,6 +167,7 @@ codes-evidence-workflows-line = Turn on Workflow files and the App's Workflows, 
 # spells -brief-check: to check is a verb here
 codes-evidence-declined-line = Check the branch's rules and hooks, then Resume
 codes-evidence-unreadable-line = Restore the branch or the App's access, then Resume
+codes-evidence-target-paths-line = Merge its branch into the target yourself, then Resume
 codes-stage-failed = { $stage } failed
 codes-detail-work-failure = Failed { -work-stage } is not reworked
 codes-detail-work-unavailable = { -work-stage(case: "upper") } cancelled

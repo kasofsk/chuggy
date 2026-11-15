@@ -555,9 +555,10 @@ test("the escalation's one line names the finalization wall where the read carri
 /**
  * A push the repository declined clears only once something there changes, so
  * its hold says what, and a workflow refusal names the settings the
- * Repositories page holds; every other hold is said by its label alone.
+ * Repositories page holds; a target no run may merge in clears once a person
+ * lands the branch; every other hold is said by its label alone.
  */
-test("a declined push and an unread one say what to change before a resume, and no other hold does", () => {
+test("a declined push, an unread one and a target no run may merge in say what to change before a resume, and no other hold does", () => {
   expect(
     copyTextEn(finalizationUnavailableKindLabel("PromotionDeclined")),
   ).toBe("Push declined");
@@ -581,6 +582,10 @@ test("a declined push and an unread one say what to change before a resume, and 
     [
       "PromotionWorkflowsRefused",
       "Turn on Workflow files and the App's Workflows, then Resume",
+    ],
+    [
+      "TargetPathsRefused",
+      "Merge its branch into the target yourself, then Resume",
     ],
   ]);
   for (const [, line] of said) {
