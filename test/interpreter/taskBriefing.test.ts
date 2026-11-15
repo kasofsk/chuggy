@@ -50,6 +50,7 @@ import {
 import {
   briefingLineCharsMax,
   commandLinesMax,
+  pushPathsRefusedMax,
 } from "../../src/contract/workerTask.ts";
 import {
   allBriefingFaults,
@@ -504,7 +505,7 @@ function viewOf(parts: {
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
   readonly readOnlyRepositories?: readonly RepositoryId[];
-  readonly pipelinesWritable?: boolean;
+  readonly pushPathsRefused?: readonly string[];
   readonly dependencyDeliveries?: readonly DependencyDelivery[];
   readonly priorWorkReports?: readonly string[];
   readonly priorEvaluationReports?: readonly string[];
@@ -533,9 +534,9 @@ function viewOf(parts: {
     },
     runtime: parts.runtime ?? noFacts,
     readOnlyRepositories: parts.readOnlyRepositories ?? [],
-    ...(parts.pipelinesWritable === undefined
+    ...(parts.pushPathsRefused === undefined
       ? {}
-      : { pipelinesWritable: parts.pipelinesWritable }),
+      : { pushPathsRefused: parts.pushPathsRefused }),
     dependencyDeliveries: parts.dependencyDeliveries ?? [],
     priorWorkReports: { reports: parts.priorWorkReports ?? [] },
     priorEvaluationReports: { reports: parts.priorEvaluationReports ?? [] },
@@ -1805,7 +1806,10 @@ test("the project's other repositories are one read-only line of the runtime con
   }
 });
 
-test("a work task whose own binding writes no pipelines is told it cannot change workflows, beside the read-only line", () => {
+/** A forge's pipeline path that is not GitHub's, so a rendered one can only have come from the view. */
+const forgejoPipelinePaths: readonly string[] = [".forgejo/workflows/"];
+
+test("a work task whose push may not change some paths is told which, beside the read-only line", () => {
   const runtimeLines = (view: BriefingView): readonly string[] | undefined =>
     composed(view).briefing.sections.find(
       (section) => section.section === "RuntimeContext",
@@ -1815,25 +1819,45 @@ test("a work task whose own binding writes no pipelines is told it cannot change
       viewOf({
         purpose: "Work",
         readOnlyRepositories: readOnly,
-        pipelinesWritable: false,
+        pushPathsRefused: forgejoPipelinePaths,
       }),
     ),
     [
       "Other repositories of this project, read-only: https://github.com/mimage/argus.git, https://github.com/mimage/rust-libs.git",
-      ...briefingPipelinesUnwritable,
+      "This job cannot change .forgejo/workflows/: its repository's binding does not let it write pipelines, and a push carrying such a change is refused whole.",
+      "If the ticket needs a change there, report that rather than making it.",
     ],
   );
   assert.deepEqual(
-    runtimeLines(viewOf({ purpose: "Work", pipelinesWritable: false })),
-    briefingPipelinesUnwritable,
+    runtimeLines(
+      viewOf({ purpose: "Work", pushPathsRefused: forgejoPipelinePaths }),
+    ),
+    briefingPipelinesUnwritable(forgejoPipelinePaths),
   );
   for (const view of [
-    viewOf({ purpose: "Work", pipelinesWritable: true }),
     viewOf({ purpose: "Work" }),
-    viewOf({ purpose: "Review", pipelinesWritable: false }),
-    viewOf({ purpose: "Check", pipelinesWritable: false }),
+    viewOf({ purpose: "Review", pushPathsRefused: forgejoPipelinePaths }),
+    viewOf({ purpose: "Check", pushPathsRefused: forgejoPipelinePaths }),
   ])
     assert.equal(runtimeLines(view), undefined);
+});
+
+test("paths a push may not change past their bound, or unprintable, are refused rather than told", () => {
+  assert.equal(
+    blockedFault(
+      viewOf({
+        pushPathsRefused: Array.from(
+          { length: pushPathsRefusedMax + 1 },
+          (_unused, at) => `.forge${String(at)}/`,
+        ),
+      }),
+    ),
+    "TooManyLines",
+  );
+  assert.equal(
+    blockedFault(viewOf({ pushPathsRefused: [".forgejo/\u001b/"] })),
+    "TextUnreadable",
+  );
 });
 
 test("read-only repositories past their bound, or unprintable, are refused rather than told", () => {
@@ -2933,43 +2957,44 @@ test("a target ref cannot forge a section", () => {
 });
 
 const targetPipelineCheck =
-  "git diff --name-only HEAD FETCH_HEAD -- .github/workflows/";
+  "git diff --name-only HEAD FETCH_HEAD -- .forgejo/workflows/";
 
-test("a work task that cannot write pipelines merges its target only where the merge changes nothing under .github/workflows/", () => {
+test("a work task whose push may not change some paths merges its target only where the merge changes none of them", () => {
   for (const parts of [
     {},
     { priorEvaluationReports: [".chug/tasks/ci.sh exited 1"] },
     { failedLanding: conflictedLanding },
   ]) {
     for (const section of ["TargetMergeFirst", "TargetMergeLast"] as const) {
-      const text = (pipelinesWritable?: boolean): string =>
+      const text = (pushPathsRefused?: readonly string[]): string =>
         (
           sectionLines(
             viewOf({
               ...parts,
               targetRef: landingTargetRef,
-              ...(pipelinesWritable === undefined ? {} : { pipelinesWritable }),
+              ...(pushPathsRefused === undefined ? {} : { pushPathsRefused }),
             }),
             section,
           ) ?? []
         ).join("\n");
-      const unwritable = text(false);
+      const refused = text(forgejoPipelinePaths);
       assert.ok(
-        unwritable.includes(
+        refused.includes(
           `then \`${targetPipelineCheck}\`, and only where that lists nothing, \`${targetMerge}\``,
         ),
         section,
       );
       assert.ok(
-        unwritable.includes(
-          "Where that check lists anything, the merge would carry a change to .github/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report",
+        refused.includes(
+          "Where that check lists anything, the merge would carry a change to .forgejo/workflows/ and its push would be refused: do not merge, go on without the target, and say in your report",
         ),
         section,
       );
-      for (const writable of [text(true), text()]) {
-        assert.ok(writable.includes(targetMerge), section);
-        assert.ok(!writable.includes(".github/workflows/"), section);
-      }
+      assert.ok(!refused.includes(".github/"), section);
+      const unrestricted = text();
+      assert.ok(unrestricted.includes(targetMerge), section);
+      assert.ok(!unrestricted.includes("git diff"), section);
+      assert.ok(!unrestricted.includes("Where that check lists"), section);
     }
   }
 });
