@@ -563,15 +563,20 @@ const chuggyToolRoster = {
    * What a thread does on its member's own word, which no lead roster carries:
    * it files the draft its owner asked for, against no parent, because the
    * member asking is where the work came from; it revokes the ticket its owner
-   * said to end; and it releases the revision of a Pending ticket's draft its
+   * said to end; it takes the ticket its owner said to take onto their own
+   * runner and account, and returns the one they said to give back to its
+   * creator; and it releases the revision of a Pending ticket's draft its
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
-   * exists, and `revoke_ticket`, `update_ticket` and the epic writes, which
-   * the API authorizes as the member's `Mutate`, are here because a thread
-   * holds this capability and a lead does not.
+   * exists, and `revoke_ticket`, `take_ticket`, `return_ticket`,
+   * `update_ticket` and the epic writes, which the API authorizes as the
+   * member's `Mutate`, are here because a thread holds this capability and a
+   * lead does not.
    */
   DraftOriginate: [
     "create_draft",
     "revoke_ticket",
+    "take_ticket",
+    "return_ticket",
     "update_ticket",
     "create_epic",
     "revise_epic",
@@ -726,6 +731,12 @@ export const chuggyToolRoutes = {
    * `Unchosen`, `Conflicted` or `Unpublished`.
    */
   ticketLandings: nativeHttpRoutes.ticketLandings,
+  /**
+   * What `take_ticket` and `return_ticket` post, taking nothing: the caller
+   * becomes the ticket's owner, or its taker gives it back to its creator.
+   */
+  ticketTake: nativeHttpRoutes.ticketTake,
+  ticketReturn: nativeHttpRoutes.ticketReturn,
   /**
    * What `read_landing_queues` answers, taking nothing: the project's landing
    * queues, one for each reference a Serialized or Stacked ticket lands on, by

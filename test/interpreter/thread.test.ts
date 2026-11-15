@@ -338,10 +338,10 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
  * cannot say when: each tool is held on a wake as on a message. What can be
  * checked is that the purpose says whose word they take.
  */
-test("the purpose lets a thread dispatch or revoke a ticket on its owner's word and on nothing else", () => {
+test("the purpose lets a thread dispatch, revoke, take or return a ticket on its owner's word and on nothing else", () => {
   assert.match(
     threadPurposeStanding,
-    /You dispatch or revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
+    /You dispatch, revoke, take or return a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
   );
 });
 
