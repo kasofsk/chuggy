@@ -22,6 +22,7 @@ import {
   inviteRedemptionsSent,
 } from "./invitePageDrawn.tsx";
 import type { InviteOpened } from "./invitePageDrawn.tsx";
+import { centeredPageSaid } from "./centeredPageDrawn.ts";
 import {
   answer,
   heldAnswer,
@@ -120,9 +121,9 @@ async function created(
   return opened;
 }
 
-test("a link that asks for its workspace's name draws the form on the same card, and keeps the cookie", async () => {
+test("a link that asks for its workspace's name draws the form on the same page, and keeps the cookie", async () => {
   const { browser, sent } = await linked();
-  expect(screen.getByRole("heading", { name: "chuggy" })).toBeTruthy();
+  expect(centeredPageSaid().title).toBe("Name your workspace");
   expect(screen.getByText("New workspace")).toBeTruthy();
   expect(field().value).toBe("");
   expect(fault()).toBe("");
@@ -205,9 +206,10 @@ test("Enter on a name that may not be sent sends nothing, and the browser is not
   expect(inviteRedemptionsSent(sent)).toStrictEqual([first]);
 });
 
-test("a name unanswered, the card says Creating… and the field and Create take nothing", async () => {
+test("a name unanswered, the page says Creating… and the field and Create take nothing", async () => {
   const held = heldAnswer();
   const { browser, sent } = await created(() => held.answered);
+  expect(centeredPageSaid().title).toBe("Name your workspace");
   expect(screen.getByText("Creating…")).toBeTruthy();
   expect(screen.queryByText("New workspace")).toBeNull();
   expect(field().disabled).toBe(true);
@@ -258,10 +260,12 @@ test("a name the plane will not read says Name not valid under the field, the na
   expect(browser.written).toStrictEqual([]);
 });
 
-test("a link the plane no longer knows when its name is sent is drawn Link not valid, its cookie ended", async () => {
+test("a link the plane no longer knows when its name is sent is drawn as no longer usable, its cookie ended", async () => {
   const { browser } = await created(() => answer({}, 404));
-  expect(screen.getByText("Link not valid")).toBeTruthy();
-  expect(inviteButtonsDrawn()).toStrictEqual(["Open chuggy"]);
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "This link can no longer be used",
+    actions: ["Open chuggy"],
+  });
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(browser.written).toStrictEqual([inviteCookieCleared("example.com")]);
   await press("Open chuggy");
@@ -275,8 +279,11 @@ test("a name that failed keeps the cookie and says the fault, and Retry sends th
       ? answer({ error: { code: "InternalError", message: "no" } }, 500)
       : answer(made),
   );
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "The invite was not accepted",
+    actions: ["Retry"],
+  });
   expect(screen.getByText("Failed")).toBeTruthy();
-  expect(inviteButtonsDrawn()).toStrictEqual(["Retry"]);
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(browser.written).toStrictEqual([]);
   expect(browser.left).toStrictEqual([]);

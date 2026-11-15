@@ -150,10 +150,17 @@ export interface SettingsCopy {
   readonly "settings-invite-link-revoked": Record<never, never>;
   readonly "settings-invite-link-expired": Record<never, never>;
   readonly "settings-invite-brand": Record<never, never>;
+  readonly "settings-invite-needed-title": Record<never, never>;
   readonly "settings-invite-needed": Record<never, never>;
+  readonly "settings-invite-invited-title": Record<never, never>;
   readonly "settings-invite-invited": Record<never, never>;
+  readonly "settings-invite-joining-title": Record<never, never>;
   readonly "settings-invite-joining": Record<never, never>;
+  readonly "settings-invite-not-valid-title": Record<never, never>;
   readonly "settings-invite-not-valid": Record<never, never>;
+  readonly "settings-invite-failed-title": Record<never, never>;
+  readonly "settings-invite-failed-next": Record<never, never>;
+  readonly "settings-invite-naming-title": Record<never, never>;
   readonly "settings-invite-sign-in": Record<never, never>;
   readonly "settings-invite-open": Record<never, never>;
   readonly "settings-invite-retry": Record<never, never>;

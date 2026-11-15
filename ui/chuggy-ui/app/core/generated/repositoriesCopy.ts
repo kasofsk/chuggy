@@ -22,11 +22,14 @@ export interface RepositoriesCopy {
   readonly "repositories-return-partial": Record<never, never>;
   readonly "repositories-return-requested": Record<never, never>;
   readonly "repositories-return-spent": Record<never, never>;
-  readonly "repositories-setup-title": Record<never, never>;
-  readonly "repositories-callback-title": Record<never, never>;
+  readonly "repositories-connecting-title": Record<never, never>;
   readonly "repositories-connecting": Record<never, never>;
+  readonly "repositories-setup-unexpected-title": Record<never, never>;
   readonly "repositories-setup-unexpected": Record<never, never>;
+  readonly "repositories-setup-unexpected-next": Record<never, never>;
   readonly "repositories-setup-updated": Record<never, never>;
+  readonly "repositories-setup-updated-continue": Record<never, never>;
+  readonly "repositories-setup-updated-home": Record<never, never>;
   readonly "repositories-home": Record<never, never>;
   readonly "repositories-continue": Record<never, never>;
   readonly "repositories-connect-github": Record<never, never>;

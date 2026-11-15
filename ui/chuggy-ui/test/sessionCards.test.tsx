@@ -33,6 +33,7 @@ import {
   sessionHarnessDiscovery as discovery,
 } from "./sessionHolderHarness.ts";
 import { renderCopied } from "./copied.tsx";
+import { centeredPageSaid } from "./centeredPageDrawn.ts";
 
 vi.mock("../app/browser/routes.tsx", () => ({ consoleRouter: {} }));
 vi.mock(import("../app/browser/ports.ts"), async (original) => ({
@@ -98,8 +99,14 @@ test("a configuration that got no answer is Unreachable, and Retry loads it into
   const held = network();
   held.served = (url) => (url === "/config.json" ? noAnswer() : working(url));
   await mounted();
-  expect(screen.getByRole("heading", { name: "Unreachable" })).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "chuggy cannot be reached",
+    actions: ["Retry"],
+  });
   expect(screen.getByText("No answer from /config.json")).toBeTruthy();
+  expect(
+    screen.getByText("Make sure you are online, then retry."),
+  ).toBeTruthy();
   held.served = working;
   act(() => {
     screen.getByRole("button", { name: "Retry" }).click();
@@ -140,7 +147,7 @@ test("a configuration whose body is lost on the way is Unreachable", async () =>
         )
       : working(url);
   await mounted();
-  expect(screen.getByRole("heading", { name: "Unreachable" })).toBeTruthy();
+  expect(centeredPageSaid().title).toBe("chuggy cannot be reached");
 });
 
 test.each([
@@ -161,9 +168,10 @@ test.each([
     const held = network();
     held.served = (url) => (url === "/config.json" ? answer() : working(url));
     await mounted();
-    expect(
-      screen.getByRole("heading", { name: "Not configured" }),
-    ).toBeTruthy();
+    expect(centeredPageSaid()).toStrictEqual({
+      title: "chuggy is not configured",
+      actions: [],
+    });
     expect(screen.getByText(detail)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   },
@@ -174,7 +182,7 @@ test("an issuer that answered with something unusable is named by its host", asy
   held.served = (url) =>
     url === discoveryAddress ? json({}, 404) : working(url);
   await mounted();
-  expect(screen.getByRole("heading", { name: "Not configured" })).toBeTruthy();
+  expect(centeredPageSaid().title).toBe("chuggy is not configured");
   expect(screen.getByText("auth.example answered 404")).toBeTruthy();
   expect(screen.queryByText(/config\.json/u)).toBeNull();
 });
@@ -183,7 +191,12 @@ test("the signed-out card's one action is a sign-in from the page it is on", asy
   network();
   const harness = sessionHarness();
   await mounted(undefined, harness);
-  expect(screen.getByText("Signed out")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Sign in to chuggy",
+    actions: ["Sign in"],
+  });
+  expect(screen.getByText("You are signed out.")).toBeTruthy();
+  expect(screen.queryByText("Sign in again to carry on.")).toBeNull();
 
   act(() => {
     screen.getByRole("button", { name: "Sign in" }).click();
@@ -212,7 +225,12 @@ test("a session another tab signed in over reads Session changed, and offers the
     shown();
   });
 
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Signed in from another tab",
+    actions: ["Reload"],
+  });
   expect(screen.getByText("Session changed")).toBeTruthy();
+  expect(screen.getByText("Reload to carry on in that session.")).toBeTruthy();
   expect(screen.queryByText("Routed")).toBeNull();
   expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
   act(() => {
@@ -220,4 +238,37 @@ test("a session another tab signed in over reads Session changed, and offers the
   });
   expect(reloadLocation).toHaveBeenCalledTimes(1);
   expect(harness.redirects).toEqual([]);
+});
+
+test("a refused sign-in is drawn the sign-in, saying why and what to do next", async () => {
+  network();
+  const holder = await mounted();
+  act(() => {
+    holder.refuse({ id: "session-callback-mismatched" });
+  });
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Sign in to chuggy",
+    actions: ["Sign in"],
+  });
+  expect(screen.getByText("the callback did not match this tab")).toBeTruthy();
+  expect(screen.getByText("Sign in again to carry on.")).toBeTruthy();
+});
+
+test("a load still unanswered is drawn on the same page, with no action", () => {
+  network();
+  const holder = createSessionHolder({ ...sessionHarness().ports, fetchJson });
+  renderCopied(
+    <SessionProvider holder={holder}>
+      <App
+        queryClient={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      />
+    </SessionProvider>,
+  );
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Opening chuggy",
+    actions: [],
+  });
+  expect(screen.getByText("Loading…")).toBeTruthy();
 });
