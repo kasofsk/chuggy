@@ -52,7 +52,6 @@ import { z } from "zod";
 import { identitySchema, textCodePointsCount } from "./http.ts";
 import {
   projectDisplayNameSchema,
-  projectNameCharsMax,
   projectNameSchema,
   tenantNameReserved,
 } from "./requests.ts";
@@ -856,18 +855,23 @@ export const accessWorkspaceLinksSchema = z.strictObject({
   links: z.array(accessWorkspaceLinkSchema),
 });
 
-/**
- * What a redemption is sent: the token, and the name of the workspace a
- * workspace link is to make. The name is bounded and nothing more here,
- * because what it must be depends on the link the token names.
- */
+/** What a redemption is sent: the token, and nothing a workspace link's new workspace is to be called. */
 export const accessInviteLinkRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
-  workspace: z.string().max(projectNameCharsMax).optional(),
 });
 
-/** The conflict a workspace link presented without a workspace's name is refused with. */
-export const accessWorkspaceLinkNameWantedCode = "WorkspaceLinkNameWanted";
+/**
+ * The display name a workspace link's new workspace is given: after the
+ * GitHub login the directory records for the person who used it, or a name
+ * of no one where it records none. Each is a display name as a rename takes.
+ */
+export function accessWorkspaceLinkDisplayName(
+  githubLogin: string | undefined,
+): string {
+  return githubLogin === undefined
+    ? "My Workspace"
+    : `${accessGithubLoginSchema.parse(githubLogin)}'s Workspace`;
+}
 
 /**
  * Where the directory asks, before it makes an account, whether to make it.

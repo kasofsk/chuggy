@@ -1,15 +1,19 @@
 /**
  * A tenant's display name as the contract holds it: what a tenant is renamed
  * to, held to the display name a project is, and what a tenant is answered as
- * named, which also admits the id it is named by until it is renamed.
+ * named, which also admits the id it is named by until it is renamed; and
+ * the display name a workspace link's new workspace is given.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  accessGithubLoginCharsMax,
+  accessInviteLinkRedemptionSchema,
   accessTenantDisplayNameChangeSchema,
   accessTenantDisplayNameSchema,
+  accessWorkspaceLinkDisplayName,
 } from "../../src/contract/accessPlane.ts";
 import { nativeHttpPathSegmentCharsMax } from "../../src/contract/http.ts";
 import { projectDisplayNameCharsMax } from "../../src/contract/requests.ts";
@@ -45,4 +49,35 @@ test("a tenant is answered named by a display name, or by an id up to an id's bo
   assert.equal(accessTenantDisplayNameSchema.parse(id), id);
   for (const name of ["", "t".repeat(nativeHttpPathSegmentCharsMax + 1)])
     assert.equal(accessTenantDisplayNameSchema.safeParse(name).success, false);
+});
+
+test("a workspace link's new workspace is named after its user's GitHub login, or as no one's without one, each a name a rename takes", () => {
+  const widest = "l".repeat(accessGithubLoginCharsMax);
+  for (const [login, displayName] of [
+    ["octo-cat", "octo-cat's Workspace"],
+    [widest, `${widest}'s Workspace`],
+    [undefined, "My Workspace"],
+  ] as const) {
+    assert.equal(accessWorkspaceLinkDisplayName(login), displayName);
+    assert.deepEqual(
+      accessTenantDisplayNameChangeSchema.parse({ displayName }),
+      {
+        displayName,
+      },
+    );
+  }
+  assert.throws(() => accessWorkspaceLinkDisplayName("two\nlines"));
+});
+
+test("a redemption carries its token alone, and no workspace's name", () => {
+  assert.deepEqual(accessInviteLinkRedemptionSchema.parse({ token: "t" }), {
+    token: "t",
+  });
+  assert.equal(
+    accessInviteLinkRedemptionSchema.safeParse({
+      token: "t",
+      workspace: "acme",
+    }).success,
+    false,
+  );
 });
