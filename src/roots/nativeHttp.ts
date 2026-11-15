@@ -12,9 +12,11 @@ import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerCon
 import {
   createNativeHttpApp,
   nativeHttpLimitsDefault,
+  type NativeHttpLimits,
   type PrincipalAuthentication,
   type UnrunDeletions,
 } from "../adapters/http/server.ts";
+import type { TicketTakes } from "../interpreter/ticketTake.ts";
 import {
   projectResourceReader,
   threadLiveFramed,
@@ -56,6 +58,7 @@ import {
   composeExecutionPlacement,
   composeProjectInbox,
   composeProjectOwnerFallback,
+  composeTicketTakes,
   composeThreadLimits,
   composeMemberChat,
   composeProjectCreation,
@@ -503,6 +506,23 @@ function nativeProjectInbox(
     usageResume,
     selector === undefined ? {} : { selector },
   );
+}
+
+/** The server's default limits, but for the largest project artifact upload, which `nativeArtifacts` reads. */
+function nativeHttpLimitsUploading(uploadBytesMax: number): NativeHttpLimits {
+  return {
+    ...nativeHttpLimitsDefault,
+    projectArtifactUploadBytesMax: uploadBytesMax,
+  };
+}
+
+/** A ticket's takes and returns, refusing the site's selector under this API's issuer. */
+function nativeTicketTakes(
+  pool: pg.Pool,
+  access: ProjectAccess,
+  issuer: string,
+): TicketTakes {
+  return composeTicketTakes(pool, access, nativeSelectorPrincipal(issuer));
 }
 
 /** What writes the authority's tuples, or nothing where this deployment names no write port. */
@@ -1655,10 +1675,7 @@ async function main(): Promise<void> {
     authentication,
     nativeReadiness(pool, selectorReviewPool, accessSettings),
     postgresInstallationAuthority(pool),
-    {
-      ...nativeHttpLimitsDefault,
-      projectArtifactUploadBytesMax: uploadBytesMax,
-    },
+    nativeHttpLimitsUploading(uploadBytesMax),
     hub,
     composeSelectorProjectSettings(pool, access),
     forge.minting,
@@ -1689,6 +1706,7 @@ async function main(): Promise<void> {
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),
     nativeUnrunDeletions(pool, access, erasure),
+    nativeTicketTakes(pool, access, authenticationConfig.issuer),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

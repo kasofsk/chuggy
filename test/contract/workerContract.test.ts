@@ -58,7 +58,7 @@ test("the contract's own release is one", () => {
 test("the contract's release is the one it was frozen at", () => {
   assert.equal(
     workerContractRelease,
-    "1.105.0",
+    "1.106.0",
     "the wire's version is frozen: a contract change no longer moves it, and the package's label is the publisher's",
   );
 });

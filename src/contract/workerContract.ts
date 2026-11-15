@@ -18,7 +18,7 @@ import { z } from "zod";
  * peer implements. Only a deliberate break moves it, by hand, and a package's
  * label is its publisher's.
  */
-export const workerContractRelease = "1.105.0";
+export const workerContractRelease = "1.106.0";
 
 /** The header a pod or a pool names its release in, and a plane answers with its own. */
 export const workerContractHeader = "chuggy-worker-contract";

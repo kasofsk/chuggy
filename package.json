@@ -4,7 +4,7 @@
   "devDependencies": {
     "@chuggy/worker-contract-1.10.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.10.0/chuggy-worker-contract-1.10.0.tgz",
     "@chuggy/worker-contract-1.102.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.102.0/chuggy-worker-contract-1.102.0.tgz",
-    "@chuggy/worker-contract-1.105.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.105.0/chuggy-worker-contract-1.105.0.tgz",
+    "@chuggy/worker-contract-1.106.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.106.0/chuggy-worker-contract-1.106.0.tgz",
     "@chuggy/worker-contract-1.11.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.11.0/chuggy-worker-contract-1.11.0.tgz",
     "@chuggy/worker-contract-1.14.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.14.0/chuggy-worker-contract-1.14.0.tgz",
     "@chuggy/worker-contract-1.15.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.15.0/chuggy-worker-contract-1.15.0.tgz",

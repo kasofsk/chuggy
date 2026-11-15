@@ -127,6 +127,7 @@ TRUNCATE TABLE
   public.ticket_definition,
   public.ticket_projection,
   public.ticket_source,
+  public.ticket_take,
   public.worker_artifact_reservation
   RESTART IDENTITY;
 
