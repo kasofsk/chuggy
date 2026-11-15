@@ -302,7 +302,7 @@ test("setup offers the Linux package: what it needs, the command that installs i
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.52.0/chuggy-linux-0.52.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.53.0/chuggy-linux-0.53.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   });
@@ -318,7 +318,7 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.22.0/chuggy-darwin-0.22.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.23.0/chuggy-darwin-0.23.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
   });
