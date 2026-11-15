@@ -20,7 +20,9 @@
  *
  * A TICKET'S HISTORY IS ITS JOURNAL, read whole on each scrape, and its owner
  * is the member its first draft revision was written under, as an execution's
- * is. A rework is an event that sent the ticket back to work for a result:
+ * is. Its repository, and each of its executions', is the one its draft's brief
+ * names, which a `Pending` ticket's revision moves and nothing moves after. A
+ * rework is an event that sent the ticket back to work for a result:
  * evaluation's rework, landing's, and the resume of an escalated evaluation
  * failure, which a landed ticket's every such escalation was followed by and
  * so is counted at the escalation.
@@ -176,6 +178,7 @@ const metricsPlaneRevisionSchema = z.object({
 const metricsPlaneTaskLabelsSchema = {
   tenant: z.string(),
   project: z.string(),
+  repository: z.string(),
   owner: z.string(),
   phase: z.enum(["Work", "Evaluation"]),
   stage: z.string(),
@@ -308,6 +311,7 @@ const metricsPlaneTurnSchema = z
 const metricsPlaneTicketOwnerSchema = {
   tenant: z.string(),
   project: z.string(),
+  repository: z.string(),
   owner: z.string(),
 };
 
@@ -704,7 +708,7 @@ async function metricsPlaneExecutionQuery(
           SELECT * FROM unnest(${labelling.principals}::text[],${labelling.owners}::text[])
                    AS o(principal,owner)),
         attempt AS (
-          SELECT a.tenant,a.project,a.execution,a.attempt,a.state,a.ended_at,
+          SELECT a.tenant,a.project,a.execution,a.attempt,a.state,a.ended_at,coalesce(b.repository,'') AS repository,
                  coalesce(o.owner,'') AS owner,t.kind AS phase,m.stage,m.runner,m.workload,
                  CASE WHEN e.placement='InCluster' THEN 'Cluster'
                       WHEN a.personal THEN 'Personal' ELSE 'Pool' END AS placement,
@@ -716,34 +720,35 @@ async function metricsPlaneExecutionQuery(
               ON t.tenant=e.tenant AND t.project=e.project AND t.request=e.source_request AND t.task=e.task
             LEFT JOIN ticket_definition d
               ON d.tenant=e.tenant AND d.project=e.project AND d.ticket=e.ticket
+            LEFT JOIN draft_brief b ON b.tenant=e.tenant AND b.project=e.project AND b.ticket=e.ticket
             JOIN task m
               ON m.key=jsonb_build_array(e.tenant,e.project,e.configuration_revision,t.kind,t.stage,
                          t.evaluator,d.selection,d.overrides)::text
             LEFT JOIN named o ON o.principal=e.owner),
         ended AS (
-          SELECT tenant,project,owner,phase,stage,runner,workload,placement,state,
+          SELECT tenant,project,repository,owner,phase,stage,runner,workload,placement,state,
                  (SELECT count(*) FROM unnest(b.secs) AS le WHERE le*1000<x.ms) AS bucket,
                  count(*) AS ended,sum(x.ms) AS ms,min(x.ended_at) AS created_at
             FROM attempt x CROSS JOIN bounds b WHERE x.ended_at IS NOT NULL
-           GROUP BY tenant,project,owner,phase,stage,runner,workload,placement,state,bucket)
+           GROUP BY tenant,project,repository,owner,phase,stage,runner,workload,placement,state,bucket)
         SELECT
           (SELECT json_agg(f)::text FROM (
-             SELECT tenant,project,owner,phase,stage,runner,workload,placement,state,
+             SELECT tenant,project,repository,owner,phase,stage,runner,workload,placement,state,
                     json_object_agg(bucket,ended) AS buckets,sum(ended)::text AS ended,
                     sum(ms)::text AS duration_ms,extract(epoch FROM min(created_at))::text AS created
-               FROM ended GROUP BY tenant,project,owner,phase,stage,runner,workload,placement,state
+               FROM ended GROUP BY tenant,project,repository,owner,phase,stage,runner,workload,placement,state
               LIMIT ${seriesMax + 1}) f) AS attempts,
           (SELECT json_agg(f)::text FROM (
-             SELECT x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,
+             SELECT x.tenant,x.project,x.repository,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,
                     sum(r.turns)::text AS turns,sum(r.duration_ms)::text AS duration_ms,
                     sum(r.duration_api_ms)::text AS duration_api_ms,
                     extract(epoch FROM min(x.ended_at))::text AS created
                FROM execution_run_total r JOIN attempt x USING (tenant,project,execution,attempt)
               WHERE x.ended_at IS NOT NULL
-              GROUP BY x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement
+              GROUP BY x.tenant,x.project,x.repository,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement
               LIMIT ${seriesMax + 1}) f) AS runs,
           (SELECT json_agg(f)::text FROM (
-             SELECT x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,m.model,
+             SELECT x.tenant,x.project,x.repository,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,m.model,
                     sum(m.tokens_input)::text AS tokens_input,sum(m.tokens_output)::text AS tokens_output,
                     sum(m.tokens_cache_creation)::text AS tokens_cache_creation,
                     sum(m.tokens_cache_read)::text AS tokens_cache_read,
@@ -751,7 +756,7 @@ async function metricsPlaneExecutionQuery(
                     extract(epoch FROM min(x.ended_at))::text AS created
                FROM execution_run_model_usage m JOIN attempt x USING (tenant,project,execution,attempt)
               WHERE x.ended_at IS NOT NULL
-              GROUP BY x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,m.model
+              GROUP BY x.tenant,x.project,x.repository,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,m.model
               LIMIT ${seriesMax + 1}) f) AS models`,
   );
   return found.rows[0];
@@ -768,7 +773,7 @@ async function metricsPlaneWaitQuery(
           SELECT * FROM unnest(${labelling.principals}::text[],${labelling.owners}::text[])
                    AS o(principal,owner)),
         waited AS (
-          SELECT a.tenant,a.project,coalesce(o.owner,'') AS owner,t.kind AS phase,
+          SELECT a.tenant,a.project,coalesce(b.repository,'') AS repository,coalesce(o.owner,'') AS owner,t.kind AS phase,
                  CASE WHEN e.placement='InCluster' THEN 'Cluster'
                       WHEN a.personal THEN 'Personal' ELSE 'Pool' END AS placement,
                  a.claimed_at,round(extract(epoch FROM a.claimed_at-a.opened_at)*1000)::bigint AS ms
@@ -777,18 +782,19 @@ async function metricsPlaneWaitQuery(
               ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
             JOIN execution_request_task t
               ON t.tenant=e.tenant AND t.project=e.project AND t.request=e.source_request AND t.task=e.task
+            LEFT JOIN draft_brief b ON b.tenant=e.tenant AND b.project=e.project AND b.ticket=e.ticket
             LEFT JOIN named o ON o.principal=e.owner
            WHERE a.claimed_at IS NOT NULL),
         bucketed AS (
-          SELECT tenant,project,owner,phase,placement,
+          SELECT tenant,project,repository,owner,phase,placement,
                  (SELECT count(*) FROM unnest(${metricsPlaneAttemptWaitBoundsSecs}::float8[]) AS le
                    WHERE le*1000<ms) AS bucket,
                  count(*) AS observed,sum(ms) AS ms,min(claimed_at) AS created_at
-            FROM waited GROUP BY tenant,project,owner,phase,placement,bucket)
+            FROM waited GROUP BY tenant,project,repository,owner,phase,placement,bucket)
         SELECT (SELECT json_agg(f)::text FROM (
-                 SELECT tenant,project,owner,phase,placement,json_object_agg(bucket,observed) AS buckets,
+                 SELECT tenant,project,repository,owner,phase,placement,json_object_agg(bucket,observed) AS buckets,
                         sum(ms)::text AS sum,extract(epoch FROM min(created_at))::text AS created
-                   FROM bucketed GROUP BY tenant,project,owner,phase,placement
+                   FROM bucketed GROUP BY tenant,project,repository,owner,phase,placement
                   LIMIT ${seriesMax + 1}) f) AS waits`,
   );
   return found.rows[0];
@@ -859,11 +865,12 @@ async function metricsPlaneTicketQuery(
                           v.e#>'{value,report,value,failure,task}') AS task
             FROM journal_entry j CROSS JOIN LATERAL (SELECT j.entry::jsonb->'event' AS e) AS v),
         entry AS (
-          SELECT f.tenant,f.project,coalesce(w.owner,'') AS owner,f.event,f.committed_at,
+          SELECT f.tenant,f.project,coalesce(b.repository,'') AS repository,coalesce(w.owner,'') AS owner,f.event,f.committed_at,
                  CASE WHEN f.task->>'type'='EvaluationTask'
                       THEN coalesce(m.stage,f.task#>>'{value,stage}') ELSE '' END AS stage
             FROM fact f
             LEFT JOIN owned w ON w.tenant=f.tenant AND w.project=f.project AND w.ticket=f.ticket
+            LEFT JOIN draft_brief b ON b.tenant=f.tenant AND b.project=f.project AND b.ticket=f.ticket
             LEFT JOIN ticket_definition d ON d.tenant=f.tenant AND d.project=f.project AND d.ticket=f.ticket
             LEFT JOIN task m
               ON m.key=jsonb_build_array(f.tenant,f.project,f.revision,'Evaluation'::text,
@@ -871,16 +878,17 @@ async function metricsPlaneTicketQuery(
                          d.selection,d.overrides)::text)
         SELECT
           (SELECT json_agg(f)::text FROM (
-             SELECT p.tenant,p.project,coalesce(w.owner,'') AS owner,p.phase,p.escalation,
-                    count(*)::text AS tickets
+             SELECT p.tenant,p.project,coalesce(b.repository,'') AS repository,coalesce(w.owner,'') AS owner,
+                    p.phase,p.escalation,count(*)::text AS tickets
                FROM ticket_projection p
                LEFT JOIN owned w ON w.tenant=p.tenant AND w.project=p.project AND w.ticket=p.ticket
-              GROUP BY p.tenant,p.project,coalesce(w.owner,''),p.phase,p.escalation
+               LEFT JOIN draft_brief b ON b.tenant=p.tenant AND b.project=p.project AND b.ticket=p.ticket
+              GROUP BY p.tenant,p.project,coalesce(b.repository,''),coalesce(w.owner,''),p.phase,p.escalation
               LIMIT ${seriesMax + 1}) f) AS tickets,
           (SELECT json_agg(f)::text FROM (
-             SELECT tenant,project,owner,event,stage,count(*)::text AS entries,
+             SELECT tenant,project,repository,owner,event,stage,count(*)::text AS entries,
                     extract(epoch FROM min(committed_at))::text AS created
-               FROM entry GROUP BY tenant,project,owner,event,stage
+               FROM entry GROUP BY tenant,project,repository,owner,event,stage
               LIMIT ${seriesMax + 1}) f) AS events`,
   );
   return found.rows[0];
@@ -909,7 +917,7 @@ async function metricsPlaneEndingQuery(
                       ELSE e#>>'{value,ticket}' END)::bigint AS ticket
                FROM (SELECT j.entry::jsonb->'event' AS e) AS x) AS v),
         ticket AS (
-          SELECT x.tenant,x.project,x.ticket,coalesce(o.owner,'') AS owner,
+          SELECT x.tenant,x.project,x.ticket,coalesce(b.repository,'') AS repository,coalesce(o.owner,'') AS owner,
                  min(x.committed_at) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_at,
                  min(x.committed_at) FILTER (WHERE x.event='TicketCreated') AS created_at,
                  min(x.committed_at) FILTER (WHERE x.event='TicketDispatched') AS dispatched_at,
@@ -922,16 +930,17 @@ async function metricsPlaneEndingQuery(
               ON r.tenant=x.tenant AND r.project=x.project AND r.ticket=x.ticket
              AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
             LEFT JOIN named o ON o.principal=r.authority_subject
-           GROUP BY x.tenant,x.project,x.ticket,coalesce(o.owner,'')),
+            LEFT JOIN draft_brief b ON b.tenant=x.tenant AND b.project=x.project AND b.ticket=x.ticket
+           GROUP BY x.tenant,x.project,x.ticket,coalesce(b.repository,''),coalesce(o.owner,'')),
         observation AS (
-          SELECT t.family,n.tenant,n.project,n.owner,'' AS ending,n.landed_at AS observed_at,t.value
+          SELECT t.family,n.tenant,n.project,n.repository,n.owner,'' AS ending,n.landed_at AS observed_at,t.value
             FROM ticket n CROSS JOIN LATERAL (VALUES
                    ('lead',round(extract(epoch FROM n.landed_at-n.created_at)*1000)::bigint),
                    ('run',round(extract(epoch FROM n.landed_at-n.dispatched_at)*1000)::bigint),
                    ('reworks',n.reworks)) AS t(family,value)
            WHERE n.landed_at IS NOT NULL AND t.value IS NOT NULL
           UNION ALL
-          SELECT 'cost',n.tenant,n.project,n.owner,n.ending,n.ended_at,
+          SELECT 'cost',n.tenant,n.project,n.repository,n.owner,n.ending,n.ended_at,
                  coalesce((SELECT sum(u.cost_usd_micros) FROM execution e
                              JOIN execution_attempt a USING (tenant,project,execution)
                              JOIN execution_run_model_usage u USING (tenant,project,execution,attempt)
@@ -940,15 +949,15 @@ async function metricsPlaneEndingQuery(
             FROM ticket n
            WHERE n.ended_at<=now()-make_interval(secs => ${metricsPlaneTicketSettleSecs}::float8)),
         bucketed AS (
-          SELECT family,tenant,project,owner,ending,
+          SELECT family,tenant,project,repository,owner,ending,
                  (SELECT count(*) FROM unnest(bounds) AS le WHERE le*scale<value) AS bucket,
                  count(*) AS observed,sum(value) AS total,min(observed_at) AS created_at
-            FROM observation JOIN bounds USING (family) GROUP BY family,tenant,project,owner,ending,bucket),
+            FROM observation JOIN bounds USING (family) GROUP BY family,tenant,project,repository,owner,ending,bucket),
         series AS (
-          SELECT family,tenant,project,owner,ending,json_object_agg(bucket,observed) AS buckets,
+          SELECT family,tenant,project,repository,owner,ending,json_object_agg(bucket,observed) AS buckets,
                  sum(total)::text AS sum,extract(epoch FROM min(created_at))::text AS created,
                  row_number() OVER (PARTITION BY family) AS place
-            FROM bucketed GROUP BY family,tenant,project,owner,ending)
+            FROM bucketed GROUP BY family,tenant,project,repository,owner,ending)
         SELECT (SELECT json_agg(s)::text FROM series s WHERE s.place<=${seriesMax + 1}) AS observations`,
   );
   return found.rows[0];
@@ -975,7 +984,8 @@ async function metricsPlaneEscalationQuery(
                FROM (SELECT j.entry::jsonb->'event' AS e) AS x) AS v
           WINDOW later AS (PARTITION BY j.tenant,j.project,v.ticket ORDER BY j.seq)),
         ended AS (
-          SELECT h.tenant,h.project,coalesce(o.owner,'') AS owner,h.event,coalesce(p.authority_kind,'') AS ender,
+          SELECT h.tenant,h.project,coalesce(b.repository,'') AS repository,coalesce(o.owner,'') AS owner,h.event,
+                 coalesce(p.authority_kind,'') AS ender,
                  h.next_at,round(extract(epoch FROM h.next_at-h.committed_at)*1000)::bigint AS ms
             FROM entry h
             LEFT JOIN operation p
@@ -984,17 +994,18 @@ async function metricsPlaneEscalationQuery(
               ON r.tenant=h.tenant AND r.project=h.project AND r.ticket=h.ticket
              AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
             LEFT JOIN named o ON o.principal=r.authority_subject
+            LEFT JOIN draft_brief b ON b.tenant=h.tenant AND b.project=h.project AND b.ticket=h.ticket
            WHERE h.event=ANY(${metricsPlaneEscalatingEvents}::text[]) AND h.next_at IS NOT NULL),
         bucketed AS (
-          SELECT tenant,project,owner,event,ender,
+          SELECT tenant,project,repository,owner,event,ender,
                  (SELECT count(*) FROM unnest(${metricsPlaneEscalationBoundsSecs}::float8[]) AS le
                    WHERE le*1000<ms) AS bucket,
                  count(*) AS observed,sum(ms) AS ms,min(next_at) AS created_at
-            FROM ended GROUP BY tenant,project,owner,event,ender,bucket)
+            FROM ended GROUP BY tenant,project,repository,owner,event,ender,bucket)
         SELECT (SELECT json_agg(f)::text FROM (
-                 SELECT tenant,project,owner,event,ender,json_object_agg(bucket,observed) AS buckets,
+                 SELECT tenant,project,repository,owner,event,ender,json_object_agg(bucket,observed) AS buckets,
                         sum(ms)::text AS sum,extract(epoch FROM min(created_at))::text AS created
-                   FROM bucketed GROUP BY tenant,project,owner,event,ender
+                   FROM bucketed GROUP BY tenant,project,repository,owner,event,ender
                   LIMIT ${seriesMax + 1}) f) AS escalations`,
   );
   return found.rows[0];
@@ -1028,16 +1039,16 @@ async function metricsPlaneCycleQuery(
                          x.phase IS DISTINCT FROM lag(x.phase) OVER later AS entered
                     FROM entry x WINDOW later AS (PARTITION BY x.tenant,x.project,x.ticket ORDER BY x.seq)) AS m),
         ticket AS (
-          SELECT x.tenant,x.project,x.ticket,coalesce(o.owner,'') AS owner,
+          SELECT x.tenant,x.project,x.ticket,coalesce(b.repository,'') AS repository,coalesce(o.owner,'') AS owner,
                  min(x.committed_at) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_at,
                  min(x.seq) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_seq
-            FROM entry x
+            FROM entry x LEFT JOIN draft_brief b ON (b.tenant,b.project,b.ticket)=(x.tenant,x.project,x.ticket)
             LEFT JOIN draft_revision r
               ON r.tenant=x.tenant AND r.project=x.project AND r.ticket=x.ticket
              AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
             LEFT JOIN unnest(${labelling.principals}::text[],${labelling.owners}::text[]) AS o(principal,owner)
               ON o.principal=r.authority_subject
-           GROUP BY x.tenant,x.project,x.ticket,coalesce(o.owner,'')),
+           GROUP BY x.tenant,x.project,x.ticket,coalesce(b.repository,''),coalesce(o.owner,'')),
         spent AS (
           SELECT s.tenant,s.project,s.ticket,s.phase,count(*) AS entries,
                  round(extract(epoch FROM sum(s.next_at-s.committed_at))*1000)::bigint AS ms
@@ -1053,24 +1064,24 @@ async function metricsPlaneCycleQuery(
             FROM spell s WHERE s.phase='Evaluation'
            GROUP BY s.tenant,s.project,s.ticket,s.spell HAVING bool_and(s.next_at IS NOT NULL)),
         observation AS (
-          SELECT c.family,c.tenant,c.project,n.owner,c.began,c.ended,'' AS phase,c.ended_at AS observed_at,c.value
+          SELECT c.family,c.tenant,c.project,n.repository,n.owner,c.began,c.ended,'' AS phase,c.ended_at AS observed_at,c.value
             FROM cycle c JOIN ticket n USING (tenant,project,ticket)
           UNION ALL
-          SELECT f.family,n.tenant,n.project,n.owner,'','',f.phase,n.landed_at,f.value
+          SELECT f.family,n.tenant,n.project,n.repository,n.owner,'','',f.phase,n.landed_at,f.value
             FROM ticket n CROSS JOIN unnest(${metricsPlaneLandedPhases}::text[]) AS p(phase)
             LEFT JOIN spent t ON (t.tenant,t.project,t.ticket,t.phase)=(n.tenant,n.project,n.ticket,p.phase)
            CROSS JOIN LATERAL (VALUES ('phase',p.phase,coalesce(t.ms,0)),('cycles','',coalesce(t.entries,0))) AS f(family,phase,value)
            WHERE n.landed_at IS NOT NULL AND (f.family='phase' OR p.phase='Work')),
         series AS (
-          SELECT family,tenant,project,owner,began,ended,phase,json_object_agg(bucket,observed) AS buckets,
+          SELECT family,tenant,project,repository,owner,began,ended,phase,json_object_agg(bucket,observed) AS buckets,
                  sum(total)::text AS sum,extract(epoch FROM min(created_at))::text AS created,
                  row_number() OVER (PARTITION BY family) AS place
-            FROM (SELECT family,tenant,project,owner,began,ended,phase,
+            FROM (SELECT family,tenant,project,repository,owner,began,ended,phase,
                          (SELECT count(*) FROM unnest(bounds) AS le WHERE le*scale<value) AS bucket,
                          count(*) AS observed,sum(value) AS total,min(observed_at) AS created_at
                     FROM observation JOIN bounds USING (family)
-                   GROUP BY family,tenant,project,owner,began,ended,phase,bucket) AS bucketed
-           GROUP BY family,tenant,project,owner,began,ended,phase)
+                   GROUP BY family,tenant,project,repository,owner,began,ended,phase,bucket) AS bucketed
+           GROUP BY family,tenant,project,repository,owner,began,ended,phase)
         SELECT (SELECT json_agg(s)::text FROM series s WHERE s.place<=${seriesMax + 1}) AS observations`,
   );
   return found.rows[0];
