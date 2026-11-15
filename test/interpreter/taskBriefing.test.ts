@@ -2403,6 +2403,31 @@ test("a rework reads the failed evaluation's reports under the template's own pr
   ]);
 });
 
+/** The rule a work task is held to on the history it pushes, which its role instructions state. */
+const historyRule =
+  "a rebased, squashed or amended commit is refused and the run's work is lost";
+
+test("a first work task is told in its role that a rewritten commit is refused", () => {
+  const text = (sectionLines(viewOf({}), "RoleInstructions") ?? []).join("\n");
+  assert.ok(
+    text.includes("Add commits on top of the commit this workspace is at"),
+  );
+  assert.ok(text.includes("bring another branch in by merging it"));
+  assert.ok(text.includes(historyRule));
+});
+
+test("a rework states the rule on rewritten commits once, in its role, and answers a message finding in a new commit", () => {
+  const text = composed(evaluationReportView([".chug/tasks/ci.sh exited 1"]))
+    .briefing.text;
+  assert.equal(text.split(historyRule).length - 1, 1);
+  assert.equal(text.split("Add commits on top").length - 1, 1);
+  assert.ok(
+    text.includes(
+      "A finding about a commit's message is answered in the message of a new commit.",
+    ),
+  );
+});
+
 test("a first attempt follows no evaluation and is told nothing about one", () => {
   assert.deepEqual(evaluationSectionLines(evaluationReportView([])), []);
   assert.equal(
@@ -2825,7 +2850,7 @@ test("a rework after a failed landing merges the target's head before it merges 
   );
 });
 
-test("every agent work briefing merges the target again as its last step, and checks and commits on a tree that brought anything in", () => {
+test("every agent work briefing merges the target again as its last step, and checks again only where the merge conflicted or touched this change's files", () => {
   for (const view of targetedWorkViews) {
     const sections = sectionIds(view);
     assert.deepEqual(sections.slice(-2), ["TargetMergeLast", "RequiredResult"]);
@@ -2835,9 +2860,16 @@ test("every agent work briefing merges the target again as its last step, and ch
     assert.ok(text.includes(targetMerge));
     assert.ok(
       text.includes(
-        "Where that brought anything in, run the checks again on the merged tree, and commit what you change on top of the merge",
+        "Where that merge conflicted, or brought in a change to a file this change also changes, run the checks again on the merged tree, and commit what you change on top of the merge",
       ),
     );
+    assert.ok(text.includes("report a pass only where they pass"));
+    assert.ok(
+      text.includes(
+        "Otherwise report on the checks you ran before the merge, since the checks stage runs them on the merged tree.",
+      ),
+    );
+    assert.equal(text.includes("Where that brought anything in"), false);
   }
 });
 
