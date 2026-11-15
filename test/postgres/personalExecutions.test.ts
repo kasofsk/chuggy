@@ -16,6 +16,8 @@ import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectOwnerFallback } from "../../src/adapters/postgres/projectOwnerFallback.ts";
+import { postgresTicketTakes } from "../../src/adapters/postgres/ticketTake.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import {
   apiRole,
@@ -1403,5 +1405,118 @@ test("each outcome a benching runner's job ended under is named for it alone: a 
   );
   assert.deepEqual(await benchAccount(member), [
     { paused: false, limited: false },
+  ]);
+});
+
+const takes = postgresTicketTakes(apiPool);
+
+/** Opens the project's request again with one more task, so its next registration registers that task alone, as a later cycle's would. */
+async function furtherTask(project: SchedulerProject): Promise<number> {
+  const found = (await rig.harness.query(
+    `SELECT max(task)::int AS task FROM execution_request_task
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  )) as readonly { task: number }[];
+  const task = (found[0]?.task ?? 0) + 1;
+  await rig.harness.query(
+    `INSERT INTO execution_request_task (tenant,project,request,task,kind,cycle)
+     VALUES ($1,$2,$3,$4,'Work',$4)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      task,
+    ],
+  );
+  await rig.harness.query(
+    `UPDATE execution_request SET state='Open'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+  return task;
+}
+
+/** The owner each task of the project's ticket was registered with, by task. */
+async function ownersByTask(
+  project: SchedulerProject,
+): Promise<readonly [number, string | null][]> {
+  const found = (await rig.harness.query(
+    `SELECT task::int AS task, owner FROM execution
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 ORDER BY task`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { task: number; owner: string | null }[];
+  return found.map((row) => [row.task, row.owner]);
+}
+
+/** The owner of the execution whose attempt `assignment` bound. */
+async function claimedOwner(assignment: string | undefined): Promise<string> {
+  assert.ok(assignment !== undefined, "a runner claimed an attempt");
+  const found = (await rig.harness.query(
+    `SELECT e.owner FROM execution_attempt a
+       JOIN execution e
+         ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+      WHERE a.assignment=$1`,
+    [assignment],
+  )) as readonly { owner: string }[];
+  assert.equal(found.length, 1);
+  return found[0]?.owner ?? "";
+}
+
+test("a take places the ticket's next execution for its taker and a return for its creator, while one registered before either keeps its owner", async () => {
+  const alice = principal("alice");
+  const bob = principal("bob");
+  const project = await ownedProject("taken", alice, "Preferred", 1);
+  assert.deepEqual(await ownersByTask(project), [[1, alice]]);
+  assert.deepEqual(
+    await takes.write(
+      project.partition,
+      asTicketId(project.ticket),
+      "Take",
+      memberAuthority(bob),
+    ),
+    { stored: "Taken", owner: bob },
+  );
+  await furtherTask(project);
+  await registered(project, "taken-again");
+  assert.deepEqual(
+    await ownersByTask(project),
+    [
+      [1, alice],
+      [2, bob],
+    ],
+    "the execution registered before the take stays Alice's",
+  );
+  await opened(project);
+  await opened(project);
+  const alices = await runnerOf(project.partition, alice);
+  const bobs = await runnerOf(project.partition, bob);
+  assert.equal(
+    await claimedOwner(await claimed(alices, [project.partition])),
+    alice,
+  );
+  assert.equal(
+    await claimed(alices, [project.partition]),
+    undefined,
+    "Alice's runner cannot claim the execution placed for Bob",
+  );
+  assert.equal(
+    await claimedOwner(await claimed(bobs, [project.partition])),
+    bob,
+  );
+  assert.deepEqual(
+    await takes.write(
+      project.partition,
+      asTicketId(project.ticket),
+      "Return",
+      memberAuthority(bob),
+    ),
+    { stored: "Returned", owner: alice },
+  );
+  await furtherTask(project);
+  await registered(project, "returned");
+  assert.deepEqual(await ownersByTask(project), [
+    [1, alice],
+    [2, bob],
+    [3, alice],
   ]);
 });

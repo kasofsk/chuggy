@@ -431,3 +431,12 @@ export const threadStandingFunction = "thread_jobs_standing";
 /** The capabilities a thread holds while a chat host holds it, read by the API. */
 export const threadChatHostCapabilitiesFunction =
   "thread_chat_host_capabilities";
+
+/** The door a member takes a released ticket and returns it through. */
+export const ticketTakeFunction = "take_ticket";
+
+/** The member who took a ticket and has not returned it, or none. */
+export const ticketTakerFunction = "ticket_taker";
+
+/** The member a ticket's next execution is placed for: its taker, else its creator, else none. */
+export const ticketOwnerFunction = "ticket_owner";

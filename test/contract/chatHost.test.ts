@@ -36,6 +36,7 @@ import {
   workerContractReleaseExport,
   workerContractReleaseSchema,
   workerContractReplayed,
+  workerContractWireOf,
 } from "./workerContractReleases.ts";
 
 const bearer = "session-bearer-secret";
@@ -388,7 +389,10 @@ async function chatHostVersionReleases(spoken: number): Promise<
 > {
   const releases = [];
   for (const release of workerContractReplayed("pool").filter((replayed) =>
-    contractVersionAccepted(workerContractChatHost, replayed),
+    contractVersionAccepted(
+      workerContractChatHost,
+      workerContractWireOf(replayed),
+    ),
   )) {
     const exported = (name: string) =>
       workerContractReleaseExport(

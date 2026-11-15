@@ -12,8 +12,8 @@
 
 import { metricsPlaneRole, type Migration } from "../shared.ts";
 
-export const migration184: Migration = {
-  version: 184,
+export const migration185: Migration = {
+  version: 185,
   name: "the metrics plane reads the repository each ticket's brief names",
   statements: [
     `GRANT SELECT(tenant,project,ticket,repository) ON TABLE public.draft_brief TO ${metricsPlaneRole}`,

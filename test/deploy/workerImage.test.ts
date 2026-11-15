@@ -26,6 +26,7 @@ import {
   contractVersionAccepted,
   workerContractAccepted,
 } from "../../src/interpreter/workerPlane.ts";
+import { workerContractWireOf } from "../contract/workerContractReleases.ts";
 
 const pinPath = new URL("../../images/worker/core.json", import.meta.url);
 const dockerfilePath = new URL(
@@ -120,15 +121,16 @@ function imageEnvironment(text: string): Map<string, string> {
   return new Map(chain.flatMap((built) => [...built.environment]));
 }
 
-test("the release the pin names is one the job and session planes accept", () => {
+test("the package the pin names is a release, and the one its contract names is one the job and session planes accept", () => {
   const { contractRelease } = JSON.parse(readFileSync(pinPath, "utf8")) as {
     contractRelease?: unknown;
   };
   assert.equal(typeof contractRelease, "string");
   assert.notEqual(workerContractVersionOf(String(contractRelease)), undefined);
+  const named = workerContractWireOf(String(contractRelease));
   assert.ok(
-    contractVersionAccepted(workerContractAccepted, String(contractRelease)),
-    `${String(contractRelease)} is refused by the planes the core calls`,
+    contractVersionAccepted(workerContractAccepted, named),
+    `${String(contractRelease)} names ${named}, which the planes the core calls refuse`,
   );
 });
 

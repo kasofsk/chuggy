@@ -1317,7 +1317,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
   );
 });
 
-test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket, which tickets a project holds, where each project runs, and why a finalization attempt failed", async () => {
+test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket and who took it, which tickets a project holds, where each project runs, and why a finalization attempt failed", async () => {
   const read = (await harness.query(
     `SELECT table_name AS relation,
             string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1358,6 +1358,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
       "ticket_definition",
       "ticket_projection",
       "ticket_source",
+      "ticket_take",
       "worker_pool",
     ],
   );
