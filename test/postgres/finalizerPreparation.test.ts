@@ -58,6 +58,7 @@ import {
   asGitRefName,
   asInputBundleId,
   asRepositoryId,
+  finalizerDefaults,
   type FinalizationClaim,
 } from "../../src/interpreter/finalizer.ts";
 import type { FinalizerProposalStore } from "../../src/interpreter/finalizationProposal.ts";
@@ -200,6 +201,29 @@ test("a clean preparation writes the candidate over the observed target and reco
   assert.deepEqual(
     (await bundleOf(project)).map((each) => each.reference_kind),
     ["Repository", "ConfigurationRevision", "ResultManifest"],
+  );
+});
+
+test("a push with nothing in its way is prepared, promoted and concluded in one pass under the default chain", async () => {
+  const { project, remote } = await finalizerSubject(rig, "chained", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const report = await finalizerPassOnce(
+    rig,
+    project,
+    finalizerRemotePort(rig),
+    "chained",
+    undefined,
+    { claimStepsPerPassMax: finalizerDefaults.claimStepsPerPassMax },
+  );
+  assert.equal(report.preparations, 1);
+  assert.equal(report.promotions, 1);
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.holds, 0);
+  const [written] = await attemptsOf(project);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    written?.candidate_commit,
   );
 });
 

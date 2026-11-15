@@ -103,6 +103,7 @@ import {
   type CandidatePromotion,
   type FinalizationAttemptOutcome,
   type FinalizationClaim,
+  type FinalizerConfig,
   type GitPromotionPort,
   type ObservedTarget,
   type PathsDiffering,
@@ -389,9 +390,10 @@ export function finalizerPassOnce(
   git: GitPromotionPort,
   label: string,
   forges?: ChangeProposalForges,
+  bounds: Partial<FinalizerConfig> = {},
 ): Promise<FinalizerPassReport> {
   return finalizerPass(
-    finalizerService(rig, git, silentFinalizerTelemetry, forges),
+    finalizerService(rig, git, silentFinalizerTelemetry, forges, bounds),
     asFinalizerOwnerId(`owner-${label}`),
     asRecoveryEpoch(project.epoch),
   );
@@ -1261,14 +1263,16 @@ export function finalizerDigestOf(canonical: CanonicalFinalization): string {
 /**
  * The service one case drives: the real durable authority over the finalizer's
  * own role, a real store over the rig's own root, and the remote the case
- * scripts. The composition root wires the same set and nothing may import it, so
- * this states it a second time.
+ * scripts, each claim taking one step per pass unless the case names more. The
+ * composition root wires the same set and nothing may import it, so this states
+ * it a second time.
  */
 export function finalizerService(
   rig: FinalizerRig,
   git: GitPromotionPort,
   metrics: FinalizerTelemetry = silentFinalizerTelemetry,
   forges?: ChangeProposalForges,
+  bounds: Partial<FinalizerConfig> = {},
 ): FinalizerService {
   const artifacts = artifactStore({ root: rig.artifactRoot });
   return {
@@ -1282,7 +1286,11 @@ export function finalizerService(
     pipelinePaths: [".github/workflows/"],
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
-    config: checkedFinalizerConfig(finalizerDefaults),
+    config: checkedFinalizerConfig({
+      ...finalizerDefaults,
+      claimStepsPerPassMax: 1,
+      ...bounds,
+    }),
     metrics,
   };
 }
