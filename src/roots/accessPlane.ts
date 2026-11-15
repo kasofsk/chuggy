@@ -2,12 +2,14 @@
  * The process where a tenant's people and their roles are managed and the
  * site's tenants are listed, composed from variables alone.
  *
- * ITS DATABASE HOLDS INVITE LINKS AND NOTHING ELSE. Every role it answers is a
- * tuple the authority holds, and a link is not a role until it is redeemed, so
- * `.dependency-cruiser.cjs` holds it to reaching the link store and what
- * opening a pool reaches, and no other PostgreSQL adapter. The database is
- * optional: a plane named none answers every link route as not configured.
- * Where it has one, it is ready only when it connected as `accessPlaneRole`.
+ * ITS DATABASE HOLDS INVITE LINKS AND TENANTS' DISPLAY NAMES AND NOTHING ELSE.
+ * Every role it answers is a tuple the authority holds, a link is not a role
+ * until it is redeemed and a name grants nothing, so `.dependency-cruiser.cjs`
+ * holds it to reaching those two stores and what opening a pool reaches, and no
+ * other PostgreSQL adapter. The database is optional: a plane named none
+ * answers every link route and a rename as not configured, and names every
+ * tenant by its id. Where it has one, it is ready only when it connected as
+ * `accessPlaneRole`.
  *
  * THE DIRECTORY IS OPTIONAL. A deployment that brings its own sign-in names
  * no directory address, and the plane then answers every invitation as not
@@ -40,6 +42,7 @@ import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import { kratosAccessDirectory } from "../adapters/kratos/identities.ts";
 import { postgresInviteLinks } from "../adapters/postgres/inviteLinks.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import { postgresTenantNames } from "../adapters/postgres/tenantNames.ts";
 import { accessPlaneRole } from "../adapters/postgres/schema/shared.ts";
 import {
   checkedAccessDirectorySettings,
@@ -53,6 +56,7 @@ import { accessInvitations } from "../interpreter/accessInvitation.ts";
 import { accessInviteLinks } from "../interpreter/accessInviteLink.ts";
 import { accessOwnerInvitations } from "../interpreter/accessOwnerInvitation.ts";
 import { accessSiteTenants } from "../interpreter/accessSiteTenants.ts";
+import { accessTenantNames } from "../interpreter/accessTenantNames.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
@@ -102,12 +106,13 @@ function accessPlaneDatabaseUrl(): string | undefined {
   return url === undefined || url.length === 0 ? undefined : url;
 }
 
-/** The invite link store over the database `url` names, its pool, and whether its connection is the plane's role. */
+/** The invite link and display name stores over the database `url` names, their pool, and whether its connection is the plane's role. */
 function accessPlaneLinks(url: string) {
   const pool = postgresPool(url);
   return {
     pool,
     store: postgresInviteLinks(pool),
+    names: postgresTenantNames(pool),
     secrets: {
       draw: () => randomBytes(32).toString("base64url"),
       digest: (token: string) =>
@@ -185,6 +190,7 @@ export function accessPlaneComposed(
     environment.databaseUrl === undefined
       ? undefined
       : accessPlaneLinks(environment.databaseUrl);
+  const names = links?.names;
   const app = createAccessPlaneApp({
     authentication,
     plane: accessPlane(ports, { issuer, bounds: accessPlaneBoundsDefault }),
@@ -202,13 +208,18 @@ export function accessPlaneComposed(
       issuer,
       bounds: accessPlaneBoundsDefault,
     }),
-    siteTenants: accessSiteTenants(ports, {
-      issuer,
-      bounds: accessPlaneBoundsDefault,
-    }),
-    callerTenants: accessCallerTenants(ports, {
-      bounds: accessPlaneBoundsDefault,
-    }),
+    siteTenants: accessSiteTenants(
+      { ...ports, names },
+      {
+        issuer,
+        bounds: accessPlaneBoundsDefault,
+      },
+    ),
+    callerTenants: accessCallerTenants(
+      { ...ports, names },
+      { bounds: accessPlaneBoundsDefault },
+    ),
+    tenantNames: accessTenantNames({ ...ports, names }),
     inviteLinks: accessInviteLinks({ ...ports, claims, links }, { issuer }),
     ready: async () =>
       (await readiness.ready()) &&

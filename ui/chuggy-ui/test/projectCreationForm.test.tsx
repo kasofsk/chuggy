@@ -28,6 +28,7 @@ import {
 } from "../app/core/projectCreation.ts";
 import { persistentStore } from "../app/browser/ports.ts";
 import {
+  accessHolding,
   answerLine,
   drawn,
   pressed,
@@ -402,5 +403,32 @@ test("the switcher offers a new project beside every project, and it opens the f
   fireEvent.click(item);
   expect(held.went).toStrictEqual([
     { to: projectCreationRoutePath, search: { workspace: partition.tenant } },
+  ]);
+});
+
+test("the switcher names each workspace by the display name the reader's own list answers, and one it does not by its id, while a pick still goes to the id's address", async () => {
+  const elsewhere = { tenant: "globex", project: "web", name: "Web" };
+  served(
+    [named, elsewhere],
+    () => Promise.resolve(answer(partition, 201)),
+    accessHolding([
+      {
+        tenant: partition.tenant,
+        displayName: "Vantage Engineering",
+        roles: ["Admin"],
+        administer: true,
+      },
+    ]),
+  );
+  await drawn(<ProjectSwitcher partition={partition} />);
+  expect(await switcherOffers()).toEqual([
+    "Vantage Engineering / Chuggy",
+    "globex / Web",
+  ]);
+  fireEvent.click(
+    screen.getByRole("menuitemradio", { name: "Vantage Engineering / Chuggy" }),
+  );
+  expect(held.went).toStrictEqual([
+    { to: "/$tenant/$project", params: partition },
   ]);
 });

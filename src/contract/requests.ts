@@ -179,12 +179,12 @@ export const projectNameSchema = z
   .max(projectNameCharsMax)
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u);
 
-/** The longest display name a project may be given, counted after it is trimmed. */
+/** The longest display name a project or a tenant may be given, once trimmed. */
 export const projectDisplayNameCharsMax = 100;
 
 /**
- * What a person calls a project, beside the name that addresses it: any text
- * but a control character, trimmed, and never empty once trimmed.
+ * What a person calls a project or a tenant, beside the name that addresses
+ * it: any text but a control character, trimmed, and never empty once trimmed.
  */
 export const projectDisplayNameSchema = z
   .string()

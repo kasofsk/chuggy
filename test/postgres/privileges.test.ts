@@ -229,7 +229,14 @@ test("no runtime role but the API binds a repository, and none records one", asy
   }
 });
 
-test("the access plane's role reaches its invite links and is refused every relation that is not its own", async () => {
+test("the access plane's role reaches its invite links and tenants' display names, and is refused every relation that is not its own", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      accessPlaneRole,
+      "UPDATE tenant SET display_name=display_name WHERE false",
+    ),
+    undefined,
+  );
   assert.equal(
     await harness.attemptAs(
       accessPlaneRole,
@@ -246,7 +253,8 @@ test("the access plane's role reaches its invite links and is refused every rela
   );
   for (const [statement, relation] of [
     ["SELECT * FROM project", "project"],
-    ["SELECT * FROM tenant", "tenant"],
+    ["UPDATE tenant SET tenant=tenant", "tenant"],
+    ["DELETE FROM tenant", "tenant"],
     [
       "SELECT * FROM worker_pool_registration_token",
       "worker_pool_registration_token",
@@ -268,7 +276,7 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
   for (const statement of [
     `SELECT tenant,project,execution,ticket,task,source_request,owner,placement,configuration_revision FROM execution`,
     "SELECT tenant,project,request,task,kind,stage,evaluator FROM execution_request_task",
-    "SELECT tenant,project,ticket,selection,overrides FROM ticket_definition",
+    "SELECT tenant,project,ticket,selection,overrides,repository FROM ticket_definition",
     "SELECT tenant,project,execution,attempt,state,personal,opened_at,ended_at FROM execution_attempt",
     "SELECT tenant,project,execution,attempt,turns,duration_ms,duration_api_ms FROM execution_run_total",
     "SELECT model,tokens_input,tokens_output,tokens_cache_creation,tokens_cache_read,cost_usd_micros FROM execution_run_model_usage",
@@ -306,6 +314,9 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ["SELECT * FROM journal_entry", "journal_entry"],
     ["SELECT owner FROM journal_entry", "journal_entry"],
     ["SELECT authoring FROM draft_revision", "draft_revision"],
+    ["SELECT brief FROM ticket_definition", "ticket_definition"],
+    ["SELECT * FROM ticket_definition", "ticket_definition"],
+    ["SELECT repository FROM draft_brief", "draft_brief"],
     ["SELECT authority_subject FROM operation", "operation"],
     ["SELECT command FROM operation", "operation"],
     ["SELECT escalation_evidence FROM ticket_projection", "ticket_projection"],

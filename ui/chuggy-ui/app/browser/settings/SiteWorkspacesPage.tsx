@@ -88,8 +88,9 @@ function SiteWorkspaceRow(props: {
         <span
           className="people-name block font-strong text-ink-1"
           title={listed.tenant}
+          translate="no"
         >
-          {listed.tenant}
+          {listed.displayName}
         </span>
       </th>
       <td data-none={settingsListingNone(none)}>

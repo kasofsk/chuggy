@@ -20,10 +20,13 @@ replayed establish is refused rather than absorbed. It is changed by
 restore is found by comparing the current epoch to the one every live lease
 and journal entry carries.
 
-`tenant` — one row per tenant name, which is what makes a name first-come.
-Owned by the boundary owner, which `create_project` runs as, and the control
-plane for insertion. Its key and identity are the tenant name, it is the parent
-`project` points at, and `tenant_is_immutable` refuses every change and the
+`tenant` — one row per tenant name, which is what makes a name first-come,
+and the tenant's display name. Owned by the boundary owner, which
+`create_project` runs as, and the control plane for insertion; the access
+plane inserts a row naming its display name and changes that column alone. Its
+key and identity are the tenant name, it is the parent `project` points at, a
+row inserted naming no display name is given its name, and
+`tenant_is_immutable` refuses every change but the display name's and the
 delete of a tenant any project names, so `delete_unrun_tenant` is its only
 deletion.
 It has no unfinished work.
@@ -207,7 +210,8 @@ because an update re-resolves them; the boundary owner reads it, the scheduler
 reads it for the requirement each execution is created at, and the finalizer
 reads the brief a landing is bound by. Neither of the last two reads the draft's
 brief. The API reads the brief and the key and nothing else, so a ticket's page
-shows the brief the ticket runs. Its composite key is `(tenant, project)` and its identity is `(tenant, project,
+shows the brief the ticket runs. Its `repository` is generated from the brief, and the
+metrics plane reads that and the key, and not the brief. Its composite key is `(tenant, project)` and its identity is `(tenant, project,
 ticket)`. It is written by the release and by each update, in the transaction
 that journals it, so unfinished work does not exist for it.
 
