@@ -11,6 +11,7 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { Copy } from "./copy.ts";
+import { settingsRoutes } from "./settingsNav.ts";
 import type { Tone } from "./tones.ts";
 
 export const navRoutes = {
@@ -21,7 +22,6 @@ export const navRoutes = {
   catalog: "/$tenant/$project/catalog",
   settings: "/$tenant/$project/settings",
   repositories: "/$tenant/$project/repositories",
-  runners: "/$tenant/$project/runners",
   ticketNew: "/$tenant/$project/tickets/new",
   thread: "/$tenant/$project/threads/$session",
 } as const;
@@ -56,7 +56,8 @@ export type NavEntryId =
 export interface NavEntry {
   readonly id: NavEntryId;
   readonly label: Copy;
-  readonly to: NavRoute;
+  /** A screen's route, or for Runners the reader's own runners, where one is added. */
+  readonly to: NavRoute | typeof settingsRoutes.project.myRunner;
   readonly params: NavParams;
   readonly standing?: NavStanding | undefined;
 }
@@ -124,7 +125,7 @@ export function shellSetupNav(
     {
       id: "runners",
       label: { id: "shell-nav-runners" },
-      to: navRoutes.runners,
+      to: settingsRoutes.project.myRunner,
       params,
     },
   ];

@@ -262,7 +262,7 @@ test("a claim is released only with a tenant holding no project, and never chang
     "Recorded",
   );
   await harness.query(
-    "SELECT outcome FROM create_project($1,'claimed','Unclaimed',false,$2,'Member','alice')",
+    "SELECT outcome FROM create_project($1,'claimed','Claimed','Unclaimed',false,$2,'Member','alice')",
     [recorded.tenant, `operation-${randomUUID()}`],
   );
   const named = `forge='${recorded.forge}' AND app='${recorded.app}' AND account='${recorded.account}'`;

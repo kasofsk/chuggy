@@ -1,16 +1,18 @@
 /**
  * The one next thing, from where a person stands on each step of setup.
  *
- * The first step that is not done decides it. This program does one step
- * itself, the runner's, and it never prints a `next:` it cannot run, so for
- * every other step what it names is a page of the console by its full address
- * and what is pressed there, and the checklist is read again only once the
- * person says the step is done. The runner's step changes the machine, so it
- * is offered and never run unasked: the person is told what `runner` would
- * put here, a service for the project's work and one for their chat host or
- * the first alone, or, where their chat host is all that is lacking, what
- * `chat-host` would, and the command is named under a rule that waits on their
- * yes; where the machine could not take a runner, they are told that instead.
+ * The first step that is not done decides it. This program does two steps
+ * itself, the MCP step's and the runner's, and it never prints a `next:` it
+ * cannot run, so for every other step what it names is a page of the console
+ * by its full address and what is pressed there, and the checklist is read
+ * again only once the person says the step is done. The MCP step and the
+ * runner's change the machine, so each is offered and never run unasked: the
+ * person is told what `mcp` would do, the runner package installed where it
+ * is not here and its server named in their agent, and for the runner's step
+ * they are told what `runner` would put here, a service for the project's
+ * work and one for their chat host or the first alone, or, where their chat
+ * host is all that is lacking, what `chat-host` would; the command is named
+ * under a rule that waits on their yes; where the machine could not take a runner, they are told that instead.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -30,6 +32,7 @@ import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
+import { ownerFallbackLabel } from "./myRunner.ts";
 import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
@@ -61,7 +64,9 @@ export const setupPressed = {
   connect: { id: "repositories-connect-github" },
   add: { id: "repositories-add" },
   retry: { id: "repositories-retry" },
-  runner: { id: "runners-add" },
+  runner: { id: "runners-register" },
+  runnerProject: { id: "runners-personal-project-add" },
+  fallback: { id: "runners-fallback-title" },
   chatHost: setupChatHostPressed,
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
@@ -270,8 +275,29 @@ function setupOffer(tell: Copy, at: SetupAt): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
+    command: "Runner",
     tell,
     when: { id: "setup-offer-when" },
+    workspace,
+    project,
+  };
+}
+
+/**
+ * The agent's MCP server for the checklist's project, which `mcp` names in
+ * its configuration on the person's yes, installing the runner package first
+ * where `packaged` says none here is one it leaves as it is.
+ */
+function setupMcpMend(at: SetupAt, packaged: boolean): SetupThing {
+  const { site, workspace, project } = at;
+  return {
+    thing: "Offer",
+    command: "Mcp",
+    tell: {
+      id: packaged ? "setup-mend-mcp-offer" : "setup-mend-mcp-offer-package",
+      args: { project: setupNamed(at), site, program: setupProgram },
+    },
+    when: { id: "setup-offer-mcp-when" },
     workspace,
     project,
   };
@@ -316,7 +342,6 @@ function setupRunnerLiveMend(
           args: {
             project: setupNamed(at),
             runs: setupRunsOn(here.claude),
-            program: setupProgram,
             chat: setupWith(chat),
           },
         },
@@ -340,6 +365,7 @@ function setupRunnerPut(
 function setupChatOffer(tell: Copy, at: SetupAt): SetupThing {
   return {
     thing: "Offer",
+    command: "ChatHost",
     tell,
     when: { id: "setup-offer-chat-host-when" },
     workspace: at.workspace,
@@ -399,6 +425,30 @@ function setupChatMend(
 }
 
 /**
+ * What a runner of the person's own, registered by hand on Personal runners,
+ * needs there before it takes the project's work: the project given to it,
+ * and where the project names no owner fallback, one set on its Placement
+ * page, which the person is told of and this program never sets.
+ */
+function setupRunnerServes(at: SetupAt, named: boolean): Copy {
+  const choose = setupPressed.runnerProject;
+  const project = at.project;
+  if (named)
+    return { id: "setup-mend-runner-serves", args: { choose, project } };
+  return {
+    id: "setup-mend-runner-serves-unnamed",
+    args: {
+      choose,
+      project,
+      placement: setupPage(at, settingsRoutes.project.placement),
+      setting: setupPressed.fallback,
+      strict: ownerFallbackLabel("Strict"),
+      preferred: ownerFallbackLabel("Preferred"),
+    },
+  };
+}
+
+/**
  * No runner yet. Where this machine could take one the person is told what
  * `runner` would put here before it may be run; where it could not, why not;
  * and where the machine was not looked at, the console's own page.
@@ -415,15 +465,16 @@ function setupRunnerMend(
     return setupChatMend(lack, at, here);
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
-  const page = setupPage(at, navRoutes.runners);
+  const page = setupPage(at, settingsRoutes.project.myRunner);
   const add = setupPressed.runner;
+  const serves = setupRunnerServes(at, lack.named);
   const elsewhere: Copy = {
     id: "setup-mend-runner-elsewhere",
-    args: { page, add },
+    args: { page, add, serves },
   };
   const instead: Copy = {
     id: "setup-mend-runner-instead",
-    args: { page, add },
+    args: { page, add, serves },
   };
   const room = here?.room;
   switch (room?.room) {
@@ -433,7 +484,12 @@ function setupRunnerMend(
       return setupOffer(
         {
           id: "setup-mend-runner-offer",
-          args: { put: setupRunnerPut(lack.chat, here?.claude), page, add },
+          args: {
+            put: setupRunnerPut(lack.chat, here?.claude),
+            page,
+            add,
+            serves,
+          },
         },
         at,
       );
@@ -441,7 +497,12 @@ function setupRunnerMend(
       return setupHand(
         {
           id: "setup-mend-runner-mac",
-          args: { program: runnerPackages.darwin.program, page, add },
+          args: {
+            program: runnerPackages.darwin.program,
+            page,
+            add,
+            serves,
+          },
         },
         setupRunnerRunning,
       );
@@ -579,10 +640,13 @@ function setupMend(
   at: SetupAt,
   mine: string | undefined,
   here: SetupRunnerHere | undefined,
+  packaged: boolean,
 ): SetupThing {
   switch (lack.lacks) {
     case "Read":
       return setupUnreadMend(lack, step);
+    case "Mcp":
+      return setupMcpMend(at, packaged);
     case "Workspace":
     case "Administration":
       return setupWorkspaceMend(lack, at);
@@ -698,23 +762,38 @@ const setupRunnerLacks: readonly SetupLack["lacks"][] = [
   "ChatHostLive",
 ];
 
-/** The project whose runner step is the one next, which is when the machine is looked at before the next thing is named. */
-export function setupRunnerDue(
+/** The project whose step is the one next where that step lacks one of `lacks`. */
+function setupDue(
   standing: SetupStanding,
+  lacks: readonly SetupLack["lacks"][],
 ): PartitionIdentity | undefined {
   if (standing.choice.choice === "Open") return undefined;
   const { workspace, project } = standing.choice;
-  const lacks = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
-  if (lacks === undefined || !setupRunnerLacks.includes(lacks.lacks))
-    return undefined;
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  if (lack === undefined || !lacks.includes(lack.lacks)) return undefined;
   return workspace === undefined || project === undefined
     ? undefined
     : { tenant: workspace, project };
 }
 
+/** The project whose runner step is the one next, which is when the machine is looked at before the next thing is named. */
+export function setupRunnerDue(
+  standing: SetupStanding,
+): PartitionIdentity | undefined {
+  return setupDue(standing, setupRunnerLacks);
+}
+
+/** The project whose MCP step is the one next, which is when the runner package here is looked for before the next thing is named. */
+export function setupMcpDue(
+  standing: SetupStanding,
+): PartitionIdentity | undefined {
+  return setupDue(standing, ["Mcp"]);
+}
+
 function setupThing(
   standing: SetupStanding,
   here: SetupRunnerHere | undefined,
+  packaged: boolean,
 ): SetupThing {
   if (standing.choice.choice === "Open") return setupAsk(standing.choice);
   const at: SetupAt = {
@@ -728,7 +807,7 @@ function setupThing(
     standing.remote === undefined
       ? undefined
       : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine, here);
+  return setupMend(undone, undone.lacks, at, mine, here, packaged);
 }
 
 /**
@@ -736,15 +815,17 @@ function setupThing(
  * carries, where `answers` is what the run's own arguments named, which a
  * question about the other name keeps. `here` is what this machine showed
  * where `setupRunnerDue` named a project, and nothing where it was not
- * looked at.
+ * looked at; `packaged` is whether the runner package here is one `mcp`
+ * leaves as it is, where `setupMcpDue` named one.
  */
 export function setupNext(
   standing: SetupStanding,
   answers: SetupAnswers,
   here?: SetupRunnerHere,
+  packaged = false,
 ): SetupNext {
   return {
     carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing, here),
+    thing: setupThing(standing, here, packaged),
   };
 }

@@ -42,6 +42,7 @@ import {
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
+import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type {
   SelectorProposalReviews,
@@ -94,6 +95,7 @@ import {
   briefFinalizationModeOf,
   type BriefFinalizationMode,
   type NativeActionAnswerRefusalCode,
+  type TicketTakeRefusalCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
@@ -129,7 +131,11 @@ import type {
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
-import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type {
+  NamedPartition,
+  Partition,
+  TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { ChatAbilitiesResponse } from "../../contract/responses.ts";
 import type {
   MemberChatProjectsRead,
@@ -140,6 +146,7 @@ import type {
   ProjectCreationResult,
 } from "../../interpreter/projectCreation.ts";
 import {
+  projectDisplayNameCharsMax,
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../contract/requests.ts";
@@ -228,6 +235,8 @@ import type {
 import {
   agentAccountCredentialInUseCode,
   deletionHeldCode,
+  projectCreatedSchema,
+  type ProjectCreatedResponse,
 } from "../../contract/responses.ts";
 import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
@@ -2010,12 +2019,23 @@ export function forgeInstallationPermissionsResponse(
   }
 }
 
-/** Why a name was refused, by the field it is in. */
-const projectNameInvalidCodes: Readonly<Record<ProjectCreationField, string>> =
-  {
-    tenant: "TenantNameInvalid",
-    project: "ProjectNameInvalid",
-  };
+/** Why a name was refused, by the field it is in, with the rule it broke. */
+const projectNameInvalid: Readonly<
+  Record<ProjectCreationField, { readonly code: string; readonly rule: string }>
+> = {
+  tenant: {
+    code: "TenantNameInvalid",
+    rule: `A tenant name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  project: {
+    code: "ProjectNameInvalid",
+    rule: `A project name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+  },
+  name: {
+    code: "ProjectDisplayNameInvalid",
+    rule: `A project's display name is at most ${String(projectDisplayNameCharsMax)} characters once trimmed, is not empty, and holds no control character.`,
+  },
+};
 
 /** What creation answers a caller the site does not permit to create a tenant. */
 function tenantCreationRefused(): NativeHttpResponse {
@@ -2028,6 +2048,10 @@ function tenantCreationRefused(): NativeHttpResponse {
   );
 }
 
+function projectCreatedBody(project: NamedPartition): ProjectCreatedResponse {
+  return projectCreatedSchema.parse(project);
+}
+
 /**
  * A creation. A tenant another principal holds is a conflict rather than a
  * missing resource, because a tenant name is first-come and not a secret.
@@ -2037,15 +2061,15 @@ export function projectCreationResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Created":
-      return response(201, result.partition, {
+      return response(201, projectCreatedBody(result.project), {
         location: tenantResourcePath(
-          result.partition.tenant,
+          result.project.tenant,
           "projects",
-          result.partition.project,
+          result.project.project,
         ),
       });
     case "AlreadyCreated":
-      return response(200, result.partition);
+      return response(200, projectCreatedBody(result.project));
     case "ProjectExists":
       return response(
         409,
@@ -2071,8 +2095,8 @@ export function projectCreationResponse(
       return response(
         422,
         nativeHttpError(
-          projectNameInvalidCodes[result.field],
-          `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+          projectNameInvalid[result.field].code,
+          projectNameInvalid[result.field].rule,
         ),
       );
     case "TenantCreationNotPermitted":
@@ -3335,4 +3359,45 @@ export function epicWriteResponse(result: EpicWritten): NativeHttpResponse {
       ? { tickets: outcome.tickets }
       : {}),
   });
+}
+
+const ticketTakeRefusalMessage: Readonly<
+  Record<TicketTakeRefusalCode, string>
+> = {
+  TakerNotAPerson:
+    "A ticket is taken and returned by a person, never by an agent.",
+  Unreleased: "A draft never released is its author's.",
+  TicketDone: "The ticket is Done and runs nothing more.",
+  TicketRevoked: "The ticket is Revoked and runs nothing more.",
+  NotTaker: "Only the member who took the ticket may return it.",
+};
+
+/**
+ * A take or a return: what it did, with the owner it leaves, or a refusal
+ * named by its code. A caller who may read and not mutate meets `403`, as an
+ * agent does; a ticket in a state that refuses it is a `409`; a project or
+ * ticket the caller cannot see is a `404` like any other absence.
+ */
+export function ticketTakeResponse(
+  result: TicketTakeWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError("Forbidden", "The caller may not take tickets."),
+      );
+    case "Refused":
+      return response(
+        result.reason === "TakerNotAPerson" ? 403 : 409,
+        nativeHttpError(result.reason, ticketTakeRefusalMessage[result.reason]),
+      );
+    case "Written":
+      return response(200, {
+        outcome: result.outcome,
+        ...(result.owner === undefined ? {} : { owner: result.owner }),
+      });
+  }
 }

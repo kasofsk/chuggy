@@ -338,6 +338,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     title: "The ticket the contract names",
     repository: "https://github.com/acme/widgets.git",
     creator: "23:https://issuer.example/alice",
+    owner: "21:https://issuer.example/bob",
     phase: "Escalated",
     sequence: 9,
     escalation: ticketEscalationResource(
@@ -802,9 +803,14 @@ test("the settings history parses every retained override and its administrator"
 
 test("a project inventory page parses with the cursor the server encoded", () => {
   const page = projectInventoryResponseSchema.parse(
-    inventoryResponse({ projects: [partition], nextAfter: partition }).body,
+    inventoryResponse({
+      projects: [{ ...partition, name: "Acme Atlas" }],
+      nextAfter: partition,
+    }).body,
   );
-  assert.deepEqual(page.projects, [{ tenant: "acme", project: "atlas" }]);
+  assert.deepEqual(page.projects, [
+    { tenant: "acme", project: "atlas", name: "Acme Atlas" },
+  ]);
   assert.ok((page.nextCursor ?? "").length > 0);
 });
 

@@ -29,6 +29,7 @@ import {
   setupRedacted,
 } from "../app/core/setupText.ts";
 import {
+  boxClaudeConfig,
   boxLogin,
   boxOwn,
   boxPools,
@@ -83,6 +84,14 @@ function said(kind: Kind): readonly (readonly [string, number, string])[] {
 
 /** Every stop, each way it is made, as what it says was found, what it exits with and the command its rule names. */
 const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
+  Unpackaged: [
+    ["the runner package, chuggy-linux, is not installed here", 0, "Mcp"],
+    [
+      "the runner package here is chuggy-linux 0.13.0, and chuggy setup needs 0.14.0 or later",
+      0,
+      "Mcp",
+    ],
+  ],
   Mac: [
     [
       "this machine is a Mac, and chuggy setup puts a runner only on Linux",
@@ -245,6 +254,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Again",
     ],
+    [
+      "removing the other chuggy MCP server from Claude Code's configuration for this folder ended with exit 1, saying: it said why",
+      1,
+      "Again",
+    ],
+    [
+      "adding chuggy's MCP server to Claude Code ended with exit 1, saying: it said why",
+      1,
+      "Again",
+    ],
     ["installing the runner package could not be started", 1, "Again"],
     [
       "registering this machine did not end within 60 s and was stopped",
@@ -332,6 +351,11 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     [
       `installing your chat host's service ended well, and what it makes is not at ${boxUnits}/${rosterChatUnit}`,
+      1,
+      "Again",
+    ],
+    [
+      `adding chuggy's MCP server to Claude Code ended well, and what it makes is not at ${boxClaudeConfig}`,
       1,
       "Again",
     ],
@@ -574,6 +598,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "Npmless",
     "Serviceless",
     "SettingsUnread",
+    "Unpackaged",
     "threads Refused",
     "work Refused",
   ]);
@@ -763,6 +788,8 @@ test("each thing a run found is said as found and each thing it did as did, in w
     ChatHostElsewhere: ["found"],
     Linger: ["found"],
     LingerOn: ["did"],
+    ServerFound: ["found"],
+    ServerAdded: ["did"],
     Running: ["found"],
     Enabled: ["did"],
     Started: ["did"],

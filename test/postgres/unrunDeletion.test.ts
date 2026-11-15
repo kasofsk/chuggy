@@ -87,6 +87,7 @@ const unrunDeletionBeneath: Readonly<Record<string, string>> = {
   evaluation_stack_dead: "ReleasedTicket",
   evaluation_stack_none: "ReleasedTicket",
   evaluation_stack_removal: "ReleasedTicket",
+  ticket_take: "ReleasedTicket",
   execution: "Execution",
   execution_attempt: "Execution",
   execution_attempt_limit: "Execution",
@@ -162,7 +163,7 @@ async function created(
   subject = "alice",
 ): Promise<string> {
   const found = await harness.query(
-    `SELECT outcome, tenant_created FROM create_project($1,$2,$3,false,$4,'Member',$5)`,
+    `SELECT outcome, tenant_created FROM create_project($1,$2,'Project',$3,false,$4,'Member',$5)`,
     [
       partition.tenant,
       partition.project,

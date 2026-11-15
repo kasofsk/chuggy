@@ -382,7 +382,7 @@ test("the list of projects is read past its first page, and is whole once a page
     const reads = await siteRead(site, { sent });
     expect(reads.inventory).toEqual({
       read: "Got",
-      value: [{ tenant: "acme", project: "widgets" }],
+      value: [{ tenant: "acme", project: "widgets", name: "widgets" }],
       whole: true,
     });
     expect(reads.choice).toEqual(made("Only", "acme", "widgets"));
@@ -529,6 +529,8 @@ const reads = [
   `GET ${project}/repositories?reach=false`,
   `GET ${project}/execution-placement`,
   `GET ${project}/session-placement`,
+  `GET ${project}/owner-fallback`,
+  "GET /api/v1/tenants/acme/personal-runner",
   `GET ${project}?limit=1&phase=Done`,
   `GET ${project}?order=RecentActivity&${moving}`,
   `GET ${project}/drafts?limit=1`,
@@ -672,7 +674,11 @@ test("each of the console's writes, sent through the ports the checklist reads t
   const ports = setupReadPorts(recording(sent), "access");
   const partition = { tenant: "acme", project: "widgets" };
   const writes = [
-    apiCreateProject(ports, { tenant: "acme", project: "widgets" }, "op-1"),
+    apiCreateProject(
+      ports,
+      { tenant: "acme", project: "widgets", name: "Widgets" },
+      "op-1",
+    ),
     apiMintWorkerPoolToken(ports, partition, { pool: "laptop" } as never),
     apiWriteSessionPlacement(ports, partition, {} as never),
   ];

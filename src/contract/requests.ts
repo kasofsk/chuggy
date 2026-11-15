@@ -179,6 +179,20 @@ export const projectNameSchema = z
   .max(projectNameCharsMax)
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u);
 
+/** The longest display name a project may be given, counted after it is trimmed. */
+export const projectDisplayNameCharsMax = 100;
+
+/**
+ * What a person calls a project, beside the name that addresses it: any text
+ * but a control character, trimmed, and never empty once trimmed.
+ */
+export const projectDisplayNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(projectDisplayNameCharsMax)
+  .regex(/^\P{Cc}*$/u);
+
 /**
  * Names a path outside the tenant routes already begins with: the access
  * plane's base, the API's base and probes, the console's own pages and the
@@ -201,12 +215,14 @@ export function tenantNameReserved(name: string): boolean {
 }
 
 /**
- * One project to create, and the tenant it is created under. The server holds
- * each name to `projectNameSchema` and refuses one by naming its field.
+ * One project to create, the tenant it is created under and what it is called.
+ * The server holds the tenant and the project to `projectNameSchema` and the
+ * name to `projectDisplayNameSchema`, and refuses one by naming its field.
  */
 export const projectCreationSchema = z.strictObject({
   tenant: bodyIdentitySchema,
   project: bodyIdentitySchema,
+  name: z.string(),
 });
 
 /**

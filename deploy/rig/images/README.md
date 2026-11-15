@@ -258,7 +258,7 @@ answers 503 to a scrape it cannot answer whole.
 | `CHUG_METRICS_PLANE_DATABASE_URL` | required | the PostgreSQL the runs are recorded in, connecting as a login of `chuggy_metrics_plane` with the group named as `?options=-c%20role%3Dchuggy_metrics_plane`; the plane is ready only when it is that role |
 | `CHUG_METRICS_PLANE_OIDC_ISSUER` | required | the issuer people sign in through; a series' `owner` is the subject a principal carries under it, and empty for any other |
 | `CHUG_METRICS_PLANE_READ_TIMEOUT_MS` | 10000 | how long one scrape's reads may take, all of its statements together, before the scrape is refused |
-| `CHUG_METRICS_PLANE_SERIES_MAX` | 10000 | the most series one page carries; a scrape past it is refused |
+| `CHUG_METRICS_PLANE_SERIES_MAX` | 25000 | the most series one page carries; a scrape past it is refused |
 | `CHUG_METRICS_PLANE_HOST` | | the default is loopback |
 | `CHUG_METRICS_PLANE_PORT` | 3004 | |
 

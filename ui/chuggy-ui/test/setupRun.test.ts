@@ -19,15 +19,22 @@ import {
 } from "../app/core/setupPorts.ts";
 import { setupOpenerCommand } from "../app/core/setupSignIn.ts";
 import { setupRetryDelayMsMax } from "../app/core/setupSession.ts";
-import { setupLockWaitMs, setupLockWord } from "../app/core/setupStore.ts";
+import { setupLockWaitMs } from "../app/core/setupStore.ts";
+import { signInStoreLockWord } from "../../../src/contract/signInStore.ts";
 import {
   machineDirectory,
   machineDraftSuffix,
+  machineHeld,
+  machineHolding,
   machineKept,
+  machineRemembered,
   machineRevokeAddress,
   machineSignedIn,
   machineSite,
+  machineStore,
+  machineStoreSwept,
   machineTokenAddress,
+  machineTokenFile,
   setupMachine,
 } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
@@ -39,10 +46,7 @@ const signedOut = {
   ended: undefined,
 };
 
-function remembered(machine: SetupMachine): unknown {
-  const text = machine.files.get(setupFiles.session);
-  return text === undefined ? undefined : JSON.parse(text);
-}
+const remembered = machineRemembered;
 
 const signedIn = (): Promise<SetupMachine> => machineSignedIn();
 
@@ -107,6 +111,7 @@ test("the bare command, signed in, reads where the person stands and reports it 
         state: "todo",
         detail: { id: "setup-step-projectless", args: { workspace: "acme" } },
       },
+      { step: "mcp", state: "todo", detail: undefined },
       { step: "github", state: "todo", detail: undefined },
       { step: "repository", state: "todo", detail: undefined },
       { step: "runner", state: "todo", detail: undefined },
@@ -147,10 +152,7 @@ test("each command spends the token it found and leaves the one that replaced it
 
 test("a renewal the issuer refuses is not signed in and not a failure, and the next sign-in opens a page", async () => {
   const machine = await signedIn();
-  machine.files.set(
-    setupFiles.session,
-    JSON.stringify({ site: machineSite, refreshToken: "renewal-spent" }),
-  );
+  machineHolding(machine, "renewal-spent");
   expect(await machine.command([])).toEqual(signedOut);
   expect(await machine.command(["sign-in", "--wait-secs", "1"])).toMatchObject({
     report: "SignInWaiting",
@@ -206,11 +208,17 @@ test("a body the site sends that this program cannot read is said to be unreadab
 test("a run that takes the lock has what a cut-short write left of the sign-in removed, gives back the room it kept as it gives the lock up, and one that cannot have the lock removes nothing", async () => {
   const machine = await signedIn();
   await machine.command([]);
-  expect(machine.swept).toEqual([setupFiles.session, setupFiles.session]);
+  const swept = [
+    setupFiles.session,
+    machineStoreSwept,
+    setupFiles.session,
+    machineStoreSwept,
+  ];
+  expect(machine.swept).toEqual(swept);
   machine.alive.add(7);
-  machine.lock = setupLockWord(7, machine.nowMs);
+  machine.lock = signInStoreLockWord(7, machine.nowMs);
   expect(await machine.command([])).toMatchObject({ report: "Busy" });
-  expect(machine.swept).toEqual([setupFiles.session, setupFiles.session]);
+  expect(machine.swept).toEqual(swept);
 });
 
 test("a site that refuses the sign-in it remembered is said to have, and the sign-in is forgotten", async () => {
@@ -247,7 +255,7 @@ test("a bare run the site refuses sends the site its one read twice and the issu
 
 const unwritable = {
   fault: "Unwritable",
-  path: `${machineKept}/${setupFiles.session}`,
+  path: `${machineStore}/${machineTokenFile()}`,
 };
 
 test("a home that gives no room for the sign-in is found before the site or the issuer is asked anything, whichever command is run, and the sign-in is still good once it does", async () => {
@@ -265,7 +273,7 @@ test("a home that gives no room for the sign-in is found before the site or the 
       fault: unwritable,
     });
   expect(machine.asked).toEqual([]);
-  expect(machine.reserved).toEqual([setupFiles.session, setupFiles.session]);
+  expect(machine.reserved).toEqual([machineTokenFile(), machineTokenFile()]);
   expect(remembered(machine)).toEqual(held);
   expect(machine.lock).toBeUndefined();
   expect(machine.detached).toHaveLength(1);
@@ -289,7 +297,7 @@ test("a run with no site to work under keeps no room, and one given a site keeps
 
 test("a token the issuer handed back that the machine would not write is a sign-in that was not kept, with the path, and never a sign-in server that is not answering", async () => {
   const machine = await signedIn();
-  machine.takes = (file) => file !== setupFiles.session;
+  machine.takes = (file) => file !== machineTokenFile();
   expect(await machine.command([])).toEqual({
     report: "Faulted",
     asked: "Status",
@@ -308,21 +316,21 @@ const unswept = {
 
 test("a sign-in that was not kept is what is said even where giving the lock up could not remove what the write left, and the lock is given up all the same", async () => {
   const machine = await signedIn();
-  machine.takes = (file) => file !== setupFiles.session;
-  machine.sweeps = (turn) => turn === 1;
+  machine.takes = (file) => file !== machineTokenFile();
+  machine.sweeps = (turn) => turn <= 2;
   expect(await machine.command([])).toEqual({
     report: "Faulted",
     asked: "Status",
     site: undefined,
     fault: { ...unwritable, fault: "Unkept" },
   });
-  expect(machine.swept).toHaveLength(2);
+  expect(machine.swept).toHaveLength(3);
   expect(machine.lock).toBeUndefined();
 });
 
 test("a run that failed in no other way says what giving the lock up could not remove", async () => {
   const machine = await signedIn();
-  machine.sweeps = (turn) => turn === 1;
+  machine.sweeps = (turn) => turn <= 2;
   expect(await machine.command([])).toEqual({
     report: "Faulted",
     asked: "Status",
@@ -355,7 +363,7 @@ test("the bearer a run reads last is checked like the others: where it renewed, 
   };
   let writes = 0;
   machine.takes = (file) => {
-    if (file !== setupFiles.session) return true;
+    if (file !== machineTokenFile()) return true;
     writes += 1;
     return writes !== 2;
   };
@@ -376,7 +384,7 @@ test("a second renewal whose token the machine would not write is a sign-in that
     machine.admits = false;
     let writes = 0;
     machine.takes = (file) => {
-      if (file !== setupFiles.session) return true;
+      if (file !== machineTokenFile()) return true;
       writes += 1;
       return writes === 1 || (forgets && writes > 2);
     };
@@ -403,7 +411,7 @@ test("room is kept again before a second renewal, and where the machine gives no
     site: undefined,
     fault: unwritable,
   });
-  expect(machine.reserved).toEqual([setupFiles.session, setupFiles.session]);
+  expect(machine.reserved).toEqual([machineTokenFile(), machineTokenFile()]);
   expect(
     machine.asked.filter((address) => address === machineTokenAddress),
   ).toHaveLength(1);
@@ -459,22 +467,22 @@ test("a renewal the issuer answers with a fault of its own is a failure, and the
   });
 });
 
-test("a token remembered for one site is never sent for another, and the other site replaces it", async () => {
+test("a token held for one site is never sent for another, and the other site is remembered in its place", async () => {
   const machine = await signedIn();
+  const elsewhere = "https://elsewhere.example";
   const held = machine.live() ?? "";
-  machine.files.set(
-    setupFiles.session,
-    JSON.stringify({ site: "https://elsewhere.example", refreshToken: held }),
-  );
+  machine.store.clear();
+  machineHolding(machine, held, elsewhere);
   expect(await machine.command(["--site", machineSite])).toEqual(signedOut);
   expect(machine.bodies.join(" ")).not.toContain(held);
   expect(remembered(machine)).toEqual({ site: machineSite });
+  expect(machineHeld(machine, elsewhere)).toBe(held);
 });
 
 test("a command that finds another run holding the lock waits a bounded time and then says so", async () => {
   const machine = await signedIn();
   machine.alive.add(7);
-  const held = setupLockWord(7, machine.nowMs);
+  const held = signInStoreLockWord(7, machine.nowMs);
   machine.lock = held;
   const began = machine.nowMs;
   expect(await machine.command([])).toEqual({
@@ -496,7 +504,7 @@ test("a command that finds another run holding the lock waits a bounded time and
 
 test("a lock whose holder is gone is taken, and the command runs", async () => {
   const machine = await signedIn();
-  machine.lock = setupLockWord(7, machine.nowMs);
+  machine.lock = signInStoreLockWord(7, machine.nowMs);
   expect(await machine.command([])).toMatchObject({ report: "Checklist" });
   expect(machine.lock).toBeUndefined();
 });

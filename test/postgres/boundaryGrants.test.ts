@@ -661,7 +661,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     strangers: [poolPlaneRole],
   },
   boundaryGrantsDoor(
-    `${projectCreateFunction}(text,text,text,boolean,text,text,text)`,
+    `${projectCreateFunction}(text,text,text,text,boolean,text,text,text)`,
     [apiRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),

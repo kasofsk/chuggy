@@ -22,6 +22,7 @@ setup-stale = this copy of { setup-program } may be older than the { -site }
 ## How a site stands, after its address.
 
 setup-site-unknown = no { -brand-name } { -site } is remembered on this machine yet
+setup-site-named = { $site }
 setup-site-signed-in = { $site }, signed in
 setup-site-signed-out = { $site }, not signed in
 setup-site-unconfirmed = { $site }, sign-in not confirmed
@@ -43,12 +44,12 @@ setup-rule-ask = Run { $command } with the person's answer after it, only once t
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $runner } or as { $chatHost }
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $mcp }, as { $runner } or as { $chatHost }
 setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, and { $replace } with { $chatHost }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
-setup-asked-project = { $runner } takes { $workspace } and { $project }, both: the { -project } the { -runner } is for
+setup-asked-project = { $mcp } and { $runner } each take { $workspace } and { $project }, both: the { -project } each is for
 setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 
@@ -174,6 +175,9 @@ setup-read-repositories = its { -repository(form: "plural") } were
 # spells -run: to run is a verb here
 setup-read-work = where its work runs was
 setup-read-placement = its { -runner(form: "plural") } were
+# spells -work-stage: the work in general
+setup-read-fallback = whether { -personal-runner(form: "plural") } take its work was
+setup-read-personal = your { -personal-runner(form: "plural") } were
 setup-read-tickets = its { -ticket(form: "plural") } were
 setup-read-drafts = its { -draft(form: "plural") } were
 setup-read-landings = { -ticket(form: "a") }'s { -landing(form: "plural") } were
@@ -201,6 +205,9 @@ setup-step-ungranted = the { $app } on { $account } is not granted { $repository
 setup-step-granted = { $account }, both apps granted { $repository }
 setup-step-remote = { $remote } (this folder's remote)
 setup-step-unconfigured = { $repository } is added, its { -configuration } not read yet
+# spells -run: to run is a verb here
+setup-step-mcp-named = { -claude-code } here runs { -brand-name }'s MCP server for { $project }
+setup-step-mcp-none = { -claude-code } here has no { -brand-name } MCP server for { $project }
 setup-step-runner-offline = registered, not running
 setup-step-runner-live = live
 # spells -work-stage: the work in general
@@ -259,6 +266,19 @@ setup-mend-binding-when = once the person says the { -repository } is added
 setup-mend-configuration-tell = { $repository } is added, but { -brand-name } has not read its { -configuration }. Open { $page } and press { $retry } on the row for { $repository }; if it still cannot, the row then says why. Tell me once { $retry } has answered.
 setup-mend-configuration-when = once the person says { $retry } has answered for { $repository }
 
+## The MCP step, which the mcp command does on this machine with the
+## person's yes.
+
+setup-offer-mcp-when = once the person says yes to { -brand-name }'s MCP server on this machine
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-mend-mcp-serves = { -claude-code } is the agent it is named in, for this folder, and it signs in as { setup-program } does, under the one sign-in, so you sign in once.
+# spells -agent: the person's own coding agent, not one of chuggy's
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-mend-mcp-offer = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package here, { $program }, serves them as an MCP server. With your yes I will name that server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+# spells -agent: the person's own coding agent, not one of chuggy's
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-mend-mcp-offer-package = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not here at a version { setup-program } uses. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+
 ## The runner's step, which the runner command does on this machine with the
 ## person's yes.
 
@@ -282,17 +302,17 @@ setup-mend-chat-too = Your { -thread(form: "plural") } run only on your { -chat-
 # spells -brief-check: to check is a verb here
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }. { setup-mend-package-newer }{ $chat ->
+setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }.{ $chat ->
     [with] { " " }{ setup-mend-chat-too }
    *[without] { "" }
 } Tell me yes to go ahead.
 setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put-chat = That puts here the { -runner } package, { $program }, and two background services of yours that start when you log in: one for the work on your { -project }'s { -ticket(form: "plural") }, one your { -chat-host }, which your { -thread(form: "plural") } run on and only on. Both run on this machine { $runs }.
+setup-mend-runner-put-chat = That puts here two background services of yours, run by the { -runner } package, { $program }, that start when you log in: one for the work on your { -project }'s { -ticket(form: "plural") }, one your { -chat-host }, which your { -thread(form: "plural") } run on and only on. Both run on this machine { $runs }.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put = That puts here the { -runner } package, { $program }, and a background service of yours that starts when you log in; work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
+setup-mend-runner-put = That puts here a background service of yours, run by the { -runner } package, { $program }, that starts when you log in; work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
 # spells -run: to run is a verb here
 setup-mend-chat-by-hand = open { $page }, press { $register }, choose the machine and run the commands it shows
 # spells -run: to run is a verb here
@@ -308,12 +328,16 @@ setup-mend-chat-tell = { $chats }, and you have none yet{ $here ->
    *[unseen] { "" }
 }. On the machine that will be it, { $byHand }. Tell me once it is running.
 # spells -work-stage: the work in general
+setup-mend-runner-serves = then press { $choose } and choose { $project }, so the { -runner } takes its work
+# spells -work-stage: the work in general
+setup-mend-runner-serves-unnamed = then press { $choose } and choose { $project }, and on { $placement } set { $setting } to { $strict } or { $preferred }, so the { -runner } takes its work
+# spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-elsewhere = Open { $page } and press { $add }, then do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
-setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there and press { $add }, and tell me once it is running.
-setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add }.
+setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work, { $serves }. Tell me once the { -runner } is running.
+setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, { $serves }, and tell me once it is running.
+setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows, { $serves }.
 # spells -run: to run is a verb here
-setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there. Tell me once the { -runner } is running.
+setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there, { $serves }. Tell me once the { -runner } is running.
 # spells -run: to run is a verb here
 setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
 setup-mend-runner-engineless = { setup-next-runner }, in containers. This machine cannot be one yet: { $none } here without a password. { setup-runner-engine-needs-password } Tell me once one answers you here. { $instead }

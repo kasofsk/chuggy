@@ -4,6 +4,7 @@ settings-nav = Settings
 settings-nav-project = { -project(case: "upper") }
 settings-nav-lead = { -lead(case: "upper") }
 settings-nav-placement = { -placement(case: "upper") }
+settings-nav-pools = Pools
 settings-nav-permissions = Permissions
 settings-nav-workspace = { -workspace(case: "upper") }
 settings-nav-people = People

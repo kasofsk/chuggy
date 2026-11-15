@@ -16,11 +16,7 @@ import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import type { Copy } from "../core/copy.ts";
 import { failureWords } from "../core/failureWords.ts";
 import { runnerAskRead, runnerPackages } from "../core/runners.ts";
-import type {
-  RunnerAsk,
-  RunnerKind,
-  RunnerPackageName,
-} from "../core/runners.ts";
+import type { RunnerAsk, RunnerPackageName } from "../core/runners.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "./consoleWrite.tsx";
 import type { ConsoleWriteShown, ConsoleWriting } from "./consoleWrite.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -28,6 +24,7 @@ import { Checkbox } from "./ui/Checkbox.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Input } from "./ui/Input.tsx";
 import { RunnerSteps, useFocusedUnheld } from "./RunnerSteps.tsx";
+import type { RunnerStepsKind } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
@@ -203,7 +200,7 @@ export function useRunnerMinting(
 
 /**
  * The ask, while it is filled in and while the caller mints its token, a
- * project's pool token or a member's own. It takes the focus as it is drawn
+ * member's own runner's. It takes the focus as it is drawn
  * only where nothing holds it, as the steps do, since the press that opened it
  * can be gone from under it.
  */
@@ -263,7 +260,7 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
  * handed over in, until `onDone` closes them. */
 export function RunnerMintOpened(props: {
   readonly minting: RunnerMinting;
-  readonly kind: RunnerKind;
+  readonly kind: RunnerStepsKind;
   readonly onDone: () => void;
 }): ReactNode {
   const { minting } = props;

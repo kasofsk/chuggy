@@ -15,8 +15,11 @@ import {
 } from "../app/core/settingsNav.ts";
 import type {
   SettingsNavGroup,
+  SettingsNavProject,
   SettingsNavSite,
 } from "../app/core/settingsNav.ts";
+
+const atlas: SettingsNavProject = { address: "atlas", name: "Atlas Billing" };
 
 const siteNone: SettingsNavSite = { workspaces: false, permissions: false };
 
@@ -32,14 +35,14 @@ function drawn(
   ]);
 }
 
-test("in a project the project's pages lead, then the workspace's, each group under its level and its name", () => {
+test("in a project the project's pages lead, then the workspace's, each group under its level and its name, the project's by its display name", () => {
   const groups = settingsNav({
     tenant: "acme",
-    project: "atlas",
+    project: atlas,
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
-    ["Project", "atlas", ["Lead", "Placement", "Permissions"]],
+    ["Project", "Atlas Billing", ["Lead", "Placement", "Pools", "Permissions"]],
     [
       "Workspace",
       "acme",
@@ -70,7 +73,7 @@ test.each([
 ])(
   "the site's group is last, named by nothing, and holds $pages alone",
   ({ site, pages }) => {
-    for (const project of ["atlas", undefined])
+    for (const project of [atlas, undefined])
       expect(
         drawn(settingsNav({ tenant: "acme", project, site })).at(-1),
       ).toStrictEqual(["Site", undefined, pages]);
@@ -78,7 +81,7 @@ test.each([
 );
 
 test("a reader drawn none of the site's pages is drawn no group for it", () => {
-  for (const project of ["atlas", undefined])
+  for (const project of [atlas, undefined])
     expect(
       settingsNav({ tenant: "acme", project, site: siteNone }).map(
         (group) => group.id,
@@ -89,7 +92,7 @@ test("a reader drawn none of the site's pages is drawn no group for it", () => {
 test("every entry is its page's address in the frame it is drawn in, with that frame's params", () => {
   const inProject = settingsNav({
     tenant: "acme",
-    project: "atlas",
+    project: atlas,
     site: siteEvery,
   }).flatMap((group) => group.entries);
   expect(inProject.map((entry) => entry.to)).toStrictEqual(
@@ -110,7 +113,7 @@ test("every entry is its page's address in the frame it is drawn in, with that f
 });
 
 test("entries are told apart by id though two pages share a label", () => {
-  const ids = settingsNav({ tenant: "acme", project: "atlas", site: siteEvery })
+  const ids = settingsNav({ tenant: "acme", project: atlas, site: siteEvery })
     .flatMap((group) => group.entries)
     .map((entry) => entry.id);
   expect(new Set(ids).size).toBe(ids.length);

@@ -1,5 +1,5 @@
 /**
- * What the Runners page draws, derived: the words for where a project's work
+ * What the runner pages draw, derived: the words for where a project's work
  * and sessions run and what decided it, the draft a placement is chosen in,
  * what a refused write is drawn as, and the package a machine is made a runner with, from
  * the command that installs it to the one that registers the machine.
@@ -9,7 +9,6 @@ import type {
   ExecutionPlacementResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
-  WorkerPoolsResponse,
 } from "../../../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
 import {
@@ -25,7 +24,6 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
-import type { PanelState } from "./freshness.ts";
 
 /** A runner package as the console hands it to a reader. */
 export interface RunnerPackage {
@@ -235,27 +233,6 @@ export function runnerRegisterCommand(
     .map((capability) => ` --capability ${capability}`)
     .join("");
   return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
-}
-
-/** Where `Add runner` is drawn: in the panel's head, or under the line an empty roster is said in. */
-export type RunnerAddPlace = "Head" | "Empty";
-
-/**
- * Where a reader who may add a runner is drawn the control: under an empty
- * roster's line, where it is the one thing to do, and in the head otherwise.
- * Nowhere while the roster is unread, so it is not drawn in one place and then
- * the other, and nowhere under the ask or steps an empty roster's control
- * opened.
- */
-export function runnerAddPlace(view: {
-  readonly administers: boolean;
-  readonly roster: PanelState<WorkerPoolsResponse>;
-  readonly opened: boolean;
-}): RunnerAddPlace | undefined {
-  if (!view.administers || view.roster.state === "Pending") return undefined;
-  if (view.roster.state !== "Ready" || view.roster.value.pools.length > 0)
-    return "Head";
-  return view.opened ? undefined : "Empty";
 }
 
 /** Where the lead runs and as which offering: its route, and whether it is

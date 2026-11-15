@@ -23,6 +23,7 @@ import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
 import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
+import { PoolsSettingsPage } from "./PoolsSettingsPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
 import { SitePermissionsPage } from "./SitePermissionsPage.tsx";
@@ -40,6 +41,11 @@ function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/placement",
       component: PlacementSettingsPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/pools",
+      component: PoolsSettingsPage,
     }),
     createRoute({
       getParentRoute,

@@ -75,7 +75,7 @@ import {
   type LeadInquiryRecord,
   type LeadInquiryStore,
 } from "./leadInquiry.ts";
-import type { Partition } from "./projectStore.ts";
+import type { NamedPartition, Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
   NativeActionResolution,
@@ -311,7 +311,7 @@ export interface ProjectInventory {
 }
 
 export interface ProjectInventoryPage {
-  readonly projects: readonly Partition[];
+  readonly projects: readonly NamedPartition[];
   readonly nextAfter?: Partition;
 }
 
@@ -460,6 +460,8 @@ export interface TicketResource {
   readonly revision: number;
   /** The authority subject of the member whose first authoring revision filed the ticket. */
   readonly creator?: string;
+  /** The member the ticket's next execution is placed for: the member who took it, else its creator. */
+  readonly owner?: string;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;
@@ -630,7 +632,7 @@ export interface ProjectResource {
   readonly nextAfter?: TicketId;
   readonly nextRecentActivityAfter?: TicketActivityPosition;
   readonly nextNumberAfter?: TicketNumberPosition;
-  /** How many tickets the search or creator matched across the project, where the read named either. */
+  /** How many tickets the search, creator or owner matched across the project, where the read named one. */
   readonly matched?: number;
 }
 
@@ -661,6 +663,8 @@ export interface ProjectReadQuery {
   readonly search?: string;
   /** Only the tickets this member filed, as a ticket's `creator` names them. */
   readonly creator?: Principal;
+  /** Only the tickets this member owns, as a ticket's `owner` names them. */
+  readonly owner?: Principal;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
   /** Only the members of this epic. */
@@ -742,7 +746,7 @@ export function checkedProjectReadQuery(
   return query;
 }
 
-/** Refuses a search that is untrimmed or past its bound, and a creator no principal could be. */
+/** Refuses a search that is untrimmed or past its bound, and a creator or owner no principal could be. */
 function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
   if (
     query.search !== undefined &&
@@ -753,6 +757,7 @@ function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
       `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
     );
   if (query.creator !== undefined) asPrincipal(query.creator);
+  if (query.owner !== undefined) asPrincipal(query.owner);
 }
 
 /** The ticket a search names by number, where it is a whole number with or without a leading `#`. */

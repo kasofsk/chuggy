@@ -64,7 +64,7 @@ export function styleless(): void {
  * it draws its own unready state, which is not what these cases are about. */
 export function shellRoute(url: string): Response {
   if (url.includes("/threads")) return answer({ threads: [] });
-  return answer({ projects: [atlas] });
+  return answer({ projects: [{ ...atlas, name: atlas.project }] });
 }
 
 /** The frame mounted, and drawn again where a case has moved the route. */

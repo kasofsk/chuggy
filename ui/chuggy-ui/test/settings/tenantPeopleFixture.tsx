@@ -183,6 +183,8 @@ export interface PeopleDrawing {
   readonly abilities?: () => Response;
   /** What the workspace's links answer, a plane that keeps none where a case says nothing. */
   readonly links?: () => Response | Promise<Response>;
+  /** The project inventory the console names projects from, none where a case says nothing. */
+  readonly inventory?: () => Response;
   /** What a grant, a removal, an invitation, a link made or one revoked is answered with. */
   readonly changed?: (request: SentRequest) => Response | Promise<Response>;
 }
@@ -191,6 +193,7 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
   const listing = drawing.listing ?? (() => answer(peopleListed));
   const abilities = drawing.abilities ?? (() => answer(peopleAbilitiesAll()));
   const links = drawing.links ?? (() => answer({}, 404));
+  const inventory = drawing.inventory ?? (() => answer({}, 404));
   const changed = drawing.changed ?? noContent;
   return drawnStrict(<TenantPeoplePage />, (request: SentRequest) => {
     if (request.url === peoplePath && request.method === "GET")
@@ -198,6 +201,7 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
     if (request.url === abilitiesPath && request.method === "GET")
       return abilities();
     if (request.url === linksPath && request.method === "GET") return links();
+    if (request.url === "/api/v1/projects") return inventory();
     if (request.url.startsWith("/access/v1/")) return changed(request);
     return answer({}, 404);
   });

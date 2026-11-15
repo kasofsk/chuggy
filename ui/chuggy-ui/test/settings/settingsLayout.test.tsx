@@ -210,6 +210,7 @@ const projectGroups = [
     [
       "Lead /acme-co/atlas-web/settings/lead",
       "Placement /acme-co/atlas-web/settings/placement",
+      "Pools /acme-co/atlas-web/settings/pools",
       "Permissions /acme-co/atlas-web/settings/permissions",
     ],
   ],
@@ -266,6 +267,23 @@ test("in a project the navigation draws the project's group then the workspace's
   expect(groupsDrawn()).toStrictEqual(projectGroups);
 });
 
+test("the project's group is headed by its display name, its links at its address", async () => {
+  await drawnSettings("/acme-co/atlas-web/settings/permissions", (request) =>
+    request.url.startsWith("/api/v1/projects")
+      ? answer({
+          projects: [
+            { tenant: "acme-co", project: "atlas-web", name: "Atlas Web" },
+          ],
+        })
+      : undefined,
+  );
+  const [project, ...rest] = projectGroups;
+  expect(groupsDrawn()).toStrictEqual([
+    ["Project Atlas Web", project?.[1]],
+    ...rest,
+  ]);
+});
+
 test("outside a project the navigation draws the workspace's group alone, every link at the workspace's own address", async () => {
   await drawnSettings("/tenants/acme-co/settings/permissions");
   expect(groupsDrawn()).toStrictEqual(workspaceGroups);
@@ -277,6 +295,7 @@ test.each([
     address: "/acme-co/atlas-web/settings/placement",
     group: "Project atlas-web",
   },
+  { address: "/acme-co/atlas-web/settings/pools", group: "Project atlas-web" },
   {
     address: "/acme-co/atlas-web/settings/permissions",
     group: "Project atlas-web",

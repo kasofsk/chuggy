@@ -19,6 +19,7 @@ export const settingsRoutes = {
   project: {
     lead: "/$tenant/$project/settings/lead",
     placement: "/$tenant/$project/settings/placement",
+    pools: "/$tenant/$project/settings/pools",
     permissions: "/$tenant/$project/settings/permissions",
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
@@ -73,9 +74,15 @@ export interface SettingsNavSite {
   readonly permissions: boolean;
 }
 
+/** The open project: its address, which every entry's link carries, and the name its group is headed by. */
+export interface SettingsNavProject {
+  readonly address: string;
+  readonly name: string;
+}
+
 export interface SettingsNavInput {
   readonly tenant: string;
-  readonly project: string | undefined;
+  readonly project: SettingsNavProject | undefined;
   readonly site: SettingsNavSite;
 }
 
@@ -95,6 +102,7 @@ export function settingsNavSiteDrawn(
 const settingsNavLabels = {
   lead: { id: "settings-nav-lead" },
   placement: { id: "settings-nav-placement" },
+  pools: { id: "settings-nav-pools" },
   permissions: { id: "settings-nav-permissions" },
   people: { id: "settings-nav-people" },
   accounts: { id: "settings-nav-accounts" },
@@ -112,7 +120,7 @@ export function settingsNav(
   const frame =
     project === undefined ? settingsRoutes.workspace : settingsRoutes.project;
   const params: SettingsNavParams =
-    project === undefined ? { tenant } : { tenant, project };
+    project === undefined ? { tenant } : { tenant, project: project.address };
   const entry = (
     id: keyof typeof settingsNavLabels,
     to: SettingsRoute,
@@ -120,10 +128,11 @@ export function settingsNav(
   const projectGroup: SettingsNavGroup = {
     id: "project",
     label: { id: "settings-nav-project" },
-    name: project,
+    name: project?.name,
     entries: [
       entry("lead", settingsRoutes.project.lead),
       entry("placement", settingsRoutes.project.placement),
+      entry("pools", settingsRoutes.project.pools),
       entry("permissions", settingsRoutes.project.permissions),
     ],
   };

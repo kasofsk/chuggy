@@ -97,6 +97,7 @@ function namedCreation(label: string) {
   return {
     tenant: asTenantId(`${label}-${suffix}`),
     project: asProjectId("chuggy"),
+    name: "Chuggy",
     operation: asOperationId(`operation-${randomUUID()}`),
   };
 }
@@ -109,6 +110,7 @@ async function committedOnly(
 ): Promise<void> {
   const answer = await store.create({
     partition: request,
+    name: request.name,
     standing,
     reserved: false,
     operation: request.operation,
@@ -293,6 +295,7 @@ test("a creator whose grants never landed is answered its own tenant under a new
   assert.deepEqual(await held(creator, request), allProjectAccessKinds);
   const replayed = await store.create({
     partition: request,
+    name: request.name,
     standing: "Administers",
     reserved: false,
     operation: request.operation,

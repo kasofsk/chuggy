@@ -12,17 +12,19 @@
  * message could carry, is ever printed.
  */
 
+import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
 import { setupAsked } from "./setupArguments.ts";
 import type {
   SetupAnswers,
   SetupAsked,
   SetupCommand,
 } from "./setupArguments.ts";
-import { setupNext, setupRunnerDue } from "./setupNext.ts";
+import { setupMcpDue, setupNext, setupRunnerDue } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
 import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
-import { readSetup, setupReadPorts } from "./setupReads.ts";
+import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
+import type { SetupReads } from "./setupReads.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
 import { setupChatHost, setupRunner } from "./setupRunner.ts";
@@ -51,8 +53,10 @@ import {
   setupLockReleased,
   setupLockTaken,
   setupLockWaitMs,
-  setupSessionRead,
-  setupSessionWritten,
+  setupSessionMoved,
+  setupSessionSite,
+  setupSessionSiteWritten,
+  setupTokenRead,
 } from "./setupStore.ts";
 
 type SetupBegun =
@@ -61,8 +65,8 @@ type SetupBegun =
 
 /**
  * The session a command works under: the site it was given or the one
- * remembered, loaded, with the remembered token only where it is that site's
- * and room for its renewal kept before anything is asked of either. A site is
+ * remembered, loaded, with the token the shared store holds for that site and
+ * room for its renewal kept before anything is asked of either. A site is
  * remembered once it has answered as one.
  */
 async function setupBegun(
@@ -70,11 +74,12 @@ async function setupBegun(
   given: string | undefined,
   asked: SetupCommand,
 ): Promise<SetupBegun> {
-  const stored = setupSessionRead(ports.files);
-  const site = given ?? stored?.site;
+  setupSessionMoved(ports.files, ports.store);
+  const remembered = setupSessionSite(ports.files);
+  const site = given ?? remembered;
   if (site === undefined)
     return { begun: "Reported", report: { report: "SiteUnknown" } };
-  const held = stored?.site === site ? stored.refreshToken : undefined;
+  const held = setupTokenRead(ports.store, site);
   const opened = setupSessionOpened(ports, site, held, undefined);
   opened.store.roomed();
   await opened.holder.load();
@@ -91,8 +96,7 @@ async function setupBegun(
             asked,
           },
     };
-  if (stored?.site !== site)
-    setupSessionWritten(ports.files, { site, refreshToken: undefined });
+  if (remembered !== site) setupSessionSiteWritten(ports.files, site);
   return { begun: "Session", opened };
 }
 
@@ -183,8 +187,9 @@ function setupBusy(
 /**
  * The checklist, read once the lock is given up: nothing from here on reads
  * or writes the session file, and no request is sent while the lock is held
- * for it. Everything goes out through ports that can only read, and where the
- * runner's step is the one next the machine is looked at and not touched.
+ * for it. Everything goes out through ports that can only read; the agent's
+ * configuration is read for the project chosen, and where the MCP step or the
+ * runner's is the one next the machine is looked at and not touched.
  */
 async function setupChecklist(
   ports: SetupPorts,
@@ -202,10 +207,15 @@ async function setupChecklist(
       workspaces: signed.workspaces,
     },
   );
-  const standing = setupStanding(reads);
+  const standing = setupStanding(
+    reads,
+    await setupChecklistNamed(ports, reads),
+  );
   const due = setupRunnerDue(standing);
   const here =
     due === undefined ? undefined : await setupRunnerHere(ports, due);
+  const packaged =
+    setupMcpDue(standing) !== undefined && (await setupMcpPackaged(ports));
   return {
     report: "Checklist",
     site,
@@ -215,8 +225,20 @@ async function setupChecklist(
       state,
       detail,
     })),
-    next: setupNext(standing, answers, here),
+    next: setupNext(standing, answers, here, packaged),
   };
+}
+
+/** Whether the agent's configuration for this folder names chuggy's server for the project the reads chose, where they chose one. */
+async function setupChecklistNamed(
+  ports: SetupPorts,
+  reads: SetupReads,
+): Promise<boolean> {
+  const partition = setupPartition(reads.choice, reads.inventory);
+  if (partition === undefined) return false;
+  const { tenant: workspace, project } = partition;
+  return (await setupAgentRead(ports, { site: reads.site, workspace, project }))
+    .named;
 }
 
 /**
@@ -396,6 +418,8 @@ export async function setupRun(
         return await setupStatus(ports, asked, pacing);
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
+      case "Mcp":
+        return await setupServer(ports, asked);
       case "Runner":
       case "ChatHost":
         return await setupRunnerRun(ports, asked, pacing);

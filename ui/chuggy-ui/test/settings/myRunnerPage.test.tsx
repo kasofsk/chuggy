@@ -101,9 +101,9 @@ const runnersTwo = {
 /** Projects the reader reads: two in this workspace, one in another. */
 const inventory = {
   projects: [
-    { tenant: "acme", project: "atlas" },
-    { tenant: "acme", project: "borealis" },
-    { tenant: "other", project: "cirrus" },
+    { tenant: "acme", project: "atlas", name: "Atlas Web" },
+    { tenant: "acme", project: "borealis", name: "Borealis" },
+    { tenant: "other", project: "cirrus", name: "cirrus" },
   ],
 };
 
@@ -118,6 +118,8 @@ interface Drawing {
   removal?: number;
   /** The chat host every read answers; absent where the reader has none. */
   host?: unknown;
+  /** Where set, the status a runner's token mint is refused with. */
+  mintRefused?: number;
 }
 
 /** A chat host of the reader's whose id ends in `tail`, never polled. */
@@ -168,7 +170,12 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
     if (path === `${tenantPath}/chat-host-registration-tokens`)
       return answer({ token: "tok_host-1", expiresAtMs: 1_800_000_000_000 });
     if (path === `${tenantPath}/personal-runner-registration-tokens`)
-      return answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 });
+      return drawing.mintRefused === undefined
+        ? answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 })
+        : answer(
+            { error: { code: "Forbidden", message: "no" } },
+            drawing.mintRefused,
+          );
     if (path.startsWith(`${tenantPath}/personal-runner/projects/`))
       return answer(undefined, 204);
     return answer({}, 404);
@@ -211,6 +218,132 @@ test("a member the workspace lets register one asks what it is for, and is hande
   ).toContain(
     "chuggy-linux register --personal --api https://chuggy.test --token=tok_en-1",
   );
+});
+
+/** The steps a runner's mint is handed over in, a list by its name. */
+function runnerSteps(): HTMLElement {
+  return screen.getByRole("list", { name: "Register runner" });
+}
+
+/** One of those steps, by the title it opens with. */
+function runnerStep(title: string): HTMLElement {
+  const found = within(runnerSteps())
+    .getAllByRole("listitem")
+    .find((item) => item.textContent.startsWith(title));
+  if (found === undefined) throw new Error(`no step is titled ${title}`);
+  return found;
+}
+
+test("a minted token is handed over in three steps, a list: install, register, and the guide for what is left", async () => {
+  await drawMyRunner();
+  await press("Register runner");
+  await press("Create token");
+  expect(
+    within(runnerSteps())
+      .getAllByRole("listitem")
+      .map((item) => item.firstElementChild?.firstElementChild?.textContent),
+  ).toStrictEqual(["Install", "Register", "Finish"]);
+  expect(runnerStep("Install").textContent).toContain(
+    "Linux · Node 24 · Docker or Podman",
+  );
+  expect(runnerStep("Install").querySelector("code")?.textContent).toBe(
+    runnerPackages.linux.installCommand,
+  );
+  expect(runnerStep("Register").textContent).toContain("Expires");
+  expect(runnerStep("Finish").querySelector("code")).toBeNull();
+  const guide = within(runnerStep("Finish")).getByRole("link", {
+    name: "Setup guide",
+  });
+  expect(guide.getAttribute("href")).toBe(
+    "https://github.com/kasofsk/chuggy-linux#configure",
+  );
+  expect(guide.getAttribute("target")).toBe("_blank");
+  expect(guide.getAttribute("rel")).toBe("noopener noreferrer");
+});
+
+test("the steps leave the focus with whatever holds it as they are drawn", async () => {
+  await drawMyRunner();
+  await press("Register runner");
+  const elsewhere = document.body.appendChild(document.createElement("input"));
+  elsewhere.focus();
+  await press("Create token");
+  expect(runnerSteps()).toBeTruthy();
+  expect(document.activeElement).toBe(elsewhere);
+  elsewhere.remove();
+});
+
+test("a mint the API refuses says so, draws no step and returns to the ask, which Cancel puts away", async () => {
+  drawing = { granted: true, runner: undefined, mintRefused: 403 };
+  await drawMyRunner();
+  await press("Register runner");
+  await press("Create token");
+  expect(screen.getByText("Refused")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("Forbidden");
+  expect(screen.queryByRole("list", { name: "Register runner" })).toBeNull();
+  expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();
+  await press("Cancel");
+  expect(screen.queryByRole("form", { name: "Runner" })).toBeNull();
+});
+
+test("a Mac asked to run work on itself and to declare capabilities mints a token that names none, and its steps install and register it so", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  fireEvent.click(screen.getByRole("radio", { name: "Mac" }));
+  await press("Advanced");
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Runs without a container" }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
+    target: { value: "Agent:Claude Tool:Xcode" },
+  });
+  await press("Create token");
+  expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
+    lifetimeSecs: 3600,
+  });
+  expect(runnerStep("Install").textContent).toContain(
+    "macOS · Node 24 · Colima",
+  );
+  expect(runnerStep("Register").querySelector("code")?.textContent).toBe(
+    "chuggy-darwin register --personal --api https://chuggy.test --token=tok_en-1 --host --capability Agent:Claude --capability Tool:Xcode",
+  );
+});
+
+/** A refusal opens the fold it is drawn in, and the reader typing a fix there
+ * is not folded away from it. */
+test("a refusal of what was typed under a folded Advanced opens it, and it stays open while the reader fixes it", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  await press("Advanced");
+  const capabilities = (): HTMLElement =>
+    screen.getByRole("textbox", { name: "Capabilities" });
+  fireEvent.change(capabilities(), { target: { value: "_x" } });
+  await press("Advanced");
+  expect(screen.queryByRole("textbox", { name: "Capabilities" })).toBeNull();
+  await press("Create token");
+  expect(screen.getByText("_x · start with a letter or digit")).toBeTruthy();
+  fireEvent.change(capabilities(), { target: { value: "x" } });
+  await settled();
+  expect(capabilities()).toBeTruthy();
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+});
+
+test("capabilities typed that are not ones are refused before anything is minted", async () => {
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  await press("Advanced");
+  fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
+    target: { value: "Platform:Linux:Amd64" },
+  });
+  await press("Create token");
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+  expect(
+    screen.getByText("Platform:Linux:Amd64 is detected, not typed"),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("textbox", { name: "Capabilities" })
+      .getAttribute("aria-invalid"),
+  ).toBe("true");
 });
 
 /** The runner read again on its clock, as a page left open is, and drawn
@@ -343,7 +476,7 @@ test("each runner says what it is running, each ticket linked with what it runs,
     within(busy ?? document.body)
       .getAllByRole("link")
       .map((link) => link.textContent),
-  ).toStrictEqual(["atlas #12", "borealis #4"]);
+  ).toStrictEqual(["Atlas Web #12", "Borealis #4"]);
   expect(busy?.textContent).toContain("Work · cycle 1");
   expect(busy?.textContent).toContain("Stage 1 · cycle 2");
   expect(busy?.textContent).toContain("More not shown");
@@ -375,7 +508,7 @@ test("a member holding a runner may register another, and one holding as many as
   expect(screen.getByText("Limit reached")).toBeTruthy();
 });
 
-test("a runner is given only a project of this workspace the reader reads, and takes one away", async () => {
+test("a runner is given only a project of this workspace the reader reads, each named by its name and written by its address, and takes one away", async () => {
   drawing = { granted: true, runner: runnerHeld };
   const sent = await drawMyRunner();
   fireEvent.keyDown(screen.getByRole("button", { name: /^Add a project/u }), {
@@ -386,12 +519,13 @@ test("a runner is given only a project of this workspace the reader reads, and t
     within(menu)
       .getAllByRole("menuitemradio")
       .map((item) => item.textContent),
-  ).toStrictEqual(["borealis"]);
+  ).toStrictEqual(["Borealis"]);
   fireEvent.click(
-    within(menu).getByRole("menuitemradio", { name: "borealis" }),
+    within(menu).getByRole("menuitemradio", { name: "Borealis" }),
   );
   await settled();
-  await press("Remove atlas");
+  expect(screen.getByRole("rowheader", { name: "Atlas Web" })).toBeTruthy();
+  await press("Remove Atlas Web");
   expect(written(sent)).toStrictEqual([
     "PUT /personal-runner/projects/borealis",
     "DELETE /personal-runner/projects/atlas",
@@ -402,12 +536,12 @@ test("a project's priority is drawn and chosen from High, Normal and Low, and on
   drawing = { granted: true, runner: runnerHeld };
   const sent = await drawMyRunner();
   const priority = screen.getByRole("button", {
-    name: /^Priority of atlas/u,
+    name: /^Priority of Atlas Web/u,
   });
   expect(priority.textContent).toContain("Normal");
   const choose = async (name: string) => {
     fireEvent.keyDown(
-      screen.getByRole("button", { name: /^Priority of atlas/u }),
+      screen.getByRole("button", { name: /^Priority of Atlas Web/u }),
       { key: "ArrowDown" },
     );
     const menu = await screen.findByRole("menu");

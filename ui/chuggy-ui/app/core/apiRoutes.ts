@@ -83,6 +83,7 @@ import type {
   ProjectArtifactResponse,
   ProjectArtifactUploadedResponse,
   ProjectCreatedResponse,
+  NamedProject,
   ProjectInventoryResponse,
   ProjectRepositoriesResponse,
   ProjectRepositoryAlreadyBoundResponse,
@@ -864,8 +865,8 @@ export function apiCreateProject(
  */
 export async function apiProjectInventoryAll(
   ports: ApiPorts,
-): Promise<ApiResult<readonly PartitionIdentity[]>> {
-  const partitions: PartitionIdentity[] = [];
+): Promise<ApiResult<readonly NamedProject[]>> {
+  const partitions: NamedProject[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < projectInventoryPagesMax; page += 1) {
     const answered = await apiProjectInventory(ports, { cursor });

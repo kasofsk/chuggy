@@ -37,7 +37,10 @@ at; a project identity never begins `@`, which names a member's own partition
 in the relations that hold one. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
 the same transaction as the entry it counts. Unfinished work is found by selecting
-active projects whose lease has expired by database time. It is deleted by
+active projects whose lease has expired by database time. Its `name` is what
+the creation that made it called it, written by `create_project`,
+and absent where no creation named it, which reads as its
+identity. It is deleted by
 `delete_unrun_project` alone, with every relation keyed by it, under its row
 lock and after moving it to `Deleting`, and only while it holds no journal
 entry and no execution, session, pool or action observation.
@@ -742,6 +745,18 @@ INSERT and SELECT, read by the API, and `epic_change_is_immutable` refuses every
 every delete but of a project standing `Deleting`. Its identity is `(tenant, project, epic, revision)` and it points at
 `project`. Its newest row per epic is the content `epic` holds, which is why a
 save writes both in one transaction. It has no unfinished work.
+
+`ticket_take` — every take and return of a released ticket: who acted, under
+which authority, and when. Owned by the boundary owner, which `take_ticket` runs
+as and which is granted INSERT and SELECT; the API and the scheduler are granted
+SELECT, and `ticket_take_is_immutable` refuses every change and every delete but
+of a project standing `Deleting`. Its identity is `(tenant, project, ticket,
+number)` and it points at `project`; numbers run from 1 per ticket without a gap
+because the door takes the project row's lock and allocates `max(number) + 1`.
+The taker is its newest row where that row is a take, and `ticket_taker` and
+`ticket_owner` derive it and the owner from it, so neither is stored. It is
+changed by `take_ticket` alone. It has no unfinished work: a take is committed
+or it was rolled back.
 
 `evaluation_stack` — the stack one ticket's work cycle was first evaluated over:
 the tip of its reference, and the commit and tree of the stack. Owned by the

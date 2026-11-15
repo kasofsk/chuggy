@@ -328,7 +328,9 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt("/api/v1/projects"),
     schema: projectInventoryResponseSchema,
-    body: () => ({ projects: [consolePartition] }),
+    body: () => ({
+      projects: [{ ...consolePartition, name: consolePartition.project }],
+    }),
   },
   {
     path: consoleReadAt(projectPath),

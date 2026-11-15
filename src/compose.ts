@@ -100,6 +100,8 @@ import {
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
+import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
 import {
   postgresProjectDeletion,
   postgresTenantDeletion,
@@ -356,6 +358,19 @@ export function composeProjectOwnerFallback(
   return projectOwnerFallbackAdministration(
     access,
     postgresProjectOwnerFallback(apiPool),
+  );
+}
+
+/** Wires a ticket's takes and returns to API-role credentials, the access that gates them, and the site's selector they refuse. */
+export function composeTicketTakes(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  selector: Principal | undefined,
+): TicketTakes {
+  return ticketTakes(
+    access,
+    postgresTicketTakes(apiPool),
+    selector === undefined ? {} : { selector },
   );
 }
 
