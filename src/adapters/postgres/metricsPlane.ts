@@ -25,6 +25,14 @@
  * failure, which a landed ticket's every such escalation was followed by and
  * so is counted at the escalation.
  *
+ * A WORK CYCLE IS AN ENTRY THAT LEAVES ITS TICKET IN WORK, AN EVALUATION CYCLE
+ * A RUN OF CONSECUTIVE ENTRIES THAT LEAVE IT IN EVALUATION, and each ends at the
+ * ticket's next entry after it; one with no next entry is open and is not
+ * observed. Which phase an entry leaves its ticket in is its event's, from
+ * `metricsPlaneEventPhases`. A landed ticket's every entry before its landing
+ * counts the time to the next toward that phase, so its phase times add up to
+ * its lead time.
+ *
  * AN ENDED TICKET'S COST IS SETTLED BEFORE IT IS OBSERVED. It counts only the
  * attempts that ended by its ending entry, and is observed only once that
  * entry is `metricsPlaneTicketSettleSecs` old, so an attempt whose ending
@@ -55,8 +63,14 @@ import { workloadRunners } from "../../contract/rosters.ts";
 import { ticketEventTags } from "../../domain/generated/modelTypes.ts";
 import { taskPurposeForKind } from "../../interpreter/executionScheduler.ts";
 import {
+  metricsPlaneAttemptWaitBoundsSecs,
+  metricsPlaneCycleBoundsSecs,
   metricsPlaneDurationBoundsSecs,
   metricsPlaneEscalatingEvents,
+  metricsPlaneEventPhases,
+  metricsPlaneLandedPhases,
+  metricsPlanePhaseTimeBoundsSecs,
+  metricsPlaneWorkCycleBounds,
   metricsPlaneEscalationBoundsSecs,
   metricsPlaneAgentPauseTriggers,
   metricsPlaneMemberProject,
@@ -67,7 +81,10 @@ import {
   type MetricsPlaneAgentPausedRow,
   type MetricsPlaneBounds,
   type MetricsPlaneAttemptRow,
+  type MetricsPlaneAttemptWaitRow,
+  type MetricsPlaneCycleRow,
   type MetricsPlaneModelRow,
+  type MetricsPlanePhaseTimeRow,
   type MetricsPlaneRead,
   type MetricsPlaneReads,
   type MetricsPlaneRunRow,
@@ -353,7 +370,47 @@ const metricsPlaneEscalationSchema = z
     createdSecs: created,
   }));
 
-/** Which ticket histogram one series the fifth statement reads is of. */
+const metricsPlaneAttemptWaitSchema = z
+  .object({
+    ...metricsPlaneTicketOwnerSchema,
+    phase: z.enum(["Work", "Evaluation"]),
+    placement: z.enum(["Cluster", "Pool", "Personal"]),
+    buckets: metricsPlaneBucketsSchema(metricsPlaneAttemptWaitBoundsSecs),
+    sum: metricsPlaneFigure,
+    created: metricsPlaneFigure,
+  })
+  .transform(({ created, ...row }): MetricsPlaneAttemptWaitRow => ({
+    ...row,
+    createdSecs: created,
+  }));
+
+const metricsPlaneCycleSchema = z
+  .object({
+    ...metricsPlaneObservedShape(metricsPlaneCycleBoundsSecs),
+    began: z.enum(ticketEventTags),
+    ended: z.enum(ticketEventTags),
+  })
+  .transform(({ created, ...row }): MetricsPlaneCycleRow => ({
+    ...row,
+    createdSecs: created,
+  }));
+
+const metricsPlanePhaseTimeSchema = z
+  .object({
+    ...metricsPlaneObservedShape(metricsPlanePhaseTimeBoundsSecs),
+    phase: z.enum(metricsPlaneLandedPhases),
+  })
+  .transform(({ created, ...row }): MetricsPlanePhaseTimeRow => ({
+    ...row,
+    createdSecs: created,
+  }));
+
+/** Which cycle histogram one series the eighth statement reads is of. */
+const metricsPlaneCycleSeriesSchema = z.looseObject({
+  family: z.enum(["work", "evaluation", "phase", "cycles"]),
+});
+
+/** Which ticket histogram one series the sixth statement reads is of. */
 const metricsPlaneEndingSeriesSchema = z.looseObject({
   family: z.enum(["lead", "run", "reworks", "cost"]),
 });
@@ -372,28 +429,38 @@ interface MetricsPlaneExecutionRow {
   readonly models: string | null;
 }
 
-/** What the third statement reads: the family of session turns. */
+/** What the third statement reads: every claimed attempt's wait. */
+interface MetricsPlaneWaitedRow {
+  readonly waits: string | null;
+}
+
+/** What the fourth statement reads: the family of session turns. */
 interface MetricsPlaneSessionRow {
   readonly turns: string | null;
 }
 
-/** What the fourth statement reads: the tickets where they stand, and every journal entry. */
+/** What the fifth statement reads: the tickets where they stand, and every journal entry. */
 interface MetricsPlaneTicketRow {
   readonly tickets: string | null;
   readonly events: string | null;
 }
 
-/** What the fifth statement reads: every ended ticket's histograms but its escalations', each family cut at one past the cap. */
+/** What the sixth statement reads: every ended ticket's histograms but its escalations', each family cut at one past the cap. */
 interface MetricsPlaneEndingRow {
   readonly observations: string | null;
 }
 
-/** What the sixth statement reads: every ended escalation's histogram. */
+/** What the seventh statement reads: every ended escalation's histogram. */
 interface MetricsPlaneEscalatedRow {
   readonly escalations: string | null;
 }
 
-/** What the seventh statement reads: whether each account's agent is paused by each trigger. */
+/** What the eighth statement reads: every ended cycle's histograms, and every landed ticket's phase times and work cycles, each family cut at one past the cap. */
+interface MetricsPlaneCycledRow {
+  readonly observations: string | null;
+}
+
+/** What the ninth statement reads: whether each account's agent is paused by each trigger. */
 interface MetricsPlaneAgentPauseRow {
   readonly pauses: string | null;
 }
@@ -408,7 +475,16 @@ const metricsPlaneAgentPauseSchema = z.object({
 /** The ticket families of a page, which the journal and the tickets where they stand are read for. */
 type MetricsPlaneTicketed = Omit<
   MetricsPlaneRows,
-  "attempts" | "runs" | "models" | "turns" | "agentPauses"
+  "attempts" | "attemptWaits" | "runs" | "models" | "turns" | "agentPauses"
+>;
+
+/** The cycle families of a page, which the journal is read for in one statement. */
+type MetricsPlaneCycled = Pick<
+  MetricsPlaneRows,
+  | "workCycleDurations"
+  | "evaluationCycleDurations"
+  | "phaseTimes"
+  | "workCycles"
 >;
 
 /** Each task shape's labels, and each principal's owner, as the later statements join them back in. */
@@ -681,6 +757,43 @@ async function metricsPlaneExecutionQuery(
   return found.rows[0];
 }
 
+/** Every claimed attempt's wait for a runner, its phase and placement derived as its attempt's are and its owner named as `labelling` named it, cut at one past `seriesMax`. */
+async function metricsPlaneWaitQuery(
+  client: pg.PoolClient,
+  labelling: MetricsPlaneLabelling,
+  seriesMax: number,
+): Promise<MetricsPlaneWaitedRow | undefined> {
+  const found = await client.query<MetricsPlaneWaitedRow>(
+    sql`WITH named AS (
+          SELECT * FROM unnest(${labelling.principals}::text[],${labelling.owners}::text[])
+                   AS o(principal,owner)),
+        waited AS (
+          SELECT a.tenant,a.project,coalesce(o.owner,'') AS owner,t.kind AS phase,
+                 CASE WHEN e.placement='InCluster' THEN 'Cluster'
+                      WHEN a.personal THEN 'Personal' ELSE 'Pool' END AS placement,
+                 a.claimed_at,round(extract(epoch FROM a.claimed_at-a.opened_at)*1000)::bigint AS ms
+            FROM execution_attempt a
+            JOIN execution e
+              ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+            JOIN execution_request_task t
+              ON t.tenant=e.tenant AND t.project=e.project AND t.request=e.source_request AND t.task=e.task
+            LEFT JOIN named o ON o.principal=e.owner
+           WHERE a.claimed_at IS NOT NULL),
+        bucketed AS (
+          SELECT tenant,project,owner,phase,placement,
+                 (SELECT count(*) FROM unnest(${metricsPlaneAttemptWaitBoundsSecs}::float8[]) AS le
+                   WHERE le*1000<ms) AS bucket,
+                 count(*) AS observed,sum(ms) AS ms,min(claimed_at) AS created_at
+            FROM waited GROUP BY tenant,project,owner,phase,placement,bucket)
+        SELECT (SELECT json_agg(f)::text FROM (
+                 SELECT tenant,project,owner,phase,placement,json_object_agg(bucket,observed) AS buckets,
+                        sum(ms)::text AS sum,extract(epoch FROM min(created_at))::text AS created
+                   FROM bucketed GROUP BY tenant,project,owner,phase,placement
+                  LIMIT ${seriesMax + 1}) f) AS waits`,
+  );
+  return found.rows[0];
+}
+
 /** The family of session turns, owners named as `labelling` named them, cut at one past `seriesMax`. */
 async function metricsPlaneSessionQuery(
   client: pg.PoolClient,
@@ -887,6 +1000,82 @@ async function metricsPlaneEscalationQuery(
   return found.rows[0];
 }
 
+/**
+ * Every ended work and evaluation cycle, timed to the ticket's entry that ended
+ * it, and every landed ticket's time in each phase and its work cycles, owners
+ * named as `labelling` named them, each family cut at one past `seriesMax`.
+ */
+async function metricsPlaneCycleQuery(
+  client: pg.PoolClient,
+  labelling: MetricsPlaneLabelling,
+  seriesMax: number,
+): Promise<MetricsPlaneCycledRow | undefined> {
+  const found = await client.query<MetricsPlaneCycledRow>(
+    sql`WITH bounds AS (
+          SELECT * FROM (VALUES ('work',${metricsPlaneCycleBoundsSecs}::float8[],1000),('evaluation',${metricsPlaneCycleBoundsSecs}::float8[],1000),
+                   ('phase',${metricsPlanePhaseTimeBoundsSecs}::float8[],1000),('cycles',${metricsPlaneWorkCycleBounds}::float8[],1)) AS b(family,bounds,scale)),
+        entry AS (
+          SELECT j.tenant,j.project,j.seq,j.committed_at,r.event,r.phase,
+                 (CASE WHEN r.event='TicketCreated' THEN v.e#>>'{value,id}'
+                       WHEN r.event=ANY(${metricsPlaneTicketValueEvents}::text[]) THEN v.e->>'value'
+                       ELSE v.e#>>'{value,ticket}' END)::bigint AS ticket
+            FROM journal_entry j CROSS JOIN LATERAL (SELECT j.entry::jsonb->'event' AS e) AS v
+            JOIN unnest(${Object.keys(metricsPlaneEventPhases)}::text[],
+                        ${Object.values(metricsPlaneEventPhases)}::text[]) AS r(event,phase) ON r.event=v.e->>'type'),
+        spell AS (
+          SELECT m.*,count(*) FILTER (WHERE m.entered) OVER (PARTITION BY m.tenant,m.project,m.ticket ORDER BY m.seq) AS spell
+            FROM (SELECT x.*,lead(x.committed_at) OVER later AS next_at,lead(x.event) OVER later AS next_event,
+                         x.phase IS DISTINCT FROM lag(x.phase) OVER later AS entered
+                    FROM entry x WINDOW later AS (PARTITION BY x.tenant,x.project,x.ticket ORDER BY x.seq)) AS m),
+        ticket AS (
+          SELECT x.tenant,x.project,x.ticket,coalesce(o.owner,'') AS owner,
+                 min(x.committed_at) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_at,
+                 min(x.seq) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_seq
+            FROM entry x
+            LEFT JOIN draft_revision r
+              ON r.tenant=x.tenant AND r.project=x.project AND r.ticket=x.ticket
+             AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
+            LEFT JOIN unnest(${labelling.principals}::text[],${labelling.owners}::text[]) AS o(principal,owner)
+              ON o.principal=r.authority_subject
+           GROUP BY x.tenant,x.project,x.ticket,coalesce(o.owner,'')),
+        spent AS (
+          SELECT s.tenant,s.project,s.ticket,s.phase,count(*) AS entries,
+                 round(extract(epoch FROM sum(s.next_at-s.committed_at))*1000)::bigint AS ms
+            FROM spell s JOIN ticket n USING (tenant,project,ticket)
+           WHERE s.seq<n.landed_seq GROUP BY s.tenant,s.project,s.ticket,s.phase),
+        cycle AS (
+          SELECT 'work' AS family,s.tenant,s.project,s.ticket,s.event AS began,s.next_event AS ended,
+                 s.next_at AS ended_at,round(extract(epoch FROM s.next_at-s.committed_at)*1000)::bigint AS value
+            FROM spell s WHERE s.phase='Work' AND s.next_at IS NOT NULL
+          UNION ALL
+          SELECT 'evaluation',s.tenant,s.project,s.ticket,(array_agg(s.event ORDER BY s.seq))[1],(array_agg(s.next_event ORDER BY s.seq DESC))[1],
+                 max(s.next_at),round(extract(epoch FROM max(s.next_at)-min(s.committed_at))*1000)::bigint
+            FROM spell s WHERE s.phase='Evaluation'
+           GROUP BY s.tenant,s.project,s.ticket,s.spell HAVING bool_and(s.next_at IS NOT NULL)),
+        observation AS (
+          SELECT c.family,c.tenant,c.project,n.owner,c.began,c.ended,'' AS phase,c.ended_at AS observed_at,c.value
+            FROM cycle c JOIN ticket n USING (tenant,project,ticket)
+          UNION ALL
+          SELECT f.family,n.tenant,n.project,n.owner,'','',f.phase,n.landed_at,f.value
+            FROM ticket n CROSS JOIN unnest(${metricsPlaneLandedPhases}::text[]) AS p(phase)
+            LEFT JOIN spent t ON (t.tenant,t.project,t.ticket,t.phase)=(n.tenant,n.project,n.ticket,p.phase)
+           CROSS JOIN LATERAL (VALUES ('phase',p.phase,coalesce(t.ms,0)),('cycles','',coalesce(t.entries,0))) AS f(family,phase,value)
+           WHERE n.landed_at IS NOT NULL AND (f.family='phase' OR p.phase='Work')),
+        series AS (
+          SELECT family,tenant,project,owner,began,ended,phase,json_object_agg(bucket,observed) AS buckets,
+                 sum(total)::text AS sum,extract(epoch FROM min(created_at))::text AS created,
+                 row_number() OVER (PARTITION BY family) AS place
+            FROM (SELECT family,tenant,project,owner,began,ended,phase,
+                         (SELECT count(*) FROM unnest(bounds) AS le WHERE le*scale<value) AS bucket,
+                         count(*) AS observed,sum(value) AS total,min(observed_at) AS created_at
+                    FROM observation JOIN bounds USING (family)
+                   GROUP BY family,tenant,project,owner,began,ended,phase,bucket) AS bucketed
+           GROUP BY family,tenant,project,owner,began,ended,phase)
+        SELECT (SELECT json_agg(s)::text FROM series s WHERE s.place<=${seriesMax + 1}) AS observations`,
+  );
+  return found.rows[0];
+}
+
 /** One ticket histogram's series of `series`, parsed by `schema`, or none where it has more than `seriesMax`. */
 function metricsPlaneEndingFamily<Schema extends z.ZodType>(
   series: readonly z.output<typeof metricsPlaneEndingSeriesSchema>[],
@@ -941,13 +1130,49 @@ function metricsPlaneAgentPauses(
   }));
 }
 
+/** The cycle families' series as the interpreter reads them, or none where one has more than `seriesMax`. */
+function metricsPlaneCycleRows(
+  cycled: MetricsPlaneCycledRow,
+  seriesMax: number,
+): MetricsPlaneCycled | undefined {
+  const series = metricsPlaneParsed(
+    cycled.observations,
+    metricsPlaneCycleSeriesSchema,
+  );
+  const family = <Schema extends z.ZodType>(
+    named: z.output<typeof metricsPlaneCycleSeriesSchema>["family"],
+    schema: Schema,
+  ): readonly z.output<Schema>[] | undefined => {
+    const rows = series
+      .filter((row) => row.family === named)
+      .map((row) => schema.parse(row));
+    return rows.length > seriesMax ? undefined : rows;
+  };
+  const workCycleDurations = family("work", metricsPlaneCycleSchema);
+  const evaluationCycleDurations = family(
+    "evaluation",
+    metricsPlaneCycleSchema,
+  );
+  const phaseTimes = family("phase", metricsPlanePhaseTimeSchema);
+  const workCycles = family(
+    "cycles",
+    metricsPlaneObservedSchema(metricsPlaneWorkCycleBounds),
+  );
+  return workCycleDurations === undefined ||
+    evaluationCycleDurations === undefined ||
+    phaseTimes === undefined ||
+    workCycles === undefined
+    ? undefined
+    : { workCycleDurations, evaluationCycleDurations, phaseTimes, workCycles };
+}
+
 /** The ticket families' series as the interpreter reads them, or none where one has more than `seriesMax`. */
 function metricsPlaneTicketRows(
   tickets: MetricsPlaneTicketRow,
   ending: MetricsPlaneEndingRow,
   escalated: MetricsPlaneEscalatedRow,
   seriesMax: number,
-): MetricsPlaneTicketed | undefined {
+): Omit<MetricsPlaneTicketed, keyof MetricsPlaneCycled> | undefined {
   const series = metricsPlaneParsed(
     ending.observations,
     metricsPlaneEndingSeriesSchema,
@@ -1014,7 +1239,7 @@ function metricsPlaneTicketRows(
 
 /** Every family's series as the interpreter reads them, or none where one has more than `seriesMax`. */
 function metricsPlaneRows(
-  executions: MetricsPlaneExecutionRow,
+  executions: MetricsPlaneExecutionRow & MetricsPlaneWaitedRow,
   sessions: MetricsPlaneSessionRow,
   ticketed: MetricsPlaneTicketed,
   agentPauses: readonly MetricsPlaneAgentPausedRow[],
@@ -1024,6 +1249,11 @@ function metricsPlaneRows(
     attempts: metricsPlaneFamilyRows(
       executions.attempts,
       metricsPlaneAttemptSchema,
+      seriesMax,
+    ),
+    attemptWaits: metricsPlaneFamilyRows(
+      executions.waits,
+      metricsPlaneAttemptWaitSchema,
       seriesMax,
     ),
     runs: metricsPlaneFamilyRows(
@@ -1042,13 +1272,22 @@ function metricsPlaneRows(
       seriesMax,
     ),
   };
-  const { attempts, runs, models, turns } = rows;
+  const { attempts, attemptWaits, runs, models, turns } = rows;
   return attempts === undefined ||
+    attemptWaits === undefined ||
     runs === undefined ||
     models === undefined ||
     turns === undefined
     ? undefined
-    : { attempts, runs, models, turns, ...ticketed, agentPauses };
+    : {
+        attempts,
+        attemptWaits,
+        runs,
+        models,
+        turns,
+        ...ticketed,
+        agentPauses,
+      };
 }
 
 /** Bounds the statements still to run in this transaction to what is left before `deadlineMs`. */
@@ -1062,6 +1301,25 @@ async function metricsPlaneRemaining(
     sql`SELECT set_config('statement_timeout',${String(remainingMs)},true)`,
   );
   return true;
+}
+
+/** The families of runs, their attempts and their waits, each statement under what is left before `deadlineMs`, or none where it passes first. */
+async function metricsPlaneExecutionReads(
+  client: pg.PoolClient,
+  labelling: MetricsPlaneLabelling,
+  seriesMax: number,
+  deadlineMs: number,
+): Promise<(MetricsPlaneExecutionRow & MetricsPlaneWaitedRow) | undefined> {
+  const executions = await metricsPlaneExecutionQuery(
+    client,
+    labelling,
+    seriesMax,
+  );
+  if (!(await metricsPlaneRemaining(client, deadlineMs))) return undefined;
+  const waited = await metricsPlaneWaitQuery(client, labelling, seriesMax);
+  if (executions === undefined || waited === undefined)
+    throw new Error("metrics plane: the read returned no row");
+  return { ...executions, ...waited };
 }
 
 /** The ticket families' statements, each under what is left before `deadlineMs`, read as the interpreter reads them or none where one has more than `seriesMax`. */
@@ -1087,11 +1345,29 @@ async function metricsPlaneTicketReads(
     labelling,
     seriesMax,
   );
-  if (tickets === undefined || ending === undefined || escalated === undefined)
+  if (!(await metricsPlaneRemaining(client, deadlineMs)))
+    return { read: "Late" };
+  const cycled = await metricsPlaneCycleQuery(client, labelling, seriesMax);
+  if (
+    tickets === undefined ||
+    ending === undefined ||
+    escalated === undefined ||
+    cycled === undefined
+  )
     throw new Error("metrics plane: the read returned no row");
+  const ticketed = metricsPlaneTicketRows(
+    tickets,
+    ending,
+    escalated,
+    seriesMax,
+  );
+  const cycles = metricsPlaneCycleRows(cycled, seriesMax);
   return {
     read: "Read",
-    rows: metricsPlaneTicketRows(tickets, ending, escalated, seriesMax),
+    rows:
+      ticketed === undefined || cycles === undefined
+        ? undefined
+        : { ...ticketed, ...cycles },
   };
 }
 
@@ -1116,12 +1392,17 @@ async function metricsPlaneScrapeRead(
     !(await metricsPlaneRemaining(client, deadlineMs))
   )
     return late;
-  const executions = await metricsPlaneExecutionQuery(
+  const executions = await metricsPlaneExecutionReads(
     client,
     labelling,
     bounds.seriesMax,
+    deadlineMs,
   );
-  if (!(await metricsPlaneRemaining(client, deadlineMs))) return late;
+  if (
+    executions === undefined ||
+    !(await metricsPlaneRemaining(client, deadlineMs))
+  )
+    return late;
   const sessions = await metricsPlaneSessionQuery(
     client,
     labelling,
@@ -1136,11 +1417,7 @@ async function metricsPlaneScrapeRead(
   if (ticketed.read === "Late") return late;
   if (!(await metricsPlaneRemaining(client, deadlineMs))) return late;
   const paused = await metricsPlaneAgentPauseQuery(client, bounds.seriesMax);
-  if (
-    executions === undefined ||
-    sessions === undefined ||
-    paused === undefined
-  )
+  if (sessions === undefined || paused === undefined)
     throw new Error("metrics plane: the read returned no row");
   const agentPauses = metricsPlaneAgentPauses(
     paused,
