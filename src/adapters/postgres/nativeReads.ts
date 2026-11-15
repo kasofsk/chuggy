@@ -598,8 +598,9 @@ function ticketUsageResumeTicket(ticket: string | null): string {
  * What `ticket_usage_resume` reads of each of `rows` under the scheduler's
  * `bounds`, by ticket: the instant the last of its limited tasks is free,
  * each free at the earliest end among its account's pauses as its runners
- * would claim it, or none where each is free already, and nothing for a
- * ticket the scheduler does not resume so.
+ * would claim it, or none where each is free already, `off` where one waits
+ * only on credentials turned off, and nothing for a ticket no usage pause
+ * holds so.
  */
 async function ticketUsageResumes(
   client: pg.Pool | pg.PoolClient,
@@ -612,9 +613,11 @@ async function ticketUsageResumes(
   const found = await client.query<{
     ticket: string | null;
     paused_until: string | null;
+    off: boolean;
   }>(
     sql`SELECT t.ticket::text AS ticket,
-               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until
+               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+               COALESCE(x.off,false) AS off
           FROM unnest(${tickets}::bigint[]) AS t(ticket)
          CROSS JOIN LATERAL ticket_usage_resume(${partition.tenant},${partition.project},
                t.ticket,${bounds.lossesMax},${bounds.rateLimitsMax}) x`,
@@ -622,9 +625,11 @@ async function ticketUsageResumes(
   return new Map(
     found.rows.map((row) => [
       ticketUsageResumeTicket(row.ticket),
-      row.paused_until === null
-        ? {}
-        : { until: nativeReadInstant(row.paused_until) },
+      row.off === true
+        ? { off: true }
+        : row.paused_until === null
+          ? {}
+          : { until: nativeReadInstant(row.paused_until) },
     ]),
   );
 }

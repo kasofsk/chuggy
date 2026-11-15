@@ -190,11 +190,15 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
 });
 
 /** A job a usage limit stopped is resumed by the scheduler once the pauses
- * holding it end, and the card says when in the reader's own zone. */
-test("a ticket the scheduler resumes once its usage pauses end says so under its wall, with when where a pause still holds it", () => {
+ * holding it end, and the card says when in the reader's own zone; one held
+ * by credentials turned off is not, and the card says that. */
+test("a ticket the scheduler resumes once its usage pauses end says so under its wall, with when where a pause still holds it, and one credentials turned off hold says that instead", () => {
   const nowMs = new Date(2026, 9, 3, 9, 0).getTime();
   const until = new Date(2026, 9, 3, 14, 5).toISOString();
-  const parked = (usageResume: { readonly until?: string }) =>
+  const parked = (usageResume: {
+    readonly until?: string;
+    readonly off?: true;
+  }) =>
     ticketSlot(
       reads({
         nowMs,
@@ -220,6 +224,7 @@ test("a ticket the scheduler resumes once its usage pauses end says so under its
     reason: undefined,
   });
   expect(parked({})).toMatchObject({ more: "Resumes automatically" });
+  expect(parked({ off: true })).toMatchObject({ more: "Credentials off" });
 });
 
 /**

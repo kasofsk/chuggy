@@ -524,6 +524,31 @@ test("every call the account tools make is to an account route, which a project'
       );
 });
 
+test("turning a credential off and on is refused a project's and a member's session bearer, holding every capability its scope may", () => {
+  const pattern = nativeHttpRoutes.agentAccountCredentialOff;
+  for (const method of ["PUT", "DELETE"] as const) {
+    assert.equal(
+      sessionBearerMethodClasses.get(`${method} ${pattern}`),
+      "Refused",
+      method,
+    );
+    for (const [scope, capabilities] of [
+      ["Project", projectCapabilities],
+      ["Member", memberCapabilities],
+    ] as const)
+      assert.equal(
+        sessionBearerAdmission(
+          sessionHolding(capabilities, scope),
+          method,
+          pattern,
+          { tenant: own.tenant, project: own.project },
+        ),
+        "Refused",
+        `${scope} is admitted to ${method} ${pattern}`,
+      );
+  }
+});
+
 test("no session capability admits a tool the person's own agent alone may call", () => {
   for (const capability of personalAgentCapabilities)
     for (const tool of chuggyToolCapabilities[capability])

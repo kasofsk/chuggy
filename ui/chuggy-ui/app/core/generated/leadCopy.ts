@@ -15,6 +15,9 @@ export interface LeadCopy {
     readonly label: unknown;
     readonly time: unknown;
   };
+  readonly "lead-absence-off": {
+    readonly label: unknown;
+  };
   readonly "lead-absence-manual": Record<never, never>;
   readonly "lead-attention-monitoring": Record<never, never>;
   readonly "lead-attention-attention": Record<never, never>;

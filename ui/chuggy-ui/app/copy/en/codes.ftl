@@ -146,6 +146,7 @@ codes-runner-losses = { $losses ->
 } resumed automatically
 codes-usage-resumes = Resumes automatically
 codes-usage-resumes-at = Resumes automatically · { $until }
+codes-usage-off = Credentials off
 codes-step-clone-failed = Clone failed
 codes-step-setup-failed = Setup failed
 codes-step-commit-failed = Commit failed
