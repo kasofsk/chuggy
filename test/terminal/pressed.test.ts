@@ -40,8 +40,6 @@ type SetupPressed = keyof typeof setupPressed;
 type SetupPressedCatalogued =
   | "edit"
   | "save"
-  | "projectPage"
-  | "projectCreate"
   | "ticket"
   | "runner"
   | "runnerProject"
@@ -55,7 +53,6 @@ type SetupPressedCatalogued =
 type SetupPressedInvite = "workspaceCreate";
 
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
-const projectCreationPage = "ui/chuggy-ui/app/browser/ProjectCreation.tsx";
 const invitePage = "ui/chuggy-ui/app/browser/InvitePage.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
@@ -79,8 +76,6 @@ const drawnFromCatalog: Readonly<
 > = {
   edit: { page: settingsSection, id: "ui-edit" },
   save: { page: settingsSection, id: "ui-save" },
-  projectPage: { page: projectCreationPage, id: "project-creation-new-title" },
-  projectCreate: { page: projectCreationPage, id: "project-creation-submit" },
   ticket: {
     page: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
     id: "ticket-authoring-create-ticket",

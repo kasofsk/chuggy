@@ -10,7 +10,8 @@
  * the program's own argument reader, with the workspace and project the run
  * was about. A run asked as `runner` is one that named both, since the program
  * reads no other, so its reports are printed with both; one asked as
- * `chat-host` named the workspace alone.
+ * `chat-host` named the workspace alone, and one asked as `project` the
+ * workspace and the name.
  */
 
 import { expect, test } from "vitest";
@@ -33,6 +34,7 @@ import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { Copy } from "../app/core/copy.ts";
 import type {
   SetupFault,
+  SetupProjectEnded,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
@@ -209,6 +211,36 @@ const things: {
       flag: "project",
     },
   ],
+  Name: [
+    {
+      thing: "Name",
+      ask: {
+        id: "setup-ask-project-name",
+        args: {
+          workspace: "acme",
+          address: "made",
+          project: "",
+          flag: "--name",
+        },
+      },
+      workspace: "acme",
+      project: undefined,
+    },
+    {
+      thing: "Name",
+      ask: {
+        id: "setup-ask-project-name",
+        args: {
+          workspace: "two words",
+          address: "given",
+          project: "it's --site",
+          flag: "--name",
+        },
+      },
+      workspace: "two words",
+      project: "it's --site",
+    },
+  ],
   Failed: [
     { thing: "Failed", found: unreadFound, stale: false },
     { thing: "Failed", found: unreadFound, stale: true },
@@ -230,6 +262,24 @@ const pairs: readonly SetupRunnerAt[] = [
   { workspace: "two words", project: "it's --site" },
   { workspace: "acme", project: undefined },
   { workspace: "two words", project: undefined },
+];
+
+/** What a run of `project` can be asked to call a project: a name plainly written, and one a shell would not read whole. */
+const projectNames: readonly string[] = ["Atlas Web", "it's --site"];
+
+/** How a run of `project` can end: made, refused where trying again could be answered otherwise, and refused where it could not. */
+const projectEndings: readonly SetupProjectEnded[] = [
+  { ended: "Made", project: "atlas-web", name: "Atlas Web" },
+  {
+    ended: "Refused",
+    refusal: { id: "project-creation-refusal-unavailable" },
+    again: true,
+  },
+  {
+    ended: "Refused",
+    refusal: { id: "project-creation-refusal-taken" },
+    again: false,
+  },
 ];
 
 /** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
@@ -292,6 +342,7 @@ const roster: {
     { report: "AskedWrongly", fault: "Project" },
     { report: "AskedWrongly", fault: "Workspace" },
     { report: "AskedWrongly", fault: "Replace" },
+    { report: "AskedWrongly", fault: "ProjectName" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -299,12 +350,14 @@ const roster: {
     { report: "Busy", asked: "Status", site, pid: undefined },
     { report: "Busy", asked: "Runner", site: undefined, pid: 4242 },
     { report: "Busy", asked: "ChatHost", site, pid: 4242 },
+    { report: "Busy", asked: "Project", site, pid: 4242 },
   ],
   Faulted: Object.values(faults).flatMap((fault) => [
     { report: "Faulted", asked: "Status", site: undefined, fault },
     { report: "Faulted", asked: "SignIn", site, fault },
     { report: "Faulted", asked: "Runner", site, fault },
     { report: "Faulted", asked: "ChatHost", site, fault },
+    { report: "Faulted", asked: "Project", site: undefined, fault },
   ]),
   SiteUnusable: [
     { report: "SiteUnusable", site, phase: "Unreachable", asked: "Status" },
@@ -386,6 +439,18 @@ const roster: {
       ended,
     })),
   ),
+  Project: pairs.flatMap(({ workspace, project }) =>
+    projectNames.flatMap((name) =>
+      projectEndings.map((ended) => ({
+        report: "Project",
+        site,
+        workspace,
+        project,
+        name,
+        ended,
+      })),
+    ),
+  ),
   Mcp: pairs.flatMap(({ workspace, project }) =>
     project === undefined
       ? []
@@ -424,6 +489,7 @@ const setupAskedOfAgain = { Status: "Status", Mcp: "Mcp" } as const;
 const sessions = every.filter(
   (report) =>
     report.report !== "Checklist" &&
+    report.report !== "Project" &&
     report.report !== "Runner" &&
     report.report !== "Mcp" &&
     report.report !== "RunnerOut",
@@ -436,11 +502,15 @@ function given(report: SetupReport): readonly SetupAnswers[] {
       ? report.project === undefined
         ? "ChatHost"
         : "Runner"
-      : report.report === "Mcp"
-        ? "Mcp"
+      : report.report === "Mcp" || report.report === "Project"
+        ? report.report
         : "asked" in report
           ? report.asked
           : undefined;
+  if (asked === "Project")
+    return choices
+      .filter((held) => held.workspace !== undefined)
+      .flatMap((held) => projectNames.map((name) => ({ ...held, name })));
   if (asked === "Runner" || asked === "Mcp")
     return choices.filter(
       (held) => held.workspace !== undefined && held.project !== undefined,
@@ -578,9 +648,12 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
   if (report.report === "Runner" || report.report === "Mcp")
     return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
+  if (report.report === "Project") return projectCarried(report);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
-    return thing.thing === "Offer" ? project(thing) : report.next.carried;
+    return thing.thing === "Offer" || thing.thing === "Name"
+      ? project(thing)
+      : report.next.carried;
   }
   return report.report === "NodeOld" || report.report === "AskedWrongly"
     ? setupAnswersNone
@@ -589,6 +662,17 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
 
 function project(of: SetupRunnerAt): SetupAnswers {
   return { workspace: of.workspace, project: of.project };
+}
+
+/** The names a run of `project` carries on: the project made, the same command where it could be tried again, and otherwise the workspace alone. */
+function projectCarried(
+  report: Extract<SetupReport, { readonly report: "Project" }>,
+): SetupAnswers {
+  const { workspace, ended } = report;
+  if (ended.ended === "Made") return { workspace, project: ended.project };
+  return ended.again
+    ? { workspace, project: report.project, name: report.name }
+    : { workspace, project: undefined };
 }
 
 test("every command a report names carries the workspace and project the run was about, so the conversation holds the choice", () => {
@@ -609,6 +693,11 @@ test("every command a report names carries the workspace and project the run was
           answers: {
             workspace: open === "--workspace" ? site : held.workspace,
             project: open === "--project" ? site : held.project,
+            ...(open === "--name"
+              ? { name: site }
+              : held.name === undefined
+                ? {}
+                : { name: held.name }),
           },
         });
       }
@@ -718,7 +807,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -953,6 +1042,104 @@ test("whatever the person answers a question with, passed after the flag the rul
   }
 });
 
+test("a project lacking is asked a name for, and the rule names project for the workspace, with the address only where one is held, and the name last", () => {
+  const [made, given] = things.Name;
+  expect(ended(made as SetupThing)).toEqual([
+    "ask: What should the new project in acme be called? Its address is made from the name. Pass the name as --name.",
+    `rule: Run node ${machineScript} project --workspace acme --name with the person's answer after it, quoted as one word, only once the person has answered.`,
+    stop,
+  ]);
+  expect(ended(given as SetupThing)).toEqual([
+    "ask: What should the new project in two words be called? Its address will be it's --site. Pass the name as --name.",
+    `rule: Run node ${machineScript} project --workspace 'two words' --project 'it'\\''s --site' --name with the person's answer after it, quoted as one word, only once the person has answered.`,
+    stop,
+  ]);
+});
+
+test("whatever the person calls the project, passed after the flag the rule names, is read as project for that workspace with that name", () => {
+  const answers = ["Atlas Web", "it's", "--project", "sign-in"];
+  for (const report of roster.Checklist) {
+    const thing = report.next.thing;
+    if (thing.thing !== "Name") continue;
+    const [named] = commands(
+      setupReportLines(report, machineScript, copyTextEn),
+    );
+    expect(named?.open).toBe(true);
+    for (const answer of answers)
+      expect(setupAsked([...(named?.argv ?? []), answer])).toMatchObject({
+        asked: "Project",
+        workspace: thing.workspace,
+        name: answer,
+        answers: { project: thing.project },
+      });
+  }
+});
+
+/** A run of `project` for acme called Atlas Web, at the address it was given where it was given one. */
+function projectRun(
+  ended: SetupProjectEnded,
+  project?: string,
+): Extract<SetupReport, { readonly report: "Project" }> {
+  return {
+    report: "Project",
+    site,
+    workspace: "acme",
+    project,
+    name: "Atlas Web",
+    ended,
+  };
+}
+
+test("a project made is said with its address and name, and the checklist for it is next", () => {
+  const made = projectRun({
+    ended: "Made",
+    project: "atlas-web",
+    name: "Atlas Web",
+  });
+  expect(setupReportLines(made, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "did: made acme/atlas-web, called Atlas Web",
+    `${next} --workspace acme --project atlas-web`,
+  ]);
+  expect(setupReportExit(made)).toBe(0);
+});
+
+test("a project refused is said in the console form's words, and is tried again only where the site did not answer, and otherwise the checklist for the workspace is named under the person's say-so", () => {
+  const unanswered = projectRun(
+    {
+      ended: "Refused",
+      refusal: { id: "project-creation-refusal-unavailable" },
+      again: true,
+    },
+    "atlas",
+  );
+  expect(setupReportLines(unanswered, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "found: the project was not made: Unavailable",
+    "tell: The project was not made: Unavailable. Tell me what to do instead.",
+    `rule: Run node ${machineScript} project --workspace acme --project atlas --name 'Atlas Web' only if the person asks to try again.`,
+    stop,
+  ]);
+  const taken = projectRun(
+    {
+      ended: "Refused",
+      refusal: { id: "project-creation-refusal-exists" },
+      again: false,
+    },
+    "atlas",
+  );
+  expect(setupReportLines(taken, machineScript, copyTextEn)).toEqual([
+    `site: ${site}, signed in`,
+    "found: the project was not made: Exists",
+    "tell: The project was not made: Exists. Tell me what to do instead.",
+    `rule: Run node ${machineScript} --workspace acme only if the person asks to look again.`,
+    stop,
+  ]);
+  expect([unanswered, taken].map((one) => setupReportExit(one))).toEqual([
+    1, 1,
+  ]);
+});
+
 test("a read that failed is a stop, and looking again waits on the person's say-so", () => {
   expect(ended(things.Failed[0] as SetupThing, both)).toEqual([
     "found: the github step is not read: its GitHub accounts were not answered",
@@ -977,6 +1164,7 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Done")).toEqual([0]);
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
+  expect(exits("Name")).toEqual([0, 0]);
   expect(exits("Offer")).toEqual([0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
