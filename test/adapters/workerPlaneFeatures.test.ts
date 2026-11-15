@@ -68,9 +68,18 @@ import {
 /** The headers a probe sends beside its bearer, one of them sent more than once where its value is a list. */
 type WorkerPlaneFeatureHeaders = Readonly<Record<string, string | string[]>>;
 
+/** A feature that first shipped in a version, which a peer listing none is read by. */
+type WorkerPlaneFeatureVersioned = {
+  [
+    Feature in WorkerContractFeature
+  ]: (typeof workerContractFeatures)[Feature] extends undefined
+    ? never
+    : Feature;
+}[WorkerContractFeature];
+
 /** One gate: the feature it asks for, the range whose floor is that feature's version, and whether a request sending `headers` was given what the feature carries. */
 interface WorkerPlaneFeatureGate {
-  readonly feature: WorkerContractFeature;
+  readonly feature: WorkerPlaneFeatureVersioned;
   readonly range: WorkerContractRange;
   readonly given: (headers: WorkerPlaneFeatureHeaders) => Promise<boolean>;
 }
@@ -420,6 +429,39 @@ const workerPlaneFeatureGates: readonly WorkerPlaneFeatureGate[] = [
   },
 ];
 
+/** A gate on a feature that shipped with no version, which only a peer's list names. */
+interface WorkerPlaneFeatureListedGate {
+  readonly feature: Exclude<WorkerContractFeature, WorkerPlaneFeatureVersioned>;
+  readonly given: (headers: WorkerPlaneFeatureHeaders) => Promise<boolean>;
+}
+
+const workerPlaneFeatureListedGates: readonly WorkerPlaneFeatureListedGate[] = [
+  {
+    feature: "TargetMerge",
+    given: async (headers) => {
+      const named: WorkerTaskRead = {
+        ...workTaskFound,
+        invocation: {
+          ...workInvocation,
+          targetMerge: { ref: "HEAD", pipelinesWritable: false },
+        },
+      };
+      const answered = await workerPlaneFeatureAsked(
+        workerPlaneFeatureAttempt({
+          tasks: { ...inertTasks, work: () => Promise.resolve(named) },
+        }),
+        {
+          method: "GET",
+          url: "/v1/task",
+          headers: { ...attemptHeld, ...headers },
+        },
+      );
+      assert.equal(answered.statusCode, 200);
+      return Object.hasOwn(answered.json<object>(), "targetMerge");
+    },
+  },
+];
+
 const workerPlaneFeaturesAll = Object.keys(
   workerContractFeatures,
 ) as WorkerContractFeature[];
@@ -486,6 +528,33 @@ for (const { feature, range, given } of workerPlaneFeatureGates) {
         false,
         `${feature} unlisted at ${release ?? "no release"}`,
       );
+    }
+  });
+}
+
+for (const { feature, given } of workerPlaneFeatureListedGates) {
+  test(`a request listing ${feature} is given it whatever release it names, and one listing every other feature, or none, is not`, async () => {
+    const others = workerContractFeaturesText(
+      workerPlaneFeaturesAll.filter((other) => other !== feature),
+    );
+    for (const release of [undefined, "1.0.0", workerContractRelease]) {
+      const named =
+        release === undefined ? {} : { [workerContractHeader]: release };
+      const at = release ?? "no release";
+      assert.equal(
+        await given({
+          ...named,
+          [workerContractFeaturesHeader]: workerContractFeaturesText([feature]),
+        }),
+        true,
+        `${feature} listed at ${at}`,
+      );
+      assert.equal(
+        await given({ ...named, [workerContractFeaturesHeader]: others }),
+        false,
+        `${feature} unlisted at ${at}`,
+      );
+      assert.equal(await given(named), false, `no list at ${at}`);
     }
   });
 }

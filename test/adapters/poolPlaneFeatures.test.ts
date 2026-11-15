@@ -82,8 +82,17 @@ import { workerPoolAssignmentsIdle } from "../interpreter/workerPoolFixture.ts";
 type PoolPlaneFeatureHeaders = Readonly<Record<string, string | string[]>>;
 
 /** One gate: the feature it asks for, the range whose floor is that feature's version, and whether a poll sending `headers` was given what the feature carries. */
+/** A feature that first shipped in a version, which a peer listing none is read by. */
+type PoolPlaneFeatureVersioned = {
+  [
+    Feature in WorkerContractFeature
+  ]: (typeof workerContractFeatures)[Feature] extends undefined
+    ? never
+    : Feature;
+}[WorkerContractFeature];
+
 interface PoolPlaneFeatureGate {
-  readonly feature: WorkerContractFeature;
+  readonly feature: PoolPlaneFeatureVersioned;
   readonly range: WorkerContractRange;
   readonly given: (headers: PoolPlaneFeatureHeaders) => Promise<boolean>;
 }

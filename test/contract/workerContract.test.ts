@@ -108,11 +108,35 @@ test("each range that floors itself has its floor as the version of the feature 
     assert.deepEqual(features[name], floor, name);
 });
 
-test("every feature is named after a version constant or a range, and none after both", () => {
+test("every feature with a version is named after a version constant or a range, and none after both", () => {
   assert.deepEqual(
-    Object.keys(workerContractFeatures).sort(),
+    Object.entries(workerContractFeatures)
+      .flatMap(([name, version]) => (version === undefined ? [] : [name]))
+      .sort(),
     [...versioned, ...ranged].map(([name]) => name).sort(),
   );
+});
+
+test("a feature with no version is implemented by a peer that lists it, and by no release that lists none", () => {
+  const features: Readonly<Record<string, unknown>> = workerContractFeatures;
+  const listed = Object.keys(features).filter(
+    (name) => features[name] === undefined,
+  ) as WorkerContractFeature[];
+  assert.notEqual(listed.length, 0);
+  for (const feature of listed) {
+    for (const release of [undefined, "1.0.0", workerContractRelease, "9.0.0"])
+      assert.ok(
+        !workerContractImplements(feature, { release, features: undefined }),
+        `${feature} at ${release ?? "no release"}`,
+      );
+    assert.ok(
+      workerContractImplements(feature, {
+        release: workerContractRelease,
+        features: [feature],
+      }),
+      feature,
+    );
+  }
 });
 
 test("a features header reads back as the names it was written with, and one this tree does not know is kept", () => {
