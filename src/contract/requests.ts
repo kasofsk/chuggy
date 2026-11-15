@@ -282,9 +282,10 @@ export const repositoryLandingWrittenSchema = z.union([
 ]);
 
 /**
- * A repository's landing default and whether its jobs may write its pipeline
- * definitions, each written against the value the writer read so two
- * administrators cannot cross.
+ * A repository's landing default, whether its jobs may write its pipeline
+ * definitions and whether they may start and read its pipeline runs, each
+ * written against the value the writer read so two administrators cannot
+ * cross. A body naming no `pipelinesRunnable` leaves it as it stands.
  */
 export const projectRepositoryLandingSchema = z.strictObject({
   repository: bodyIdentitySchema,
@@ -294,6 +295,12 @@ export const projectRepositoryLandingSchema = z.strictObject({
     expected: z.boolean(),
     wanted: z.boolean(),
   }),
+  pipelinesRunnable: z
+    .strictObject({
+      expected: z.boolean(),
+      wanted: z.boolean(),
+    })
+    .optional(),
 });
 
 /** Where a project's work and its evaluations run, both written whole. */

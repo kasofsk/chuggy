@@ -137,6 +137,7 @@ test("a row is marked bound by the address the binding names", () => {
           policy: "Direct",
         } as const,
         pipelinesWritable: false,
+        pipelinesRunnable: false,
       },
     ],
     [],
@@ -153,6 +154,7 @@ test("a row whose binding is retired is not marked bound", () => {
     landing: { mode: "Push" as const },
     finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" } as const,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
   };
   const marked = (retiredAt: string | undefined): readonly boolean[] =>
     repositoryChoices(
@@ -928,6 +930,7 @@ const bound = {
   landing: { mode: "Push" as const },
   finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" } as const,
   pipelinesWritable: false,
+  pipelinesRunnable: false,
 };
 
 const both = [claim("portal", "kasofsk"), claim("worker", "kasofsk")];
