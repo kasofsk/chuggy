@@ -1,6 +1,7 @@
 /**
  * The page an invite link is opened at, drawn the same with a session and
- * without one: a card, one line, and at most one action, which for a link that
+ * without one: a title for the state the link is in, one line, what to do next
+ * where a send was refused, and at most one action, which for a link that
  * makes a workspace is the form that names it.
  *
  * It reads no router, because the tree's root draws it for a browser that
@@ -11,7 +12,7 @@
  * from the process root.
  *
  * NOTHING HERE LEAVES THE PAGE WITHOUT A PRESS but a redemption the plane
- * took. A person the sign-in service refused is drawn a card and not sent
+ * took. A person the sign-in service refused is drawn a page and not sent
  * round again, and a workspace's name is sent by a press of `Create` and by
  * nothing else: no effect sends one, so no mount does.
  */
@@ -41,7 +42,21 @@ import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
 import { InvitationText } from "./settings/InvitationFields.tsx";
 import { Button } from "./ui/Button.tsx";
+import { CenteredPage } from "./ui/CenteredPage.tsx";
 import { Locomotive } from "./ui/Locomotive.tsx";
+
+/** What each state of the page is for, said as its title. */
+const invitePageTitles = {
+  needed: { id: "settings-invite-needed-title" },
+  invited: { id: "settings-invite-invited-title" },
+  redeeming: { id: "settings-invite-joining-title" },
+  notValid: { id: "settings-invite-not-valid-title" },
+  failed: { id: "settings-invite-failed-title" },
+  naming: { id: "settings-invite-naming-title" },
+} as const satisfies Readonly<Record<string, Copy>>;
+
+/** What a reader whose send failed does next, said under why. */
+const inviteFailedNext: Copy = { id: "settings-invite-failed-next" };
 
 const InviteContext = createContext<InviteHolder | undefined>(undefined);
 
@@ -64,7 +79,9 @@ function useInviteHolder(): InviteHolder {
 }
 
 function InviteCard(props: {
+  readonly title: Copy;
   readonly line: CopyOrData;
+  readonly next?: Copy;
   readonly action?: Copy;
   readonly onAction?: () => void;
   readonly media?: ReactNode;
@@ -73,8 +90,9 @@ function InviteCard(props: {
   const text = useCopyText();
   return (
     <SessionCard
-      title={text(invitePageWords.brand)}
+      title={text(props.title)}
       detail={copyOrDataText(text, props.line)}
+      next={props.next === undefined ? undefined : text(props.next)}
       media={props.media}
       action={
         action === undefined || onAction === undefined ? undefined : (
@@ -99,6 +117,7 @@ function InviteNeeded(props: {
   }, [invite, domain]);
   return (
     <InviteCard
+      title={invitePageTitles.needed}
       line={invitePageWords.needed}
       action={invitePageWords.signIn}
       onAction={() => {
@@ -264,47 +283,44 @@ function useInviteNaming(
   };
 }
 
-/** The card as a form: the field, under it what a workspace is until a fault stands there, and `Create`, which Enter in the field presses. */
+/** The page as a form: the field, under it what a workspace is until a fault stands there, and `Create`, which Enter in the field presses. */
 function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
   const { name, sending, refused, change, create } = props.named;
   const text = useCopyText();
   const nameFault = siteWorkspaceNameFault(name);
   return (
-    <SessionCard
-      title={text(invitePageWords.brand)}
-      detail={text(sending ? invitePageWords.creating : invitePageWords.naming)}
-      action={
-        <form
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create();
-          }}
+    <CenteredPage landmark title={text(invitePageTitles.naming)}>
+      <p>{text(sending ? invitePageWords.creating : invitePageWords.naming)}</p>
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          create();
+        }}
+      >
+        <InvitationText
+          label={text(invitePageWords.workspaceName)}
+          value={name}
+          fault={
+            (nameFault === undefined ? undefined : text(nameFault)) ??
+            (refused !== null && inviteRefusalOf(refused) === "Refused"
+              ? refused.message
+              : undefined)
+          }
+          about={text(invitePageWords.workspaceAbout)}
+          disabled={sending}
+          onChange={change}
+        />
+        <Button
+          variant="primary"
+          type="submit"
+          disabled={sending || !inviteWorkspaceSendable(name)}
+          busy={sending}
         >
-          <InvitationText
-            label={text(invitePageWords.workspaceName)}
-            value={name}
-            fault={
-              (nameFault === undefined ? undefined : text(nameFault)) ??
-              (refused !== null && inviteRefusalOf(refused) === "Refused"
-                ? refused.message
-                : undefined)
-            }
-            about={text(invitePageWords.workspaceAbout)}
-            disabled={sending}
-            onChange={change}
-          />
-          <Button
-            variant="primary"
-            type="submit"
-            disabled={sending || !inviteWorkspaceSendable(name)}
-            busy={sending}
-          >
-            {text(invitePageWords.create)}
-          </Button>
-        </form>
-      }
-    />
+          {text(invitePageWords.create)}
+        </Button>
+      </form>
+    </CenteredPage>
   );
 }
 
@@ -320,6 +336,7 @@ function InviteNamingCard(props: {
   if (refusal === "NotValid")
     return (
       <InviteCard
+        title={invitePageTitles.notValid}
         line={invitePageWords.notValid}
         action={invitePageWords.open}
         onAction={invite.elsewhere}
@@ -328,7 +345,9 @@ function InviteNamingCard(props: {
   if (refused !== null && refusal === "Failed")
     return (
       <InviteCard
+        title={invitePageTitles.failed}
         line={refused.message}
+        next={inviteFailedNext}
         action={invitePageWords.retry}
         onAction={named.create}
       />
@@ -348,20 +367,29 @@ function InviteRedeeming(props: {
   if (refused !== null)
     return inviteRefusalOf(refused) === "NotValid" ? (
       <InviteCard
+        title={invitePageTitles.notValid}
         line={invitePageWords.notValid}
         action={invitePageWords.open}
         onAction={invite.elsewhere}
       />
     ) : (
       <InviteCard
+        title={invitePageTitles.failed}
         line={refused.message}
+        next={inviteFailedNext}
         action={invitePageWords.retry}
         onAction={retry}
       />
     );
   if (redemption?.outcome === "NameWanted")
     return <InviteNamingCard token={props.token} domain={props.domain} />;
-  return <InviteCard line={invitePageWords.redeeming} media={<Locomotive />} />;
+  return (
+    <InviteCard
+      title={invitePageTitles.redeeming}
+      line={invitePageWords.redeeming}
+      media={<Locomotive />}
+    />
+  );
 }
 
 export function InvitePage(): ReactNode {
@@ -380,6 +408,7 @@ export function InvitePage(): ReactNode {
     case "Invited":
       return (
         <InviteCard
+          title={invitePageTitles.invited}
           line={invitePageWords.invited}
           action={invitePageWords.signIn}
           onAction={() => {

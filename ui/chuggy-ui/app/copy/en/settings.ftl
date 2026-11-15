@@ -162,10 +162,17 @@ settings-invite-link-expired = Expired
 ## The page an invite link is opened at.
 
 settings-invite-brand = { -brand-name }
-settings-invite-needed = { -invite(case: "upper") } needed
-settings-invite-invited = Invited
+settings-invite-needed-title = { -invite(case: "upper", form: "a") } is needed
+settings-invite-needed = This account has no { -invite } to { -brand-name }. Ask for { -invite(form: "a") } link, then sign in again.
+settings-invite-invited-title = You are invited to { -brand-name }
+settings-invite-invited = Sign in to accept.
+settings-invite-joining-title = Joining { -brand-name }
 settings-invite-joining = Joining…
-settings-invite-not-valid = Link not valid
+settings-invite-not-valid-title = This link can no longer be used
+settings-invite-not-valid = It may have expired or been used already. Ask whoever sent it for a new one.
+settings-invite-failed-title = The { -invite } was not accepted
+settings-invite-failed-next = Retry. If it keeps failing, ask whoever sent the link.
+settings-invite-naming-title = Name your { -workspace }
 settings-invite-sign-in = Sign in
 settings-invite-open = Open { -brand-name }
 settings-invite-retry = Retry
