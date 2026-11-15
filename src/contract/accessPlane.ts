@@ -35,8 +35,9 @@
  * it.
  *
  * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
- * no workspace: whoever presents it signed in names the workspace they will
- * administer, at the route every invite link is redeemed at.
+ * no workspace: whoever presents it signed in, at the route every invite link
+ * is redeemed at, is made the administrator of a workspace the plane draws the
+ * id of and names after them.
  *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
@@ -818,7 +819,7 @@ export const accessWorkspaceLinkNoteSchema = z
 /**
  * What a workspace link is sent: whether the workspace's administrators may
  * make accounts, and a note the site's list alone shows. It names nobody and
- * no workspace: whoever uses it names the workspace then.
+ * no workspace: the workspace is made when it is used.
  */
 export const accessWorkspaceLinkCreationSchema = z.strictObject({
   createAccounts: z.boolean(),

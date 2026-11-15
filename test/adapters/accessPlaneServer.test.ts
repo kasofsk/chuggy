@@ -54,7 +54,6 @@ import {
   accessTenantRoles,
   accessTenantNamesNotConfiguredCode,
   accessTenantTakenCode,
-  accessWorkspaceLinkNameWantedCode,
   accessWorkspaceLinkNoteCharsMax,
   accessWorkspaceLinksSchema,
   type AccessPlaneRouteName,
@@ -132,7 +131,6 @@ import {
   accessMemoryHolders,
   accessMemoryPlane,
   accessMemorySiteTenants,
-  tenantNameMemory,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
 import { accessTenantNames } from "../../src/interpreter/accessTenantNames.ts";
@@ -228,7 +226,7 @@ async function served(
 ) {
   const memory = accessMemory();
   const links = stored ? inviteLinkMemory() : undefined;
-  const names = stored ? tenantNameMemory() : undefined;
+  const names = links?.names;
   for (const grant of [
     projectTenantGrant(web),
     tenantPrincipalGrant({
@@ -1947,7 +1945,7 @@ test("a plane with no store answers every link route not configured, while an in
         ? {
             payload: JSON.stringify(
               name === "inviteLinkRedemption"
-                ? { token: "token-0", workspace: "alice-works" }
+                ? { token: "token-0" }
                 : name === "siteWorkspaceLinkCreation"
                   ? { createAccounts: false }
                   : { role: "Member" },
@@ -2165,16 +2163,8 @@ test("a workspace link's note past its bound or holding a line break, or a body 
   );
 });
 
-test("a workspace link presented without a name, with a taken one or one no tenant may take is refused under its own code and stays open, with a free name makes its user the workspace's administrator, and is then answered the same to them alone", async () => {
-  const { app, memory } = await served();
-  await memory.grants.write(
-    tenantPrincipalGrant({
-      issuer: accessFixtureIssuer,
-      subject: "alice",
-      tenant: asTenantId("held-works"),
-      relation: "admins",
-    }),
-  );
+test("a workspace link makes its user the administrator of a workspace it draws the id of and names by default, refuses a body naming one, and is then answered the same to them alone", async () => {
+  const { app, links, memory } = await served();
   const minted = accessInviteLinkMintedSchema.parse(
     (
       await workspaceLinkMinted(app, "sita-token", {
@@ -2185,70 +2175,97 @@ test("a workspace link presented without a name, with a taken one or one no tena
   );
   const { token } = minted;
   enveloped(await redemption(app, undefined, { token }), "Unauthenticated");
-  const wanted = await redemption(app, "sam-token", { token });
-  enveloped(wanted, "Conflict", accessWorkspaceLinkNameWantedCode);
-  for (const caller of ["sam-token", "alice-token"])
-    enveloped(
-      await redemption(app, caller, { token, workspace: "held-works" }),
-      "Conflict",
-      accessTenantTakenCode,
-    );
-  for (const workspace of ["Not A Name", "api", "w".repeat(40), 7])
+  for (const workspace of ["sam-works", "Not A Name", 7])
     enveloped(
       await redemption(app, "sam-token", { token, workspace }),
       "Rejected",
       "InvalidRequest",
     );
   assert.equal((await registrationAsked(app, { token })).statusCode, 204);
-  const redeemed = await redemption(app, "sam-token", {
-    token,
-    workspace: "sam-works",
-  });
+  const redeemed = await redemption(app, "sam-token", { token });
   assert.equal(redeemed.statusCode, 200, redeemed.body);
+  const workspace = links?.workspacesDrawn[0];
+  assert.equal(links?.workspacesDrawn.length, 1);
   assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
-    tenant: "sam-works",
+    tenant: workspace,
     role: "Admin",
     projects: [],
   });
   assert.ok(!redeemed.body.includes("Octo"), redeemed.body);
-  assert.ok(!wanted.body.includes("Octo"), wanted.body);
-  const batches = memory.batches.length;
-  for (const workspace of [undefined, "sam-other-works", "Not A Name"]) {
-    const again = await redemption(app, "sam-token", { token, workspace });
-    assert.equal(again.statusCode, 200, again.body);
-    assert.equal(again.body, redeemed.body);
-  }
-  assert.equal(memory.batches.length, batches);
-  enveloped(
-    await redemption(app, "dee-token", { token, workspace: "dee-works" }),
-    "Absent",
+  const held = await app.inject({
+    method: "GET",
+    url: pathOf("callerTenants"),
+    headers: as("sam-token"),
+  });
+  assert.deepEqual(
+    accessCallerTenantsSchema
+      .parse(held.json())
+      .tenants.map(({ tenant: listed, displayName, roles }) => ({
+        listed,
+        displayName,
+        roles,
+      })),
+    [{ listed: workspace, displayName: "My Workspace", roles: ["Admin"] }],
   );
+  const batches = memory.batches.length;
+  const again = await redemption(app, "sam-token", { token });
+  assert.equal(again.statusCode, 200, again.body);
+  assert.equal(again.body, redeemed.body);
+  assert.equal(memory.batches.length, batches);
+  assert.equal(links?.workspacesDrawn.length, 1);
+  enveloped(await redemption(app, "dee-token", { token }), "Absent");
   enveloped(
-    await redemption(app, "dee-token", {
-      token: "token-nobody-holds",
-      workspace: "Not A Name",
-    }),
+    await redemption(app, "dee-token", { token: "token-nobody-holds" }),
     "Absent",
   );
 });
 
-test("a tenant's link redeemed with a workspace's name or without one is used as before", async () => {
+test("a workspace link whose drawn id something holds is refused as taken and stays open", async () => {
+  const { app, links, memory } = await served();
+  if (links === undefined) return;
+  await memory.grants.write(
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "alice",
+      tenant: asTenantId("held-works"),
+      relation: "admins",
+    }),
+  );
+  links.workspaceDraw = () => "held-works";
+  const { token } = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", { createAccounts: false })
+    ).json(),
+  );
+  enveloped(
+    await redemption(app, "sam-token", { token }),
+    "Conflict",
+    accessTenantTakenCode,
+  );
+  links.workspaceDraw = () => "sam-works";
+  assert.equal((await redemption(app, "sam-token", { token })).statusCode, 200);
+});
+
+test("a tenant's link is redeemed with its token alone, and a body naming a workspace is refused", async () => {
   const { app } = await served();
-  for (const workspace of [undefined, "sam-works", "Not A Name"]) {
-    const minted = accessInviteLinkMintedSchema.parse(
-      (await linkMinted(app, "alice-token", { role: "Member" })).json(),
-    );
-    const redeemed = await redemption(app, "sam-token", {
+  const minted = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+  );
+  enveloped(
+    await redemption(app, "sam-token", {
       token: minted.token,
-      ...(workspace === undefined ? {} : { workspace }),
-    });
-    assert.equal(redeemed.statusCode, 200, redeemed.body);
-    assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
-      tenant,
-      role: "Member",
-      projects: [],
-    });
-  }
+      workspace: "sam-works",
+    }),
+    "Rejected",
+    "InvalidRequest",
+  );
+  const redeemed = await redemption(app, "sam-token", { token: minted.token });
+  assert.equal(redeemed.statusCode, 200, redeemed.body);
+  assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
+    tenant,
+    role: "Member",
+    projects: [],
+  });
 });
 
 /** The directory's question about a registration presenting `body`, sent as JSON as the directory sends it, with `headers` beside. */
