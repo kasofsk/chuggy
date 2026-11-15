@@ -213,11 +213,14 @@ export function threadStandingSection(standing: string): string {
 }
 
 /**
- * Every heading a turn's input can open with: the seeding block's own four, on
- * a thread's first turn, and `threadPageHeading` and `threadImagesHeading`, on
- * a later turn that names a page or an image. A reader checks the whole list
- * rather than the seeding block's own, which is what lets it split a later
- * turn's sections off correctly without being told the turn carries one.
+ * Every heading a turn's input can open with: the seeding block's own North
+ * Star, drafts and standing headings, on a thread's first turn, and
+ * `threadPageHeading` and `threadImagesHeading`, on a later turn that names a
+ * page or an image, with `threadRefusalsHeading`, no longer written, kept so a
+ * reader still splits turns stored while the seeding carried it. A reader
+ * checks the whole list rather than the seeding block's own, which is what lets
+ * it split a later turn's sections off correctly without being told the turn
+ * carries one.
  */
 export const threadSeedingHeadings = [
   threadNorthStarHeading,
