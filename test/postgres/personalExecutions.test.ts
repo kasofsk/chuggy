@@ -77,6 +77,7 @@ import {
   schedulerRuntime,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
+import { workerContractPeerNaming } from "../interpreter/workerContractPeerFixture.ts";
 
 const rig = await schedulerRigOpen();
 const planePool = postgresHarnessRolePool(poolPlaneRole);
@@ -1222,7 +1223,11 @@ function benchPolled(
     bench.ports,
     runner,
     { jobs: held, sessions: [] },
-    { wanted: 1, wantedSessions: 0, contract },
+    {
+      wanted: 1,
+      wantedSessions: 0,
+      contract: workerContractPeerNaming(contract),
+    },
     benchSettings,
   );
 }
@@ -1348,12 +1353,13 @@ test("each outcome a benching runner's job ended under is named for it alone: a 
   const runner = await runnerOf(project.partition, member);
   const bench = benchPorts();
   const taken: string[] = [];
+  const contract = workerContractPeerNaming(workerContractRelease);
   for (let claiming = 0; claiming < 4; claiming += 1) {
     const answered = await workerPoolReconcile(
       bench.ports,
       runner,
       { jobs: taken, sessions: [] },
-      { wanted: 1, wantedSessions: 0, contract: workerContractRelease },
+      { wanted: 1, wantedSessions: 0, contract },
       { ...benchSettings, heldMax: 4 },
     );
     const assignment = answered.assignments[0]?.assignment;

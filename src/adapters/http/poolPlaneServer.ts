@@ -24,9 +24,9 @@
  * retry, and only the last of those is a pool that should come back unchanged.
  *
  * A POLL MAY NAME ITS RUNNER, and is answered with the release pinned for that
- * runner's package where its release reads one. A header that does not name a
- * runner is a poll naming none, never a refusal, since the cluster's own pool
- * and every earlier runner send none. The credentials a poll may name are read
+ * runner's package where its peer implements `RunnerReleases`. A header that
+ * does not name a runner is a poll naming none, never a refusal, since the
+ * cluster's own pool and every earlier runner send none. The credentials a poll may name are read
  * the same way: a header this side does not read names none.
  *
  * A POLL MAY NAME THE CAPABILITIES ITS RUNNER HAS, and one whose header names
@@ -45,13 +45,16 @@
  * chat host is no runner: its report is answered as a caller this route does
  * not serve, and nothing of its polls is held.
  *
- * A MEMBER'S CHAT HOST IS SERVED FROM ITS OWN RELEASE ON. One speaking an
- * earlier release is refused on every route as any caller outside the plane's
- * range is, since nothing before it reads what a host is handed.
+ * A MEMBER'S CHAT HOST IS SERVED ONLY WHERE IT IMPLEMENTS `ChatHost`. Any
+ * other is refused on every route as any caller outside the plane's range is,
+ * since nothing that does not reads what a host is handed.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
+import {
+  contractVersionRefusalStatus,
+  workerContractImplements,
+} from "../../contract/workerContract.ts";
 
 import {
   assignmentOutcomeSchema,
@@ -83,7 +86,6 @@ import {
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import {
-  contractVersionAccepted,
   contractVersionRefusal,
   workerContractChatHost,
 } from "../../interpreter/workerPlane.ts";
@@ -131,7 +133,7 @@ import type { PrincipalAuthentication } from "./server.ts";
 import {
   workerContractChecked,
   workerContractNamed,
-  workerContractOffered,
+  workerContractPeer,
 } from "./workerContractVersion.ts";
 
 /** A contract route's refusal of a release outside the range the pool plane serves. */
@@ -315,10 +317,7 @@ function poolPlaneRoute(
       }
       if (
         caller.identity.kind === "ChatHost" &&
-        !contractVersionAccepted(
-          workerContractChatHost,
-          workerContractOffered(request),
-        )
+        !workerContractImplements("ChatHost", workerContractPeer(request))
       ) {
         void reply.code(contractVersionRefusalStatus).send(chatHostRefusal);
         return undefined;
@@ -329,7 +328,7 @@ function poolPlaneRoute(
   );
 }
 
-/** What a chat host speaking a release before its own is answered with on every route. */
+/** What a chat host not implementing `ChatHost` is answered with on every route. */
 const chatHostRefusal = contractVersionRefusal(workerContractChatHost);
 
 /** The assignment a settlement's path names, held to the same bound as everywhere else on the wire. */
@@ -379,7 +378,7 @@ function poolAssignmentsRoute(
       if (counts === undefined) return reply.code(400).send();
       const { ceiling, room, wait } = counts;
       const runner = poolRunnerNamed(request);
-      const contract = workerContractOffered(request);
+      const contract = workerContractPeer(request);
       poolPolledHeld(service, identity, runner, room, ceiling);
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
@@ -398,7 +397,7 @@ function poolAssignmentsRoute(
               : {}),
             ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
             ...(wait.named === "Count" ? { pollWaitSecs: wait.count } : {}),
-            ...(contract === undefined ? {} : { contract }),
+            contract,
           },
           service.settings,
         );

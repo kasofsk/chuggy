@@ -56,6 +56,8 @@ import {
   type WorkerPoolSessionOpening,
   type WorkerPoolSessions,
 } from "../../src/interpreter/workerPoolSessions.ts";
+import { workerContractPeerNaming } from "./workerContractPeerFixture.ts";
+import { workerPoolAssignmentsIdle as idle } from "./workerPoolFixture.ts";
 
 const identity: PoolPlaneIdentity = {
   kind: "Dedicated",
@@ -115,24 +117,6 @@ const unaddressed: WorkerPoolPollSettings = {
 const settings: WorkerPoolPollSettings = {
   ...unaddressed,
   sessionApiUrl: "https://api.invalid/",
-};
-
-/** A durable side holding nothing, which is what a pool with no work to take meets. */
-const idle: WorkerPoolAssignments = {
-  claim: () => Promise.resolve(undefined),
-  ownersDeferredTo: () => Promise.resolve([]),
-  claimPersonal: () => Promise.resolve(undefined),
-  waiting: () => Promise.resolve(false),
-  waitingPersonal: () => Promise.resolve(false),
-  allowlisted: () => Promise.resolve([]),
-  credentialOutcomes: () => Promise.resolve([]),
-  credentialPauses: () => Promise.resolve([]),
-  polled: () => Promise.resolve(),
-  renew: () => Promise.resolve(true),
-  refuse: () => Promise.resolve(false),
-  release: () => Promise.resolve(false),
-  held: () => Promise.resolve(false),
-  heldImages: () => Promise.resolve([]),
 };
 
 const launch: SessionLaunchFacts = {
@@ -860,7 +844,9 @@ test("only a chat host on a release that reads it is handed each session naming 
       {
         wanted: 0,
         wantedSessions: 3,
-        ...(contract === undefined ? {} : { contract }),
+        ...(contract === undefined
+          ? {}
+          : { contract: workerContractPeerNaming(contract) }),
       },
       { ...settings, sessionsPerPollMax: 3, sessionsHeldMax: 3 },
     );
@@ -1266,7 +1252,7 @@ test("each job a poll claims fits what the claims before it left of the room it 
           wanted: 2,
           wantedSessions: 0,
           ...(room === undefined ? {} : { memoryRoomMib: room }),
-          contract: workerContractRelease,
+          contract: workerContractPeerNaming(workerContractRelease),
         },
         settings,
       );
@@ -1298,7 +1284,7 @@ test("a claim that took a job larger than the room its poll named fails the poll
         wanted: 1,
         wantedSessions: 0,
         memoryRoomMib: 4_096,
-        contract: workerContractRelease,
+        contract: workerContractPeerNaming(workerContractRelease),
       },
       settings,
     ),
@@ -1338,7 +1324,7 @@ test("a poll wanting no job in a room of nothing is told none is waiting without
       asked({
         held: ["held-one"],
         memoryRoomMib: 0,
-        contract: workerContractRelease,
+        contract: workerContractPeerNaming(workerContractRelease),
       }),
       settings,
     );
@@ -1360,10 +1346,19 @@ test("a poll naming its room whose release reads it is told whether a job it fit
     [[3_000], { memoryRoomMib: 4_096 }, [["waiting", 4_096]], true],
     [[3_000], { memoryRoomMib: 2_048 }, [["waiting", 2_048]], false],
     [[3_000], {}, [], undefined],
-    [[3_000], { memoryRoomMib: 4_096, contract: "1.20.0" }, [], undefined],
     [
       [3_000],
-      { wanted: 1, memoryRoomMib: 4_096, contract: "1.20.0" },
+      { memoryRoomMib: 4_096, contract: workerContractPeerNaming("1.20.0") },
+      [],
+      undefined,
+    ],
+    [
+      [3_000],
+      {
+        wanted: 1,
+        memoryRoomMib: 4_096,
+        contract: workerContractPeerNaming("1.20.0"),
+      },
       [["claim", 4_096]],
       undefined,
     ],
@@ -1377,7 +1372,7 @@ test("a poll naming its room whose release reads it is told whether a job it fit
       {
         wanted: 0,
         wantedSessions: 0,
-        contract: workerContractRelease,
+        contract: workerContractPeerNaming(workerContractRelease),
         ...over,
       },
       settings,
@@ -1398,7 +1393,10 @@ test("a poll wanting no job is answered at once when one it fits is waiting, and
     const answered = await workerPoolPoll(
       ports(durable.assignments),
       identity,
-      asked({ memoryRoomMib: room, contract: workerContractRelease }),
+      asked({
+        memoryRoomMib: room,
+        contract: workerContractPeerNaming(workerContractRelease),
+      }),
       settings,
     );
     assert.deepEqual(answered, {
@@ -1602,7 +1600,11 @@ test("only a chat host's poll on a release that reads them is answered the threa
     const polled = await workerPoolPoll(
       ports(idle, over),
       caller,
-      asked(contract === undefined ? {} : { contract }),
+      asked(
+        contract === undefined
+          ? {}
+          : { contract: workerContractPeerNaming(contract) },
+      ),
       settings,
     );
     if (polled.polled !== "Answered") throw new Error("a poll was refused");
@@ -1703,7 +1705,9 @@ test("a personal runner's job names its own attempt's project to a poll whose re
       {
         wanted: 2,
         wantedSessions: 1,
-        ...(contract === undefined ? {} : { contract }),
+        ...(contract === undefined
+          ? {}
+          : { contract: workerContractPeerNaming(contract) }),
       },
       settings,
     );
@@ -1771,7 +1775,11 @@ test("a personal runner whose release reads credential outcomes is told each bes
     ports(assignments),
     runner,
     benchedHolding,
-    { wanted: 1, wantedSessions: 0, contract: workerContractRelease },
+    {
+      wanted: 1,
+      wantedSessions: 0,
+      contract: workerContractPeerNaming(workerContractRelease),
+    },
     benchedSettings,
   );
   assert.deepEqual(answered.stop, ["limited", "empty", "failed"]);
@@ -1796,7 +1804,9 @@ test("a personal runner of an earlier release is never named an outcome, and cla
       {
         wanted: 1,
         wantedSessions: 0,
-        ...(contract === undefined ? {} : { contract }),
+        ...(contract === undefined
+          ? {}
+          : { contract: workerContractPeerNaming(contract) }),
       },
       benchedSettings,
     );
@@ -1817,7 +1827,11 @@ test("a pool and a chat host are never named an outcome or asked for one, nor a 
       ports(assignments),
       caller,
       benchedHolding,
-      { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+      {
+        wanted: 0,
+        wantedSessions: 0,
+        contract: workerContractPeerNaming(workerContractRelease),
+      },
       benchedSettings,
     );
     assert.deepEqual(answered.stop, ["limited", "empty", "failed"]);
@@ -1829,7 +1843,11 @@ test("a pool and a chat host are never named an outcome or asked for one, nor a 
     ports(quiet.assignments),
     runner,
     { jobs: ["live"], sessions: [] },
-    { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+    {
+      wanted: 0,
+      wantedSessions: 0,
+      contract: workerContractPeerNaming(workerContractRelease),
+    },
     benchedSettings,
   );
   assert.equal(Object.hasOwn(unstopped, "credentialOutcomes"), false);
@@ -1839,7 +1857,11 @@ test("a pool and a chat host are never named an outcome or asked for one, nor a 
     ports(none.assignments),
     runner,
     benchedHolding,
-    { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+    {
+      wanted: 0,
+      wantedSessions: 0,
+      contract: workerContractPeerNaming(workerContractRelease),
+    },
     benchedSettings,
   );
   assert.equal(Object.hasOwn(unnamed, "credentialOutcomes"), false);
@@ -1858,7 +1880,11 @@ test("an outcome the durable side names for a job the answer does not stop fails
       }),
       runner,
       benchedHolding,
-      { wanted: 0, wantedSessions: 0, contract: workerContractRelease },
+      {
+        wanted: 0,
+        wantedSessions: 0,
+        contract: workerContractPeerNaming(workerContractRelease),
+      },
       benchedSettings,
     ),
     /does not stop/u,
@@ -1895,7 +1921,7 @@ test("a personal runner whose owner may read nothing it allowlists claims nothin
         wanted,
         wantedSessions: 0,
         memoryRoomMib: 4_096,
-        contract: workerContractRelease,
+        contract: workerContractPeerNaming(workerContractRelease),
       },
       settings,
     );
@@ -1951,7 +1977,7 @@ test("a pool's claim and its probe name revoked each owner it would defer to who
       wanted: 1,
       wantedSessions: 0,
       memoryRoomMib: 4_096,
-      contract: workerContractRelease,
+      contract: workerContractPeerNaming(workerContractRelease),
     },
     settings,
   );
@@ -2152,7 +2178,9 @@ test("a personal runner is claimed no session, its poll reading none, asking the
       {
         wanted: 0,
         wantedSessions: 2,
-        ...(contract === undefined ? {} : { contract }),
+        ...(contract === undefined
+          ? {}
+          : { contract: workerContractPeerNaming(contract) }),
       },
       settings,
     );
@@ -2181,7 +2209,11 @@ test("a personal runner wanting a job and a session is claimed its job alone, wh
       ),
       caller,
       nothingHeld,
-      { wanted: 1, wantedSessions: 1, contract: workerContractRelease },
+      {
+        wanted: 1,
+        wantedSessions: 1,
+        contract: workerContractPeerNaming(workerContractRelease),
+      },
       settings,
     );
     return [answered.assignments.length, answered.sessions.length];
