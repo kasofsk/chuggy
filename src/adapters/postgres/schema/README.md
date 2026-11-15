@@ -20,10 +20,13 @@ replayed establish is refused rather than absorbed. It is changed by
 restore is found by comparing the current epoch to the one every live lease
 and journal entry carries.
 
-`tenant` — one row per tenant name, which is what makes a name first-come.
-Owned by the boundary owner, which `create_project` runs as, and the control
-plane for insertion. Its key and identity are the tenant name, it is the parent
-`project` points at, and `tenant_is_immutable` refuses every change and the
+`tenant` — one row per tenant name, which is what makes a name first-come,
+and the tenant's display name. Owned by the boundary owner, which
+`create_project` runs as, and the control plane for insertion; the access
+plane inserts a row naming its display name and changes that column alone. Its
+key and identity are the tenant name, it is the parent `project` points at, a
+row inserted naming no display name is given its name, and
+`tenant_is_immutable` refuses every change but the display name's and the
 delete of a tenant any project names, so `delete_unrun_tenant` is its only
 deletion.
 It has no unfinished work.

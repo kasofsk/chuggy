@@ -302,7 +302,12 @@ export function saidFated(
 export function saidMemberSite(): SetupSite {
   const site = setupSiteAt("Workspace");
   site.tenants = [
-    { tenant: setupSiteWorkspace, roles: ["Member"], administer: false },
+    {
+      tenant: setupSiteWorkspace,
+      displayName: setupSiteWorkspace,
+      roles: ["Member"],
+      administer: false,
+    },
   ];
   return site;
 }

@@ -214,7 +214,11 @@ test.each([[201], [200]])(
   async (status) => {
     const grown = [
       ...workspacesListed.tenants,
-      { ...workspacesListed.tenants[3], tenant: "northwind-co" },
+      {
+        ...workspacesListed.tenants[3],
+        tenant: "northwind-co",
+        displayName: "northwind-co",
+      },
     ];
     const drawn = await filled(
       listedAfterCreation(

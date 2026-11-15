@@ -201,6 +201,14 @@ export interface SettingsCopy {
   readonly "settings-delete-project-done": {
     readonly project: unknown;
   };
+  readonly "settings-rename-workspace-title": Record<never, never>;
+  readonly "settings-rename-workspace-about": {
+    readonly workspace: unknown;
+  };
+  readonly "settings-rename-workspace-label": Record<never, never>;
+  readonly "settings-rename-workspace": Record<never, never>;
+  readonly "settings-rename-workspace-writing": Record<never, never>;
+  readonly "settings-rename-workspace-written": Record<never, never>;
   readonly "settings-delete-workspace-title": Record<never, never>;
   readonly "settings-delete-workspace-about": Record<never, never>;
   readonly "settings-delete-workspace": Record<never, never>;

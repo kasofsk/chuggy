@@ -12,6 +12,9 @@
  * no control; where they are not answered beside a list that was, their line
  * is drawn under it.
  *
+ * A reader who administers the workspace is offered its display name to
+ * change under the people.
+ *
  * The workspace's invite links are read beside the people, and only a read
  * that answered with a list draws anything: a plane that keeps no links, a
  * read not yet answered and one that failed all leave the page as it is
@@ -49,6 +52,7 @@ import { TenantDeletion } from "./UnrunDeletion.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
 import { TenantInviteLinks } from "./TenantInviteLinks.tsx";
 import { TenantPersonRow } from "./TenantPersonRow.tsx";
+import { TenantRename } from "./TenantRename.tsx";
 import {
   useTenantAbilities,
   useTenantInviteLinks,
@@ -192,6 +196,7 @@ export function TenantPeoplePage(): ReactNode {
         {people.state !== "Ready" || read.state === "Pending" ? null : (
           <PanelUnready state={read} />
         )}
+        <TenantRename tenant={tenant} abilities={abilities} />
         <TenantDeletion tenant={tenant} />
       </SettingsListing>
     </SettingsPage>

@@ -545,7 +545,7 @@ test("a tenant, a creation and its recorded grants stand as written, even for th
   await creator().create(write);
   await creator().recordGrants(write.operation);
   for (const statement of [
-    "UPDATE tenant SET tenant=tenant WHERE tenant=$1",
+    "UPDATE tenant SET tenant=tenant||'-moved' WHERE tenant=$1",
     "DELETE FROM tenant WHERE tenant=$1",
     "UPDATE project_creation_operation SET tenant_created=false WHERE tenant=$1",
     "DELETE FROM project_creation_operation WHERE tenant=$1",

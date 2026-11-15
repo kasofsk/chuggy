@@ -311,6 +311,7 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
   if (!reached("Workspace")) return site;
   site.tenants.push({
     tenant: setupSiteWorkspace,
+    displayName: setupSiteWorkspace,
     roles: ["Admin"],
     administer: true,
   });
