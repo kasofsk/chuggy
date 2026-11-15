@@ -83,9 +83,11 @@ const two: TicketsPartition = {
   revision: "revision-authored",
 };
 
-/** The repositories project one's first two tickets' briefs name; its third's names none, and project two's tickets have no brief. */
+/** The repositories project one's first two tickets' released briefs name; its third's names none, and project two's tickets have no brief. */
 const webRepository = "https://github.com/tickets/web.git";
 const docsRepository = "https://github.com/tickets/docs.git";
+/** The repository project one's first ticket's draft was revised to name after its release, and that it never ran in. */
+const revisedRepository = "https://github.com/tickets/revised.git";
 
 /** Seconds since the epoch at the start of the first of January, when every dated entry is committed from. */
 const baseSecs = 1_767_225_600;
@@ -385,7 +387,12 @@ async function ticketsRun(
   );
 }
 
-/** Project one's briefs: its first two tickets each in a repository of their own, its third in none. */
+/**
+ * Project one's released briefs: its first two tickets each in a repository of
+ * their own, its third in none. The first's draft has since been revised to
+ * name another, which no update followed, so the brief it runs still names its
+ * own.
+ */
 async function ticketsBriefed(query: TicketsQuery): Promise<void> {
   for (const [ticket, repository] of [
     [1, webRepository],
@@ -393,10 +400,16 @@ async function ticketsBriefed(query: TicketsQuery): Promise<void> {
     [3, null],
   ] as const)
     await query(
-      `INSERT INTO draft_brief (tenant,project,ticket,intent,repository,finalization_kind)
-       VALUES ($1,$2,$3,'An intent the plane never reads.',$4,'None')`,
+      `INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief)
+       VALUES ($1,$2,$3,'{}'::jsonb,'digest',
+               jsonb_strip_nulls(jsonb_build_object('intent','An intent the plane never reads.','repository',$4::text)))`,
       [one.tenant, one.project, ticket, repository],
     );
+  await query(
+    `INSERT INTO draft_brief (tenant,project,ticket,intent,repository,finalization_kind)
+     VALUES ($1,$2,1,'An intent the plane never reads.',$3,'None')`,
+    [one.tenant, one.project, revisedRepository],
+  );
 }
 
 async function ticketsSeeded(query: TicketsQuery): Promise<void> {
@@ -905,7 +918,7 @@ test("a ticket family past the series a page may carry is refused whole", async 
   );
 });
 
-test("a ticket's families and its executions' are labelled by the repository its brief names, and by none where it names none or has no brief", async () => {
+test("a ticket's families and its executions' are labelled by the repository its released brief names, not its draft's, and by none where it names none or has no brief", async () => {
   const ran = `phase="Work",stage="",runner="Agent",placement="Cluster",workload="make",state="Reported"`;
   assert.deepEqual(
     await ticketsFamily("chuggy_attempts_ended_total"),
@@ -925,5 +938,9 @@ test("a ticket's families and its executions' are labelled by the repository its
       `chuggy_tickets{${danaOne},phase="Work",escalation="NoEscalation"} 1`,
     ].toSorted(),
     "one project's tickets in two repositories are told apart, and the one whose brief names none is labelled empty",
+  );
+  assert.ok(
+    !(await ticketsSamples()).some((line) => line.includes(revisedRepository)),
+    "a draft revised after its release labels nothing",
   );
 });

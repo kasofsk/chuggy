@@ -2,12 +2,13 @@
  * The metrics plane reads the repository each ticket's brief names, which it
  * labels the ticket's families and its executions' by.
  *
- * `draft_brief.repository` IS THE COLUMN, one row per ticket, the brief a
- * release stored and every revision of it while the ticket is `Pending`, and
- * fixed once it leaves. `ticket_source` holds a row only once the ticket has
- * run, and `ticket_definition.brief` holds the intent beside the repository.
- * The plane is granted the repository and the keys it joins by, as 091 granted
- * the rest, and not the intent or any other column of the brief.
+ * `ticket_definition.repository` IS THE BRIEF'S, generated from
+ * `ticket_definition.brief` and so never apart from it: the brief the ticket
+ * was released or last updated with, which is the one it runs. The plane is
+ * granted it and not the brief, which holds the intent beside it, and it joins
+ * by the keys 091 already granted. `draft_brief.repository` is the draft's,
+ * which a `Pending` ticket's revision moves with no update to follow it, and
+ * `ticket_source` holds a row only once the ticket has run.
  */
 
 import { metricsPlaneRole, type Migration } from "../shared.ts";
@@ -16,6 +17,8 @@ export const migration185: Migration = {
   version: 185,
   name: "the metrics plane reads the repository each ticket's brief names",
   statements: [
-    `GRANT SELECT(tenant,project,ticket,repository) ON TABLE public.draft_brief TO ${metricsPlaneRole}`,
+    `ALTER TABLE public.ticket_definition
+       ADD COLUMN repository text GENERATED ALWAYS AS (brief->>'repository') STORED`,
+    `GRANT SELECT(repository) ON TABLE public.ticket_definition TO ${metricsPlaneRole}`,
   ],
 };

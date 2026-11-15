@@ -20,8 +20,8 @@
  *
  * A TICKET'S HISTORY IS ITS JOURNAL, read whole on each scrape, and its owner
  * is the member its first draft revision was written under, as an execution's
- * is. Its repository, and each of its executions', is the one its draft's brief
- * names, which a `Pending` ticket's revision moves and nothing moves after. A
+ * is. Its repository, and each of its executions', is the one the brief it was
+ * released or last updated with names, not its draft's. A
  * rework is an event that sent the ticket back to work for a result:
  * evaluation's rework, landing's, and the resume of an escalated evaluation
  * failure, which a landed ticket's every such escalation was followed by and
@@ -708,7 +708,7 @@ async function metricsPlaneExecutionQuery(
           SELECT * FROM unnest(${labelling.principals}::text[],${labelling.owners}::text[])
                    AS o(principal,owner)),
         attempt AS (
-          SELECT a.tenant,a.project,a.execution,a.attempt,a.state,a.ended_at,coalesce(b.repository,'') AS repository,
+          SELECT a.tenant,a.project,a.execution,a.attempt,a.state,a.ended_at,coalesce(d.repository,'') AS repository,
                  coalesce(o.owner,'') AS owner,t.kind AS phase,m.stage,m.runner,m.workload,
                  CASE WHEN e.placement='InCluster' THEN 'Cluster'
                       WHEN a.personal THEN 'Personal' ELSE 'Pool' END AS placement,
@@ -720,7 +720,6 @@ async function metricsPlaneExecutionQuery(
               ON t.tenant=e.tenant AND t.project=e.project AND t.request=e.source_request AND t.task=e.task
             LEFT JOIN ticket_definition d
               ON d.tenant=e.tenant AND d.project=e.project AND d.ticket=e.ticket
-            LEFT JOIN draft_brief b ON b.tenant=e.tenant AND b.project=e.project AND b.ticket=e.ticket
             JOIN task m
               ON m.key=jsonb_build_array(e.tenant,e.project,e.configuration_revision,t.kind,t.stage,
                          t.evaluator,d.selection,d.overrides)::text
@@ -782,7 +781,7 @@ async function metricsPlaneWaitQuery(
               ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
             JOIN execution_request_task t
               ON t.tenant=e.tenant AND t.project=e.project AND t.request=e.source_request AND t.task=e.task
-            LEFT JOIN draft_brief b ON b.tenant=e.tenant AND b.project=e.project AND b.ticket=e.ticket
+            LEFT JOIN ticket_definition b ON b.tenant=e.tenant AND b.project=e.project AND b.ticket=e.ticket
             LEFT JOIN named o ON o.principal=e.owner
            WHERE a.claimed_at IS NOT NULL),
         bucketed AS (
@@ -865,12 +864,11 @@ async function metricsPlaneTicketQuery(
                           v.e#>'{value,report,value,failure,task}') AS task
             FROM journal_entry j CROSS JOIN LATERAL (SELECT j.entry::jsonb->'event' AS e) AS v),
         entry AS (
-          SELECT f.tenant,f.project,coalesce(b.repository,'') AS repository,coalesce(w.owner,'') AS owner,f.event,f.committed_at,
+          SELECT f.tenant,f.project,coalesce(d.repository,'') AS repository,coalesce(w.owner,'') AS owner,f.event,f.committed_at,
                  CASE WHEN f.task->>'type'='EvaluationTask'
                       THEN coalesce(m.stage,f.task#>>'{value,stage}') ELSE '' END AS stage
             FROM fact f
             LEFT JOIN owned w ON w.tenant=f.tenant AND w.project=f.project AND w.ticket=f.ticket
-            LEFT JOIN draft_brief b ON b.tenant=f.tenant AND b.project=f.project AND b.ticket=f.ticket
             LEFT JOIN ticket_definition d ON d.tenant=f.tenant AND d.project=f.project AND d.ticket=f.ticket
             LEFT JOIN task m
               ON m.key=jsonb_build_array(f.tenant,f.project,f.revision,'Evaluation'::text,
@@ -882,7 +880,7 @@ async function metricsPlaneTicketQuery(
                     p.phase,p.escalation,count(*)::text AS tickets
                FROM ticket_projection p
                LEFT JOIN owned w ON w.tenant=p.tenant AND w.project=p.project AND w.ticket=p.ticket
-               LEFT JOIN draft_brief b ON b.tenant=p.tenant AND b.project=p.project AND b.ticket=p.ticket
+               LEFT JOIN ticket_definition b ON b.tenant=p.tenant AND b.project=p.project AND b.ticket=p.ticket
               GROUP BY p.tenant,p.project,coalesce(b.repository,''),coalesce(w.owner,''),p.phase,p.escalation
               LIMIT ${seriesMax + 1}) f) AS tickets,
           (SELECT json_agg(f)::text FROM (
@@ -930,7 +928,7 @@ async function metricsPlaneEndingQuery(
               ON r.tenant=x.tenant AND r.project=x.project AND r.ticket=x.ticket
              AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
             LEFT JOIN named o ON o.principal=r.authority_subject
-            LEFT JOIN draft_brief b ON b.tenant=x.tenant AND b.project=x.project AND b.ticket=x.ticket
+            LEFT JOIN ticket_definition b ON b.tenant=x.tenant AND b.project=x.project AND b.ticket=x.ticket
            GROUP BY x.tenant,x.project,x.ticket,coalesce(b.repository,''),coalesce(o.owner,'')),
         observation AS (
           SELECT t.family,n.tenant,n.project,n.repository,n.owner,'' AS ending,n.landed_at AS observed_at,t.value
@@ -994,7 +992,7 @@ async function metricsPlaneEscalationQuery(
               ON r.tenant=h.tenant AND r.project=h.project AND r.ticket=h.ticket
              AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
             LEFT JOIN named o ON o.principal=r.authority_subject
-            LEFT JOIN draft_brief b ON b.tenant=h.tenant AND b.project=h.project AND b.ticket=h.ticket
+            LEFT JOIN ticket_definition b ON b.tenant=h.tenant AND b.project=h.project AND b.ticket=h.ticket
            WHERE h.event=ANY(${metricsPlaneEscalatingEvents}::text[]) AND h.next_at IS NOT NULL),
         bucketed AS (
           SELECT tenant,project,repository,owner,event,ender,
@@ -1042,7 +1040,7 @@ async function metricsPlaneCycleQuery(
           SELECT x.tenant,x.project,x.ticket,coalesce(b.repository,'') AS repository,coalesce(o.owner,'') AS owner,
                  min(x.committed_at) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_at,
                  min(x.seq) FILTER (WHERE x.event='TicketFinalizationSucceeded') AS landed_seq
-            FROM entry x LEFT JOIN draft_brief b ON (b.tenant,b.project,b.ticket)=(x.tenant,x.project,x.ticket)
+            FROM entry x LEFT JOIN ticket_definition b ON (b.tenant,b.project,b.ticket)=(x.tenant,x.project,x.ticket)
             LEFT JOIN draft_revision r
               ON r.tenant=x.tenant AND r.project=x.project AND r.ticket=x.ticket
              AND r.authoring_version=1 AND r.authority_kind=${memberAuthorityKind}
