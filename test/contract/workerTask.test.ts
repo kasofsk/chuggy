@@ -183,6 +183,33 @@ test("a task names the ref its finalization lands on, or none, and never an empt
   }
 });
 
+test("a task names what its core merges in, or nothing, and never an empty ref or change, nor a merge without its pipeline answer", () => {
+  for (const pod of workPods()) {
+    const document = without(carried(pod, workerTaskVariable), ["targetMerge"]);
+    for (const targetMerge of [
+      { ref: "HEAD", pipelinesWritable: true },
+      {
+        ref: "refs/heads/main",
+        pipelinesWritable: false,
+        change: "2".repeat(40),
+      },
+    ]) {
+      const named = { ...document, targetMerge };
+      assert.deepEqual(workTaskDocumentSchema.strict().parse(named), named);
+    }
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(document), document);
+    for (const targetMerge of [
+      { ref: "", pipelinesWritable: true },
+      { ref: "HEAD", pipelinesWritable: true, change: "" },
+      { ref: "HEAD" },
+    ])
+      assert.ok(
+        !workTaskDocumentSchema.safeParse({ ...document, targetMerge }).success,
+        JSON.stringify(targetMerge),
+      );
+  }
+});
+
 test("a task lists the credentials its configuration named beside its grant, and one listing none lists its granted ones", () => {
   for (const pod of workPods()) {
     const document = without(carried(pod, workerTaskVariable), [

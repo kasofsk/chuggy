@@ -90,7 +90,10 @@
  * the scheduler decide a ticket-wide fact it is not the authority for.
  */
 
-import type { WorkTaskDocument } from "../contract/workerTask.ts";
+import type {
+  WorkTaskDocument,
+  WorkTaskTargetMerge,
+} from "../contract/workerTask.ts";
 import { placementRoutes, placementRouteSources } from "../contract/rosters.ts";
 import {
   workerImageFaults,
@@ -1169,6 +1172,7 @@ export type WorkTaskInvocation = Pick<
   | "credentialsListed"
   | "worker"
   | "targetRef"
+  | "targetMerge"
 >;
 
 /**
@@ -1197,6 +1201,8 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly invocation: TaskInvocation;
   /** The ref the ticket's finalization lands on, where its brief or binding names one. */
   readonly targetRef?: GitRefName;
+  /** What the work task's core merges in, where it merges anything. */
+  readonly targetMerge?: WorkTaskTargetMerge;
   readonly capability: AttemptCapability;
 }
 

@@ -57,8 +57,11 @@ import {
 import {
   contractVersionRefusalSchema,
   contractVersionRefusalStatus,
+  workerContractFeaturesHeader,
+  workerContractFeaturesText,
   workerContractHeader,
   workerContractRelease,
+  type WorkerContractFeature,
 } from "../../src/contract/workerContract.ts";
 import {
   heldCredentialSecretCharsMax,
@@ -269,6 +272,8 @@ interface WorkerPlaneCase {
   readonly bearer?: string;
   readonly release?: string;
   readonly named?: true;
+  /** The features the caller lists, which no older release is driven listing. */
+  readonly features?: readonly WorkerContractFeature[];
   readonly status?: number;
   /** The versions of pod that can provoke this case; a release outside it is not driven with it. */
   readonly sent?: WorkerContractRange;
@@ -540,6 +545,21 @@ const workTaskRosterCases: readonly WorkerPlaneCase[] = [
       invocation: { ...liveInvocation, targetRef: "refs/heads/main" },
     }),
   },
+  ...[
+    { ref: "HEAD", pipelinesWritable: true },
+    {
+      ref: "refs/heads/main",
+      pipelinesWritable: false,
+      change: "2".repeat(40),
+    },
+  ].map((targetMerge) => ({
+    name: `a work task naming what its core merges in, ${JSON.stringify(targetMerge)}, to a peer listing the feature`,
+    features: ["TargetMerge"] as const,
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: { ...liveInvocation, targetMerge },
+    }),
+  })),
   {
     name: "a work task listing a credential its grant does not carry",
     service: workerPlaneTask({
@@ -1847,6 +1867,13 @@ async function workerPlaneDriven<Name extends string>(
       ...(driven.release === undefined
         ? {}
         : { [workerContractHeader]: driven.release }),
+      ...(driven.features === undefined
+        ? {}
+        : {
+            [workerContractFeaturesHeader]: workerContractFeaturesText(
+              driven.features,
+            ),
+          }),
       ...call.headers,
     },
     ...(call.payload === undefined ? {} : { payload: call.payload }),
@@ -2011,8 +2038,9 @@ function workerPlaneReplayed<Name extends string>(
       );
       for (const driven of plane.cases[name]) {
         if (
-          driven.sent !== undefined &&
-          !contractVersionAccepted(driven.sent, older.wire)
+          driven.features !== undefined ||
+          (driven.sent !== undefined &&
+            !contractVersionAccepted(driven.sent, older.wire))
         )
           continue;
         const answered = await workerPlaneDriven(
