@@ -16,6 +16,20 @@ import {
   workerContractVersionText,
   type WorkerContractFeature,
 } from "../../src/contract/workerContract.ts";
+import {
+  sessionPlaneRouteFeatures,
+  sessionPlaneRoutes,
+} from "../../src/contract/sessionPlane.ts";
+import {
+  workerPlaneRouteFeatures,
+  workerPlaneRoutes,
+} from "../../src/contract/workerPlane.ts";
+import {
+  workerPoolPollRoute,
+  workerPoolRouteFeatures,
+  workerPoolSettlementRoutes,
+  workerRunnerReportRoute,
+} from "../../src/contract/workerPool.ts";
 import * as plane from "../../src/interpreter/workerPlane.ts";
 
 const versionSchema = z.strictObject({ major: z.number(), minor: z.number() });
@@ -164,5 +178,27 @@ test("a peer that names no release and lists no features speaks the first versio
       }),
       feature,
     );
+  }
+});
+
+test("each plane's routes are each named with a feature in the roster or with none, and every route of its table is named", () => {
+  const planes = [
+    [workerPlaneRouteFeatures, Object.keys(workerPlaneRoutes)],
+    [sessionPlaneRouteFeatures, Object.keys(sessionPlaneRoutes)],
+    [
+      workerPoolRouteFeatures,
+      [
+        workerPoolPollRoute,
+        workerRunnerReportRoute,
+        ...Object.values(workerPoolSettlementRoutes),
+      ],
+    ],
+  ] as const;
+  for (const [features, routes] of planes) {
+    assert.deepEqual(Object.keys(features).sort(), [...routes].sort());
+    for (const feature of Object.values(features))
+      assert.ok(
+        feature === null || Object.hasOwn(workerContractFeatures, feature),
+      );
   }
 });

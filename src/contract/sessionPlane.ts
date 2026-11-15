@@ -53,6 +53,7 @@ import {
 } from "./rosters.ts";
 import { sessionLiveEventSchema } from "./sessionLive.ts";
 import { allThreadJobWakeReasons } from "./threadWake.ts";
+import type { WorkerContractFeature } from "./workerContract.ts";
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
@@ -116,6 +117,33 @@ export const sessionPlaneRoutes = {
   ended: { method: "POST", path: "/v1/session/ended" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type SessionPlaneRouteName = keyof typeof sessionPlaneRoutes;
+
+/**
+ * The feature each session plane route belongs to, so a client is held only to
+ * the routes of the features it lists.
+ * A new route names the feature it belongs to, and `null` is for a route every
+ * client of the plane must speak.
+ */
+export const sessionPlaneRouteFeatures: Readonly<
+  Record<SessionPlaneRouteName, WorkerContractFeature | null>
+> = {
+  facts: null,
+  heartbeat: null,
+  reference: null,
+  turn: null,
+  turnAnswer: null,
+  turnFailure: null,
+  turnLive: null,
+  turnStopped: null,
+  held: null,
+  standing: null,
+  wake: null,
+  storeStreams: null,
+  storeBatch: null,
+  storePage: null,
+  credential: null,
+  ended: null,
+};
 
 /** What marks a token as a session bearer rather than an OIDC one, so the API never probes. */
 export const sessionBearerPrefix = "chgs_";
