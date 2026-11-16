@@ -48,7 +48,6 @@ import {
   nativeActionCallerOf,
   nativeActionFeedbackRefusal,
   nativeActionsAnswerable,
-  type NativeActionAgents,
   type NativeActionAsked,
 } from "./nativeActionAnswer.ts";
 import { assertNever } from "../domain/assertNever.ts";
@@ -805,11 +804,17 @@ export interface NativeReadStore {
   ): Promise<NativeActionAsked | undefined>;
 }
 
+/** A command a principal may submit: a stored `ProposeDispatch` still decodes, but nothing submits one. */
+export type NativeSubmittedCommand = Exclude<
+  ProjectCommand,
+  { readonly command: "ProposeDispatch" }
+>;
+
 export interface NativeSubmission {
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
-  readonly command: ProjectCommand;
+  readonly command: NativeSubmittedCommand;
   /** The session a command came through, where a session bearer is what carried it. */
   readonly viaSession?: SessionId;
 }
@@ -1187,11 +1192,10 @@ export interface NativeWeb extends NativeEpics {
   ): Promise<LeadInquiryAsked>;
 }
 
-function submissionAccess(command: ProjectCommand): ProjectAccessKind {
+function submissionAccess(command: NativeSubmittedCommand): ProjectAccessKind {
   if (command.command === "ChangeTicketOverrides")
     return overridesAccess(command.overrides);
   if (command.command === "ManualDispatch") return "DispatchTicket";
-  if (command.command === "ProposeDispatch") return "ProposeDispatch";
   return "Mutate";
 }
 
@@ -1638,10 +1642,9 @@ async function nativeSubmitPlanRefusal(
     : undefined;
 }
 
-/** What a resolution's submission reads to decide who may give it: the action it names, and which principals are agents. */
+/** What a resolution's submission reads to decide who may give it: the action it names. */
 interface NativeSubmitAnswers {
   readonly reads: Pick<NativeReadStore, "nativeActionAsked">;
-  readonly agents: NativeActionAgents;
 }
 
 /**
@@ -1672,7 +1675,6 @@ async function nativeSubmitAuthority(
   }
   const answerer = await nativeActionAnswerer(
     access,
-    answers.agents,
     nativeActionCallerOf(principal, submission.viaSession),
     submission.partition,
     asked,
@@ -1998,7 +2000,6 @@ function nativeRunEvidenceMethods(
 function nativeTicketMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
-  agents: NativeActionAgents,
 ): Pick<
   NativeWeb,
   | "ticket"
@@ -2026,7 +2027,6 @@ function nativeTicketMethods(
         ? undefined
         : nativeActionsAnswerable(
             access,
-            agents,
             nativeActionCallerOf(principal, viaSession),
             partition,
             actions,
@@ -2045,7 +2045,6 @@ function nativeTicketMethods(
           ...page,
           actions: await nativeActionsAnswerable(
             access,
-            agents,
             nativeActionCallerOf(principal, viaSession),
             partition,
             page.actions,
@@ -3160,7 +3159,6 @@ export async function ticketsWithLatestExecutions(
 function nativeProjectionMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
-  agents: NativeActionAgents,
   operationalReads?: OperationalReadStore,
 ): Pick<
   NativeWeb,
@@ -3197,7 +3195,7 @@ function nativeProjectionMethods(
           }
         : read;
     },
-    ...nativeTicketMethods(access, reads, agents),
+    ...nativeTicketMethods(access, reads),
   };
 }
 
@@ -3223,35 +3221,19 @@ function nativeCancelMethod(
   };
 }
 
-/** The principals no person's approval is asked of, which is the site's selector where the lead ports name one. */
-export function nativeWebAgents(leads?: NativeLeadPorts): NativeActionAgents {
-  return leads?.selector === undefined ? {} : { selector: leads.selector };
-}
-
-/** The submission, the cancellation and the reads of tickets and their actions, each knowing which callers are agents. */
+/** The submission, the cancellation and the reads of tickets and their actions. */
 function nativeDeskMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
   inbox: OperationInbox,
   backlog: ExecutionBacklogGuard,
   authoring: AuthoringStore,
-  desk: {
-    readonly agents: NativeActionAgents;
-    readonly operationalReads: OperationalReadStore | undefined;
-  },
+  desk: { readonly operationalReads: OperationalReadStore | undefined },
 ): Pick<NativeWeb, "submit" | "cancel"> &
   ReturnType<typeof nativeProjectionMethods> {
   return {
-    submit: nativeSubmitMethod(access, inbox, backlog, authoring, {
-      reads,
-      agents: desk.agents,
-    }),
-    ...nativeProjectionMethods(
-      access,
-      reads,
-      desk.agents,
-      desk.operationalReads,
-    ),
+    submit: nativeSubmitMethod(access, inbox, backlog, authoring, { reads }),
+    ...nativeProjectionMethods(access, reads, desk.operationalReads),
     cancel: nativeCancelMethod(access, reads, inbox),
   };
 }
@@ -3311,7 +3293,6 @@ export function nativeWeb(
       selectorContexts,
     ),
     ...nativeDeskMethods(access, reads, inbox, backlog, authoring, {
-      agents: nativeWebAgents(leads),
       operationalReads,
     }),
     notifications: authorizedProjectValue(access, (partition, cursor) =>

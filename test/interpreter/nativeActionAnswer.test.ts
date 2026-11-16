@@ -1,8 +1,8 @@
 /**
  * Who may answer a native action, and what feedback an answer may carry: an
- * evaluation approval by whom its approvers name and never by an agent or a
- * session, every other kind under `Mutate`, and a caller who may not read the
- * project told nothing is there.
+ * evaluation approval by whom its approvers name and never by a session,
+ * every other kind under `Mutate`, and a caller who may not read the project
+ * told nothing is there.
  */
 
 import assert from "node:assert/strict";
@@ -42,15 +42,13 @@ const reader = asPrincipal("reader");
 const developer = asPrincipal("developer");
 const admin = asPrincipal("admin");
 const outsider = asPrincipal("outsider");
-const selector = asPrincipal("selector");
 const session = "session-1" as SessionId;
 
-/** Read for everyone but the outsider, develop for the developer, the admin and the selector, administer for the admin. */
+/** Read for everyone but the outsider, develop for the developer and the admin, administer for the admin. */
 const held: ReadonlyMap<Principal, readonly ProjectAccessKind[]> = new Map([
   [reader, ["Read"]],
   [developer, ["Read", "Mutate"]],
   [admin, ["Read", "Mutate", "Administer"]],
-  [selector, ["Read", "Mutate", "Administer"]],
 ]);
 
 function authorityOf(principal: Principal): Authority {
@@ -75,8 +73,6 @@ function access(asked: string[] = []): ProjectAccess {
   };
 }
 
-const agents = { selector };
-
 function approval(
   approvers: "Developer" | "Admin" | readonly string[],
 ): NativeActionAsked {
@@ -90,7 +86,6 @@ async function answererOf(
 ) {
   return nativeActionAnswerer(
     access(),
-    agents,
     viaSession === undefined ? { principal } : { principal, viaSession },
     partition,
     asked,
@@ -137,16 +132,12 @@ test("a listed principal who no longer reads the project is told it is not found
   });
 });
 
-test("an agent or a session never answers an approval, whatever it holds or whoever names it", async () => {
+test("a session never answers an approval, whatever it holds or whoever names it", async () => {
   for (const asked of [
     approval("Developer"),
     approval("Admin"),
-    approval([selector, admin]),
+    approval([admin]),
   ]) {
-    assert.deepEqual(await answererOf(selector, asked), {
-      answerer: "Refused",
-      code: "ApproverNotAPerson",
-    });
     assert.deepEqual(await answererOf(admin, asked, session), {
       answerer: "Refused",
       code: "ApproverNotAPerson",
@@ -160,7 +151,6 @@ test("an escalation is answered under Mutate, by a session as by a person", asyn
     (await answererOf(developer, { kind }, session)).answerer,
     "Answerer",
   );
-  assert.equal((await answererOf(selector, { kind })).answerer, "Answerer");
   assert.deepEqual(await answererOf(reader, { kind }), {
     answerer: "NotFound",
   });
@@ -197,7 +187,6 @@ test("each listed action says whether its caller may answer it, asking the autho
   const asked: string[] = [];
   const answered = await nativeActionsAnswerable(
     access(asked),
-    agents,
     { principal: reader },
     partition,
     [

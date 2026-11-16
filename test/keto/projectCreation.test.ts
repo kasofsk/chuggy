@@ -147,10 +147,9 @@ async function created(
   principal: Principal,
   partition: Partition,
   tenantCreated: boolean,
-  selector?: Principal,
 ): Promise<void> {
   await grants.writeAll(
-    projectCreationGrants(principal, partition, tenantCreated, selector),
+    projectCreationGrants(principal, partition, tenantCreated),
   );
 }
 
@@ -173,21 +172,6 @@ test("a new tenant's creator holds every kind on its project and administers the
     ),
     undefined,
   );
-});
-
-test("a site's selector develops each project made under it, and administers neither the project nor its tenant", async () => {
-  const partition = ketoHarnessPartition("selected");
-  const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
-  const selector = oidcPrincipal(ketoHarnessIssuer, `selector-${randomUUID()}`);
-  await created(creator, partition, true, selector);
-  assert.deepEqual(await held(selector, partition), [
-    "Read",
-    "Mutate",
-    "ProposeDispatch",
-    "ChatMetadata",
-    "Execute",
-  ]);
-  assert.equal(await administers(selector, partition), false);
 });
 
 test("a project added to a tenant that stands is reached through the tenant's administrators", async () => {

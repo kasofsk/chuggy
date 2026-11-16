@@ -33,8 +33,8 @@ export const projectAbilityKinds: Readonly<
  * Whether the caller may press each of a project's doors, asked only of a
  * caller who may read it. These kinds are the ones a door of the API that a
  * person presses asks: the grant kinds and `ManageProjectAuthorities` are the
- * access plane's doors and its own abilities answer them, and `Execute` and
- * `ProposeDispatch` are asked of no door a person presses.
+ * access plane's doors and its own abilities answer them, and `Execute` is
+ * asked of no door a person presses.
  */
 export async function projectAbilities(
   access: ProjectAccess,

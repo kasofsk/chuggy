@@ -93,10 +93,10 @@ import {
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type {
   NativeActionPosition,
+  NativeSubmittedCommand,
   TicketActivityPosition,
   TicketNumberPosition,
 } from "../../interpreter/nativeWeb.ts";
-import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import {
   asForgeId,
@@ -115,7 +115,6 @@ import {
   asOperationTicketCommand,
   type IdempotencyKey,
   type OperationId,
-  type ProjectCommand,
 } from "../../interpreter/operationInbox.ts";
 import {
   asProjectId,
@@ -478,7 +477,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
 export interface ParsedSubmission {
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
-  readonly command: ProjectCommand;
+  readonly command: NativeSubmittedCommand;
 }
 
 /** Encodes only the fields selected by a cursor's payload projection. */
@@ -668,7 +667,7 @@ export function parsePartition(tenant: string, project: string): Partition {
 /** An escalated ticket's overrides change, fenced as an answer to its escalation is. */
 function publicMutationOverridesCommand(
   mutation: Extract<PublicMutation, { mutation: "ChangeTicketOverrides" }>,
-): ProjectCommand {
+): NativeSubmittedCommand {
   return {
     version: 1,
     command: "ChangeTicketOverrides",
@@ -682,7 +681,7 @@ function publicMutationOverridesCommand(
 /** An answer to an open native action, with what the person said of the work where they said anything. */
 function publicMutationAnswerCommand(
   mutation: Extract<PublicMutation, { mutation: "ResolveNativeAction" }>,
-): ProjectCommand {
+): NativeSubmittedCommand {
   return {
     version: 1,
     command: "ResolveNativeAction",
@@ -693,7 +692,9 @@ function publicMutationAnswerCommand(
   };
 }
 
-function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
+function publicMutationCommand(
+  mutation: PublicMutation,
+): NativeSubmittedCommand {
   switch (mutation.mutation) {
     case "RevokeTicket":
       return {
@@ -741,17 +742,6 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
         command: "ManualDispatch",
         ticket: asTicketId(mutation.ticket),
         expectedTicketVersion: mutation.expectedTicketVersion,
-      };
-    case "ProposeDispatch":
-      return {
-        version: 1,
-        command: "ProposeDispatch",
-        ticket: asTicketId(mutation.ticket),
-        expectedTicketVersion: mutation.expectedTicketVersion,
-        observedViewToken: mutation.observedViewToken,
-        selectorDecisionReference: checkedSelectorDecisionReference(
-          mutation.selectorDecisionReference,
-        ),
       };
   }
 }

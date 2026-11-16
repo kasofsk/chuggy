@@ -42,7 +42,6 @@ import type { SessionId } from "./agentSession.ts";
 import {
   nativeActionCallerOf,
   nativeActionsAnswerable,
-  type NativeActionAgents,
 } from "./nativeActionAnswer.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -102,8 +101,6 @@ export interface ProjectInbox {
 }
 
 export interface ProjectInboxPorts {
-  /** The principals no person's approval is asked of, which every action's answerability is read against. */
-  readonly agents?: NativeActionAgents;
   readonly store: InboxReadStore;
   readonly operationalReads: Pick<
     OperationalReadStore,
@@ -213,7 +210,6 @@ export function projectInbox(
       );
       const actions = await nativeActionsAnswerable(
         access,
-        ports.agents ?? {},
         nativeActionCallerOf(principal, viaSession),
         partition,
         page.actions,

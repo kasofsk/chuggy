@@ -28,16 +28,12 @@ import {
 } from "../../src/interpreter/projectCreation.ts";
 import {
   projectAuthorityDefaults,
-  projectRelationGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
   tenantAuthorityDefaults,
   type ProjectGrant,
 } from "../../src/interpreter/projectGrant.ts";
-import {
-  asPrincipal,
-  type Principal,
-} from "../../src/interpreter/principal.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
   asTenantId,
@@ -123,7 +119,6 @@ function creationWith(
     readonly claimed?: readonly string[];
     readonly erasureFails?: boolean;
     readonly grantFails?: boolean;
-    readonly selector?: Principal;
     readonly unpermitted?: boolean;
     readonly vacated?: boolean;
   } = {},
@@ -169,7 +164,6 @@ function creationWith(
       },
     },
     authority,
-    ...(options.selector === undefined ? {} : { selector: options.selector }),
   });
   return {
     access,
@@ -455,20 +449,10 @@ test("a reservation is exact: a tenant extending a reserved name is not reserved
   }
 });
 
-test("a creation's tuples are its administrator holding personal runners and the tenant's defaults where it made the tenant, then the link, the project's defaults and the selector", () => {
-  const selector = asPrincipal("issuer selector");
-  const developing = projectRelationGrant(selector, partition, "developers");
+test("a creation's tuples are its administrator holding personal runners and the tenant's defaults where it made the tenant, then the link and the project's defaults", () => {
   assert.deepEqual(
     projectCreationGrants(principal, partition, true),
     madeTenant,
-  );
-  assert.deepEqual(
-    projectCreationGrants(principal, partition, true, selector),
-    [...madeTenant, developing],
-  );
-  assert.deepEqual(
-    projectCreationGrants(principal, partition, false, selector),
-    [...madeProject, developing],
   );
   assert.deepEqual(
     projectCreationGrants(principal, partition, false),
@@ -528,15 +512,6 @@ test("a caller nothing names the tenant to makes it and administers what it made
   ]);
   assert.deepEqual(lists, [madeTenant]);
   assert.deepEqual(recorded, [request.operation]);
-});
-
-test("a site that names its selector makes it a developer of the project, beside the creator's grants", async () => {
-  const selector = asPrincipal("issuer selector");
-  const { lists, service } = creationWith(created, { selector });
-  assert.equal((await service.create(principal, request)).result, "Created");
-  assert.deepEqual(lists, [
-    [...madeTenant, projectRelationGrant(selector, partition, "developers")],
-  ]);
 });
 
 test("a list the authority does not take leaves the creation unrecorded, and its repeat writes the whole list", async () => {

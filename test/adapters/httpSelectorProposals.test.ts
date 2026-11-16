@@ -187,7 +187,7 @@ test("a decision no longer held is a conflict naming why", async () => {
 test("a reader who may not dispatch is not found, and nothing is reviewed", async () => {
   const reviewed: Reviewed[] = [];
   await using app = appOver(
-    new Set<ProjectAccessKind>(["Read", "ProposeDispatch"]),
+    new Set<ProjectAccessKind>(["Read"]),
     [held("first", 3)],
     reviewed,
   );
