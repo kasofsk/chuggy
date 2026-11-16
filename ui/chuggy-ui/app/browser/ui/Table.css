@@ -82,55 +82,6 @@
     font-weight: var(--weight-medium);
   }
 
-  /* The scroller keeps a bar a reader can see, because an overlay bar leaves a
-     table cut at the edge looking like a table that ends there. */
-  .tabular-scroll::-webkit-scrollbar {
-    height: var(--space-2);
-  }
-
-  .tabular-scroll::-webkit-scrollbar-thumb {
-    border-radius: var(--radius-2);
-    background: var(--edge-strong);
-  }
-
-  /* A scroller that holds more than it shows keeps its scrolling to itself,
-     and fades the side the more is on. */
-  .tabular-scroll:is([data-more-start], [data-more-end]) {
-    overscroll-behavior-x: contain;
-  }
-
-  .tabular-scroll[data-more-end] {
-    mask-image: linear-gradient(
-      to left,
-      transparent,
-      var(--ink-1) var(--space-6)
-    );
-  }
-
-  .tabular-scroll[data-more-start] {
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      var(--ink-1) var(--space-6)
-    );
-  }
-
-  .tabular-scroll[data-more-start][data-more-end] {
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      var(--ink-1) var(--space-6),
-      var(--ink-1) calc(100% - var(--space-6)),
-      transparent
-    );
-  }
-
-  /* A mask cuts away the focus ring, which lies outside the scroller, so a
-     scroller focused by keyboard drops its fade and keeps its bar as the cue. */
-  .tabular-scroll:focus-visible {
-    mask-image: none;
-  }
-
   /* A stacked table measures the width it is given, which is what chooses
      between its columns and its cards. */
   .tabular-stacking {

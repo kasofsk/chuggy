@@ -18,6 +18,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { Table } from "../app/browser/ui/Table.tsx";
 import type { TableColumn } from "../app/browser/ui/Table.tsx";
+import scrollSidesSheet from "../app/browser/ui/ScrollSides.css?raw";
 import tableSheet from "../app/browser/ui/Table.css?raw";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
@@ -474,7 +475,9 @@ function childrenDrawn(): HTMLElement {
 test("a table that has not opted in draws no roles, labels or container of its own", () => {
   const scroller = childrenDrawn();
   const table = screen.getByRole("table");
-  expect(scroller.className).toBe("tabular-scroll max-w-full overflow-x-auto");
+  expect(scroller.className).toBe(
+    "tabular-scroll scroll-sides max-w-full overflow-x-auto",
+  );
   expect(table.className).toBe("tabular");
   expect(scroller.querySelector("[role]")).toBeNull();
   expect(scroller.querySelector(".tabular-label")).toBeNull();
@@ -486,7 +489,7 @@ test("a scroller that holds its table whole is no keyboard stop and draws no fad
   expect(scroller.hasAttribute("role")).toBe(false);
   expect(scroller.hasAttribute("data-more-end")).toBe(false);
   expect(
-    sheetDeclared(sheetRules(tableSheet, []), scroller, "mask-image"),
+    sheetDeclared(sheetRules(scrollSidesSheet, []), scroller, "mask-image"),
   ).toBe("");
 });
 
@@ -498,7 +501,7 @@ test("a scroller with more to show is a named keyboard stop that fades the side 
   expect(scroller.tabIndex).toBe(0);
   expect(scroller.hasAttribute("data-more-end")).toBe(true);
   expect(scroller.hasAttribute("data-more-start")).toBe(false);
-  const rules = sheetRules(tableSheet, []);
+  const rules = sheetRules(scrollSidesSheet, []);
   expect(sheetDeclared(rules, scroller, "mask-image")).toContain("to left");
   expect(sheetDeclared(rules, scroller, "overscroll-behavior-x")).toBe(
     "contain",
@@ -519,7 +522,7 @@ test("an overflowing scroller focused by keyboard drops the fade that would cut 
   const scroller = childrenDrawn();
   const focused = "data-keyboard-focused";
   const rules = sheetRules(
-    tableSheet.replaceAll(":focus-visible", `[${focused}]`),
+    scrollSidesSheet.replaceAll(":focus-visible", `[${focused}]`),
     [],
   );
   expect(sheetDeclared(rules, scroller, "mask-image")).toContain("to left");
