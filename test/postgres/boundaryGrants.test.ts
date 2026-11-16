@@ -715,13 +715,13 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${sessionRouteFunction}(text,text,text)`,
-    [apiRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
+    [apiRole, schedulerRole],
+    [workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
-    [apiRole, selectorServiceRole],
-    [schedulerRole, workerPlaneRole, poolPlaneRole],
+    [apiRole, selectorServiceRole, schedulerRole],
+    [workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${sessionPlacementSetFunction}(text,text,text,text,text,text,text)`,

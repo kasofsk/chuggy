@@ -32,7 +32,6 @@ import {
   sessionEfforts,
   sessionIdentityCharsMax,
   sessionModelSchema,
-  threadWakesPerPassMax,
 } from "../contract/http.ts";
 import {
   commandDatabaseConfig,
@@ -48,7 +47,6 @@ import {
 
 const configurationVariable = "CHUG_SELECTOR_CONFIG";
 const clientSecretVariable = "CHUG_SELECTOR_SOURCE_CLIENT_SECRET";
-const wakesPerPassVariable = "CHUG_SELECTOR_THREAD_WAKES_PER_PASS_MAX";
 const httpUrl = z.url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === "http:" || protocol === "https:";
@@ -179,26 +177,6 @@ interface ProcessSignals {
   removeListener(signal: NodeJS.Signals, listener: () => void): unknown;
 }
 
-/**
- * The wake pass's bound, which a deployment may lower and may not raise: the
- * candidate read caps what it is asked for at `threadWakesPerPassMax`, so a
- * larger number here would be a configured bound that is not the bound that
- * runs. An unset variable is the contract's own ceiling, and there is no arm in
- * which the pass is unbounded.
- */
-function selectorWakesPerPass(environment: NodeJS.ProcessEnv): number {
-  const value = environment[wakesPerPassVariable];
-  if (value === undefined || value.length === 0) return threadWakesPerPassMax;
-  if (!/^[1-9][0-9]*$/u.test(value))
-    throw new Error(`${wakesPerPassVariable} must be a positive integer`);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed > threadWakesPerPassMax)
-    throw new Error(
-      `${wakesPerPassVariable} must be at most ${String(threadWakesPerPassMax)}`,
-    );
-  return parsed;
-}
-
 export function selectorConfiguration(
   environment: NodeJS.ProcessEnv,
 ): SelectorCommandConfig {
@@ -215,7 +193,6 @@ export function selectorConfiguration(
       database: commandDatabaseConfig(data.database),
       runtime: data.runtime,
       ...(data.selector === undefined ? {} : { selector: data.selector }),
-      wakes: { wakesPerPassMax: selectorWakesPerPass(environment) },
       access: checkedProjectAccessSettings(data.access),
     },
     identity: data.identity,

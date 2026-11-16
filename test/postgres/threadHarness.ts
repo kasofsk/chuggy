@@ -67,7 +67,8 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 import { sessionRigAttempt } from "./sessionHarness.ts";
-import { postgresHarnessKeying } from "./harness.ts";
+import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
+import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import type { SessionStoreDouble } from "./storeDouble.ts";
 
 /** One opened subject: the lead rig, and the thread stores. */
@@ -81,14 +82,19 @@ export interface ThreadRig extends LeadRig {
 
 export async function threadRigOpen(): Promise<ThreadRig> {
   const lead = await leadRigOpen();
+  const schedulerPool = postgresHarnessRolePool(schedulerRole);
   return {
     ...lead,
+    close: async () => {
+      await schedulerPool.end();
+      await lead.close();
+    },
     threads: postgresThreads(lead.apiPool, {
       streamsMax: sessionStoreStreamsAnswered,
     }),
     minting: threadSessionMint(),
     seeding: postgresThreadSeeding(lead.apiPool),
-    wakes: postgresThreadWakes(lead.selectorPool),
+    wakes: postgresThreadWakes(schedulerPool),
     limits: postgresThreadLimits(lead.apiPool),
   };
 }

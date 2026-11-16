@@ -3,7 +3,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { test } from "node:test";
 
-import { threadWakesPerPassMax } from "../../src/contract/http.ts";
 import { signalledCommandRun } from "./harness.ts";
 
 const execute = promisify(execFile);
@@ -87,7 +86,6 @@ test("the selector command parses every plain-data dependency", async () => {
       database: validConfiguration.database,
       runtime: validConfiguration.runtime,
       selector: validConfiguration.selector,
-      wakes: { wakesPerPassMax: threadWakesPerPassMax },
       access: validConfiguration.access,
     },
     identity: validConfiguration.identity,
@@ -202,55 +200,6 @@ test("the source's token source confirms an issuer's invalid_client before it is
     found.stdout,
     "client credentials grant returned 401 invalid_client, a refusal being confirmed: 0s of 90s",
   );
-});
-
-test("the wake bound defaults to the contract's own and may be lowered, not raised", async () => {
-  const program = `
-    const root = await import('./src/roots/selector.ts');
-    process.stdout.write(
-      String(root.selectorConfiguration(process.env).process.wakes.wakesPerPassMax),
-    );
-  `;
-  const read = async (value: string | undefined): Promise<string> => {
-    const found = await execute(
-      process.execPath,
-      ["--experimental-strip-types", "--input-type=module", "--eval", program],
-      {
-        cwd: process.cwd(),
-        env:
-          value === undefined
-            ? validEnvironment
-            : {
-                ...validEnvironment,
-                CHUG_SELECTOR_THREAD_WAKES_PER_PASS_MAX: value,
-              },
-      },
-    );
-    return found.stdout;
-  };
-  assert.equal(await read(undefined), String(threadWakesPerPassMax));
-  assert.equal(await read(""), String(threadWakesPerPassMax));
-  assert.equal(await read("1"), "1");
-  assert.equal(
-    await read(String(threadWakesPerPassMax)),
-    String(threadWakesPerPassMax),
-    "the ceiling the diagnostic names and the unset default runs at is a bound a deployment may write down",
-  );
-  for (const refused of [
-    "0",
-    "-1",
-    "one",
-    "1.5",
-    String(threadWakesPerPassMax + 1),
-  ]) {
-    const failure = await executeFailure({
-      ...validEnvironment,
-      CHUG_SELECTOR_THREAD_WAKES_PER_PASS_MAX: refused,
-    });
-    assert.equal(failure.code, 2, refused);
-    assert.match(failure.stderr, /CHUG_SELECTOR_THREAD_WAKES_PER_PASS_MAX/u);
-    assert.ok(!failure.stderr.includes(clientSecret));
-  }
 });
 
 test("the client secret is required and never reaches the diagnostic", async () => {

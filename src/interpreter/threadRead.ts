@@ -32,7 +32,7 @@
  *
  * THE TRANSCRIPT IS THE LEAD'S WALK OVER ANOTHER SESSION, and literally so:
  * nothing here declares a page, a query or a read of its own. The boundary
- * draws a thread's transcript with `leadRead.ts`'s walk over `leadRead.ts`'s
+ * draws a thread's transcript with `sessionTranscriptPage.ts`'s walk over its
  * row source and answers it through the lead's own wire body, so one transcript
  * has one page type and one representation — and a reader of a thread's and a
  * reader of the lead's cannot be shown two readings of one store.

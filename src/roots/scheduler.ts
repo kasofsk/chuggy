@@ -39,6 +39,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       metrics: silentSchedulerTelemetry,
     },
     access: config.access,
+    wakes: { wakesPerPassMax: config.threadWakesPerPassMax },
     sessions: {
       placement: kubernetesSessionLaunch(config.sessions),
       bearers: sessionAttemptMint(),

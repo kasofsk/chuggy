@@ -39,7 +39,7 @@ import {
   threadsResponseSchema,
 } from "../../src/contract/responses.ts";
 import type { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import { leadTranscriptResponse } from "../../src/adapters/http/outcomes.ts";
+import { sessionTranscriptResponse } from "../../src/adapters/http/outcomes.ts";
 import {
   asSessionId,
   asSessionStoreStream,
@@ -50,7 +50,7 @@ import {
   checkedThreadMailboxQuery,
   threadBacklogRetrySeconds,
 } from "../../src/interpreter/threadRead.ts";
-import { checkedLeadTranscriptQuery } from "../../src/interpreter/leadRead.ts";
+import { checkedSessionTranscriptQuery } from "../../src/interpreter/sessionTranscriptPage.ts";
 import type {
   ThreadClosing,
   ThreadHiding,
@@ -186,7 +186,7 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
       );
     },
     threadTranscript: (_principal, _partition, session, query) => {
-      checkedLeadTranscriptQuery(query);
+      checkedSessionTranscriptQuery(query);
       held.calls.push(
         `transcript:${session}:${String(query.stream)}:${String(query.after)}:${String(query.limit)}`,
       );
@@ -460,7 +460,7 @@ test("a thread's entries are stripped the way the lead's are", async () => {
     "uuid",
   ]);
   assert.deepEqual(
-    leadTranscriptResponse({ read: "Page", page: transcriptPage }).body,
+    sessionTranscriptResponse({ read: "Page", page: transcriptPage }).body,
     page,
   );
 });
