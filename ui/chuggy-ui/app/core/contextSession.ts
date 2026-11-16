@@ -31,9 +31,9 @@ import { conversationAskMessage } from "./conversation.ts";
 import { contextNumber, contextRecord } from "./contextRecord.ts";
 import { contextWindowRead, contextWindowUnread } from "./contextView.ts";
 import type {
-  LeadTranscriptCut,
-  LeadTranscriptEntry,
-} from "./leadTranscript.ts";
+  SessionTranscriptCut,
+  SessionTranscriptEntry,
+} from "./sessionTranscript.ts";
 
 export type SessionContextTurn = SessionContextResponse["turns"][number];
 
@@ -95,7 +95,7 @@ interface ContextTranscriptTurn {
 }
 
 /** Whether a user entry is a prompt someone sent, rather than a tool's answer. */
-function contextEntryAsks(entry: LeadTranscriptEntry): boolean {
+function contextEntryAsks(entry: SessionTranscriptEntry): boolean {
   if (entry.type !== "user") return false;
   const content = contextRecord(entry.message)?.["content"];
   if (typeof content === "string") return true;
@@ -107,7 +107,7 @@ function contextEntryAsks(entry: LeadTranscriptEntry): boolean {
 
 /** The context an assistant entry was billed as sending, where it carries usage. */
 export function contextEntryTokens(
-  entry: LeadTranscriptEntry,
+  entry: SessionTranscriptEntry,
 ): number | undefined {
   if (entry.type !== "assistant") return undefined;
   const usage = contextRecord(contextRecord(entry.message)?.["usage"]);
@@ -144,8 +144,8 @@ function contextCutMark(
  * which nobody sent, so a user entry there opens no turn.
  */
 export function contextTranscriptTurns(
-  entries: readonly LeadTranscriptEntry[],
-  cuts: readonly LeadTranscriptCut[],
+  entries: readonly SessionTranscriptEntry[],
+  cuts: readonly SessionTranscriptCut[],
 ): ContextTranscriptTurns {
   const turns: { ordinal: number; tokens: number | undefined }[] = [];
   const compactions: ContextCompactionMark[] = [];
@@ -184,8 +184,8 @@ export function contextTranscriptTurns(
 /** What one session's panel is drawn from. */
 export interface ContextSessionRead {
   readonly context: SessionContextResponse | undefined;
-  readonly entries: readonly LeadTranscriptEntry[];
-  readonly cuts: readonly LeadTranscriptCut[];
+  readonly entries: readonly SessionTranscriptEntry[];
+  readonly cuts: readonly SessionTranscriptCut[];
 }
 
 /** Each cut the transcript named with its sizes, in the first held turn whose
@@ -193,7 +193,7 @@ export interface ContextSessionRead {
  * turn before. A cut no earlier held turn bounds may be older than every held
  * turn, so it is placed in the first only where that is the session's first. */
 function contextCutsByReadings(
-  cuts: readonly LeadTranscriptCut[],
+  cuts: readonly SessionTranscriptCut[],
   turns: readonly SessionContextTurn[],
 ): readonly ContextCompactionMark[] {
   return cuts.flatMap((cut) => {

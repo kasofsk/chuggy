@@ -43,7 +43,7 @@ setup-rule-ask-name = Run { $command } with the person's answer after it, quoted
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check } or as { $imported }
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported } or as { $bound }
 setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, and { $test } with { $configuration }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
@@ -260,6 +260,22 @@ setup-mend-github-when = once the person says { -github } is connected
 setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them. Tell me once it is installed.
 setup-mend-worker-when = once the person says the { -worker-app } is installed on { $account }
 setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
+# The pages are the forge's own, one an app that is not let into the repository.
+setup-mend-reach-settings = the { $app }, on its settings page { $page }
+# The press is the console's own install, which is the one the workspace claims.
+setup-mend-reach-install-portal = the { $app }, which is not installed there yet: on { $page } press { $press } and install it on { $account }
+setup-mend-reach-install-worker = the { $app }, which is not installed there yet: on { $page } press { $press } on the row of { $account }
+setup-mend-reach-install-worker-after = the { $app }, which is not installed there either: once { $account } is listed on that page, press { $press } on its row
+setup-mend-reach-tell = { -github } does not let { $count ->
+        [two] these apps
+       *[one] this app
+    } into { $repository }, this folder's { -repository }: { $count ->
+        [two] { $first }; and { $second }
+       *[one] { $first }
+    }. On { -github } choose { $repository } among the { -repository(form: "plural") } each app may reach, and save. { -github } may ask you to confirm access first, with a code it emails you. Tell me once you are done there.
+setup-mend-reach-when = once the person says each app named is given { $repository } on { -github }
+setup-mend-bind-offer = The { -portal-app } and the { -worker-app } are both let into { $repository }, this folder's { -repository }, and { $project } does not have it yet. With your yes I will add it to { $project }, as the { -repository(form: "plural") } page's Add does. Tell me yes to go ahead.
+setup-offer-bind-when = once the person says yes to adding { $repository } to the { -project }
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
 setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
@@ -307,6 +323,10 @@ setup-check-absent-found = this checkout declares no { -configuration } under { 
 setup-import-none = nothing to import: the next thing is not the { -configuration } of a { -repository }
 setup-import-did = asked { -brand-name } to import { $repository }
 setup-import-refused = { -brand-name } did not import { $repository }: { $refusal }
+setup-bind-none = nothing to add: the next thing is not adding this folder's { -repository }
+# The answer is the Add dialog's own line, which another section holds.
+setup-bind-did = asked { -brand-name } to add { $repository }, and it answered { $said }
+setup-bind-refused = { -brand-name } did not add { $repository }: { $refusal }
 
 ## The MCP step, which the mcp command does on this machine with the
 ## person's yes.

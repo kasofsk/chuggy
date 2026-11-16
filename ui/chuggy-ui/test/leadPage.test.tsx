@@ -43,21 +43,23 @@ import {
   sessionTranscriptEntriesMax,
   sessionTranscriptHeldBatchesMax,
 } from "../../../src/contract/http.ts";
-import { leadTranscriptEntriesHeldMax } from "../app/core/leadTranscript.ts";
+import { sessionTranscriptEntriesHeldMax } from "../app/core/sessionTranscript.ts";
 import { projectLeadAbsencePolledMs } from "../app/core/projectLead.ts";
 import {
   leadBody,
   leadHandoffNote,
   leadInquiry,
-  leadPartition,
   leadRefusals,
   leadRouteAnswer,
-  leadSelectorSettingsBody,
   leadSession,
-  leadSessionResource,
-  leadStream,
   leadUnstarted,
 } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
+import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
+import {
+  sessionChangeResource,
+  transcriptStream,
+} from "./sessionTranscriptFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
 import { fillerMessage, fillerSentence } from "./interruptionFixture.ts";
 import { contextSessionBody } from "./contextFixture.ts";
@@ -92,7 +94,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 /** Which project the router says this page is for, which a case moves the way a
  * params-only navigation does. */
-let drawnPartition = { ...leadPartition };
+let drawnPartition = { ...projectPartition };
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -104,7 +106,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
-  drawnPartition = { ...leadPartition };
+  drawnPartition = { ...projectPartition };
 });
 
 /** The page under its providers, over whatever fetch the case has stubbed. */
@@ -112,7 +114,7 @@ async function mountLead(): Promise<ReturnType<typeof openedStream>> {
   const server = openedStream();
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
@@ -157,7 +159,7 @@ async function drawLeadSelector(
   answering: () => {
     readonly body: unknown;
     readonly status: number;
-  } = () => ({ body: leadSelectorSettingsBody(13), status: 200 }),
+  } = () => ({ body: selectorSettingsBody(13), status: 200 }),
 ): Promise<LeadSelectorWrites> {
   const writes: unknown[] = [];
   const fetching = ((
@@ -210,7 +212,7 @@ async function drawLeadBeside(
   const server = openedStream();
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
@@ -329,7 +331,7 @@ test("the bar's chips wrap on their own rather than crowd the title", async () =
 test("the strip's mode cell is named Lead, not Selector", async () => {
   await drawLeadSelector(
     () => opening,
-    () => ({ body: leadSelectorSettingsBody(13), status: 200 }),
+    () => ({ body: selectorSettingsBody(13), status: 200 }),
   );
   const strip = screen
     .getByRole("button", { name: "Pause" })
@@ -348,7 +350,7 @@ test("Pause writes the paused mode beside every other override", async () => {
   const server = await drawLeadSelector(
     () => opening,
     () => ({
-      body: leadSelectorSettingsBody(13),
+      body: selectorSettingsBody(13),
       status: 200,
     }),
   );
@@ -370,11 +372,7 @@ test("Pause writes the paused mode beside every other override", async () => {
 test("Resume clears the override where the installation is running", async () => {
   const server = await drawLeadSelector(() => ({
     ...opening,
-    settings: leadSelectorSettingsBody(
-      12,
-      { mode: "Paused" },
-      { mode: "Paused" },
-    ),
+    settings: selectorSettingsBody(12, { mode: "Paused" }, { mode: "Paused" }),
   }));
   await turned(() => {
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
@@ -391,7 +389,7 @@ test("Resume clears the override where the installation is running", async () =>
 test("Resume writes Running where the installation is paused", async () => {
   const server = await drawLeadSelector(() => ({
     ...opening,
-    settings: leadSelectorSettingsBody(
+    settings: selectorSettingsBody(
       12,
       {},
       { mode: "Paused", installationMode: "Paused" },
@@ -480,14 +478,14 @@ test("a tool call sits inside the collapsed work disclosure", async () => {
         const asked = new URL(url, "https://console").searchParams.get("after");
         if (asked !== null && asked !== "0")
           return answer({
-            stream: leadStream,
+            stream: transcriptStream,
             entries: [],
             held: [],
             elided: 0,
             truncated: false,
           });
         return answer({
-          stream: leadStream,
+          stream: transcriptStream,
           entries: [
             {
               uuid: "uuid-a",
@@ -565,7 +563,7 @@ function leadTurnOut(
     const first =
       new URL(url, "http://console").searchParams.get("after") !== "1";
     return {
-      stream: leadStream,
+      stream: transcriptStream,
       entries: first ? entries : [],
       held: [],
       elided: 0,
@@ -586,11 +584,11 @@ function leadTurnOut(
           session: leadSession,
           state: "Open",
           attention: "Monitoring",
-          agentReference: leadStream,
+          agentReference: transcriptStream,
           notificationCursor: 1,
           handoffNote: { bytes: 0, preview: "", truncated: false },
           turns,
-          streams: [{ stream: leadStream, batches: 1 }],
+          streams: [{ stream: transcriptStream, batches: 1 }],
         });
       const found = leadRouteAnswer(url, opening);
       return answer(found.body, found.status);
@@ -695,7 +693,7 @@ test("a read that could not decide what is held draws its entries and no shortfa
     route: (url) => {
       if (url.includes("/lead/transcript"))
         return answer({
-          stream: leadStream,
+          stream: transcriptStream,
           entries: [{ uuid: "uuid-a", type: "user", message: { content: [] } }],
           elided: 0,
           truncated: false,
@@ -728,7 +726,7 @@ test("a Session frame naming another session leaves the page alone", async () =>
     server.push(
       frame("Session", "41", {
         version: 1,
-        resource: leadSessionResource("session-elsewhere", "turn-2"),
+        resource: sessionChangeResource("session-elsewhere", "turn-2"),
         representation: null,
       }),
     );
@@ -770,7 +768,7 @@ test("a lead whose read failed is still woken by its own Session frame", async (
       server.push(
         frame("Session", id, {
           version: 1,
-          resource: leadSessionResource(leadSession, `turn-${id}`),
+          resource: sessionChangeResource(leadSession, `turn-${id}`),
           representation: null,
         }),
       );
@@ -957,7 +955,7 @@ test("a project with a lead is not read again on the clock", async () => {
     stream.push(
       frame("Session", "52", {
         version: 1,
-        resource: leadSessionResource(leadSession, "turn-1"),
+        resource: sessionChangeResource(leadSession, "turn-1"),
         representation: null,
       }),
     );
@@ -1043,7 +1041,7 @@ test("a project the API will not show is the same page without the line", async 
     route: (url) =>
       url.includes("/lead")
         ? answer({ error: { code: "NotFound", message: "no" } }, 404)
-        : answer({ partition: leadPartition, sequence: 1, tickets: [] }),
+        : answer({ partition: projectPartition, sequence: 1, tickets: [] }),
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
@@ -1066,7 +1064,7 @@ test("a project with no lead draws the lead whose frame says it has opened", asy
     stream.push(
       frame("Session", "50", {
         version: 1,
-        resource: leadSessionResource(leadSession, "turn-1"),
+        resource: sessionChangeResource(leadSession, "turn-1"),
         representation: null,
       }),
     );
@@ -1085,7 +1083,7 @@ test("a project with no lead is not re-read by a thread's frame", async () => {
     stream.push(
       frame("Session", "51", {
         version: 1,
-        resource: leadSessionResource("thread-geoff", "turn-1", "Thread"),
+        resource: sessionChangeResource("thread-geoff", "turn-1", "Thread"),
         representation: null,
       }),
     );
@@ -1109,7 +1107,7 @@ test("a Session frame moves the turn tail and walks the transcript on", async ()
     server.push(
       frame("Session", "40", {
         version: 1,
-        resource: leadSessionResource(leadSession, "turn-2"),
+        resource: sessionChangeResource(leadSession, "turn-2"),
         representation: null,
       }),
     );
@@ -1141,7 +1139,7 @@ test("the lead's own frame moves the lead alone, and an inquiry's the inquiries"
     server.push(
       frame("Session", "80", {
         version: 1,
-        resource: leadSessionResource(leadSession, "turn-2"),
+        resource: sessionChangeResource(leadSession, "turn-2"),
         representation: null,
       }),
     );
@@ -1157,7 +1155,7 @@ test("the lead's own frame moves the lead alone, and an inquiry's the inquiries"
     server.push(
       frame("Session", "81", {
         version: 1,
-        resource: leadSessionResource("inq-9", "turn-1", "Inquiry"),
+        resource: sessionChangeResource("inq-9", "turn-1", "Inquiry"),
         representation: null,
       }),
     );
@@ -1233,7 +1231,7 @@ function pagedStore(
             ? after + sessionStorePageBatchesMax
             : Math.min(after + sessionStorePageBatchesMax, batches);
         return answer({
-          stream: leadStream,
+          stream: transcriptStream,
           entries: Array.from({ length: last - after }, (_unused, at) => [
             {
               uuid: `uuid-ask-${String(after + at + 1)}`,
@@ -1463,7 +1461,7 @@ function compactingStore(moveOnRead: number): { readonly reads: () => number } {
         reads += 1;
         const cut = reads >= moveOnRead ? 9 : 1;
         return answer({
-          stream: leadStream,
+          stream: transcriptStream,
           entries: [
             {
               uuid: `uuid-${String(asked)}`,
@@ -1553,7 +1551,7 @@ function scriptedPage(
   entries: readonly string[],
 ): Response {
   return answer({
-    stream: leadStream,
+    stream: transcriptStream,
     entries: entries.map((uuid) => ({
       uuid,
       type: "assistant",
@@ -1605,7 +1603,7 @@ test("a re-walk that draws nothing keeps the chain the reader had", async () => 
     if (read === 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
     if (read === 2) return scriptedPage(after, 9, [`uuid-${String(after)}`]);
     return answer({
-      stream: leadStream,
+      stream: transcriptStream,
       entries: [],
       held: [],
       cut: 9,
@@ -1628,7 +1626,7 @@ test("a re-walk that draws nothing keeps the chain the reader had", async () => 
 test("a lead that has recorded nothing says so", async () => {
   scriptedStore((_read, after) =>
     answer({
-      stream: leadStream,
+      stream: transcriptStream,
       entries: [],
       held: [],
       cut: 1,
@@ -1651,7 +1649,7 @@ test("what a read could not draw is said beside what it did", async () => {
   scriptedStore((read, after) =>
     read === 1
       ? answer({
-          stream: leadStream,
+          stream: transcriptStream,
           entries: [
             { uuid: "uuid-a", type: "assistant", message: { content: [] } },
           ],
@@ -1662,7 +1660,7 @@ test("what a read could not draw is said beside what it did", async () => {
           nextAfter: after + 1,
         })
       : answer({
-          stream: leadStream,
+          stream: transcriptStream,
           entries: [],
           held: [],
           cut: 1,
@@ -1684,7 +1682,7 @@ test("what a read could not draw is said beside what it did", async () => {
  * of it. The route answers a page of entries at a time, so overflowing the cap
  * takes as many pages as the cap is worth of them. */
 test("the entries a pane stopped holding are counted where a reader sees them", async () => {
-  const overflowing = leadTranscriptEntriesHeldMax + 2;
+  const overflowing = sessionTranscriptEntriesHeldMax + 2;
   scriptedStore((_read, after) => {
     const from = after * sessionTranscriptEntriesMax;
     const carried = Math.max(
@@ -1692,7 +1690,7 @@ test("the entries a pane stopped holding are counted where a reader sees them", 
       Math.min(sessionTranscriptEntriesMax, overflowing - from),
     );
     return answer({
-      stream: leadStream,
+      stream: transcriptStream,
       entries: Array.from({ length: carried }, (_unused, at) => ({
         uuid: `uuid-${String(from + at).padStart(4, "0")}`,
         type: "assistant",
@@ -1716,7 +1714,7 @@ test("the entries a pane stopped holding are counted where a reader sees them", 
  * other's.
  */
 test("a lead that changes stream is walked as a new pane", async () => {
-  let stream = leadStream;
+  let stream = transcriptStream;
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -1747,13 +1745,13 @@ test("a lead that changes stream is walked as a new pane", async () => {
   });
   vi.stubGlobal("fetch", api.fetch);
   const server = await mountLead();
-  expect(screen.getByText(`on ${leadStream}`)).toBeDefined();
+  expect(screen.getByText(`on ${transcriptStream}`)).toBeDefined();
   stream = "another-stream";
   await turned(() => {
     server.push(
       frame("Session", "60", {
         version: 1,
-        resource: leadSessionResource(leadSession, "turn-2"),
+        resource: sessionChangeResource(leadSession, "turn-2"),
         representation: null,
       }),
     );
@@ -1761,7 +1759,7 @@ test("a lead that changes stream is walked as a new pane", async () => {
   await settled();
   expect(screen.getByText("on another-stream")).toBeDefined();
   expect(
-    screen.queryByText(`on ${leadStream}`),
+    screen.queryByText(`on ${transcriptStream}`),
     "one lead's chain was drawn as another stream's",
   ).toBeNull();
   expect(exchangeCount()).toBe(1);
@@ -1772,7 +1770,7 @@ test("a lead that changes stream is walked as a new pane", async () => {
 test("an unreached tail draws its marker", async () => {
   scriptedStore((_read, after) =>
     answer({
-      stream: leadStream,
+      stream: transcriptStream,
       entries: [
         {
           uuid: `uuid-${String(after)}`,
@@ -1920,7 +1918,7 @@ test("a project switch and a return leave the box and its pair where they were",
     box().value,
     "one project's question was drawn on another project's page",
   ).toBe("");
-  await moveTo(leadPartition);
+  await moveTo(projectPartition);
   expect(
     box().value,
     "a reader came back to a project and found their question gone",
@@ -1999,7 +1997,7 @@ test("a visit to a project with no lead keeps the box of the one that has it", a
   styleless();
   await moveTo(absent);
   expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
-  await moveTo(leadPartition);
+  await moveTo(projectPartition);
   expect(
     box().value,
     "a project that answers no lead took another project's question with it",

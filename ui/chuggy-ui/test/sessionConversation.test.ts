@@ -13,11 +13,11 @@ import { expect, test } from "vitest";
 
 import { conversationExchanges } from "../app/core/conversation.ts";
 import type { ConversationItem } from "../app/core/conversation.ts";
-import { leadTranscriptFoldEmpty } from "../app/core/leadTranscript.ts";
+import { sessionTranscriptFoldEmpty } from "../app/core/sessionTranscript.ts";
 import type {
-  LeadTranscriptEntry,
-  LeadTranscriptHeld,
-} from "../app/core/leadTranscript.ts";
+  SessionTranscriptEntry,
+  SessionTranscriptHeld,
+} from "../app/core/sessionTranscript.ts";
 import {
   sessionConversationItems,
   sessionConversationTurns,
@@ -38,9 +38,9 @@ import { threadTurn } from "./threadFixture.ts";
 
 const stream = "9f8e7d";
 
-function heldOf(held: Partial<LeadTranscriptHeld>): LeadTranscriptHeld {
+function heldOf(held: Partial<SessionTranscriptHeld>): SessionTranscriptHeld {
   return {
-    ...leadTranscriptFoldEmpty,
+    ...sessionTranscriptFoldEmpty,
     stream,
     failure: undefined,
     unreached: false,
@@ -53,15 +53,15 @@ function said(text: string): unknown {
 }
 
 function entryOf(
-  entry: Partial<LeadTranscriptEntry> &
-    Pick<LeadTranscriptEntry, "type" | "message">,
-): LeadTranscriptEntry {
+  entry: Partial<SessionTranscriptEntry> &
+    Pick<SessionTranscriptEntry, "type" | "message">,
+): SessionTranscriptEntry {
   return { uuid: "uuid-1", timestamp: "2026-09-02T10:00:00Z", ...entry };
 }
 
 /** The items one read makes, with the stream listed unless a case says else. */
 function itemsOf(
-  held: Partial<LeadTranscriptHeld>,
+  held: Partial<SessionTranscriptHeld>,
 ): readonly ConversationItem[] {
   return sessionConversationItems({
     held: heldOf(held),
@@ -305,7 +305,7 @@ test("a walk that stopped short says so, and one that reached the end says nothi
 
 const sentences = [interruptionSentence, interruptionToolSentence] as const;
 
-function entered(uuid: string, text: string): LeadTranscriptEntry {
+function entered(uuid: string, text: string): SessionTranscriptEntry {
   return entryOf({ uuid, type: "user", message: { content: text } });
 }
 
@@ -333,7 +333,7 @@ test.each(sentences)(
   },
 );
 
-const cutOff: readonly LeadTranscriptEntry[] = [
+const cutOff: readonly SessionTranscriptEntry[] = [
   entered("uuid-a", "run the gates"),
   entryOf({
     uuid: "uuid-b",
@@ -457,7 +457,7 @@ test("only what the runtime writes is left out: its words among others, by the a
   expect(ids(items)).toHaveLength(kept.length + 1);
 });
 
-function called(uuid: string, call: string): readonly LeadTranscriptEntry[] {
+function called(uuid: string, call: string): readonly SessionTranscriptEntry[] {
   return [
     entryOf({
       uuid,
@@ -479,7 +479,7 @@ function called(uuid: string, call: string): readonly LeadTranscriptEntry[] {
 /** What a store holds of a turn stopped after two calls and before a word,
  * and of the session resumed after it: the line `written` in the assistant's
  * role, then the next message and its answer. */
-function resumed(written: unknown): readonly LeadTranscriptEntry[] {
+function resumed(written: unknown): readonly SessionTranscriptEntry[] {
   return [
     entered("uuid-a", "run the gates"),
     ...called("uuid-b", "toolu_1"),

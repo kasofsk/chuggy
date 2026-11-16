@@ -35,7 +35,7 @@ import {
   epicServingReset,
   epicView,
 } from "./epicPageFixture.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import { settled } from "./screenHarness.tsx";
 
@@ -770,7 +770,7 @@ test("the selected ticket's panel says its layer and step, and how many it depen
     within(panel)
       .getByRole("link", { name: "Open ticket" })
       .getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+  ).toBe(`/${projectPartition.tenant}/${projectPartition.project}/tickets/5`);
   fireEvent.click(cardButton(8));
   expect(side().querySelector(".epic-graph-side-place")?.textContent).toBe(
     "Layer 3 of 4",
@@ -882,7 +882,7 @@ test("on a phone the graph takes the screen at rest, and a tapped card rises in 
     within(sheet())
       .getByRole("link", { name: "Open ticket" })
       .getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/5`);
+  ).toBe(`/${projectPartition.tenant}/${projectPartition.project}/tickets/5`);
   expect(sheet().hasAttribute("style")).toBe(false);
   expect(sheet().querySelectorAll("[style]")).toHaveLength(0);
 });
@@ -1135,7 +1135,8 @@ test("a queue read that fails draws no chip and leaves every card drawn", async 
   });
   await vi.waitFor(() => {
     expect(
-      client.getQueryState(landingQueuesQuery(leadPartition).queryKey)?.status,
+      client.getQueryState(landingQueuesQuery(projectPartition).queryKey)
+        ?.status,
     ).toBe("error");
   });
   await settled();
@@ -1184,7 +1185,7 @@ test("a graph that cannot be read says so where the graph would be", async () =>
 
 /** Every read but the graph's made again, as another's write would leave them. */
 async function refetchedButGraph(client: QueryClient): Promise<void> {
-  const graphKey = JSON.stringify(epicGraphQuery(leadPartition, 7).queryKey);
+  const graphKey = JSON.stringify(epicGraphQuery(projectPartition, 7).queryKey);
   await client.refetchQueries({
     predicate: (query) => JSON.stringify(query.queryKey) !== graphKey,
   });

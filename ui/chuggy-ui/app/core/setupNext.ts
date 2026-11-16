@@ -10,7 +10,10 @@
  * where one is lacking the next thing is that question. A repository holding
  * no configuration of its own is the one other: its configuration is written
  * in the checkout by the person's agent with them, through `configuration`,
- * `check` and `import`, and no page is pressed for it. The MCP step and the
+ * `check` and `import`, and no page is pressed for it. Where the project
+ * holds no repository and both apps are granted the folder's own, `bind`
+ * adds it on the person's yes, and where an app is not, the tell names that
+ * app's page on the forge and no page of the console. The MCP step and the
  * runner's change the machine, so each is offered and never run unasked: the
  * person is told what `mcp` would do, the runner package installed where it
  * is not here and its server named in their agent, and for the runner's step
@@ -30,6 +33,7 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
@@ -59,9 +63,16 @@ import {
   setupEnginesNone,
 } from "./setupRunnerSaid.ts";
 import { setupAppNames, setupPhaseSaid, setupSeen } from "./setupStanding.ts";
-import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
+import type {
+  SetupAppPage,
+  SetupLack,
+  SetupStanding,
+  SetupStep,
+} from "./setupStanding.ts";
 import { setupFlat } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
+import { workspaceNamesListed } from "./workspaceNames.ts";
+import type { WorkspaceNamed } from "./workspaceNames.ts";
 
 /**
  * What is pressed on the console's pages, by the message each page draws it
@@ -72,6 +83,7 @@ export const setupPressed = {
   edit: { id: "ui-edit" },
   save: { id: "ui-save" },
   connect: { id: "repositories-connect-github" },
+  addAccount: { id: "settings-accounts-add" },
   add: { id: "repositories-add" },
   runner: { id: "runners-register" },
   runnerProject: { id: "runners-personal-project-add" },
@@ -84,11 +96,12 @@ export const setupPressed = {
 /** How many names a question lists before it says how many more there are. */
 export const setupAskNamesMax = 12;
 
-/** Where the pages a step is done on are: the site, and the workspace and project as far as the checklist is of one. */
+/** Where the pages a step is done on are: the site, and the workspace and project as far as the checklist is of one; `named` is what a sentence calls a workspace. */
 interface SetupAt {
   readonly site: string;
   readonly workspace: string;
   readonly project: string;
+  readonly named: WorkspaceNamed;
 }
 
 function setupPage(at: SetupAt, route: string): string {
@@ -102,7 +115,7 @@ function setupTicketPage(at: SetupAt, ticket: number): string {
 }
 
 function setupNamed(at: SetupAt): string {
-  return `${at.workspace}/${at.project}`;
+  return `${at.named(at.workspace)}/${at.project}`;
 }
 
 function setupHand(tell: Copy, when: Copy): SetupThing {
@@ -116,7 +129,7 @@ function setupWorkspaceMend(
   at: SetupAt,
 ): SetupThing {
   if (lack.lacks === "Administration") {
-    const { workspace } = lack;
+    const workspace = at.named(lack.workspace);
     return setupHand(
       {
         id: "setup-mend-admin-tell",
@@ -159,7 +172,7 @@ function setupProjectMend(
       ask: {
         id: "setup-ask-project-name",
         args: {
-          workspace,
+          workspace: at.named(workspace),
           address: address === undefined ? "made" : "given",
           project: address ?? "",
           flag: setupNameFlag,
@@ -248,28 +261,116 @@ function setupGithubMend(
   );
 }
 
+/**
+ * An app as a line of the tell names it: with its settings page on the forge,
+ * or with the press on the workspace's accounts page that installs it. The
+ * worker app's install is on the row of an account holding the portal app, so
+ * where the portal app is to be installed there too, its row is waited on.
+ */
+function setupAppPageSaid(
+  page: SetupAppPage,
+  pages: readonly SetupAppPage[],
+  at: SetupAt,
+): Copy {
+  const app = setupAppNames[page.app];
+  if (page.page === "Settings")
+    return {
+      id: "setup-mend-reach-settings",
+      args: { app, page: page.settings },
+    };
+  const accounts = setupPage(at, settingsRoutes.workspace.accounts);
+  const { account } = page;
+  if (page.app === "portal")
+    return {
+      id: "setup-mend-reach-install-portal",
+      args: { app, page: accounts, press: setupPressed.addAccount, account },
+    };
+  const after = pages.some(
+    (other) => other.app === "portal" && other.page === "Install",
+  );
+  const press = forgeInstallLabel("worker");
+  return after
+    ? {
+        id: "setup-mend-reach-install-worker-after",
+        args: { app, press, account },
+      }
+    : {
+        id: "setup-mend-reach-install-worker",
+        args: { app, page: accounts, press, account },
+      };
+}
+
+/**
+ * The folder's repository before it is added: where both apps are granted it,
+ * `bind` adds it on the person's yes, as the console's Add does; where an app
+ * is not, every such app is named in the one tell with where it is given it,
+ * and the checklist is read again once the person says they are done there.
+ * Where what the apps grant was not read, the console's Add is the way.
+ */
+function setupBindingMend(
+  lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
+  at: SetupAt,
+  mine: string | undefined,
+): SetupThing {
+  const reach = lack.reach;
+  if (reach?.reach === "Granted")
+    return {
+      thing: "Offer",
+      command: "Bind",
+      tell: {
+        id: "setup-mend-bind-offer",
+        args: { repository: reach.repository, project: setupNamed(at) },
+      },
+      when: {
+        id: "setup-offer-bind-when",
+        args: { repository: reach.repository },
+      },
+      workspace: at.workspace,
+      project: at.project,
+    };
+  if (reach?.reach === "Ungranted") {
+    if (reach.apps.length < 1 || reach.apps.length > forgeApps.length)
+      throw new Error("a tell of the apps not granted names one or both");
+    const [first, second] = reach.apps.map((page) =>
+      setupAppPageSaid(page, reach.apps, at),
+    );
+    return setupHand(
+      {
+        id: "setup-mend-reach-tell",
+        args: {
+          repository: reach.repository,
+          count: second === undefined ? "one" : "two",
+          first: first ?? "",
+          second: second ?? "",
+        },
+      },
+      { id: "setup-mend-reach-when", args: { repository: reach.repository } },
+    );
+  }
+  return setupHand(
+    {
+      id: "setup-mend-binding-tell",
+      args: {
+        page: setupPage(at, navRoutes.repositories),
+        add: setupPressed.add,
+        repository:
+          mine === undefined
+            ? { id: "setup-mend-binding-yours" }
+            : { id: "setup-mend-binding-mine", args: { repository: mine } },
+      },
+    },
+    { id: "setup-mend-binding-when" },
+  );
+}
+
 function setupRepositoryMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" | "Configuration" }>,
   at: SetupAt,
   mine: string | undefined,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
-  if (lack.lacks === "Binding")
-    return setupHand(
-      {
-        id: "setup-mend-binding-tell",
-        args: {
-          page,
-          add: setupPressed.add,
-          repository:
-            mine === undefined
-              ? { id: "setup-mend-binding-yours" }
-              : { id: "setup-mend-binding-mine", args: { repository: mine } },
-        },
-      },
-      { id: "setup-mend-binding-when" },
-    );
-  return setupConfigurationMend(lack, at);
+  return lack.lacks === "Binding"
+    ? setupBindingMend(lack, at, mine)
+    : setupConfigurationMend(lack, at);
 }
 
 /** What the import of the repository last came to, as the line on the repositories page says it, where one finished. */
@@ -728,13 +829,17 @@ function setupListed(names: readonly string[]): CopyArgument {
 /** The question a choice still open is put as, with the names it is among as far as the site sent them. */
 function setupAsk(
   choice: Extract<SetupChoice, { readonly choice: "Open" }>,
+  named: WorkspaceNamed,
 ): SetupThing {
   const of: Copy =
     choice.open === "workspace"
       ? { id: "setup-ask-workspace" }
       : {
           id: "setup-ask-project",
-          args: { workspace: choice.workspace ?? "" },
+          args: {
+            workspace:
+              choice.workspace === undefined ? "" : named(choice.workspace),
+          },
         };
   const shown = choice.among.slice(0, setupAskNamesMax);
   const more = choice.among.length - shown.length;
@@ -835,6 +940,23 @@ export function setupConfigurationDue(
     : { partition, repository: lack.bound };
 }
 
+/** The project and the folder's repository, by the address the portal app lists it by, where adding it is the one next thing, which is when `bind` asks the site to add it. */
+export function setupBindDue(standing: SetupStanding):
+  | {
+      readonly partition: PartitionIdentity;
+      readonly repository: string;
+      readonly url: string;
+    }
+  | undefined {
+  const partition = setupDue(standing, ["Binding"]);
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  if (partition === undefined || lack?.lacks !== "Binding") return undefined;
+  const reach = lack.reach;
+  return reach?.reach === "Granted"
+    ? { partition, repository: reach.repository, url: reach.url }
+    : undefined;
+}
+
 /** The project whose MCP step is the one next, which is when the runner package here is looked for before the next thing is named. */
 export function setupMcpDue(
   standing: SetupStanding,
@@ -847,11 +969,14 @@ function setupThing(
   here: SetupRunnerHere | undefined,
   packaged: boolean,
 ): SetupThing {
-  if (standing.choice.choice === "Open") return setupAsk(standing.choice);
+  const named = workspaceNamesListed(standing.workspaces);
+  if (standing.choice.choice === "Open")
+    return setupAsk(standing.choice, named);
   const at: SetupAt = {
     site: standing.site,
     workspace: standing.choice.workspace ?? "",
     project: standing.choice.project ?? "",
+    named,
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
   if (undone?.lacks === undefined) return setupDoneThing(standing, at);

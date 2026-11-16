@@ -26,7 +26,8 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
-import { leadPartition, leadRefusals, leadRouteAnswer } from "./leadFixture.ts";
+import { leadRefusals, leadRouteAnswer } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import type { AgenticRefusalsResponse } from "../../../src/contract/responses.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -40,7 +41,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -67,14 +68,14 @@ async function drawRefusals(
   const server = openedStream();
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
       transport={server.ports.fetch}
     >
       <LeadRefusals
-        partition={leadPartition}
+        partition={projectPartition}
         nowMs={Date.parse("2026-09-01T12:00:00Z")}
       />
     </ScreenHarness>,

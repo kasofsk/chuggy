@@ -14,22 +14,31 @@
  * repository from and the worker app is what a ticket's work is given its
  * credential under; and a runner is waited on only where the project's work
  * goes to runners, and the person's chat host only where their chats in it
- * do. Which repositories the worker app lacks and whether work or a chat
- * waits on a runner are the console's own deciders, so this program and the
- * pages do not say different things. Beside its few words each step that is
- * not done carries what it lacks as a member of a closed set, which is what
+ * do. Before any repository is added, the repository step carries what the
+ * apps on the account that owns the folder's remote grant it, where every
+ * read that says so was got: both granted it, which is the repository the
+ * program may add itself, or each app that is not, with where it is given
+ * it: the forge's settings page of an app installed there, and the console's
+ * own install of one that is not, since only that install is claimed for the
+ * workspace. Which repositories the worker app lacks, whether an app's
+ * install is offered, and whether work or a chat waits on a runner are the
+ * console's own deciders, so this program and the pages do not say different
+ * things. Beside its few words each step that is not done carries what it lacks as a member of a closed set, which is what
  * the next thing is decided from. Nothing is remembered between runs: the
  * server is the record.
  */
 
+import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
   RepositoryConfigurationImportAttemptResponse,
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type {
   ForgeAppName,
   PlacementRoute,
@@ -38,7 +47,7 @@ import type {
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
-import { forgeAccountRows } from "./forgeInstallation.ts";
+import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
@@ -51,6 +60,7 @@ import {
   setupLanding,
   setupPartition,
   setupProjectListed,
+  setupRemoteOwner,
 } from "./setupReads.ts";
 import type {
   SetupChoice,
@@ -62,6 +72,8 @@ import type {
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import { workRunnerStanding } from "./workRunner.ts";
+import { workspaceNamesListed } from "./workspaceNames.ts";
+import type { WorkspaceNamed } from "./workspaceNames.ts";
 import type {
   SetupStepName,
   SetupStepSaid,
@@ -116,7 +128,8 @@ export type SetupLack =
       readonly repository: string;
     }
   | { readonly lacks: "Mcp" }
-  | { readonly lacks: "Binding" }
+  /** `reach` is what the apps grant the folder's remote, where every read that says so was got. */
+  | { readonly lacks: "Binding"; readonly reach: SetupReach | undefined }
   /** `bound` is the repository as the binding names it, and `lastImport` the import of it that finished last, where one did. */
   | {
       readonly lacks: "Configuration";
@@ -146,6 +159,42 @@ export type SetupLack =
 
 type TicketPhase = TicketResponse["phase"];
 
+/**
+ * One app that is not granted the folder's repository, and where it is given
+ * it: its installation's settings page on the forge, where the app is
+ * installed on `account`; and where it is not, the console's own install of
+ * it, which mints the state the setup landing claims the install by, so the
+ * next read finds it on `account`.
+ */
+export type SetupAppPage =
+  | {
+      readonly app: ForgeAppName;
+      readonly page: "Settings";
+      readonly settings: string;
+    }
+  | {
+      readonly app: ForgeAppName;
+      readonly page: "Install";
+      readonly account: string;
+    };
+
+/**
+ * What both apps grant the folder's repository before any is added: both
+ * granted it, with the address the portal app lists it by, which is what a
+ * bind names; or the apps that are not, each with its page.
+ */
+export type SetupReach =
+  | {
+      readonly reach: "Granted";
+      readonly repository: string;
+      readonly url: string;
+    }
+  | {
+      readonly reach: "Ungranted";
+      readonly repository: string;
+      readonly apps: readonly SetupAppPage[];
+    };
+
 export interface SetupStep extends SetupStepSaid {
   /** Present exactly where the step is not done. */
   readonly lacks: SetupLack | undefined;
@@ -155,6 +204,8 @@ export interface SetupStanding {
   readonly site: string;
   readonly choice: SetupChoice;
   readonly remote: SetupRemote | undefined;
+  /** The person's own workspaces, whose display names are what a line names each by. */
+  readonly workspaces: readonly AccessCallerTenant[];
   /** What the folder's remote came to, where it was looked for. */
   readonly found: readonly Copy[];
   /** One a step in order, or none where which project is meant is still open. */
@@ -278,6 +329,7 @@ function setupFateOf(
 function setupWorkspaceStep(
   reads: SetupReads,
   workspace: string | undefined,
+  named: WorkspaceNamed,
 ): SetupStep {
   const { tenants, truncated } = reads.workspaces;
   const lacking: SetupLack = { lacks: "Workspace", workspace };
@@ -291,7 +343,8 @@ function setupWorkspaceStep(
           lacking,
         );
   const held = tenants.find((tenant) => tenant.tenant === workspace);
-  if (held?.administer === true) return setupDone("workspace", workspace);
+  if (held?.administer === true)
+    return setupDone("workspace", named(workspace));
   const seen =
     reads.inventory.read === "Got" &&
     reads.inventory.value.some((partition) => partition.tenant === workspace);
@@ -304,7 +357,7 @@ function setupWorkspaceStep(
           held === undefined
             ? "setup-step-workspace-seen"
             : "setup-step-workspace-member",
-        args: { workspace },
+        args: { workspace: named(workspace) },
       },
       { lacks: "Administration", workspace },
     );
@@ -323,19 +376,20 @@ function setupProjectless(
   workspace: string,
   project: string | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): Copy {
   if (project === undefined)
     return {
       id: administers
         ? "setup-step-projectless"
         : "setup-step-projectless-unshown",
-      args: { workspace },
+      args: { workspace: named(workspace) },
     };
   return {
     id: administers
       ? "setup-step-projectless-named"
       : "setup-step-projectless-unshown-named",
-    args: { workspace, project },
+    args: { workspace: named(workspace), project },
   };
 }
 
@@ -344,6 +398,7 @@ function setupProjectUnnamed(
   reads: SetupReads,
   workspace: string | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   const inventory = reads.inventory;
   if (inventory.read !== "Got")
@@ -357,7 +412,7 @@ function setupProjectUnnamed(
     ? setupUndone(
         "project",
         "todo",
-        setupProjectless(workspace, project, administers),
+        setupProjectless(workspace, project, administers, named),
         lacking,
       )
     : setupUnread("project", "inventory", setupCut);
@@ -381,17 +436,18 @@ function setupProjectStep(
   workspace: string | undefined,
   partition: PartitionIdentity | undefined,
   administers: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   if (partition === undefined)
-    return setupProjectUnnamed(reads, workspace, administers);
+    return setupProjectUnnamed(reads, workspace, administers, named);
   if (setupProjectAbsent(reads, partition))
     return setupUndone(
       "project",
       "todo",
-      setupProjectless(partition.tenant, partition.project, administers),
+      setupProjectless(partition.tenant, partition.project, administers, named),
       { lacks: "Project" },
     );
-  const name = `${partition.tenant}/${partition.project}`;
+  const name = setupNamed(partition, named);
   const settings = reads.settings;
   if (settings.read !== "Got") {
     const unread = setupUnread("project", "settings", setupFateOf(settings));
@@ -612,13 +668,116 @@ function setupGithubStep(
   }
 }
 
-/** Done where the repository meant is configured; waiting where it is added and is not. */
+/** One app as it stands on the remote's owner: granted it, the page it is given it on, or nothing where a read that would say was not got or was cut short. */
+type SetupAppReach =
+  | { readonly app: "Granted"; readonly entry: ForgeRepositoryResponse }
+  | { readonly app: "Lacking"; readonly page: SetupAppPage }
+  | undefined;
+
+/**
+ * The worker app's listing held to the portal app's entry by the console's
+ * own decider, so this program and the Add dialog do not say different
+ * things of it; and where the portal app lists nothing for it, by what two
+ * addresses of one repository have in common.
+ */
+function setupWorkerEntry(
+  owner: string,
+  listed: readonly ForgeRepositoryResponse[],
+  whole: boolean,
+  portal: ForgeRepositoryResponse | undefined,
+  address: string,
+): ForgeRepositoryResponse | "Lacking" | undefined {
+  if (portal === undefined)
+    return setupGrantEntry(listed, address) ?? (whole ? "Lacking" : undefined);
+  const lacked = repositoriesWorkerless(
+    [{ account: owner, repositories: [portal], truncated: false }],
+    [{ account: owner, repositories: listed, truncated: !whole }],
+  );
+  if (lacked.includes(portal.url)) return "Lacking";
+  return listed.find((held) => held.url === portal.url);
+}
+
+/**
+ * Whether the accounts page draws the console's install of `app`: the
+ * worker app's on the row of an account once it holds the portal app, and
+ * the portal app's, as Add account, only once the workspace lists an account.
+ */
+function setupInstallDrawn(
+  installations: readonly ForgeInstallationResponse[],
+  app: ForgeAppName,
+): boolean {
+  return app === "worker" || installations.length > 0;
+}
+
+function setupAppReach(
+  reads: SetupReads,
+  remote: SetupRemote,
+  owner: string,
+  app: ForgeAppName,
+  portal: ForgeRepositoryResponse | undefined,
+): SetupAppReach {
+  const installations = reads.installations;
+  if (installations.read !== "Got") return undefined;
+  const claim = installations.value.find(
+    (held) => held.app === app && held.account === owner,
+  );
+  if (claim === undefined) {
+    const apps = reads.apps;
+    const offered =
+      apps.read === "Got" ? forgeInstallOffered(apps.value, app) : undefined;
+    return installations.whole &&
+      offered !== undefined &&
+      setupInstallDrawn(installations.value, app)
+      ? { app: "Lacking", page: { app, page: "Install", account: owner } }
+      : undefined;
+  }
+  const grant = reads.grants.find((held) => held.app === app);
+  const listed = grant?.listed;
+  if (listed?.read !== "Got") return undefined;
+  const address = `https://${remote.said}`;
+  const entry =
+    app === "portal"
+      ? (setupGrantEntry(listed.value, address) ??
+        (listed.whole ? "Lacking" : undefined))
+      : setupWorkerEntry(owner, listed.value, listed.whole, portal, address);
+  if (entry === undefined) return undefined;
+  if (entry !== "Lacking") return { app: "Granted", entry };
+  const settings = grant?.settings;
+  return settings?.read === "Got"
+    ? {
+        app: "Lacking",
+        page: { app, page: "Settings", settings: settings.value },
+      }
+    : undefined;
+}
+
+/** What both apps grant the folder's remote, where it names a repository of one owner and every read that says so was got. */
+function setupReachOf(reads: SetupReads): SetupReach | undefined {
+  const remote = reads.remote;
+  const owner = remote === undefined ? undefined : setupRemoteOwner(remote);
+  if (remote === undefined || owner === undefined) return undefined;
+  const repository = repositoryLabel(`https://${remote.said}`);
+  const pages: SetupAppPage[] = [];
+  let portal: ForgeRepositoryResponse | undefined;
+  for (const app of forgeApps) {
+    const one = setupAppReach(reads, remote, owner, app, portal);
+    if (one === undefined) return undefined;
+    if (one.app === "Lacking") pages.push(one.page);
+    else portal ??= one.entry;
+  }
+  if (pages.length > 0) return { reach: "Ungranted", repository, apps: pages };
+  return portal === undefined
+    ? undefined
+    : { reach: "Granted", repository, url: portal.url };
+}
+
+/** Done where the repository meant is configured; waiting where it is added and is not; to do where none is, with what the apps grant the folder's remote. */
 function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
   const mine: Copy | undefined =
     reads.remote === undefined
       ? undefined
       : { id: "setup-step-remote", args: { remote: reads.remote.said } };
-  const lacking: SetupLack = { lacks: "Binding" };
+  const lacking: SetupLack = { lacks: "Binding", reach: undefined };
   const meant = setupMeant(reads.repositories);
   switch (meant.meant) {
     case "Unread":
@@ -626,7 +785,10 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
         ? setupUndone("repository", "todo", mine, lacking)
         : setupUnread("repository", "repositories", meant.fate);
     case "None":
-      return setupUndone("repository", "todo", mine, lacking);
+      return setupUndone("repository", "todo", mine, {
+        lacks: "Binding",
+        reach: none ? undefined : setupReachOf(reads),
+      });
     case "Repository": {
       const repository = repositoryLabel(meant.binding.repository);
       return meant.binding.configured
@@ -893,12 +1055,19 @@ function setupTicketStep(
   return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
 }
 
-function setupNamed(partition: PartitionIdentity): string {
-  return `${partition.tenant}/${partition.project}`;
+/** A project as a line names it: by its workspace's display name, and its own address. */
+function setupNamed(
+  partition: PartitionIdentity,
+  named: WorkspaceNamed,
+): string {
+  return `${named(partition.tenant)}/${partition.project}`;
 }
 
 /** What the folder's remote came to among the projects it was looked for in, said of those and of no others, whether or not it proposed one. */
-function setupRemoteFound(reads: SetupReads): readonly Copy[] {
+function setupRemoteFound(
+  reads: SetupReads,
+  named: WorkspaceNamed,
+): readonly Copy[] {
   const proposal = reads.proposal;
   if (reads.remote === undefined || proposal.proposal === "Unsought") return [];
   const remote = reads.remote.said;
@@ -907,7 +1076,7 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
       ? { id: "setup-remote-among" }
       : {
           id: "setup-remote-among-within",
-          args: { workspace: proposal.within },
+          args: { workspace: named(proposal.within) },
         };
   switch (proposal.proposal) {
     case "Unbound":
@@ -919,7 +1088,7 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
           args: {
             remote,
             among,
-            project: setupNamed(proposal.partition),
+            project: setupNamed(proposal.partition, named),
             workspaceFlag: "--workspace",
             projectFlag: "--project",
           },
@@ -932,7 +1101,9 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
           args: {
             remote,
             among,
-            projects: proposal.partitions.map(setupNamed).join(", "),
+            projects: proposal.partitions
+              .map((partition) => setupNamed(partition, named))
+              .join(", "),
           },
         },
       ];
@@ -945,12 +1116,13 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
 function setupMcpStep(
   partition: PartitionIdentity | undefined,
   none: boolean,
-  named: boolean,
+  served: boolean,
+  named: WorkspaceNamed,
 ): SetupStep {
   if (partition === undefined || none)
     return setupUndone("mcp", "todo", undefined, { lacks: "Mcp" });
-  const project = setupNamed(partition);
-  return named
+  const project = setupNamed(partition, named);
+  return served
     ? setupDone("mcp", { id: "setup-step-mcp-named", args: { project } })
     : setupUndone(
         "mcp",
@@ -968,21 +1140,29 @@ function setupMcpStep(
  * chosen, is the machine's to say and no read's.
  */
 export function setupStanding(reads: SetupReads, named = false): SetupStanding {
+  const workspaces = reads.workspaces.tenants;
+  const workspaceNamed = workspaceNamesListed(workspaces);
   const standing = {
     site: reads.site,
     choice: reads.choice,
     remote: reads.remote,
-    found: setupRemoteFound(reads),
+    workspaces,
+    found: setupRemoteFound(reads, workspaceNamed),
   };
   if (reads.choice.choice === "Open")
     return { ...standing, steps: [], unmerged: undefined };
-  const workspace = setupWorkspaceStep(reads, reads.choice.workspace);
+  const workspace = setupWorkspaceStep(
+    reads,
+    reads.choice.workspace,
+    workspaceNamed,
+  );
   const partition = setupPartition(reads.choice, reads.inventory);
   const project = setupProjectStep(
     reads,
     reads.choice.workspace,
     partition,
     workspace.state === "done",
+    workspaceNamed,
   );
   const none = workspace.state === "todo" || project.state === "todo";
   const done = setupTicketDone(reads);
@@ -991,7 +1171,7 @@ export function setupStanding(reads: SetupReads, named = false): SetupStanding {
     steps: [
       workspace,
       project,
-      setupMcpStep(partition, none, named),
+      setupMcpStep(partition, none, named, workspaceNamed),
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),
       setupRunnerStep(reads, none),

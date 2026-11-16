@@ -29,10 +29,10 @@ import {
   leadDecisionRefusing,
   leadDecisionSettledOn,
   leadDecisionUnsaid,
-  leadPartition,
   leadRefusals,
   leadRouteAnswer,
 } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { navRoutes } from "../app/core/shellNav.ts";
 import { pillTones } from "../app/core/tones.ts";
 import { operationRefusalCodes } from "../../../src/contract/rosters.ts";
@@ -48,7 +48,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode; readonly to?: string }) => (
     <a href={props.to ?? "/"}>{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -77,14 +77,14 @@ async function drawDecisions(history?: unknown): Promise<readonly string[]> {
   vi.stubGlobal("fetch", api.fetch);
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
       transport={openedStream().ports.fetch}
     >
       <LeadDecisions
-        partition={leadPartition}
+        partition={projectPartition}
         nowMs={Date.parse("2026-09-01T12:00:00Z")}
       />
     </ScreenHarness>,

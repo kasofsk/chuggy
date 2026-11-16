@@ -25,7 +25,10 @@ import {
 } from "./apiRoutes.ts";
 import { consoleListQuery, consolePartitionQuery } from "./consoleQuery.ts";
 import { inquirySessionKind } from "./leadInquiries.ts";
-import { leadSessionNamed, sessionChangeKindNamed } from "./leadTranscript.ts";
+import {
+  sessionChangeSessionNamed,
+  sessionChangeKindNamed,
+} from "./sessionTranscript.ts";
 import { projectLeadSessionKind } from "./projectLead.ts";
 import { threadUsagePaged } from "./threadCommands.ts";
 import type { ThreadUsage } from "./threadCommands.ts";
@@ -52,7 +55,7 @@ export function leadQuery(
       (change) =>
         session === undefined
           ? sessionChangeKindNamed(change.resource) === projectLeadSessionKind
-          : leadSessionNamed(change.resource) === session,
+          : sessionChangeSessionNamed(change.resource) === session,
     ),
     (ports) => apiLead(ports, partition),
     polledMs,
@@ -82,7 +85,7 @@ export function threadQuery(partition: PartitionIdentity, session: string) {
       partition,
       "Session",
       `thread-${session}`,
-      (change) => leadSessionNamed(change.resource) === session,
+      (change) => sessionChangeSessionNamed(change.resource) === session,
     ),
     (ports) => apiThread(ports, partition, session),
   );
@@ -100,7 +103,7 @@ export function threadUsageQuery(
       partition,
       "Session",
       `thread-usage-${session}`,
-      (change) => leadSessionNamed(change.resource) === session,
+      (change) => sessionChangeSessionNamed(change.resource) === session,
     ),
     (ports) =>
       threadUsagePaged((page) => apiThread(ports, partition, session, page)),
