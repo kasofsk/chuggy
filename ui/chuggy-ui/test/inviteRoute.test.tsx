@@ -75,6 +75,7 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
   expect(
     scripted.sent.map((request) => [request.url, request.body]),
   ).toStrictEqual([
+    ["/api/v1/appearance/choice", undefined],
     ["/access/v1/invite-links/redemptions", { token: "crossed" }],
   ]);
   expect(browser.left).toStrictEqual(["/acme/atlas"]);

@@ -26,7 +26,9 @@ import {
 } from "./sessionHolderHarness.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
-vi.mock("../app/browser/routes.tsx", () => ({ consoleRouter: {} }));
+vi.mock("../app/browser/routes.tsx", () => ({
+  consoleRouter: { matchRoutes: () => [] },
+}));
 
 /** The route tree of one loaded document, drawn over the modules that
  * document loaded: a button that renews its session when pressed. */

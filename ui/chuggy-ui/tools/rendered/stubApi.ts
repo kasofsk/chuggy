@@ -17,6 +17,10 @@
 
 import type { z } from "zod";
 
+import {
+  builtInThemeDefault,
+  builtInThemes,
+} from "../../../../src/contract/appearance.ts";
 import { ticketActionReachResponseSchema } from "../../../../src/contract/actionReach.ts";
 import {
   dispatchViewSchemaVersion,
@@ -56,9 +60,11 @@ import {
   projectResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
+  projectAppearanceResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
+  themeChoiceResponseSchema,
   threadsResponseSchema,
   ticketLandingsResponseSchema,
   ticketNativeActionsResponseSchema,
@@ -504,6 +510,12 @@ const epicReads: readonly StubApiRead[] = [
 
 /** The reads every case is answered, a route to a row. */
 export const stubApiReads: readonly StubApiRead[] = [
+  stubApiRead(`${projectPath}/appearance`, projectAppearanceResponseSchema, {
+    theme: builtInThemes[builtInThemeDefault],
+    layer: "BuiltInDefault",
+    layers: {},
+  }),
+  stubApiRead("/api/v1/appearance/choice", themeChoiceResponseSchema, {}),
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
     projects: [{ ...partition, name: stubApiProject }],
   }),
