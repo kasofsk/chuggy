@@ -47,6 +47,10 @@ import {
   threadWakeFunction,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import {
+  postgresSessionStoreRows,
+  sessionStoreStreamRows,
+} from "../../src/adapters/postgres/sessionStoreReads.ts";
 import { sessionChangeResourceSchema } from "../../src/contract/events.ts";
 import {
   threadNorthStarHeading,
@@ -1826,7 +1830,8 @@ test("the store reads answer the session they were asked about and no sibling", 
     );
 
   assert.deepEqual(
-    await rig.apiLead.streams(
+    await sessionStoreStreamRows(
+      rig.apiPool,
       partition,
       thread.session,
       sessionStoreStreamsAnswered,
@@ -1834,7 +1839,7 @@ test("the store reads answer the session they were asked about and no sibling", 
     [{ stream: "thread-stream", batches: 1 }],
   );
   assert.deepEqual(
-    await rig.apiLead.batches({
+    await postgresSessionStoreRows(rig.apiPool).batches({
       partition,
       session: thread.session,
       stream: asSessionStoreStream("thread-stream"),
@@ -1844,7 +1849,7 @@ test("the store reads answer the session they were asked about and no sibling", 
     [{ batch: 1, digest: "c".repeat(64), bytes: 12 }],
   );
   assert.deepEqual(
-    await rig.apiLead.batches({
+    await postgresSessionStoreRows(rig.apiPool).batches({
       partition,
       session: thread.session,
       stream: asSessionStoreStream("lead-stream"),

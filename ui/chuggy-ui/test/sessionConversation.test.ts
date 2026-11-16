@@ -22,7 +22,6 @@ import {
   sessionConversationItems,
   sessionConversationTurns,
 } from "../app/core/sessionConversation.ts";
-import type { LeadTurnResponse } from "../../../src/contract/responses.ts";
 import {
   fillerMessage,
   fillerModel,
@@ -657,44 +656,4 @@ test("an answered thread turn carries the words it ended on", () => {
     threadTurn({ turn: "thread-turn-1", result: "it waits on 40" }),
   ]);
   expect(turn?.result).toBe("it waits on 40");
-});
-
-/** A lead's turn carries no `input` at all — the decision log already holds
- * it — so none is invented for it, whatever the turn's state. */
-test("a lead's turn carries no input of its own", () => {
-  const turn: LeadTurnResponse = {
-    turn: "turn-1",
-    ordinal: 1,
-    inputKind: "Observation",
-    state: "Answered",
-    tokens: 900,
-  };
-  expect(sessionConversationTurns([turn])).toStrictEqual([
-    {
-      turn: "turn-1",
-      ordinal: 1,
-      inputKind: "Observation",
-      state: "Answered",
-      tokens: 900,
-    },
-  ]);
-});
-
-/** A lead turn nobody has claimed appends a running exchange that draws its
- * kind word and no text, because a lead's turn has no input for the overlay
- * to have carried in the first place. */
-test("a Queued lead turn with no input appends a running exchange with its kind word", () => {
-  const turn: LeadTurnResponse = {
-    turn: "turn-9",
-    ordinal: 9,
-    inputKind: "Observation",
-    state: "Queued",
-  };
-  const exchanges = conversationExchanges([], sessionConversationTurns([turn]));
-  expect(exchanges).toHaveLength(1);
-  expect(exchanges[0]?.ask).toEqual({ ask: "Observation" });
-  expect(exchanges[0]?.standing).toEqual({
-    standing: "Running",
-    state: "Queued",
-  });
 });

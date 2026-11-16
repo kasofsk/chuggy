@@ -351,16 +351,15 @@ test("the purpose lets an instruction to dispatch reach tickets not yet ready, a
 /**
  * A released ticket waits on whoever may dispatch it, so a thread that says
  * nothing of that leaves its owner waiting on a run nobody started. No lead
- * dispatches, so a thread told of one, or pointed at read_lead, waits on a
- * dispatch that never comes.
+ * dispatches, so a thread told of one waits on a dispatch that never comes.
  */
 test("the purpose says releasing starts nothing until someone who may dispatch does, and names no lead", () => {
   assert.match(
     threadPurposeStanding,
     /Releasing starts nothing: a released ticket runs only once someone who may dispatch dispatches it, so say so when you release, and dispatch only on your owner's word\./u,
   );
-  assert.doesNotMatch(threadPurposeStanding, /lead|read_lead/u);
-  assert.doesNotMatch(threadStandingRulesDefault, /lead|read_lead/u);
+  assert.doesNotMatch(threadPurposeStanding, /lead/u);
+  assert.doesNotMatch(threadStandingRulesDefault, /lead/u);
 });
 
 /**

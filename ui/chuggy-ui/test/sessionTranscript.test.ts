@@ -35,7 +35,7 @@ import type {
   SessionTranscriptEntry,
   SessionTranscriptPane,
 } from "../app/core/sessionTranscript.ts";
-import type { LeadTranscriptResponse } from "../../../src/contract/responses.ts";
+import type { SessionTranscriptResponse } from "../../../src/contract/responses.ts";
 import { threadMineSession } from "./threadFixture.ts";
 import {
   transcriptBoundaryUuid,
@@ -48,7 +48,7 @@ import {
  * page answered anywhere else names it. */
 function paged(
   pane: SessionTranscriptPane,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
   highWaterBatch: number,
   after: number = pane.fold.readTo ?? 0,
 ): SessionTranscriptPane {
@@ -278,7 +278,7 @@ function cutPage(
   entries: readonly string[],
   held: readonly string[],
   nextAfter?: number,
-): LeadTranscriptResponse {
+): SessionTranscriptResponse {
   return {
     stream: transcriptStream,
     entries: entries.map((uuid) => ({
@@ -390,7 +390,7 @@ function cutsPage(
   entries: readonly string[],
   boundaries: readonly string[],
   nextAfter?: number,
-): LeadTranscriptResponse {
+): SessionTranscriptResponse {
   return {
     ...cutPage(cut, entries, entries, nextAfter),
     compactions: boundaries.map((boundary) => ({ boundary })),
@@ -491,7 +491,7 @@ test("a page delivered twice lands once, in the place it first took", () => {
  * and the walk as the end of what the mark allows it to ask.
  */
 test("a page at a cursor the fold has passed changes nothing", () => {
-  const page: LeadTranscriptResponse = {
+  const page: SessionTranscriptResponse = {
     ...cutPage(1, ["uuid-a"], ["uuid-a"], 1),
     elided: 1,
   };
@@ -526,7 +526,7 @@ test("a page at a cursor the fold has passed changes nothing", () => {
  * two the second time the stream is read.
  */
 test("what could not be drawn is counted once per walk, not once per reading", () => {
-  const elided = (cut: number): LeadTranscriptResponse => ({
+  const elided = (cut: number): SessionTranscriptResponse => ({
     ...cutPage(cut, ["uuid-a"], ["uuid-a"], 1),
     elided: 1,
     truncated: true,

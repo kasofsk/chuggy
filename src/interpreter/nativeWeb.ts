@@ -161,24 +161,10 @@ import type {
 } from "../contract/responses.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
-import type { SelectorRuntimeSettingsSource } from "./selector.ts";
 import {
   sessionSpendRoute,
   type SessionRouteReads,
 } from "./sessionPlacement.ts";
-import {
-  leadNotNeeded,
-  leadAwaitingSelector,
-  leadPaused,
-  leadSelectorNotGranted,
-  leadSelectorUnnamed,
-  type LeadAbsence,
-  type LeadHeld,
-  type LeadRead,
-  type LeadReadStore,
-  type LeadRefused,
-  type LeadSubsidy,
-} from "./leadRead.ts";
 import {
   checkedSessionTranscriptQuery,
   sessionHeldWalk,
@@ -197,11 +183,7 @@ import {
   type SessionContextRead,
 } from "./sessionContext.ts";
 import type { SessionStoreReadPort, SessionStoreRead } from "./sessionStore.ts";
-import {
-  leadTurnsAnsweredMax,
-  sessionStoreStreamsAnswered,
-  workerErrorPath,
-} from "../contract/http.ts";
+import { workerErrorPath } from "../contract/http.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
@@ -881,17 +863,6 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<ProjectAbilitiesResponse>>;
-  lead(principal: Principal, partition: Partition): Promise<LeadRead>;
-  leadTranscript(
-    principal: Principal,
-    partition: Partition,
-    query: SessionTranscriptQuery,
-  ): Promise<SessionTranscriptRead>;
-  leadContext(
-    principal: Principal,
-    partition: Partition,
-    query: SessionContextQuery,
-  ): Promise<SessionContextPageRead>;
   executions(
     principal: Principal,
     partition: Partition,
@@ -1988,29 +1959,6 @@ function nativeTicketMethods(
   };
 }
 
-/**
- * The ports the lead's read side needs. They arrive together because the lead
- * page needs every one, and a deployment that composed only some would answer a
- * page partly blank without saying which part.
- */
-export interface NativeLeadPorts {
-  readonly leads: LeadReadStore;
-  readonly store: SessionStoreReadPort;
-  readonly context: SessionContextRead;
-  /** The project's settings as the selector resolves them, which say whether it is paused. */
-  readonly settings: Pick<SelectorRuntimeSettingsSource, "projectSettings">;
-  /** The tickets a dispatch is enabled at, which say whether one waits on a decision. */
-  readonly candidates: DispatchViewStore;
-  /** The site's selector, whose read of a project is what its sweep lists it by, where the deployment names one. */
-  readonly selector?: Principal;
-}
-
-function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
-  if (ports === undefined)
-    throw new Error("native web: no lead read ports were composed");
-  return ports;
-}
-
 /** The stream a transcript read defaults to, which is the session's own agent reference. */
 function nativeSessionStream(
   subject: SessionTranscriptSubject,
@@ -2119,170 +2067,10 @@ async function nativeSessionTranscriptPage(
 }
 
 /**
- * Why a project holds no lead, where a selector paused, by the installation or
- * the project, or one that may not read the project outranks the refusal it
- * keeps, since neither asks admission and a kept refusal may have stopped being
- * true. With neither and no refusal, a released ticket the selector has not yet
- * taken up is `AwaitingSelector`, or `SelectorUnnamed` where no selector is
- * named whose reach could be read, and only a project where none waits is
- * `NotNeeded`.
- */
-async function nativeLeadSessionAbsence(
-  access: ProjectAccess,
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<LeadAbsence> {
-  const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  if (standing !== undefined) return standing;
-  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
-    return leadNotNeeded;
-  return ports.selector === undefined
-    ? leadSelectorUnnamed
-    : leadAwaitingSelector;
-}
-
-/**
- * The selector's pause or its want of a grant, which outrank a kept refusal,
- * or else the refusal it keeps, or nothing where none of the three stands.
- */
-async function nativeLeadRefusalStanding(
-  access: ProjectAccess,
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<LeadHeld | LeadRefused | undefined> {
-  if ((await ports.settings.projectSettings(partition)).mode === "Paused")
-    return leadPaused;
-  if (
-    ports.selector !== undefined &&
-    (await access.authorize(ports.selector, partition, "Read")) === undefined
-  )
-    return leadSelectorNotGranted;
-  return ports.leads.leadRefusal(partition);
-}
-
-/**
- * What a lead holding a session is drawn with from the same standing a project
- * holding none answers its absence from: what holds it, where that project
- * would answer `Paused` or `SelectorNotGranted`, or else the refusal kept.
- */
-async function nativeLeadSessionSelectorStanding(
-  access: ProjectAccess,
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<{ readonly held?: LeadHeld; readonly refusal?: LeadRefused }> {
-  const standing = await nativeLeadRefusalStanding(access, ports, partition);
-  if (standing === undefined) return {};
-  return "since" in standing ? { refusal: standing } : { held: standing };
-}
-
-/** A subsidized lead's tenant's spend this month and its cap, and nothing for a lead run as its own. */
-async function nativeLeadSubsidy(
-  ports: NativeLeadPorts,
-  partition: Partition,
-): Promise<{ readonly subsidy?: LeadSubsidy }> {
-  const spend = await ports.leads.subsidizedLeadSpend(partition);
-  return spend === undefined
-    ? {}
-    : {
-        subsidy: {
-          tenantMicros: spend.tenantMicros,
-          tenantMonthlyMicros: spend.tenantMonthlyMicros,
-        },
-      };
-}
-
-/**
- * Whether a released ticket waits on a dispatch decision. A view being rebuilt
- * answers no candidates, so it says none waits until it stands again.
- */
-async function nativeLeadDispatchWaits(
-  candidates: DispatchViewStore,
-  partition: Partition,
-): Promise<boolean> {
-  const page = await candidates.read(partition, { limit: 1 });
-  return page.result === "Page" && page.candidates.length > 0;
-}
-
-/**
- * The lead's own two reads, each reauthorizing before it reaches a store. A
- * readable project holding no lead is answered `None` by the head, which is
- * how the project stands, with why as the reason; its transcript has nothing to
- * page and is not found.
- */
-function nativeLeadSessionMethods(
-  access: ProjectAccess,
-  leads?: NativeLeadPorts,
-): Pick<NativeWeb, "lead" | "leadTranscript" | "leadContext"> {
-  return {
-    lead: async (principal, partition) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      const ports = composedLeadPorts(leads);
-      const standing = await ports.leads.standing(
-        partition,
-        leadTurnsAnsweredMax,
-      );
-      if (standing === undefined)
-        return {
-          result: "None",
-          absence: await nativeLeadSessionAbsence(access, ports, partition),
-        };
-      return {
-        result: "Found",
-        lead: standing,
-        streams: await ports.leads.streams(
-          partition,
-          standing.session,
-          sessionStoreStreamsAnswered,
-        ),
-        ...(await nativeLeadSessionSelectorStanding(access, ports, partition)),
-        ...(await nativeLeadSubsidy(ports, partition)),
-      };
-    },
-    leadTranscript: async (principal, partition, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      const ports = composedLeadPorts(leads);
-      const standing = await ports.leads.standing(
-        partition,
-        leadTurnsAnsweredMax,
-      );
-      if (standing === undefined) return { read: "NotFound" };
-      return nativeSessionTranscriptPage(
-        ports.leads,
-        ports.store,
-        partition,
-        standing,
-        checkedSessionTranscriptQuery(query),
-      );
-    },
-    leadContext: async (principal, partition, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      const ports = composedLeadPorts(leads);
-      const standing = await ports.leads.standing(
-        partition,
-        leadTurnsAnsweredMax,
-      );
-      if (standing === undefined) return { read: "NotFound" };
-      return {
-        read: "Page",
-        page: await sessionContextPage(
-          ports.context,
-          partition,
-          standing.session,
-          query,
-        ),
-      };
-    },
-  };
-}
-
-/**
  * The ports one project's threads are read and written through, arriving
  * together because a thread page needs all of them and a deployment that
  * composed some would answer a page that is part blank without saying which
- * part. `rows`, `store` and `context` are the lead's own, session-keyed — a
+ * part. `rows`, `store` and `context` are session-keyed — a
  * thread's transcript is drawn by the SAME walk over the SAME bytes, so one
  * transcript has one page type and one wire answer, and its context readings
  * likewise — and `credentialSlot` is the
@@ -3008,7 +2796,6 @@ export function nativeWeb(
   repositoryConfigurationImports?: NativeRepositoryConfigurationImportPorts,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
-  leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
   sessionRoutes?: SessionRouteReads,
   projectArtifacts?: ProjectArtifactPort,
@@ -3018,7 +2805,6 @@ export function nativeWeb(
   return {
     ...nativeEpicMethods(access, epics),
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
-    ...nativeLeadSessionMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
     abilities: (principal, partition) =>

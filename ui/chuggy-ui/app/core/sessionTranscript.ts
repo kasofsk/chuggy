@@ -67,21 +67,23 @@ import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts"
 import type { SessionChangeResource } from "../../../../src/contract/events.ts";
 import { sessionStorePageBatchesMax } from "../../../../src/contract/http.ts";
 import type {
-  LeadResponse,
-  LeadTranscriptResponse,
+  SessionStoreStreamResponse,
+  SessionTranscriptResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 
 /** The most entries a pane keeps, past which the oldest leave. */
 export const sessionTranscriptEntriesHeldMax = 4096;
 
-export type SessionTranscriptEntry = LeadTranscriptResponse["entries"][number];
+export type SessionTranscriptEntry =
+  SessionTranscriptResponse["entries"][number];
 
-export type SessionTranscriptCompaction = LeadTranscriptResponse["compaction"];
+export type SessionTranscriptCompaction =
+  SessionTranscriptResponse["compaction"];
 
 /** One cut among the entries a page sent, with what the store kept of it. */
 export type SessionTranscriptCut = NonNullable<
-  LeadTranscriptResponse["compactions"]
+  SessionTranscriptResponse["compactions"]
 >[number];
 
 /**
@@ -247,7 +249,7 @@ export function sessionTranscriptCursorsFrom(
  * leaves anything unread on that basis.
  */
 function sessionTranscriptMore(
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
   asked: number,
   highWaterBatch: number,
 ): boolean {
@@ -279,7 +281,7 @@ function sessionTranscriptEntriesMerged(
 /** Where the walk stands after a page: the cursor it asks next, and the mark it
  * is waiting at if a page would not move that cursor. */
 function sessionTranscriptCursor(
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
   highWaterBatch: number,
   asked: number,
 ): { readonly readTo: number; readonly stalledAt: number | undefined } {
@@ -299,7 +301,7 @@ function sessionTranscriptCursor(
  */
 function sessionTranscriptCutMoved(
   fold: SessionTranscriptFold,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
 ): boolean {
   if (page.held === undefined) return false;
   return fold.readTo !== undefined && page.cut !== fold.cut;
@@ -337,7 +339,7 @@ function sessionTranscriptHoldingPruned(
  * with. */
 function sessionTranscriptGathered(
   fold: SessionTranscriptFold,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
   highWaterBatch: number,
   asked: number,
 ): SessionTranscriptFold {
@@ -374,7 +376,7 @@ function sessionTranscriptGathered(
 export type SessionTranscriptEvent =
   | {
       readonly event: "Page";
-      readonly page: LeadTranscriptResponse;
+      readonly page: SessionTranscriptResponse;
       readonly highWaterBatch: number;
       /** The cursor the walk asked this page at, which is what it is folded
        * against — a read in flight is answered at a cursor the pane may have
@@ -393,7 +395,7 @@ export type SessionTranscriptEvent =
  */
 function sessionTranscriptReset(
   pane: SessionTranscriptPane,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
 ): SessionTranscriptPane {
   return {
     stream: page.stream,
@@ -420,7 +422,7 @@ function sessionTranscriptPassed(
  */
 function sessionTranscriptPaged(
   pane: SessionTranscriptPane,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
   highWaterBatch: number,
   after: number,
 ): SessionTranscriptPane {
@@ -504,14 +506,14 @@ export function sessionTranscriptDrawn(
 }
 
 /**
- * What either read says about the session's store: the stream it is writing and
- * the listing of what the store holds. Stated as the fields rather than as the
- * lead's whole response, because a thread read carries the same two and the
- * walk below is the same walk over a different session.
+ * What a session's read says about its store: the stream it is writing and the
+ * listing of what the store holds. Stated as the fields rather than as a whole
+ * response, because every session read carries the same two and the walk below
+ * is the same walk over a different session.
  */
 export interface SessionStreams {
   readonly agentReference?: string | undefined;
-  readonly streams: LeadResponse["streams"];
+  readonly streams: readonly SessionStoreStreamResponse[];
 }
 
 /** The stream the transcript route defaults to, and how far its store has been written. */

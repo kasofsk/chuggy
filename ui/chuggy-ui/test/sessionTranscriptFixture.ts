@@ -8,7 +8,7 @@
  * drawn at all.
  */
 
-import type { LeadTranscriptResponse } from "../../../src/contract/responses.ts";
+import type { SessionTranscriptResponse } from "../../../src/contract/responses.ts";
 
 export const transcriptStream = "1a2b3c";
 
@@ -19,7 +19,7 @@ function sessionTranscriptEntry(
   uuid: string,
   type: string,
   text: string,
-): LeadTranscriptResponse["entries"][number] {
+): SessionTranscriptResponse["entries"][number] {
   return {
     uuid,
     type,
@@ -34,7 +34,7 @@ function sessionTranscriptEntry(
  * holding none of its entries, a page holding some of them, and pages holding
  * all of them.
  */
-const sessionTranscriptBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][number][])[] =
+const sessionTranscriptBatchEntries: readonly (readonly SessionTranscriptResponse["entries"][number][])[] =
   [
     [
       sessionTranscriptEntry("uuid-p", "user", "observation-1-before-cut"),
@@ -65,7 +65,7 @@ export const transcriptCutBatch = 2;
  */
 function sessionTranscriptHeldOf(
   after: number,
-  entries: readonly LeadTranscriptResponse["entries"][number][],
+  entries: readonly SessionTranscriptResponse["entries"][number][],
 ): readonly string[] {
   if (after < transcriptCutBatch - 1) return [];
   const at = entries.findIndex(
@@ -85,7 +85,7 @@ function sessionTranscriptHeldOf(
 export function sessionTranscriptPage(
   after: number,
   batches: number,
-): LeadTranscriptResponse {
+): SessionTranscriptResponse {
   const entries =
     after < batches ? (sessionTranscriptBatchEntries[after] ?? []) : [];
   const at = entries.findIndex(

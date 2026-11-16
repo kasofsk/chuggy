@@ -20,9 +20,8 @@
  * ticket has open for a person to answer rather than the ticket itself: an
  * approval is opened and answered without the ticket's own phase or sequence
  * moving, so the two are separate resources under one identity.
- * `Session` names a session as its identity for the lead read. Its schema
- * admits that body and the stream sends it as a tombstone, so a page watching
- * a lead sees a turn move by reading it again.
+ * `Session` names a session as its identity and is always sent as a
+ * tombstone, so a page watching a session sees a turn move by reading it again.
  *
  * `ready` opens the stream, `reset` says the requested
  * `Last-Event-ID` is no longer retained and the client must reload from the GET
@@ -47,7 +46,6 @@ import {
   configurationResponseSchema,
   draftResponseSchema,
   executionSummarySchema,
-  leadResponseSchema,
   operationResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
@@ -79,8 +77,8 @@ const versionSchema = z.literal(projectStreamVersion);
 /**
  * The body each kind's GET route answers with. `Project` is the entry
  * `GET /api/v1/projects` lists, `Execution` the row the executions list
- * answers, and `Session` the lead route's lead less `held`, each less than
- * the route that reads the one resource returns.
+ * answers, each less than the route that reads the one resource returns, and
+ * `Session` none, because its frames are always tombstones.
  */
 export const projectChangeRepresentationSchemas = {
   Operation: operationResponseSchema,
@@ -90,7 +88,7 @@ export const projectChangeRepresentationSchemas = {
   Project: partitionSchema,
   Execution: executionSummarySchema,
   NativeAction: ticketNativeActionsResponseSchema,
-  Session: leadResponseSchema,
+  Session: z.null(),
 } as const satisfies Record<ProjectChangeKind, z.ZodType>;
 
 export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
