@@ -347,7 +347,7 @@ test("the successor door is the selector service's own and no other role's", asy
   assert.deepEqual(
     roster.filter(({ permitted }) => permitted).map(({ rolname }) => rolname),
     [boundaryOwnerRole, selectorServiceRole],
-    "minting a lead is minting an authority to act as a principal: the definer's owner holds it, one runtime role is granted it, and every other role of the installation — the API's two pools among them — is refused",
+    "minting a lead is minting an authority to act as a principal: the definer's owner holds it, one runtime role is granted it, and every other role of the installation — the API's role and the review group among them — is refused",
   );
   assert.match(
     (await rig.sessions.harness.attemptAs(
