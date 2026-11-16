@@ -629,6 +629,8 @@ async function workerPoolClaimed(
  * choice of attempt, with no lock, no order and nothing taken. The predicate
  * is written twice, here and there, its deferral to an owner's runners a third
  * time in `./operationalReads.ts`'s answer of what a run waits on of them, and
+ * the whole of it less its room, slots and pause a fourth time there, in its
+ * answer of the memory a run waiting on its project's pools is short of;
  * `test/postgres/workerPoolClaim.test.ts` holds them to one answer over every
  * case it asks the claim.
  */
@@ -906,20 +908,36 @@ function postgresExecutionHoldsRouted(
   };
 }
 
-/** Stamps a pool's poll as one that could take an execution where `executions` says it could, while this registration is the pool's; any other poll of a pool is its session store's to stamp. */
+/**
+ * Keeps the memory room a pool's poll named or none, and stamps the poll as
+ * one that could take an execution where `executions` says it could, while
+ * this registration is the pool's; any other poll of a pool is its session
+ * store's to stamp. The plane may not read the stamp, so a poll that could
+ * take none leaves it in a statement of its own.
+ */
 async function workerPoolExecutionsPolled(
   pool: pg.Pool,
   identity: WorkerPoolIdentity,
   executions: boolean,
+  memoryRoomMib: number | undefined,
 ): Promise<void> {
-  if (!executions) return;
-  await pool.query(
-    sql`UPDATE worker_pool w SET executions_polled_at=now()
+  const room = memoryRoomMib ?? null;
+  if (executions)
+    await pool.query(
+      sql`UPDATE worker_pool w SET executions_polled_at=now(),memory_room_mib=${room}::bigint
           WHERE w.tenant=${identity.partition.tenant}
             AND w.project=${identity.partition.project}
             AND w.pool=${identity.pool}
             AND w.principal=${identity.principal}`,
-  );
+    );
+  else
+    await pool.query(
+      sql`UPDATE worker_pool w SET memory_room_mib=${room}::bigint
+          WHERE w.tenant=${identity.partition.tenant}
+            AND w.project=${identity.partition.project}
+            AND w.pool=${identity.pool}
+            AND w.principal=${identity.principal}`,
+    );
 }
 
 /**
@@ -1041,7 +1059,7 @@ export function postgresWorkerPoolAssignments(
     polled: (identity, executions, memoryRoomMib) =>
       identity.kind === "Personal"
         ? personalExecutionsPolled(pool, identity, executions, memoryRoomMib)
-        : workerPoolExecutionsPolled(pool, identity, executions),
+        : workerPoolExecutionsPolled(pool, identity, executions, memoryRoomMib),
     ...postgresExecutionHoldsRouted(pool),
   };
 }

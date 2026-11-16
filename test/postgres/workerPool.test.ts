@@ -713,12 +713,12 @@ const poolPlaneColumns = [
   [
     "worker_pool",
     "SELECT",
-    "capabilities,class,credentials_named,memory_ceiling_mib,pool,principal,project,registered_by,runner_package,runner_version,tenant",
+    "capabilities,class,credentials_named,memory_ceiling_mib,memory_room_mib,pool,principal,project,registered_by,runner_package,runner_version,tenant",
   ],
   [
     "worker_pool",
     "UPDATE",
-    "capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+    "capabilities,credentials_named,executions_polled_at,last_polled_at,memory_ceiling_mib,memory_room_mib,runner_package,runner_version",
   ],
 ];
 
@@ -728,7 +728,7 @@ const poolPlaneColumns = [
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
  * liveness and the runner, capabilities, memory ceiling and credentials its
- * poll named, a personal runner's memory room, and whether a personal runner's capabilities advertise its
+ * poll named, its memory room, and whether a personal runner's capabilities advertise its
  * agents, are all of its row the plane writes, as a chat host's liveness,
  * runner and credentials are of its, while a pool's registrant is the account its claims spend and a press
  * is read and spent by the claim it lets through, as a personal runner's
@@ -869,6 +869,43 @@ test("a pool is listed live only while its newest poll of either kind is inside 
   assert.deepEqual(await listed(), { polled: true, live: true });
   await stamp("last_polled_at", sessionRunnerPolledSecsMax * 3);
   assert.deepEqual(await listed(), { polled: true, live: false });
+});
+
+test("a pool's poll keeps the memory room it named under its current registration, a later room of nothing or none replacing it, and stamps it only where it could take an execution", async () => {
+  const project = await poolProject("pool-room");
+  const { partition } = project;
+  const pool = "pool-room";
+  const stale = await registered(partition, pool, [platform]);
+  const current = await poolRegisteredAgain(project, pool);
+  const kept = async () =>
+    (await rig.harness.query(
+      `SELECT memory_room_mib::text AS room,
+              executions_polled_at IS NOT NULL AS stamped
+         FROM worker_pool WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [partition.tenant, partition.project, pool],
+    )) as readonly { room: string | null; stamped: boolean }[];
+  await assignments.polled(stale, true, 1_434);
+  assert.deepEqual(await kept(), [{ room: null, stamped: false }]);
+  await assignments.polled(current, false, undefined);
+  assert.deepEqual(await kept(), [{ room: null, stamped: false }]);
+  await assignments.polled(current, true, 3_686);
+  assert.deepEqual(await kept(), [{ room: "3686", stamped: true }]);
+  await rig.harness.query(
+    `UPDATE worker_pool SET executions_polled_at=now()-make_interval(secs=>$4::double precision)
+      WHERE tenant=$1 AND project=$2 AND pool=$3`,
+    [partition.tenant, partition.project, pool, sessionRunnerPolledSecsMax * 2],
+  );
+  await assignments.polled(current, false, 0);
+  assert.deepEqual(await kept(), [{ room: "0", stamped: true }]);
+  assert.equal(
+    (await postgresWorkerPoolDirectory(apiPool).listed(partition)).pools[0]
+      ?.live,
+    false,
+    "a poll that could take nothing moves no stamp",
+  );
+  await assignments.polled(current, true, 2_048);
+  await assignments.polled(current, false, undefined);
+  assert.deepEqual(await kept(), [{ room: null, stamped: true }]);
 });
 
 test("a pool's row keeps a runner only whole, and only in the header's grammar", async () => {
