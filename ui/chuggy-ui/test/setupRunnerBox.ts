@@ -42,6 +42,9 @@ export const boxLoginSecret = "sk-ant-oat01-box-claude-login-never-read";
 /** The folder the program and every command it runs are run in, and where Claude Code keeps the person's configuration. */
 export const boxFolder = `${boxHome}/work`;
 export const boxClaudeConfig = `${boxHome}/.claude.json`;
+/** The memory the engine reports unless a case says another, in bytes: what a VM of twelve GiB reported in Colima, below its nominal size as engines report. */
+export const boxEngineBytes = 12_562_779_340;
+
 /** The version an install puts here unless a case has the release be another. */
 export const boxVersion = "0.35.0";
 
@@ -111,6 +114,8 @@ export interface RunnerBox {
   /** The version of the package's current release, which an install puts here. */
   release: string;
   engines: Record<SetupEngine, "Yes" | "No" | "Absent">;
+  /** The memory every engine here reports in its `info`, in bytes, or nothing where it reports none. */
+  memoryBytes: number | undefined;
   /** Whether the user's service manager answers. */
   services: boolean;
   /** What the login manager says of lingering, or nothing where it does not say; and whether turning it on wants a password. */
@@ -156,6 +161,7 @@ export function runnerBox(): RunnerBox {
     ]),
     release: boxVersion,
     engines: { docker: "Yes", podman: "Absent" },
+    memoryBytes: boxEngineBytes,
     services: true,
     linger: "no",
     lingerAsks: false,
@@ -193,6 +199,11 @@ export function boxDisk(box: RunnerBox): SetupDiskPort {
     },
     make: (path, text) => {
       if (box.sealed.has(path) || kind(box, path) !== "None")
+        throw new SetupMachineError({ fault: "Unwritable", path });
+      box.paths.set(path, text);
+    },
+    replace: (path, text) => {
+      if (box.sealed.has(path) || kind(box, path) !== "File")
         throw new SetupMachineError({ fault: "Unwritable", path });
       box.paths.set(path, text);
     },
@@ -279,7 +290,7 @@ const told: readonly (readonly [BoxAct, string, readonly string[]])[] = [
   ["start", "systemctl", ["enable", "--now"]],
   ["restart", "systemctl", ["restart"]],
   ["docker", "docker", ["version"]],
-  ["podman", "podman", ["info"]],
+  ["podman", "podman", ["info", "--format", "{{.Host.Os}}"]],
   ["install", "npm", ["i", "-g"]],
   ["linger", "loginctl", ["show-user"]],
   ["lingerOn", "loginctl", ["--no-ask-password", "enable-linger"]],
@@ -348,6 +359,21 @@ function boxServed(
     }),
   );
   return exited(0, `${added ? "Added" : "Removed"} MCP server ${name}\n`);
+}
+
+/** What an engine's `info` prints, as docker or podman lays it out, where it answers this user: the memory it has, which is all of it a run reads. */
+export function boxEngineInfo(
+  box: RunnerBox,
+  command: readonly string[],
+): string | undefined {
+  const name = command[0] === "podman" ? "podman" : "docker";
+  if (box.engines[name] !== "Yes" || box.memoryBytes === undefined)
+    return undefined;
+  return JSON.stringify(
+    name === "podman"
+      ? { host: { memTotal: box.memoryBytes, os: "linux" } }
+      : { MemTotal: box.memoryBytes, NCPU: 4 },
+  );
 }
 
 /** Installs the package the command's last word names, chuggy-darwin's or chuggy-linux's, at the box's release. */

@@ -177,6 +177,8 @@ export interface SetupDiskPort {
   readonly text: (path: string, bytesMax: number) => string | undefined;
   /** Makes a file only its owner reads, with the directories above it, where nothing is at the path; throws which path it could not make. */
   readonly make: (path: string, text: string) => void;
+  /** Puts a file only its owner reads at a path in place of the whole of the file there; throws which path it could not put it at. */
+  readonly replace: (path: string, text: string) => void;
   /** Whether this user may make and remove names in a directory that is there. */
   readonly writable: (directory: string) => boolean;
 }

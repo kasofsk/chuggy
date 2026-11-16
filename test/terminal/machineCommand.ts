@@ -400,7 +400,18 @@ function loginctl(): number {
   return said(0);
 }
 
+/** What `info` prints of an engine that answers: docker's memory at the top, podman's under its host. */
+function engineInfo(): string {
+  const info =
+    name === "podman"
+      ? { host: { memTotal: knobs.memoryBytes } }
+      : { MemTotal: knobs.memoryBytes };
+  return `${JSON.stringify(info)}\n`;
+}
+
 function engine(): number {
+  if (knobs.engines[name] === true && argv[0] === "info")
+    return said(0, engineInfo());
   return knobs.engines[name] === true
     ? said(0, "27.3.1\n")
     : said(

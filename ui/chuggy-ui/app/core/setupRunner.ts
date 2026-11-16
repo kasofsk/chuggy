@@ -1,11 +1,14 @@
 /**
  * `runner`: a runner installed, registered and started on the machine the
  * program is run on, for one project, and said to be done only once the site
- * sees it live; then, where the person's chats in the project run on runners,
- * the same machine made their chat host, which takes their chats in every
- * project of the workspace, and said to be done only once the site sees this
- * machine live as that host too. One package, one settings file and one
- * Claude credential serve both.
+ * sees it live; then, where the person's chats in the project run on runners
+ * and they said yes to it, the same machine made their chat host, which takes
+ * their chats in every project of the workspace, and said to be done only
+ * once the site sees this machine live as that host too. One package, one
+ * settings file and one Claude credential serve both. The chat host is sized
+ * in those settings before it is set up, to the room the engine's memory has
+ * beside a job, where they name no size of their own: every other key of
+ * them is kept, and none of the rest is read.
  *
  * The machine is the record of the machine's things and the site of the
  * site's, and this program keeps neither. Every act is preceded by the probe
@@ -87,8 +90,10 @@ import {
   setupChatClient,
   setupChatFiles,
   setupChildBytesMax,
+  setupChatSized,
   setupChildFailed,
   setupColimaAtLogin,
+  setupEngineMemoryRead,
   setupInstallCommand,
   setupInstallCommandPath,
   setupLingerByHand,
@@ -105,6 +110,9 @@ import {
   setupRunnerCommands,
   setupRunnerPlaces,
   setupRunnerRoom,
+  setupSettingsChat,
+  setupSettingsChatText,
+  setupSettingsHeld,
   setupSettingsRead,
   setupSettingsText,
   setupUnitIs,
@@ -219,9 +227,10 @@ interface Run {
   session: SetupRunnerSession;
 }
 
-/** A run of `runner`, for one project. */
+/** A run of `runner`, for one project; `chatHost` where the person said yes to this machine as their chat host too. */
 interface ProjectRun extends Run {
   readonly partition: PartitionIdentity;
+  readonly chatHost: boolean;
 }
 
 /** Why a walk went no further: a stop of its own, or a report another part of the program makes. */
@@ -248,14 +257,18 @@ export function setupChatHostWrites(tenant: string): readonly string[] {
   return [`POST ${route}`];
 }
 
-/** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the project's runner and for the person's chat host. */
+/** Each write `runner` makes for a project, by its method and its address: the mint of a registration token for the project's runner, and for the person's chat host where `chat` says this machine is made it. */
 export function setupRunnerWrites(
   partition: PartitionIdentity,
+  chat: boolean,
 ): readonly string[] {
   const route = nativeHttpRoutes.workerPoolRegistrationTokens
     .replace(":tenant", encodeURIComponent(partition.tenant))
     .replace(":project", encodeURIComponent(partition.project));
-  return [`POST ${route}`, ...setupChatHostWrites(partition.tenant)];
+  return [
+    `POST ${route}`,
+    ...(chat ? setupChatHostWrites(partition.tenant) : []),
+  ];
 }
 
 /**
@@ -319,10 +332,11 @@ function setupUnread(
 
 const setupWhole = (): boolean => true;
 
-/** Where the person's chats in the project run, read before anything is touched: whether they run on a chat host, which is the person's. */
+/** Where the person's chats in the project run, read before anything is touched: whether they run on a chat host, which is the person's, and the person said yes to this machine as it. */
 async function setupChatsAsked(
   run: ProjectRun,
 ): Promise<{ readonly chats: boolean } | Halt> {
+  if (!run.chatHost) return { chats: false };
   const placement = await setupSiteAsked(run, setupRunnerReads, (ports) =>
     apiSessionPlacement(ports, run.partition),
   );
@@ -561,6 +575,44 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
   }
   run.notes.push({ note: "SettingsWritten", path, engine: machine.engine });
   return undefined;
+}
+
+/**
+ * The chat host's size, written into the runner's settings where they name
+ * no sessions for it: as many as the engine's memory has room for beside a
+ * job, and one where it has room for none, each taking the memory the
+ * settings name or the package's own, keeping every other key. Answers
+ * whether it wrote them, which is whether a running chat host is now stale.
+ */
+async function setupChatSettingsHad(
+  run: Run,
+  machine: Machine,
+): Promise<{ readonly written: boolean } | Halt> {
+  const path = run.places.settings;
+  const guide = run.offered.guideAddress;
+  const held = setupSettingsHeld(run.ports, run.places);
+  const chat = held === undefined ? undefined : setupSettingsChat(held);
+  if (held === undefined || chat === undefined)
+    return halt({ stop: "SettingsUnread", path, guide });
+  if (chat.sessionsMax !== undefined) return { written: false };
+  const engineMib = await setupEngineMemoryRead(run.ports, machine.engine);
+  const { sessionsMax, sessionMemoryMib } = setupChatSized(engineMib, chat);
+  try {
+    run.ports.disk.replace(
+      path,
+      setupSettingsChatText(held, { sessionsMax, sessionMemoryMib }),
+    );
+  } catch (failure: unknown) {
+    if (!(failure instanceof SetupMachineError)) throw failure;
+    return halt({ stop: "Unwritten", path });
+  }
+  run.notes.push({
+    note: "ChatSettingsWritten",
+    path,
+    sessionsMax,
+    sessionMemoryMib,
+  });
+  return { written: true };
 }
 
 /** A registration of this machine, and whether this run made it. */
@@ -1205,6 +1257,8 @@ async function setupChatWalked(
   }
   const shared = await setupChatLogin(run, machine.credential);
   if (halted(shared)) return shared;
+  const sized = await setupChatSettingsHad(run, machine);
+  if (halted(sized)) return sized;
   const replaced =
     elsewhere === undefined ? undefined : myRunnerShort(elsewhere.id);
   const hosting =
@@ -1223,7 +1277,8 @@ async function setupChatWalked(
   const pooled = of.of === "Runner" && of.pooled;
   const lingering = pooled ? undefined : await setupLingerHad(run);
   if (halted(lingering)) return lingering;
-  const changed = hosting.fresh || packaged.installed || served.written;
+  const changed =
+    hosting.fresh || packaged.installed || served.written || sized.written;
   const started = await setupStarted(run, served, changed);
   if (halted(started)) return started;
   const seen = await setupWaited(
@@ -1380,18 +1435,20 @@ export async function setupRunner(
   if (entered.entered === "Out") return entered.report;
   const at = setupRunnerAtNamed(unnamed, entered.session);
   const partition = { tenant: workspace, project };
+  const chatHost = asked.chatHost === "yes";
   const run: ProjectRun = {
     ...setupRunMade(
       ports,
       false,
       workspace,
-      setupRunnerWrites(partition),
+      setupRunnerWrites(partition, chatHost),
       asked,
       livePollMs,
       enter,
       entered.session,
     ),
     partition,
+    chatHost,
   };
   return setupRunReported(run, at, setupDoneNoted(run, await setupWalked(run)));
 }

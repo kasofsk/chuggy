@@ -38,7 +38,16 @@ export interface Stood {
 /** Every machine the suite stood up, for its control to search. */
 export const stoodAll: Stood[] = [];
 
-export const runner = ["runner", "--workspace", "acme", "--project", "widgets"];
+/** `runner` as the rule of an offer that asks of no chat host names it. */
+export const runnerAlone = [
+  "runner",
+  "--workspace",
+  "acme",
+  "--project",
+  "widgets",
+];
+/** `runner` as a person who said yes to their chat host too runs it. */
+export const runner = [...runnerAlone, "--chat-host", "yes"];
 export const flags = "--workspace acme --project widgets";
 export const poolFile = "acme.widgets.shame.json";
 export const unit = "chuggy-linux-acme.widgets.shame.service";
@@ -50,7 +59,7 @@ export const redemption = "runner POST /api/v1/worker-pool-registrations";
 export const chatFile = `acme.${machineNamePart(setupSiteMember)}.chat.host.json`;
 export const chatUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.chat.host.service`;
 export const next = `next: node ${program} ${flags}`;
-export const again = `rule: Run node ${program} runner ${flags} only `;
+export const again = `rule: Run node ${program} runner ${flags} --chat-host yes only `;
 
 export const mcp = ["mcp", "--workspace", "acme", "--project", "widgets"];
 
