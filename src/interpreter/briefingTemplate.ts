@@ -127,7 +127,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 21;
+export const briefingTemplateVersion = 22;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -465,6 +465,7 @@ export function briefingRoleInstructions(
         "Change the least that satisfies the acceptance criteria below, and leave the rest alone.",
         "If the ticket cannot be satisfied as written, report that rather than satisfying something adjacent to it.",
         "Add commits on top of the commit this workspace is at, and bring another branch in by merging it; a rebased, squashed or amended commit is refused and the run's work is lost.",
+        "Give each commit a message that says what that commit changes, written when you make it, since a commit's message cannot be changed afterwards.",
       ];
     case "Review":
       return [
