@@ -1,8 +1,12 @@
 /**
- * Whether a Stacked ticket pending unstacked is sent back to Work to evaluate
- * over the queue ahead of it, and over which line. `model/stacking.qnt` states
- * it as `canRestack`, with `restackLine` the line and `restackedOver` the line
- * its latest re-stack was sent back over.
+ * Whether a Stacked ticket pending unstacked, or pending over a stack that
+ * stopped standing, is sent back to Work to evaluate over the queue ahead of
+ * it, and over which line. `model/stacking.qnt` states it as `canRestack`, with
+ * `restackLine` the line and `restackedOver` the line its latest re-stack was
+ * sent back over. A ticket pending over a stack that stopped standing is the
+ * model's `sweep` leaving it `Ready` and `Unstacked`, so it is a candidate as
+ * one pending unstacked is; until it could stack it waits, and if it comes to
+ * hold first its landing re-checks it.
  *
  * A RE-STACK IS PAID FOR BY THE LINE AHEAD CHANGING. A ticket is not sent back
  * again over the same tickets at the same commits as its latest re-stack, so
@@ -29,7 +33,12 @@
 import type { TicketId } from "../domain/ids.ts";
 import type { GitObjectId } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
-import { stackFor, type StackEntry, type StackMember } from "./stackChoice.ts";
+import {
+  stackFor,
+  stackStands,
+  type StackEntry,
+  type StackMember,
+} from "./stackChoice.ts";
 
 /** A Stacked ticket whose finalization waits on the holder of its reference. */
 export interface RestackCandidate {
@@ -56,9 +65,10 @@ function restackSameLine(
 
 /**
  * The line the candidate is sent back to stack over, or undefined where it is
- * not sent back: it is not a Stacked entry pending unstacked in `queue`, it
- * could not stack now, or it would stack over the line it was last sent back
- * over. The holder has nothing ahead of it, so it is never sent back.
+ * not sent back: it is not a Stacked entry in `queue` pending unstacked or over
+ * a stack that does not stand, it could not stack now, or it would stack over
+ * the line it was last sent back over. The holder has nothing ahead of it, so
+ * it is never sent back.
  */
 export function restackLine(
   candidate: RestackCandidate,
@@ -68,7 +78,7 @@ export function restackLine(
   if (
     entry?.policy !== "Stacked" ||
     entry.phase !== "Pending" ||
-    entry.stack !== undefined
+    (entry.stack !== undefined && stackStands(entry.stack, queue))
   )
     return undefined;
   const line = stackFor(

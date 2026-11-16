@@ -161,6 +161,7 @@ import {
   stackFailuresMax,
   type StackEntry,
   type StackMember,
+  type StackStanding,
 } from "../../src/interpreter/stackChoice.ts";
 import { restackRefusals } from "../../src/interpreter/stackRestack.ts";
 import {
@@ -6406,6 +6407,108 @@ test("a waiting request someone else claimed first is left for the next pass", a
   await passOver(service);
   assert.deepEqual(store.unattemptedClaims, [asTicketId(1)]);
   assert.deepEqual(store.attempts, []);
+});
+
+/** A stack beneath ticket 7, broken by ticket 6 landing since its tip. */
+const restackDead: StackStanding = {
+  beneath: [{ ticket: asTicketId(7), commit: asGitObjectId(commitOf("e")) }],
+  landings: [{ ticket: asTicketId(6), commit: asGitObjectId(commitOf("f")) }],
+};
+
+/** Tickets 1 and 2 restackable over `queue`, which a test moves between passes, each with a request waiting on the holder. */
+function restackPair(first: readonly StackEntry[]) {
+  let queue = first;
+  const stacks: NonNullable<FinalizerService["stacks"]> = {
+    ...stacksRestackable([]),
+    queue: () => Promise.resolve(queue),
+    restackable: () =>
+      Promise.resolve(
+        [1, 2].map((ticket) => ({
+          partition,
+          ticket: asTicketId(ticket),
+          cycle: 1,
+          repository: "repository-run",
+          target: undefined,
+          restackedOver: undefined,
+        })),
+      ),
+  };
+  const pair = restackCase(stacks);
+  pair.store.waiting = [1, 2].map((ticket) => {
+    const view = preparableView(`request-waiting-${String(ticket)}`);
+    return { ...view, claim: { ...view.claim, ticket: asTicketId(ticket) } };
+  });
+  return {
+    ...pair,
+    queueAs: (next: readonly StackEntry[]) => {
+      queue = next;
+    },
+  };
+}
+
+test("tickets pending over a stack that stopped standing are sent back one at a time from a holder in its re-check", async () => {
+  const holder = restackEntry(9, "Stacked", "Evaluation", 1, "a");
+  const second = {
+    ...restackEntry(1, "Stacked", "Pending", 2, "c"),
+    stack: restackDead,
+  };
+  const third = {
+    ...restackEntry(2, "Stacked", "Pending", 3, "b"),
+    stack: restackDead,
+  };
+  const { store, service, queueAs } = restackPair([holder, second, third]);
+  const restacked = () =>
+    store.attempts.map((attempt) => [
+      Number(attempt.claim.ticket),
+      attempt.restackBeneath?.map((member) => Number(member.ticket)),
+    ]);
+
+  await passOver(service);
+  assert.deepEqual(restacked(), [[1, [9]]], "the second over the holder alone");
+
+  queueAs([
+    holder,
+    { ...second, phase: "Evaluation", stack: undefined },
+    third,
+  ]);
+  await passOver(service);
+  assert.deepEqual(restacked(), [[1, [9]]], "nothing behind one evaluating");
+
+  const overHolder: StackStanding = {
+    beneath: [{ ticket: asTicketId(9), commit: asGitObjectId(commitOf("a")) }],
+    landings: [],
+  };
+  queueAs([holder, { ...second, stack: overHolder }, third]);
+  await passOver(service);
+  assert.deepEqual(
+    restacked(),
+    [
+      [1, [9]],
+      [2, [9, 1]],
+    ],
+    "the third over both once the second is pending over a stack that stands",
+  );
+});
+
+test("a pending ticket whose stack stands is never sent back, and nothing is sent back over a holder whose stack stopped standing", async () => {
+  const standing: StackStanding = {
+    beneath: [{ ticket: asTicketId(9), commit: asGitObjectId(commitOf("a")) }],
+    landings: [],
+  };
+  const holderDead = {
+    ...restackEntry(9, "Stacked", "Pending", 1, "a"),
+    stack: restackDead,
+  };
+  for (const queue of [
+    [restackHolder, { ...restackPending, stack: standing }],
+    [holderDead, restackPending],
+    [holderDead, { ...restackPending, stack: restackDead }],
+  ]) {
+    const { store, service } = restackPair(queue);
+    await passOver(service);
+    assert.deepEqual(store.unattemptedClaims, []);
+    assert.deepEqual(store.attempts, []);
+  }
 });
 
 /**
