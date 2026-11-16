@@ -494,3 +494,19 @@ test("a ticket ahead sent back to re-check still holds, and a holder's own re-ch
     [asTicketId(second.ticket), entryAt(landing), "Work"],
   ]);
 });
+
+test("a ticket of another reference stopping leaves the instant a holder holds from", async () => {
+  const first = await serialized("tenure-elsewhere");
+  const ranked = await elsewhere(first, "tenure-elsewhere-ranked");
+  const second = await finalizerSibling(rig, first, "tenure-elsewhere-second", {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+    target: "refs/heads/release",
+    after: ranked - first.authorizingSeq,
+  });
+  await landed(first, "tenure-elsewhere");
+  assert.deepEqual(await tenureOf(first), [
+    [asTicketId(second.ticket), entryAt(ranked), "Finalization"],
+  ]);
+});
