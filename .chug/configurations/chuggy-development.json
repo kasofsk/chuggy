@@ -17,7 +17,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=opus",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [
@@ -54,7 +54,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=opus",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [
@@ -91,7 +91,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=fable",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [
@@ -128,7 +128,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=fable",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [
@@ -165,7 +165,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=sonnet",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [
@@ -202,7 +202,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=sonnet",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [
@@ -239,7 +239,7 @@
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
               "--model=opus",
-              "--settings={\"autoCompactWindow\":350000}"
+              "--settings={\"autoCompactWindow\":250000}"
             ]
           },
           "setup": [

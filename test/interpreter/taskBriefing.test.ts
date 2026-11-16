@@ -1498,6 +1498,54 @@ test("this tree's workloads each list their credentials, and only ones its deplo
   }
 });
 
+/** Every Agent workload this tree declares, by the file and workload it is in; a workload named by path is read at that path. */
+function treeAgentWorkloads(): ReadonlyMap<string, DevelopmentWorkload> {
+  const agents = new Map<string, DevelopmentWorkload>();
+  const parsed = (path: string): unknown =>
+    JSON.parse(readFileSync(path, "utf8"));
+  const including = (where: string, declaration: unknown): void => {
+    if ((declaration as { runner?: unknown }).runner === "Agent")
+      agents.set(where, declaration as DevelopmentWorkload);
+  };
+  for (const name of readdirSync(".chug/configurations")) {
+    if (!name.endsWith(".json")) continue;
+    const path = `.chug/configurations/${name}`;
+    const declared = parsed(path) as {
+      readonly configuration: { readonly workloads: Record<string, unknown> };
+    };
+    for (const [workload, declaration] of Object.entries(
+      declared.configuration.workloads,
+    ))
+      if (typeof declaration !== "string")
+        including(`${path} ${workload}`, declaration);
+  }
+  for (const name of readdirSync(".chug/workloads")) {
+    if (!name.endsWith(".json")) continue;
+    const path = `.chug/workloads/${name}`;
+    including(path, parsed(path));
+  }
+  return agents;
+}
+
+test("every agent workload this tree declares compacts at one window", () => {
+  const agents = treeAgentWorkloads();
+  assert.ok(agents.has(".chug/workloads/review.json"));
+  assert.ok(agents.has(".chug/configurations/basic-coding.json review"));
+  assert.ok(
+    agents.has(
+      ".chug/configurations/chuggy-development.json build-orchestrated",
+    ),
+  );
+  for (const [where, { worker }] of agents)
+    assert.deepEqual(
+      worker.mode.arguments.filter((argument) =>
+        argument.startsWith("--settings"),
+      ),
+      ['--settings={"autoCompactWindow":250000}'],
+      where,
+    );
+});
+
 test("a fault in one role's block does not refuse the other role's briefing", () => {
   const view = viewOf({
     block: { instructions: ["Change the importer and nothing beside it."] },
