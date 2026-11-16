@@ -67,15 +67,16 @@ function storeFile(machine: Home, site: string): string {
   return join(machine.store, encodeURIComponent(site));
 }
 
-test("a sign-in the person finishes is exchanged, remembered and said, on this machine's own address", async () => {
+test("a sign-in the person finishes is exchanged, remembered and said, on this machine's own address, and sends the browser to the site's home", async () => {
   const { installation, machine } = await installed();
   let address = "";
   const done = await signedIn(installation, machine, async (opened) => {
     address = opened;
-    const page = await person(opened);
-    assert.equal(page.status, 200);
-    assert.equal(page.headers.get("content-type"), "text/html; charset=utf-8");
-    assert.match(await page.text(), /<h1>Signed in to chuggy<\/h1>/u);
+    const answered = await person(opened);
+    assert.equal(answered.status, 303);
+    assert.equal(answered.headers.get("location"), `${installation.site}/`);
+    assert.equal(answered.headers.get("content-type"), null);
+    assert.equal(await answered.text(), "");
   });
   assert.match(address, /^http:\/\/127\.0\.0\.1:\d+\/$/u);
   assert.deepEqual(done.lines.slice(0, -1), [
@@ -342,7 +343,7 @@ test("a denial or a code that does not carry this sign-in's state ends nothing, 
     assert.match(machine.file("sign-in.json") ?? "", /"note":"Waiting"/u);
     statuses.push((await person(opened)).status);
   });
-  assert.deepEqual(statuses, [400, 400, 400, 400, 400, 200]);
+  assert.deepEqual(statuses, [400, 400, 400, 400, 400, 303]);
   assert.equal(done.code, 0);
   assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
   assert.deepEqual(installation.grants, ["authorization_code granted"]);
@@ -398,7 +399,7 @@ test("only the path the issuer was given is read as its answer, and the page goe
     statuses.push((await browsed(`${back.origin}/callback`)).status);
     statuses.push((await browsed(back.href)).status);
   });
-  assert.deepEqual(statuses, [404, 404, 404, 400, 200]);
+  assert.deepEqual(statuses, [404, 404, 404, 400, 303]);
   assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
 });
 
@@ -420,7 +421,7 @@ test("a person slower than one wait finishes in the same page, and the next sign
   ]);
   assert.match(first.lines.at(-1) ?? "", /^next: node \S+ sign-in$/u);
   const second = machine.run(["sign-in"]);
-  assert.equal((await person(address)).status, 200);
+  assert.equal((await person(address)).status, 303);
   const done = await second;
   assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
   assert.equal(
@@ -441,7 +442,7 @@ test("where the opener cannot be run the address is printed at once, and the pag
   )?.[1];
   assert.ok(address !== undefined);
   const waiting = machine.run(["sign-in"]);
-  assert.equal((await person(address)).status, 200);
+  assert.equal((await person(address)).status, 303);
   assert.equal(
     (await waiting).lines[0],
     `site: ${installation.site}, signed in`,
