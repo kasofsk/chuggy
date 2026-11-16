@@ -548,8 +548,8 @@ interface ExecutionRunnerWait {
  * at `memoryMibDefault` where it names none), with whether that runner polled
  * for executions within the deferral's window, whether it is offered the
  * attempt's agent, its pause by the credentials it named, the memory room its
- * last poll named, and the memory the execution needs. This fourth of
- * the five copies of the claim's predicate `./personalRunner.ts` counts is
+ * last poll named, and the memory the execution needs. It is one
+ * of the copies of the claim's predicate `./personalRunner.ts` counts, and is
  * held to the claim's answers in `test/postgres/workerPoolClaim.test.ts`.
  */
 async function executionsRunnerRows(
@@ -715,8 +715,9 @@ interface ExecutionPoolRow {
  * it names none; the room a poll names, the slots a pool holds, the pause of
  * the account it spends and owners revoked are left out, since none is a fact
  * of the execution a reader's view knows.
- * This sixth copy of the claim's predicate `./personalRunner.ts` counts is
- * held to the claim's answers in `test/postgres/workerPoolClaim.test.ts`.
+ * It is one of the copies of the claim's predicate `./personalRunner.ts`
+ * counts, and is held to the claim's answers in
+ * `test/postgres/workerPoolClaim.test.ts`.
  */
 async function executionsPoolRows(
   pool: pg.Pool,
