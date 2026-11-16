@@ -91,6 +91,7 @@ import {
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
 import type {
   SessionRouteKind,
+  SessionRoutes,
   SessionRouting,
 } from "../interpreter/sessionPlacement.ts";
 import { repositoryConfigurationNameCharsMax } from "../interpreter/repositoryConfigurationIdentity.ts";
@@ -214,11 +215,26 @@ const schedulerMirrorsSchema = z.record(
   schedulerRepositorySchema,
 );
 
-/** Where sessions of each kind run, naming only the kinds that run otherwise than in cluster. */
-const schedulerSessionRoutesSchema = z.strictObject({
+const schedulerSessionRoutesShape = {
   Thread: schedulerRouteSchema.exactOptional(),
+} satisfies Record<SessionRouteKind, z.ZodType>;
+
+/**
+ * Where threads run, named only where they run otherwise than in cluster.
+ * `Lead` is accepted and ignored, because there is no lead to route and a
+ * deployed policy may still name one.
+ */
+const schedulerSessionRoutesSchema = z.strictObject({
+  ...schedulerSessionRoutesShape,
   Lead: schedulerRouteSchema.exactOptional(),
-} satisfies Record<SessionRouteKind, z.ZodType>);
+});
+
+/** The routes an override names, without the `Lead` its document may carry. */
+function schedulerSessionPolicyOverride(
+  named: z.infer<typeof schedulerSessionRoutesSchema>,
+): Partial<SessionRoutes> {
+  return named.Thread === undefined ? {} : { Thread: named.Thread };
+}
 
 const schedulerSessionPolicySchema = z.strictObject({
   image: schedulerTextSchema.max(workerImageCharsMax),
@@ -596,21 +612,25 @@ function schedulerPolicyRouting(
       Work: parsed.Work?.route ?? "InCluster",
       Evaluation: parsed.Evaluation?.route ?? "InCluster",
     },
-    projectRoutes: schedulerProjectRoutes(parsed.projectRoutes),
+    projectRoutes: schedulerProjectRoutes(
+      parsed.projectRoutes,
+      (override) => override,
+    ),
   };
 }
 
-/** Per-project overrides as a policy document writes them, keyed by tenant and then project. */
-function schedulerProjectRoutes<Override>(
-  named: Readonly<Record<string, Readonly<Record<string, Override>>>> = {},
+/** Per-project overrides as a policy document writes them, keyed by tenant and then project, each as `override` reads it. */
+function schedulerProjectRoutes<Named, Override>(
+  named: Readonly<Record<string, Readonly<Record<string, Named>>>> | undefined,
+  override: (named: Named) => Override,
 ): ReadonlyMap<TenantId, ReadonlyMap<ProjectId, Override>> {
   return new Map(
-    Object.entries(named).map(([tenant, projects]) => [
+    Object.entries(named ?? {}).map(([tenant, projects]) => [
       asTenantId(tenant),
       new Map(
-        Object.entries(projects).map(([project, override]) => [
+        Object.entries(projects).map(([project, each]) => [
           asProjectId(project),
-          override,
+          override(each),
         ]),
       ),
     ]),
@@ -838,11 +858,11 @@ function schedulerSessionPolicy(
       mirrors: schedulerMirrors(parsed.mirrors),
     },
     sessionRouting: {
-      routes: {
-        Thread: parsed.routes?.Thread ?? "InCluster",
-        Lead: parsed.routes?.Lead ?? "InCluster",
-      },
-      projectRoutes: schedulerProjectRoutes(parsed.projectRoutes),
+      routes: { Thread: parsed.routes?.Thread ?? "InCluster" },
+      projectRoutes: schedulerProjectRoutes(
+        parsed.projectRoutes,
+        schedulerSessionPolicyOverride,
+      ),
     },
   };
 }

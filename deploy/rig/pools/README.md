@@ -14,15 +14,16 @@ that routes a kind otherwise. A kind that names no route runs in the cluster,
 so a pool takes nothing until a policy sends it work, and a policy changed
 later moves only what registers after it.
 
-A session is routed by `CHUG_SCHEDULER_SESSION_POLICY`'s `routes`, on `Thread`
-and `Lead`, and its `projectRoutes`, over the project's own session placement.
-A turn keeps the route it was admitted on, so a placement changed later moves
-the next turn admitted and never one already queued, and the cluster places and
-claims only turns admitted `InCluster`. On `Pool` a thread is taken only by its
-member's chat host, and the lead by any of the project's pools. A member with
-no chat host is refused a thread's turn on `Pool` as `NoRunner`, and a `Pool`
-turn no runner takes within `sessionPoolTurnDwellSecs`
-(`src/interpreter/sessionPlacement.ts`) is withdrawn by the scheduler.
+A thread is routed by `CHUG_SCHEDULER_SESSION_POLICY`'s `routes` on `Thread`,
+and its `projectRoutes`, over the project's own session placement; a `Lead`
+either names is ignored. A turn keeps the route it was admitted on, so a
+placement changed later moves the next turn admitted and never one already
+queued, and the cluster places and claims only turns admitted `InCluster`. On
+`Pool` a thread is taken only by its member's chat host, and no pool takes a
+session. A member with no chat host is refused a thread's turn on `Pool` as
+`NoRunner`, and a `Pool` turn no chat host takes within
+`sessionPoolTurnDwellSecs` (`src/interpreter/sessionPlacement.ts`) is
+withdrawn by the scheduler.
 
 A pool is handed a placement and nothing about the work, so its harness
 fetches the task from the worker plane under the attempt bearer, as it fetches
