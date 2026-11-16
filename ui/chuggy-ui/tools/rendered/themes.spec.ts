@@ -1,8 +1,8 @@
 /**
  * A project's resolved theme drawn under the served policy: the page's colours
  * are the theme's in the light scheme and the dark, the browser's chrome
- * follows them, and a reload paints them from what this browser kept while
- * the server has not yet answered. With no theme the root carries no
+ * follows them, and a reload puts them on the root from what this browser kept
+ * before the console mounts, while the server has not yet answered. With no theme the root carries no
  * property, so the page is the sheet's own. zod's probe is the one violation
  * known, as `console.spec.ts` says.
  */
@@ -12,6 +12,7 @@ import type { Page } from "@playwright/test";
 import { builtInThemes } from "../../../../src/contract/appearance.ts";
 import type { ThemeColours } from "../../../../src/contract/appearance.ts";
 import { projectAppearanceResponseSchema } from "../../../../src/contract/responses.ts";
+import { themeAssignmentsOf, themeTokens } from "../../app/core/themeTokens.ts";
 import {
   expect,
   renderedDist,
@@ -62,6 +63,40 @@ async function themesDrawnIn(page: Page, colours: ThemeColours): Promise<void> {
   ).toHaveAttribute("content", themesRgb(colours["surface-0"]));
 }
 
+/** What the root first wore on a load, and whether the console had mounted. */
+interface ThemesFirstWorn {
+  readonly mounted: boolean;
+  readonly assignments: Record<string, string>;
+}
+
+/** Keeps, on each later load, the theme tokens the root carries the first time
+ * its style is set, and whether the console had drawn into its mount then. */
+async function themesFirstWornHeard(page: Page): Promise<void> {
+  await page.addInitScript((tokens: readonly string[]) => {
+    const heard = window as unknown as { themesFirstWorn?: ThemesFirstWorn };
+    new MutationObserver((records, observer) => {
+      const root = document.documentElement;
+      if (!records.some((record) => record.target === root)) return;
+      observer.disconnect();
+      heard.themesFirstWorn = {
+        mounted: (document.getElementById("root")?.childElementCount ?? 0) > 0,
+        assignments: Object.fromEntries(
+          tokens
+            .map((token): [string, string] => [
+              token,
+              root.style.getPropertyValue(token),
+            ])
+            .filter(([, value]) => value !== ""),
+        ),
+      };
+    }).observe(document, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style"],
+    });
+  }, themeTokens);
+}
+
 async function themesOpen(
   browser: Parameters<typeof renderedOpen>[0],
   served: Served,
@@ -74,7 +109,7 @@ async function themesOpen(
   });
 }
 
-test("a project's resolved theme repaints the page in the light scheme and the dark, the chrome follows, and a reload paints it before the server answers", async ({
+test("a project's resolved theme repaints the page in the light scheme and the dark, the chrome follows, and a reload puts it on the root from the cache before the console mounts", async ({
   browser,
 }) => {
   const served = await servedOpen({
@@ -97,11 +132,26 @@ test("a project's resolved theme repaints the page in the light scheme and the d
     await page.emulateMedia({ colorScheme: "light" });
 
     await page.route(`**${appearancePath}`, () => undefined);
+    await themesFirstWornHeard(page);
     const asked = page.waitForRequest(`**${appearancePath}`);
     await page.reload();
     await asked;
     await expect(page.getByText("#1", { exact: true })).toBeVisible();
     await themesDrawnIn(page, schemeColours(harbour, "light"));
+    const firstWorn = await page.evaluate(
+      () =>
+        (window as unknown as { themesFirstWorn?: ThemesFirstWorn })
+          .themesFirstWorn,
+    );
+    expect(firstWorn).toEqual({
+      mounted: false,
+      assignments: Object.fromEntries(
+        themeAssignmentsOf(harbour).map(({ property, value }) => [
+          property,
+          value,
+        ]),
+      ),
+    });
     renderedNoViolations(rendered, [zodProbeViolation]);
     expect(served.unanswered).toEqual([]);
   } finally {
