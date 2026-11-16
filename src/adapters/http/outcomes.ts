@@ -69,7 +69,6 @@ import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
-  leadOfferingNotAdmittedCode,
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
   proposalMergeForbiddenCode,
@@ -185,9 +184,10 @@ import type {
 } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
-import type {
-  SessionPlacementView,
-  SessionPlacementWritten,
+import {
+  sessionPlacementLeadCompatibility,
+  type SessionPlacementView,
+  type SessionPlacementWritten,
 } from "../../interpreter/sessionPlacement.ts";
 import type {
   AgentAccountPressed,
@@ -1207,9 +1207,9 @@ export function sessionPlacementBody(
 ): SessionPlacementResponse {
   return {
     thread: view.routes.Thread,
-    lead: view.routes.Lead,
-    leadOffering: view.leadOffering,
-    leadOfferings: [...view.leadOfferings],
+    lead: sessionPlacementLeadCompatibility.lead,
+    leadOffering: sessionPlacementLeadCompatibility.leadOffering,
+    leadOfferings: [...sessionPlacementLeadCompatibility.leadOfferings],
     choices: [...view.choices],
     runners: {
       mine: view.runners.mine,
@@ -1277,18 +1277,10 @@ export function placementWriteResponse<View>(
   }
 }
 
-/** A session placement written, or refused a lead offering its route does not admit on this deployment, by its code. */
+/** A session placement written. */
 export function sessionPlacementWriteResponse(
   result: SessionPlacementWritten,
 ): NativeHttpResponse {
-  if (result.result === "LeadOfferingNotAdmitted")
-    return response(
-      422,
-      nativeHttpError(
-        leadOfferingNotAdmittedCode,
-        "The deployment does not admit this lead offering on this route.",
-      ),
-    );
   return placementWriteResponse(result, sessionPlacementBody);
 }
 

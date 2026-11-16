@@ -12,6 +12,7 @@ import fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
+  type RouteOptions,
 } from "fastify";
 
 import type { TicketId } from "../../domain/ids.ts";
@@ -1649,21 +1650,20 @@ function registerBodylessRoutes(
 }
 
 /**
- * A project put on or taken off the caller's own allowlist. The put's body,
- * which names the project's priority, may be left out: an empty body is no
- * body under any media type, as a client or a proxy may frame a bodyless
- * write, and one that is not empty is read as the API's media type alone.
+ * Registers routes whose body may be left out in a scope that reads an empty
+ * body as no body under any media type, as a client or a proxy may frame a
+ * bodyless write, and one that is not empty as the API's media type alone.
  */
-function registerPersonalRunnerProjects(
+function registerOptionalBodyRoutes(
   app: FastifyInstance,
-  runners: PersonalRunnerService,
+  routes: (scope: FastifyInstance) => void,
 ): void {
   void app.register((scope, _options, registered) => {
     const json = scope.getDefaultJsonParser("error", "error");
     scope.removeAllContentTypeParsers();
     scope.addContentTypeParser(
       "*",
-      { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
+      { parseAs: "string" },
       (request, body, parsed) => {
         const text = body.toString();
         if (text.length === 0) parsed(null, undefined);
@@ -1680,8 +1680,21 @@ function registerPersonalRunnerProjects(
           );
       },
     );
-    registerPersonalRunnerProjectRoutes(scope, runners);
+    routes(scope);
     registered();
+  });
+}
+
+/**
+ * A project put on or taken off the caller's own allowlist. The put's body,
+ * which names the project's priority, may be left out.
+ */
+function registerPersonalRunnerProjects(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  registerOptionalBodyRoutes(app, (scope) => {
+    registerPersonalRunnerProjectRoutes(scope, runners);
   });
 }
 
@@ -2449,15 +2462,12 @@ function registerEndpoint<Value>(
   ) => Promise<Value>,
   respond: (value: Value, partition: Partition) => NativeHttpResponse,
 ): void {
-  app.route({
+  registerEndpointRoute(app, endpoint.body, {
     method: endpoint.method,
     url: endpoint.path,
     ...(endpoint.bodyLimit === undefined
       ? {}
       : { bodyLimit: endpoint.bodyLimit }),
-    ...(endpoint.body === undefined
-      ? {}
-      : { preValidation: requireVersionedJson }),
     handler: async (request, reply) => {
       const partition = partitionOf(request);
       nativeHttpSend(
@@ -2469,6 +2479,24 @@ function registerEndpoint<Value>(
       );
     },
   });
+}
+
+/**
+ * Registers an endpoint's route by what its body schema reads: one that reads
+ * an absent body is reached without one, and any other body is the API's media
+ * type alone.
+ */
+function registerEndpointRoute(
+  app: FastifyInstance,
+  body: z.ZodType | undefined,
+  route: RouteOptions,
+): void {
+  if (body === undefined) app.route(route);
+  else if (body.safeParse(undefined).success)
+    registerOptionalBodyRoutes(app, (scope) => {
+      scope.route(route);
+    });
+  else app.route({ ...route, preValidation: requireVersionedJson });
 }
 
 function registerActionReach(
@@ -2978,12 +3006,9 @@ function registerChatEndpoint<Value>(
   ) => Promise<Value>,
   respond: (value: Value, tenant: TenantId) => NativeHttpResponse,
 ): void {
-  app.route({
+  registerEndpointRoute(app, endpoint.body, {
     method: endpoint.method,
     url: endpoint.path,
-    ...(endpoint.body === undefined
-      ? {}
-      : { preValidation: requireVersionedJson }),
     handler: async (request, reply) => {
       const tenant = tenantOf(request);
       nativeHttpSend(
