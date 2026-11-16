@@ -57,5 +57,11 @@ export function LandingQueueChip(props: {
       <span aria-hidden="true">{text(landingQueuePlaceFigure(place))}</span>
     </span>
   );
-  return props.inLink === true ? chip : <Tooltip text={words}>{chip}</Tooltip>;
+  return props.inLink === true ? (
+    chip
+  ) : (
+    <Tooltip trigger="abbreviation" text={words}>
+      {chip}
+    </Tooltip>
+  );
 }

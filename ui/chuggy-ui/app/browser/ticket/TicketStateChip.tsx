@@ -75,7 +75,7 @@ export function TicketStateChip(props: {
   );
   if (dispatch !== undefined)
     return (
-      <Tooltip text={dispatch.effect}>
+      <Tooltip trigger="control" text={dispatch.effect}>
         <button
           type="button"
           className="ticket-list-standing"
@@ -93,7 +93,7 @@ export function TicketStateChip(props: {
       </Tooltip>
     );
   return (
-    <Tooltip text={props.hint}>
+    <Tooltip trigger="abbreviation" text={props.hint}>
       <span className="ticket-list-standing" data-standing={standing}>
         {label}
       </span>

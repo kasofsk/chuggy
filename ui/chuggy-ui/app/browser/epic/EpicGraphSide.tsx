@@ -106,7 +106,7 @@ function EpicGraphSideDispatch(props: {
       {(dispatch, notes) =>
         dispatch === undefined ? null : (
           <>
-            <Tooltip text={dispatch.effect}>
+            <Tooltip trigger="control" text={dispatch.effect}>
               <Button
                 variant="primary"
                 size="sm"

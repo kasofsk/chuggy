@@ -192,7 +192,7 @@ function ChatPaneMenu(props: {
   const text = useCopyText();
   const label = text({ id: "chat-more" });
   return (
-    <Tooltip text={label}>
+    <Tooltip trigger="control" text={label}>
       <span className="flex">
         <MoreMenu label={label} items={props.items} />
       </span>

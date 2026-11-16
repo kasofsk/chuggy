@@ -294,7 +294,7 @@ function UsageSettingsReading(props: {
         <Figure figure={agoFigure(reading.observedAt, props.nowMs)} />
       </span>
       {agentAccountReadingStale(reading, props.nowMs) ? (
-        <Tooltip text={agentAccountReadingStaleLine}>
+        <Tooltip trigger="abbreviation" text={agentAccountReadingStaleLine}>
           <span>
             <Pill tone="parked">{text(agentAccountReadingStaleWord)}</Pill>
           </span>

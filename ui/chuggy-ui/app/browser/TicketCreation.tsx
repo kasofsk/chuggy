@@ -226,7 +226,7 @@ function ConfigurationLine(props: {
   const text = useCopyText();
   const shaping = creationConfigurationLabel(props.offer);
   return (
-    <Tooltip text={shaping.title}>
+    <Tooltip trigger="abbreviation" text={shaping.title}>
       <p className="creation-sole text-ink-3">{text(shaping.text)}</p>
     </Tooltip>
   );

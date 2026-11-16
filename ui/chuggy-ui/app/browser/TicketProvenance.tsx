@@ -180,7 +180,7 @@ function ConfigurationFoot(props: {
   return (
     <p className="config-foot">
       <span>{text({ id: "ticket-provenance-digest" })}</span>{" "}
-      <Tooltip text={props.digest}>
+      <Tooltip trigger="abbreviation" text={props.digest}>
         <code>{digestShortened(props.digest)}</code>
       </Tooltip>
       <span> · </span>

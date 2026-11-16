@@ -135,11 +135,10 @@ shellFrameEachCase(() => {
 
 async function tooltipNamed(name: string): Promise<void> {
   const button = screen.getByRole("button", { name });
-  const trigger = button.closest('[tabindex="0"]');
-  if (trigger === null) throw new Error(`no tooltip trigger around ${name}`);
-  fireEvent.focus(trigger);
+  expect(button.parentElement?.closest("[tabindex]")).toBeNull();
+  fireEvent.focus(button);
   expect((await screen.findByRole("tooltip")).textContent).toBe(name);
-  fireEvent.blur(trigger);
+  fireEvent.blur(button);
 }
 
 /** At the two-column width its default share is narrower than a pane is ever

@@ -97,7 +97,7 @@ export function Toasts(props: {
           <RadixToast.Description className="toast-said">
             <ToastWord tone={toast.tone} />
             <span className="toast-line">
-              <Tooltip text={toast.detail}>
+              <Tooltip trigger="abbreviation" text={toast.detail}>
                 <span>{toast.line}</span>
               </Tooltip>
             </span>
