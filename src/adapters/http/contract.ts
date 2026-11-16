@@ -332,16 +332,9 @@ export function parsePersonalRunnerProject(
     : personalRunnerProjectSchema.parse(body).priority;
 }
 
-/** One session placement as the wire carries it, keyed by the session kind each route is for, and the lead's offering where it names one. */
+/** One session placement as the wire carries it, keeping only the thread's route: the lead and its offering an older client names are ignored. */
 export function parseSessionPlacement(body: unknown): SessionPlacementChoice {
-  const parsed = sessionPlacementSchema.parse(body);
-  return {
-    Thread: parsed.thread,
-    Lead: parsed.lead,
-    ...(parsed.leadOffering === undefined
-      ? {}
-      : { leadOffering: parsed.leadOffering }),
-  };
+  return { Thread: sessionPlacementSchema.parse(body).thread };
 }
 
 /** One retirement as the wire carries it, which is the binding and nothing else. */

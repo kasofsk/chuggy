@@ -285,9 +285,8 @@ export const executionPlacementSchema = z.strictObject({
 });
 
 /**
- * Where a project's threads and its lead run, both written whole, and the
- * lead's offering. One not named is kept while the lead stays `InCluster`, and
- * is `Own` where it moves to `Pool`.
+ * Where a project's threads run, written whole. `lead` and `leadOffering` are
+ * accepted from older clients and ignored: there is no lead.
  */
 export const sessionPlacementSchema = z.strictObject({
   thread: z.enum(placementRoutes),
