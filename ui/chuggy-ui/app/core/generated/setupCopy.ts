@@ -65,6 +65,7 @@ export interface SetupCopy {
     readonly check: unknown;
     readonly imported: unknown;
     readonly bound: unknown;
+    readonly served: unknown;
     readonly filed: unknown;
     readonly plugged: unknown;
   };
@@ -100,6 +101,7 @@ export interface SetupCopy {
   readonly "setup-asked-project": {
     readonly mcp: unknown;
     readonly runner: unknown;
+    readonly served: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
   };
@@ -573,6 +575,22 @@ export interface SetupCopy {
     readonly repository: unknown;
     readonly refusal: unknown;
   };
+  readonly "setup-serve-none": Record<never, never>;
+  readonly "setup-serve-given": {
+    readonly project: unknown;
+  };
+  readonly "setup-serve-given-failed": {
+    readonly project: unknown;
+    readonly failure: unknown;
+  };
+  readonly "setup-serve-allowed": {
+    readonly project: unknown;
+    readonly preferred: unknown;
+  };
+  readonly "setup-serve-allowed-failed": {
+    readonly project: unknown;
+    readonly failure: unknown;
+  };
   readonly "setup-offer-mcp-when": Record<never, never>;
   readonly "setup-mend-mcp-serves": Record<never, never>;
   readonly "setup-mend-mcp-offer": {
@@ -686,33 +704,38 @@ export interface SetupCopy {
     readonly here: unknown;
     readonly byHand: unknown;
   };
-  readonly "setup-mend-runner-serves": {
-    readonly choose: unknown;
-    readonly project: unknown;
-  };
-  readonly "setup-mend-runner-serves-unnamed": {
-    readonly choose: unknown;
-    readonly project: unknown;
-    readonly placement: unknown;
-    readonly setting: unknown;
-    readonly strict: unknown;
-    readonly preferred: unknown;
-  };
   readonly "setup-mend-runner-elsewhere": {
     readonly page: unknown;
     readonly add: unknown;
-    readonly serves: unknown;
   };
   readonly "setup-mend-runner-instead": {
     readonly page: unknown;
     readonly add: unknown;
-    readonly serves: unknown;
   };
   readonly "setup-mend-runner-offer": {
     readonly put: unknown;
     readonly page: unknown;
     readonly add: unknown;
-    readonly serves: unknown;
+  };
+  readonly "setup-mend-serving-offer": {
+    readonly project: unknown;
+    readonly does: unknown;
+    readonly admin: unknown;
+    readonly setting: unknown;
+    readonly placement: unknown;
+  };
+  readonly "setup-mend-serving-admin": {
+    readonly setting: unknown;
+    readonly placement: unknown;
+  };
+  readonly "setup-mend-serving-admin-tell": {
+    readonly project: unknown;
+    readonly setting: unknown;
+    readonly placement: unknown;
+  };
+  readonly "setup-offer-serve-when": Record<never, never>;
+  readonly "setup-mend-serving-admin-when": {
+    readonly setting: unknown;
   };
   readonly "setup-mend-runner-serviceless": {
     readonly elsewhere: unknown;

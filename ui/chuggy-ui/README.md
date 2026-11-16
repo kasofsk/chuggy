@@ -310,6 +310,15 @@ it, since only the console's install is claimed for the workspace. Where what
 an app is granted was not read, or the site offers no install it can claim,
 the `tell:` names the console's Add instead.
 
+Where the project has no pool and she holds a personal runner that does not
+take its work, the `rule:` names `serve --workspace <w> --project <p>` for once
+she says yes. `serve` gives her runners the project, as the console's Personal
+runners page does, where they are not given it, and where the project names no
+owner fallback and she administers it, names Preferred, so the project's pools
+still take the work while her runner is off. Those are its only writes; it says
+what each came to, and reads the checklist again. Where she does not
+administer the project, the `tell:` names its Placement page for an admin.
+
 Where the project has no ticket yet, the ticket step asks what she wants done
 first, and the configurations a ticket may use are read as the console's New
 ticket page reads them. The `rule:` names `ticket` with `--title` and

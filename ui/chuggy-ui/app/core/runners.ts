@@ -70,7 +70,7 @@ export const runnerPackages = {
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.53.0/chuggy-linux-0.53.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.55.0/chuggy-linux-0.55.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   },
@@ -79,7 +79,7 @@ export const runnerPackages = {
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:
-      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.23.0/chuggy-darwin-0.23.0.tgz",
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.25.0/chuggy-darwin-0.25.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
   },
