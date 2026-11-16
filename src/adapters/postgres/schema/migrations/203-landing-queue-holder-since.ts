@@ -37,8 +37,8 @@ import {
 
 const signature = `public.${projectLandingQueueCandidatesFunction}(in_tenant text, in_project text)`;
 
-export const migration202: Migration = {
-  version: 202,
+export const migration203: Migration = {
+  version: 203,
   name: "a landing queue says since when its holder has held it",
   statements: [
     `GRANT SELECT(committed_at) ON TABLE public.journal_entry TO ${boundaryOwnerRole}`,
