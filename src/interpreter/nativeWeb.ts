@@ -2071,7 +2071,7 @@ async function nativeSessionTranscriptPage(
  * together because a thread page needs all of them and a deployment that
  * composed some would answer a page that is part blank without saying which
  * part. `rows`, `store` and `context` are session-keyed — a
- * thread's transcript is drawn by the SAME walk over the SAME bytes, so one
+ * thread's transcript is drawn by the session transcript's walk, so one
  * transcript has one page type and one wire answer, and its context readings
  * likewise — and `credentialSlot` is the
  * installation's named mount for a member's thread, configuration rather than a

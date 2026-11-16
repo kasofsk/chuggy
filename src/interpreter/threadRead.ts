@@ -30,12 +30,11 @@
  * older pages walked backwards the way a conversation is scrolled, and a
  * listing answers whole.
  *
- * THE TRANSCRIPT IS THE LEAD'S WALK OVER ANOTHER SESSION, and literally so:
- * nothing here declares a page, a query or a read of its own. The boundary
- * draws a thread's transcript with `sessionTranscriptPage.ts`'s walk over its
- * row source and answers it through the lead's own wire body, so one transcript
- * has one page type and one representation — and a reader of a thread's and a
- * reader of the lead's cannot be shown two readings of one store.
+ * THE TRANSCRIPT IS THE SESSION'S WALK, and literally so: nothing here
+ * declares a page, a query or a read of its own. The boundary draws a thread's
+ * transcript with `sessionTranscriptPage.ts`'s walk over its row source and
+ * answers it through the session transcript's wire body, so one transcript has
+ * one page type and one representation.
  *
  * THE SEEDING BLOCK IS COMPOSED HERE AND BOUNDED IN `thread.ts`. The first turn
  * of a thread with no agent reference carries the project's North Star and
@@ -137,8 +136,8 @@ export interface MemberThreadRecord extends ThreadRecord {
 
 /**
  * One turn of a thread's mailbox as a reader sees it, carrying its input and
- * its result where the lead's carries neither: a member's input is what they
- * typed and their result is the answer they are waiting for.
+ * its result: a member's input is what they typed and their result is the
+ * answer they are waiting for.
  */
 export interface ThreadTurnRecord {
   readonly turn: SessionTurnId;
