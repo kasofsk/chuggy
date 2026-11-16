@@ -21,7 +21,7 @@ import {
   useSessionTranscript,
   type SessionTranscriptRead,
   type SessionTranscriptWalk,
-} from "../app/browser/conversation/useSessionTranscript.ts";
+} from "../app/browser/thread/useSessionTranscript.ts";
 import { projectPartition } from "./projectFixture.ts";
 import {
   transcriptStream,

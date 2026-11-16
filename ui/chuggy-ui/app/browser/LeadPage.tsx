@@ -75,7 +75,7 @@ import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import { LeadNote } from "./lead/LeadTranscript.tsx";
-import { useSessionTranscript } from "./conversation/useSessionTranscript.ts";
+import { useSessionTranscript } from "./thread/useSessionTranscript.ts";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
 import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import {
