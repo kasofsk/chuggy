@@ -25,7 +25,8 @@
  * is in the process list of every user on the host, so the credential is never
  * one; git asks the helper below for it, and the helper reads it from the
  * environment it was started with. The floor is the oldest git whose
- * `merge-tree` writes trees, refused at construction rather than mid-promotion.
+ * `merge-tree` writes trees and whose `patch-id` reads a diff verbatim, refused
+ * at construction rather than mid-promotion.
  *
  * WHAT GIT WROTE IS PRINTED ONLY AS AN EXCERPT, made the way the setup program
  * makes one of another program's words: every secret the caller knows and
@@ -41,10 +42,10 @@ import type { RepositoryCredential } from "../../interpreter/finalizer.ts";
 /** The environment a git child is given, which the composition root supplies because `src/` reads none. */
 export type GitEnvironment = Readonly<Record<string, string | undefined>>;
 
-/** The oldest git whose `merge-tree` writes trees, below which this adapter refuses to run. */
+/** The oldest git whose `merge-tree` writes trees and whose `patch-id` takes `--verbatim`, below which this adapter refuses to run. */
 const gitVersionMin: { readonly major: number; readonly minor: number } = {
   major: 2,
-  minor: 38,
+  minor: 39,
 };
 
 /** The most output one git call may produce before it is stopped unread. */
@@ -297,7 +298,7 @@ export function gitRunSaid(
 }
 // jscpd:ignore-end -- the excerpt written twice ends
 
-/** Whether a `git --version` line names a git new enough to write merge trees. */
+/** Whether a `git --version` line names a git new enough to write merge trees and verbatim patch-ids. */
 export function gitVersionAdmits(version: string): boolean {
   const parsed = /(\d+)\.(\d+)/u.exec(version);
   if (parsed === null) return false;
@@ -332,7 +333,7 @@ export function gitRunAssertVersion(environment: GitEnvironment): void {
   const version = gitRunSetup(["--version"], environment);
   if (!gitVersionAdmits(version)) {
     throw new Error(
-      `git: ${version.trim()} cannot write merge trees; ${String(gitVersionMin.major)}.${String(gitVersionMin.minor)} is the floor`,
+      `git: ${version.trim()} cannot write merge trees or verbatim patch-ids; ${String(gitVersionMin.major)}.${String(gitVersionMin.minor)} is the floor`,
     );
   }
 }
