@@ -13,6 +13,7 @@ export interface ShellCopy {
     readonly count: unknown;
   };
   readonly "shell-crumbs": Record<never, never>;
+  readonly "shell-skip": Record<never, never>;
   readonly "shell-details": Record<never, never>;
   readonly "shell-account": Record<never, never>;
   readonly "shell-sign-out": Record<never, never>;

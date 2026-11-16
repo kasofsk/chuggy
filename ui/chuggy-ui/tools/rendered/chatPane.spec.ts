@@ -35,7 +35,7 @@ for (const viewport of chatPaneViewports)
     const page = rendered.page;
     const phone = viewport === "phone";
     if (phone) await page.getByRole("button", { name: "Expand chat" }).click();
-    const pane = page.getByRole("region", { name: "Chat", exact: true });
+    const pane = page.getByRole("complementary", { name: "Chat", exact: true });
     const header = pane.locator("header");
     await expect(
       header.getByRole("heading", { level: 2, name: "New chat" }),

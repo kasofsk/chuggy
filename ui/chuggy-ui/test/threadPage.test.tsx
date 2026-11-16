@@ -176,7 +176,7 @@ function threadPath(session: string): string {
 }
 
 function chatDrawn(): HTMLElement | null {
-  return screen.queryByRole("region", { name: "Chat" });
+  return screen.queryByRole("complementary", { name: "Chat" });
 }
 
 /** The title the pane's header holds, which is its one second-level heading. */

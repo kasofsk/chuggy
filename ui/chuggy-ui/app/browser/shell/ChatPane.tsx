@@ -491,12 +491,12 @@ function ChatPaneSection(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <section
+    <aside
       aria-label={text({ id: "chat-region" })}
       className={`chat-open bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.reading ? "chat-reading" : ""}`}
     >
       {props.children}
-    </section>
+    </aside>
   );
 }
 

@@ -108,7 +108,7 @@ export async function mounted(
 }
 
 export function chatDrawn(): HTMLElement | null {
-  return screen.queryByRole("region", { name: "Chat" });
+  return screen.queryByRole("complementary", { name: "Chat" });
 }
 
 export function navDrawn(): HTMLElement | null {

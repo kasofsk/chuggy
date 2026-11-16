@@ -1683,7 +1683,7 @@ test("the pane's title and every control of it stand in the header's one row", a
   );
   const header = chatDrawn()?.querySelector("header");
   expect(header?.classList.contains("flex")).toBe(true);
-  const region = screen.getByRole("region", { name: "Chat" });
+  const region = screen.getByRole("complementary", { name: "Chat" });
   expect(region.contains(header ?? null)).toBe(true);
   expect(region.querySelector("h1")).toBeNull();
   expect(
