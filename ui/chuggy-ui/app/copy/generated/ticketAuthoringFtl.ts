@@ -8,6 +8,8 @@ ticket-authoring-new-ticket = New { -ticket }
 ticket-authoring-create-ticket = Create { -ticket }
 ticket-authoring-revise-and-release = revise and { -release }
 ticket-authoring-edit-heading = Edit { -ticket } { $ticket }
+# The toast once an edit has landed and its page has been left.
+ticket-authoring-edit-saved = { -ticket(case: "upper") } { $ticket } saved
 ticket-authoring-duplicate-heading = New { -ticket } from
 ticket-authoring-duplicate-from = { -ticket } { $ticket }
 ticket-authoring-ticket = { -ticket(case: "upper") } { $ticket }

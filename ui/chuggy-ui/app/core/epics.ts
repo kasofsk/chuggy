@@ -556,7 +556,9 @@ export function epicDraftRefusal(failure: ApiFailure): Copy | undefined {
   return undefined;
 }
 
-/** The write of an epic: the request, the sentence its refusal is drawn as, and the reads it leaves stale. */
+/** The write of an epic: the request, the sentence its refusal is drawn as,
+ * and the reads it leaves stale. It says no line of its landing: the form that
+ * sends a revision does, and the Tickets tab draws the members it changed. */
 export function epicWrite(
   partition: PartitionIdentity,
 ): ConsoleWrite<
@@ -571,9 +573,25 @@ export function epicWrite(
   };
 }
 
+/** The write a revision of an epic is sent from its form through, which
+ * says once it landed, since the form is left for the page it was opened
+ * from. */
+export function epicRevisionWrite(
+  partition: PartitionIdentity,
+): ReturnType<typeof epicWrite> {
+  return {
+    ...epicWrite(partition),
+    landedUnseen: (saved) => ({
+      id: "epics-saved-toast",
+      args: { epic: saved.epic },
+    }),
+  };
+}
+
 /** The write that archives an epic or makes it active again: an epic's
  * write under a key of its own, so the form revising the same epic and the
- * press that archives it each draw only their own answer. */
+ * press that archives it each draw only their own answer. It says which it
+ * did once it landed, since the menu and the question that sent it close. */
 export function epicVisibilityWrite(
   partition: PartitionIdentity,
 ): ReturnType<typeof epicWrite> {
@@ -584,5 +602,12 @@ export function epicVisibilityWrite(
       partition.tenant,
       partition.project,
     ),
+    landedUnseen: (written, request) => ({
+      id:
+        request.content.visibility === "Archived"
+          ? "epics-archived-toast"
+          : "epics-reactivated-toast",
+      args: { epic: written.epic },
+    }),
   };
 }

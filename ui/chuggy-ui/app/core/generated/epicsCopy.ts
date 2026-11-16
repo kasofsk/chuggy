@@ -68,6 +68,12 @@ export interface EpicsCopy {
   readonly "epics-reactivate": Record<never, never>;
   readonly "epics-reactivate-title": Record<never, never>;
   readonly "epics-reactivate-body": Record<never, never>;
+  readonly "epics-archived-toast": {
+    readonly epic: unknown;
+  };
+  readonly "epics-reactivated-toast": {
+    readonly epic: unknown;
+  };
   readonly "epics-note-attention": Record<never, never>;
   readonly "epics-note-attention-escalated": Record<never, never>;
   readonly "epics-overview-description": Record<never, never>;
@@ -209,6 +215,9 @@ export interface EpicsCopy {
   };
   readonly "epics-edit": Record<never, never>;
   readonly "epics-edit-save": Record<never, never>;
+  readonly "epics-saved-toast": {
+    readonly epic: unknown;
+  };
   readonly "epics-leave-question": Record<never, never>;
   readonly "epics-fault-title-empty": Record<never, never>;
   readonly "epics-fault-title-long": Record<never, never>;

@@ -15,6 +15,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { EpicGraphTab } from "../app/browser/epic/EpicGraphTab.tsx";
 import { EpicHistoryTab } from "../app/browser/epic/EpicHistoryTab.tsx";
 import { EpicOverviewTab } from "../app/browser/epic/EpicOverviewTab.tsx";
@@ -188,6 +189,33 @@ test("the menu's Archive asks first, then revises the epic archived at the revis
     expected: 3,
     content: { visibility: "Archived", tickets: [4, 5] },
   });
+});
+
+test("an archive that lands says so in a success toast, since its question and its menu have closed", async () => {
+  await epicPageDrawn(abilitiesEvery, {
+    written: () => answer({ epic: 7, revision: 4 }),
+    tab: (
+      <>
+        <EpicOverviewTab />
+        <ConsoleWriteToasts />
+      </>
+    ),
+  });
+  fireEvent.click(
+    within(await menuOpened()).getByRole("menuitem", { name: "Archive" }),
+  );
+  await settled();
+  fireEvent.click(
+    within(
+      screen.getByRole("dialog", { name: "Archive this epic?" }),
+    ).getByRole("button", { name: "Archive" }),
+  );
+  await settled();
+  const toast = document.querySelector(".toast");
+  expect(toast?.getAttribute("data-tone")).toBe("Success");
+  expect(toast?.querySelector(".toast-line")?.textContent).toBe(
+    "Epic 7 archived",
+  );
 });
 
 test("a reader who may not write is offered no edit and no archive", async () => {

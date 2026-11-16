@@ -64,6 +64,9 @@ epics-archive-body = An archived { -epic } takes no new { -ticket(form: "plural"
 epics-reactivate = Reactivate
 epics-reactivate-title = Reactivate this { -epic }?
 epics-reactivate-body = The { -epic } is active again and takes new { -ticket(form: "plural") }.
+# The toast once an archive or a reactivation has landed.
+epics-archived-toast = { -epic(case: "upper") } { $epic } archived
+epics-reactivated-toast = { -epic(case: "upper") } { $epic } reactivated
 epics-note-attention = Needs attention:
 epics-note-attention-escalated = is { -escalation }
 
@@ -171,6 +174,8 @@ epics-history-also = { $first } · { $rest }
 
 epics-edit = Edit the { -epic }
 epics-edit-save = Save
+# The toast once a revision has landed and the edit page has been left.
+epics-saved-toast = { -epic(case: "upper") } { $epic } saved
 epics-leave-question = Discard the unsaved changes to the { -epic } and leave?
 
 ## What a form has wrong before it is sent, and what a refused write says.

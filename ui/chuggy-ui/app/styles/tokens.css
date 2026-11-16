@@ -266,6 +266,8 @@
     --duration-epic-graph-in: 700ms; /* an epic graph's lines for a new look */
     --duration-epic-graph-out: 250ms; /* the lines that look replaced */
     --duration-epic-graph-sheet: 360ms; /* an epic graph's sheet rising on a phone */
+    /* a success's toast before it closes itself: a time to read, not motion */
+    --duration-toast-read: 6000ms;
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
     /* late, for what comes in unhurried */
     --ease-in: cubic-bezier(0.7, 0, 1, 1);

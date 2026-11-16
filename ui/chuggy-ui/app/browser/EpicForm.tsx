@@ -26,7 +26,7 @@ import {
   epicFormChanged,
   epicFormFaults,
   epicFormFieldOf,
-  epicWrite,
+  epicRevisionWrite,
   epicWriteFrom,
   epicWriteRefusal,
   epicsInvalidated,
@@ -205,7 +205,9 @@ export function EpicFormPanel(props: {
 }): ReactNode {
   const { partition, held } = props;
   const client = useQueryClient();
-  const writing = useConsoleWrite(epicWrite(partition), { drawn: true });
+  const writing = useConsoleWrite(epicRevisionWrite(partition), {
+    drawn: true,
+  });
   const typed = useEpicFormPanelTyped(held, writing.reset);
   const formElement = useRef<HTMLFormElement>(null);
   const failed = useEpicFormPanelFocus(formElement);
