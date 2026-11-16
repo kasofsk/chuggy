@@ -441,6 +441,9 @@ ci_declare() { # <gate id or suite path>
 		ci_manifests
 		ci_install
 		;;
+	check-console-colours)
+		ci_code ui/chuggy-ui/app .chug/tasks/check-console-colours.sh
+		;;
 	check-console-copy)
 		ci_code ui/chuggy-ui/app/copy ui/chuggy-ui/app/core/generated \
 			ui/chuggy-ui/tools/copyCatalog.ts .chug/tasks/check-console-copy.sh
@@ -564,6 +567,9 @@ ci_declare() { # <gate id or suite path>
 	.chug/tasks/check-queries.test.sh)
 		ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
 			.chug/tasks/_suite.sh
+		;;
+	.chug/tasks/check-console-colours.test.sh)
+		ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/check-console-sheets.sh .chug/tasks/_suite.sh
 		;;
 	.chug/tasks/*.test.sh) ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/_suite.sh ;;
 	.githooks/pre-commit.test.sh) ci_code "$1" .githooks/pre-commit .chug/tasks/_suite.sh ;;
