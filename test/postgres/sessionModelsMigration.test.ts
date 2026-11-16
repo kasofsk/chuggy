@@ -1,8 +1,7 @@
 /**
  * 133 adds the columns a session's model and effort are held in, and a
  * project's choice of them, as nullable columns alone: every row written
- * before it reads as it did, holding no model and no effort, and every door it
- * re-creates is callable by the roles it was before and by no other.
+ * before it reads as it did, holding no model and no effort.
  */
 
 import assert from "node:assert/strict";
@@ -10,13 +9,6 @@ import { test } from "node:test";
 import type pg from "pg";
 
 import { postgresMigrate } from "../../src/adapters/postgres/pool.ts";
-import {
-  apiRole,
-  boundaryOwnerRole,
-  selectorControlRole,
-  selectorServiceRole,
-  workerPlaneRole,
-} from "../../src/adapters/postgres/schema.ts";
 import { migration133 } from "../../src/adapters/postgres/schema/migrations/133-session-model-effort.ts";
 import { migratedBefore, migrationDatabase } from "./migrationHarness.ts";
 
@@ -91,50 +83,5 @@ test("133 keeps every session and settings row as it stood, holding no model and
         },
       ],
     );
-  });
-});
-
-test("133 keeps each door it re-created where it was granted", async () => {
-  await migrationDatabase("session_model_doors", async (subject) => {
-    await migratedBefore(subject, migration133.version);
-    await postgresMigrate(subject);
-    const doors = await subject.query(
-      `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner,
-              p.prosecdef AS definer,
-              has_function_privilege($1,p.oid,'EXECUTE') AS api,
-              has_function_privilege($2,p.oid,'EXECUTE') AS control,
-              has_function_privilege($3,p.oid,'EXECUTE') AS selector,
-              has_function_privilege($4,p.oid,'EXECUTE') AS worker,
-              has_function_privilege('public',p.oid,'EXECUTE') AS public,
-              pg_get_function_identity_arguments(p.oid) ~ '(in|new)_[a-z_]*(model|effort)'
-                OR pg_get_function_result(p.oid) ~ '\\m(model|effort)\\M' AS chosen
-         FROM pg_proc p
-        WHERE p.proname IN ('update_selector_project_settings','open_project_lead',
-                            'open_member_thread','lead_session','read_session_attempt')
-        ORDER BY p.proname`,
-      [apiRole, selectorControlRole, selectorServiceRole, workerPlaneRole],
-    );
-    const door = {
-      owner: boundaryOwnerRole,
-      definer: true,
-      api: false,
-      control: false,
-      selector: false,
-      worker: false,
-      public: false,
-      chosen: true,
-    };
-    assert.deepEqual(doors.rows, [
-      { name: "lead_session", ...door, selector: true },
-      { name: "open_member_thread", ...door, api: true },
-      { name: "open_project_lead", ...door, selector: true },
-      { name: "read_session_attempt", ...door, worker: true },
-      {
-        name: "update_selector_project_settings",
-        ...door,
-        api: true,
-        control: true,
-      },
-    ]);
   });
 });

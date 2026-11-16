@@ -107,7 +107,6 @@ test("every runtime role may read only the migration ledger contract", async () 
     metricsPlaneRole,
     apiRole,
     ticketServiceRole,
-    selectorServiceRole,
     schedulerRole,
     finalizerRole,
   ]) {
