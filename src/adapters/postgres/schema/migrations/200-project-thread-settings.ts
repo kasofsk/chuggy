@@ -88,8 +88,8 @@ const threadSettingsWrite = `CREATE FUNCTION ${signature} RETURNS TABLE(revision
      AND settings.revision=written;
      END $$`;
 
-export const migration199: Migration = {
-  version: 199,
+export const migration200: Migration = {
+  version: 200,
   name: "a project's settings are written as its thread settings",
   statements: [
     threadSettingsWrite,
