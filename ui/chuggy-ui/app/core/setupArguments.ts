@@ -26,7 +26,10 @@
  * asking what `--intent` says, under the configuration `--configuration`
  * names where the project offers more than one, where that is the
  * checklist's next thing, and reads the checklist again. Neither is ever
- * printed back.
+ * printed back. `plugin` installs chuggy's Claude Code plugin, or updates or
+ * enables it. `--plugin skip` is the way past the plugin step without it, and
+ * every command the program prints carries it as it carries the workspace and
+ * project.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
@@ -61,7 +64,8 @@ export type SetupAskFault =
   | "Replace"
   | "ProjectName"
   | "Test"
-  | "Brief";
+  | "Brief"
+  | "Plugin";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
@@ -75,13 +79,30 @@ export type SetupCommand =
   | "Check"
   | "Import"
   | "Bind"
-  | "Ticket";
+  | "Ticket"
+  | "Plugin";
 
-/** Which workspace and project a run is about, as far as its arguments named them, and what `project` was asked to call the one it makes. */
+/** Which workspace and project a run is about, as far as its arguments named them, what `project` was asked to call the one it makes, and whether the plugin step is passed over. */
 export interface SetupAnswers {
   readonly workspace: string | undefined;
   readonly project: string | undefined;
   readonly name?: string | undefined;
+  readonly plugin?: SetupPluginAnswer;
+}
+
+/** The one value `--plugin` takes: the plugin step passed over without the plugin. */
+export const setupPluginSkip = "skip";
+
+export type SetupPluginAnswer = typeof setupPluginSkip;
+
+/** The flag the plugin step is passed over with. */
+export const setupPluginFlag = "--plugin";
+
+/** The plugin step's answer, where one was given, to be kept in answers made anew. */
+export function setupAnswersPlugin(
+  answers: SetupAnswers,
+): Pick<SetupAnswers, "plugin"> {
+  return answers.plugin === undefined ? {} : { plugin: answers.plugin };
 }
 
 export const setupAnswersNone: SetupAnswers = {
@@ -170,6 +191,11 @@ export type SetupAsked =
       readonly configuration: string | undefined;
     }
   | {
+      readonly asked: "Plugin";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+    }
+  | {
       readonly asked: "Listen";
       readonly site: string;
       readonly lifeSecs: number;
@@ -189,6 +215,7 @@ const setupCommandWords = {
   import: "Import",
   bind: "Bind",
   ticket: "Ticket",
+  plugin: "Plugin",
   listen: "Listen",
 } as const;
 
@@ -206,23 +233,33 @@ const setupFlags = [
   "title",
   "intent",
   "configuration",
+  "plugin",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
 
 /** The flags each command reads; one it does not read is asked wrongly. */
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
-  Status: ["site", "workspace", "project"],
-  SignIn: ["site", "wait-secs", "workspace", "project"],
-  Project: ["site", "workspace", "project", "name"],
-  Mcp: ["site", "workspace", "project"],
-  Runner: ["site", "wait-secs", "workspace", "project"],
-  ChatHost: ["site", "wait-secs", "workspace", "replace"],
-  Configuration: ["workspace", "project", "test"],
-  Check: ["workspace", "project"],
-  Import: ["site", "workspace", "project"],
-  Bind: ["site", "workspace", "project"],
-  Ticket: ["site", "workspace", "project", "title", "intent", "configuration"],
+  Status: ["site", "workspace", "project", "plugin"],
+  SignIn: ["site", "wait-secs", "workspace", "project", "plugin"],
+  Project: ["site", "workspace", "project", "name", "plugin"],
+  Mcp: ["site", "workspace", "project", "plugin"],
+  Runner: ["site", "wait-secs", "workspace", "project", "plugin"],
+  ChatHost: ["site", "wait-secs", "workspace", "replace", "plugin"],
+  Configuration: ["workspace", "project", "test", "plugin"],
+  Check: ["workspace", "project", "plugin"],
+  Import: ["site", "workspace", "project", "plugin"],
+  Bind: ["site", "workspace", "project", "plugin"],
+  Ticket: [
+    "site",
+    "workspace",
+    "project",
+    "title",
+    "intent",
+    "configuration",
+    "plugin",
+  ],
+  Plugin: ["site", "workspace", "project", "plugin"],
   Listen: ["site", "life-secs"],
 };
 
@@ -302,9 +339,12 @@ function setupAnswersRead(
   const project = flags.get("project");
   const name = flags.get("name");
   if (!setupNameWhole(workspace) || !setupNameWhole(project)) return undefined;
+  const plugin: Pick<SetupAnswers, "plugin"> = flags.has("plugin")
+    ? { plugin: setupPluginSkip }
+    : {};
   return name === undefined
-    ? { workspace, project }
-    : { workspace, project, name };
+    ? { workspace, project, ...plugin }
+    : { workspace, project, name, ...plugin };
 }
 
 /** A name is carried back in the command that retries it, so it is one a line prints as it is. */
@@ -370,6 +410,9 @@ function setupAskedOf(
   const site = given === undefined ? undefined : setupSiteRead(given);
   if (given !== undefined && site === undefined)
     return { asked: "Wrongly", fault: "Site" };
+  const plugin = flags.get("plugin");
+  if (plugin !== undefined && plugin !== setupPluginSkip)
+    return { asked: "Wrongly", fault: "Plugin" };
   const answers = setupAnswersRead(flags);
   if (answers === undefined) return { asked: "Wrongly", fault: "Name" };
   const wait = setupSecsRead(
@@ -406,6 +449,7 @@ function setupAskedOf(
       return { asked, site: undefined, answers };
     case "Import":
     case "Bind":
+    case "Plugin":
       return { asked, site, answers };
     case "Ticket":
       return setupTicketAsked(site, answers, flags);
@@ -454,10 +498,12 @@ export function setupCommandArguments(
       return ["bind"];
     case "Ticket":
       return ["ticket"];
+    case "Plugin":
+      return ["plugin"];
   }
 }
 
-/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it. */
+/** The flags that name a choice again for `command`, which `setupAsked` reads back as the same choice: the name only for `project`, the one command that reads it, and the plugin step passed over for every command. */
 export function setupAnswerArguments(
   answers: SetupAnswers,
   command: SetupCommand = "Status",
@@ -470,6 +516,7 @@ export function setupAnswerArguments(
     ...(command !== "Project" || answers.name === undefined
       ? []
       : [setupNameFlag, answers.name]),
+    ...(answers.plugin === undefined ? [] : [setupPluginFlag, answers.plugin]),
   ];
 }
 

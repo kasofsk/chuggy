@@ -1,8 +1,8 @@
 /**
  * The one next thing, from where a person stands on each step of setup.
  *
- * The first step that is not done decides it. This program does three steps
- * itself, the project's, the MCP step's and the runner's, and it never prints
+ * The first step that is not done decides it. This program does the plugin's
+ * step, the project's, the MCP step's and the runner's itself, and it never prints
  * a `next:` it cannot run, so for every other step but one what it names is a
  * page of the console by its full address and what is pressed there, and the
  * checklist is read again only once the person says the step is done. A
@@ -32,7 +32,9 @@
  * a page's. A step that was not read is said as that: a read the site refused
  * or cut short is the person's to take up, and one that failed is a failure.
  * Where which project is meant is still open, the next thing is the question,
- * one flag at a time.
+ * one flag at a time. chuggy's Claude Code plugin is offered first, since its
+ * setup skill holds the talk of every step after it: `plugin` installs it on
+ * the person's yes, and on their no the checklist is read past it.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -53,7 +55,7 @@ import {
   repositoryImportWord,
   repositoryImportWordLabel,
 } from "./repositoryImport.ts";
-import { setupNameFlag } from "./setupArguments.ts";
+import { setupAnswersPlugin, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
@@ -435,6 +437,18 @@ function setupMcpMend(at: SetupAt, packaged: boolean): SetupThing {
   };
 }
 
+/** chuggy's Claude Code plugin, which `plugin` installs, or enables where it is installed and off, on the person's yes. */
+function setupPluginMend(off: boolean): SetupThing {
+  return {
+    thing: "Offer",
+    command: "Plugin",
+    tell: {
+      id: off ? "setup-mend-plugin-offer-off" : "setup-mend-plugin-offer",
+    },
+    when: { id: "setup-offer-plugin-when" },
+  };
+}
+
 /** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
 const setupClaudeOn: Readonly<Record<SetupClaudeKind, Copy>> = {
   Subscription: { id: "setup-claude-on-subscription" },
@@ -812,6 +826,8 @@ function setupMend(
       return setupUnreadMend(lack, step);
     case "Mcp":
       return setupMcpMend(at, packaged);
+    case "Plugin":
+      return setupPluginMend(lack.off);
     case "Workspace":
     case "Administration":
       return setupWorkspaceMend(lack, at);
@@ -889,18 +905,19 @@ function setupAsk(
   };
 }
 
-/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made. */
+/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the plugin step passed over, where it was. */
 function setupCarried(
   choice: SetupChoice,
   answers: SetupAnswers,
 ): SetupAnswers {
+  const plugin = setupAnswersPlugin(answers);
   if (choice.choice === "Made")
     return choice.by === "Only"
       ? answers
-      : { workspace: choice.workspace, project: choice.project };
+      : { workspace: choice.workspace, project: choice.project, ...plugin };
   return choice.open === "workspace"
-    ? { workspace: undefined, project: answers.project }
-    : { workspace: choice.workspace, project: undefined };
+    ? { workspace: undefined, project: answers.project, ...plugin }
+    : { workspace: choice.workspace, project: undefined, ...plugin };
 }
 
 /** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with the pull request to merge where one writes the repository's own configuration. */

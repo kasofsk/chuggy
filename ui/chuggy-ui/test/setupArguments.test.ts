@@ -387,3 +387,37 @@ test("configuration and check read the workspace and project and no site, config
   ])
     expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Flag"));
 });
+
+test("plugin is read with a site, a workspace and a project, --plugin takes only skip and is read by every command but a listener, and skip is carried back in the arguments a report names", () => {
+  expect(setupAsked(["plugin", "--site", site])).toEqual({
+    asked: "Plugin",
+    site,
+    answers: setupAnswersNone,
+  });
+  expect(
+    setupAsked(["plugin", "--workspace", "acme", "--project", "widgets"]),
+  ).toMatchObject({
+    asked: "Plugin",
+    answers: { workspace: "acme", project: "widgets" },
+  });
+  expect(setupCommandArguments("Plugin")).toEqual(["plugin"]);
+  const skip = { ...setupAnswersNone, plugin: "skip" } as const;
+  for (const command of [
+    [],
+    ["sign-in"],
+    ["plugin"],
+    ["mcp", "--workspace", "acme", "--project", "widgets"],
+    ["project", "--workspace", "acme", "--name", "Atlas"],
+  ])
+    expect(
+      setupAsked([...command, "--plugin", "skip"]),
+      command.join(" "),
+    ).toMatchObject({ answers: { plugin: "skip" } });
+  for (const value of ["yes", "", "Skip"])
+    expect(setupAsked(["--plugin", value]), value).toEqual(wrongly("Plugin"));
+  expect(setupAsked(["--plugin", "skip", "--plugin", "skip"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(setupAnswerArguments(skip)).toEqual(["--plugin", "skip"]);
+  expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
+});

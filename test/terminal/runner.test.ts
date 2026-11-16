@@ -101,7 +101,7 @@ test("on a fresh machine signed in, the bare command offers chuggy's MCP server 
     " only once the person says yes to chuggy's MCP server on this machine.";
   assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
   assert.deepEqual(words(on, "npm"), [["prefix", "-g"]]);
-  assert.deepEqual(words(on, "claude"), []);
+  assert.deepEqual(words(on, "claude"), [["plugin", "list", "--json"]]);
   assert.deepEqual(on.installation.writes, []);
 
   cleared(on);

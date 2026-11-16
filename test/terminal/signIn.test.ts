@@ -44,6 +44,10 @@ async function installed(): Promise<{
   return { installation: await made.installation(), machine: made.machine() };
 }
 
+/** The plugin's step on a machine with no claude to ask. */
+const pluginNone =
+  "step: plugin      todo     Claude Code here has no chuggy plugin";
+
 /** The site the program's own file remembers, and the sign-in the shared store holds for it. */
 function remembered(machine: Home): {
   site: string | undefined;
@@ -103,8 +107,9 @@ test("a second run renews with what the first stored, and a third with what the 
   const first = remembered(machine).refreshToken;
   const second = await machine.run([]);
   assert.equal(second.code, 0, second.stdout);
-  assert.deepEqual(second.lines.slice(0, 3), [
+  assert.deepEqual(second.lines.slice(0, 4), [
     `site: ${installation.site}, signed in`,
+    pluginNone,
     "step: workspace   done     acme",
     "step: project     todo     acme has no project yet",
   ]);
@@ -187,8 +192,9 @@ test("a sign-in the site does not confirm is a failure that is kept, and the nex
   installation.serves = true;
   const confirmed = await machine.run([]);
   assert.equal(confirmed.code, 0);
-  assert.deepEqual(confirmed.lines.slice(0, 2), [
+  assert.deepEqual(confirmed.lines.slice(0, 3), [
     `site: ${installation.site}, signed in`,
+    pluginNone,
     "step: workspace   done     acme",
   ]);
   assert.equal(confirmed.lines.at(-1), "next: stop");

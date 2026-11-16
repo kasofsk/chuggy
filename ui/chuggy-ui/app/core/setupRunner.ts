@@ -141,6 +141,11 @@ export const setupActWaitMs: Readonly<Record<SetupRunnerAct, number>> = {
   Install: 300_000,
   ServerRemoved: 60_000,
   ServerAdded: 60_000,
+  PluginMarketplaceAdd: 300_000,
+  PluginMarketplaceUpdate: 300_000,
+  PluginInstall: 300_000,
+  PluginUpdate: 300_000,
+  PluginEnable: 60_000,
   Register: 60_000,
   Check: 120_000,
   Service: 60_000,
@@ -420,7 +425,7 @@ type Acting = Pick<Run, "ports" | "secrets">;
 type Packaging = Acting & Pick<Run, "places" | "notes">;
 
 /** Runs one thing on the machine to its end, and answers what it printed or the stop its failure is; the registration, which is handed the token, fails with nothing it printed kept. */
-async function setupActed(
+export async function setupActed(
   run: Acting,
   act: SetupRunnerAct,
   command: readonly string[],

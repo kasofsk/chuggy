@@ -39,6 +39,7 @@ import {
 import type { SetupPacing } from "./setupPacing.ts";
 import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
+import { setupPlugin, setupPluginHad } from "./setupPlugin.ts";
 import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
 import type { SetupReads } from "./setupReads.ts";
 import { setupProject } from "./setupProject.ts";
@@ -211,7 +212,8 @@ function setupBusy(
 /**
  * The checklist, read once the lock is given up: nothing from here on reads
  * or writes the session file, and no request is sent while the lock is held
- * for it. Everything goes out through ports that can only read; the agent's
+ * for it. Everything goes out through ports that can only read; Claude Code's
+ * list of plugins is read where the plugin step was not passed over, the agent's
  * configuration is read for the project chosen, where the MCP step or the
  * runner's is the one next the machine is looked at and not touched, and
  * where the project's first ticket is, what it may be drawn under is read.
@@ -265,7 +267,11 @@ async function setupStandingRead(
       workspaces: signed.workspaces,
     },
   );
-  return setupStanding(reads, await setupChecklistNamed(ports, reads));
+  return setupStanding(
+    reads,
+    await setupChecklistNamed(ports, reads),
+    await setupPluginHad(ports, answers),
+  );
 }
 
 /** Whether the agent's configuration for this folder names chuggy's server for the project the reads chose, where they chose one. */
@@ -588,6 +594,8 @@ export async function setupRun(
         );
       case "Mcp":
         return await setupServer(ports, asked);
+      case "Plugin":
+        return await setupPlugin(ports, asked);
       case "Runner":
       case "ChatHost":
         return await setupRunnerRun(ports, asked, pacing);

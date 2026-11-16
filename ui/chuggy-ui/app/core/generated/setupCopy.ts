@@ -66,11 +66,13 @@ export interface SetupCopy {
     readonly imported: unknown;
     readonly bound: unknown;
     readonly filed: unknown;
+    readonly plugged: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
     readonly workspace: unknown;
     readonly project: unknown;
+    readonly plugin: unknown;
     readonly wait: unknown;
     readonly name: unknown;
     readonly made: unknown;
@@ -121,6 +123,10 @@ export interface SetupCopy {
   };
   readonly "setup-asked-replace": {
     readonly flag: unknown;
+  };
+  readonly "setup-asked-plugin": {
+    readonly flag: unknown;
+    readonly skip: unknown;
   };
   readonly "setup-platforms-and": {
     readonly one: unknown;
@@ -352,6 +358,10 @@ export interface SetupCopy {
   readonly "setup-step-mcp-none": {
     readonly project: unknown;
   };
+  readonly "setup-step-plugin-on": Record<never, never>;
+  readonly "setup-step-plugin-off": Record<never, never>;
+  readonly "setup-step-plugin-none": Record<never, never>;
+  readonly "setup-step-plugin-skipped": Record<never, never>;
   readonly "setup-step-runner-offline": Record<never, never>;
   readonly "setup-step-runner-live": Record<never, never>;
   readonly "setup-step-runner-hosted": Record<never, never>;
@@ -587,6 +597,36 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly site: unknown;
     readonly program: unknown;
+  };
+  readonly "setup-offer-plugin-when": Record<never, never>;
+  readonly "setup-rule-plugin-skip": {
+    readonly command: unknown;
+  };
+  readonly "setup-mend-plugin-adds": Record<never, never>;
+  readonly "setup-mend-plugin-does": Record<never, never>;
+  readonly "setup-mend-plugin-offer": Record<never, never>;
+  readonly "setup-mend-plugin-offer-off": Record<never, never>;
+  readonly "setup-plugin-did": {
+    readonly did: unknown;
+    readonly uninstall: unknown;
+  };
+  readonly "setup-rule-skill": {
+    readonly skill: unknown;
+  };
+  readonly "setup-plugin-passed": {
+    readonly found: unknown;
+  };
+  readonly "setup-plugin-claudeless": Record<never, never>;
+  readonly "setup-plugin-old": {
+    readonly said: unknown;
+    readonly version: unknown;
+    readonly least: unknown;
+  };
+  readonly "setup-plugin-unlisted": {
+    readonly plugin: unknown;
+  };
+  readonly "setup-plugin-off": {
+    readonly plugin: unknown;
   };
   readonly "setup-project-made": {
     readonly project: unknown;
