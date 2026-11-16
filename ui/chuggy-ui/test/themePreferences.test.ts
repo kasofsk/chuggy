@@ -37,20 +37,22 @@ const mineChoice = { kind: "Owned", theme: 7 } as const;
 
 function said(appearance: ProjectAppearanceResponse): string | undefined {
   const project = themePreferencesOf(undefined, appearance).project;
-  return project === undefined ? undefined : copyTextEn(project.said);
+  return project === undefined
+    ? undefined
+    : `${project.applies}: ${copyTextEn(project.because)}`;
 }
 
 test("each layer is said in plain words, naming the theme that applies", () => {
   expect(
     said(themeResolvedOf({ override: harbourChoice, global: emberChoice }, [])),
-  ).toBe("Harbour, your choice for this project.");
+  ).toBe("Harbour: Your choice for this project");
   expect(
     said(themeResolvedOf({ projectDefault: ember, global: harbourChoice }, [])),
-  ).toBe("Ember, the project's default.");
+  ).toBe("Ember: The project's default");
   expect(said(themeResolvedOf({ global: mineChoice }, owned))).toBe(
-    "Mine, your own theme.",
+    "Mine: Your own theme",
   );
-  expect(said(themeResolvedOf({}, []))).toBe("Chuggy, the console's default.");
+  expect(said(themeResolvedOf({}, []))).toBe("Chuggy: The console's default");
 });
 
 test("the global picker says the project's default covers it only where that default is what applies", () => {
@@ -59,7 +61,7 @@ test("the global picker says the project's default covers it only where that def
     themeResolvedOf({ projectDefault: ember, global: harbourChoice }, []),
   ).global.covered;
   expect(covered === undefined ? undefined : copyTextEn(covered)).toBe(
-    "This project shows its own default, Ember, in place of your theme.",
+    "This project shows its own default theme in place of yours.",
   );
   for (const layers of [
     { override: emberChoice, projectDefault: ember },

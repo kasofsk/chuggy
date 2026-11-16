@@ -43,22 +43,12 @@ export interface SettingsCopy {
   readonly "settings-preferences-scheme-light": Record<never, never>;
   readonly "settings-preferences-scheme-dark": Record<never, never>;
   readonly "settings-preferences-theme": Record<never, never>;
-  readonly "settings-preferences-theme-covered": {
-    readonly name: unknown;
-  };
+  readonly "settings-preferences-theme-covered": Record<never, never>;
   readonly "settings-preferences-theme-here": Record<never, never>;
-  readonly "settings-preferences-theme-here-override": {
-    readonly name: unknown;
-  };
-  readonly "settings-preferences-theme-here-default": {
-    readonly name: unknown;
-  };
-  readonly "settings-preferences-theme-here-global": {
-    readonly name: unknown;
-  };
-  readonly "settings-preferences-theme-here-built-in": {
-    readonly name: unknown;
-  };
+  readonly "settings-preferences-theme-here-override": Record<never, never>;
+  readonly "settings-preferences-theme-here-default": Record<never, never>;
+  readonly "settings-preferences-theme-here-global": Record<never, never>;
+  readonly "settings-preferences-theme-here-built-in": Record<never, never>;
   readonly "settings-preferences-theme-here-project-default": Record<
     never,
     never

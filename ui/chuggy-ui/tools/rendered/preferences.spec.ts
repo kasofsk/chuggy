@@ -102,9 +102,8 @@ for (const viewport of ["phone", "desk"] as const)
     await expect(theme.getByRole("radio", { checked: true })).toHaveText(
       "Chuggy",
     );
-    await expect(
-      page.getByText("Chuggy, the console's default.", { exact: true }),
-    ).toBeVisible();
+    const applies = page.locator(".preferences-theme-applies > span");
+    await expect(applies).toHaveText(["Chuggy", "The console's default"]);
     await renderedNoOverflow(page);
     if (viewport === "phone")
       await renderedTouchTargets(page, page.locator(".settings-section"));
@@ -116,9 +115,7 @@ for (const viewport of ["phone", "desk"] as const)
     await expect(theme.getByRole("radio", { checked: true })).toHaveText(
       "Harbour",
     );
-    await expect(
-      page.getByText("Harbour, your own theme.", { exact: true }),
-    ).toBeVisible();
+    await expect(applies).toHaveText(["Harbour", "Your own theme"]);
     await renderedNoOverflow(page);
     if (viewport === "phone")
       await renderedTouchTargets(page, page.locator(".settings-section"));

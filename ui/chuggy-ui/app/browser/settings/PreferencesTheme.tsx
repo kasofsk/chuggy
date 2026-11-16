@@ -188,6 +188,7 @@ function themeCards(
   return options.map((option) => ({
     key: option.key,
     name: option.theme.name,
+    data: true,
     theme: option.theme,
   }));
 }
@@ -207,7 +208,8 @@ function ThemeRefused(props: {
 function PreferencesThemeHere(props: {
   readonly partition: PartitionIdentity;
   readonly chosen: string;
-  readonly said: Copy;
+  readonly applies: string;
+  readonly because: Copy;
   readonly options: readonly ThemePickerOption[];
   readonly owned: readonly OwnedThemeResponse[];
 }): ReactNode {
@@ -221,8 +223,11 @@ function PreferencesThemeHere(props: {
   return (
     <div className="preferences-theme">
       <p className="font-strong text-ink-1">{label}</p>
-      <p id={said} className="text-sm text-ink-3">
-        {text(props.said)}
+      <p id={said} className="preferences-theme-applies text-sm">
+        <span className="font-strong text-ink-1" translate="no">
+          {props.applies}
+        </span>
+        <span className="text-ink-3">{text(props.because)}</span>
       </p>
       <ThemePicker
         label={label}
@@ -234,6 +239,7 @@ function PreferencesThemeHere(props: {
             name: text({
               id: "settings-preferences-theme-here-project-default",
             }),
+            data: false,
             theme: undefined,
           },
           ...themeCards(props.options),
@@ -312,7 +318,8 @@ function PreferencesThemeRead(props: {
         <PreferencesThemeHere
           partition={props.partition}
           chosen={said.project.chosen}
-          said={said.project.said}
+          applies={said.project.applies}
+          because={said.project.because}
           options={options}
           owned={owned}
         />

@@ -19,10 +19,12 @@ import { themeColourAssignmentsOf } from "../../core/themeTokens.ts";
 
 import "./ThemePicker.css";
 
-/** One card: the key it is chosen by, its name, and the theme it shows. */
+/** One card: the key it is chosen by, its name, whether that name is data,
+ * as a theme's own is, rather than the catalog's, and the theme it shows. */
 export interface ThemePickerCard {
   readonly key: string;
   readonly name: string;
+  readonly data: boolean;
   readonly theme: ThemeDocument | undefined;
 }
 
@@ -87,7 +89,9 @@ export function ThemePicker(props: {
             <ThemePickerSwatch theme={card.theme} />
           )}
           <span className="theme-card-name">
-            <span className="min-w-0">{card.name}</span>
+            <span className="min-w-0" translate={card.data ? "no" : undefined}>
+              {card.name}
+            </span>
             <RadioGroupPrimitive.Indicator className="flex">
               <ThemePickerMark />
             </RadioGroupPrimitive.Indicator>

@@ -166,9 +166,15 @@ export interface ThemePreferences {
      * is what applies. */
     readonly covered: Copy | undefined;
   };
-  /** The row for the project the reader is in, none outside every project. */
+  /** The row for the project the reader is in, none outside every project:
+   * the theme that applies there by its name, which is data, and why. */
   readonly project:
-    { readonly chosen: string; readonly said: Copy } | undefined;
+    | {
+        readonly chosen: string;
+        readonly applies: string;
+        readonly because: Copy;
+      }
+    | undefined;
 }
 
 /** The global picker marks the reader's choice, and the built-in default
@@ -177,7 +183,6 @@ export function themePreferencesOf(
   global: ThemeChoice | undefined,
   appearance: ProjectAppearanceResponse | undefined,
 ): ThemePreferences {
-  const name = appearance?.theme.name ?? "";
   return {
     global: {
       chosen: themePickerKeyOf(
@@ -185,7 +190,7 @@ export function themePreferencesOf(
       ),
       covered:
         appearance?.layer === "ProjectDefault"
-          ? { id: "settings-preferences-theme-covered", args: { name } }
+          ? { id: "settings-preferences-theme-covered" }
           : undefined,
     },
     project:
@@ -196,10 +201,8 @@ export function themePreferencesOf(
               appearance.layers.override === undefined
                 ? themePickerProjectDefault
                 : themePickerKeyOf(appearance.layers.override),
-            said: {
-              id: themePreferencesHere[appearance.layer],
-              args: { name },
-            },
+            applies: appearance.theme.name,
+            because: { id: themePreferencesHere[appearance.layer] },
           },
   };
 }
