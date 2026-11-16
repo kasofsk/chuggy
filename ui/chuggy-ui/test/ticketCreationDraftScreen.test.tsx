@@ -270,13 +270,14 @@ test("an untouched YAML view is written again from each revision that arrives", 
   expect(followBehind()).toBeNull();
 });
 
-test("a touched form keeps what was typed, says the draft changed, and holds the submit back", async () => {
+test("a touched form keeps what was typed, says the draft changed, and holds the submit back without calling it busy", async () => {
   const { server } = await drawDraft();
   followRetitled("Mine");
   await followArrives(server, revisedBy("Revised by the agent"));
   expect(followTitle().value).toBe("Mine");
   expect(followBehind()).not.toBeNull();
   expect(submitButton().disabled).toBe(true);
+  expect(submitButton().getAttribute("aria-busy")).not.toBe("true");
 });
 
 test("taking theirs drops what was typed for the revision", async () => {

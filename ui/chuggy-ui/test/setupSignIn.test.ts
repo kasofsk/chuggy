@@ -824,8 +824,8 @@ test("each page the browser is shown is the catalog's words: nothing here for a 
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
   expect(pages).toEqual([
-    "There is nothing here.",
-    "Signed in to chuggy. You can close this tab and go back to your terminal.",
-    "This sign-in page has already been answered.",
+    "There is nothing here",
+    "Signed in to chuggy",
+    "This sign-in page has already been answered",
   ]);
 });
