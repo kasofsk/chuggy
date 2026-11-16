@@ -190,27 +190,29 @@ import {
   type TicketAgenticRefusalsRead,
 } from "./agenticRefusal.ts";
 import {
-  checkedLeadTranscriptQuery,
   leadNotNeeded,
   leadAwaitingSelector,
   leadPaused,
   leadSelectorNotGranted,
   leadSelectorUnnamed,
-  leadTranscriptPage,
-  sessionHeldWalk,
-  sessionHeldWalkAsks,
   type LeadAbsence,
   type LeadHeld,
   type LeadRead,
   type LeadReadStore,
   type LeadRefused,
   type LeadSubsidy,
-  type LeadTranscriptQuery,
-  type LeadTranscriptRead,
+} from "./leadRead.ts";
+import {
+  checkedSessionTranscriptQuery,
+  sessionHeldWalk,
+  sessionHeldWalkAsks,
+  sessionTranscriptPage,
   type SessionHeldWalk,
   type SessionStoreRowsRead,
+  type SessionTranscriptQuery,
+  type SessionTranscriptRead,
   type SessionTranscriptSubject,
-} from "./leadRead.ts";
+} from "./sessionTranscriptPage.ts";
 import {
   sessionContextPage,
   type SessionContextPageRead,
@@ -912,8 +914,8 @@ export interface NativeWeb extends NativeEpics {
   leadTranscript(
     principal: Principal,
     partition: Partition,
-    query: LeadTranscriptQuery,
-  ): Promise<LeadTranscriptRead>;
+    query: SessionTranscriptQuery,
+  ): Promise<SessionTranscriptRead>;
   leadContext(
     principal: Principal,
     partition: Partition,
@@ -1112,8 +1114,8 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
     session: SessionId,
-    query: LeadTranscriptQuery,
-  ): Promise<LeadTranscriptRead>;
+    query: SessionTranscriptQuery,
+  ): Promise<SessionTranscriptRead>;
   threadContext(
     principal: Principal,
     partition: Partition,
@@ -2143,8 +2145,8 @@ async function nativeSessionTranscriptPage(
   store: SessionStoreReadPort,
   partition: Partition,
   subject: SessionTranscriptSubject,
-  query: LeadTranscriptQuery,
-): Promise<LeadTranscriptRead> {
+  query: SessionTranscriptQuery,
+): Promise<SessionTranscriptRead> {
   const stream = query.stream ?? nativeSessionStream(subject);
   if (stream === undefined) return { read: "NotFound" };
   const page = await rows.batches({
@@ -2175,7 +2177,7 @@ async function nativeSessionTranscriptPage(
   const last = page.at(-1)?.batch;
   return {
     read: "Page",
-    page: leadTranscriptPage({
+    page: sessionTranscriptPage({
       stream,
       drawn,
       ...(held === "Undecided" ? {} : { walk: held }),
@@ -2331,7 +2333,7 @@ function nativeLeadSessionMethods(
         ports.store,
         partition,
         standing,
-        checkedLeadTranscriptQuery(query),
+        checkedSessionTranscriptQuery(query),
       );
     },
     leadContext: async (principal, partition, query) => {
@@ -2906,7 +2908,7 @@ function nativeThreadSessionMethods(
         found.ports.store,
         partition,
         found.thread,
-        checkedLeadTranscriptQuery(query),
+        checkedSessionTranscriptQuery(query),
       );
     },
     threadContext: async (principal, partition, session, query) => {

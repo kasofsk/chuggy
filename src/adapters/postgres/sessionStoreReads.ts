@@ -13,7 +13,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import type { SessionId } from "../../interpreter/agentSession.ts";
-import type { SessionStoreRowsRead } from "../../interpreter/leadRead.ts";
+import type { SessionStoreRowsRead } from "../../interpreter/sessionTranscriptPage.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   SessionStoreBatchRow,

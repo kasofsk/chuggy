@@ -200,7 +200,7 @@ import {
   hostedRunsResponse,
   projectAbilitiesResponse,
   leadResponse,
-  leadTranscriptResponse,
+  sessionTranscriptResponse,
   selectorHistoryResponse,
   selectorProposalReviewResponse,
   selectorProposalsResponse,
@@ -936,7 +936,7 @@ function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
         limit: query.limit,
       });
     },
-    leadTranscriptResponse,
+    sessionTranscriptResponse,
   );
   registerEndpoint(
     app,
@@ -2878,7 +2878,7 @@ function registerThreadReads(
         },
       );
     },
-    leadTranscriptResponse,
+    sessionTranscriptResponse,
   );
   registerEndpoint(
     app,
@@ -3275,7 +3275,7 @@ function registerChatSessionReads(
         },
       );
     },
-    leadTranscriptResponse,
+    sessionTranscriptResponse,
   );
   registerChatEndpoint(
     app,

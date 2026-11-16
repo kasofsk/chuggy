@@ -1,0 +1,173 @@
+/**
+ * A transcript page's two bounds, its held set and the walk that decides it.
+ *
+ * The chain the page is built over is proved against a real store in
+ * `test/interpreter/sessionTranscript.test.ts`; what is left here is what a
+ * real store is too small to reach — a stream long enough to pass the entry
+ * bound — so the entries below are synthetic and are only ever counted.
+ */
+
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  sessionStorePageBatchesMax,
+  sessionTranscriptEntriesMax,
+} from "../../src/contract/http.ts";
+import {
+  checkedSessionTranscriptQuery,
+  sessionHeldWalk,
+  sessionTranscriptPage,
+} from "../../src/interpreter/sessionTranscriptPage.ts";
+import { asSessionStoreStream } from "../../src/interpreter/agentSession.ts";
+import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
+
+const stream = asSessionStoreStream("stream");
+
+/** A chain of `length` user entries, each naming the one before it. */
+function chainText(length: number): string {
+  return Array.from({ length }, (_unused, index) =>
+    JSON.stringify({
+      type: "user",
+      uuid: `entry-${String(index)}`,
+      ...(index === 0 ? {} : { parentUuid: `entry-${String(index - 1)}` }),
+      message: { role: "user", content: "one" },
+    }),
+  ).join("\n");
+}
+
+function drawn(text: string): SessionStoreRead {
+  return { read: "Content", content: text };
+}
+
+test("a transcript query outside its bounds is refused rather than clamped", () => {
+  assert.deepEqual(
+    checkedSessionTranscriptQuery({
+      after: 0,
+      limit: sessionStorePageBatchesMax,
+    }),
+    { after: 0, limit: sessionStorePageBatchesMax },
+  );
+  for (const limit of [0, -1, sessionStorePageBatchesMax + 1, 1.5])
+    assert.throws(() => checkedSessionTranscriptQuery({ after: 0, limit }));
+  for (const after of [-1, 2.5])
+    assert.throws(() => checkedSessionTranscriptQuery({ after, limit: 1 }));
+});
+
+test("a page longer than the entry bound is cut and says so", () => {
+  const held = new Set<string>();
+  const page = sessionTranscriptPage({
+    stream,
+    walk: { held },
+    drawn: [drawn(chainText(sessionTranscriptEntriesMax + 4))],
+  });
+  assert.equal(page.entries.length, sessionTranscriptEntriesMax);
+  assert.equal(page.truncated, true);
+  const undecided = sessionTranscriptPage({
+    stream,
+    drawn: [drawn(chainText(sessionTranscriptEntriesMax + 4))],
+  });
+  assert.equal(
+    undecided.truncated,
+    true,
+    "a cut is a cut whether or not the walk decided",
+  );
+  const whole = sessionTranscriptPage({
+    stream,
+    walk: { held },
+    drawn: [drawn(chainText(sessionTranscriptEntriesMax))],
+  });
+  assert.equal(whole.entries.length, sessionTranscriptEntriesMax);
+  assert.equal(whole.truncated, false);
+});
+
+test("a walk that could not decide what is held names no held set", () => {
+  const undecided = sessionTranscriptPage({
+    stream,
+    drawn: [drawn(chainText(2))],
+  });
+  assert.equal(undecided.held, undefined);
+  assert.equal(
+    undecided.truncated,
+    false,
+    "the page's own entries all crossed, so nothing about them was cut",
+  );
+  const decided = sessionTranscriptPage({
+    stream,
+    walk: { held: new Set(["entry-1"]) },
+    drawn: [drawn(chainText(2))],
+  });
+  assert.deepEqual(decided.held, ["entry-1"]);
+  assert.equal(decided.truncated, false);
+});
+
+test("the cut is the batch the stream's boundary was written in", () => {
+  const said = (uuid: string, parentUuid: string) =>
+    JSON.stringify({
+      type: "user",
+      uuid,
+      parentUuid,
+      message: { role: "user", content: uuid },
+    });
+  const boundary = (uuid: string, from: string) =>
+    JSON.stringify({
+      type: "system",
+      subtype: "compact_boundary",
+      uuid,
+      parentUuid: null,
+      logicalParentUuid: from,
+      compactMetadata: {
+        preservedMessages: { anchorUuid: `${uuid}-summary`, uuids: [] },
+      },
+    });
+  const walked = sessionHeldWalk([
+    { batch: 4, content: chainText(2) },
+    { batch: 5, content: boundary("cut-one", "entry-1") },
+    { batch: 6, content: said("cut-one-summary", "cut-one") },
+  ]);
+  assert.equal(walked.cut, 5);
+  assert.deepEqual([...walked.held], ["cut-one-summary"]);
+  assert.equal(
+    sessionHeldWalk([{ batch: 1, content: chainText(2) }]).cut,
+    undefined,
+    "a stream that never compacted names no cut",
+  );
+});
+
+test("a page names the held entries it carries, and no others", () => {
+  const page = sessionTranscriptPage({
+    stream,
+    walk: { held: new Set(["entry-2", "elsewhere"]) },
+    drawn: [drawn(chainText(3))],
+  });
+  assert.equal(page.compaction, undefined);
+  assert.deepEqual(
+    page.held,
+    ["entry-2"],
+    "held is the subset of this page's entries, never a uuid it did not send",
+  );
+  const dropped = sessionTranscriptPage({
+    stream,
+    walk: { held: new Set(["elsewhere"]) },
+    drawn: [drawn(chainText(3))],
+  });
+  assert.deepEqual(
+    dropped.held,
+    [],
+    "a page the last cut dropped entirely holds none of its own entries",
+  );
+});
+
+test("a batch nobody could draw is counted and the page still stands", () => {
+  const page = sessionTranscriptPage({
+    stream,
+    walk: { held: new Set(["entry-0", "entry-1"]) },
+    drawn: [drawn(chainText(2)), { read: "Corrupt" }, { read: "NotFound" }],
+    nextAfter: 3,
+  });
+  assert.equal(page.elided, 2);
+  assert.equal(page.entries.length, 2);
+  assert.equal(page.nextAfter, 3);
+  assert.equal(page.compaction, undefined);
+  assert.deepEqual(page.held, ["entry-0", "entry-1"]);
+});

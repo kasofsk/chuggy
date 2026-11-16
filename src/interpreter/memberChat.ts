@@ -37,7 +37,10 @@ import {
   type SessionScope,
   type SessionTurnId,
 } from "./agentSession.ts";
-import type { LeadTranscriptQuery, LeadTranscriptRead } from "./leadRead.ts";
+import type {
+  SessionTranscriptQuery,
+  SessionTranscriptRead,
+} from "./sessionTranscriptPage.ts";
 import { nativeThreadMethods, type NativeThreadPorts } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
 import type {
@@ -151,8 +154,8 @@ export interface MemberChat {
     principal: Principal,
     tenant: TenantId,
     session: SessionId,
-    query: LeadTranscriptQuery,
-  ): Promise<LeadTranscriptRead>;
+    query: SessionTranscriptQuery,
+  ): Promise<SessionTranscriptRead>;
   threadContext(
     principal: Principal,
     tenant: TenantId,
