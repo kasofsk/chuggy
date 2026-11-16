@@ -302,6 +302,8 @@ function sessionCalls(
       heldImages: (_identity, max) =>
         answer(["heldImages", max], holding.length > 0 ? [sessionImage] : []),
       polled: () => answer(["polled"], undefined),
+      unlistedEnded: (_identity, listed) =>
+        answer(["unlistedEnded", [...listed]], 0),
     },
   };
 }

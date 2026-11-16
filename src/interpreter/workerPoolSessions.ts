@@ -217,6 +217,12 @@ export interface WorkerPoolSessions extends WorkerPoolSessionRows<WorkerPoolSess
     identity: ChatHostIdentity,
     max: number,
   ): Promise<readonly WorkerPoolThreadClosed[]>;
+  /** Ends `Lost`, as `Vanished`, at most `max` of the attempts `identity` holds that `listed` does not name, releasing their turns, and answers how many it ended. */
+  unlistedEnded(
+    identity: ChatHostIdentity,
+    listed: readonly string[],
+    max: number,
+  ): Promise<number>;
 }
 
 /** Everything a session claim reaches beyond its rows and the authority: each project's binding, and where a bearer is drawn. */

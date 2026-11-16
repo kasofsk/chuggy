@@ -140,6 +140,8 @@ export const chatHostSessionReleaseFunction =
   "release_chat_host_session_attempt";
 export const chatHostSessionImagesFunction = "chat_host_session_images";
 export const chatHostFenceFunction = "fence_chat_host_attempts";
+export const chatHostSessionUnlistedEndFunction =
+  "end_unlisted_chat_host_session_attempts";
 export const personalExecutionReleaseFunction =
   "release_personal_execution_assignment";
 /** Whether the capabilities a runner declares run an execution's requirement. */
