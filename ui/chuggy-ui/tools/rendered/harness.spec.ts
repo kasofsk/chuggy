@@ -176,3 +176,17 @@ test("a custom property set on the root re-themes what the sweep reads", async (
   );
   renderedNoViolations(rendered);
 });
+
+test("a case that fails with a context open is marked as failing", async ({
+  browser,
+}) => {
+  test.fail();
+  await harnessOpen(browser, "/");
+  expect(browser.contexts()).toHaveLength(0);
+});
+
+test("no case leaves a context open on the worker's browser, passed or failed", ({
+  browser,
+}) => {
+  expect(browser.contexts()).toEqual([]);
+});

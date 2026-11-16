@@ -4,7 +4,9 @@
  * can see.
  *
  * `test` is Playwright's with one worker-scoped fixture, `served`: the build's
- * `dist` behind `served.ts` for as long as the worker lives. A case opens a
+ * `dist` behind `served.ts` for as long as the worker lives. Every browser
+ * context a case opens on the worker's browser is closed when the case ends,
+ * whether it passed or failed. A case opens a
  * route with `renderedOpen`, which records every content-security-policy
  * violation the document reports from its first byte, and ends with
  * `renderedNoViolations`, which fails on any.
@@ -66,7 +68,23 @@ export interface RenderedOpening {
   readonly ready: (page: Page) => Locator;
 }
 
-export const test = base.extend<object, { served: Served }>({
+export const test = base.extend<
+  { renderedContextsClosed: undefined },
+  { served: Served }
+>({
+  renderedContextsClosed: [
+    async ({ browser }, use) => {
+      const before = new Set(browser.contexts());
+      await use(undefined);
+      await Promise.all(
+        browser
+          .contexts()
+          .filter((context) => !before.has(context))
+          .map((context) => context.close()),
+      );
+    },
+    { auto: true },
+  ],
   served: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads what a fixture depends on from this pattern, and this one depends on nothing
     async ({}, use) => {
