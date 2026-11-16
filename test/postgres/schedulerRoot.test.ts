@@ -174,6 +174,7 @@ function schedulerRootProgram(): string {
       },
       service: ports.schedulerRootService,
       access: ports.schedulerRootAccess,
+      wakes: ports.schedulerRootWakes,
       sessions: ports.schedulerRootSessions,
       sessionRouting: { routes: { Thread: 'InCluster', Lead: 'InCluster' }, projectRoutes: new Map() },
       sessionLaunch: ports.schedulerRootSessionLaunch,

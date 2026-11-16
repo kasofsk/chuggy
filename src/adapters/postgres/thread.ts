@@ -13,9 +13,9 @@
  * same reason, because a name is a decision. An adapter that checked any of
  * them itself would be a second opinion racing the definer that decides it.
  *
- * THE API, THE SELECTOR AND THE WORKER PLANE REACH DIFFERENT DOORS, so they are
+ * THE API, THE SCHEDULER AND THE WORKER PLANE REACH DIFFERENT DOORS, so they are
  * different factories over different pools. `postgresThreads` is the API's
- * reads and doors; `postgresThreadWakes` is the selector's cursor, candidate
+ * reads and doors; `postgresThreadWakes` is the scheduler's cursor, candidate
  * read and wake door; `postgresThreadJobWakes` is the worker plane's view and
  * wake door under a session bearer. A single factory over one pool would be a shape a deployment
  * cannot supply, because no credential in it holds both roles.

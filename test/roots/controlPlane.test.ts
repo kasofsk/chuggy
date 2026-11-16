@@ -55,8 +55,8 @@ test("every control-plane root reports an absent schema as could-not-run", async
       wakesPerPassMax: 1,
     };
     const runtimes = [
-      roots.selectorProcess({}, wakes, requirements, config),
-      roots.schedulerProcess({}, {}, identity, requirements, config),
+      roots.selectorProcess({}, requirements, config),
+      roots.schedulerProcess({}, {}, wakes, identity, requirements, config),
       roots.ticketServiceProcess(
         {},
         { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
@@ -112,22 +112,20 @@ const successfulProcessProgram = `
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
     let selectorPasses = 0;
     let sessionPasses = 0;
-    /** Appending after an await is what makes the ORDER observable: a tick that started the two together reads the log before this tick's rows are in it. */
-    let appended = 0;
+    let executionPasses = 0;
+    /** Each pass's first call, in the order the scheduler's tick made them. */
+    const order = [];
     const selectorService = {
       runOnce: async () => {
         selectorPasses += 1;
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        appended += 1;
         return { reached: [], failures: [] };
       },
     };
     let wakePasses = 0;
-    const read = [];
-    const selectorWakes = {
+    const schedulerWakes = {
       store: {
         cursor: async () => 0,
-        candidates: async () => { wakePasses += 1; read.push(appended); return []; },
+        candidates: async () => { wakePasses += 1; order.push('wake'); return []; },
         wake: async () => { throw new Error('an empty page offered a wake'); },
         advance: async () => { throw new Error('an empty page moved the cursor'); },
       },
@@ -136,7 +134,13 @@ const successfulProcessProgram = `
     };
     const schedulerService = {
       store: {
-        fenceOldEpochAttempts: async () => 0,
+        fenceOldEpochAttempts: async () => {
+          executionPasses += 1;
+          /** Settling after a timer is what makes the ORDER observable: a tick that started the passes together would let the others run first. */
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          order.push('execution');
+          return 0;
+        },
         claimRequests: async () => [],
         admit: async () => ({ admitted: 'NoCandidate' }),
         refusedAttempts: async () => [],
@@ -165,7 +169,7 @@ const successfulProcessProgram = `
     };
     const sessionService = {
       store: {
-        fenceOldEpochAttempts: async () => 0,
+        fenceOldEpochAttempts: async () => { order.push('session'); return 0; },
         attemptsAwaitingCleanup: async () => [],
         attemptCleanupCompleted: async () => true,
         attemptsAwaitingObservation: async () => [],
@@ -192,8 +196,8 @@ const successfulProcessProgram = `
       metrics: finalizerTelemetry.silentFinalizerTelemetry,
     };
     const runtimes = [
-      roots.selectorProcess(selectorService, selectorWakes, requirements, config),
-      roots.schedulerProcess(schedulerService, sessionService, identity, requirements, config),
+      roots.selectorProcess(selectorService, requirements, config),
+      roots.schedulerProcess(schedulerService, sessionService, schedulerWakes, identity, requirements, config),
       roots.ticketServiceProcess(
         ticketService,
         { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
@@ -205,14 +209,14 @@ const successfulProcessProgram = `
     const outcomes = [];
     for (const runtime of runtimes) outcomes.push(await runtime.start());
     ${programUntil(
-      "[wakePasses, sessionPasses, ticketPasses, finalizerPasses].every((passes) => passes > 0)",
+      "[selectorPasses, wakePasses, sessionPasses, ticketPasses, finalizerPasses].every((passes) => passes > 0)",
       "a loop never reached its ports",
     )}
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
     process.stdout.write(JSON.stringify({
-      outcomes, health, selectorPasses, sessionPasses, wakePasses,
-      read: read.slice(0, 1),
+      outcomes, health, selectorPasses, sessionPasses, executionPasses, wakePasses,
+      order: order.slice(0, 3),
     }));
   `;
 
@@ -232,8 +236,9 @@ test("every control-plane responsibility starts, passes and stops against its po
     readonly health: readonly unknown[];
     readonly selectorPasses: number;
     readonly sessionPasses: number;
+    readonly executionPasses: number;
     readonly wakePasses: number;
-    readonly read: readonly number[];
+    readonly order: readonly string[];
   };
   assert.deepEqual(
     found.outcomes,
@@ -255,13 +260,13 @@ test("every control-plane responsibility starts, passes and stops against its po
   );
   assert.equal(
     found.wakePasses,
-    found.selectorPasses,
-    "one loop drives both passes, so a tick that ran one ran the other",
+    found.executionPasses,
+    "one loop drives the scheduler's passes and the wake pass, so a tick that ran one ran the other",
   );
   assert.deepEqual(
-    found.read,
-    [1],
-    "the wake pass read the log before this tick's runtime pass had appended to it, so the two are not ordered",
+    found.order,
+    ["execution", "wake", "session"],
+    "the scheduler's tick is not execution, then wakes, then sessions",
   );
 });
 
@@ -372,6 +377,10 @@ const containedFaultProgram = `
 const truncatedWakeProgram = `
     const roots = await import('./src/roots/controlPlane.ts');
     const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+    const scheduler = await import('./src/interpreter/executionScheduler.ts');
+    const finalizer = await import('./src/interpreter/finalizer.ts');
+    const tickets = await import('./src/interpreter/ticketService.ts');
+    const sessions = await import('./src/interpreter/sessionScheduler.ts');
     const projectAccess = await import('./src/interpreter/projectAccess.ts');
     const rows = schema.currentRuntimeSchemaContract.required;
     const requirements = { pool: { query: async () => ({ rows }) } };
@@ -400,9 +409,48 @@ const truncatedWakeProgram = `
       clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
       wakesPerPassMax: 2,
     };
-    const runtime = roots.selectorProcess(
-      { runOnce: async () => ({ reached: [], failures: [] }) },
+    const idleExecution = {
+      store: {
+        fenceOldEpochAttempts: async () => 0,
+        claimRequests: async () => [],
+        admit: async () => ({ admitted: 'NoCandidate' }),
+        refusedAttempts: async () => [],
+        attemptsAwaitingObservation: async () => [],
+        waitingAttempts: async () => [],
+        reapLapsedAttempts: async () => 0,
+        attemptsAwaitingCleanup: async () => [],
+        attemptCleanupCompleted: async () => true,
+        unlaunched: async () => [],
+        runnerLostTickets: async () => [],
+        rateLimitedTickets: async () => [],
+      },
+      config: scheduler.executionSchedulerDefaults,
+      ticketService: tickets.ticketServiceDefaults,
+      finalizer: finalizer.finalizerDefaults,
+      metrics: scheduler.silentSchedulerTelemetry,
+    };
+    const idleSessions = {
+      store: {
+        fenceOldEpochAttempts: async () => 0,
+        attemptsAwaitingCleanup: async () => [],
+        attemptCleanupCompleted: async () => true,
+        attemptsAwaitingObservation: async () => [],
+        attemptTurnFailure: async () => ({ turnFailure: undefined, sessionClosed: false }),
+        reapLapsedAttempts: async () => 0,
+        reapIdleAttempts: async () => 0,
+        withdrawUnservedPoolTurns: async () => 0,
+        awaitingPlacement: async () => [],
+      },
+      placement: {},
+      bearers: { mint: () => { throw new Error('no session waits for a pod'); } },
+      policy: {},
+      config: sessions.sessionSchedulerDefaults,
+    };
+    const runtime = roots.schedulerProcess(
+      idleExecution,
+      idleSessions,
       wakes,
+      { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' },
       requirements,
       config,
     );
@@ -459,17 +507,7 @@ const admissionProgram = `
         return run;
       },
     };
-    const wakes = {
-      store: {
-        cursor: async () => 0,
-        candidates: async () => [],
-        wake: async () => { throw new Error('an empty page offered a wake'); },
-        advance: async () => { throw new Error('an empty page moved the cursor'); },
-      },
-      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
-      wakesPerPassMax: 1,
-    };
-    const runtime = roots.selectorProcess(service, wakes, requirements, config);
+    const runtime = roots.selectorProcess(service, requirements, config);
     await runtime.start();
     await scripted;
     await runtime.stop();

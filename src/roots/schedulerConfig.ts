@@ -27,7 +27,10 @@
 
 import { z } from "zod";
 
-import { textCodePointsCount } from "../contract/http.ts";
+import {
+  textCodePointsCount,
+  threadWakesPerPassMax,
+} from "../contract/http.ts";
 import { claudeCredentialMountKinds } from "../contract/rosters.ts";
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import type { SessionSiteBounds } from "../interpreter/workerTask.ts";
@@ -129,6 +132,8 @@ export interface SchedulerCommandConfig {
   readonly sessionPolicy: SessionPolicy;
   readonly sessionRouting: SessionRouting;
   readonly access: ProjectAccessSettings;
+  /** How many threads one wake pass may wake, at most the contract's ceiling. */
+  readonly threadWakesPerPassMax: number;
   /** The memory, in MiB, the pool plane runs an execution naming none with. */
   readonly poolMemoryMib: number;
 }
@@ -890,6 +895,29 @@ function schedulerAccess(
 }
 
 /**
+ * The wake pass's bound, which a deployment may lower and may not raise: the
+ * candidate read caps what it is asked for at `threadWakesPerPassMax`, so a
+ * larger number here would be a configured bound that is not the bound that
+ * runs. An unset variable is the contract's own ceiling, and there is no arm in
+ * which the pass is unbounded.
+ */
+function schedulerThreadWakesPerPass(
+  environment: SchedulerEnvironment,
+): number {
+  const name = `${schedulerVariablePrefix}THREAD_WAKES_PER_PASS_MAX`;
+  const value = schedulerOptional(environment, "THREAD_WAKES_PER_PASS_MAX");
+  if (value === undefined) return threadWakesPerPassMax;
+  if (!/^[1-9][0-9]*$/u.test(value))
+    throw new RangeError(`${name} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > threadWakesPerPassMax)
+    throw new RangeError(
+      `${name} must be at most ${String(threadWakesPerPassMax)}`,
+    );
+  return parsed;
+}
+
+/**
  * The scheduler's pass bounds as a deployment names them, which the API reads
  * under the same variable so that what it says the scheduler will do is what
  * the scheduler does.
@@ -962,6 +990,7 @@ export function schedulerCommandConfig(
     ),
     ...schedulerSessionPolicy(environment),
     access: schedulerAccess(environment),
+    threadWakesPerPassMax: schedulerThreadWakesPerPass(environment),
     poolMemoryMib: schedulerEnvironmentPositive(
       environment,
       poolPlaneMemoryVariable,
