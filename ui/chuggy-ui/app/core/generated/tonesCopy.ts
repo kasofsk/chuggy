@@ -3,14 +3,6 @@
 
 /** Each message's variables, by name. */
 export interface TonesCopy {
-  readonly "tones-dispatch-approval": Record<never, never>;
-  readonly "tones-dispatch-pending": Record<never, never>;
-  readonly "tones-dispatch-submitted": Record<never, never>;
-  readonly "tones-dispatch-landed": Record<never, never>;
-  readonly "tones-dispatch-unread": Record<never, never>;
-  readonly "tones-dispatch-outcome": {
-    readonly outcome: unknown;
-  };
   readonly "tones-reach-reached": Record<never, never>;
   readonly "tones-reach-not-yet": Record<never, never>;
   readonly "tones-reach-failed": Record<never, never>;

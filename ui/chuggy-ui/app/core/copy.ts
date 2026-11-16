@@ -21,7 +21,6 @@ import type { EpicsCopy } from "./generated/epicsCopy.ts";
 import type { FailureCopy } from "./generated/failureCopy.ts";
 import type { FiguresCopy } from "./generated/figuresCopy.ts";
 import type { InboxCopy } from "./generated/inboxCopy.ts";
-import type { LeadCopy } from "./generated/leadCopy.ts";
 import type { OperationCopy } from "./generated/operationCopy.ts";
 import type { PagesCopy } from "./generated/pagesCopy.ts";
 import type { PanelCopy } from "./generated/panelCopy.ts";
@@ -57,7 +56,6 @@ type CopyVariables = ApiCopy &
   FailureCopy &
   FiguresCopy &
   InboxCopy &
-  LeadCopy &
   OperationCopy &
   PagesCopy &
   PanelCopy &

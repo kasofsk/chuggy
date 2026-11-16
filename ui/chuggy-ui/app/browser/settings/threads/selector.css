@@ -1,74 +1,8 @@
-/* The thread settings and the strip that leads the Lead page: the status
-   strip, the shape a prose setting is read in, the rows grid and the
-   revisions list. Everything a utility can state is stated as one; what is
+/* The thread settings: the shape a prose setting is read in, the rows grid
+   and the revisions list. Everything a utility can state is stated as one; what is
    here is the grids and the states a data attribute carries. */
 
 @layer page {
-  .selector-strip {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    border: var(--hairline) solid var(--edge);
-    border-radius: var(--radius-2);
-    background: var(--surface-1);
-  }
-
-  .selector-cell {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-  }
-
-  .selector-cell > :last-child {
-    margin-left: auto;
-  }
-
-  .selector-cell + .selector-cell {
-    border-top: var(--hairline) solid var(--edge);
-  }
-
-  @container (min-width: 60em) {
-    .selector-strip {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .selector-cell + .selector-cell {
-      border-top: 0;
-      border-left: var(--hairline) solid var(--edge);
-    }
-  }
-
-  .selector-key {
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-    min-width: 5em;
-  }
-
-  .selector-standing {
-    flex: 1 0 auto;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--ink-1);
-    font-weight: var(--weight-medium);
-  }
-
-  .selector-dot {
-    width: 0.5em;
-    height: 0.5em;
-    border-radius: var(--radius-circle);
-    flex: none;
-  }
-
-  .selector-dot[data-tone="live"] {
-    background: var(--tone-live);
-  }
-
-  .selector-dot[data-tone="parked"] {
-    background: var(--tone-parked);
-  }
-
   .selector-prose {
     white-space: pre-wrap;
     max-width: var(--measure);

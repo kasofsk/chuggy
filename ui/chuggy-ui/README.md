@@ -29,8 +29,7 @@ builds with.
   in `browser/`, which is the rule `chuggy-ui-primitives-reach-no-effect`
   states and is why each mounts in a suite with no provider around it.
 - `ui/chuggy-ui/app/browser/conversation/` — the one conversation surface,
-  shared by the shell's chat pane, a run's transcript and the lead's
-  dispatches.
+  shared by the shell's chat pane, a thread's page and a run's transcript.
   `chuggy-ui-conversation-owns-assistant-ui` makes it the only module that
   names `@assistant-ui`; `chuggy-ui-conversation-reaches-only-primitives`
   bounds it to itself, `browser/ui/`, the decision layer and the contract, so

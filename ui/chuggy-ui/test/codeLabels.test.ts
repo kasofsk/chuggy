@@ -27,8 +27,6 @@ import {
   finalizationRecheckReasons,
   finalizationUnavailableKinds,
   gitEvidences,
-  leadAbsencesUntimed,
-  leadAdmissionRefusals,
   nativeActionKinds,
   operationRefusalCodes,
   operationStates,
@@ -66,7 +64,6 @@ import {
   gitMergeModeLabel,
   gitMergePolicyEffect,
   gitMergePolicyLabel,
-  leadAbsenceLabel,
   resumeActionEffect,
   wallExitLine,
   escalationDetailLine,
@@ -149,9 +146,6 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
     ...changeProposalStatuses.map((each) =>
       copyTextEn(changeProposalStatusLabel(each)),
     ),
-    ...[...leadAbsencesUntimed, ...leadAdmissionRefusals].map((each) =>
-      copyTextEn(leadAbsenceLabel(each)),
-    ),
   ];
   for (const label of drawn) {
     expect(label.length).toBeGreaterThan(0);
@@ -165,12 +159,6 @@ test("every landing state is one word", () => {
     expect(copyTextEn(ticketLandingStateLabel(state))).toMatch(
       /^[A-Z][a-z]+$/u,
     );
-});
-
-test("a lead whose subsidy is spent says the month's allowance is spent, that it resumes next month, and that runners take it now", () => {
-  expect(copyTextEn(leadAbsenceLabel("SubsidyExhausted"))).toBe(
-    "Month's allowance spent · Resumes next month or on runners",
-  );
 });
 
 test("a detail line names only the facts the page holds, a stage by its plan's name", () => {
@@ -945,11 +933,6 @@ const codeSwitches: readonly (readonly [string, readonly Copy[], boolean])[] = [
   [
     "landing holds",
     finalizationUnavailableKinds.map(finalizationUnavailableKindLabel),
-    true,
-  ],
-  [
-    "lead absences",
-    [...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
     true,
   ],
   ["landing states", ticketLandingStates.map(ticketLandingStateLabel), true],

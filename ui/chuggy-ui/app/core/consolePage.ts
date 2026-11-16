@@ -53,7 +53,6 @@ function consolePageTicketNew(match: ConsolePageMatch): unknown {
 const consolePagePlainPaths = {
   Tickets: "",
   Inbox: "inbox",
-  Lead: "lead",
   Catalog: "catalog",
   Repositories: "repositories",
   Epics: "epics",
@@ -166,11 +165,14 @@ function consolePagePathOf(page: ConsolePage): string {
   switch (page.page) {
     case "Tickets":
     case "Inbox":
-    case "Lead":
     case "Catalog":
     case "Repositories":
     case "Epics":
       return consolePagePlainPaths[page.page satisfies ConsolePagePlain];
+    case "Lead":
+      // The contract still names a Lead page, which has no address of its
+      // own, so it opens the tickets list.
+      return consolePagePlainPaths.Tickets;
     case "Runners":
       return consolePageRunnersPath;
     case "Epic":

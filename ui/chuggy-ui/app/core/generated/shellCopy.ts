@@ -6,7 +6,6 @@ export interface ShellCopy {
   readonly "shell-nav": Record<never, never>;
   readonly "shell-nav-tickets": Record<never, never>;
   readonly "shell-nav-epics": Record<never, never>;
-  readonly "shell-nav-lead": Record<never, never>;
   readonly "shell-nav-catalog": Record<never, never>;
   readonly "shell-nav-settings": Record<never, never>;
   readonly "shell-nav-repositories": Record<never, never>;

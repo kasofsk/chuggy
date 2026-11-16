@@ -38,8 +38,8 @@ import {
   inboxAsked,
   inboxBody,
   inboxEntry,
+  inboxRefusal,
 } from "./inboxFixture.ts";
-import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
   abilitiesEvery,
@@ -125,7 +125,7 @@ function servedWithRefusal(url: string): Response {
   return (
     inboxAnswered(url, [
       inboxEntry(escalated),
-      inboxEntry(refused, { refusals: leadRefusals(false).refusals }),
+      inboxEntry(refused, { refusals: [inboxRefusal()] }),
     ]) ?? served(url)
   );
 }

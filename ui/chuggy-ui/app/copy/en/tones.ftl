@@ -1,15 +1,5 @@
 ## The one status word a pill says beside its tone.
 
-## Where one of a lead decision's dispatches got to.
-
-tones-dispatch-approval = { -approval(case: "upper") }
-tones-dispatch-pending = Queued
-tones-dispatch-submitted = Sent
-tones-dispatch-landed = { -dispatch(case: "upper", form: "ed") }
-tones-dispatch-unread = Unknown
-# The code the record settled a dispatch on, which is its own word.
-tones-dispatch-outcome = { $outcome }
-
 ## Where an action a repository declares stands for a finalized commit.
 
 tones-reach-reached = Reached

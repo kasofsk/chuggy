@@ -1,6 +1,6 @@
 /**
- * The session adapter of the Context view: the lead's panel at the head of its
- * details, and the panel a thread's page opens beside its conversation.
+ * The session adapter of the Context view: the panel a thread's page opens
+ * beside its conversation.
  *
  * Each is drawn from the session's readings and the transcript its page is
  * already walking, and its readings are read again only when the session's own
@@ -10,17 +10,12 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
-  LeadResponse,
   SessionContextResponse,
   ThreadResponse,
 } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-import {
-  leadContextQuery,
-  threadContextQuery,
-} from "../../core/contextQueries.ts";
+import { threadContextQuery } from "../../core/contextQueries.ts";
 import {
   contextSessionInputsOf,
   contextSessionMarkOf,
@@ -31,7 +26,7 @@ import type { PanelState } from "../../core/freshness.ts";
 import type { SessionTranscriptHeld } from "../../core/sessionTranscript.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
-import { DataPanel, PanelUnready } from "../DataPanel.tsx";
+import { PanelUnready } from "../DataPanel.tsx";
 import { ChatPaneIconButton } from "../shell/chatPaneIcons.tsx";
 import { Button } from "../ui/Button.tsx";
 import { ContextSessionView } from "./ContextView.tsx";
@@ -55,34 +50,6 @@ function SessionContextDrawn(props: {
         inputs: contextSessionInputsOf(props.context, props.seed, view.window),
       }}
     />
-  );
-}
-
-/** The lead's Context panel, the first of its details. */
-export function LeadContextPanel(props: {
-  readonly partition: PartitionIdentity;
-  readonly lead: LeadResponse | undefined;
-  readonly held: SessionTranscriptHeld;
-}): ReactNode {
-  const text = useCopyText();
-  const state = usePanelState({
-    ...leadContextQuery(
-      props.partition,
-      contextSessionMarkOf(props.lead?.turns ?? []),
-    ),
-    enabled: props.lead !== undefined,
-    placeholderData: keepPreviousData,
-  });
-  return (
-    <DataPanel title={text({ id: "context-title" })} state={state}>
-      {(context) => (
-        <SessionContextDrawn
-          context={context}
-          held={props.held}
-          seed={undefined}
-        />
-      )}
-    </DataPanel>
   );
 }
 

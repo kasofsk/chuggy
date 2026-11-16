@@ -9,10 +9,9 @@
  *
  * THE WRITE REPLACES THE WHOLE OVERRIDE SET, so every override the read
  * returned is written back. The draft holds more than the settings page draws —
- * the base prompt, the limits and the lead's model and effort as read, and the
- * mode and dispatch mode the Lead page's strip presses — and the two allowlists
- * and the context age are carried through it unchanged, so an edit to a box the
- * page draws deletes none of them.
+ * the base prompt, the limits, the mode, the dispatch mode and the lead's model
+ * and effort as read — and the two allowlists and the context age are carried
+ * through it unchanged, so an edit to a box the page draws deletes none of them.
  *
  * A BOX THE READER HAS TOUCHED IS THEIRS AND EVERY OTHER BOX FOLLOWS THE READ.
  * The draft holds what the read gave beside what is held, so the two can be
@@ -47,8 +46,6 @@ import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { groupedDigits, instantFigure } from "./figures.ts";
 import { failureWords } from "./failureWords.ts";
-import { selectorModeTone } from "./tones.ts";
-import type { Tone } from "./tones.ts";
 
 export type SelectorProjectOverrides = z.infer<
   typeof selectorProjectOverridesSchema
@@ -554,85 +551,6 @@ export function selectorSettingsTextOverriddenAtRead(
   name: SelectorSettingsTextName,
 ): boolean {
   return draft.read[name] !== "";
-}
-
-/**
- * One operational fact and the single press that changes it: what the project
- * runs under, whether that is its own or the installation's, and the draft the
- * press writes. There is no edit mode here — the press is the write.
- */
-export interface SelectorSettingsStripCell {
-  readonly name: Copy;
-  readonly value: Copy;
-  readonly tone: Tone | undefined;
-  readonly inherited: boolean;
-  readonly action: Copy;
-  readonly pressed: SelectorSettingsDraft;
-}
-
-/** The draft a strip press writes from: the read's own boxes, not whatever an
- * open section's edit currently holds — a press here has nothing to do with
- * the section a reader may be mid-edit on. */
-function selectorSettingsAtRest(
-  draft: SelectorSettingsDraft,
-): SelectorSettingsDraft {
-  return { ...draft, ...draft.read };
-}
-
-/**
- * Whether the selector is deciding for this project. Resume clears the
- * project's override where the installation is running anyway, so a project
- * that was never paused of its own does not acquire an override by being
- * resumed; where the installation is paused it writes Running instead, because
- * clearing there would leave the project paused by inheritance.
- */
-export function selectorSettingsModeCell(
-  draft: SelectorSettingsDraft,
-  settings: SelectorProjectSettingsResponse,
-): SelectorSettingsStripCell {
-  const effective = settings.effective;
-  const running = effective.mode === "Running";
-  const resumed = effective.installationMode === "Running" ? "" : "Running";
-  return {
-    name: { id: "lead-mode-name" },
-    value: {
-      id: running ? "lead-mode-running" : "lead-mode-paused",
-    },
-    tone: selectorModeTone(effective.mode),
-    inherited: draft.mode === "",
-    action: {
-      id: running ? "lead-mode-action-pause" : "lead-mode-action-resume",
-    },
-    pressed: {
-      ...selectorSettingsAtRest(draft),
-      mode: running ? "Paused" : resumed,
-    },
-  };
-}
-
-/** Whether a proposal is dispatched or held for a reviewer. */
-export function selectorSettingsDispatchCell(
-  draft: SelectorSettingsDraft,
-  settings: SelectorProjectSettingsResponse,
-): SelectorSettingsStripCell {
-  const automatic = settings.effective.dispatchMode === "Automatic";
-  return {
-    name: { id: "lead-dispatch-name" },
-    value: {
-      id: automatic ? "lead-dispatch-automatic" : "lead-dispatch-approval",
-    },
-    tone: undefined,
-    inherited: draft.dispatchMode === "",
-    action: {
-      id: automatic
-        ? "lead-dispatch-action-require"
-        : "lead-dispatch-action-automatic",
-    },
-    pressed: {
-      ...selectorSettingsAtRest(draft),
-      dispatchMode: automatic ? "ApprovalRequired" : "Automatic",
-    },
-  };
 }
 
 /** The settings a write lost its fence to, and who moved them where the route

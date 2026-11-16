@@ -31,11 +31,12 @@ import {
   sessionStorePageBatchesMax,
 } from "../../../src/contract/http.ts";
 import type {
+  SessionStreams,
   SessionTranscriptEntry,
   SessionTranscriptPane,
 } from "../app/core/sessionTranscript.ts";
 import type { LeadTranscriptResponse } from "../../../src/contract/responses.ts";
-import { leadBody, leadSession, leadUnstarted } from "./leadFixture.ts";
+import { threadMineSession } from "./threadFixture.ts";
 import {
   transcriptBoundaryUuid,
   transcriptStream,
@@ -638,46 +639,57 @@ test("a page that decided nothing does not move the cut or the walk", () => {
   ]);
 });
 
+/** A session whose store holds the stream it names, written to `batches`. */
+function sessionStreamsAt(batches: number): SessionStreams {
+  return {
+    agentReference: transcriptStream,
+    streams: [{ stream: transcriptStream, batches }],
+  };
+}
+
+/** A session whose first turn has not run, so it names no stream and holds none. */
+const sessionStreamsUnstarted: SessionStreams = { streams: [] };
+
 test("the transcript reads the stream the session's own reference names", () => {
-  const lead = leadBody(2, 1);
-  expect(sessionStreamBatches(lead)).toBe(2);
-  expect(sessionStreamListed(lead)).toBe(true);
-  expect(sessionStreamBatches({ ...lead, streams: [] })).toBe(0);
-  expect(sessionStreamBatches(leadUnstarted())).toBe(0);
+  const session = sessionStreamsAt(2);
+  expect(sessionStreamBatches(session)).toBe(2);
+  expect(sessionStreamListed(session)).toBe(true);
+  expect(sessionStreamBatches({ ...session, streams: [] })).toBe(0);
+  expect(sessionStreamBatches(sessionStreamsUnstarted)).toBe(0);
 });
 
 /** A reference the bounded listing does not carry reads as nothing to walk,
  * which is a different thing from a store with nothing in it. */
 test("a reference the store's listing does not carry is not a listed stream", () => {
-  const lead = leadBody(2, 1);
-  expect(sessionStreamListed({ ...lead, streams: [] })).toBe(false);
+  const session = sessionStreamsAt(2);
+  expect(sessionStreamListed({ ...session, streams: [] })).toBe(false);
   expect(
     sessionStreamListed({
-      ...lead,
+      ...session,
       streams: [{ stream: "another-stream", batches: 9 }],
     }),
   ).toBe(false);
-  expect(sessionStreamListed(leadUnstarted())).toBe(false);
+  expect(sessionStreamListed(sessionStreamsUnstarted)).toBe(false);
 });
 
 test("a store holding a stream that is neither the one named nor under it wrote to another before", () => {
-  const lead = leadBody(2, 1);
+  const session = sessionStreamsAt(2);
   const under = { stream: `${transcriptStream}/subagent-1`, batches: 3 };
-  expect(sessionStreamReplaced(lead)).toBe(false);
+  expect(sessionStreamReplaced(session)).toBe(false);
   expect(
-    sessionStreamReplaced({ ...lead, streams: [...lead.streams, under] }),
+    sessionStreamReplaced({ ...session, streams: [...session.streams, under] }),
   ).toBe(false);
   expect(
     sessionStreamReplaced({
-      ...lead,
+      ...session,
       streams: [
         { stream: `${transcriptStream}0`, batches: 9 },
-        ...lead.streams,
+        ...session.streams,
       ],
     }),
   ).toBe(true);
-  expect(sessionStreamReplaced({ ...lead, streams: [] })).toBe(false);
-  expect(sessionStreamReplaced(leadUnstarted())).toBe(false);
+  expect(sessionStreamReplaced({ ...session, streams: [] })).toBe(false);
+  expect(sessionStreamReplaced(sessionStreamsUnstarted)).toBe(false);
 });
 
 /**
@@ -725,19 +737,23 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
 test("a Session frame names the session that moved, and only that", () => {
   expect(
     sessionChangeSessionNamed(
-      JSON.stringify({ session: leadSession, kind: "Turn", turn: "turn-7" }),
+      JSON.stringify({
+        session: threadMineSession,
+        kind: "Turn",
+        turn: "turn-7",
+      }),
     ),
-  ).toBe(leadSession);
+  ).toBe(threadMineSession);
   expect(
     sessionChangeSessionNamed(
       JSON.stringify({
-        session: leadSession,
+        session: threadMineSession,
         kind: "Store",
         stream: transcriptStream,
         batch: 14,
       }),
     ),
-  ).toBe(leadSession);
+  ).toBe(threadMineSession);
   expect(
     sessionChangeSessionNamed(
       JSON.stringify({ session: "lead-other", kind: "Turn", turn: "turn-1" }),
@@ -751,19 +767,19 @@ test("a Session frame names the session that moved, and only that", () => {
  * frame changed shape is a worse answer than a panel that did not refresh.
  */
 test("a resource that is not a session pointer is ignored, not thrown on", () => {
-  expect(sessionChangeSessionNamed(leadSession)).toBeUndefined();
+  expect(sessionChangeSessionNamed(threadMineSession)).toBeUndefined();
   expect(sessionChangeSessionNamed("")).toBeUndefined();
   expect(sessionChangeSessionNamed("{")).toBeUndefined();
   expect(
-    sessionChangeSessionNamed(JSON.stringify({ session: leadSession })),
+    sessionChangeSessionNamed(JSON.stringify({ session: threadMineSession })),
   ).toBe(undefined);
   expect(
     sessionChangeSessionNamed(
-      JSON.stringify({ session: leadSession, kind: "Turn", turn: 7 }),
+      JSON.stringify({ session: threadMineSession, kind: "Turn", turn: 7 }),
     ),
   ).toBeUndefined();
   expect(
-    sessionChangeSessionNamed(JSON.stringify([leadSession])),
+    sessionChangeSessionNamed(JSON.stringify([threadMineSession])),
   ).toBeUndefined();
 });
 
@@ -776,7 +792,11 @@ test("a resource that is not a session pointer is ignored, not thrown on", () =>
 test("a Session frame names what kind of session moved", () => {
   expect(
     sessionChangeKindNamed(
-      JSON.stringify({ session: leadSession, kind: "Lead", turn: "turn-7" }),
+      JSON.stringify({
+        session: threadMineSession,
+        kind: "Lead",
+        turn: "turn-7",
+      }),
     ),
   ).toBe("Lead");
   expect(
@@ -803,13 +823,13 @@ test("a Session frame names what kind of session moved", () => {
  */
 test("a resource neither accessor can read is ignored by both", () => {
   for (const resource of [
-    leadSession,
+    threadMineSession,
     "",
     "{",
-    JSON.stringify({ session: leadSession }),
-    JSON.stringify({ session: leadSession, kind: "Lead", turn: 7 }),
+    JSON.stringify({ session: threadMineSession }),
+    JSON.stringify({ session: threadMineSession, kind: "Lead", turn: 7 }),
     JSON.stringify({ ticket: 42, version: 2 }),
-    JSON.stringify([leadSession]),
+    JSON.stringify([threadMineSession]),
   ]) {
     expect(sessionChangeSessionNamed(resource), resource).toBeUndefined();
     expect(sessionChangeKindNamed(resource), resource).toBeUndefined();

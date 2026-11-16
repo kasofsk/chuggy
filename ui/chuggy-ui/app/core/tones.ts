@@ -18,10 +18,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type {
   ForgeInstallationPermissionsName,
-  SelectorAttention,
-  SelectorMode,
   SessionRunnerStanding,
-  SessionState,
   SessionTurnState,
   ThreadStanding,
   TicketLandingState,
@@ -32,8 +29,6 @@ import type {
   ConversationStanding,
 } from "./conversation.ts";
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
-import { leadDispatchLanded } from "./leadTranscript.ts";
-import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
 import {
   repositoryImportFaultless,
   type RepositoryImportLine,
@@ -143,16 +138,6 @@ export function ticketLandingTone(state: TicketLandingState): Tone {
   }
 }
 
-/** Whether the lead's session still takes turns. */
-export function sessionStateTone(state: SessionState): Tone {
-  switch (state) {
-    case "Open":
-      return "live";
-    case "Closed":
-      return "retired";
-  }
-}
-
 /** Where a member's thread stands: taking messages, ended, or held by a member
  * who is gone, which is something to act on rather than retired. */
 export function threadStandingTone(standing: ThreadStanding): Tone {
@@ -247,29 +232,7 @@ export function repositoryImportTone(word: RepositoryImportLine["word"]): Tone {
   }
 }
 
-/** Whether the selector is deciding for this project, or has been stopped. */
-export function selectorModeTone(mode: SelectorMode): Tone {
-  switch (mode) {
-    case "Running":
-      return "live";
-    case "Paused":
-      return "parked";
-  }
-}
-
-/** How closely the lead says the project needs watching. */
-export function selectorAttentionTone(attention: SelectorAttention): Tone {
-  switch (attention) {
-    case "Monitoring":
-      return "live";
-    case "Attention":
-      return "parked";
-    case "Stopped":
-      return "fail";
-  }
-}
-
-/** Where one turn of the lead's mailbox stands. */
+/** Where one turn of a session's mailbox stands. */
 export function sessionTurnStateTone(state: SessionTurnState): Tone {
   switch (state) {
     case "Queued":
@@ -282,47 +245,6 @@ export function sessionTurnStateTone(state: SessionTurnState): Tone {
       return "fail";
     case "Abandoned":
       return "retired";
-  }
-}
-
-/** One status word and its tone for one of a decision's dispatches. */
-export interface LeadDispatchArm {
-  readonly word: Copy;
-  readonly tone: Tone;
-}
-
-/** A settled dispatch whose outcome this console cannot read. The delivery
- * record says it is over and does not say how it went, and a pill saying
- * nothing would read as one that had not settled at all. */
-const leadDispatchUnread: Copy = { id: "tones-dispatch-unread" };
-
-/**
- * Where one dispatch of a decision got to, in the one word the log says it in.
- * `AwaitingApproval` takes the hue a ticket needing a human takes on the
- * project table, because that is what it is; a settled dispatch that did not
- * land is drawn as the code the record settled it on, which is already one word
- * and is the thing a reader came for.
- */
-export function leadDispatchArm(dispatch: LeadDispatch): LeadDispatchArm {
-  switch (dispatch.state) {
-    case "AwaitingApproval":
-      return { word: { id: "tones-dispatch-approval" }, tone: "parked" };
-    case "Pending":
-      return { word: { id: "tones-dispatch-pending" }, tone: "pass" };
-    case "Submitted":
-      return { word: { id: "tones-dispatch-submitted" }, tone: "pass" };
-    case "Terminal":
-      if (leadDispatchLanded(dispatch))
-        return { word: { id: "tones-dispatch-landed" }, tone: "pass" };
-      return dispatch.outcome === undefined
-        ? { word: leadDispatchUnread, tone: "neutral" }
-        : {
-            word: {
-              id: "tones-dispatch-outcome",
-              args: { outcome: dispatch.outcome },
-            },
-            tone: "fail",
-          };
   }
 }
 
@@ -352,18 +274,6 @@ export function actionReachArm(reach: ActionReach): ActionReachArm {
       return { word: { id: "tones-reach-rolled-back" }, tone: "retired" };
     case "Unknown":
       return { word: { id: "tones-reach-unknown" }, tone: "neutral" };
-  }
-}
-
-/** Whether a refusal still binds, or the ticket has moved past it. */
-export function agenticRefusalStandingTone(
-  standing: AgenticRefusalStanding,
-): Tone {
-  switch (standing) {
-    case "Standing":
-      return "parked";
-    case "Superseded":
-      return "retired";
   }
 }
 

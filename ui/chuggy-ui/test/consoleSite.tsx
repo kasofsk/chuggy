@@ -48,7 +48,6 @@ import {
 } from "../../../src/contract/accessPlane.ts";
 import {
   agentAccountsResponseSchema,
-  agenticRefusalsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
   chatThreadsResponseSchema,
@@ -71,8 +70,6 @@ import {
   forgeInstallationsResponseSchema,
   hostedRunsResponseSchema,
   inboxResponseSchema,
-  leadReadResponseSchema,
-  leadTranscriptResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
@@ -116,10 +113,9 @@ import {
 } from "./contextFixture.ts";
 import type { ConsoleNetwork } from "./consoleNetwork.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
+import { inboxRefusal } from "./inboxFixture.ts";
 import { inviteBrowser } from "./inviteDouble.ts";
-import { leadBody, leadRefusals } from "./leadFixture.ts";
 import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
-import { sessionTranscriptPage } from "./sessionTranscriptFixture.ts";
 import { abilitiesEvery } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
@@ -230,7 +226,7 @@ const consoleInbox: InboxResponse = {
         ticket: consoleInboxTicket,
       },
       actions: [],
-      refusals: leadRefusals(false).refusals,
+      refusals: [inboxRefusal()],
       proposals: [
         { decision: "selector-decision-2", tickets: [consoleInboxTicket] },
       ],
@@ -344,29 +340,9 @@ const consoleReads: readonly ConsoleRead[] = [
     body: () => abilitiesEvery,
   },
   {
-    path: consoleReadAt(`${projectPath}/lead`),
-    schema: leadReadResponseSchema,
-    body: () => leadBody(1, 1),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/lead/transcript`),
-    schema: leadTranscriptResponseSchema,
-    body: () => sessionTranscriptPage(0, 1),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/lead/context`),
-    schema: sessionContextResponseSchema,
-    body: () => contextSessionBody([{ ordinal: 1, total: 96_721 }]),
-  },
-  {
     path: consoleReadAt(`${projectPath}/inbox`),
     schema: inboxResponseSchema,
     body: () => consoleInbox,
-  },
-  {
-    path: consoleReadAt(`${projectPath}/agentic-refusals`),
-    schema: agenticRefusalsResponseSchema,
-    body: () => leadRefusals(false),
   },
   {
     path: consoleReadAt(`${projectPath}/selector-settings`),

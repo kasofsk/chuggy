@@ -14,12 +14,6 @@
  * with the scroller chasing the bottom. From that settle on each page is
  * published as it is folded, so a session still answering appends.
  *
- * ONE WALK SERVES THE LEAD AND A MEMBER THREAD. The two routes answer the same
- * page over the same store — the contract aliases the thread's response to the
- * lead's — so a second copy of this walk would be two accounts of one chain,
- * and the compaction discipline is exactly the part that must not be re-derived.
- * What a caller chooses is the session; everything below is the same.
- *
  * `OF` IS A VALUE AND NOT A READER FUNCTION, so that what the walk's effect
  * depends on stays a string, `of` named as one: a caller handing it a fresh
  * closure each render would re-run the walk every render, which is a read loop
@@ -29,10 +23,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { sessionStorePageBatchesMax } from "../../../../../src/contract/http.ts";
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import type { LeadTranscriptResponse } from "../../../../../src/contract/responses.ts";
+import type { ThreadTranscriptResponse } from "../../../../../src/contract/responses.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
-import { apiLeadTranscript } from "../../core/apiRoutes.ts";
 import {
   sessionTranscriptCursorsFrom,
   sessionTranscriptDrawn,
@@ -49,11 +41,11 @@ import { apiThreadTranscriptAt } from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { useApiPorts } from "../api.ts";
 
-/** Whose store is walked: a project's own lead, or one member thread wherever
- * it is kept. */
-export type SessionTranscriptOf =
-  | { readonly lead: PartitionIdentity }
-  | { readonly thread: string; readonly home: ThreadHome };
+/** Whose store is walked: one member thread, wherever it is kept. */
+export interface SessionTranscriptOf {
+  readonly thread: string;
+  readonly home: ThreadHome;
+}
 
 export interface SessionTranscriptRead {
   readonly of: SessionTranscriptOf;
@@ -88,13 +80,15 @@ function sessionTranscriptReads(
   ports: ApiPorts,
   at: { readonly of: SessionTranscriptOf; readonly stream: string },
 ): {
-  readonly asked: (after: number) => Promise<ApiResult<LeadTranscriptResponse>>;
+  readonly asked: (
+    after: number,
+  ) => Promise<ApiResult<ThreadTranscriptResponse>>;
   readonly taken: (after: number) => void;
   readonly dropped: () => void;
 } {
   const inFlight = new Map<
     number,
-    Promise<ApiResult<LeadTranscriptResponse>>
+    Promise<ApiResult<ThreadTranscriptResponse>>
   >();
   return {
     asked: (after) => {
@@ -105,11 +99,12 @@ function sessionTranscriptReads(
         after,
         limit: sessionStorePageBatchesMax,
       };
-      const { of } = at;
-      const asking =
-        "lead" in of
-          ? apiLeadTranscript(ports, of.lead, page)
-          : apiThreadTranscriptAt(ports, of.home, of.thread, page);
+      const asking = apiThreadTranscriptAt(
+        ports,
+        at.of.home,
+        at.of.thread,
+        page,
+      );
       inFlight.set(after, asking);
       return asking;
     },

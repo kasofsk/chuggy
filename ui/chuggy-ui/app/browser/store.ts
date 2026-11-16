@@ -50,7 +50,6 @@ import {
   consoleWriteUnseenHeardFrom,
 } from "./consoleWriteUnseen.ts";
 import { creationDraftsHeld } from "./creationDraftsHeld.ts";
-import { inquiryBoxes } from "./lead/inquiryBoxes.ts";
 import { chatPanes } from "./shell/chatPanes.ts";
 import { threadSendsCarriedMade } from "./storeExtra.ts";
 import type { ConsoleExtra, ConsoleServices } from "./storeExtra.ts";
@@ -58,7 +57,6 @@ import { threadSends } from "./thread/threadSends.ts";
 import { ticketAttempts } from "./ticketAttempts.ts";
 
 const consoleReducer = combineSlices(
-  inquiryBoxes,
   ticketAttempts,
   creationDraftsHeld,
   chatPanes,
