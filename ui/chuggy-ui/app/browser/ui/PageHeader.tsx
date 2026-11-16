@@ -40,7 +40,6 @@ export interface PageHeaderBack {
   readonly link: LinkOptions;
 }
 
-// jscpd:ignore-start -- the ticket header's own observer, lifted as it is so adopting this changes nothing
 /** Whether the element is out of view, which nothing says until it has been
  * observed and a browser without the observer never says. */
 function usePageHeaderScrolledAway(
@@ -62,7 +61,6 @@ function usePageHeaderScrolledAway(
   }, [ref]);
   return away;
 }
-// jscpd:ignore-end -- the lifted observer ends here
 
 function PageHeaderActionDrawn(props: {
   readonly action: PageHeaderAction;

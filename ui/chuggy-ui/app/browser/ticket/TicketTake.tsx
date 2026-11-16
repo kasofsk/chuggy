@@ -1,5 +1,5 @@
 /**
- * Take and Return on a ticket's header: the reader takes the ticket for
+ * Take and Return in a ticket's header menu: the reader takes the ticket for
  * themselves, or returns one they took to its creator. Which is drawn is
  * `ticketTakeOffer`'s, and nothing here names any member but the reader,
  * because no door does.
@@ -21,7 +21,7 @@ import { projectPartitionKey } from "../../core/projectQueryKeys.ts";
 import type { TicketTakeOffer } from "../../core/ticketOffers.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
-import { Button } from "../ui/Button.tsx";
+import type { MoreMenuItem } from "../ui/MoreMenu.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
 type TicketTakeKind = Exclude<TicketTakeOffer, "None">;
@@ -49,35 +49,36 @@ function ticketTakeWrite(
   };
 }
 
-/** The one of Take and Return the header offers, and the refusal of the last
- * press under it. */
-export function TicketTake(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly offer: TicketTakeOffer;
-}): ReactNode {
+/** The one of Take and Return the header's menu offers, and the refusal of
+ * the last press, which the header draws beside the menu. */
+export function useTicketTake(
+  partition: PartitionIdentity,
+  ticket: number,
+  offer: TicketTakeOffer,
+): { readonly item: MoreMenuItem | undefined; readonly refused: ReactNode } {
   const text = useCopyText();
-  const taking = useConsoleWrite(
-    ticketTakeWrite(props.partition, props.ticket),
-    { drawn: true },
-  );
-  const offer = props.offer;
-  if (offer === "None") return null;
-  return (
-    <>
-      <Button
-        disabled={taking.isPending}
-        onClick={() => {
-          taking.mutate(offer);
-        }}
-      >
-        {text({ id: offer === "Take" ? "ticket-take" : "ticket-return" })}
-      </Button>
-      {taking.error === null ? null : (
+  const taking = useConsoleWrite(ticketTakeWrite(partition, ticket), {
+    drawn: true,
+  });
+  return {
+    item:
+      offer === "None"
+        ? undefined
+        : {
+            kind: "action",
+            label: text({
+              id: offer === "Take" ? "ticket-take" : "ticket-return",
+            }),
+            disabled: taking.isPending,
+            onSelect: () => {
+              taking.mutate(offer);
+            },
+          },
+    refused:
+      taking.error === null ? null : (
         <Notice tone="danger" inline role="status">
           <ConsoleWriteRefusedWords refused={taking.error} />
         </Notice>
-      )}
-    </>
-  );
+      ),
+  };
 }

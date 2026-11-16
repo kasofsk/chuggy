@@ -122,11 +122,11 @@ test("the lead's settings page draws, from the catalog, the section the program 
   );
 });
 
-test("a ticket's page draws each action it offers as a button under the action's label, Dispatch's being the program's word, and has a line of its own for a project with no runner", () => {
+test("a ticket's page draws the action it leads with as a button under the action's label, Dispatch's being the program's word, and has a line of its own for a project with no runner", () => {
   const source = readFileSync(ticketPage, "utf8");
   assert.match(
     source,
-    /<OfferedAction\s+key=\{nativeActionAnswerKey\(action\)\}\s+action=\{text\(ticketActionLabel\(action\.action\)\)\}/u,
+    /<OfferedAction\s+action=\{text\(ticketActionLabel\(action\.action\)\)\}/u,
   );
   assert.equal(
     copyTextEn(ticketActionLabel("Dispatch")),

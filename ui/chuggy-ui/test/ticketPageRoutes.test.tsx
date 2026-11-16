@@ -67,7 +67,7 @@ async function mountedAt(path: string): Promise<void> {
 test("the ticket's address draws the header, marks Overview current, and draws Instructions", async () => {
   await mountedAt(ticketPath);
   expect(tabCurrent()).toBe("Overview");
-  expect(document.querySelector("header.ticket-header")).not.toBeNull();
+  expect(document.querySelector("header.page-header")).not.toBeNull();
   expect(screen.getByRole("heading", { name: /^Instructions/u })).toBeDefined();
   consoleSiteClean(site);
 });
@@ -75,7 +75,7 @@ test("the ticket's address draws the header, marks Overview current, and draws I
 test("a ticket with no run says so on its Usage tab", async () => {
   await mountedAt(`${ticketPath}/usage`);
   expect(tabCurrent()).toBe("Usage");
-  expect(document.querySelector("header.ticket-header")).not.toBeNull();
+  expect(document.querySelector("header.page-header")).not.toBeNull();
   expect(screen.getByText("Nothing has run")).toBeDefined();
   consoleSiteClean(site);
 });
@@ -122,7 +122,7 @@ test("switching tabs reads nothing the page has already read", async () => {
 test("the edit screen is its own page, without the header or the tabs", async () => {
   await mountedAt(`${ticketPath}/edit`);
   expect(screen.queryByRole("navigation", { name: "Ticket" })).toBeNull();
-  expect(document.querySelector("header.ticket-header")).toBeNull();
+  expect(document.querySelector("header.page-header")).toBeNull();
 });
 
 test("the Runs tab of a ticket nothing has run for says so", async () => {

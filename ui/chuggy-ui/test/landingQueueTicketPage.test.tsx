@@ -95,7 +95,7 @@ async function pageDrawn(
   });
   await settled();
   const state = document.querySelector<HTMLElement>(
-    "header.ticket-header .ticket-header-state",
+    "header.page-header .page-header-status",
   );
   if (state === null) throw new Error("the header's state is drawn");
   return state;
