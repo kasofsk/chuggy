@@ -622,6 +622,7 @@ export const nativeHttpRoutes = {
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
   ticketTake: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/take`,
   ticketReturn: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/return`,
+  ticketProposalMerge: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/proposal-merge`,
   landingQueues: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/landing-queues`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
