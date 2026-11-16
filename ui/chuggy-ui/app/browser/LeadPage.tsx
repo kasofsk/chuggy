@@ -33,16 +33,18 @@ import {
   tokenCountFigure,
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
-import type { LeadTranscriptHeld } from "../core/leadTranscript.ts";
+import type { SessionTranscriptHeld } from "../core/sessionTranscript.ts";
 import {
   leadSessionStateLabel,
-  leadStreamBatches,
-  leadStreamListed,
   leadTurnFailureLabel,
   leadTurnInputKindLabel,
   leadTurnStateLabel,
   selectorAttentionLabel,
 } from "../core/leadTranscript.ts";
+import {
+  sessionStreamBatches,
+  sessionStreamListed,
+} from "../core/sessionTranscript.ts";
 import {
   projectLeadAbsenceLine,
   projectLeadAbsencePolledMs,
@@ -72,7 +74,8 @@ import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
-import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import { LeadNote } from "./lead/LeadTranscript.tsx";
+import { useSessionTranscript } from "./thread/useSessionTranscript.ts";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
 import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import {
@@ -321,7 +324,7 @@ function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
 function LeadDetails(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
-  readonly held: LeadTranscriptHeld;
+  readonly held: SessionTranscriptHeld;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
@@ -357,11 +360,11 @@ function LeadBody(props: {
 }): ReactNode {
   const text = useCopyText();
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
-  const listed = lead !== undefined && leadStreamListed(lead);
-  const walked = useLeadTranscript({
+  const listed = lead !== undefined && sessionStreamListed(lead);
+  const walked = useSessionTranscript({
     of: { lead: props.partition },
     stream: lead?.agentReference,
-    highWaterBatch: lead === undefined ? 0 : leadStreamBatches(lead),
+    highWaterBatch: lead === undefined ? 0 : sessionStreamBatches(lead),
   });
   const exchanges = conversationExchanges(
     sessionConversationItems({

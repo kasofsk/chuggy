@@ -18,7 +18,7 @@ import {
   sessionRunnerStandings,
 } from "../../../src/contract/rosters.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { leadSelectorSettingsBody } from "./leadFixture.ts";
+import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
 import type { Copy } from "../app/core/copy.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import {
@@ -60,7 +60,7 @@ const hosted: ExecutionPlacementResponse = {
 
 /** The effective settings the subsidized lead's line reads, beside the lead's. */
 const selectorEffective = selectorProjectSettingsResponseSchema.parse(
-  leadSelectorSettingsBody(),
+  selectorSettingsBody(),
 ).effective;
 
 const sessions: SessionPlacementResponse = {

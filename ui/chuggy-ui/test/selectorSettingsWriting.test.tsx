@@ -19,7 +19,8 @@ import {
 } from "../app/browser/selectorSettingsWriting.ts";
 import type { SelectorSettingsPage } from "../app/browser/selectorSettingsWriting.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
-import { leadPartition, leadSelectorSettingsBody } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
+import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
 import {
   answer,
   heldAnswer,
@@ -43,7 +44,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const settings = leadSelectorSettingsBody() as SelectorProjectSettingsResponse;
+const settings = selectorSettingsBody() as SelectorProjectSettingsResponse;
 
 /** One page's door, a press through it, and the line it draws of its own
  * writer's write. */
@@ -51,7 +52,7 @@ function Writer(props: { readonly page: SelectorSettingsPage }): ReactNode {
   const held = useSelectorSettingsDraft(settings);
   const writing = useSelectorSettingsWriting<"writer">(
     props.page,
-    leadPartition,
+    projectPartition,
     held,
   );
   const shown = selectorSettingsShown(writing, "writer");
@@ -88,7 +89,7 @@ test("a refusal of one page's write, landing while the other page is drawn, is a
   const client = consoleQueryClient();
   const tree = (page: SelectorSettingsPage): ReactNode => (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >

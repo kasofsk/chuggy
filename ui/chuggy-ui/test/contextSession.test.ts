@@ -8,9 +8,9 @@
 import { expect, test } from "vitest";
 
 import type {
-  LeadTranscriptCut,
-  LeadTranscriptEntry,
-} from "../app/core/leadTranscript.ts";
+  SessionTranscriptCut,
+  SessionTranscriptEntry,
+} from "../app/core/sessionTranscript.ts";
 import {
   contextSessionInputsOf,
   contextSessionMarkOf,
@@ -25,7 +25,11 @@ function at(time: string): string {
   return `2026-11-01T${time}.000Z`;
 }
 
-function asked(uuid: string, text: string, time: string): LeadTranscriptEntry {
+function asked(
+  uuid: string,
+  text: string,
+  time: string,
+): SessionTranscriptEntry {
   return {
     uuid,
     type: "user",
@@ -38,7 +42,7 @@ function answered(
   uuid: string,
   read: number,
   time: string,
-): LeadTranscriptEntry {
+): SessionTranscriptEntry {
   return {
     uuid,
     type: "assistant",
@@ -138,8 +142,8 @@ test("a cut in a session's first turn is placed where the panel holds that turn"
  * entries only, the summary the compaction wrote a user entry like a prompt,
  * and the boundary named by its time among the page's cuts. */
 const compacted: {
-  readonly entries: readonly LeadTranscriptEntry[];
-  readonly cuts: readonly LeadTranscriptCut[];
+  readonly entries: readonly SessionTranscriptEntry[];
+  readonly cuts: readonly SessionTranscriptCut[];
 } = {
   entries: [
     asked("u1", "first", "10:00:00"),

@@ -25,7 +25,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -55,7 +55,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition, repository: routed.repository }),
+  useParams: () => ({ ...projectPartition, repository: routed.repository }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -97,7 +97,7 @@ function binding(
 
 const initialization = {
   configuration: {
-    partition: leadPartition,
+    partition: projectPartition,
     revision: "r6",
     canonical: "{}",
     digest: "a".repeat(64),
@@ -235,7 +235,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }

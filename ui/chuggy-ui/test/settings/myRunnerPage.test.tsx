@@ -39,7 +39,7 @@ import {
   settled,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
@@ -54,11 +54,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ tenant: leadPartition.tenant }),
+  useParams: () => ({ tenant: projectPartition.tenant }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
-const tenantPath = `${nativeHttpBasePath}/tenants/${leadPartition.tenant}`;
+const tenantPath = `${nativeHttpBasePath}/tenants/${projectPartition.tenant}`;
 
 /** A runner of the reader's whose id ends in `tail`, polling where `live`, holding `held`. */
 function runnerListed(
@@ -688,7 +688,7 @@ test("on Linux the line to paste into Claude Code, naming chat-host and the work
   await chatHostRegistered("Linux");
   const line = screen.getByText(/chat-host --site/u);
   expect(line.textContent).toBe(
-    `Make this machine my chuggy chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs chat-host --site https://chuggy.test --workspace ${leadPartition.tenant}" and do what its output says.`,
+    `Make this machine my chuggy chat host: run "curl -fsS https://chuggy.test/chuggy-setup.mjs -o ~/.chuggy-setup.mjs && node ~/.chuggy-setup.mjs chat-host --site https://chuggy.test --workspace ${projectPartition.tenant}" and do what its output says.`,
   );
   expect(
     screen.getByText(

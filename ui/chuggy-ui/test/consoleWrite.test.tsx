@@ -33,7 +33,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { renderCopied } from "./copied.tsx";
 
@@ -74,11 +74,11 @@ async function drawn(
   vi.stubGlobal("fetch", scripted.fetch);
   const tree = (shown: boolean): ReactNode => (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >
-      {shown ? <OwnerFallbackSection partition={leadPartition} /> : null}
+      {shown ? <OwnerFallbackSection partition={projectPartition} /> : null}
       <ConsoleWriteToasts />
     </ScreenHarness>
   );
@@ -227,7 +227,7 @@ test("a creation refused for its held draft's failed read keeps that read's code
   const client = consoleQueryClient();
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >

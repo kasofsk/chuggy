@@ -21,17 +21,17 @@ import { expect, test } from "vitest";
 import type { LeadTranscriptResponse } from "../../../src/contract/responses.ts";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
 import {
-  leadTranscriptDrawn,
-  leadTranscriptEntriesHeldMax,
-  leadTranscriptNextAfter,
-  leadTranscriptPaneEmpty,
-  leadTranscriptStep,
-} from "../app/core/leadTranscript.ts";
+  sessionTranscriptDrawn,
+  sessionTranscriptEntriesHeldMax,
+  sessionTranscriptNextAfter,
+  sessionTranscriptPaneEmpty,
+  sessionTranscriptStep,
+} from "../app/core/sessionTranscript.ts";
 import type {
-  LeadTranscriptEvent,
-  LeadTranscriptHeld,
-  LeadTranscriptPane,
-} from "../app/core/leadTranscript.ts";
+  SessionTranscriptEvent,
+  SessionTranscriptHeld,
+  SessionTranscriptPane,
+} from "../app/core/sessionTranscript.ts";
 import { seededRandom } from "./seededRandom.ts";
 
 /** How many event sequences one run drives, and how long each is. */
@@ -165,7 +165,7 @@ function modelGathered(
       seen.add(uuid);
       merged.push(uuid);
     }
-  const kept = merged.slice(-leadTranscriptEntriesHeldMax);
+  const kept = merged.slice(-sessionTranscriptEntriesHeldMax);
   const present = new Set(kept);
   const holding = [
     ...new Set([...segment.holding, ...(page.held ?? [])]),
@@ -207,7 +207,7 @@ interface ModelReference {
  * last of them, and the last earlier run with entries where the last has none.
  */
 function modelReference(
-  events: readonly LeadTranscriptEvent[],
+  events: readonly SessionTranscriptEvent[],
 ): ModelReference {
   let runs: ModelSegment[] = [modelSegmentEmpty];
   let failure: ApiFailure | undefined;
@@ -262,7 +262,7 @@ function modelReference(
   };
 }
 
-function drawnUuids(drawn: LeadTranscriptHeld): readonly string[] {
+function drawnUuids(drawn: SessionTranscriptHeld): readonly string[] {
   return drawn.entries.flatMap((entry) =>
     entry.uuid === undefined ? [] : [entry.uuid],
   );
@@ -270,16 +270,16 @@ function drawnUuids(drawn: LeadTranscriptHeld): readonly string[] {
 
 /** One sequence's worth of events, and the store they were read from. */
 interface ModelRun {
-  readonly events: readonly LeadTranscriptEvent[];
+  readonly events: readonly SessionTranscriptEvent[];
   readonly chain: readonly string[];
 }
 
 function modelEvent(
   random: () => number,
   store: ModelStore,
-  pane: LeadTranscriptPane,
+  pane: SessionTranscriptPane,
   highWaterBatch: number,
-): LeadTranscriptEvent | undefined {
+): SessionTranscriptEvent | undefined {
   const roll = random();
   if (roll < 0.08)
     return {
@@ -287,7 +287,7 @@ function modelEvent(
       failure: { outcome: "Fault", code: "InternalError", status: 500 },
     };
   if (roll < 0.12) return { event: "StreamChange", stream: "model-stream" };
-  const after = leadTranscriptNextAfter(pane, highWaterBatch);
+  const after = sessionTranscriptNextAfter(pane, highWaterBatch);
   if (after === undefined) return undefined;
   return {
     event: "Page",
@@ -339,8 +339,8 @@ function modelRun(seed: number, shape: ModelShape): ModelRun {
     1 + Math.floor(random() * shape.batches),
     shape.entries,
   );
-  let pane = leadTranscriptPaneEmpty;
-  const events: LeadTranscriptEvent[] = [];
+  let pane = sessionTranscriptPaneEmpty;
+  const events: SessionTranscriptEvent[] = [];
   for (let at = 0; at < shape.events; at += 1) {
     if (random() > 0.85)
       store = {
@@ -351,7 +351,7 @@ function modelRun(seed: number, shape: ModelShape): ModelRun {
     const event = modelEvent(random, store, pane, store.batches.length);
     if (event === undefined) continue;
     events.push(event);
-    pane = leadTranscriptStep(pane, event);
+    pane = sessionTranscriptStep(pane, event);
   }
   return { events, chain: modelChain(store) };
 }
@@ -369,12 +369,12 @@ function modelSaid(where: ModelWhere, said: string): string {
 
 /** Every invariant, checked over one prefix of one sequence. */
 function modelChecked(
-  events: readonly LeadTranscriptEvent[],
+  events: readonly SessionTranscriptEvent[],
   chain: readonly string[],
-  pane: LeadTranscriptPane,
+  pane: SessionTranscriptPane,
   where: ModelWhere & { readonly everHadEntries: boolean },
 ): void {
-  const drawn = leadTranscriptDrawn(pane);
+  const drawn = sessionTranscriptDrawn(pane);
   const uuids = drawnUuids(drawn);
   const reference = modelReference(events);
   expect(
@@ -405,7 +405,7 @@ function modelChecked(
   expect(
     uuids.length,
     modelSaid(where, "a pane drew more entries than it may keep"),
-  ).toBeLessThanOrEqual(leadTranscriptEntriesHeldMax);
+  ).toBeLessThanOrEqual(sessionTranscriptEntriesHeldMax);
   expect(
     drawn.holding.every((uuid) => uuids.includes(uuid)),
     modelSaid(where, "the lead was marked as holding an entry not drawn"),
@@ -436,13 +436,13 @@ interface ModelReached {
 /** One run driven and checked at every step, answering what it reached. */
 function modelDriven(seed: number, shape: ModelShape): ModelReached {
   const run = modelRun(seed, shape);
-  let pane = leadTranscriptPaneEmpty;
+  let pane = sessionTranscriptPaneEmpty;
   let everHadEntries = false;
   let dropped = 0;
   let droppedWhileRebuilding = false;
   let repeatedInPage = false;
   let repeatedAcrossPages = false;
-  const applied: LeadTranscriptEvent[] = [];
+  const applied: SessionTranscriptEvent[] = [];
   for (const event of run.events) {
     applied.push(event);
     if (event.event === "Page") {
@@ -457,7 +457,7 @@ function modelDriven(seed: number, shape: ModelShape): ModelReached {
       repeatedAcrossPages =
         repeatedAcrossPages || arriving.some((uuid) => held.includes(uuid));
     }
-    pane = leadTranscriptStep(pane, event);
+    pane = sessionTranscriptStep(pane, event);
     if (event.event === "StreamChange") everHadEntries = false;
     modelChecked(applied, run.chain, pane, {
       seed,
@@ -467,7 +467,8 @@ function modelDriven(seed: number, shape: ModelShape): ModelReached {
     dropped = Math.max(dropped, pane.fold.entriesDropped);
     if (pane.kept !== undefined && pane.kept.entriesDropped > 0)
       droppedWhileRebuilding = true;
-    if (drawnUuids(leadTranscriptDrawn(pane)).length > 0) everHadEntries = true;
+    if (drawnUuids(sessionTranscriptDrawn(pane)).length > 0)
+      everHadEntries = true;
   }
   return {
     dropped,
@@ -534,18 +535,18 @@ test("a walk over a store that stands still stops at the mark it read against", 
       modelEntriesPerBatch,
     );
     shapes.add(String(store.batches.length));
-    let pane = leadTranscriptPaneEmpty;
+    let pane = sessionTranscriptPaneEmpty;
     let reads = 0;
     let stalls = false;
     const cursors: number[] = [];
     for (let at = 0; at <= store.batches.length; at += 1) {
-      const after = leadTranscriptNextAfter(pane, store.batches.length);
+      const after = sessionTranscriptNextAfter(pane, store.batches.length);
       if (after === undefined) break;
       cursors.push(after);
       reads += 1;
       const stalling = random() > 0.7;
       stalls = stalls || stalling;
-      pane = leadTranscriptStep(pane, {
+      pane = sessionTranscriptStep(pane, {
         event: "Page",
         page: modelPage(store, after, {
           decides: true,
@@ -566,7 +567,7 @@ test("a walk over a store that stands still stops at the mark it read against", 
       Array.from({ length: new Set(cursors).size }, (_unused, at) => at),
     );
     expect(
-      leadTranscriptNextAfter(pane, store.batches.length),
+      sessionTranscriptNextAfter(pane, store.batches.length),
       `seed ${String(seed)}: the walk was still asking past the mark`,
     ).toBeUndefined();
     expect(
@@ -605,30 +606,30 @@ test("a store written past a stall carries the walk on from where it stopped", (
       repeats: false,
       elided: 0,
     });
-  let pane = leadTranscriptStep(leadTranscriptPaneEmpty, {
+  let pane = sessionTranscriptStep(sessionTranscriptPaneEmpty, {
     event: "Page",
     page: stalling(0),
     highWaterBatch: 2,
     after: 0,
   });
-  pane = leadTranscriptStep(pane, {
+  pane = sessionTranscriptStep(pane, {
     event: "Page",
     page: stalling(1),
     highWaterBatch: 2,
     after: 1,
   });
   expect(pane.fold.readTo, "the walk gave up the cursor it stalled at").toBe(1);
-  expect(leadTranscriptNextAfter(pane, 2)).toBeUndefined();
+  expect(sessionTranscriptNextAfter(pane, 2)).toBeUndefined();
   expect(
-    leadTranscriptDrawn(pane).unreached,
+    sessionTranscriptDrawn(pane).unreached,
     "a pane that has not reached the rest of the stream said it had",
   ).toBe(true);
   const cursors: number[] = [];
   for (let at = 0; at <= store.batches.length; at += 1) {
-    const after = leadTranscriptNextAfter(pane, store.batches.length);
+    const after = sessionTranscriptNextAfter(pane, store.batches.length);
     if (after === undefined) break;
     cursors.push(after);
-    pane = leadTranscriptStep(pane, {
+    pane = sessionTranscriptStep(pane, {
       event: "Page",
       page: modelPage(store, after, {
         decides: true,
@@ -654,7 +655,7 @@ test("a store written past a stall carries the walk on from where it stopped", (
  * returns the page that was just read. */
 test("a cursor that does not advance ends the walk where it stands", () => {
   const store = modelStore(4, modelEntriesPerBatch);
-  const walked = leadTranscriptStep(leadTranscriptPaneEmpty, {
+  const walked = sessionTranscriptStep(sessionTranscriptPaneEmpty, {
     event: "Page",
     page: modelPage(store, 0, {
       decides: true,
@@ -668,7 +669,7 @@ test("a cursor that does not advance ends the walk where it stands", () => {
   });
   expect(walked.fold.entries.length).toBe(modelEntriesPerBatch);
   expect(
-    leadTranscriptNextAfter(walked, 4),
+    sessionTranscriptNextAfter(walked, 4),
     "the walk was sent back to the cursor the page would not move",
   ).toBeUndefined();
 });

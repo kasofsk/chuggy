@@ -50,7 +50,7 @@ import type {
   ConversationLiveHeld,
   ConversationLiveRun,
 } from "../app/core/conversationLive.ts";
-import { leadTranscriptFoldEmpty } from "../app/core/leadTranscript.ts";
+import { sessionTranscriptFoldEmpty } from "../app/core/sessionTranscript.ts";
 import { sessionConversationItems } from "../app/core/sessionConversation.ts";
 import { conversationStoreEntries } from "./conversationFixture.ts";
 
@@ -1146,7 +1146,7 @@ test("more messages heard than are kept, the store behind them all: the text bei
 function storeItems(entries: number): readonly ConversationItem[] {
   return sessionConversationItems({
     held: {
-      ...leadTranscriptFoldEmpty,
+      ...sessionTranscriptFoldEmpty,
       entries: conversationStoreEntries()
         .filter((entry) => entry.type === "user" || entry.type === "assistant")
         .slice(0, entries)
