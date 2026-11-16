@@ -478,6 +478,31 @@ function setupBindAsked(
   };
 }
 
+/** A run of `mcp`, `serve` or `runner`, each of which names its project, and `runner` its chat host where it is given one. */
+function setupAskedOfProjectRun(
+  asked: "Mcp" | "Serve" | "Runner",
+  site: string | undefined,
+  waitSecs: number,
+  answers: SetupAnswers,
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupAsked {
+  const { workspace, project } = answers;
+  if (workspace === undefined || project === undefined)
+    return { asked: "Wrongly", fault: "Project" };
+  if (asked !== "Runner") return { asked, site, answers, workspace, project };
+  const chatHost = setupChatHostRead(flags.get("chat-host"));
+  if (chatHost === "Wrongly") return { asked: "Wrongly", fault: "ChatHost" };
+  return {
+    asked,
+    site,
+    waitSecs,
+    answers: chatHost === undefined ? answers : { ...answers, chatHost },
+    workspace,
+    project,
+    chatHost,
+  };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -511,25 +536,8 @@ function setupAskedOf(
       return setupProjectAsked(site, answers);
     case "Mcp":
     case "Serve":
-    case "Runner": {
-      const { workspace, project } = answers;
-      if (workspace === undefined || project === undefined)
-        return { asked: "Wrongly", fault: "Project" };
-      if (asked !== "Runner")
-        return { asked, site, answers, workspace, project };
-      const chatHost = setupChatHostRead(flags.get("chat-host"));
-      if (chatHost === "Wrongly")
-        return { asked: "Wrongly", fault: "ChatHost" };
-      return {
-        asked,
-        site,
-        waitSecs: wait,
-        answers: chatHost === undefined ? answers : { ...answers, chatHost },
-        workspace,
-        project,
-        chatHost,
-      };
-    }
+    case "Runner":
+      return setupAskedOfProjectRun(asked, site, wait, answers, flags);
     case "ChatHost":
       return setupChatHostAsked(site, wait, answers, flags.get("replace"));
     case "Configuration":
