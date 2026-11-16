@@ -19,12 +19,13 @@ interface Signed {
   readonly machine: Home;
 }
 
-/** A machine signed in to a stand-in installation of its own, with nothing yet kept of what was asked. */
+/** A machine signed in to a stand-in installation of its own, whose agent here already has chuggy's MCP server for acme/widgets, with nothing yet kept of what was asked. */
 export async function signed(): Promise<Signed> {
   const installation = await made.installation();
   const machine = made.machine();
   const done = await signedIn(installation, machine);
   assert.equal(done.code, 0, done.stdout);
+  machine.served(installation.site);
   installation.asked.length = 0;
   return { installation, machine };
 }
@@ -55,7 +56,7 @@ export function said(done: Ran, word: string): readonly string[] {
 }
 
 const ruleEnd =
-  / with the person's answer after it,| only (?:once|if) the person /u;
+  / with the (?:person's answer|command that tests this repository) after it,| only (?:once|if) the person /u;
 
 /**
  * The arguments of the command a run's rule names, as a shell makes words of

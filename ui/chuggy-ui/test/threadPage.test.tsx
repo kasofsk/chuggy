@@ -47,6 +47,7 @@ import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type { ViewportFrame } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { contextSessionBody } from "./contextFixture.ts";
+import { chatPaneHistoryChosen, chatPaneMenuChosen } from "./chatPaneMenu.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -94,7 +95,9 @@ function threadsServed(url: string): Response {
       title: read.title,
     });
   if (url.endsWith("/threads")) return answer({ threads: listed });
-  return answer({ projects: [threadPartition] });
+  return answer({
+    projects: [{ ...threadPartition, name: threadPartition.project }],
+  });
 }
 
 function ThreadAt(): ReactNode {
@@ -173,7 +176,7 @@ function threadPath(session: string): string {
 }
 
 function chatDrawn(): HTMLElement | null {
-  return screen.queryByRole("region", { name: "Chat" });
+  return screen.queryByRole("complementary", { name: "Chat" });
 }
 
 /** The title the pane's header holds, which is its one second-level heading. */
@@ -196,6 +199,54 @@ test("a thread's address draws its conversation as the page, with no chat pane a
     "Close",
   ]);
   styleless();
+});
+
+test("a thread kept running says so beside its standing, with how to end it, and one that is not says nothing of it", async () => {
+  await mountedAt(threadPath(threadMineSession));
+  expect(screen.queryByText("Kept running")).toBeNull();
+  cleanup();
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      (async (url: string, init?: RequestInit) => {
+        const read = await served(url, init);
+        if (!url.endsWith(`/threads/${threadMineSession}`)) return read;
+        return answer({ ...(await read.json()), jobsStanding: true });
+      }) as typeof fetch,
+  );
+  const kept = screen.getByText("Kept running");
+  expect(screen.getByText("Open")).toBeDefined();
+  fireEvent.focus(kept.closest("[tabindex]") ?? kept);
+  expect(
+    (await screen.findAllByText(/Close it, or ask it to stop them/u)).length,
+  ).toBeGreaterThan(0);
+});
+
+test("a thread its owner's chat host holds says so beside its standing, with what it may do there, and one no chat host holds says nothing of it", async () => {
+  await mountedAt(threadPath(threadMineSession));
+  expect(screen.queryByText("On your chat host")).toBeNull();
+  cleanup();
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      (async (url: string, init?: RequestInit) => {
+        const read = await served(url, init);
+        if (!url.endsWith(`/threads/${threadMineSession}`)) return read;
+        return answer({
+          ...(await read.json()),
+          chatHostCapabilities: ["RepositoryRead", "RunCommands"],
+        });
+      }) as typeof fetch,
+  );
+  const hosted = screen.getByText("On your chat host");
+  fireEvent.focus(hosted.closest("[tabindex]") ?? hosted);
+  expect(
+    (
+      await screen.findAllByText(
+        "On your chat host, this chat may: Read the repository, Run commands",
+      )
+    ).length,
+  ).toBeGreaterThan(0);
 });
 
 test("the bar's Context opens the thread's context beside its conversation, and its close takes it away", async () => {
@@ -317,31 +368,14 @@ test("Open goes to the thread's page, and back draws the pane holding what it he
     `/${threadPartition.tenant}/${threadPartition.project}`,
   );
   expect(paneHolds()).toBe("mine");
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const theirs = await screen.findByRole("menuitemradio", { name: /^theirs,/ });
-  await turned(() => {
-    fireEvent.click(theirs);
-  });
-  await settled();
+  await chatPaneHistoryChosen(/^theirs,/);
   expect(paneHolds()).toBe("theirs");
-  fireEvent.keyDown(
-    within(chatDrawn() ?? document.body).getByRole("button", {
-      name: "Chat actions",
-    }),
-    { key: "ArrowDown" },
-  );
-  const menu = await screen.findByRole("menu");
-  await turned(() => {
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
-  });
-  await settled();
+  await chatPaneMenuChosen("Open");
   expect(router.state.location.pathname).toBe(threadPath(threadOtherSession));
   expect(chatDrawn()).toBeNull();
   expect(
-    screen.getByRole("heading", { level: 1, name: "theirs" }),
-  ).toBeDefined();
+    screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent),
+  ).toStrictEqual(["theirs"]);
   await turned(() => {
     router.history.back();
   });

@@ -5,11 +5,16 @@
 
 import { expect, test } from "vitest";
 
-import { epicListQueryParse } from "../../../src/contract/epics.ts";
+import {
+  epicListQueryParse,
+  epicSummaryCharsMax,
+} from "../../../src/contract/epics.ts";
 import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
 import {
   epicDraftRefusal,
+  epicFormChanged,
   epicFormFaults,
+  epicFormFieldOf,
   epicFormFrom,
   epicPickerOptions,
   epicProgressGroupTone,
@@ -246,6 +251,34 @@ test("a form with no title or unreadable tickets is faulted before it is sent", 
   expect(saidEn(epicFormFaults({ ...form, tickets: "q" }))).toStrictEqual([
     "Not ticket numbers: q.",
   ]);
+});
+
+test("a fault or a refusal about the title or the summary is that field's, and one about the whole epic is none's", () => {
+  expect(
+    epicFormFaults({
+      ...form,
+      title: "",
+      summary: "s".repeat(epicSummaryCharsMax + 1),
+    }).map(epicFormFieldOf),
+  ).toStrictEqual(["title", "summary"]);
+  expect(
+    epicFormFaults({ ...form, tickets: "q" }).map(epicFormFieldOf),
+  ).toStrictEqual([undefined]);
+  const refused = (code: string) =>
+    epicFormFieldOf(epicWriteRefusal({ outcome: "Conflict", code, body: {} }));
+  expect(refused("EmptyTitle")).toBe("title");
+  expect(refused("LongTitle")).toBe("title");
+  expect(refused("LongSummary")).toBe("summary");
+  expect(refused("StaleRevision")).toBeUndefined();
+  expect(refused("LargeContent")).toBeUndefined();
+});
+
+test("a form is changed once anything typed differs from the epic as read, and not by typing it back", () => {
+  expect(epicFormChanged(form, { ...form })).toBe(false);
+  expect(epicFormChanged(form, { ...form, description: "Other" })).toBe(true);
+  expect(
+    epicFormChanged(form, { ...form, title: form.title.toUpperCase() }),
+  ).toBe(true);
 });
 
 test("a stale revision is said to need a reload, and unknown tickets are named", () => {

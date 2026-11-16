@@ -149,7 +149,7 @@ test("a first message can be stopped before the door has taken it, and the stop 
 
   await stageSent(asked);
   expect(stageColumn(pane.container)).toStrictEqual([`> ${asked}`, ""]);
-  expect(stageButton(), "the door has not taken the message").toBe("Stop");
+  expect(stageButton(), "the door has not taken the message").toBe("Stop+Send");
 
   await stageStopped();
   expect(stageColumn(pane.container)).toStrictEqual(stopped);
@@ -189,7 +189,7 @@ test("a first message the door has taken can be stopped before the thread it ope
   const turn = sent?.turn ?? "";
   await stageAnswered(sent, { turn, ordinal: 1 }, 202);
   expect(stageColumn(pane.container)).toStrictEqual([`> ${asked}`, ""]);
-  expect(stageButton(), "the thread has not been read").toBe("Stop");
+  expect(stageButton(), "the thread has not been read").toBe("Stop+Send");
 
   await stageStopped();
   expect(stageColumn(pane.container)).toStrictEqual(stopped);
@@ -205,17 +205,17 @@ test("a first message the door has taken can be stopped before the thread it ope
   expect(pane.container.textContent).not.toContain("No store");
 });
 
-test("a first message nobody stopped is Stop until its thread is read, and Stop after", async () => {
+test("a first message nobody stopped offers Stop until its thread is read, and after", async () => {
   const pane = await paneOpened();
   await stageSent(asked);
   const [sent] = pane.sends;
   const turn = sent?.turn ?? "";
   await stageAnswered(sent, { turn, ordinal: 1 }, 202);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
 
   await pane.read(threadAt(turn, "Queued"));
   await stageColumnIs(pane.container, [`> ${asked}`, ""]);
-  expect(stageButton()).toBe("Stop");
+  expect(stageButton()).toBe("Stop+Send");
   expect(threadDrawn(pane.container)).toBe(true);
   expect(pane.stops).toStrictEqual([]);
 });

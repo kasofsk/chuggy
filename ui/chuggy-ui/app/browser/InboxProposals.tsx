@@ -217,6 +217,7 @@ export function InboxProposalWhy(props: {
     const others = inboxProposalOthers(proposal, props.ticket);
     return (
       <Tooltip
+        trigger="abbreviation"
         key={proposal.decision}
         text={
           others.length === 0

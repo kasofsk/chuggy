@@ -1,6 +1,7 @@
 /**
  * A tenant's invite links and the site's workspace links held in memory, for
- * the links' suites and the server's, and the secrets a mint draws.
+ * the links' suites and the server's, the secrets a mint draws, the ids a
+ * workspace link's use draws, and the display names its use writes.
  *
  * A LINK'S STATE IS DERIVED AS THE STORE'S STATEMENTS DERIVE IT, against a
  * clock a case moves, and a mint keeps the tenant's bounds, or the site's, as
@@ -8,6 +9,8 @@
  * used links hold one workspace. Whether the database's own clock and lock answer the same is
  * `test/postgres/inviteLinks.test.ts`'s to show.
  */
+
+import { randomUUID } from "node:crypto";
 
 import {
   accessInviteLinkLifetimeMs,
@@ -30,7 +33,9 @@ import type { TenantId } from "../../src/interpreter/projectStore.ts";
 import { accessMemoryClaims } from "./accessInvitationFixture.ts";
 import {
   accessFixtureIssuer,
+  tenantNameMemory,
   type AccessMemory,
+  type TenantNameMemory,
 } from "./accessPlaneFixture.ts";
 
 /** What every link keeps, whatever its kind. */
@@ -73,6 +78,11 @@ export interface InviteLinkMemory {
   nowMs: number;
   /** Every token drawn, in order. */
   readonly drawn: string[];
+  /** How a workspace link's use draws its workspace's id, as the root draws it unless a case says otherwise. */
+  workspaceDraw: () => string;
+  /** Every workspace id drawn, in order. */
+  readonly workspacesDrawn: string[];
+  readonly names: TenantNameMemory;
   readonly store: AccessInviteLinkStore;
 }
 
@@ -357,6 +367,9 @@ export function inviteLinkMemory(): InviteLinkMemory {
     rows: [],
     nowMs: 3_600_000,
     drawn: [],
+    workspaceDraw: () => randomUUID(),
+    workspacesDrawn: [],
+    names: tenantNameMemory(),
   };
   const full = memory as InviteLinkMemory;
   return Object.assign(full, { store: inviteLinkStore(full) });
@@ -415,7 +428,13 @@ export function accessMemoryInviteLinks(
                   return token;
                 },
                 digest: inviteLinkDigest,
+                workspace: () => {
+                  const workspace = links.workspaceDraw();
+                  links.workspacesDrawn.push(workspace);
+                  return workspace;
+                },
               },
+              names: links.names,
             },
     },
     { issuer: accessFixtureIssuer },

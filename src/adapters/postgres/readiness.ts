@@ -21,7 +21,7 @@
  * or whose epoch a restore superseded is carried closed for the writer to
  * refuse.
  *
- * AN APPROVAL ANSWER RESOLVES TO NO COMMAND. `Approve` and `Decline` name no
+ * AN APPROVAL ANSWER RESOLVES TO NO COMMAND. `Approve` and `Reject` name no
  * domain command, so the source built for one carries the answer and no
  * `ticketCommand`, and the join onto the offered resolutions is what proves the
  * action asked that question rather than the other one.

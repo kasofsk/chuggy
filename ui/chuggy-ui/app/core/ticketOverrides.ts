@@ -35,8 +35,8 @@ import type {
   ConfigurationView,
 } from "./configurationView.ts";
 
-/** The overrides of a version 1 configuration, which a form holds field by field; a catalog's workloads are held whole. */
-type Overrides = Omit<ConfigurationOverrides, "workloads">;
+/** The overrides of a version 1 configuration, which a form holds field by field; a catalog's workloads and plans are held whole. */
+type Overrides = Omit<ConfigurationOverrides, "workloads" | "plans">;
 
 /** One overridable field by its path in a configuration: a top-level list by
  * its name, and a field of a block beside the block's. */

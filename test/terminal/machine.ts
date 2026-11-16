@@ -1,5 +1,5 @@
 /**
- * A machine for `runner` to be run on, with nothing of this one in it: every
+ * A machine for `mcp` and `runner` to be run on, with nothing of this one in it: every
  * command the program runs by name is a stand-in in the home's own directory
  * of programs, and everything they write is under that home or beside it.
  *
@@ -45,7 +45,14 @@ export const machineLoginSecret =
 export const machineAskers = ["sudo", "su", "pkexec"] as const;
 
 /** What a machine has by name unless a case says otherwise: no podman, as most have none. */
-const programs = ["npm", "systemctl", "loginctl", "docker", "git"] as const;
+const programs = [
+  "npm",
+  "claude",
+  "systemctl",
+  "loginctl",
+  "docker",
+  "git",
+] as const;
 
 export interface Machine {
   /** Where the runner package keeps its things under this home, and where npm installs. */

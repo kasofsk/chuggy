@@ -7,6 +7,7 @@
  */
 
 import {
+  workerContractFeaturesHeader,
   workerContractHeader,
   workerContractRelease,
 } from "../../contract/workerContract.ts";
@@ -14,6 +15,7 @@ import {
   sessionEndedSchema,
   sessionPlaneRoutes,
 } from "../../contract/sessionPlane.ts";
+import { workerContractClientFeatures } from "../../interpreter/workerContractClientFeatures.ts";
 import { poolEndAnswer } from "./poolJobPlaneClient.ts";
 import type {
   WorkerPoolEndAnswer,
@@ -51,6 +53,7 @@ async function poolSessionPlaneEnded(
           authorization: `Bearer ${ended.session.bearer}`,
           "content-type": "application/json",
           [workerContractHeader]: workerContractRelease,
+          [workerContractFeaturesHeader]: workerContractClientFeatures,
         },
         body,
       },

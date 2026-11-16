@@ -1,5 +1,6 @@
-## The reader's own agent accounts and their pauses: the Usage settings page,
-## `app/core/agentAccounts.ts`, `UsageSettingsPage.tsx`, `AgentPause.tsx`.
+## The reader's own agent accounts and their pauses, each credential's under
+## its own name: the Usage settings page, `app/core/agentAccounts.ts`,
+## `UsageSettingsPage.tsx`, `AgentPause.tsx`.
 
 usage-title = Usage
 usage-about = Your own { -agent } accounts, the same in every { -workspace }.
@@ -14,8 +15,9 @@ usage-window-five-hour = Five-hour window
 # spells -window: an account's usage window, not a context's
 usage-window-seven-day = Weekly window
 usage-provider-limit = Provider limit
-usage-joined = { $lead } · { $rest }
+usage-reason-off = Off
 usage-until = until
+usage-held-by = held by { $credentials }
 usage-try-again = Try again now
 usage-try-again-named = Try { $agent } again now
 usage-press-unheld = No limit holds it
@@ -35,3 +37,27 @@ usage-threads-pause-with = Pause with it
 usage-threads-keep-running = Keep running
 usage-writing = Writing
 usage-written = Written
+
+## Retiring a credential the account no longer spends.
+
+usage-credentials = Credentials
+usage-retire = Retire
+usage-retire-named = Retire credential { $credential }
+usage-retire-question = Retire credential { $credential }?
+usage-retirement = Its readings and its limit are forgotten. { -runner(case: "upper", form: "a") } that reports { $credential } again brings it back.
+usage-retire-in-use = A live { -runner } still names it
+
+## Turning a credential off, which every runner of the reader's passes over, and on.
+
+# spells -turn: to turn off is a verb here
+usage-turn-off = Turn off
+# spells -turn: to turn off is a verb here
+usage-turn-off-named = Turn off credential { $credential }
+# spells -turn: to turn off is a verb here
+usage-turn-off-question = Turn off credential { $credential }?
+usage-turned-off = Every { -runner } of yours passes it over.
+usage-turn-off-full = No more credentials can be off
+# spells -turn: to turn on is a verb here
+usage-turn-on = Turn on
+# spells -turn: to turn on is a verb here
+usage-turn-on-named = Turn on credential { $credential }
