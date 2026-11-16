@@ -84,6 +84,7 @@ export async function stood(
     await siteRead(site, asking),
     asking.named ?? true,
     asking.plugin ?? "On",
+    asking.answers?.northStar,
   );
 }
 

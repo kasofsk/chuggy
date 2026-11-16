@@ -79,6 +79,7 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
       pluginOn,
       "step: workspace   todo     you are in no workspace yet",
       "step: project     todo",
+      "step: north-star  todo",
       "step: mcp         todo",
       "step: github      todo",
       "step: repository  todo",
@@ -104,6 +105,7 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       pluginOn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
+      "step: north-star  done     the project has a North Star",
       "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      waiting  acme-org has the portal app, not the worker app",
       "step: repository  todo",
@@ -125,6 +127,7 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       pluginOn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
+      "step: north-star  done     the project has a North Star",
       "step: mcp         done     Claude Code here runs chuggy's MCP server for acme/widgets",
       "step: github      done     acme-org, both apps granted acme-org/widgets",
       "step: repository  done     acme-org/widgets",
@@ -202,7 +205,7 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     setupSiteClaim("acme-org", "portal"),
   ]);
   const done = await printed(await machineSignedIn(world));
-  expect(done.lines.slice(5, 7)).toEqual([
+  expect(done.lines.slice(6, 8)).toEqual([
     "step: github      waiting  acme-org, which owns acme-org/widgets, has the portal app, not the worker app",
     "step: repository  done     acme-org/widgets",
   ]);

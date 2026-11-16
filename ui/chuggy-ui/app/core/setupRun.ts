@@ -45,6 +45,7 @@ import {
   setupMergeDue,
   setupMergeUnseen,
   setupNext,
+  setupNorthStarDue,
   setupRunnerDue,
   setupServeDue,
   setupTicketDue,
@@ -58,6 +59,11 @@ import {
 } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import { setupPlugin, setupPluginHad } from "./setupPlugin.ts";
+import {
+  setupNorthStarWrites,
+  setupNorthStarWritten,
+  setupTrackedRead,
+} from "./setupNorthStar.ts";
 import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
 import type { SetupReads } from "./setupReads.ts";
 import { setupProject } from "./setupProject.ts";
@@ -236,7 +242,9 @@ function setupBusy(
  * list of plugins is read where the plugin step was not passed over, the agent's
  * configuration is read for the project chosen, where the MCP step or the
  * runner's is the one next the machine is looked at and not touched, where
- * the project's first ticket is, what it may be drawn under is read, and where
+ * the project's first ticket is, what it may be drawn under is read, where the
+ * project's North Star is, the files the folder's checkout tracks are counted,
+ * and where
  * the merge is offered and `merged` says nothing of one, the folder's history
  * is counted.
  */
@@ -263,6 +271,10 @@ async function setupChecklist(
           setupReadPorts(signed.opened.api, signed.bearer),
           filing,
         );
+  const tracked =
+    setupNorthStarDue(standing) === undefined
+      ? undefined
+      : await setupTrackedRead(ports.process, pacing.remoteWaitMs);
   const merge =
     merged ??
     (setupMergeDue(standing) === undefined
@@ -288,6 +300,7 @@ async function setupChecklist(
       packaged,
       offers,
       merge,
+      tracked,
     ),
   };
 }
@@ -312,6 +325,7 @@ async function setupStandingRead(
     reads,
     await setupChecklistNamed(ports, reads),
     await setupPluginHad(ports, answers),
+    answers.northStar,
   );
 }
 
@@ -698,6 +712,44 @@ async function setupTicket(
 }
 
 /**
+ * `north-star` works under the remembered sign-in as `ticket` does. Where the
+ * checklist's next thing is the project's North Star, it writes the text it
+ * was given as that, through ports that let out only the settings' write, and
+ * reads the checklist again; where it is not, it writes nothing and says the
+ * checklist.
+ */
+async function setupNorthStar(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "NorthStar" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "NorthStar");
+  if (held === undefined) return setupBusy(ports, "NorthStar", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupNorthStarDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupNorthStarWritten(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupNorthStarWrites(due),
+          ),
+          due,
+          asked.text,
+        );
+  return {
+    report: "NorthStar",
+    project: due === undefined ? undefined : `${due.tenant}/${due.project}`,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
  * One entry of the sign-in `project`, `runner` or `chat-host` works under. Whatever does
  * not end signed in is answered as a report, a fault of this machine's among
  * them, so a run that enters again part-way has one way out and says what it
@@ -874,6 +926,8 @@ export async function setupRun(
         return await setupServe(ports, asked, pacing);
       case "Ticket":
         return await setupTicket(ports, asked, pacing);
+      case "NorthStar":
+        return await setupNorthStar(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }
