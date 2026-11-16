@@ -352,7 +352,6 @@ test("reopening a session compares the objectives it would be opened with", asyn
 test("the pod is answered the objectives its session was opened with", async () => {
   const partition = await sessionToolsProject("facts");
   const session = await sessionRigSession(rig, partition, "facts", {
-    kind: "Lead",
     capabilities: ["RepositoryRead", "ProjectRead"],
     systemPrompt: "what the pod is told it is",
   });
@@ -362,7 +361,7 @@ test("the pod is answered the objectives its session was opened with", async () 
   assert.equal(authenticated?.systemPrompt, "what the pod is told it is");
 
   const bare = await sessionToolsProject("bare");
-  const spare = await sessionRigSession(rig, bare, "bare", { kind: "Lead" });
+  const spare = await sessionRigSession(rig, bare, "bare");
   await sessionRigTurn(rig, bare, spare, "bare");
   const other = await sessionRigAttempt(rig, bare, spare, "bare");
   assert.equal(

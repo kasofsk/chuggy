@@ -105,8 +105,8 @@ test("the installation's session routing is one row at most", async () => {
   await migratedDatabase("session_routing", async (subject) => {
     await assert.rejects(
       subject.query(`INSERT INTO session_routing
-        (singleton,thread_route,lead_route,project_routes)
-        VALUES (2,'Pool','Pool','{}')`),
+        (singleton,thread_route,project_routes)
+        VALUES (2,'Pool','{}')`),
       /session_routing_is_one_row/u,
     );
   });
@@ -117,8 +117,8 @@ test("a project's placement names who set it whole, or names nobody", async () =
     await subject.query(`${deletionPartition}
       INSERT INTO project_execution_placement(tenant,project,work_route,evaluation_route)
       VALUES('tenant-5','project-5','InCluster','InCluster');
-      INSERT INTO project_session_placement(tenant,project,thread_route,lead_route)
-      VALUES('tenant-5','project-5','InCluster','InCluster')`);
+      INSERT INTO project_session_placement(tenant,project,thread_route)
+      VALUES('tenant-5','project-5','InCluster')`);
     for (const placement of [
       "project_execution_placement",
       "project_session_placement",

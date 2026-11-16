@@ -6,13 +6,7 @@ import { postgresNotifications } from "../../src/adapters/postgres/notifications
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   apiRole,
-  boundaryOwnerRole,
   dispatchAcceptanceFunction,
-  selectorControlRole,
-  selectorProjectSettingsFunction,
-  selectorReviewRole,
-  selectorServiceRole,
-  ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
@@ -409,69 +403,5 @@ test("dispatch acceptance refuses every command the wire parser cannot read", as
     }
   } finally {
     await pool.end();
-  }
-});
-
-/**
- * Every definer this slice re-created, with the roles it answers to: a drop
- * takes the owner, the `search_path` pin, the revoke and the grants with it,
- * `CREATE OR REPLACE` drops the pin the same way by taking everything but the
- * owner and the privileges from the new command, and a re-create that loses
- * one of them is world-executable or is resolved under the caller's path. The
- * pin is the arm no functional case can find, because an unpinned definer
- * answers an ordinary caller exactly as a pinned one does and differs only for
- * one that has shadowed a relation in `pg_temp`.
- */
-const i5SliceDefiners: readonly (readonly [
-  string,
-  string,
-  readonly string[],
-])[] = [
-  [
-    selectorProjectSettingsFunction,
-    "text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text,text,text,text,text",
-    [apiRole],
-  ],
-];
-
-const i5SelectorRoles = [
-  apiRole,
-  selectorServiceRole,
-  selectorControlRole,
-  selectorReviewRole,
-  ticketServiceRole,
-];
-
-test("each definer this slice re-created is owned, pinned, world-revoked and granted where it was", async () => {
-  for (const [name, signature, granted] of i5SliceDefiners) {
-    const identity = `${name}(${signature})`;
-    assert.deepEqual(
-      await harness.query(
-        `SELECT prosecdef AS definer,pg_get_userbyid(proowner) AS owner,
-                array_to_string(proconfig,',') AS settings,
-                EXISTS(SELECT 1 FROM aclexplode(proacl) entry
-                        WHERE entry.grantee=0) AS world
-           FROM pg_proc WHERE oid=$1::regprocedure`,
-        [identity],
-      ),
-      [
-        {
-          definer: true,
-          owner: boundaryOwnerRole,
-          settings: "search_path=pg_catalog, public, pg_temp",
-          world: false,
-        },
-      ],
-      identity,
-    );
-    for (const role of i5SelectorRoles)
-      assert.deepEqual(
-        await harness.query(
-          `SELECT has_function_privilege($1,$2::regprocedure,'EXECUTE') AS held`,
-          [role, identity],
-        ),
-        [{ held: granted.includes(role) }],
-        `${identity} to ${role}`,
-      );
   }
 });

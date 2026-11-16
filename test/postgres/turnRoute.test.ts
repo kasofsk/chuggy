@@ -209,12 +209,12 @@ test("a turn queued for a runner stays there when an administrator moves threads
   const member = threadRigMember(rig, partition, "route-moved");
   unhosted(partition, member);
   await sessionRigRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const session = await threadOf(partition, member);
   assert.equal((await sent(partition, member, session)).status, 202);
   assert.equal(await offered(session), false);
 
-  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "InCluster");
   assert.equal(
     (await sent(partition, member, session)).status,
     403,
@@ -278,7 +278,7 @@ test("a running thread attempt claims no turn admitted for a runner, nor one que
 
   unhosted(partition, member);
   await sessionRigRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   assert.equal((await sent(partition, member, session)).status, 202);
   assert.equal(
     await claimed(pod),
@@ -296,7 +296,7 @@ test("a running thread attempt claims no turn admitted for a runner, nor one que
     principal: member.principal,
     access: new Set(["ExecuteHosted"]),
   });
-  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "InCluster");
   assert.equal((await sent(partition, member, session)).status, 202);
   assert.deepEqual(
     await sessionRigTurnRoutes(rig.sessions, partition, session),
@@ -319,7 +319,7 @@ test("a member with no chat host is refused a thread routed to runners however l
   const member = threadRigMember(rig, partition, "route-runnerless");
   const session = await threadOf(partition, member);
   const newcomer = threadRigMember(rig, partition, "route-runnerless-new");
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   for (const runs of [member, newcomer])
     await sessionRigPersonalRunner(rig.sessions, partition, runs.principal);
 
@@ -366,11 +366,11 @@ test("a thread's turn offered to runners that none takes is withdrawn after the 
   const partition = await threadRigProject(rig, "dwell-thread");
   const member = threadRigMember(rig, partition, "dwell-thread");
   await sessionRigRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const session = await threadOf(partition, member);
   const unserved = await sent(partition, member, session);
   assert.equal(unserved.status, 202);
-  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "InCluster");
   assert.equal((await sent(partition, member, session)).status, 202);
   assert.equal(await offered(session), false);
 
@@ -419,7 +419,7 @@ test("the dwell withdraws the thread that waited longest first, and never a turn
   const cluster = member("cluster");
   const shorter = member("shorter");
   const longer = member("longer");
-  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "InCluster");
   const heldThread = await threadOf(partition, held);
   const answering = await sent(partition, held, heldThread);
   const pod = await sessionRigAttempt(
@@ -433,7 +433,7 @@ test("the dwell withdraws the thread that waited longest first, and never a turn
   const inCluster = await sent(partition, cluster, clusterThread);
   for (const runner of [held, cluster, shorter, longer])
     await sessionRigRunner(rig.sessions, partition, runner.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const behindAttempt = await sent(partition, held, heldThread);
   const behindCluster = await sent(partition, cluster, clusterThread);
   const shorterThread = await threadOf(partition, shorter);
@@ -481,7 +481,7 @@ test("a turn's dwell runs from when it came to head its thread, not from when it
   const partition = await threadRigProject(rig, "dwell-head");
   const member = threadRigMember(rig, partition, "dwell-head");
   await sessionRigRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const session = await threadOf(partition, member);
   const first = await sent(partition, member, session);
   const second = await sent(partition, member, session);

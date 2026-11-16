@@ -87,18 +87,6 @@ async function routed(partition: Partition): Promise<string> {
   return `${resolved.route}/${resolved.source}`;
 }
 
-/** The lead route and offering the project's row and the published routing hold, which a write never names. */
-async function leadStored(partition: Partition): Promise<unknown> {
-  return {
-    placed: await harness.query(
-      `SELECT lead_route, lead_offering FROM project_session_placement
-        WHERE tenant=$1 AND project=$2`,
-      [partition.tenant, partition.project],
-    ),
-    routing: await harness.query(`SELECT lead_route FROM session_routing`),
-  };
-}
-
 test("a project nobody placed runs its threads in cluster while no routing is published", async () => {
   const partition = await postgresHarnessProject(harness.store, "unpublished");
   assert.equal(await routed(partition), "InCluster/Default");
@@ -128,32 +116,17 @@ test("a project's own row overrides the published default, and the deployment's 
   assert.equal(await routed(beside), "InCluster/Default");
 });
 
-test("a write and a published routing store the lead in cluster as its own, whatever the thread's route", async () => {
-  const partition = await postgresHarnessProject(harness.store, "lead-fixed");
-  await published({ routes: { Thread: "Pool" }, projectRoutes: new Map() });
-  assert.equal(
-    await postgresSessionPlacement(apiPool).write(
-      partition,
-      { Thread: "Pool" },
-      owner,
-    ),
-    "Written",
-  );
-  assert.deepEqual(await leadStored(partition), {
-    placed: [{ lead_route: "InCluster", lead_offering: "Own" }],
-    routing: [{ lead_route: "InCluster" }],
-  });
-});
-
-test("a kind the routing does not name is refused rather than placed", async () => {
+test("every kind but a thread is refused rather than placed", async () => {
   const partition = await postgresHarnessProject(harness.store, "unnamed");
-  await assert.rejects(
-    apiPool.query(`SELECT * FROM ${sessionRouteFunction}($1,$2,'Execution')`, [
-      partition.tenant,
-      partition.project,
-    ]),
-    /session kind Execution has no route/u,
-  );
+  for (const kind of ["Lead", "Inquiry", "Execution"])
+    await assert.rejects(
+      apiPool.query(`SELECT * FROM ${sessionRouteFunction}($1,$2,$3)`, [
+        partition.tenant,
+        partition.project,
+        kind,
+      ]),
+      new RegExp(`session kind ${kind} has no route`, "u"),
+    );
 });
 
 test("a write that changes nothing is unchanged, and a project that does not exist is not found", async () => {
