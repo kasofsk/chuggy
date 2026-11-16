@@ -15,10 +15,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import type { FastifyInstance } from "fastify";
+
 import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import { sessionStoreBatchBytesMax } from "../../src/contract/http.ts";
 import type { SessionBearerSecret } from "../../src/interpreter/agentSession.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { inertWorkerPlane } from "../adapters/workerPlaneFixtures.ts";
 import {
   sessionRigAttempt,
@@ -27,6 +30,7 @@ import {
   sessionRigProject,
   sessionRigSession,
   sessionRigTurn,
+  type SessionRig,
 } from "./sessionHarness.ts";
 
 const artifactRoot = mkdtempSync(join(tmpdir(), "chuggy-session-store-"));
@@ -43,8 +47,11 @@ function held(secret: SessionBearerSecret) {
   return { authorization: `Bearer ${secret}` };
 }
 
-test("a session that is nobody's fork reads no other session's objects", async () => {
-  const rig = await sessionRigOpen();
+/** The plane a pod talks to, with every object read recorded at the address it was asked at. */
+function recordingPlane(rig: SessionRig): {
+  readonly app: FastifyInstance;
+  readonly addressed: string[];
+} {
   const volume = artifactStore({
     root: artifactRoot,
     writeBytesMax: sessionStoreBatchBytesMax,
@@ -60,59 +67,73 @@ test("a session that is nobody's fork reads no other session's objects", async (
       },
     }),
   });
+  return { app, addressed };
+}
+
+/** A thread that has run: a bound reference, its batches stored, and a turn settled over them. */
+async function threadThatWrote(
+  rig: SessionRig,
+  app: FastifyInstance,
+  partition: Partition,
+): Promise<{ readonly stream: string; readonly secret: SessionBearerSecret }> {
+  const writer = await sessionRigSession(rig, partition, "writer");
+  const turn = await sessionRigTurn(rig, partition, writer, "writer");
+  const { secret } = await sessionRigAttempt(rig, partition, writer, "writer");
+  const stream = randomUUID();
+  const claimed = await app.inject({
+    method: "GET",
+    url: "/v1/session/turn",
+    headers: held(secret),
+  });
+  assert.equal(claimed.statusCode, 200, claimed.body);
+  const bound = await app.inject({
+    method: "PUT",
+    url: "/v1/session/reference",
+    headers: held(secret),
+    payload: { reference: stream },
+  });
+  assert.equal(bound.statusCode, 204, bound.body);
+  for (const [at, content] of written.entries()) {
+    const stored = await app.inject({
+      method: "PUT",
+      url: `/v1/session/store/${encodeURIComponent(stream)}/${String(at + 1)}`,
+      headers: { ...held(secret), "content-type": "application/octet-stream" },
+      payload: Buffer.from(content),
+    });
+    assert.equal(stored.statusCode, 204, stored.body);
+  }
+  const answered = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/answer",
+    headers: held(secret),
+    payload: { turn, result: "ok", batchFirst: 1, batchLast: written.length },
+  });
+  assert.equal(answered.statusCode, 204, answered.body);
+  return { stream, secret };
+}
+
+async function storePage(
+  app: FastifyInstance,
+  secret: SessionBearerSecret,
+  stream: string,
+): Promise<{ readonly batches: readonly unknown[] }> {
+  const page = await app.inject({
+    method: "GET",
+    url: `/v1/session/store/${encodeURIComponent(stream)}`,
+    headers: held(secret),
+  });
+  assert.equal(page.statusCode, 200, page.body);
+  return JSON.parse(page.body) as { readonly batches: readonly unknown[] };
+}
+
+test("a session that is nobody's fork reads no other session's objects", async () => {
+  const rig = await sessionRigOpen();
+  const { app, addressed } = recordingPlane(rig);
   try {
     const partition = await sessionRigProject(rig, "store-isolation");
-
-    const writer = await sessionRigSession(rig, partition, "writer");
-    const turn = await sessionRigTurn(rig, partition, writer, "writer");
-    const writing = await sessionRigAttempt(rig, partition, writer, "writer");
-    const stream = randomUUID();
-    const claimed = await app.inject({
-      method: "GET",
-      url: "/v1/session/turn",
-      headers: held(writing.secret),
-    });
-    assert.equal(claimed.statusCode, 200, claimed.body);
-    const bound = await app.inject({
-      method: "PUT",
-      url: "/v1/session/reference",
-      headers: held(writing.secret),
-      payload: { reference: stream },
-    });
-    assert.equal(bound.statusCode, 204, bound.body);
-    for (const [at, content] of written.entries()) {
-      const stored = await app.inject({
-        method: "PUT",
-        url: `/v1/session/store/${encodeURIComponent(stream)}/${String(at + 1)}`,
-        headers: {
-          ...held(writing.secret),
-          "content-type": "application/octet-stream",
-        },
-        payload: Buffer.from(content),
-      });
-      assert.equal(stored.statusCode, 204, stored.body);
-    }
-    const answered = await app.inject({
-      method: "POST",
-      url: "/v1/session/turn/answer",
-      headers: held(writing.secret),
-      payload: {
-        turn,
-        result: "ok",
-        batchFirst: 1,
-        batchLast: written.length,
-      },
-    });
-    assert.equal(answered.statusCode, 204, answered.body);
-
-    const own = await app.inject({
-      method: "GET",
-      url: `/v1/session/store/${encodeURIComponent(stream)}`,
-      headers: held(writing.secret),
-    });
-    assert.equal(own.statusCode, 200, own.body);
+    const writer = await threadThatWrote(rig, app, partition);
     assert.equal(
-      (JSON.parse(own.body) as { batches: unknown[] }).batches.length,
+      (await storePage(app, writer.secret, writer.stream)).batches.length,
       written.length,
       "the writer reads its own store, so the stranger's empty page is the boundary and not an empty store",
     );
@@ -126,13 +147,9 @@ test("a session that is nobody's fork reads no other session's objects", async (
       "stranger",
     );
     addressed.length = 0;
-    const page = await app.inject({
-      method: "GET",
-      url: `/v1/session/store/${encodeURIComponent(stream)}`,
-      headers: held(stranger.secret),
+    assert.deepEqual(await storePage(app, stranger.secret, writer.stream), {
+      batches: [],
     });
-    assert.equal(page.statusCode, 200, page.body);
-    assert.deepEqual(JSON.parse(page.body), { batches: [] });
     assert.deepEqual(addressed, []);
     const listed = await app.inject({
       method: "GET",
