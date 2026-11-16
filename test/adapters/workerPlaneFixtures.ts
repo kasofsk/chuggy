@@ -144,6 +144,11 @@ export function inertSessionPlane(
     heartbeatLeaseSecs: workerPlaneFixtureLeaseSecs,
     references: { bind: () => Promise.resolve("Bound") },
     standings: { stand: () => Promise.resolve("Recorded") },
+    ticketWakes: {
+      readTicketWakes: () => Promise.resolve(undefined),
+      chooseTicketWakes: () =>
+        Promise.resolve({ chosen: "Recorded", wakes: {} }),
+    },
     turns: { claim: () => Promise.resolve(undefined) },
     settlements: {
       answer: () => Promise.resolve("Answered"),

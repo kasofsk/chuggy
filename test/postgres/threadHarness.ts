@@ -225,6 +225,22 @@ export async function threadRigThread(
   return opened.thread;
 }
 
+/**
+ * Sets a thread's own ticket wake choice straight, where a case is about the
+ * wake rather than who chose it; the door a thread's attempt chooses through is
+ * driven in `threadWake.test.ts`.
+ */
+export async function threadRigTicketWakes(
+  rig: ThreadRig,
+  session: SessionId,
+  choice: "On" | "Off" | null,
+): Promise<void> {
+  await rig.sessions.harness.query(
+    "UPDATE agent_session SET ticket_wakes=$2 WHERE session=$1",
+    [session, choice],
+  );
+}
+
 /** Sets how many threads a member may hold open, through the API's door, as an administrator would. */
 export async function threadRigLimit(
   rig: ThreadRig,

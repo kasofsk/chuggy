@@ -851,6 +851,22 @@ test("a poll's session capabilities read back as the set a host wrote, the empty
     );
 });
 
+test("a poll's ticket wakes read back as On or Off, absent where it named none, and nothing else is read", () => {
+  const query = workerPoolPollQuerySchema(2);
+  for (const ticketWakes of ["On", "Off"] as const)
+    assert.equal(
+      query.parse({ wanted: "0", ticketWakes }).ticketWakes,
+      ticketWakes,
+    );
+  assert.equal("ticketWakes" in query.parse({ wanted: "0" }), false);
+  for (const ticketWakes of ["", "on", "true", ["On", "Off"]])
+    assert.equal(
+      query.safeParse({ wanted: "0", ticketWakes }).success,
+      false,
+      JSON.stringify(ticketWakes),
+    );
+});
+
 test("each settlement route is the poll route, the assignment and the outcome", () => {
   for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
     assert.equal(

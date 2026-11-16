@@ -25,6 +25,7 @@ import {
   sessionEfforts,
   sessionStoreStreamsAnswered,
 } from "../../contract/http.ts";
+import type { ThreadTicketWakes } from "../../contract/threadWake.ts";
 import {
   allSessionKinds,
   allSessionScopes,
@@ -52,6 +53,8 @@ import type {
   SessionStandingPort,
   SessionStandingRecorded,
   SessionStoreBatchWritten,
+  SessionTicketWakesChosen,
+  SessionTicketWakesPort,
   SessionStoreQueryPort,
   SessionStoreRecordPort,
   SessionStoreStreamRow,
@@ -70,6 +73,7 @@ import {
   sessionRowMember,
   sessionRowText,
   sessionPodEndingOf,
+  threadTicketWakesOf,
 } from "./sessionRows.ts";
 
 /**
@@ -83,6 +87,7 @@ export type SessionPlaneStore = SessionPlaneAuthority &
   SessionHeartbeatPort &
   SessionReferencePort &
   SessionStandingPort &
+  SessionTicketWakesPort &
   SessionTurnClaimPort &
   SessionTurnSettlePort &
   SessionTurnWatchPort &
@@ -443,6 +448,53 @@ async function sessionPlaneStand(
   );
 }
 
+const ticketWakesArms = ["Recorded", "Fenced", "NotThread"] as const;
+
+async function sessionPlaneTicketWakesRead(
+  pool: pg.Pool,
+  input: Parameters<SessionTicketWakesPort["readTicketWakes"]>[0],
+): Promise<ThreadTicketWakes | undefined> {
+  const found = await pool.query<{
+    thread: string | null;
+    host: string | null;
+  }>(
+    sql`SELECT thread,host FROM read_session_ticket_wakes(
+      ${sessionSecretDigest(input.secret)},${input.generation})`,
+  );
+  const row = found.rows[0];
+  return row === undefined
+    ? undefined
+    : threadTicketWakesOf(row.thread, row.host);
+}
+
+async function sessionPlaneTicketWakesChoose(
+  pool: pg.Pool,
+  input: Parameters<SessionTicketWakesPort["chooseTicketWakes"]>[0],
+): Promise<SessionTicketWakesChosen> {
+  const found = await pool.query<{
+    verdict: string | null;
+    thread: string | null;
+    host: string | null;
+  }>(
+    sql`SELECT verdict,thread,host FROM choose_session_ticket_wakes(
+      ${sessionSecretDigest(input.secret)},${input.generation},
+      ${input.thread ?? null}::text)`,
+  );
+  const row = found.rows[0];
+  if (row === undefined)
+    throw new Error(
+      "postgres session plane: choosing a thread's ticket wakes answered no row",
+    );
+  const chosen = sessionVerdict(
+    ticketWakesArms,
+    row.verdict,
+    "choosing a thread's ticket wakes",
+  );
+  return chosen === "Recorded"
+    ? { chosen, wakes: threadTicketWakesOf(row.thread, row.host) }
+    : { chosen };
+}
+
 /** Everything a session pod may ask of the durable side, over the plane's own pool. */
 export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
   return {
@@ -499,6 +551,10 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
     },
 
     stand: (input) => sessionPlaneStand(pool, input),
+
+    readTicketWakes: (input) => sessionPlaneTicketWakesRead(pool, input),
+
+    chooseTicketWakes: (input) => sessionPlaneTicketWakesChoose(pool, input),
 
     claim: (input) => sessionPlaneClaim(pool, input.secret, input.generation),
 

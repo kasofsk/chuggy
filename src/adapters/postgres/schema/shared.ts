@@ -450,3 +450,12 @@ export const ticketTakerFunction = "ticket_taker";
 
 /** The member a ticket's next execution is placed for: its taker, else its creator, else none. */
 export const ticketOwnerFunction = "ticket_owner";
+
+/** A thread's own choice of ticket wakes and its member's chat host's setting, read by the scheduler beside each wake candidate. */
+export const threadTicketWakesFunction = "thread_ticket_wakes";
+
+/** The same two, read by the worker plane under a thread attempt's bearer. */
+export const sessionTicketWakesReadFunction = "read_session_ticket_wakes";
+
+/** The door a thread's own live attempt chooses its ticket wakes through. */
+export const sessionTicketWakesChooseFunction = "choose_session_ticket_wakes";

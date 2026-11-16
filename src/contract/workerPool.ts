@@ -39,6 +39,7 @@ import {
   sessionContainerEnds,
   type SessionCapability,
 } from "./rosters.ts";
+import { threadTicketWakeSettings } from "./threadWake.ts";
 import type { WorkerContractFeature } from "./workerContract.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
@@ -210,6 +211,7 @@ export const workerPoolPollQuery = {
   wantedSessions: "wantedSessions",
   idleSecs: "idleSecs",
   sessionCapabilities: "sessionCapabilities",
+  ticketWakes: "ticketWakes",
 } as const;
 
 /** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
@@ -248,7 +250,10 @@ export const workerPoolPollIdleSecsMax = Math.floor((2 ** 31 - 1) / 1_000);
  * `workerPoolPollIdleSecsMax`, and is read from no other caller, and
  * `sessionCapabilities`, the capabilities a chat host's threads may hold, as
  * `workerPoolPollSessionCapabilitiesText` writes them once, which leaves a
- * roster whole where it is absent and is read from no other caller.
+ * roster whole where it is absent and is read from no other caller, and
+ * `ticketWakes`, whether a chat host's threads that made no choice of their own
+ * are woken for their tickets, which a host naming none leaves unset and is
+ * read from no other caller.
  * The held list's length is the plane's own setting rather than a figure
  * written here, and a list longer than that is refused whole rather than cut,
  * because a cut list reads as a pool that let go of work it is still running;
@@ -277,6 +282,9 @@ export function workerPoolPollQuerySchema(heldMax: number) {
         text === "" ? [] : text.split(workerPoolSessionCapabilitiesSeparator),
       )
       .pipe(workerPoolSessionCapabilitiesSchema)
+      .optional(),
+    [workerPoolPollQuery.ticketWakes]: z
+      .enum(threadTicketWakeSettings)
       .optional(),
   });
 }
