@@ -20,6 +20,12 @@ export interface SetupRunnerCopy {
     readonly command: unknown;
     readonly when: unknown;
   };
+  readonly "setup-runner-rule-chat-host": {
+    readonly given: unknown;
+    readonly flag: unknown;
+    readonly no: unknown;
+    readonly yes: unknown;
+  };
   readonly "setup-runner-claude-subscription": Record<never, never>;
   readonly "setup-runner-claude-subscription-made": Record<never, never>;
   readonly "setup-runner-claude-api-key": Record<never, never>;
@@ -72,6 +78,12 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-note-settings-written": {
     readonly path: unknown;
     readonly engine: unknown;
+  };
+  readonly "setup-runner-note-chat-settings-written": {
+    readonly path: unknown;
+    readonly sessions: unknown;
+    readonly each: unknown;
+    readonly total: unknown;
   };
   readonly "setup-runner-note-login": {
     readonly credential: unknown;

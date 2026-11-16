@@ -1,15 +1,17 @@
 /**
  * Paths outside the setup program's own directory: what is at one, whether
  * one is itself a link, the names in one, a file's text, a file made where
- * there was nothing, and whether a directory is this user's to write.
+ * there was nothing or put in place of the one there, and whether a
+ * directory is this user's to write.
  *
  * Every path is the caller's, whole, and nothing here knows whose it is. A
  * probe the system would not answer is answered as nothing there, since a
  * path this user cannot see is one it cannot use, and what the system said of
- * it is dropped. Only making a file throws, as which path it was. A file is
- * made beside its place, put on the disk and only then linked onto it, so it
- * is there whole or not at all, also on a machine that loses power, and a
- * link is refused where something already holds the name.
+ * it is dropped. Only writing a file throws, as which path it was. A file is
+ * written beside its place, put on the disk and only then linked onto it, so
+ * it is there whole or not at all, also on a machine that loses power: a made
+ * one is linked, which is refused where something already holds the name,
+ * and a replacing one is renamed over the file there.
  */
 
 import {
@@ -23,6 +25,7 @@ import {
   openSync,
   readSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -110,6 +113,20 @@ function make(path: string, held: string): void {
   });
 }
 
+function replace(path: string, held: string): void {
+  const draft = `${path}.${String(process.pid)}.draft`;
+  attempted("Unwritable", path, () => {
+    if (!lstatSync(path).isFile()) throw new Error(`${path} is not a file`);
+    rmSync(draft, { force: true });
+    try {
+      flushed(draft, held);
+      renameSync(draft, path);
+    } finally {
+      rmSync(draft, { force: true });
+    }
+  });
+}
+
 function writable(directory: string): boolean {
   try {
     accessSync(directory, constants.W_OK | constants.X_OK);
@@ -125,5 +142,6 @@ export const disk: SetupDiskPort = {
   names,
   text,
   make,
+  replace,
   writable,
 };

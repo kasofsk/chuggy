@@ -375,6 +375,14 @@ export const runnerNotes: {
   })[];
 } = {
   Engine: [{ note: "Engine", engine: "docker" }],
+  ChatSettingsWritten: [
+    {
+      note: "ChatSettingsWritten",
+      path: boxSettings,
+      sessionsMax: 3,
+      sessionMemoryMib: 2_048,
+    },
+  ],
   Package: [{ note: "Package", command: rosterCommand, version: boxVersion }],
   Outdated: [
     {
@@ -501,6 +509,7 @@ export function rosterLines(places: RosterPlaces) {
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
+      chatSized: `did: wrote the size of your chat host into ${settings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
       chat: `did: registered this machine as your chat host, in ${chat}`,
       chatUnit: `did: installed your chat host's service, ${chatUnit}`,
       chatStarted: `did: started ${chatUnit}, which also starts when you log in`,

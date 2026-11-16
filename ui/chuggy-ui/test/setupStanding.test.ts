@@ -1046,8 +1046,8 @@ test("a project with no pool lacks a runner where the person holds no personal r
     "another project Preferred false": serving(false, true, false),
     "given None true": serving(true, false, true),
     "given None false": serving(true, false, false),
-    "given Preferred true": { lacks: "ChatHost" },
-    "given Preferred false": { lacks: "ChatHost" },
+    "given Preferred true": undefined,
+    "given Preferred false": undefined,
   });
 });
 
@@ -1069,7 +1069,7 @@ test("the owner fallback unread leaves the runner step unread only where the pro
   }
 });
 
-test("a project whose work the cluster runs needs no runner of its own, and its step waits only on where the person's chats in it run", async () => {
+test("a project whose work the cluster runs needs no runner of its own, and its step is done saying chat-host where the person's chats in it run on a chat host they lack", async () => {
   const site = setupSiteAt("Landed");
   for (const held of site.projects) {
     held.work = "InCluster";
@@ -1082,8 +1082,8 @@ test("a project whose work the cluster runs needs no runner of its own, and its 
   ]);
   site.chat.clear();
   expect((await column(site))[5]).toEqual([
-    "todo",
-    "hosted runs take its work; you have no chat host for your chats in it",
+    "done",
+    "hosted runs take its work; you have no chat host, which only your chats in the browser need, and chat-host sets one up",
   ]);
   for (const held of site.projects) held.threads = "InCluster";
   expect((await column(site))[5]).toEqual(hosted);
@@ -1094,7 +1094,7 @@ test("a project whose work the cluster runs needs no runner of its own, and its 
   ]);
 });
 
-test("where the person's chats run on runners the runner step is done only once the project's runner and their chat host are both live, and the project's is said first", async () => {
+test("where the person's chats run on runners the runner step is done once the project's runner is live, and a chat host of theirs that is missing or not running is said on its done line with chat-host, never as what the step lacks", async () => {
   const said: Record<string, readonly unknown[]> = {};
   for (const runner of sessionRunnerStandings)
     for (const mine of sessionRunnerStandings) {
@@ -1110,7 +1110,6 @@ test("where the person's chats run on runners the runner step is done only once 
         step?.lacks,
       ];
     }
-  const chat = (lacks: "ChatHost" | "ChatHostLive") => ({ lacks });
   expect(said).toEqual({
     "Unregistered Unregistered": ["todo", "", { lacks: "Runner", chat: true }],
     "Unregistered Offline": ["todo", "", { lacks: "Runner", chat: true }],
@@ -1131,14 +1130,14 @@ test("where the person's chats run on runners the runner step is done only once 
       { lacks: "RunnerLive", chat: false },
     ],
     "Live Unregistered": [
-      "todo",
-      "live; you have no chat host for your chats in it",
-      chat("ChatHost"),
+      "done",
+      "live; you have no chat host, which only your chats in the browser need, and chat-host sets one up",
+      undefined,
     ],
     "Live Offline": [
-      "waiting",
-      "live; your chat host is registered, not running",
-      chat("ChatHostLive"),
+      "done",
+      "live; your chat host, which only your chats in the browser need, is registered and not running, and chat-host on its machine starts it",
+      undefined,
     ],
     "Live Live": ["done", "live", undefined],
   });

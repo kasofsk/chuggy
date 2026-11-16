@@ -13,8 +13,9 @@
  * repository, since the portal app's listing is what the console offers a
  * repository from and the worker app is what a ticket's work is given its
  * credential under; and a runner is waited on only where the project's work
- * goes to runners, and the person's chat host only where their chats in it
- * do. Before any repository is added, the repository step carries what the
+ * goes to runners, and never on the person's chat host, which only their
+ * chats in the browser need, so that a chat host lacking is said on the
+ * runner's done line and is never what the step lacks. Before any repository is added, the repository step carries what the
  * apps on the account that owns the folder's remote grant it, where every
  * read that says so was got: both granted it, which is the repository the
  * program may add itself, or each app that is not, with where it is given
@@ -55,6 +56,7 @@ import {
   repositoryLabel,
 } from "./projectRepositories.ts";
 import { sessionPlacementShort, sessionRunnerShort } from "./sessionRunners.ts";
+import { setupCommandArguments } from "./setupArguments.ts";
 import {
   setupBindingMeant,
   setupBootstrapped,
@@ -151,8 +153,6 @@ export type SetupLack =
       readonly administers: boolean;
     }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
-  | { readonly lacks: "ChatHost" }
-  | { readonly lacks: "ChatHostLive" }
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
@@ -862,13 +862,13 @@ function setupWorkStanding(
 }
 
 /**
- * Done where the project's work has a runner live or the cluster runs it, and
- * the person's chats in it have their chat host live or the cluster runs
- * them; waiting where a runner is registered and is not running, its runner
- * being a pool or, where it has none and names an owner fallback, a personal
- * runner of the person's that serves the project, as the console's own
- * decider counts one, and never their chat host, which takes no work. The
- * project's runner is said first, and the chat host once it is done.
+ * Done where the project's work has a runner live or the cluster runs it;
+ * waiting where a runner is registered and is not running, its runner being a
+ * pool or, where it has none and names an owner fallback, a personal runner
+ * of the person's that serves the project, as the console's own decider
+ * counts one, and never their chat host, which takes no work. Where the
+ * person's chats in it run on their chat host and they have none live, the
+ * done line says so and names `chat-host`, which sets one up.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
@@ -906,23 +906,20 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const said: Copy = !setupHosted(route)
     ? { id: "setup-step-runner-live" }
     : { id: "setup-step-runner-hosted" };
+  const [command = ""] = setupCommandArguments("ChatHost");
   switch (mine) {
     case undefined:
       return setupDone("runner", said);
     case "RunnerOffline":
-      return setupUndone(
-        "runner",
-        "waiting",
-        { id: "setup-step-chat-host-offline", args: { runner: said } },
-        { lacks: "ChatHostLive" },
-      );
+      return setupDone("runner", {
+        id: "setup-step-chat-host-offline",
+        args: { runner: said, command },
+      });
     case "NoRunner":
-      return setupUndone(
-        "runner",
-        "todo",
-        { id: "setup-step-chat-host-none", args: { runner: said } },
-        { lacks: "ChatHost" },
-      );
+      return setupDone("runner", {
+        id: "setup-step-chat-host-none",
+        args: { runner: said, command },
+      });
   }
 }
 
