@@ -351,23 +351,6 @@ export type SessionTurnEnqueued =
     }
   | { readonly enqueued: "Closed" | "Backlogged" };
 
-/** What setting a lead's objectives answered: they moved, they were already these, or there is no lead. */
-export type LeadSystemPromptSet = "Set" | "Unchanged" | "NoLead";
-
-/**
- * The one durable door that moves a lead's objectives onto what the project now
- * asks of it. It names a project and never a session, because a door that could
- * name any session could rewrite a member's thread prompt; and it is separate
- * from `AgentSessionStore` because that store's doors are the boundary owner's
- * and this one is the selector's.
- */
-export interface LeadSystemPromptPort {
-  setSystemPrompt(
-    partition: Partition,
-    prompt: string,
-  ): Promise<LeadSystemPromptSet>;
-}
-
 /** Who the pool connected as, and whether that identity may open a session at all. */
 export interface AgentSessionWriter {
   readonly role: string;

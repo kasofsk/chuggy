@@ -3,8 +3,8 @@
  * suites already stand on, the two further role pools the lead doors are
  * granted to, and a recorded decision for a refusal to hang off.
  *
- * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The selector's mailbox and
- * write door run as `chuggy_selector_service` and the reads as `chuggy_api`,
+ * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The lead turn door and the
+ * selector's write door run as `chuggy_selector_service` and the reads as `chuggy_api`,
  * because a suite that drove both as the migration owner would be green over a
  * grant that had never been made — which is a defect only the deployed
  * credential meets.
@@ -25,10 +25,6 @@ import {
   postgresAgenticRefusalLedger,
 } from "../../src/adapters/postgres/agenticRefusal.ts";
 import {
-  postgresLeadMailbox,
-  postgresLeadSystemPrompt,
-} from "../../src/adapters/postgres/leadMailbox.ts";
-import {
   postgresLeadReads,
   type PostgresLeadReads,
 } from "../../src/adapters/postgres/leadReads.ts";
@@ -38,62 +34,31 @@ import {
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
-import {
-  sessionRigAttempt,
-  sessionRigRouted,
-  type SessionRigAttempt,
-} from "./sessionHarness.ts";
+import { sessionRigRouted } from "./sessionHarness.ts";
 import type {
   AgenticRefusalBindingRead,
   AgenticRefusalRead,
   AgenticRefusalSelectorRead,
   AgenticRefusalWrite,
 } from "../../src/interpreter/agenticRefusal.ts";
-import type {
-  LeadSystemPromptPort,
-  SessionId,
-  SessionTurnId,
-  SessionTurnMeasured,
-} from "../../src/interpreter/agentSession.ts";
-import type { LeadMailbox } from "../../src/interpreter/leadMailbox.ts";
+import type { SessionTurnId } from "../../src/interpreter/agentSession.ts";
 import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import {
-  memberAuthority,
-  type ProjectAccess,
-} from "../../src/interpreter/projectAccess.ts";
-import type {
-  JsonValue,
-  SelectorObservation,
-} from "../../src/interpreter/selector.ts";
-import type { LeadPolicyClock } from "../../src/interpreter/leadPolicyHost.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
+import type { JsonValue } from "../../src/interpreter/selector.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { DispatchCandidate } from "../../src/interpreter/dispatchView.ts";
 import { postgresHarnessProject, postgresHarnessRolePool } from "./harness.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import { sessionRigOpen, type SessionRig } from "./sessionHarness.ts";
-import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
-
-/**
- * An authority granting every question. The runtime asks the hosted grant
- * before it offers a turn, and these cases start at the turn.
- */
-export const leadRigHostedAccess: ProjectAccess = {
-  authorize: (principal) => Promise.resolve(memberAuthority(principal)),
-  authorizeTenant: (principal) => Promise.resolve(memberAuthority(principal)),
-  authorizeSite: projectAccessSiteRefused,
-};
 
 /** One opened subject: the session rig, the two role pools and every door over them. */
 export interface LeadRig {
   readonly sessions: SessionRig;
   readonly selectorPool: pg.Pool;
   readonly apiPool: pg.Pool;
-  readonly mailbox: LeadMailbox;
-  readonly prompts: LeadSystemPromptPort;
   readonly writes: AgenticRefusalWrite;
   readonly selectorStanding: AgenticRefusalSelectorRead;
   readonly apiRefusals: AgenticRefusalRead;
@@ -110,8 +75,6 @@ export async function leadRigOpen(): Promise<LeadRig> {
     sessions,
     selectorPool,
     apiPool,
-    mailbox: postgresLeadMailbox(selectorPool),
-    prompts: postgresLeadSystemPrompt(selectorPool),
     writes: postgresAgenticRefusalLedger(selectorPool),
     selectorStanding: postgresAgenticRefusalStanding(selectorPool),
     apiRefusals: postgresAgenticRefusalReads(apiPool),
@@ -195,193 +158,19 @@ export async function leadRigDecision(
   return decision;
 }
 
-/** How long one wait in this harness may poll, and how often. */
-const leadRigPollMs = 5;
-const leadRigPollsMax = 2_000;
-
-/**
- * Waits for something the runtime does from another connection, and gives up
- * rather than hanging: an unbounded wait in a suite is a gate that stalls
- * instead of failing, which is a red nobody can read.
- */
-async function leadRigWaited<T>(
-  attempt: () => Promise<T>,
-  gaveUp: string,
-): Promise<T> {
-  for (let poll = 0; poll < leadRigPollsMax; poll += 1) {
-    try {
-      return await attempt();
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, leadRigPollMs));
-    }
-  }
-  throw new Error(gaveUp);
-}
-
-/**
- * The lead a project holds once the runtime has opened one, waited for because
- * the successor's identity is minted in the pass rather than by the case.
- */
-export function leadRigSuccessor(
+/** Offers the project's lead one turn through the selector's door, answering what the door answered. */
+export async function leadRigTurnOffered(
   rig: LeadRig,
   partition: Partition,
-  replacing: SessionId,
-): Promise<SessionId> {
-  return leadRigWaited(async () => {
-    const standing = await rig.mailbox.lead(partition);
-    if (standing === undefined || standing.session === replacing)
-      throw new Error("no successor yet");
-    return standing.session;
-  }, `${replacing}: no successor was ever opened`);
-}
-
-/** One live pod attempt, waited for because the runtime enqueues from elsewhere. */
-export function leadRigPodAttempt(
-  rig: LeadRig,
-  partition: Partition,
-  session: SessionId,
-  label: string,
-): Promise<SessionRigAttempt> {
-  return leadRigWaited(
-    () => sessionRigAttempt(rig.sessions, partition, session, label),
-    `${label}: no turn ever became launchable`,
+  turn: SessionTurnId,
+  input: string,
+  route: PlacementRoute,
+): Promise<string | undefined> {
+  const offered = await rig.selectorPool.query<{ enqueued: string }>(
+    "SELECT enqueued FROM enqueue_lead_turn($1,$2,$3,$4,$5)",
+    [partition.tenant, partition.project, turn, input, route],
   );
-}
-
-/** What a pod reports of a turn where the case does not say, which no lead is replaced for. */
-export const leadRigMeasured: SessionTurnMeasured = {
-  model: "claude-model",
-  tokens: 4_096,
-  costMicros: 12_345,
-  durationMs: 61_000,
-  tools: ["Read"],
-};
-
-/**
- * One turn taken by a pod that already holds an attempt: it claims, binds the
- * runtime session the way a real pod does — which is what makes the next turn a
- * resumed one rather than a seeded one — and answers what the case decides,
- * measured as the case says, `null` being a turn the pod measured nothing of.
- * A session holds one live attempt, so a case wanting two turns takes them both
- * on one of these.
- */
-export async function leadRigPodTurn(
-  rig: LeadRig,
-  attempt: SessionRigAttempt,
-  label: string,
-  decide: (input: string) => unknown,
-  measured: SessionTurnMeasured | null = leadRigMeasured,
-): Promise<SessionTurnId> {
-  for (let poll = 0; poll < leadRigPollsMax; poll += 1) {
-    const claimed = await rig.sessions.plane.claim({
-      secret: attempt.secret,
-      generation: attempt.attempt.generation,
-    });
-    if (claimed === undefined) {
-      await new Promise((resolve) => setTimeout(resolve, leadRigPollMs));
-      continue;
-    }
-    const bound = await rig.sessions.plane.bind({
-      secret: attempt.secret,
-      generation: attempt.attempt.generation,
-      reference: `agent-session-${label}`,
-    });
-    if (bound !== "Bound" && bound !== "AlreadyBound")
-      throw new Error(
-        `${label}: the pod's own runtime session was ${bound}; a row already holding another's is what answers Conflict`,
-      );
-    await rig.sessions.plane.answer({
-      secret: attempt.secret,
-      generation: attempt.attempt.generation,
-      turn: claimed.turn,
-      result: JSON.stringify(decide(claimed.input)),
-      ...(measured === null ? {} : { measured }),
-    });
-    return claimed.turn;
-  }
-  throw new Error(`${label}: no turn ever became claimable`);
-}
-
-/** A pod that takes exactly one turn, which is what most cases here need. */
-export async function leadRigPod(
-  rig: LeadRig,
-  partition: Partition,
-  session: SessionId,
-  label: string,
-  decide: (input: string) => unknown,
-): Promise<SessionTurnId> {
-  return leadRigPodTurn(
-    rig,
-    await leadRigPodAttempt(rig, partition, session, label),
-    label,
-    decide,
-  );
-}
-
-/** A lead host's clock on the wall, whose wait ends early where the run is abandoned. */
-export const leadRigClock: LeadPolicyClock = {
-  now: () => {
-    const epochMs = Date.now();
-    return Promise.resolve({
-      instant: new Date(epochMs).toISOString(),
-      epochMs,
-    });
-  },
-  wait: (milliseconds, signal) =>
-    new Promise((resolve, reject) => {
-      const timer = setTimeout(resolve, milliseconds);
-      signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        reject(signal.reason as Error);
-      });
-    }),
-};
-
-/** A fresh observation of two candidates, moved to `cursor`, which a decision case offers its lead. */
-export function leadRigObservation(
-  partition: Partition,
-  cursor: number,
-): SelectorObservation {
-  const token = {
-    ...partition,
-    recoveryEpoch: "epoch",
-    schemaVersion: 1,
-    watermark: 1,
-    digest: "a".repeat(64),
-  };
-  return {
-    token,
-    candidates: [
-      {
-        ticket: asTicketId(41),
-        ticketVersion: 3,
-        dependencies: [],
-        program: [{ key: 1, evaluators: [{ key: 1 }] }],
-        configurationRevision: "revision",
-        configurationDigest: "d".repeat(64),
-        configurationCanonical: "{}",
-      },
-      {
-        ticket: asTicketId(43),
-        ticketVersion: 1,
-        dependencies: [],
-        program: [{ key: 1, evaluators: [{ key: 1 }] }],
-        configurationRevision: "revision",
-        configurationDigest: "d".repeat(64),
-        configurationCanonical: "{}",
-      },
-    ],
-    refusals: [],
-    notificationCursor: cursor,
-    changes: [{ ordinal: cursor, kind: "Ticket", resource: "41" }],
-    operationalContext: {
-      ...postgresHarnessSelectorContext,
-      observedAtEpochMs: Date.now(),
-      observedAt: new Date().toISOString(),
-    },
-    handoffNote: { watching: "41" },
-    nextCandidateScan: { state: "Exhausted", token },
-  };
+  return offered.rows[0]?.enqueued;
 }
 
 /**
