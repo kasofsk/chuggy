@@ -31,7 +31,7 @@ function repositoryConfigurationCells(
   text: CopyText,
 ): TableRow<RepositoryConfigurationColumn>["cells"] {
   const name = (
-    <Tooltip text={row.configuration.title}>
+    <Tooltip trigger="abbreviation" text={row.configuration.title}>
       <span>{row.configuration.text}</span>
     </Tooltip>
   );
@@ -47,7 +47,7 @@ function repositoryConfigurationCells(
   return {
     configuration: name,
     worker: (
-      <Tooltip text={facts.worker.title}>
+      <Tooltip trigger="abbreviation" text={facts.worker.title}>
         <span>{copyOrDataText(text, facts.worker.text)}</span>
       </Tooltip>
     ),

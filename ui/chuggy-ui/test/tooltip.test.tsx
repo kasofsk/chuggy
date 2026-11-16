@@ -1,7 +1,8 @@
 /**
- * The tooltip: a focusable trigger, hover text a screen reader can also find,
- * and no runtime `<style>` element while it is open — the served policy
- * refuses one.
+ * The tooltip: no tab stop of its own around a control, a focusable trigger
+ * only where the caller says the child abbreviates the text, the text bound as
+ * the trigger's description, Escape closing it where focus is, and no runtime
+ * `<style>` element while it is open — the served policy refuses one.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -19,25 +20,73 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("the child is the trigger, focusable, and the text appears on focus", async () => {
+test("around a control the tooltip adds no tab stop, and the control's focus opens it as the control's description", async () => {
   const { container } = render(
-    <Tooltip text="the full reason">
+    <Tooltip trigger="control" text="what pressing does">
+      <button type="button">Press</button>
+    </Tooltip>,
+  );
+  const button = screen.getByRole("button", { name: "Press" });
+  expect(button.hasAttribute("tabindex")).toBe(false);
+  expect(container.querySelector("[tabindex]")).toBeNull();
+  button.focus();
+  const content = await screen.findByRole("tooltip");
+  expect(content.textContent).toBe("what pressing does");
+  expect(button.getAttribute("aria-describedby")).toBe(content.id);
+  expect(
+    screen.getByRole("button", { description: "what pressing does" }),
+  ).toBe(button);
+});
+
+test("an abbreviation is focusable, and the text appears on focus as its description", async () => {
+  const { container } = render(
+    <Tooltip trigger="abbreviation" text="the full reason">
       <span>short</span>
     </Tooltip>,
   );
   const trigger = screen.getByText("short");
   expect(trigger.getAttribute("tabindex")).toBe("0");
   styleless();
-  fireEvent.focus(trigger);
+  trigger.focus();
   const content = await screen.findByRole("tooltip");
   expect(content.textContent).toBe("the full reason");
+  expect(trigger.getAttribute("aria-describedby")).toBe(content.id);
   styleless();
   expect(container.querySelector("[style]")).toBeNull();
 });
 
+test("a decoration makes nothing focusable, and gives its text to assistive technology beside the child", () => {
+  const { container } = render(
+    <Tooltip trigger="decoration" text="the whole of it">
+      <span>part</span>
+    </Tooltip>,
+  );
+  expect(container.querySelector("[tabindex]")).toBeNull();
+  const spoken = screen.getByText("the whole of it");
+  expect(spoken.className).toBe("visually-hidden");
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("Escape closes the open tooltip and leaves focus where it was", async () => {
+  render(
+    <Tooltip trigger="control" text="what pressing does">
+      <button type="button">Press</button>
+    </Tooltip>,
+  );
+  const button = screen.getByRole("button", { name: "Press" });
+  button.focus();
+  await screen.findByRole("tooltip");
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+  });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(document.activeElement).toBe(button);
+  expect(button.hasAttribute("aria-describedby")).toBe(false);
+});
+
 test("absent text draws the child alone", () => {
   render(
-    <Tooltip text={undefined}>
+    <Tooltip trigger="abbreviation" text={undefined}>
       <span>plain</span>
     </Tooltip>,
   );
@@ -49,7 +98,7 @@ test("absent text draws the child alone", () => {
 
 test("a descriptor is drawn in the catalog's words", async () => {
   renderCopied(
-    <Tooltip text={{ id: "api-reason-deadline" }}>
+    <Tooltip trigger="abbreviation" text={{ id: "api-reason-deadline" }}>
       <span>short</span>
     </Tooltip>,
   );

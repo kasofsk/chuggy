@@ -57,7 +57,7 @@ export function ReadFailed(props: {
         inline
       >
         {lead.map((part) => `${copyOrDataText(text, part)} · `).join("")}
-        <Tooltip text={words.detail}>
+        <Tooltip trigger="abbreviation" text={words.detail}>
           <span>{text(words.word)}</span>
         </Tooltip>
       </Notice>

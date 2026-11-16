@@ -301,9 +301,8 @@ test("the History trigger names itself again as a tooltip on focus", async () =>
     />,
   );
   const button = screen.getByRole("button", { name: "History" });
-  const trigger = button.closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around History");
-  fireEvent.focus(trigger);
+  expect(button.parentElement?.closest("[tabindex]")).toBeNull();
+  fireEvent.focus(button);
   expect((await screen.findByRole("tooltip")).textContent).toBe("History");
 });
 
@@ -362,8 +361,8 @@ test("what is done to the thread is one control beside its title, named again on
   await renderedActions({ session: threadMineSession, mine: true });
   expect(screen.getAllByRole("button")).toHaveLength(1);
   const button = screen.getByRole("button", { name: "Chat actions" });
-  const trigger = button.closest('[tabindex="0"]') ?? button;
-  fireEvent.focus(trigger);
+  expect(button.parentElement?.closest("[tabindex]")).toBeNull();
+  fireEvent.focus(button);
   expect((await screen.findByRole("tooltip")).textContent).toBe("Chat actions");
 });
 

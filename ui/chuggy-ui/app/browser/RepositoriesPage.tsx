@@ -144,7 +144,7 @@ function BindingRow(props: {
       level={2}
       meta={
         <>
-          <Tooltip text={binding.repository}>
+          <Tooltip trigger="abbreviation" text={binding.repository}>
             <span>
               {repositoryHost(binding.repository) ?? binding.repository}
             </span>

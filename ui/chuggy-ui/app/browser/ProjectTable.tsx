@@ -234,7 +234,7 @@ function TicketListRepository(props: {
   const repository = props.row.repository;
   if (repository === undefined) return null;
   return (
-    <Tooltip text={repository}>
+    <Tooltip trigger="abbreviation" text={repository}>
       <span className="ticket-list-repository">
         {repositoryLabel(repository)}
       </span>
@@ -259,7 +259,7 @@ export function TicketListDependencies(props: {
   const waitsOn = text({ id: "project-table-waits-on" });
   return (
     <span className="ticket-list-dependencies" aria-label={waitsOn}>
-      <Tooltip text={waitsOn}>
+      <Tooltip trigger="abbreviation" text={waitsOn}>
         <span className="ticket-list-waits">{ticketListDependencyGlyph}</span>
       </Tooltip>
       {waits.map(([ticket, phase]) => (

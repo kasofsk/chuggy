@@ -210,9 +210,8 @@ test.each(["Collapse", "Chat menu"])(
   async (name) => {
     const header = await headerDrawn({ thread: own });
     const button = within(header).getByRole("button", { name });
-    const trigger = button.closest('[tabindex="0"]');
-    if (trigger === null) throw new Error(`no tooltip trigger around ${name}`);
-    fireEvent.focus(trigger);
+    expect(button.parentElement?.closest("[tabindex]")).toBeNull();
+    fireEvent.focus(button);
     expect((await screen.findByRole("tooltip")).textContent).toBe(name);
   },
 );

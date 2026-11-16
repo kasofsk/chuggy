@@ -185,6 +185,7 @@ export function ApprovalAnswers(props: {
       <div className="flex gap-2 items-baseline">
         {props.answers.map((offer) => (
           <Tooltip
+            trigger="control"
             key={nativeActionAnswerKey(offer)}
             text={ticketActionSentence(offer.action)}
           >

@@ -152,7 +152,7 @@ export function ChatPaneIconButton(props: {
   readonly disabled?: boolean;
 }): ReactNode {
   return (
-    <Tooltip text={props.label}>
+    <Tooltip trigger="control" text={props.label}>
       <span className="flex">
         <Button
           variant="quiet"
