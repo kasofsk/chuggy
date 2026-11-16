@@ -107,6 +107,34 @@ test("the tabs are links to each tab's own address, the same whatever the ticket
   ]);
 });
 
+/** The levels of the headings the page's main region draws, in order, each
+ * with its words. */
+function headingsOfMain(): readonly (readonly [number, string])[] {
+  const main = screen.getByRole("main");
+  return [...main.querySelectorAll("h1, h2, h3, h4, h5, h6")].map((heading) => [
+    Number(heading.tagName.slice(1)),
+    heading.textContent ?? "",
+  ]);
+}
+
+for (const [suffix, tab] of [
+  ["", "Overview"],
+  ["/runs", "Runs"],
+  ["/configuration", "Configuration"],
+  ["/usage", "Usage"],
+] as const)
+  test(`the ${tab} tab is current at its address, and its body opens on its name under the title with no level skipped`, async () => {
+    runServed();
+    await mountedAt(`${ticketPath}${suffix}`);
+    expect(tabCurrent()).toMatch(new RegExp(`^${tab}`, "u"));
+    const headings = headingsOfMain();
+    expect(headings.slice(0, 2).map(([level]) => level)).toStrictEqual([1, 2]);
+    expect(headings[1]?.[1]).toBe(tab);
+    headings.slice(1).forEach(([level], at) => {
+      expect(level).toBeLessThanOrEqual((headings[at]?.[0] ?? 0) + 1);
+    });
+  });
+
 test("switching tabs reads nothing the page has already read", async () => {
   await mountedAt(ticketPath);
   site.reads.length = 0;

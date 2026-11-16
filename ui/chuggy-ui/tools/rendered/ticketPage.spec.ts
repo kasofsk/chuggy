@@ -5,10 +5,13 @@
  * Duplicate. Neither scrolls the page sideways, the title is the page's one
  * heading and wraps rather than pushing the actions off the screen, on the
  * phone every control in the header is at least the touch height, and every
- * read is one the stub answers.
+ * read is one the stub answers. A ticket that has run draws its tabs past a
+ * phone's width with the Runs count, and the row scrolls inside itself and
+ * cues its more while the page does not scroll.
  */
 
 import {
+  executionsResponseSchema,
   projectResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -48,6 +51,24 @@ function ticketPageTicket(phase: "Pending" | "Done") {
     changedAt: "2026-11-02T00:00:00Z",
     revokedDependencies: [],
     openDependencies: [],
+  };
+}
+
+/** What a ticket's runs stand in for: one passed work run of `cycle`. */
+function ticketPageRun(cycle: number) {
+  return {
+    execution: `execution-${String(cycle)}`,
+    ticket: 1,
+    task: cycle,
+    taskKind: "Work",
+    identity: { type: "WorkTask", value: { ticket: 1, cycle } },
+    cluster: "cluster-rendered",
+    configurationRevision: "revision-rendered",
+    requirementIdentity: "requirement-rendered",
+    status: "Terminal",
+    outcome: "Passed",
+    retriesSpent: 0,
+    registeredAt: "2026-11-01T00:00:00Z",
   };
 }
 
@@ -120,3 +141,58 @@ for (const viewport of ticketPageViewports)
         await served.close();
       }
     });
+
+test("a ticket that has run draws its tab row past a phone, and the row scrolls inside itself while the page does not", async ({
+  browser,
+}) => {
+  const ticket = ticketPageTicket("Pending");
+  const served = await servedOpen({
+    root: renderedDist,
+    reads: [
+      stubApiRead(
+        `${ticketPageProjectPath}/tickets/1`,
+        ticketResponseSchema,
+        ticket,
+      ),
+      stubApiRead(ticketPageProjectPath, projectResponseSchema, {
+        partition: { tenant: stubApiTenant, project: stubApiProject },
+        sequence: 1,
+        tickets: [ticket],
+      }),
+      stubApiRead(
+        `${ticketPageProjectPath}/executions`,
+        executionsResponseSchema,
+        { executions: [ticketPageRun(1), ticketPageRun(2)] },
+      ),
+    ],
+  });
+  try {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: `/${stubApiTenant}/${stubApiProject}/tickets/1`,
+      viewport: "phone",
+      touch: true,
+      signedIn: true,
+      ready: (page) => page.getByRole("link", { name: "Runs 2", exact: true }),
+    });
+    const page = rendered.page;
+    const tabs = page.getByRole("navigation", { name: "Ticket" });
+    const usage = tabs.getByRole("link", { name: "Usage" });
+    expect(
+      await tabs.evaluate((row) => row.scrollWidth - row.clientWidth),
+      "the tabs are wider than their row",
+    ).toBeGreaterThan(0);
+    await expect(tabs).toHaveAttribute("data-more-end", "");
+    await expect(usage).not.toBeInViewport({ ratio: 1 });
+    await renderedNoOverflow(page, page.locator("header.page-header"));
+    await tabs.evaluate((row) => {
+      row.scrollLeft = row.scrollWidth;
+    });
+    await expect(usage).toBeInViewport({ ratio: 1 });
+    await expect(tabs).toHaveAttribute("data-more-start", "");
+    await renderedNoOverflow(page, page.locator("header.page-header"));
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  } finally {
+    await served.close();
+  }
+});

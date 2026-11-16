@@ -1,6 +1,6 @@
-/* The epic page's header, and the bar of where an epic's tickets stand, which
-   the epics list draws too: one segment a group, in the group's tone, Pending
-   in the track's, each named in a key or in words beside it. */
+/* The epic page's header and its tabs, and the bar of where an epic's tickets
+   stand, which the epics list draws too: one segment a group, in the group's
+   tone, Pending in the track's, each named in a key or in words beside it. */
 
 @layer page {
   .epic-header-note {
@@ -106,5 +106,63 @@
     color: var(--ink-2);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* The tabs: a row over a hairline, the current one in full ink on a rail,
+     a count on a tinted ground. */
+  .epic-tabs {
+    min-width: 0;
+    overflow-x: auto;
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .epic-tabs ul {
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .epic-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink-3);
+    font-size: var(--text-md);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .epic-tab:hover {
+    color: var(--ink-1);
+  }
+
+  .epic-tab[aria-current="page"] {
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  .epic-tab[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: var(--rail);
+    background: var(--ink-1);
+  }
+
+  @media (max-width: 40em) {
+    .epic-tab {
+      padding-inline: var(--space-2);
+    }
+  }
+
+  .epic-tab-count {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-3);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: var(--text-xs);
+    line-height: var(--leading-dense);
   }
 }

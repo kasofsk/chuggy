@@ -3,7 +3,7 @@
    ScrollSides.css cues. */
 
 @layer ui {
-  /* jscpd:ignore-start — the ticket page's tabs, lifted rule for rule so adopting this draws them unchanged */
+  /* jscpd:ignore-start — the epic page's tabs draw these rules under their own names until they adopt this */
   .tab-nav {
     min-width: 0;
     overflow-x: auto;

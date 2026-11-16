@@ -1,7 +1,6 @@
 /**
- * The epic page's tabs, drawn as the ticket page's are: each a link to its
- * own address, which the router marks current, and the same whatever the
- * epic's state. Tickets carries how many members the epic holds and History
+ * The epic page's tabs: each a link to its own address, which the router
+ * marks current, and the same whatever the epic's state. Tickets carries how many members the epic holds and History
  * how many revisions it has had. The edit page is none of them, so none is
  * current there.
  */
@@ -12,7 +11,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 
-import "../ticket/ticket.css";
+import "./epic.css";
 
 function EpicTab(props: {
   readonly to:
@@ -30,11 +29,11 @@ function EpicTab(props: {
         to={props.to}
         params={props.params}
         activeOptions={{ exact: true, includeSearch: false }}
-        className="ticket-tab"
+        className="epic-tab"
       >
         {props.children}
         {props.count === undefined ? null : (
-          <span className="ticket-tab-count">{props.count}</span>
+          <span className="epic-tab-count">{props.count}</span>
         )}
       </Link>
     </li>
@@ -53,7 +52,7 @@ export function EpicTabs(props: {
   const text = useCopyText();
   const params = { ...props.partition, epic: String(props.epic) };
   return (
-    <nav aria-label={text({ id: "epics-tabs-label" })} className="ticket-tabs">
+    <nav aria-label={text({ id: "epics-tabs-label" })} className="epic-tabs">
       <ul>
         <EpicTab to="/$tenant/$project/epics/$epic" params={params}>
           {text({ id: "epics-tab-overview" })}

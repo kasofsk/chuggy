@@ -56,6 +56,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { TabNav, TabNavLink } from "../ui/TabNav.tsx";
 import {
   readValue,
   useTicketPageHeld,
@@ -269,28 +270,21 @@ function TicketRunViewTabs(props: {
   };
   const text = useCopyText();
   return (
-    <nav
-      aria-label={text({ id: "ticket-run-nav-label" })}
-      className="ticket-tabs ticket-run-views"
-    >
-      <ul>
-        {props.offered.map((view) => (
-          <li key={view}>
-            <Link
-              to="/$tenant/$project/tickets/$ticket/runs/$task"
-              params={params}
-              search={{ view }}
-              activeOptions={{ exact: true, includeSearch: true }}
-              aria-current={view === props.shown ? "page" : undefined}
-              className="ticket-tab"
-              replace
-            >
-              {text(ticketRunViewLabel(view))}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    <TabNav label={text({ id: "ticket-run-nav-label" })}>
+      {props.offered.map((view) => (
+        <TabNavLink
+          key={view}
+          to="/$tenant/$project/tickets/$ticket/runs/$task"
+          params={params}
+          search={{ view }}
+          activeOptions={{ exact: true, includeSearch: true }}
+          aria-current={view === props.shown ? "page" : undefined}
+          replace
+        >
+          {text(ticketRunViewLabel(view))}
+        </TabNavLink>
+      ))}
+    </TabNav>
   );
 }
 
