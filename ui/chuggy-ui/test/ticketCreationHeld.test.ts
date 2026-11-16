@@ -18,8 +18,8 @@ import {
   creationDraftDeletedSentence,
   creationDraftHeldSentence,
   creationTicketExistsSentence,
-  TicketCreationRefused,
 } from "../app/core/ticketCreationRun.ts";
+import { TicketCreationRefused } from "../app/core/ticketCreationRefused.ts";
 import type {
   CreationDraftHeld,
   TicketCreationEnded,

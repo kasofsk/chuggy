@@ -22,6 +22,11 @@
  * import the repository the checklist means, and reads the checklist again.
  * `bind` asks the site to add the folder's repository to the project, where
  * that is the checklist's next thing, and reads the checklist again.
+ * `ticket` files the project's first ticket, titled what `--title` says and
+ * asking what `--intent` says, under the configuration `--configuration`
+ * names where the project offers more than one, where that is the
+ * checklist's next thing, and reads the checklist again. Neither is ever
+ * printed back.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
@@ -35,6 +40,11 @@ export const setupNameFlag = "--name";
 
 /** The flag `configuration` is told the repository's test command in. */
 export const setupTestFlag = "--test";
+
+/** The flags `ticket` is told the ticket's title, what is wanted done, and the configuration chosen in. */
+export const setupTitleFlag = "--title";
+export const setupIntentFlag = "--intent";
+export const setupConfigurationFlag = "--configuration";
 
 /** How long a sign-in page stays answerable where the command starting it names no other life. */
 export const setupListenSecsDefault = 600;
@@ -50,7 +60,8 @@ export type SetupAskFault =
   | "Workspace"
   | "Replace"
   | "ProjectName"
-  | "Test";
+  | "Test"
+  | "Brief";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
@@ -63,7 +74,8 @@ export type SetupCommand =
   | "Configuration"
   | "Check"
   | "Import"
-  | "Bind";
+  | "Bind"
+  | "Ticket";
 
 /** Which workspace and project a run is about, as far as its arguments named them, and what `project` was asked to call the one it makes. */
 export interface SetupAnswers {
@@ -148,6 +160,16 @@ export type SetupAsked =
       readonly answers: SetupAnswers;
     }
   | {
+      readonly asked: "Ticket";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+      /** What the ticket is called and what the person wants done, which the command is not run without. */
+      readonly title: string;
+      readonly intent: string;
+      /** The configuration the person chose, where they named one. */
+      readonly configuration: string | undefined;
+    }
+  | {
       readonly asked: "Listen";
       readonly site: string;
       readonly lifeSecs: number;
@@ -166,6 +188,7 @@ const setupCommandWords = {
   check: "Check",
   import: "Import",
   bind: "Bind",
+  ticket: "Ticket",
   listen: "Listen",
 } as const;
 
@@ -180,6 +203,9 @@ const setupFlags = [
   "name",
   "replace",
   "test",
+  "title",
+  "intent",
+  "configuration",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
@@ -196,6 +222,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Check: ["workspace", "project"],
   Import: ["site", "workspace", "project"],
   Bind: ["site", "workspace", "project"],
+  Ticket: ["site", "workspace", "project", "title", "intent", "configuration"],
   Listen: ["site", "life-secs"],
 };
 
@@ -321,6 +348,20 @@ function setupConfigurationAsked(
   return { asked: "Configuration", site: undefined, answers, test };
 }
 
+/** A ticket is not filed without both a title and what is wanted done; neither is printed back, so neither is held to a line. */
+function setupTicketAsked(
+  site: string | undefined,
+  answers: SetupAnswers,
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupAsked {
+  const title = flags.get("title");
+  const intent = flags.get("intent");
+  if (title === undefined || intent === undefined)
+    return { asked: "Wrongly", fault: "Brief" };
+  const configuration = flags.get("configuration");
+  return { asked: "Ticket", site, answers, title, intent, configuration };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -366,6 +407,8 @@ function setupAskedOf(
     case "Import":
     case "Bind":
       return { asked, site, answers };
+    case "Ticket":
+      return setupTicketAsked(site, answers, flags);
     case "Listen":
       return site === undefined
         ? { asked: "Wrongly", fault: "Site" }
@@ -409,6 +452,8 @@ export function setupCommandArguments(
       return ["import"];
     case "Bind":
       return ["bind"];
+    case "Ticket":
+      return ["ticket"];
   }
 }
 

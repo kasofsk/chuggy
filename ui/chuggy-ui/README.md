@@ -305,6 +305,17 @@ it, since only the console's install is claimed for the workspace. Where what
 an app is granted was not read, or the site offers no install it can claim,
 the `tell:` names the console's Add instead.
 
+Where the project has no ticket yet, the ticket step asks what she wants done
+first, and the configurations a ticket may use are read as the console's New
+ticket page reads them. The `rule:` names `ticket` with `--title` and
+`--intent`, and with `--configuration` where she has to choose among several.
+`ticket` files the ticket through the core the console's Create ticket calls:
+the form that page starts on, filled with her words and the branch it proposes,
+then created, released and dispatched. Its writes are the draft and the two
+submissions. It says what the site answered and reads the checklist again.
+Where the configurations were not read, the `tell:` names the New ticket page
+instead.
+
 ## The session
 
 OIDC authorization code with PKCE against the issuer `/config.json` names, with

@@ -2192,7 +2192,7 @@ test("from the offer to live: the command the rule names sets the runner up, and
     after.lines.filter((line) => /^step: (?:runner|ticket) /u.test(line)),
   ).toEqual(["step: runner      done     live", "step: ticket      todo"]);
   expect(after.lines.at(-2)).toBe(
-    `rule: Run node ${machineScript} ${flags} only once the person says the ticket is created.`,
+    `rule: Run node ${machineScript} ticket ${flags} with --title and a short title for what the person wants done, then --intent and what they want done in their own words, each quoted as one word, only once the person has said what they want done.`,
   );
 });
 
@@ -2607,7 +2607,7 @@ test("runner keeps its rule of never replacing a chat host of the person's on an
   expect(
     (await ran(machine, [...runner, "--replace", "chuggy-chat-1"])).lines,
   ).toEqual([
-    "found: chuggy setup takes --site, --workspace, --project and --wait-secs, --name with project, --replace with chat-host, and --test with configuration, each once with a value, and no other flag",
+    "found: chuggy setup takes --site, --workspace, --project and --wait-secs, --name with project, --replace with chat-host, --test with configuration, and --title, --intent and --configuration with ticket, each once with a value, and no other flag",
     `next: node ${machineScript}`,
   ]);
   expect(machine.box.ran).toEqual([]);
@@ -2675,7 +2675,7 @@ test("chat-host is not read without a workspace, with a project, or with --repla
     ],
     [
       [...chatHost, "--project", "widgets"],
-      "found: chuggy setup takes --site, --workspace, --project and --wait-secs, --name with project, --replace with chat-host, and --test with configuration, each once with a value, and no other flag",
+      "found: chuggy setup takes --site, --workspace, --project and --wait-secs, --name with project, --replace with chat-host, --test with configuration, and --title, --intent and --configuration with ticket, each once with a value, and no other flag",
     ],
     [
       [...chatHost, "--replace", ".."],

@@ -21,7 +21,7 @@ import {
   consoleQueryClient,
   consoleWriteWatchOf,
 } from "../app/core/consoleWrite.ts";
-import { TicketCreationRefused } from "../app/core/ticketCreationRun.ts";
+import { TicketCreationRefused } from "../app/core/ticketCreationRefused.ts";
 import {
   answer,
   heldAnswer,

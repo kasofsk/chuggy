@@ -34,6 +34,12 @@
  * install page, and the client a person authorizes unless a case takes it
  * away; and each installation's settings page.
  *
+ * It files a ticket as the server does: a draft created under a revision the
+ * project offers, at its fence, released into a ticket that waits to start,
+ * and dispatched where the dispatch view lists it; every brief it was sent is
+ * kept, so a suite can say what was filed. Each operation is decided as it is
+ * submitted.
+ *
  * It imports a repository's configuration as the server does: from what was
  * pushed to the repository's default branch, judged by the contract's own
  * judgment of a configuration directory, kept as the binding's last import,
@@ -77,6 +83,18 @@ export interface SetupSiteRepository {
   readonly bootstrapped?: boolean;
   /** The import of it that finished last, where one did. */
   readonly lastImport?: RepositoryConfigurationImportAttemptResponse;
+  /** How its work is finalized, pushed unless a case has it merged through a pull request. */
+  readonly mode?: "Push" | "PullRequestMerge";
+}
+
+/** A draft as it was created: the revision it is drawn under, and its brief. */
+export interface SetupSiteFiled {
+  readonly configurationRevision: string;
+  readonly brief: {
+    readonly title?: string;
+    readonly intent: string;
+    readonly branch?: string;
+  };
 }
 
 export interface SetupSiteTicket {
@@ -110,6 +128,12 @@ export interface SetupSiteProject {
   /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
   pools: string[];
   tokens: string[];
+  /** The names a repository holding its own configuration declares, each ready at the one commit imported. */
+  declared: string[];
+  /** Every draft created, by its ticket, with the body it was created from. */
+  readonly filed: Map<number, SetupSiteFiled>;
+  /** Every operation submitted, by its identity, with what it was submitted to do. */
+  readonly operations: Map<string, unknown>;
   /** What the project is called, where it is other than its address, and whether the caller made it. */
   name?: string;
   made?: true;
@@ -137,9 +161,17 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner` or `bind` asks, which a case moves likewise; `mint`, `chatMint` and `bind` are writes. */
+/** What only `runner`, `bind` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind` and `file` are writes, `file` the draft's creation. */
 export type SetupSiteRunnerAsk =
-  "abilities" | "pools" | "mint" | "permit" | "chat" | "chatMint" | "bind";
+  | "abilities"
+  | "pools"
+  | "mint"
+  | "permit"
+  | "chat"
+  | "chatMint"
+  | "bind"
+  | "configurations"
+  | "file";
 
 /** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
 export interface SetupSiteChatHost {
@@ -226,6 +258,9 @@ export function setupSiteProject(
     administer: true,
     pools: [],
     tokens: [],
+    declared: ["development"],
+    filed: new Map(),
+    operations: new Map(),
   };
 }
 
@@ -486,8 +521,12 @@ function binding(
   return {
     repository: repository.repository,
     boundAt: "2026-08-26T00:00:00Z",
-    landing: { mode: "Push" },
-    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    landing: { mode: repository.mode ?? "Push" },
+    finalization: {
+      kind: "GitMerge",
+      mode: repository.mode ?? "Push",
+      policy: "Direct",
+    },
     pipelinesWritable: false,
     pipelinesRunnable: false,
     ...(repository.retired === true
@@ -783,6 +822,188 @@ function abilities(
   );
 }
 
+const filedAt = "2026-08-28T00:00:00Z";
+const filedDigest = "c".repeat(64);
+const filedCommit = "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23";
+
+/** The revision a declared name is imported at. */
+export function setupSiteDeclaredRevision(name: string): string {
+  return `declared-${name}`;
+}
+
+/** The project's revisions, newest first: each name each binding holding its own configuration declares, ready at the one commit imported. */
+function configurationsListed(
+  site: SetupSite,
+  project: SetupSiteProject,
+): SetupSiteAnswer {
+  const declaring = project.repositories.filter(
+    (held) =>
+      held.configured && held.bootstrapped !== true && held.retired !== true,
+  );
+  return (
+    fated(site, "configurations") ??
+    answered({
+      configurations: declaring.flatMap((held) =>
+        project.declared.map((name) => ({
+          revision: setupSiteDeclaredRevision(name),
+          digest: filedDigest,
+          createdAt: filedAt,
+          provenance: {
+            source: "Repository",
+            repository: held.repository,
+            commit: filedCommit,
+            path: `configurations/${name}.json`,
+            name,
+          },
+          readiness: "Ready",
+          image: "an-image",
+          practices: [],
+          workInstructionsCount: 1,
+          reviewInstructionsCount: 1,
+          evaluationStagesCount: 1,
+        })),
+      ),
+    })
+  );
+}
+
+/** The project's head, which every ticket's sequence is at or below. */
+function headOf(project: SetupSiteProject): number {
+  return Math.max(1, ...project.tickets.map((held) => held.ticket));
+}
+
+/** What a draft drawn under `revision` starts on, fenced at the project's head. */
+function initialization(
+  project: SetupSiteProject,
+  revision: string,
+): SetupSiteAnswer {
+  return answered({
+    configuration: {
+      partition: { tenant: project.tenant, project: project.project },
+      revision,
+      canonical: "{}",
+      digest: filedDigest,
+    },
+    fence: {
+      projectSequence: headOf(project),
+      configurationDigest: filedDigest,
+    },
+    defaults: {
+      dependencies: [],
+      program: [{ key: 1, evaluators: [{ key: 1 }] }],
+    },
+    choices: { programStagesMax: 2, evaluatorsMax: 3 },
+    dependencyCandidates: [],
+    dependencyCandidatesTruncated: false,
+  });
+}
+
+/** A draft created from `body`, under the ticket number after every one the project holds, and kept with its brief. */
+function filed(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "file");
+  if (fate !== undefined) return fate;
+  const asked = JSON.parse(body ?? "{}") as SetupSiteFiled & {
+    readonly expectedProjectSequence: number;
+  };
+  if (asked.expectedProjectSequence !== headOf(project))
+    return conflict("ProjectSequenceStale");
+  const number =
+    Math.max(
+      0,
+      ...project.tickets.map((held) => held.ticket),
+      ...project.drafts,
+      ...project.filed.keys(),
+    ) + 1;
+  project.drafts.push(number);
+  project.filed.set(number, {
+    configurationRevision: asked.configurationRevision,
+    brief: asked.brief,
+  });
+  return {
+    status: 201,
+    body: {
+      ...draft(project, number),
+      configurationRevision: asked.configurationRevision,
+    },
+  };
+}
+
+/** A submission, decided as it arrives: a release makes its draft a ticket that waits to start, and a dispatch starts one that waits. */
+function submitted(
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly operation: string;
+    readonly mutation: { readonly mutation: string; readonly ticket: number };
+  };
+  const { mutation } = asked;
+  project.operations.set(asked.operation, mutation);
+  if (mutation.mutation === "ReleaseDraft") {
+    project.drafts = project.drafts.filter((held) => held !== mutation.ticket);
+    project.tickets.unshift({ ticket: mutation.ticket, phase: "Pending" });
+  }
+  if (mutation.mutation === "ManualDispatch")
+    project.tickets = project.tickets.map((held) =>
+      held.ticket === mutation.ticket ? { ...held, phase: "Work" } : held,
+    );
+  return {
+    status: 202,
+    body: { operation: asked.operation, state: "Pending" },
+  };
+}
+
+/** An operation submitted, as decided; one never submitted is not found. */
+function operationAnswered(
+  project: SetupSiteProject,
+  operation: string,
+): SetupSiteAnswer {
+  return project.operations.has(operation)
+    ? answered({
+        operation,
+        acceptedAt: filedAt,
+        state: "Succeeded",
+        decidedSequence: headOf(project),
+      })
+    : refused();
+}
+
+/** The page of the dispatch view a ticket is looked for on: each ticket that waits to start, after the one named. */
+function dispatchView(
+  project: SetupSiteProject,
+  query: URLSearchParams,
+): SetupSiteAnswer {
+  const after = Number(query.get("after") ?? "0");
+  return answered({
+    result: "Page",
+    token: {
+      tenant: project.tenant,
+      project: project.project,
+      recoveryEpoch: "epoch-1",
+      schemaVersion: 1,
+      watermark: headOf(project),
+      digest: filedDigest,
+    },
+    candidates: project.tickets
+      .filter((held) => held.phase === "Pending" && held.ticket > after)
+      .map((held) => ({
+        ticket: held.ticket,
+        ticketVersion: 1,
+        dependencies: [],
+        program: [{ key: 1, evaluators: [{ key: 1 }] }],
+        configurationRevision:
+          project.filed.get(held.ticket)?.configurationRevision ?? "r1",
+        configurationDigest: filedDigest,
+        configurationCanonical: "{}",
+      })),
+    notificationCursor: 1,
+  });
+}
+
 /** One page of the project's tickets in the phases asked for, which is where a done one and those on their way part. */
 function tickets(
   site: SetupSite,
@@ -834,6 +1055,12 @@ function projectAnswered(
 ): SetupSiteAnswer | undefined {
   const landed = /^\/tickets\/(\d+)\/landings$/u.exec(rest);
   if (landed !== null) return landings(site, project, landed[1] ?? "");
+  const initialized = /^\/draft-initializations\/([^/]+)$/u.exec(rest);
+  if (initialized !== null)
+    return initialization(project, decodeURIComponent(initialized[1] ?? ""));
+  const operation = /^\/operations\/([^/]+)$/u.exec(rest);
+  if (operation !== null)
+    return operationAnswered(project, decodeURIComponent(operation[1] ?? ""));
   switch (rest) {
     case "":
       return tickets(site, project, query);
@@ -863,6 +1090,10 @@ function projectAnswered(
       );
     case "/abilities":
       return abilities(site, project);
+    case "/configurations":
+      return configurationsListed(site, project);
+    case "/dispatch-view":
+      return dispatchView(project, query);
     case "/worker-pools":
       return pools(site, project);
     case "/drafts":
@@ -1138,6 +1369,14 @@ function tenantWritten(
   if (sent.method === "POST" && within?.[2] === "/repositories") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : bound(site, project, sent.body);
+  }
+  if (sent.method === "POST" && within?.[2] === "/drafts") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined ? refused() : filed(site, project, sent.body);
+  }
+  if (sent.method === "POST" && within?.[2] === "/operations") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined ? refused() : submitted(project, sent.body);
   }
   if (sent.method === "POST" && within?.[2] === importsPath) {
     const project = projectOf(site, tenant, within[1]);

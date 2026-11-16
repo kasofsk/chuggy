@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { setTimeout as slept } from "node:timers/promises";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import type { FetchJsonPort } from "../app/core/sessionHolder.ts";
 import { setupPacingRead } from "../app/core/setupPacing.ts";
@@ -135,6 +136,7 @@ export function portsOf(script: string): SetupPorts {
     sleepMs: (ms, signal) => slept(ms, undefined, { signal }),
     drawBytes: (count) => crypto.getRandomValues(new Uint8Array(count)),
     digest,
+    text: copyTextEn,
     fetchJson: fetchJsonWithin(setupFetchTimeoutMs),
     apiFetch,
     listen,

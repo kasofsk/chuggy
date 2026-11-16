@@ -34,6 +34,7 @@ import {
   setupMcpDue,
   setupNext,
   setupRunnerDue,
+  setupTicketDue,
 } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
 import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
@@ -65,6 +66,11 @@ import {
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
 import { setupStanding } from "./setupStanding.ts";
+import {
+  setupTicketFiled,
+  setupTicketOffersRead,
+  setupTicketWrites,
+} from "./setupTicket.ts";
 import type { SetupStanding } from "./setupStanding.ts";
 import {
   setupLockHeldBy,
@@ -206,8 +212,9 @@ function setupBusy(
  * The checklist, read once the lock is given up: nothing from here on reads
  * or writes the session file, and no request is sent while the lock is held
  * for it. Everything goes out through ports that can only read; the agent's
- * configuration is read for the project chosen, and where the MCP step or the
- * runner's is the one next the machine is looked at and not touched.
+ * configuration is read for the project chosen, where the MCP step or the
+ * runner's is the one next the machine is looked at and not touched, and
+ * where the project's first ticket is, what it may be drawn under is read.
  */
 async function setupChecklist(
   ports: SetupPorts,
@@ -221,6 +228,14 @@ async function setupChecklist(
     due === undefined ? undefined : await setupRunnerHere(ports, due);
   const packaged =
     setupMcpDue(standing) !== undefined && (await setupMcpPackaged(ports));
+  const filing = setupTicketDue(standing);
+  const offers =
+    filing === undefined
+      ? undefined
+      : await setupTicketOffersRead(
+          setupReadPorts(signed.opened.api, signed.bearer),
+          filing,
+        );
   return {
     report: "Checklist",
     site: standing.site,
@@ -230,7 +245,7 @@ async function setupChecklist(
       state,
       detail,
     })),
-    next: setupNext(standing, answers, here, packaged),
+    next: setupNext(standing, answers, here, packaged, offers),
   };
 }
 
@@ -378,6 +393,44 @@ async function setupBind(
   return {
     report: "Bind",
     repository: due?.repository,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
+ * `ticket` works under the remembered sign-in as `bind` does. Where the
+ * checklist's next thing is the project's first ticket, it files one from
+ * what the person said, as the console's Create ticket does, through ports
+ * that let out only that creation's writes, each submission under an
+ * operation of its own, and reads the checklist again; where it is not, it
+ * files nothing and says the checklist.
+ */
+async function setupTicket(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Ticket" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Ticket");
+  if (held === undefined) return setupBusy(ports, "Ticket", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupTicketDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const drawn = (): string =>
+    base64urlFromBytes(ports.drawBytes(operationIdBytesCount));
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupTicketFiled(
+          setupWritePorts(held.opened.api, held.bearer, setupTicketWrites(due)),
+          due,
+          asked,
+          { release: drawn(), dispatch: drawn() },
+          ports.text,
+        );
+  return {
+    report: "Ticket",
     answered,
     checklist: await setupChecklist(ports, held, asked.answers, pacing),
   };
@@ -552,6 +605,8 @@ export async function setupRun(
         return await setupImport(ports, asked, pacing);
       case "Bind":
         return await setupBind(ports, asked, pacing);
+      case "Ticket":
+        return await setupTicket(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

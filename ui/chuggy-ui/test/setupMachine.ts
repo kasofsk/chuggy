@@ -16,6 +16,7 @@
  * program's own directory and the programs it runs there.
  */
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import type {
   FetchJsonInit,
@@ -520,6 +521,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       return machine.draws(count, inner.drawn);
     },
     digest: (message) => Promise.resolve(machine.digest(message)),
+    text: copyTextEn,
     fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
     apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
     files: filesOf(machine),
