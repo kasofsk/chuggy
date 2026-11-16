@@ -1,7 +1,9 @@
 /**
  * The preferences page and the account menu at a phone's width. The page is
  * drawn alone under the link back to the settings' index with its Appearance
- * section, and a choice made on it is applied to the document; the menu
+ * section, and a choice made on it is applied to the document; a theme
+ * chosen there, at the phone's width and the desk's, repaints the page with
+ * no sideways scroll, every control the touch height on the phone; the menu
  * opened from the bar names the stub's member and holds Settings, Preferences
  * and Sign out. Neither scrolls the page sideways, and every control of each
  * is at least the touch height. The shell around the page is not this page's,
@@ -9,6 +11,14 @@
  * the menu and on its trigger.
  */
 
+import type { Page } from "@playwright/test";
+
+import { builtInThemes } from "../../../../src/contract/appearance.ts";
+import type {
+  ThemeChoice,
+  ThemeDocument,
+} from "../../../../src/contract/appearance.ts";
+import type { ProjectAppearanceResponse } from "../../../../src/contract/responses.ts";
 import {
   expect,
   renderedNoOverflow,
@@ -28,6 +38,90 @@ import {
 const zodProbeViolation = { directive: "script-src", blocked: "eval" };
 
 const projectRoot = `/${stubApiTenant}/${stubApiProject}`;
+const choicePath = "/api/v1/appearance/choice";
+const appearancePath = `/api/v1/tenants/${stubApiTenant}/projects/${stubApiProject}/appearance`;
+
+/** The reader's global choice kept as the server keeps it, and the project,
+ * which names no theme of its own, resolved from it. */
+async function preferencesChoiceKept(page: Page): Promise<void> {
+  let chosen: ThemeChoice | undefined;
+  const themeOf = (choice: ThemeChoice): ThemeDocument => {
+    if (choice.kind !== "BuiltIn")
+      throw new Error("the stub holds no theme of the member's own");
+    return builtInThemes[choice.theme];
+  };
+  await page.route(`**${choicePath}`, async (route) => {
+    if (route.request().method() === "PUT") {
+      chosen = route.request().postDataJSON() as ThemeChoice;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({
+      json: chosen === undefined ? {} : { choice: chosen },
+    });
+  });
+  await page.route(`**${appearancePath}`, async (route) => {
+    const resolved: ProjectAppearanceResponse =
+      chosen === undefined
+        ? { theme: builtInThemes.chuggy, layer: "BuiltInDefault", layers: {} }
+        : {
+            theme: themeOf(chosen),
+            layer: "Global",
+            layers: { global: chosen },
+          };
+    await route.fulfill({ json: resolved });
+  });
+}
+
+/** A hex colour as a computed style says it. */
+function preferencesRgb(hex: string): string {
+  const [red, green, blue] = [1, 3, 5].map((start) =>
+    Number.parseInt(hex.slice(start, start + 2), 16),
+  ) as [number, number, number];
+  return `rgb(${String(red)}, ${String(green)}, ${String(blue)})`;
+}
+
+for (const viewport of ["phone", "desk"] as const)
+  test(`at the ${viewport}'s width a theme chosen in Appearance repaints the page at once and is said to apply in the project, with no sideways scroll${viewport === "phone" ? " and every control the touch height" : ""}`, async ({
+    browser,
+    served,
+  }) => {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: `${projectRoot}/settings/preferences`,
+      viewport,
+      signedIn: true,
+      ready: (page) => page.getByRole("radiogroup", { name: "Theme" }),
+    });
+    const page = rendered.page;
+    await page.emulateMedia({ colorScheme: "light" });
+    await preferencesChoiceKept(page);
+    const harbour = builtInThemes.harbour;
+    if (harbour.palette.schemes !== "Both")
+      throw new Error("Harbour carries both schemes");
+    const theme = page.getByRole("radiogroup", { name: "Theme" });
+    await expect(theme.getByRole("radio", { checked: true })).toHaveText(
+      "Chuggy",
+    );
+    const applies = page.locator(".preferences-theme-applies > span");
+    await expect(applies).toHaveText(["Chuggy", "The console's default"]);
+    await renderedNoOverflow(page);
+    if (viewport === "phone")
+      await renderedTouchTargets(page, page.locator(".settings-section"));
+    await theme.getByRole("radio", { name: "Harbour" }).click();
+    await expect(page.locator("body")).toHaveCSS(
+      "background-color",
+      preferencesRgb(harbour.palette.light["surface-0"]),
+    );
+    await expect(theme.getByRole("radio", { checked: true })).toHaveText(
+      "Harbour",
+    );
+    await expect(applies).toHaveText(["Harbour", "Your own theme"]);
+    await renderedNoOverflow(page);
+    if (viewport === "phone")
+      await renderedTouchTargets(page, page.locator(".settings-section"));
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  });
 
 test("on the phone the preferences page does not scroll sideways, every control is the touch height, and a scheme chosen is applied", async ({
   browser,

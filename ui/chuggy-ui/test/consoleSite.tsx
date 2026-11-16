@@ -54,6 +54,7 @@ import {
 import {
   agentAccountsResponseSchema,
   projectAppearanceResponseSchema,
+  ownedThemesResponseSchema,
   themeChoiceResponseSchema,
   agenticRefusalsResponseSchema,
   chatAbilitiesResponseSchema,
@@ -627,6 +628,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt("/api/v1/appearance/choice"),
     schema: themeChoiceResponseSchema,
     body: () => ({}),
+  },
+  {
+    path: consoleReadAt("/api/v1/appearance/themes"),
+    schema: ownedThemesResponseSchema,
+    body: () => ({ themes: [] }),
   },
   {
     path: consoleReadAt("/api/v1/agent-accounts"),

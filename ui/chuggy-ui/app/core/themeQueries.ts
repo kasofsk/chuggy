@@ -11,6 +11,7 @@ import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
   ownedThemeSchema,
+  ownedThemesResponseSchema,
   projectAppearanceResponseSchema,
   themeChoiceResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -49,6 +50,18 @@ export function ownedThemeQuery(theme: number) {
       ports,
       endpointPath(nativeHttpRoutes.ownTheme, { theme }),
       (value) => ownedThemeSchema.parse(value),
+      signal,
+    ),
+  );
+}
+
+/** Every theme of the reader's own, which a picker offers after the built-ins. */
+export function ownedThemesQuery() {
+  return consoleCallerQuery("themes", (ports, signal) =>
+    apiGet(
+      ports,
+      nativeHttpRoutes.ownThemes,
+      (value) => ownedThemesResponseSchema.parse(value),
       signal,
     ),
   );

@@ -125,6 +125,7 @@ import type {
   chatThreadMessageSchema,
   threadOfferReplyRequestSchema,
 } from "../../../../src/contract/requests.ts";
+import type { ThemeChoice } from "../../../../src/contract/appearance.ts";
 import type {
   AccountAgent,
   PersonalRunnerPriority,
@@ -682,6 +683,35 @@ export function apiDeleteTenant(
       method: "DELETE",
       path: apiFilled(nativeHttpRoutes.tenantDeletion, { tenant }),
     },
+    () => undefined,
+  );
+}
+
+/** The reader's global theme choice, written whole. */
+export function apiWriteThemeChoice(
+  ports: ApiPorts,
+  choice: ThemeChoice,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    { method: "PUT", path: nativeHttpRoutes.themeChoice, body: choice },
+    () => undefined,
+  );
+}
+
+/** The reader's own theme for one project, written whole, or cleared where
+ * `choice` is none so the project's own resolution applies. */
+export function apiWriteProjectThemeOverride(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  choice: ThemeChoice | undefined,
+): Promise<ApiResult<undefined>> {
+  const path = endpointPath(nativeHttpRoutes.projectThemeOverride, partition);
+  return apiRead(
+    ports,
+    choice === undefined
+      ? { method: "DELETE", path }
+      : { method: "PUT", path, body: choice },
     () => undefined,
   );
 }

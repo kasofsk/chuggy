@@ -4,8 +4,9 @@
  * region of its own, so what is added to one is added inside it and a new
  * one is one more entry in the page's list.
  *
- * Every choice is applied as it is made and kept in this browser, as each
- * one's own module says; none is the server's.
+ * Every choice is applied as it is made. The theme is kept by the server, as
+ * `PreferencesTheme.tsx` says; every other choice is kept in this browser, as
+ * each one's own module says.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -33,6 +34,7 @@ import {
 import type { SchemeChoice } from "../scheme.ts";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
+import { PreferencesTheme } from "./PreferencesTheme.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
 
@@ -108,6 +110,7 @@ function PreferencesAppearance(): ReactNode {
   return (
     <PreferencesSection title={{ id: "settings-preferences-appearance" }}>
       <PreferencesScheme />
+      <PreferencesTheme />
     </PreferencesSection>
   );
 }

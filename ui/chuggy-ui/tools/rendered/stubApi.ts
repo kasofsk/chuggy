@@ -64,6 +64,7 @@ import {
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
+  ownedThemesResponseSchema,
   themeChoiceResponseSchema,
   threadsResponseSchema,
   ticketLandingsResponseSchema,
@@ -516,6 +517,9 @@ export const stubApiReads: readonly StubApiRead[] = [
     layers: {},
   }),
   stubApiRead("/api/v1/appearance/choice", themeChoiceResponseSchema, {}),
+  stubApiRead("/api/v1/appearance/themes", ownedThemesResponseSchema, {
+    themes: [],
+  }),
   stubApiRead("/api/v1/projects", projectInventoryResponseSchema, {
     projects: [{ ...partition, name: stubApiProject }],
   }),

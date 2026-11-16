@@ -318,6 +318,8 @@
     --size-epic-graph-step: 1.25rem; /* epic: a card's step on the longest chain */
     --width-epic-graph-line: 1.5px; /* epic: a strong line under the cards */
     --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
+    --width-theme-card: 8rem; /* preferences: a theme's card, before the row of them wraps */
+    --height-theme-swatch: 2.5rem; /* preferences: a theme's colours on its card */
   }
 
   :root[data-theme="light"] {
