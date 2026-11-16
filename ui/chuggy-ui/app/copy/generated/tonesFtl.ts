@@ -13,7 +13,7 @@ tones-dispatch-unread = Unknown
 # The code the record settled a dispatch on, which is its own word.
 tones-dispatch-outcome = { $outcome }
 
-## Where an action a repository declares stands for a landed commit.
+## Where an action a repository declares stands for a finalized commit.
 
 tones-reach-reached = Reached
 tones-reach-not-yet = Waiting

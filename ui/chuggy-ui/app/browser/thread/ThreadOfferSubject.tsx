@@ -28,7 +28,11 @@ import {
   configurationCatalogSelected,
 } from "../../core/configurationCatalog.ts";
 import { configurationQuery } from "../../core/configurationQueries.ts";
-import { programPlannedUnder, programShort } from "../../core/programPlan.ts";
+import {
+  programPlannedUnder,
+  programShort,
+  programShortOfCatalog,
+} from "../../core/programPlan.ts";
 import { phaseTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
 import { IntentFolded } from "../ticket/TicketInstructions.tsx";
@@ -94,10 +98,17 @@ function ThreadOfferDraftPlan(props: {
     catalog === undefined
       ? undefined
       : configurationCatalogSelected(catalog, draft.selection);
-  const short = programShort(
-    programPlannedUnder(canonical, draft.selection),
-    draft.authoring.program,
-  );
+  const short =
+    programShort(
+      programPlannedUnder(canonical, draft.selection, draft.overrides),
+      draft.authoring.program,
+    ) ||
+    programShortOfCatalog(
+      canonical,
+      draft.overrides,
+      draft.selection,
+      draft.authoring.program,
+    );
   return (
     <>
       {selected === undefined ? null : (

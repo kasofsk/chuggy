@@ -1,7 +1,7 @@
 /**
  * A draft never released, drawn as the ticket page draws a ticket: the Draft
- * label and "Not released", Release, Edit, which opens the form, and a menu
- * holding Duplicate, Copy link and Delete draft, over the same tabs.
+ * label and "Not released", Release, and a menu holding Edit, which opens the
+ * form, Duplicate, Copy link and Delete draft, over the same tabs.
  *
  * Release is the form's own `ReleaseDraft`, fenced at the version the page
  * read, and followed as any of the ticket's actions is; the ticket it makes is
@@ -9,7 +9,7 @@
  * same way and goes back to the ticket list once it lands.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -31,7 +31,6 @@ import { FreshnessInstants } from "../Freshness.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { FollowNotes, TicketActingScope } from "../TicketActions.tsx";
 import type { TicketActing } from "../TicketActions.tsx";
-import { ButtonLink } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { OfferedAction } from "../ui/OfferedAction.tsx";
 import { TicketHeader, TicketTabs } from "./TicketHeader.tsx";
@@ -73,8 +72,8 @@ export function useTicketDraftDeletion(
   return useConsoleWrite(draftDeleteWrite(partition, ticket, text), { drawn });
 }
 
-/** Release leading, Edit beside it, and the menu, for a reader who may write
- * the draft; the menu's Copy link alone for one who may not. */
+/** Release leading, and the menu holding Edit, for a reader who may write the
+ * draft; the menu's Copy link alone for one who may not. */
 function TicketDraftActions(props: {
   readonly partition: PartitionIdentity;
   readonly draft: DraftResponse;
@@ -93,30 +92,39 @@ function TicketDraftActions(props: {
   return (
     <div className="ticket-header-actions">
       {writes ? (
-        <>
-          <OfferedAction
-            action={release.action}
-            effect={text(
-              ticketActionEffect(release.action, { kind: "NoPoint" }).effect,
-            )}
-            busy={busy}
-            primary
-            onChoose={() => {
-              acting.submitting.submit(release);
-            }}
-          />
-          <ButtonLink
-            to="/$tenant/$project/tickets/new"
-            params={partition}
-            search={{ draft: draft.ticket }}
-          >
-            {text({ id: "ticket-edit" })}
-          </ButtonLink>
-        </>
+        <OfferedAction
+          action={release.action}
+          effect={text(
+            ticketActionEffect(release.action, { kind: "NoPoint" }).effect,
+          )}
+          busy={busy}
+          primary
+          onChoose={() => {
+            acting.submitting.submit(release);
+          }}
+        />
       ) : null}
       <TicketHeaderMenu
         partition={partition}
         ticket={draft.ticket}
+        leading={
+          writes
+            ? [
+                {
+                  kind: "link",
+                  label: text({ id: "ticket-edit" }),
+                  link: (anchor) => (
+                    <Link
+                      to="/$tenant/$project/tickets/new"
+                      params={partition}
+                      search={{ draft: draft.ticket }}
+                      {...anchor}
+                    />
+                  ),
+                },
+              ]
+            : []
+        }
         revoke={undefined}
         duplicate={writes}
         busy={busy}

@@ -14,7 +14,7 @@
  * came from and writes into no entry; the row leaves when the inbox, read again
  * on a frame or a poll, no longer holds it. That is the only account of where a
  * ticket is that a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx`,
- * `ui/chuggy-ui/test/inboxApproval.test.tsx` and
+ * `ui/chuggy-ui/test/inboxEscalation.test.tsx` and
  * `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
  */
 

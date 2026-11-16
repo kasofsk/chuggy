@@ -23,7 +23,6 @@
  * neither ticket text nor a credential.
  */
 
-import type { ApprovalAsked } from "./finalizerPreparation.ts";
 import type {
   CandidateIntegrated,
   CandidatePromoted,
@@ -60,7 +59,6 @@ export type FinalizerHoldReason =
   | "CandidateUnbuilt"
   | "IntegrationUnanswered"
   | "AttemptFenced"
-  | "ApprovalUnopened"
   | "PermitRefused"
   | "PassCeilingReached"
   | "ReconciliationUnrecorded"
@@ -78,7 +76,6 @@ export interface FinalizerMetrics {
     outcome: FinalizationAttemptOutcome,
     failure?: FinalizationFailureKind,
   ): void;
-  approval(asked: ApprovalAsked["asked"]): void;
   permit(state: CommitPermitState): void;
   promotion(arm: CandidatePromoted["promoted"]): void;
   reconciliation(verdict: ReconciliationVerdict): void;
@@ -97,7 +94,6 @@ export const silentFinalizerMetrics: FinalizerMetrics = {
   preparation: () => undefined,
   integration: () => undefined,
   attempt: () => undefined,
-  approval: () => undefined,
   permit: () => undefined,
   promotion: () => undefined,
   reconciliation: () => undefined,

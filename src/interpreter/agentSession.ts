@@ -427,6 +427,8 @@ export interface SessionBearerIdentity {
   readonly principal: Principal;
   /** A member's own session is confined to the member's routes, and a project's to its partition's. */
   readonly scope: SessionScope;
+  /** The session row's capabilities as the bearer is presented, which confine it among its scope's routes. */
+  readonly capabilities: readonly SessionCapability[];
 }
 
 /**

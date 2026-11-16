@@ -264,6 +264,39 @@ test("the ticket's and the project's action reads and the inbox say what the app
   assert.deepEqual(inbox.actions, [listed]);
 });
 
+test("the action reads say what an approval asks under the ticket's own selection and overrides", async () => {
+  const project = await schedulerProject(
+    rig,
+    "approval-selected",
+    { tasks: 2 },
+    catalogOf("signOff"),
+    undefined,
+    { workloads: { approval: { approvers: "Developer" } } },
+    { ...mixed, selection: { evaluation: "mixed" } },
+  );
+  const at = await reported(
+    { project, memory: project.memory, config: mixed.config },
+    (memory) =>
+      postgresHarnessReport(memory.graph, workTaskIdentity(1, 1), "Pass"),
+  );
+  await evaluationRegistered(at, "approval-selected");
+  const native = postgresNativeReads(ingress);
+  const [asked] =
+    (await native.ticketNativeActions(
+      at.project.partition,
+      id(at.project.ticket),
+    )) ?? [];
+  assert.ok(asked?.approval !== undefined);
+  assert.equal(asked.approval.evaluator, 2);
+  assert.equal(asked.approval.approvers, "Developer");
+  const [listed] = (
+    await native.nativeActions(at.project.partition, { limit: 10 })
+  ).actions;
+  assert.ok(listed?.approval !== undefined);
+  assert.equal(listed.approval.evaluator, 2);
+  assert.equal(listed.approval.approvers, "Developer");
+});
+
 /** The three action reads over the real store, under an access holding an administrator, a developer and a reader. */
 function answerableReads(at: Evaluating) {
   const { partition } = at.project;

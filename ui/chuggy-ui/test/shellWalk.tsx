@@ -30,6 +30,7 @@ import type {
   ChatPaneTrail,
   ChatPaneTrailFrame,
 } from "../app/core/chatPane.ts";
+import { chatPaneMenuChosen } from "./chatPaneMenu.tsx";
 import { seededRandom } from "./seededRandom.ts";
 import {
   chatDrawn,
@@ -196,16 +197,16 @@ export async function walkApplied(
       await panePlaced(move.placement);
       return frame;
     case "Collapsed":
-      await pressed("Collapse");
+      await pressed(trail.twoColumn ? "Collapse" : "Back");
       return frame;
     case "Expanded":
       await pressed("Expand chat");
       return frame;
     case "Filled":
-      await pressed("Full screen");
+      await chatPaneMenuChosen("Full screen");
       return frame;
     case "Restored":
-      await pressed("Exit full screen");
+      await chatPaneMenuChosen("Exit full screen");
       return frame;
     case "Narrowed":
     case "Widened":

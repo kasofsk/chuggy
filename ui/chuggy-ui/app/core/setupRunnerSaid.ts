@@ -1,6 +1,7 @@
 /**
- * What a run of `runner` found, did and stopped on, as values, and the
- * catalog's sentences each is printed as.
+ * What a run of `runner` or `chat-host` found, did and stopped on, as values,
+ * and the catalog's sentences each is printed as, of the project or the
+ * workspace the run was for.
  *
  * Everything said of another program is this program's own words. The most
  * that is kept of what one printed is an excerpt already through the
@@ -14,7 +15,20 @@
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
-import { runnerPackages } from "./runners.ts";
+import { runnerPackageOffered, runnerPackages } from "./runners.ts";
+
+/** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone. */
+export interface SetupRunnerAt {
+  readonly workspace: string;
+  readonly project: string | undefined;
+}
+
+/** The place a run was for, by its name: the workspace's and the project's, or the workspace's alone. */
+export function setupRunnerNamed(at: SetupRunnerAt): string {
+  return at.project === undefined
+    ? at.workspace
+    : `${at.workspace}/${at.project}`;
+}
 
 /** The container engines the runner package runs its work in, the package's own default first. */
 export const setupEngines = ["docker", "podman"] as const;
@@ -103,9 +117,11 @@ export type SetupDockerBarred =
   | { readonly barred: "Named"; readonly settings: string }
   | { readonly barred: "Podmanless"; readonly answered: "No" | "Absent" };
 
-/** The things `runner` runs another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host. */
+/** The things `runner` and `mcp` run another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host, and `ServerRemoved` and `ServerAdded` of the agent's MCP server. */
 export type SetupRunnerAct =
   | "Install"
+  | "ServerRemoved"
+  | "ServerAdded"
   | "Register"
   | "Check"
   | "Service"
@@ -207,6 +223,12 @@ export type SetupRunnerNote =
       readonly note: "ChatHost" | "ChatHostGone" | "ChatHostRegistered";
       readonly path: string;
     }
+  /** This machine registered as the person's chat host in place of the one on another machine, `short`, as `--replace` named it. */
+  | {
+      readonly note: "ChatHostReplaced";
+      readonly path: string;
+      readonly short: string;
+    }
   | { readonly note: "ChatUnit" | "ChatUnitWritten"; readonly unit: string }
   /** `ChatHostElsewhere` is the person's chat host live on another machine, which is left as it is. */
   | { readonly note: "ChatHostLive" | "ChatHostElsewhere" }
@@ -216,7 +238,9 @@ export type SetupRunnerNote =
   | {
       readonly note: "Running" | "Enabled" | "Started" | "Restarted";
       readonly unit: string;
-    };
+    }
+  /** The agent's MCP configuration names chuggy's server for the project, as it was found or once this run added it. */
+  | { readonly note: "ServerFound" | "ServerAdded"; readonly path: string };
 
 /**
  * What the runner package's own check looks at, by the names it prints them
@@ -295,6 +319,14 @@ export type SetupRunnerStop =
       readonly guide: string;
     }
   | { readonly stop: "Npmless" }
+  /** `runner` found no runner package it can use, which `mcp` installs: `found` is the one there, older than `least` or of a version that cannot be read. */
+  | {
+      readonly stop: "Unpackaged";
+      readonly found:
+        | { readonly command: string; readonly version: string | undefined }
+        | undefined;
+      readonly least: string;
+    }
   | { readonly stop: "Unwritten"; readonly path: string }
   | {
       readonly stop: "Act";
@@ -352,10 +384,10 @@ export type SetupRunnerStop =
       readonly registered: boolean;
     }
   | {
-      /** The workspace does not let the person register a chat host; `work` is what the project's work has, said as set up. */
+      /** The workspace does not let the person register a chat host; `work` is what the project's work has, said as set up, and nothing where the run was for the workspace alone. */
       readonly stop: "PermitWithheld";
       readonly people: string;
-      readonly work: "Runner" | "Cluster";
+      readonly work: "Runner" | "Cluster" | undefined;
     }
   | {
       readonly stop: "ChatMintRefused";
@@ -372,7 +404,29 @@ export type SetupRunnerStop =
       readonly settings: string;
       readonly login: string;
     }
-  | { readonly stop: "ChatHostNotLive"; readonly waitedSecs: number };
+  | { readonly stop: "ChatHostNotLive"; readonly waitedSecs: number }
+  /** The person's chat host is another machine, `short` as the console shows it, which `chat-host` registers this machine in place of only where `--replace` names it. */
+  | {
+      readonly stop: "ChatHostHeld";
+      readonly short: string;
+      readonly live: boolean;
+    }
+  /** `--replace` named a chat host other than the one the site holds for the person, `short`, so nothing was replaced. */
+  | {
+      readonly stop: "ReplaceMismatched";
+      readonly short: string;
+      readonly live: boolean;
+    }
+  /** `chat-host` on a machine that is not the package's platform: the person registers one by hand from `page`, the workspace's personal runners page at the site. */
+  | {
+      readonly stop: "MacChatHost";
+      readonly page: string;
+    };
+
+/** How a run of `mcp` ended: the agent's configuration names the server, or it stopped. */
+export type SetupServerEnded =
+  | { readonly ended: "Served" }
+  | { readonly ended: "Stopped"; readonly stop: SetupRunnerStop };
 
 /** How a run of `runner` ended: the site sees live the runner the project's work runs on and the chat host the person's chats in it run on, the cluster runs both, or it stopped. */
 export type SetupRunnerEnded =
@@ -380,12 +434,13 @@ export type SetupRunnerEnded =
   | { readonly ended: "Hosted" }
   | { readonly ended: "Stopped"; readonly stop: SetupRunnerStop };
 
-/** A stop as it is said, and what its rule names: this command again, or the checklist where this command could do nothing more. */
+/** A stop as it is said, and what its rule names: this command again, `mcp` for the project where that is what would mend it, `replace` where it is named with `--replace` and that chat host's short id, or the checklist where this command could do nothing more. */
 export interface SetupRunnerStopSaid {
   readonly found: Copy;
   readonly tell: Copy;
   readonly when: Copy;
-  readonly again: "Runner" | "Status";
+  readonly again: "Again" | "Status" | "Mcp";
+  readonly replace?: string;
 }
 
 /** A note as its word and its text. */
@@ -481,6 +536,7 @@ type SetupChatNote = Extract<
       | "ChatHost"
       | "ChatHostGone"
       | "ChatHostRegistered"
+      | "ChatHostReplaced"
       | "ChatChecked"
       | "ChatUnit"
       | "ChatUnitWritten"
@@ -489,19 +545,17 @@ type SetupChatNote = Extract<
   }
 >;
 
-/** What the site sees of the project's runner, and what a run found and did of the person's chat host. */
-function setupChatNoteSaid(
-  note: SetupChatNote,
-  project: string,
-): SetupRunnerNoteSaid {
+type SetupChatFileNote = Extract<
+  SetupChatNote,
+  {
+    readonly note:
+      "ChatHost" | "ChatHostGone" | "ChatHostRegistered" | "ChatHostReplaced";
+  }
+>;
+
+/** What a run found and did of the file this machine holds as the person's chat host. */
+function setupChatFileNoteSaid(note: SetupChatFileNote): SetupRunnerNoteSaid {
   switch (note.note) {
-    case "ProjectLive":
-      return [
-        "found",
-        { id: "setup-runner-note-project-live", args: { project } },
-      ];
-    case "Hosted":
-      return ["found", { id: "setup-runner-note-hosted", args: { project } }];
     case "ChatHost":
       return [
         "found",
@@ -520,6 +574,36 @@ function setupChatNoteSaid(
           args: { path: note.path },
         },
       ];
+    case "ChatHostReplaced":
+      return [
+        "did",
+        {
+          id: "setup-runner-note-chat-host-replaced",
+          args: { path: note.path, short: note.short },
+        },
+      ];
+  }
+}
+
+/** What the site sees of the project's runner, and what a run found and did of the person's chat host. */
+function setupChatNoteSaid(
+  note: SetupChatNote,
+  at: SetupRunnerAt,
+): SetupRunnerNoteSaid {
+  const project = setupRunnerNamed(at);
+  switch (note.note) {
+    case "ProjectLive":
+      return [
+        "found",
+        { id: "setup-runner-note-project-live", args: { project } },
+      ];
+    case "Hosted":
+      return ["found", { id: "setup-runner-note-hosted", args: { project } }];
+    case "ChatHost":
+    case "ChatHostGone":
+    case "ChatHostRegistered":
+    case "ChatHostReplaced":
+      return setupChatFileNoteSaid(note);
     case "ChatChecked":
       return [
         "found",
@@ -546,7 +630,12 @@ function setupChatNoteSaid(
     case "ChatHostLive":
       return [
         "found",
-        { id: "setup-runner-note-chat-host-live", args: { project } },
+        at.project === undefined
+          ? {
+              id: "setup-runner-note-chat-host-live-workspace",
+              args: { workspace: at.workspace },
+            }
+          : { id: "setup-runner-note-chat-host-live", args: { project } },
       ];
     case "ChatHostElsewhere":
       return [
@@ -645,8 +734,9 @@ function setupPackageNoteSaid(note: SetupPackageNote): SetupRunnerNoteSaid {
 
 export function setupRunnerNoteSaid(
   note: SetupRunnerNote,
-  project: string,
+  at: SetupRunnerAt,
 ): SetupRunnerNoteSaid {
+  const project = setupRunnerNamed(at);
   switch (note.note) {
     case "Engine":
       return [
@@ -700,13 +790,30 @@ export function setupRunnerNoteSaid(
     case "ChatHost":
     case "ChatHostGone":
     case "ChatHostRegistered":
+    case "ChatHostReplaced":
     case "ChatChecked":
     case "ChatUnit":
     case "ChatUnitWritten":
     case "ChatHostLive":
     case "ChatHostElsewhere":
-      return setupChatNoteSaid(note, project);
+      return setupChatNoteSaid(note, at);
+    case "ServerFound":
+    case "ServerAdded":
+      return setupServerNoteSaid(note, project);
   }
+}
+
+function setupServerNoteSaid(
+  note: Extract<
+    SetupRunnerNote,
+    { readonly note: "ServerFound" | "ServerAdded" }
+  >,
+  project: string,
+): SetupRunnerNoteSaid {
+  const args = { project, path: note.path };
+  return note.note === "ServerFound"
+    ? ["found", { id: "setup-runner-note-server-found", args }]
+    : ["did", { id: "setup-runner-note-server-added", args }];
 }
 
 const setupUnchanged: Copy = { id: "setup-runner-unchanged" };
@@ -760,7 +867,7 @@ function setupEnginelessSaid(
       args: { none: setupEnginesNone(asked) },
     },
     when: { id: "setup-runner-engineless-when" },
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -836,7 +943,7 @@ function setupDockerBarredSaid(
           },
     tell: { id: "setup-runner-docker-tell", args: { why, state, mend } },
     when,
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -857,26 +964,31 @@ const setupUnknown: Copy = { id: "setup-runner-unknown" };
 
 function setupUnreadSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Unread" }>,
-  project: string,
+  at: SetupRunnerAt,
 ): SetupRunnerStopSaid {
   const what = setupReadsSaid[stop.read];
+  const project = setupRunnerNamed(at);
+  const left = setupReadsFirst.includes(stop.read)
+    ? setupUnchanged
+    : setupUnknown;
   if (stop.outcome === "Refused")
     return {
       found: {
         id: "setup-runner-unread-refused-found",
         args: { project, what },
       },
-      tell: {
-        id: "setup-runner-unread-refused-tell",
-        args: {
-          project,
-          left: setupReadsFirst.includes(stop.read)
-            ? setupUnchanged
-            : setupUnknown,
-        },
-      },
+      tell:
+        at.project === undefined
+          ? {
+              id: "setup-runner-unread-refused-workspace-tell",
+              args: { workspace: at.workspace, what, left },
+            }
+          : {
+              id: "setup-runner-unread-refused-tell",
+              args: { project, left },
+            },
       when: { id: "setup-runner-unread-refused-when" },
-      again: "Runner",
+      again: "Again",
     };
   return {
     found: {
@@ -885,12 +997,14 @@ function setupUnreadSaid(
     },
     tell: { id: "setup-runner-unread-tell" },
     when: setupTryAgain,
-    again: "Runner",
+    again: "Again",
   };
 }
 
 const setupActs: Readonly<Record<SetupRunnerAct, CopyId>> = {
   Install: "setup-runner-act-install",
+  ServerRemoved: "setup-runner-act-server-removed",
+  ServerAdded: "setup-runner-act-server-added",
   Register: "setup-runner-act-register",
   Check: "setup-runner-act-check",
   Service: "setup-runner-act-service",
@@ -948,9 +1062,41 @@ function setupActSaid(act: SetupRunnerAct, failed: Copy): SetupRunnerStopSaid {
       id: "setup-runner-act-found",
       args: { act: setupActOf(act), failed },
     },
-    tell: { id: "setup-runner-act-tell", args: { act: setupActOf(act, true) } },
+    tell: {
+      id:
+        act === "ServerRemoved" || act === "ServerAdded"
+          ? "setup-runner-act-tell-server"
+          : "setup-runner-act-tell",
+      args: { act: setupActOf(act, true) },
+    },
     when: setupTryAgain,
-    again: "Runner",
+    again: "Again",
+  };
+}
+
+/** No runner package `runner` can use, which the program's `mcp` installs for the project before `runner` is run again. */
+function setupUnpackagedSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Unpackaged" }>,
+  project: string,
+): SetupRunnerStopSaid {
+  const { found, least } = stop;
+  const program = setupProgramOf(
+    found?.command ?? runnerPackageOffered.program,
+  );
+  return {
+    found:
+      found === undefined
+        ? { id: "setup-runner-unpackaged-found-none", args: { program } }
+        : {
+            id: "setup-runner-unpackaged-found",
+            args: {
+              versioned: setupPackageOf(found.command, found.version),
+              least,
+            },
+          },
+    tell: { id: "setup-runner-unpackaged-tell", args: { program, project } },
+    when: { id: "setup-runner-unpackaged-when", args: { program } },
+    again: "Mcp",
   };
 }
 
@@ -971,7 +1117,7 @@ function setupBehindSaid(
     },
     tell: { id: "setup-runner-behind-tell", args: { left, least, program } },
     when: { id: "setup-runner-behind-when", args: { program } },
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -989,7 +1135,7 @@ const setupRefusalsLasting: {
   "needs Node": {
     tell: { id: "setup-runner-lasting-node-tell" },
     when: { id: "setup-runner-lasting-node-when" },
-    again: "Runner",
+    again: "Again",
   },
   "a Linux pool runs on": {
     tell: { id: "setup-runner-lasting-processor-tell" },
@@ -999,7 +1145,7 @@ const setupRefusalsLasting: {
   "hostname makes no pool name": {
     tell: { id: "setup-runner-lasting-hostname-tell" },
     when: { id: "setup-runner-lasting-hostname-when" },
-    again: "Runner",
+    again: "Again",
   },
 };
 
@@ -1041,7 +1187,7 @@ function setupServiceRefusedSaid(
       args: { act: setupActOf(stop.act, true), path },
     },
     when: { id: "setup-runner-service-refused-when", args: { path } },
-    again: "Runner",
+    again: "Again",
     ...setupLasting(stop.failed),
   };
 }
@@ -1059,7 +1205,7 @@ function setupMintSaid(
       found,
       tell: { id: "setup-runner-mint-absent-tell", args: { project } },
       when: { id: "setup-runner-when-admin", args: { project } },
-      again: "Runner",
+      again: "Again",
     };
   if (stop.outcome === "Conflict")
     return {
@@ -1069,13 +1215,13 @@ function setupMintSaid(
         args: { project, mins: String(stop.lapseMins) },
       },
       when: setupTryAgain,
-      again: "Runner",
+      again: "Again",
     };
   return {
     found,
     tell: { id: "setup-runner-mint-tell", args: { project } },
     when: setupTryAgain,
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1102,7 +1248,7 @@ function setupLoginMissingSaid(
             args: { credential, path, saved },
           },
     when: { id: "setup-runner-login-missing-when", args: { credential } },
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1118,7 +1264,7 @@ function setupSettingsUnreadSaid(
       args: { path, guide: stop.guide },
     },
     when: { id: "setup-runner-settings-unread-when", args: { path } },
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1161,7 +1307,7 @@ function setupMachineSaid(
           args: { guide: stop.guide },
         },
         when: setupTryAgain,
-        again: "Runner",
+        again: "Again",
       };
     case "SettingsUnread":
       return setupSettingsUnreadSaid(stop);
@@ -1172,7 +1318,7 @@ function setupMachineSaid(
         found: { id: "setup-runner-npmless-found" },
         tell: { id: "setup-runner-npmless-tell" },
         when: { id: "setup-runner-npmless-when" },
-        again: "Runner",
+        again: "Again",
       };
     case "Unwritten":
       return {
@@ -1182,7 +1328,7 @@ function setupMachineSaid(
         },
         tell: { id: "setup-runner-unwritten-tell", args: { path: stop.path } },
         when: { id: "setup-runner-unwritten-when", args: { path: stop.path } },
-        again: "Runner",
+        again: "Again",
       };
   }
 }
@@ -1204,7 +1350,7 @@ function setupInactiveSaid(
       found: { id: "setup-runner-inactive-silent-found", args: { unit, was } },
       tell: { id: "setup-runner-inactive-silent-tell" },
       when: setupTryAgain,
-      again: "Runner",
+      again: "Again",
     };
   return {
     found: {
@@ -1220,7 +1366,7 @@ function setupInactiveSaid(
     },
     tell: { id: "setup-runner-inactive-tell" },
     when: setupTryAgain,
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1252,7 +1398,7 @@ function setupCheckFailedSaid(
       },
     },
     when: { id: "setup-runner-check-failed-when" },
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1280,7 +1426,7 @@ function setupServiceSaid(
           args: { command: stop.command },
         },
         when: { id: "setup-runner-linger-when" },
-        again: "Runner",
+        again: "Again",
       };
     case "Inactive":
       return setupInactiveSaid(stop);
@@ -1294,7 +1440,7 @@ function setupServiceSaid(
         },
         tell: { id: "setup-runner-not-live-tell" },
         when: setupLookAgain,
-        again: "Runner",
+        again: "Again",
       };
   }
 }
@@ -1312,7 +1458,7 @@ function setupChatMintSaid(
       found,
       tell: { id: "setup-runner-chat-mint-absent-tell" },
       when: { id: "setup-runner-chat-mint-absent-when" },
-      again: "Runner",
+      again: "Again",
     };
   if (stop.outcome === "Conflict")
     return {
@@ -1322,13 +1468,13 @@ function setupChatMintSaid(
         args: { mins: String(stop.lapseMins) },
       },
       when: setupTryAgain,
-      again: "Runner",
+      again: "Again",
     };
   return {
     found,
     tell: { id: "setup-runner-chat-mint-tell" },
     when: setupTryAgain,
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1381,7 +1527,7 @@ function setupChatLoginSaid(
       },
     },
     when: { id: "setup-runner-chat-login-when", args: { credential } },
-    again: "Runner",
+    again: "Again",
   };
 }
 
@@ -1404,21 +1550,27 @@ function setupChatSaid(
     case "PermitWithheld":
       return {
         found: { id: "setup-runner-permit-found" },
-        tell: {
-          id: "setup-runner-permit-tell",
-          args: {
-            work: {
-              id:
-                stop.work === "Runner"
-                  ? "setup-runner-permit-runner"
-                  : "setup-runner-permit-hosted",
-              args: { project },
-            },
-            people: stop.people,
-          },
-        },
+        tell:
+          stop.work === undefined
+            ? {
+                id: "setup-runner-permit-workspace-tell",
+                args: { people: stop.people },
+              }
+            : {
+                id: "setup-runner-permit-tell",
+                args: {
+                  work: {
+                    id:
+                      stop.work === "Runner"
+                        ? "setup-runner-permit-runner"
+                        : "setup-runner-permit-hosted",
+                    args: { project },
+                  },
+                  people: stop.people,
+                },
+              },
         when: { id: "setup-runner-permit-when" },
-        again: "Runner",
+        again: "Again",
       };
     case "ChatMintRefused":
       return setupChatMintSaid(stop);
@@ -1430,7 +1582,7 @@ function setupChatSaid(
           args: { project, runners: stop.runners },
         },
         when: { id: "setup-runner-offline-when" },
-        again: "Runner",
+        again: "Again",
       };
     case "ChatLogin":
       return setupChatLoginSaid(stop);
@@ -1442,16 +1594,74 @@ function setupChatSaid(
         },
         tell: { id: "setup-runner-chat-not-live-tell" },
         when: setupLookAgain,
-        again: "Runner",
+        again: "Again",
       };
   }
 }
 
-/** A stop as it is said of a project named `project`, workspace first. */
+/** The flag `chat-host` is told the chat host it may replace with. */
+export const setupReplaceFlag = "--replace";
+
+/**
+ * The person's chat host held on another machine, as a stop of `chat-host`:
+ * which host, whether it is live, and that registering this machine ends that
+ * host's sessions, so the command named again carries `--replace` with its
+ * short id and waits on the person's yes.
+ */
+function setupHeldSaid(
+  stop: Extract<
+    SetupRunnerStop,
+    { readonly stop: "ChatHostHeld" | "ReplaceMismatched" }
+  >,
+): SetupRunnerStopSaid {
+  const { short } = stop;
+  const state: Copy = {
+    id: stop.live ? "setup-runner-held-live" : "setup-runner-held-offline",
+  };
+  const replacing: Copy = {
+    id: "setup-runner-held-replacing",
+    args: { short, flag: setupReplaceFlag },
+  };
+  return {
+    found:
+      stop.stop === "ChatHostHeld"
+        ? { id: "setup-runner-held-found", args: { short, state } }
+        : {
+            id: "setup-runner-mismatched-found",
+            args: { short, flag: setupReplaceFlag },
+          },
+    tell:
+      stop.stop === "ChatHostHeld"
+        ? { id: "setup-runner-held-tell", args: { short, state, replacing } }
+        : {
+            id: "setup-runner-mismatched-tell",
+            args: { short, state, replacing, flag: setupReplaceFlag },
+          },
+    when: { id: "setup-runner-held-when", args: { short } },
+    again: "Again",
+    replace: short,
+  };
+}
+
+/** What the console's personal runners page draws the button that mints a chat host's registration token as. */
+export const setupChatHostPressed = {
+  id: "runners-chat-host-register",
+} as const;
+
+/** How a chat host is registered on a machine the setup program does not set one up on: by the commands `page` shows for the machine chosen there. */
+export function setupChatByHand(page: string): Copy {
+  return {
+    id: "setup-mend-chat-by-hand",
+    args: { page, register: setupChatHostPressed },
+  };
+}
+
+/** A stop as it is said of the project or the workspace the run was for. */
 export function setupRunnerStopSaid(
   stop: SetupRunnerStop,
-  project: string,
+  at: SetupRunnerAt,
 ): SetupRunnerStopSaid {
+  const project = setupRunnerNamed(at);
   switch (stop.stop) {
     case "Mac":
     case "Serviceless":
@@ -1461,13 +1671,13 @@ export function setupRunnerStopSaid(
     case "Unwritten":
       return setupMachineSaid(stop);
     case "Unread":
-      return setupUnreadSaid(stop, project);
+      return setupUnreadSaid(stop, at);
     case "NotAdmin":
       return {
         found: { id: "setup-runner-not-admin-found", args: { project } },
         tell: { id: "setup-runner-not-admin-tell", args: { project } },
         when: { id: "setup-runner-when-admin", args: { project } },
-        again: "Runner",
+        again: "Again",
       };
     case "Engineless":
       return setupEnginelessSaid(stop.asked);
@@ -1482,6 +1692,8 @@ export function setupRunnerStopSaid(
       });
     case "Behind":
       return setupBehindSaid(stop);
+    case "Unpackaged":
+      return setupUnpackagedSaid(stop, project);
     case "ServiceRefused":
       return setupServiceRefusedSaid(stop);
     case "MintRefused":
@@ -1497,6 +1709,19 @@ export function setupRunnerStopSaid(
     case "ChatLogin":
     case "ChatHostNotLive":
       return setupChatSaid(stop, project);
+    case "ChatHostHeld":
+    case "ReplaceMismatched":
+      return setupHeldSaid(stop);
+    case "MacChatHost":
+      return {
+        found: { id: "setup-runner-mac-chat-found" },
+        tell: {
+          id: "setup-runner-mac-chat-tell",
+          args: { byHand: setupChatByHand(stop.page) },
+        },
+        when: { id: "setup-mend-chat-host-when" },
+        again: "Status",
+      };
   }
 }
 
@@ -1504,6 +1729,7 @@ export function setupRunnerStopSaid(
 export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
   switch (stop.stop) {
     case "Mac":
+    case "MacChatHost":
       return 2;
     case "NotAdmin":
     case "Serviceless":
@@ -1515,6 +1741,9 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "PermitWithheld":
     case "ChatHostOffline":
     case "ChatLogin":
+    case "ChatHostHeld":
+    case "ReplaceMismatched":
+    case "Unpackaged":
       return 0;
     case "Unread":
       return stop.outcome === "Refused" ? 0 : 1;

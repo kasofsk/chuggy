@@ -1,10 +1,10 @@
-## The runners page.
+## A project's pools, and the words the pages of runners share.
 
 runners-title = { -runner(case: "upper", form: "plural") }
+runners-pools-title = Pools
 # spells -run: to run is a verb here
-runners-about = Machines that run this { -project }'s { -agent(form: "plural") }.
-runners-none = No { -runner } registered
-runners-caption = Registered { -runner(form: "plural") }
+runners-pools-about = Shared machines registered to run this { -project }'s { -agent(form: "plural") }.
+runners-pools-none = No pools
 runners-col-runner = { -runner(case: "upper") }
 runners-col-platforms = Platforms
 runners-col-version = Version
@@ -134,9 +134,10 @@ runners-chat-host-empty = No { -chat-host } yet
 runners-chat-host-remove-named = Remove { -chat-host } { $short }
 runners-chat-host-remove-question = Remove { -chat-host } { $short }?
 runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } and { -inquiry(form: "plural") } in this { -workspace }, and the sessions it is running now end.
-runners-chat-host-token-about = Registers your { -chat-host } once · expires
-runners-chat-host-copy-token = Copy token
+runners-chat-host-claude-code-about = Paste into { -claude-code } on the machine that will be your { -chat-host }
 runners-chat-host-replaces = Replaces { -chat-host } { $short } · Ends its sessions
+runners-chat-host-threads = { -thread(case: "upper", form: "plural") } here may: { $capabilities }
+runners-chat-host-threads-whole = { -thread(case: "upper", form: "plural") } here may do everything their own roster allows
 
 ## Taking a member's personal runners off, in their editor.
 
@@ -152,7 +153,9 @@ runners-member-none = No { -personal-runner } you may remove
 ## Whether a run of the reader's waits on their personal runners.
 
 runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
-runners-wait-offline = Waiting on your { -personal-runner(form: "plural") } · offline
+runners-wait-offline = offline
+# spells -run: to run is a verb here
+runners-wait-unable = none can run it
 
 ## Whether personal runners take a member's work in a project.
 

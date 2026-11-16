@@ -1,8 +1,8 @@
 /**
- * The head of every tab of the epic page, drawn in the ticket page's frame:
- * the title with its number, its status and whether it is archived; its
- * summary; a bar of where its tickets stand; what this reader may do to it;
- * and the notes that apply. Where the reader is narrow, the actions wrap under the title.
+ * The head of every tab of the epic page, drawn through `PageHeader` as the
+ * ticket page's is: the title with its number; its summary; its status and
+ * whether it is archived, with what this reader may do to it; a bar of where
+ * its tickets stand; and the notes that apply.
  *
  * An archive and a reactivation are each sent at the revision the page read,
  * so one made over another's is refused as stale.
@@ -19,6 +19,7 @@ import type {
   EpicViewResponse,
 } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 import { consolePageHref } from "../../core/consolePage.ts";
 import {
   epicFormFrom,
@@ -28,15 +29,13 @@ import {
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { currentOrigin } from "../ports.ts";
 import { TicketActionConfirm } from "../ticket/TicketActionConfirm.tsx";
-import {
-  TicketHeaderFrame,
-  TicketHeaderTitle,
-} from "../ticket/TicketHeader.tsx";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
+import { PageHeader } from "../ui/PageHeader.tsx";
+import type { PageHeaderAction } from "../ui/PageHeader.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
 import { EpicProgressPage, EpicStatusChip } from "./EpicProgress.tsx";
@@ -188,40 +187,37 @@ function EpicHeaderMenu(props: {
   );
 }
 
-/** New ticket on an Active epic, Edit for a reader who may write epics, and
- * the ⋯ menu. */
-function EpicHeaderActions(props: {
-  readonly held: EpicPageHeld;
-  readonly view: EpicViewResponse;
-  readonly writing: EpicHeaderWriting;
-}): ReactNode {
-  const text = useCopyText();
-  const { held, view } = props;
-  const params = { ...held.partition, epic: String(view.number) };
-  return (
-    <div className="epic-header-actions">
-      {view.visibility === "Active" ? (
-        <Link
-          to="/$tenant/$project/tickets/new"
-          params={held.partition}
-          search={{ epic: view.number }}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "epics-new-ticket" })}
-        </Link>
-      ) : null}
-      {held.writing ? (
-        <Link
-          to="/$tenant/$project/epics/$epic/edit"
-          params={params}
-          className={buttonLookClassName({ size: "sm" })}
-        >
-          {text({ id: "ui-edit" })}
-        </Link>
-      ) : null}
-      <EpicHeaderMenu held={held} view={view} writing={props.writing} />
-    </div>
-  );
+/** New ticket on an Active epic, and Edit for a reader who may write epics. */
+function epicHeaderActions(
+  held: EpicPageHeld,
+  view: EpicViewResponse,
+  text: CopyText,
+): readonly PageHeaderAction[] {
+  return [
+    ...(view.visibility === "Active"
+      ? [
+          {
+            label: text({ id: "epics-new-ticket" }),
+            link: {
+              to: "/$tenant/$project/tickets/new",
+              params: held.partition,
+              search: { epic: view.number },
+            },
+          } satisfies PageHeaderAction,
+        ]
+      : []),
+    ...(held.writing
+      ? [
+          {
+            label: text({ id: "ui-edit" }),
+            link: {
+              to: "/$tenant/$project/epics/$epic/edit",
+              params: { ...held.partition, epic: String(view.number) },
+            },
+          } satisfies PageHeaderAction,
+        ]
+      : []),
+  ];
 }
 
 /** A ticket named by its number and, where the graph holds it, its title. */
@@ -286,27 +282,26 @@ export function EpicHeader(props: {
   const { held, view } = props;
   const writing = useEpicHeaderWriting(held.partition);
   return (
-    <TicketHeaderFrame
-      label={<EpicStatusChip status={view.status} />}
+    <PageHeader
       title={view.title}
-    >
-      <div className="epic-header-top">
-        <div className="epic-header-heading">
-          <TicketHeaderTitle title={view.title} ticket={view.number} />
+      number={view.number}
+      {...(view.summary === undefined ? {} : { description: view.summary })}
+      status={
+        <>
           <EpicStatusChip status={view.status} />
           {view.visibility === "Archived" ? (
             <Pill tone="retired">
               {text({ id: "epics-visibility-archived" })}
             </Pill>
           ) : null}
-        </div>
-        <EpicHeaderActions held={held} view={view} writing={writing} />
-      </div>
-      {view.summary === undefined ? null : (
-        <p className="epic-header-summary">{view.summary}</p>
-      )}
+        </>
+      }
+      statusCondensed={<EpicStatusChip status={view.status} />}
+      secondary={epicHeaderActions(held, view, text)}
+      overflow={<EpicHeaderMenu held={held} view={view} writing={writing} />}
+    >
       <EpicProgressPage progress={view.progress} />
       <EpicHeaderNotes held={held} writing={writing} />
-    </TicketHeaderFrame>
+    </PageHeader>
   );
 }

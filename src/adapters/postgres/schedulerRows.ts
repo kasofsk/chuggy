@@ -80,7 +80,7 @@ import {
   asExecutionRequirement,
   executionAgentCapability,
   type RequirementSource,
-} from "../../interpreter/executionRequirement.ts";
+} from "../../contract/executionRequirement.ts";
 import type { TaskResources } from "../../interpreter/taskResources.ts";
 import { declaredConfigurationIsCatalog } from "../../interpreter/authoring.ts";
 import {
