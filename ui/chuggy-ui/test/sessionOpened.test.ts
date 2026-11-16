@@ -3,8 +3,9 @@
  * it: the entry is imported as the document's script is, over that document's
  * two stores, its address and its events.
  *
- * Only the network and the lock manager are doubles, and the route tree, which
- * is a marker that renews when it is pressed. So what is checked is the wiring
+ * Only the network and the lock manager are doubles, the media queries the
+ * document answers at a desk's width, and the route tree, which is a marker
+ * that renews when it is pressed. So what is checked is the wiring
  * nothing else can see: that this session renews under the origin's turn,
  * hears the store change and the document shown again, is told where the
  * document was loaded, and gives a request the network never answers up.
@@ -23,6 +24,7 @@ import {
   sessionHarnessConfiguration as configuration,
   sessionHarnessDiscovery as discovery,
 } from "./sessionHolderHarness.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 vi.mock("../app/browser/routes.tsx", () => ({ consoleRouter: {} }));
 
@@ -128,6 +130,7 @@ function lockManager(): { readonly asked: string[]; held: number } {
 /** A document loaded afresh: the entry run once more, into a root of its own. */
 async function entered(): Promise<void> {
   document.body.innerHTML = '<div id="root"></div>';
+  viewportAtEm(viewportDeskEm);
   vi.resetModules();
   vi.doMock("@tanstack/react-router", routeTree);
   await import("../app/browser/main.tsx");

@@ -64,6 +64,20 @@
     --syntax-value: light-dark(#80489b, #c79ae0);
     --syntax-note: var(--ink-3);
 
+    /* the locomotive — the favicon's own pixels, one value in both schemes
+       because the mark is the same drawing on either page */
+    --locomotive-ink: #1b1530;
+    --locomotive-body: #e0413f;
+    --locomotive-body-light: #ff8c86;
+    --locomotive-body-shadow: #9b2335;
+    --locomotive-window: #7fd8ff;
+    --locomotive-cream: #f0f0f5;
+    --locomotive-steel-highlight: #b9bccb;
+    --locomotive-steel-light: #b4bcc8;
+    --locomotive-steel-dark: #6b7280;
+    --locomotive-lamp: #f5c542;
+    --locomotive-lamp-shadow: #b8860b;
+
     /* categories — the parts of an agent's context, told apart by hue alone;
        slots and not the machine's tones, since none of them is a state */
     --slot-1: light-dark(#6a4fd0, #a593f2); /* system prompt */
