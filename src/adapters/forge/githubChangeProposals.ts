@@ -46,6 +46,12 @@
  * answers it, the composition root answers that port, and the value reaches
  * exactly one header and no diagnostic, evidence field or returned string.
  *
+ * WHAT THE FORGE SAID IS KEPT BESIDE WHAT IT CAME TO. Every act that reached
+ * the forge returns its status and the forge's own message, cut to its bound,
+ * and one that reached none the name of what stopped it. The message is the
+ * body's and never a header's, and the credential is replaced wherever the
+ * forge repeated it, so the reply is a string an operator may read.
+ *
  * THE MARKER IS WHAT MAKES A PROPOSAL THIS REQUEST'S UNTIL ITS NUMBER DOES. A
  * pull request the forge returns is evidence only where its body carries the
  * request's marker; anything else on the same head branch is somebody else's
@@ -104,6 +110,10 @@ import { assertNever } from "../../domain/assertNever.ts";
 import { asBoundedText } from "../../interpreter/boundedText.ts";
 import {
   asProposalDisplayUrl,
+  changeProposalAnsweredReply,
+  changeProposalUnreachedReply,
+  type ChangeProposalForgeReply,
+  type ChangeProposalReplied,
   type ChangeProposalUpdated,
   asProposalMergeState,
   asProposalNumber,
@@ -240,14 +250,15 @@ interface GithubChangeProposalsState {
  * What one forge request came to, in the closed vocabulary both calls map into
  * their own. `Unsettled` is everything that neither answered nor refused.
  */
-type GithubAnswer =
+type GithubAnswer = (
   | { readonly answer: "Read"; readonly body: unknown }
   | { readonly answer: "Denied" }
   | { readonly answer: "Busy" }
   | {
       readonly answer: "Unsettled";
       readonly status: number | undefined;
-    };
+    }
+) & { readonly reply: ChangeProposalForgeReply };
 
 /** What one request sends, a body being what tells a read from an act. */
 type GithubSending =
@@ -394,14 +405,67 @@ function githubChangeProposalsThrottled(response: Response): boolean {
 }
 
 /** What a refusal was, a forge asking to be asked again kept apart from one refusing this caller. */
-function githubChangeProposalsRefusalOf(response: Response): GithubAnswer {
-  if (response.status === githubBusyStatus) return { answer: "Busy" };
+function githubChangeProposalsRefusalOf(
+  response: Response,
+  reply: ChangeProposalForgeReply,
+): GithubAnswer {
+  if (response.status === githubBusyStatus) return { answer: "Busy", reply };
   if (githubDeniedStatuses.includes(response.status)) {
     return githubChangeProposalsThrottled(response)
-      ? { answer: "Busy" }
-      : { answer: "Denied" };
+      ? { answer: "Busy", reply }
+      : { answer: "Denied", reply };
   }
-  return { answer: "Unsettled", status: response.status };
+  return { answer: "Unsettled", status: response.status, reply };
+}
+
+/** The message this forge's error body carries, in its REST and GraphQL shapes alike. */
+const githubMessageSchema = z.union([
+  z.object({ message: z.string() }),
+  z.object({
+    errors: z.array(z.object({ message: z.string() })),
+  }),
+]);
+
+/**
+ * The forge's own message out of a body, with the credential that authorized
+ * the act taken out of it wherever the forge echoed it, and nothing where the
+ * body carries none.
+ */
+function githubChangeProposalsMessageOf(
+  body: unknown,
+  credential: ForgeCredential,
+): string | undefined {
+  const parsed = githubMessageSchema.safeParse(body);
+  if (!parsed.success) return undefined;
+  const message =
+    "message" in parsed.data
+      ? parsed.data.message
+      : parsed.data.errors[0]?.message;
+  return message?.replaceAll(credential, "[credential]");
+}
+
+/** The JSON a bounded body holds, and nothing where it holds none this can read. */
+async function githubChangeProposalsBodyOf(
+  own: GithubChangeProposalsState,
+  response: Response,
+): Promise<unknown> {
+  try {
+    return JSON.parse(
+      await githubResponseTextOf(
+        response,
+        own.responseBytesMax,
+        "github proposals",
+      ),
+    ) as unknown;
+  } catch {
+    await response.body?.cancel().catch(() => undefined);
+    return undefined;
+  }
+}
+
+/** The name a request that reached no forge failed under, which carries no header and no body. */
+function githubChangeProposalsFailureOf(raised: unknown): string {
+  return raised instanceof Error ? raised.name : "Unknown";
 }
 
 /** Resolves what authorizes one forge act, which is never stored and never folded into anything. */
@@ -438,23 +502,24 @@ async function githubChangeProposalsSend(
         own.requestTimeoutSecsMax * millisecondsPerSecond,
       ),
     });
-  } catch {
-    return { answer: "Unsettled", status: undefined };
+  } catch (raised) {
+    return {
+      answer: "Unsettled",
+      status: undefined,
+      reply: changeProposalUnreachedReply(
+        githubChangeProposalsFailureOf(raised),
+      ),
+    };
   }
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    return githubChangeProposalsRefusalOf(response);
-  }
-  try {
-    const text = await githubResponseTextOf(
-      response,
-      own.responseBytesMax,
-      "github proposals",
-    );
-    return { answer: "Read", body: JSON.parse(text) };
-  } catch {
-    return { answer: "Unsettled", status: response.status };
-  }
+  const body = await githubChangeProposalsBodyOf(own, response);
+  const reply = changeProposalAnsweredReply(
+    response.status,
+    githubChangeProposalsMessageOf(body, credential),
+  );
+  if (!response.ok) return githubChangeProposalsRefusalOf(response, reply);
+  return body === undefined
+    ? { answer: "Unsettled", status: response.status, reply }
+    : { answer: "Read", body, reply };
 }
 
 /**
@@ -755,7 +820,7 @@ function githubChangeProposalsTargetOf(
 async function githubChangeProposalsCreate(
   own: GithubChangeProposalsState,
   request: ChangeProposalRequest,
-): Promise<ChangeProposalCreated> {
+): Promise<ChangeProposalReplied<ChangeProposalCreated>> {
   const target = githubChangeProposalsTargetOf(own, request);
   if (target === undefined) return { created: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -776,11 +841,12 @@ async function githubChangeProposalsCreate(
       }),
     },
   );
-  if (answer.answer === "Denied") return { created: "Denied" };
-  if (answer.answer === "Busy") return { created: "Unavailable" };
-  if (answer.answer === "Unsettled") return { created: "Ambiguous" };
+  const { reply } = answer;
+  if (answer.answer === "Denied") return { created: "Denied", reply };
+  if (answer.answer === "Busy") return { created: "Unavailable", reply };
+  if (answer.answer === "Unsettled") return { created: "Ambiguous", reply };
   const parsed = githubPullRequestSchema.safeParse(answer.body);
-  if (!parsed.success) return { created: "Ambiguous" };
+  if (!parsed.success) return { created: "Ambiguous", reply };
   const match = githubChangeProposalsEvidenceOf(
     request,
     target.address,
@@ -789,8 +855,8 @@ async function githubChangeProposalsCreate(
     "ByMarker",
   );
   return match.matched === "Evidence"
-    ? { created: "Created", evidence: match.evidence }
-    : { created: "Ambiguous" };
+    ? { created: "Created", evidence: match.evidence, reply }
+    : { created: "Ambiguous", reply };
 }
 
 /** The collection query one read is, bounded to the proposals a read may consider. */
@@ -809,7 +875,7 @@ function githubChangeProposalsReadUrl(
 async function githubChangeProposalsRead(
   own: GithubChangeProposalsState,
   request: ChangeProposalRequest,
-): Promise<ChangeProposalRead> {
+): Promise<ChangeProposalReplied<ChangeProposalRead>> {
   const target = githubChangeProposalsTargetOf(own, request);
   if (target === undefined) return { read: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -820,6 +886,19 @@ async function githubChangeProposalsRead(
     authorized.credential,
     { method: "GET" },
   );
+  return {
+    ...githubChangeProposalsMarkedOf(own, request, target, answer),
+    reply: answer.reply,
+  };
+}
+
+/** What one answer to a read by marker says of the proposal it looked for. */
+function githubChangeProposalsMarkedOf(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalRequest,
+  target: GithubProposalTarget,
+  answer: GithubAnswer,
+): ChangeProposalRead {
   if (answer.answer === "Denied") return { read: "Denied" };
   if (answer.answer !== "Read") return { read: "Unavailable" };
   const parsed = z.array(githubPullRequestSchema).safeParse(answer.body);
@@ -893,7 +972,7 @@ function githubChangeProposalsNumberedAddress(
 async function githubChangeProposalsReadNumbered(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
-): Promise<ChangeProposalRead> {
+): Promise<ChangeProposalReplied<ChangeProposalRead>> {
   const address = githubChangeProposalsNumberedAddress(own, request);
   if (address === undefined) return { read: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -904,10 +983,11 @@ async function githubChangeProposalsReadNumbered(
     authorized.credential,
     { method: "GET" },
   );
-  if (answer.answer === "Denied") return { read: "Denied" };
-  if (answer.answer !== "Read") return { read: "Unavailable" };
+  const { reply } = answer;
+  if (answer.answer === "Denied") return { read: "Denied", reply };
+  if (answer.answer !== "Read") return { read: "Unavailable", reply };
   const parsed = githubPullRequestSchema.safeParse(answer.body);
-  if (!parsed.success) return { read: "Unavailable" };
+  if (!parsed.success) return { read: "Unavailable", reply };
   const match = githubChangeProposalsEvidenceOf(
     request,
     address,
@@ -916,8 +996,8 @@ async function githubChangeProposalsReadNumbered(
     "ByNumber",
   );
   return match.matched === "Evidence"
-    ? { read: "Found", evidence: match.evidence }
-    : { read: "Unavailable" };
+    ? { read: "Found", evidence: match.evidence, reply }
+    : { read: "Unavailable", reply };
 }
 
 /** What a refusal this forge named no answer of its own for comes to. */
@@ -935,7 +1015,7 @@ function githubChangeProposalsMergeRefusal(
 async function githubChangeProposalsMerge(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
-): Promise<ChangeProposalMerged> {
+): Promise<ChangeProposalReplied<ChangeProposalMerged>> {
   const address = githubChangeProposalsNumberedAddress(own, request);
   if (address === undefined) return { merged: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -956,6 +1036,13 @@ async function githubChangeProposalsMerge(
       }),
     },
   );
+  return { ...githubChangeProposalsMergedOf(answer), reply: answer.reply };
+}
+
+/** What one answer to a merge says came of it. */
+function githubChangeProposalsMergedOf(
+  answer: GithubAnswer,
+): ChangeProposalMerged {
   if (answer.answer === "Denied") return { merged: "Denied" };
   if (answer.answer === "Busy") return { merged: "Unavailable" };
   if (answer.answer === "Unsettled")
@@ -975,7 +1062,7 @@ async function githubChangeProposalsMerge(
 async function githubChangeProposalsUpdate(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
-): Promise<ChangeProposalUpdated> {
+): Promise<ChangeProposalReplied<ChangeProposalUpdated>> {
   const address = githubChangeProposalsNumberedAddress(own, request);
   if (address === undefined) return { updated: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -990,6 +1077,13 @@ async function githubChangeProposalsUpdate(
       body: JSON.stringify({ expected_head_sha: request.headCommit }),
     },
   );
+  return { ...githubChangeProposalsUpdatedOf(answer), reply: answer.reply };
+}
+
+/** What one answer to an update says came of it. */
+function githubChangeProposalsUpdatedOf(
+  answer: GithubAnswer,
+): ChangeProposalUpdated {
   switch (answer.answer) {
     case "Read":
       return { updated: "Accepted" };
@@ -1072,25 +1166,30 @@ const githubGraphqlAnswerSchema = z.object({
 
 /** What one GraphQL request came to, a refusal read off the types its errors name. */
 type GithubGraphqlAnswer =
-  | { readonly answer: "Data"; readonly data: unknown }
-  | { readonly answer: "Refused" }
+  | ({ readonly answer: "Data"; readonly data: unknown } & {
+      readonly reply: ChangeProposalForgeReply;
+    })
+  | ({ readonly answer: "Refused" } & {
+      readonly reply: ChangeProposalForgeReply;
+    })
   | Exclude<GithubAnswer, { readonly answer: "Read" }>;
 
 /** What a refusal's error types name: the caller, the forge's allowance, the proposal, or nothing this tree reads. */
 function githubChangeProposalsGraphqlRefusalOf(
   types: readonly (string | undefined)[],
+  reply: ChangeProposalForgeReply,
 ): GithubGraphqlAnswer {
   if (
     types.some(
       (type) => type !== undefined && githubGraphqlDeniedTypes.includes(type),
     )
   )
-    return { answer: "Denied" };
-  if (types.includes(githubGraphqlBusyType)) return { answer: "Busy" };
+    return { answer: "Denied", reply };
+  if (types.includes(githubGraphqlBusyType)) return { answer: "Busy", reply };
   return types.length > 0 &&
     types.every((type) => type === githubGraphqlRefusedType)
-    ? { answer: "Refused" }
-    : { answer: "Unsettled", status: undefined };
+    ? { answer: "Refused", reply }
+    : { answer: "Unsettled", status: undefined, reply };
 }
 
 /** Makes the one bounded GraphQL request this act is, a success carrying errors being the refusal it is. */
@@ -1107,12 +1206,16 @@ async function githubChangeProposalsGraphql(
     { method: "POST", body: JSON.stringify({ query, variables }) },
   );
   if (answer.answer !== "Read") return answer;
+  const { reply } = answer;
   const parsed = githubGraphqlAnswerSchema.safeParse(answer.body);
-  if (!parsed.success) return { answer: "Unsettled", status: undefined };
+  if (!parsed.success) return { answer: "Unsettled", status: undefined, reply };
   const errors = parsed.data.errors ?? [];
   return errors.length === 0
-    ? { answer: "Data", data: parsed.data.data }
-    : githubChangeProposalsGraphqlRefusalOf(errors.map((error) => error.type));
+    ? { answer: "Data", data: parsed.data.data, reply }
+    : githubChangeProposalsGraphqlRefusalOf(
+        errors.map((error) => error.type),
+        reply,
+      );
 }
 
 /** The fields of a queue event this tree reads, either kind. */
@@ -1255,7 +1358,7 @@ function githubChangeProposalsStandingOf(
 async function githubChangeProposalsReadQueue(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
-): Promise<ChangeProposalQueueRead> {
+): Promise<ChangeProposalReplied<ChangeProposalQueueRead>> {
   const address = githubChangeProposalsNumberedAddress(own, request);
   if (address === undefined) return { read: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -1270,12 +1373,13 @@ async function githubChangeProposalsReadQueue(
       number: request.proposal.number,
     },
   );
-  if (answer.answer === "Denied") return { read: "Denied" };
-  if (answer.answer !== "Data") return { read: "Unavailable" };
+  const { reply } = answer;
+  if (answer.answer === "Denied") return { read: "Denied", reply };
+  if (answer.answer !== "Data") return { read: "Unavailable", reply };
   const standing = githubChangeProposalsStandingOf(answer.data);
   return standing === undefined
-    ? { read: "Unavailable" }
-    : { read: "Standing", standing };
+    ? { read: "Unavailable", reply }
+    : { read: "Standing", standing, reply };
 }
 
 /** The data a queue mutation answers, its entry present where the forge acted. */
@@ -1298,7 +1402,7 @@ function githubChangeProposalsQueueEntryOf(
 async function githubChangeProposalsEnqueue(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
-): Promise<ChangeProposalEnqueued> {
+): Promise<ChangeProposalReplied<ChangeProposalEnqueued>> {
   const address = githubChangeProposalsNumberedAddress(own, request);
   if (address === undefined) return { enqueued: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -1310,6 +1414,13 @@ async function githubChangeProposalsEnqueue(
     githubEnqueueMutation,
     { id: request.proposal.remote, head: request.headCommit },
   );
+  return { ...githubChangeProposalsEnqueuedOf(answer), reply: answer.reply };
+}
+
+/** What one answer to an enqueue says came of it. */
+function githubChangeProposalsEnqueuedOf(
+  answer: GithubGraphqlAnswer,
+): ChangeProposalEnqueued {
   switch (answer.answer) {
     case "Data":
       return githubChangeProposalsQueueEntryOf(
@@ -1335,7 +1446,7 @@ async function githubChangeProposalsEnqueue(
 async function githubChangeProposalsDequeue(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
-): Promise<ChangeProposalDequeued> {
+): Promise<ChangeProposalReplied<ChangeProposalDequeued>> {
   const address = githubChangeProposalsNumberedAddress(own, request);
   if (address === undefined) return { dequeued: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
@@ -1347,6 +1458,13 @@ async function githubChangeProposalsDequeue(
     githubDequeueMutation,
     { id: request.proposal.remote },
   );
+  return { ...githubChangeProposalsDequeuedOf(answer), reply: answer.reply };
+}
+
+/** What one answer to a dequeue says came of it. */
+function githubChangeProposalsDequeuedOf(
+  answer: GithubGraphqlAnswer,
+): ChangeProposalDequeued {
   switch (answer.answer) {
     case "Data":
       return githubChangeProposalsQueueEntryOf(

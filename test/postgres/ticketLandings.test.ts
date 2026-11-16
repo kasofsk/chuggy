@@ -545,6 +545,7 @@ test("a landing whose pull request the forge would not merge for a conflict answ
     creation: "Created",
     status: "Open",
     mergeability: "Conflicting",
+    mergesAsked: 1,
   });
 });
 
@@ -575,6 +576,7 @@ test("a landing merged through its pull request answers Landed, the link and the
       baseRef: "refs/heads/main",
       creation: "Created",
       status: "Merged",
+      mergesAsked: 1,
     },
     "a merge read with no head of its own names no other head",
   );
@@ -847,6 +849,7 @@ test("a landing whose merge waits on the forge's own rules answers AwaitingMerge
     status: "Open",
     mergeability: "Blocked",
     mergeState: "behind",
+    mergesAsked: 1,
   });
 });
 

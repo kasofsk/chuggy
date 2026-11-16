@@ -16,11 +16,14 @@
  * a hold emits alongside it, which is what keeps the count and the reasons in
  * agreement.
  *
- * ONE OBSERVATION NAMES ITS REQUEST, AND NONE NAMES ANYTHING ELSE. Every other
- * observation is closed and identifier-free; `advanced` carries the request
- * one advance was about beside the hold it was left at, because a request held
- * on every pass is one an operator has to be able to find, and its identity is
- * neither ticket text nor a credential.
+ * THREE OBSERVATIONS NAME THEIR REQUEST, AND NONE NAMES ANYTHING ELSE. Every
+ * other observation is closed and identifier-free; `advanced` carries the
+ * request one advance was about beside the hold it was left at, and
+ * `forgeAnswered` and `holdRecorded` carry its ticket and request beside what
+ * the forge answered one act or the hold a pass recorded, because a request
+ * held on every pass is one an operator has to be able to find. A ticket's
+ * number and a request's identity are neither ticket text nor a credential,
+ * and a forge's reply is the adapter's, which keeps every credential out of it.
  */
 
 import type {
@@ -33,6 +36,11 @@ import type {
   FinalizationSubmitted,
   ReconciliationVerdict,
 } from "./finalizer.ts";
+import type { FinalizationUnavailableKind } from "../contract/rosters.ts";
+import type {
+  ChangeProposalForgeReply,
+  ChangeProposalPort,
+} from "./changeProposal.ts";
 import type { FinalizationOutcome } from "./projectCommand.ts";
 import { observe } from "./ticketService.ts";
 
@@ -66,7 +74,28 @@ export type FinalizerHoldReason =
   | "ProposalUnrecorded"
   | "ProposalUnbranched";
 
-/** The finalizer's observations, `advanced` the one naming its request. */
+/** One act the finalizer asked a forge of a proposal, named as the port names it. */
+export type FinalizerForgeAct = keyof ChangeProposalPort;
+
+/** What one forge act came to: the arm it mapped to, and the forge's reply where it sent anything. */
+export interface FinalizerForgeAnswered {
+  readonly ticket: number;
+  readonly request: string;
+  readonly act: FinalizerForgeAct;
+  readonly outcome: string;
+  readonly reply?: ChangeProposalForgeReply;
+}
+
+/** One hold a pass recorded on its request, and whether recording it escalated the request. */
+export interface FinalizerHoldRecorded {
+  readonly ticket: number;
+  readonly request: string;
+  readonly kind: FinalizationUnavailableKind;
+  readonly passes: number;
+  readonly escalated: boolean;
+}
+
+/** The finalizer's observations, `advanced`, `forgeAnswered` and `holdRecorded` the ones naming their request. */
 export interface FinalizerMetrics {
   claiming(claims: number, ceiling: number): void;
   reopening(scope: FinalizerReopenScope, requests: number): void;
@@ -85,6 +114,8 @@ export interface FinalizerMetrics {
   ): void;
   holding(reason: FinalizerHoldReason): void;
   advanced(request: string, held: FinalizerHoldReason | undefined): void;
+  forgeAnswered(answered: FinalizerForgeAnswered): void;
+  holdRecorded(recorded: FinalizerHoldRecorded): void;
 }
 
 /** Emits nothing, which is what a caller that supplies no telemetry gets. */
@@ -100,6 +131,8 @@ export const silentFinalizerMetrics: FinalizerMetrics = {
   conclusion: () => undefined,
   holding: () => undefined,
   advanced: () => undefined,
+  forgeAnswered: () => undefined,
+  holdRecorded: () => undefined,
 };
 
 /**
@@ -159,11 +192,19 @@ export function finalizerHoldLog(
   write: (line: string) => void,
   requestsMax: number = finalizerHoldLogRequestsMax,
 ): FinalizerTelemetry {
+  return finalizerTelemetry(finalizerHoldLogMetrics(write, requestsMax));
+}
+
+/** The observations a hold log is, which a process log extends. */
+function finalizerHoldLogMetrics(
+  write: (line: string) => void,
+  requestsMax: number,
+): FinalizerMetrics {
   if (!Number.isSafeInteger(requestsMax) || requestsMax < 1) {
     throw new RangeError("finalizer hold log: requestsMax must be positive");
   }
   const logged = new Map<string, FinalizerHoldLogged>();
-  return finalizerTelemetry({
+  return {
     ...silentFinalizerMetrics,
     advanced: (request, held) => {
       const prior = logged.get(request);
@@ -186,6 +227,57 @@ export function finalizerHoldLog(
           `finalizer: request ${JSON.stringify(request)} held at ${held}, ${String(advances)} advances in a row\n`,
         );
       }
+    },
+  };
+}
+
+/** The fields of one forge reply a line carries, flat beside the act's own. */
+function finalizerReplyFields(
+  reply: ChangeProposalForgeReply | undefined,
+): Record<string, string | number | boolean> {
+  if (reply === undefined) return {};
+  return reply.reached === "Unreached"
+    ? { failure: reply.failure }
+    : {
+        status: reply.status,
+        ...(reply.message === undefined ? {} : { message: reply.message }),
+        ...(reply.messageCut === true ? { messageCut: true } : {}),
+      };
+}
+
+/**
+ * The finalizer process's own log: the hold log's lines, and one JSON object
+ * per line for every forge act a pass made and every hold it recorded or
+ * escalated, each naming its ticket and request.
+ */
+export function finalizerProcessLog(
+  write: (line: string) => void,
+  requestsMax: number = finalizerHoldLogRequestsMax,
+): FinalizerTelemetry {
+  const line = (fields: Record<string, unknown>): void => {
+    write(`${JSON.stringify(fields)}\n`);
+  };
+  return finalizerTelemetry({
+    ...finalizerHoldLogMetrics(write, requestsMax),
+    forgeAnswered: (answered) => {
+      line({
+        finalizer: "forgeAct",
+        ticket: answered.ticket,
+        request: answered.request,
+        act: answered.act,
+        outcome: answered.outcome,
+        ...finalizerReplyFields(answered.reply),
+      });
+    },
+    holdRecorded: (recorded) => {
+      line({
+        finalizer: "hold",
+        ticket: recorded.ticket,
+        request: recorded.request,
+        hold: recorded.kind,
+        passes: recorded.passes,
+        escalated: recorded.escalated,
+      });
     },
   });
 }

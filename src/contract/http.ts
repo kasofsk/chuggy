@@ -285,6 +285,16 @@ export const proposalMergeStateCharsMax = 64;
 /** The longest word a forge's merge queue answers in: a removal's reason, or the login that removed it. */
 export const proposalQueueWordCharsMax = 64;
 
+/**
+ * The longest message a forge's answer to one act on a proposal is kept at; a
+ * longer one is cut to it and says so. A landing carries one, and the heaviest
+ * landing has to fit one tool answer of the session pod whole.
+ */
+export const proposalForgeMessageCharsMax = 88;
+
+/** The longest name a failure that reached no forge is kept under, which the platform's own error names fit. */
+export const proposalForgeFailureCharsMax = 12;
+
 /** The longest model identity a usage row names. */
 export const runModelCharsMax = 128;
 

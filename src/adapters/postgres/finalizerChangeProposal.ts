@@ -54,6 +54,13 @@
  * clears the reading a wait kept, so a reading kept beside a standing is
  * always the newer of the two.
  *
+ * WHAT THE FORGE ANSWERED IS KEPT PER ACT, NEWEST ONLY. `forge_answers` holds
+ * one object for a merge and one for an update: the count that authorizes the
+ * act stamps when it was asked, and the answer, once heard, is written beside
+ * it with when. Only an act asked and not yet answered takes one, so a crash
+ * between them leaves an act asked and unanswered, which is what happened. It
+ * is a record and decides nothing.
+ *
  * AN ADOPTED HEAD IS WRITTEN BESIDE THE ONE ASKED FOR, never over it, and only
  * where the reading the row keeps found the proposal at that head.
  *
@@ -141,6 +148,8 @@ import {
   type ProposalQueueInstant,
 } from "../../interpreter/changeProposal.ts";
 import type {
+  ChangeProposalAnswer,
+  ChangeProposalAnsweredAct,
   ChangeProposalAsked,
   ChangeProposalEnqueueWrite,
   ChangeProposalUpdateWrite,
@@ -1129,6 +1138,10 @@ export async function finalizerChangeProposalMergeAttempt(
   const marked = await client.query(
     sql`UPDATE finalization_change_proposal
         SET merge_attempts = merge_attempts + 1,
+            forge_answers = forge_answers || jsonb_build_object('merge',
+              jsonb_build_object('askedAt',
+                to_char(now() AT TIME ZONE 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))),
             merge_reading = NULL,
             merge_reading_contradiction = NULL,
             merge_reading_evidence = NULL
@@ -1322,7 +1335,11 @@ export async function finalizerChangeProposalUpdateMark(
   const marked = await client.query(
     sql`UPDATE finalization_change_proposal c
         SET merge_updates = merge_updates + 1,
-            merge_update_unread = true
+            merge_update_unread = true,
+            forge_answers = c.forge_answers || jsonb_build_object('updateBranch',
+              jsonb_build_object('askedAt',
+                to_char(now() AT TIME ZONE 'UTC',
+                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))
       WHERE c.tenant = ${claim.partition.tenant} AND c.project = ${claim.partition.project}
         AND c.request = ${claim.request}
         AND c.merge IS NULL
@@ -1367,6 +1384,57 @@ export async function finalizerChangeProposalUpdateRecord(
         AND request = ${claim.request}
         AND merge IS NULL
         AND merge_update_unread`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/** The longest document one kept forge answer may be. */
+const changeProposalAnswerCharsMax = 2048;
+
+/** One forge answer as its row keeps it, flat beside the time it was asked. */
+function changeProposalAnswerDocument(answer: ChangeProposalAnswer): string {
+  const reply = answer.reply;
+  return JSON.stringify({
+    outcome: answer.outcome,
+    ...(reply === undefined
+      ? {}
+      : reply.reached === "Unreached"
+        ? { failure: reply.failure }
+        : {
+            status: reply.status,
+            ...(reply.message === undefined ? {} : { message: reply.message }),
+            ...(reply.messageCut === true ? { messageCut: true } : {}),
+          }),
+  });
+}
+
+/**
+ * Keeps what the forge answered the newest act of one kind beside when it was
+ * asked. Only an act counted and not yet answered takes one, so an answer is
+ * never kept for an act another pass asked, and never twice.
+ */
+export async function finalizerChangeProposalAnswerRecord(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  act: ChangeProposalAnsweredAct,
+  answer: ChangeProposalAnswer,
+): Promise<ChangeProposalWritten> {
+  const document = changeProposalAnswerDocument(answer);
+  if (textCodePointsCount(document) > changeProposalAnswerCharsMax)
+    return { wrote: "Nothing" };
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET forge_answers = forge_answers || jsonb_build_object(${act}::text,
+              (forge_answers->${act}::text) || ${document}::jsonb
+                || jsonb_build_object('answeredAt',
+                     to_char(now() AT TIME ZONE 'UTC',
+                             'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND forge_answers->${act}::text->>'askedAt' IS NOT NULL
+        AND forge_answers->${act}::text->>'answeredAt' IS NULL`,
   );
   return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
 }

@@ -684,6 +684,16 @@ export const changeProposalMerges = [
   "NotMergeable",
 ] as const;
 
+/** What the forge answered one merge asked of a proposal, restating `allChangeProposalMerges`. */
+export const changeProposalMergeOutcomes = [
+  "Merged",
+  "NotMergeable",
+  "HeadMoved",
+  "Denied",
+  "Unavailable",
+  "Ambiguous",
+] as const;
+
 /** Why a stored change proposal was not mergeable, restating `allChangeProposalUnmergeableSettled`. */
 export const changeProposalMergeReasons = ["Conflict"] as const;
 

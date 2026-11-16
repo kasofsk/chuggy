@@ -387,6 +387,7 @@ function recordingProposals(
 ): FinalizerProposalStore {
   return {
     changeProposal: () => Promise.resolve(recordedProposalOf(store())),
+    recordChangeProposalAnswer: () => Promise.resolve({ wrote: "Nothing" }),
     markChangeProposalAttempt: (record) => {
       const own = store();
       if (
