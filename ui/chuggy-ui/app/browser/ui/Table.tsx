@@ -18,9 +18,12 @@
  * restated on every element a stacked table draws.
  */
 
-import { Fragment, useEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { Fragment } from "react";
+import type { ReactNode } from "react";
 
+import { useScrollSides } from "./useScrollSides.ts";
+
+import "./ScrollSides.css";
 import "./Table.css";
 
 export interface TableColumn<Key extends string> {
@@ -82,14 +85,14 @@ function tableColumnsOrdered<Key extends string>(
 }
 
 export function Table<Key extends string>(props: TableProps<Key>): ReactNode {
-  const { scroller, more } = useTableOverflow();
+  const { scroller, more } = useScrollSides<HTMLDivElement>();
   const stacked = "stacked" in props ? props.stacked : undefined;
   const scrolls = more.start || more.end;
   return (
     <div
       ref={scroller}
       className={
-        "tabular-scroll max-w-full overflow-x-auto" +
+        "tabular-scroll scroll-sides max-w-full overflow-x-auto" +
         (stacked === undefined ? "" : " tabular-stacking")
       }
       data-more-start={more.start ? "" : undefined}
@@ -226,40 +229,4 @@ function TableStackedCell<Key extends string>(props: {
       {content}
     </td>
   );
-}
-
-/** Whether the scroller holds more than it shows, before its start and past
- * its end, measured again whenever it scrolls or changes size. */
-function useTableOverflow(): {
-  readonly scroller: RefObject<HTMLDivElement | null>;
-  readonly more: { readonly start: boolean; readonly end: boolean };
-} {
-  const scroller = useRef<HTMLDivElement>(null);
-  const [more, setMore] = useState({ start: false, end: false });
-  useEffect(() => {
-    const element = scroller.current;
-    if (element === null) return undefined;
-    const measure = (): void => {
-      const before = Math.abs(element.scrollLeft);
-      const start = before > 0;
-      const end = before + element.clientWidth < element.scrollWidth - 1;
-      setMore((held) =>
-        held.start === start && held.end === end ? held : { start, end },
-      );
-    };
-    measure();
-    element.addEventListener("scroll", measure, { passive: true });
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(measure);
-    observer?.observe(element);
-    if (element.firstElementChild !== null)
-      observer?.observe(element.firstElementChild);
-    return () => {
-      element.removeEventListener("scroll", measure);
-      observer?.disconnect();
-    };
-  }, []);
-  return { scroller, more };
 }
