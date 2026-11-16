@@ -43,11 +43,9 @@
     );
   }
 
-  /* A mask cuts away a focus ring at the faded edge, so a scroller focused by
-     keyboard, or holding what is, drops its fade and keeps its bar as the
-     cue. */
-  .scroll-sides:focus-visible,
-  .scroll-sides:has(:focus-visible) {
+  /* A mask cuts away the focus ring, which lies outside the scroller, so a
+     scroller focused by keyboard drops its fade and keeps its bar as the cue. */
+  .scroll-sides:focus-visible {
     mask-image: none;
   }
 }

@@ -7,7 +7,8 @@
  * drawn with no provider around them.
  */
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import scrollSidesSheet from "../app/browser/ui/ScrollSides.css?raw";
@@ -24,6 +25,7 @@ vi.mock(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const tabNavParams = { tenant: "acme", project: "web", ticket: "7" };
@@ -126,12 +128,97 @@ test("a row holding a tab focused by keyboard drops the fade that would cut its 
   nav.setAttribute("data-more-end", "");
   const focused = "data-keyboard-focused";
   const rules = sheetRules(
-    scrollSidesSheet.replaceAll(":focus-visible", `[${focused}]`),
+    (scrollSidesSheet + tabSheet).replaceAll(":focus-visible", `[${focused}]`),
     [],
   );
   expect(sheetDeclared(rules, nav, "mask-image")).toContain("to left");
   screen.getByRole("link", { name: "Overview" }).setAttribute(focused, "");
   expect(sheetDeclared(rules, nav, "mask-image")).toBe("none");
+});
+
+/** An observer told, once the row is laid out again, only of a target whose
+ * width then changed; what it returns lays the row out. */
+function tabNavObserversStubbed(
+  widthOf: (element: Element) => number,
+): () => void {
+  const observers: {
+    readonly callback: ResizeObserverCallback;
+    readonly widths: Map<Element, number>;
+  }[] = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      readonly held: (typeof observers)[number];
+      constructor(callback: ResizeObserverCallback) {
+        this.held = { callback, widths: new Map() };
+        observers.push(this.held);
+      }
+      observe(target: Element): void {
+        this.held.widths.set(target, widthOf(target));
+      }
+      unobserve(): void {}
+      disconnect(): void {
+        this.held.widths.clear();
+      }
+    },
+  );
+  return () => {
+    for (const held of observers) {
+      const changed = [...held.widths].filter(
+        ([target, width]) => widthOf(target) !== width,
+      );
+      for (const [target] of changed) held.widths.set(target, widthOf(target));
+      if (changed.length > 0)
+        held.callback(
+          changed.map(([target]) => ({ target }) as ResizeObserverEntry),
+          {} as ResizeObserver,
+        );
+    }
+  };
+}
+
+/** jsdom lays nothing out, so the row is laid out here as a browser would: the
+ * list as wide as its tabs where the sheet sizes it to them, and as wide as the
+ * row otherwise. */
+test("a row that comes to hold more than it shows after mount is marked then", () => {
+  const rowWidth = 200;
+  let tabsWidth = 150;
+  const rules = sheetRules(tabSheet + scrollSidesSheet, []);
+  const widthOf = (element: Element): number =>
+    element.tagName === "NAV" ||
+    sheetDeclared(rules, element, "width") !== "max-content"
+      ? rowWidth
+      : tabsWidth;
+  const laidOut = tabNavObserversStubbed(widthOf);
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(
+    function (this: HTMLElement): number {
+      return this.tagName === "NAV" ? Math.max(rowWidth, tabsWidth) : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(
+    rowWidth,
+  );
+  const drawn = (count?: number): ReactNode => (
+    <TabNav label="Ticket">
+      <TabNavLink to="/$tenant/$project/tickets/$ticket" params={tabNavParams}>
+        Overview
+      </TabNavLink>
+      <TabNavLink
+        to="/$tenant/$project/tickets/$ticket/runs"
+        params={tabNavParams}
+        count={count}
+      >
+        Runs
+      </TabNavLink>
+    </TabNav>
+  );
+  const view = render(drawn());
+  const nav = screen.getByRole("navigation", { name: "Ticket" });
+  expect(nav.hasAttribute("data-more-end")).toBe(false);
+  view.rerender(drawn(3));
+  tabsWidth = 400;
+  act(laidOut);
+  expect(nav.hasAttribute("data-more-end")).toBe(true);
 });
 
 test("each tab is at least the touch height under a coarse pointer", () => {

@@ -1,8 +1,10 @@
 /**
  * Which sides of a sideways scroller hold more than it shows, before its start
- * and past its end, measured again whenever it scrolls or changes size. A
- * scroller draws them as `data-more-start` and `data-more-end`, which
- * `ScrollSides.css` fades.
+ * and past its end, measured again whenever it scrolls or it or its first
+ * child changes size. That child is what it scrolls, so it is sized to its own
+ * content rather than the scroller's width, or content that grows inside it
+ * goes unmeasured. A scroller draws them as `data-more-start` and
+ * `data-more-end`, which `ScrollSides.css` fades.
  */
 
 import { useEffect, useRef, useState } from "react";
