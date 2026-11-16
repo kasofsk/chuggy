@@ -1,6 +1,7 @@
 /**
  * What this adapter needs to be there before it can serve any promotion at all:
- * a git that writes merge trees, and a scratch it can work in.
+ * a git that writes merge trees and verbatim patch-ids, and a scratch it can
+ * work in.
  *
  * A PREREQUISITE IS A VERDICT AND NOT AN EXCEPTION HERE. `scratchOpen` refuses
  * both of these at construction, which is right for a composition and useless
@@ -24,7 +25,7 @@ import { gitRun, gitVersionAdmits, type GitEnvironment } from "./gitRun.ts";
 /** The bound the one call this asks for an answer on is made under. */
 const gitAvailableTimeoutMsMax = 30_000;
 
-/** Requires a git that writes merge trees on the path this environment names. */
+/** Requires a git that writes merge trees and verbatim patch-ids on the path this environment names. */
 export function gitAvailablePrecondition(
   environment: GitEnvironment,
 ): RuntimePrecondition {
@@ -51,7 +52,7 @@ export function gitAvailablePrecondition(
       }
       return runtimePreconditionAnswer(
         gitVersionAdmits(ran.stdout),
-        `the git on this path is not one that writes merge trees: ${ran.stdout}`,
+        `the git on this path is not one that writes merge trees and verbatim patch-ids: ${ran.stdout}`,
       );
     },
   };

@@ -1,12 +1,15 @@
 /**
  * The identity of a ticket's change, asked of the repository its commits are
- * in: the stable patch-id of the diff from where the work commit and the target
- * tip meet to the work commit.
+ * in: the patch-id of the lines the diff from where the work commit and the
+ * target tip meet to the work commit adds and removes, with no lines of
+ * context around them.
  *
  * THE MEETING POINT IS WHAT MAKES THE ANSWER THE SAME WHENEVER IT IS ASKED. A
  * work commit that merged a moved target cleanly meets that target at its new
- * tip, so the diff is still only the ticket's own change; a conflict resolved
- * or an edit added is a different diff and a different identity.
+ * tip, so the lines it adds and removes are still only the ticket's own,
+ * whatever the target changed beside them; a conflict resolved or an edit
+ * added is a different diff and a different identity. The same lines added
+ * and removed at another place in the same file are the same identity.
  *
  * AN EMPTY DIFF IS AN ANSWER, `emptyChangeIdentity`, and a port that could not
  * find out says so by answering nothing, which is not a finding about the
@@ -22,7 +25,7 @@ export interface ChangeIdentityQuestion {
   readonly target: GitObjectId;
 }
 
-/** A change's identity: a stable patch-id, or `emptyChangeIdentity`. */
+/** A change's identity: a patch-id, or `emptyChangeIdentity`. */
 export type ChangeIdentity = string;
 
 /** The identity of a change that changes nothing, which no patch-id is spelled as. */
