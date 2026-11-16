@@ -347,7 +347,7 @@ const kindResources: Readonly<Record<ProjectChangeKind, string>> = {
 /**
  * The kinds the reader holds no read for. They must read as tombstones rather
  * than raise, because `framesForRow` turns a read that keeps raising into a
- * stream reset and the session turn triggers append one on every lead turn.
+ * stream reset and the session turn triggers append one on every turn.
  */
 const kindsWithoutReads = ["Session"] as const;
 

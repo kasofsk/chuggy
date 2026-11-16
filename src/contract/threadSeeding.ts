@@ -73,7 +73,6 @@ function threadPageFields(
   switch (page.page) {
     case "Tickets":
     case "Inbox":
-    case "Lead":
     case "Catalog":
     case "Repositories":
     case "Runners":

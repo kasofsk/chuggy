@@ -513,7 +513,7 @@ export async function workerPoolSessionClaims(
   return claimed;
 }
 
-/** The thread a claimed session is an attempt of, named only to a chat host whose poll's peer implements `ChatSessionThreads`, and absent for an inquiry or a lead. */
+/** The thread a claimed session is an attempt of, named only to a chat host whose poll's peer implements `ChatSessionThreads`. */
 function workerPoolSessionThreadNamed(
   identity: WorkerPoolSessionClaimant,
   contract: WorkerContractPeer | undefined,
@@ -521,7 +521,6 @@ function workerPoolSessionThreadNamed(
 ): Pick<WorkerPoolSessionAssignment, "thread"> {
   if (
     identity.kind !== "ChatHost" ||
-    candidate.kind !== "Thread" ||
     !workerPoolPeerImplements("ChatSessionThreads", contract)
   )
     return {};

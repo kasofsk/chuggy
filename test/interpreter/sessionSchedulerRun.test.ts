@@ -78,7 +78,7 @@ const epoch = asRecoveryEpoch("epoch-one");
 const session: AgentSession = {
   partition,
   session: asSessionId("session-one"),
-  kind: "Lead",
+  kind: "Thread",
   principal: asPrincipal("21:https://auth.invalidlead"),
   agentReference: "1a2b3c",
   capabilities: ["RepositoryRead"],
@@ -521,7 +521,7 @@ test("a session with a turn waiting is opened under this deployment's ceilings a
   ]);
   assert.deepEqual(asked, {
     ...attempt,
-    kind: "Lead",
+    kind: "Thread",
     capabilities: ["RepositoryRead"],
     credentialSlot: "claude-code",
     agentReference: "1a2b3c",
@@ -962,8 +962,8 @@ test("a binding that cannot be read is asked for before an attempt is opened", a
 /**
  * The rule is written on the ROSTER and not on the kind, and these two cases are
  * what tell those two predicates apart: each is green under the roster and red
- * under `session.kind === "Inquiry"`, so a rule quietly rewritten to the kind
- * cannot pass. A predicate nothing can refute is the control this file's header
+ * under any rule keyed on the kind, every session being a thread, so a rule
+ * quietly rewritten to the kind cannot pass. A predicate nothing can refute is the control this file's header
  * argues against.
  */
 test("a thread whose roster reads no tree is placed with no checkout, bound or not", async () => {
@@ -998,9 +998,9 @@ test("a thread whose roster reads no tree is placed with no checkout, bound or n
 });
 
 /**
- * The scheduler places what the row says rather than what a kind's default
- * roster says, so a session recorded with `RepositoryRead` gets its checkout
- * whatever kind it is: the placement is not where a kind's roster is decided.
+ * The scheduler places what the row says rather than what a door's default
+ * roster says, so a session recorded with `RepositoryRead` gets its checkout:
+ * the placement is not where a roster is decided.
  */
 test("a session recorded with a roster that reads the tree is placed with the binding", async () => {
   const asked: SessionPlacement[] = [];
@@ -1011,7 +1011,6 @@ test("a session recorded with a roster that reads the tree is placed with the bi
         awaiting: [
           {
             ...session,
-            kind: "Inquiry",
             capabilities: ["RepositoryRead", "ProjectRead"],
           },
         ],

@@ -2,9 +2,8 @@
  * The public wire schemas of `src/contract/`, branded into the interpreter's
  * own types.
  *
- * The server sends a response by parsing it here, and the selector's client
- * reads one back the same way, so the shape is stated once and both directions
- * are held to it.
+ * The server sends a response by parsing it here, so the shape is stated once
+ * and every response is held to it.
  */
 
 import { asTicketId } from "../../domain/ids.ts";

@@ -477,8 +477,8 @@ export function apiWriteExecutionPlacement(
   );
 }
 
-/** Where one project's threads and lead run, what decided each, what the
- * reader may choose, and the runners each would run on. */
+/** Where one project's threads run, what decided it, what the reader may
+ * choose, and the runners they would run on. */
 export function apiSessionPlacement(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -488,7 +488,7 @@ export function apiSessionPlacement(
   );
 }
 
-/** Where one project's threads and lead run, written whole; a hosted route the tenant has not granted is refused by its code. */
+/** Where one project's threads run, written whole; a hosted route the tenant has not granted is refused by its code. */
 export function apiWriteSessionPlacement(
   ports: ApiPorts,
   partition: PartitionIdentity,

@@ -339,16 +339,16 @@ test("the cluster offers a session only where its oldest queued turn was admitte
 
 test("a per-account ceiling binds one account and leaves another project's alone", async () => {
   const first = await sessionRigProject(rig, "account-first");
-  const lead = await sessionRigSession(rig, first, "account-first");
-  await sessionRigTurn(rig, first, lead, "account-first");
-  await sessionRigAttempt(rig, first, lead, "account-first");
+  const holder = await sessionRigSession(rig, first, "account-first");
+  await sessionRigTurn(rig, first, holder, "account-first");
+  await sessionRigAttempt(rig, first, holder, "account-first");
   const second = await sessionRigProject(rig, "account-second");
   const elsewhere = await sessionRigSession(rig, second, "account-second");
   await sessionRigTurn(rig, second, elsewhere, "account-second");
   const accounts = await rig.harness.query(
     `SELECT count(DISTINCT account)::text AS accounts FROM agent_session
       WHERE session = ANY($1::text[])`,
-    [[lead, elsewhere]],
+    [[holder, elsewhere]],
   );
   assert.deepEqual(accounts, [{ accounts: "2" }]);
   await sessionRigAttempt(rig, second, elsewhere, "account-second", {
@@ -358,14 +358,14 @@ test("a per-account ceiling binds one account and leaves another project's alone
 
 test("a per-account ceiling and a cluster ceiling each refuse the launch they bind", async () => {
   const partition = await sessionRigProject(rig, "ceilings");
-  const lead = await sessionRigSession(rig, partition, "ceiling-lead");
-  await sessionRigTurn(rig, partition, lead, "ceiling-lead");
+  const holder = await sessionRigSession(rig, partition, "ceiling-holder");
+  await sessionRigTurn(rig, partition, holder, "ceiling-holder");
   const thread = await sessionRigSession(rig, partition, "ceiling-thread", {
     kind: "Thread",
     principal: "member-ceiling",
   });
   await sessionRigTurn(rig, partition, thread, "ceiling-thread");
-  await sessionRigAttempt(rig, partition, lead, "ceiling-first");
+  await sessionRigAttempt(rig, partition, holder, "ceiling-first");
   await assert.rejects(
     sessionRigAttempt(rig, partition, thread, "ceiling-account", {
       attemptsPerAccountMax: 1,
@@ -540,9 +540,9 @@ async function liveBeside(
 
 test("an attempt a pool holds fills no ceiling of the cluster's, and the cluster neither observes nor cleans it up", async () => {
   const partition = await sessionRigProject(rig, "pool-held");
-  const lead = await sessionRigSession(rig, partition, "pool-held-lead");
-  await sessionRigTurn(rig, partition, lead, "pool-held-lead");
-  const held = await sessionRigAttempt(rig, partition, lead, "pool-held");
+  const holder = await sessionRigSession(rig, partition, "pool-held-holder");
+  await sessionRigTurn(rig, partition, holder, "pool-held-holder");
+  const held = await sessionRigAttempt(rig, partition, holder, "pool-held");
   await rig.scheduler.attemptPlaced(
     held.attempt,
     asPlacementId("placement-pool-held"),
@@ -555,7 +555,7 @@ test("an attempt a pool holds fills no ceiling of the cluster's, and the cluster
       principal: `member-held-${shared}`,
     });
     await sessionRigTurn(rig, partition, thread, `held-${shared}`);
-    const max = await liveBeside(shared, lead);
+    const max = await liveBeside(shared, holder);
     const beside = await sessionRigAttempt(
       rig,
       partition,

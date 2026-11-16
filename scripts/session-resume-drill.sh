@@ -165,7 +165,7 @@ provision() { # <action> [extra assignments as VAR=value ...]
 		CHUG_PROVISION_SESSION_TENANT=drill \
 		CHUG_PROVISION_SESSION_PROJECT=drill \
 		CHUG_PROVISION_SESSION_SESSION="$session" \
-		CHUG_PROVISION_SESSION_KIND=Lead \
+		CHUG_PROVISION_SESSION_KIND=Thread \
 		CHUG_API_OIDC_ISSUER="https://auth.invalid" \
 		CHUG_PROVISION_SESSION_SUBJECT=drill \
 		CHUG_PROVISION_SESSION_CAPABILITIES=RepositoryRead \
@@ -217,7 +217,7 @@ open_attempt() { # <label>
 
 pod_task() { # <label>
 	cat <<JSON
-{"tenant":"drill","project":"drill","session":"$session","kind":"Lead",
+{"tenant":"drill","project":"drill","session":"$session","kind":"Thread",
  "attempt":"$attempt","generation":1,"capabilities":$capabilities,
  "credentialSlot":"claude-code","authority":$authority,
  "workerPlane":{"url":"$plane","capabilityFile":"$scratch/bearer"},

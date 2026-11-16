@@ -9,8 +9,8 @@
  * an execution moves without a project ordinal being allocated for it, an
  * evaluation approval is opened by the scheduler's registration of its
  * execution, which takes no project row lock and may not begin taking one to
- * publish, and the last is the selector's own output — a publication of it
- * would wake the selector on what it had just decided.
+ * publish, and a session's change is appended by a trigger on its own rows,
+ * which allocates no project ordinal either.
  *
  * THE DURABLE CHECK ON THIS ROSTER IS WRITTEN OUT at the migration that last
  * replaced `project_change_kind_is_known`, so a kind added here is a kind every

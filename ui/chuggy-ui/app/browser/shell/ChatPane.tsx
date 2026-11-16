@@ -85,8 +85,7 @@ import {
   ChatPaneThreadActionsIdle,
 } from "./ChatPaneHistory.tsx";
 
-/** The listing the pane reads, which lists no lead session and so is not read
- * again on the frames of one. */
+/** The listing the pane reads. */
 function useChatPaneThreads(
   partition: PartitionIdentity,
 ): readonly ThreadEntryResponse[] | undefined {
@@ -105,7 +104,6 @@ function ChatPaneStartDoor(props: {
         <ChatPaneHeaderRow>
           <SessionRunnerNotice
             partition={props.partition}
-            session="Thread"
             short={props.header.runner}
           />
         </ChatPaneHeaderRow>

@@ -104,12 +104,6 @@ export const workerContractRunnerAgentsAdvertised: WorkerContractVersion = {
   minor: 50,
 };
 
-/** The first version in which a session pod runs a session its facts mark `systemPromptOwn` on that prompt alone and reads none of its project's settings: a plane answers such a session's facts only to a pod whose release names this version or a later one, and refuses every other. */
-export const workerContractSystemPromptOwn: WorkerContractVersion = {
-  major: 1,
-  minor: 63,
-};
-
 /** The first version whose job plane may answer held credentials as bundles and name those it does not serve: a plane serves a bundle only to an attempt whose request names this version or a later one. */
 export const workerContractCredentialBundles: WorkerContractVersion = {
   major: 1,
@@ -159,7 +153,6 @@ export const workerContractFeatures = {
   SessionContext: workerContractSessionContext,
   CredentialOutcome: workerContractCredentialOutcome,
   RunnerAgentsAdvertised: workerContractRunnerAgentsAdvertised,
-  SystemPromptOwn: workerContractSystemPromptOwn,
   CredentialBundles: workerContractCredentialBundles,
   RunCredential: workerContractRunCredential,
   CredentialPauses: workerContractCredentialPauses,

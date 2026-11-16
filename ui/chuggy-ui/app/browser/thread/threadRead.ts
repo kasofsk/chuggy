@@ -2,7 +2,7 @@
  * One thread's read, re-read on the `Session` frames that name it and left
  * alone by the rest.
  *
- * A project holds a session per member beside its lead, so a read that
+ * A project holds a session per member, so a read that
  * re-answered on every `Session` frame would re-read every thread on every
  * other thread's turn. The frame is a pointer and carries no body, so there is
  * nothing to fold and the read is what answers.

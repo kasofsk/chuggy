@@ -4,35 +4,24 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { SessionKind } from "../../../../src/contract/rosters.ts";
 import type {
   ThreadResponse,
   ThreadsResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiThread, apiThreads } from "./apiRoutes.ts";
 import { consoleListQuery } from "./consoleQuery.ts";
-import {
-  sessionChangeSessionNamed,
-  sessionChangeKindNamed,
-} from "./sessionTranscript.ts";
+import { sessionChangeSessionNamed } from "./sessionTranscript.ts";
 import { threadUsagePaged } from "./threadCommands.ts";
 import type { ThreadUsage } from "./threadCommands.ts";
-import { projectListRereadNamed } from "./projectQueryKeys.ts";
+import {
+  projectListReread,
+  projectListRereadNamed,
+} from "./projectQueryKeys.ts";
 
-/** The session kind the threads listing lists none of. */
-const threadsQuerySkippedKind: SessionKind = "Lead";
-
-/** The listing the chat pane reads, which lists no lead session and so is not
- * read again on the frames of one. */
+/** The listing the chat pane reads, read again on every `Session` frame. */
 export function threadsQuery(partition: PartitionIdentity) {
   return consoleListQuery(
-    projectListRereadNamed<ThreadsResponse>(
-      partition,
-      "Session",
-      "threads",
-      (change) =>
-        sessionChangeKindNamed(change.resource) !== threadsQuerySkippedKind,
-    ),
+    projectListReread<ThreadsResponse>(partition, "Session", "threads"),
     (ports) => apiThreads(ports, partition),
   );
 }

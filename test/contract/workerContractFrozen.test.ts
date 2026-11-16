@@ -20,7 +20,6 @@ const workerContractFrozenVersions: readonly string[] = [
   "workerContractRunnerReport",
   "workerContractSessionCapabilitiesNamed",
   "workerContractSessionContext",
-  "workerContractSystemPromptOwn",
   "workerContractTargetRef",
   "workerContractUnnamed",
 ];
@@ -46,7 +45,6 @@ const workerContractFrozenRanges: readonly string[] = [
   "workerContractRunnerReleases",
   "workerContractRunnerSessions",
   "workerContractSessionContexts",
-  "workerContractSystemPromptsOwn",
   "workerContractTargetRefs",
   "workerContractThreadOffer",
   "workerContractTicketDispatch",

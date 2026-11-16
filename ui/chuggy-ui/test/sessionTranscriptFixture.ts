@@ -58,7 +58,7 @@ const sessionTranscriptBatchEntries: readonly (readonly SessionTranscriptRespons
 export const transcriptCutBatch = 2;
 
 /**
- * Which of a page's own entries the lead still holds, decided by the cut in the
+ * Which of a page's own entries the session still holds, decided by the cut in the
  * whole stream and not by what the page happens to carry: none of them on a
  * batch below the cut, and the boundary on where the page holds it. `after` is
  * the cursor the page was asked with, so the batch it answers is `after + 1`.
@@ -120,7 +120,7 @@ export function sessionTranscriptPage(
 export function sessionChangeResource(
   session: string,
   turn: string,
-  kind = "Lead",
+  kind = "Thread",
 ): string {
   return JSON.stringify({ session, kind, turn });
 }

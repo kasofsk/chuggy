@@ -168,7 +168,7 @@ const compacted: {
 
 test("with no readings, each turn is the context its last billed entry sent, and a cut the page names stands after the turn before the one whose entries follow it", () => {
   const view = contextSessionOf({
-    context: { turns: [], autoCompactWindow: 200_000 },
+    context: { turns: [] },
     ...compacted,
   });
   expect(
@@ -185,7 +185,7 @@ test("with no readings, each turn is the context its last billed entry sent, and
     view.window.reading,
     view.window.used,
     view.window.window,
-  ]).toStrictEqual([false, 50_002, 200_000]);
+  ]).toStrictEqual([false, 50_002, undefined]);
 });
 
 test("a compaction's summary opens no turn, so a compacted transcript keeps its count of turns", () => {
@@ -248,7 +248,7 @@ test("the first page is read for what the session was opened under, then the new
   }, 300);
   expect(asks.slice(0, 2)).toStrictEqual([0, 236]);
   if (answered.outcome !== "Ok") throw new Error("refused");
-  expect(answered.value.systemPrompt).toBe("You are the project's lead.");
+  expect(answered.value.systemPrompt).toBe("You are the member's thread.");
   expect(answered.value.turns.at(-1)?.ordinal).toBe(304);
 });
 
@@ -259,14 +259,14 @@ test("a thread's inputs are its seeded block, the appended prompt and the window
   expect(seed).toBeUndefined();
   expect(
     contextSessionInputsOf(
-      { turns: [], systemPrompt: "Appended.", autoCompactWindow: 200_000 },
+      { turns: [], systemPrompt: "Appended." },
       undefined,
       {
         unit: "Turn",
         at: undefined,
         reading: false,
         used: 0,
-        window: undefined,
+        window: 200_000,
         threshold: undefined,
         rows: [],
         segments: [],

@@ -851,6 +851,28 @@ test("a poll's session capabilities read back as the set a host wrote, the empty
     );
 });
 
+test("a poll naming a retired session capability is read with the rest of its set, without it", () => {
+  const query = workerPoolPollQuerySchema(2);
+  for (const [named, read] of [
+    ["LeadDecision", []],
+    ["ProjectRead,LeadDecision,RunCommands", ["ProjectRead", "RunCommands"]],
+  ] as const)
+    assert.deepEqual(
+      query.parse({ wanted: "0", sessionCapabilities: named })
+        .sessionCapabilities,
+      read,
+      named,
+    );
+  assert.equal(
+    query.safeParse({
+      wanted: "0",
+      sessionCapabilities: "LeadDecision,LeadDecision",
+    }).success,
+    false,
+    "a retired member named twice is a set named twice",
+  );
+});
+
 test("a poll's ticket wakes read back as On or Off, absent where it named none, and nothing else is read", () => {
   const query = workerPoolPollQuerySchema(2);
   for (const ticketWakes of ["On", "Off"] as const)

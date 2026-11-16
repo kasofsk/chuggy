@@ -44,8 +44,6 @@ import {
   identitySchema,
   instantSchema,
   isBoundedText,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
@@ -1851,19 +1849,13 @@ export const sessionContextTurnResponseSchema = z.object({
  * One page of a session's context readings, by turn ascending and resumed by
  * the last turn's ordinal. The first page alone carries what the session was
  * opened under: the text it appends to the agent runtime's own system prompt,
- * and the window at which its runtime compacts, each where it has one.
+ * where it has one.
  */
 export const sessionContextResponseSchema = z.object({
   turns: z
     .array(sessionContextTurnResponseSchema)
     .max(sessionContextPageTurnsMax),
   systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
-  autoCompactWindow: z
-    .number()
-    .int()
-    .min(leadAutoCompactWindowTokensMin)
-    .max(leadAutoCompactWindowTokensMax)
-    .optional(),
   nextAfter: countSchema.optional(),
 });
 export type SessionContextResponse = z.infer<
@@ -2460,7 +2452,7 @@ export const threadLimitResponseSchema = z.strictObject({
 });
 export type ThreadLimitResponse = z.infer<typeof threadLimitResponseSchema>;
 
-/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
+/** Whether the project's tenant grants the caller the hosted runs a thread spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({
   granted: z.boolean(),
 });

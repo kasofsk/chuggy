@@ -80,7 +80,7 @@ test("an operation submitted by a person alone records no session", async () => 
 test("the same key through two different sessions is one operation, and it is the first", async () => {
   const partition = await sessionRigProject(rig, "idempotent");
   const first = await sessionRigSession(rig, partition, "idempotent-first", {
-    kind: "Lead",
+    kind: "Thread",
   });
   const second = await sessionRigSession(rig, partition, "idempotent-second", {
     kind: "Thread",

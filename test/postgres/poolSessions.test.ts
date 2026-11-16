@@ -1978,7 +1978,7 @@ test("a chat host naming its threads' capabilities records them, opens its threa
   const owner = { tenant: partition.tenant, owner: member };
   const thread = await opened("host-capabilities-thread");
   const host = await chatHost(partition, member);
-  const named = ["ProjectRead", "RepositoryRead", "LeadDecision"] as const;
+  const named = ["ProjectRead", "RepositoryRead", "MemberRead"] as const;
   const held = ["RepositoryRead", "ProjectRead"];
   assert.equal(await threadHostCapabilitiesOf(partition, thread), null);
   const claimed = await hostClaimedNaming(host, named);

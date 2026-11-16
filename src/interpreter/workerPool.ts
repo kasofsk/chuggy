@@ -211,7 +211,7 @@ export interface WorkerPoolRegistration {
   readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
-  /** The person whose token registered the pool, recorded as who registered it; every pool is handed its project's lead alone. */
+  /** The person whose token registered the pool, recorded as who registered it. */
   readonly registeredBy?: Principal;
 }
 

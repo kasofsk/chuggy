@@ -35,10 +35,7 @@ import {
   runnerWaitRoomLine,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
-import {
-  sessionRunnerAdded,
-  sessionRunnerNoticeWord,
-} from "../app/core/sessionRunners.ts";
+import { sessionRunnerNoticeWord } from "../app/core/sessionRunners.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
 const held = {
@@ -262,27 +259,10 @@ test("taking a member's runners off says whether there were any it could take", 
   );
 });
 
-test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's Pools page", () => {
-  expect(sessionRunnerAdded("Thread")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Inquiry")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Chat")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Lead")).toBe("Pools");
-});
-
-test("a thread's, an inquiry's and a member's own chat's missing runner is named their chat host, and the lead's a runner", () => {
-  for (const session of ["Thread", "Inquiry", "Chat"] as const) {
-    expect(copyTextEn(sessionRunnerNoticeWord("NoRunner", session))).toBe(
-      "No chat host",
-    );
-    expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", session))).toBe(
-      "Chat host offline",
-    );
-  }
-  expect(copyTextEn(sessionRunnerNoticeWord("NoRunner", "Lead"))).toBe(
-    "No runner",
-  );
-  expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", "Lead"))).toBe(
-    "Runner offline",
+test("a thread's and a member's own chat's missing runner is named their chat host", () => {
+  expect(copyTextEn(sessionRunnerNoticeWord("NoRunner"))).toBe("No chat host");
+  expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline"))).toBe(
+    "Chat host offline",
   );
 });
 

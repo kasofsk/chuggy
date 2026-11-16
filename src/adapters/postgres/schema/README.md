@@ -333,11 +333,9 @@ awaiting reads for theirs.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change
 log. It is a single row, keyed `singleton` and held to it by a CHECK, because
-the pass is installation-wide like the log it reads while the selector's own
-state is per project — a cursor per project over one shared log would re-wake
-every member of every other project's history the first time a project's
-selector ran. The selector service reads it and moves it forward through
-`advance_thread_wake_cursor`, which never moves it back.
+the pass is installation-wide like the log it reads. The wake pass reads it and
+moves it forward through `advance_thread_wake_cursor`, which never moves it
+back.
 
 `session_attempt` — one physical run of a session, its lease, its bearer digest
 and how it ended. It is a sibling of `execution_attempt` rather than a widening
@@ -646,8 +644,7 @@ is kept with its attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their
-threads and inquiries pause with it; the lead of a pool they registered always
-does. The API writes one person's row whole through `write_agent_account_setting`, and no
+threads pause with it. The API writes one person's row whole through `write_agent_account_setting`, and no
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call, reads it through that, as
@@ -665,8 +662,8 @@ name that never reported being free. A credential in
 and limit say, until `agentAccountCredentialOffSecsAt191` past each read, so it
 never ends by itself and ranks after every real end; where no live runner names
 a credential of the agent, an off credential pauses it by its own readings and
-limit alone. A pause held by `off` alone also holds a thread or an inquiry,
-whatever the setting says. `agent_account_named_credential_pauses`
+limit alone. A pause held by `off` alone also holds a thread, whatever the
+setting says. `agent_account_named_credential_pauses`
 answers the pool plane each of them that is paused, and until when.
 `ticket_rate_limit_resumable` asks for the scheduler, and `ticket_usage_resume`
 for the API, `agent_account_pause` of the agent a limited task spent, and

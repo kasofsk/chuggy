@@ -131,7 +131,7 @@ test("a project's placement names who set it whole, or names nobody", async () =
   });
 });
 
-/** A lead session of project-5, on a cluster account of its own. */
+/** A thread of project-5, on a cluster account of its own. */
 const sessionSeed = `${deletionPartition}
   INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
   VALUES('cluster-5',1,1);
@@ -139,7 +139,7 @@ const sessionSeed = `${deletionPartition}
   VALUES('account-5','cluster-5',0,1,1);
   INSERT INTO agent_session
     (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-  VALUES('tenant-5','project-5','session-5','Lead','principal-5','{}',
+  VALUES('tenant-5','project-5','session-5','Thread','principal-5','{}',
          'slot-5','account-5','cluster-5')`;
 
 test("a turn is queued on the route a door stamped it with, and no default stamps one", async () => {
@@ -193,7 +193,7 @@ test("a project's session names a project there is", async () => {
       subject.query(
         `INSERT INTO agent_session
            (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-         VALUES('tenant-5','project-6','session-6','Lead','principal-5','{}',
+         VALUES('tenant-5','project-6','session-6','Thread','principal-5','{}',
                 'slot-5','account-5','cluster-5')`,
       ),
       /agent_session_belongs_to_project/u,

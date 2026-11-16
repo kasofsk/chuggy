@@ -207,7 +207,7 @@ export interface MetricsPlaneTurnRow {
   readonly tenant: string;
   readonly project: string;
   readonly owner: string;
-  readonly session: "Lead" | "Thread" | "Inquiry";
+  readonly session: "Thread";
   readonly state: string;
   readonly model: string | undefined;
   readonly buckets: readonly number[] | undefined;

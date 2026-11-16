@@ -170,7 +170,7 @@ export interface DispatchViewStore {
 
 /**
  * The program a stored candidate carries, read and written through the
- * authoring schema the wire states. A candidate offers a selector what its
+ * authoring schema the wire states. A candidate offers a dispatcher what its
  * author chose, not what the release resolved: the task definitions a released
  * stage hangs off each evaluator are no part of a choice, and a reader that was
  * handed them would be reading a second copy of the journal.

@@ -912,7 +912,7 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const route = work.value.work.route;
   const standing = setupWorkStanding(reads, route, read.value.runners.project);
   if (typeof standing !== "string") return standing;
-  const mine = sessionPlacementShort(read.value, "thread", "mine");
+  const mine = sessionPlacementShort(read.value, "mine");
   const chat = mine !== undefined;
   switch (sessionRunnerShort(route, standing)) {
     case "RunnerOffline":

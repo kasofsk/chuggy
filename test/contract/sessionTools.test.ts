@@ -18,11 +18,8 @@ import {
   dispatchViewSchemaVersion,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
-  nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
-  runModelCharsMax,
   selectorSettingsTextCharsMax,
-  sessionEfforts,
   sessionStoreBatchBytesMax,
   sessionTurnToolsMax,
   workerRunCredentialSchema,
@@ -34,7 +31,6 @@ import * as epics from "../../src/contract/epics.ts";
 import {
   agentAccountsResponseSchema,
   epicViewResponseSchema,
-  selectorProjectSettingsResponseSchema,
   type AgentAccountsResponse,
 } from "../../src/contract/responses.ts";
 import {
@@ -62,7 +58,6 @@ import {
   chuggyToolDispatchViewResponseBytesMax,
   chuggyToolDocsResponseBytesMax,
   chuggyToolEpicViewResponseBytesMax,
-  chuggyToolLeadSettingsResponseBytesMax,
   chuggyToolNames,
   chuggyToolPagesMax,
   chuggyToolPrefix,
@@ -120,12 +115,6 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "add_epic_tickets",
     "remove_epic_tickets",
     "dispatch_ticket",
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
     "read_my_abilities",
     "list_projects",
     "list_my_threads",
@@ -221,14 +210,6 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "remove_epic_tickets",
   ]);
   assert.deepEqual(chuggyToolCapabilities.TicketDispatch, ["dispatch_ticket"]);
-  assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
-    "dispatch",
-    "refuse",
-    "lift",
-    "set_attention",
-    "set_handoff_note",
-    "set_planning_intent",
-  ]);
   assert.deepEqual(chuggyToolCapabilities.ThreadOffer, [
     "navigate",
     "offer_release",
@@ -243,10 +224,9 @@ test("each capability admits the tools the roster gives it and no other", () => 
 });
 
 /**
- * A lead must not rewrite the settings it runs under, and a thread must not
- * make an administrator's write on a chat message's strength, so the settings
- * tools are a person's own agent's alone and no session can be opened with
- * what admits them.
+ * A thread must not make an administrator's write on a chat message's
+ * strength, so the settings tools are a person's own agent's alone and no
+ * session can be opened with what admits them.
  */
 test("no session can hold the capability that admits the settings tools", () => {
   assert.ok(
@@ -290,7 +270,6 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     DraftAuthor: [],
     DraftOriginate: [],
     TicketDispatch: [],
-    LeadDecision: [],
     MemberRead: [],
     ThreadOffer: [],
     ProjectSettings: [],
@@ -330,17 +309,6 @@ test("a turn's measurement may name every tool a session can be given", () => {
 test("the qualified names are the roster's own, prefixed, and never repeated", () => {
   assert.deepEqual(chuggyToolNames([]), []);
   assert.deepEqual(
-    chuggyToolNames(["LeadDecision"]),
-    [
-      "dispatch",
-      "refuse",
-      "lift",
-      "set_attention",
-      "set_handoff_note",
-      "set_planning_intent",
-    ].map((tool) => `${chuggyToolPrefix}${tool}`),
-  );
-  assert.deepEqual(
     chuggyToolNames(["ProjectSettings"]),
     [
       "read_lead_settings",
@@ -371,9 +339,9 @@ test("the qualified names are the roster's own, prefixed, and never repeated", (
     chuggyToolNames(["ProjectRead", "ProjectRead"]),
     chuggyToolNames(["ProjectRead"]),
   );
-  assert.deepEqual(chuggyToolNames(["LeadDecision", "ProjectRead"]), [
+  assert.deepEqual(chuggyToolNames(["ThreadOffer", "ProjectRead"]), [
     ...chuggyToolNames(["ProjectRead"]),
-    ...chuggyToolNames(["LeadDecision"]),
+    ...chuggyToolNames(["ThreadOffer"]),
   ]);
   assert.equal(chuggyToolPrefix, `mcp__${chuggyToolServerName}__`);
 });
@@ -547,7 +515,7 @@ test("an epic view of the heaviest epic the domain saves is under the bound the 
   assert.ok(bytes <= chuggyToolEpicViewResponseBytesMax);
 });
 
-test("the settings tools reach the route table's own lead-settings and placement routes", () => {
+test("the settings tools reach the route table's own selector-settings and placement routes", () => {
   assert.equal(
     chuggyToolRoutes.selectorSettings,
     nativeHttpRoutes.selectorSettings,
@@ -564,43 +532,6 @@ function longestOf<Member extends string>(roster: readonly Member[]): Member {
     member.length > longest.length ? member : longest,
   );
 }
-
-/**
- * The heaviest lead settings the wire admits: every text and identity of
- * control characters, which JSON escapes heaviest, at its longest; the model of
- * the heaviest character a model may hold; and every count the largest a count
- * may be.
- */
-function heaviestLeadSettings(): unknown {
-  const escaped = "\u0001";
-  const text = escaped.repeat(selectorSettingsTextCharsMax);
-  const identity = escaped.repeat(nativeHttpPathSegmentCharsMax);
-  return {
-    partition: { tenant: identity, project: identity },
-    revision: Number.MAX_SAFE_INTEGER,
-    overrides: {
-      northStar: text,
-      threadStandingRules: text,
-      threadModel: "€".repeat(runModelCharsMax),
-      threadEffort: longestOf(sessionEfforts),
-    },
-    effective: { northStar: text, threadStandingRules: text },
-  };
-}
-
-/**
- * Lead settings at their heaviest are far past an ordinary answer's bound, so
- * the settings tools reading them, or a write's answer, under that bound would
- * refuse settings the server holds.
- */
-test("the heaviest lead settings the wire admits are under the bound the settings tools read them with", () => {
-  const settings = selectorProjectSettingsResponseSchema.parse(
-    heaviestLeadSettings(),
-  );
-  const bytes = Buffer.byteLength(JSON.stringify(settings), "utf8");
-  assert.ok(bytes > nativeHttpBodyBytesMax);
-  assert.ok(bytes <= chuggyToolLeadSettingsResponseBytesMax);
-});
 
 test("the account tools reach the route table's own agent-account routes", () => {
   assert.equal(chuggyToolRoutes.agentAccounts, nativeHttpRoutes.agentAccounts);

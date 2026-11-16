@@ -557,14 +557,6 @@ export const repositoryConfigurationImportAbsences = [
 export type RepositoryConfigurationImportAbsenceName =
   (typeof repositoryConfigurationImportAbsences)[number];
 
-/** Where one of a decision's dispatches stands, which is what the log says landed. */
-export const selectorDeliveryStates = [
-  "AwaitingApproval",
-  "Pending",
-  "Submitted",
-  "Terminal",
-] as const;
-export type SelectorDeliveryState = (typeof selectorDeliveryStates)[number];
 export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 
 export const draftStates = ["Draft", "Released", "Deleted"] as const;
@@ -804,16 +796,8 @@ export const nativeActionResolutions = [
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];
 
-/** How closely the lead says a project needs watching, which one decision may move. */
-export const selectorAttentions = [
-  "Monitoring",
-  "Attention",
-  "Stopped",
-] as const;
-export type SelectorAttention = (typeof selectorAttentions)[number];
-
 /** What a session is for, which is what decides whose turns it takes and what it may write. */
-export const sessionKinds = ["Lead", "Thread", "Inquiry"] as const;
+export const sessionKinds = ["Thread"] as const;
 export type SessionKind = (typeof sessionKinds)[number];
 
 /** What a session may do, which the worker image maps to its agent runtime's own tools. */
@@ -825,11 +809,19 @@ export const sessionCapabilities = [
   "DraftAuthor",
   "DraftOriginate",
   "TicketDispatch",
-  "LeadDecision",
   "MemberRead",
   "ThreadOffer",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
+
+/**
+ * Capabilities no session holds any more that a stored roster or a chat host's
+ * poll may still name. A reader accepts each and drops it, so a host whose
+ * operator configured one is served the rest rather than refused.
+ */
+export const sessionCapabilitiesRetired = ["LeadDecision"] as const;
+export type SessionCapabilityRetired =
+  (typeof sessionCapabilitiesRetired)[number];
 
 /**
  * What a person's own agent may do beyond any session, reaching chuggy through
@@ -924,9 +916,8 @@ export const placementRouteSources = [
 export type PlacementRouteSource = (typeof placementRouteSources)[number];
 
 /**
- * How a project's lead runs on its route: on the members' own Claude login or
- * the deployment's credential, or subsidized, in cluster on a profile the
- * deployment publishes.
+ * What a placement's `leadOffering` may name. The placement route answers and
+ * accepts it only for older clients, and the core's placement tool reads it.
  */
 export const leadOfferings = ["Own", "Subsidized"] as const;
 export type LeadOffering = (typeof leadOfferings)[number];
@@ -938,49 +929,6 @@ export const sessionRunnerStandings = [
   "Live",
 ] as const;
 export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
-
-/**
- * Why a selector cycle that needed a project's lead was refused one: on a
- * hosted route the tenant grants the lead's principal no hosted runs, or a
- * subsidized lead's tenant or the whole deployment has spent its month's
- * subsidy, and on a runner route none of the project's runners is live, or
- * every live one is paused for its owner's Claude account, on every credential
- * it named or, where it named none, on the whole agent.
- */
-export const leadAdmissionRefusals = [
-  "HostedRunsNotGranted",
-  "RunnerOffline",
-  "UsagePaused",
-  "SubsidyExhausted",
-] as const;
-export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
-
-/**
- * Why a project holds no lead where no refusal stands to date it: nothing waits
- * on a dispatch decision, its selector is paused, the site's selector may not
- * read it and so never sweeps it, a released ticket waits for a selector pass
- * that has not yet taken it up, or one waits where the API names no selector
- * and so cannot say whether any sweeps it.
- */
-export const leadAbsencesUntimed = [
-  "NotNeeded",
-  "Paused",
-  "SelectorNotGranted",
-  "AwaitingSelector",
-  "SelectorUnnamed",
-] as const;
-export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
-
-/**
- * What holds a lead that stands from dispatching where no refusal dates it, the
- * untimed absences that outrank a kept refusal: its selector is paused, or the
- * site's selector may not read the project.
- */
-export const leadHolds = [
-  "Paused",
-  "SelectorNotGranted",
-] as const satisfies readonly LeadAbsenceUntimed[];
-export type LeadHold = (typeof leadHolds)[number];
 
 /**
  * When a pool other than its owner's personal runner may take an owned
@@ -1109,10 +1057,8 @@ export const noRunnerCode = "NoRunner";
 
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
-  "Observation",
   "UserMessage",
   "Wake",
-  "Inquiry",
   "OfferReply",
 ] as const;
 export type SessionTurnInputKind = (typeof sessionTurnInputKinds)[number];

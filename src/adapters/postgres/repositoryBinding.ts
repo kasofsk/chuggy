@@ -184,7 +184,7 @@ export function postgresReadOnlyRepositories(
 }
 
 /**
- * What a project's members wrote it is for, read from its selector settings
+ * What a project's members wrote it is for, read from its project settings
  * under the scheduler's own role, and none where no row or no text is there. A
  * failed read is `Unavailable` for the same reason the repositories' is.
  */

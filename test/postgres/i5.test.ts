@@ -135,11 +135,11 @@ async function i5StaleProposal(
 /**
  * The change-driven runtime gives a project a turn only where its notification
  * log moved past the cursor its last turn stood on, so a decision whose every
- * dispatch the writer refuses must leave a row there or the lead is never asked
- * again. It does, because a refused operation is settled and published in the
+ * dispatch the writer refuses must leave a row there or the project is never
+ * decided again. It does, because a refused operation is settled and published in the
  * deciding transaction exactly as a journaled one is.
  */
-test("a refused proposal moves the project its lead's next turn waits on", async () => {
+test("a refused proposal moves the log the project's next decision waits on", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "i5-refused-moves",
@@ -183,7 +183,7 @@ test("a refused proposal moves the project its lead's next turn waits on", async
     assert.deepEqual(
       moved.events.map((event) => event.kind),
       ["Operation"],
-      "the refusal is what the lead's next turn is triggered by",
+      "the refusal is what the project's next decision is triggered by",
     );
     assert.equal(
       moved.events[0]?.resource,
@@ -193,7 +193,7 @@ test("a refused proposal moves the project its lead's next turn waits on", async
     assert.equal(
       phaseOf(ticketAt(decided.memory.graph, candidate.ticket).state),
       "Pending",
-      "a refused dispatch leaves its ticket where the lead will see it again",
+      "a refused dispatch leaves its ticket where the next decision will see it again",
     );
   } finally {
     await pool.end();

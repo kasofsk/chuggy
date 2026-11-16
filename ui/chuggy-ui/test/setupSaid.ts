@@ -404,7 +404,7 @@ export const saidMember: readonly Said[] = [
   saidTodo,
 ];
 
-/** A site set up to a landed ticket, seen by someone who is in no workspace and is shown its one project and not that project's lead settings. */
+/** A site set up to a landed ticket, seen by someone who is in no workspace and is shown its one project and not that project's thread settings. */
 export function saidViewerSite(): SetupSite {
   const site = setupSiteAt("Landed");
   site.tenants = [];

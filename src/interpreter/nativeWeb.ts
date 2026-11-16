@@ -2383,8 +2383,8 @@ function nativeStopThreadTurnMethod(
  * The close door, which is `Mutate` and reaches any thread the project holds:
  * a thread files drafts and does nothing else, so ending one takes nothing its
  * owner cannot file again from a new one, and the durable side is what refuses
- * a session that is not a thread. The turns it still held are abandoned, the
- * lead is told nothing, and the thread stays readable.
+ * a session that is not a thread. The turns it still held are abandoned and
+ * the thread stays readable.
  */
 function nativeCloseThreadMethod(
   access: ProjectAccess,

@@ -57,7 +57,7 @@ function authenticationProgram(token: string): string {
         asked[named].push(statement.values);
         return { rows: [{
           tenant: 'tenant', project: 'project', session: 'session-' + named,
-          kind: 'Lead', principal, scope: 'Project',
+          kind: 'Thread', principal, scope: 'Project',
           capabilities: ['ProjectRead'],
         }] };
       },
@@ -101,7 +101,7 @@ interface Authenticated {
  * The root's own thread composition, over one pool that answers no rows. The
  * credential slot is read from the environment because it is what a member's
  * thread speaks through, and a default would open every member's thread on
- * whatever the lead happens to use while reading as though somebody chose it.
+ * whatever another session happens to use while reading as though somebody chose it.
  */
 const threadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');

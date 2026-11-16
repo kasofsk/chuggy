@@ -23,8 +23,6 @@ export function sessionCapabilityLabel(capability: SessionCapability): Copy {
       return { id: "chat-capability-draft-originate" };
     case "TicketDispatch":
       return { id: "chat-capability-ticket-dispatch" };
-    case "LeadDecision":
-      return { id: "chat-capability-lead-decision" };
     case "MemberRead":
       return { id: "chat-capability-member-read" };
     case "ThreadOffer":

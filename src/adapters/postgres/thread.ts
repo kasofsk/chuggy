@@ -227,7 +227,7 @@ async function threadChatHostCapabilities(
 /**
  * One thread's standing, or nothing where the session named is not this
  * project's own thread — which the definer decides by admitting `kind='Thread'`
- * alone, so a lead's mailbox is not readable through a thread route.
+ * alone.
  */
 async function threadStanding(
   pool: pg.Pool,
@@ -707,8 +707,8 @@ async function threadProjectTexts(
 /**
  * What a thread's first turn is seeded from. The project's two texts are read
  * as themselves rather than as the whole resolved settings record, so the
- * composition that uses them cannot hand a thread the lead's prompt or its
- * limits by accident; the drafts are filtered to the member the block is for,
+ * composition that uses them cannot hand a thread settings it was not given
+ * by accident; the drafts are filtered to the member the block is for,
  * which is why an authority rather than a principal is what they take.
  */
 export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {

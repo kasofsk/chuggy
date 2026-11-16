@@ -3,7 +3,7 @@
  * listing's first answer and held from then, so the box under it keeps what is
  * being typed while another of their threads moves or a listing read fails,
  * and moved on only once that thread closes. And the listing is read again on
- * a thread's frames, never on a lead's.
+ * a thread's frames.
  */
 
 import { fireEvent, cleanup, screen, waitFor } from "@testing-library/react";
@@ -87,21 +87,14 @@ async function paneOpened(): Promise<Pane> {
 
 let frameId = 0;
 
-/** A `Session` frame for `session` of `kind`, and the pane left to settle. */
-async function heard(
-  pane: Pane,
-  session: string,
-  kind: string = "Thread",
-): Promise<void> {
+/** A `Session` frame for `session`, and the pane left to settle. */
+async function heard(pane: Pane, session: string): Promise<void> {
   frameId += 1;
   await turned(() => {
     pane.server.push(
       frame("Session", String(frameId), {
         version: 1,
-        resource:
-          kind === "Thread"
-            ? threadSessionResource(session, "turn")
-            : JSON.stringify({ session, kind, turn: "turn" }),
+        resource: threadSessionResource(session, "turn"),
         representation: null,
       }),
     );
@@ -169,11 +162,9 @@ test("the thread the pane holds moves on to the reader's other open thread once 
   expect(screen.queryByText("held")).toBeNull();
 });
 
-test("a lead's frame does not read the listing again, and a thread's does", async () => {
+test("a thread's frame reads the listing again", async () => {
   const pane = await paneOpened();
   const before = pane.listed();
-  await heard(pane, "lead-atlas", "Lead");
-  expect(pane.listed()).toBe(before);
   await heard(pane, moved);
   expect(pane.listed()).toBe(before + 1);
 });

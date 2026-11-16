@@ -769,7 +769,7 @@ test("a chat host is drawn though its owner may no longer register one, and taki
     screen.getByRole("group", { name: "Remove chat host 5be0d7aa?" })
       .textContent,
   ).toContain(
-    "Chat host 5be0d7aa stops taking your chats and questions in this workspace, and the sessions it is running now end.",
+    "Chat host 5be0d7aa stops taking your chats in this workspace, and the sessions it is running now end.",
   );
   drawing.host = undefined;
   await press("Remove");

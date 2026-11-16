@@ -314,8 +314,8 @@ const agentAccountPercentSchema = z.number().int().min(1).max(100);
 
 /**
  * How a person's own account pauses one agent, written whole: the share of
- * each window a reading pauses it at, and whether their threads and inquiries
- * pause with it. The lead of a pool they registered always does.
+ * each window a reading pauses it at, and whether their threads pause with
+ * it.
  */
 export const agentAccountSettingsSchema = z.strictObject({
   fiveHourPercent: agentAccountPercentSchema,

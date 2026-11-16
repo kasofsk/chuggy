@@ -206,6 +206,20 @@ test("a chat host's poll keeps the credentials it named, the same again writing 
   );
 });
 
+test("a chat host's kept session capabilities are read without a retired one its row still names", async () => {
+  const tenant = await tenantOf("host-retired-capability");
+  const hosts = postgresChatHostRegistry(api);
+  const key = { tenant, owner: member };
+  await hosts.register(registration(key, `${tenant}-1`));
+  await harness.query(
+    `UPDATE chat_host SET session_capabilities=ARRAY['ProjectRead','LeadDecision'] WHERE tenant=$1`,
+    [tenant],
+  );
+  assert.deepEqual((await hosts.host(key))?.sessionCapabilities, [
+    "ProjectRead",
+  ]);
+});
+
 test("the pool plane reads a chat host and stamps its poll and runner, and changes nothing else", async () => {
   assert.equal(
     await harness.attemptAs(

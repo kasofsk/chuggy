@@ -16,8 +16,6 @@ import {
   countSchema,
   identitySchema,
   isBoundedText,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
   nativeHttpPageItemsMax,
   sessionCapabilitiesMax,
   sessionEfforts,
@@ -339,16 +337,13 @@ export const sessionEndedSchema = z.strictObject({
 /**
  * What a pod is told of its own session, each optional fact absent where the
  * session has none, as `model` and `effort` are where it opened under the
- * site's session model and the runtime's own effort. `autoCompactWindow` is a
- * lead's alone: the context, in tokens, at which its runtime compacts the
- * conversation; `systemPromptOwn` is present only where the session runs
- * on its own system prompt and loads nothing of its project's settings; and
- * `shellCredentialHanded` is present only for a thread a chat host whose
- * settings name its threads' capabilities holds, whose session hands its shell
- * the API's origin, its bearer, its tenant and its project, in
- * `sessionApiOriginVariable`, `sessionBearerVariable`, `sessionTenantVariable`
- * and `sessionProjectVariable`, where a session told nothing hands its shell
- * none of them; `ticketWakes` is a thread's alone.
+ * site's session model and the runtime's own effort. `shellCredentialHanded`
+ * is present only for a thread a chat host whose settings name its threads'
+ * capabilities holds, whose session hands its shell the API's origin, its
+ * bearer, its tenant and its project, in `sessionApiOriginVariable`,
+ * `sessionBearerVariable`, `sessionTenantVariable` and
+ * `sessionProjectVariable`, where a session told nothing hands its shell none
+ * of them.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
@@ -361,16 +356,8 @@ export const sessionFactsAnswerSchema = z.object({
   credentialSlot: sessionIdentitySchema,
   agentReference: sessionIdentitySchema.optional(),
   systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
-  autoCompactWindow: z
-    .number()
-    .int()
-    .min(leadAutoCompactWindowTokensMin)
-    .max(leadAutoCompactWindowTokensMax)
-    .optional(),
   model: sessionModelSchema.optional(),
   effort: z.enum(sessionEfforts).optional(),
-  forkFrom: sessionIdentitySchema.optional(),
-  systemPromptOwn: z.literal(true).optional(),
   shellCredentialHanded: z.literal(true).optional(),
   ticketWakes: sessionTicketWakesSchema.optional(),
 });

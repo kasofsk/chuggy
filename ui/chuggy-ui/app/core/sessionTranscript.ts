@@ -555,11 +555,6 @@ export function sessionStreamReplaced(session: SessionStreams): boolean {
  * it is which session to re-read, and a resource this console cannot parse is a
  * frame it ignores rather than one it throws on, since a stream that ended on a
  * shape a console did not expect would stop carrying every other kind with it.
- *
- * THE PARSE IS HERE ONCE AND THE TWO QUESTIONS ASKED OF IT ARE ACCESSORS, a
- * panel watching one session and a panel watching one kind of session reading
- * one resource: two parses could disagree about whether a frame is one at all, and
- * the panel that said no would be the one that never updated.
  */
 function sessionChangeNamed(
   resource: string,
@@ -579,9 +574,4 @@ export function sessionChangeSessionNamed(
   resource: string,
 ): string | undefined {
   return sessionChangeNamed(resource)?.session;
-}
-
-/** What kind of session a `Session` frame names, so a panel can watch one kind. */
-export function sessionChangeKindNamed(resource: string): string | undefined {
-  return sessionChangeNamed(resource)?.kind;
 }

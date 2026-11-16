@@ -303,7 +303,7 @@ RUN case "$TARGETARCH" in \
 # then lists the whole chuggy server over the runtime's own transport, because a
 # shape the runtime cannot render to JSON schema makes the entire listing throw
 # while the server still reports itself connected — every tool silently absent,
-# and the lead told they do not exist. What that probe asks is `toolListing.mjs`,
+# and the session told they do not exist. What that probe asks is `toolListing.mjs`,
 # which a suite drives against a stub server, so the gate itself is tested.
 # `contractProbe.mjs` imports every entry of the installed contract and holds it
 # to the scripts' own `zod`. `confinementProbe.mjs` drives a session on its own

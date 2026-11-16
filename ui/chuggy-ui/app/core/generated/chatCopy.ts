@@ -31,7 +31,6 @@ export interface ChatCopy {
   readonly "chat-capability-draft-author": Record<never, never>;
   readonly "chat-capability-draft-originate": Record<never, never>;
   readonly "chat-capability-ticket-dispatch": Record<never, never>;
-  readonly "chat-capability-lead-decision": Record<never, never>;
   readonly "chat-capability-member-read": Record<never, never>;
   readonly "chat-capability-thread-offer": Record<never, never>;
   readonly "chat-capabilities-none": Record<never, never>;
@@ -74,8 +73,6 @@ export interface ChatCopy {
   readonly "chat-withheld": Record<never, never>;
   readonly "chat-turn-message": Record<never, never>;
   readonly "chat-turn-wake": Record<never, never>;
-  readonly "chat-turn-observation": Record<never, never>;
-  readonly "chat-turn-inquiry": Record<never, never>;
   readonly "chat-turn-offer-reply": Record<never, never>;
   readonly "chat-wake": {
     readonly reason: unknown;

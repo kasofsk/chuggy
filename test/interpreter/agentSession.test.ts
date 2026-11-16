@@ -213,7 +213,7 @@ test("a stream carrying a control or whitespace character is refused at the door
 });
 
 test("every roster holds its members in the order the schema iterates", () => {
-  assert.deepEqual(allSessionKinds, ["Lead", "Thread", "Inquiry"]);
+  assert.deepEqual(allSessionKinds, ["Thread"]);
   assert.deepEqual(allSessionStates, ["Open", "Closed"]);
   assert.deepEqual(allSessionCapabilities, [
     "RepositoryRead",
@@ -223,16 +223,13 @@ test("every roster holds its members in the order the schema iterates", () => {
     "DraftAuthor",
     "DraftOriginate",
     "TicketDispatch",
-    "LeadDecision",
     "MemberRead",
     "ThreadOffer",
   ]);
   assert.deepEqual(allSessionScopes, ["Project", "Member"]);
   assert.deepEqual(allSessionTurnInputKinds, [
-    "Observation",
     "UserMessage",
     "Wake",
-    "Inquiry",
     "OfferReply",
   ]);
   assert.deepEqual(allSessionTurnStates, [

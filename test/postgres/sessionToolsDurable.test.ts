@@ -326,7 +326,7 @@ test("one project's drafts are not another's", async () => {
 test("reopening a session compares the objectives it would be opened with", async () => {
   const partition = await sessionToolsProject("reopen");
   const session = await sessionRigSession(rig, partition, "reopened", {
-    kind: "Lead",
+    kind: "Thread",
     principal: "reopened",
     systemPrompt: "the objectives it was opened with",
   });
@@ -334,7 +334,7 @@ test("reopening a session compares the objectives it would be opened with", asyn
     rig.sessions.open({
       partition,
       session,
-      kind: "Lead",
+      kind: "Thread",
       principal: asPrincipal("reopened"),
       capabilities: ["RepositoryRead"],
       credentialSlot: "claude-code",
@@ -541,7 +541,7 @@ function provisionSession(
 ): Promise<{ readonly code: number; readonly output: string }> {
   return sessionRigProvision({
     CHUG_PROVISION_SESSION_ACTION: "open",
-    CHUG_PROVISION_SESSION_KIND: "Lead",
+    CHUG_PROVISION_SESSION_KIND: "Thread",
     CHUG_PROVISION_SESSION_CAPABILITIES: "RepositoryRead,ProjectRead",
     CHUG_PROVISION_SESSION_CREDENTIAL_SLOT: "claude-code",
     ...environment,
@@ -551,7 +551,7 @@ function provisionSession(
 test("a session provisioned from an issuer and a subject is the membership's own principal", async () => {
   const partition = await sessionToolsProject("provisioned");
   const issuer = "https://auth.invalid/realm";
-  const subject = `chuggy-selector-${randomUUID()}`;
+  const subject = `chuggy-member-${randomUUID()}`;
   const session = `session-provisioned-${randomUUID()}`;
   const opened = await provisionSession({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
@@ -585,20 +585,20 @@ test("a session provisioned from an issuer and a subject is the membership's own
   );
 });
 
-test("the provisioning command refuses to open an inquiry, naming the kind, and opens none", async () => {
-  const partition = await sessionToolsProject("provisioned-inquiry");
-  const session = `session-provisioned-inquiry-${randomUUID()}`;
+test("the provisioning command refuses to open a session of a retired kind, naming the kinds it opens, and opens none", async () => {
+  const partition = await sessionToolsProject("provisioned-retired");
+  const session = `session-provisioned-retired-${randomUUID()}`;
   const refused = await provisionSession({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
     CHUG_PROVISION_SESSION_PROJECT: partition.project,
     CHUG_PROVISION_SESSION_SESSION: session,
-    CHUG_PROVISION_SESSION_KIND: "Inquiry",
-    CHUG_PROVISION_SESSION_PRINCIPAL: "principal-provisioned-inquiry",
+    CHUG_PROVISION_SESSION_KIND: "Lead",
+    CHUG_PROVISION_SESSION_PRINCIPAL: "principal-provisioned-retired",
   });
   assert.equal(refused.code, 1, refused.output);
   assert.match(
     refused.output,
-    /CHUG_PROVISION_SESSION_KIND may not be Inquiry/u,
+    /CHUG_PROVISION_SESSION_KIND must be one of Thread/u,
   );
   assert.deepEqual(
     await harness.query(`SELECT 1 FROM agent_session WHERE session=$1`, [

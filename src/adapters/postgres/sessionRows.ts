@@ -11,6 +11,7 @@
  * stands beside the execution scheduler.
  */
 
+import { sessionCapabilitiesRetired } from "../../contract/rosters.ts";
 import {
   threadTicketWakeSettings,
   type ThreadTicketWakes,
@@ -53,9 +54,8 @@ export interface AgentSessionRow {
   readonly tenant: string | null;
   readonly project: string | null;
   readonly session: string | null;
-  readonly kind: string | null;
+  readonly kind: string;
   readonly principal: string | null;
-  readonly parent_session: string | null;
   readonly agent_reference: string | null;
   readonly capabilities: string[] | null;
   readonly credential_slot: string | null;
@@ -126,15 +126,24 @@ export function sessionPodEndingOf(
   };
 }
 
-/** Reads the row's capability roster, refusing a member the CHECK should have stopped. */
+/**
+ * Reads the row's capability roster, dropping a `sessionCapabilitiesRetired`
+ * member a stored roster may still hold and refusing any other the CHECK
+ * should have stopped.
+ */
 export function sessionRowCapabilities(
   values: readonly string[] | null,
 ): readonly SessionCapability[] {
   if (values === null)
     throw new Error("agent session row: the capability roster is null");
-  return values.map((value) =>
-    sessionRowMember(allSessionCapabilities, value, "session capability"),
-  );
+  return values
+    .filter(
+      (value) =>
+        !(sessionCapabilitiesRetired as readonly string[]).includes(value),
+    )
+    .map((value) =>
+      sessionRowMember(allSessionCapabilities, value, "session capability"),
+    );
 }
 
 export function agentSessionRowOf(row: AgentSessionRow): AgentSession {
@@ -146,9 +155,6 @@ export function agentSessionRowOf(row: AgentSessionRow): AgentSession {
     session: asSessionId(sessionRowText(row.session, "session")),
     kind: sessionRowMember(allSessionKinds, row.kind, "session kind"),
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
-    ...(row.parent_session === null
-      ? {}
-      : { parent: asSessionId(row.parent_session) }),
     ...(row.agent_reference === null
       ? {}
       : { agentReference: row.agent_reference }),
@@ -242,8 +248,8 @@ export interface SessionTurnStanding {
 
 /**
  * The turn a standing row carries, or nothing where the session has taken none.
- * It stands here because a lead's mailbox and a thread's are read by two
- * modules and differ in what they add to a turn, never in the turn.
+ * It stands here because a thread's mailbox is read by more than one module,
+ * each adding its own to a turn and none differing in the turn.
  */
 export function sessionTurnStandingOf(
   row: SessionTurnStandingRow,

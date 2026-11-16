@@ -14,6 +14,10 @@
  * generation are one `SECURITY DEFINER` function's decision; a join written
  * around one would run as the caller, which is a role that holds no privilege
  * on any relation a session lives in.
+ *
+ * A THREAD IS THE ONE KIND OF SESSION READ. Every read naming a session's kind
+ * keeps `Thread` alone, so a bearer of a session of any kind the database still
+ * holds rows of answers as a bearer naming no session.
  */
 
 import { createHash } from "node:crypto";
@@ -104,7 +108,7 @@ interface SessionIdentityRow {
   readonly tenant: string | null;
   readonly project: string | null;
   readonly session: string | null;
-  readonly kind: string | null;
+  readonly kind: string;
   readonly principal: string | null;
 }
 
@@ -122,11 +126,8 @@ interface SessionAuthorityRow extends SessionIdentityRow {
   readonly credential_slot: string | null;
   readonly agent_reference: string | null;
   readonly system_prompt: string | null;
-  readonly auto_compact_window: string | null;
   readonly model: string | null;
   readonly effort: string | null;
-  readonly fork_from: string | null;
-  readonly system_prompt_own: boolean | null;
   readonly shell_credential_handed: boolean | null;
   readonly live: boolean | null;
 }
@@ -174,14 +175,6 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
       ? {}
       : { agentReference: row.agent_reference }),
     ...(row.system_prompt === null ? {} : { systemPrompt: row.system_prompt }),
-    ...(row.auto_compact_window === null
-      ? {}
-      : {
-          autoCompactWindow: projectRowCounter(
-            row.auto_compact_window,
-            "session auto-compact window",
-          ),
-        }),
     ...(row.model === null ? {} : { model: row.model }),
     ...(row.effort === null
       ? {}
@@ -192,8 +185,6 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
             "session effort",
           ),
         }),
-    ...(row.fork_from === null ? {} : { forkFrom: row.fork_from }),
-    ...(row.system_prompt_own === true ? { systemPromptOwn: true } : {}),
     ...(row.shell_credential_handed === true
       ? { shellCredentialHanded: true }
       : {}),
@@ -265,10 +256,9 @@ async function sessionPlaneAuthenticate(
   const found = await pool.query<SessionAuthorityRow>(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
                kind,principal,capabilities,credential_slot,agent_reference,
-               system_prompt,auto_compact_window::text AS auto_compact_window,
-               model,effort,fork_from,system_prompt_own,
-               shell_credential_handed,live
-          FROM read_session_attempt(${sessionSecretDigest(secret)})`,
+               system_prompt,model,effort,shell_credential_handed,live
+          FROM read_session_attempt(${sessionSecretDigest(secret)})
+         WHERE kind = 'Thread'`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : sessionAuthorityOf(row);
@@ -282,7 +272,8 @@ async function sessionPlaneBinding(
   const found = await pool.query<SessionIdentityRow>(
     sql`SELECT tenant,project,session,kind,principal
           FROM session_attempt_binding(
-                 ${sessionSecretDigest(secret)},${generation})`,
+                 ${sessionSecretDigest(secret)},${generation})
+         WHERE kind = 'Thread'`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : sessionIdentityOf(row);
@@ -591,7 +582,8 @@ export function postgresSessionBearerAuthority(
     authenticate: async (secret) => {
       const found = await pool.query<SessionBearerRow>(
         sql`SELECT tenant,project,session,kind,principal,scope,capabilities
-              FROM authenticate_session_bearer(${sessionSecretDigest(secret)})`,
+              FROM authenticate_session_bearer(${sessionSecretDigest(secret)})
+             WHERE kind = 'Thread'`,
       );
       const row = found.rows[0];
       return row === undefined

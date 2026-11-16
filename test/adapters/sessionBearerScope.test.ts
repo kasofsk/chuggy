@@ -139,7 +139,7 @@ function memberChatRecorded(reached: string[], granted: boolean): never {
 function scopedApp(
   reached: string[],
   web?: ServedNativeWeb,
-  kind: SessionKind = "Lead",
+  kind: SessionKind = "Thread",
   scope: SessionScope = "Project",
   granted = true,
   capabilities: readonly SessionCapability[] = scope === "Member"
@@ -364,12 +364,6 @@ const chuggyToolCalls = {
     ["dispatchView", "GET"],
     ["operations", "POST"],
   ],
-  dispatch: [],
-  refuse: [],
-  lift: [],
-  set_attention: [],
-  set_handoff_note: [],
-  set_planning_intent: [],
   read_my_abilities: [["chatAbilities", "GET"]],
   list_projects: [["chatProjects", "GET"]],
   list_my_threads: [["chatThreads", "GET"]],
@@ -623,9 +617,9 @@ function sessionBearerAdmissionScopeOf(
   return scope === "Member" ? "Member" : "Partition";
 }
 
-test("a lead's bearer holding only reads reads its project, and its draft and revocation writes are answered as unauthorized", async () => {
+test("a bearer holding only reads reads its project, and its draft and revocation writes are answered as unauthorized", async () => {
   const reached: string[] = [];
-  await using app = scopedApp(reached, undefined, "Lead", "Project", true, [
+  await using app = scopedApp(reached, undefined, "Thread", "Project", true, [
     "ProjectRead",
   ]);
   await app.inject(
@@ -648,95 +642,81 @@ test("a lead's bearer holding only reads reads its project, and its draft and re
   }
 });
 
-test("list_repositories's route reaches the project's repositories under a lead's and a thread's own bearer", async () => {
+test("list_repositories's route reaches the project's repositories under a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.projectRepositories,
     nativeHttpRoutes.projectRepositories,
     "list_repositories calls no route",
   );
-  for (const kind of ["Lead", "Thread"] as const) {
-    const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    await app.inject(
-      routeRequest(
-        `GET ${chuggyToolRoutes.projectRepositories}`,
-        own,
-        sessionToken,
-      ),
-    );
-    assert.deepEqual(reached, ["onboarding.projectRepositories"], kind);
-  }
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  await app.inject(
+    routeRequest(
+      `GET ${chuggyToolRoutes.projectRepositories}`,
+      own,
+      sessionToken,
+    ),
+  );
+  assert.deepEqual(reached, ["onboarding.projectRepositories"]);
 });
 
-test("fetch_image's route reaches the project's image under a lead's and a thread's own bearer", async () => {
+test("fetch_image's route reaches the project's image under a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.projectArtifact,
     nativeHttpRoutes.projectArtifact,
     "fetch_image calls no route",
   );
-  for (const kind of ["Lead", "Thread"] as const) {
-    const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    await app.inject(
-      routeRequest(
-        `GET ${chuggyToolRoutes.projectArtifact}`,
-        own,
-        sessionToken,
-      ),
-    );
-    assert.deepEqual(reached, ["web.projectArtifact"], kind);
-  }
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  await app.inject(
+    routeRequest(`GET ${chuggyToolRoutes.projectArtifact}`, own, sessionToken),
+  );
+  assert.deepEqual(reached, ["web.projectArtifact"]);
 });
 
-test("read_run_error's route reaches an attempt's error text under a lead's and a thread's own bearer", async () => {
+test("read_run_error's route reaches an attempt's error text under a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.runError,
     nativeHttpRoutes.runError,
     "read_run_error calls no route",
   );
-  for (const kind of ["Lead", "Thread"] as const) {
-    const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    await app.inject(
-      routeRequest(`GET ${chuggyToolRoutes.runError}`, own, sessionToken),
-    );
-    assert.deepEqual(reached, ["web.runError"], kind);
-  }
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  await app.inject(
+    routeRequest(`GET ${chuggyToolRoutes.runError}`, own, sessionToken),
+  );
+  assert.deepEqual(reached, ["web.runError"]);
 });
 
-test("read_ticket_landings's route reaches a ticket's landings under a lead's and a thread's own bearer", async () => {
+test("read_ticket_landings's route reaches a ticket's landings under a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.ticketLandings,
     nativeHttpRoutes.ticketLandings,
     "read_ticket_landings calls no route",
   );
-  for (const kind of ["Lead", "Thread"] as const) {
-    const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    await app.inject(
-      routeRequest(`GET ${chuggyToolRoutes.ticketLandings}`, own, sessionToken),
-    );
-    assert.deepEqual(reached, ["landings.read"], kind);
-  }
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  await app.inject(
+    routeRequest(`GET ${chuggyToolRoutes.ticketLandings}`, own, sessionToken),
+  );
+  assert.deepEqual(reached, ["landings.read"]);
 });
 
-test("read_landing_queues's route reaches the project's landing queues under a lead's and a thread's own bearer", async () => {
+test("read_landing_queues's route reaches the project's landing queues under a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.landingQueues,
     nativeHttpRoutes.landingQueues,
     "read_landing_queues calls no route",
   );
-  for (const kind of ["Lead", "Thread"] as const) {
-    const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    await app.inject(
-      routeRequest(`GET ${chuggyToolRoutes.landingQueues}`, own, sessionToken),
-    );
-    assert.deepEqual(reached, ["landingQueues.read"], kind);
-  }
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  await app.inject(
+    routeRequest(`GET ${chuggyToolRoutes.landingQueues}`, own, sessionToken),
+  );
+  assert.deepEqual(reached, ["landingQueues.read"]);
 });
 
-test("take_ticket's and return_ticket's routes reach a ticket's take and return under a thread's own bearer, and a lead's is refused them before any port", async () => {
+test("take_ticket's and return_ticket's routes reach a ticket's take and return under a thread's own bearer, and one holding no DraftOriginate is refused them before any port", async () => {
   const routes = [chuggyToolRoutes.ticketTake, chuggyToolRoutes.ticketReturn];
   assert.deepEqual(routes, [
     nativeHttpRoutes.ticketTake,
@@ -757,13 +737,15 @@ test("take_ticket's and return_ticket's routes reach a ticket's take and return 
   }
   for (const route of routes) {
     const reached: string[] = [];
-    await using lead = scopedApp(reached, undefined, "Lead", "Project", true, [
-      "RepositoryRead",
-      "ProjectRead",
-      "DraftAuthor",
-      "LeadDecision",
-    ] as const);
-    const answered = await lead.inject(
+    await using authoring = scopedApp(
+      reached,
+      undefined,
+      "Thread",
+      "Project",
+      true,
+      ["RepositoryRead", "ProjectRead", "DraftAuthor"] as const,
+    );
+    const answered = await authoring.inject(
       routeRequest(`POST ${route}`, own, sessionToken),
     );
     assert.equal(answered.statusCode, 404, route);
@@ -771,20 +753,18 @@ test("take_ticket's and return_ticket's routes reach a ticket's take and return 
   }
 });
 
-test("read_abilities's route reaches the session's own abilities under a lead's and a thread's own bearer", async () => {
+test("read_abilities's route reaches the session's own abilities under a thread's own bearer", async () => {
   assert.equal(
     chuggyToolRoutes.abilities,
     nativeHttpRoutes.abilities,
     "read_abilities calls no route",
   );
-  for (const kind of ["Lead", "Thread"] as const) {
-    const reached: string[] = [];
-    await using app = scopedApp(reached, undefined, kind);
-    await app.inject(
-      routeRequest(`GET ${chuggyToolRoutes.abilities}`, own, sessionToken),
-    );
-    assert.deepEqual(reached, ["web.abilities"], kind);
-  }
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  await app.inject(
+    routeRequest(`GET ${chuggyToolRoutes.abilities}`, own, sessionToken),
+  );
+  assert.deepEqual(reached, ["web.abilities"]);
 });
 
 /** A project read that finds every project but one, recording each partition it was asked for. */

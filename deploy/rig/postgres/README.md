@@ -176,17 +176,17 @@ refused rather than resolved by a precedence.
 export CHUG_PROVISION_SESSION_DATABASE_URL="$owner_url"
 export CHUG_PROVISION_SESSION_TENANT="tenant" CHUG_PROVISION_SESSION_PROJECT="project"
 export CHUG_PROVISION_SESSION_SESSION="an opaque session identity"
-export CHUG_PROVISION_SESSION_KIND=Lead
+export CHUG_PROVISION_SESSION_KIND=Thread
 export CHUG_API_OIDC_ISSUER="https://accounts.example.test"
 export CHUG_PROVISION_SESSION_SUBJECT="the sub claim the provider issues"
-export CHUG_PROVISION_SESSION_CAPABILITIES="RepositoryRead,ProjectRead,DraftAuthor,LeadDecision"
+export CHUG_PROVISION_SESSION_CAPABILITIES="RepositoryRead,ProjectRead,DraftAuthor"
 export CHUG_PROVISION_SESSION_CREDENTIAL_SLOT=claude-code
 CHUG_PROVISION_SESSION_ACTION=open npm run provision:session
 ```
 
 `CHUG_PROVISION_SESSION_SYSTEM_PROMPT` is the objectives the session is opened
-with, which the pod reads as its system prompt. It is optional here because the
-selector sets a lead's own from the project's settings.
+with, which the pod reads as its system prompt. It is optional, and a session
+opened without it is told no objectives.
 
 ## Apply the policies
 

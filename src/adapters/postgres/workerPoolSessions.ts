@@ -223,7 +223,7 @@ type SessionHoldRows<Identity> = Omit<
 /**
  * A pool's claims, every call keyed by its project, its name and the
  * registration that claimed: it finds which assignments it holds, and is
- * offered no session, because there is no lead for it to claim.
+ * offered no session, because a chat host alone claims one.
  */
 function postgresPoolSessionClaims(
   pool: pg.Pool,
@@ -325,7 +325,7 @@ function postgresChatHostSessionClaims(
           await pool.query<{
             project: string | null;
             session: string | null;
-            kind: string | null;
+            kind: string;
             capabilities: string[] | null;
             agent_reference: string | null;
           }>(
@@ -333,7 +333,8 @@ function postgresChatHostSessionClaims(
                   FROM chat_host_sessions_awaiting_claim(
                     ${identity.tenant},${identity.owner},${identity.principal},
                     ${backoffSecs},${workerPoolSessionBound(max, "claim bound")},
-                    ${memberScope})`,
+                    ${memberScope})
+                 WHERE kind = 'Thread'`,
           )
         ).rows,
       ),

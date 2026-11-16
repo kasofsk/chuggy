@@ -1,6 +1,6 @@
 /**
- * What every thread case needs of a real PostgreSQL: the session rig and API
- * pool of the lead rig, the two thread stores over the roles their doors are
+ * What every thread case needs of a real PostgreSQL: the session rig, a pool
+ * under the API's role, the two thread stores over the roles their doors are
  * granted to, and a member the project admits for a thread to act under.
  *
  * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The API-side doors run as
@@ -18,6 +18,7 @@
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type pg from "pg";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
@@ -58,14 +59,28 @@ import type { ThreadLimitStore } from "../../src/interpreter/threadLimit.ts";
 import type { ThreadLiveHub } from "../../src/interpreter/threadLive.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
 import type { SessionId } from "../../src/interpreter/agentSession.ts";
-import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
-import { sessionRigAttempt } from "./sessionHarness.ts";
-import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
-import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  sessionRigAttempt,
+  sessionRigOpen,
+  type SessionRig,
+} from "./sessionHarness.ts";
+import {
+  postgresHarnessKeying,
+  postgresHarnessProject,
+  postgresHarnessRolePool,
+} from "./harness.ts";
+import { apiRole, schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import type { SessionStoreDouble } from "./storeDouble.ts";
 
-/** One opened subject: the lead rig, and the thread stores. */
-export interface ThreadRig extends LeadRig {
+/**
+ * One opened subject: the session rig, a pool under the API's role, so a door
+ * granted to `chuggy_api` is driven as that role and not as the migration
+ * owner, which would be green over a grant never made, and the thread stores.
+ */
+export interface ThreadRig {
+  readonly sessions: SessionRig;
+  readonly apiPool: pg.Pool;
+  readonly close: () => Promise<void>;
   readonly threads: ThreadStore;
   readonly minting: ThreadSessionMint;
   readonly seeding: ThreadSeedingRead;
@@ -74,21 +89,24 @@ export interface ThreadRig extends LeadRig {
 }
 
 export async function threadRigOpen(): Promise<ThreadRig> {
-  const lead = await leadRigOpen();
+  const sessions = await sessionRigOpen();
+  const apiPool = postgresHarnessRolePool(apiRole);
   const schedulerPool = postgresHarnessRolePool(schedulerRole);
   return {
-    ...lead,
+    sessions,
+    apiPool,
     close: async () => {
       await schedulerPool.end();
-      await lead.close();
+      await apiPool.end();
+      await sessions.close();
     },
-    threads: postgresThreads(lead.apiPool, {
+    threads: postgresThreads(apiPool, {
       streamsMax: sessionStoreStreamsAnswered,
     }),
     minting: threadSessionMint(),
-    seeding: postgresThreadSeeding(lead.apiPool),
+    seeding: postgresThreadSeeding(apiPool),
     wakes: postgresThreadWakes(schedulerPool),
-    limits: postgresThreadLimits(lead.apiPool),
+    limits: postgresThreadLimits(apiPool),
   };
 }
 
@@ -97,7 +115,7 @@ export function threadRigProject(
   rig: ThreadRig,
   label: string,
 ): Promise<Partition> {
-  return leadRigProject(rig, `thread-${label}`);
+  return postgresHarnessProject(rig.sessions.harness.store, `thread-${label}`);
 }
 
 /** One member: the identity an operation is audited to, and the principal a thread acts as. */

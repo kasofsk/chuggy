@@ -369,8 +369,7 @@ export type ConversationAsk =
     }
   | { readonly ask: "Wake"; readonly wake: string; readonly resource: string }
   | { readonly ask: "Document"; readonly kind: SessionTurnInputKind }
-  | { readonly ask: "Observation"; readonly text?: string }
-  | { readonly ask: "Inquiry" };
+  | { readonly ask: "Observation"; readonly text: string };
 
 /** One thing that happened between the ask and the answer. */
 export type ConversationStep =
@@ -721,10 +720,6 @@ function conversationAskOf(
         ? { ask: "Document", kind }
         : { ask: "Wake", wake: wake.wake, resource: wake.resource };
     }
-    case "Observation":
-      return { ask: "Observation" };
-    case "Inquiry":
-      return { ask: "Inquiry" };
     case "OfferReply":
       return { ask: "Document", kind };
   }

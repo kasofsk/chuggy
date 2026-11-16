@@ -258,16 +258,16 @@ export function runnerRegisterCommand(
   return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
 }
 
-/** Where the lead runs and as which offering: its route, and whether it is
- * the members' own or the subsidized lead. */
+/** The `lead` and `leadOffering` a session placement's write still names, as
+ * read: the server answers fixed values for both and ignores what is written. */
 export interface RunnersLeadPlacement {
   readonly route: PlacementRoute;
   readonly offering: LeadOffering;
 }
 
-/** Every kind's route, the lead's with its offering, written as two
- * placements: work and evaluation, and a thread and the lead. The lead is held
- * as read and never moved here; the session placement's write still names it. */
+/** Every kind's route, written as two placements: work and evaluation, and a
+ * thread. `lead` is held as read and never moved here; the session placement's
+ * write still names it. */
 export interface RunnersPlacementDraft {
   readonly work: PlacementRoute;
   readonly evaluation: PlacementRoute;
@@ -289,7 +289,7 @@ export function runnersPlacementDraft(
 }
 
 /** The kinds the reader has chosen a route for since opening the editor, which
- * never include the lead. */
+ * never include `lead`. */
 export type RunnersPlacementMoves = Partial<
   Omit<RunnersPlacementDraft, "lead">
 >;
@@ -324,8 +324,7 @@ export function runnersPlacementOptions(
 
 /** What a save writes: each placement only where one of its own kinds differs
  * from the read, since a write names both its kinds, and the session's with
- * the lead as read and its offering always named, since one left out is the
- * row's stored offering rather than the one read. */
+ * `lead` and `leadOffering` as read. */
 export interface RunnersPlacementWrites {
   readonly execution:
     | { readonly work: PlacementRoute; readonly evaluation: PlacementRoute }

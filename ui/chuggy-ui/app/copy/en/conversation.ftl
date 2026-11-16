@@ -32,7 +32,6 @@ conversation-prompt-unreadable = Prompt unreadable
 conversation-context = { -context(case: "upper") }
 conversation-sent-from = Sent from
 conversation-observation = Observation
-conversation-inquiry = { -inquiry(case: "upper") }
 conversation-copy-answer = Copy answer
 conversation-marker-compaction = { -compaction(case: "upper") }
 conversation-marker-elided = Elided · { $bytes } bytes

@@ -19,7 +19,7 @@
 -- revisions and the repository configurations drawn from them, bound
 -- repositories and the operations that bound them, forge installations and
 -- the authority that claimed them, the deployment authoring policy, the
--- selector's project settings with their history, worker pools
+-- project settings with their history, worker pools
 -- and their registration tokens, where each project's executions run and the
 -- routing the scheduler published, the execution cluster, the capacity
 -- entitlements drawn on it, the worker catalog and the recovery epochs, and
