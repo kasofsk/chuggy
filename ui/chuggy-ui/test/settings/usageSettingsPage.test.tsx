@@ -27,7 +27,7 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
@@ -44,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ tenant: leadPartition.tenant }),
+  useParams: () => ({ tenant: projectPartition.tenant }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 

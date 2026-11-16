@@ -67,6 +67,8 @@ import type {
   RepositoryCredential,
   RepositoryCredentialPort,
   RepositoryId,
+  StackFolded,
+  StackFolding,
   StackMinted,
   StackMinting,
   StackRemoved,
@@ -82,7 +84,12 @@ import {
   candidatePathsDiffering,
   candidatePrepare,
 } from "./gitCandidate.ts";
-import { stackMint, stackRemove, stackRemoveUnrecorded } from "./gitStack.ts";
+import {
+  stackFold,
+  stackMint,
+  stackRemove,
+  stackRemoveUnrecorded,
+} from "./gitStack.ts";
 import {
   scratchFetchRef,
   scratchHasCommit,
@@ -314,6 +321,17 @@ async function gitPromotionMintStack(
   if (authorized.authorized === "Refused")
     return { minted: "Failed", evidence: authorized.evidence };
   return stackMint(own.scratch, authorized.credential, minting);
+}
+
+/** Merges a stack and publishes nothing, a credential refused being a stack not folded. */
+async function gitPromotionFoldStack(
+  own: GitPromotionState,
+  folding: StackFolding,
+): Promise<StackFolded> {
+  const authorized = await gitPromotionCredentialOf(own, folding.repository);
+  if (authorized.authorized === "Refused")
+    return { folded: "Failed", evidence: authorized.evidence };
+  return stackFold(own.scratch, authorized.credential, folding);
 }
 
 /** Deletes a published stack's ref. */
@@ -583,6 +601,7 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
     mintStack: (minting) => gitPromotionMintStack(own, minting),
+    foldStack: (folding) => gitPromotionFoldStack(own, folding),
     removeStack: (removal) => gitPromotionRemoveStack(own, removal),
     removeUnrecordedStack: (removal) =>
       gitPromotionRemoveUnrecordedStack(own, removal),

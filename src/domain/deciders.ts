@@ -339,8 +339,8 @@ export function decideUpdate(
 
 /**
  * Ready to Work, at a source the caller names: which Ready ticket runs next
- * and what its work is done against are both agentic picks, so both arrive in
- * the command and the event IS the ticket writer's decision. Refused for a
+ * and what its work is done against are both the dispatcher's choice, so both
+ * arrive in the command and the event IS the ticket writer's decision. Refused for a
  * ticket that is not Pending, or that waits on a dependency not yet Done.
  */
 export function decideDispatch(

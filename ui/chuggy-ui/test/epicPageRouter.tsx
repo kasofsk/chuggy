@@ -7,7 +7,7 @@
 
 import type { ReactNode } from "react";
 
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 
 /** The epic the address names. */
 export const epicRouted = { epic: "7" };
@@ -56,7 +56,7 @@ function EpicLink(
 export const epicRouterDouble = {
   createLink: (component: unknown) => component,
   Link: EpicLink,
-  useParams: () => ({ ...leadPartition, epic: epicRouted.epic }),
+  useParams: () => ({ ...projectPartition, epic: epicRouted.epic }),
   useNavigate:
     () =>
     (options: {

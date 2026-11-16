@@ -29,7 +29,8 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
-import { leadPartition, leadSelectorSettingsBody } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
+import { selectorSettingsBody } from "../selectorSettingsFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { renderCopied } from "../copied.tsx";
 
@@ -43,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -99,7 +100,7 @@ async function drawPage(
         ? answer({ error: { code: "NotFound" } }, 404)
         : answer(drawing.fallback);
     if (request.url.endsWith("/selector-settings"))
-      return answer(drawing.settings ?? leadSelectorSettingsBody());
+      return answer(drawing.settings ?? selectorSettingsBody());
     if (request.url.endsWith("/session-placement"))
       return (drawing.sessionsHeld ?? Promise.resolve()).then(() =>
         drawing.sessionsFailing === true
@@ -111,7 +112,7 @@ async function drawPage(
   vi.stubGlobal("fetch", scripted.fetch);
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         drawing.client ??
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -368,7 +369,7 @@ test("a subsidized project's lead is drawn subsidized, its line names the model 
   };
   const sent = await drawPage({
     sessions: subsidizedSessions,
-    settings: leadSelectorSettingsBody(
+    settings: selectorSettingsBody(
       12,
       {},
       {

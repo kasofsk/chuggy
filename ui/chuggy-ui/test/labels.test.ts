@@ -13,7 +13,7 @@ import { expect, test } from "vitest";
 import {
   configurationCommitShort,
   configurationLabel,
-  creatorEmailsOf,
+  creatorNamesOf,
   creatorLabel,
   digestShortened,
   imageShortened,
@@ -118,18 +118,31 @@ test("a creator with no issuer prefix, or one naming nothing past it, is drawn w
   });
 });
 
-test("a creator the project's people name an email for is drawn as it, and by subject otherwise", () => {
-  const principal = "23:https://issuer.example/alice";
-  const emails = creatorEmailsOf([
-    { subject: "alice", email: "alice@example.com" },
-    { subject: "bob" },
+test("a creator is drawn by the GitHub login the project's people hold for them, else their email, else by subject", () => {
+  const names = creatorNamesOf([
+    {
+      subject: "alice",
+      account: true,
+      email: "alice@example.com",
+      githubLogin: "alice-gh",
+    },
+    { subject: "bob", account: true, email: "bob@example.com" },
+    { subject: "carol", account: true },
+    { subject: "dan", account: false },
   ]);
-  expect([...emails.keys()]).toEqual(["alice"]);
-  expect(creatorLabel(principal, emails)).toEqual({
-    text: "alice@example.com",
-    title: principal,
+  expect([...names]).toEqual([
+    ["alice", "alice-gh"],
+    ["bob", "bob@example.com"],
+  ]);
+  const alice = "23:https://issuer.example/alice";
+  expect(creatorLabel(alice, names)).toEqual({
+    text: "alice-gh",
+    title: alice,
   });
-  expect(creatorLabel("23:https://issuer.example/bob", emails).text).toBe(
-    "bob",
+  expect(creatorLabel("23:https://issuer.example/bob", names).text).toBe(
+    "bob@example.com",
+  );
+  expect(creatorLabel("23:https://issuer.example/carol", names).text).toBe(
+    "carol",
   );
 });

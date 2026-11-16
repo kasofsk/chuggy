@@ -19,7 +19,7 @@ import type {
   SelectorSettingsDraft,
   SelectorSettingsDrawn,
 } from "../app/core/selectorSettingsForm.ts";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 
 const readDrawn: SelectorSettingsDrawn = {
@@ -53,7 +53,7 @@ function draftOf(
 }
 
 const settings: SelectorProjectSettingsResponse = {
-  partition: leadPartition,
+  partition: projectPartition,
   revision: 12,
   overrides: { northStar: "ship the console" },
   effective: {

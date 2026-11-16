@@ -118,8 +118,9 @@ const aWorkTask = 3;
 const aEvaluationTask = 4;
 
 /**
- * A spawn request of A's, copied from B's spawn of the same kind at an effect
- * position past B's, holding the one task it names.
+ * A spawn request of a hand-placed ticket's, copied from B's spawn of the same
+ * kind at an effect position past B's and apart from every other ticket's,
+ * holding the one task it names.
  */
 async function aSpawn(
   project: FinalizerProject,
@@ -134,7 +135,7 @@ async function aSpawn(
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, kind, state, capacity_account, configuration_revision,
         configuration_digest, input_bundle, input_bundle_digest)
-     SELECT tenant, project, $4, authorizing_seq, effect_position + 100, $5,
+     SELECT tenant, project, $4, authorizing_seq, effect_position + 100 * ($5::bigint - $3::bigint), $5,
             ticket_version, kind, 'Fulfilled', capacity_account,
             configuration_revision, configuration_digest, input_bundle,
             input_bundle_digest
@@ -195,10 +196,16 @@ async function aEvaluating(
   );
 }
 
+/** Where a hand-placed ticket's request entered the journal, and whether it is still to be drawn. */
+interface Entered {
+  readonly seq: number;
+  readonly state: "Fulfilled" | "Open";
+}
+
 /**
  * Writes A beside B in `phase`, released with B's brief, its work passed at
  * `commit` off `tip` and its evaluation started where `phase` is Evaluation,
- * and ranked ahead of B by a request of its own.
+ * and ranked ahead of B by a request of its own, or where `entered` says.
  */
 async function aPlaced(
   project: FinalizerProject,
@@ -211,6 +218,7 @@ async function aPlaced(
     readonly tip: string;
   },
   branch?: string,
+  entered: Entered = { seq: project.authorizingSeq - 1, state: "Fulfilled" },
 ): Promise<string> {
   const [brief] = await rig.harness.query(
     `SELECT brief FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
@@ -253,13 +261,14 @@ async function aPlaced(
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, request_generation, kind, state, work_cycle,
         finalization_generation)
-     VALUES ($1,$2,$3,$4,1,$5,$4,1,'RunFinalizer','Fulfilled',1,1)`,
+     VALUES ($1,$2,$3,$4,1,$5,$4,1,'RunFinalizer',$6,1,1)`,
     [
       project.partition.tenant,
       project.partition.project,
       request,
-      project.authorizingSeq - 1,
+      entered.seq,
       ticket,
+      entered.state,
     ],
   );
   return request;
@@ -267,18 +276,20 @@ async function aPlaced(
 
 /**
  * B, accepted at a commit of its own off the reference's tip, and A ranked
- * ahead of it in `phase`, accepted at another, each touching a file of its own.
+ * ahead of it in `phase`, accepted at another, A adding `a.txt` and B adding
+ * `bPath`, a file of its own unless a case names A's.
  */
 async function pairOpened(
   label: string,
   phase: string,
   proposing = false,
+  bPath = "b.txt",
 ): Promise<Pair> {
   const { project, remote, work } = await finalizerSubject(rig, label, []);
   const tip = finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main");
   const ticket = project.ticket;
   const bRef = `refs/heads/chuggy/tickets/${String(ticket)}/attempts/b`;
-  const bCommit = finalizerRemoteAttempt(remote, "b.txt", "b\n", bRef);
+  const bCommit = finalizerRemoteAttempt(remote, bPath, "b\n", bRef);
   await finalizerDeclareSource(rig, project, work, bRef, bCommit, tip);
   await finalizerBriefLanding(
     rig,
@@ -974,4 +985,99 @@ test("B sent back to re-stack re-reports its accepted commit, stacks over A, and
     stack?.stackTree,
     "what B lands on A is the tree it was re-evaluated over",
   );
+});
+
+/** Whether one hand-placed request of the project has been claimed by anyone. */
+async function claimed(pair: Pair, request: string): Promise<boolean> {
+  const [row] = await rig.harness.query(
+    `SELECT claim_generation::text AS generation FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [pair.b.partition.tenant, pair.b.partition.project, request],
+  );
+  return row?.["generation"] !== "0";
+}
+
+/**
+ * C, a Serialized ticket ranked behind B whose work is one commit off A's,
+ * which is what the target holds once A lands, so it lands as it is.
+ */
+async function cPlaced(
+  pair: Pair,
+  label: string,
+): Promise<{ ticket: number; request: string; commit: string }> {
+  const ticket = pair.b.ticket + 2;
+  const ref = `refs/heads/chuggy/tickets/${String(ticket)}/attempts/c`;
+  const seed = pair.remote.seed;
+  finalizerGitVerb(seed, "fetch", "-q", pair.remote.origin, pair.aCommit);
+  finalizerGitVerb(seed, "checkout", "-q", "--detach", pair.aCommit);
+  const commit = finalizerRemoteAttempt(pair.remote, "c.txt", "c\n", ref);
+  const request = await aPlaced(
+    pair.b,
+    ticket,
+    "Finalization",
+    label,
+    { ref, commit, tip: pair.aCommit },
+    undefined,
+    { seq: pair.b.authorizingSeq, state: "Open" },
+  );
+  await finalizerBriefLanding(
+    rig,
+    pair.b.partition,
+    ticket,
+    "Serialized",
+    pair.b.repository,
+  );
+  return { ticket, request, commit };
+}
+
+test("B, whose work conflicts with A's, is not re-stacked behind A, gives up its rank once A lands, and C behind it holds and lands while B is in Work", async () => {
+  const label = "flow-conflict-yields";
+  const pair = await pairOpened(label, "Finalization", false, "a.txt");
+  const c = await cPlaced(pair, `${label}-c`);
+  const port = finalizerRemotePort(rig);
+  const bRank = await rankOf(pair.b, pair.b.ticket);
+
+  await finalizerPassOnce(rig, pair.b, port, `${label}-pending`);
+  assert.deepEqual(
+    await bRestacks(pair),
+    [],
+    "B is not sent back over a line its work conflicts with",
+  );
+  assert.equal(await rankOf(pair.b, pair.b.ticket), bRank);
+  assert.equal(await claimed(pair, c.request), false, "C waits behind B");
+
+  await aLandedAt(pair, `${label}-a`);
+  await finalizerPassOnce(rig, pair.b, port, `${label}-b`);
+  const [conflicted, ...rest] = await rig.as(
+    `SELECT failure_kind, conflict_manifest FROM finalization_attempt
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [...keysOf(pair.b, pair.b.ticket)],
+  );
+  assert.deepEqual(rest, []);
+  assert.equal(conflicted?.["failure_kind"], "MergeConflict");
+  assert.notEqual(conflicted?.["conflict_manifest"], null);
+  assert.equal(await rankOf(pair.b, pair.b.ticket), null, "B holds no rank");
+
+  await finalizerExpireClaim(rig, pair.b);
+  await finalizerPassOnce(rig, pair.b, port, `${label}-b-concluded`);
+  await finalizerDrain(rig.harness, pair.b.partition, pair.b.memory);
+  assert.equal(await bPhase(pair), "Work");
+
+  const passesMax = 8;
+  for (let pass = 1; pass <= passesMax; pass++) {
+    const landed = finalizerGitVerb(
+      pair.remote.origin,
+      "rev-parse",
+      landingTarget,
+    );
+    if (landed === c.commit) break;
+    await finalizerExpireClaim(rig, pair.b);
+    await finalizerPassOnce(rig, pair.b, port, `${label}-c-${String(pass)}`);
+  }
+  assert.equal(
+    finalizerGitVerb(pair.remote.origin, "rev-parse", landingTarget),
+    c.commit,
+    "C lands on A",
+  );
+  assert.equal(await bPhase(pair), "Work", "while B is in Work");
 });

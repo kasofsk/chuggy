@@ -1140,17 +1140,30 @@ export type CandidateIntegrated =
   | { readonly integrated: "Failed"; readonly evidence: GitEvidence };
 
 /**
- * The stack an evaluation is to run over: the candidate merged on the accepted
- * commits beneath it, bottom first, over the tip of the reference they land on,
- * and published at `ref` so a plain clone fetches it.
+ * A stack: the candidate merged on the accepted commits beneath it, bottom
+ * first, over the tip of the reference they land on.
  */
-export interface StackMinting {
+export interface StackFolding {
   readonly repository: RepositoryBinding;
   readonly tip: ObservedTarget;
   readonly beneath: readonly GitObjectId[];
   readonly candidate: GitObjectId;
+}
+
+/** The stack an evaluation is to run over, published at `ref` so a plain clone fetches it. */
+export interface StackMinting extends StackFolding {
   readonly ref: GitRefName;
 }
+
+/** What folding a stack found, the commit a function of its inputs alone; nothing is published. */
+export type StackFolded =
+  | {
+      readonly folded: "Stack";
+      readonly commit: GitObjectId;
+      readonly tree: GitObjectId;
+    }
+  | { readonly folded: "Conflicted" }
+  | { readonly folded: "Failed"; readonly evidence: GitEvidence };
 
 /**
  * What minting found. The commit is a function of the tip, the commits and the
@@ -1294,6 +1307,9 @@ export interface GitPromotionPort {
 
   /** Merges a stack deterministically and publishes it at its ref. */
   mintStack(minting: StackMinting): Promise<StackMinted>;
+
+  /** Merges a stack deterministically as `mintStack` does, publishing nothing. */
+  foldStack(folding: StackFolding): Promise<StackFolded>;
 
   /** Deletes a published stack's ref, only while it still holds the commit the stack was recorded at. */
   removeStack(removal: {

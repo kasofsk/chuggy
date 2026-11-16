@@ -17,7 +17,8 @@ import {
   projectPartitionKey,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
-import { leadSession, leadSessionResource } from "./leadFixture.ts";
+import { leadSession } from "./leadFixture.ts";
+import { sessionChangeResource } from "./sessionTranscriptFixture.ts";
 import { runSummary } from "./runPageFixture.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -236,7 +237,7 @@ test("a refusal names its ticket and a session names itself", () => {
     resource: "42",
     representation: ledger,
   });
-  const named = leadSessionResource(leadSession, "turn-7");
+  const named = sessionChangeResource(leadSession, "turn-7");
   const session = projectCacheCommands(
     partition,
     decoded({

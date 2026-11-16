@@ -117,12 +117,9 @@ import {
 import type { ConsoleNetwork } from "./consoleNetwork.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
 import { inviteBrowser } from "./inviteDouble.ts";
-import {
-  leadBody,
-  leadRefusals,
-  leadSelectorSettingsBody,
-  leadTranscriptPage,
-} from "./leadFixture.ts";
+import { leadBody, leadRefusals } from "./leadFixture.ts";
+import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
+import { sessionTranscriptPage } from "./sessionTranscriptFixture.ts";
 import { abilitiesEvery } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
@@ -354,7 +351,7 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt(`${projectPath}/lead/transcript`),
     schema: leadTranscriptResponseSchema,
-    body: () => leadTranscriptPage(0, 1),
+    body: () => sessionTranscriptPage(0, 1),
   },
   {
     path: consoleReadAt(`${projectPath}/lead/context`),
@@ -374,7 +371,7 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt(`${projectPath}/selector-settings`),
     schema: selectorProjectSettingsResponseSchema,
-    body: () => leadSelectorSettingsBody(12, { northStar: "north-star-1" }),
+    body: () => selectorSettingsBody(12, { northStar: "north-star-1" }),
   },
   {
     path: consoleReadAt(`${projectPath}/selector-settings/history`),

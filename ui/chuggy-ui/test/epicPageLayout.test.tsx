@@ -29,7 +29,7 @@ import {
   epicView,
 } from "./epicPageFixture.tsx";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import { answer, settled, turned } from "./screenHarness.tsx";
 
@@ -44,7 +44,7 @@ afterEach(() => {
   epicServingReset();
 });
 
-const epicPath = `/${leadPartition.tenant}/${leadPartition.project}/epics/7`;
+const epicPath = `/${projectPartition.tenant}/${projectPartition.project}/epics/7`;
 
 function gets(sent: readonly { method: string; url: string }[]): number {
   return sent.filter((request) => request.method === "GET").length;
@@ -133,7 +133,7 @@ test("New ticket goes to a new ticket in the epic, and Edit to the edit page", a
       .getByRole("link", { name: "New ticket" })
       .getAttribute("href"),
   ).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/tickets/new?epic=7`,
+    `/${projectPartition.tenant}/${projectPartition.project}/tickets/new?epic=7`,
   );
   expect(
     within(header()).getByRole("link", { name: "Edit" }).getAttribute("href"),
@@ -215,7 +215,7 @@ test("the notes link the escalated member", async () => {
     "Needs attention: #5 Refund is escalated",
   );
   expect(attention?.querySelector("a")?.getAttribute("href")).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/tickets/5`,
+    `/${projectPartition.tenant}/${projectPartition.project}/tickets/5`,
   );
 });
 

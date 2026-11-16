@@ -30,6 +30,9 @@ import {
   asRepositoryId,
   repositoryTargetObserved,
   type GitPromotionPort,
+  type GitRefName,
+  type ObservedTarget,
+  type RepositoryBinding,
 } from "./finalizer.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import { stackFor } from "./stackChoice.ts";
@@ -50,6 +53,18 @@ async function queueRead(
     ports.store.queue(due.partition, due.repository, target),
     ports.store.stackFailures(due.partition, due.ticket),
   ]).catch((): undefined => undefined);
+}
+
+/** The tip a stack over `target` is folded onto, or nothing where it could not be read. */
+export async function stackTipObserved(
+  git: Pick<GitPromotionPort, "observeTarget">,
+  binding: RepositoryBinding,
+  target: GitRefName | undefined,
+): Promise<ObservedTarget | undefined> {
+  const observed = await repositoryTargetObserved(git, binding, target).catch(
+    (): undefined => undefined,
+  );
+  return observed?.observed === "Target" ? observed.target : undefined;
 }
 
 /**
@@ -82,12 +97,8 @@ export async function stackPrepared(
   const target = briefQueuesOn(brief);
   const read = await queueRead(ports, due, target);
   if (read === undefined) return undefined;
-  const observed = await repositoryTargetObserved(
-    ports.git,
-    binding,
-    target,
-  ).catch((): undefined => undefined);
-  if (observed?.observed !== "Target") return undefined;
+  const tip = await stackTipObserved(ports.git, binding, target);
+  if (tip === undefined) return undefined;
   const [queue, stackFailures] = read;
   const beneath = stackFor(
     {
@@ -102,7 +113,7 @@ export async function stackPrepared(
   const minted = await ports.git
     .mintStack({
       repository: binding,
-      tip: observed.target,
+      tip,
       beneath: beneath.map((member) => member.commit),
       candidate: commit,
       ref: stackRefOf(ticket, cycle),
@@ -117,8 +128,8 @@ export async function stackPrepared(
       ticket,
       cycle,
       repository: due.repository,
-      target: observed.target.ref,
-      tip: observed.target.commit,
+      target: tip.ref,
+      tip: tip.commit,
       beneath,
       stackCommit: minted.commit,
       stackTree: minted.tree,

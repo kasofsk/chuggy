@@ -32,7 +32,7 @@ import {
 import { ticketActionLabel } from "../../core/codeLabels.ts";
 import { ticketActionSentence } from "../../core/ticketActions.ts";
 import type { TicketAction } from "../../core/ticketActions.ts";
-import { useCreatorEmails } from "../creatorEmails.ts";
+import { useCreatorNames } from "../creatorNames.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
@@ -58,13 +58,13 @@ export function ApprovalApproversDrawn(props: {
   readonly approvers: ApprovalApprovers;
 }): ReactNode {
   const text = useCopyText();
-  const emails = useCreatorEmails(props.partition);
+  const names = useCreatorNames(props.partition);
   const approvers = props.approvers;
   if (approvers.by === "Role") return text(approvers.role);
   return (
     <span className="flex flex-wrap gap-2">
       {approvers.people.map((person) => (
-        <Identity key={person} label={creatorLabel(person, emails)} />
+        <Identity key={person} label={creatorLabel(person, names)} />
       ))}
     </span>
   );

@@ -63,9 +63,17 @@
  * that reading falls due, if that is sooner.
  *
  * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
- * ticket pending unstacked that could now stack over the queue ahead of it has
- * its waiting request claimed and a `Restack` failure recorded on it, and the
- * request's next claim concludes it; nothing else is done under that claim.
+ * ticket pending unstacked that could now stack over the queue ahead of it, and
+ * whose stack over it folds without a conflict, has its waiting request claimed
+ * and a `Restack` failure recorded on it, and the request's next claim
+ * concludes it; nothing else is done under that claim.
+ *
+ * A SEND-BACK THAT KEEPS ITS RANK IS ONE A MERGE WOULD NOT REFUSE. A re-check
+ * and a re-stack bring the target or the line in and evaluate again, so neither
+ * is offered to work that conflicts with it: a landing whose target moved
+ * integrates first and records a conflict as a `MergeConflict`, and a re-stack
+ * whose fold conflicts is not made. A `MergeConflict` ends the chain, so the
+ * ticket reworks it holding no rank and the queue behind it moves on.
  *
  * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. Claims held under a superseded
  * epoch and claims past their expiry are reopened first, because a lease that
@@ -342,11 +350,18 @@ import {
   type EvaluatingStack,
   type EvaluationStack,
   type EvaluationStackStore,
+  type RestackableStack,
   type UnpreparedStack,
 } from "./evaluationStack.ts";
-import { stackPrepared } from "./evaluationStacking.ts";
+import { stackPrepared, stackTipObserved } from "./evaluationStacking.ts";
 import { stackInvalidations } from "./stackInvalidation.ts";
-import { restackLine } from "./stackRestack.ts";
+import {
+  restackForget,
+  restackLine,
+  restackRefuse,
+  restackRefused,
+  type RestackRefusals,
+} from "./stackRestack.ts";
 import type { StackMember } from "./stackChoice.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
@@ -385,6 +400,8 @@ export interface FinalizerService {
     | "invalidate"
     | "restackable"
   >;
+  /** The re-stacks whose fold conflicted, kept by this process against the inputs they were folded from. */
+  readonly restackRefusals: RestackRefusals;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
   /** The paths the forge says a job's push may not change where its repository's binding withholds pipelines. */
@@ -1460,9 +1477,68 @@ async function finalizerContainedIntegrated(
 }
 
 /**
+ * Sends back a serialized landing whose target moved past its accepted commit:
+ * to be re-checked where the two merge cleanly, and to rework where they
+ * conflict, as a `MergeConflict` with its manifest, which ends the chain and
+ * releases its rank. The merge is only asked about; nothing it writes lands.
+ */
+async function finalizerContainedMoved(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  landable: FinalizerLandableTarget,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const { target, landing } = landable;
+  const integration = await finalizerIntegration(
+    service,
+    subject,
+    target,
+    accepted,
+    tally,
+  );
+  if (integration === undefined) return;
+  const integrated = await service.git.integrateCandidate(integration);
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.integration(integrated.integrated);
+  });
+  switch (integrated.integrated) {
+    case "Candidate":
+      await finalizerRecheckRequired(
+        service,
+        subject,
+        target,
+        accepted,
+        finalizerRecheckOf("TargetMoved", subject, landing),
+        tally,
+      );
+      return;
+    case "Conflicted":
+      await finalizerConflicted(
+        service,
+        subject,
+        target,
+        accepted,
+        integrated,
+        tally,
+      );
+      return;
+    case "Failed":
+      finalizerHold(service, tally, "IntegrationUnanswered");
+      return;
+    default:
+      return assertNever(integrated);
+  }
+}
+
+/**
  * Prepares a serialized landing: the accepted commit lands when it holds the
  * target's tip, so what lands is the tree that was evaluated, and otherwise
- * goes back to be re-checked. It is never merged with a target that moved.
+ * goes back, never merged with a target that moved. A send-back over a target
+ * it merges with cleanly is a re-check and keeps the rank; one over a target
+ * it conflicts with is a `MergeConflict`, which `model/stacking.qnt` has no
+ * notion of and `model/refinement.qnt` reduces to `FinalizationNeedsWork`, as
+ * it does the same failure on the stacked path.
  */
 async function finalizerContainedPrepared(
   service: FinalizerService,
@@ -1472,7 +1548,7 @@ async function finalizerContainedPrepared(
 ): Promise<void> {
   const landable = await finalizerLandable(service, subject, accepted, tally);
   if (landable === undefined) return;
-  const { target, landing } = landable;
+  const { target } = landable;
   const contained = await service.git.proveTargetContained({
     repository: subject.repository,
     target,
@@ -1489,12 +1565,11 @@ async function finalizerContainedPrepared(
       );
       return;
     case "Uncontained":
-      await finalizerRecheckRequired(
+      await finalizerContainedMoved(
         service,
         subject,
-        target,
+        landable,
         accepted,
-        finalizerRecheckOf("TargetMoved", subject, landing),
         tally,
       );
       return;
@@ -3186,12 +3261,50 @@ async function finalizerInvalidateStacks(
 }
 
 /**
+ * Whether the stack one ticket would be sent back over folds: the target's tip,
+ * observed as a stack's is, then the line, then the ticket's accepted commit.
+ * A conflict is kept against those inputs and not folded again over them, and
+ * a tip or a fold nobody could read answers no and is asked again next pass.
+ */
+async function finalizerRestackFolds(
+  service: FinalizerService,
+  epoch: RecoveryEpoch,
+  due: RestackableStack,
+  line: readonly StackMember[],
+  accepted: GitObjectId,
+): Promise<boolean> {
+  const repository = {
+    partition: due.partition,
+    repository: asRepositoryId(due.repository),
+    recoveryEpoch: epoch,
+  };
+  const tip = await stackTipObserved(service.git, repository, due.target);
+  if (tip === undefined) return false;
+  const fold = { tip: tip.commit, line, accepted };
+  const refusals = service.restackRefusals;
+  if (restackRefused(refusals, due.partition, due.ticket, fold)) return false;
+  const folded = await service.git
+    .foldStack({
+      repository,
+      tip,
+      beneath: line.map((member) => member.commit),
+      candidate: accepted,
+    })
+    .catch((): undefined => undefined);
+  if (folded?.folded === "Conflicted")
+    restackRefuse(refusals, due.partition, due.ticket, fold);
+  if (folded?.folded !== "Stack") return false;
+  restackForget(refusals, due.partition, due.ticket);
+  return true;
+}
+
+/**
  * Sends back to Work every Stacked ticket pending unstacked that `restackLine`
- * finds could now stack over the queue ahead of it, by claiming its waiting
- * request and recording a `Restack` failure naming the accepted commit and the
- * line, which the request's next claim concludes as `FinalizationNeedsWork`.
- * A queue that cannot be read and a request someone else holds are left for
- * the next pass.
+ * finds could now stack over the queue ahead of it and whose stack over that
+ * line folds, by claiming its waiting request and recording a `Restack`
+ * failure naming the accepted commit and the line, which the request's next
+ * claim concludes as `FinalizationNeedsWork`. A queue that cannot be read and a
+ * request someone else holds are left for the next pass.
  */
 async function finalizerRestackStacks(
   service: FinalizerService,
@@ -3218,6 +3331,10 @@ async function finalizerRestackStacks(
     );
     const accepted = queue.find((entry) => entry.ticket === due.ticket);
     if (line === undefined || accepted === undefined) continue;
+    if (
+      !(await finalizerRestackFolds(service, epoch, due, line, accepted.commit))
+    )
+      continue;
     const claim = await service.store.claimUnattempted(
       owner,
       epoch,

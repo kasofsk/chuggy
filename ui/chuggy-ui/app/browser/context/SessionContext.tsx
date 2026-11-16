@@ -28,7 +28,7 @@ import {
   contextThreadSeedOf,
 } from "../../core/contextSession.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import type { LeadTranscriptHeld } from "../../core/leadTranscript.ts";
+import type { SessionTranscriptHeld } from "../../core/sessionTranscript.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
 import { DataPanel, PanelUnready } from "../DataPanel.tsx";
@@ -40,7 +40,7 @@ import { ContextSessionView } from "./ContextView.tsx";
  * transcript holds. */
 function SessionContextDrawn(props: {
   readonly context: SessionContextResponse | undefined;
-  readonly held: LeadTranscriptHeld;
+  readonly held: SessionTranscriptHeld;
   readonly seed: string | undefined;
 }): ReactNode {
   const view = contextSessionOf({
@@ -62,7 +62,7 @@ function SessionContextDrawn(props: {
 export function LeadContextPanel(props: {
   readonly partition: PartitionIdentity;
   readonly lead: LeadResponse | undefined;
-  readonly held: LeadTranscriptHeld;
+  readonly held: SessionTranscriptHeld;
 }): ReactNode {
   const text = useCopyText();
   const state = usePanelState({
@@ -90,7 +90,7 @@ export function LeadContextPanel(props: {
  * read still draws what the transcript says. */
 function ThreadContextBody(props: {
   readonly state: PanelState<SessionContextResponse>;
-  readonly held: LeadTranscriptHeld;
+  readonly held: SessionTranscriptHeld;
   readonly seed: string | undefined;
 }): ReactNode {
   const { state } = props;
@@ -128,7 +128,7 @@ export function ContextToggle(props: {
 export function ThreadContextPanel(props: {
   readonly home: ThreadHome;
   readonly thread: ThreadResponse;
-  readonly held: LeadTranscriptHeld;
+  readonly held: SessionTranscriptHeld;
   readonly onClose: () => void;
 }): ReactNode {
   const text = useCopyText();
