@@ -453,6 +453,7 @@ export interface SetupCopy {
   readonly "setup-mend-account-tell": {
     readonly page: unknown;
     readonly connect: unknown;
+    readonly repository: unknown;
   };
   readonly "setup-mend-github-when": Record<never, never>;
   readonly "setup-mend-worker-tell": {

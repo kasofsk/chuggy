@@ -2562,6 +2562,9 @@ test("an empty roster carries Add under its line and how a repository comes to b
   expect(body.previousElementSibling?.textContent).toBe(
     copyTextEn(repositoryAddHow),
   );
+  expect(copyTextEn(repositoryAddHow)).toBe(
+    "Install both apps on your repository on GitHub, then Add",
+  );
   expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
     "No repository bound",
   );
