@@ -146,7 +146,8 @@ import {
   asForgeInstallationId,
   asForgeRepositoryName,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
+import { selectorEffectiveSettings } from "../../src/interpreter/selectorProjectSettings.ts";
+import { resolvedThreadStandingRules } from "../../src/contract/threadSeeding.ts";
 import type { Refusal } from "../../src/interpreter/refusal.ts";
 import { ticketEscalationResource } from "../../src/interpreter/nativeWeb.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -180,7 +181,6 @@ import {
   partition,
   refusedOperation,
   reopenedDraft,
-  selectorDefaults,
   selectorProjectSettings,
   revision,
   ticketCarried,
@@ -692,37 +692,27 @@ test("a project's selector settings parse as its overrides beside what they reso
   assert.equal(parsed.revision, 2);
   assert.equal(parsed.overrides.northStar, "Ship the console.");
   assert.equal(parsed.effective.northStar, "Ship the console.");
-  assert.equal(parsed.effective.basePrompt, selectorDefaults.basePrompt);
-  assert.equal(parsed.effective.projectRevision, 2);
   assert.equal(
-    parsed.effective.limits.concurrentDecisions,
-    selectorDefaults.limits.concurrentDecisions,
+    parsed.effective.threadStandingRules,
+    "- You draft, and nothing else.",
   );
 });
 
-test("a project pause and an installation pause are not the same body", () => {
-  const body = (installation: "Running" | "Paused") =>
+test("a project that set nothing answers the default standing rules and no North Star", () => {
+  const parsed = selectorProjectSettingsResponseSchema.parse(
     selectorProjectSettingsResponse({
       result: "Found",
       settings: {
         partition,
-        revision: 2,
-        overrides: { mode: "Paused" },
-        effective: resolvedSelectorSettings(
-          partition,
-          { ...selectorDefaults, mode: installation },
-          2,
-          { mode: "Paused" },
-        ),
+        revision: 0,
+        overrides: {},
+        effective: selectorEffectiveSettings({}),
       },
-    }).body;
-  const stopped = selectorProjectSettingsResponseSchema.parse(body("Paused"));
-  const theirs = selectorProjectSettingsResponseSchema.parse(body("Running"));
-  assert.equal(stopped.effective.mode, "Paused");
-  assert.equal(theirs.effective.mode, "Paused");
-  assert.equal(stopped.effective.installationMode, "Paused");
-  assert.equal(theirs.effective.installationMode, "Running");
-  assert.notDeepEqual(body("Paused"), body("Running"));
+    }).body,
+  );
+  assert.deepEqual(parsed.effective, {
+    threadStandingRules: resolvedThreadStandingRules(undefined),
+  });
 });
 
 test("a settings write that lost its fence answers a conflict carrying the current row", () => {

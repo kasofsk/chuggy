@@ -1,15 +1,6 @@
 /**
- * A project's own selector settings, reached through the project access that
+ * A project's own thread settings, reached through the project access that
  * bounds them.
- *
- * THE INSTALLATION'S SETTINGS ARE DEFAULTS AND NOT CEILINGS, WITH ONE
- * EXCEPTION. A project may override every field upward, and what bounds that is
- * the `ManageProjectSelector` access check rather than a limit above it. The
- * exception is `mode`: an installation pause is the operator's kill switch and
- * stops the whole sweep before any project is resolved, so a project cannot
- * unpause itself and `resolvedSelectorSettings` clamps `mode` to `Paused`
- * rather than reporting a selector that will never run. Per-project pause is
- * therefore the only direction that override travels today.
  *
  * A WRITE REPLACES THE WHOLE OVERRIDE SET under the revision it was read at, so
  * clearing an override and setting one are the same write and a rollback is a
@@ -17,27 +8,55 @@
  */
 
 import {
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
   sessionEfforts,
   sessionModelSchema,
   textCodePointsCount,
+  type SessionEffort,
 } from "../contract/http.ts";
+import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import type {
-  SelectorProjectOverrides,
-  SelectorResolvedSettings,
-} from "./selector.ts";
+
+/** What a project sets for its threads, each absent field taking the default. */
+export interface SelectorProjectOverrides {
+  readonly northStar?: string;
+  /** The standing rules this project's threads act under, in place of the default. */
+  readonly threadStandingRules?: string;
+  /** The model a thread opened from now runs on, in place of the site's session model. */
+  readonly threadModel?: string;
+  /** The effort a thread opened from now runs at, in place of the runtime's own. */
+  readonly threadEffort?: SessionEffort;
+}
+
+/** What a project's threads run under once its overrides are resolved. */
+export interface SelectorEffectiveSettings {
+  readonly northStar?: string;
+  /** Always a value: a project that overrides nothing runs its threads under the code default. */
+  readonly threadStandingRules: string;
+}
+
+/** Resolves the overrides a thread's briefing reads to what it runs under. */
+export function selectorEffectiveSettings(
+  overrides: SelectorProjectOverrides,
+): SelectorEffectiveSettings {
+  return {
+    ...(overrides.northStar === undefined
+      ? {}
+      : { northStar: overrides.northStar }),
+    threadStandingRules: resolvedThreadStandingRules(
+      overrides.threadStandingRules,
+    ),
+  };
+}
 
 /** What a project set, what that resolves to, and the revision a write must expect. */
 export interface SelectorProjectSettingsRecord {
   readonly partition: Partition;
   readonly revision: number;
   readonly overrides: SelectorProjectOverrides;
-  readonly effective: SelectorResolvedSettings;
+  readonly effective: SelectorEffectiveSettings;
 }
 
 /** Who moved a project's settings to the revision now standing, and when. */
@@ -64,14 +83,11 @@ export interface SelectorProjectSettingsRevision {
 }
 
 /**
- * What one durable write answers with: the row it wrote, the fence it lost, or a
- * refusal — `Automatic` dispatch asked for while no policy host is production
- * ready, or a write that did not complete and can be made again. Each is a
- * condition an administrator can act on, so each is a variant rather than a
- * fault.
+ * What one durable write answers with: the row it wrote, the fence it lost, or
+ * a write that did not complete and can be made again. Each is a condition an
+ * administrator can act on, so each is a variant rather than a fault.
  */
-export type SelectorProjectSettingsRefusal =
-  "AutomaticDispatchUnavailable" | "SettingsWriteContended";
+export type SelectorProjectSettingsRefusal = "SettingsWriteContended";
 
 export type SelectorProjectSettingsWriteOutcome =
   | {
@@ -156,12 +172,6 @@ export const selectorProjectSettingsHistoryLimitMax = 100;
 /** The longest text any single settings field carries, matching what the column holds. */
 export const selectorProjectSettingsTextCharsMax = 65_536;
 
-/** The most names one allowlist carries, matching the installation controls. */
-export const selectorProjectSettingsAllowlistNamesMax = 64;
-
-/** The longest name an allowlist entry carries, matching the installation controls. */
-export const selectorProjectSettingsNameCharsMax = 256;
-
 function checkedText(value: string | undefined, what: string): void {
   if (value === undefined) return;
   if (
@@ -169,40 +179,6 @@ function checkedText(value: string | undefined, what: string): void {
     textCodePointsCount(value) > selectorProjectSettingsTextCharsMax
   )
     throw new RangeError(`${what} must be bounded text`);
-}
-
-function checkedAllowlist(
-  values: readonly string[] | undefined,
-  what: string,
-): void {
-  if (values === undefined) return;
-  if (
-    values.length > selectorProjectSettingsAllowlistNamesMax ||
-    values.some(
-      (value) =>
-        value.length < 1 ||
-        textCodePointsCount(value) > selectorProjectSettingsNameCharsMax,
-    )
-  )
-    throw new RangeError(`${what} must contain bounded names`);
-}
-
-function checkedLimit(value: number | undefined, what: string): void {
-  if (value === undefined) return;
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${what} must be a positive safe integer`);
-}
-
-/** Refuses a compaction window the lead's runtime would not take. */
-export function checkedAutoCompactWindow(value: number | undefined): void {
-  if (value === undefined) return;
-  if (
-    value < leadAutoCompactWindowTokensMin ||
-    value > leadAutoCompactWindowTokensMax
-  )
-    throw new RangeError(
-      `autoCompactWindow must be between ${String(leadAutoCompactWindowTokensMin)} and ${String(leadAutoCompactWindowTokensMax)} tokens`,
-    );
 }
 
 /** Refuses a model no session could be handed, by the wire's own rule. */
@@ -225,28 +201,8 @@ export function checkedSelectorProjectOverrides(
 ): SelectorProjectOverrides {
   checkedText(overrides.northStar, "selector north star");
   checkedText(overrides.threadStandingRules, "thread standing rules");
-  checkedText(overrides.basePrompt, "selector base prompt");
-  checkedAllowlist(overrides.modelAllowlist, "selector model allowlist");
-  checkedAllowlist(overrides.toolAllowlist, "selector tool allowlist");
-  const limits = overrides.limits ?? {};
-  for (const [what, value] of Object.entries(limits))
-    checkedLimit(value, `selector ${what}`);
-  checkedLimit(
-    overrides.operationalContextMaxAgeMs,
-    "selector operationalContextMaxAgeMs",
-  );
-  checkedAutoCompactWindow(limits.autoCompactWindow);
-  checkedSessionModel(overrides.leadModel, "leadModel");
-  checkedSessionEffort(overrides.leadEffort, "leadEffort");
   checkedSessionModel(overrides.threadModel, "threadModel");
   checkedSessionEffort(overrides.threadEffort, "threadEffort");
-  if (
-    limits.candidatePagesPerDecision !== undefined &&
-    limits.candidatePagesPerDecision !== 1
-  )
-    throw new RangeError(
-      "candidatePagesPerDecision must be one until multi-page policy tools land",
-    );
   return overrides;
 }
 

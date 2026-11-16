@@ -46,10 +46,10 @@ import {
   asAuthoritySubject,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
-import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
-import type {
-  SelectorProjectSettingsAdministration,
-  SelectorProjectSettingsRecord,
+import {
+  selectorEffectiveSettings,
+  type SelectorProjectSettingsAdministration,
+  type SelectorProjectSettingsRecord,
 } from "../../src/interpreter/selectorProjectSettings.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
@@ -506,27 +506,6 @@ const selectorPartition = {
   project: asProjectId("atlas"),
 };
 
-const selectorDefaults = {
-  revision: 3,
-  mode: "Running",
-  dispatchMode: "ApprovalRequired",
-  basePrompt: "Select at most one currently dispatchable ticket.",
-  modelAllowlist: ["*"],
-  toolAllowlist: ["*"],
-  limits: {
-    tokensPerDecision: 8192,
-    millisecondsPerDecision: 120_000,
-    toolCallsPerDecision: 20,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1_048_576,
-    candidatePagesPerDecision: 1,
-    autoCompactWindow: 200_000,
-    concurrentDecisions: 4,
-    selectionsPerMinute: 60,
-  },
-  operationalContextMaxAgeMs: 30_000,
-} as const;
-
 function selectorRecord(
   revision: number,
   northStar?: string,
@@ -536,12 +515,7 @@ function selectorRecord(
     partition: selectorPartition,
     revision,
     overrides,
-    effective: resolvedSelectorSettings(
-      selectorPartition,
-      selectorDefaults,
-      revision,
-      overrides,
-    ),
+    effective: selectorEffectiveSettings(overrides),
   };
 }
 
@@ -569,12 +543,7 @@ function fakeSelectorSettings(
       calls.push(
         `selector-settings:write:${String(expectedRevision)}:${String(overrides.northStar)}`,
       );
-      if (overrides.dispatchMode === "Automatic")
-        return Promise.resolve({
-          result: "Refused",
-          refusal: "AutomaticDispatchUnavailable",
-        });
-      if (overrides.basePrompt === "contend")
+      if (overrides.northStar === "contend")
         return Promise.resolve({
           result: "Refused",
           refusal: "SettingsWriteContended",
@@ -1029,7 +998,8 @@ test("a settings write that lost its fence is a conflict rather than a rewrite",
   );
 });
 
-test("automatic dispatch with no ready host is a refusal the caller can act on", async () => {
+/** An old core still writing the selector's own fields is told no, and nothing is written. */
+test("a settings write naming the selector's mode is refused before it is written", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
   const refused = await app.inject({
@@ -1041,14 +1011,11 @@ test("automatic dispatch with no ready host is a refusal the caller can act on",
     },
     payload: JSON.stringify({
       expectedRevision: 1,
-      overrides: { dispatchMode: "Automatic" },
+      overrides: { mode: "Paused" },
     }),
   });
-  assert.equal(refused.statusCode, 409);
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    "AutomaticDispatchUnavailable",
-  );
+  assert.equal(refused.statusCode, 400);
+  assert.deepEqual(calls, []);
 });
 
 test("a settings write that lost a race for its project is retryable", async () => {
@@ -1063,7 +1030,7 @@ test("a settings write that lost a race for its project is retryable", async () 
     },
     payload: JSON.stringify({
       expectedRevision: 1,
-      overrides: { basePrompt: "contend" },
+      overrides: { northStar: "contend" },
     }),
   });
   assert.equal(refused.statusCode, 503);

@@ -63,6 +63,8 @@ import {
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
   schedulerRole,
+  selectorControlRole,
+  selectorProjectThreadSettingsFunction,
   selectorServiceRole,
   sessionLeadOfferingFunction,
   sessionPlacementSetFunction,
@@ -767,6 +769,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     boundaryGrantsSettingsWrite,
     [apiRole],
     [selectorServiceRole, workerPlaneRole],
+  ),
+  boundaryGrantsDoor(
+    `${selectorProjectThreadSettingsFunction}(text,text,bigint,text,text,text,text,text,text)`,
+    [apiRole],
+    [selectorServiceRole, selectorControlRole, schedulerRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
     `${leadRefusalReadFunction}(text,text,bigint)`,

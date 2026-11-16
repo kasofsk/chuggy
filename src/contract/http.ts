@@ -291,12 +291,6 @@ export const runModelCharsMax = 128;
 /** The longest settings text the wire carries, which is what its column holds. */
 export const selectorSettingsTextCharsMax = 65_536;
 
-/** The most names one selector allowlist carries. */
-export const selectorAllowlistNamesMax = 64;
-
-/** The longest name one selector allowlist entry carries. */
-export const selectorAllowlistNameCharsMax = 256;
-
 /** The largest handoff note the wire carries, which is what its column holds. */
 export const selectorHandoffNoteBytesMax = 65_536;
 

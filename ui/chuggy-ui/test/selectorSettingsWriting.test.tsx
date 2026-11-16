@@ -1,7 +1,6 @@
 /**
- * The selector settings are written from two pages, and each page's write is
- * its own: a page drawn while the other's write is out does not take it up,
- * so a refusal of it is the shell's toast rather than a line nobody draws.
+ * A settings write outlives the page that pressed it: a refusal landing once
+ * the page is gone is the shell's toast rather than a line nobody draws.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -17,7 +16,6 @@ import {
   useSelectorSettingsDraft,
   useSelectorSettingsWriting,
 } from "../app/browser/selectorSettingsWriting.ts";
-import type { SelectorSettingsPage } from "../app/browser/selectorSettingsWriting.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { projectPartition } from "./projectFixture.ts";
 import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
@@ -46,18 +44,14 @@ afterEach(() => {
 
 const settings = selectorSettingsBody() as SelectorProjectSettingsResponse;
 
-/** One page's door, a press through it, and the line it draws of its own
+/** The page's door, a press through it, and the line it draws of its own
  * writer's write. */
-function Writer(props: { readonly page: SelectorSettingsPage }): ReactNode {
+function Writer(): ReactNode {
   const held = useSelectorSettingsDraft(settings);
-  const writing = useSelectorSettingsWriting<"writer">(
-    props.page,
-    projectPartition,
-    held,
-  );
+  const writing = useSelectorSettingsWriting<"writer">(projectPartition, held);
   const shown = selectorSettingsShown(writing, "writer");
   return (
-    <section aria-label={props.page}>
+    <section aria-label="Settings">
       <button
         type="button"
         onClick={() => {
@@ -80,30 +74,30 @@ function toastLines(): readonly (string | null)[] {
   );
 }
 
-test("a refusal of one page's write, landing while the other page is drawn, is a toast", async () => {
+test("a refusal of a write, landing once its page is gone, is a toast", async () => {
   const writing = heldAnswer();
   const scripted = scriptedFetch((request) =>
     request.method === "PUT" ? writing.answered : answer(settings),
   );
   vi.stubGlobal("fetch", scripted.fetch);
   const client = consoleQueryClient();
-  const tree = (page: SelectorSettingsPage): ReactNode => (
+  const tree = (drawn: boolean): ReactNode => (
     <ScreenHarness
       partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >
-      <Writer key={page} page={page} />
+      {drawn ? <Writer /> : null}
       <ConsoleWriteToasts />
     </ScreenHarness>
   );
-  const view: RenderResult = renderCopied(tree("Lead"));
+  const view: RenderResult = renderCopied(tree(true));
   await settled();
   await turned(() => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
   });
   await turned(() => {
-    view.rerender(tree("Settings"));
+    view.rerender(tree(false));
   });
   await settled();
   expect(screen.queryByRole("status")).toBeNull();

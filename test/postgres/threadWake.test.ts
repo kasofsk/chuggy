@@ -653,9 +653,8 @@ test("a project's own standing rules reach the wake through the candidate", asyn
   const ticket = await draft(partition, revision, member, thread.session);
   const stated = "- You draft, and nothing else.";
   await rig.sessions.harness.query(
-    `SELECT revision FROM update_selector_project_settings(
-       $1,$2,0,NULL,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-       NULL,NULL,NULL,NULL,NULL,NULL,'User','thread wake suite')`,
+    `SELECT revision FROM update_selector_project_thread_settings(
+       $1,$2,0,NULL,$3,NULL,NULL,'User','thread wake suite')`,
     [partition.tenant, partition.project, stated],
   );
   await fromTheHead();

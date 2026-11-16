@@ -75,10 +75,7 @@ import {
   asThreadOpenKey,
   type ThreadOpenKey,
 } from "../../interpreter/threadRead.ts";
-import type {
-  SelectorProjectLimitOverrides,
-  SelectorProjectOverrides,
-} from "../../interpreter/selector.ts";
+import type { SelectorProjectOverrides } from "../../interpreter/selectorProjectSettings.ts";
 import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asConfigurationRevisionId,
@@ -423,13 +420,9 @@ export function parseSelectorProjectSettings(body: unknown): {
   readonly overrides: SelectorProjectOverrides;
 } {
   const value = selectorProjectSettingsSchema.parse(body);
-  const limits: SelectorProjectLimitOverrides | undefined =
-    value.overrides.limits === undefined
-      ? undefined
-      : withoutAbsentFields(value.overrides.limits);
   return {
     expectedRevision: value.expectedRevision,
-    overrides: withoutAbsentFields({ ...value.overrides, limits }),
+    overrides: withoutAbsentFields(value.overrides),
   };
 }
 

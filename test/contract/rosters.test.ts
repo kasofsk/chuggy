@@ -58,9 +58,6 @@ import {
   resumePoints,
   runCostBases,
   schedulerFreshnesses,
-  selectorAttentions,
-  selectorDispatchModes,
-  selectorModes,
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
@@ -107,8 +104,6 @@ import {
   allRepositoryConfigurationImportAttemptResults,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
-  agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
   imageMediaTypes,
   nativeHttpPageItemsMax,
   projectArtifactUploadBytesMax,
@@ -116,9 +111,7 @@ import {
   runConfigurationBytesMax,
   sessionCapabilitiesMax,
   sessionKindCharsMax,
-  sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
-  sessionTurnResultCharsMax,
   ticketLandingStackDepthMax,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
@@ -161,12 +154,6 @@ import {
   sessionCapabilitiesMax as interpretedSessionCapabilitiesMax,
   sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
-import type { SelectorProjectState } from "../../src/interpreter/selector.ts";
-import {
-  leadDecisionBytesMax,
-  leadObservationBytesMax,
-  leadRefusalsObservedMax,
-} from "../../src/interpreter/selector.ts";
 import {
   escalationTags,
   resumeTags,
@@ -257,7 +244,6 @@ import type {
   DraftState,
 } from "../../src/interpreter/authoring.ts";
 import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
-import type { SelectorRuntimeSettings } from "../../src/interpreter/selector.ts";
 
 function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
   return Object.keys(record).sort();
@@ -751,19 +737,6 @@ test("the output content encoding roster is exhaustive over its union", () => {
   assert.deepEqual(sorted(outputContentEncodings), keysOf(encodings));
 });
 
-test("the selector rosters are exhaustive over the settings they name", () => {
-  const modes: Record<SelectorRuntimeSettings["mode"], true> = {
-    Running: true,
-    Paused: true,
-  };
-  const dispatch: Record<SelectorRuntimeSettings["dispatchMode"], true> = {
-    Automatic: true,
-    ApprovalRequired: true,
-  };
-  assert.deepEqual(sorted(selectorModes), keysOf(modes));
-  assert.deepEqual(sorted(selectorDispatchModes), keysOf(dispatch));
-});
-
 test("the authoring rosters are exhaustive over the model unions", () => {
   const states: Record<DraftState, true> = {
     Draft: true,
@@ -869,20 +842,6 @@ test("every session roster restates the interpreter's own", () => {
   assert.deepEqual(artifactFailures, allArtifactFailures);
 });
 
-/**
- * The attention roster has no runtime list behind it, so this record is what
- * the compiler rejects when the union gains or loses a member.
- */
-const attention: Readonly<Record<SelectorProjectState["attention"], true>> = {
-  Monitoring: true,
-  Attention: true,
-  Stopped: true,
-};
-
-test("the attention roster is the union the selector's own state carries", () => {
-  assert.deepEqual(sorted(selectorAttentions), keysOf(attention));
-});
-
 test("every bound the wire restates holds the value its source does", () => {
   assert.equal(sessionCapabilitiesMax, interpretedSessionCapabilitiesMax);
   assert.equal(repositoryIdentityCharsMax, finalizerIdentityCharsMax);
@@ -892,20 +851,6 @@ test("every bound the wire restates holds the value its source does", () => {
   );
   assert.equal(workerInputReferencesMax, inputBundleReferencesMax);
   assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
-  assert.equal(leadRefusalsObservedMax, dispatchViewPageLimitMax);
-  assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);
-  assert.equal(leadDecisionBytesMax, sessionTurnResultCharsMax);
-});
-
-/**
- * The refusal page argues its size as a product with the reason bound, so the
- * arithmetic is what is asserted rather than either number.
- */
-test("a page of refusals fits the observation it is sized against", () => {
-  assert.ok(
-    agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
-      leadObservationBytesMax / 2,
-  );
 });
 
 /**

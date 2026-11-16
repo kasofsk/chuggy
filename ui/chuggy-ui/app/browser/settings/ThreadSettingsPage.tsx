@@ -7,11 +7,10 @@
  * boxes this reader never touched take what now stands rather than carrying
  * their stale copy of it back over another administrator's write. Every box
  * left empty is an override cleared, which is what the route means by omitting
- * a field, and the installation's value stands in the section instead.
+ * a field, and the default stands in the section instead.
  *
  * EVERY WRITE ON THIS PAGE IS THE WHOLE OVERRIDE SET. A section's Save and a
- * revision's Restore both go through `selectorSettingsWriting.ts`'s one door,
- * so the overrides no section draws are carried by each of them alike.
+ * revision's Restore both go through `selectorSettingsWriting.ts`'s one door.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -151,7 +150,6 @@ function SelectorSettingsForm(props: {
 }): ReactNode {
   const held = useSelectorSettingsDraft(props.settings);
   const writing = useSelectorSettingsWriting<SelectorSettingsWriter>(
-    "Settings",
     props.partition,
     held,
   );

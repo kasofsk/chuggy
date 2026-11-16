@@ -8,9 +8,7 @@
  * the settings that moved, and the section names that revision and stops.
  *
  * EVERY WRITE HERE IS THE WHOLE OVERRIDE SET, so a case that presses one button
- * asserts the whole body: a section's Save and a Restore each carry every
- * override the page draws no box for or delete it. The strip's own press is
- * covered beside `leadPage.test.tsx`, where it now lives.
+ * asserts the whole body.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -51,33 +49,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const installationLimits = {
-  tokensPerDecision: 200_000,
-  millisecondsPerDecision: 900_000,
-  toolCallsPerDecision: 40,
-  dispatchesPerDecision: 3,
-  inputBytesPerDecision: 1_048_576,
-  candidatePagesPerDecision: 4,
-  autoCompactWindow: 400_000,
-  concurrentDecisions: 2,
-  selectionsPerMinute: 6,
-};
-
 const effective = {
-  revision: 12,
-  projectRevision: 12,
-  mode: "Running",
-  installationMode: "Running",
-  dispatchMode: "Automatic",
-  basePrompt: "choose the next ticket",
   northStar: "ship the console",
   threadStandingRules: "- You act through your owner's own commands.",
-  modelAllowlist: [],
-  toolAllowlist: [],
-  limits: installationLimits,
-  installationLimits,
-  operationalContextMaxAgeMs: 60_000,
-  leadOffering: "Own",
 };
 
 function settingsBody(
@@ -89,12 +63,7 @@ function settingsBody(
     partition: projectPartition,
     revision,
     overrides,
-    effective: {
-      ...effective,
-      ...resolved,
-      revision,
-      projectRevision: revision,
-    },
+    effective: { ...effective, ...resolved },
   };
 }
 
@@ -133,9 +102,8 @@ interface SettingsScript {
   readonly failing?: () => boolean;
 }
 
-/** The page over a server whose answer to the write the case decides, whose
- * read the case may make carry overrides no section draws, and whose history
- * the case may fill. */
+/** The page over a server whose answer to the write and whose read the case
+ * decides, and whose history the case may fill. */
 async function drawSettings(
   script: SettingsScript = {},
 ): Promise<SettingsServer> {
@@ -217,17 +185,9 @@ test("the top bar names the revision the settings were read at", async () => {
   expect(revision?.textContent).toBe("Revision 12");
 });
 
-/** The page is what threads run under: the lead's own settings, its limits and
- * its prompt are not drawn here, and nothing of the lead is read. */
+/** The page is what threads run under, and nothing of the lead is read. */
 test("the page draws the North Star, the standing rules, the models and the revisions, and reads nothing of the lead", async () => {
-  const server = await drawSettings({
-    read: settingsBody(12, {
-      northStar: "ship the console",
-      basePrompt: "choose the newest",
-      limits: { tokensPerDecision: 500 },
-      leadModel: "sonnet",
-    }),
-  });
+  const server = await drawSettings();
   const titles = ["North Star", "Standing rules", "Models", "Revisions"];
   expect(screen.getAllByRole("region")).toStrictEqual(titles.map(sectionOf));
   expect(screen.queryByText("Base prompt")).toBeNull();
@@ -272,7 +232,7 @@ test("opening one section closes Edit on every other", async () => {
 
 /** The pill is the only thing on the page that says a setting is nobody's
  * choice, and it sits on the section whose whole value is inherited. */
-test("a section on the installation's value carries the Default pill", async () => {
+test("a section on the default carries the Default pill", async () => {
   await drawSettings();
   expect(within(sectionOf("North Star")).queryByText("Default")).toBeNull();
   expect(
@@ -364,9 +324,7 @@ test("the Models section reads Default for a row the project never set, and the 
   }
 });
 
-/** The lead's model and effort are not drawn, and the write replaces the whole
- * override set, so they go back on the wire as read. */
-test("a thread model and effort chosen in the Models section are written beside every other override, the lead's as read", async () => {
+test("a thread model and effort chosen in the Models section are written beside the North Star", async () => {
   const server = await drawSettings({
     answering: () => ({
       body: settingsBody(13, {
@@ -375,11 +333,6 @@ test("a thread model and effort chosen in the Models section are written beside 
         threadEffort: "medium",
       }),
       status: 200,
-    }),
-    read: settingsBody(12, {
-      northStar: "ship the console",
-      leadModel: "opus",
-      leadEffort: "low",
     }),
   });
   await turned(() => {
@@ -410,8 +363,6 @@ test("a thread model and effort chosen in the Models section are written beside 
     expectedRevision: 12,
     overrides: {
       northStar: "ship the console",
-      leadModel: "opus",
-      leadEffort: "low",
       threadModel: "claude-sonnet-5-5",
       threadEffort: "medium",
     },
@@ -471,45 +422,6 @@ test("a model the door refuses marks its own box with why and blocks the save", 
     fireEvent.change(model(), { target: { value: "claude-opus-5-5" } });
   });
   expect(model().getAttribute("aria-invalid")).toBe("false");
-});
-
-/**
- * The route replaces the whole override set, so an override no section draws is
- * deleted by any save that does not carry it. Nothing on the page shows the
- * lead's settings, so nothing on the page would show them going.
- */
-test("an override no section draws survives a save that edits another", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, {
-      northStar: "ship the console",
-      mode: "Paused",
-      dispatchMode: "ApprovalRequired",
-      basePrompt: "choose the newest",
-      limits: { tokensPerDecision: 500, dispatchesPerDecision: 2 },
-      modelAllowlist: ["claude-opus-4"],
-      toolAllowlist: ["Read", "Grep"],
-      operationalContextMaxAgeMs: 30_000,
-      leadModel: "opus",
-      leadEffort: "low",
-    }),
-  });
-  await selectorSettingsPageNorthStarSaved();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: {
-      modelAllowlist: ["claude-opus-4"],
-      toolAllowlist: ["Read", "Grep"],
-      operationalContextMaxAgeMs: 30_000,
-      northStar: "ship the settings page",
-      basePrompt: "choose the newest",
-      mode: "Paused",
-      dispatchMode: "ApprovalRequired",
-      limits: { tokensPerDecision: 500, dispatchesPerDecision: 2 },
-      leadModel: "opus",
-      leadEffort: "low",
-    },
-  });
 });
 
 test("a revision that moved under the write is named and not retried", async () => {
@@ -612,10 +524,7 @@ test("a conflict does not carry a box this reader never touched", async () => {
         return {
           body: {
             error: { code: "SettingsRevisionConflict", message: "moved" },
-            settings: settingsBody(14, {
-              northStar: "somebody else's star",
-              toolAllowlist: ["Read"],
-            }),
+            settings: settingsBody(14, { northStar: "somebody else's star" }),
           },
           status: 409,
         };
@@ -641,7 +550,6 @@ test("a conflict does not carry a box this reader never touched", async () => {
   expect(server.written()).toStrictEqual({
     expectedRevision: 14,
     overrides: {
-      toolAllowlist: ["Read"],
       northStar: "somebody else's star",
       threadModel: "haiku",
     },
@@ -785,7 +693,6 @@ const history = {
     revisionBody(14, {
       northStar: "ship the console",
       threadModel: "sonnet",
-      limits: { tokensPerDecision: 12_000_000 },
     }),
     revisionBody(13, { northStar: "ship the console" }),
   ],
@@ -814,8 +721,7 @@ test("a revision row names the fields it moved and expands to the diff", async (
 });
 
 /** Restore is a write of that revision's overrides under the revision the page
- * holds, which is the whole override set like every other write here, the ones
- * the page draws no row for included. */
+ * holds, which is the whole override set like every other write here. */
 test("Restore writes that revision's overrides under the current revision", async () => {
   const server = await drawSettings({
     answering: () => ({ body: settingsBody(16, {}), status: 200 }),
@@ -833,7 +739,6 @@ test("Restore writes that revision's overrides under the current revision", asyn
     overrides: {
       northStar: "ship the console",
       threadModel: "sonnet",
-      limits: { tokensPerDecision: 12_000_000 },
     },
   });
 });

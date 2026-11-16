@@ -144,7 +144,7 @@ import {
   type ProjectCreationAuthority,
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
-import { postgresSelectorProjectSettings } from "./adapters/postgres/selector.ts";
+import { postgresSelectorProjectSettings } from "./adapters/postgres/selectorProjectSettings.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import {
   selectorProjectSettingsAdministration,
