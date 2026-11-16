@@ -80,6 +80,7 @@ import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { restackRefusals } from "../../src/interpreter/stackRestack.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
@@ -107,6 +108,7 @@ import {
   type GitPromotionPort,
   type ObservedTarget,
   type PathsDiffering,
+  type StackFolded,
   type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
@@ -1171,6 +1173,8 @@ export interface FinalizerGitFake extends GitPromotionPort {
   held: CandidateHeld;
   contained: TargetContained;
   differing: PathsDiffering;
+  /** What folding a re-stack's stack answers, a clean fold unless a case says otherwise. */
+  fold: StackFolded;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1184,6 +1188,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     held: "Unheld",
     contained: "Contained",
     differing: { read: "Paths", differing: { paths: [], truncated: false } },
+    fold: { folded: "Stack", commit: target.commit, tree: target.commit },
     readPathsDiffering: () => {
       fake.acts.push("differing");
       return Promise.resolve(fake.differing);
@@ -1238,6 +1243,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       throw new Error("finalizer harness: the pass asked for a commit's tree");
     },
     mintStack: () => Promise.resolve({ minted: "Conflicted" }),
+    foldStack: () => Promise.resolve(fake.fold),
     removeStack: () => Promise.resolve({ removed: "Removed" }),
     removeUnrecordedStack: () => Promise.resolve({ removed: "Removed" }),
   };
@@ -1281,6 +1287,7 @@ export function finalizerService(
     forges: forges ?? finalizerNoForges,
     ticketBriefs: postgresTicketBrief(rig.pool),
     stacks: postgresEvaluationStack(rig.pool),
+    restackRefusals: restackRefusals(),
     handoffs: artifacts,
     artifacts,
     pipelinePaths: [".github/workflows/"],

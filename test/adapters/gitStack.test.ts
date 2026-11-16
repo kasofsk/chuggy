@@ -1,8 +1,9 @@
 /**
  * Minting the commit a stacked evaluation runs over, against real bare
  * repositories on disk: the same inputs are the same commit however many
- * scratches mint it, a conflict is no stack, a ref the remote will not take is
- * a failure, and a plain clone fetches what was published.
+ * scratches mint it, a fold is that commit published nowhere, a conflict is no
+ * stack, a ref the remote will not take is a failure, and a plain clone
+ * fetches what was published.
  */
 
 import assert from "node:assert/strict";
@@ -186,6 +187,38 @@ test("a textual conflict is no stack and publishes nothing", async (t) => {
   assert.deepEqual(minted, { minted: "Conflicted" });
   assert.throws(() =>
     run(fixture.remote, "rev-parse", "--verify", "refs/heads/chuggy/stack/7/1"),
+  );
+});
+
+test("a fold is the commit and tree the mint of the same stack publishes, and publishes nothing itself", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "below.txt", "below\n");
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const folded = await port(fixture, "folding").foldStack(
+    minting(fixture, [below], top),
+  );
+  assert.throws(() =>
+    run(fixture.remote, "rev-parse", "--verify", "refs/heads/chuggy/stack/7/1"),
+  );
+  const minted = await port(fixture, "minting").mintStack(
+    minting(fixture, [below], top),
+  );
+  assert.equal(minted.minted, "Stack");
+  if (minted.minted !== "Stack") return;
+  assert.deepEqual(folded, {
+    folded: "Stack",
+    commit: minted.commit,
+    tree: minted.tree,
+  });
+});
+
+test("a fold whose line conflicts with the candidate is a conflict", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "base.txt", "one\n");
+  const top = branchCommit(fixture, "top", "base.txt", "two\n");
+  assert.deepEqual(
+    await port(fixture, "scratch").foldStack(minting(fixture, [below], top)),
+    { folded: "Conflicted" },
   );
 });
 
