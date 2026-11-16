@@ -445,12 +445,15 @@ setup-done = { -brand-name } is set up for { $project }{ $how ->
    *[merged] { "" }
 } The next { -ticket } is made at { $page }.
 
-## The page a sign-in returns to, in the person's browser.
+## The page a sign-in returns to, in the person's browser: the program's name,
+## what happened as its heading, and what to do next under it.
 
-setup-page-signed-in = Signed in to { -brand-name }. You can close this tab and go back to your terminal.
-setup-page-unfinished = This sign-in did not finish. Close this tab and go back to your terminal.
-setup-page-answered = This sign-in page has already been answered.
-setup-page-nothing = There is nothing here.
+setup-page-brand = { -brand-name }
+setup-page-signed-in = Signed in to { -brand-name }
+setup-page-unfinished = This sign-in did not finish
+setup-page-answered = This sign-in page has already been answered
+setup-page-nothing = There is nothing here
+setup-page-next = Go back to your { -agent }. You can close this tab.
 
 ## The build's last step, which starts the program it built. A first run is
 ## this program's, not a stage's.
