@@ -1,8 +1,8 @@
 /**
- * One project's session placement as the read answers it: where threads and
- * the lead run, and the runners each would wait on. Every part a case does not
- * name runs on runners that are live, so the case's own term is the one that
- * moves what is drawn.
+ * One project's session placement as the read answers it: where threads run,
+ * the runners a thread would wait on, and the lead and offering it answers as
+ * fixed values. Every part a case does not name runs on runners that are live,
+ * so the case's own term is the one that moves what is drawn.
  */
 
 import type { SessionPlacementResponse } from "../../../src/contract/responses.ts";
@@ -14,7 +14,6 @@ import type {
 export function sessionPlacementBody(
   input: {
     readonly thread?: PlacementRoute;
-    readonly lead?: PlacementRoute;
     readonly mine?: SessionRunnerStanding;
     readonly inquiry?: SessionRunnerStanding;
     readonly project?: SessionRunnerStanding;
@@ -22,7 +21,7 @@ export function sessionPlacementBody(
 ): SessionPlacementResponse {
   return {
     thread: { route: input.thread ?? "Pool", source: "Default" },
-    lead: { route: input.lead ?? "Pool", source: "Default" },
+    lead: { route: "InCluster", source: "Default" },
     leadOffering: "Own",
     leadOfferings: ["Own"],
     choices: ["Pool"],

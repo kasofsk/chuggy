@@ -1423,6 +1423,16 @@ const poolReplayPolls = [
     undefined,
     undefined,
   ],
+  [
+    "a chat host's inquiry",
+    hostToken,
+    [],
+    0,
+    1,
+    undefined,
+    undefined,
+    undefined,
+  ],
 ] as const;
 
 /** The durable side one replayed poll reaches: each claim taking `claimed`, a runner's where it names a project, and the job `benched` stopped where its credential ran out. */
@@ -1463,7 +1473,7 @@ function poolReplayPorts(
  * whole.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and a pool or a chat host is handed the session it has room for`, async () => {
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and only a chat host is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
     for (const [
       what,
@@ -1485,7 +1495,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         [],
         ["session-waiting"],
         [{ project: partition.project, session: "thread-closed" }],
-        token === hostToken ? "Thread" : "Lead",
+        what === "a chat host's inquiry" ? "Inquiry" : "Thread",
       );
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
@@ -1516,7 +1526,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       assert.deepEqual(older.reconciliation.parse(body), body, what);
       assert.deepEqual(
         offering.made.filter((call) => (call as unknown[])[0] === "open"),
-        Array(token === runnerToken ? 0 : sessions).fill([
+        Array(token === hostToken ? sessions : 0).fill([
           "open",
           "session-waiting",
           "minted-1",
@@ -1530,7 +1540,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
   });
 }
 
-test("a pool of this release with room for a session is handed the one waiting, on the plane's terms, and is recorded as polling", async () => {
+test("a pool of this release with room for a session is handed none while one waits, asks for none, and is recorded as polling", async () => {
   const recorded = calls();
   const offering = sessionCalls([], ["session-waiting"]);
   const answered = await createPoolPlaneApp(
@@ -1543,27 +1553,10 @@ test("a pool of this release with room for a session is handed the one waiting, 
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(answered.json(), {
     assignments: [],
-    sessions: [
-      {
-        assignment: "minted-1",
-        capabilities: [],
-        image: sessionPublished,
-        cpuMillis: 500,
-        memoryMib: 256,
-        deadlineSecs: launch.deadlineSecs,
-        callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: sessionSecret,
-      },
-    ],
+    sessions: [],
     stop: [],
   });
-  assert.deepEqual(offering.made, [
-    ["among", []],
-    ["polled"],
-    ["launch"],
-    ["awaiting", 1],
-    ["open", "session-waiting", "minted-1"],
-  ]);
+  assert.deepEqual(offering.made, [["among", []], ["polled"]]);
   assert.deepEqual(recorded.made, []);
 });
 
@@ -2411,7 +2404,7 @@ test("a chat host's poll names its threads' ticket wakes as it wrote them, none 
   assert.equal(refused.statusCode, 400);
 });
 
-test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {
+test("a pool's declared idle bound is accepted and opens nothing, and a bound of no seconds is refused", async () => {
   const sessions = openingsRecorded();
   const answered = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), sessions.store),
@@ -2421,9 +2414,7 @@ test("a pool's declared idle bound is not read, and a bound of no seconds is ref
     headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
-  const [opening] = sessions.opened;
-  assert.equal(opening?.idleSecs, undefined);
-  assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
+  assert.deepEqual(sessions.opened, []);
   const refused = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), openingsRecorded().store),
   ).inject({
