@@ -115,6 +115,7 @@ import {
   setupSettingsHeld,
   setupSettingsRead,
   setupSettingsText,
+  setupFitRead,
   setupUnitIs,
   setupUnitOf,
   setupUnitText,
@@ -129,7 +130,7 @@ import type {
   SetupSettingsRead,
   SetupUnit,
 } from "./setupRunnerMachine.ts";
-import { setupCheckFirst } from "./setupRunnerSaid.ts";
+import { setupCheckFirst, setupFitStopOf } from "./setupRunnerSaid.ts";
 import type {
   SetupClaudeCredential,
   SetupEngine,
@@ -165,6 +166,8 @@ export const setupActWaitMs: Readonly<Record<SetupRunnerAct, number>> = {
   Reload: 60_000,
   Start: 60_000,
   Restart: 60_000,
+  ColimaStop: 120_000,
+  ColimaStart: 600_000,
 };
 
 /** How often the site is asked again whether it sees a runner live. */
@@ -1317,6 +1320,38 @@ async function setupHostedWalked(
   return setupChatAlone(run, { of: "Runner", pooled: false });
 }
 
+/** On a Mac, Colima's VM given what a job needs where a yes can give it, or the stop of what only the person can mend; then what the VM has. */
+async function setupColimaHad(run: Run): Promise<Halt | undefined> {
+  if (run.platform !== "darwin") return undefined;
+  const { fit } = await setupFitRead(run.ports, "docker");
+  const told = setupFitStopOf(fit);
+  if (told !== undefined) return halt(told);
+  if (fit.fit !== "Colima") return undefined;
+  for (const command of fit.commands) {
+    const act = command[1] === "stop" ? "ColimaStop" : "ColimaStart";
+    const acted = await setupActed(run, act, command);
+    if (halted(acted)) return acted;
+    run.notes.push({ note: "ColimaRan", command: setupCommandLine(command) });
+  }
+  const after = await setupFitRead(run.ports, "docker");
+  const colima = after.mac?.colima;
+  const vm = colima?.colima === "Vm" ? colima.vm : undefined;
+  run.notes.push({
+    note: "ColimaVm",
+    memoryMib: vm?.memoryMib,
+    amd64: vm?.amd64,
+  });
+  const still = setupFitStopOf(after.fit);
+  if (still !== undefined) return halt(still);
+  return after.fit.fit === "Colima"
+    ? halt({
+        stop: "ColimaShort",
+        memoryMib: vm?.memoryMib,
+        amd64: vm?.amd64,
+      })
+    : undefined;
+}
+
 async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   const project = await setupProjectAsked(run);
   if (halted(project)) return project;
@@ -1326,6 +1361,8 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (setupHosted(project.route)) return setupHostedWalked(run, chats);
   const leasts = setupPackageLeasts[run.platform];
   const least = chats ? leasts.chat : leasts.pool;
+  const colima = await setupColimaHad(run);
+  if (colima !== undefined) return colima;
   const machine = await setupMachineProbed(run, least);
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);

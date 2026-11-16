@@ -220,6 +220,8 @@ export interface SetupSurroundings {
   readonly configHome: string | undefined;
   /** Where the person set Claude Code to keep its configuration, where they set that. */
   readonly claudeHome: string | undefined;
+  /** Where the person set Colima to keep its profiles, where they set that. */
+  readonly colimaHome: string | undefined;
   /** The person as the machine numbers its users, or nothing where it numbers none. */
   readonly user: string | undefined;
 }

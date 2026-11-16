@@ -91,6 +91,8 @@ const acts: readonly SetupRunnerAct[] = [
   "Reload",
   "Start",
   "Restart",
+  "ColimaStop",
+  "ColimaStart",
   "ServerRemoved",
   "ServerAdded",
 ];
@@ -356,6 +358,30 @@ export const runnerStops: {
     { stop: "ReplaceMismatched", short: "0f3a9c21", live: true },
     { stop: "ReplaceMismatched", short: "0f3a9c21", live: false },
   ],
+  Rosettaless: [
+    {
+      stop: "Rosettaless",
+      install: "softwareupdate --install-rosetta --agree-to-license",
+    },
+  ],
+  Rebuild: [
+    {
+      stop: "Rebuild",
+      why: "Qemu",
+      remove: "colima delete",
+      make: "colima start --vm-type vz --vz-rosetta --memory 8",
+    },
+    {
+      stop: "Rebuild",
+      why: "Unrosetta",
+      remove: "colima delete",
+      make: "colima start --vm-type vz --vz-rosetta --memory 8",
+    },
+  ],
+  ColimaShort: [
+    { stop: "ColimaShort", memoryMib: 2_048, amd64: false },
+    { stop: "ColimaShort", memoryMib: undefined, amd64: undefined },
+  ],
 };
 
 /** The stops only `chat-host` makes, whose rule may name `--replace`, which `runner` does not read. */
@@ -367,6 +393,9 @@ export const rosterChatHostStops: readonly SetupRunnerStop["stop"][] = [
 /** The stops only `runner` makes, which `chat-host` does not since it installs the package itself. */
 export const rosterRunnerStops: readonly SetupRunnerStop["stop"][] = [
   "Unpackaged",
+  "Rosettaless",
+  "Rebuild",
+  "ColimaShort",
 ];
 
 export const runnerNotes: {
@@ -457,6 +486,11 @@ export const runnerNotes: {
   Started: [{ note: "Started", unit: rosterUnit }],
   Restarted: [{ note: "Restarted", unit: rosterUnit }],
   Colima: [{ note: "Colima", start: rosterColimaAtLogin }],
+  ColimaRan: [{ note: "ColimaRan", command: "colima stop" }],
+  ColimaVm: [
+    { note: "ColimaVm", memoryMib: 8_192, amd64: true },
+    { note: "ColimaVm", memoryMib: undefined, amd64: undefined },
+  ],
 };
 
 /** Where a machine keeps the things a run names in its lines, and the engine it runs its work in where that is not docker. */

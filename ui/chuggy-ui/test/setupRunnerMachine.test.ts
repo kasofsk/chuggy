@@ -73,6 +73,7 @@ const surroundings = {
   home: boxHome,
   configHome: undefined,
   claudeHome: undefined,
+  colimaHome: undefined,
   user: "1000",
 };
 
@@ -732,6 +733,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
       sessionMemoryMib: 2_048,
     },
     claude: "Subscription",
+    fit: { fit: "Room" },
   });
   expect(bare.box.paths).toEqual(before);
   expect(bare.box.acts).toEqual(["services", "docker"]);
@@ -769,6 +771,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     held: false,
     chat: false,
     claude: "Subscription",
+    fit: { fit: "Room" },
   });
   expect(barred.box.acts).toEqual(["services"]);
 
@@ -805,6 +808,7 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
       sessionMemoryMib: 2_048,
     },
     claude: "Subscription",
+    fit: { fit: "Room" },
   });
   expect(darwin.box.acts).toEqual(["docker"]);
   expect(darwin.box.read).toEqual([boxMacSettings]);

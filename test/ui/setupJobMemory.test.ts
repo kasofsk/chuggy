@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { workerPoolMemoryMibDefault } from "../../src/interpreter/workerPool.ts";
-import { setupJobMemoryMib } from "../../ui/chuggy-ui/app/core/setupRunnerMachine.ts";
+import { setupJobMemoryMib } from "../../ui/chuggy-ui/app/core/setupFit.ts";
 
 test("the memory setup says a run takes, and sizes the chat host beside, is the memory an execution naming none runs with on a pool", () => {
   assert.equal(setupJobMemoryMib, workerPoolMemoryMibDefault);

@@ -625,4 +625,48 @@ export interface SetupRunnerCopy {
     readonly secs: unknown;
   };
   readonly "setup-runner-chat-not-live-tell": Record<never, never>;
+  readonly "setup-runner-act-colima-stop": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-colima-start": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-note-colima-ran": {
+    readonly command: unknown;
+  };
+  readonly "setup-runner-note-colima-vm": {
+    readonly has: unknown;
+  };
+  readonly "setup-runner-colima-has": {
+    readonly memory: unknown;
+    readonly has: unknown;
+    readonly amd64: unknown;
+  };
+  readonly "setup-runner-colima-short-found": {
+    readonly has: unknown;
+  };
+  readonly "setup-runner-colima-short-tell": Record<never, never>;
+  readonly "setup-runner-fit-tell": {
+    readonly told: unknown;
+  };
+  readonly "setup-runner-fit-unchanged": {
+    readonly unchanged: unknown;
+  };
+  readonly "setup-runner-amd64-runs": Record<never, never>;
+  readonly "setup-runner-rosettaless-found": Record<never, never>;
+  readonly "setup-runner-rosettaless-told": {
+    readonly unchanged: unknown;
+    readonly install: unknown;
+  };
+  readonly "setup-runner-rosettaless-when": Record<never, never>;
+  readonly "setup-runner-rebuild-found": {
+    readonly why: unknown;
+  };
+  readonly "setup-runner-rebuild-told": {
+    readonly why: unknown;
+    readonly unchanged: unknown;
+    readonly remove: unknown;
+    readonly make: unknown;
+  };
+  readonly "setup-runner-rebuild-when": Record<never, never>;
 }
