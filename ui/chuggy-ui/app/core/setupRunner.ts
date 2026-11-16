@@ -93,6 +93,7 @@ import {
   setupChatSized,
   setupChildFailed,
   setupColimaAtLogin,
+  setupEngineInUseRead,
   setupEngineMemoryRead,
   setupInstallCommand,
   setupInstallCommandPath,
@@ -582,14 +583,17 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
 
 /**
  * The chat host's size, written into the runner's settings where they name
- * no sessions for it: as many as the engine's memory has room for beside a
- * job, and one where it has room for none, each taking the memory the
- * settings name or the package's own, keeping every other key. Answers
- * whether it wrote them, which is whether a running chat host is now stale.
+ * no sessions for it: as many as the engine's memory has room for beside
+ * what it runs and a job, and one where it has room for none, each taking
+ * the memory the settings name or the package's own, keeping every other
+ * key, counting what it runs as `colima` found it before any restart too.
+ * Answers whether it wrote them, which is whether a running chat host is now
+ * stale.
  */
 async function setupChatSettingsHad(
   run: Run,
   machine: Machine,
+  colima: ColimaHad,
 ): Promise<{ readonly written: boolean } | Halt> {
   const path = run.places.settings;
   const guide = run.offered.guideAddress;
@@ -599,7 +603,15 @@ async function setupChatSettingsHad(
     return halt({ stop: "SettingsUnread", path, guide });
   if (chat.sessionsMax !== undefined) return { written: false };
   const engineMib = await setupEngineMemoryRead(run.ports, machine.engine);
-  const { sessionsMax, sessionMemoryMib } = setupChatSized(engineMib, chat);
+  const inUseMib = setupInUseLarger(
+    colima,
+    await setupEngineInUseRead(run.ports, machine.engine),
+  );
+  const { sessionsMax, sessionMemoryMib } = setupChatSized(
+    engineMib,
+    inUseMib,
+    chat,
+  );
   try {
     run.ports.disk.replace(
       path,
@@ -616,6 +628,18 @@ async function setupChatSettingsHad(
     sessionMemoryMib,
   });
   return { written: true };
+}
+
+/** What a yes counts in use: the larger of the counts before and after it restarted Colima's VM, since a container the restart stopped is started again; nothing where either was not read. */
+function setupInUseLarger(
+  colima: ColimaHad,
+  afterMib: number | undefined,
+): number | undefined {
+  if (!colima.restarted) return afterMib;
+  const beforeMib = colima.inUseMib;
+  return beforeMib === undefined || afterMib === undefined
+    ? undefined
+    : Math.max(beforeMib, afterMib);
 }
 
 /** A registration of this machine, and whether this run made it. */
@@ -1245,6 +1269,7 @@ async function setupChatWalked(
   machine: Machine,
   packaged: Packaged,
   of: ChatOf,
+  colima: ColimaHad,
 ): Promise<SetupRunnerEnded | Halt> {
   const host = await setupChatHad(run);
   if (halted(host)) return host;
@@ -1260,7 +1285,7 @@ async function setupChatWalked(
   }
   const shared = await setupChatLogin(run, machine.credential);
   if (halted(shared)) return shared;
-  const sized = await setupChatSettingsHad(run, machine);
+  const sized = await setupChatSettingsHad(run, machine, colima);
   if (halted(sized)) return sized;
   const replaced =
     elsewhere === undefined ? undefined : myRunnerShort(elsewhere.id);
@@ -1307,7 +1332,7 @@ async function setupChatAlone(
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);
   if (halted(packaged)) return packaged;
-  return setupChatWalked(run, machine, packaged, of);
+  return setupChatWalked(run, machine, packaged, of, { restarted: false });
 }
 
 /** Where the project's work runs on the cluster: nothing is set up where the person's chats do too, and only their chat host where those run on one. */
@@ -1320,13 +1345,26 @@ async function setupHostedWalked(
   return setupChatAlone(run, { of: "Runner", pooled: false });
 }
 
+/** Whether a yes restarted Colima's running VM, and if so what its running containers took before, which is what the offer counted. */
+type ColimaHad =
+  | { readonly restarted: false }
+  | { readonly restarted: true; readonly inUseMib: number | undefined };
+
 /** On a Mac, Colima's VM given what a job needs where a yes can give it, or the stop of what only the person can mend; then what the VM has. */
-async function setupColimaHad(run: Run): Promise<Halt | undefined> {
-  if (run.platform !== "darwin") return undefined;
+async function setupColimaHad(run: Run): Promise<Halt | ColimaHad> {
+  const unchanged = { restarted: false } as const;
+  if (run.platform !== "darwin") return unchanged;
   const { fit } = await setupFitRead(run.ports, "docker");
   const told = setupFitStopOf(fit);
   if (told !== undefined) return halt(told);
-  if (fit.fit !== "Colima") return undefined;
+  if (fit.fit !== "Colima") return unchanged;
+  const had: ColimaHad =
+    fit.vm === "Running"
+      ? {
+          restarted: true,
+          inUseMib: await setupEngineInUseRead(run.ports, "docker"),
+        }
+      : unchanged;
   for (const command of fit.commands) {
     const act = command[1] === "stop" ? "ColimaStop" : "ColimaStart";
     const acted = await setupActed(run, act, command);
@@ -1349,7 +1387,7 @@ async function setupColimaHad(run: Run): Promise<Halt | undefined> {
         memoryMib: vm?.memoryMib,
         amd64: vm?.amd64,
       })
-    : undefined;
+    : had;
 }
 
 async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
@@ -1362,7 +1400,7 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   const leasts = setupPackageLeasts[run.platform];
   const least = chats ? leasts.chat : leasts.pool;
   const colima = await setupColimaHad(run);
-  if (colima !== undefined) return colima;
+  if (halted(colima)) return colima;
   const machine = await setupMachineProbed(run, least);
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);
@@ -1382,7 +1420,13 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
   if (halted(seen)) return seen;
   run.notes.push({ note: "ProjectLive" });
   return chats
-    ? setupChatWalked(run, machine, packaged, { of: "Runner", pooled: true })
+    ? setupChatWalked(
+        run,
+        machine,
+        packaged,
+        { of: "Runner", pooled: true },
+        colima,
+      )
     : { ended: "Live" };
 }
 
