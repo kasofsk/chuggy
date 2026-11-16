@@ -15,7 +15,12 @@ import {
   setupServerPackages,
 } from "../app/core/setupAgent.ts";
 import { runnerPackages } from "../app/core/runners.ts";
-import { setupChatPackageLeast } from "../app/core/setupRunnerMachine.ts";
+import {
+  setupChatPackageLeast,
+  setupPackageCurrent,
+  setupPackageLeasts,
+  setupVersionLater,
+} from "../app/core/setupRunnerMachine.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
@@ -238,6 +243,22 @@ test("mcp on a Mac whose person set a configuration directory names the Mac's ow
   expect(signInStoreDirectory({ home: boxHome, configHome: "/xdg" })).toBe(
     "/xdg/chuggy/sign-ins",
   );
+});
+
+test("the package mcp leaves on each platform is one runner and chat-host can use", () => {
+  for (const platform of ["linux", "darwin"] as const) {
+    const left = { command: "", version: setupServerPackages[platform].least };
+    const leasts = setupPackageLeasts[platform];
+    expect(setupPackageCurrent(left, leasts.pool)).toBe(true);
+    expect(setupPackageCurrent(left, leasts.chat)).toBe(true);
+  }
+});
+
+test("the later of two versions is the one past the other, whichever comes first", () => {
+  expect(setupVersionLater("0.23.0", "0.24.1")).toBe("0.24.1");
+  expect(setupVersionLater("0.24.1", "0.23.0")).toBe("0.24.1");
+  expect(setupVersionLater("1.0.0", "0.99.0")).toBe("1.0.0");
+  expect(setupVersionLater("0.23.0", "0.23.0")).toBe("0.23.0");
 });
 
 test("mcp on Linux installs and runs chuggy-linux, at the least a chat host needs", async () => {

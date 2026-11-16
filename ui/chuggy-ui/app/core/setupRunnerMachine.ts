@@ -477,6 +477,13 @@ export function setupPackageCurrent(
   return at < 0 || (had[at] ?? 0) > (floor[at] ?? 0);
 }
 
+/** The later of two versions, as `setupPackageCurrent` orders them. */
+export function setupVersionLater(one: string, other: string): string {
+  return setupPackageCurrent({ command: "", version: one }, other)
+    ? one
+    : other;
+}
+
 function setupCommandIn(prefix: string, offered: RunnerPackage): string {
   return setupPath(prefix, "bin", offered.program);
 }
