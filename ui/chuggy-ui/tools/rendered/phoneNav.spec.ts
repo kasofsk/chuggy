@@ -120,7 +120,7 @@ async function phoneItemsSafe(items: Locator): Promise<void> {
  * stays at the foot of the viewport. */
 async function phoneChatOverBar(page: Page, bar: Locator): Promise<void> {
   const height = renderedViewports.phone.height;
-  const chat = page.getByRole("region", { name: "Chat", exact: true });
+  const chat = page.getByRole("complementary", { name: "Chat", exact: true });
   await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
   await expect
     .poll(

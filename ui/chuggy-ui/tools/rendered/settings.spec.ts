@@ -93,7 +93,8 @@ test("at the desk with the chat pane open the settings' own address is its first
     route: settingsRoot,
     viewport: "desk",
     signedIn: true,
-    ready: (page) => page.getByRole("region", { name: "Chat", exact: true }),
+    ready: (page) =>
+      page.getByRole("complementary", { name: "Chat", exact: true }),
   });
   const page = rendered.page;
   await expect(page).toHaveURL(`${served.origin}${settingsRoot}/lead`);

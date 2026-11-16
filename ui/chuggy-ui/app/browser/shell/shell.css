@@ -22,9 +22,34 @@
    its glyph over its name and a finger's height, the one the reader is on
    marked the same three ways with its bar along the item's head; the bar
    keeps clear of the screen's unsafe edges, and the project's name gives way,
-   cut short, before the account menu does. */
+   cut short, before the account menu does.
+
+   The link past the bar is clipped to nothing until it holds focus, and then
+   stands over the bar's corner, above the frame's other layers and under the
+   overlay band. The page it moves the reader to is a region
+   rather than a control, so it wears no ring of its own. */
 
 @layer page {
+  .shell-skip {
+    position: absolute;
+    inset-block-start: var(--space-2);
+    inset-inline-start: var(--space-2);
+    z-index: 3;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-2);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    font-size: var(--text-md);
+  }
+
+  .shell-skip:not(:focus) {
+    clip-path: inset(50%);
+  }
+
+  .shell-main:focus-visible {
+    box-shadow: none;
+  }
+
   .chat-reading {
     --conversation-width: var(--width-reading);
     --conversation-text: var(--text-lg);

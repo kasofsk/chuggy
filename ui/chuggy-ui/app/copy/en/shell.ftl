@@ -8,6 +8,7 @@ shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread
 shell-crumbs = Breadcrumb
+shell-skip = Skip to content
 shell-details = Details
 shell-account = Account menu
 shell-sign-out = Sign out
