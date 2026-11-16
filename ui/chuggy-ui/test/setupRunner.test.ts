@@ -64,6 +64,7 @@ import {
   boxLogin,
   boxLoginSecret,
   boxMacLogin,
+  boxMacMade,
   boxMacSettings,
   boxOwn,
   boxPoolFile,
@@ -78,7 +79,7 @@ import {
   boxVersion,
   exited,
 } from "./setupRunnerBox.ts";
-import type { BoxAct } from "./setupRunnerBox.ts";
+import type { BoxAct, BoxContainer } from "./setupRunnerBox.ts";
 import {
   rosterColimaAtLogin,
   rosterLines,
@@ -2394,6 +2395,66 @@ test("where the person's chats run on a chat host, the bare command asks of it o
     expect(writes(machine)).toEqual([]);
 });
 
+/** What an engine may run beside a run that is no runner's: a buildkitd and a postgres. */
+const boxBesideContainers: BoxContainer[] = [
+  {
+    id: "b1",
+    name: "buildkitd",
+    labels: {},
+    memoryBytes: 0,
+    usage: "1.6GiB",
+  },
+  {
+    id: "p2",
+    name: "postgres",
+    labels: {},
+    memoryBytes: 0,
+    usage: "409.6MiB",
+  },
+];
+
+test("the bare command sizes the chat host to the room what the engine already runs leaves: 11.7 GiB with 2 GiB in use is recommended two chats in 4 GiB and a yes writes two, and a run's own container that leaves no room is recommended none, saying what is in use", async () => {
+  const used = await both();
+  used.box.containers.push(...boxBesideContainers);
+  expect((await ran(used, [])).lines.slice(-4)).toEqual(
+    chatOffer(
+      "chuggy-linux",
+      "4 GiB whenever it runs: 2 GiB a chat, for up to 2",
+      "There is room for it here beside a run, so I recommend it.",
+      "yes",
+    ),
+  );
+  const crowded = await both();
+  crowded.box.containers.push(...boxBesideContainers, {
+    id: "j3",
+    name: "job",
+    labels: { "io.chuggy.pool": "shame" },
+    memoryBytes: 4 * 2 ** 30,
+    usage: "1GiB",
+  });
+  expect((await ran(crowded, [])).lines.slice(-4)).toEqual(
+    chatOffer(
+      "chuggy-linux",
+      "2 GiB whenever it runs: 2 GiB a chat, for up to 1",
+      "I recommend against it here: docker here has 11.7 GiB, 6 GiB of it in use, too little for a run and a chat host at once.",
+      "no",
+    ),
+  );
+  const uncounted = await both();
+  uncounted.box.containers.push(...boxBesideContainers);
+  uncounted.box.stats = undefined;
+  expect((await ran(uncounted, [])).lines.at(-4)).toContain(
+    "I recommend against it here: docker here did not say what its containers use.",
+  );
+  for (const machine of [used, crowded, uncounted])
+    expect(writes(machine)).toEqual([]);
+
+  await ran(used);
+  expect(JSON.parse(used.box.paths.get(boxSettings) ?? "")).toMatchObject({
+    chat: { sessionsMax: 2, sessionMemoryMib: 2048 },
+  });
+});
+
 test("on a Mac the bare command asks of the chat host as Linux does, with the Mac's own package, on the memory its engine reports", async () => {
   const roomy = await mac();
   for (const project of roomy.world.projects) project.threads = "Pool";
@@ -2405,6 +2466,83 @@ test("on a Mac the bare command asks of the chat host as Linux does, with the Ma
   short.box.memoryBytes = 6 * 2 ** 30;
   expect((await ran(short, [])).lines.slice(-4)).toEqual(
     chatShort.map((line) => line.replace("chuggy-linux", "chuggy-darwin")),
+  );
+});
+
+test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare command counts nothing in use against the memory a yes gives it, recommending three chats in 6 GiB, and the yes writes the same three", async () => {
+  for (const vm of ["Stopped", "None"] as const) {
+    const machine = await mac();
+    for (const project of machine.world.projects) project.threads = "Pool";
+    boxMacMade(machine.box, {
+      silicon: true,
+      rosetta: true,
+      memoryBytes: 24 * 2 ** 30,
+      vm:
+        vm === "None"
+          ? undefined
+          : {
+              running: false,
+              vmType: "vz",
+              vzRosetta: true,
+              memoryBytes: 8 * 2 ** 30,
+              arch: "aarch64",
+              rosettaOn: true,
+            },
+    });
+    const offer = (await ran(machine, [])).lines.join("\n");
+    expect(offer).toContain(
+      "which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once.",
+    );
+    expect(offer).toContain(
+      "There is room for it here beside a run, so I recommend it.",
+    );
+    expect(offer).toContain(`${flags} --chat-host yes only once`);
+    expect(writes(machine)).toEqual([]);
+
+    expect((await ran(machine)).exit).toBe(0);
+    expect(
+      JSON.parse(machine.box.paths.get(boxMacSettings) ?? ""),
+    ).toMatchObject({ chat: { sessionsMax: 3, sessionMemoryMib: 2048 } });
+  }
+});
+
+test("on a Mac whose running Colima VM a yes restarts, the yes counts what ran before the restart, so a postgres the restart stops leaves the offer's two chats in 4 GiB, not three", async () => {
+  const machine = await mac();
+  for (const project of machine.world.projects) project.threads = "Pool";
+  boxMacMade(machine.box, {
+    silicon: true,
+    rosetta: true,
+    memoryBytes: 24 * 2 ** 30,
+    vm: {
+      running: true,
+      vmType: "vz",
+      vzRosetta: true,
+      memoryBytes: 2 * 2 ** 30,
+      arch: "aarch64",
+      rosettaOn: true,
+    },
+  });
+  machine.box.containers = [
+    {
+      id: "c0ffee",
+      name: "postgres",
+      labels: {},
+      memoryBytes: 0,
+      usage: "2GiB",
+    },
+  ];
+  const offer = (await ran(machine, [])).lines.join("\n");
+  expect(offer).toContain(
+    "which holds 4 GiB whenever it runs: 2 GiB a chat, for up to 2 at once.",
+  );
+  expect(offer).toContain(
+    "There is room for it here beside a run, so I recommend it.",
+  );
+
+  expect((await ran(machine)).exit).toBe(0);
+  expect(machine.box.containers).toEqual([]);
+  expect(JSON.parse(machine.box.paths.get(boxMacSettings) ?? "")).toMatchObject(
+    { chat: { sessionsMax: 2, sessionMemoryMib: 2048 } },
   );
 });
 

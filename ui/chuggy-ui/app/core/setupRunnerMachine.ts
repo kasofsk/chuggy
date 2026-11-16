@@ -13,12 +13,19 @@
  * workspace, and the service of either: a systemd user unit on Linux, a
  * launchd agent on a Mac. A settings file is read for the engine, the Claude
  * credential and the chat host's size it names and for nothing else, the
- * engine for the memory it reports, the chat host's file for the id
+ * engine for the memory it reports and for what its running containers take
+ * of it, the chat host's file for the id
  * the site holds that host by and for nothing else, and a pool's registration
  * and a Claude credential's file are never read at all, only looked for. The
  * package is
  * installed by the console's own install command, under the person's own
  * prefix where the machine's is not theirs to write.
+ *
+ * What the running containers take is counted as the runner counts it, in
+ * kasofsk/chuggy-common's `memoryBudget.mjs`, which this program cannot
+ * import: one carrying the pool label and a memory cap at that cap, and every
+ * other at what the engine's `stats` says it uses, in docker's binary units
+ * or podman's decimal ones. A count that could not be made is no count.
  */
 
 import { z } from "zod";
@@ -467,7 +474,9 @@ export const setupChatSessionsMax = 4;
 export interface SetupChatSize {
   /** The engine's memory as it reports it, in MiB, or nothing where it did not say. */
   readonly engineMib: number | undefined;
-  /** The sessions at once the engine's memory has room for beside a job, none where it has room for none or did not say; the chat host is recommended only where this is one or more. */
+  /** What the engine's running containers take of it, in MiB, or nothing where that could not be counted. */
+  readonly inUseMib: number | undefined;
+  /** The sessions at once the engine's memory has room for beside what it runs and a job, none where it has room for none or either was not read; the chat host is recommended only where this is one or more. */
   readonly room: number;
   /** The sessions at once the settings name: those already named, and otherwise the room, but never none, since the package takes none fewer than one. */
   readonly sessionsMax: number;
@@ -475,22 +484,24 @@ export interface SetupChatSize {
   readonly sessionMemoryMib: number;
 }
 
-/** A chat host sized to the memory the engine reports, which is below its nominal size, and to what the settings already name of it. */
+/** A chat host sized to the memory the engine reports, which is below its nominal size, less what its running containers take, and to what the settings already name of it. */
 export function setupChatSized(
   engineMib: number | undefined,
+  inUseMib: number | undefined,
   chat: SetupChatSettings,
 ): SetupChatSize {
   const sessionMemoryMib = chat.sessionMemoryMib ?? setupChatSessionMemoryMib;
   const left =
-    engineMib === undefined
+    engineMib === undefined || inUseMib === undefined
       ? 0
-      : engineMib - setupJobMemoryMib - setupEngineSpareMib;
+      : engineMib - inUseMib - setupJobMemoryMib - setupEngineSpareMib;
   const room = Math.max(
     0,
     Math.min(setupChatSessionsMax, Math.floor(left / sessionMemoryMib)),
   );
   return {
     engineMib,
+    inUseMib,
     room,
     sessionsMax: chat.sessionsMax ?? Math.max(1, room),
     sessionMemoryMib,
@@ -546,6 +557,134 @@ export async function setupEngineInfoRead(
     machine:
       engine === "docker" && machine.success ? machine.data.Name : undefined,
   };
+}
+
+/** The label a runner's workload carries, which the runner counts at its cap where it has one. */
+const setupPoolLabel = "io.chuggy.pool";
+
+/** What of a running container's inspection is counted: its name, its labels and its memory cap, which is 0 or none where it has none. */
+const setupContainersSchema = z.array(
+  z.object({
+    Name: z.string(),
+    Config: z.object({
+      Labels: z.record(z.string(), z.string()).nullish(),
+    }),
+    HostConfig: z.object({ Memory: z.number().nullish() }).nullish(),
+  }),
+);
+
+/** The bytes each unit an engine's `stats` prints counts, docker's binary and podman's decimal. */
+const setupSizeUnitBytes: ReadonlyMap<string, number> = new Map([
+  ["B", 1],
+  ["kB", 1e3],
+  ["KB", 1e3],
+  ["MB", 1e6],
+  ["GB", 1e9],
+  ["TB", 1e12],
+  ["KiB", 2 ** 10],
+  ["MiB", 2 ** 20],
+  ["GiB", 2 ** 30],
+  ["TiB", 2 ** 40],
+]);
+
+/** The bytes a size an engine printed counts, or nothing for one it did not print as a size. */
+function setupSizeBytes(size: string): number | undefined {
+  const match = /^(\d+(?:\.\d+)?)([A-Za-z]+)$/u.exec(size);
+  if (match === null) return undefined;
+  const unit = setupSizeUnitBytes.get(match[2] ?? "");
+  return unit === undefined ? undefined : Number(match[1]) * unit;
+}
+
+/** What the containers named in `names` use together, in bytes, as the engine's `stats` printed it, a line each; nothing where a use of one of them could not be read. One the lines name no use of has ended since it was listed. */
+function setupStatsUsedBytes(
+  printed: string,
+  names: ReadonlySet<string>,
+): number | undefined {
+  let used = 0;
+  for (const line of printed.split("\n")) {
+    const match = /^(\S+) (\S+) \/ /u.exec(line.trim());
+    if (match === null || !names.has(match[1] ?? "")) continue;
+    const bytes = setupSizeBytes(match[2] ?? "");
+    if (bytes === undefined) return undefined;
+    used += bytes;
+  }
+  return used;
+}
+
+/** Asks the engine `engine` with the arguments `argv`, as every probe of it is asked. */
+function setupEngineAsk(
+  ports: SetupPorts,
+  engine: SetupEngine,
+  argv: readonly string[],
+): Promise<string | undefined> {
+  return ports.process.read(
+    [engine, ...argv],
+    setupProbeWaitMs,
+    setupChildBytesMax,
+  );
+}
+
+/** What the engine's running containers take of its memory together, in whole MiB rounded up, as the runner counts them; nothing where the engine did not say, or said what cannot be read. */
+export async function setupEngineInUseRead(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<number | undefined> {
+  const listed = await setupEngineAsk(ports, engine, [
+    "ps",
+    "--quiet",
+    "--no-trunc",
+  ]);
+  if (listed === undefined) return undefined;
+  const ids = listed.split("\n").filter((line) => line.trim() !== "");
+  if (ids.length === 0) return 0;
+  const inspected = setupContainersSchema.safeParse(
+    setupJson(
+      await setupEngineAsk(ports, engine, ["container", "inspect", ...ids]),
+    ),
+  );
+  if (!inspected.success) return undefined;
+  const running = inspected.data.map((container) => {
+    const capBytes = container.HostConfig?.Memory ?? 0;
+    const pooled = container.Config.Labels?.[setupPoolLabel] !== undefined;
+    return {
+      name: container.Name.replace(/^\//u, ""),
+      cappedBytes: pooled && capBytes > 0 ? capBytes : undefined,
+    };
+  });
+  const cappedBytes = running.reduce(
+    (sum, { cappedBytes: bytes }) => sum + (bytes ?? 0),
+    0,
+  );
+  const measured = new Set(
+    running.flatMap(({ name, cappedBytes: bytes }) =>
+      bytes === undefined ? [name] : [],
+    ),
+  );
+  const usedBytes =
+    measured.size === 0
+      ? 0
+      : setupEngineUsedBytes(
+          await setupEngineAsk(ports, engine, [
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{.Name}} {{.MemUsage}}",
+          ]),
+          measured,
+        );
+  return usedBytes === undefined
+    ? undefined
+    : Math.ceil((cappedBytes + usedBytes) / setupBytesPerMib);
+}
+
+/** What `stats` printed of the containers `measured`, where it printed anything. */
+function setupEngineUsedBytes(
+  printed: string | undefined,
+  measured: ReadonlySet<string>,
+): number | undefined {
+  return printed === undefined
+    ? undefined
+    : setupStatsUsedBytes(printed, measured);
 }
 
 /** The memory the engine reports, in whole MiB, which on a Mac is Colima's VM's; nothing where it did not say. */
@@ -935,18 +1074,32 @@ export async function setupRunnerHere(
   );
   const open = room.room === "Open";
   const chat = settings.settings === "Read" ? settings.chat : {};
-  const { fit, engineMib } = await setupFitRead(ports, setupRoomEngine(room));
+  const engine = setupRoomEngine(room);
+  const { fit, engineMib } = await setupFitRead(ports, engine);
   const sized = open || fit.fit === "Colima";
+  const inUseMib = sized ? await setupInUseHere(ports, engine, fit) : undefined;
   return {
     room,
     held: open && setupPoolFiles(ports, places, partition).length > 0,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
     chatSize: sized
-      ? setupChatSized(setupFitEngineMib(fit, engineMib), chat)
+      ? setupChatSized(setupFitEngineMib(fit, engineMib), inUseMib, chat)
       : undefined,
     fit,
   };
+}
+
+/** What the engine's running containers take of the memory a chat host here is sized to: none where Colima's VM is not running or there is none yet, since it runs nothing, and otherwise as the engine counts them. */
+async function setupInUseHere(
+  ports: SetupPorts,
+  engine: SetupEngine | undefined,
+  fit: SetupFit,
+): Promise<number | undefined> {
+  if (fit.fit === "Colima" && fit.vm !== "Running") return 0;
+  return engine === undefined
+    ? undefined
+    : await setupEngineInUseRead(ports, engine);
 }
 
 /** The engine a room is read of for what a job needs: the one that answered, or on a Mac docker, which Colima runs, whether or not it answered. */
