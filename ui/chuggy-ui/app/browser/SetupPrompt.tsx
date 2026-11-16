@@ -1,7 +1,8 @@
 /**
  * The line a reader pastes into Claude Code to have this site's setup program
- * run in their repository, folded behind the bar that copies it: the one
- * drawing of it, on the welcome page and on the page a project is made at.
+ * run in their repository, under the bar that copies it, whose control says
+ * its name: the one drawing of it, open on the welcome page and folded on the
+ * page a project is made at, as its caller asks.
  *
  * It is built from the console's own address alone, so it is drawn before any
  * read has answered and does not move when one does.
@@ -18,7 +19,10 @@ import {
 import { currentOrigin } from "./ports.ts";
 import { CopyBox } from "./ui/CopyBox.tsx";
 
-export function SetupPrompt(): ReactNode {
+export function SetupPrompt(props: {
+  /** Whether the line starts behind its bar. */
+  readonly folded: boolean;
+}): ReactNode {
   const text = useCopyText();
   return (
     <CopyBox
@@ -26,7 +30,8 @@ export function SetupPrompt(): ReactNode {
       text={claudeCodeLine(currentOrigin())}
       copyLabel={text(claudeCodeLineCopy)}
       breaks="words"
-      folded
+      folded={props.folded}
+      labelled
     />
   );
 }

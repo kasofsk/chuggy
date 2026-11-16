@@ -1,9 +1,10 @@
 /**
  * The line to paste into Claude Code, on the page a project is made at and on
- * the welcome page a reader with no project lands on: one folded box drawn
- * for this console's own site under the page's heading and, on the first,
- * over the form, before either read has answered, and not drawn where an
- * empty state stands in for the form.
+ * the welcome page a reader with no project lands on: one box drawn for this
+ * console's own site under the page's heading, folded on the first and over
+ * its form, before either read has answered, and not drawn where an empty
+ * state stands in for the form; open on the second. Its control says its name
+ * on it on both.
  *
  * Folded, the box draws none of the line until its bar is pressed, and its
  * control puts the whole line on the clipboard either way and asks the
@@ -82,11 +83,6 @@ function created(): Promise<Response> {
   return Promise.resolve(answer({ tenant: "acme", project: "atlas" }, 201));
 }
 
-const pages = {
-  page: <ProjectCreationPage />,
-  landing: <Landing />,
-};
-
 /** The line as the page draws it, none where no line is drawn or it is folded. */
 function line(): HTMLElement | null {
   return document.querySelector("code");
@@ -121,24 +117,50 @@ function precedes(earlier: Node, later: Node): boolean {
   );
 }
 
+test("the page a project is made at draws the line folded under its heading, and its bar opens the line for its own site, broken between its words", async () => {
+  served([], created, accessHolding([administered("mimage")]));
+  await drawn(<ProjectCreationPage />);
+  expect(line()).toBeNull();
+  const folded = bar();
+  if (folded === null) throw new Error("no line is drawn");
+  expect(
+    precedes(screen.getByRole("heading", { name: "New project" }), folded),
+  ).toBe(true);
+  const drawnLine = opened();
+  expect(drawnLine.textContent).toBe(claudeCodeLine(site.origin));
+  expect(drawnLine.classList.contains("wrap-anywhere")).toBe(true);
+  expect(document.querySelectorAll("code")).toHaveLength(1);
+});
+
+test("the welcome page draws the line open under its heading, for its own site, broken between its words, with no bar to open it", async () => {
+  served([], created, accessHolding([administered("mimage")]));
+  await drawn(<Landing />);
+  expect(bar()).toBeNull();
+  expect(screen.getByText(copyTextEn(claudeCodeLineAbout))).toBeDefined();
+  const drawnLine = line();
+  if (drawnLine === null) throw new Error("no line is drawn");
+  expect(
+    precedes(
+      screen.getByRole("heading", { name: "Welcome to chuggy" }),
+      drawnLine,
+    ),
+  ).toBe(true);
+  expect(drawnLine.textContent).toBe(claudeCodeLine(site.origin));
+  expect(drawnLine.classList.contains("wrap-anywhere")).toBe(true);
+  expect(document.querySelectorAll("code")).toHaveLength(1);
+});
+
 test.each([
-  ["the page a project is made at", "page", "New project"],
-  ["the welcome page", "landing", "Welcome to chuggy"],
+  ["the page a project is made at", <ProjectCreationPage key="page" />],
+  ["the welcome page", <Landing key="landing" />],
 ] as const)(
-  "%s draws the line folded under its heading, and its bar opens the line for its own site, broken between its words",
-  async (_page, page, leads) => {
+  "%s says the control's name on it as a word",
+  async (_page, page) => {
     served([], created, accessHolding([administered("mimage")]));
-    await drawn(pages[page]);
-    expect(line()).toBeNull();
-    const folded = bar();
-    if (folded === null) throw new Error("no line is drawn");
-    expect(precedes(screen.getByRole("heading", { name: leads }), folded)).toBe(
-      true,
-    );
-    const drawnLine = opened();
-    expect(drawnLine.textContent).toBe(claudeCodeLine(site.origin));
-    expect(drawnLine.classList.contains("wrap-anywhere")).toBe(true);
-    expect(document.querySelectorAll("code")).toHaveLength(1);
+    await drawn(page);
+    const control = copyControl();
+    if (control === null) throw new Error("no control is drawn");
+    expect(control.textContent).toContain(copyTextEn(claudeCodeLineCopy));
   },
 );
 
@@ -154,7 +176,7 @@ test("the control puts the whole line on the clipboard while it is folded, says 
   served([], created, accessHolding([administered("mimage")]));
   const asked = vi.fn(fetch);
   vi.stubGlobal("fetch", asked);
-  await drawn(<Landing />);
+  await drawn(<ProjectCreationPage />);
   const before = asked.mock.calls.length;
   expect(before).toBeGreaterThan(0);
   await press(copyTextEn(claudeCodeLineCopy));
