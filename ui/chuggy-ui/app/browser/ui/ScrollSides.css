@@ -1,0 +1,53 @@
+/* ScrollSides: a sideways scroller that keeps a bar a reader can see, because
+   an overlay bar leaves a row cut at the edge looking like a row that ends
+   there, and that, holding more than it shows, keeps its scrolling to itself
+   and fades the side the more is on. */
+
+@layer ui {
+  .scroll-sides::-webkit-scrollbar {
+    height: var(--space-2);
+  }
+
+  .scroll-sides::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-2);
+    background: var(--edge-strong);
+  }
+
+  .scroll-sides:is([data-more-start], [data-more-end]) {
+    overscroll-behavior-x: contain;
+  }
+
+  .scroll-sides[data-more-end] {
+    mask-image: linear-gradient(
+      to left,
+      transparent,
+      var(--ink-1) var(--space-6)
+    );
+  }
+
+  .scroll-sides[data-more-start] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      var(--ink-1) var(--space-6)
+    );
+  }
+
+  .scroll-sides[data-more-start][data-more-end] {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      var(--ink-1) var(--space-6),
+      var(--ink-1) calc(100% - var(--space-6)),
+      transparent
+    );
+  }
+
+  /* A mask cuts away a focus ring at the faded edge, so a scroller focused by
+     keyboard, or holding what is, drops its fade and keeps its bar as the
+     cue. */
+  .scroll-sides:focus-visible,
+  .scroll-sides:has(:focus-visible) {
+    mask-image: none;
+  }
+}
