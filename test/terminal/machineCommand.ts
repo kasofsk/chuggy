@@ -8,7 +8,8 @@
  * was run with, what it was given to read and whether it leads a session of
  * its own, and then answers as the real one was found to: the runner
  * package's own lines, the files it writes under the home it is run in, the
- * servers Claude Code names in the configuration under that home, and a
+ * servers Claude Code names in the configuration under that home, chuggy's
+ * plugin in Claude Code installed and on, and a
  * registration, a pool's or with `--chat` the person's chat host's, redeemed
  * at the site it is pointed to. It answers from what a
  * case told the machine, and keeps what it changed beside the home. Nothing
@@ -24,6 +25,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+
+import { setupPluginId } from "../../ui/chuggy-ui/app/core/setupProgram.ts";
 
 import {
   machineFiles,
@@ -130,8 +133,21 @@ interface ClaudeConfig {
   >;
 }
 
-/** `claude mcp add|remove --scope local`, as Claude Code does them for the folder it is run in: a server named there, a name already there refused, and one removed only where it is there. */
+/** `claude mcp add|remove --scope local`, as Claude Code does them for the folder it is run in: a server named there, a name already there refused, and one removed only where it is there; and `claude plugin list --json`, which has chuggy's plugin installed and on. */
 function claude(): number {
+  if (argv.join(" ") === "plugin list --json")
+    return said(
+      0,
+      `${JSON.stringify([
+        {
+          id: setupPluginId,
+          version: "0.1.0",
+          scope: "user",
+          enabled: true,
+          installPath: join(home, ".claude", "plugins", "cache", "chuggy"),
+        },
+      ])}\n`,
+    );
   const [group, verb, scopeFlag, scope, server = ""] = argv;
   if (group !== "mcp" || scopeFlag !== "--scope" || scope !== "local")
     return said(1, "", "claude: no\n");

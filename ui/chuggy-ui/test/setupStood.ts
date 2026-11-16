@@ -13,7 +13,10 @@ import type { SetupReads } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
 import type { SetupNext } from "../app/core/setupReport.ts";
 import { setupStanding } from "../app/core/setupStanding.ts";
-import type { SetupStanding } from "../app/core/setupStanding.ts";
+import type {
+  SetupPluginHere,
+  SetupStanding,
+} from "../app/core/setupStanding.ts";
 import { setupSiteAnswered } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
@@ -29,6 +32,8 @@ export interface Asking {
   readonly through?: (ports: ApiPorts) => ApiPorts;
   /** Whether the agent's configuration here names chuggy's server for the project, which it does unless a case says not. */
   readonly named?: boolean;
+  /** How Claude Code here has chuggy's plugin, which is on unless a case says otherwise. */
+  readonly plugin?: SetupPluginHere;
 }
 
 /** Ports that answer from `site` by path, as the ports a session is opened with are asked, and fail whatever it has no answer for. */
@@ -72,7 +77,11 @@ export async function stood(
   site: SetupSite,
   asking: Asking = {},
 ): Promise<SetupStanding> {
-  return setupStanding(await siteRead(site, asking), asking.named ?? true);
+  return setupStanding(
+    await siteRead(site, asking),
+    asking.named ?? true,
+    asking.plugin ?? "On",
+  );
 }
 
 /** The next thing for a site, as a run given `asking` would name it. */

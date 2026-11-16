@@ -105,6 +105,11 @@ test("the bare command, signed in, reads where the person stands and reports it 
     site: machineSite,
     found: [],
     steps: [
+      {
+        step: "plugin",
+        state: "done",
+        detail: { id: "setup-step-plugin-on" },
+      },
       { step: "workspace", state: "done", detail: "acme" },
       {
         step: "project",

@@ -127,6 +127,8 @@ export type SetupLack =
       readonly repository: string;
     }
   | { readonly lacks: "Mcp" }
+  /** `off` where the plugin is installed and not enabled. */
+  | { readonly lacks: "Plugin"; readonly off: boolean }
   /** `reach` is what the apps grant the folder's remote, where every read that says so was got. */
   | { readonly lacks: "Binding"; readonly reach: SetupReach | undefined }
   /** `bound` is the repository as the binding names it, and `lastImport` the import of it that finished last, where one did. */
@@ -1107,6 +1109,37 @@ function setupRemoteFound(
   }
 }
 
+/**
+ * chuggy's Claude Code plugin as this machine has it: installed and enabled,
+ * installed and off, not installed, or passed over by the person's no, which
+ * the commands printed carry.
+ */
+export type SetupPluginHere = "On" | "Off" | "None" | "Skipped";
+
+/** Done where the plugin is on or passed over; to do while it is off or not installed. */
+function setupPluginStep(plugin: SetupPluginHere): SetupStep {
+  switch (plugin) {
+    case "On":
+      return setupDone("plugin", { id: "setup-step-plugin-on" });
+    case "Skipped":
+      return setupDone("plugin", { id: "setup-step-plugin-skipped" });
+    case "Off":
+      return setupUndone(
+        "plugin",
+        "todo",
+        { id: "setup-step-plugin-off" },
+        { lacks: "Plugin", off: true },
+      );
+    case "None":
+      return setupUndone(
+        "plugin",
+        "todo",
+        { id: "setup-step-plugin-none" },
+        { lacks: "Plugin", off: false },
+      );
+  }
+}
+
 /** Done where the agent's configuration for this folder names chuggy's server for the project; it is to do while the project is, since no server can serve one that is not there. */
 function setupMcpStep(
   partition: PartitionIdentity | undefined,
@@ -1132,9 +1165,14 @@ function setupMcpStep(
  * never asked is to do where the workspace or the project it belongs to is
  * itself to do, since a read that was got is what said so. `named`, whether
  * the agent's configuration here names chuggy's server for the project
- * chosen, is the machine's to say and no read's.
+ * chosen, and `plugin`, how this machine has chuggy's Claude Code plugin, are
+ * the machine's to say and no read's.
  */
-export function setupStanding(reads: SetupReads, named = false): SetupStanding {
+export function setupStanding(
+  reads: SetupReads,
+  named: boolean,
+  plugin: SetupPluginHere,
+): SetupStanding {
   const workspaces = reads.workspaces.tenants;
   const workspaceNamed = workspaceNamesListed(workspaces);
   const standing = {
@@ -1164,6 +1202,7 @@ export function setupStanding(reads: SetupReads, named = false): SetupStanding {
   return {
     ...standing,
     steps: [
+      setupPluginStep(plugin),
       workspace,
       project,
       setupMcpStep(partition, none, named, workspaceNamed),

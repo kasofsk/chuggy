@@ -47,11 +47,17 @@ export type SaidThing =
   | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
   | {
       readonly thing: "Offer";
-      readonly command: SetupOfferCommand;
+      readonly command: Exclude<SetupOfferCommand, "Plugin">;
       readonly tell: string;
       readonly when: string;
       readonly workspace: string;
       readonly project: string | undefined;
+    }
+  | {
+      readonly thing: "Offer";
+      readonly command: "Plugin";
+      readonly tell: string;
+      readonly when: string;
     }
   | {
       readonly thing: "Ask";
@@ -136,6 +142,13 @@ export const saidReady = [
   saidLive,
 ] as const;
 
+/** The plugin step where chuggy's Claude Code plugin here is installed and on. */
+export const saidPluginOn: Said = [
+  "done",
+  "Claude Code here has chuggy's plugin, on",
+];
+
+/** Each stage's steps past the plugin's, in order. */
 export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Nothing: [
     ["todo", "you are in no workspace yet"],

@@ -21,7 +21,9 @@
  * faults fixed, the commit pushed. `bind` adds a repository to the project at
  * the site, and is named only under a rule that waits on her yes. `ticket`
  * files a ticket at the site, and is named only under a rule that waits on
- * her saying what she wants done.
+ * her saying what she wants done. `plugin` installs chuggy's Claude Code
+ * plugin, and is named only under a rule that waits on her yes, beside one
+ * that names the way past it on her no.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
@@ -46,10 +48,13 @@ import type { Copy, CopyArgument, CopyOrData, CopyText } from "./copy.ts";
 import {
   setupAnswerArguments,
   setupAnswersNone,
+  setupAnswersPlugin,
   setupCommandArguments,
   setupConfigurationFlag,
   setupIntentFlag,
   setupNameFlag,
+  setupPluginFlag,
+  setupPluginSkip,
   setupTestFlag,
   setupTitleFlag,
   setupWaitSecsMax,
@@ -71,9 +76,12 @@ import type { SetupMachineFault, SetupPlatform } from "./setupPorts.ts";
 import {
   setupLoopbackAddress,
   setupNodeMajorMin,
+  setupPluginId,
+  setupPluginSkill,
   setupProgramPath,
 } from "./setupProgram.ts";
 import {
+  setupActFound,
   setupReplaceFlag,
   setupRunnerNamed,
   setupRunnerNoteSaid,
@@ -81,6 +89,8 @@ import {
   setupRunnerStopSaid,
 } from "./setupRunnerSaid.ts";
 import type {
+  SetupChildFailed,
+  SetupRunnerAct,
   SetupRunnerAt,
   SetupRunnerEnded,
   SetupRunnerNote,
@@ -118,6 +128,7 @@ export type SetupFault =
 
 /** The steps of setup, in the order they are done and printed. */
 export const setupSteps = [
+  "plugin",
   "workspace",
   "project",
   "mcp",
@@ -144,7 +155,8 @@ export interface SetupStepSaid {
 /**
  * The one next thing a checklist ends on: nothing, where setup is done;
  * something the person does by hand, and the condition the checklist may be
- * read again under; something `mcp` or `runner` would do on this machine for
+ * read again under; something `plugin` would do on this machine, with the way
+ * past it; something `mcp` or `runner` would do on this machine for
  * the project named, or `chat-host` for the workspace where no project is, or
  * `bind` at the site for the project named, and the yes it waits on; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
@@ -160,11 +172,17 @@ export type SetupThing =
   | { readonly thing: "Hand"; readonly tell: Copy; readonly when: Copy }
   | {
       readonly thing: "Offer";
-      readonly command: SetupOfferCommand;
+      readonly command: Exclude<SetupOfferCommand, "Plugin">;
       readonly tell: Copy;
       readonly when: Copy;
       readonly workspace: string;
       readonly project: string | undefined;
+    }
+  | {
+      readonly thing: "Offer";
+      readonly command: "Plugin";
+      readonly tell: Copy;
+      readonly when: Copy;
     }
   | {
       readonly thing: "Ask";
@@ -224,6 +242,34 @@ export type SetupProjectEnded =
       readonly refusal: Copy;
       readonly again: boolean;
     };
+
+/** What `plugin` did that left the plugin on. */
+export type SetupPluginDid = "Installed" | "Updated" | "Enabled";
+
+/**
+ * How a run of `plugin` ended: the plugin on, by what it did, with the folder
+ * a session reads it from; or not, because there is no `claude` here, or one
+ * older than `least`, a command it ran failed, or the list after shows the
+ * plugin absent or off.
+ */
+export type SetupPluginEnded =
+  | {
+      readonly ended: "On";
+      readonly did: SetupPluginDid;
+      readonly folder: string;
+    }
+  | { readonly ended: "Claudeless" }
+  | {
+      readonly ended: "Old";
+      readonly version: string | undefined;
+      readonly least: string;
+    }
+  | {
+      readonly ended: "Failed";
+      readonly act: SetupRunnerAct;
+      readonly failed: SetupChildFailed;
+    }
+  | { readonly ended: "Unlisted" | "Off" };
 
 export interface SetupNext {
   /** The workspace and project every command the checklist prints carries. */
@@ -325,6 +371,12 @@ export type SetupReport =
       readonly ended: SetupServerEnded;
     }
   | {
+      /** A run of `plugin`: how it ended, and the site it was given, where it was given one. */
+      readonly report: "Plugin";
+      readonly site: string | undefined;
+      readonly ended: SetupPluginEnded;
+    }
+  | {
       /** A run of `configuration`: what it wrote into the checkout, or why it wrote nothing. */
       readonly report: "Configuration";
       readonly ended: SetupConfigurationEnded;
@@ -378,9 +430,9 @@ export type SetupMachineCommand = Extract<
   "Mcp" | "Runner" | "ChatHost"
 >;
 
-/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, and `bind`, which adds a repository at the site. */
+/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, and `bind`, which adds a repository at the site. */
 export type SetupOfferCommand =
-  SetupMachineCommand | Extract<SetupCommand, "Bind">;
+  SetupMachineCommand | Extract<SetupCommand, "Bind" | "Plugin">;
 
 /** The command a run of the runner package's service is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
 function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
@@ -471,6 +523,7 @@ function setupCommandWords() {
     imported = "",
     bound = "",
     filed = "",
+    plugged = "",
   ] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("Project"),
@@ -482,6 +535,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Import"),
     ...setupCommandArguments("Bind"),
     ...setupCommandArguments("Ticket"),
+    ...setupCommandArguments("Plugin"),
   ];
   return {
     signIn,
@@ -494,6 +548,7 @@ function setupCommandWords() {
     imported,
     bound,
     filed,
+    plugged,
   };
 }
 
@@ -503,10 +558,7 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
-      return {
-        id: "setup-asked-command",
-        args: words,
-      };
+      return { id: "setup-asked-command", args: words };
     case "Flag":
       return {
         id: "setup-asked-flag",
@@ -524,6 +576,7 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
           intent: setupIntentFlag,
           chosen: setupConfigurationFlag,
           filed,
+          plugin: setupPluginFlag,
         },
       };
     case "Site":
@@ -561,6 +614,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       return {
         id: "setup-asked-brief",
         args: { filed, title: setupTitleFlag, intent: setupIntentFlag },
+      };
+    case "Plugin":
+      return {
+        id: "setup-asked-plugin",
+        args: { flag: setupPluginFlag, skip: setupPluginSkip },
       };
   }
 }
@@ -1038,7 +1096,46 @@ function setupFailedLines(
 /** How a command for one project, or for a workspace alone, is written, whatever names the run was given: that project's or that workspace's. */
 function setupSayingOf(saying: SetupSaying, named: SetupRunnerAt): SetupSaying {
   const { workspace, project } = named;
-  return { ...saying, answers: { workspace, project } };
+  return {
+    ...saying,
+    answers: { workspace, project, ...setupAnswersPlugin(saying.answers) },
+  };
+}
+
+/** The same commands, with the plugin step passed over. */
+function setupSkipping(saying: SetupSaying): SetupSaying {
+  return {
+    ...saying,
+    answers: { ...saying.answers, plugin: setupPluginSkip },
+  };
+}
+
+/** An offer: what the command would do, and the rule it is named under; for `plugin`, also the rule that names the checklist past it on the person's no. */
+function setupOfferLines(
+  thing: Extract<SetupThing, { readonly thing: "Offer" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  if (thing.command !== "Plugin")
+    return [
+      ["tell", thing.tell],
+      ...setupStopRule(
+        thing,
+        setupCommandOf(setupSayingOf(saying, thing), thing.command),
+      ),
+    ];
+  const command = setupCommandOf(saying, "Plugin");
+  return [
+    ["tell", thing.tell],
+    ["rule", { id: "setup-runner-rule", args: { command, when: thing.when } }],
+    [
+      "rule",
+      {
+        id: "setup-rule-plugin-skip",
+        args: { command: setupCommandOf(setupSkipping(saying), "Status") },
+      },
+    ],
+    ["next", setupNextStop],
+  ];
 }
 
 /** The command an answer is passed to: the flag it goes in last, and never twice, whatever was carried under that name. */
@@ -1068,13 +1165,7 @@ function setupThingLines(
         ...setupStopRule(thing, setupCommandOf(saying, "Status")),
       ];
     case "Offer":
-      return [
-        ["tell", thing.tell],
-        ...setupStopRule(
-          thing,
-          setupCommandOf(setupSayingOf(saying, thing), thing.command),
-        ),
-      ];
+      return setupOfferLines(thing, saying);
     case "Ask":
       return [
         ["ask", thing.ask],
@@ -1089,7 +1180,11 @@ function setupThingLines(
       ];
     case "Name": {
       const { workspace, project } = thing;
-      const answers = { workspace, project };
+      const answers = {
+        workspace,
+        project,
+        ...setupAnswersPlugin(saying.answers),
+      };
       return [
         ["ask", thing.ask],
         [
@@ -1531,6 +1626,7 @@ function setupProjectLines(
   saying: SetupSaying,
 ): readonly SetupLine[] {
   const { workspace, ended } = report;
+  const plugin = setupAnswersPlugin(saying.answers);
   const head = setupSiteSaid(report.site, "setup-site-signed-in");
   if (ended.ended === "Made")
     return [
@@ -1546,7 +1642,10 @@ function setupProjectLines(
         },
       ],
       setupNextLine(
-        { ...saying, answers: { workspace, project: ended.project } },
+        {
+          ...saying,
+          answers: { workspace, project: ended.project, ...plugin },
+        },
         "Status",
       ),
     ];
@@ -1555,12 +1654,17 @@ function setupProjectLines(
     ? setupCommandOf(
         {
           ...saying,
-          answers: { workspace, project: report.project, name: report.name },
+          answers: {
+            workspace,
+            project: report.project,
+            name: report.name,
+            ...plugin,
+          },
         },
         "Project",
       )
     : setupCommandOf(
-        { ...saying, answers: { workspace, project: undefined } },
+        { ...saying, answers: { workspace, project: undefined, ...plugin } },
         "Status",
       );
   return [
@@ -1570,6 +1674,85 @@ function setupProjectLines(
     ...setupStopRule(
       { when: ended.again ? setupAskedRetry : setupLookAgain },
       command,
+    ),
+  ];
+}
+
+/** Why a run of `plugin` left the plugin off, as its `found:` line says it. */
+function setupPluginOffSaid(
+  ended: Exclude<SetupPluginEnded, { readonly ended: "On" }>,
+): Copy {
+  switch (ended.ended) {
+    case "Claudeless":
+      return { id: "setup-plugin-claudeless" };
+    case "Old":
+      return {
+        id: "setup-plugin-old",
+        args: {
+          version: ended.version ?? "",
+          said: ended.version === undefined ? "unsaid" : "said",
+          least: ended.least,
+        },
+      };
+    case "Failed":
+      return setupActFound(ended.act, ended.failed);
+    case "Unlisted":
+      return { id: "setup-plugin-unlisted", args: { plugin: setupPluginId } };
+    case "Off":
+      return { id: "setup-plugin-off", args: { plugin: setupPluginId } };
+  }
+}
+
+/**
+ * A run of `plugin`: what it did and the skill the agent reads now, then the
+ * checklist; or why the plugin is not on, and the checklist with the plugin
+ * step passed over.
+ */
+function setupPluginLines(
+  report: Extract<SetupReport, { readonly report: "Plugin" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const { ended } = report;
+  const site = setupSiteFlag(report.site);
+  if (ended.ended !== "On")
+    return [
+      [
+        "found",
+        {
+          id: "setup-plugin-passed",
+          args: { found: setupPluginOffSaid(ended) },
+        },
+      ],
+      setupNextLine(setupSkipping(saying), "Status", site),
+    ];
+  const { workspace, project } = saying.answers;
+  return [
+    [
+      "did",
+      {
+        id: "setup-plugin-did",
+        args: {
+          did: ended.did,
+          uninstall: setupCommandLine([
+            "claude",
+            "plugin",
+            "uninstall",
+            setupPluginId,
+          ]),
+        },
+      },
+    ],
+    [
+      "rule",
+      {
+        id: "setup-rule-skill",
+        args: { skill: setupPluginSkill(ended.folder) },
+      },
+    ],
+    setupNextLine(
+      { ...saying, answers: { workspace, project } },
+      "Status",
+      site,
     ),
   ];
 }
@@ -1657,6 +1840,8 @@ function setupLines(
       return setupTicketLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
+    case "Plugin":
+      return setupPluginLines(report, saying);
     case "Runner":
       return setupRunnerLines(report, saying);
     case "RunnerOut":
@@ -1746,6 +1931,8 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
     case "Bind":
     case "Ticket":
       return setupReportExit(report.checklist);
+    case "Plugin":
+      return 0;
     case "Mcp":
     case "Runner":
       return report.ended.ended === "Stopped"

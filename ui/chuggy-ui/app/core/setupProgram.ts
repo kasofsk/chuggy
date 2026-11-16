@@ -1,7 +1,7 @@
 /**
  * The setup program's fixed facts: the path the console serves it at, the
- * client it signs in as, the loopback address a sign-in returns to, and the
- * Node it runs on.
+ * client it signs in as, the loopback address a sign-in returns to, the Node
+ * it runs on, and where the Claude Code plugin it installs is published.
  *
  * The path is read by the build that emits the program, so the file's name and
  * its address are one constant. This module imports nothing, because the
@@ -13,6 +13,20 @@ export const setupClientId = "chuggy-setup";
 export const setupCallbackPath = "/callback";
 export const setupScopes: readonly string[] = ["openid", "offline_access"];
 export const setupNodeMajorMin = 24;
+
+/** Where chuggy's Claude Code plugin is published: the marketplace's repository, the parts of it a checkout keeps, the marketplace's name, and the plugin's id in it. */
+export const setupPluginSource = "https://github.com/kasofsk/chuggy-docs.git";
+export const setupPluginSparse: readonly string[] = [
+  ".claude-plugin",
+  "plugins",
+];
+export const setupPluginMarketplace = "chuggy";
+export const setupPluginId = "chuggy@chuggy";
+
+/** The setup skill's file, under the folder a session reads the plugin from. */
+export function setupPluginSkill(folder: string): string {
+  return `${folder}/skills/setup/SKILL.md`;
+}
 
 /** The address itself and never a name for it: the issuer matches a redirect's host exactly. */
 export const setupLoopbackHost = "127.0.0.1";

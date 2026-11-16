@@ -321,6 +321,21 @@ export interface SetupRunnerCopy {
   readonly "setup-runner-act-server-added": {
     readonly case: unknown;
   };
+  readonly "setup-runner-act-plugin-marketplace-add": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-marketplace-update": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-install": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-update": {
+    readonly case: unknown;
+  };
+  readonly "setup-runner-act-plugin-enable": {
+    readonly case: unknown;
+  };
   readonly "setup-runner-act-register": {
     readonly case: unknown;
   };

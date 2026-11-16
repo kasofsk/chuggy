@@ -497,12 +497,13 @@ function lockOf(machine: SetupMachine): SetupPorts["lock"] {
   };
 }
 
-/** What a command run to read its answer prints here: npm's prefix, the checkout's top, or the folder's remote. */
+/** What a command run to read its answer prints here: npm's prefix, Claude Code's plugins, the checkout's top, or the folder's remote. */
 function machineRead(
   machine: SetupMachine,
   command: readonly string[],
 ): string | undefined {
   if (command[0] === "npm") return machine.box.prefix;
+  if (command[0] === "claude") return machine.box.plugins;
   return command[1] === "rev-parse" ? machine.top : machine.remote;
 }
 

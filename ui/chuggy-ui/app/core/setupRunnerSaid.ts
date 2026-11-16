@@ -122,11 +122,16 @@ export type SetupDockerBarred =
   | { readonly barred: "Named"; readonly settings: string }
   | { readonly barred: "Podmanless"; readonly answered: "No" | "Absent" };
 
-/** The things `runner` and `mcp` run another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host, and `ServerRemoved` and `ServerAdded` of the agent's MCP server. */
+/** The things `runner`, `mcp` and `plugin` run another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host, `ServerRemoved` and `ServerAdded` of the agent's MCP server, and each `Plugin` act of chuggy's Claude Code plugin and its marketplace. */
 export type SetupRunnerAct =
   | "Install"
   | "ServerRemoved"
   | "ServerAdded"
+  | "PluginMarketplaceAdd"
+  | "PluginMarketplaceUpdate"
+  | "PluginInstall"
+  | "PluginUpdate"
+  | "PluginEnable"
   | "Register"
   | "Check"
   | "Service"
@@ -1010,6 +1015,11 @@ const setupActs: Readonly<Record<SetupRunnerAct, CopyId>> = {
   Install: "setup-runner-act-install",
   ServerRemoved: "setup-runner-act-server-removed",
   ServerAdded: "setup-runner-act-server-added",
+  PluginMarketplaceAdd: "setup-runner-act-plugin-marketplace-add",
+  PluginMarketplaceUpdate: "setup-runner-act-plugin-marketplace-update",
+  PluginInstall: "setup-runner-act-plugin-install",
+  PluginUpdate: "setup-runner-act-plugin-update",
+  PluginEnable: "setup-runner-act-plugin-enable",
   Register: "setup-runner-act-register",
   Check: "setup-runner-act-check",
   Service: "setup-runner-act-service",
@@ -1059,6 +1069,17 @@ function setupFailedSaid(failed: SetupChildFailed): Copy {
             },
           };
   }
+}
+
+/** A program run for `act` that did not do it, as a `found:` line says it. */
+export function setupActFound(
+  act: SetupRunnerAct,
+  failed: SetupChildFailed,
+): Copy {
+  return {
+    id: "setup-runner-act-found",
+    args: { act: setupActOf(act), failed: setupFailedSaid(failed) },
+  };
 }
 
 function setupActSaid(act: SetupRunnerAct, failed: Copy): SetupRunnerStopSaid {
