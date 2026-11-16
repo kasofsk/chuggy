@@ -20,8 +20,21 @@ const repository = "https://github.com/acme/widgets.git";
 
 const queues: LandingQueuesResponse = {
   queues: [
-    { repository, holder: 4, waiting: [9, 2] },
-    { repository, target: "refs/heads/release", holder: 7, waiting: [3] },
+    {
+      repository,
+      holder: 4,
+      holderSince: "2026-11-16T09:30:00.000000Z",
+      holderPhase: "Finalization",
+      waiting: [9, 2],
+    },
+    {
+      repository,
+      target: "refs/heads/release",
+      holder: 7,
+      holderSince: "2026-11-16T09:30:00.000000Z",
+      holderPhase: "Finalization",
+      waiting: [3],
+    },
   ],
   truncated: false,
 };

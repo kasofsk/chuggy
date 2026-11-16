@@ -3,6 +3,8 @@
  * Stacked ticket of the project holds or waits on, who holds it and who waits
  * behind it. The queues are `serializedQueues`' over the candidates the store
  * answers, so this read and the finalizer's claim cannot order them apart.
+ * Each queue also says its holder's phase and since when it has held it, as
+ * the store derives that from the journal.
  *
  * IT IS AUTHORIZED AS THE PROJECT'S TICKET LIST IS, and a project the caller
  * may not read is answered as one that does not exist.
@@ -14,6 +16,7 @@
  */
 
 import { landingQueueTicketsAnsweredMax } from "../contract/http.ts";
+import type { TicketPhase } from "../contract/rosters.ts";
 import { authorizedProjectRead } from "./authorizedProject.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -24,9 +27,15 @@ import {
   type SerializedQueue,
 } from "./serializedHolder.ts";
 
+/** A ranked candidate, with the instant it came to hold its queue where it holds it. */
+export interface LandingQueueCandidate extends SerializedCandidate {
+  /** The later of its rank's instant and the latest at which a ticket ranked ahead of it on its reference stopped holding, as ISO 8601 in UTC. */
+  readonly holderSince: string | undefined;
+}
+
 /** One project's ranked queue candidates, in rank order, and whether more were ranked than were answered. */
 export interface LandingQueueCandidates {
-  readonly candidates: readonly SerializedCandidate[];
+  readonly candidates: readonly LandingQueueCandidate[];
   readonly truncated: boolean;
 }
 
@@ -38,9 +47,15 @@ export interface LandingQueuesStore {
   ): Promise<LandingQueueCandidates>;
 }
 
+/** One queue, with its holder's phase and the instant it came to hold it. */
+export interface LandingQueue extends SerializedQueue {
+  readonly holderSince: string;
+  readonly holderPhase: TicketPhase;
+}
+
 /** A project's queues, by repository and then target, and whether the candidates were cut. */
 export interface LandingQueues {
-  readonly queues: readonly SerializedQueue[];
+  readonly queues: readonly LandingQueue[];
   readonly truncated: boolean;
 }
 
@@ -66,6 +81,23 @@ function landingQueuesBefore(
   );
 }
 
+/** `queue` with what its holder's candidate says of it, which must say since when it holds. */
+function landingQueuesHeld(
+  queue: SerializedQueue,
+  candidates: readonly LandingQueueCandidate[],
+): LandingQueue {
+  const holder = candidates.find(
+    (candidate) => candidate.ticket === queue.holder,
+  );
+  if (holder?.holderSince === undefined)
+    throw new Error("landing queues: a holder has no instant it holds from");
+  return {
+    ...queue,
+    holderSince: holder.holderSince,
+    holderPhase: holder.phase,
+  };
+}
+
 /** The queues of one project's candidates, each of which the store must have answered for that project. */
 export function landingQueuesOf(
   partition: Partition,
@@ -81,7 +113,9 @@ export function landingQueuesOf(
       throw new Error("landing queues: a candidate is another project's");
   }
   return {
-    queues: [...serializedQueues(read.candidates)].sort(landingQueuesBefore),
+    queues: [...serializedQueues(read.candidates)]
+      .sort(landingQueuesBefore)
+      .map((queue) => landingQueuesHeld(queue, read.candidates)),
     truncated: read.truncated,
   };
 }
