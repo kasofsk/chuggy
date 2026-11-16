@@ -248,7 +248,7 @@ export function ChatPaneHistory(props: {
   );
   return (
     <DropdownMenu.Root modal={false}>
-      <Tooltip text={chatPaneHistoryLabel}>
+      <Tooltip trigger="control" text={chatPaneHistoryLabel}>
         <DropdownMenu.Trigger
           className={buttonLookClassName({ size: "icon", variant: "quiet" })}
         >
@@ -451,7 +451,10 @@ function ChatPaneThreadTitle(props: {
       </span>
       {props.thread.jobsStanding === true ? (
         <span className="flex shrink-0 pr-2">
-          <Tooltip text={{ id: "chat-kept-running-detail" }}>
+          <Tooltip
+            trigger="abbreviation"
+            text={{ id: "chat-kept-running-detail" }}
+          >
             <span>
               <Pill tone="live">{text({ id: "chat-kept-running" })}</Pill>
             </span>
@@ -461,6 +464,7 @@ function ChatPaneThreadTitle(props: {
       {props.thread.chatHostCapabilities === undefined ? null : (
         <span className="flex shrink-0 pr-2">
           <Tooltip
+            trigger="abbreviation"
             text={text({
               id: "chat-host-capabilities-detail",
               args: {
@@ -490,7 +494,7 @@ const chatPaneThreadMenuLabel: Copy = { id: "chat-actions" };
 function ChatPaneThreadMenuTrigger(): ReactNode {
   const text = useCopyText();
   return (
-    <Tooltip text={chatPaneThreadMenuLabel}>
+    <Tooltip trigger="control" text={chatPaneThreadMenuLabel}>
       <DropdownMenu.Trigger
         className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
       >

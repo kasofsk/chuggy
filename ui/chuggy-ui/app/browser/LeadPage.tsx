@@ -244,6 +244,7 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
       <td>{text(leadTurnInputKindLabel(turn.inputKind))}</td>
       <td>
         <Tooltip
+          trigger="abbreviation"
           text={
             turn.failure === undefined
               ? undefined

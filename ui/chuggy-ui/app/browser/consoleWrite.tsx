@@ -256,7 +256,10 @@ export function ConsoleWriteRefusedWords(props: {
   readonly className?: string;
 }): ReactNode {
   return (
-    <Tooltip text={consoleWriteRefusedDetail(props.refused)}>
+    <Tooltip
+      trigger="abbreviation"
+      text={consoleWriteRefusedDetail(props.refused)}
+    >
       <span className={props.className}>{props.refused.message}</span>
     </Tooltip>
   );

@@ -101,7 +101,7 @@ function MemberChatBar(props: {
     <header className="border-edge flex min-w-0 flex-wrap items-center gap-1 border-b px-4 py-2">
       {props.children}
       {props.session === undefined ? null : (
-        <Tooltip text={{ id: "chat-new" }}>
+        <Tooltip trigger="control" text={{ id: "chat-new" }}>
           <Link
             to={memberChatRoutes.chat}
             params={{ tenant }}

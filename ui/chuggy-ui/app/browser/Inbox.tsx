@@ -133,7 +133,7 @@ import { Button } from "./ui/Button.tsx";
 import { useRunReason } from "./RunEvidence.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { Tooltip, tooltipTriggerWrapping } from "./ui/Tooltip.tsx";
 import type { CopyText } from "../core/copy.ts";
 
 export interface InboxRowsHeld {
@@ -249,6 +249,9 @@ function InboxActions(props: {
       <div className="flex gap-2 items-baseline">
         {actions.map((action) => (
           <Tooltip
+            trigger={tooltipTriggerWrapping(
+              inboxAnswerInFlight(props.answer?.step),
+            )}
             key={nativeActionAnswerKey(action)}
             text={ticketActionSentence(action.action, {
               kind: inboxEntryPhased(props.entry)?.escalation?.kind,
@@ -299,7 +302,7 @@ function InboxLostWhy(props: {
   const said = [text(runnerLossDetail(lost)), text(runnerLossLine(lost))];
   if (lost.error !== undefined && reason !== undefined) said.push(reason.line);
   return (
-    <Tooltip text={said.join(" · ")}>
+    <Tooltip trigger="abbreviation" text={said.join(" · ")}>
       <span>
         <Pill tone="parked">{props.badge}</Pill>
       </span>
@@ -325,7 +328,7 @@ function InboxFailedWhy(props: {
   if (failed.error !== undefined && reason !== undefined)
     said.push(reason.line);
   return (
-    <Tooltip text={said.join(" · ")}>
+    <Tooltip trigger="abbreviation" text={said.join(" · ")}>
       <span>
         <Pill tone="parked">{props.badge}</Pill>
       </span>
@@ -408,7 +411,10 @@ function InboxWhy(props: {
       : [text(usageResumeLine(resume, props.nowMs))]),
   ];
   return (
-    <Tooltip text={said.length === 0 ? undefined : said.join(" · ")}>
+    <Tooltip
+      trigger="abbreviation"
+      text={said.length === 0 ? undefined : said.join(" · ")}
+    >
       <span>
         <Pill tone="parked">{text(row.badge ?? phaseLabel(row.phase))}</Pill>
       </span>
@@ -427,7 +433,7 @@ function InboxRefusal(props: {
   const refusal = props.entry.refusals[0];
   if (refusal === undefined) return null;
   return (
-    <Tooltip text={refusal.reason}>
+    <Tooltip trigger="abbreviation" text={refusal.reason}>
       <span>
         <Pill tone={agenticRefusalStandingTone(inboxRefusalStanding)}>
           {text(agenticRefusalStandingLabel(inboxRefusalStanding))}
@@ -571,7 +577,7 @@ function InboxRow(props: {
         {answer === undefined ? (
           cellAbsent
         ) : (
-          <Tooltip text={inboxStepDetail(answer.step)}>
+          <Tooltip trigger="abbreviation" text={inboxStepDetail(answer.step)}>
             <span>{inboxStepSentence(answer.step, text)}</span>
           </Tooltip>
         )}

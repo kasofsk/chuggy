@@ -73,7 +73,7 @@ function PickerTrigger(props: {
   const labelled =
     field?.labelId === undefined ? undefined : `${field.labelId} ${textId}`;
   return (
-    <Tooltip text={props.hint}>
+    <Tooltip trigger="control" text={props.hint}>
       <DropdownMenu.Trigger
         className={`${buttonLookClassName({ size: "sm" })} min-w-0 max-w-full`}
         id={field?.id}

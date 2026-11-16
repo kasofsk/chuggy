@@ -126,7 +126,7 @@ function StepNote(props: {
   const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
   return (
     <Notice tone={tone} inline role="status">
-      <Tooltip text={drawn.detail}>
+      <Tooltip trigger="abbreviation" text={drawn.detail}>
         <span>{text(drawn.text)}</span>
       </Tooltip>
     </Notice>
