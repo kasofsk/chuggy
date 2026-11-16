@@ -294,9 +294,15 @@ what the site answered, and reads the checklist again.
 
 Where the project holds no repository and the folder's `origin` names one, the
 repository step is held to what the two apps on the account that owns it are
-granted. Where both are granted it, the `rule:` names `bind` for once she says
-yes; `bind` adds it to the project with the request the console's Add sends,
-its one write, says what the site answered, and reads the checklist again.
+granted. Every trip to GitHub the checklist sends her on ends on `next:`
+naming `bind`, which the `rule:` has run at once while she goes. `bind` reads the checklist again every few seconds, for as long as
+`--wait-secs` gives it, until both apps are granted the folder's repository or
+the next thing is no longer GitHub's; where connecting GitHub is next, it first
+opens the repositories page that begins Connect GitHub, with `sign-in`'s
+opener. Once both are granted it, `bind` adds it to the project with the
+request the console's Add sends, its one write, says what the site answered,
+and reads the checklist again. A wait that ends first says what GitHub still
+lacks and names `bind` again.
 Where an app is not granted it, one `tell:` names every such app: the
 installation's settings page on GitHub where it is installed on that account,
 and where it is not, the press on the workspace's accounts page that installs

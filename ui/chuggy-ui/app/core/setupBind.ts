@@ -6,6 +6,8 @@
  * the checklist names only where both apps are granted it, and it lets no
  * other write out. What the site answered is said in the Add dialog's own
  * words, and whether the step is done is the checklist's to say, read after.
+ * Until both apps are granted it, the checklist is read again at
+ * `setupBindPollMs`.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -18,6 +20,9 @@ import {
   repositoryBindOutcome,
 } from "./projectRepositories.ts";
 import type { SetupBindAnswered } from "./setupReport.ts";
+
+/** How often `bind` reads the checklist again while what is next waits on GitHub. */
+export const setupBindPollMs = 3_000;
 
 /** The one write `bind` makes for a project: the binding of one repository. */
 export function setupBindWrites(

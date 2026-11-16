@@ -29,8 +29,10 @@ import {
 } from "./setupConfiguration.ts";
 import { setupBindAsked, setupBindWrites } from "./setupBind.ts";
 import {
+  setupBindAwaited,
   setupBindDue,
   setupConfigurationDue,
+  setupConnectDue,
   setupMcpDue,
   setupNext,
   setupRunnerDue,
@@ -63,6 +65,7 @@ import type {
   SetupWorkspacesAnswered,
 } from "./setupSession.ts";
 import {
+  setupBrowserOpened,
   setupListened,
   setupSignInAwaited,
   setupSignInBegun,
@@ -378,47 +381,90 @@ async function setupImport(
   };
 }
 
+/** The repositories page that begins Connect GitHub, opened in a browser where connecting GitHub is the next thing and the opener took it. */
+async function setupBindConnectOpened(
+  ports: SetupPorts,
+  standing: SetupStanding,
+): Promise<string | undefined> {
+  const address = setupConnectDue(standing);
+  if (address === undefined) return undefined;
+  return (await setupBrowserOpened(ports, address)) ? address : undefined;
+}
+
+/** The one bind `bind` asks of the site, under an operation of its own, and the checklist read after it. */
+async function setupBound(
+  ports: SetupPorts,
+  held: Extract<SetupSigned, { readonly signed: "In" }>,
+  due: NonNullable<ReturnType<typeof setupBindDue>>,
+  checklist: () => Promise<
+    Extract<SetupReport, { readonly report: "Checklist" }>
+  >,
+): Promise<Omit<Extract<SetupReport, { readonly report: "Bind" }>, "opened">> {
+  const answered = await setupBindAsked(
+    setupWritePorts(
+      held.opened.api,
+      held.bearer,
+      setupBindWrites(due.partition),
+    ),
+    due.partition,
+    due.url,
+    base64urlFromBytes(ports.drawBytes(operationIdBytesCount)),
+  );
+  return {
+    report: "Bind",
+    repository: due.repository,
+    answered,
+    checklist: await checklist(),
+  };
+}
+
 /**
- * `bind` works under the remembered sign-in as `import` does. Where the
- * checklist's next thing is adding the folder's repository, which it is only
- * where both apps are granted it, it asks the site to bind it, the one write
- * its ports let through, under an operation of its own, and reads the
- * checklist again; where it is not, it binds nothing and says the checklist.
+ * `bind` works under the remembered sign-in as `import` does, entering it
+ * again at each look, so a wait outlasts the bearer it began with. While the
+ * checklist's next thing waits on GitHub, it reads the checklist again at
+ * `pacing.bindPollMs` for as long as the run was given, and where its first
+ * look finds GitHub to connect, it opens the page that does in a browser.
+ * Once the next thing is adding the folder's repository, it asks the site to
+ * bind it, the one write its ports let through, and reads the checklist
+ * again; where the next thing waits on neither, it binds nothing and says the
+ * checklist.
  */
 async function setupBind(
   ports: SetupPorts,
   asked: Extract<SetupAsked, { readonly asked: "Bind" }>,
   pacing: SetupPacing,
 ): Promise<SetupReport> {
-  const held = await setupEntered(ports, asked.site, "Bind");
-  if (held === undefined) return setupBusy(ports, "Bind", asked.site);
-  if (held.signed === "Out") return held.report;
-  const due = setupBindDue(
-    await setupStandingRead(ports, held, asked.answers, pacing),
-  );
-  const answered =
-    due === undefined
-      ? undefined
-      : await setupBindAsked(
-          setupWritePorts(
-            held.opened.api,
-            held.bearer,
-            setupBindWrites(due.partition),
-          ),
-          due.partition,
-          due.url,
-          base64urlFromBytes(ports.drawBytes(operationIdBytesCount)),
-        );
-  return {
-    report: "Bind",
-    repository: due?.repository,
-    answered,
-    checklist: await setupChecklist(ports, held, asked.answers, pacing),
-  };
+  const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
+  let opened: string | undefined;
+  for (let looked = false; ; looked = true) {
+    const held = await setupEntered(ports, asked.site, "Bind");
+    if (held === undefined) return setupBusy(ports, "Bind", asked.site);
+    if (held.signed === "Out") return held.report;
+    const checklist = () => setupChecklist(ports, held, asked.answers, pacing);
+    const standing = await setupStandingRead(
+      ports,
+      held,
+      asked.answers,
+      pacing,
+    );
+    const due = setupBindDue(standing);
+    if (due !== undefined)
+      return { ...(await setupBound(ports, held, due, checklist)), opened };
+    if (!looked) opened = await setupBindConnectOpened(ports, standing);
+    if (!setupBindAwaited(standing) || ports.nowMs() >= endsAtMs)
+      return {
+        report: "Bind",
+        opened,
+        repository: undefined,
+        answered: undefined,
+        checklist: await checklist(),
+      };
+    await ports.sleepMs(pacing.bindPollMs);
+  }
 }
 
 /**
- * `ticket` works under the remembered sign-in as `bind` does. Where the
+ * `ticket` works under the remembered sign-in as `import` does. Where the
  * checklist's next thing is the project's first ticket, it files one from
  * what the person said, as the console's Create ticket does, through ports
  * that let out only that creation's writes, each submission under an

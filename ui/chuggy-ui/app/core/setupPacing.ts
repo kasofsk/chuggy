@@ -16,6 +16,7 @@
 
 import { z } from "zod";
 
+import { setupBindPollMs } from "./setupBind.ts";
 import { setupRemoteWaitMs } from "./setupRemote.ts";
 import { setupLivePollMs } from "./setupRunner.ts";
 import { setupSignInPollMs } from "./setupSignIn.ts";
@@ -27,12 +28,15 @@ export interface SetupPacing {
   readonly livePollMs: number;
   /** How long git is given to name the folder's remote. */
   readonly remoteWaitMs: number;
+  /** How often `bind` reads the checklist again while it waits on GitHub. */
+  readonly bindPollMs: number;
 }
 
 export const setupPacing: SetupPacing = {
   signInPollMs: setupSignInPollMs,
   livePollMs: setupLivePollMs,
   remoteWaitMs: setupRemoteWaitMs,
+  bindPollMs: setupBindPollMs,
 };
 
 function setupPacingField(msMax: number) {
@@ -43,6 +47,7 @@ const setupPacingSchema = z.strictObject({
   signInPollMs: setupPacingField(setupPacing.signInPollMs),
   livePollMs: setupPacingField(setupPacing.livePollMs),
   remoteWaitMs: setupPacingField(setupPacing.remoteWaitMs),
+  bindPollMs: setupPacingField(setupPacing.bindPollMs),
 });
 
 /** The pacing `text` names, each field it leaves out the program's own. */
@@ -60,5 +65,6 @@ export function setupPacingRead(text: string | undefined): SetupPacing {
     signInPollMs: named.data.signInPollMs ?? setupPacing.signInPollMs,
     livePollMs: named.data.livePollMs ?? setupPacing.livePollMs,
     remoteWaitMs: named.data.remoteWaitMs ?? setupPacing.remoteWaitMs,
+    bindPollMs: named.data.bindPollMs ?? setupPacing.bindPollMs,
   };
 }

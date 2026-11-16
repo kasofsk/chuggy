@@ -20,8 +20,10 @@
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
  * import the repository the checklist means, and reads the checklist again.
- * `bind` asks the site to add the folder's repository to the project, where
- * that is the checklist's next thing, and reads the checklist again.
+ * `bind` waits, for as long as `--wait-secs` gives it, while the checklist's
+ * next thing waits on GitHub, then asks the site to add the folder's
+ * repository to the project where that is the next thing, and reads the
+ * checklist again.
  * `ticket` files the project's first ticket, titled what `--title` says and
  * asking what `--intent` says, under the configuration `--configuration`
  * names where the project offers more than one, where that is the
@@ -178,6 +180,7 @@ export type SetupAsked =
   | {
       readonly asked: "Bind";
       readonly site: string | undefined;
+      readonly waitSecs: number;
       readonly answers: SetupAnswers;
     }
   | {
@@ -249,7 +252,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Configuration: ["workspace", "project", "test", "plugin"],
   Check: ["workspace", "project", "plugin"],
   Import: ["site", "workspace", "project", "plugin"],
-  Bind: ["site", "workspace", "project", "plugin"],
+  Bind: ["site", "wait-secs", "workspace", "project", "plugin"],
   Ticket: [
     "site",
     "workspace",
@@ -447,8 +450,9 @@ function setupAskedOf(
       return setupConfigurationAsked(answers, flags.get("test"));
     case "Check":
       return { asked, site: undefined, answers };
-    case "Import":
     case "Bind":
+      return { asked, site, waitSecs: wait, answers };
+    case "Import":
     case "Plugin":
       return { asked, site, answers };
     case "Ticket":

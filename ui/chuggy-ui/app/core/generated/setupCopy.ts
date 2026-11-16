@@ -443,22 +443,14 @@ export interface SetupCopy {
     readonly status: unknown;
     readonly label: unknown;
   };
-  readonly "setup-mend-grant-when": {
-    readonly app: unknown;
-    readonly repository: unknown;
-  };
   readonly "setup-mend-account-tell": {
     readonly page: unknown;
     readonly connect: unknown;
     readonly repository: unknown;
   };
-  readonly "setup-mend-github-when": Record<never, never>;
   readonly "setup-mend-worker-tell": {
     readonly page: unknown;
     readonly install: unknown;
-    readonly account: unknown;
-  };
-  readonly "setup-mend-worker-when": {
     readonly account: unknown;
   };
   readonly "setup-mend-portal-tell": {
@@ -493,16 +485,10 @@ export interface SetupCopy {
     readonly first: unknown;
     readonly second: unknown;
   };
-  readonly "setup-mend-reach-when": {
-    readonly repository: unknown;
+  readonly "setup-rule-bind": {
+    readonly told: unknown;
   };
-  readonly "setup-mend-bind-offer": {
-    readonly repository: unknown;
-    readonly project: unknown;
-  };
-  readonly "setup-offer-bind-when": {
-    readonly repository: unknown;
-  };
+  readonly "setup-rule-bind-again": Record<never, never>;
   readonly "setup-mend-binding-yours": Record<never, never>;
   readonly "setup-mend-binding-mine": {
     readonly repository: unknown;
@@ -578,6 +564,7 @@ export interface SetupCopy {
     readonly refusal: unknown;
   };
   readonly "setup-bind-none": Record<never, never>;
+  readonly "setup-bind-waited": Record<never, never>;
   readonly "setup-bind-did": {
     readonly repository: unknown;
     readonly said: unknown;

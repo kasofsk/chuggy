@@ -1,9 +1,10 @@
 /**
- * The folder's repository added by the setup program itself: offered where
- * both apps are granted it and bound by `bind` on the person's yes, with the
- * write the console's Add makes; and, where an app is not granted it, one
- * tell naming every such app with where it is given it, with the checklist
- * read again once the person says they are done there.
+ * The folder's repository added by the setup program itself: `bind` named to
+ * run at once wherever the next thing is a trip to GitHub or the repository
+ * both apps are granted, reading the checklist again while GitHub is not yet
+ * done and binding once it is, with the write the console's Add makes; and,
+ * where an app is not granted it, one tell naming every such app with where
+ * it is given it.
  *
  * @vitest-environment node
  */
@@ -36,7 +37,17 @@ const at = flags.join(" ");
 const repository = "acme-org/widgets";
 const bindPath = "/api/v1/tenants/acme/projects/widgets/repositories";
 const accounts = `${machineSite}/tenants/acme/settings/accounts`;
-const granting = `On GitHub choose ${repository} among the repositories each app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.`;
+const granting = `On GitHub, choose "All repositories", or "Only select repositories" and pick ${repository}, and save. Either is fine: with All, a later project needs no trip to GitHub. GitHub may ask you to confirm access first, with a code it emails you.`;
+const runNow =
+  "rule: Run the command on the next: line now, without asking the person";
+const runNowRest =
+  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+const runBind = `next: node ${machineScript} bind ${at}`;
+/** The rule and command a checklist ends on beside a tell of a trip to GitHub. */
+const tripped = [
+  `${runNow}, while they do what the tell: line says${runNowRest}`,
+  runBind,
+];
 
 /** A site with both apps on the account that owns the folder's repository and nothing added, each app granted what `granted` says. */
 function connected(granted: { portal: boolean; worker: boolean }): SetupSite {
@@ -69,14 +80,11 @@ function binds(machine: SetupMachine): readonly string[] {
   );
 }
 
-test("where both apps are granted the folder's repository, the checklist offers bind, and one yes binds it and the step is done", async () => {
+test("where both apps are granted the folder's repository, the checklist runs bind at once, which binds it once, and a second bind finds it added and writes nothing", async () => {
   const machine = await inFolder(connected({ portal: true, worker: true }));
   const offered = lines(await machine.command(flags));
-  expect(offered.slice(-3)).toEqual([
-    `tell: The portal app and the worker app are both let into ${repository}, this folder's repository, and acme/widgets does not have it yet. With your yes I will add it to acme/widgets, as the repositories page's Add does. Tell me yes to go ahead.`,
-    `rule: Run node ${machineScript} bind ${at} only once the person says yes to adding ${repository} to the project.`,
-    "next: stop",
-  ]);
+  expect(offered.slice(-2)).toEqual([`${runNow}${runNowRest}`, runBind]);
+  expect(offered.some((line) => line.startsWith("tell: "))).toBe(false);
   expect(binds(machine)).toEqual([]);
 
   const report = await machine.command(["bind", ...flags]);
@@ -92,6 +100,89 @@ test("where both apps are granted the folder's repository, the checklist offers 
     { repository: setupSiteRepositoryAddress },
   ]);
   expect(setupReportExit(report)).toBe(0);
+
+  const again = lines(await machine.command(["bind", ...flags]));
+  expect(again[1]).toBe(
+    "found: nothing to add: the next thing is not adding this folder's repository",
+  );
+  expect(binds(machine)).toHaveLength(1);
+});
+
+test("bind run while an app is not yet granted reads the checklist again until it is, then binds once under one operation", async () => {
+  const machine = await inFolder(connected({ portal: true, worker: false }));
+  const worker = setupSiteClaim(setupSiteAccount, "worker");
+  const listing = `/forge-installations/${worker.installationId}/repositories`;
+  let looks = 0;
+  machine.answering = () => {
+    if (!(machine.sent.at(-1) ?? "").endsWith(listing)) return;
+    looks += 1;
+    if (looks === 2)
+      machine.world.grants.set(worker.installationId, [
+        setupSiteRepositoryAddress,
+      ]);
+  };
+  const said = lines(await machine.command(["bind", ...flags]));
+  expect(looks).toBeGreaterThanOrEqual(2);
+  expect(said[1]).toBe(
+    `did: asked chuggy to add ${repository}, and it answered ${repository} · Default configuration added`,
+  );
+  expect(binds(machine)).toHaveLength(1);
+  expect(step(said, "repository")).toBe(
+    `step: repository  done     ${repository}`,
+  );
+});
+
+test("a bind whose wait ends before GitHub is done binds nothing, says what GitHub still lacks, and names bind to run again", async () => {
+  const machine = await inFolder(connected({ portal: true, worker: false }));
+  const worker = setupSiteClaim(setupSiteAccount, "worker");
+  const startedMs = machine.nowMs;
+  const report = await machine.command(["bind", ...flags, "--wait-secs", "9"]);
+  const said = lines(report);
+  expect(machine.nowMs - startedMs).toBeGreaterThanOrEqual(9_000);
+  expect(said[1]).toBe(
+    "found: the wait ended before GitHub let both apps into this folder's repository",
+  );
+  expect(said.slice(-3)).toEqual([
+    `tell: GitHub does not let this app into ${repository}, this folder's repository: the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. ${granting}`,
+    "rule: Run the command on the next: line again, and go on running it while GitHub still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.",
+    runBind,
+  ]);
+  expect(binds(machine)).toEqual([]);
+  expect(setupReportExit(report)).toBe(0);
+});
+
+test("bind run where GitHub is not connected opens the repositories page that begins Connect GitHub, with the opener sign-in uses, and says so", async () => {
+  const machine = await machineSignedIn(setupSiteAt("Project"));
+  const connect = `${machineSite}/acme/widgets/repositories?connect=github`;
+  const before = machine.launched.length;
+  const said = lines(
+    await machine.command(["bind", ...flags, "--wait-secs", "0"]),
+  );
+  expect(machine.launched.slice(before)).toEqual([["xdg-open", connect]]);
+  expect(said[1]).toBe(`did: opened ${connect} in a browser`);
+  expect(said.at(-3)).toMatch(
+    new RegExp(
+      `^tell: Open ${connect.replace(/[.?]/gu, "\\$&")}, and press Connect GitHub if the page does not go on to GitHub by itself\\. `,
+      "u",
+    ),
+  );
+  expect(binds(machine)).toEqual([]);
+});
+
+test("a later project whose repository an All installation already reaches has bind run at once, with no trip to GitHub", async () => {
+  const site = setupSiteAt("Apps");
+  for (const app of ["portal", "worker"] as const)
+    site.grants.set(`${setupSiteAccount}-${app}`, [
+      "https://github.com/acme-org/gadgets",
+      setupSiteRepositoryAddress,
+    ]);
+  const machine = await inFolder(site);
+  const said = lines(await machine.command(flags));
+  expect(said.slice(-2)).toEqual([`${runNow}${runNowRest}`, runBind]);
+  expect(said.some((line) => line.startsWith("tell: "))).toBe(false);
+  expect(lines(await machine.command(["bind", ...flags]))[1]).toBe(
+    `did: asked chuggy to add ${repository}, and it answered ${repository} · Default configuration added`,
+  );
 });
 
 test("a bind the site refuses says the refusal in the Add dialog's words, binds nothing, and leaves the step to do", async () => {
@@ -108,9 +199,12 @@ test("a bind the site refuses says the refusal in the Add dialog's words, binds 
   expect(machine.world.projects[0]?.repositories).toEqual([]);
 });
 
-test("bind asks nothing of the site where adding the folder's repository is not the next thing, and says so", async () => {
-  const machine = await inFolder(connected({ portal: true, worker: false }));
+test("bind waits on nothing and asks nothing of the site where the next thing is neither GitHub's nor adding the folder's repository, and says so", async () => {
+  const machine = await inFolder(connected({ portal: true, worker: true }));
+  machine.world.fates.set("workerGrant", "Failed");
+  const startedMs = machine.nowMs;
   const said = lines(await machine.command(["bind", ...flags]));
+  expect(machine.nowMs - startedMs).toBeLessThan(3_000);
   expect(said[1]).toBe(
     "found: nothing to add: the next thing is not adding this folder's repository",
   );
@@ -126,12 +220,11 @@ test("where neither app is granted the folder's repository, one tell names each 
   const said = lines(await machine.command(flags));
   expect(said.slice(-3)).toEqual([
     `tell: GitHub does not let these apps into ${repository}, this folder's repository: the portal app, on its settings page ${setupSiteSettingsUrl(portal)}; and the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. ${granting}`,
-    `rule: Run node ${machineScript} ${at} only once the person says each app named is given ${repository} on GitHub.`,
-    "next: stop",
+    ...tripped,
   ]);
 });
 
-test("where one app is granted the folder's repository, the tell names only the other, and once it is granted the checklist offers bind", async () => {
+test("where one app is granted the folder's repository, the tell names only the other, and once it is granted the checklist runs bind with no tell", async () => {
   const machine = await inFolder(connected({ portal: true, worker: false }));
   const worker = setupSiteClaim(setupSiteAccount, "worker");
   const said = lines(await machine.command(flags));
@@ -139,9 +232,10 @@ test("where one app is granted the folder's repository, the tell names only the 
     `tell: GitHub does not let this app into ${repository}, this folder's repository: the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. ${granting}`,
   );
   machine.world.grants.set(worker.installationId, [setupSiteRepositoryAddress]);
-  expect(lines(await machine.command(flags)).at(-2)).toBe(
-    `rule: Run node ${machineScript} bind ${at} only once the person says yes to adding ${repository} to the project.`,
-  );
+  expect(lines(await machine.command(flags)).slice(-2)).toEqual([
+    `${runNow}${runNowRest}`,
+    runBind,
+  ]);
 });
 
 /** A site where `elsewhere` holds both apps and the account that owns the folder's repository holds those `held` names. */
@@ -162,7 +256,7 @@ function claimed(machine: SetupMachine, app: "portal" | "worker"): void {
     ?.push(setupSiteClaim(setupSiteAccount, app));
 }
 
-test("an app not installed on the account that owns the folder's repository is sent to the console's install of it, whose claim the next read finds, and then bind is offered", async () => {
+test("an app not installed on the account that owns the folder's repository is sent to the console's install of it, whose claim the next read finds, and then bind is run with no tell", async () => {
   const machine = await inFolder(owning(["portal"]));
   const tell = lines(await machine.command(flags)).at(-3);
   expect(tell).toBe(
@@ -170,9 +264,10 @@ test("an app not installed on the account that owns the folder's repository is s
   );
   expect(tell).not.toContain(setupSiteInstallUrl("worker"));
   claimed(machine, "worker");
-  expect(lines(await machine.command(flags)).at(-2)).toBe(
-    `rule: Run node ${machineScript} bind ${at} only once the person says yes to adding ${repository} to the project.`,
-  );
+  expect(lines(await machine.command(flags)).slice(-2)).toEqual([
+    `${runNow}${runNowRest}`,
+    runBind,
+  ]);
 });
 
 test("where neither app is installed on the account that owns the folder's repository, one tell names Add account for the portal app and the worker app's install on the row that follows it", async () => {
@@ -183,9 +278,10 @@ test("where neither app is installed on the account that owns the folder's repos
   );
   claimed(machine, "portal");
   claimed(machine, "worker");
-  expect(lines(await machine.command(flags)).at(-2)).toBe(
-    `rule: Run node ${machineScript} bind ${at} only once the person says yes to adding ${repository} to the project.`,
-  );
+  expect(lines(await machine.command(flags)).slice(-2)).toEqual([
+    `${runNow}${runNowRest}`,
+    runBind,
+  ]);
 });
 
 test("where the deployment offers no install the workspace can claim, an app not installed there leaves the console's Add the way", async () => {

@@ -10,10 +10,13 @@
  * where one is lacking the next thing is that question. A repository holding
  * no configuration of its own is the one other: its configuration is written
  * in the checkout by the person's agent with them, through `configuration`,
- * `check` and `import`, and no page is pressed for it. Where the project
- * holds no repository and both apps are granted the folder's own, `bind`
- * adds it on the person's yes, and where an app is not, the tell names that
- * app's page on the forge and no page of the console. Where the project has
+ * `check` and `import`, and no page is pressed for it. Every trip to GitHub
+ * names `bind` to run at once while the person makes it: `bind` waits for
+ * GitHub to let both apps into the folder's repository and then adds it,
+ * which the project's `Administer` permit already guards, so where both apps
+ * are granted it the next thing is `bind` and nothing is asked. Where an app
+ * is not granted it, the tell names that app's page on the forge and no page
+ * of the console. Where the project has
  * no ticket yet and what a ticket may be drawn under was read, the person is
  * asked what they want done first, and `ticket` files it, with the
  * configuration they choose where there is a choice; where that read came to
@@ -45,6 +48,7 @@ import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import {
+  repositoriesConnectPath,
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
@@ -132,6 +136,17 @@ function setupHand(tell: Copy, when: Copy): SetupThing {
   return { thing: "Hand", tell, when };
 }
 
+/** `bind` run at once for the checklist's project, while the person does what `tell` says on GitHub, where it says anything. */
+function setupBindRun(at: SetupAt, tell: Copy | undefined): SetupThing {
+  return {
+    thing: "Run",
+    command: "Bind",
+    tell,
+    workspace: at.workspace,
+    project: at.project,
+  };
+}
+
 const setupLookAgain: Copy = { id: "setup-runner-when-look-again" };
 
 function setupWorkspaceMend(
@@ -192,26 +207,28 @@ function setupProjectMend(at: SetupAt): SetupThing {
 /** An app that is installed and not let into the repository: the picker draws a line for it under its list, with a link to that app's own page on the forge. */
 function setupGrantMend(
   lack: Extract<SetupLack, { readonly lacks: "Grant" }>,
-  page: string,
+  at: SetupAt,
 ): SetupThing {
   const line = repositoryGrantLines[lack.app];
   const app = setupAppNames[lack.app];
   const { account, repository } = lack;
-  return setupHand(
-    {
-      id: "setup-mend-grant-tell",
-      args: {
-        app,
-        account,
-        repository,
-        page,
-        add: setupPressed.add,
-        status: line.status,
-        label: line.label,
-      },
+  return setupBindRun(at, {
+    id: "setup-mend-grant-tell",
+    args: {
+      app,
+      account,
+      repository,
+      page: setupPage(at, navRoutes.repositories),
+      add: setupPressed.add,
+      status: line.status,
+      label: line.label,
     },
-    { id: "setup-mend-grant-when", args: { app, repository } },
-  );
+  });
+}
+
+/** The repositories page asked to begin Connect GitHub's press, which it does by itself only for the workspace's sole administrator. */
+function setupConnectPage(at: SetupAt): string {
+  return repositoriesConnectPath(setupPage(at, navRoutes.repositories));
 }
 
 /** The folder's repository by its remote, or the person's where it has none. */
@@ -226,41 +243,34 @@ function setupGithubMend(
   at: SetupAt,
   mine: string | undefined,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.repositories);
-  const connected: Copy = { id: "setup-mend-github-when" };
-  if (lack.lacks === "Grant") return setupGrantMend(lack, page);
+  if (lack.lacks === "Grant") return setupGrantMend(lack, at);
   if (lack.lacks === "Account")
-    return setupHand(
-      {
-        id: "setup-mend-account-tell",
-        args: {
-          page,
-          connect: setupPressed.connect,
-          repository: setupMendBindingSaid(mine),
-        },
+    return setupBindRun(at, {
+      id: "setup-mend-account-tell",
+      args: {
+        page: setupConnectPage(at),
+        connect: setupPressed.connect,
+        repository: setupMendBindingSaid(mine),
       },
-      connected,
-    );
+    });
   const { account } = lack;
   if (lack.app === "worker")
-    return setupHand(
-      {
-        id: "setup-mend-worker-tell",
-        args: { page, install: forgeInstallLabel(lack.app), account },
-      },
-      { id: "setup-mend-worker-when", args: { account } },
-    );
-  return setupHand(
-    {
-      id: "setup-mend-portal-tell",
+    return setupBindRun(at, {
+      id: "setup-mend-worker-tell",
       args: {
-        page: setupPage(at, settingsRoutes.workspace.accounts),
-        connect: setupPressed.connect,
+        page: setupPage(at, navRoutes.repositories),
+        install: forgeInstallLabel(lack.app),
         account,
       },
+    });
+  return setupBindRun(at, {
+    id: "setup-mend-portal-tell",
+    args: {
+      page: setupPage(at, settingsRoutes.workspace.accounts),
+      connect: setupPressed.connect,
+      account,
     },
-    connected,
-  );
+  });
 }
 
 /**
@@ -304,10 +314,10 @@ function setupAppPageSaid(
 
 /**
  * The folder's repository before it is added: where both apps are granted it,
- * `bind` adds it on the person's yes, as the console's Add does; where an app
- * is not, every such app is named in the one tell with where it is given it,
- * and the checklist is read again once the person says they are done there.
- * Where what the apps grant was not read, the console's Add is the way.
+ * `bind` adds it at once, as the console's Add does; where an app is not,
+ * every such app is named in the one tell with where it is given it, and
+ * `bind` waits while the person gives it. Where what the apps grant was not
+ * read, the console's Add is the way.
  */
 function setupBindingMend(
   lack: Extract<SetupLack, { readonly lacks: "Binding" }>,
@@ -315,39 +325,22 @@ function setupBindingMend(
   mine: string | undefined,
 ): SetupThing {
   const reach = lack.reach;
-  if (reach?.reach === "Granted")
-    return {
-      thing: "Offer",
-      command: "Bind",
-      tell: {
-        id: "setup-mend-bind-offer",
-        args: { repository: reach.repository, project: setupNamed(at) },
-      },
-      when: {
-        id: "setup-offer-bind-when",
-        args: { repository: reach.repository },
-      },
-      workspace: at.workspace,
-      project: at.project,
-    };
+  if (reach?.reach === "Granted") return setupBindRun(at, undefined);
   if (reach?.reach === "Ungranted") {
     if (reach.apps.length < 1 || reach.apps.length > forgeApps.length)
       throw new Error("a tell of the apps not granted names one or both");
     const [first, second] = reach.apps.map((page) =>
       setupAppPageSaid(page, reach.apps, at),
     );
-    return setupHand(
-      {
-        id: "setup-mend-reach-tell",
-        args: {
-          repository: reach.repository,
-          count: second === undefined ? "one" : "two",
-          first: first ?? "",
-          second: second ?? "",
-        },
+    return setupBindRun(at, {
+      id: "setup-mend-reach-tell",
+      args: {
+        repository: reach.repository,
+        count: second === undefined ? "one" : "two",
+        first: first ?? "",
+        second: second ?? "",
       },
-      { id: "setup-mend-reach-when", args: { repository: reach.repository } },
-    );
+    });
   }
   return setupHand(
     {
@@ -1028,6 +1021,31 @@ export function setupBindDue(standing: SetupStanding):
   return reach?.reach === "Granted"
     ? { partition, repository: reach.repository, url: reach.url }
     : undefined;
+}
+
+/**
+ * Whether the one next thing waits on GitHub: an account to connect, an app
+ * to install, or an app to let into the folder's repository, which is what
+ * `bind` waits out before it adds the repository.
+ */
+export function setupBindAwaited(standing: SetupStanding): boolean {
+  if (setupDue(standing, ["Account", "App", "Grant", "Binding"]) === undefined)
+    return false;
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  return lack?.lacks !== "Binding" || lack.reach?.reach === "Ungranted";
+}
+
+/** The repositories page asked to begin Connect GitHub's press, where connecting GitHub is the one next thing, which is when `bind` opens it in a browser. */
+export function setupConnectDue(standing: SetupStanding): string | undefined {
+  const partition = setupDue(standing, ["Account"]);
+  return partition === undefined
+    ? undefined
+    : setupConnectPage({
+        site: standing.site,
+        workspace: partition.tenant,
+        project: partition.project,
+        named: workspaceNamesListed(standing.workspaces),
+      });
 }
 
 /** The project whose ticket step is the one next and has no ticket at all, which is when what a ticket may be drawn under is read and `ticket` files one. */
