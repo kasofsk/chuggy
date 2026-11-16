@@ -17,6 +17,7 @@ import {
   setupWaitSecsDefault,
   setupWaitSecsMax,
 } from "../app/core/setupArguments.ts";
+import { selectorSettingsTextCharsMax } from "../../../src/contract/http.ts";
 
 const site = "https://chuggy.example";
 
@@ -420,6 +421,68 @@ test("plugin is read with a site, a workspace and a project, --plugin takes only
   );
   expect(setupAnswerArguments(skip)).toEqual(["--plugin", "skip"]);
   expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
+});
+
+test("--north-star takes only skip and is read by every command but a listener, and skip is carried back in the arguments a report names, beside the plugin's", () => {
+  const skip = { ...setupAnswersNone, northStar: "skip" } as const;
+  for (const command of [
+    [],
+    ["sign-in"],
+    ["plugin"],
+    ["mcp", "--workspace", "acme", "--project", "widgets"],
+    ["project", "--workspace", "acme", "--name", "Atlas"],
+    ["serve", "--workspace", "acme", "--project", "widgets"],
+    ["north-star", "--text", "Widgets."],
+  ])
+    expect(
+      setupAsked([...command, "--north-star", "skip"]),
+      command.join(" "),
+    ).toMatchObject({ answers: { northStar: "skip" } });
+  for (const value of ["yes", "", "Skip"])
+    expect(setupAsked(["--north-star", value]), value).toEqual(
+      wrongly("NorthStar"),
+    );
+  expect(setupAsked(["--north-star", "skip", "--north-star", "skip"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(setupAnswerArguments(skip)).toEqual(["--north-star", "skip"]);
+  expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
+  const both = { ...skip, plugin: "skip" } as const;
+  expect(setupAnswersAsked(setupAnswerArguments(both))).toEqual(both);
+});
+
+test("north-star reads its text whole, as one argument and at most as long as the settings take, with a site, a workspace and a project, and --text is read by no other command", () => {
+  const named = ["--workspace", "acme", "--project", "widgets"];
+  const text = "Widgets for everyone, --site and all.\nKept small.";
+  expect(
+    setupAsked(["north-star", ...named, "--site", site, "--text", text]),
+  ).toEqual({
+    asked: "NorthStar",
+    site,
+    answers: { workspace: "acme", project: "widgets" },
+    text,
+  });
+  expect(setupCommandArguments("NorthStar")).toEqual(["north-star"]);
+  const longest = "w".repeat(selectorSettingsTextCharsMax);
+  expect(setupAsked(["north-star", "--text", longest])).toMatchObject({
+    asked: "NorthStar",
+    text: longest,
+  });
+  for (const given of [
+    [],
+    ["--text", ""],
+    ["--text", " \n "],
+    ["--text", `${longest}w`],
+  ])
+    expect(
+      setupAsked(["north-star", ...named, ...given]),
+      given.join(" ").slice(0, 20),
+    ).toEqual(wrongly("NorthStarText"));
+  for (const command of [[], ["ticket"], ["project", "--name", "Atlas"]])
+    expect(
+      setupAsked([...command, "--text", "Widgets."]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
 });
 
 test("bind reads --opened, which takes only github and no other command reads, as a page connecting GitHub already open", () => {

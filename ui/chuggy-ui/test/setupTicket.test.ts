@@ -17,11 +17,12 @@ import { setupTicketFiledUnder } from "../app/core/setupTicket.ts";
 import { creationConfigurationsOffered } from "../app/core/ticketCreation.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
+  machineProject,
   machineScript,
   machineServing,
   machineSignedIn,
+  machineWrites,
 } from "./setupMachine.ts";
-import type { SetupMachine } from "./setupMachine.ts";
 import {
   setupSiteAt,
   setupSiteBootstrap,
@@ -29,7 +30,7 @@ import {
   setupSiteDeclaredRevision,
   setupSiteRepositoryAddress,
 } from "./setupSite.ts";
-import type { SetupSite, SetupSiteProject } from "./setupSite.ts";
+import type { SetupSite } from "./setupSite.ts";
 import {
   creationBinding,
   creationListed,
@@ -56,19 +57,6 @@ function step(said: readonly string[], name: string): string | undefined {
   return said.find((line) => line.startsWith(`step: ${name} `));
 }
 
-function project(machine: SetupMachine): SetupSiteProject {
-  const held = machine.world.projects[0];
-  if (held === undefined) throw new Error("no project");
-  return held;
-}
-
-/** Every write the run sent, by method and path. */
-function writes(machine: SetupMachine): readonly string[] {
-  return machine.sent
-    .filter((sent) => !sent.startsWith("GET "))
-    .map((sent) => sent.replace(/https?:\/\/[^/]+/u, ""));
-}
-
 function filing(...more: readonly string[]): readonly string[] {
   return ["ticket", ...flags, "--title", title, "--intent", intent, ...more];
 }
@@ -91,7 +79,7 @@ test("where the repository holds no configuration of its own, the ticket step as
     `${rule}${once}`,
     "next: stop",
   ]);
-  expect(writes(machine)).toEqual([]);
+  expect(machineWrites(machine)).toEqual([]);
 
   const report = await machine.command(filing());
   const said = lines(report);
@@ -101,12 +89,12 @@ test("where the repository holds no configuration of its own, the ticket step as
   expect(step(said, "ticket")).toBe(
     "step: ticket      waiting  ticket 1 is in Work",
   );
-  expect(writes(machine)).toEqual([
+  expect(machineWrites(machine)).toEqual([
     `POST ${projectBase}/drafts`,
     `POST ${projectBase}/operations`,
     `POST ${projectBase}/operations`,
   ]);
-  expect(project(machine).filed.get(1)).toMatchObject({
+  expect(machineProject(machine).filed.get(1)).toMatchObject({
     configurationRevision: setupSiteBootstrapRevision(
       setupSiteRepositoryAddress,
     ),
@@ -122,8 +110,8 @@ test("a filing the site refuses says so in the console's words, makes no ticket,
   expect(said[1]).toMatch(/^found: chuggy did not file the ticket: \S/u);
   expect(step(said, "ticket")).toBe("step: ticket      todo");
   expect(said.at(-3)).toBe(`ask: ${asked} ${yourself}`);
-  expect(writes(machine)).toEqual([`POST ${projectBase}/drafts`]);
-  expect(project(machine).tickets).toEqual([]);
+  expect(machineWrites(machine)).toEqual([`POST ${projectBase}/drafts`]);
+  expect(machineProject(machine).tickets).toEqual([]);
 });
 
 test("where the repository declares one configuration, the ticket is filed under it with nothing to choose", async () => {
@@ -133,7 +121,7 @@ test("where the repository declares one configuration, the ticket is filed under
   expect(said[1]).toBe(
     "did: asked chuggy to file ticket 1, released and sent to start, under development",
   );
-  expect(project(machine).filed.get(1)?.configurationRevision).toBe(
+  expect(machineProject(machine).filed.get(1)?.configurationRevision).toBe(
     setupSiteDeclaredRevision("development"),
   );
 });
@@ -157,7 +145,7 @@ test("where the repository declares several configurations, the ask names them, 
   expect(unoffered[1]).toBe(
     "found: chuggy did not file the ticket: the configuration named is not one the project offers, which are development, review",
   );
-  expect(writes(machine)).toEqual([]);
+  expect(machineWrites(machine)).toEqual([]);
 
   const chosen = lines(
     await machine.command(filing("--configuration", "review")),
@@ -165,7 +153,7 @@ test("where the repository declares several configurations, the ask names them, 
   expect(chosen[1]).toBe(
     "did: asked chuggy to file ticket 1, released and sent to start, under review",
   );
-  expect(project(machine).filed.get(1)?.configurationRevision).toBe(
+  expect(machineProject(machine).filed.get(1)?.configurationRevision).toBe(
     setupSiteDeclaredRevision("review"),
   );
 });
@@ -180,7 +168,7 @@ test("where the repository's work is merged through a pull request, the ticket's
   }));
   const machine = await machineSignedIn(site);
   await machine.command(filing());
-  expect(project(machine).filed.get(1)?.brief.branch).toBe(
+  expect(machineProject(machine).filed.get(1)?.brief.branch).toBe(
     "refs/heads/fix-the-readme-s-install-steps",
   );
 });
@@ -191,7 +179,7 @@ test("ticket files nothing where the project's first ticket is not the next thin
   expect(said[1]).toBe(
     "found: nothing to file: the next thing is not the project's first ticket",
   );
-  expect(writes(machine)).toEqual([]);
+  expect(machineWrites(machine)).toEqual([]);
 });
 
 test("where what a ticket may use could not be read, the console's New ticket page is the way", async () => {

@@ -116,6 +116,7 @@ test("the bare command, signed in, reads where the person stands and reports it 
         state: "todo",
         detail: { id: "setup-step-projectless", args: { workspace: "acme" } },
       },
+      { step: "north-star", state: "todo", detail: undefined },
       { step: "mcp", state: "todo", detail: undefined },
       { step: "github", state: "todo", detail: undefined },
       { step: "repository", state: "todo", detail: undefined },

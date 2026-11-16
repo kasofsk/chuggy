@@ -51,8 +51,8 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed } or as { $plugged }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed }, as { $plugged } or as { $starred }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin }, { $northStar } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, { $title }, { $intent } and { $chosen } with { $filed }, and { $text } with { $starred }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -64,6 +64,8 @@ setup-asked-test = { $flag } takes the command that tests this { -repository }, 
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 setup-asked-chat-host = { $flag } takes only { $yes } or { $no }: whether this machine is made your { -chat-host } too
 setup-asked-plugin = { $flag } takes only { $skip }
+setup-asked-north-star = { $flag } takes only { $skip }
+setup-asked-north-star-text = { $starred } takes { $text }: the North Star, as some words and at most { $chars } characters of them
 setup-asked-opened = { $flag } takes only { $github }, with { $bound }
 
 ## A machine the program is not served on, or a Node too old to run it.
@@ -226,6 +228,9 @@ setup-step-plugin-on = { -claude-code } here has { -brand-name }'s plugin, on
 setup-step-plugin-off = { -claude-code } here has { -brand-name }'s plugin, off
 setup-step-plugin-none = { -claude-code } here has no { -brand-name } plugin
 setup-step-plugin-skipped = passed over without { -brand-name }'s plugin
+setup-step-north-star-set = the { -project } has a North Star
+setup-step-north-star-none = the { -project } has no North Star yet
+setup-step-north-star-skipped = passed over without a North Star
 setup-step-runner-offline = registered, not running
 setup-step-runner-live = live
 # spells -work-stage: the work in general
@@ -395,6 +400,30 @@ setup-mend-plugin-does = It is installed with { -claude-code }'s own commands, f
 setup-mend-plugin-offer = The first step is { -brand-name }'s plugin for { -claude-code }. { setup-mend-plugin-adds } { setup-mend-plugin-does } With your yes I will install it. Tell me yes to go ahead, or no to go on without it.
 # spells -turn: to turn on is a verb here
 setup-mend-plugin-offer-off = The first step is { -brand-name }'s plugin for { -claude-code }, which is installed here and off. { setup-mend-plugin-adds } { setup-mend-plugin-does } With your yes I will update it and turn it on. Tell me yes to go ahead, or no to go on without it.
+
+## The North Star step, which the north-star command writes with the
+## person's yes to the words drafted with them, and passes over on their no.
+
+# spells -run: to run is a verb here
+# spells -draft: to draft is a verb here
+# spells -inquiry: a question the setup agent asks, not the lead
+setup-mend-north-star-tell = Every { -agent } { -brand-name } runs for this { -project } reads its North Star: what the { -project } is for and what to favour. { $drawn ->
+    [folder] I can draft one from this folder's code, for you to change or say yes to, or we can skip it.
+   *[question] I can write a short one from your answer to one question, or we can skip it.
+}
+# spells -inquiry: a question the setup agent asks, not the lead
+setup-north-star-ask = Ask the person one question: is this a demo for one or a few tries, or software they will keep and maintain? Write a short North Star from the answer: a demo favours working end to end soon over structure and polish, and maintained software favours clear structure, tests and docs that let later changes go in safely.
+# spells -draft: to draft is a verb here
+# spells -work-stage: the work in general
+setup-north-star-draft-folder = Read this folder, its README, code, tests and docs, and draft the North Star as one short paragraph: the strongest reading of what the { -project } is for, who it serves and what its work should favour, steelmanned and not hedged. Where the folder holds too little to read a purpose from, do this instead: { setup-north-star-ask }
+setup-north-star-draft-ask = { setup-north-star-ask }
+# spells -run: to run is a verb here
+setup-rule-north-star = Run { $command } with { $text } and the North Star, quoted as one word, only once the person has said yes to it or to their changes of it. To write it: { $draft } Show it to the person for a yes or their changes before running anything.
+# spells -run: to run is a verb here
+setup-rule-north-star-skip = Run { $command } only if the person would rather go on without a North Star.
+setup-north-star-none = nothing to write: the next thing is not the { -project }'s North Star
+setup-north-star-did = wrote the North Star of { $project }
+setup-north-star-failed = { -brand-name } did not write the North Star of { $project }: { $failure }
 
 ## A run of the plugin command: the plugin on and its setup skill handed to
 ## the agent, or why it is not, which passes the step over.

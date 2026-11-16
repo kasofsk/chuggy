@@ -40,6 +40,10 @@
  * kept, so a suite can say what was filed. Each operation is decided as it is
  * submitted.
  *
+ * It writes a project's settings as the server does: whole, under the
+ * revision they were read at, a write the revision moved under answered with
+ * the settings standing in its place.
+ *
  * It imports a repository's configuration as the server does: from what was
  * pushed to the repository's default branch, judged by the contract's own
  * judgment of a configuration directory, kept as the binding's last import,
@@ -118,6 +122,10 @@ export interface SetupSiteProject {
   page: number;
   /** Whether the caller is shown the project's settings. */
   settled: boolean;
+  /** The project's settings as they stand, by their revision, and how many writes the revision is moved under by someone else before one is taken. */
+  overrides: SelectorProjectSettingsResponse["overrides"];
+  revision: number;
+  races: number;
   repositories: SetupSiteRepository[];
   /** Where the project's work runs, and where the caller's chats in it run. */
   work: PlacementRoute;
@@ -169,7 +177,7 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner`, `bind`, `serve` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow` and `file` are writes, `file` the draft's creation, `serve` the project given the caller's runners and `allow` the owner fallback named. */
+/** What only `runner`, `bind`, `serve`, `ticket` or `north-star` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow`, `file` and `star` are writes, `file` the draft's creation, `serve` the project given the caller's runners, `allow` the owner fallback named and `star` the project's settings written. */
 export type SetupSiteRunnerAsk =
   | "abilities"
   | "serve"
@@ -181,7 +189,8 @@ export type SetupSiteRunnerAsk =
   | "chatMint"
   | "bind"
   | "configurations"
-  | "file";
+  | "file"
+  | "star";
 
 /** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
 export interface SetupSiteChatHost {
@@ -278,6 +287,9 @@ export function setupSiteProject(
     project,
     page: 0,
     settled: true,
+    overrides: { northStar: setupSiteNorthStar },
+    revision: 1,
+    races: 0,
     repositories: [],
     work: "Pool",
     threads: "Pool",
@@ -378,6 +390,9 @@ export const setupSiteHeld: TicketLandingResponse = {
 
 export const setupSiteWorkspace = "acme";
 export const setupSiteProjectName = "widgets";
+
+/** The North Star a project this site holds carries, unless it was made by the caller or a case takes it away. */
+export const setupSiteNorthStar = "Widgets for everyone.";
 export const setupSiteAccount = "acme-org";
 export const setupSiteRepositoryAddress = "https://github.com/acme-org/widgets";
 
@@ -499,9 +514,14 @@ function cut(
 function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
   return {
     partition: { tenant: project.tenant, project: project.project },
-    revision: 1,
-    overrides: {},
-    effective: { threadStandingRules: "Be brief." },
+    revision: project.revision,
+    overrides: project.overrides,
+    effective: {
+      ...(project.overrides.northStar === undefined
+        ? {}
+        : { northStar: project.overrides.northStar }),
+      threadStandingRules: project.overrides.threadStandingRules ?? "Be brief.",
+    },
   };
 }
 
@@ -1551,6 +1571,36 @@ function fallbackWritten(
   });
 }
 
+/** The project's settings written whole under the revision the writer read, refused as the server refuses a write the revision moved under. */
+function settingsWritten(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "star");
+  if (fate !== undefined) return fate;
+  if (!project.settled) return refused();
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly expectedRevision: number;
+    readonly overrides: SelectorProjectSettingsResponse["overrides"];
+  };
+  if (project.races > 0) {
+    project.races -= 1;
+    project.revision += 1;
+  }
+  if (asked.expectedRevision !== project.revision)
+    return {
+      status: 409,
+      body: {
+        error: { code: "SettingsRevisionConflict", message: "Conflict." },
+        settings: settings(project),
+      },
+    };
+  project.overrides = asked.overrides;
+  project.revision += 1;
+  return answered(settings(project));
+}
+
 /** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, a project's owner fallback named, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
@@ -1571,6 +1621,12 @@ function tenantWritten(
   if (sent.method === "POST" && within?.[2] === "/repositories") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : bound(site, project, sent.body);
+  }
+  if (sent.method === "PUT" && within?.[2] === "/selector-settings") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : settingsWritten(site, project, sent.body);
   }
   if (sent.method === "PUT" && within?.[2] === "/owner-fallback") {
     const project = projectOf(site, tenant, within[1]);
@@ -1721,6 +1777,7 @@ function projectCreated(
       : conflict("ProjectExists");
   site.projects.push({
     ...setupSiteProject(tenant, project),
+    overrides: {},
     name: name.trim(),
     made: true,
   });

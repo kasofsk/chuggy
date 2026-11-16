@@ -42,7 +42,11 @@
  * Where which project is meant is still open, the next thing is the question,
  * one flag at a time. chuggy's Claude Code plugin is offered first, since its
  * setup skill holds the talk of every step after it: `plugin` installs it on
- * the person's yes, and on their no the checklist is read past it. Where every
+ * the person's yes, and on their no the checklist is read past it. A project
+ * with no North Star is offered one in the same way: the agent drafts it from
+ * the folder where its checkout tracks any file, and otherwise from whether
+ * the project is a demo or software to be maintained, and `north-star` writes
+ * it on the person's yes. Where every
  * step is done and the first ticket's pull request, holding the repository's
  * own configuration, stands unmerged, `merge` is offered on the person's yes,
  * leaning towards leaving the merge to them where the repository has a history
@@ -70,11 +74,12 @@ import {
 } from "./repositoryImport.ts";
 import { setupServerPackages } from "./setupAgent.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
-import { setupAnswersPlugin, setupNameFlag } from "./setupArguments.ts";
+import { setupAnswersSkipped, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
 import type { SetupAnswers, SetupChatHostAnswer } from "./setupArguments.ts";
 import { setupMergeImportFailed } from "./setupMerge.ts";
 import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
+import type { SetupTracked } from "./setupNorthStar.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
@@ -473,6 +478,28 @@ function setupPluginMend(off: boolean): SetupThing {
       id: off ? "setup-mend-plugin-offer-off" : "setup-mend-plugin-offer",
     },
     when: { id: "setup-offer-plugin-when" },
+  };
+}
+
+/** The project's North Star offered, drafted from the folder where its checkout tracks any file, and from one question to the person otherwise. */
+function setupNorthStarMend(
+  at: SetupAt,
+  tracked: SetupTracked | undefined,
+): SetupThing {
+  const folder = tracked === "Files";
+  return {
+    thing: "NorthStar",
+    tell: {
+      id: "setup-mend-north-star-tell",
+      args: { drawn: folder ? "folder" : "question" },
+    },
+    draft: {
+      id: folder
+        ? "setup-north-star-draft-folder"
+        : "setup-north-star-draft-ask",
+    },
+    workspace: at.workspace,
+    project: at.project,
   };
 }
 
@@ -988,6 +1015,7 @@ function setupMend(
   here: SetupRunnerHere | undefined,
   mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
+  tracked: SetupTracked | undefined,
 ): SetupThing {
   switch (lack.lacks) {
     case "Read":
@@ -1001,6 +1029,8 @@ function setupMend(
       return setupWorkspaceMend(lack, at);
     case "Project":
       return setupProjectMend(at);
+    case "NorthStar":
+      return setupNorthStarMend(at, tracked);
     case "Account":
     case "App":
     case "Grant":
@@ -1073,19 +1103,19 @@ function setupAsk(
   };
 }
 
-/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the plugin step passed over, where it was. */
+/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made; and the steps passed over, where any was. */
 function setupCarried(
   choice: SetupChoice,
   answers: SetupAnswers,
 ): SetupAnswers {
-  const plugin = setupAnswersPlugin(answers);
+  const skipped = setupAnswersSkipped(answers);
   if (choice.choice === "Made")
     return choice.by === "Only"
       ? answers
-      : { workspace: choice.workspace, project: choice.project, ...plugin };
+      : { workspace: choice.workspace, project: choice.project, ...skipped };
   return choice.open === "workspace"
-    ? { workspace: undefined, project: answers.project, ...plugin }
-    : { workspace: choice.workspace, project: undefined, ...plugin };
+    ? { workspace: undefined, project: answers.project, ...skipped }
+    : { workspace: choice.workspace, project: undefined, ...skipped };
 }
 
 /** What setup said to be done says of the repository's own configuration, after a `merge` run: in place, being imported, or refused by its import with what the import said. */
@@ -1324,6 +1354,13 @@ export function setupTicketDue(
   return setupDue(standing, ["Ticket"]);
 }
 
+/** The project whose North Star step is the one next, which is when the folder's checkout is looked at and `north-star` writes one. */
+export function setupNorthStarDue(
+  standing: SetupStanding,
+): PartitionIdentity | undefined {
+  return setupDue(standing, ["NorthStar"]);
+}
+
 /** The platform the program runs on, and what `mcp` would find of its runner package here. */
 interface SetupMcpHere {
   readonly platform: SetupPlatform;
@@ -1343,6 +1380,7 @@ function setupThing(
   mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
   merge: SetupMergeSeen,
+  tracked: SetupTracked | undefined,
 ): SetupThing {
   const named = workspaceNamesListed(standing.workspaces);
   if (standing.choice.choice === "Open")
@@ -1359,7 +1397,7 @@ function setupThing(
     standing.remote === undefined
       ? undefined
       : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine, here, mcp, offers);
+  return setupMend(undone, undone.lacks, at, mine, here, mcp, offers, tracked);
 }
 
 /**
@@ -1371,7 +1409,8 @@ function setupThing(
  * would find of the platform's runner package here, where `setupMcpDue`
  * named one; `offers` is what a ticket may be drawn under where
  * `setupTicketDue` named a project and it was read; `merge` is what the merge
- * offer turns on beyond the reads.
+ * offer turns on beyond the reads; `tracked` is what the folder's checkout
+ * tracks, where `setupNorthStarDue` named a project and it was looked at.
  */
 export function setupNext(
   standing: SetupStanding,
@@ -1381,9 +1420,17 @@ export function setupNext(
   packaged: SetupMcpPackaged = "Absent",
   offers?: SetupTicketOffers,
   merge: SetupMergeSeen = setupMergeUnseen,
+  tracked?: SetupTracked,
 ): SetupNext {
   return {
     carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing, here, { platform, packaged }, offers, merge),
+    thing: setupThing(
+      standing,
+      here,
+      { platform, packaged },
+      offers,
+      merge,
+      tracked,
+    ),
   };
 }

@@ -52,7 +52,7 @@ import {
   signInStoreTokenRead,
 } from "../../../src/contract/signInStore.ts";
 import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
-import type { SetupSite } from "./setupSite.ts";
+import type { SetupSite, SetupSiteProject } from "./setupSite.ts";
 
 export const machineSite = "https://chuggy.example";
 export const machineIssuer = "https://auth.example";
@@ -432,6 +432,20 @@ function filesOf(machine: SetupMachine): SetupPorts["files"] {
         throw unwritable(`${file}${machineDraftSuffix}`);
     },
   };
+}
+
+/** The first project the machine's site holds. */
+export function machineProject(machine: SetupMachine): SetupSiteProject {
+  const held = machine.world.projects[0];
+  if (held === undefined) throw new Error("no project");
+  return held;
+}
+
+/** Every write the machine's runs sent, by method and path. */
+export function machineWrites(machine: SetupMachine): readonly string[] {
+  return machine.sent
+    .filter((sent) => !sent.startsWith("GET "))
+    .map((sent) => sent.replace(/https?:\/\/[^/]+/u, ""));
 }
 
 /** The file the shared store keeps a site's sign-in in. */

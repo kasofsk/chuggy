@@ -75,6 +75,7 @@ test("a person with a workspace and no project is asked what to call it, the pro
       { step: "plugin", state: "done" },
       { step: "workspace", state: "done" },
       { step: "project", state: "done" },
+      { step: "north-star", state: "todo" },
       ...Array.from({ length: 5 }, () => expect.anything() as unknown),
     ],
   });
