@@ -21,6 +21,7 @@ import {
 } from "./finalizerHarness.ts";
 import {
   landingCommits,
+  type LandingMergeRead,
   landingRequest,
   landingTarget,
   landingWrite,
@@ -258,6 +259,7 @@ async function proposedLanding(
     accepted: string;
     onto: string;
     merged?: string;
+    read?: LandingMergeRead;
   },
 ): Promise<void> {
   const head = `refs/heads/${label}`;
@@ -274,6 +276,7 @@ async function proposedLanding(
       proposal: {
         head,
         ...(landing.merged === undefined ? {} : { merged: landing.merged }),
+        ...(landing.read === undefined ? {} : { read: landing.read }),
       },
     },
   );
@@ -356,4 +359,116 @@ test("a proposal's stack stops standing when something else lands on its base be
     stackStands(mine?.stack ?? { beneath: [], landings: [] }, []),
     false,
   );
+});
+
+/** What the two doors over a stack's landings answer for `project`'s first cycle stacked on `tip`. */
+async function landingDoors(
+  project: FinalizerProject,
+  tip: string,
+): Promise<{ landings: [number, string][]; beneath: string }> {
+  const { tenant, project: named } = project.partition;
+  const landings = await rig.harness.query(
+    `SELECT landing_depth, landing_ticket::text AS landing_ticket, landing_accepted
+       FROM evaluation_stack_landings($1, $2, $3, $4, $5, 8)`,
+    [tenant, named, project.repository, landingTarget, tip],
+  );
+  const [beneath] = await rig.harness.query(
+    `SELECT ticket_cycle_beneath_landed($1, $2, $3, 1) AS landed`,
+    [tenant, named, project.ticket],
+  );
+  return {
+    landings: landings.map((row, at): [number, string] => {
+      assert.equal(row["landing_depth"], at + 1);
+      return [Number(row["landing_ticket"]), String(row["landing_accepted"])];
+    }),
+    beneath: String(beneath?.["landed"]),
+  };
+}
+
+/** A merge reading that found the proposal merged, as one merged by anyone but the finalizer concludes. */
+const queueMerged = { reading: "Accepted", status: "Merged" } as const;
+
+test("a proposal merged through the forge's merge queue lands at the commit its reading names, and a landing chained on it follows", async () => {
+  const subject = await stackedSubject(
+    rig,
+    "stack-queue-merged",
+    finalizerCommit(),
+    "refs/heads/stack-queue-merged",
+  );
+  const { project, work } = subject;
+  const c = landingCommits("tip", "group", "pushed", "a7", "a8");
+  await proposedLanding(subject, "stack-queue-merged-seven", {
+    ticket: 7,
+    accepted: c.a7,
+    onto: c.tip,
+    merged: c.group,
+    read: queueMerged,
+  });
+  await landingWrite(rig, project, work, "stack-queue-merged-eight", {
+    ticket: 8,
+    accepted: c.a8,
+    onto: c.group,
+    candidate: c.pushed,
+  });
+  await stackedOn(project, c.tip, [
+    { ticket: 7, commit: c.a7 },
+    { ticket: 8, commit: c.a8 },
+  ]);
+  assert.deepEqual(await landingDoors(project, c.tip), {
+    landings: [
+      [7, c.a7],
+      [8, c.a8],
+    ],
+    beneath: "Landed",
+  });
+  const [mine] = await store.queue(
+    project.partition,
+    project.repository,
+    undefined,
+  );
+  assert.equal(mine?.stack?.unreadable, undefined);
+  assert.equal(
+    stackStands(mine?.stack ?? { beneath: [], landings: [] }, []),
+    true,
+  );
+});
+
+test("a proposal whose merge reading did not read it merged lands nothing, whatever commit its evidence names", async () => {
+  for (const read of [
+    { reading: "Unmerged", status: "Open" },
+    { reading: "Contradictory", status: "Closed" },
+  ] as const) {
+    const label = `stack-unread-${read.reading.toLowerCase()}`;
+    const subject = await stackedSubject(
+      rig,
+      label,
+      finalizerCommit(),
+      `refs/heads/${label}`,
+    );
+    const { project } = subject;
+    const c = landingCommits("tip", "merged", "a7");
+    await proposedLanding(subject, `${label}-seven`, {
+      ticket: 7,
+      accepted: c.a7,
+      onto: c.tip,
+      merged: c.merged,
+      read,
+    });
+    await stackedOn(project, c.tip, [{ ticket: 7, commit: c.a7 }]);
+    assert.deepEqual(
+      await landingDoors(project, c.tip),
+      { landings: [], beneath: "NotLanded" },
+      read.reading,
+    );
+    const [mine] = await store.queue(
+      project.partition,
+      project.repository,
+      undefined,
+    );
+    assert.equal(
+      stackStands(mine?.stack ?? { beneath: [], landings: [] }, []),
+      false,
+      read.reading,
+    );
+  }
 });
