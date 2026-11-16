@@ -728,6 +728,7 @@ export interface SetupCopy {
     readonly said: unknown;
     readonly engine: unknown;
     readonly memory: unknown;
+    readonly used: unknown;
   };
   readonly "setup-mend-runner-elsewhere": {
     readonly page: unknown;

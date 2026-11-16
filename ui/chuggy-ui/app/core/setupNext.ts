@@ -511,27 +511,31 @@ function setupChatHostRecommended(size: SetupChatSize): SetupChatHostAnswer {
 
 /** What a chat host here would be, where the machine was looked at and its engine named; sized as having no room where the engine was not read. */
 function setupChatSizeHere(here: SetupRunnerHere): SetupChatSize {
-  return here.chatSize ?? setupChatSized(undefined, {});
+  return here.chatSize ?? setupChatSized(undefined, undefined, {});
 }
 
-/** The question an offer of `runner` asks of the person's chat host: what it would hold, what it is for, and whether it is recommended, with where memory is short where it is not. */
+/** Where memory is short for a chat host of `size` beside a run, as the engine `engine` said it or did not. */
+function setupChatHostShort(size: SetupChatSize, engine: string): Copy {
+  const id = "setup-mend-chat-host-short";
+  const { engineMib, inUseMib } = size;
+  if (engineMib === undefined)
+    return { id, args: { said: "unsaid", engine, memory: "", used: "" } };
+  if (inUseMib === undefined)
+    return { id, args: { said: "uncounted", engine, memory: "", used: "" } };
+  const memory = setupMemorySaid(engineMib);
+  return inUseMib === 0
+    ? { id, args: { said: "said", engine, memory, used: "" } }
+    : {
+        id,
+        args: { said: "used", engine, memory, used: setupMemorySaid(inUseMib) },
+      };
+}
+
+/** The question an offer of `runner` asks of the person's chat host: what it would hold, what it is for, and whether it is recommended, with where memory is short where it is not; an engine not yet answering is a Mac's docker, which Colima runs. */
 function setupChatHostAsk(here: SetupRunnerHere): Copy {
   const size = setupChatSizeHere(here);
-  const engine = here.room.room === "Open" ? here.room.engine : "";
-  const short: Copy =
-    size.engineMib === undefined
-      ? {
-          id: "setup-mend-chat-host-short",
-          args: { said: "unsaid", engine, memory: "" },
-        }
-      : {
-          id: "setup-mend-chat-host-short",
-          args: {
-            said: "said",
-            engine,
-            memory: quantityFigureCopy(memoryMibFigure(size.engineMib)),
-          },
-        };
+  const engine = here.room.room === "Open" ? here.room.engine : "docker";
+  const short = setupChatHostShort(size, engine);
   return {
     id: "setup-mend-chat-host-ask",
     args: {

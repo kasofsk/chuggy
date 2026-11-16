@@ -398,7 +398,7 @@ test("on a Mac the MCP step and the runner, with or without the chat host, offer
     room: { room: "Open", engine: "docker" },
     held: false,
     chat: false,
-    chatSize: setupChatSized(engineRoomy, {}),
+    chatSize: setupChatSized(engineRoomy, 0, {}),
     claude: "Subscription",
     fit: { fit: "Room" },
   };
@@ -897,7 +897,7 @@ function here(
   held = false,
   chat = false,
   platform: SetupPlatform = "linux",
-  chatSize: SetupChatSize = setupChatSized(engineRoomy, {}),
+  chatSize: SetupChatSize = setupChatSized(engineRoomy, 0, {}),
 ): SaidThing {
   const looked: SetupRunnerHere = {
     room,
@@ -950,7 +950,7 @@ test("with neither a runner of the project nor the person's chat host, the offer
       false,
       false,
       "linux",
-      setupChatSized(6_144, {}),
+      setupChatSized(6_144, 0, {}),
     ),
   ).toEqual({
     ...offered(
@@ -965,11 +965,50 @@ test("with neither a runner of the project nor the person's chat host, the offer
       false,
       false,
       "linux",
-      setupChatSized(undefined, {}),
+      setupChatSized(undefined, 0, {}),
     ),
   ).toMatchObject({
     tell: expect.stringContaining(
       "I recommend against it here: docker here did not say how much memory it has.",
+    ) as unknown,
+    chatHost: "no",
+  });
+});
+
+test("an offer recommending against the chat host for what the engine already runs says how much of its memory is in use, and one whose use was not counted says so", () => {
+  const short = (inUseMib: number | undefined) =>
+    here(
+      { lacks: "Runner", chat: true },
+      roomy,
+      false,
+      false,
+      "linux",
+      setupChatSized(6_144, inUseMib, {}),
+    );
+  expect(short(2_048)).toMatchObject({
+    tell: expect.stringContaining(
+      "I recommend against it here: docker here has 6 GiB, 2 GiB of it in use, too little for a run and a chat host at once.",
+    ) as unknown,
+    chatHost: "no",
+  });
+  expect(short(undefined)).toMatchObject({
+    tell: expect.stringContaining(
+      "I recommend against it here: docker here did not say what its containers use.",
+    ) as unknown,
+    chatHost: "no",
+  });
+  expect(
+    here(
+      { lacks: "Runner", chat: true },
+      roomy,
+      false,
+      false,
+      "linux",
+      setupChatSized(engineRoomy, undefined, {}),
+    ),
+  ).toMatchObject({
+    tell: expect.stringContaining(
+      "I recommend against it here: docker here did not say what its containers use.",
     ) as unknown,
     chatHost: "no",
   });
@@ -1090,7 +1129,7 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
           room: roomy,
           held,
           chat: false,
-          chatSize: setupChatSized(engineRoomy, {}),
+          chatSize: setupChatSized(engineRoomy, 0, {}),
           claude,
           fit: { fit: "Room" },
         }),
