@@ -37,9 +37,9 @@
  *
  * ADD IS DRAWN A SECOND TIME UNDER AN EMPTY ROSTER'S LINE, where adding is the
  * one thing left to do, and opens the dialog the one in the head opens. The
- * line over it says how a repository comes to be listed there: made on GitHub
- * and granted to both apps. `ui/chuggy-ui/app/core/projectRepositories.ts`
- * decides when.
+ * line over it says the two ways a repository comes to be bound: granted on
+ * GitHub to both apps and added, or added by the setup program itself.
+ * `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
