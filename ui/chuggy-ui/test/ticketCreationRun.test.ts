@@ -22,8 +22,8 @@ import {
   creationProjectNotActiveSentence,
   readCreationContext,
   reviseAndUpdateTicket,
-  TicketUpdateRefused,
 } from "../app/core/ticketCreationRun.ts";
+import { TicketUpdateRefused } from "../app/core/ticketCreationRefused.ts";
 import {
   creationBinding,
   creationBody,

@@ -22,7 +22,7 @@ import {
 import { sinceFigure } from "../../core/figures.ts";
 import { creatorLabel } from "../../core/labels.ts";
 import { runReasonOf } from "../../core/runReason.ts";
-import { useCreatorEmails } from "../creatorEmails.ts";
+import { useCreatorNames } from "../creatorNames.ts";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
@@ -38,13 +38,13 @@ function ApprovalAnsweredBy(props: {
   readonly answered: ApprovalAnswered;
 }): ReactNode {
   const text = useCopyText();
-  const emails = useCreatorEmails(props.partition);
+  const names = useCreatorNames(props.partition);
   const line = approvalAnsweredLine(props.read);
   if (line === undefined) return null;
   return (
     <>
       {text(line)}{" "}
-      <Identity label={creatorLabel(props.answered.principal, emails)} />
+      <Identity label={creatorLabel(props.answered.principal, names)} />
     </>
   );
 }

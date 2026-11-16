@@ -48,6 +48,13 @@ export interface SetupCopy {
   readonly "setup-rule-ask-name": {
     readonly command: unknown;
   };
+  readonly "setup-rule-ticket": {
+    readonly command: unknown;
+    readonly title: unknown;
+    readonly intent: unknown;
+    readonly choose: unknown;
+    readonly configuration: unknown;
+  };
   readonly "setup-asked-command": {
     readonly signIn: unknown;
     readonly made: unknown;
@@ -58,6 +65,7 @@ export interface SetupCopy {
     readonly check: unknown;
     readonly imported: unknown;
     readonly bound: unknown;
+    readonly filed: unknown;
   };
   readonly "setup-asked-flag": {
     readonly site: unknown;
@@ -70,6 +78,10 @@ export interface SetupCopy {
     readonly chatHost: unknown;
     readonly test: unknown;
     readonly configuration: unknown;
+    readonly title: unknown;
+    readonly intent: unknown;
+    readonly chosen: unknown;
+    readonly filed: unknown;
   };
   readonly "setup-asked-site": {
     readonly flag: unknown;
@@ -97,6 +109,11 @@ export interface SetupCopy {
     readonly made: unknown;
     readonly workspace: unknown;
     readonly name: unknown;
+  };
+  readonly "setup-asked-brief": {
+    readonly filed: unknown;
+    readonly title: unknown;
+    readonly intent: unknown;
   };
   readonly "setup-asked-test": {
     readonly flag: unknown;
@@ -702,6 +719,33 @@ export interface SetupCopy {
   readonly "setup-mend-ticket-create": {
     readonly page: unknown;
     readonly create: unknown;
+  };
+  readonly "setup-ask-ticket": {
+    readonly project: unknown;
+    readonly choose: unknown;
+    readonly names: unknown;
+    readonly create: unknown;
+  };
+  readonly "setup-ticket-none": Record<never, never>;
+  readonly "setup-ticket-did": {
+    readonly ticket: unknown;
+    readonly configuration: unknown;
+  };
+  readonly "setup-ticket-unfiled": {
+    readonly refusal: unknown;
+  };
+  readonly "setup-ticket-unread": Record<never, never>;
+  readonly "setup-ticket-choose": {
+    readonly names: unknown;
+  };
+  readonly "setup-ticket-unoffered": {
+    readonly names: unknown;
+  };
+  readonly "setup-ticket-faults": {
+    readonly faults: unknown;
+  };
+  readonly "setup-ticket-refused": {
+    readonly refusal: unknown;
   };
   readonly "setup-mend-ticket-tell": {
     readonly create: unknown;

@@ -18,7 +18,7 @@
  */
 
 import type { ApiFetchPort } from "./apiRequest.ts";
-import type { Copy } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import type { PkceDigestPort } from "./pkce.ts";
 import type { FetchJsonPort } from "./sessionHolder.ts";
 
@@ -222,4 +222,6 @@ export interface SetupPorts {
   readonly process: SetupProcessPort;
   readonly disk: SetupDiskPort;
   readonly surroundings: SetupSurroundings;
+  /** The console's catalog, which a refusal of the console's own ticket creation is said in. */
+  readonly text: CopyText;
 }

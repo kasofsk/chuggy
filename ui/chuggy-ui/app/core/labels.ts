@@ -16,6 +16,8 @@ import type {
   ConfigurationSummary,
   ExecutionSummary,
 } from "../../../../src/contract/responses.ts";
+import { tenantPersonName } from "./tenantPeople.ts";
+import type { TenantSubject } from "./tenantPeople.ts";
 
 /** What a reader is shown, and the value in full that hovering it reveals. */
 export interface Label {
@@ -104,34 +106,34 @@ export function creatorSubject(principal: string): string {
     : principal;
 }
 
-/** The email the directory holds for each of a roster's people, by subject;
- * a person it holds none for is left out. */
-export function creatorEmailsOf(
-  people: readonly {
-    readonly subject: string;
-    readonly email?: string | undefined;
-  }[],
+/** The name each of a roster's people is called by, by subject: as the welcome
+ * page calls them, their GitHub login or else their email. A person the
+ * directory holds neither for is left out. */
+export function creatorNamesOf(
+  people: readonly TenantSubject[],
 ): ReadonlyMap<string, string> {
   return new Map(
-    people.flatMap((person) =>
-      person.email === undefined ? [] : [[person.subject, person.email]],
-    ),
+    people.flatMap((person) => {
+      const named = tenantPersonName(person);
+      const called =
+        named.githubLogin ?? (named.subject ? undefined : named.name);
+      return called === undefined ? [] : [[person.subject, called]];
+    }),
   );
 }
 
 /**
- * The member who filed a ticket, drawn as their email where the project's
- * people, who are the site issuer's own, name one for their subject, and
- * otherwise as the subject shortened as a digest is. The whole principal is
- * kept for the hover.
+ * The member who filed a ticket, drawn by the name the project's people, who
+ * are the site issuer's own, call their subject by, and otherwise as the
+ * subject shortened as a digest is. The whole principal is kept for the hover.
  */
 export function creatorLabel(
   principal: string,
-  emails: ReadonlyMap<string, string> = new Map(),
+  names: ReadonlyMap<string, string> = new Map(),
 ): Label {
   const subject = creatorSubject(principal);
   return {
-    text: emails.get(subject) ?? digestShortened(subject),
+    text: names.get(subject) ?? digestShortened(subject),
     title: principal,
   };
 }

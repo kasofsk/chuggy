@@ -65,6 +65,13 @@ export type SaidThing =
       readonly project: string | undefined;
     }
   | {
+      readonly thing: "Brief";
+      readonly ask: string;
+      readonly workspace: string;
+      readonly project: string;
+      readonly choose: boolean;
+    }
+  | {
       readonly thing: "Configure";
       readonly tell: string;
       readonly workspace: string;
@@ -90,6 +97,7 @@ export function saidThing(thing: SetupThing): SaidThing {
       };
     case "Ask":
     case "Name":
+    case "Brief":
       return { ...thing, ask: copyTextEn(thing.ask) };
     case "Failed":
       return { ...thing, found: copyTextEn(thing.found) };

@@ -160,10 +160,10 @@ async function creatorChosen(name: string): Promise<void> {
 }
 
 /** The reader's principal names no issuer, so a person's is their subject. */
-test("a link naming a creator draws the list under them, by their email", async () => {
+test("a link naming a creator draws the list under them, by their GitHub login", async () => {
   consoleMounted(`${projectAddress}?creator=s-ada`, consoleSession(), false);
   await consoleAdvanced(ticketListAddressSettleMs);
-  expect(creatorDrawn()).toContain("ada@example.com");
+  expect(creatorDrawn()).toContain("ada-l");
   expect(namedCreators(site.reads)).toStrictEqual(new Set(["s-ada"]));
   consoleSiteClean(site);
 });
@@ -227,10 +227,10 @@ async function ownerChosen(name: string): Promise<void> {
   await consoleAdvanced(ticketListAddressSettleMs);
 }
 
-test("a link naming an owner draws the list under them, by their email, and names no creator", async () => {
+test("a link naming an owner draws the list under them, by their GitHub login, and names no creator", async () => {
   consoleMounted(`${projectAddress}?owner=s-ada`, consoleSession(), false);
   await consoleAdvanced(ticketListAddressSettleMs);
-  expect(ownerDrawn()).toContain("ada@example.com");
+  expect(ownerDrawn()).toContain("ada-l");
   expect(creatorDrawn()).toContain("Anyone");
   expect(namedOwners(site.reads)).toStrictEqual(new Set(["s-ada"]));
   expect(namedCreators(site.reads)).toStrictEqual(new Set());

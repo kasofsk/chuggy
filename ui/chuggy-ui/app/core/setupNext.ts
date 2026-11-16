@@ -13,7 +13,11 @@
  * `check` and `import`, and no page is pressed for it. Where the project
  * holds no repository and both apps are granted the folder's own, `bind`
  * adds it on the person's yes, and where an app is not, the tell names that
- * app's page on the forge and no page of the console. The MCP step and the
+ * app's page on the forge and no page of the console. Where the project has
+ * no ticket yet and what a ticket may be drawn under was read, the person is
+ * asked what they want done first, and `ticket` files it, with the
+ * configuration they choose where there is a choice; where that read came to
+ * nothing, the console's New ticket page is the way. The MCP step and the
  * runner's change the machine, so each is offered and never run unasked: the
  * person is told what `mcp` would do, the runner package installed where it
  * is not here and its server named in their agent, and for the runner's step
@@ -55,6 +59,7 @@ import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
+import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
   setupChatByHand,
@@ -683,6 +688,29 @@ function setupRunnerBarredMend(
   );
 }
 
+/** What the person wants done first, asked with the configurations they choose among where there is a choice, and the console's page named for writing it themselves. */
+function setupBriefAsked(
+  at: SetupAt,
+  offers: SetupTicketOffers,
+  create: Copy,
+): SetupThing {
+  return {
+    thing: "Brief",
+    ask: {
+      id: "setup-ask-ticket",
+      args: {
+        project: setupNamed(at),
+        choose: offers.choose ? "choose" : "given",
+        names: setupListed(offers.names),
+        create,
+      },
+    },
+    workspace: at.workspace,
+    project: at.project,
+    choose: offers.choose,
+  };
+}
+
 function setupTicketMend(
   lack: Extract<
     SetupLack,
@@ -692,6 +720,7 @@ function setupTicketMend(
     }
   >,
   at: SetupAt,
+  offers: SetupTicketOffers | undefined,
 ): SetupThing {
   const create: Copy = {
     id: "setup-mend-ticket-create",
@@ -701,6 +730,8 @@ function setupTicketMend(
     },
   };
   const created: Copy = { id: "setup-mend-ticket-when" };
+  if (lack.lacks === "Ticket" && offers !== undefined)
+    return setupBriefAsked(at, offers, create);
   if (lack.lacks === "Ticket")
     return setupHand(
       { id: "setup-mend-ticket-tell", args: { create } },
@@ -781,6 +812,7 @@ function setupMend(
   mine: string | undefined,
   here: SetupRunnerHere | undefined,
   packaged: boolean,
+  offers: SetupTicketOffers | undefined,
 ): SetupThing {
   switch (lack.lacks) {
     case "Read":
@@ -810,7 +842,7 @@ function setupMend(
     case "Dispatch":
     case "Landing":
     case "Decision":
-      return setupTicketMend(lack, at);
+      return setupTicketMend(lack, at, offers);
   }
 }
 
@@ -957,6 +989,13 @@ export function setupBindDue(standing: SetupStanding):
     : undefined;
 }
 
+/** The project whose ticket step is the one next and has no ticket at all, which is when what a ticket may be drawn under is read and `ticket` files one. */
+export function setupTicketDue(
+  standing: SetupStanding,
+): PartitionIdentity | undefined {
+  return setupDue(standing, ["Ticket"]);
+}
+
 /** The project whose MCP step is the one next, which is when the runner package here is looked for before the next thing is named. */
 export function setupMcpDue(
   standing: SetupStanding,
@@ -968,6 +1007,7 @@ function setupThing(
   standing: SetupStanding,
   here: SetupRunnerHere | undefined,
   packaged: boolean,
+  offers: SetupTicketOffers | undefined,
 ): SetupThing {
   const named = workspaceNamesListed(standing.workspaces);
   if (standing.choice.choice === "Open")
@@ -984,7 +1024,7 @@ function setupThing(
     standing.remote === undefined
       ? undefined
       : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine, here, packaged);
+  return setupMend(undone, undone.lacks, at, mine, here, packaged, offers);
 }
 
 /**
@@ -993,16 +1033,18 @@ function setupThing(
  * question about the other name keeps. `here` is what this machine showed
  * where `setupRunnerDue` named a project, and nothing where it was not
  * looked at; `packaged` is whether the runner package here is one `mcp`
- * leaves as it is, where `setupMcpDue` named one.
+ * leaves as it is, where `setupMcpDue` named one; `offers` is what a ticket
+ * may be drawn under where `setupTicketDue` named a project and it was read.
  */
 export function setupNext(
   standing: SetupStanding,
   answers: SetupAnswers,
   here?: SetupRunnerHere,
   packaged = false,
+  offers?: SetupTicketOffers,
 ): SetupNext {
   return {
     carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing, here, packaged),
+    thing: setupThing(standing, here, packaged, offers),
   };
 }

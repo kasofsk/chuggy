@@ -19,7 +19,9 @@
  * `configuration`, `check` and `import` are each named under a rule that waits
  * on what the agent and the person do between them: the blanks filled in, the
  * faults fixed, the commit pushed. `bind` adds a repository to the project at
- * the site, and is named only under a rule that waits on her yes.
+ * the site, and is named only under a rule that waits on her yes. `ticket`
+ * files a ticket at the site, and is named only under a rule that waits on
+ * her saying what she wants done.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
@@ -45,8 +47,11 @@ import {
   setupAnswerArguments,
   setupAnswersNone,
   setupCommandArguments,
+  setupConfigurationFlag,
+  setupIntentFlag,
   setupNameFlag,
   setupTestFlag,
+  setupTitleFlag,
   setupWaitSecsMax,
 } from "./setupArguments.ts";
 import type {
@@ -143,7 +148,9 @@ export interface SetupStepSaid {
  * the project named, or `chat-host` for the workspace where no project is, or
  * `bind` at the site for the project named, and the yes it waits on; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
- * the workspace, at the address named where one is; the repository's own
+ * the workspace, at the address named where one is; what she wants done
+ * first, which `ticket` files for the project named, with the configuration
+ * she chooses where `choose` says she must; the repository's own
  * configuration, which `configuration` starts and `import` has imported; or a
  * read that failed, `stale` where this copy of the program could not read what
  * the site sent.
@@ -171,6 +178,13 @@ export type SetupThing =
       readonly project: string | undefined;
     }
   | {
+      readonly thing: "Brief";
+      readonly ask: Copy;
+      readonly workspace: string;
+      readonly project: string;
+      readonly choose: boolean;
+    }
+  | {
       readonly thing: "Configure";
       readonly tell: Copy;
       readonly workspace: string;
@@ -185,6 +199,15 @@ export type SetupThing =
 /** What the site answered a bind, in the words the console's Add dialog says it in: added, or already, or refused. */
 export type SetupBindAnswered =
   | { readonly answered: "Bound"; readonly said: Copy }
+  | { readonly answered: "Refused"; readonly refusal: Copy };
+
+/** What the site answered a filing: the ticket made, released and sent to start, under the configuration named, or refused, in the console's creation's words where they are its. */
+export type SetupTicketAnswered =
+  | {
+      readonly answered: "Filed";
+      readonly ticket: number;
+      readonly configuration: string;
+    }
   | { readonly answered: "Refused"; readonly refusal: Copy };
 
 /**
@@ -331,6 +354,15 @@ export type SetupReport =
       >;
     }
   | {
+      /** A run of `ticket`: what the site answered the filing, where the checklist's next thing was that, and the checklist read after. */
+      readonly report: "Ticket";
+      readonly answered: SetupTicketAnswered | undefined;
+      readonly checklist: Extract<
+        SetupReport,
+        { readonly report: "Checklist" }
+      >;
+    }
+  | {
       /** A run of `runner` or `chat-host` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
       readonly report: "RunnerOut";
       readonly workspace: string;
@@ -437,6 +469,7 @@ function setupCommandWords() {
     check = "",
     imported = "",
     bound = "",
+    filed = "",
   ] = [
     ...setupCommandArguments("SignIn"),
     ...setupCommandArguments("Project"),
@@ -447,6 +480,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Check"),
     ...setupCommandArguments("Import"),
     ...setupCommandArguments("Bind"),
+    ...setupCommandArguments("Ticket"),
   ];
   return {
     signIn,
@@ -458,12 +492,13 @@ function setupCommandWords() {
     check,
     imported,
     bound,
+    filed,
   };
 }
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const words = setupCommandWords();
-  const { made, mcp, runner, chatHost, configuration } = words;
+  const { made, mcp, runner, chatHost, configuration, filed } = words;
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
@@ -484,6 +519,10 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
           made,
           test: setupTestFlag,
           configuration,
+          title: setupTitleFlag,
+          intent: setupIntentFlag,
+          chosen: setupConfigurationFlag,
+          filed,
         },
       };
     case "Site":
@@ -516,6 +555,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       return {
         id: "setup-asked-test",
         args: { flag: setupTestFlag, configuration },
+      };
+    case "Brief":
+      return {
+        id: "setup-asked-brief",
+        args: { filed, title: setupTitleFlag, intent: setupIntentFlag },
       };
   }
 }
@@ -1061,6 +1105,8 @@ function setupThingLines(
         ["next", setupNextStop],
       ];
     }
+    case "Brief":
+      return setupBriefLines(thing, saying);
     case "Configure":
       return [
         ["tell", thing.tell],
@@ -1069,6 +1115,30 @@ function setupThingLines(
     case "Failed":
       return setupFailedLines(report.site, thing, saying);
   }
+}
+
+/** What the person wants done first, asked, and the rule `ticket` is named under: with the configuration they choose where they must choose one. */
+function setupBriefLines(
+  thing: Extract<SetupThing, { readonly thing: "Brief" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  return [
+    ["ask", thing.ask],
+    [
+      "rule",
+      {
+        id: "setup-rule-ticket",
+        args: {
+          command: setupCommandOf(setupSayingOf(saying, thing), "Ticket"),
+          title: setupTitleFlag,
+          intent: setupIntentFlag,
+          choose: thing.choose ? "choose" : "given",
+          configuration: setupConfigurationFlag,
+        },
+      },
+    ],
+    ["next", setupNextStop],
+  ];
 }
 
 /** The rule `configuration` is named under: with the repository's test command where the agent knows it, and bare where it does not. */
@@ -1291,6 +1361,46 @@ function setupBindLines(
   return [
     ...(site === undefined ? [] : [site]),
     ...setupBindSaid(report),
+    ...rest,
+  ];
+}
+
+/** What `ticket` asked of the site and what it answered, said where the checklist read after it says the site. */
+function setupTicketSaid(
+  report: Extract<SetupReport, { readonly report: "Ticket" }>,
+): readonly SetupLine[] {
+  const answered = report.answered;
+  if (answered === undefined) return [["found", { id: "setup-ticket-none" }]];
+  return answered.answered === "Filed"
+    ? [
+        [
+          "did",
+          {
+            id: "setup-ticket-did",
+            args: {
+              ticket: String(answered.ticket),
+              configuration: answered.configuration,
+            },
+          },
+        ],
+      ]
+    : [
+        [
+          "found",
+          { id: "setup-ticket-unfiled", args: { refusal: answered.refusal } },
+        ],
+      ];
+}
+
+/** A run of `ticket`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
+function setupTicketLines(
+  report: Extract<SetupReport, { readonly report: "Ticket" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const [site, ...rest] = setupLines(report.checklist, saying);
+  return [
+    ...(site === undefined ? [] : [site]),
+    ...setupTicketSaid(report),
     ...rest,
   ];
 }
@@ -1541,6 +1651,8 @@ function setupLines(
       return setupImportLines(report, saying);
     case "Bind":
       return setupBindLines(report, saying);
+    case "Ticket":
+      return setupTicketLines(report, saying);
     case "Mcp":
       return setupServerLines(report, saying);
     case "Runner":
@@ -1630,6 +1742,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
         : 0;
     case "Import":
     case "Bind":
+    case "Ticket":
       return setupReportExit(report.checklist);
     case "Mcp":
     case "Runner":
