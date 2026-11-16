@@ -105,6 +105,7 @@
 
   @media (forced-colors: active) {
     .catalog-groups .record-row-title a[aria-current="page"] {
+      text-decoration-line: underline;
       text-decoration-color: var(--forced-current);
       text-decoration-thickness: var(--rail);
     }

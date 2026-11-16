@@ -315,10 +315,12 @@
     color: var(--ink-1);
   }
 
+  /* An edge rather than an underline: the link holds an icon, no text. Off
+   * while focused, so the focus outline is the one drawn. */
   @media (forced-colors: active) {
-    .topbar-inbox[aria-current="page"] {
-      text-decoration: underline;
-      text-decoration-color: var(--forced-current);
+    .topbar-inbox[aria-current="page"]:not(:focus-visible) {
+      outline: var(--hairline) solid var(--forced-current);
+      outline-offset: calc(-1 * var(--hairline));
     }
   }
 

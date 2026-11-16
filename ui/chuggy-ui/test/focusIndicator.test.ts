@@ -153,7 +153,11 @@ test("the shared focus indicator is an outline drawn from the focus tokens, clea
 test("no sheet draws focus as a shadow, and every focus outline takes the focus tokens", () => {
   const found = Object.entries(focusIndicatorSheets).flatMap(([path, text]) =>
     focusIndicatorRules(text)
-      .filter((rule) => rule.selectorText.includes(":focus"))
+      .filter((rule) =>
+        rule.selectorText
+          .replace(/:not\(:focus[\w-]*\)/gu, "")
+          .includes(":focus"),
+      )
       .flatMap((rule) => {
         const shadow = rule.style.getPropertyValue("box-shadow");
         const outline = rule.style.getPropertyValue("outline");
@@ -255,8 +259,8 @@ test("under forced colours a state a wash drew alone gains an edge or an underli
     ],
     [
       "browser/shell/shell.css",
-      '.topbar-inbox[aria-current="page"]',
-      "text-decoration-color",
+      '.topbar-inbox[aria-current="page"]:not(:focus-visible)',
+      "outline",
     ],
     [
       "browser/catalog/catalog.css",
@@ -294,6 +298,25 @@ test("under forced colours a state a wash drew alone gains an edge or an underli
       focusIndicatorForcedValue(path, selector, property),
       selector,
     ).toContain("var(--forced-current)");
+  }
+});
+
+test("under forced colours an underline that marks a state is drawn, not only recoloured", () => {
+  for (const [path, selector] of [
+    ["browser/ui/Menu.css", ".menu-item[data-highlighted]"],
+    [
+      "browser/conversation/conversation.css",
+      ".conversation-trigger-item[data-highlighted]",
+    ],
+    [
+      "browser/catalog/catalog.css",
+      '.catalog-groups .record-row-title a[aria-current="page"]',
+    ],
+  ] as const) {
+    const line =
+      focusIndicatorForcedValue(path, selector, "text-decoration-line") ||
+      focusIndicatorForcedValue(path, selector, "text-decoration");
+    expect(line, selector).toContain("underline");
   }
 });
 
