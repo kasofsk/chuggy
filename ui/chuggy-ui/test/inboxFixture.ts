@@ -33,6 +33,18 @@ export function inboxEntry(
   };
 }
 
+/** One standing refusal of ticket 42, as an entry carries it. */
+export function inboxRefusal(): AgenticRefusalResponse {
+  return {
+    ticket: 42,
+    ticketVersion: 2,
+    reason: "the brief names no reference",
+    decision: "selector-decision-1",
+    recordedAt: "2026-09-01T09:01:00Z",
+    superseded: false,
+  };
+}
+
 /** One page holding `entries`, counting them unless the case says the server holds more. */
 export function inboxBody(
   entries: readonly InboxEntryResponse[],

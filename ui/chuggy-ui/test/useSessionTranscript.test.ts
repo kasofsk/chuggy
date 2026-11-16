@@ -22,6 +22,7 @@ import {
   type SessionTranscriptRead,
   type SessionTranscriptWalk,
 } from "../app/browser/thread/useSessionTranscript.ts";
+import { threadHomeOf } from "../app/core/threadHome.ts";
 import { projectPartition } from "./projectFixture.ts";
 import {
   transcriptStream,
@@ -136,7 +137,7 @@ async function answering(
 
 function readAt(highWaterBatch: number): SessionTranscriptRead {
   return {
-    of: { lead: projectPartition },
+    of: { thread: "thread-atlas", home: threadHomeOf(projectPartition) },
     stream: transcriptStream,
     highWaterBatch,
   };

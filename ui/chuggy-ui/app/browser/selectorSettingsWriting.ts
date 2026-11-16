@@ -3,9 +3,8 @@
  * draws it: a draft seeded from the read and rebased when the read moves under
  * an open form, and a write fenced on the revision the draft was seeded at.
  *
- * EVERY WRITE THROUGH THIS DOOR IS THE WHOLE OVERRIDE SET, which is what makes
- * it one door rather than two: the settings page's sections and revisions, and
- * the Lead page's strip, each hold their own draft and their own call into it,
+ * EVERY WRITE THROUGH THIS DOOR IS THE WHOLE OVERRIDE SET: the settings page's
+ * sections and revisions each hold their own draft and their own call into it,
  * but the fencing, the rebase and the conflict handling are the same for all of
  * them. `TWriter` is each page's own roster of what on it can write, carried in
  * the write itself, so a page with several — a section, the history — can tell

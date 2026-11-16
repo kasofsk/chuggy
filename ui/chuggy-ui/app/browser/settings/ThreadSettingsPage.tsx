@@ -11,8 +11,7 @@
  *
  * EVERY WRITE ON THIS PAGE IS THE WHOLE OVERRIDE SET. A section's Save and a
  * revision's Restore both go through `selectorSettingsWriting.ts`'s one door,
- * so the overrides no section draws are carried by each of them alike — the
- * same door the Lead page's strip writes mode and dispatch mode through.
+ * so the overrides no section draws are carried by each of them alike.
  */
 
 import { useParams } from "@tanstack/react-router";

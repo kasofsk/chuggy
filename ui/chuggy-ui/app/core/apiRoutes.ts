@@ -11,7 +11,6 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
   agentAccountsResponseSchema,
-  agenticRefusalsResponseSchema,
   chatHostResponseSchema,
   configurationResponseSchema,
   configurationsResponseSchema,
@@ -46,7 +45,6 @@ import {
   projectRepositoryRetiredSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
-  selectorHistoryResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
@@ -57,7 +55,6 @@ import {
 } from "../../../../src/contract/responses.ts";
 import type {
   AgentAccountsResponse,
-  AgenticRefusalsResponse,
   ProjectDeletionResponse,
   TenantDeletionResponse,
   ChatHostResponse,
@@ -91,7 +88,6 @@ import type {
   ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
   ProjectResponse,
-  SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
   SessionPlacementResponse,
@@ -109,7 +105,6 @@ import type {
   personalRunnerProjectSchema,
   projectOwnerFallbackSchema,
   forgeAuthorizationSchema,
-  leadInquirySchema,
   projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
@@ -1311,13 +1306,6 @@ export function apiDrafts(
   );
 }
 
-/** The project's lead session, its mailbox tail and the streams its store
- * holds, or that the project has none. */
-export const apiLead = apiProjectEndpoint(
-  nativeHttpEndpoints.lead,
-  (partition) => ({ parameters: partition }),
-);
-
 /** Whether the project's tenant grants the reader hosted runs. */
 export const apiHostedRuns = apiProjectEndpoint(
   nativeHttpEndpoints.hostedRuns,
@@ -1341,24 +1329,6 @@ export interface SessionContextPage {
   readonly after: number;
   readonly limit: number;
 }
-
-/** The chain over the batches above the one named, with the held subset marked. */
-export const apiLeadTranscript = apiProjectEndpoint(
-  nativeHttpEndpoints.leadTranscript,
-  (partition, page: LeadTranscriptPage = {}) => ({
-    parameters: partition,
-    query: { stream: page.stream, after: page.after, limit: page.limit },
-  }),
-);
-
-/** A page of the lead's context readings by turn, after the turn named. */
-export const apiLeadContext = apiProjectEndpoint(
-  nativeHttpEndpoints.leadContext,
-  (partition, page: SessionContextPage) => ({
-    parameters: partition,
-    query: { after: page.after, limit: page.limit },
-  }),
-);
 
 /**
  * The project's member threads, each saying whether it is the caller's own.
@@ -1395,7 +1365,7 @@ export const apiThread = apiProjectEndpoint(
   }),
 );
 
-/** One thread's store, paged exactly as the lead's is and by the same walk. */
+/** One thread's store, paged by the transcript walk. */
 export const apiThreadTranscript = apiProjectEndpoint(
   nativeHttpEndpoints.threadTranscript,
   (partition, session: string, page: LeadTranscriptPage = {}) => ({
@@ -1411,16 +1381,6 @@ export const apiThreadContext = apiProjectEndpoint(
     parameters: { ...partition, session },
     query: { after: page.after, limit: page.limit },
   }),
-);
-
-/**
- * Every inquiry against this project's lead, newest first and bounded by the
- * route. There is no page and no limit: the listing takes neither, so asking
- * for one would be a query arm the route rejects the whole read for.
- */
-export const apiLeadInquiries = apiProjectEndpoint(
-  nativeHttpEndpoints.leadInquiries,
-  (partition) => ({ parameters: partition }),
 );
 
 /**
@@ -1581,68 +1541,6 @@ export const apiRenameChatThread = apiTenantEndpoint(
     body: { title },
   }),
 );
-
-/**
- * A question asked aside, which opens one fork and one turn.
- *
- * The two identities are minted by the caller, the way an operation id is, and
- * the door is idempotent on them — so a retried post answers the ordinal it
- * already has rather than forking the lead again, which is why this is the one
- * write here with no idempotency key: the key is in the body, and a header
- * carrying a third identity would be a second account of one fact.
- */
-export const apiAskLead = apiProjectEndpoint(
-  nativeHttpEndpoints.askLead,
-  (partition, asked: z.infer<typeof leadInquirySchema>) => ({
-    parameters: partition,
-    body: asked,
-  }),
-);
-
-/** Every ticket in the project whose latest refusal entry still stands. */
-export function apiAgenticRefusals(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  page: { readonly limit?: number | undefined } = {},
-): Promise<ApiResult<AgenticRefusalsResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "agentic-refusals"), { limit: page.limit }),
-    (value) => agenticRefusalsResponseSchema.parse(value),
-  );
-}
-
-/**
- * Which end of the decision log a read starts at: `oldest` pages forward with
- * `after`, and `newest` answers the last `limit` decisions as one bounded page
- * with no cursor.
- */
-export const selectorHistoryOrders = ["oldest", "newest"] as const;
-
-export type SelectorHistoryOrder = (typeof selectorHistoryOrders)[number];
-
-export interface SelectorHistoryPage {
-  readonly after?: number | undefined;
-  readonly limit?: number | undefined;
-  readonly order?: SelectorHistoryOrder | undefined;
-}
-
-/** What the lead decided, from whichever end of the log the caller named. */
-export function apiSelectorHistory(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  page: SelectorHistoryPage = {},
-): Promise<ApiResult<SelectorHistoryResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "selector-history"), {
-      after: page.after,
-      limit: page.limit,
-      order: page.order,
-    }),
-    (value) => selectorHistoryResponseSchema.parse(value),
-  );
-}
 
 /** The project's own selector settings and what they resolve to. */
 export function apiSelectorSettings(

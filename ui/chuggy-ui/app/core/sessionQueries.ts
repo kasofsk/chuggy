@@ -1,66 +1,26 @@
 /**
- * The reads of a project's sessions — its lead, its threads and a thread's
- * usage summed over its mailbox, the inquiries put to it, the selector's
- * decisions and the refusals it raised — each a list a `Session` or
- * `AgenticRefusal` frame stales, except the decisions, which no frame names
- * and the partition's refetch reaches.
+ * The reads of a project's threads — the listing, one thread, and a thread's
+ * usage summed over its mailbox — each a list a `Session` frame stales.
  */
 
-import { selectorHistoryLimitMax } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { SessionKind } from "../../../../src/contract/rosters.ts";
 import type {
-  AgenticRefusalsResponse,
-  LeadInquiriesResponse,
-  LeadReadResponse,
   ThreadResponse,
   ThreadsResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  apiAgenticRefusals,
-  apiLead,
-  apiLeadInquiries,
-  apiSelectorHistory,
-  apiThread,
-  apiThreads,
-} from "./apiRoutes.ts";
-import { consoleListQuery, consolePartitionQuery } from "./consoleQuery.ts";
-import { inquirySessionKind } from "./leadInquiries.ts";
+import { apiThread, apiThreads } from "./apiRoutes.ts";
+import { consoleListQuery } from "./consoleQuery.ts";
 import {
   sessionChangeSessionNamed,
   sessionChangeKindNamed,
 } from "./sessionTranscript.ts";
-import { projectLeadSessionKind } from "./projectLead.ts";
 import { threadUsagePaged } from "./threadCommands.ts";
 import type { ThreadUsage } from "./threadCommands.ts";
-import {
-  projectListReread,
-  projectListRereadNamed,
-} from "./projectQueryKeys.ts";
+import { projectListRereadNamed } from "./projectQueryKeys.ts";
 
-/**
- * The lead read, re-read on the `Session` frames that name `session` and left
- * alone by the rest — or, until the caller has learnt which session that is,
- * on any lead's frame, which is how a project with none hears one has opened.
- */
-export function leadQuery(
-  partition: PartitionIdentity,
-  session: string | undefined,
-  polledMs: number | undefined,
-) {
-  return consoleListQuery(
-    projectListRereadNamed<LeadReadResponse>(
-      partition,
-      "Session",
-      "lead",
-      (change) =>
-        session === undefined
-          ? sessionChangeKindNamed(change.resource) === projectLeadSessionKind
-          : sessionChangeSessionNamed(change.resource) === session,
-    ),
-    (ports) => apiLead(ports, partition),
-    polledMs,
-  );
-}
+/** The session kind the threads listing lists none of. */
+const threadsQuerySkippedKind: SessionKind = "Lead";
 
 /** The listing the chat pane reads, which lists no lead session and so is not
  * read again on the frames of one. */
@@ -71,7 +31,7 @@ export function threadsQuery(partition: PartitionIdentity) {
       "Session",
       "threads",
       (change) =>
-        sessionChangeKindNamed(change.resource) !== projectLeadSessionKind,
+        sessionChangeKindNamed(change.resource) !== threadsQuerySkippedKind,
     ),
     (ports) => apiThreads(ports, partition),
   );
@@ -107,43 +67,5 @@ export function threadUsageQuery(
     ),
     (ports) =>
       threadUsagePaged((page) => apiThread(ports, partition, session, page)),
-  );
-}
-
-/** One project's inquiries, re-read on the `Session` frames naming an inquiry
- * and left alone by every other kind. Built from a project rather than closed
- * over the one on screen, because an accepted press re-reads the project it was
- * asked in and that is not always the project being drawn when it answers. */
-export function leadInquiriesQuery(partition: PartitionIdentity) {
-  return consoleListQuery(
-    projectListRereadNamed<LeadInquiriesResponse>(
-      partition,
-      "Session",
-      "inquiries",
-      (change) =>
-        sessionChangeKindNamed(change.resource) === inquirySessionKind,
-    ),
-    (ports) => apiLeadInquiries(ports, partition),
-  );
-}
-
-export function agenticRefusalsQuery(partition: PartitionIdentity) {
-  return consoleListQuery(
-    projectListReread<AgenticRefusalsResponse>(
-      partition,
-      "AgenticRefusal",
-      "lead",
-    ),
-    (ports) => apiAgenticRefusals(ports, partition),
-  );
-}
-
-/** The selector's newest decisions, which no frame names. */
-export function leadDecisionsQuery(partition: PartitionIdentity) {
-  return consolePartitionQuery(partition, "selector-history", (ports) =>
-    apiSelectorHistory(ports, partition, {
-      order: "newest",
-      limit: selectorHistoryLimitMax,
-    }),
   );
 }

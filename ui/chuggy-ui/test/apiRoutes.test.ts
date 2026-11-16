@@ -14,8 +14,6 @@ import {
 } from "../../../src/contract/http.ts";
 import {
   apiAgentAccounts,
-  apiAgenticRefusals,
-  apiAskLead,
   apiBindProjectRepository,
   apiChatAbilities,
   apiChatThread,
@@ -39,9 +37,6 @@ import {
   apiForgeInstallationRepositories,
   apiForgeInstallations,
   apiHostedRuns,
-  apiLead,
-  apiLeadInquiries,
-  apiLeadTranscript,
   apiInbox,
   apiOpenThread,
   apiOwnerFallback,
@@ -57,10 +52,10 @@ import {
   apiProjectInventoryAll,
   apiProjectRepositories,
   apiRenameThread,
-  apiSelectorHistory,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
   apiStopThreadTurn,
+  apiThreadTranscript,
   apiStopTimeoutMs,
   apiTicket,
   apiTicketActionReach,
@@ -374,40 +369,21 @@ test("a page read on its own asks for exactly the cursor it was given", async ()
 
 const partitionPath = `${nativeHttpBasePath}/tenants/acme/projects/at%20las`;
 
-test("the lead and its transcript hang from one segment, the store from two", async () => {
-  const held = recording((url) =>
-    url.includes("/transcript")
-      ? { stream: "1a2b", entries: [], held: [], elided: 0 }
-      : {
-          session: "lead-atlas",
-          state: "Open",
-          attention: "Monitoring",
-          notificationCursor: 0,
-          handoffNote: {},
-          turns: [],
-          streams: [],
-        },
-  );
-  await apiLead(held.ports, partition);
-  expect(held.urls[0]).toBe(`${partitionPath}/lead`);
-  await apiLeadTranscript(held.ports, partition, {
+test("a thread's transcript hangs from its thread's segment, asking the page it is given", async () => {
+  const held = recording(() => ({
+    stream: "1a2b",
+    entries: [],
+    held: [],
+    elided: 0,
+  }));
+  await apiThreadTranscript(held.ports, partition, "thread/1", {
     stream: "1a2b",
     after: 4,
     limit: 8,
   });
-  expect(held.urls[1]).toBe(
-    `${partitionPath}/lead/transcript?stream=1a2b&after=4&limit=8`,
+  expect(held.urls[0]).toBe(
+    `${partitionPath}/threads/thread%2F1/transcript?stream=1a2b&after=4&limit=8`,
   );
-});
-
-/** A project with no lead is an answer the route gives in a body of its own,
- * and the console reads it rather than refusing it as unreadable. */
-test("the lead route's answer that there is none is read as that", async () => {
-  const held = recording(() => ({ lead: "None" }));
-  expect(await apiLead(held.ports, partition)).toStrictEqual({
-    outcome: "Ok",
-    value: { lead: "None" },
-  });
 });
 
 test("the hosted-runs grant hangs from the partition and is read as given or not", async () => {
@@ -436,52 +412,6 @@ test("the reader's abilities hang from the partition and are read door by door",
     value: abilities,
   });
   expect(held.urls[0]).toBe(`${partitionPath}/abilities`);
-});
-
-/**
- * The two doors of a question hang from the lead's own segment, and the
- * listing takes no query at all — a limit or a cursor this console invented
- * would be a query arm the route rejects the whole read for.
- */
-test("the inquiries hang from the lead's segment and take no query", async () => {
-  const held = recording(() => ({ inquiries: [] }));
-  await apiLeadInquiries(held.ports, partition);
-  expect(held.urls[0]).toBe(`${partitionPath}/lead/inquiries`);
-  const asking = recording(() => ({
-    session: "inq-1",
-    turn: "inq-turn-1",
-    ordinal: 1,
-  }));
-  const accepted = await apiAskLead(asking.ports, partition, {
-    session: "inq-1",
-    turn: "inq-turn-1",
-    question: "why",
-  });
-  expect(asking.urls[0]).toBe(`${partitionPath}/lead/inquiries`);
-  expect(accepted.outcome).toBe("Ok");
-});
-
-test("the standing refusals are read across the project", async () => {
-  const held = recording(() => ({ refusals: [], more: false }));
-  await apiAgenticRefusals(held.ports, partition, { limit: 32 });
-  expect(held.urls[0]).toBe(`${partitionPath}/agentic-refusals?limit=32`);
-});
-
-/** The two arms are one route: the ascending one is resumed after the ordinal
- * already held, and the newest is a bounded page with no cursor at all. */
-test("the decision log is read from whichever end the caller named", async () => {
-  const held = recording(() => ({ decisions: [] }));
-  await apiSelectorHistory(held.ports, partition, { after: 1201, limit: 50 });
-  expect(held.urls[0]).toBe(
-    `${partitionPath}/selector-history?after=1201&limit=50`,
-  );
-  await apiSelectorHistory(held.ports, partition, {
-    limit: 50,
-    order: "newest",
-  });
-  expect(held.urls[1]).toBe(
-    `${partitionPath}/selector-history?limit=50&order=newest`,
-  );
 });
 
 const apiLimits = {

@@ -12,13 +12,11 @@
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { Copy } from "./copy.ts";
 import { settingsRoutes } from "./settingsNav.ts";
-import type { Tone } from "./tones.ts";
 
 export const navRoutes = {
   overview: "/$tenant/$project",
   inbox: "/$tenant/$project/inbox",
   epics: "/$tenant/$project/epics",
-  lead: "/$tenant/$project/lead",
   catalog: "/$tenant/$project/catalog",
   settings: "/$tenant/$project/settings",
   repositories: "/$tenant/$project/repositories",
@@ -34,20 +32,12 @@ export interface NavParams {
   readonly session?: string | undefined;
 }
 
-/** One entry's standing, in its word and the hue it takes, so a dot is not
- * the only thing carrying it. */
-export interface NavStanding {
-  readonly word: Copy;
-  readonly tone: Tone;
-}
-
 /** Every entry the bar and its gear draw, and the inbox beside the gear, so
  * each is drawn with its own glyph. */
 export type NavEntryId =
   | "overview"
   | "inbox"
   | "epics"
-  | "lead"
   | "catalog"
   | "settings"
   | "repositories"
@@ -59,12 +49,10 @@ export interface NavEntry {
   /** A screen's route, or for Runners the reader's own runners, where one is added. */
   readonly to: NavRoute | typeof settingsRoutes.project.myRunner;
   readonly params: NavParams;
-  readonly standing?: NavStanding | undefined;
 }
 
 export interface ShellNavInput {
   readonly partition: PartitionIdentity;
-  readonly leadStanding?: NavStanding | undefined;
 }
 
 export function shellNav(input: ShellNavInput): readonly NavEntry[] {
@@ -84,13 +72,6 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       label: { id: "shell-nav-epics" },
       to: navRoutes.epics,
       params,
-    },
-    {
-      id: "lead",
-      label: { id: "shell-nav-lead" },
-      to: navRoutes.lead,
-      params,
-      standing: input.leadStanding,
     },
     {
       id: "catalog",

@@ -67,7 +67,6 @@ import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { InvitePage } from "./InvitePage.tsx";
-import { LeadPage } from "./LeadPage.tsx";
 import { MemberChatPage } from "./MemberChatPage.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectCreationPage, ProjectlessFrame } from "./ProjectCreation.tsx";
@@ -271,12 +270,6 @@ const epicEditRoute = createRoute({
   getParentRoute: () => epicRoute,
   path: "/edit",
   component: EpicEditPage,
-});
-
-const leadRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/lead",
-  component: LeadPage,
 });
 
 function CatalogRoute(): ReactNode {
@@ -514,7 +507,6 @@ const routeTree = rootRoute.addChildren([
       epicHistoryRoute,
       epicEditRoute,
     ]),
-    leadRoute,
     catalogRoute,
     projectSettingsRoutes(partitionRoute),
     repositoriesRoute,

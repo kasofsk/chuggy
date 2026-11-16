@@ -59,7 +59,6 @@ async function drawnAt(path: string): Promise<readonly string[]> {
       partition.addChildren([
         leaf("/"),
         leaf("/inbox"),
-        leaf("/lead"),
         leaf("/settings"),
         leaf("/repositories"),
         leaf("/tickets/new"),

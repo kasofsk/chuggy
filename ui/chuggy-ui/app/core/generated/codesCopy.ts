@@ -46,15 +46,6 @@ export interface CodesCopy {
   readonly "codes-hold-dequeued": Record<never, never>;
   readonly "codes-hold-rechecks-exhausted": Record<never, never>;
   readonly "codes-hold-target-paths-refused": Record<never, never>;
-  readonly "codes-lead-absence-not-needed": Record<never, never>;
-  readonly "codes-lead-absence-paused": Record<never, never>;
-  readonly "codes-lead-absence-not-granted": Record<never, never>;
-  readonly "codes-lead-absence-awaiting": Record<never, never>;
-  readonly "codes-lead-absence-unnamed": Record<never, never>;
-  readonly "codes-lead-absence-hosted-runs": Record<never, never>;
-  readonly "codes-lead-absence-runner-offline": Record<never, never>;
-  readonly "codes-lead-absence-usage-paused": Record<never, never>;
-  readonly "codes-lead-absence-subsidy-exhausted": Record<never, never>;
   readonly "codes-finalization-running": Record<never, never>;
   readonly "codes-finalization-held": Record<never, never>;
   readonly "codes-finalization-waiting": Record<never, never>;

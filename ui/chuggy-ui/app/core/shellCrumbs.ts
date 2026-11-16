@@ -27,7 +27,6 @@ export interface ShellCrumb {
 /** The screens that sit directly under a project, by their address segment. */
 const screenRoutes: Readonly<Record<string, NavRoute>> = {
   inbox: navRoutes.inbox,
-  lead: navRoutes.lead,
   catalog: navRoutes.catalog,
   settings: navRoutes.settings,
   repositories: navRoutes.repositories,

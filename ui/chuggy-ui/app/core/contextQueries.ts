@@ -12,7 +12,7 @@
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { sessionContextPageTurnsMax } from "../../../../src/contract/http.ts";
 import type { ApiPorts } from "./apiRequest.ts";
-import { apiLeadContext, apiRunContext, apiRunTurns } from "./apiRoutes.ts";
+import { apiRunContext, apiRunTurns } from "./apiRoutes.ts";
 import {
   consolePartitionQuery,
   consoleProjectQuery,
@@ -68,23 +68,6 @@ export function runContextQuery(
           limit: contextRunReadingsPageRows,
         }),
       ),
-  );
-}
-
-/** The lead's readings, read again when its newest turn moves. */
-export function leadContextQuery(
-  partition: PartitionIdentity,
-  at: SessionContextMark,
-) {
-  return consolePartitionQuery(partition, `lead-context@${at.mark}`, (ports) =>
-    contextSessionPaged(
-      (after) =>
-        apiLeadContext(ports, partition, {
-          after,
-          limit: sessionContextPageTurnsMax,
-        }),
-      at.newest,
-    ),
   );
 }
 

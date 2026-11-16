@@ -1,7 +1,7 @@
 /**
- * The selector settings draft's own decisions, with no renderer: what a strip
- * press writes, what a limit box parses to, and what a refused write's
- * conflict carries through to the section.
+ * The selector settings draft's own decisions, with no renderer: what a write
+ * carries, what a limit box parses to, and what a refused write's conflict
+ * carries through to the section.
  */
 
 import { expect, test } from "vitest";
@@ -9,9 +9,7 @@ import { expect, test } from "vitest";
 import type { SelectorProjectSettingsResponse } from "../../../src/contract/responses.ts";
 import {
   selectorSettingsConflictOf,
-  selectorSettingsDispatchCell,
   selectorSettingsDraft,
-  selectorSettingsModeCell,
   selectorSettingsModelTyped,
   selectorSettingsTextTyped,
   selectorSettingsRefusal,
@@ -97,24 +95,6 @@ const settings: SelectorProjectSettingsResponse = {
     leadOffering: "Own",
   },
 };
-
-/** A press must carry the SAVED override set plus the one field it moves,
- * never an open section's unsaved text — the draft holds both, so a cell that
- * spread the live draft instead of the read would leak whatever another
- * section is mid-edit on. */
-test("a mode press is built from the read, not an open section's unsaved text", () => {
-  const draft = draftOf({ northStar: "SECRET UNSAVED DRAFT" });
-  const cell = selectorSettingsModeCell(draft, settings);
-  expect(cell.pressed.northStar).toBe("ship the console");
-  expect(cell.pressed.mode).toBe("Paused");
-});
-
-test("a dispatch press is built from the read, not an open section's unsaved text", () => {
-  const draft = draftOf({ basePrompt: "SECRET UNSAVED DRAFT" });
-  const cell = selectorSettingsDispatchCell(draft, settings);
-  expect(cell.pressed.basePrompt).toBe("");
-  expect(cell.pressed.dispatchMode).toBe("ApprovalRequired");
-});
 
 /** The settings page draws boxes for fewer overrides than the read returns,
  * and the route replaces the whole set, so a box it never draws must survive an
