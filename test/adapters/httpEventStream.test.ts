@@ -58,7 +58,6 @@ import {
   unreading,
   type Held,
 } from "./heldStream.ts";
-import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { executionSummary } from "../contract/representations.ts";
 import { unservedEpics, unservedThreads } from "./threadFixtures.ts";
 
@@ -102,7 +101,6 @@ function servedWeb(
   actions: () => readonly TicketNativeAction[] | undefined,
 ): ServedWeb {
   return {
-    ...unreadableLeadReads(),
     ...unservedThreads,
     ...unservedEpics,
     cancel: notFound,

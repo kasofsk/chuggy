@@ -90,8 +90,6 @@ const projectReadTools = [
   "read_configuration",
   "read_ticket_landings",
   "read_landing_queues",
-  "read_lead",
-  "read_lead_transcript",
   "list_executions",
   "read_execution",
   "read_run_transcript",

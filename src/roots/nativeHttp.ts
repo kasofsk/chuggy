@@ -2,7 +2,6 @@ import { apiRole } from "../adapters/postgres/schema.ts";
 import { postgresApiReady } from "../adapters/postgres/apiReadiness.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
-import { postgresDispatchViews } from "../adapters/postgres/dispatchViews.ts";
 import {
   ketoProjectAccess,
   ketoReadiness,
@@ -70,11 +69,7 @@ import {
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
-import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
-import type {
-  NativeLeadPorts,
-  NativeThreadPorts,
-} from "../interpreter/nativeWeb.ts";
+import type { NativeThreadPorts } from "../interpreter/nativeWeb.ts";
 import { threadSessionMint } from "../adapters/crypto/threadSessionMint.ts";
 import {
   postgresThreadSeeding,
@@ -97,7 +92,6 @@ import {
   projectAccessTimeoutMsDefault,
   type ProjectAccessSettings,
 } from "../interpreter/projectAccess.ts";
-import { postgresSelectorResolvedSettings } from "../adapters/postgres/selector.ts";
 import { pathToFileURL } from "node:url";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import {
@@ -1438,27 +1432,8 @@ export async function nativeDatabasesReady(
 }
 
 /**
- * The lead's read side over the API pool, whose role holds `EXECUTE` on the
- * read doors, and the artifact volume.
- */
-export function nativeLeadPorts(
-  pools: NativePools,
-  artifacts: SessionStoreReadPort,
-): NativeLeadPorts {
-  return {
-    leads: postgresLeadReads(pools.pool),
-    store: artifacts,
-    context: postgresSessionContext(pools.pool),
-    settings: postgresSelectorResolvedSettings(pools.pool),
-    candidates: postgresDispatchViews(pools.pool),
-  };
-}
-
-/**
- * The four ports one project's threads are reached through, beside the store
- * the lead's transcript is already read from. The rows read and the context
- * read are the session-keyed ones, so a thread's transcript and the lead's are
- * one walk over one function, and their readings one read.
+ * The ports one project's threads are reached through, over the API pool and
+ * the artifact volume.
  */
 export function nativeThreadPorts(
   pools: NativePools,
@@ -1485,7 +1460,6 @@ function nativeComposedWeb(
   artifacts: ReturnType<typeof artifactStore>,
   ports: {
     readonly repositories: NativeForge["repositories"];
-    readonly leads: NativeLeadPorts;
     readonly threads: NativeThreadPorts;
     readonly usageResume: TicketUsageResumeBounds;
   },
@@ -1500,7 +1474,6 @@ function nativeComposedWeb(
     undefined,
     artifacts,
     ports.repositories,
-    ports.leads,
     ports.threads,
     ports.usageResume,
     nativePoolPlaneMemoryMibDefault(),
@@ -1553,7 +1526,6 @@ async function main(): Promise<void> {
   const usageResume = nativeUsageResumeBounds();
   const web = nativeComposedWeb(pools, keying, access, artifacts, {
     repositories: forge.repositories,
-    leads: nativeLeadPorts(pools, artifacts),
     threads,
     usageResume,
   });

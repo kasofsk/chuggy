@@ -321,8 +321,6 @@ const chuggyToolCalls = {
   read_configuration: [["configuration", "GET"]],
   read_ticket_landings: [["ticketLandings", "GET"]],
   read_landing_queues: [["landingQueues", "GET"]],
-  read_lead: [["lead", "GET"]],
-  read_lead_transcript: [["leadTranscript", "GET"]],
   list_executions: [["executions", "GET"]],
   read_execution: [["execution", "GET"]],
   read_run_transcript: [["runTranscript", "GET"]],

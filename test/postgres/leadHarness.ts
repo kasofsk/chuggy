@@ -4,7 +4,7 @@
  * granted to.
  *
  * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The lead turn door runs as
- * `chuggy_selector_service` and the reads as `chuggy_api`, because a suite that drove both as the migration owner would be green over a
+ * `chuggy_selector_service` and the API's doors as `chuggy_api`, because a suite that drove both as the migration owner would be green over a
  * grant that had never been made — which is a defect only the deployed
  * credential meets.
  */
@@ -13,10 +13,6 @@ import { randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
-import {
-  postgresLeadReads,
-  type PostgresLeadReads,
-} from "../../src/adapters/postgres/leadReads.ts";
 import {
   apiRole,
   selectorServiceRole,
@@ -38,7 +34,6 @@ export interface LeadRig {
   readonly sessions: SessionRig;
   readonly selectorPool: pg.Pool;
   readonly apiPool: pg.Pool;
-  readonly apiLead: PostgresLeadReads;
   readonly close: () => Promise<void>;
 }
 
@@ -50,7 +45,6 @@ export async function leadRigOpen(): Promise<LeadRig> {
     sessions,
     selectorPool,
     apiPool,
-    apiLead: postgresLeadReads(apiPool),
     close: async () => {
       await apiPool.end();
       await selectorPool.end();

@@ -4,9 +4,9 @@
  * THEY ARE KEYED ON THE SESSION AND NOT ON A KIND, because a thread's
  * transcript is the same walk over a different session: two definers differing
  * in one predicate is where a fix lands in only one of them, and two adapters
- * over them would be the same mistake one layer up. So the lead's route and a
- * thread's both pass the session they resolved, and this module is the only
- * place either read is written.
+ * over them would be the same mistake one layer up. So every route passes the
+ * session it resolved, and this module is the only place either read is
+ * written.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -72,9 +72,8 @@ export async function sessionStoreStreamRows(
 }
 
 /**
- * The row half of a session's transcript as one port, which is what a thread's
- * bundle and the lead's both read through. It is the same function either way:
- * the read takes the session it reads, so there is nothing per-kind to compose.
+ * The row half of a session's transcript as one port. The read takes the
+ * session it reads, so there is nothing per-kind to compose.
  */
 export function postgresSessionStoreRows(pool: pg.Pool): SessionStoreRowsRead {
   return { batches: (query) => sessionStoreBatchRows(pool, query) };

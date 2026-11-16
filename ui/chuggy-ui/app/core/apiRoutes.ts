@@ -1327,7 +1327,7 @@ export const apiProjectAbilities = apiProjectEndpoint(
   (partition) => ({ parameters: partition }),
 );
 
-export interface LeadTranscriptPage {
+export interface SessionTranscriptPage {
   readonly stream?: string | undefined;
   readonly after?: number | undefined;
   readonly limit?: number | undefined;
@@ -1377,7 +1377,7 @@ export const apiThread = apiProjectEndpoint(
 /** One thread's store, paged by the transcript walk. */
 export const apiThreadTranscript = apiProjectEndpoint(
   nativeHttpEndpoints.threadTranscript,
-  (partition, session: string, page: LeadTranscriptPage = {}) => ({
+  (partition, session: string, page: SessionTranscriptPage = {}) => ({
     parameters: { ...partition, session },
     query: { stream: page.stream, after: page.after, limit: page.limit },
   }),
@@ -1500,7 +1500,7 @@ export const apiChatThread = apiTenantEndpoint(
 
 export const apiChatThreadTranscript = apiTenantEndpoint(
   nativeHttpEndpoints.chatThreadTranscript,
-  (tenant, session: string, page: LeadTranscriptPage = {}) => ({
+  (tenant, session: string, page: SessionTranscriptPage = {}) => ({
     parameters: { tenant, session },
     query: { stream: page.stream, after: page.after, limit: page.limit },
   }),

@@ -18,7 +18,7 @@
 
 import { expect, test } from "vitest";
 
-import type { LeadTranscriptResponse } from "../../../src/contract/responses.ts";
+import type { SessionTranscriptResponse } from "../../../src/contract/responses.ts";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
 import {
   sessionTranscriptDrawn,
@@ -95,7 +95,7 @@ function modelPage(
     readonly repeats: boolean;
     readonly elided: number;
   },
-): LeadTranscriptResponse {
+): SessionTranscriptResponse {
   const above = shape.draws ? (store.batches[after] ?? []) : [];
   const batch = shape.repeats ? [...above, ...above] : above;
   const cut = store.cut;
@@ -150,7 +150,7 @@ const modelSegmentEmpty: ModelSegment = {
 
 function modelGathered(
   segment: ModelSegment,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
   highWaterBatch: number,
 ): ModelSegment {
   const stalls =
@@ -189,7 +189,7 @@ function modelGathered(
 /** Whether this page belongs to the run being gathered, or begins a new one. */
 function modelStartsRun(
   segment: ModelSegment,
-  page: LeadTranscriptResponse,
+  page: SessionTranscriptResponse,
 ): boolean {
   if (page.held === undefined) return false;
   return segment.pages > 0 && page.cut !== segment.cut;

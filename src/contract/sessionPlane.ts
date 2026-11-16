@@ -41,7 +41,7 @@ import {
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
 import {
-  leadStoreStreamResponseSchema,
+  sessionStoreStreamResponseSchema,
   sessionContextOfferedSchema,
 } from "./responses.ts";
 import {
@@ -361,7 +361,9 @@ export const sessionTurnStoppedAnswerSchema = z.object({
 
 /** The streams a session's store holds under the prefix asked for, answered whole or refused. */
 export const sessionStoreStreamsAnswerSchema = z.object({
-  streams: z.array(leadStoreStreamResponseSchema).max(nativeHttpPageItemsMax),
+  streams: z
+    .array(sessionStoreStreamResponseSchema)
+    .max(nativeHttpPageItemsMax),
 });
 
 /**

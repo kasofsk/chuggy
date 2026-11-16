@@ -530,8 +530,6 @@ const chuggyToolRoster = {
     "read_configuration",
     "read_ticket_landings",
     "read_landing_queues",
-    "read_lead",
-    "read_lead_transcript",
     "list_executions",
     "read_execution",
     "read_run_transcript",
@@ -756,8 +754,6 @@ export const chuggyToolRoutes = {
    * queue is its holder and waits on nobody.
    */
   landingQueues: nativeHttpRoutes.landingQueues,
-  lead: nativeHttpRoutes.lead,
-  leadTranscript: nativeHttpRoutes.leadTranscript,
   executions: nativeHttpRoutes.executions,
   execution: nativeHttpRoutes.execution,
   runTranscript: nativeHttpRoutes.runTranscript,

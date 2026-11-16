@@ -3,8 +3,8 @@
  * answers carried, and what the session was opened under.
  *
  * THE READ IS KEYED ON THE SESSION AND NOT ON A KIND, as the transcript's rows
- * are: the lead's route and a thread's each resolve their session under their
- * own permission and pass it here, so one page shape answers both.
+ * are: a thread's routes resolve their session under their own permission and
+ * pass it here, so one page shape answers every kind of thread.
  *
  * WHAT THE SESSION WAS OPENED UNDER CROSSES ONCE, on the first page. A prompt
  * may weigh as much as the page's readings, and it is the same text on every
