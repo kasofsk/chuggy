@@ -730,6 +730,7 @@ run_selected_gate check-paths "check-paths" ./.chug/tasks/check-paths.sh
 run_selected_gate check-shell-quoting "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 run_selected_gate check-duplication "check-duplication" ./.chug/tasks/check-duplication.sh
 run_selected_gate check-console-sheets "check-console-sheets" ./.chug/tasks/check-console-sheets.sh
+run_selected_gate check-console-colours "check-console-colours" ./.chug/tasks/check-console-colours.sh
 run_selected_gate check-gates "check-gates" ./.chug/tasks/check-gates.sh
 run_selected_gate check-comments "check-comments" ./.chug/tasks/check-comments.sh
 run_selected_gate check-roster "check-roster" ./.chug/tasks/check-roster.sh

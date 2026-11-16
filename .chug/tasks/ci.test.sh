@@ -733,6 +733,19 @@ done
 check "a page skips the static checks" 0 "$RC" "check-source static: SKIPPED"
 check "a page skips the clone detector" 0 "$RC" "check-duplication: SKIPPED"
 
+# The console's colour gate reads the console's modules and nothing else.
+stub_repo 0
+mkdir -p "$R/ui/chuggy-ui/app" "$R/src"
+commit_all baseline
+printf 'export const pill = 1;\n' > "$R/ui/chuggy-ui/app/pill.ts"
+commit_all console-module
+run_last_commit
+refute "a console module selects the colour gate" 0 "$RC" "check-console-colours: SKIPPED"
+printf 'export const other = 1;\n' > "$R/src/other.ts"
+commit_all source-module
+run_last_commit
+check "a module outside the console skips the colour gate" 0 "$RC" "check-console-colours: SKIPPED"
+
 # The boundary gate walks directories, so a module of a kind its old list of
 # suffixes left out is in its cone, and the generated API's gate holds both
 # files its generator writes.
@@ -1430,6 +1443,7 @@ for gate in \
 	"check-model|packages|--|./.chug/tasks/check-model.sh|" \
 	"check-model-api|packages|--|./.chug/tasks/check-model-api.sh|" \
 	"check-console-copy|packages|--|./.chug/tasks/check-console-copy.sh|" \
+	"check-console-colours|none|--|./.chug/tasks/check-console-colours.sh|" \
 	"check-conformance|packages|--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
 	"check-random|packages|--env|CHUG_WALK_SAMPLES|--env|CHUG_WALK_SEED_BASE|--env|CHUG_WALK_SEED|--env|CHUG_WALK_INSTANCE|--|./.chug/tasks/check-random.sh|" \
 	"check-console|install|--|./.chug/tasks/check-console.sh|"; do
@@ -1515,6 +1529,7 @@ pin_scope check-console-copy "$record_tool_installed '@fluent/syntax'" ui/chuggy
 	ui/chuggy-ui/app/core/generated ui/chuggy-ui/tools/copyCatalog.ts .chug/tasks/check-console-copy.sh \
 	':(glob)**/package.json' -- ui/chuggy-ui/tools/node_modules ui/chuggy-ui/tools/package.json \
 	ui/chuggy-ui/node_modules ui/chuggy-ui/package.json
+pin_scope check-console-colours "" ui/chuggy-ui/app .chug/tasks/check-console-colours.sh
 pin_scope check-conformance "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" src/domain src/generated test/conformance \
 	test/domain test/itf test/golden model .chug/tasks/check-conformance.sh ':(glob)**/package.json' \
 	-- src/node_modules src/package.json
@@ -1602,6 +1617,7 @@ for suite in .chug/tasks/ci.test.sh .chug/tasks/check-source.test.sh \
 	.chug/tasks/check-model-api.test.sh .chug/tasks/check-shell-quoting.test.sh \
 	.chug/tasks/check-random.test.sh .chug/tasks/emit-goldens.test.sh .chug/tasks/check-keto.test.sh \
 	.chug/tasks/check-postgres.test.sh .chug/tasks/check-queries.test.sh .chug/tasks/other.test.sh \
+	.chug/tasks/check-console-colours.test.sh \
 	.githooks/pre-commit.test.sh images/worker/core.test.sh deploy/rig/drill.test.sh; do
 	mkdir -p "$R/${suite%/*}"
 	printf '#!/bin/sh\nexit 0\n' > "$R/$suite"
@@ -1653,6 +1669,8 @@ pin_scope .chug/tasks/check-queries.test.sh "" .chug/tasks/check-queries.test.sh
 	.chug/tasks/check-queries.sh .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
 	.chug/tasks/_suite.sh
 pin_scope .chug/tasks/other.test.sh "" .chug/tasks/other.test.sh .chug/tasks/other.sh .chug/tasks/_suite.sh
+pin_scope .chug/tasks/check-console-colours.test.sh "" .chug/tasks/check-console-colours.test.sh \
+	.chug/tasks/check-console-colours.sh .chug/tasks/check-console-sheets.sh .chug/tasks/_suite.sh
 pin_scope .githooks/pre-commit.test.sh "" .githooks/pre-commit.test.sh .githooks/pre-commit \
 	.chug/tasks/_suite.sh
 pin_scope images/worker/core.test.sh "" images/worker/core.test.sh images/worker/core.sh \
@@ -2951,7 +2969,7 @@ unit_stored() { # <label> <suite>...
 	check "which reuses every suite" 0 "$RC" "5 selected, 5 reused, 0 ran"
 	# Every wrapped stub gate and every unit suite, each open one counted
 	# though they are one entry.
-	check "and counts each reused suite in the run's total" 0 "$RC" "ci: all gates clean (23 reused)"
+	check "and counts each reused suite in the run's total" 0 "$RC" "ci: all gates clean (24 reused)"
 	printf 'export type Other = "b";\n' >> "$R/src/kinds.ts"
 	unit_stored "a module one closed suite reaches" test/unit/typed.test.ts $unit_open
 	check "which reuses the other closed suites" 0 "$RC" "5 selected, 2 reused, 3 ran"
