@@ -761,6 +761,30 @@ test("an origin is one only as a URL writes it, with nothing after it", () => {
     );
 });
 
+test("the worker is told to indent the declaration by two spaces and end it and each prompt file it names in a newline", () => {
+  assert.ok(
+    briefed("Work", "Prompt").some(
+      (line) =>
+        line.includes(
+          `Write each file in ${repositoryConfigurationRoot} as JSON indented by two spaces and ending in a newline`,
+        ) && line.includes("end each prompt file it names in a newline"),
+    ),
+  );
+});
+
+test("a declaration laid out as its worker is told imports as the compact one does", () => {
+  const compact = declaredFile(atEveryBound);
+  const laidOut = `${JSON.stringify(JSON.parse(compact), undefined, 2)}\n`;
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [{ path: declaredPath, kind: "File", content: laidOut }],
+    referenced: declaredPrompts,
+  });
+  assert.equal(imported.readiness, "Ready");
+  assert.deepEqual(imported, declaredTo(atEveryBound));
+});
+
 test("the worker is told that evaluations run in order and stop at a failure", () => {
   const told = briefed("Work", "Prompt");
   assert.ok(

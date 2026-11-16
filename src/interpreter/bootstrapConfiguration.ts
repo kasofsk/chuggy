@@ -198,6 +198,7 @@ function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
     `W is ${bootstrapAgentSkeleton("", "P")}, P the path of a file under .chug/ holding the prompt the worker is handed, as written.`,
     `R is ${bootstrapAgentSkeleton('"purpose":"Review","reevaluate":"OnChange",', "Q")}, Q the path of a file under .chug/ telling a reviewer what to hold a change to.`,
     `K is {"runner":"Commands","commands":[L],"worker":{"setup":[L],"files":[]}}, which runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit. A plan's stages run in the order listed and a failed stage ends evaluation, so the cheap checks stage goes before the review.`,
+    `Write each file in ${repositoryConfigurationRoot} as JSON indented by two spaces and ending in a newline, and end each prompt file it names in a newline too.`,
     `Each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it. Each L runs under sh -eu with CHUG_CHANGE_BASE set to the commit the change started from where that is known, and unset otherwise, so a check of only what changed reads it as \${CHUG_CHANGE_BASE-} and runs everything where that is empty. CHUG_TENANT, CHUG_PROJECT, CHUG_REPOSITORY (its clone URL), CHUG_TICKET, CHUG_ATTEMPT and CHUG_STAGE (Work, or Evaluation:N counted from one) name the job each L runs in, and are always set.`,
     bootstrapSchemaLine(input.publicOrigin),
     bootstrapImageLine(input.image),
