@@ -206,7 +206,6 @@ function servedApp(options: Serving, web: ServedWeb, hub?: ThreadLiveHub) {
     undefined,
     undefined,
     undefined,
-    undefined,
     hub,
   );
 }

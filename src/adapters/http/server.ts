@@ -67,7 +67,6 @@ import type {
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
 import type { ProjectInbox } from "../../interpreter/projectInbox.ts";
-import type { SelectorProposalReviews } from "../../interpreter/selectorReview.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import type {
@@ -98,7 +97,6 @@ import {
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
   selectorHistoryLimitMax,
-  selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
   workerRunCredentialSchema,
 } from "../../contract/http.ts";
@@ -140,7 +138,6 @@ import {
   parseDraftRevision,
   parsePartition,
   parseSelectorProjectSettings,
-  parseSelectorProposalReview,
   parseSubmission,
   parseLeadInquiry,
   parseThreadHide,
@@ -202,10 +199,7 @@ import {
   leadResponse,
   sessionTranscriptResponse,
   selectorHistoryResponse,
-  selectorProposalReviewResponse,
-  selectorProposalsResponse,
   ticketAgenticRefusalsResponse,
-  selectorOperationalContextResponse,
   selectorProjectSettingsResponse,
   selectorProjectSettingsWriteResponse,
   selectorSettingsHistoryResponse,
@@ -367,7 +361,6 @@ type InitialNativeWeb = Pick<
   | "executions"
   | "latestExecutions"
   | "operationalStatus"
-  | "selectorOperationalContext"
   | "hostedRuns"
   | "abilities"
   | "lead"
@@ -1020,17 +1013,6 @@ function registerSelectorHistory(
   });
 }
 
-/** The lead's held decisions and the inbox that holds them, each where it was composed. */
-function registerReviewsAndInbox(
-  app: FastifyInstance,
-  proposalReviews: SelectorProposalReviews | undefined,
-  inbox: ProjectInbox | undefined,
-): void {
-  if (proposalReviews !== undefined)
-    registerSelectorProposals(app, proposalReviews);
-  if (inbox !== undefined) registerInbox(app, inbox);
-}
-
 /** The inbox, one page at a time under the tickets list's own activity cursor. */
 function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
   registerEndpoint(
@@ -1051,51 +1033,6 @@ function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
       );
     },
     inboxResponse,
-  );
-}
-
-/** The lead's held decisions, read and answered by a principal who may dispatch. */
-function registerSelectorProposals(
-  app: FastifyInstance,
-  reviews: SelectorProposalReviews,
-): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.selectorProposals,
-    (_request, principal, partition) =>
-      reviews.pending(
-        principal,
-        partition,
-        selectorProposalDispatchesAnsweredMax,
-      ),
-    selectorProposalsResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.reviewSelectorProposal,
-    async (request, principal, partition) => {
-      const review = parseSelectorProposalReview(
-        textField(record(request.params), "decision"),
-        request.body,
-      );
-      const result =
-        review.outcome === "Approved"
-          ? await reviews.approve(
-              principal,
-              partition,
-              review.decision,
-              review.feedback,
-            )
-          : await reviews.reject(
-              principal,
-              partition,
-              review.decision,
-              review.feedback,
-            );
-      return { review, result };
-    },
-    ({ review, result }) =>
-      selectorProposalReviewResponse(result, review.decision, review.outcome),
   );
 }
 
@@ -1411,26 +1348,6 @@ function registerProjectArtifacts(
     });
     registered();
   });
-}
-
-function registerSelectorContext(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/selector-context",
-    async (request, reply) => {
-      nativeHttpSend(
-        reply,
-        selectorOperationalContextResponse(
-          await web.selectorOperationalContext(
-            principalOf(request),
-            partitionOf(request),
-          ),
-        ),
-      );
-    },
-  );
 }
 
 /**
@@ -3540,7 +3457,6 @@ export function createNativeHttpApp(
   creation?: ProjectCreation,
   placement?: ExecutionPlacementAdministration,
   sessionPlacement?: SessionPlacementAdministration,
-  proposalReviews?: SelectorProposalReviews,
   threadLive?: ThreadLiveHub,
   actionReports?: ActionReports,
   actionReach?: TicketActionReaches,
@@ -3566,11 +3482,10 @@ export function createNativeHttpApp(
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
   registerLead(app, web);
-  registerSelectorContext(app, web);
   registerSelectorHistory(app, web, nativeHttpPartitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
-  registerReviewsAndInbox(app, proposalReviews, inbox);
+  if (inbox !== undefined) registerInbox(app, inbox);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
   if (onboarding !== undefined) registerOnboarding(app, onboarding);

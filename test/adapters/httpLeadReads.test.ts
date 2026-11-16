@@ -463,7 +463,6 @@ function appOf(shape: LeadCase = {}) {
     undefined,
     undefined,
     undefined,
-    undefined,
     leadPorts(shape),
   );
   return createNativeHttpApp(

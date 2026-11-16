@@ -213,8 +213,7 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
   epic: String(consoleEpic.number),
 };
 
-/** The ticket the lead refuses, which a held decision of its own also names:
- * the one entry the inbox holds. */
+/** The ticket the lead refuses: the one entry the inbox holds. */
 export const consoleInboxTicket = 42;
 
 const consoleInbox: InboxResponse = {
@@ -227,9 +226,6 @@ const consoleInbox: InboxResponse = {
       },
       actions: [],
       refusals: [inboxRefusal()],
-      proposals: [
-        { decision: "selector-decision-2", tickets: [consoleInboxTicket] },
-      ],
     },
   ],
   count: 1,

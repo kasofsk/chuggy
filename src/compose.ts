@@ -140,20 +140,13 @@ import {
   type ProjectCreationAuthority,
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
-import {
-  postgresSelectorProjectSettings,
-  postgresSelectorProposalReviews,
-} from "./adapters/postgres/selector.ts";
+import { postgresSelectorProjectSettings } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import { postgresAgenticRefusalBinding } from "./adapters/postgres/agenticRefusal.ts";
 import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
 } from "./interpreter/selectorProjectSettings.ts";
-import {
-  selectorProposalReviews,
-  type SelectorProposalReviews,
-} from "./interpreter/selectorReview.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
 import { postgresEvaluationStack } from "./adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
@@ -209,7 +202,6 @@ import { postgresOperationalReads } from "./adapters/postgres/operationalReads.t
 import { postgresRunEvidenceReads } from "./adapters/postgres/runEvidence.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
 import type { RunEvidenceContentPort } from "./interpreter/runEvidence.ts";
-import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
 import type {
   RepositoryConfigurationSnapshotPort,
   RepositoryDefaultBranchPort,
@@ -340,27 +332,9 @@ export function composeSelectorProjectSettings(
   );
 }
 
-/**
- * Wires the review of a lead's held proposals to the review role, whose definer
- * is the one way a held delivery moves, under the dispatch permit a reviewer needs.
- */
-export function composeSelectorProposalReviews(
-  selectorReviewPool: pg.Pool,
-  access: ProjectAccess,
-): SelectorProposalReviews {
-  return selectorProposalReviews(
-    access,
-    postgresSelectorProposalReviews(selectorReviewPool),
-  );
-}
-
-/**
- * The inbox over the API pool, with the refusals it reads there and the held
- * decisions it reads through the review role, as the proposals route does.
- */
+/** The inbox over the API pool, with the refusals it reads there. */
 export function composeProjectInbox(
   apiPool: pg.Pool,
-  selectorReviewPool: pg.Pool,
   access: ProjectAccess,
   usageResume?: TicketUsageResumeBounds,
 ): ProjectInbox {
@@ -368,7 +342,6 @@ export function composeProjectInbox(
     store: postgresInboxReads(apiPool, usageResume),
     operationalReads: postgresOperationalReads(apiPool),
     refusals: postgresAgenticRefusalBinding(apiPool),
-    proposals: composeSelectorProposalReviews(selectorReviewPool, access),
   });
 }
 
@@ -870,7 +843,6 @@ export function composeNativeWeb(
   outputContents?: OutputContentPort &
     RunEvidenceContentPort &
     ProjectArtifactPort,
-  selectorContexts?: SelectorOperationalContextRead,
   repositories?: RepositoryConfigurationSnapshotPort &
     RepositoryDefaultBranchPort,
   leads?: NativeLeadPorts,
@@ -892,7 +864,6 @@ export function composeNativeWeb(
       authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
     postgresOperationalReads(apiPool, memoryMibDefault),
     outputContents,
-    selectorContexts,
     repositories === undefined
       ? undefined
       : {

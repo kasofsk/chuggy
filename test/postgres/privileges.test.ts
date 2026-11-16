@@ -39,7 +39,6 @@ import {
   runnerLossResumeFunction,
   runnerLostTicketsFunction,
   schedulerRole,
-  selectorReviewRole,
   selectorServiceRole,
   ticketUpdatedDependenciesFunction,
   ticketRateLimitResumableFunction,
@@ -109,7 +108,6 @@ test("every runtime role may read only the migration ledger contract", async () 
     apiRole,
     ticketServiceRole,
     selectorServiceRole,
-    selectorReviewRole,
     schedulerRole,
     finalizerRole,
   ]) {
