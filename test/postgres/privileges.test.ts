@@ -1406,7 +1406,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
   assert.equal(
     read.find((row) => row.relation === "worker_pool")?.columns,
-    "capabilities,class,memory_ceiling_mib,pool,principal,project,tenant",
+    "capabilities,class,memory_ceiling_mib,memory_room_mib,pool,principal,project,tenant",
   );
   assert.equal(
     read.find((row) => row.relation === "personal_runner")?.columns,
