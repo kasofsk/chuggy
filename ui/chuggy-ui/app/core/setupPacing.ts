@@ -1,6 +1,6 @@
 /**
  * The setup program's pacing: how often a run looks again at what it waits
- * on, and how long it gives git to name the folder's remote.
+ * on, and how long it gives git to name the folder's remote and its history.
  *
  * A run is paced as the modules that wait state unless it is handed text
  * naming quicker values. That text is a JSON object naming some of the fields
@@ -17,6 +17,7 @@
 import { z } from "zod";
 
 import { setupBindPollMs } from "./setupBind.ts";
+import { setupMergePollMs } from "./setupMerge.ts";
 import { setupRemoteWaitMs } from "./setupRemote.ts";
 import { setupLivePollMs } from "./setupRunner.ts";
 import { setupSignInPollMs } from "./setupSignIn.ts";
@@ -26,10 +27,12 @@ export interface SetupPacing {
   readonly signInPollMs: number;
   /** How often `runner` asks the site again whether it sees a runner live. */
   readonly livePollMs: number;
-  /** How long git is given to name the folder's remote. */
+  /** How long git is given to name the folder's remote, and to count its history. */
   readonly remoteWaitMs: number;
   /** How often `bind` reads the checklist again while it waits on GitHub. */
   readonly bindPollMs: number;
+  /** How often `merge` reads the checklist again while it waits on the import. */
+  readonly mergePollMs: number;
 }
 
 export const setupPacing: SetupPacing = {
@@ -37,6 +40,7 @@ export const setupPacing: SetupPacing = {
   livePollMs: setupLivePollMs,
   remoteWaitMs: setupRemoteWaitMs,
   bindPollMs: setupBindPollMs,
+  mergePollMs: setupMergePollMs,
 };
 
 function setupPacingField(msMax: number) {
@@ -48,6 +52,7 @@ const setupPacingSchema = z.strictObject({
   livePollMs: setupPacingField(setupPacing.livePollMs),
   remoteWaitMs: setupPacingField(setupPacing.remoteWaitMs),
   bindPollMs: setupPacingField(setupPacing.bindPollMs),
+  mergePollMs: setupPacingField(setupPacing.mergePollMs),
 });
 
 /** The pacing `text` names, each field it leaves out the program's own. */
@@ -66,5 +71,6 @@ export function setupPacingRead(text: string | undefined): SetupPacing {
     livePollMs: named.data.livePollMs ?? setupPacing.livePollMs,
     remoteWaitMs: named.data.remoteWaitMs ?? setupPacing.remoteWaitMs,
     bindPollMs: named.data.bindPollMs ?? setupPacing.bindPollMs,
+    mergePollMs: named.data.mergePollMs ?? setupPacing.mergePollMs,
   };
 }

@@ -272,10 +272,10 @@ async function landingTold(
 const told = (ends: string): string =>
   `tell: Ticket 1 is in Work. ${ends} https://chuggy.example/acme/widgets/tickets/1 shows where it is. Tell me when you want me to look again.`;
 
-test("a first ticket under the bootstrap, in a repository that lands work in a pull request the person merges, is told to end in one, whose merge makes later tickets run on the repository's own configuration", async () => {
+test("a first ticket under the bootstrap, in a repository that lands work in a pull request the person merges, is told to end in one setup can merge on a yes, whose merge makes later tickets run on the repository's own configuration", async () => {
   expect(await landingTold("Bootstrap", "PullRequest")).toBe(
     told(
-      "It ends in a pull request for you to merge on GitHub, and merging it makes later tickets run on this repository's own configuration. Setup is done once that pull request is open.",
+      "It ends in a pull request that I can merge for you once you say yes, and merging it makes later tickets run on this repository's own configuration. Setup is done once that pull request is open.",
     ),
   );
 });

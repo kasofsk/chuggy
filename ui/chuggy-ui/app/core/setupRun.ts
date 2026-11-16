@@ -29,16 +29,26 @@ import {
 } from "./setupConfiguration.ts";
 import { setupBindAsked, setupBindWrites } from "./setupBind.ts";
 import {
+  setupHistoryRead,
+  setupMergeAsked,
+  setupMergeImportFailed,
+  setupMergeWrites,
+} from "./setupMerge.ts";
+import {
   setupBindAwaited,
   setupBindDue,
   setupConfigurationDue,
   setupConnectDue,
   setupMcpDue,
+  setupMergeAwaited,
+  setupMergeDue,
+  setupMergeUnseen,
   setupNext,
   setupRunnerDue,
   setupServeDue,
   setupTicketDue,
 } from "./setupNext.ts";
+import type { SetupMergeSeen } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
 import {
   SetupMachineError,
@@ -224,14 +234,17 @@ function setupBusy(
  * for it. Everything goes out through ports that can only read; Claude Code's
  * list of plugins is read where the plugin step was not passed over, the agent's
  * configuration is read for the project chosen, where the MCP step or the
- * runner's is the one next the machine is looked at and not touched, and
- * where the project's first ticket is, what it may be drawn under is read.
+ * runner's is the one next the machine is looked at and not touched, where
+ * the project's first ticket is, what it may be drawn under is read, and where
+ * the merge is offered and `merged` says nothing of one, the folder's history
+ * is counted.
  */
 async function setupChecklist(
   ports: SetupPorts,
   signed: Extract<SetupSigned, { readonly signed: "In" }>,
   answers: SetupAnswers,
   pacing: SetupPacing,
+  merged?: SetupMergeSeen,
 ): Promise<Extract<SetupReport, { readonly report: "Checklist" }>> {
   const standing = await setupStandingRead(ports, signed, answers, pacing);
   const due = setupRunnerDue(standing);
@@ -249,6 +262,14 @@ async function setupChecklist(
           setupReadPorts(signed.opened.api, signed.bearer),
           filing,
         );
+  const merge =
+    merged ??
+    (setupMergeDue(standing) === undefined
+      ? setupMergeUnseen
+      : {
+          seen: "Offered",
+          history: await setupHistoryRead(ports.process, pacing.remoteWaitMs),
+        });
   return {
     report: "Checklist",
     site: standing.site,
@@ -265,6 +286,7 @@ async function setupChecklist(
       here,
       packaged,
       offers,
+      merge,
     ),
   };
 }
@@ -468,6 +490,92 @@ async function setupBind(
         checklist: await checklist(),
       };
     await ports.sleepMs(pacing.bindPollMs);
+  }
+}
+
+type SetupMergeReport = Extract<SetupReport, { readonly report: "Merge" }>;
+
+/** The one merge `merge` asks of the site, where the checklist offers it, and what it looked at before. */
+async function setupMergeFirst(
+  held: Extract<SetupSigned, { readonly signed: "In" }>,
+  standing: SetupStanding,
+): Promise<
+  Pick<SetupMergeReport, "url" | "answered"> & {
+    readonly since: Extract<SetupMergeSeen, { readonly seen: "Merged" }>;
+  }
+> {
+  const due = setupMergeDue(standing);
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupMergeAsked(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupMergeWrites(due.partition, due.unmerged.ticket),
+          ),
+          due.partition,
+          due.unmerged.ticket,
+        );
+  return {
+    url: due?.unmerged.url,
+    answered,
+    since: {
+      seen: "Merged",
+      before: standing.bootstrap?.lastImport,
+      mergeCommit:
+        answered?.answered === "Merged"
+          ? answered.mergeCommit
+          : standing.bootstrap?.mergeCommit,
+    },
+  };
+}
+
+/**
+ * `merge` works under the remembered sign-in as `bind` does, asking the site
+ * for the merge where the checklist offers it, the one write its ports let
+ * through, and ending on a refusal with setup said to be done. Once it is
+ * merged, or where nothing stands unmerged and the repository still holds only
+ * the bootstrap, it reads the checklist again at `pacing.mergePollMs`, entered
+ * again at each look, until the repository's own configuration is imported,
+ * its import is refused, or the run's wait ends.
+ */
+async function setupMergeRun(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Merge" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
+  const first = await setupEntered(ports, asked.site, "Merge");
+  if (first === undefined) return setupBusy(ports, "Merge", asked.site);
+  if (first.signed === "Out") return first.report;
+  const standing = await setupStandingRead(ports, first, asked.answers, pacing);
+  const { url, answered, since } = await setupMergeFirst(first, standing);
+  const report = async (
+    held: Extract<SetupSigned, { readonly signed: "In" }>,
+    merged: SetupMergeSeen | undefined,
+  ): Promise<SetupReport> => ({
+    report: "Merge",
+    url,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing, merged),
+  });
+  if (answered?.answered === "Refused")
+    return report(first, { seen: "Refused" });
+  if (answered?.answered === "Failed") return report(first, undefined);
+  if (answered === undefined && !setupMergeAwaited(standing))
+    return report(first, undefined);
+  for (let held = first, looked = standing; ;) {
+    const imported =
+      !setupMergeAwaited(looked) ||
+      setupMergeImportFailed(since, looked.bootstrap?.lastImport);
+    if (imported || ports.nowMs() >= endsAtMs) return report(held, since);
+    await ports.sleepMs(pacing.mergePollMs);
+    const again = await setupEntered(ports, asked.site, "Merge");
+    if (again === undefined) return setupBusy(ports, "Merge", asked.site);
+    if (again.signed === "Out") return again.report;
+    held = again;
+    looked = await setupStandingRead(ports, held, asked.answers, pacing);
   }
 }
 
@@ -713,6 +821,8 @@ export async function setupRun(
         return await setupImport(ports, asked, pacing);
       case "Bind":
         return await setupBind(ports, asked, pacing);
+      case "Merge":
+        return await setupMergeRun(ports, asked, pacing);
       case "Serve":
         return await setupServe(ports, asked, pacing);
       case "Ticket":

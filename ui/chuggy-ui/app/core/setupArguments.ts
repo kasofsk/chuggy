@@ -27,6 +27,9 @@
  * repository to the project where that is the next thing, and reads the
  * checklist again. `--opened github` says a `bind` before it already opened
  * the page that connects GitHub, so this one opens none.
+ * `merge`, on the person's yes, has the site merge the pull request the
+ * checklist offers, then waits as `bind` does for the repository's own
+ * configuration to be imported, and reads the checklist again.
  * `serve`, for a project named whole, has the person's own runners take its
  * work, where that is the checklist's next thing, and reads the checklist
  * again.
@@ -93,6 +96,7 @@ export type SetupCommand =
   | "Check"
   | "Import"
   | "Bind"
+  | "Merge"
   | "Serve"
   | "Ticket"
   | "Plugin";
@@ -209,6 +213,12 @@ export type SetupAsked =
       readonly opened: boolean;
     }
   | {
+      readonly asked: "Merge";
+      readonly site: string | undefined;
+      readonly waitSecs: number;
+      readonly answers: SetupAnswers;
+    }
+  | {
       readonly asked: "Serve";
       readonly site: string | undefined;
       readonly answers: SetupAnswers;
@@ -250,6 +260,7 @@ const setupCommandWords = {
   check: "Check",
   import: "Import",
   bind: "Bind",
+  merge: "Merge",
   serve: "Serve",
   ticket: "Ticket",
   plugin: "Plugin",
@@ -289,6 +300,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Check: ["workspace", "project", "plugin"],
   Import: ["site", "workspace", "project", "plugin"],
   Bind: ["site", "wait-secs", "workspace", "project", "plugin", "opened"],
+  Merge: ["site", "wait-secs", "workspace", "project", "plugin"],
   Serve: ["site", "workspace", "project", "plugin"],
   Ticket: [
     "site",
@@ -466,6 +478,31 @@ function setupBindAsked(
   };
 }
 
+/** A run of `mcp`, `serve` or `runner`, each of which names its project, and `runner` its chat host where it is given one. */
+function setupAskedOfProjectRun(
+  asked: "Mcp" | "Serve" | "Runner",
+  site: string | undefined,
+  waitSecs: number,
+  answers: SetupAnswers,
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupAsked {
+  const { workspace, project } = answers;
+  if (workspace === undefined || project === undefined)
+    return { asked: "Wrongly", fault: "Project" };
+  if (asked !== "Runner") return { asked, site, answers, workspace, project };
+  const chatHost = setupChatHostRead(flags.get("chat-host"));
+  if (chatHost === "Wrongly") return { asked: "Wrongly", fault: "ChatHost" };
+  return {
+    asked,
+    site,
+    waitSecs,
+    answers: chatHost === undefined ? answers : { ...answers, chatHost },
+    workspace,
+    project,
+    chatHost,
+  };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -493,30 +530,14 @@ function setupAskedOf(
     case "Status":
       return { asked, site, answers };
     case "SignIn":
+    case "Merge":
       return { asked, site, waitSecs: wait, answers };
     case "Project":
       return setupProjectAsked(site, answers);
     case "Mcp":
     case "Serve":
-    case "Runner": {
-      const { workspace, project } = answers;
-      if (workspace === undefined || project === undefined)
-        return { asked: "Wrongly", fault: "Project" };
-      if (asked !== "Runner")
-        return { asked, site, answers, workspace, project };
-      const chatHost = setupChatHostRead(flags.get("chat-host"));
-      if (chatHost === "Wrongly")
-        return { asked: "Wrongly", fault: "ChatHost" };
-      return {
-        asked,
-        site,
-        waitSecs: wait,
-        answers: chatHost === undefined ? answers : { ...answers, chatHost },
-        workspace,
-        project,
-        chatHost,
-      };
-    }
+    case "Runner":
+      return setupAskedOfProjectRun(asked, site, wait, answers, flags);
     case "ChatHost":
       return setupChatHostAsked(site, wait, answers, flags.get("replace"));
     case "Configuration":
@@ -573,6 +594,8 @@ export function setupCommandArguments(
       return ["import"];
     case "Bind":
       return ["bind"];
+    case "Merge":
+      return ["merge"];
     case "Serve":
       return ["serve"];
     case "Ticket":
