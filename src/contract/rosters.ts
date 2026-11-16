@@ -471,10 +471,6 @@ export type DispatchViewResult = (typeof dispatchViewResults)[number];
 /** What the scheduler is willing to claim about the counts it reports. */
 export const schedulerFreshnesses = ["Unknown"] as const;
 
-/** Whether the selector is running at all, at an installation or for one project. */
-export const selectorModes = ["Running", "Paused"] as const;
-export type SelectorMode = (typeof selectorModes)[number];
-
 /** What a minted forge credential may do to the repository it is scoped to. */
 export const forgeCredentialPermissions = ["read", "write", "propose"] as const;
 export type ForgeCredentialPermission =
@@ -560,10 +556,6 @@ export const repositoryConfigurationImportAbsences = [
 ] as const;
 export type RepositoryConfigurationImportAbsenceName =
   (typeof repositoryConfigurationImportAbsences)[number];
-
-/** Whether a selector proposal is dispatched or held for a reviewer. */
-export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
-export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];
 
 /** Where one of a decision's dispatches stands, which is what the log says landed. */
 export const selectorDeliveryStates = [

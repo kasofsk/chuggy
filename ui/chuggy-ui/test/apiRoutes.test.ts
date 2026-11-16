@@ -415,18 +415,6 @@ test("the reader's abilities hang from the partition and are read door by door",
   expect(held.urls[0]).toBe(`${partitionPath}/abilities`);
 });
 
-const apiLimits = {
-  tokensPerDecision: 1,
-  millisecondsPerDecision: 1,
-  toolCallsPerDecision: 1,
-  dispatchesPerDecision: 3,
-  inputBytesPerDecision: 1,
-  candidatePagesPerDecision: 1,
-  autoCompactWindow: 200_000,
-  concurrentDecisions: 1,
-  selectionsPerMinute: 1,
-};
-
 /** The write is a PUT of the whole override set under the revision it was read
  * at, which is what makes a concurrent write a conflict rather than a clobber. */
 test("the settings are read, written whole and paged for their revisions", async () => {
@@ -435,19 +423,7 @@ test("the settings are read, written whole and paged for their revisions", async
     revision: 12,
     overrides: {},
     effective: {
-      revision: 12,
-      projectRevision: 12,
-      mode: "Running",
-      installationMode: "Running",
-      dispatchMode: "Automatic",
-      basePrompt: "choose",
       threadStandingRules: "- You act through your owner's own commands.",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits: apiLimits,
-      installationLimits: apiLimits,
-      operationalContextMaxAgeMs: 1,
-      leadOffering: "Own",
     },
   };
   const held = recording((url) =>

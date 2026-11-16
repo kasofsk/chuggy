@@ -5,39 +5,26 @@ import {
   selectorProjectOverridesSchema,
   selectorProjectSettingsSchema,
 } from "../../src/contract/requests.ts";
+import { resolvedThreadStandingRules } from "../../src/contract/threadSeeding.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
-import {
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
-  runModelCharsMax,
-  sessionEfforts,
-} from "../../src/contract/http.ts";
+import { runModelCharsMax, sessionEfforts } from "../../src/contract/http.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
-  leadDispatchesMax,
-  leadInputBytesMax,
-  leadObservationBytesMax,
-  resolvedSelectorSettings,
-  selectorSettingsFence,
-  selectorSettingsFenceHolds,
-  type SelectorProjectOverrides,
-  type SelectorRuntimeSettings,
-} from "../../src/interpreter/selector.ts";
-import {
   checkedSelectorProjectOverrides,
+  selectorEffectiveSettings,
   selectorProjectSettingsAdministration,
   selectorProjectSettingsTextCharsMax,
+  type SelectorProjectOverrides,
   type SelectorProjectSettingsRecord,
   type SelectorProjectSettingsStore,
   type SelectorProjectSettingsWriteOutcome,
   type SelectorSettingsMovement,
 } from "../../src/interpreter/selectorProjectSettings.ts";
-import type { SubsidizedLeadProfile } from "../../src/interpreter/sessionPlacement.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -50,27 +37,6 @@ const principal = asPrincipal("6:issuersubject");
 const administrator = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("selector-admin"),
-};
-
-const defaults: SelectorRuntimeSettings = {
-  revision: 7,
-  mode: "Running",
-  dispatchMode: "ApprovalRequired",
-  basePrompt: "Select at most one currently dispatchable ticket.",
-  modelAllowlist: ["*"],
-  toolAllowlist: ["*"],
-  limits: {
-    tokensPerDecision: 8192,
-    millisecondsPerDecision: 120_000,
-    toolCallsPerDecision: 20,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1_048_576,
-    candidatePagesPerDecision: 1,
-    autoCompactWindow: 200_000,
-    concurrentDecisions: 4,
-    selectionsPerMinute: 60,
-  },
-  operationalContextMaxAgeMs: 30_000,
 };
 
 function access(kinds: readonly string[]): ProjectAccess {
@@ -90,12 +56,7 @@ function record(
     partition,
     revision,
     overrides,
-    effective: resolvedSelectorSettings(
-      partition,
-      defaults,
-      revision,
-      overrides,
-    ),
+    effective: selectorEffectiveSettings(overrides),
   };
 }
 
@@ -127,104 +88,52 @@ function store(
   };
 }
 
-test("an absent override resolves to the installation default", () => {
-  const resolved = resolvedSelectorSettings(partition, defaults, 0, {});
-  assert.equal(resolved.basePrompt, defaults.basePrompt);
-  assert.equal(resolved.mode, defaults.mode);
-  assert.deepEqual(resolved.limits, defaults.limits);
-  assert.equal(resolved.northStar, undefined);
-  assert.equal(resolved.revision, defaults.revision);
-  assert.equal(resolved.projectRevision, 0);
+test("a project that overrides nothing resolves to the default standing rules and no North Star", () => {
+  assert.deepEqual(selectorEffectiveSettings({}), {
+    threadStandingRules: resolvedThreadStandingRules(undefined),
+  });
 });
 
-test("a project overrides upward and keeps the shared pool's limits", () => {
-  const resolved = resolvedSelectorSettings(partition, defaults, 3, {
-    northStar: "Ship the console.",
-    basePrompt: "Prefer tickets that unblock the largest closure.",
-    mode: "Paused",
-    limits: { tokensPerDecision: defaults.limits.tokensPerDecision * 4 },
-  });
-  assert.equal(resolved.northStar, "Ship the console.");
-  assert.equal(
-    resolved.basePrompt,
-    "Prefer tickets that unblock the largest closure.",
-  );
-  assert.equal(resolved.mode, "Paused");
-  assert.equal(resolved.limits.tokensPerDecision, 32_768);
-  assert.equal(
-    resolved.limits.concurrentDecisions,
-    defaults.limits.concurrentDecisions,
-  );
-  assert.equal(
-    resolved.limits.selectionsPerMinute,
-    defaults.limits.selectionsPerMinute,
-  );
-  assert.equal(resolved.dispatchMode, defaults.dispatchMode);
-  assert.equal(resolved.projectRevision, 3);
-});
-
-test("an installation pause is the one ceiling, and the resolved mode says so", () => {
-  const paused = resolvedSelectorSettings(
-    partition,
-    { ...defaults, mode: "Paused" },
-    3,
-    { mode: "Running" },
-  );
-  assert.equal(paused.mode, "Paused");
-  assert.equal(paused.installationMode, "Paused");
-  const running = resolvedSelectorSettings(partition, defaults, 3, {
-    mode: "Paused",
-  });
-  assert.equal(running.mode, "Paused");
-  assert.equal(running.installationMode, "Running");
-  assert.equal(
-    resolvedSelectorSettings(partition, defaults, 3, {}).installationMode,
-    "Running",
+test("a project's own North Star and standing rules are what it resolves to, and its model and effort are not resolved", () => {
+  assert.deepEqual(
+    selectorEffectiveSettings({
+      northStar: "Ship the console.",
+      threadStandingRules: "- You draft, and nothing else.",
+      threadModel: "opus",
+      threadEffort: "high",
+    }),
+    {
+      northStar: "Ship the console.",
+      threadStandingRules: "- You draft, and nothing else.",
+    },
   );
 });
 
 /**
- * A reader that has only the resolved limits cannot say which of them the
- * project asked for, so the unresolved defaults stand beside them whatever the
- * project overrode.
+ * The door is a strict object, so a caller still naming a field of the
+ * selector's — an old core setting `mode`, say — is told no rather than
+ * answered 200 for an override nothing would run under.
  */
-test("the installation limits survive a project overriding every one of them", () => {
-  const resolved = resolvedSelectorSettings(partition, defaults, 3, {
-    limits: {
-      tokensPerDecision: defaults.limits.tokensPerDecision * 2,
-      millisecondsPerDecision: defaults.limits.millisecondsPerDecision * 2,
-      toolCallsPerDecision: defaults.limits.toolCallsPerDecision * 2,
-      dispatchesPerDecision: leadDispatchesMax,
-      inputBytesPerDecision: defaults.limits.inputBytesPerDecision * 2,
-      candidatePagesPerDecision: defaults.limits.candidatePagesPerDecision * 2,
-    },
-  });
-  assert.deepEqual(resolved.installationLimits, defaults.limits);
-  assert.notDeepEqual(resolved.limits, resolved.installationLimits);
-  assert.deepEqual(
-    resolvedSelectorSettings(partition, defaults, 3, {}).installationLimits,
-    defaults.limits,
-  );
-});
-
-test("the fence holds only while both revisions still name what was read", () => {
-  const started = resolvedSelectorSettings(partition, defaults, 3, {});
-  const fence = selectorSettingsFence(started);
-  assert.equal(selectorSettingsFenceHolds(fence, started), true);
-  assert.equal(
-    selectorSettingsFenceHolds(
-      fence,
-      resolvedSelectorSettings(partition, { ...defaults, revision: 8 }, 3, {}),
-    ),
-    false,
-  );
-  assert.equal(
-    selectorSettingsFenceHolds(
-      fence,
-      resolvedSelectorSettings(partition, defaults, 4, {}),
-    ),
-    false,
-  );
+test("the override door takes the four thread fields and refuses every other", () => {
+  const admits = (overrides: unknown) =>
+    selectorProjectSettingsSchema.safeParse({ expectedRevision: 0, overrides })
+      .success;
+  assert.deepEqual(Object.keys(selectorProjectOverridesSchema.shape).sort(), [
+    "northStar",
+    "threadEffort",
+    "threadModel",
+    "threadStandingRules",
+  ]);
+  for (const refused of [
+    { mode: "Paused" },
+    { dispatchMode: "ApprovalRequired" },
+    { basePrompt: "Select one." },
+    { modelAllowlist: ["*"] },
+    { limits: { tokensPerDecision: 1 } },
+    { leadModel: "opus" },
+    { leadEffort: "high" },
+  ])
+    assert.equal(admits(refused), false, JSON.stringify(refused));
 });
 
 test("an override no column would hold is refused before the row is offered one", () => {
@@ -233,21 +142,13 @@ test("an override no column would hold is refused before the row is offered one"
     RangeError,
   );
   assert.throws(
-    () => checkedSelectorProjectOverrides({ basePrompt: "x".repeat(65_537) }),
-    RangeError,
-  );
-  assert.throws(
-    () => checkedSelectorProjectOverrides({ modelAllowlist: [""] }),
-    RangeError,
-  );
-  assert.throws(
-    () => checkedSelectorProjectOverrides({ limits: { tokensPerDecision: 0 } }),
+    () => checkedSelectorProjectOverrides({ threadStandingRules: "" }),
     RangeError,
   );
   assert.throws(
     () =>
       checkedSelectorProjectOverrides({
-        limits: { candidatePagesPerDecision: 2 },
+        threadStandingRules: "x".repeat(65_537),
       }),
     RangeError,
   );
@@ -259,11 +160,11 @@ test("an override no column would hold is refused before the row is offered one"
 test("the override door's text bound counts code points, matching the schema in front of it", () => {
   const atBound = "😀".repeat(selectorProjectSettingsTextCharsMax);
 
-  assert.deepEqual(checkedSelectorProjectOverrides({ basePrompt: atBound }), {
-    basePrompt: atBound,
+  assert.deepEqual(checkedSelectorProjectOverrides({ northStar: atBound }), {
+    northStar: atBound,
   });
   assert.throws(
-    () => checkedSelectorProjectOverrides({ basePrompt: atBound + "😀" }),
+    () => checkedSelectorProjectOverrides({ northStar: atBound + "😀" }),
     RangeError,
   );
 });
@@ -363,26 +264,6 @@ test("an unbounded history page is refused rather than asked for", async () => {
 });
 
 /**
- * The wire's own bound on the dispatch budget. A project asking for more than
- * a decision may dispatch would be stored and then refused on every turn that
- * spent it, which is a control reporting a number nothing applies.
- */
-test("the override door refuses a dispatch budget above the parse ceiling", () => {
-  const admits = (dispatches: number) =>
-    selectorProjectSettingsSchema.safeParse({
-      expectedRevision: 0,
-      overrides: { limits: { dispatchesPerDecision: dispatches } },
-    }).success;
-  assert.equal(admits(leadDispatchesMax), true);
-  assert.equal(admits(leadDispatchesMax + 1), false);
-});
-
-/**
- * The window is the runtime's own setting, so the door takes what the runtime
- * takes: its bounds are admitted and kept, and one past either is refused by
- * the wire and by the check behind it.
- */
-/**
  * A model is a name Claude Code's `--model` takes, judged by the runtime and
  * by no list here; the door refuses only what could not be one or would read
  * as a flag. An effort is one of the agent SDK's five.
@@ -397,227 +278,40 @@ test("the door keeps a model name and one of the five efforts, and refuses what 
     "claude-opus-5-5[1m]",
     "m".repeat(runModelCharsMax),
   ];
-  for (const name of ["leadModel", "threadModel"] as const) {
-    for (const model of kept) {
-      assert.equal(admits({ [name]: model }), true, `${name} ${model}`);
-      assert.deepEqual(checkedSelectorProjectOverrides({ [name]: model }), {
-        [name]: model,
-      });
-    }
-    for (const model of [
-      "claude sonnet",
-      " opus",
-      "opus\n",
-      "op\u0000us",
-      "-p",
-      "--model",
-      "",
-      "m".repeat(runModelCharsMax + 1),
-    ]) {
-      assert.equal(admits({ [name]: model }), false, `${name} ${model}`);
-      assert.throws(
-        () => checkedSelectorProjectOverrides({ [name]: model }),
-        RangeError,
-        `${name} ${model}`,
-      );
-    }
-  }
-  for (const name of ["leadEffort", "threadEffort"] as const) {
-    for (const effort of sessionEfforts)
-      assert.equal(admits({ [name]: effort }), true, `${name} ${effort}`);
-    for (const effort of ["none", "minimal", "ultra", "Medium", ""]) {
-      assert.equal(admits({ [name]: effort }), false, `${name} ${effort}`);
-      assert.throws(
-        () =>
-          checkedSelectorProjectOverrides({
-            [name]: effort,
-          }),
-        RangeError,
-        `${name} ${effort}`,
-      );
-    }
-  }
-});
-
-test("a project's lead model and effort resolve to the lead's, and its thread's never do", () => {
-  assert.deepEqual(
-    resolvedSelectorSettings(partition, defaults, 1, {}).lead,
-    { offering: "Own" },
-    "an unset override is the site's model and the runtime's effort",
-  );
-  assert.deepEqual(
-    resolvedSelectorSettings(partition, defaults, 1, {
-      leadModel: "claude-sonnet-5-5",
-      leadEffort: "medium",
-      threadModel: "claude-opus-5-5",
-      threadEffort: "max",
-    }).lead,
-    { offering: "Own", model: "claude-sonnet-5-5", effort: "medium" },
-  );
-  assert.deepEqual(
-    resolvedSelectorSettings(partition, defaults, 1, {
-      threadModel: "claude-opus-5-5",
-      threadEffort: "max",
-    }).lead,
-    { offering: "Own" },
-  );
-});
-
-const subsidizedProfile: SubsidizedLeadProfile = {
-  credentialSlot: "anthropic-api",
-  model: "claude-haiku-5-5",
-  effort: "medium",
-  autoCompactWindow: 100_000,
-  inputBytesPerDecision: 262_144,
-  turnTokensMax: 120_000,
-};
-
-test("a subsidized project's lead resolves to the profile's model, effort, slot and turn bound, whatever the project chose", () => {
-  const resolved = resolvedSelectorSettings(
-    partition,
-    defaults,
-    1,
-    { leadModel: "claude-opus-5-5", leadEffort: "max" },
-    subsidizedProfile,
-  );
-  assert.deepEqual(resolved.lead, {
-    offering: "Subsidized",
-    model: "claude-haiku-5-5",
-    effort: "medium",
-    credentialSlot: "anthropic-api",
-    turnTokensMax: 120_000,
-  });
-});
-
-test("a subsidized project's window and input budget are no higher than the profile's, and its other limits are its own", () => {
-  const overrides: SelectorProjectOverrides = {
-    limits: {
-      autoCompactWindow: 400_000,
-      inputBytesPerDecision: 2_000_000,
-      toolCallsPerDecision: 7,
-    },
-  };
-  const own = resolvedSelectorSettings(partition, defaults, 1, overrides);
-  const subsidized = resolvedSelectorSettings(
-    partition,
-    defaults,
-    1,
-    overrides,
-    subsidizedProfile,
-  );
-  assert.deepEqual(
-    [own.limits.autoCompactWindow, own.limits.inputBytesPerDecision],
-    [400_000, 2_000_000],
-  );
-  assert.deepEqual(subsidized.limits, {
-    ...own.limits,
-    autoCompactWindow: subsidizedProfile.autoCompactWindow,
-    inputBytesPerDecision: subsidizedProfile.inputBytesPerDecision,
-  });
-  assert.equal(leadInputBytesMax(subsidized), 262_144);
-  const below = resolvedSelectorSettings(
-    partition,
-    defaults,
-    1,
-    { limits: { autoCompactWindow: 100_000, inputBytesPerDecision: 4_096 } },
-    { ...subsidizedProfile, autoCompactWindow: 150_000 },
-  );
-  assert.deepEqual(
-    [below.limits.autoCompactWindow, below.limits.inputBytesPerDecision],
-    [100_000, 4_096],
-    "a project below the profile keeps its own",
-  );
-});
-
-test("a subsidized lead's input budget is still held to the mailbox row", () => {
-  const resolved = resolvedSelectorSettings(
-    partition,
-    defaults,
-    1,
-    { limits: { inputBytesPerDecision: leadObservationBytesMax * 2 } },
-    {
-      ...subsidizedProfile,
-      inputBytesPerDecision: leadObservationBytesMax * 2,
-    },
-  );
-  assert.equal(leadInputBytesMax(resolved), leadObservationBytesMax);
-});
-
-test("a subsidized project's model check admits the profile's model alone, in place of its own allowlist", () => {
-  const resolved = resolvedSelectorSettings(
-    partition,
-    defaults,
-    1,
-    { modelAllowlist: ["claude-opus-5-5"] },
-    subsidizedProfile,
-  );
-  assert.deepEqual(resolved.modelAllowlist, ["claude-haiku-5-5"]);
-});
-
-test("a compaction window inside the runtime's bounds is kept, and one outside them is refused", () => {
-  const admits = (autoCompactWindow: number) =>
-    selectorProjectSettingsSchema.safeParse({
-      expectedRevision: 0,
-      overrides: { limits: { autoCompactWindow } },
-    }).success;
-  for (const window of [
-    leadAutoCompactWindowTokensMin,
-    leadAutoCompactWindowTokensMax,
-  ]) {
-    assert.equal(admits(window), true, String(window));
-    const overrides = checkedSelectorProjectOverrides({
-      limits: { autoCompactWindow: window },
+  for (const model of kept) {
+    assert.equal(admits({ threadModel: model }), true, model);
+    assert.deepEqual(checkedSelectorProjectOverrides({ threadModel: model }), {
+      threadModel: model,
     });
-    assert.equal(
-      resolvedSelectorSettings(partition, defaults, 1, overrides).limits
-        .autoCompactWindow,
-      window,
+  }
+  for (const model of [
+    "claude sonnet",
+    " opus",
+    "opus\n",
+    "op\u0000us",
+    "-p",
+    "--model",
+    "",
+    "m".repeat(runModelCharsMax + 1),
+  ]) {
+    assert.equal(admits({ threadModel: model }), false, model);
+    assert.throws(
+      () => checkedSelectorProjectOverrides({ threadModel: model }),
+      RangeError,
+      model,
     );
   }
-  for (const window of [
-    leadAutoCompactWindowTokensMin - 1,
-    leadAutoCompactWindowTokensMax + 1,
-  ]) {
-    assert.equal(admits(window), false, String(window));
+  for (const effort of sessionEfforts)
+    assert.equal(admits({ threadEffort: effort }), true, effort);
+  for (const effort of ["none", "minimal", "ultra", "Medium", ""]) {
+    assert.equal(admits({ threadEffort: effort }), false, effort);
     assert.throws(
       () =>
         checkedSelectorProjectOverrides({
-          limits: { autoCompactWindow: window },
-        }),
+          threadEffort: effort,
+        } as unknown as SelectorProjectOverrides),
       RangeError,
-      String(window),
+      effort,
     );
   }
-});
-
-/**
- * A limit the runtime resolves and the wire door does not name is REFUSED
- * rather than dropped: the door is a strict object, so a caller asking for one
- * is told no instead of being answered 200 for an override no decision would
- * ever run under. The roster is the difference between the two, so a limit that
- * gains a door keeps the case honest without editing it.
- */
-test("a limit the override door does not name is refused, never dropped", () => {
-  const admitted = new Set(
-    Object.keys(
-      (
-        selectorProjectOverridesSchema.shape.limits.unwrap() as never as {
-          readonly shape: Readonly<Record<string, unknown>>;
-        }
-      ).shape,
-    ),
-  );
-  const unadmitted = Object.keys(defaults.limits).filter(
-    (limit) => !admitted.has(limit),
-  );
-  assert.ok(unadmitted.length > 0, "the door already names every limit");
-  for (const limit of unadmitted)
-    assert.equal(
-      selectorProjectSettingsSchema.safeParse({
-        expectedRevision: 0,
-        overrides: { limits: { [limit]: 2 } },
-      }).success,
-      false,
-      limit,
-    );
 });
