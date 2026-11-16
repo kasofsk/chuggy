@@ -1077,10 +1077,7 @@ export async function setupRunnerHere(
   const engine = setupRoomEngine(room);
   const { fit, engineMib } = await setupFitRead(ports, engine);
   const sized = open || fit.fit === "Colima";
-  const inUseMib =
-    sized && engine !== undefined
-      ? await setupEngineInUseRead(ports, engine)
-      : undefined;
+  const inUseMib = sized ? await setupInUseHere(ports, engine, fit) : undefined;
   return {
     room,
     held: open && setupPoolFiles(ports, places, partition).length > 0,
@@ -1091,6 +1088,18 @@ export async function setupRunnerHere(
       : undefined,
     fit,
   };
+}
+
+/** What the engine's running containers take of the memory a chat host here is sized to: none where Colima's VM is not running or there is none yet, since it runs nothing, and otherwise as the engine counts them. */
+async function setupInUseHere(
+  ports: SetupPorts,
+  engine: SetupEngine | undefined,
+  fit: SetupFit,
+): Promise<number | undefined> {
+  if (fit.fit === "Colima" && fit.vm !== "Running") return 0;
+  return engine === undefined
+    ? undefined
+    : await setupEngineInUseRead(ports, engine);
 }
 
 /** The engine a room is read of for what a job needs: the one that answered, or on a Mac docker, which Colima runs, whether or not it answered. */

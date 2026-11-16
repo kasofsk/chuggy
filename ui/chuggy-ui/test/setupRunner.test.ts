@@ -64,6 +64,7 @@ import {
   boxLogin,
   boxLoginSecret,
   boxMacLogin,
+  boxMacMade,
   boxMacSettings,
   boxOwn,
   boxPoolFile,
@@ -2466,6 +2467,43 @@ test("on a Mac the bare command asks of the chat host as Linux does, with the Ma
   expect((await ran(short, [])).lines.slice(-4)).toEqual(
     chatShort.map((line) => line.replace("chuggy-linux", "chuggy-darwin")),
   );
+});
+
+test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare command counts nothing in use against the memory a yes gives it, recommending three chats in 6 GiB, and the yes writes the same three", async () => {
+  for (const vm of ["Stopped", "None"] as const) {
+    const machine = await mac();
+    for (const project of machine.world.projects) project.threads = "Pool";
+    boxMacMade(machine.box, {
+      silicon: true,
+      rosetta: true,
+      memoryBytes: 24 * 2 ** 30,
+      vm:
+        vm === "None"
+          ? undefined
+          : {
+              running: false,
+              vmType: "vz",
+              vzRosetta: true,
+              memoryBytes: 8 * 2 ** 30,
+              arch: "aarch64",
+              rosettaOn: true,
+            },
+    });
+    const offer = (await ran(machine, [])).lines.join("\n");
+    expect(offer).toContain(
+      "which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once.",
+    );
+    expect(offer).toContain(
+      "There is room for it here beside a run, so I recommend it.",
+    );
+    expect(offer).toContain(`${flags} --chat-host yes only once`);
+    expect(writes(machine)).toEqual([]);
+
+    expect((await ran(machine)).exit).toBe(0);
+    expect(
+      JSON.parse(machine.box.paths.get(boxMacSettings) ?? ""),
+    ).toMatchObject({ chat: { sessionsMax: 3, sessionMemoryMib: 2048 } });
+  }
 });
 
 test("--chat-host no sets up the project's runner alone, minting and registering no chat host, and the runner's step is done with it live, saying chat-host where the chat host is missing or not running", async () => {
