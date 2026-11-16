@@ -738,3 +738,79 @@ test("a ticket sent back by a merge conflict loses its place", async () => {
     "the conflict released the reference",
   );
 });
+
+/** The failure each attempt of `project`'s ticket recorded, and whether it named a conflict manifest. */
+async function attemptsOf(
+  project: FinalizerProject,
+): Promise<readonly (readonly [unknown, boolean])[]> {
+  const rows = await rig.harness.query(
+    `SELECT failure_kind, conflict_manifest FROM finalization_attempt
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 ORDER BY prepared_at`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  return rows.map((row) => [
+    row["failure_kind"],
+    row["conflict_manifest"] !== null,
+  ]);
+}
+
+/**
+ * A holder with no stack, landing as `landing`, whose worker changed
+ * `worker.txt`, and a Serialized ticket ranked after it waiting on the
+ * reference; the default branch then moves by a commit changing `path`.
+ */
+async function movedHolder(
+  label: string,
+  landing: "Serialized" | "Stacked",
+  path: string,
+): Promise<{ project: FinalizerProject; waiting: FinalizerProject }> {
+  const { project, remote } = await finalizerSerializedSubject(rig, label);
+  await finalizerBriefLanding(
+    rig,
+    project.partition,
+    project.ticket,
+    landing,
+    project.repository,
+  );
+  const waiting = await sibling(project, `${label}-waiting`, {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+  });
+  const first = await drawn([project, waiting], `${label}-before`);
+  assert.equal(includes(first, project), true, "the holder is drawn");
+  assert.equal(includes(first, waiting), false, "the later ticket waits");
+  await finalizerExpireClaim(rig, project);
+  finalizerRemoteCommit(remote, path, "moved\n", "moved");
+  await finalizerPassOnce(rig, project, finalizerRemotePort(rig), label);
+  await finalizerExpireClaim(rig, project);
+  return { project, waiting };
+}
+
+for (const landing of ["Serialized", "Stacked"] as const) {
+  test(`a ${landing} holder with no stack whose work conflicts with the moved target records a MergeConflict with its manifest, and the ticket behind it holds`, async () => {
+    const label = `moved-conflict-${landing.toLowerCase()}`;
+    const { project, waiting } = await movedHolder(
+      label,
+      landing,
+      "worker.txt",
+    );
+
+    assert.deepEqual(await attemptsOf(project), [["MergeConflict", true]]);
+    assert.equal(
+      includes(await drawn([project, waiting], label), waiting),
+      true,
+      "the conflict released the reference",
+    );
+  });
+
+  test(`a ${landing} holder with no stack whose work merges cleanly with the moved target is re-checked and keeps the reference`, async () => {
+    const label = `moved-clean-${landing.toLowerCase()}`;
+    const { project, waiting } = await movedHolder(label, landing, "other.txt");
+
+    assert.deepEqual(await attemptsOf(project), [["RecheckRequired", false]]);
+    const claims = await drawn([project, waiting], label);
+    assert.equal(includes(claims, waiting), false, "the re-check holds it");
+    assert.equal(await untouched(waiting), true);
+  });
+}

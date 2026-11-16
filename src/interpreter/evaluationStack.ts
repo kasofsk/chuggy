@@ -113,7 +113,7 @@ export interface RestackableStack {
   readonly cycle: number;
   readonly repository: string;
   /** The reference its brief queues on, absent for the repository's default. */
-  readonly target: string | undefined;
+  readonly target: GitRefName | undefined;
   /** The line its latest re-stack was sent back over, absent where it has none. */
   readonly restackedOver: readonly StackMember[] | undefined;
 }

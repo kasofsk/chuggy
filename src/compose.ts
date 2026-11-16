@@ -203,6 +203,7 @@ import {
   type ProjectArtifactMinting,
 } from "./interpreter/projectArtifact.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import { restackRefusals } from "./interpreter/stackRestack.ts";
 import type {
   FinalizerSettings,
   ForgeBindingFile,
@@ -795,6 +796,7 @@ export function composeFinalizerService(
     forges: runtime.forges,
     ticketBriefs: postgresTicketBrief(finalizerPool),
     stacks: postgresEvaluationStack(finalizerPool),
+    restackRefusals: restackRefusals(),
     handoffs: artifacts,
     artifacts,
     pipelinePaths: runtime.pipelinePaths,
