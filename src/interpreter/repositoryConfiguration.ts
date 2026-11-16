@@ -1117,28 +1117,40 @@ export function boundRepositoryImportReport(
 }
 
 /**
- * Why a run may not leave zero: a binding it could not import whole, or a
- * listing it filled, which leaves every binding past the bound unimported.
+ * Why a run may not leave zero: a listing it filled, which leaves every binding
+ * past the bound unimported. A binding that failed is not a reason; it is
+ * reported, and counted by `boundRepositoryImportFinding`.
  */
-export function boundRepositoryImportRefusal(
+export function boundRepositoryImportTruncation(
   run: BoundRepositoryImportRun,
   bindingsMax: number,
+): string | undefined {
+  return run.truncated
+    ? `the listing filled its bound of ${String(bindingsMax)} bindings and the rest of the estate is unimported`
+    : undefined;
+}
+
+/**
+ * What a run that may still leave zero says of what failed in it: the bindings
+ * it could not import whole, and the tickets or bindings following failed on.
+ */
+export function boundRepositoryImportFinding(
+  run: BoundRepositoryImportRun,
+  followingFailed: number,
 ): string | undefined {
   const failed = run.imports.filter(
     (bound) =>
       bound.result.result === "Failed" || bound.actions.result === "Failed",
   ).length;
-  const refusals = [
+  const findings = [
     ...(failed === 0
       ? []
-      : [`${String(failed)} of ${String(run.imports.length)} bindings`]),
-    ...(run.truncated
-      ? [
-          `the listing filled its bound of ${String(bindingsMax)} bindings and the rest of the estate is unimported`,
-        ]
-      : []),
+      : [`${String(failed)} of ${String(run.imports.length)} bindings failed`]),
+    ...(followingFailed === 0
+      ? []
+      : [`following failed on ${String(followingFailed)} tickets or bindings`]),
   ];
-  return refusals.length === 0 ? undefined : refusals.join("; ");
+  return findings.length === 0 ? undefined : findings.join("; ");
 }
 
 function repositoryConfigurationRevision(
