@@ -61,10 +61,7 @@ import {
 import type { ThreadLimitStore } from "../../src/interpreter/threadLimit.ts";
 import type { ThreadLiveHub } from "../../src/interpreter/threadLive.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
-import {
-  asSessionTurnId,
-  type SessionId,
-} from "../../src/interpreter/agentSession.ts";
+import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 import { sessionRigAttempt } from "./sessionHarness.ts";
 import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
@@ -257,24 +254,6 @@ export async function threadRigFacts(
   const facts = await rig.sessions.plane.authenticate(pod.secret);
   assert.ok(facts !== undefined, "the pod's bearer was not recognised");
   return facts;
-}
-
-/** A decision turn on the project's lead, which is what an attempt on it opens to take. */
-export async function threadRigLeadTurn(
-  rig: ThreadRig,
-  partition: Partition,
-): Promise<void> {
-  assert.equal(
-    (
-      await rig.mailbox.offer({
-        partition,
-        turn: asSessionTurnId(`turn-lead-${randomUUID()}`),
-        input: "{}",
-        route: "InCluster",
-      })
-    ).offered,
-    "Enqueued",
-  );
 }
 
 /** A turn identity no other case is using. */

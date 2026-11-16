@@ -48,7 +48,7 @@ import {
   repositoryLabel,
 } from "./projectRepositories.ts";
 import { ownerFallbackLabel } from "./myRunner.ts";
-import { runnerPackageOffered, runnerPackages } from "./runners.ts";
+import { runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import {
   repositoryImportRefusedFile,
@@ -486,9 +486,6 @@ function setupRunsOn(claude: SetupClaudeKind | undefined): Copy {
     : { id: "setup-runs-on", args: { claude: setupClaudeOn[claude] } };
 }
 
-/** The runner package an offer would put here, by the name its program goes by. */
-const setupProgram = runnerPackageOffered.program;
-
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
@@ -510,12 +507,13 @@ function setupRunnerLiveMend(
     : setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
 }
 
-/** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's chat host where that is lacking too. */
+/** What `runner` puts here where the project's runner is lacking: its service, run by the platform's package `program`, and beside it the person's chat host where that is lacking too. */
 function setupRunnerPut(
   chat: boolean,
   claude: SetupClaudeKind | undefined,
+  program: string,
 ): Copy {
-  const args = { program: setupProgram, runs: setupRunsOn(claude) };
+  const args = { program, runs: setupRunsOn(claude) };
   return chat
     ? { id: "setup-mend-runner-put-chat", args }
     : { id: "setup-mend-runner-put", args };
@@ -542,6 +540,7 @@ function setupChatMend(
   lack: Extract<SetupLack, { readonly lacks: "ChatHost" | "ChatHostLive" }>,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
+  program: string,
 ): SetupThing {
   const project = setupNamed(at);
   const chats: Copy = { id: "setup-mend-chats", args: { project } };
@@ -551,7 +550,7 @@ function setupChatMend(
       ? setupChatOffer(
           {
             id: "setup-mend-chat-live-offer",
-            args: { chats, program: setupProgram },
+            args: { chats, program },
           },
           at,
         )
@@ -565,7 +564,7 @@ function setupChatMend(
         id: "setup-mend-chat-offer",
         args: {
           chats,
-          program: setupProgram,
+          program,
           runs: setupRunsOn(here.claude),
         },
       },
@@ -610,8 +609,9 @@ function setupRunnerServes(at: SetupAt, named: boolean): Copy {
 
 /**
  * No runner yet. Where this machine could take one the person is told what
- * `runner` would put here before it may be run; where it could not, why not;
- * and where the machine was not looked at, the console's own page.
+ * `runner` would put here, with the package of the platform the program runs
+ * on, before it may be run; where it could not, why not; and where the
+ * machine was not looked at, the console's own page.
  */
 function setupRunnerMend(
   lack: Extract<
@@ -620,9 +620,11 @@ function setupRunnerMend(
   >,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
+  platform: SetupPlatform,
 ): SetupThing {
+  const { program } = runnerPackages[platform];
   if (lack.lacks === "ChatHost" || lack.lacks === "ChatHostLive")
-    return setupChatMend(lack, at, here);
+    return setupChatMend(lack, at, here, program);
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
   const page = setupPage(at, settingsRoutes.project.myRunner);
@@ -645,26 +647,13 @@ function setupRunnerMend(
         {
           id: "setup-mend-runner-offer",
           args: {
-            put: setupRunnerPut(lack.chat, here?.claude),
+            put: setupRunnerPut(lack.chat, here?.claude, program),
             page,
             add,
             serves,
           },
         },
         at,
-      );
-    case "Mac":
-      return setupHand(
-        {
-          id: "setup-mend-runner-mac",
-          args: {
-            program: runnerPackages.darwin.program,
-            page,
-            add,
-            serves,
-          },
-        },
-        setupRunnerRunning,
       );
     case "Serviceless":
       return setupHand(
@@ -685,17 +674,21 @@ function setupRunnerBarredMend(
   >,
   instead: Copy,
 ): SetupThing {
-  if (room.room === "Engineless")
+  if (room.room === "Engineless") {
+    const none = setupEnginesNone(room.asked);
     return setupHand(
-      {
-        id: "setup-mend-runner-engineless",
-        args: { none: setupEnginesNone(room.asked), instead },
-      },
+      room.start === undefined
+        ? { id: "setup-mend-runner-engineless", args: { none, instead } }
+        : {
+            id: "setup-mend-runner-engineless-colima",
+            args: { start: room.start, instead },
+          },
       {
         id: "setup-mend-runner-or-running",
         args: { when: { id: "setup-runner-engineless-when" } },
       },
     );
+  }
   const { why, state, mend, when } = setupDockerBarredTold(room.user, room.how);
   return setupHand(
     { id: "setup-mend-runner-docker", args: { why, state, mend, instead } },
@@ -858,7 +851,7 @@ function setupMend(
     case "RunnerLive":
     case "ChatHost":
     case "ChatHostLive":
-      return setupRunnerMend(lack, at, here);
+      return setupRunnerMend(lack, at, here, mcp.platform);
     case "Ticket":
     case "Release":
     case "Dispatch":

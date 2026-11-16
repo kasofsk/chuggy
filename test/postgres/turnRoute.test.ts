@@ -43,7 +43,6 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
-import { leadRigProject } from "./leadHarness.ts";
 import {
   sessionRigAttempt,
   sessionRigAttemptState,
@@ -52,7 +51,6 @@ import {
   sessionRigQueuedFor,
   sessionRigRouted,
   sessionRigRunner,
-  sessionRigSession,
   sessionRigTurnId,
   sessionRigTurnRoutes,
   sessionRigTurnState,
@@ -308,42 +306,6 @@ test("a running thread attempt claims no turn admitted for a runner, nor one que
     await claimed(pod),
     undefined,
     "a cluster attempt claimed past an older turn admitted for a runner",
-  );
-});
-
-test("a running lead attempt claims no turn the selector admitted for the project's runners", async () => {
-  const partition = await leadRigProject(rig, "route-lead");
-  const session = await sessionRigSession(
-    rig.sessions,
-    partition,
-    "route-lead",
-    { kind: "Lead" },
-  );
-  const offer = async (route: PlacementRoute) => {
-    const turn = sessionRigTurnId("route-lead");
-    const enqueued = await rig.mailbox.offer({
-      partition,
-      turn,
-      input: "{}",
-      route,
-    });
-    assert.equal(enqueued.offered, "Enqueued");
-    return turn;
-  };
-  const first = await offer("InCluster");
-  const pod = await sessionRigAttempt(
-    rig.sessions,
-    partition,
-    session,
-    "route-lead",
-  );
-  await answered(pod, first);
-
-  await offer("Pool");
-  assert.equal(
-    await claimed(pod),
-    undefined,
-    "a cluster lead attempt claimed a turn admitted for a runner",
   );
 });
 

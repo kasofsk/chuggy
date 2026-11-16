@@ -55,7 +55,6 @@ import {
   type SessionKind,
   type SessionScope,
 } from "../../src/interpreter/agentSession.ts";
-import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import {
   asAuthorityKind,
@@ -763,14 +762,12 @@ test("take_ticket's and return_ticket's routes reach a ticket's take and return 
   }
   for (const route of routes) {
     const reached: string[] = [];
-    await using lead = scopedApp(
-      reached,
-      undefined,
-      "Lead",
-      "Project",
-      true,
-      leadSessionCapabilities,
-    );
+    await using lead = scopedApp(reached, undefined, "Lead", "Project", true, [
+      "RepositoryRead",
+      "ProjectRead",
+      "DraftAuthor",
+      "LeadDecision",
+    ] as const);
     const answered = await lead.inject(
       routeRequest(`POST ${route}`, own, sessionToken),
     );

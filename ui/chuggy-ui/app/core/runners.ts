@@ -88,9 +88,6 @@ export const runnerPackages = {
 /** A package by the name the reader chooses it under. */
 export type RunnerPackageName = keyof typeof runnerPackages;
 
-/** The package chuggy setup installs, on the Linux machine it runs on. */
-export const runnerPackageOffered: RunnerPackage = runnerPackages.linux;
-
 /** What a reader asks a runner to declare beside its platforms. */
 export interface RunnerAsk {
   readonly package: RunnerPackageName;
