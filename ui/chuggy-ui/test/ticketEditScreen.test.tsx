@@ -17,6 +17,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { TicketEdit } from "../app/browser/TicketEdit.tsx";
 import { operationStateSentence } from "../app/core/codeSentences.ts";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
@@ -215,6 +216,7 @@ async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
       transport={openedStream().ports.fetch}
     >
       <TicketEdit />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -360,6 +362,17 @@ test("a ticket moved off a name no longer offered leaves the screen once its upd
     configurationRevision: "n-development",
   });
   expect(left.to).toStrictEqual(["/$tenant/$project/tickets/$ticket"]);
+});
+
+test("an update that lands says so in a success toast, since the screen it was sent from is left", async () => {
+  await drawEdit({ draft: pinned("development-opus", "o-opus") });
+  await chooseConfiguration("development");
+  await retitleAndSubmit();
+  const toast = document.querySelector(".toast");
+  expect(toast?.getAttribute("data-tone")).toBe("Success");
+  expect(toast?.querySelector(".toast-line")?.textContent).toBe(
+    "Ticket 12 saved",
+  );
 });
 
 test("a refused update of a ticket moved off such a name is said over what was typed", async () => {

@@ -10,6 +10,7 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { epicSummaryCharsMax } from "../../../src/contract/epics.ts";
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { EpicEditPage } from "../app/browser/epic/EpicEditPage.tsx";
 import { epicPageDrawn, epicServingReset } from "./epicPageFixture.tsx";
 import { epicNavigated, epicRouted } from "./epicPageRouter.tsx";
@@ -34,7 +35,15 @@ async function editDrawn(
   written: (request: SentRequest) => Response = () => answer({}, 503),
 ): Promise<readonly SentRequest[]> {
   return (
-    await epicPageDrawn(abilitiesEvery, { written, tab: <EpicEditPage /> })
+    await epicPageDrawn(abilitiesEvery, {
+      written,
+      tab: (
+        <>
+          <EpicEditPage />
+          <ConsoleWriteToasts />
+        </>
+      ),
+    })
   ).sent;
 }
 
@@ -200,4 +209,13 @@ test("a save the API takes leaves without asking", async () => {
   await savePressed();
   expect(asked).not.toHaveBeenCalled();
   expect(epicNavigated).toHaveLength(1);
+});
+
+test("a save the API takes says so in a success toast, since the form it was sent from is left", async () => {
+  await editDrawn(() => answer({ epic: 7, revision: 4 }));
+  fireEvent.change(box("Title"), { target: { value: "Payments" } });
+  await savePressed();
+  const toast = document.querySelector(".toast");
+  expect(toast?.getAttribute("data-tone")).toBe("Success");
+  expect(toast?.querySelector(".toast-line")?.textContent).toBe("Epic 7 saved");
 });

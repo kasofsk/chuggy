@@ -13,6 +13,9 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-edit-heading": {
     readonly ticket: unknown;
   };
+  readonly "ticket-authoring-edit-saved": {
+    readonly ticket: unknown;
+  };
   readonly "ticket-authoring-duplicate-heading": Record<never, never>;
   readonly "ticket-authoring-duplicate-from": {
     readonly ticket: unknown;

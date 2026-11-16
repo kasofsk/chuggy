@@ -14,12 +14,16 @@ ui-ledger-current = Current
 ui-ledger-superseded = Superseded
 ui-locomotive = { -brand-name } is under way
 ui-no-match = No match
-ui-refusals = Refusal
-# The landmark the refusals arrive in, with the keys that move focus to it.
-ui-refusals-held = Refusals ({ $hotkey })
 ui-reload = Reload
 ui-required = Required
 ui-save = Save changes
+# What a toast is announced as, before its tone's word and its line.
+ui-toasts = Notification
+# The landmark the toasts arrive in, with the keys that move focus to it.
+ui-toasts-held = Notifications ({ $hotkey })
+# A toast's tone, as the word beside its mark.
+ui-toast-failure = Refused
+ui-toast-success = Done
 # How many filters a list's Filter control holds set, beside its glyph.
 ui-filter-set = { $count } set
 ui-filter-clear-all = Clear all
