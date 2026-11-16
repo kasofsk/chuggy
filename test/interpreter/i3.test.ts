@@ -63,7 +63,6 @@ import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import {
   allNativeActionKinds,
   allNativeActionResolutions,
-  isApprovalResolution,
   isCompletionTicketCommand,
   isEscalationResolution,
   nativeActionResolutions,
@@ -321,11 +320,6 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
       nativeActionResolutions[kind].some((each) => each === resolution),
     );
     assert.ok(asking.length >= 1, resolution);
-    assert.equal(
-      isApprovalResolution(resolution),
-      asking.includes("FinalizationApproval"),
-      resolution,
-    );
     assert.equal(
       isEscalationResolution(resolution),
       asking.includes("TicketEscalation"),
@@ -632,6 +626,34 @@ test("a spawn bundle pins the change identity its source observed, and only that
   assert.deepEqual(kinds("8".repeat(40)), [
     { kind: "ChangeIdentity", reference: "8".repeat(40) },
   ]);
+  assert.deepEqual(kinds(), []);
+});
+
+/**
+ * A bundle pins the ref its target commit is on where its source names one,
+ * and no bundle pins one it was not given. Catches the ref dropped between
+ * the source and the references.
+ */
+test("a spawn bundle pins the ref its target commit is on, and only that", () => {
+  const configuration = {
+    configurationRevision: "revision",
+    configurationDigest: "d".repeat(64),
+  };
+  const source = {
+    repository: asRepositoryId("repository"),
+    targetCommit: asGitObjectId("a".repeat(40)),
+    manifests: [],
+  };
+  const ref = "refs/heads/chuggy/stack/1/2";
+  const kinds = (targetCommitRef?: string) =>
+    inputBundleReferencesOf(configuration, {
+      bundle: "bundle",
+      source: {
+        ...source,
+        ...(targetCommitRef === undefined ? {} : { targetCommitRef }),
+      },
+    }).filter((reference) => reference.kind === "TargetCommitRef");
+  assert.deepEqual(kinds(ref), [{ kind: "TargetCommitRef", reference: ref }]);
   assert.deepEqual(kinds(), []);
 });
 
@@ -1089,7 +1111,7 @@ function finalizationInput(event: TicketCommand): DecisionInput {
   };
 }
 
-test("a decision leaving finalization withdraws the approval it left unanswered", () => {
+test("a decision leaving finalization withdraws for its ticket, as a stored journal derived it", () => {
   const before = finalizing();
   const result = reportFinalizationResultCommand(id(1), 1, 1, {
     type: "FinalizationNeedsWork",

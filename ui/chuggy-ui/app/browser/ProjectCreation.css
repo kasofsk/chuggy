@@ -1,0 +1,8 @@
+/* The new-project form: its disclosure's trigger is pressed, so it is at least
+   a control's height. */
+
+@layer page {
+  .project-creation .panel-trigger {
+    min-height: var(--height-control);
+  }
+}

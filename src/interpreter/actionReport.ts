@@ -47,7 +47,7 @@ import { assertNever } from "../domain/assertNever.ts";
 import type { GitObjectId } from "./finalizer.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 import type { RepositoryActionId } from "./repositoryAction.ts";
-import { repositoryDeclarationsMax } from "./repositoryDeclaration.ts";
+import { repositoryDeclarationsMax } from "../contract/repositoryDeclaration.ts";
 
 declare const actionReporterNameBrand: unique symbol;
 

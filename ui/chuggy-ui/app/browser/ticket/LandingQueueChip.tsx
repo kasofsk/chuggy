@@ -47,7 +47,7 @@ export function LandingQueueChip(props: {
   const words = text(landingQueuePlaceWords(place));
   const chip = (
     <span
-      className={`${pillLookClassName({ tone })} landing-queue-chip`}
+      className={`${pillLookClassName({ tone })} finalization-queue-chip`}
       role="img"
       aria-label={words}
       title={props.inLink === true ? words : undefined}
@@ -57,5 +57,11 @@ export function LandingQueueChip(props: {
       <span aria-hidden="true">{text(landingQueuePlaceFigure(place))}</span>
     </span>
   );
-  return props.inLink === true ? chip : <Tooltip text={words}>{chip}</Tooltip>;
+  return props.inLink === true ? (
+    chip
+  ) : (
+    <Tooltip trigger="abbreviation" text={words}>
+      {chip}
+    </Tooltip>
+  );
 }

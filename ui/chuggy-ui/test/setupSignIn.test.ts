@@ -19,11 +19,13 @@ import {
   setupSignInPollMs,
   setupSignInStartSecsMax,
 } from "../app/core/setupSignIn.ts";
-import { setupLockWord } from "../app/core/setupStore.ts";
+import { signInStoreLockWord } from "../../../src/contract/signInStore.ts";
 import {
   folded,
   machineAudience,
+  machineRemembered,
   machineSite,
+  machineTokenFile,
   machineTokenAddress,
   setupMachine,
 } from "./setupMachine.ts";
@@ -31,10 +33,7 @@ import type { SetupMachine } from "./setupMachine.ts";
 
 const signIn = ["sign-in", "--site", machineSite, "--wait-secs", "2"];
 
-function remembered(machine: SetupMachine): unknown {
-  const text = machine.files.get(setupFiles.session);
-  return text === undefined ? undefined : JSON.parse(text);
-}
+const remembered = machineRemembered;
 
 function ended(ending: string) {
   return { report: "SignInEnded", site: machineSite, ended: ending };
@@ -266,7 +265,7 @@ test("a page answered on a machine that gives no room for the sign-in exchanges 
   machine.room = (turn) => turn === 1;
   expect(await machine.command(signIn)).toEqual(ended("Faulted"));
   expect(faults).toEqual(["Unwritable"]);
-  expect(machine.reserved).toEqual([setupFiles.session, setupFiles.session]);
+  expect(machine.reserved).toEqual([machineTokenFile(), machineTokenFile()]);
   expect(machine.bodies).toEqual([]);
   expect(remembered(machine)).toEqual({ site: machineSite });
   expect(machine.lock).toBeUndefined();
@@ -275,7 +274,7 @@ test("a page answered on a machine that gives no room for the sign-in exchanges 
 test("a sign-in the issuer exchanged that the machine would not write ends the page as a fault, and is not said to be signed in", async () => {
   const { machine, faults } = thrown();
   await machine.command(["--site", machineSite]);
-  machine.takes = (file) => file !== setupFiles.session;
+  machine.takes = (file) => file !== machineTokenFile();
   expect(await machine.command(["sign-in"])).toEqual(ended("Faulted"));
   expect(faults).toEqual(["Unkept"]);
   expect(machine.bodies).toHaveLength(1);
@@ -291,7 +290,7 @@ test("a token renewed while the page confirmed its sign-in that the machine woul
     machine.admits = false;
     let writes = 0;
     machine.takes = (file) => {
-      if (file !== setupFiles.session) return true;
+      if (file !== machineTokenFile()) return true;
       writes += 1;
       return writes === 1 || (forgets && writes > 2);
     };
@@ -339,7 +338,7 @@ test("an ending a waiting sign-in could not have the lock to mark is reported al
   machine.opened = async () => {
     await machine.person(false);
     machine.alive.add(7);
-    machine.lock = setupLockWord(7, machine.nowMs);
+    machine.lock = signInStoreLockWord(7, machine.nowMs);
   };
   expect(await machine.command(signIn)).toEqual(ended("Declined"));
   expect(noted(machine)).toMatchObject({ ended: "Declined", told: false });
@@ -509,9 +508,9 @@ test("an exchange the issuer answers with nothing readable is its failure, not a
 test("a token remembered from before does not pass for the renewal token an allow page withheld", async () => {
   const machine = prompt();
   await machine.command(signIn);
-  const spent = machine.files.get(setupFiles.session) ?? "";
+  const spent = machine.store.get(machineTokenFile()) ?? "";
   await machine.command([]);
-  machine.files.set(setupFiles.session, spent);
+  machine.store.set(machineTokenFile(), spent);
   expect(await machine.command([])).toMatchObject({ report: "SignedOut" });
   machine.renewable = false;
   expect(await machine.command(signIn)).toEqual(ended("NoRenewal"));
@@ -672,7 +671,7 @@ test("an answer being read when the bound passes is read to its end", async () =
   const machine = setupMachine();
   await machine.command(signIn);
   machine.alive.add(7);
-  machine.lock = setupLockWord(7, machine.nowMs + 590_000);
+  machine.lock = signInStoreLockWord(7, machine.nowMs + 590_000);
   await machine.advance(590_000);
   const answering = machine.person();
   await machine.advance(15_000);
@@ -687,7 +686,7 @@ test("a listener that cannot have the lock in time ends as busy and writes no to
   const machine = setupMachine();
   await machine.command(signIn);
   machine.alive.add(7);
-  machine.lock = setupLockWord(7, machine.nowMs);
+  machine.lock = signInStoreLockWord(7, machine.nowMs);
   const answering = machine.person();
   await machine.advance(31_000);
   expect((await answering).status).toBe(400);

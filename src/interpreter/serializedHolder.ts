@@ -7,9 +7,9 @@
  * A TICKET HOLDS A RANK WHILE IT IS ON THE WORK, EVALUATION, FINALIZATION PATH
  * AND ITS CHAIN OF WORK CYCLES HAS ONE. The rank is the position of its first
  * finalization request since the chain last broke. A chain is the work cycles
- * a `RecheckRequired` send-back links, so a re-check, the re-evaluation after
- * it and an invalidation keep the rank, and a landing, a merge conflict or
- * other non-re-check send-back, an evaluation failure returning the ticket to
+ * a `RecheckRequired` or `Restack` send-back links, so a re-check, a re-stack,
+ * the re-evaluation after either and an invalidation keep the rank, and a
+ * landing, a merge conflict or other send-back, an evaluation failure returning the ticket to
  * rework, a revoke, an escalation and a blocked evaluator each end the chain or
  * leave the path, and so release it with no code of their own.
  *

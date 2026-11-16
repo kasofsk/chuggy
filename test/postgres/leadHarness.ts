@@ -413,3 +413,22 @@ export async function leadRigPooled(
   );
   return pool;
 }
+
+/** Keeps `named` as the credentials `pool`'s newest poll named of Claude, or none where it is absent, as the pool plane's write does. */
+export async function leadRigNamed(
+  rig: LeadRig,
+  partition: Partition,
+  pool: string,
+  named?: readonly string[],
+): Promise<void> {
+  await rig.sessions.harness.query(
+    `UPDATE worker_pool SET credentials_named=$4::jsonb
+      WHERE tenant=$1 AND project=$2 AND pool=$3`,
+    [
+      partition.tenant,
+      partition.project,
+      pool,
+      named === undefined ? null : JSON.stringify({ Claude: named }),
+    ],
+  );
+}

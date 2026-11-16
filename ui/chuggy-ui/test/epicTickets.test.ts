@@ -31,6 +31,7 @@ function row(
     title: `Row ${String(ticket)}`,
     repository: undefined,
     creator: undefined,
+    owner: undefined,
     phase,
     sequence: ticket,
     badge: undefined,

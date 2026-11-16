@@ -22,6 +22,7 @@ import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { readFailedLines } from "../readFailedLines.ts";
+import { tableCards, tableText } from "../tableText.ts";
 
 const held = vi.hoisted((): { redirects: string[] } => ({ redirects: [] }));
 
@@ -143,11 +144,28 @@ test("an account is one row saying which of the two apps it holds", async () => 
   await drawAccounts();
   const accounts = sectionOf("GitHub accounts");
   const rows = within(accounts).getAllByRole("row");
-  expect(rows.map((row) => row.textContent)).toStrictEqual([
+  expect(rows.map(tableText)).toStrictEqual([
     "AccountKindPortal appWorker app",
     "kasofskOrganizationInstalledInstalled",
     "gdoteofUserInstalledMissing",
   ]);
+});
+
+test("each account is a card titled by its name, what kind it is and its two apps labelled under it", async () => {
+  await drawAccounts();
+  expect(
+    tableCards(
+      within(sectionOf("GitHub accounts")).getByRole("table", {
+        name: "Connected accounts",
+      }),
+    ),
+  ).toStrictEqual(
+    ["kasofsk", "gdoteof"].map((title) => ({
+      title,
+      labels: ["Kind", "Portal app", "Worker app"],
+      actionsLast: false,
+    })),
+  );
 });
 
 test("a panel with no account offers Connect GitHub alone", async () => {
@@ -340,7 +358,7 @@ function workerBehind(installationId: string): Response {
 test("an installation behind its app says so and opens its own page on the forge", async () => {
   await drawAccounts({ permissions: workerBehind });
   const rows = within(sectionOf("GitHub accounts")).getAllByRole("row");
-  expect(rows.map((row) => row.textContent)).toStrictEqual([
+  expect(rows.map(tableText)).toStrictEqual([
     "AccountKindPortal appWorker app",
     "kasofskOrganizationInstalledUpdate pendingReview on GitHub",
     "gdoteofUserInstalledMissing",
@@ -368,9 +386,7 @@ test("an installation current or unknown says Installed and offers nothing", asy
   ]) {
     await drawAccounts({ permissions });
     const accounts = within(sectionOf("GitHub accounts"));
-    expect(
-      accounts.getAllByRole("row").map((row) => row.textContent),
-    ).toStrictEqual([
+    expect(accounts.getAllByRole("row").map(tableText)).toStrictEqual([
       "AccountKindPortal appWorker app",
       "kasofskOrganizationInstalledInstalled",
       "gdoteofUserInstalledMissing",

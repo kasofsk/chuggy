@@ -59,7 +59,6 @@ const failedThenLanded: readonly TicketLandingRecord[] = [
       preparedAt,
     },
     conflictManifest: asProjectArtifactId("conflict-1"),
-    approvalOpen: false,
   },
   {
     cycle: 2,
@@ -79,7 +78,6 @@ const failedThenLanded: readonly TicketLandingRecord[] = [
       candidateCommit,
       preparedAt,
     },
-    approvalOpen: false,
     proposal: {
       url: "https://forge.example/acme/atlas/pull/9",
       headRef: "refs/heads/chuggy/7",

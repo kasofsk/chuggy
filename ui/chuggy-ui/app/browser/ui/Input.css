@@ -48,4 +48,13 @@
     border-left: var(--hairline) solid var(--edge);
     white-space: nowrap;
   }
+
+  /* Under a coarse pointer the box a finger presses is a control's height,
+     and its text is the size a phone types into without zooming the page. */
+  @media (pointer: coarse) {
+    .input-box {
+      min-height: var(--height-control);
+      font-size: var(--text-unzoomed);
+    }
+  }
 }

@@ -52,6 +52,7 @@ import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { creationMoreOpened } from "./creationMore.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -418,12 +419,25 @@ const runnerReads: readonly (readonly [
   ],
   [
     "with no runner but the reader's own, which it lets take their work",
-    { runners: "Unregistered", fallback: "Strict" },
+    {
+      runners: "Unregistered",
+      fallback: "Strict",
+      personal: { live: false, project: creationPartition.project },
+    },
     starting,
   ],
   [
     "with no runner, which lets a reader with none of their own take their work",
-    { runners: "Unregistered", mine: "Unregistered", fallback: "Preferred" },
+    { runners: "Unregistered", fallback: "Preferred" },
+    ["No runner", true],
+  ],
+  [
+    "with no runner, which lets a reader take their work on a personal runner they gave only another project",
+    {
+      runners: "Unregistered",
+      fallback: "Strict",
+      personal: { live: true, project: "elsewhere" },
+    },
     ["No runner", true],
   ],
   ["with a runner that is offline", { runners: "Offline" }, starting],
@@ -511,7 +525,7 @@ test.each([
         screen.getByRole("menuitemradio", { name: "development" }),
       );
     });
-    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    creationMoreOpened();
     expect(screen.queryAllByRole("button", { name: "Remove" })).toHaveLength(
       removes,
     );
