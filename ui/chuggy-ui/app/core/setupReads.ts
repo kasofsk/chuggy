@@ -211,6 +211,11 @@ export interface SetupTicketLandings {
   readonly landings: SetupRead<readonly TicketLandingResponse[]>;
 }
 
+/** The person's own personal runners: none registered, or registered and standing for the project as `workRunnerPersonal` says, unregistered where it is not given them. */
+export type SetupPersonal =
+  | { readonly registered: false }
+  | { readonly registered: true; readonly standing: SessionRunnerStanding };
+
 export interface SetupReads {
   readonly site: string;
   readonly remote: SetupRemote | undefined;
@@ -230,8 +235,8 @@ export interface SetupReads {
   readonly placement: SetupRead<SessionPlacementResponse>;
   /** Whether the project lets a member's own runners take their work, which says whether the person's own can be its runner. */
   readonly fallback: SetupRead<ProjectOwnerFallbackResponse>;
-  /** How the person's own personal runners stand for the project, unregistered where they hold none or none serves it; they take the person's work where the fallback lets them. */
-  readonly personal: SetupRead<SessionRunnerStanding>;
+  /** Whether the person holds personal runners, and how they stand for the project: unregistered where it is not given them; they take the person's work where the fallback lets them. */
+  readonly personal: SetupRead<SetupPersonal>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
   /** The tickets on their way, most lately moved first. */
@@ -595,10 +600,13 @@ async function setupProjectRead(
     fallback: setupGot(fallback, (answered) => answered, all),
     personal:
       personal.outcome === "Absent"
-        ? { read: "Got", value: "Unregistered", whole: true }
+        ? { read: "Got", value: { registered: false }, whole: true }
         : setupGot(
             personal,
-            (answered) => workRunnerPersonal(answered, partition.project),
+            (answered) => ({
+              registered: true,
+              standing: workRunnerPersonal(answered, partition.project),
+            }),
             all,
           ),
     landed: setupGot(landed, (answered) => answered.tickets, all),

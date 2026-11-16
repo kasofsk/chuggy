@@ -44,6 +44,7 @@ import type {
   SetupPluginEnded,
   SetupProjectEnded,
   SetupBindAnswered,
+  SetupServeAnswered,
   SetupTicketAnswered,
   SetupReport,
   SetupSignInEnded,
@@ -280,6 +281,23 @@ const things: {
       tell: { id: "setup-mend-plugin-offer-off" },
       when: { id: "setup-offer-plugin-when" },
     },
+    {
+      thing: "Offer",
+      command: "Serve",
+      tell: {
+        id: "setup-mend-serving-offer",
+        args: {
+          project: "acme/widgets",
+          does: "both",
+          admin: "none",
+          setting: { id: "runners-fallback-title" },
+          placement: "https://chuggy.example/acme/widgets/settings/placement",
+        },
+      },
+      when: { id: "setup-offer-serve-when" },
+      workspace: "acme",
+      project: "widgets",
+    },
   ],
   Ask: [
     {
@@ -489,6 +507,18 @@ const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
   {
     answered: "Refused",
     refusal: { id: "setup-ticket-refused", args: { refusal: "It broke." } },
+  },
+];
+
+/** What a run of `serve` can have had answered: nothing asked, each write written, and each refused. */
+const serveAnswers: readonly (SetupServeAnswered | undefined)[] = [
+  undefined,
+  { given: { written: true }, allowed: { written: true } },
+  { given: { written: true }, allowed: undefined },
+  { given: undefined, allowed: { written: true } },
+  {
+    given: { written: false, failure: { id: "failure-refused" } },
+    allowed: { written: false, failure: { id: "failure-no-connection" } },
   },
 ];
 
@@ -708,6 +738,12 @@ const roster: {
     answered,
     checklist: checklist(things.Offer[3] as SetupThing),
   })),
+  Serve: serveAnswers.map((answered) => ({
+    report: "Serve",
+    project: answered === undefined ? undefined : "widgets",
+    answered,
+    checklist: checklist(things.Offer.at(-1) as SetupThing),
+  })),
   Ticket: ticketAnswers.map((answered) => ({
     report: "Ticket",
     answered,
@@ -735,6 +771,7 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Check",
   "Import",
   "Bind",
+  "Serve",
   "Ticket",
 ]);
 
@@ -916,6 +953,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
   if (
     report.report === "Import" ||
     report.report === "Bind" ||
+    report.report === "Serve" ||
     report.report === "Ticket"
   )
     return carried(report.checklist, answers);
@@ -1459,7 +1497,7 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Hand")).toEqual([0, 0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
