@@ -1,10 +1,12 @@
 /**
  * The change identity the commit ancestry adapter answers, against real
  * repositories: a ticket's change, the same change after its work merged a
- * moved target, and the change once a conflict was resolved or an edit added.
+ * moved target, also where the target edited a line beside the change's own,
+ * and the change once a conflict was resolved or an edit added.
  */
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -70,6 +72,19 @@ function changeOpen(t: TestContext): {
   return { fixture, landed, work };
 }
 
+/** A ticket's branch, not yet worked on, over a `main` that has just landed one file. */
+function changeOpenOver(
+  t: TestContext,
+  file: string,
+  content: string,
+): { readonly fixture: Fixture; readonly landed: GitObjectId } {
+  const fixture = fixtureOpen(t);
+  fixtureGit(fixture.seed, "checkout", "-q", "main");
+  const landed = changeCommit(fixture, file, content);
+  fixtureGit(fixture.seed, "checkout", "-q", "-b", "ticket");
+  return { fixture, landed };
+}
+
 /** Moves `main` on by one commit, and returns the seed to the ticket's branch. */
 function changeTargetMoved(
   fixture: Fixture,
@@ -100,6 +115,82 @@ test("a change and the same change after a clean merge of a moved target have on
     await port.changeIdentity(changeQuestion(fixture, work, moved)),
     before,
   );
+});
+
+/** The lines of a file numbered one to seven, the third and fifth as given. */
+function changeNumbered(third: string, fifth: string): string {
+  return ["1", "2", third, "4", fifth, "6", "7", ""].join("\n");
+}
+
+/** The stable patch-id of the diff with context between two commits, whitespace stripped. */
+function changeStrippedWithContext(
+  fixture: Fixture,
+  base: GitObjectId,
+  work: GitObjectId,
+): string {
+  const diff = fixtureGit(fixture.seed, "diff-tree", "-p", base, work);
+  const [patchId] = execFileSync("git", ["patch-id", "--stable"], {
+    input: `${diff}\n`,
+    encoding: "utf8",
+  }).split(" ");
+  assert.match(patchId ?? "", /^[0-9a-f]{40}$/u);
+  return patchId ?? "";
+}
+
+test("a change keeps its identity over a clean merge of a target that edited a line beside its own", async (t) => {
+  const { fixture, landed } = changeOpenOver(
+    t,
+    "numbered",
+    changeNumbered("3", "5"),
+  );
+  const work = changeCommit(fixture, "numbered", changeNumbered("three", "5"));
+  const port = fixturePort(fixture);
+  const before = await port.changeIdentity(
+    changeQuestion(fixture, work, landed),
+  );
+  assert.match(before ?? "", /^[0-9a-f]{40}$/u);
+  const moved = changeTargetMoved(
+    fixture,
+    "numbered",
+    changeNumbered("3", "five"),
+  );
+  fixtureGit(fixture.seed, "merge", "-q", "--no-ff", "-m", "merge", "main");
+  const merged = changeHead(fixture);
+  assert.equal(
+    await port.changeIdentity(changeQuestion(fixture, merged, moved)),
+    before,
+  );
+});
+
+test("an edit to the change's own lines gives it another identity", async (t) => {
+  const { fixture, landed, work } = changeOpen(t);
+  const port = fixturePort(fixture);
+  const before = await port.changeIdentity(
+    changeQuestion(fixture, work, landed),
+  );
+  const edited = changeCommit(fixture, "change", "one\nTWO\n");
+  const after = await port.changeIdentity(
+    changeQuestion(fixture, edited, landed),
+  );
+  assert.notEqual(after, undefined);
+  assert.notEqual(after, before);
+});
+
+test("no identity equals one taken with context and whitespace stripped for another change", async (t) => {
+  const { fixture, landed } = changeOpenOver(t, "signed", "+x\n");
+  const appended = changeCommit(fixture, "signed", "+x\ny\n");
+  fixtureGit(fixture.seed, "checkout", "-q", "-b", "other", landed);
+  const inserted = changeCommit(fixture, "signed", "+x\nx\ny\n");
+  const stripped = changeStrippedWithContext(fixture, landed, appended);
+  assert.notEqual(
+    stripped,
+    changeStrippedWithContext(fixture, landed, inserted),
+  );
+  const identity = await fixturePort(fixture).changeIdentity(
+    changeQuestion(fixture, inserted, landed),
+  );
+  assert.notEqual(identity, undefined);
+  assert.notEqual(identity, stripped);
 });
 
 test("an edit added to the change gives it another identity", async (t) => {
