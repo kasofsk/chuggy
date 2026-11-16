@@ -1,7 +1,8 @@
 /**
  * The ticket header as drawn: a label for every state that is never only a
  * colour, the bar that stands in for the header once it scrolls away, the
- * epics under the title, and the Runs tab's count.
+ * epics under the title, the Runs tab's count, and the status a change of
+ * state is said in.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -183,4 +184,43 @@ test("Runs carries its count once the page holds a run, and the tabs are the sam
     "Configuration",
     "Usage",
   ]);
+});
+
+function headerOf(standing: TicketListStanding): ReactNode {
+  return (
+    <TicketHeader
+      ticket={335}
+      title="Lock the contract"
+      standing={standing}
+      fragment={{ fragment: "None" }}
+      nowMs={0}
+      actions={null}
+      epics={null}
+      notes={null}
+    />
+  );
+}
+
+test("a change of state is said once through a status, and the state the page opens on is not", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const view = renderCopied(headerOf("Ready"));
+  const status = screen.getByRole("status");
+  expect(status.classList.contains("visually-hidden")).toBe(true);
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Ready"));
+  expect(status.textContent).toBe("");
+  view.rerender(headerOf("Work"));
+  expect(status.textContent).toBe("Ticket is now Working");
+  const changes = new MutationObserver(() => undefined);
+  changes.observe(status, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+  });
+  view.rerender(headerOf("Work"));
+  expect(changes.takeRecords()).toStrictEqual([]);
+  changes.disconnect();
+  view.rerender(headerOf("Done"));
+  expect(screen.getByRole("status")).toBe(status);
+  expect(status.textContent).toBe("Ticket is now Done");
 });

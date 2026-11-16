@@ -4,17 +4,23 @@
  * its place in a landing queue where it holds one, the actions, the epics it
  * belongs to, and the tabs. Once the header has scrolled out of view, the
  * primitive's bar holds the small label and the title in its place.
+ *
+ * A STATE THAT CHANGES UNDER THE READER IS SAID, once, through a status nobody
+ * sees, in the word the label shows; the state the page opens on is not.
  */
 
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { LandingQueuePlace } from "../../core/landingQueues.ts";
+import { ticketStateAnnounced } from "../../core/ticketHeader.ts";
 import type {
   TicketHeaderFragment,
   TicketStateStanding,
 } from "../../core/ticketHeader.ts";
+import type { Copy } from "../../core/copy.ts";
 import { LandingQueueChip } from "./LandingQueueChip.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
@@ -63,6 +69,27 @@ function TicketHeaderFragmentDrawn(props: {
   }
 }
 
+/** The status a change of state is said in, empty until the state changes. */
+function TicketStateAnnouncement(props: {
+  readonly standing: TicketStateStanding;
+}): ReactNode {
+  const text = useCopyText();
+  const [seen, setSeen] = useState<{
+    readonly standing: TicketStateStanding;
+    readonly said: Copy | undefined;
+  }>({ standing: props.standing, said: undefined });
+  if (seen.standing !== props.standing)
+    setSeen({
+      standing: props.standing,
+      said: ticketStateAnnounced(seen.standing, props.standing) ?? seen.said,
+    });
+  return (
+    <p role="status" className="visually-hidden">
+      {seen.said === undefined ? null : text(seen.said)}
+    </p>
+  );
+}
+
 export function TicketHeader(props: {
   readonly ticket: number;
   readonly title: string;
@@ -80,6 +107,7 @@ export function TicketHeader(props: {
       number={props.ticket}
       status={
         <>
+          <TicketStateAnnouncement standing={props.standing} />
           <TicketStateLabel standing={props.standing} size="page" />
           <TicketHeaderFragmentDrawn
             fragment={props.fragment}

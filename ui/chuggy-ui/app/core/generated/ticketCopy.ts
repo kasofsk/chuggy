@@ -52,6 +52,9 @@ export interface TicketCopy {
   readonly "ticket-tab-configuration": Record<never, never>;
   readonly "ticket-tab-usage": Record<never, never>;
   readonly "ticket-tabs-nav-label": Record<never, never>;
+  readonly "ticket-state-announced": {
+    readonly state: unknown;
+  };
   readonly "ticket-header-merged-into": {
     readonly base: unknown;
   };
