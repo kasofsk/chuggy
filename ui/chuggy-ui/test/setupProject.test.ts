@@ -72,6 +72,7 @@ test("a person with a workspace and no project is asked what to call it, the pro
   ).toMatchObject({
     report: "Checklist",
     steps: [
+      { step: "plugin", state: "done" },
       { step: "workspace", state: "done" },
       { step: "project", state: "done" },
       ...Array.from({ length: 5 }, () => expect.anything() as unknown),

@@ -133,7 +133,7 @@ const mends: {
   readonly [
     Kind in Exclude<
       SetupLack["lacks"],
-      "Read" | "Mcp" | "Project" | "Configuration"
+      "Read" | "Plugin" | "Mcp" | "Project" | "Configuration"
     >
   ]: readonly [Extract<SetupLack, { readonly lacks: Kind }>, SaidThing];
 } = {
@@ -254,6 +254,45 @@ const mends: {
     ),
   ],
 };
+
+/** What `plugin` offers, with `tell` said. */
+const pluginOffered = (tell: string): SaidThing => ({
+  thing: "Offer",
+  command: "Plugin",
+  tell,
+  when: "once the person says yes to chuggy's plugin in Claude Code",
+});
+
+const pluginAdds =
+  "It adds two skills to Claude Code: one that sets chuggy up with you, and one that files tickets. It is installed with Claude Code's own commands, for you alone: they write your Claude Code user settings and clone the plugin into the plugins folder of ~/.claude, and the plugin runs nothing.";
+
+test("the plugin step offers plugin, saying what the plugin adds and writes, and what the person's yes is to where it is installed and off", () => {
+  expect(thing({ lacks: "Plugin", off: false })).toEqual(
+    pluginOffered(
+      `The first step is chuggy's plugin for Claude Code. ${pluginAdds} With your yes I will install it. Tell me yes to go ahead, or no to go on without it.`,
+    ),
+  );
+  expect(thing({ lacks: "Plugin", off: true })).toEqual(
+    pluginOffered(
+      `The first step is chuggy's plugin for Claude Code, which is installed here and off. ${pluginAdds} With your yes I will update it and turn it on. Tell me yes to go ahead, or no to go on without it.`,
+    ),
+  );
+});
+
+test("signed in with no workspace, the plugin is what is next where Claude Code here has it off or not at all, and passed over the workspace is, with the way past carried", async () => {
+  for (const plugin of ["None", "Off"] as const)
+    expect(
+      (await nextSaid(setupSiteAt("Nothing"), { plugin })).thing,
+      plugin,
+    ).toMatchObject({ thing: "Offer", command: "Plugin" });
+  const skip = { plugin: "skip" } as const;
+  const past = await nextSaid(setupSiteAt("Nothing"), {
+    plugin: "Skipped",
+    answers: skip,
+  });
+  expect(past.thing).toEqual(mends.Workspace[1]);
+  expect(past.carried).toEqual({ ...setupAnswersNone, ...skip });
+});
 
 /** What `mcp` offers for the project, with `tell` said. */
 const mcpOffered = (tell: string): SaidThing => ({

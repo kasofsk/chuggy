@@ -24,7 +24,7 @@ import { setupLandingsMax } from "../app/core/setupReads.ts";
 import type { SetupRead } from "../app/core/setupReads.ts";
 import { setupSteps } from "../app/core/setupReport.ts";
 import { setupStanding } from "../app/core/setupStanding.ts";
-import type { SetupStep } from "../app/core/setupStanding.ts";
+import type { SetupPluginHere, SetupStep } from "../app/core/setupStanding.ts";
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunnerRead } from "../app/core/workRunner.ts";
 import {
@@ -41,6 +41,7 @@ import {
   saidMember,
   saidMemberSite,
   saidOrg,
+  saidPluginOn,
   saidRepository,
   saidRunnable,
   saidServed,
@@ -85,7 +86,7 @@ function worded(step: SetupStep | undefined) {
     : { ...step, detail: saidDetail(step.detail) };
 }
 
-/** Every step of a site as it is said, in order. */
+/** Every step of a site past the plugin's, which is on, as it is said, in order. */
 async function column(
   site: SetupSite,
   asking: Asking = {},
@@ -94,7 +95,9 @@ async function column(
   expect(steps.map((step) => step.step)).toEqual(setupSteps);
   for (const step of steps)
     expect(step.lacks === undefined, step.step).toBe(step.state === "done");
-  return steps.map(saidStep);
+  const [plugin, ...past] = steps.map(saidStep);
+  expect(plugin).toEqual(saidPluginOn);
+  return past;
 }
 
 test.each(Object.entries(saidStages))(
@@ -371,11 +374,16 @@ test("a standing over a list of projects that was not whole never says a workspa
   const reads = await siteRead(setupSiteAt("Workspace"));
   expect(reads.choice).toMatchObject({ choice: "Made", project: undefined });
   const unasked = (subject: string): Said => ["unread", `${subject} not read`];
-  const { steps } = setupStanding({
-    ...reads,
-    inventory: { read: "Got", value: [], whole: false },
-  });
+  const { steps } = setupStanding(
+    {
+      ...reads,
+      inventory: { read: "Got", value: [], whole: false },
+    },
+    true,
+    "On",
+  );
   expect(steps.map(saidStep)).toEqual([
+    saidPluginOn,
     saidAcme,
     ["unread", "your projects were sent only in part"],
     saidTodo,
@@ -514,7 +522,7 @@ const personal = [
 
 test("once a repository is added GitHub is held to the account that owns it, whatever another account holds, and waits on the app that account lacks", async () => {
   const github = async (site: SetupSite) =>
-    worded((await stood(site)).steps[3]);
+    worded((await stood(site)).steps[4]);
   const waiting = (detail: string, app: "portal" | "worker") => ({
     step: "github",
     state: "waiting",
@@ -601,7 +609,7 @@ const elsewhere = "https://github.com/acme-org/gadgets";
 
 test("with both apps on the owner's account, GitHub waits on whichever is not granted this repository, the portal app said first, and is done only where both are", async () => {
   const github = async (site: SetupSite) =>
-    worded((await stood(site)).steps[3]);
+    worded((await stood(site)).steps[4]);
   const mine = setupSiteRepositoryAddress;
   const waiting = (app: "portal" | "worker") => ({
     step: "github",
@@ -684,7 +692,7 @@ test("the worker app is waited on exactly where the console's own decider, over 
           });
           if (portal === undefined || worker === undefined)
             throw new Error("a listing was not asked for");
-          const lacks = setupStanding(reads).steps[3]?.lacks;
+          const lacks = setupStanding(reads, true, "On").steps[4]?.lacks;
           const said = lacks?.lacks === "Grant" && lacks.app === "worker";
           expect(said, JSON.stringify(site.grants)).toBe(
             repositoriesWorkerless([portal], [worker]).includes(mine),
@@ -921,7 +929,7 @@ test("a project with no pool says whether it names an owner fallback in what its
     project.runner = "Unregistered";
     project.fallback = fallback;
     site.chat.clear();
-    expect((await stood(site)).steps[5]?.lacks).toEqual({
+    expect((await stood(site)).steps[6]?.lacks).toEqual({
       lacks: "Runner",
       chat: true,
       named: fallback !== undefined,
@@ -981,7 +989,7 @@ test("where the person's chats run on runners the runner step is done only once 
       if (mine === "Unregistered") site.chat.clear();
       else
         site.chat.set("acme", { id: "chuggy-chat-1", live: mine === "Live" });
-      const step = (await stood(site)).steps[5];
+      const step = (await stood(site)).steps[6];
       said[`${runner} ${mine}`] = [
         step?.state,
         saidDetail(step?.detail),
@@ -1130,4 +1138,26 @@ test("a second project in the workspace changes nothing of a project that was na
   const named = { answers: { project: "widgets" } };
   expect(await column(site, named)).toEqual(saidLanding);
   expect((await stood(site)).steps).toEqual([]);
+});
+
+test("signed in, the plugin's step comes first and is done where Claude Code here has it on or the run was given the way past it, and otherwise lacks it, saying whether it is installed", async () => {
+  const first = async (plugin: SetupPluginHere) => {
+    const [step] = (await stood(setupSiteAt("Nothing"), { plugin })).steps;
+    return step === undefined
+      ? undefined
+      : { said: saidStep(step), lacks: step.lacks };
+  };
+  expect(await first("On")).toEqual({ said: saidPluginOn, lacks: undefined });
+  expect(await first("Skipped")).toEqual({
+    said: ["done", "passed over without chuggy's plugin"],
+    lacks: undefined,
+  });
+  expect(await first("Off")).toEqual({
+    said: ["todo", "Claude Code here has chuggy's plugin, off"],
+    lacks: { lacks: "Plugin", off: true },
+  });
+  expect(await first("None")).toEqual({
+    said: ["todo", "Claude Code here has no chuggy plugin"],
+    lacks: { lacks: "Plugin", off: false },
+  });
 });

@@ -190,6 +190,26 @@ setup-runner-act-server-added = { $case ->
     [upper] Adding { -brand-name }'s MCP server to { -claude-code }
    *[lower] adding { -brand-name }'s MCP server to { -claude-code }
 }
+setup-runner-act-plugin-marketplace-add = { $case ->
+    [upper] Adding { -brand-name }'s plugin marketplace to { -claude-code }
+   *[lower] adding { -brand-name }'s plugin marketplace to { -claude-code }
+}
+setup-runner-act-plugin-marketplace-update = { $case ->
+    [upper] Updating { -brand-name }'s plugin marketplace in { -claude-code }
+   *[lower] updating { -brand-name }'s plugin marketplace in { -claude-code }
+}
+setup-runner-act-plugin-install = { $case ->
+    [upper] Installing { -brand-name }'s plugin in { -claude-code }
+   *[lower] installing { -brand-name }'s plugin in { -claude-code }
+}
+setup-runner-act-plugin-update = { $case ->
+    [upper] Updating { -brand-name }'s plugin in { -claude-code }
+   *[lower] updating { -brand-name }'s plugin in { -claude-code }
+}
+setup-runner-act-plugin-enable = { $case ->
+    [upper] Turning on { -brand-name }'s plugin in { -claude-code }
+   *[lower] turning on { -brand-name }'s plugin in { -claude-code }
+}
 setup-runner-act-register = { $case ->
     [upper] Registering this machine
    *[lower] registering this machine
