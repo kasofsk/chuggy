@@ -418,7 +418,7 @@ test("an unparameterised transcript read asks from before the first batch", asyn
   ]);
 });
 
-test("a thread's transcript is the lead's page over another session", async () => {
+test("a thread's transcript is a session transcript page over its own session", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
 
@@ -437,11 +437,12 @@ test("a thread's transcript is the lead's page over another session", async () =
 
 /**
  * ONE TRANSCRIPT HAS ONE REPRESENTATION. A thread's page goes out through the
- * lead's own wire body, so the parent links and the compaction metadata the walk
- * needed are stripped from a thread's entries exactly as they are from a lead's
- * — a second encoder would be a second answer to what a transcript entry is.
+ * session transcript's own wire body, so the parent links and the compaction
+ * metadata the walk needed are stripped from a thread's entries exactly as from
+ * any session's — a second encoder would be a second answer to what a
+ * transcript entry is.
  */
-test("a thread's entries are stripped the way the lead's are", async () => {
+test("a thread's entries are stripped the way every session's are", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
 

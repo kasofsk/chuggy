@@ -28,7 +28,7 @@ import {
   apiThreadContext,
   apiThreadTranscript,
 } from "./apiRoutes.ts";
-import type { LeadTranscriptPage, SessionContextPage } from "./apiRoutes.ts";
+import type { SessionTranscriptPage, SessionContextPage } from "./apiRoutes.ts";
 import type { ApiPorts } from "./apiRequest.ts";
 
 export type ThreadHome =
@@ -63,7 +63,7 @@ export function apiThreadTranscriptAt(
   ports: ApiPorts,
   home: ThreadHome,
   session: string,
-  page: LeadTranscriptPage,
+  page: SessionTranscriptPage,
 ): ReturnType<typeof apiThreadTranscript> {
   return home.scope === "Project"
     ? apiThreadTranscript(ports, home.partition, session, page)

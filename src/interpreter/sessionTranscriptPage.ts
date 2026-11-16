@@ -48,10 +48,9 @@ import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
 
 /**
- * Where one session's store rows are read from, SESSION-KEYED so that one walk
- * serves the lead and a member's thread both. It is the ONLY row read either
- * has: `LeadReadStore` extends this rather than declaring a lead-only
- * `batches`, because 062 retired the definer that was fenced on `kind='Lead'`
+ * Where one session's store rows are read from, SESSION-KEYED rather than
+ * keyed on a kind: it is the one row read every session's transcript is drawn
+ * through, because 062 retired the definer that was fenced on `kind='Lead'`
  * for `read_session_store_batches` — a name of its own because
  * `read_session_store` is already the worker plane's, authenticated by a bearer
  * digest rather than by project access.

@@ -36,7 +36,6 @@ test("query defaults and absent cursors retain their transport meaning", () => {
     limit: runContextPageReadingsMax,
   });
   for (const endpoint of [
-    nativeHttpEndpoints.leadContext,
     nativeHttpEndpoints.threadContext,
     nativeHttpEndpoints.chatThreadContext,
   ])

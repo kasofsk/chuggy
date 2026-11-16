@@ -353,14 +353,6 @@ export const sessionModelSchema = z
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
 
-/**
- * How much of the handoff note the lead read carries. The note's own ceiling is
- * a whole wire body, and the lead read carries a mailbox tail and a stream
- * listing beside it, so a note at its bound would put that one response past
- * what the wire admits.
- */
-export const selectorHandoffNotePreviewCharsMax = 4_096;
-
 /** How many of one project's decisions a single history page answers with. */
 export const selectorHistoryLimitMax = 50;
 
@@ -377,9 +369,6 @@ export const agenticRefusalReasonCharsMax = 1_024;
  * the refusals may take of a document that also carries the candidates.
  */
 export const agenticRefusalsAnsweredMax = 32;
-
-/** How many of a lead's turns one read of the lead answers with, newest last. */
-export const leadTurnsAnsweredMax = 32;
 
 /** The longest summary a result carries, which the manifest reader accepts and a later evaluation retains. */
 export const resultReportCharsMax = 8_192;
@@ -621,9 +610,6 @@ export const nativeHttpRoutes = {
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
   selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,
   selectorSettingsHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings/history`,
-  lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
-  leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
-  leadContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/context`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,

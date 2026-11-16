@@ -1,8 +1,7 @@
 /**
  * A subsidized lead's monthly caps against a real server: what
  * `subsidized_lead_spend` sums of a tenant's sessions and of the deployment's,
- * the admission the selector asks of it, and the refusal it keeps until the
- * month turns.
+ * and the admission the selector asks of it.
  *
  * Each case publishes the profile on a credential slot of its own, so the
  * deployment's sum is the spend of that case's sessions alone.
@@ -13,8 +12,6 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
-import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
-import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import {
   postgresLeadRouteReads,
   postgresSessionRouteReads,
@@ -227,15 +224,7 @@ async function capsLastMonth(partition: Partition): Promise<void> {
   );
 }
 
-/** The first instant of next month in UTC, as the API renders an instant. */
-function capsNextMonth(): string {
-  const now = new Date();
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-  ).toISOString();
-}
-
-test("a tenant whose subsidized sessions spent the cap this month is refused SubsidyExhausted until the first of the next month, and admitted again once that spend is last month's", async () => {
+test("a tenant whose subsidized sessions spent the cap this month is refused SubsidyExhausted, and admitted again once that spend is last month's", async () => {
   const offer = capsOffer("exhausted");
   await capsPublished(offer);
   const partition = await capsProject("exhausted");
@@ -257,14 +246,6 @@ test("a tenant whose subsidized sessions spent the cap this month is refused Sub
     deploymentMonthlyMicros: 10_000,
   });
   assert.equal(await capsAdmission(partition), "SubsidyExhausted");
-
-  await postgresSelectorState(selectorPool).recordLeadRefusal(
-    partition,
-    "SubsidyExhausted",
-  );
-  const refused = await postgresLeadReads(apiPool).leadRefusal(partition);
-  assert.equal(refused?.reason, "SubsidyExhausted");
-  assert.equal(refused.until, capsNextMonth());
 
   await capsLastMonth(partition);
   assert.equal((await capsSpend(partition))?.tenantMicros, 0);

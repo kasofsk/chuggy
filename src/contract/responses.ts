@@ -46,7 +46,6 @@ import {
   isBoundedText,
   leadAutoCompactWindowTokensMax,
   leadAutoCompactWindowTokensMin,
-  leadTurnsAnsweredMax,
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
@@ -67,8 +66,6 @@ import {
   runToolUseIdCharsMax,
   runTranscriptPageBatchesMax,
   runTurnSeriesMax,
-  selectorHandoffNoteBytesMax,
-  selectorHandoffNotePreviewCharsMax,
   sessionContextPageTurnsMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
@@ -172,13 +169,11 @@ import {
   runStepEvidences,
   runUsageWindows,
   schedulerFreshnesses,
-  selectorAttentions,
   selectorDispatchModes,
   selectorModes,
   sessionCapabilities,
   sessionRunnerStandings,
   sessionScopes,
-  sessionStates,
   projectLifecycles,
   sessionTurnFailures,
   sessionTurnInputKinds,
@@ -192,9 +187,6 @@ import {
   forgeInstallationPermissions,
   forgeRepositorySelections,
   forgeApps,
-  leadAbsencesUntimed,
-  leadAdmissionRefusals,
-  leadHolds,
   projectRepositoryConfigurationDeferrals,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
@@ -1782,21 +1774,8 @@ export type DraftInitializationResponse = z.infer<
 >;
 
 /**
- * How large the note a lead leaves its successor is, and as much of it as the
- * lead read carries. The note itself is opaque to everything but the lead, and
- * at its own ceiling it weighs a whole wire body, so the read that carries a
- * mailbox tail and a stream listing beside it carries this instead.
- */
-const handoffNotePreviewSchema = z.strictObject({
-  bytes: countSchema.max(selectorHandoffNoteBytesMax),
-  preview: z.string().max(selectorHandoffNotePreviewCharsMax),
-  truncated: z.boolean(),
-});
-
-/**
- * What a pod measured of one turn and which batches it wrote, on a lead's turn
- * and a member's alike. It is one shape rather than two copies, because a turn
- * is measured the same way whatever kind of session took it.
+ * What a pod measured of one turn and which batches it wrote, whatever kind of
+ * session took it.
  */
 const sessionTurnMeasureShape = {
   model: z.string().min(1).max(sessionTurnModelCharsMax).optional(),
@@ -1811,124 +1790,17 @@ const sessionTurnMeasureShape = {
   batchLast: countSchema.optional(),
 };
 
-/**
- * One turn of the lead's mailbox and what the pod measured of it. The turn's
- * input is absent: it is the observation document, the decision log already
- * holds it, and shipping it twice would double the page for nothing.
- */
-export const leadTurnResponseSchema = z.object({
-  turn: identitySchema,
-  ordinal: countSchema,
-  inputKind: z.enum(sessionTurnInputKinds),
-  state: z.enum(sessionTurnStates),
-  decision: identitySchema.optional(),
-  failure: z.enum(sessionTurnFailures).optional(),
-  ...sessionTurnMeasureShape,
-});
-export type LeadTurnResponse = z.infer<typeof leadTurnResponseSchema>;
-
 /** One stream a session's store holds, and how many batches stand under it. */
-export const leadStoreStreamResponseSchema = z.object({
+export const sessionStoreStreamResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
   batches: countSchema,
 });
-
-/**
- * The admission refusal the last cycle that needed a lead met, which has been
- * the answer since `since`. A `UsagePaused` refusal names in `until` the
- * earliest instant one of the live pools stops being paused, each on the
- * Claude credentials it named or, where it named none, on the whole agent, as
- * the pause stands at the read, and never whose account it is or why, or
- * `off` in its place where every live pool is held only by credentials turned
- * off; a `SubsidyExhausted` one names the first instant of the next calendar
- * month in UTC.
- */
-export const leadRefusalResponseSchema = z.object({
-  reason: z.enum(leadAdmissionRefusals),
-  since: instantSchema,
-  until: instantSchema.optional(),
-  off: z.literal(true).optional(),
-});
-export type LeadRefusalResponse = z.infer<typeof leadRefusalResponseSchema>;
-
-/**
- * What a subsidized lead's tenant has spent of the subsidy this calendar month
- * in UTC, and its cap, each in micro-dollars.
- */
-export const leadSubsidyResponseSchema = z.object({
-  tenantMicros: countSchema,
-  tenantMonthlyMicros: countSchema,
-});
-
-/**
- * The project's lead session: what it is, what it decided under, its mailbox
- * tail, the refusal kept for it where one stands and neither the selector's
- * pause nor its want of a grant outranks it, and a subsidized lead's spend
- * this month, absent for a lead run as its own.
- */
-export const leadResponseSchema = z.object({
-  session: identitySchema,
-  state: z.enum(sessionStates),
-  attention: z.enum(selectorAttentions),
-  agentReference: identitySchema.optional(),
-  notificationCursor: countSchema,
-  handoffNote: handoffNotePreviewSchema,
-  turns: z.array(leadTurnResponseSchema).max(leadTurnsAnsweredMax),
-  streams: z
-    .array(leadStoreStreamResponseSchema)
-    .max(sessionStoreStreamsAnswered),
-  refusal: leadRefusalResponseSchema.optional(),
-  subsidy: leadSubsidyResponseSchema.optional(),
-});
-export type LeadResponse = z.infer<typeof leadResponseSchema>;
-
-/**
- * Why a project holds no lead: `Paused` while its selector is paused, by the
- * project or the whole installation, then `SelectorNotGranted` while the site's
- * selector may not read the project, each ahead of any refusal it keeps, and
- * otherwise the admission refusal the last cycle that needed a lead met. Where
- * none holds and a released ticket waits on a dispatch decision,
- * `AwaitingSelector`, or `SelectorUnnamed` where the API names no selector to
- * say whether one reaches the project; `NotNeeded` where none waits.
- */
-export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
-  z.object({ reason: z.enum(leadAbsencesUntimed) }),
-  leadRefusalResponseSchema,
-]);
-export type LeadAbsenceResponse = z.infer<typeof leadAbsenceResponseSchema>;
-
-/**
- * A project the reader may read that holds no lead session: an answer, where a
- * refusal is a 404. `absence` is absent from a server that predates it.
- */
-export const leadNoneResponseSchema = z.object({
-  lead: z.literal("None"),
-  absence: leadAbsenceResponseSchema.optional(),
-});
-export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
-
-/**
- * A project the reader may read that holds a lead session: the session, and
- * `held`, where the lead stands but dispatches no ticket, the reason a project
- * holding none would answer as its absence: `Paused` while its selector is
- * paused, by the project or the whole installation, then `SelectorNotGranted`
- * while the site's selector may not read the project. No `Session` frame
- * carries it, and a server that predates it never answers it.
- */
-export const leadFoundResponseSchema = leadResponseSchema.extend({
-  held: z.object({ reason: z.enum(leadHolds) }).optional(),
-});
-export type LeadFoundResponse = z.infer<typeof leadFoundResponseSchema>;
-
-/** What the lead route answers: the project's lead, or that it has none. */
-export const leadReadResponseSchema = z.union([
-  leadFoundResponseSchema,
-  leadNoneResponseSchema,
-]);
-export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
+export type SessionStoreStreamResponse = z.infer<
+  typeof sessionStoreStreamResponseSchema
+>;
 
 /** One entry of a session's transcript, parsed no further than a reader draws it. */
-export const leadTranscriptEntryResponseSchema = z.object({
+export const sessionTranscriptEntryResponseSchema = z.object({
   uuid: identitySchema.optional(),
   type: identitySchema,
   timestamp: instantSchema.optional(),
@@ -1946,15 +1818,15 @@ export const sessionTranscriptCompactionResponseSchema = z.object({
 
 /**
  * The chain over the batches read, with `held` naming the entries of this page
- * the lead still holds, decided by the last compaction in the whole stream and
+ * the session still holds, decided by the last compaction in the whole stream and
  * absent only where that walk could not reach the stream's end. An elided batch
  * is one whose row exists and whose object cannot be drawn, which is what a run
  * that died leaves behind.
  */
-export const leadTranscriptResponseSchema = z.object({
+export const sessionTranscriptResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
   entries: z
-    .array(leadTranscriptEntryResponseSchema)
+    .array(sessionTranscriptEntryResponseSchema)
     .max(sessionTranscriptEntriesMax),
   held: z.array(identitySchema).max(sessionTranscriptEntriesMax).optional(),
   /**
@@ -1985,8 +1857,8 @@ export const leadTranscriptResponseSchema = z.object({
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
-export type LeadTranscriptResponse = z.infer<
-  typeof leadTranscriptResponseSchema
+export type SessionTranscriptResponse = z.infer<
+  typeof sessionTranscriptResponseSchema
 >;
 
 /** One turn's readings of its session's context window, in the order the turn took them. */
@@ -2089,10 +1961,9 @@ export const chatThreadsResponseSchema = z.object({
 export type ChatThreadsResponse = z.infer<typeof chatThreadsResponseSchema>;
 
 /**
- * One turn of a thread's mailbox, carrying its `input` and its `result` where
- * `leadTurnResponseSchema` carries neither: a lead's are the observation and
- * the decision its log already holds, and a member's are what they typed and
- * the answer they are waiting for. Each is bounded by the column that holds it.
+ * One turn of a thread's mailbox, carrying its `input` and its `result`: what
+ * the member typed and the answer they are waiting for. Each is bounded by the
+ * column that holds it.
  */
 export const threadTurnResponseSchema = z.object({
   turn: identitySchema,
@@ -2107,10 +1978,7 @@ export const threadTurnResponseSchema = z.object({
 export type ThreadTurnResponse = z.infer<typeof threadTurnResponseSchema>;
 
 /**
- * One member thread: what it is, whose it is, and its mailbox tail. It is its
- * own shape rather than the lead's reused, because `attention` and
- * `notificationCursor` are facts about the project's selector state and neither
- * is a fact about a thread.
+ * One member thread: what it is, whose it is, and its mailbox tail.
  */
 export const threadResponseSchema = z.object({
   session: identitySchema,
@@ -2126,7 +1994,7 @@ export const threadResponseSchema = z.object({
   /** The cursor an older page is asked for with, absent where this page holds the first turn. */
   nextBefore: countSchema.optional(),
   streams: z
-    .array(leadStoreStreamResponseSchema)
+    .array(sessionStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
   /**
    * Present where the thread holds jobs its chat host restarts with each
@@ -2140,13 +2008,11 @@ export const threadResponseSchema = z.object({
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 
 /**
- * A thread's transcript is the lead's page over a different session: the same
- * walk, over the same store, answering the same chain. It is aliased rather
- * than forked so the two cannot drift; the rename that makes the name
- * session-keyed rather than lead-keyed belongs with the walk it renames.
+ * A thread's transcript is a session's transcript page. It is aliased rather
+ * than forked so the two cannot drift.
  */
-export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
-export type ThreadTranscriptResponse = LeadTranscriptResponse;
+export const threadTranscriptResponseSchema = sessionTranscriptResponseSchema;
+export type ThreadTranscriptResponse = SessionTranscriptResponse;
 
 /**
  * What the rename and the hide doors answer: the entry as it now stands, which

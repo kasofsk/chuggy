@@ -8,7 +8,6 @@ import {
   asPrincipal,
   type NativeWeb,
 } from "../../src/interpreter/nativeWeb.ts";
-import { unreadableLeadReads } from "./leadReadFixtures.ts";
 
 /**
  * A boundary method a suite does not serve. It raises rather than answering, so
@@ -73,7 +72,6 @@ export const unservedEpics: Pick<
 export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   ...unservedThreads,
   ...unservedEpics,
-  ...unreadableLeadReads(),
   cancel: unserved("cancel"),
   configuration: unserved("configuration"),
   configurations: unserved("configurations"),

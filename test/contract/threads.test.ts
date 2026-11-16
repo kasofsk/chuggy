@@ -45,8 +45,7 @@ import {
   threadRenameRequestSchema,
 } from "../../src/contract/requests.ts";
 import {
-  leadTranscriptResponseSchema,
-  leadTurnResponseSchema,
+  sessionTranscriptResponseSchema,
   threadEntryResponseSchema,
   threadMessageAcceptedSchema,
   threadResponseSchema,
@@ -359,18 +358,6 @@ test("a turn's measurement carries exactly the fields a pod reports", () => {
   ];
 
   assert.deepEqual(
-    Object.keys(leadTurnResponseSchema.shape).sort(),
-    [
-      ...measured,
-      "decision",
-      "failure",
-      "inputKind",
-      "ordinal",
-      "state",
-      "turn",
-    ].sort(),
-  );
-  assert.deepEqual(
     Object.keys(threadTurnResponseSchema.shape).sort(),
     [
       ...measured,
@@ -462,9 +449,9 @@ test("a mailbox answers the page asked for, however long the conversation is", (
   );
 });
 
-/** The walk is the lead's, over a different session, so the page is the same page. */
-test("a thread's transcript is the lead's schema and not a second copy", () => {
-  assert.equal(threadTranscriptResponseSchema, leadTranscriptResponseSchema);
+/** A thread's walk is a session's walk, so the page is the same page. */
+test("a thread's transcript is the session transcript's schema and not a second copy", () => {
+  assert.equal(threadTranscriptResponseSchema, sessionTranscriptResponseSchema);
 });
 
 test("the message door takes a minted turn and a message inside its bound", () => {
