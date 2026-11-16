@@ -2389,17 +2389,17 @@ test("each door a thread passes through is the role's it was granted to and no o
     `SELECT ${sessionStoreStreamListFunction}('${partition.tenant}','${partition.project}','session-grants',1)`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     threadWakeFunction,
     `SELECT ${threadWakeFunction}('${partition.tenant}','${partition.project}','session-grants','turn-wake-grants','{}','InCluster')`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     threadWakeCandidatesFunction,
     `SELECT ${threadWakeCandidatesFunction}(0,1)`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     threadWakeCursorAdvanceFunction,
     `SELECT ${threadWakeCursorAdvanceFunction}(0)`,
   );
@@ -2409,7 +2409,7 @@ test("each door a thread passes through is the role's it was granted to and no o
     `SELECT set_session_capabilities('${partition.tenant}','${partition.project}','session-grants',ARRAY['ProjectRead']::text[])`,
   );
   await onlyTheseRolesMay(
-    [selectorServiceRole],
+    [schedulerRole],
     "thread_wake_cursor",
     "SELECT sequence FROM thread_wake_cursor",
   );

@@ -256,19 +256,12 @@ function selectorProcessAdmissionLine(skip: SelectorAdmissionSkip): string {
 }
 
 /**
- * Drives the selector's own pass and the thread wake pass in ONE tick of ONE
- * pacing loop, the runtime STRICTLY FIRST: the runtime pass ends by appending
- * the change rows the wake pass exists to read, so a tick that started them
- * together would read the log before this tick's refusals were in it, and one
- * loop is the whole of the pacing because a second loop over the same cursor
- * would be a second writer to it. A change whose fan-out one pass cannot read
- * is the one arm in which a notice is dropped for good, and a project newly
- * passed over because its lead may not run is a lead that stops, so each
- * reaches stderr the way a contained ticket service fault does.
+ * Drives the selector's own pass. A project newly passed over because its lead
+ * may not run is a lead that stops, so it reaches stderr the way a contained
+ * ticket service fault does.
  */
 export function selectorProcess(
   service: SelectorRuntimeService,
-  wakes: ThreadWakeService,
   requirements: ControlPlaneRequirements,
   config: ServiceRuntimeConfig,
 ): ServiceRuntime {
@@ -281,11 +274,6 @@ export function selectorProcess(
         admissions = admitted.reported;
         for (const skip of admitted.changed)
           process.stderr.write(selectorProcessAdmissionLine(skip));
-        const report = await threadWakePass(wakes);
-        if (report.truncatedAt !== undefined)
-          process.stderr.write(
-            `thread wakes: change ${String(report.truncatedAt)} wakes more threads than one pass reads, and the pass moved past it\n`,
-          );
       },
     },
     systemPacing,
@@ -307,17 +295,21 @@ function schedulerProcessNoticeLine(notice: SchedulerPassNotice): string {
 }
 
 /**
- * Drives both schedulers in one tick of one pacing loop, execution first: either
- * cleanup raises on a cluster answering `Unavailable` to a cancel and
- * `../interpreter/serviceRuntime.ts` ends the loop on a raise out of `run`, so
- * the order decides only which half has finished its pass when the other stops
- * the tick, and this slice's newest infrastructure does not get to deny the
- * proved execution machine a dispatch on its way out. What the execution pass
- * could not mend reaches stderr, since an operator is who mends it.
+ * Drives both schedulers and the thread wake pass in one tick of one pacing
+ * loop, execution first and sessions last: either cleanup raises on a cluster
+ * answering `Unavailable` to a cancel and `../interpreter/serviceRuntime.ts`
+ * ends the loop on a raise out of `run`, so the proved execution machine is not
+ * denied a dispatch on its way out, a turn the wake pass wakes is placed in the
+ * same tick, and one loop is the whole of the pacing because a second over the
+ * wake cursor would be a second writer to it. What the execution pass could
+ * not mend, and a change whose fan-out one wake pass cannot read, which is the
+ * one arm in which a notice is dropped for good, reach stderr, since an
+ * operator is who mends them.
  */
 export function schedulerProcess(
   service: ExecutionSchedulerService,
   sessions: SessionSchedulerService,
+  wakes: ThreadWakeService,
   identity: {
     readonly owner: SchedulerOwnerId;
     readonly recoveryEpoch: RecoveryEpoch;
@@ -337,6 +329,11 @@ export function schedulerProcess(
         );
         for (const notice of report.notices)
           process.stderr.write(schedulerProcessNoticeLine(notice));
+        const woken = await threadWakePass(wakes);
+        if (woken.truncatedAt !== undefined)
+          process.stderr.write(
+            `thread wakes: change ${String(woken.truncatedAt)} wakes more threads than one pass reads, and the pass moved past it\n`,
+          );
         await sessionSchedulerPass(sessions, identity.recoveryEpoch);
       },
     },
@@ -409,14 +406,7 @@ export interface SelectorProcessRootConfig {
   readonly runtime: ServiceRuntimeConfig;
   readonly selector?: SelectorRuntimeConfig;
   /**
-   * The wake pass's bound. It is required rather than defaulted here, because a
-   * root that supplied its own default would be a second place the default
-   * lives and an arm in which a deployment's bound is not the bound that runs.
-   */
-  readonly wakes: { readonly wakesPerPassMax: number };
-  /**
-   * Where the project authority is. The wake pass asks it whether a thread's
-   * principal may still read the project, and the runtime whether a project's
+   * Where the project authority is. The runtime asks it whether a project's
    * tenant grants a lead run in cluster hosted runs, which no row in this
    * database says.
    */
@@ -436,12 +426,11 @@ export function selectorProcessRoot(
   additional: readonly RuntimePrecondition[] = [],
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const access = ketoProjectAccess(config.access);
   const service = composeSelectorRuntime(
     pool,
     source,
     lead,
-    access,
+    ketoProjectAccess(config.access),
     identities,
     config.selector,
   );
@@ -449,12 +438,6 @@ export function selectorProcessRoot(
     pool,
     selectorProcess(
       service,
-      {
-        store: postgresThreadWakes(pool),
-        access,
-        clock: { nowIso: () => new Date().toISOString() },
-        wakesPerPassMax: config.wakes.wakesPerPassMax,
-      },
       {
         pool,
         additional: selectorProcessPreconditions(pool, [
@@ -631,9 +614,16 @@ export interface SchedulerProcessRootConfig {
   >;
   /**
    * Where the project authority is. A pass asks it whether a registered pool
-   * may still run its project's work, which no row in this database says.
+   * may still run its project's work, and the wake pass whether a thread's
+   * principal may still read the project, which no row in this database says.
    */
   readonly access: ProjectAccessSettings;
+  /**
+   * The wake pass's bound. It is required rather than defaulted here, because a
+   * root that supplied its own default would be a second place the default
+   * lives and an arm in which a deployment's bound is not the bound that runs.
+   */
+  readonly wakes: { readonly wakesPerPassMax: number };
   /**
    * The session half of the same process; its own store and its binding read
    * come from the same pool, so a deployment names neither.
@@ -709,6 +699,12 @@ export function schedulerProcessRoot(
     schedulerProcess(
       service,
       schedulerProcessRootSessions(pool, config.sessions),
+      {
+        store: postgresThreadWakes(pool),
+        access: ketoProjectAccess(config.access),
+        clock: { nowIso: () => new Date().toISOString() },
+        wakesPerPassMax: config.wakes.wakesPerPassMax,
+      },
       config.identity,
       {
         pool,

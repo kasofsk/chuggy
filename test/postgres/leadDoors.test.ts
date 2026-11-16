@@ -41,10 +41,7 @@ import {
   selectorReconcileClaimFunction,
   sessionRunnerStandingFunction,
   sessionSystemPromptSetFunction,
-  threadWakeCandidatesFunction,
-  threadWakeCursorAdvanceFunction,
   subsidizedLeadReadFunction,
-  threadWakeFunction,
 } from "../../src/adapters/postgres/schema/shared.ts";
 import {
   apiRole,
@@ -117,7 +114,7 @@ test("an answer the server did not give is refused rather than permitted", () =>
 
 /**
  * Every function this role is granted EXECUTE on that no decision opens: the
- * attempts, deliveries and thread wakes the same process drives, each named
+ * attempts and deliveries the same process drives, each named
  * where its own schema names it. It is what lets the case below compare sets
  * rather than test membership, and a door granted to this role that is in
  * neither it nor `leadDoorSignatures` reds that case until somebody says which
@@ -132,9 +129,6 @@ const selectorDoorsBesideADecision: readonly string[] = [
   selectorHostReadinessFunction,
   selectorReconcileClaimFunction,
   sessionRunnerStandingFunction,
-  threadWakeCandidatesFunction,
-  threadWakeCursorAdvanceFunction,
-  threadWakeFunction,
 ];
 
 /** The function a door names, which is what classes it without its argument types. */
@@ -183,7 +177,6 @@ const composedRootProgram = `
     {
       database: { url: process.env.CHUG_SELECTOR_URL },
       runtime: { idleIntervalMilliseconds: 60000, shutdownDrainMilliseconds: 1000 },
-      wakes: { wakesPerPassMax: 1 },
     },
     {
       projects: reject, moved: reject, notifications: reject,
