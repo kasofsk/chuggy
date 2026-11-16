@@ -1046,6 +1046,15 @@ export const apiReturnTicket = apiProjectEndpoint(
   }),
 );
 
+/** The pull request the ticket's newest successful landing opened, merged by the site's portal app. */
+export const apiMergeTicketProposal = apiProjectEndpoint(
+  nativeHttpEndpoints.ticketProposalMerge,
+  (partition, ticket: number) => ({
+    parameters: { ...partition, ticket },
+    body: {},
+  }),
+);
+
 /** Who holds and who waits on each reference the project's tickets land on. */
 export const apiLandingQueues = apiProjectEndpoint(
   nativeHttpEndpoints.landingQueues,

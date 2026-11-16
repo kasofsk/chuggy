@@ -17,6 +17,7 @@
 import { expect, test } from "vitest";
 
 import { repositoryConfigurationRoot as root } from "../../../src/contract/configurationDocument.ts";
+import { proposalMergeRefusals } from "../../../src/contract/rosters.ts";
 import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
 import {
   setupAnswersNone,
@@ -44,6 +45,7 @@ import type {
   SetupPluginEnded,
   SetupProjectEnded,
   SetupBindAnswered,
+  SetupMergeAnswered,
   SetupServeAnswered,
   SetupTicketAnswered,
   SetupReport,
@@ -73,6 +75,9 @@ import {
 const runNotes = runnerNotesAll.filter((note) => note.note !== "Colima");
 
 const site = "https://chuggy.example";
+
+/** The pull request of the first ticket, which a run of `merge` is asked about. */
+const mergeUrl = "https://github.com/acme-org/widgets/pull/7";
 const next = `next: node ${machineScript}`;
 const stop = `next: ${setupNextStop}`;
 const directory = "~/.chuggy-setup";
@@ -196,8 +201,22 @@ const things: {
           project: "acme/widgets",
           how: "unsaid",
           detail: "",
-          merge: "merged",
-          url: "",
+          configuration: "none",
+          last: "",
+          page: `${site}/acme/widgets/tickets/new`,
+        },
+      },
+    },
+    {
+      thing: "Done",
+      tell: {
+        id: "setup-done",
+        args: {
+          project: "acme/widgets",
+          how: "unsaid",
+          detail: "",
+          configuration: "imported",
+          last: "",
           page: `${site}/acme/widgets/tickets/new`,
         },
       },
@@ -284,6 +303,17 @@ const things: {
       workspace: "acme",
       project: "widgets",
     },
+    {
+      thing: "Offer",
+      command: "Merge",
+      tell: {
+        id: "setup-mend-merge-offer",
+        args: { ticket: "1", url: mergeUrl, lean: "ask" },
+      },
+      when: { id: "setup-offer-merge-when" },
+      workspace: "acme",
+      project: "widgets",
+    },
   ],
   Run: [
     {
@@ -302,6 +332,23 @@ const things: {
           page: "the page",
           connect: { id: "repositories-connect-github" },
           account: "acme-org",
+        },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Run",
+      command: "Merge",
+      tell: {
+        id: "setup-done",
+        args: {
+          project: "acme/widgets",
+          how: "unsaid",
+          detail: "",
+          configuration: "importing",
+          last: "",
+          page: `${site}/acme/widgets/tickets/new`,
         },
       },
       workspace: "acme",
@@ -547,6 +594,14 @@ const bindAnswers: readonly (SetupBindAnswered | undefined)[] = [
   { answered: "Refused", refusal: { id: "repositories-not-installed" } },
 ];
 
+/** What a run of `merge` can have had answered: nothing asked, merged, refused, and a request that failed. */
+const mergeAnswers: readonly (SetupMergeAnswered | undefined)[] = [
+  undefined,
+  { answered: "Merged", mergeCommit: "abc123" },
+  { answered: "Refused", refusal: "Blocked" },
+  { answered: "Failed", failure: { id: "failure-no-connection" } },
+];
+
 /** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
 function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
   const others =
@@ -772,6 +827,24 @@ const roster: {
       checklist: checklist(things.Run[1] as SetupThing),
     },
   ],
+  Merge: [
+    ...mergeAnswers.map((answered) => ({
+      report: "Merge" as const,
+      url: answered === undefined ? undefined : mergeUrl,
+      answered,
+      checklist: checklist(
+        answered?.answered === "Merged"
+          ? (things.Done[1] as SetupThing)
+          : (things.Done[0] as SetupThing),
+      ),
+    })),
+    {
+      report: "Merge",
+      url: mergeUrl,
+      answered: { answered: "Merged", mergeCommit: undefined },
+      checklist: checklist(things.Run[2] as SetupThing),
+    },
+  ],
   Serve: serveAnswers.map((answered) => ({
     report: "Serve",
     project: answered === undefined ? undefined : "widgets",
@@ -805,6 +878,7 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Check",
   "Import",
   "Bind",
+  "Merge",
   "Serve",
   "Ticket",
 ]);
@@ -987,6 +1061,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
   if (
     report.report === "Import" ||
     report.report === "Bind" ||
+    report.report === "Merge" ||
     report.report === "Serve" ||
     report.report === "Ticket"
   )
@@ -1299,11 +1374,20 @@ test("every step in every state is laid out in the same columns, and a step with
   expect(Math.max(...setupStepStates.map((state) => state.length))).toBe(7);
 });
 
-test("no checklist but bind's ends on a command: whatever else comes next waits on the person, and is named under a rule or not at all", () => {
+test("no checklist but bind's and merge's ends on a command: whatever else comes next waits on the person, and is named under a rule or not at all", () => {
   for (const report of roster.Checklist) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report.next);
     const thing = report.next.thing;
+    if (thing.thing === "Run" && thing.command === "Merge") {
+      expect(lines.at(-1), said).toBe(
+        `next: node ${machineScript} merge ${flags}`,
+      );
+      expect(lines.at(-2), said).toMatch(
+        /^rule: Run the command on the next: line again, and go on running it while chuggy imports/u,
+      );
+      continue;
+    }
     if (thing.thing === "Run") {
       expect(lines.at(-1), said).toBe(
         `next: node ${machineScript} bind ${flags}`,
@@ -1537,12 +1621,12 @@ test("an answer this copy cannot read says the copy may be old, and fetching the
 test("a checklist exits zero whatever is next, and one where a read failed", () => {
   const exits = (kind: SetupThing["thing"]) =>
     things[kind].map((thing) => setupReportExit(checklist(thing)));
-  expect(exits("Done")).toEqual([0]);
+  expect(exits("Done")).toEqual([0, 0]);
   expect(exits("Hand")).toEqual([0, 0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0]);
-  expect(exits("Run")).toEqual([0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  expect(exits("Run")).toEqual([0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
@@ -2671,5 +2755,102 @@ test("a run of plugin that did not leave it on says why and names the checklist 
     [
       "found: chuggy@chuggy is installed and still off after Claude Code was asked to turn it on, so setup goes on without chuggy's plugin",
     ],
+  ]);
+});
+
+test("a run of merge says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, merged, refused, failed] = roster.Merge;
+  for (const [report, said] of [
+    [
+      none,
+      [
+        "found: nothing to merge: no pull request of the first ticket stands unmerged",
+      ],
+    ],
+    [merged, [`did: asked chuggy to merge ${mergeUrl}, and it is merged`]],
+    [
+      refused,
+      [
+        `found: chuggy did not merge ${mergeUrl}: the repository's own rules on GitHub block it, such as a branch protection or a required review or check; merge it on GitHub your own way`,
+      ],
+    ],
+    [failed, [`found: chuggy did not merge ${mergeUrl}: No connection`]],
+  ] as const) {
+    if (report === undefined) throw new Error("no merge report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
+});
+
+test("every refusal of a merge is one line in the person's words with the pull request's link, and setup still ends", () => {
+  const refusals = [
+    ["Closed", "it is closed"],
+    ["Conflicting", "it conflicts with its base branch"],
+    [
+      "Blocked",
+      "the repository's own rules on GitHub block it, such as a branch protection or a required review or check",
+    ],
+    [
+      "Behind",
+      "its base branch has moved on since, and the repository wants it brought up to date first",
+    ],
+    ["HeadMoved", "something was pushed to it after chuggy checked it"],
+    ["NotMergeable", "GitHub would not merge it, and did not say why"],
+    ["AppDenied", "GitHub did not let chuggy's portal app merge it"],
+    [
+      "Forbidden",
+      "only the project's admins may have chuggy merge its pull requests, so one of them can",
+    ],
+  ] as const;
+  expect(new Set(refusals.map(([refusal]) => refusal))).toEqual(
+    new Set([...proposalMergeRefusals, "Forbidden"]),
+  );
+  for (const [refusal, words] of refusals) {
+    const report: SetupReport = {
+      report: "Merge",
+      url: mergeUrl,
+      answered: { answered: "Refused", refusal },
+      checklist: checklist(things.Done[0] as SetupThing),
+    };
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const found = lines.filter((line) => line.includes(mergeUrl));
+    expect(found).toEqual([
+      `found: chuggy did not merge ${mergeUrl}: ${words}; merge it on GitHub your own way`,
+    ]);
+    expect(lines.at(-1)).toBe(stop);
+    expect(setupReportExit(report)).toBe(0);
+  }
+});
+
+test("a merge whose wait ended before the import says the import is under way and has merge run again under a rule saying it merges nothing again", () => {
+  const waited = roster.Merge[4];
+  if (waited === undefined) throw new Error("no waited merge");
+  const lines = setupReportLines(waited, machineScript, copyTextEn);
+  expect(lines[1]).toBe(
+    `did: asked chuggy to merge ${mergeUrl}, and it is merged`,
+  );
+  expect(lines.at(-3)).toMatch(
+    /^tell: .*chuggy is importing the repository's own configuration, and later tickets run on it once it is in place\. /u,
+  );
+  expect(lines.slice(-2)).toEqual([
+    "rule: Run the command on the next: line again, and go on running it while chuggy imports the repository's own configuration: the pull request is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.",
+    `next: node ${machineScript} merge ${flags}`,
+  ]);
+  expect(setupReportExit(waited)).toBe(0);
+});
+
+test("the merge is offered under one rule naming merge, once the person says yes", () => {
+  const offer = things.Offer.find(
+    (thing) => thing.command === "Merge",
+  ) as SetupThing;
+  const lines = ended(offer, both);
+  expect(lines[0]).toBe(
+    `tell: Ticket 1 opened a pull request, ${mergeUrl}, holding its work and this repository's own configuration; once it is merged, later tickets run on that configuration. Do you want me to merge it, or would you rather review it and merge it yourself? If you merge it yourself, setup is done now, and the configuration is in place once it is merged.`,
+  );
+  expect(lines.slice(1)).toEqual([
+    `rule: Run node ${machineScript} merge ${flags} only once the person says yes to chuggy merging that pull request.`,
+    stop,
   ]);
 });
