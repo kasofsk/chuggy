@@ -157,7 +157,9 @@ test.each([
       { anchor: "t0ken" },
       { summarized },
     );
-    expect(screen.getByRole("heading").textContent).toBe("This link can no longer be used");
+    expect(screen.getByRole("heading").textContent).toBe(
+      "This link can no longer be used",
+    );
     expect(
       screen.getByText(
         "This link has been used or revoked, has expired, or was never made. Ask whoever sent it for a new one.",
