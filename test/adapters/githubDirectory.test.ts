@@ -131,10 +131,10 @@ const fixtureOrganization = {
  */
 const fixturePageSize = 100;
 
-/** One page of a listing: `count` rows named apart, out of `total` in all. */
 /** The number of the account the fixture installation's repositories stand on. */
 const fixtureOwnerId = 1342004;
 
+/** One page of a listing: `count` rows named apart, out of `total` in all. */
 function fixturePage(
   from: number,
   count: number,
