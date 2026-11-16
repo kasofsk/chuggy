@@ -38,24 +38,41 @@ import type { ReactNode } from "react";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import "./Locomotive.css";
 
-type PixelRect = readonly [number, number, number, number, string];
+type PixelRect = readonly [number, number, number, number, PixelColour];
 type WheelPhase = "A" | "B";
 type PuffStage = "none" | "near" | "drifting" | "fading";
 
 const frameWidthUnits = 16;
 const frameCount = 4;
 
-const ink = "#1b1530";
-const bodyRed = "#e0413f";
-const bodyRedLight = "#ff8c86";
-const bodyRedShadow = "#9b2335";
-const windowBlue = "#7fd8ff";
-const cream = "#f0f0f5";
-const steelHighlight = "#b9bccb";
-const steelLight = "#b4bcc8";
-const steelDark = "#6b7280";
-const lampGold = "#f5c542";
-const lampGoldShadow = "#b8860b";
+/**
+ * The colour each pixel is drawn in, as the role its class names; the fill
+ * of each is a token, set in `Locomotive.css`.
+ */
+const ink = "ink";
+const bodyRed = "body";
+const bodyRedLight = "body-light";
+const bodyRedShadow = "body-shadow";
+const windowBlue = "window";
+const cream = "cream";
+const steelHighlight = "steel-highlight";
+const steelLight = "steel-light";
+const steelDark = "steel-dark";
+const lampGold = "lamp";
+const lampGoldShadow = "lamp-shadow";
+
+type PixelColour =
+  | typeof ink
+  | typeof bodyRed
+  | typeof bodyRedLight
+  | typeof bodyRedShadow
+  | typeof windowBlue
+  | typeof cream
+  | typeof steelHighlight
+  | typeof steelLight
+  | typeof steelDark
+  | typeof lampGold
+  | typeof lampGoldShadow;
 
 function engineBodyRects(
   frameOffsetX: number,
@@ -127,7 +144,7 @@ function engineWheelRects(
 ): readonly PixelRect[] {
   const x = frameOffsetX;
   const y = bobOffsetY;
-  const [hubNear, hubFar] =
+  const [hubNear, hubFar]: readonly [PixelColour, PixelColour] =
     phase === "A" ? [steelDark, steelLight] : [steelLight, steelDark];
   return [
     [x + 2, y + 11, 2, 1, ink],
@@ -206,14 +223,14 @@ function LocomotiveEngine(): ReactNode {
         viewBox={`0 0 ${frameCount * frameWidthUnits} ${frameWidthUnits}`}
         shapeRendering="crispEdges"
       >
-        {spriteRects.map(([rectX, rectY, width, height, fill]) => (
+        {spriteRects.map(([rectX, rectY, width, height, colour]) => (
           <rect
             key={`${rectX}-${rectY}`}
             x={rectX}
             y={rectY}
             width={width}
             height={height}
-            fill={fill}
+            className={`locomotive-pixel-${colour}`}
           />
         ))}
       </svg>
