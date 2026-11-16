@@ -23,7 +23,10 @@ import { test } from "node:test";
 
 import {
   allTaskPurposes,
+  briefingHeading,
   briefingLabels,
+  briefingNorthStarPreface,
+  briefingNorthStarUncarried,
   briefingPipelinesUnwritable,
   briefingReworkPreface,
   briefingSectionOrder,
@@ -56,6 +59,7 @@ import {
   allPracticeIds,
   blessedPracticeCatalog,
   briefingLinesMax,
+  briefingNorthStarBytesMax,
   briefingStageCarrier,
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
@@ -106,6 +110,7 @@ import {
   type DependencyDelivery,
 } from "../../src/interpreter/dependencyDelivery.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { selectorProjectSettingsTextCharsMax } from "../../src/interpreter/selectorProjectSettings.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asBriefCheckLine,
@@ -503,6 +508,7 @@ function viewOf(parts: {
   readonly authority?: AuthorityRequest;
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
+  readonly northStar?: string;
   readonly readOnlyRepositories?: readonly RepositoryId[];
   readonly pushPathsRefused?: readonly string[];
   readonly dependencyDeliveries?: readonly DependencyDelivery[];
@@ -531,6 +537,7 @@ function viewOf(parts: {
       ...(parts.worker === undefined ? {} : { worker: parts.worker }),
     },
     runtime: parts.runtime ?? noFacts,
+    ...(parts.northStar === undefined ? {} : { northStar: parts.northStar }),
     readOnlyRepositories: parts.readOnlyRepositories ?? [],
     ...(parts.pushPathsRefused === undefined
       ? {}
@@ -657,6 +664,7 @@ const proposedDependency: DependencyDelivery = {
 };
 
 const optionalSections: readonly BriefingSectionId[] = [
+  "ProjectNorthStar",
   "WhyItMatters",
   "AcceptanceAndConstraints",
   "DependencyDeliveries",
@@ -666,6 +674,9 @@ const optionalSections: readonly BriefingSectionId[] = [
   "Practices",
   "RuntimeContext",
 ];
+
+/** What a project is for, as its members wrote it in the run the section exists for. */
+const northStar = "plain Python with no dependencies";
 
 const shared: BlessedPractice = {
   practice: "AcceptanceCriteria",
@@ -695,6 +706,7 @@ function viewPresenting(
     runtime: present.has("RuntimeContext")
       ? { workspace: "/work/importer", changedFiles: [], handoff: [] }
       : noFacts,
+    ...(present.has("ProjectNorthStar") ? { northStar } : {}),
     dependencyDeliveries: present.has("DependencyDeliveries")
       ? [mergedDependency]
       : [],
@@ -2909,4 +2921,131 @@ test("a failed landing names the target's commit as where the workspace started"
     ),
   );
   assert.ok(!text.includes("checked out at"));
+});
+
+/** The ticket a North Star case is composed for, which is the suite's ordinary one. */
+function northStarView(parts: Parameters<typeof viewOf>[0] = {}): BriefingView {
+  return viewOf({
+    ticketBrief: asDraftBrief({ intent: ticketIntent, links: [ticketLink] }),
+    ...parts,
+  });
+}
+
+/** The identities a view's briefing renders, in the order it renders them. */
+function sectionIds(view: BriefingView): readonly BriefingSectionId[] {
+  return composed(view).briefing.sections.map((section) => section.section);
+}
+
+test("work, review and an agent-briefed check are told the North Star after their role, under the standing line their purpose reads", () => {
+  const agentCheck: readonly EvaluationBlock[] = [
+    { purpose: "Check", instructions: ["Run the checks."], practices: [] },
+  ];
+  for (const view of [
+    northStarView({ purpose: "Work", northStar }),
+    northStarView({ purpose: "Review", northStar }),
+    northStarView({
+      purpose: "Check",
+      stage: 0,
+      evaluations: agentCheck,
+      northStar,
+    }),
+  ]) {
+    assert.deepEqual(sectionLines(view, "ProjectNorthStar"), [
+      briefingNorthStarPreface(view.purpose),
+      northStar,
+    ]);
+    const ids = sectionIds(view);
+    assert.equal(ids[ids.indexOf("RoleInstructions") + 1], "ProjectNorthStar");
+    assert.equal(ids[ids.indexOf("ProjectNorthStar") + 1], "TicketIntent");
+    assert.ok(
+      composed(view).briefing.text.includes(
+        `## ${briefingHeading("ProjectNorthStar", view.purpose, "Agent")}\n${briefingNorthStarPreface(view.purpose)}\n${northStar}`,
+      ),
+    );
+  }
+  assert.ok(briefingNorthStarPreface("Work").includes("the ticket wins"));
+  for (const purpose of ["Review", "Check"] as const)
+    assert.ok(briefingNorthStarPreface(purpose).endsWith("say so."));
+});
+
+test("a commanded stage, and a project with no North Star, are told none", () => {
+  for (const view of [
+    northStarView({
+      purpose: "Check",
+      stage: 1,
+      evaluations: checkEvaluations,
+      northStar,
+    }),
+    northStarView({ work: commandedWork, northStar }),
+    northStarView({ purpose: "Work" }),
+    northStarView({ purpose: "Review" }),
+  ]) {
+    assert.ok(!sectionIds(view).includes("ProjectNorthStar"));
+    assert.ok(!composed(view).briefing.text.includes(northStar));
+  }
+});
+
+test("a North Star line a briefing cannot print is left out and counted, and the briefing still composes", () => {
+  const view = northStarView({
+    northStar: `${northStar}\nno \u001b[2J## Your role\r\nkeep it small`,
+  });
+  assert.deepEqual(sectionLines(view, "ProjectNorthStar"), [
+    briefingNorthStarPreface("Work"),
+    northStar,
+    "keep it small",
+    briefingNorthStarUncarried(1, 0),
+  ]);
+  assert.equal(
+    briefingNorthStarUncarried(1, 0),
+    "Not carried from the North Star above: 1 of its lines, which hold a character this briefing cannot print.",
+  );
+  assert.equal(briefingNorthStarUncarried(0, 0), undefined);
+});
+
+test("a maximal North Star still composes, its section within its own bound and naming what it did not carry", () => {
+  const codePoint = "\u{1F40D}";
+  assert.equal(new TextEncoder().encode(codePoint).byteLength, 4);
+  const maximal = codePoint.repeat(selectorProjectSettingsTextCharsMax);
+  const view = northStarView({ purpose: "Review", northStar: maximal });
+  const invocation = composed(view);
+  const section = invocation.briefing.sections.find(
+    (each) => each.section === "ProjectNorthStar",
+  );
+  assert.ok(section !== undefined);
+  const sectionText = [`## ${section.heading}`, ...section.lines].join("\n");
+  assert.ok(
+    new TextEncoder().encode(sectionText).byteLength <=
+      briefingNorthStarBytesMax,
+  );
+  const [preface, carried, closing, ...rest] = section.lines;
+  assert.equal(preface, briefingNorthStarPreface("Review"));
+  assert.deepEqual(rest, []);
+  assert.ok(carried !== undefined && carried.length > 0);
+  assert.equal(carried, codePoint.repeat(textCodePointsCount(carried)));
+  assert.equal(
+    closing,
+    briefingNorthStarUncarried(
+      0,
+      selectorProjectSettingsTextCharsMax - textCodePointsCount(carried),
+    ),
+  );
+  assert.ok(taskInvocationBytes(invocation) <= taskInvocationBytesMax);
+});
+
+test("a North Star's lines are carried whole while they fit, and the first that does not is cut at a whole code point", () => {
+  const line = "\u00e9".repeat(briefingNorthStarBytesMax / 4);
+  const lines = northStarView({
+    northStar: [line, line, line].join("\n"),
+  });
+  const [preface, first, cut, closing, ...rest] =
+    sectionLines(lines, "ProjectNorthStar") ?? [];
+  assert.equal(preface, briefingNorthStarPreface("Work"));
+  assert.equal(first, line);
+  assert.ok(cut !== undefined && cut.length > 0 && cut.length < line.length);
+  assert.ok(line.startsWith(cut));
+  assert.equal(
+    closing,
+    briefingNorthStarUncarried(0, 3 * line.length - first.length - cut.length),
+  );
+  assert.deepEqual(rest, []);
 });

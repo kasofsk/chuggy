@@ -21,6 +21,8 @@ import {
   briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
+  briefingNorthStarPreface,
+  briefingNorthStarUncarried,
   briefingPipelinesUnwritable,
   briefingRequiredResult,
   briefingReworkPreface,
@@ -179,6 +181,13 @@ function dependencyWording(): readonly string[] {
   ];
 }
 
+/** Every closing line a North Star section can end with, in an order this file fixes. */
+const northStarUncarried: readonly string[] = [
+  briefingNorthStarUncarried(1, 0),
+  briefingNorthStarUncarried(0, 1),
+  briefingNorthStarUncarried(1, 1),
+].filter((line) => line !== undefined);
+
 /** Every string the template states, in an order this file fixes rather than reads. */
 function templateWording(): readonly string[] {
   const wording: string[] = [
@@ -188,12 +197,13 @@ function templateWording(): readonly string[] {
     ...briefingPipelinesUnwritable(pushPathsRefused),
     ...failedLandings.flatMap(briefingFailedLandingLines),
     ...dependencyWording(),
+    ...northStarUncarried,
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
     wording.push(label, text);
   }
   for (const purpose of allTaskPurposes) {
-    wording.push(purpose);
+    wording.push(purpose, briefingNorthStarPreface(purpose));
     for (const carrier of allBriefingCarriers) {
       wording.push(carrier);
       for (const section of briefingSectionOrder) {
@@ -219,7 +229,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [22, "ebb9b0e5d0bfdc475f97d0177dfdbe345fc443b1569e6dfa581a1c45ec3c017f"],
+    [23, "c79cc22d1577564cf29574684cc49b5488dc72aaaeb5e227aee17a2769d00771"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -248,6 +258,8 @@ test("the digest reads every string the template states", () => {
     ...briefingPipelinesUnwritable(pushPathsRefused),
     ...failedLandings.flatMap(briefingFailedLandingLines),
     ...dependencyWording(),
+    ...northStarUncarried,
+    ...allTaskPurposes.map(briefingNorthStarPreface),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);
   }

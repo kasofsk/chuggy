@@ -50,19 +50,7 @@ import type {
   ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
-import { postgresDependencyPins } from "../../src/adapters/postgres/dependencyDeliveries.ts";
-import {
-  postgresFailedLanding,
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../../src/adapters/postgres/evaluationReports.ts";
-import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
-import { postgresReadOnlyRepositories } from "../../src/adapters/postgres/repositoryBinding.ts";
-import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
-import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
-import { postgresTicketLandings } from "../../src/adapters/postgres/ticketLandings.ts";
-import { dependencyDeliveriesRead } from "../../src/interpreter/dependencyDelivery.ts";
-import type { ExecutionSchedulerService } from "../../src/interpreter/executionSchedulerRun.ts";
+import { schedulerProcessRootBriefingReads } from "../../src/roots/controlPlane.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
@@ -117,34 +105,7 @@ import {
 } from "./harness.ts";
 
 /** Every read a briefing is gathered from, over one pool, as the scheduler's root composes them. */
-export function schedulerBriefingReads(
-  pool: pg.Pool,
-): Pick<
-  ExecutionSchedulerService,
-  | "configurations"
-  | "priorWorkReports"
-  | "priorEvaluationReports"
-  | "failedLanding"
-  | "readOnlyRepositories"
-  | "dependencyDeliveries"
-  | "ticketBriefs"
-  | "bindings"
-> {
-  return {
-    configurations: postgresPinnedConfigurations(pool),
-    priorWorkReports: postgresPriorWorkReports(pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(pool),
-    failedLanding: postgresFailedLanding(pool),
-    readOnlyRepositories: postgresReadOnlyRepositories(pool),
-    dependencyDeliveries: dependencyDeliveriesRead({
-      pinned: postgresDependencyPins(pool),
-      landings: postgresTicketLandings(pool),
-      briefs: postgresTicketBrief(pool),
-    }),
-    ticketBriefs: postgresTicketBrief(pool),
-    bindings: postgresProjectRepositoryBinding(pool),
-  };
-}
+export const schedulerBriefingReads = schedulerProcessRootBriefingReads;
 
 /** A pool whose every session runs as the execution scheduler's own role. */
 export function schedulerRolePool(): pg.Pool {

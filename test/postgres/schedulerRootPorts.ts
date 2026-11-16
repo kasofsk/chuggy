@@ -37,6 +37,7 @@ export const schedulerRootService: Omit<
   | "priorEvaluationReports"
   | "failedLanding"
   | "readOnlyRepositories"
+  | "northStar"
   | "dependencyDeliveries"
   | "ticketBriefs"
   | "bindings"

@@ -56,7 +56,10 @@ import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
-import { postgresReadOnlyRepositories } from "../adapters/postgres/repositoryBinding.ts";
+import {
+  postgresProjectNorthStar,
+  postgresReadOnlyRepositories,
+} from "../adapters/postgres/repositoryBinding.ts";
 import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
 import {
@@ -457,6 +460,7 @@ export interface SchedulerProcessRootConfig {
     | "priorEvaluationReports"
     | "failedLanding"
     | "readOnlyRepositories"
+    | "northStar"
     | "dependencyDeliveries"
     | "ticketBriefs"
     | "bindings"
@@ -491,6 +495,38 @@ export interface SchedulerProcessRootConfig {
   readonly additional?: readonly RuntimePrecondition[];
 }
 
+/** Every read a briefing is gathered from, over one pool. */
+export function schedulerProcessRootBriefingReads(
+  pool: pg.Pool,
+): Pick<
+  ExecutionSchedulerService,
+  | "configurations"
+  | "priorWorkReports"
+  | "priorEvaluationReports"
+  | "failedLanding"
+  | "readOnlyRepositories"
+  | "northStar"
+  | "dependencyDeliveries"
+  | "ticketBriefs"
+  | "bindings"
+> {
+  return {
+    configurations: postgresPinnedConfigurations(pool),
+    priorWorkReports: postgresPriorWorkReports(pool),
+    priorEvaluationReports: postgresPriorEvaluationReports(pool),
+    failedLanding: postgresFailedLanding(pool),
+    readOnlyRepositories: postgresReadOnlyRepositories(pool),
+    northStar: postgresProjectNorthStar(pool),
+    dependencyDeliveries: dependencyDeliveriesRead({
+      pinned: postgresDependencyPins(pool),
+      landings: postgresTicketLandings(pool),
+      briefs: postgresTicketBrief(pool),
+    }),
+    ticketBriefs: postgresTicketBrief(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
+  };
+}
+
 /** Composes the scheduler service with the PostgreSQL ports its process owns. */
 export function schedulerProcessRootService(
   pool: pg.Pool,
@@ -501,18 +537,7 @@ export function schedulerProcessRootService(
     ...service,
     access: ketoProjectAccess(access),
     store: postgresExecutionScheduler(pool),
-    configurations: postgresPinnedConfigurations(pool),
-    priorWorkReports: postgresPriorWorkReports(pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(pool),
-    failedLanding: postgresFailedLanding(pool),
-    readOnlyRepositories: postgresReadOnlyRepositories(pool),
-    dependencyDeliveries: dependencyDeliveriesRead({
-      pinned: postgresDependencyPins(pool),
-      landings: postgresTicketLandings(pool),
-      briefs: postgresTicketBrief(pool),
-    }),
-    ticketBriefs: postgresTicketBrief(pool),
-    bindings: postgresProjectRepositoryBinding(pool),
+    ...schedulerProcessRootBriefingReads(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };
 }

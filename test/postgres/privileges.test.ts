@@ -1420,7 +1420,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
 });
 
-test("of a project's selector settings the scheduler reads only its thread standing rules", async () => {
+test("of a project's selector settings the scheduler reads only its North Star and its thread standing rules", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1429,7 +1429,7 @@ test("of a project's selector settings the scheduler reads only its thread stand
           AND table_name='selector_project_settings'`,
       [schedulerRole],
     ),
-    [{ columns: "project,tenant,thread_standing_rules" }],
+    [{ columns: "north_star,project,tenant,thread_standing_rules" }],
   );
 });
 

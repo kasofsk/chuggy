@@ -1255,6 +1255,9 @@ const landingNone = "{ landing: async () => ({ read: 'Landing' }) }";
 const readOnlyNone =
   "{ repositories: async () => ({ read: 'Repositories', repositories: [] }) }";
 
+/** A port that answers a project whose members wrote no North Star, as the program spells one. */
+const northStarNone = "{ northStar: async () => ({ read: 'NorthStar' }) }";
+
 /** A port that answers no dependency of the ticket, as the program spells one. */
 const deliveriesNone =
   "{ deliveries: async () => ({ read: 'Deliveries', deliveries: [] }) }";
@@ -1336,7 +1339,7 @@ function processProgram(
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone}, dependencyDeliveries: ${deliveriesNone},
+      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone}, northStar: ${northStarNone}, dependencyDeliveries: ${deliveriesNone},
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
