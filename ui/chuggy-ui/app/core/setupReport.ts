@@ -51,6 +51,8 @@ import {
   setupAnswerArguments,
   setupAnswersNone,
   setupAnswersPlugin,
+  setupChatHostAnswers,
+  setupChatHostFlag,
   setupCommandArguments,
   setupConfigurationFlag,
   setupIntentFlag,
@@ -66,6 +68,7 @@ import {
 import type {
   SetupAnswers,
   SetupAskFault,
+  SetupChatHostAnswer,
   SetupCommand,
 } from "./setupArguments.ts";
 import type {
@@ -184,6 +187,8 @@ export type SetupThing =
       readonly when: Copy;
       readonly workspace: string;
       readonly project: string | undefined;
+      /** The answer `runner` is named with for the person's chat host, the one recommended, where the offer asks of one. */
+      readonly chatHost?: SetupChatHostAnswer;
     }
   | {
       readonly thing: "Offer";
@@ -596,7 +601,7 @@ function setupCommandWords() {
 
 /** Every flag the program takes, each with the command it alone is read by. */
 function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
-  const { made, chatHost, configuration, filed, bound } = words;
+  const { made, runner, chatHost, configuration, filed, bound } = words;
   return {
     id: "setup-asked-flag",
     args: {
@@ -606,6 +611,8 @@ function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
       wait: "--wait-secs",
       replace: setupReplaceFlag,
       chatHost,
+      chatHostFlag: setupChatHostFlag,
+      runner,
       name: setupNameFlag,
       made,
       test: setupTestFlag,
@@ -651,6 +658,13 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       };
     case "Replace":
       return { id: "setup-asked-replace", args: { flag: setupReplaceFlag } };
+    case "ChatHost": {
+      const [yes, no] = setupChatHostAnswers;
+      return {
+        id: "setup-asked-chat-host",
+        args: { flag: setupChatHostFlag, yes, no },
+      };
+    }
     case "ProjectName":
       return {
         id: "setup-asked-project-name",
@@ -1154,7 +1168,14 @@ function setupSayingOf(saying: SetupSaying, named: SetupRunnerAt): SetupSaying {
   const { workspace, project } = named;
   return {
     ...saying,
-    answers: { workspace, project, ...setupAnswersPlugin(saying.answers) },
+    answers: {
+      workspace,
+      project,
+      ...setupAnswersPlugin(saying.answers),
+      ...(saying.answers.chatHost === undefined
+        ? {}
+        : { chatHost: saying.answers.chatHost }),
+    },
   };
 }
 
@@ -1166,19 +1187,40 @@ function setupSkipping(saying: SetupSaying): SetupSaying {
   };
 }
 
+/** The rule that names the chat host's other answer, and when the agent gives it in place of the one named. */
+function setupChatHostRule(given: SetupChatHostAnswer): SetupLine {
+  const [yes, no] = setupChatHostAnswers;
+  return [
+    "rule",
+    {
+      id: "setup-runner-rule-chat-host",
+      args: { flag: setupChatHostFlag, given, yes, no },
+    },
+  ];
+}
+
 /** An offer: what the command would do, and the rule it is named under; for `plugin`, also the rule that names the checklist past it on the person's no. */
 function setupOfferLines(
   thing: Extract<SetupThing, { readonly thing: "Offer" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
-  if (thing.command !== "Plugin")
+  if (thing.command !== "Plugin") {
+    const chatHost = thing.chatHost;
+    const command = setupCommandOf(
+      setupSayingOf(saying, thing),
+      thing.command,
+      chatHost === undefined ? [] : [setupChatHostFlag, chatHost],
+    );
     return [
       ["tell", thing.tell],
-      ...setupStopRule(
-        thing,
-        setupCommandOf(setupSayingOf(saying, thing), thing.command),
-      ),
+      [
+        "rule",
+        { id: "setup-runner-rule", args: { command, when: thing.when } },
+      ],
+      ...(chatHost === undefined ? [] : [setupChatHostRule(chatHost)]),
+      ["next", setupNextStop],
     ];
+  }
   const command = setupCommandOf(saying, "Plugin");
   return [
     ["tell", thing.tell],
@@ -1742,8 +1784,9 @@ function setupRunnerLines(
     case "Stopped": {
       const stop = setupRunnerStopSaid(report.ended.stop, report);
       const command = setupAgainOf(stop.again, report);
-      const rest =
-        stop.replace === undefined ? [] : [setupReplaceFlag, stop.replace];
+      const rest = [
+        ...(stop.replace === undefined ? [] : [setupReplaceFlag, stop.replace]),
+      ];
       return [
         ...head,
         ...setupStopSaid(stop),

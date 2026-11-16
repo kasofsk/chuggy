@@ -56,6 +56,7 @@ import {
   redemption,
   rerun,
   runner,
+  runnerAlone,
   stood,
   stoodSearched,
   unasked,
@@ -169,7 +170,7 @@ test("on a machine `mcp` has put the runner package on, the bare command offers 
 
   cleared(on);
   const argv = await commanded(rule.slice("rule: Run ".length, -yes.length));
-  assert.deepEqual(argv, runner);
+  assert.deepEqual(argv, runnerAlone);
   const done = await ran(on, argv);
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines, [
@@ -240,21 +241,33 @@ test("a second run on a machine that has everything finds each thing as it is, r
   unasked(on);
 });
 
+/** How the bare command asks of the chat host on an engine with room for three chats beside a run, and the rule that names the answer it does not recommend. */
+const chatAsked =
+  / 4 GiB a run\. I can also make this machine your chat host, a second background service, which holds 6 GiB whenever it runs: 2 GiB a chat, for up to 3 at once\. .* so I recommend it\. /u;
+const chatRuleNo =
+  "rule: Run it with --chat-host no in place of --chat-host yes where the person wants no chat host, or only uses chuggy through their agent.";
+
+/** The chat host's size the runner's settings on the machine name. */
+function settingsChat(on: Stood): unknown {
+  const held = JSON.parse(readFileSync(on.machine.settings, "utf8")) as {
+    readonly chat?: unknown;
+  };
+  return held.chat;
+}
+
 /** The words each registration was run with, a pool's and the person's chat host's. */
 function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
 
-test("where the person's chats run on a chat host and they have none, the bare command offers two services of theirs here, and the command its rule names makes this machine the project's runner and then their chat host, on one package, one settings file and one Claude login, and ends on a checklist that says the runner's step done", async () => {
+test("where the person's chats run on a chat host and they have none, the bare command asks of it beside the runner, recommending three chats in 6 GiB on an engine with 11.7 GiB, and the command its rule names makes this machine the project's runner and then their chat host, sized in the one settings file, on one package and one Claude login, and ends on a checklist that says the runner's step done", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
   const offered = await ran(on, []);
   assert.equal(offered.code, 0, offered.stdout);
-  assert.match(
-    offered.lines.at(-3) ?? "",
-    / two background services of yours here\. The runner package, chuggy-linux, runs them, and they start when you log in\. One does the work on your project's tickets\. The other is your chat host: your chats with chuggy run there and nowhere else\. /u,
-  );
-  const rule = offered.lines.at(-2) ?? "";
+  assert.match(offered.lines.at(-4) ?? "", chatAsked);
+  assert.equal(offered.lines.at(-2), chatRuleNo);
+  const rule = offered.lines.at(-3) ?? "";
   const yes = " only once the person says yes to a runner on this machine.";
   assert.ok(rule.startsWith("rule: Run ") && rule.endsWith(yes), rule);
   assert.deepEqual(on.installation.writes, []);
@@ -277,6 +290,7 @@ test("where the person's chats run on a chat host and they have none, the bare c
     did.linger,
     did.started,
     found.live,
+    did.chatSized,
     did.chat,
     found.chatCheck,
     did.chatUnit,
@@ -284,6 +298,10 @@ test("where the person's chats run on a chat host and they have none, the bare c
     found.chatLive,
     next,
   ]);
+  assert.deepEqual(settingsChat(on), {
+    sessionsMax: 3,
+    sessionMemoryMib: 2048,
+  });
   assert.deepEqual(on.installation.writes, [
     mint,
     redemption,
@@ -354,8 +372,9 @@ test("a workspace that does not let the person register a chat host stops the ru
   on.installation.world.withheld.add("acme");
   const withheld = await ran(on);
   assert.equal(withheld.code, 0, withheld.stdout);
-  assert.deepEqual(withheld.lines.slice(-5), [
+  assert.deepEqual(withheld.lines.slice(-6), [
     lines(on).found.live,
+    lines(on).did.chatSized,
     "found: the workspace does not let you register a chat host",
     `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
     `${again}once the person says Personal runners is on for them in the workspace.`,
@@ -487,6 +506,7 @@ test("a machine that was set up and has since come to have no runner package run
         found.linger,
         found.running,
         found.live,
+        did.chatSized,
         did.chat,
         found.chatCheck,
         did.chatUnit,

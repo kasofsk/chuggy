@@ -41,6 +41,9 @@ const script = resolve("test/terminal/machineCommand.ts");
 export const machineLoginSecret =
   "sk-ant-oat01-stand-in-claude-login-never-read";
 
+/** What the engine of a stand-in machine says its memory is unless a case says otherwise. */
+export const machineEngineBytes = 12_562_779_340;
+
 /** The commands that would ask a person for a password. */
 export const machineAskers = ["sudo", "su", "pkexec"] as const;
 
@@ -80,6 +83,7 @@ function knobsFirst(prefix: string): MachineKnobs {
     version: "0.35.0",
     pool: "shame",
     engines: { docker: true, podman: true },
+    memoryBytes: machineEngineBytes,
     services: true,
     lingerSaid: true,
     lingerAsks: false,

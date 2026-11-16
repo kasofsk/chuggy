@@ -81,6 +81,8 @@ export interface SetupCopy {
     readonly bound: unknown;
     readonly replace: unknown;
     readonly chatHost: unknown;
+    readonly chatHostFlag: unknown;
+    readonly runner: unknown;
     readonly test: unknown;
     readonly configuration: unknown;
     readonly title: unknown;
@@ -127,6 +129,11 @@ export interface SetupCopy {
   };
   readonly "setup-asked-replace": {
     readonly flag: unknown;
+  };
+  readonly "setup-asked-chat-host": {
+    readonly flag: unknown;
+    readonly yes: unknown;
+    readonly no: unknown;
   };
   readonly "setup-asked-plugin": {
     readonly flag: unknown;
@@ -376,9 +383,11 @@ export interface SetupCopy {
   readonly "setup-step-runner-hosted": Record<never, never>;
   readonly "setup-step-chat-host-offline": {
     readonly runner: unknown;
+    readonly command: unknown;
   };
   readonly "setup-step-chat-host-none": {
     readonly runner: unknown;
+    readonly command: unknown;
   };
   readonly "setup-step-ticket-done": {
     readonly ticket: unknown;
@@ -656,7 +665,6 @@ export interface SetupCopy {
     readonly refusal: unknown;
   };
   readonly "setup-offer-when": Record<never, never>;
-  readonly "setup-offer-chat-host-when": Record<never, never>;
   readonly "setup-claude-on-subscription": Record<never, never>;
   readonly "setup-claude-on-api-key": Record<never, never>;
   readonly "setup-claude-on-bedrock": Record<never, never>;
@@ -671,45 +679,30 @@ export interface SetupCopy {
   readonly "setup-mend-package-newer": {
     readonly program: unknown;
   };
-  readonly "setup-mend-chat-too": Record<never, never>;
   readonly "setup-mend-runner-live-offer": {
     readonly project: unknown;
     readonly runs: unknown;
+    readonly job: unknown;
     readonly chat: unknown;
+    readonly ask: unknown;
   };
   readonly "setup-mend-runner-live-tell": Record<never, never>;
-  readonly "setup-mend-runner-put-chat": {
-    readonly program: unknown;
-    readonly runs: unknown;
-  };
   readonly "setup-mend-runner-put": {
     readonly program: unknown;
     readonly runs: unknown;
+    readonly job: unknown;
   };
-  readonly "setup-mend-chat-by-hand": {
-    readonly page: unknown;
-    readonly register: unknown;
+  readonly "setup-mend-chat-host-ask": {
+    readonly total: unknown;
+    readonly each: unknown;
+    readonly sessions: unknown;
+    readonly recommend: unknown;
+    readonly short: unknown;
   };
-  readonly "setup-mend-chats": {
-    readonly project: unknown;
-  };
-  readonly "setup-mend-chat-live-offer": {
-    readonly chats: unknown;
-    readonly program: unknown;
-  };
-  readonly "setup-mend-chat-live-tell": {
-    readonly chats: unknown;
-  };
-  readonly "setup-mend-chat-host-when": Record<never, never>;
-  readonly "setup-mend-chat-offer": {
-    readonly chats: unknown;
-    readonly program: unknown;
-    readonly runs: unknown;
-  };
-  readonly "setup-mend-chat-tell": {
-    readonly chats: unknown;
-    readonly here: unknown;
-    readonly byHand: unknown;
+  readonly "setup-mend-chat-host-short": {
+    readonly said: unknown;
+    readonly engine: unknown;
+    readonly memory: unknown;
   };
   readonly "setup-mend-runner-elsewhere": {
     readonly page: unknown;
@@ -721,6 +714,8 @@ export interface SetupCopy {
   };
   readonly "setup-mend-runner-offer": {
     readonly put: unknown;
+    readonly chat: unknown;
+    readonly ask: unknown;
     readonly page: unknown;
     readonly add: unknown;
   };

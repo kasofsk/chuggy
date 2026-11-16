@@ -18,6 +18,7 @@ import type {
   SetupStepState,
   SetupThing,
 } from "../app/core/setupReport.ts";
+import type { SetupChatHostAnswer } from "../app/core/setupArguments.ts";
 import { setupSiteAt, setupSiteHeld, setupSiteWorkspace } from "./setupSite.ts";
 import type {
   SetupSite,
@@ -52,6 +53,7 @@ export type SaidThing =
       readonly when: string;
       readonly workspace: string;
       readonly project: string | undefined;
+      readonly chatHost?: SetupChatHostAnswer;
     }
   | {
       readonly thing: "Offer";

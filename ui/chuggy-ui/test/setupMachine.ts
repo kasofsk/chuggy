@@ -36,6 +36,7 @@ import type { SetupReport } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
 import {
   boxDisk,
+  boxEngineInfo,
   boxFolder,
   boxHome,
   boxRan,
@@ -497,12 +498,13 @@ function lockOf(machine: SetupMachine): SetupPorts["lock"] {
   };
 }
 
-/** What a command run to read its answer prints here: npm's prefix, Claude Code's plugins, the checkout's top, or the folder's remote. */
+/** What a command run to read its answer prints here: npm's prefix, Claude Code's plugins, an engine's own account of itself, the checkout's top, or the folder's remote. */
 function machineRead(
   machine: SetupMachine,
   command: readonly string[],
 ): string | undefined {
   if (command[0] === "npm") return machine.box.prefix;
+  if (command[1] === "info") return boxEngineInfo(machine.box, command);
   if (command[0] === "claude") return machine.box.plugins;
   return command[1] === "rev-parse" ? machine.top : machine.remote;
 }

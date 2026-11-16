@@ -11,8 +11,9 @@
  * its Claude login, its registrations and its services' files, how it names a
  * pool file for a project and the file of the person's chat host in a
  * workspace, and the service of either: a systemd user unit on Linux, a
- * launchd agent on a Mac. A settings file is read for the engine and the Claude
- * credential it names and for nothing else, the chat host's file for the id
+ * launchd agent on a Mac. A settings file is read for the engine, the Claude
+ * credential and the chat host's size it names and for nothing else, the
+ * engine for the memory it reports, the chat host's file for the id
  * the site holds that host by and for nothing else, and a pool's registration
  * and a Claude credential's file are never read at all, only looked for. The
  * package is
@@ -300,11 +301,22 @@ const setupCredentialSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("Foundry"), apiKeyFile: setupWholePath }),
 ]);
 
+const setupPositive = z.number().int().positive().safe();
+
+/** What the settings name of the chat host's size, which this program goes by; the rest of the chat host's settings it never holds. */
+const setupChatSettingsSchema = z.object({
+  sessionsMax: setupPositive.optional(),
+  sessionMemoryMib: setupPositive.optional(),
+});
+
+export type SetupChatSettings = z.infer<typeof setupChatSettingsSchema>;
+
 /** What a settings file names that this program goes by, the rest of it never held: `environment` there may carry a person's secrets. */
 const setupSettingsSchema = z.object({
   claudeTokenFile: setupWholePath.optional(),
   claudeCredential: setupCredentialSchema.optional(),
   engine: z.enum(setupEngines).optional(),
+  chat: setupChatSettingsSchema.optional(),
 });
 
 /**
@@ -355,7 +367,7 @@ function setupCredentialNamed(
     : undefined;
 }
 
-/** The runner's settings: none yet, there and not read as the package's, or the engine and the Claude credential they name. */
+/** The runner's settings: none yet, there and not read as the package's, or the engine, the Claude credential and the chat host's size they name. */
 export type SetupSettingsRead =
   | { readonly settings: "Absent" }
   | { readonly settings: "Unread" }
@@ -364,6 +376,7 @@ export type SetupSettingsRead =
       readonly path: string;
       readonly engine: SetupEngine;
       readonly credential: SetupClaudeCredential;
+      readonly chat: SetupChatSettings;
     };
 
 function setupJson(text: string | undefined): unknown {
@@ -394,8 +407,127 @@ export function setupSettingsRead(
         path: places.settings,
         engine: parsed.data.engine ?? setupEngines[0],
         credential,
+        chat: parsed.data.chat ?? {},
       }
     : { settings: "Unread" };
+}
+
+/** The settings file as one object, every key of it kept whole and none of them read, or nothing where it is not one. */
+export function setupSettingsHeld(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+): Readonly<Record<string, unknown>> | undefined {
+  const held = setupJson(ports.disk.text(places.settings, setupTextBytesMax));
+  return typeof held === "object" && held !== null && !Array.isArray(held)
+    ? (held as Readonly<Record<string, unknown>>)
+    : undefined;
+}
+
+/** The chat host's size the settings `held` name, or nothing where what they name is not one the package takes. */
+export function setupSettingsChat(
+  held: Readonly<Record<string, unknown>>,
+): SetupChatSettings | undefined {
+  const parsed = setupChatSettingsSchema.safeParse(held["chat"] ?? {});
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** The settings `held` with the chat host's size `size` in their `chat`, every other key of either kept as it was. */
+export function setupSettingsChatText(
+  held: Readonly<Record<string, unknown>>,
+  size: Pick<SetupChatSize, "sessionsMax" | "sessionMemoryMib">,
+): string {
+  const had = held["chat"];
+  const chat = typeof had === "object" && had !== null ? had : {};
+  const settings = {
+    ...held,
+    chat: {
+      ...chat,
+      sessionsMax: size.sessionsMax,
+      sessionMemoryMib: size.sessionMemoryMib,
+    },
+  };
+  return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+/** The memory, in MiB, a job that names none runs with on a runner, as the plane gives it; a suite holds this to the plane's own. */
+export const setupJobMemoryMib = 4_096;
+
+/** The memory, in MiB, the runner package gives the chat host for each session where its settings name none. */
+export const setupChatSessionMemoryMib = 2_048;
+
+/** The most sessions at once setup sizes a chat host to. */
+export const setupChatSessionsMax = 4;
+
+/** The memory, in MiB, a chat host is sized to leave the engine beside a job and its own sessions. */
+export const setupEngineSpareMib = 1_024;
+
+/** What a chat host here would hold, as a yes to it leaves the settings naming. */
+export interface SetupChatSize {
+  /** The engine's memory as it reports it, in MiB, or nothing where it did not say. */
+  readonly engineMib: number | undefined;
+  /** The sessions at once the engine's memory has room for beside a job, none where it has room for none or did not say; the chat host is recommended only where this is one or more. */
+  readonly room: number;
+  /** The sessions at once the settings name: those already named, and otherwise the room, but never none, since the package takes none fewer than one. */
+  readonly sessionsMax: number;
+  /** The memory, in MiB, each takes: the settings' own where they name one. */
+  readonly sessionMemoryMib: number;
+}
+
+/** A chat host sized to the memory the engine reports, which is below its nominal size, and to what the settings already name of it. */
+export function setupChatSized(
+  engineMib: number | undefined,
+  chat: SetupChatSettings,
+): SetupChatSize {
+  const sessionMemoryMib = chat.sessionMemoryMib ?? setupChatSessionMemoryMib;
+  const left =
+    engineMib === undefined
+      ? 0
+      : engineMib - setupJobMemoryMib - setupEngineSpareMib;
+  const room = Math.max(
+    0,
+    Math.min(setupChatSessionsMax, Math.floor(left / sessionMemoryMib)),
+  );
+  return {
+    engineMib,
+    room,
+    sessionsMax: chat.sessionsMax ?? Math.max(1, room),
+    sessionMemoryMib,
+  };
+}
+
+/** What each engine is asked for everything it says of itself, which is where the memory it has is, as the runner's own budget reads it. */
+const setupEngineInfo: Readonly<Record<SetupEngine, readonly string[]>> = {
+  docker: ["docker", "info", "--format", "{{json .}}"],
+  podman: ["podman", "info", "--format", "{{json .}}"],
+};
+
+const setupEngineBytes = z.number().int().positive().safe();
+
+const setupEngineMemorySchemas = {
+  docker: z
+    .object({ MemTotal: setupEngineBytes })
+    .transform((info) => info.MemTotal),
+  podman: z
+    .object({ host: z.object({ memTotal: setupEngineBytes }) })
+    .transform((info) => info.host.memTotal),
+} as const;
+
+const setupBytesPerMib = 2 ** 20;
+
+/** The memory the engine reports, in whole MiB, which on a Mac is Colima's VM's; nothing where it did not say. */
+export async function setupEngineMemoryRead(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<number | undefined> {
+  const printed = await ports.process.read(
+    setupEngineInfo[engine],
+    setupProbeWaitMs,
+    setupChildBytesMax,
+  );
+  const parsed = setupEngineMemorySchemas[engine].safeParse(setupJson(printed));
+  return parsed.success
+    ? Math.floor(parsed.data / setupBytesPerMib)
+    : undefined;
 }
 
 /** The limits the package's guide writes in the settings it shows, which have no default of the package's own. */
@@ -603,6 +735,8 @@ export interface SetupRunnerHere {
   readonly chat: boolean;
   /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
   readonly claude: SetupClaudeKind | undefined;
+  /** What a chat host here would hold, where a runner could be put here. */
+  readonly chatSize: SetupChatSize | undefined;
 }
 
 /** One part of a registration's file name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
@@ -732,11 +866,15 @@ export async function setupRunnerHere(
     settings.settings === "Read" ? settings : undefined,
   );
   const open = room.room === "Open";
+  const chat = settings.settings === "Read" ? settings.chat : {};
   return {
     room,
     held: open && setupPoolFiles(ports, places, partition).length > 0,
     chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
+    chatSize: open
+      ? setupChatSized(await setupEngineMemoryRead(ports, room.engine), chat)
+      : undefined,
   };
 }
 
