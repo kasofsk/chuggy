@@ -311,10 +311,10 @@ test("with two projects and no folder to go by, the person is asked which, and h
   ]);
   expect(answered.lines.slice(1, 3)).toEqual([
     "step: workspace   done     acme",
-    "step: project     waiting  acme/gadgets has no North Star yet",
+    "step: project     done     acme/gadgets",
   ]);
   expect(answered.lines.at(-2)).toBe(
-    `rule: Run node ${machineScript} --workspace acme --project gadgets only once the person says the North Star is saved.`,
+    `rule: Run node ${machineScript} mcp --workspace acme --project gadgets only once the person says yes to chuggy's MCP server on this machine.`,
   );
 });
 
@@ -330,11 +330,15 @@ test("a folder whose remote is added to one of two projects proposes it and says
     "step: workspace   done     acme",
   ]);
   expect(done.lines.at(-2)).toBe(
-    `rule: Run node ${machineScript} --workspace acme --project gadgets only once the person says the North Star is saved.`,
+    `rule: Run node ${machineScript} mcp --workspace acme --project gadgets only once the person says yes to chuggy's MCP server on this machine.`,
   );
   expect(done.lines.join("\n")).not.toContain(secret);
   expect(done.lines.join("\n")).not.toContain("deploy-user");
-  expect(machine.ran).toEqual([setupRemoteCommand, setupCheckoutTopCommand]);
+  expect(machine.ran).toEqual([
+    setupRemoteCommand,
+    setupCheckoutTopCommand,
+    ["npm", "prefix", "-g"],
+  ]);
   expect(machine.asked.join("\n")).not.toContain(secret);
 });
 

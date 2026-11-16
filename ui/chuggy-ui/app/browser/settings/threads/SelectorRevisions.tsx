@@ -54,7 +54,7 @@ function SelectorRevisionChanged(props: {
   if (changes.length === 0)
     return (
       <span className="selector-changed" data-none="">
-        {text({ id: "lead-history-no-change" })}
+        {text({ id: "settings-threads-history-no-change" })}
       </span>
     );
   return (
@@ -71,11 +71,7 @@ function SelectorRevisionDiff(props: {
   return (
     <dl className="selector-diff">
       {props.changes.map((change) => (
-        <div
-          key={change.label.id}
-          className="selector-diff-row"
-          data-mono={change.mono ? "" : undefined}
-        >
+        <div key={change.label.id} className="selector-diff-row">
           <dt>{text(change.label)}</dt>
           <dd>
             <span className="selector-before">
@@ -115,7 +111,9 @@ function SelectorRevision(props: {
               className={buttonLookClassName({ variant: "quiet", size: "sm" })}
             >
               {text({
-                id: open ? "lead-history-hide-diff" : "lead-history-diff",
+                id: open
+                  ? "settings-threads-history-hide-diff"
+                  : "settings-threads-history-diff",
               })}
             </Collapsible.Trigger>
           )}
@@ -128,7 +126,7 @@ function SelectorRevision(props: {
                 onRestore(diff.revision.overrides);
               }}
             >
-              {text({ id: "lead-history-restore" })}
+              {text({ id: "settings-threads-history-restore" })}
             </Button>
           ) : null}
         </span>
@@ -150,7 +148,11 @@ function SelectorRevisionList(props: {
   const [all, setAll] = useState(false);
   const diffs = selectorSettingsHistoryDiffs(props.history.revisions);
   if (diffs.length === 0)
-    return <EmptyState label={text({ id: "lead-history-none-recorded" })} />;
+    return (
+      <EmptyState
+        label={text({ id: "settings-threads-history-none-recorded" })}
+      />
+    );
   const shown = all ? diffs : diffs.slice(0, selectorRevisionsShownMax);
   return (
     <div className="grid justify-items-start gap-2">
@@ -174,7 +176,10 @@ function SelectorRevisionList(props: {
             setAll(true);
           }}
         >
-          {text({ id: "lead-history-show-all", args: { count: diffs.length } })}
+          {text({
+            id: "settings-threads-history-show-all",
+            args: { count: diffs.length },
+          })}
         </Button>
       )}
     </div>
@@ -193,8 +198,8 @@ export function SelectorRevisions(props: {
   return (
     <Panel
       variant="section"
-      title={text({ id: "lead-history-title" })}
-      about={text({ id: "lead-history-about" })}
+      title={text({ id: "settings-threads-history-title" })}
+      about={text({ id: "settings-threads-history-about" })}
       foot={
         selectorSettingsNoticed(props.saved) ? (
           <SelectorSettingsSavedNotice saved={props.saved} />

@@ -157,15 +157,6 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   ],
   Project: [
     saidAcme,
-    ["waiting", "acme/widgets has no North Star yet"],
-    saidServed,
-    saidTodo,
-    saidTodo,
-    saidTodo,
-    saidTodo,
-  ],
-  NorthStar: [
-    saidAcme,
     saidWidgets,
     saidServed,
     saidTodo,
@@ -261,7 +252,7 @@ export const saidUnread: Readonly<
   >
 > = {
   inventory: [1, "your projects were"],
-  settings: [1, "acme/widgets: its lead settings were"],
+  settings: [1, "acme/widgets: its chat settings were"],
   installations: [3, "its GitHub accounts were"],
   portalGrant: [3, "what the portal app is granted on GitHub was"],
   workerGrant: [3, "what the worker app is granted on GitHub was"],
@@ -359,7 +350,7 @@ export function saidViewerSite(): SetupSite {
 
 export const saidViewer: readonly Said[] = [
   ["waiting", "acme, where you see a project and are not an admin"],
-  ["unread", "acme/widgets: its lead settings were not shown to you"],
+  ["unread", "acme/widgets: its chat settings were not shown to you"],
   saidServed,
   saidAccountsUnshown,
   saidRepository,

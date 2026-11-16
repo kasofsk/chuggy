@@ -5,7 +5,7 @@ export const settingsFtl = `## The settings pages.
 
 settings-nav = Settings
 settings-nav-project = { -project(case: "upper") }
-settings-nav-lead = { -lead(case: "upper") }
+settings-nav-threads = { -thread(case: "upper", form: "plural") }
 settings-nav-placement = { -placement(case: "upper") }
 settings-nav-pools = Pools
 settings-nav-permissions = Permissions
@@ -23,6 +23,54 @@ settings-edit = Edit
 settings-remove = Remove
 settings-none = None
 settings-creating = Creating…
+
+## The settings threads run under, and every revision of them.
+
+settings-threads-title = { -thread(case: "upper", form: "plural") }
+settings-threads-revision = { -revision(case: "upper") } { $revision }
+settings-threads-default = Default
+settings-threads-effective-none = None
+
+settings-threads-fault-invalid = Invalid
+settings-threads-fault-at-least = At least { $min }
+settings-threads-fault-at-most = At most { $max }
+settings-threads-fault-at-most-characters = At most { $max } characters
+settings-threads-fault-model-flag = Cannot start with -
+settings-threads-fault-model-spaced = No spaces or control characters
+
+settings-threads-model-thread-model = { -thread(case: "upper") } model
+settings-threads-model-thread-effort = { -thread(case: "upper") } effort
+settings-threads-model-alias = Alias
+
+settings-threads-effort-low = Low
+settings-threads-effort-medium = Medium
+settings-threads-effort-high = High
+settings-threads-effort-xhigh = Extra high
+settings-threads-effort-max = Max
+
+settings-threads-section-north-star-title = North Star
+settings-threads-section-north-star-about = What this { -project } is for. Every new { -thread } is handed it.
+settings-threads-section-standing-rules-title = Standing rules
+settings-threads-section-standing-rules-about = How { -thread(form: "plural") } act on this { -project }.
+settings-threads-section-models-title = Models
+settings-threads-section-models-about = The model and effort of each new { -thread }. Open { -thread(form: "plural") } keep theirs.
+settings-threads-reset-default = Reset to default
+
+settings-threads-writing = Writing
+settings-threads-written = Written · { $revision }
+settings-threads-changed-by = Changed by
+settings-threads-changed-at = at
+settings-threads-conflict-moved-by = Changed by { $subject } at { $time }
+settings-threads-conflict-revision = Conflict · { $revision }
+
+settings-threads-history-no-change = No change
+settings-threads-history-diff = Diff
+settings-threads-history-hide-diff = Hide diff
+settings-threads-history-restore = Restore
+settings-threads-history-show-all = Show all { $count }
+settings-threads-history-none-recorded = No { -revision(form: "plural") }
+settings-threads-history-title = { -revision(case: "upper", form: "plural") }
+settings-threads-history-about = Every save, newest first.
 
 ## The roles, and what else a person holds in a workspace.
 

@@ -1,6 +1,6 @@
 /**
- * The lead settings page: what the project runs under, the section a reader
- * opens one at a time, and what a write the revision moved under does.
+ * The thread settings page: what the project's threads run under, the section
+ * a reader opens one at a time, and what a write the revision moved under does.
  *
  * THE CONFLICT CASE IS THE ONE WITH TEETH. The settings are written whole, so a
  * write carrying no `expectedRevision` — or one that retried past a refusal —
@@ -20,14 +20,7 @@ import { renderCopied } from "../copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { LeadSettingsPage } from "../../app/browser/settings/LeadSettingsPage.tsx";
-import {
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
-  leadDispatchesMax,
-} from "../../../../src/contract/http.ts";
-import { selectorProjectOverridesSchema } from "../../../../src/contract/requests.ts";
-import { selectorSettingsLimitNames } from "../../app/core/selectorSettingsForm.ts";
+import { ThreadSettingsPage } from "../../app/browser/settings/ThreadSettingsPage.tsx";
 import {
   answer,
   openedStream,
@@ -35,10 +28,7 @@ import {
   settled,
   turned,
 } from "../screenHarness.tsx";
-import { leadBody } from "../leadFixture.ts";
 import { projectPartition } from "../projectFixture.ts";
-import { sessionPlacementBody } from "../sessionPlacementFixture.ts";
-import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
 import { styleless } from "../styleless.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
@@ -118,6 +108,8 @@ function revisionBody(revision: number, overrides: unknown): unknown {
 }
 
 interface SettingsServer {
+  /** Every address the page asked, in order. */
+  readonly asked: () => readonly string[];
   readonly written: () => unknown;
   readonly writes: () => readonly unknown[];
   readonly reads: () => number;
@@ -137,10 +129,6 @@ interface SettingsScript {
   };
   readonly read?: unknown;
   readonly history?: unknown;
-  /** What the lead route answers, a lead of its own where the case says none. */
-  readonly lead?: unknown;
-  /** Where the lead runs and the runners it waits on, live where unsaid. */
-  readonly placement?: SessionPlacementResponse;
   /** Whether the settings read fails, asked at each read. */
   readonly failing?: () => boolean;
 }
@@ -151,12 +139,14 @@ interface SettingsScript {
 async function drawSettings(
   script: SettingsScript = {},
 ): Promise<SettingsServer> {
+  const asked: string[] = [];
   const writes: unknown[] = [];
   let reads = 0;
   const read =
     script.read ?? settingsBody(12, { northStar: "ship the console" });
   const answering = script.answering ?? (() => ({ body: {}, status: 200 }));
   const fetching = ((url: string, init?: SettingsInit) => {
+    asked.push(url);
     if (init?.method === "PUT") {
       writes.push(JSON.parse(init.body ?? "null"));
       const found = answering();
@@ -164,12 +154,6 @@ async function drawSettings(
     }
     if (url.includes("/history"))
       return Promise.resolve(answer(script.history ?? { revisions: [] }));
-    if (url.endsWith("/lead"))
-      return Promise.resolve(answer(script.lead ?? leadBody(1, 1)));
-    if (url.endsWith("/session-placement"))
-      return Promise.resolve(
-        answer(script.placement ?? sessionPlacementBody()),
-      );
     reads += 1;
     if (script.failing?.() === true)
       return Promise.resolve(answer({ error: { code: "InternalError" } }, 500));
@@ -185,11 +169,12 @@ async function drawSettings(
       client={client}
       transport={openedStream().ports.fetch}
     >
-      <LeadSettingsPage />
+      <ThreadSettingsPage />
     </ScreenHarness>,
   );
   await settled();
   return {
+    asked: () => asked,
     written: () => writes[writes.length - 1],
     writes: () => writes,
     reads: () => reads,
@@ -224,59 +209,38 @@ function box(name: string): HTMLInputElement | HTMLTextAreaElement {
   return screen.getByRole<HTMLInputElement>("textbox", { name });
 }
 
-/**
- * THE SETTINGS SAY HOW A LEAD WOULD DISPATCH, not whether this project has one,
- * so a project with none reads `Running` and `Automatic` over tickets that wait
- * for a press — and the page says that first.
- */
-test("a project with no lead is told above the settings that its tickets are dispatched by hand", async () => {
-  await drawSettings({ lead: { lead: "None" } });
-  expect(screen.getByText("No lead")).toBeDefined();
-  expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
-});
-
-/** The page says why there is no lead as the lead page does, so the two never
- * disagree about one project. */
-test("a project with no lead is told above the settings why, as the lead page says it", async () => {
-  await drawSettings({
-    lead: { lead: "None", absence: { reason: "NotNeeded" } },
-  });
-  expect(screen.getByText("No lead")).toBeDefined();
-  expect(screen.getByText("Opens when a ticket is released")).toBeDefined();
-  expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
-  cleanup();
-  await drawSettings({ lead: { lead: "None", absence: { reason: "Paused" } } });
-  expect(screen.getByText("Lead paused")).toBeDefined();
-});
-
-/** A refusal for no live runner is left to the runner notice, which says it
- * with where one is added, as on the lead page. */
-test("a project with no lead and no runner is told so with where one is added", async () => {
-  await drawSettings({
-    lead: {
-      lead: "None",
-      absence: { reason: "RunnerOffline", since: "2026-09-02T09:30:00Z" },
-    },
-    placement: sessionPlacementBody({ project: "Unregistered" }),
-  });
-  expect(screen.getByText("No lead")).toBeDefined();
-  expect(screen.queryByText(/No live runner/u)).toBeNull();
-  expect(screen.getByText("No runner")).toBeDefined();
-  expect(screen.getByRole("link", { name: "Pools" })).toBeDefined();
-});
-
-test("a project with a lead is told nothing of the hand", async () => {
-  await drawSettings();
-  expect(screen.queryByText("No lead")).toBeNull();
-  expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
-});
-
 test("the top bar names the revision the settings were read at", async () => {
   await drawSettings();
   const revision = screen.getByRole("heading", {
-    name: "Lead",
+    name: "Chats",
   }).nextElementSibling;
   expect(revision?.textContent).toBe("Revision 12");
+});
+
+/** The page is what threads run under: the lead's own settings, its limits and
+ * its prompt are not drawn here, and nothing of the lead is read. */
+test("the page draws the North Star, the standing rules, the models and the revisions, and reads nothing of the lead", async () => {
+  const server = await drawSettings({
+    read: settingsBody(12, {
+      northStar: "ship the console",
+      basePrompt: "choose the newest",
+      limits: { tokensPerDecision: 500 },
+      leadModel: "sonnet",
+    }),
+  });
+  const titles = ["North Star", "Standing rules", "Models", "Revisions"];
+  expect(screen.getAllByRole("region")).toStrictEqual(titles.map(sectionOf));
+  expect(screen.queryByText("Base prompt")).toBeNull();
+  expect(screen.queryByText("Limits")).toBeNull();
+  expect(screen.queryByText("Lead model")).toBeNull();
+  expect(screen.queryByText("No lead")).toBeNull();
+  expect(
+    server
+      .asked()
+      .filter(
+        (url) => url.endsWith("/lead") || url.endsWith("/session-placement"),
+      ),
+  ).toStrictEqual([]);
 });
 
 /** A section is read until its Edit is pressed: the text stands whole and there
@@ -341,7 +305,7 @@ test("Cancel takes the box back to the read and writes nothing", async () => {
   });
   await turned(() => {
     fireEvent.change(box("North Star"), {
-      target: { value: "ship the lead page" },
+      target: { value: "ship the settings page" },
     });
   });
   await turned(() => {
@@ -354,7 +318,7 @@ test("Cancel takes the box back to the read and writes nothing", async () => {
   expect(box("North Star").value).toBe("ship the console");
 });
 
-/** Edits North Star to "ship the lead page" and saves the section — the
+/** Edits North Star to "ship the settings page" and saves the section — the
  * change every save-revision scenario below makes before it asserts on the
  * write. */
 async function selectorSettingsPageNorthStarSaved(): Promise<void> {
@@ -363,7 +327,7 @@ async function selectorSettingsPageNorthStarSaved(): Promise<void> {
   });
   await turned(() => {
     fireEvent.change(box("North Star"), {
-      target: { value: "ship the lead page" },
+      target: { value: "ship the settings page" },
     });
   });
   await turned(save);
@@ -373,328 +337,25 @@ async function selectorSettingsPageNorthStarSaved(): Promise<void> {
 test("saving a section writes every override whole, under the read revision", async () => {
   const server = await drawSettings({
     answering: () => ({
-      body: settingsBody(13, { northStar: "ship the lead page" }),
+      body: settingsBody(13, { northStar: "ship the settings page" }),
       status: 200,
     }),
   });
   await selectorSettingsPageNorthStarSaved();
   expect(server.written()).toStrictEqual({
     expectedRevision: 12,
-    overrides: { northStar: "ship the lead page" },
+    overrides: { northStar: "ship the settings page" },
   });
   expect(within(sectionOf("North Star")).getByText("Written · 13"));
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 });
 
-/** A limit is read in the unit a person states it in, and never in the wire's
- * own: nobody sets a decision's wall in milliseconds or its input in bytes. */
-test("a limit is read in its own unit and its digits are not scaled", async () => {
-  await drawSettings();
-  const limits = sectionOf("Limits");
-  expect(within(limits).getByText("200,000")).toBeDefined();
-  expect(within(limits).getByText("15")).toBeDefined();
-  expect(within(limits).getByText("min")).toBeDefined();
-  expect(within(limits).getByText("MiB")).toBeDefined();
-});
-
-/** The figure and its unit are two elements, so a reading that takes the text
- * of the row sees whether a space stands between them. */
-test("a limit's digits and unit read as two words", async () => {
-  await drawSettings();
-  const limits = sectionOf("Limits").textContent;
-  expect(limits).toContain("200,000 tokens");
-  expect(limits).toContain("40 calls");
-  expect(limits).toContain("15 min");
-  expect(limits).toContain("1 MiB");
-  expect(limits).toContain("4 pages");
-  expect(limits).toContain("400,000 tokens");
-});
-
-/** EVERY ROW CARRIES ITS OWN STATE. A pill on the section would say the whole
- * of Limits is inherited when every row but one is. */
-test("each limit row says for itself whether it is the installation's", async () => {
-  await drawSettings({
-    read: settingsBody(12, { limits: { dispatchesPerDecision: 3 } }),
-  });
-  const limits = sectionOf("Limits");
-  expect(within(limits).getAllByText("Default")).toHaveLength(
-    selectorSettingsLimitNames.length - 1,
-  );
-  await turned(() => {
-    edit("Limits");
-  });
-  expect(screen.getAllByRole("button", { name: "Reset" })).toHaveLength(1);
-  expect(within(sectionOf("Limits")).getAllByText("Default")).toHaveLength(
-    selectorSettingsLimitNames.length - 1,
-  );
-});
-
-/** The foot counts the rows a save will move, because a reader cannot see every
- * box and its read value at once. */
-test("the foot counts the rows this draft would move", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  const foot = () => sectionOf("Limits").querySelector("footer.panel-foot");
-  expect(foot()?.textContent).toContain("0 changes");
-  await turned(() => {
-    fireEvent.change(box("Dispatches"), {
-      target: { value: "5" },
-    });
-  });
-  expect(foot()?.textContent).toContain("1 change");
-  await turned(() => {
-    fireEvent.change(box("Tokens"), {
-      target: { value: "500" },
-    });
-  });
-  expect(foot()?.textContent).toContain("2 changes");
-});
-
-/** A row this draft moved is marked, so a reader scanning the rows sees which
- * two the count is about. */
-test("a row this draft moved is marked and an untouched one is not", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  const rowOf = (label: string) =>
-    screen.getByLabelText(label).closest(".selector-limit");
-  expect(rowOf("Dispatches")?.hasAttribute("data-edited")).toBe(false);
-  await turned(() => {
-    fireEvent.change(box("Dispatches"), {
-      target: { value: "5" },
-    });
-  });
-  expect(rowOf("Dispatches")?.hasAttribute("data-edited")).toBe(true);
-  expect(rowOf("Tokens")?.hasAttribute("data-edited")).toBe(false);
-});
-
-/** A row's own Reset gives that ceiling back to the installation without
- * touching the five beside it. */
-test("a row's Reset clears that override and no other", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, {
-      limits: { dispatchesPerDecision: 3, tokensPerDecision: 100 },
-    }),
-  });
-  await turned(() => {
-    edit("Limits");
-  });
-  const [reset] = within(sectionOf("Limits")).getAllByRole("button", {
-    name: "Reset",
-  });
-  if (reset === undefined) throw new Error("no overridden limit offered Reset");
-  await turned(() => {
-    fireEvent.click(reset);
-  });
-  await turned(save);
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: { limits: { dispatchesPerDecision: 3 } },
-  });
-});
-
-/** `installationLimits` is on the wire, so a row Reset clears knows its own
- * default at once: the box takes it as a placeholder and the row rejoins the
- * ones the pill calls Default. */
-test("Reset on an overridden limit shows the installation value as its placeholder", async () => {
-  await drawSettings({
-    read: settingsBody(12, { limits: { tokensPerDecision: 100 } }),
-  });
-  await turned(() => {
-    edit("Limits");
-  });
-  const [reset] = within(sectionOf("Limits")).getAllByRole("button", {
-    name: "Reset",
-  });
-  if (reset === undefined) throw new Error("no overridden limit offered Reset");
-  await turned(() => {
-    fireEvent.click(reset);
-  });
-  expect(box("Tokens").getAttribute("placeholder")).toBe(
-    String(installationLimits.tokensPerDecision),
-  );
-  const row = screen
-    .getByLabelText("Tokens")
-    .closest<HTMLElement>(".selector-limit");
-  if (row === null) throw new Error("no row found for Tokens");
-  expect(within(row).getByText("Default")).toBeDefined();
-});
-
-/** A row on the installation's value shows it as the edit box's placeholder,
- * so a reader who opens Limits sees what a save would leave the row at. */
-test("a limit on the installation's value shows it as the edit box's placeholder", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  expect(box("Tokens").getAttribute("placeholder")).toBe(
-    String(installationLimits.tokensPerDecision),
-  );
-});
-
-/** An overridden row reads its own default beside the value at rest, and
- * beside its Reset while the section is open — both in the same unit the
- * value itself is read in. */
-test("an overridden limit reads its own installation default beside the value", async () => {
-  await drawSettings({
-    read: settingsBody(
-      12,
-      { limits: { dispatchesPerDecision: 5 } },
-      { limits: { ...installationLimits, dispatchesPerDecision: 5 } },
-    ),
-  });
-  const readRow = screen
-    .getByText("Dispatches")
-    .closest<HTMLElement>(".selector-limit");
-  if (readRow === null) throw new Error("no row found for Dispatches");
-  expect(within(readRow).getByText("5")).toBeDefined();
-  expect(within(readRow).getByText("3")).toBeDefined();
-  await turned(() => {
-    edit("Limits");
-  });
-  const editRow = screen
-    .getByLabelText("Dispatches")
-    .closest<HTMLElement>(".selector-limit");
-  if (editRow === null) throw new Error("no row found for Dispatches");
-  expect(within(editRow).getByText("3")).toBeDefined();
-  expect(within(editRow).getByRole("button", { name: "Reset" })).toBeDefined();
-});
-
-/** The row reads at rest with grouped digits, so typing them back is taken
- * the same as the bare digits underneath. */
-test("a limit typed with grouped digits is accepted", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, {}),
-  });
-  await turned(() => {
-    edit("Limits");
-  });
-  await turned(() => {
-    fireEvent.change(box("Tokens"), {
-      target: { value: "12,000" },
-    });
-  });
-  expect(box("Tokens").getAttribute("aria-invalid")).toBe("false");
-  await turned(save);
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: { limits: { tokensPerDecision: 12_000 } },
-  });
-});
-
-test("a limit the wire will not take marks its own box and blocks the save", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  await turned(() => {
-    fireEvent.change(box("Tokens"), {
-      target: { value: "many" },
-    });
-  });
-  expect(box("Tokens").getAttribute("aria-invalid")).toBe("true");
-  expect(
-    screen
-      .getByRole("button", { name: "Save changes" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
-});
-
-test("a faulted box is described by the text that names its fault", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  await turned(() => {
-    fireEvent.change(box("Tokens"), {
-      target: { value: "many" },
-    });
-  });
-  const described = box("Tokens").getAttribute("aria-describedby");
-  const fault = document.querySelector(".selector-fault");
-  expect(fault?.id).toBe(described);
-  expect(fault?.textContent).not.toBe("");
-});
-
-/**
- * THE CEILING IS THE WIRE'S AND THE PAGE HOLDS NO COPY OF IT. What a decision
- * may dispatch is bounded by the override schema this form parses its draft
- * with, so a budget past it marks its own box exactly as an unreadable one
- * does — and the ceiling itself is admitted, which is the half a bound stated
- * one off would get wrong.
- */
-test("a dispatch budget past the wire's ceiling marks its own box", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  await turned(() => {
-    fireEvent.change(box("Dispatches"), {
-      target: { value: String(leadDispatchesMax + 1) },
-    });
-  });
-  expect(box("Dispatches").getAttribute("aria-invalid")).toBe("true");
-  await turned(() => {
-    fireEvent.change(box("Dispatches"), {
-      target: { value: String(leadDispatchesMax) },
-    });
-  });
-  expect(
-    box("Dispatches").getAttribute("aria-invalid"),
-    "the box refused the ceiling itself and not only what is past it",
-  ).toBe("false");
-});
-
-/**
- * THE WINDOW'S BOUNDS ARE THE WIRE'S, and the mark says which one a box crossed,
- * read off the override schema's own refusal rather than a copy of either
- * bound. Each bound itself is admitted.
- */
-test("a compaction window outside the runtime's bounds marks its own box with the bound it crossed", async () => {
-  await drawSettings();
-  await turned(() => {
-    edit("Limits");
-  });
-  const window = () => box("Compaction window");
-  const fault = () =>
-    document.getElementById(window().getAttribute("aria-describedby") ?? "")
-      ?.textContent;
-  for (const [typed, said] of [
-    [leadAutoCompactWindowTokensMin - 1, "At least 100,000"],
-    [leadAutoCompactWindowTokensMax + 1, "At most 1,000,000"],
-  ] as const) {
-    await turned(() => {
-      fireEvent.change(window(), { target: { value: String(typed) } });
-    });
-    expect(window().getAttribute("aria-invalid")).toBe("true");
-    expect(fault()).toBe(said);
-  }
-  for (const typed of [
-    leadAutoCompactWindowTokensMin,
-    leadAutoCompactWindowTokensMax,
-  ]) {
-    await turned(() => {
-      fireEvent.change(window(), { target: { value: String(typed) } });
-    });
-    expect(window().getAttribute("aria-invalid"), String(typed)).toBe("false");
-  }
-});
-
 test("the Models section reads Default for a row the project never set, and the value for one it did", async () => {
   await drawSettings({
-    read: settingsBody(12, { leadModel: "sonnet", threadEffort: "high" }),
+    read: settingsBody(12, { threadEffort: "high" }),
   });
   const models = sectionOf("Models");
   for (const [row, value] of [
-    ["Lead model", "sonnet"],
-    ["Lead effort", "Default"],
     ["Chat model", "Default"],
     ["Chat effort", "High"],
   ] as const) {
@@ -703,100 +364,34 @@ test("the Models section reads Default for a row the project never set, and the 
   }
 });
 
-/** The model rows' text, each row as it reads. */
-function modelRows(): readonly (string | null)[] {
-  return Array.from(
-    sectionOf("Models").querySelectorAll(".selector-limit"),
-    (row) => row.textContent,
-  );
-}
-
-/** The project's subsidized lead, on the profile's model and effort, over
- * overrides of its own the profile's stand in place of. */
-const subsidizedRead = settingsBody(
-  12,
-  { northStar: "ship the console", leadModel: "sonnet" },
-  {
-    leadOffering: "Subsidized",
-    leadModel: "claude-haiku-5-5",
-    leadEffort: "low",
-  },
-);
-
-test("a subsidized project's lead reads the profile's model and effort, pinned, and its boxes are disabled with the line that says why", async () => {
-  await drawSettings({ read: subsidizedRead });
-  expect(modelRows().slice(0, 2)).toStrictEqual([
-    "Lead modelclaude-haiku-5-5Pinned",
-    "Lead effortLowPinned",
-  ]);
-  const why = "Set by chuggy for its subsidized lead";
-  expect(within(sectionOf("Models")).getByText(why)).toBeTruthy();
-  await turned(() => {
-    edit("Models");
-  });
-  for (const [row, value] of [
-    ["Lead model", "claude-haiku-5-5"],
-    ["Lead effort", "Low"],
-  ] as const) {
-    const pinned = box(row);
-    expect(pinned.value, row).toBe(value);
-    expect(pinned.disabled, row).toBe(true);
-    const line = document.getElementById(
-      pinned.getAttribute("aria-describedby") ?? "",
-    );
-    expect(line?.textContent, row).toBe(why);
-  }
-  expect(box("Chat model").disabled).toBe(false);
-});
-
-test("a subsidized lead's month reads what it spent against its cap", async () => {
-  await drawSettings({
-    read: subsidizedRead,
-    lead: {
-      ...leadBody(1, 1),
-      subsidy: { tenantMicros: 1_250_000, tenantMonthlyMicros: 50_000_000 },
-    },
-  });
-  expect(modelRows()).toContain("Allowance$1.25 of $50.00");
-});
-
-/** Guards the members' own lead: its rows read its overrides and stay
- * editable, and nothing says pinned or spent. */
-test("a project whose lead is its own reads and edits its lead model as before", async () => {
-  await drawSettings({
-    read: settingsBody(12, { leadModel: "sonnet" }),
-  });
-  expect(screen.queryByText("Pinned")).toBeNull();
-  expect(screen.queryByText("Allowance")).toBeNull();
-  expect(screen.queryByText(/subsidized/u)).toBeNull();
-  await turned(() => {
-    edit("Models");
-  });
-  expect(box("Lead model").value).toBe("sonnet");
-  expect(box("Lead model").disabled).toBe(false);
-});
-
-test("a lead model and effort chosen in the Models section are written beside every other override", async () => {
+/** The lead's model and effort are not drawn, and the write replaces the whole
+ * override set, so they go back on the wire as read. */
+test("a thread model and effort chosen in the Models section are written beside every other override, the lead's as read", async () => {
   const server = await drawSettings({
     answering: () => ({
       body: settingsBody(13, {
         northStar: "ship the console",
-        leadModel: "claude-sonnet-5-5",
-        leadEffort: "medium",
+        threadModel: "claude-sonnet-5-5",
+        threadEffort: "medium",
       }),
       status: 200,
+    }),
+    read: settingsBody(12, {
+      northStar: "ship the console",
+      leadModel: "opus",
+      leadEffort: "low",
     }),
   });
   await turned(() => {
     edit("Models");
   });
   await turned(() => {
-    fireEvent.change(box("Lead model"), {
+    fireEvent.change(box("Chat model"), {
       target: { value: "claude-sonnet-5-5" },
     });
   });
   await turned(() => {
-    fireEvent.keyDown(screen.getByRole("button", { name: /^Lead effort/u }), {
+    fireEvent.keyDown(screen.getByRole("button", { name: /^Chat effort/u }), {
       key: "ArrowDown",
     });
   });
@@ -815,8 +410,10 @@ test("a lead model and effort chosen in the Models section are written beside ev
     expectedRevision: 12,
     overrides: {
       northStar: "ship the console",
-      leadModel: "claude-sonnet-5-5",
-      leadEffort: "medium",
+      leadModel: "opus",
+      leadEffort: "low",
+      threadModel: "claude-sonnet-5-5",
+      threadEffort: "medium",
     },
   });
 });
@@ -849,7 +446,7 @@ test("a model the door refuses marks its own box with why and blocks the save", 
   await turned(() => {
     edit("Models");
   });
-  const model = () => box("Lead model");
+  const model = () => box("Chat model");
   const fault = () =>
     document.getElementById(model().getAttribute("aria-describedby") ?? "")
       ?.textContent;
@@ -878,17 +475,23 @@ test("a model the door refuses marks its own box with why and blocks the save", 
 
 /**
  * The route replaces the whole override set, so an override no section draws is
- * deleted by any save that does not carry it. Nothing on the page shows an
- * allowlist, so nothing on the page would show it going.
+ * deleted by any save that does not carry it. Nothing on the page shows the
+ * lead's settings, so nothing on the page would show them going.
  */
 test("an override no section draws survives a save that edits another", async () => {
   const server = await drawSettings({
     answering: () => ({ body: settingsBody(13, {}), status: 200 }),
     read: settingsBody(12, {
       northStar: "ship the console",
+      mode: "Paused",
+      dispatchMode: "ApprovalRequired",
+      basePrompt: "choose the newest",
+      limits: { tokensPerDecision: 500, dispatchesPerDecision: 2 },
       modelAllowlist: ["claude-opus-4"],
       toolAllowlist: ["Read", "Grep"],
       operationalContextMaxAgeMs: 30_000,
+      leadModel: "opus",
+      leadEffort: "low",
     }),
   });
   await selectorSettingsPageNorthStarSaved();
@@ -898,7 +501,13 @@ test("an override no section draws survives a save that edits another", async ()
       modelAllowlist: ["claude-opus-4"],
       toolAllowlist: ["Read", "Grep"],
       operationalContextMaxAgeMs: 30_000,
-      northStar: "ship the lead page",
+      northStar: "ship the settings page",
+      basePrompt: "choose the newest",
+      mode: "Paused",
+      dispatchMode: "ApprovalRequired",
+      limits: { tokensPerDecision: 500, dispatchesPerDecision: 2 },
+      leadModel: "opus",
+      leadEffort: "low",
     },
   });
 });
@@ -988,7 +597,7 @@ test("a second save is made against the revision the first one produced", async 
 });
 
 /**
- * THE CASE `expectedRevision` EXISTS FOR. This reader edits one limit while
+ * THE CASE `expectedRevision` EXISTS FOR. This reader edits one model while
  * another administrator changes the North Star under them, so carrying every
  * drawn box forward would put this reader's stale North Star back on the wire
  * under a revision that by then matches — and the route would accept it, the
@@ -1016,17 +625,17 @@ test("a conflict does not carry a box this reader never touched", async () => {
     read: settingsBody(12, { northStar: "the original star" }),
   });
   await turned(() => {
-    edit("Limits");
+    edit("Models");
   });
   await turned(() => {
-    fireEvent.change(box("Tokens"), {
-      target: { value: "500" },
+    fireEvent.change(box("Chat model"), {
+      target: { value: "haiku" },
     });
   });
   await turned(save);
   await settled();
-  expect(within(sectionOf("Limits")).getByText("Conflict · 14"));
-  expect(box("Tokens").value).toBe("500");
+  expect(within(sectionOf("Models")).getByText("Conflict · 14"));
+  expect(box("Chat model").value).toBe("haiku");
   await turned(save);
   await settled();
   expect(server.written()).toStrictEqual({
@@ -1034,18 +643,18 @@ test("a conflict does not carry a box this reader never touched", async () => {
     overrides: {
       toolAllowlist: ["Read"],
       northStar: "somebody else's star",
-      limits: { tokensPerDecision: 500 },
+      threadModel: "haiku",
     },
   });
 });
 
 /**
- * THE REBASE IS PER BOX AND NOT PER LIMIT SET: a limit typed in *and* a
- * different limit moved under it. `limits` is one override on the wire, so a
- * rebase taking the reader's whole set wherever one box in it was touched reads
- * as harmless and is the lost update the per-box rule exists to refuse.
+ * THE REBASE IS PER ROW AND NOT PER SECTION: a model typed in *and* the effort
+ * beside it moved under it. A rebase taking the reader's whole section wherever
+ * one row in it was touched reads as harmless and is the lost update the
+ * per-row rule exists to refuse.
  */
-test("a conflict rebases a limit beside the budget this reader typed", async () => {
+test("a conflict rebases an effort beside the model this reader typed", async () => {
   let conflicting = true;
   const server = await drawSettings({
     answering: () => {
@@ -1055,7 +664,8 @@ test("a conflict rebases a limit beside the budget this reader typed", async () 
           body: {
             error: { code: "SettingsRevisionConflict", message: "moved" },
             settings: settingsBody(14, {
-              limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 1 },
+              threadModel: "opus",
+              threadEffort: "high",
             }),
           },
           status: 409,
@@ -1063,32 +673,24 @@ test("a conflict rebases a limit beside the budget this reader typed", async () 
       }
       return { body: settingsBody(15, {}), status: 200 };
     },
-    read: settingsBody(12, {
-      limits: { tokensPerDecision: 100, dispatchesPerDecision: 1 },
-    }),
+    read: settingsBody(12, { threadModel: "opus", threadEffort: "low" }),
   });
   await turned(() => {
-    edit("Limits");
+    edit("Models");
   });
   await turned(() => {
-    fireEvent.change(box("Dispatches"), {
-      target: { value: "5" },
+    fireEvent.change(box("Chat model"), {
+      target: { value: "haiku" },
     });
   });
   await turned(save);
   await settled();
-  expect(
-    box("Tokens").value,
-    "a ceiling nobody here typed was held over the one that arrived",
-  ).toBe("900000");
-  expect(box("Dispatches").value).toBe("5");
+  expect(box("Chat model").value).toBe("haiku");
   await turned(save);
   await settled();
   expect(server.written()).toStrictEqual({
     expectedRevision: 14,
-    overrides: {
-      limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 5 },
-    },
+    overrides: { threadModel: "haiku", threadEffort: "high" },
   });
 });
 
@@ -1109,7 +711,7 @@ test("Reload after a conflict reads the settings again", async () => {
   });
   await turned(() => {
     fireEvent.change(box("North Star"), {
-      target: { value: "ship the lead page" },
+      target: { value: "ship the settings page" },
     });
   });
   await turned(save);
@@ -1120,7 +722,7 @@ test("Reload after a conflict reads the settings again", async () => {
   });
   await settled();
   expect(server.reads()).toBeGreaterThan(before);
-  expect(box("North Star").value).toBe("ship the lead page");
+  expect(box("North Star").value).toBe("ship the settings page");
 });
 
 /**
@@ -1174,32 +776,15 @@ test("an open edit survives a read of the settings that fails behind it", async 
   expect(box("North Star").value).toBe("typed before the read failed");
 });
 
-/**
- * The boxes and the wire's own limit roster are one set, read from the schema
- * rather than listed again. A limit the wire admits and the page draws no row
- * for is not merely invisible: the write rebuilds the whole limit set from the
- * rows, so the first edit to anything would drop it.
- */
-test("the page draws a row for every limit the wire admits", () => {
-  expect([...selectorSettingsLimitNames].sort()).toStrictEqual(
-    Object.keys(
-      (
-        selectorProjectOverridesSchema.shape.limits.unwrap() as never as {
-          readonly shape: Readonly<Record<string, unknown>>;
-        }
-      ).shape,
-    ).sort(),
-  );
-});
-
 const history = {
   revisions: [
     revisionBody(15, {
       northStar: "ship the console",
-      limits: { tokensPerDecision: 17_523_063 },
+      threadModel: "claude-opus-5-5",
     }),
     revisionBody(14, {
       northStar: "ship the console",
+      threadModel: "sonnet",
       limits: { tokensPerDecision: 12_000_000 },
     }),
     revisionBody(13, { northStar: "ship the console" }),
@@ -1211,7 +796,9 @@ const history = {
 test("a revision row names the fields it moved and expands to the diff", async () => {
   await drawSettings({ history });
   const revisions = sectionOf("Revisions");
-  expect(within(revisions).getAllByText("Tokens").length).toBeGreaterThan(0);
+  expect(within(revisions).getAllByText("Chat model").length).toBeGreaterThan(
+    0,
+  );
   await turned(() => {
     fireEvent.click(
       within(revisions).getAllByRole("button", {
@@ -1219,13 +806,16 @@ test("a revision row names the fields it moved and expands to the diff", async (
       })[0] as HTMLElement,
     );
   });
-  expect(within(sectionOf("Revisions")).getByText("12,000,000")).toBeDefined();
-  expect(within(sectionOf("Revisions")).getByText("17,523,063")).toBeDefined();
+  expect(within(sectionOf("Revisions")).getByText("sonnet")).toBeDefined();
+  expect(
+    within(sectionOf("Revisions")).getByText("claude-opus-5-5"),
+  ).toBeDefined();
   styleless();
 });
 
 /** Restore is a write of that revision's overrides under the revision the page
- * holds, which is the whole override set like every other write here. */
+ * holds, which is the whole override set like every other write here, the ones
+ * the page draws no row for included. */
 test("Restore writes that revision's overrides under the current revision", async () => {
   const server = await drawSettings({
     answering: () => ({ body: settingsBody(16, {}), status: 200 }),
@@ -1242,6 +832,7 @@ test("Restore writes that revision's overrides under the current revision", asyn
     expectedRevision: 12,
     overrides: {
       northStar: "ship the console",
+      threadModel: "sonnet",
       limits: { tokensPerDecision: 12_000_000 },
     },
   });
@@ -1307,17 +898,17 @@ test("the top row stands, the bottom row has no predecessor, and a diff reads ol
   });
   const revisions = sectionOf("Revisions");
   expect(revisions.querySelector(".selector-before")?.textContent).toBe(
-    "12,000,000",
+    "sonnet",
   );
   expect(revisions.querySelector(".selector-after")?.textContent).toBe(
-    "17,523,063",
+    "claude-opus-5-5",
   );
 });
 
 test("only the latest revisions stand until Show all is pressed", async () => {
   const many = {
     revisions: Array.from({ length: 7 }, (_unused, at) =>
-      revisionBody(20 - at, { limits: { tokensPerDecision: 100 + at } }),
+      revisionBody(20 - at, { threadModel: `model-${String(at)}` }),
     ),
   };
   await drawSettings({ history: many });
@@ -1335,9 +926,9 @@ test("only the latest revisions stand until Show all is pressed", async () => {
 test("a long passage is drawn whole, with no clip and no Show all", async () => {
   const long = "a".repeat(2000);
   await drawSettings({
-    read: settingsBody(12, {}, { basePrompt: long }),
+    read: settingsBody(12, {}, { threadStandingRules: long }),
   });
-  const prompt = sectionOf("Base prompt");
+  const prompt = sectionOf("Standing rules");
   expect(prompt.querySelector(".selector-clip")).toBeNull();
   expect(within(prompt).getByText(long));
   expect(within(prompt).queryByRole("button", { name: /Show all/ })).toBeNull();
@@ -1354,12 +945,12 @@ test("nothing this page draws is a runtime style element", async () => {
   });
   styleless();
   await turned(() => {
-    edit("Limits");
+    edit("Models");
   });
   styleless();
   await turned(() => {
-    fireEvent.change(box("Dispatches"), {
-      target: { value: "3" },
+    fireEvent.change(box("Chat model"), {
+      target: { value: "haiku" },
     });
   });
   save();

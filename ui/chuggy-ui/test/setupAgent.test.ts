@@ -41,7 +41,7 @@ const served = { ended: "Served" } as const;
 
 /** A machine signed in to a site set up as far as its project, with nothing of chuggy's server on it. */
 function unserved(): Promise<SetupMachine> {
-  return machineSignedIn(setupSiteAt("NorthStar"), false);
+  return machineSignedIn(setupSiteAt("Project"), false);
 }
 
 /** The step the bare command says of the agent's configuration. */
@@ -113,7 +113,7 @@ test("mcp asks nothing of the site or the issuer, so it runs before a sign-in as
 });
 
 test("mcp where the server is already named for the project changes nothing and says it was found", async () => {
-  const machine = await machineSignedIn(setupSiteAt("NorthStar"));
+  const machine = await machineSignedIn(setupSiteAt("Project"));
   const before = machine.box.paths.get(boxClaudeConfig);
   const report = await machine.command(mcp);
   expect(report).toMatchObject({
@@ -198,7 +198,7 @@ test("the server the agent would run is the folder's local one over the checkout
 });
 
 test("a sign-in kept by the program before the shared store is moved there once, and one the store already holds is never replaced by it", async () => {
-  const machine = await machineSignedIn(setupSiteAt("NorthStar"));
+  const machine = await machineSignedIn(setupSiteAt("Project"));
   const held = machine.live() ?? "";
   machine.store.clear();
   machine.files.set(

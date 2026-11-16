@@ -8,7 +8,7 @@
  * command makes and refuses, as the server does, what it would not show:
  * a project the caller is not listed in is not found, a workspace's accounts
  * and what each installation on them grants are not found by anyone who does
- * not administer it, and lead settings are not found by whoever is not shown
+ * not administer it, and settings are not found by whoever is not shown
  * them. The list of projects is answered a
  * page at a time, each page but the last naming the next, since the server
  * answers a page of what it scanned and not of what the caller is shown. A
@@ -108,10 +108,7 @@ export interface SetupSiteProject {
   readonly project: string;
   /** The page of the list of projects this one is answered on, the first being zero. */
   page: number;
-  northStar: string | undefined;
-  /** A North Star the installation gives every project that has none of its own. */
-  inherited: string | undefined;
-  /** Whether the caller is shown the project's lead settings. */
+  /** Whether the caller is shown the project's settings. */
   settled: boolean;
   repositories: SetupSiteRepository[];
   /** Where the project's work runs, and where the caller's chats in it run. */
@@ -245,8 +242,6 @@ export function setupSiteProject(
     tenant,
     project,
     page: 0,
-    northStar: undefined,
-    inherited: undefined,
     settled: true,
     repositories: [],
     work: "Pool",
@@ -355,7 +350,6 @@ export const setupSiteStages = [
   "Nothing",
   "Workspace",
   "Project",
-  "NorthStar",
   "Portal",
   "Apps",
   "Added",
@@ -384,7 +378,6 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
   if (!reached("Project")) return site;
   const project = setupSiteProject(setupSiteWorkspace, setupSiteProjectName);
   site.projects.push(project);
-  if (reached("NorthStar")) project.northStar = "Widgets, made well.";
   const claims: ForgeInstallationResponse[] = [];
   if (reached("Portal"))
     claims.push(setupSiteClaim(setupSiteAccount, "portal"));
@@ -479,14 +472,10 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
     concurrentDecisions: 1,
     selectionsPerMinute: 1,
   };
-  const northStar =
-    project.northStar === undefined ? {} : { northStar: project.northStar };
-  const inherited =
-    project.inherited === undefined ? {} : { northStar: project.inherited };
   return {
     partition: { tenant: project.tenant, project: project.project },
     revision: 1,
-    overrides: northStar,
+    overrides: {},
     effective: {
       revision: 1,
       projectRevision: 1,
@@ -494,8 +483,6 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
       installationMode: "Running",
       dispatchMode: "Automatic",
       basePrompt: "Lead the project.",
-      ...inherited,
-      ...northStar,
       threadStandingRules: "Be brief.",
       modelAllowlist: [],
       toolAllowlist: [],

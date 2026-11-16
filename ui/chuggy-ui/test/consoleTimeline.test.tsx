@@ -117,7 +117,7 @@ const consoleDesks: readonly ConsoleDesk[] = [
   },
   {
     name: "an open North Star edit and the composer",
-    path: `${projectAddress}/settings/lead`,
+    path: `${projectAddress}/settings/threads`,
     typed: async () => {
       await act(async () => {
         fireEvent.click(

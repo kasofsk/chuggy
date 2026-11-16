@@ -33,9 +33,9 @@ function SelectorSettingsMovedBy(props: {
   const subject = props.movedBy.administrator.subject;
   return (
     <>
-      {text({ id: "lead-settings-changed-by" })}{" "}
+      {text({ id: "settings-threads-changed-by" })}{" "}
       <Identity label={{ text: subject, title: subject }} />{" "}
-      {text({ id: "lead-settings-changed-at" })}{" "}
+      {text({ id: "settings-threads-changed-at" })}{" "}
       <Figure figure={instantFigure(props.movedBy.recordedAt, nowMs)} />
     </>
   );
@@ -60,7 +60,7 @@ export function SelectorSettingsSavedNotice(props: {
       <Notice
         tone="info"
         inline
-        detail={text({ id: "lead-settings-writing" })}
+        detail={text({ id: "settings-threads-writing" })}
       />
     );
   if (saved.error !== null) {
@@ -87,7 +87,7 @@ export function SelectorSettingsSavedNotice(props: {
         tone="live"
         inline
         detail={text({
-          id: "lead-settings-written",
+          id: "settings-threads-written",
           args: { revision: String(saved.data.revision) },
         })}
       />
@@ -128,7 +128,9 @@ export function SelectorSection(props: {
         <span className="flex items-center gap-2">
           {props.title}
           {props.inherited ? (
-            <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+            <Pill tone="neutral">
+              {text({ id: "settings-threads-default" })}
+            </Pill>
           ) : null}
         </span>
       }

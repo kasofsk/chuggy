@@ -400,14 +400,14 @@ test("a project named with its workspace stands as it is read by its name, on no
   ]);
 });
 
-test("a project read by its name is not said to be absent on its lead settings alone: one whose tickets were read is there, and its settings are what was not shown", async () => {
+test("a project read by its name is not said to be absent on its settings alone: one whose tickets were read is there, and its settings are what was not shown", async () => {
   const named = { answers: { workspace: "acme", project: "widgets" } };
   const site = setupSiteAt("Landed");
   site.fates.set("inventory", "Failed");
   for (const held of site.projects) held.settled = false;
   expect((await column(site, named))[1]).toEqual([
     "unread",
-    "acme/widgets: its lead settings were not shown to you",
+    "acme/widgets: its chat settings were not shown to you",
   ]);
   site.fates.set("landed", "Refused");
   expect((await column(site, named))[1]).toEqual([
@@ -417,11 +417,11 @@ test("a project read by its name is not said to be absent on its lead settings a
   site.fates.delete("inventory");
   expect((await column(site, named))[1]).toEqual([
     "unread",
-    "acme/widgets: its lead settings were not shown to you",
+    "acme/widgets: its chat settings were not shown to you",
   ]);
 });
 
-test("a project read by its name is not said to be absent on its tickets alone: one whose lead settings were read is there", async () => {
+test("a project read by its name is not said to be absent on its tickets alone: one whose settings were read is there", async () => {
   const named = { answers: { workspace: "acme", project: "widgets" } };
   const site = setupSiteAt("Landed");
   site.fates.set("inventory", "Failed");
@@ -429,23 +429,12 @@ test("a project read by its name is not said to be absent on its tickets alone: 
   expect((await column(site, named))[1]).toEqual(saidWidgets);
 });
 
-test("a project is done on a North Star of its own, and one the installation gives every project is not one", async () => {
-  const site = setupSiteAt("Project");
-  for (const held of site.projects) held.inherited = "The installation's own.";
-  expect((await column(site))[1]).toEqual([
-    "waiting",
-    "acme/widgets has no North Star yet",
-  ]);
-  for (const held of site.projects) held.northStar = "Widgets, made well.";
-  expect((await column(site))[1]).toEqual(saidWidgets);
-});
-
 /** A site set up as far as its project, holding the claims a case names. */
 function claimed(
   claims: readonly (readonly [string, "portal" | "worker"])[],
   fate?: SetupSiteFate,
 ): SetupSite {
-  const site = setupSiteAt("NorthStar");
+  const site = setupSiteAt("Project");
   site.installations.set(
     setupSiteWorkspace,
     claims.map(([account, app]) => setupSiteClaim(account, app)),

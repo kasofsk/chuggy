@@ -148,13 +148,6 @@ const mends: {
       "once the person says they are an admin of acme",
     ),
   ],
-  NorthStar: [
-    { lacks: "NorthStar" },
-    hand(
-      `Open ${pages}/settings/lead, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.`,
-      "once the person says the North Star is saved",
-    ),
-  ],
   Grant: [
     {
       lacks: "Grant",
@@ -949,8 +942,7 @@ const deciding: Readonly<
 > = {
   Nothing: "Workspace",
   Workspace: "Project",
-  Project: "NorthStar",
-  NorthStar: "Account",
+  Project: "Account",
   Portal: "App",
   Apps: "Binding",
   Added: "Configuration",

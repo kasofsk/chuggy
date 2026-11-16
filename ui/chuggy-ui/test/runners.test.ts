@@ -11,14 +11,12 @@ import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
 } from "../../../src/contract/responses.ts";
-import { selectorProjectSettingsResponseSchema } from "../../../src/contract/responses.ts";
 import {
   placementRouteSources,
   placementRoutes,
   sessionRunnerStandings,
 } from "../../../src/contract/rosters.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
 import type { Copy } from "../app/core/copy.ts";
 import { copyOrDataText } from "../app/core/copy.ts";
 import {
@@ -32,16 +30,12 @@ import {
   runnerRouteLabel,
   runnerRouteSourceLabel,
   runnerStandingLabel,
-  runnersLeadPlacementChoices,
   runnersPlacementDraft,
-  runnersPlacementLabel,
   runnersPlacementMoved,
   runnersPlacementOptions,
   runnersPlacementRefusal,
   runnersPlacementUnhosted,
-  runnersPlacementValue,
   runnersPlacementWrites,
-  runnersSubsidizedLine,
 } from "../app/core/runners.ts";
 import type { RunnersLeadPlacement } from "../app/core/runners.ts";
 
@@ -57,11 +51,6 @@ const hosted: ExecutionPlacementResponse = {
   evaluation: { route: "Pool", source: "Default" },
   choices: ["InCluster", "Pool"],
 };
-
-/** The effective settings the subsidized lead's line reads, beside the lead's. */
-const selectorEffective = selectorProjectSettingsResponseSchema.parse(
-  selectorSettingsBody(),
-).effective;
 
 const sessions: SessionPlacementResponse = {
   thread: { route: "Pool", source: "Default" },
@@ -126,66 +115,6 @@ const subsidized: RunnersLeadPlacement = {
   offering: "Subsidized",
 };
 
-test("the lead is offered the subsidized lead in cluster wherever the deployment admits it, and its own routes alone otherwise", () => {
-  expect(runnersLeadPlacementChoices(sessions)).toStrictEqual([
-    ownHosted,
-    { route: "Pool", offering: "Own" },
-  ]);
-  expect(
-    runnersLeadPlacementChoices({
-      ...sessions,
-      choices: ["Pool"],
-      leadOfferings: ["Own", "Subsidized"],
-    }),
-  ).toStrictEqual([{ route: "Pool", offering: "Own" }, subsidized]);
-});
-
-/** The subsidized lead runs in cluster too, so its route alone cannot tell it
- * from the members' own lead there. */
-test("a subsidized lead read is its own choice, apart from the members' own lead in cluster", () => {
-  expect(
-    runnersPlacementOptions(subsidized, [ownHosted, subsidized]),
-  ).toStrictEqual([
-    { choice: ownHosted, choosable: true },
-    { choice: subsidized, choosable: true },
-  ]);
-  expect(runnersPlacementOptions(subsidized, [ownHosted])).toStrictEqual([
-    { choice: subsidized, choosable: false },
-    { choice: ownHosted, choosable: true },
-  ]);
-  expect(runnersPlacementValue(subsidized)).toBe("Subsidized");
-  expect(runnersPlacementValue(ownHosted)).toBe("InCluster");
-  expect(copyTextEn(runnersPlacementLabel(subsidized))).toBe("Subsidized");
-  expect(copyTextEn(runnersPlacementLabel(ownHosted))).toBe("Hosted runs");
-});
-
-test("the subsidized lead's line says it is chuggy's, the model the effective settings name for it, and that it is free up to a monthly allowance", () => {
-  expect(copyTextEn(runnersSubsidizedLine(undefined))).toBe(
-    "Runs on chuggy · Free up to a monthly allowance",
-  );
-  const effective = {
-    leadModel: "claude-haiku-5-5",
-  } as const;
-  expect(
-    copyTextEn(
-      runnersSubsidizedLine({
-        ...selectorEffective,
-        ...effective,
-        leadOffering: "Subsidized",
-      }),
-    ),
-  ).toBe("Runs claude-haiku-5-5 on chuggy · Free up to a monthly allowance");
-  expect(
-    copyTextEn(
-      runnersSubsidizedLine({
-        ...selectorEffective,
-        ...effective,
-        leadOffering: "Own",
-      }),
-    ),
-  ).toBe("Runs on chuggy · Free up to a monthly allowance");
-});
-
 /** A write names both its kinds, so a placement is written whole where either
  * moved and not at all where neither did. */
 test("a save writes only the placements the draft moved, each whole", () => {
@@ -209,15 +138,6 @@ test("a save writes only the placements the draft moved, each whole", () => {
     session: undefined,
   });
   expect(
-    runnersPlacementWrites(read, {
-      ...read,
-      lead: { route: "Pool", offering: "Own" },
-    }),
-  ).toStrictEqual({
-    execution: undefined,
-    session: { thread: "Pool", lead: "Pool", leadOffering: "Own" },
-  });
-  expect(
     runnersPlacementWrites(read, { ...read, thread: "InCluster" }),
   ).toStrictEqual({
     execution: undefined,
@@ -226,9 +146,9 @@ test("a save writes only the placements the draft moved, each whole", () => {
 });
 
 /** A write naming no offering keeps the one the project's row stores, which
- * may be a subsidized lead the deployment withdrew, so a write moving only the
- * thread names the offering read and moving the lead names the one chosen. */
-test("a session write names the lead's offering, as read where only the thread moved", () => {
+ * may be a subsidized lead the deployment withdrew, so the session write names
+ * the lead as read, and the editor never moves it. */
+test("a session write names the lead and its offering as read, and moves only the thread", () => {
   const read = {
     work: "InCluster",
     evaluation: "Pool",
@@ -237,11 +157,7 @@ test("a session write names the lead's offering, as read where only the thread m
   } as const;
   expect(
     runnersPlacementWrites(read, { ...read, lead: subsidized }).session,
-  ).toStrictEqual({
-    thread: "Pool",
-    lead: "InCluster",
-    leadOffering: "Subsidized",
-  });
+  ).toBeUndefined();
   const subsidizedRead = { ...read, lead: subsidized };
   expect(
     runnersPlacementWrites(subsidizedRead, {
