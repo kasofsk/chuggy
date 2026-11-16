@@ -23,6 +23,7 @@ import {
   changeProposalMergeReasons,
   changeProposalMergeWaits,
   changeProposalStatuses,
+  changeProposalMergeOutcomes,
   changeProposalMerges,
   configurationProvenanceSources,
   configurationReadinesses,
@@ -177,6 +178,7 @@ import {
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
+  allChangeProposalMerges,
   allChangeProposalMergeWaits,
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
@@ -308,6 +310,10 @@ test("the attempt and pull request codes a landing carries are the ones a row ho
   assert.deepEqual(
     [...changeProposalMerges],
     [...allChangeProposalMergeAnswers],
+  );
+  assert.deepEqual(
+    [...changeProposalMergeOutcomes],
+    [...allChangeProposalMerges],
   );
   assert.deepEqual(
     [...changeProposalMergeReasons],

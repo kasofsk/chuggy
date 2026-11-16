@@ -8,7 +8,7 @@ import type {
   SchedulerPassNotice,
 } from "../interpreter/executionSchedulerRun.ts";
 import type { FinalizerOwnerId } from "../interpreter/finalizer.ts";
-import { finalizerHoldLog } from "../interpreter/finalizerTelemetry.ts";
+import { finalizerProcessLog } from "../interpreter/finalizerTelemetry.ts";
 import {
   finalizerPass,
   type FinalizerService,
@@ -579,9 +579,11 @@ export interface FinalizerProcessRootConfig {
 }
 
 /**
- * Composes the finalizer service over the pool its process owns, its holds
- * written to stderr: a request held where it was found writes nothing anywhere
- * else, so this is the only place an operator learns which one is.
+ * Composes the finalizer service over the pool its process owns, its holds and
+ * every forge act it makes written to stderr: a request held where it was found
+ * writes nothing anywhere else, and neither does what a forge answered beyond
+ * the newest of each act its row keeps, so this is where an operator learns
+ * both.
  */
 export function finalizerProcessRootService(
   pool: pg.Pool,
@@ -591,7 +593,7 @@ export function finalizerProcessRootService(
     pool,
     config.service(pool),
     config.finalizer,
-    finalizerHoldLog((line) => {
+    finalizerProcessLog((line) => {
       process.stderr.write(line);
     }),
   );
