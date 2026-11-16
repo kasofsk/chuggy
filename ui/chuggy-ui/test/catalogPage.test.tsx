@@ -444,7 +444,7 @@ test("while the listing is read, rows stand where its rows will be", async () =>
   vi.stubGlobal("fetch", () => new Promise<never>(() => undefined));
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
