@@ -1427,7 +1427,7 @@ function imported(
       };
 }
 
-/** A merge of `ticket`'s pull request, as `site.merging` says it is met: its landings' pull request marked merged, and an import of the repository brought on. */
+/** A merge of `ticket`'s pull request, as `site.merging` says it is met: its landings' pull request marked merged at the merge's commit, and an import of the repository brought on. */
 function merged(
   site: SetupSite,
   project: SetupSiteProject,
@@ -1464,7 +1464,14 @@ function merged(
     held.map((landing) =>
       landing.proposal === undefined
         ? landing
-        : { ...landing, proposal: { ...landing.proposal, merge: "Merged" } },
+        : {
+            ...landing,
+            proposal: {
+              ...landing.proposal,
+              merge: "Merged",
+              mergeCommit: setupSiteMergeCommit,
+            },
+          },
     ),
   );
   if (!already)

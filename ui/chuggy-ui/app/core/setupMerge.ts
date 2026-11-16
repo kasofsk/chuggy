@@ -97,7 +97,7 @@ export async function setupMergeAsked(
     : { answered: "Failed", failure: failureWords(result).word };
 }
 
-/** What a `merge` run looked at before it asked: the import of the repository that had finished last, and the commit the merge left where the site named one. */
+/** What a `merge` run looked at before it asked: the import of the repository that had finished last, and the commit the merge left, as the site's merge named it or, where it was merged already, as the ticket's landings name it. */
 export interface SetupMergeSince {
   readonly before: RepositoryConfigurationImportAttemptResponse | undefined;
   readonly mergeCommit: string | undefined;

@@ -242,9 +242,10 @@ export interface SetupUnmerged {
   readonly ticket: number;
 }
 
-/** A repository holding only the bootstrap, and the import of it that finished last, where one did. */
+/** A repository holding only the bootstrap, the import of it that finished last, where one did, and the commit the first ticket's pull request was merged at, where its landings name one. */
 export interface SetupBootstrap {
   readonly lastImport: RepositoryConfigurationImportAttemptResponse | undefined;
+  readonly mergeCommit: string | undefined;
 }
 
 /** Each forge app, as a sentence names it. */
@@ -940,23 +941,29 @@ function setupProposed(landing: TicketLandingResponse): boolean {
   }
 }
 
-/** The ticket setup is done on, as the ticket step says it, and its pull request where one stands unmerged. */
+/** The ticket setup is done on, as the ticket step says it, its pull request where one stands unmerged, and the commit it was merged at where its landings name one. */
 interface SetupTicketDone {
   readonly detail: Copy;
   readonly unmerged: SetupUnmerged | undefined;
+  readonly mergeCommit: string | undefined;
 }
 
-/** The pull request of a ticket's landings that stands and is not merged, from landings got whole: none where one of them landed, or where the newest that stands says it merged. */
-function setupUnmerged(
+/** A ticket's pull request, from landings got whole, where none of them landed: the one the newest that stands opened, unmerged or merged at the commit it names. */
+function setupProposal(
   held: SetupTicketLandings | undefined,
-): SetupUnmerged | undefined {
-  if (held?.landings.read !== "Got" || !held.landings.whole) return undefined;
+): Pick<SetupTicketDone, "unmerged" | "mergeCommit"> {
+  const none = { unmerged: undefined, mergeCommit: undefined };
+  if (held?.landings.read !== "Got" || !held.landings.whole) return none;
   const landings = held.landings.value;
-  if (landings.some((landing) => landing.state === "Landed")) return undefined;
+  if (landings.some((landing) => landing.state === "Landed")) return none;
   const proposal = landings.findLast(setupProposed)?.proposal;
-  return proposal?.merge === "Merged" || proposal?.url === undefined
-    ? undefined
-    : { url: proposal.url, ticket: held.ticket };
+  if (proposal?.url === undefined) return none;
+  return proposal.merge === "Merged"
+    ? { unmerged: undefined, mergeCommit: proposal.mergeCommit }
+    : {
+        unmerged: { url: proposal.url, ticket: held.ticket },
+        mergeCommit: undefined,
+      };
 }
 
 /** The ticket setup is done on, where a read that was got shows one, said as what was read of it: a ticket that is done, or a landing that landed or whose pull request stands. */
@@ -968,7 +975,7 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
         id: "setup-step-ticket-done",
         args: { ticket: String(done.ticket) },
       },
-      unmerged: setupUnmerged(reads.doneLandings),
+      ...setupProposal(reads.doneLandings),
     };
   for (const held of reads.landings) {
     if (held.landings.read !== "Got") continue;
@@ -977,11 +984,12 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
       return {
         detail: { id: "setup-step-ticket-finalized", args },
         unmerged: undefined,
+        mergeCommit: undefined,
       };
     if (held.landings.value.some(setupProposed))
       return {
         detail: { id: "setup-step-ticket-proposed", args },
-        unmerged: setupUnmerged(held),
+        ...setupProposal(held),
       };
   }
   return undefined;
@@ -1274,7 +1282,10 @@ export function setupStanding(
       ? done?.unmerged
       : undefined,
     bootstrap: setupBootstrapped(reads.repositories)
-      ? { lastImport: setupBindingMeant(reads.repositories)?.lastImport }
+      ? {
+          lastImport: setupBindingMeant(reads.repositories)?.lastImport,
+          mergeCommit: done?.mergeCommit,
+        }
       : undefined,
   };
 }

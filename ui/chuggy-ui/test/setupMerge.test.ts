@@ -201,6 +201,32 @@ test("a merge whose import fails ends setup saying the configuration was not imp
   expect(said.at(-1)).toBe(stop);
 });
 
+test("a merge run again after its import failed ends setup saying the configuration was not imported, and merges nothing again", async () => {
+  const site = unmerged({
+    merging: "Merged",
+    reads: Number.MAX_SAFE_INTEGER,
+    outcome: { result: "SnapshotAbsent", absent: "ConfigurationDirectory" },
+  });
+  const machine = await signedIn(site);
+  const first = lines(
+    await machine.command(["merge", ...flags, "--wait-secs", "3"]),
+  );
+  expect(first.at(-1)).toBe(`next: node ${machineScript} merge ${at}`);
+
+  if (site.importing !== undefined) site.importing.reads = 0;
+  const startedMs = machine.nowMs;
+  const report = await machine.command(["merge", ...flags]);
+  const again = lines(report);
+  expect(machine.nowMs - startedMs).toBeLessThan(
+    machine.pacing.mergePollMs * 2,
+  );
+  expect(told(again)).toMatch(
+    /^tell: chuggy is set up for acme\/widgets: ticket 1 is done\. chuggy did not import the repository's own configuration \(.+\), so later tickets run on the bootstrap until it does\. /u,
+  );
+  expect(again.at(-1)).toBe(stop);
+  expect(writes(machine)).toEqual([mergeSent]);
+});
+
 test("every refusal of the merge is one line in the person's words with the pull request's link, and setup still ends", async () => {
   for (const merging of [
     ...proposalMergeRefusals.map((refused): SetupSiteMerging => ({

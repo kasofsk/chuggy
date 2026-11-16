@@ -524,7 +524,9 @@ async function setupMergeFirst(
       seen: "Merged",
       before: standing.bootstrap?.lastImport,
       mergeCommit:
-        answered?.answered === "Merged" ? answered.mergeCommit : undefined,
+        answered?.answered === "Merged"
+          ? answered.mergeCommit
+          : standing.bootstrap?.mergeCommit,
     },
   };
 }
