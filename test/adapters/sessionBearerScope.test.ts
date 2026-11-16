@@ -202,6 +202,7 @@ function scopedApp(
       tenants: recorded(reached, "tenantDeletion"),
     },
     recorded(reached, "takes"),
+    recorded(reached, "proposalMerges"),
   );
 }
 
@@ -401,6 +402,7 @@ const chuggyToolCalls = {
   ],
   retry_paused_agent: [["agentAccountPresses", "POST"]],
   retire_credential: [["agentAccountCredential", "DELETE"]],
+  merge_pull_request: [["ticketProposalMerge", "POST"]],
 } as const satisfies Readonly<Record<ChuggyTool, readonly ChuggyToolCall[]>>;
 
 /** The routes the account tools call, each the caller's own at no tenant and no project, which no session bearer reaches. */
@@ -545,6 +547,40 @@ test("turning a credential off and on is refused a project's and a member's sess
         "Refused",
         `${scope} is admitted to ${method} ${pattern}`,
       );
+  }
+});
+
+test("merge_pull_request's route is refused every project session bearer as out of scope, holding every capability its scope may, before any port", async () => {
+  assert.deepEqual(chuggyToolCalls.merge_pull_request, [
+    ["ticketProposalMerge", "POST"],
+  ]);
+  const pattern = chuggyToolRoutes.ticketProposalMerge;
+  assert.equal(sessionBearerMethodClasses.get(`POST ${pattern}`), "Refused");
+  for (const kind of sessionKinds) {
+    const reached: string[] = [];
+    await using app = scopedApp(
+      reached,
+      undefined,
+      kind,
+      "Project",
+      true,
+      projectCapabilities,
+    );
+    const answered = await app.inject(
+      routeRequest(`POST ${pattern}`, own, sessionToken),
+    );
+    assert.equal(answered.statusCode, 403, kind);
+    assert.deepEqual(
+      answered.json(),
+      {
+        error: {
+          code: "InsufficientScope",
+          message: "A session bearer is not admitted to this route.",
+        },
+      },
+      kind,
+    );
+    assert.deepEqual(reached, [], kind);
   }
 });
 

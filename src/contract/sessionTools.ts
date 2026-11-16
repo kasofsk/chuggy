@@ -634,14 +634,21 @@ const chuggyToolRoster = {
     "retry_paused_agent",
     "retire_credential",
   ],
+  /**
+   * What a person's own agent does to the pull request a ticket opened, which
+   * the API authorizes as that person's `MergeProposals`. Only that person's
+   * agent holds it and no session can, because a session must not merge on the
+   * strength of a chat message the work it merges may have written.
+   */
+  ProposalMerge: ["merge_pull_request"],
 } as const satisfies Readonly<Record<ToolCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
  * session may see of the project, what it may author, what it may decide, what
  * a member's own session reads of them, what a thread may offer its member,
- * and what a person's own agent may do to a project's settings and to their
- * own agent accounts, each named once.
+ * and what a person's own agent may do to a project's settings, to their own
+ * agent accounts and to a ticket's pull request, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
@@ -653,6 +660,7 @@ export const allChuggyTools = [
   ...chuggyToolRoster.ThreadOffer,
   ...chuggyToolRoster.ProjectSettings,
   ...chuggyToolRoster.AgentAccounts,
+  ...chuggyToolRoster.ProposalMerge,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -695,6 +703,7 @@ export const builtInToolCapabilities: Readonly<
   ThreadOffer: [],
   ProjectSettings: [],
   AgentAccounts: [],
+  ProposalMerge: [],
 };
 
 /**
@@ -737,6 +746,12 @@ export const chuggyToolRoutes = {
    */
   ticketTake: nativeHttpRoutes.ticketTake,
   ticketReturn: nativeHttpRoutes.ticketReturn,
+  /**
+   * What `merge_pull_request` posts, taking nothing: the pull request the
+   * ticket's newest successful landing opened is merged at the head that
+   * landing evaluated, or the refusal is named.
+   */
+  ticketProposalMerge: nativeHttpRoutes.ticketProposalMerge,
   /**
    * What `read_landing_queues` answers, taking nothing: the project's landing
    * queues, one for each reference a Serialized or Stacked ticket lands on, by

@@ -87,7 +87,8 @@ test("origination, revoking, updating, dispatching and offering are admitted for
         ([capability]) =>
           capability !== "MemberRead" &&
           capability !== "ProjectSettings" &&
-          capability !== "AgentAccounts",
+          capability !== "AgentAccounts" &&
+          capability !== "ProposalMerge",
       )
       .flatMap(([, tools]) => tools),
   );
