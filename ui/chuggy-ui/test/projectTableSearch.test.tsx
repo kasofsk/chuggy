@@ -38,6 +38,11 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import {
+  ticketListFilterChosen,
+  ticketListFilterHeld,
+  ticketListFilterOpened,
+} from "./ticketListFilter.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -224,9 +229,7 @@ test("a search under a standing counts only the rows of that standing, of those 
           nextCursor: "x-2",
         });
   });
-  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Pending", ""]),
-  );
+  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(new Set(["Pending"]));
   expect(titlesDrawn()).toStrictEqual(["Ticket 5"]);
   expect(screen.getByRole("status").textContent).toBe(
     "1 matching ticket so far",
@@ -505,13 +508,13 @@ test("a Show more pressed while no read of the list is running starts none", asy
   expect(pagesAsked(drawn.asked.slice(pressedAt))).toStrictEqual(["finished"]);
 });
 
-/** The filter the list is drawn under, as its control names it. */
-function filterDrawn(): string | null {
-  return screen.getByRole("button", { name: /^Filter/u }).textContent;
+/** The state the list is drawn under, as the Filter control's panel holds it. */
+async function filterDrawn(): Promise<string | undefined> {
+  return ticketListFilterHeld("State", settled);
 }
 
-/** The phases each read asked for, one read to an entry: the filter's, and
- * none for the counts, which are of every ticket. */
+/** The phases each read asked for, one read to an entry, which is the
+ * filter's. */
 function phasesAsked(asked: readonly URLSearchParams[]): readonly string[] {
   return asked.map((each) => each.getAll("phase").join(","));
 }
@@ -535,9 +538,9 @@ test("a filter the address names is the list drawn, whatever this browser kept",
   const drawn = await drawnAt({ filter: "Escalated" }, servedByPhase);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated", ""]),
+    new Set(["Escalated"]),
   );
-  expect(filterDrawn()).toContain("Escalated");
+  expect(await filterDrawn()).toBe("Escalated");
   expect(drawn.written).toStrictEqual([]);
 });
 
@@ -555,21 +558,40 @@ test("where the address names no filter the kept one is drawn, and one kept by a
   expect(drawn.written).toStrictEqual([{ sort: "Oldest" }]);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated", ""]),
+    new Set(["Escalated"]),
   );
 });
 
 test("a filter chosen is written to the address and kept by this browser", async () => {
   const drawn = await drawnAt({ q: "gate" }, servedByPhase);
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menu");
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Done" }));
-  await settled();
+  await ticketListFilterChosen("State", "Done", settled);
   expect(drawn.written).toStrictEqual([{ q: "gate", filter: "Done" }]);
   expect(localStorage.getItem(ticketListFilterStored)).toBe("Done");
   expect(titlesDrawn()).toStrictEqual(["Ticket 120"]);
+});
+
+test("Clear all writes every state and no member to the address, keeping the search and the sort, and a mark writes its own away", async () => {
+  const drawn = await drawnAt(
+    { q: "gate", sort: "Oldest", filter: "Done", creator: "s-ada" },
+    servedByPhase,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Remove State: Done" }));
+  await settled();
+  expect(drawn.written).toStrictEqual([
+    { q: "gate", sort: "Oldest", filter: "All", creator: "s-ada" },
+  ]);
+  fireEvent.click(
+    within(await ticketListFilterOpened(settled)).getByRole("button", {
+      name: "Clear all",
+    }),
+  );
+  await settled();
+  expect(drawn.written.at(-1)).toStrictEqual({
+    q: "gate",
+    sort: "Oldest",
+    filter: "All",
+  });
+  expect(localStorage.getItem(ticketListFilterStored)).toBe("All");
 });
 
 test("a standing none of whose rows the first page holds says so of the rows read, and Show more reads the page that holds one", async () => {

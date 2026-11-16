@@ -4,7 +4,10 @@
  * as, and of the page's address.
  */
 
-import { defaultParseSearch } from "@tanstack/react-router";
+import {
+  defaultParseSearch,
+  defaultStringifySearch,
+} from "@tanstack/react-router";
 import { expect, test } from "vitest";
 
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
@@ -13,13 +16,14 @@ import {
   ticketSearchCharsMax,
 } from "../../../src/contract/http.ts";
 import {
-  ticketListCountDimmed,
-  ticketListCountTapped,
   ticketListCreatorsOffered,
   ticketListFiltered,
+  ticketListFiltersActive,
   ticketListQueryOf,
   ticketListQueryCleared,
+  ticketListQueryFiltersCleared,
   ticketListQueryWith,
+  ticketListQueryWithout,
   ticketListSearchOf,
   ticketListShown,
   ticketListSortOf,
@@ -193,26 +197,87 @@ test("a standing's filter draws the pending rows that stand in it, and any other
     expect(drawn(filter), filter).toStrictEqual([1, 2, 3, 4]);
 });
 
-test("a state's count tapped filters to that state, and tapped as the filter goes back to every ticket", () => {
-  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
-    expect(ticketListCountTapped("All", standing)).toBe(standing);
-    expect(ticketListCountTapped("Pending", standing)).toBe(standing);
-    expect(ticketListCountTapped(standing, standing)).toBe("All");
-  }
-  expect(ticketListCountTapped("Ready", "Blocked")).toBe("Blocked");
+test("the Filter control counts the state, the creator and the owner each only where one is set, in its panel's order", () => {
+  expect(ticketListFiltersActive({ filter: "All" })).toStrictEqual([]);
+  expect(
+    ticketListFiltersActive({
+      filter: "Ready",
+      creator: "s-ada",
+      owner: "s-bob",
+    }),
+  ).toStrictEqual([
+    { kind: "filter", filter: "Ready" },
+    { kind: "creator", principal: "s-ada" },
+    { kind: "owner", principal: "s-bob" },
+  ]);
+  expect(
+    ticketListFiltersActive({ filter: "All", owner: "s-bob" }),
+  ).toStrictEqual([{ kind: "owner", principal: "s-bob" }]);
 });
 
-test("a state's count is dimmed exactly while a filter is set that draws none of its tickets", () => {
-  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
-    expect(ticketListCountDimmed("All", standing), standing).toBe(false);
-    expect(ticketListCountDimmed(standing, standing), standing).toBe(false);
-    expect(ticketListCountDimmed("Done", standing), standing).toBe(true);
-  }
-  expect(ticketListCountDimmed("Ready", "Blocked")).toBe(true);
-  expect(ticketListCountDimmed("Work", "Escalated")).toBe(true);
-  expect(ticketListCountDimmed("Pending", "Ready")).toBe(false);
-  expect(ticketListCountDimmed("Pending", "Blocked")).toBe(false);
-  expect(ticketListCountDimmed("Pending", "Work")).toBe(true);
+test("a mark taken away drops its own narrowing from the address and keeps every other", () => {
+  const query = {
+    q: "billing",
+    sort: "Newest",
+    filter: "Done",
+    creator: "s-ada",
+    owner: "s-bob",
+  } as const;
+  expect(ticketListQueryWithout(query, "filter")).toStrictEqual({
+    ...query,
+    filter: "All",
+  });
+  expect(ticketListQueryWithout(query, "creator")).toStrictEqual({
+    q: "billing",
+    sort: "Newest",
+    filter: "Done",
+    owner: "s-bob",
+  });
+  expect(ticketListQueryWithout(query, "owner")).toStrictEqual({
+    q: "billing",
+    sort: "Newest",
+    filter: "Done",
+    creator: "s-ada",
+  });
+});
+
+test("clearing the Filter control writes every state and no member, and keeps the search and the sort", () => {
+  expect(
+    ticketListQueryFiltersCleared({
+      q: "billing",
+      sort: "Oldest",
+      filter: "Blocked",
+      creator: "s-ada",
+      owner: "s-bob",
+    }),
+  ).toStrictEqual({ q: "billing", sort: "Oldest", filter: "All" });
+  expect(ticketListQueryFiltersCleared({ creator: "s-ada" })).toStrictEqual({
+    filter: "All",
+  });
+});
+
+/** The address a link already carries reads as the same view it did. */
+test("an address naming every narrowing reads back the view it names, and each written view reads back as itself", () => {
+  const address = defaultParseSearch(
+    "?q=billing&sort=Oldest&filter=Blocked&creator=s-ada&owner=s-bob",
+  );
+  const query = ticketListQueryOf(address);
+  expect(query).toStrictEqual({
+    q: "billing",
+    sort: "Oldest",
+    filter: "Blocked",
+    creator: "s-ada",
+    owner: "s-bob",
+  });
+  for (const written of [
+    ticketListQueryWithout(query, "filter"),
+    ticketListQueryWithout(query, "creator"),
+    ticketListQueryWithout(query, "owner"),
+    ticketListQueryFiltersCleared(query),
+  ])
+    expect(
+      ticketListQueryOf(defaultParseSearch(defaultStringifySearch(written))),
+    ).toStrictEqual(written);
 });
 
 test("the address holds a creator as the text it was written as, and drops one the server would refuse", () => {

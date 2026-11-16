@@ -1,6 +1,6 @@
 /**
- * The bar over a list: what the list counts at its start, and at its end its
- * search and its pickers, each drawn as a glyph. It sticks to the top of the
+ * The bar over a list: at its end its search and its pickers, each drawn as a
+ * glyph. It sticks to the top of the
  * page and goes out of the way as `useHeadroom` says, and while it is out of
  * the way nothing in it can be reached; while focus is inside it, it stays.
  */
@@ -143,8 +143,6 @@ export function ListSearch(props: {
 }
 
 export function ListControls(props: {
-  /** What stands at the bar's start, opposite the search and the pickers. */
-  readonly start?: ReactNode;
   readonly children: ReactNode;
 }): ReactNode {
   const bar = useRef<HTMLDivElement>(null);
@@ -164,7 +162,6 @@ export function ListControls(props: {
           setFocused(false);
       }}
     >
-      {props.start}
       <div className="list-selects">{props.children}</div>
     </div>
   );

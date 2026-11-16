@@ -17,3 +17,9 @@ ui-refusals-held = Refusals ({ $hotkey })
 ui-reload = Reload
 ui-required = Required
 ui-save = Save changes
+# How many filters a list's Filter control holds set, beside its glyph.
+ui-filter-set = { $count } set
+ui-filter-clear-all = Clear all
+# A filter that is set, as its mark under a list's bar names it.
+ui-filter-mark = { $field }: { $value }
+ui-filter-remove = Remove { $filter }

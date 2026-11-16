@@ -173,3 +173,76 @@ for (const viewport of ticketsViewports)
         await served.close();
       }
     });
+
+/**
+ * The one Filter control opened over a page of tickets: on the phone a sheet
+ * risen to the screen's foot, every control in it at least the touch height,
+ * and on the desk a popover that stands beside the control. A state chosen in
+ * it is written to the address as it always was, and is then a mark under
+ * the bar that one press takes away.
+ */
+for (const viewport of ticketsViewports)
+  test(`the Filter panel on the ${viewport} holds every filter, writes the address, and leaves a mark that takes it away`, async ({
+    browser,
+  }) => {
+    const served = await servedOpen({
+      root: renderedDist,
+      reads: [
+        stubApiRead(ticketsProjectPath, projectResponseSchema, ticketsPage),
+      ],
+    });
+    try {
+      const rendered = await renderedOpen(browser, served.origin, {
+        route: ticketsPath,
+        viewport,
+        touch: viewport === "phone",
+        signedIn: true,
+        ready: (page) =>
+          page.getByRole("heading", { level: 3, name: ticketsTitleLong }),
+      });
+      const page = rendered.page;
+      await expect(page.getByRole("list", { name: "Filters set" })).toHaveCount(
+        0,
+      );
+      await page.getByRole("button", { name: /^Filter/u }).click();
+      const panel = page.getByRole("dialog", { name: "Filter" });
+      await expect(panel).toBeVisible();
+      for (const field of ["State", "Creator", "Owner"])
+        await expect(
+          panel.getByRole("combobox", { name: field, exact: true }),
+        ).toBeVisible();
+      await renderedNoOverflow(page);
+      const drawn = await panel.boundingBox();
+      const screenSize = page.viewportSize();
+      if (viewport === "phone") {
+        await renderedTouchTargets(page, panel);
+        expect(drawn?.x).toBe(0);
+        expect(drawn?.width).toBe(screenSize?.width);
+        await expect
+          .poll(async () => {
+            const box = await panel.boundingBox();
+            return box === null ? undefined : box.y + box.height;
+          })
+          .toBe(screenSize?.height);
+      } else expect(drawn?.width ?? 0).toBeLessThan(screenSize?.width ?? 0);
+      await panel
+        .getByRole("combobox", { name: "State", exact: true })
+        .selectOption({ label: "Ready" });
+      await expect(page).toHaveURL(/[?&]filter=Ready(&|$)/u);
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      const mark = page.getByRole("button", { name: "Remove State: Ready" });
+      await expect(mark).toBeVisible();
+      if (viewport === "phone")
+        await renderedTouchTargets(page, page.locator(".ticket-list-page"));
+      await mark.click();
+      await expect(page).toHaveURL(/[?&]filter=All(&|$)/u);
+      await expect(page.getByRole("list", { name: "Filters set" })).toHaveCount(
+        0,
+      );
+      renderedNoViolations(rendered, [zodProbeViolation]);
+      expect(served.unanswered).toEqual([]);
+    } finally {
+      await served.close();
+    }
+  });
