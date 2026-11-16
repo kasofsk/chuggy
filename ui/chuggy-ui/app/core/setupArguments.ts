@@ -20,6 +20,8 @@
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
  * import the repository the checklist means, and reads the checklist again.
+ * `bind` asks the site to add the folder's repository to the project, where
+ * that is the checklist's next thing, and reads the checklist again.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
@@ -60,7 +62,8 @@ export type SetupCommand =
   | "ChatHost"
   | "Configuration"
   | "Check"
-  | "Import";
+  | "Import"
+  | "Bind";
 
 /** Which workspace and project a run is about, as far as its arguments named them, and what `project` was asked to call the one it makes. */
 export interface SetupAnswers {
@@ -140,6 +143,11 @@ export type SetupAsked =
       readonly answers: SetupAnswers;
     }
   | {
+      readonly asked: "Bind";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+    }
+  | {
       readonly asked: "Listen";
       readonly site: string;
       readonly lifeSecs: number;
@@ -157,6 +165,7 @@ const setupCommandWords = {
   configuration: "Configuration",
   check: "Check",
   import: "Import",
+  bind: "Bind",
   listen: "Listen",
 } as const;
 
@@ -186,6 +195,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Configuration: ["workspace", "project", "test"],
   Check: ["workspace", "project"],
   Import: ["site", "workspace", "project"],
+  Bind: ["site", "workspace", "project"],
   Listen: ["site", "life-secs"],
 };
 
@@ -354,6 +364,7 @@ function setupAskedOf(
     case "Check":
       return { asked, site: undefined, answers };
     case "Import":
+    case "Bind":
       return { asked, site, answers };
     case "Listen":
       return site === undefined
@@ -396,6 +407,8 @@ export function setupCommandArguments(
       return ["check"];
     case "Import":
       return ["import"];
+    case "Bind":
+      return ["bind"];
   }
 }
 

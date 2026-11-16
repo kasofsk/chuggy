@@ -1,7 +1,8 @@
 /**
  * The page an invite link is opened at, decided with no renderer: what counts
  * as a token, the cookie that carries one across a sign-in, the card for every
- * combination of what the page is opened with, and what a redemption came to.
+ * combination of what the page is opened with, the card a link's summary is
+ * drawn as before sign-in, and what a redemption came to.
  */
 
 import { expect, test } from "vitest";
@@ -22,6 +23,7 @@ import {
   inviteFlowCarried,
   invitePageDecided,
   inviteRedemption,
+  inviteSummaryCard,
   inviteTokenRead,
 } from "../app/core/invitePage.ts";
 import type {
@@ -242,4 +244,76 @@ test("a conflict answering the send is a failure with its own line, and keeps th
     outcome: "Failed",
     cookieCleared: false,
   });
+});
+
+/** A summary's card, its title and line in the base language's words. */
+function summaryWorded(
+  result: Parameters<typeof inviteSummaryCard>[0],
+): readonly string[] {
+  const drawn = inviteSummaryCard(result);
+  return [drawn.card, copyTextEn(drawn.title), copyTextEn(drawn.line)];
+}
+
+test("an open link's card is titled what it gives and names who sent it and as what", () => {
+  expect(
+    summaryWorded({
+      outcome: "Ok",
+      value: { state: "Open", kind: "Workspace", mintedBy: "octo-maker" },
+    }),
+  ).toStrictEqual([
+    "Open",
+    "Your own chuggy workspace",
+    "octo-maker invites you to make a workspace of your own, as its admin.",
+  ]);
+  expect(
+    summaryWorded({
+      outcome: "Ok",
+      value: {
+        state: "Open",
+        kind: "Tenant",
+        displayName: "Acme Co",
+        role: "Member",
+        mintedBy: "octo-maker",
+      },
+    }),
+  ).toStrictEqual([
+    "Open",
+    "Join Acme Co",
+    "octo-maker invites you to join as a member.",
+  ]);
+  expect(
+    summaryWorded({
+      outcome: "Ok",
+      value: {
+        state: "Open",
+        kind: "Tenant",
+        displayName: "Acme Co",
+        role: "Admin",
+      },
+    }),
+  ).toStrictEqual([
+    "Open",
+    "Join Acme Co",
+    "This link makes you an admin of Acme Co.",
+  ]);
+});
+
+test("an ended link, one the plane does not know and a token it will not read are each the same ended card", () => {
+  const ended = summaryWorded({ outcome: "Ok", value: { state: "Ended" } });
+  expect(ended[0]).toBe("Ended");
+  for (const result of [
+    { outcome: "Absent" },
+    { outcome: "Rejected", code: "InvalidRequest", status: 400, body: {} },
+  ] as const)
+    expect(summaryWorded(result)).toStrictEqual(ended);
+});
+
+test("a summary unanswered is reading, and any other failure is a failure a retry may mend", () => {
+  expect(inviteSummaryCard(undefined).card).toBe("Reading");
+  for (const result of [
+    { outcome: "Fault", code: "InternalError", status: 500 },
+    { outcome: "Unreachable", reason: "no answer" },
+    { outcome: "Retryable", code: "Retryable", retryAfterSeconds: 1 },
+  ] as const)
+    expect(inviteSummaryCard(result).card).toBe("Failed");
 });

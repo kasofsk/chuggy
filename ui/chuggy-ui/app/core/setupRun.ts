@@ -12,6 +12,8 @@
  * message could carry, is ever printed.
  */
 
+import { base64urlFromBytes } from "./base64url.ts";
+import { operationIdBytesCount } from "./operationFollow.ts";
 import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
 import { setupAsked } from "./setupArguments.ts";
 import type {
@@ -25,7 +27,9 @@ import {
   setupImportAsked,
   setupImportWrites,
 } from "./setupConfiguration.ts";
+import { setupBindAsked, setupBindWrites } from "./setupBind.ts";
 import {
+  setupBindDue,
   setupConfigurationDue,
   setupMcpDue,
   setupNext,
@@ -341,6 +345,45 @@ async function setupImport(
 }
 
 /**
+ * `bind` works under the remembered sign-in as `import` does. Where the
+ * checklist's next thing is adding the folder's repository, which it is only
+ * where both apps are granted it, it asks the site to bind it, the one write
+ * its ports let through, under an operation of its own, and reads the
+ * checklist again; where it is not, it binds nothing and says the checklist.
+ */
+async function setupBind(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Bind" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Bind");
+  if (held === undefined) return setupBusy(ports, "Bind", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupBindDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupBindAsked(
+          setupWritePorts(
+            held.opened.api,
+            held.bearer,
+            setupBindWrites(due.partition),
+          ),
+          due.partition,
+          due.url,
+          base64urlFromBytes(ports.drawBytes(operationIdBytesCount)),
+        );
+  return {
+    report: "Bind",
+    repository: due?.repository,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
  * One entry of the sign-in `project`, `runner` or `chat-host` works under. Whatever does
  * not end signed in is answered as a report, a fault of this machine's among
  * them, so a run that enters again part-way has one way out and says what it
@@ -359,7 +402,15 @@ async function setupRunnerEntry(
       };
     if (held.signed === "Out") return { entered: "Out", report: held.report };
     const { site, api } = held.opened;
-    return { entered: "In", session: { site, api, bearer: held.bearer } };
+    return {
+      entered: "In",
+      session: {
+        site,
+        api,
+        bearer: held.bearer,
+        workspaces: held.workspaces.tenants,
+      },
+    };
   } catch (failure: unknown) {
     return { entered: "Out", report: setupFaulted(asked, failure) };
   }
@@ -499,6 +550,8 @@ export async function setupRun(
         };
       case "Import":
         return await setupImport(ports, asked, pacing);
+      case "Bind":
+        return await setupBind(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

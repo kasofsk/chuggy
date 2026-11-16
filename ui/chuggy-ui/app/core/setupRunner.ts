@@ -47,6 +47,7 @@
  * said is this program's own words.
  */
 
+import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import type {
@@ -159,6 +160,21 @@ export interface SetupRunnerSession {
   readonly site: string;
   readonly api: ApiPorts;
   readonly bearer: string;
+  /** The person's own workspaces, as the site answered them on signing in. */
+  readonly workspaces: readonly AccessCallerTenant[];
+}
+
+/** Where a run was for, with its workspace's display name where the sign-in's list names that workspace. */
+export function setupRunnerAtNamed(
+  at: SetupRunnerAt,
+  session: SetupRunnerSession,
+): SetupRunnerAt {
+  const listed = session.workspaces.find(
+    (held) => held.tenant === at.workspace,
+  );
+  return listed === undefined
+    ? at
+    : { ...at, workspaceName: listed.displayName };
 }
 
 /** What entering the remembered sign-in came to: a session, or the report that says why there is none. */
@@ -1243,14 +1259,15 @@ export async function setupRunner(
   livePollMs: number,
 ): Promise<SetupReport> {
   const { workspace, project } = asked;
-  const at: SetupRunnerAt = { workspace, project };
+  const unnamed: SetupRunnerAt = { workspace, project };
   if (ports.surroundings.platform !== setupRunnerPlatform)
-    return setupRunSaid(at, undefined, [], {
+    return setupRunSaid(unnamed, undefined, [], {
       ended: "Stopped",
       stop: { stop: "Mac" },
     });
   const entered = await enter();
   if (entered.entered === "Out") return entered.report;
+  const at = setupRunnerAtNamed(unnamed, entered.session);
   const partition = { tenant: workspace, project };
   const run: ProjectRun = {
     ...setupRunMade(
@@ -1280,7 +1297,7 @@ export async function setupChatHost(
   livePollMs: number,
 ): Promise<SetupReport> {
   const { workspace } = asked;
-  const at: SetupRunnerAt = { workspace, project: undefined };
+  const unnamed: SetupRunnerAt = { workspace, project: undefined };
   if (ports.surroundings.platform !== setupRunnerPlatform) {
     const site = asked.site ?? setupSessionSite(ports.files);
     if (site === undefined) return { report: "SiteUnknown" };
@@ -1288,13 +1305,14 @@ export async function setupChatHost(
       "$tenant",
       encodeURIComponent(workspace),
     );
-    return setupRunSaid(at, undefined, [], {
+    return setupRunSaid(unnamed, undefined, [], {
       ended: "Stopped",
       stop: { stop: "MacChatHost", page: `${site}${page}` },
     });
   }
   const entered = await enter();
   if (entered.entered === "Out") return entered.report;
+  const at = setupRunnerAtNamed(unnamed, entered.session);
   const run = setupRunMade(
     ports,
     true,

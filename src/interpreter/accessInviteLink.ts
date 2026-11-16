@@ -38,6 +38,11 @@
  * it asks the store for the used link the digest names whose user is the
  * caller, and the answer says what the link gave, never what is held now.
  *
+ * A SUMMARY IS A READ, AND ASKS NOBODY WHO THEY ARE. It is the open link's
+ * kind, a tenant's link's display name and role, and its maker's GitHub login,
+ * and anything not open, a token nobody holds among them, is answered the same
+ * `Ended`, which is what a redemption by anyone but the link's user answers.
+ *
  * A REGISTRATION IS ADMITTED BY READING A LINK, NEVER BY SPENDING IT. The
  * directory may ask twice about one registration, or fail it after admitting
  * it, and redeeming is still what spends the link.
@@ -53,6 +58,7 @@ import {
   type AccessInviteLink,
   type AccessInviteLinkMinted,
   type AccessInviteLinkRedeemed,
+  type AccessInviteLinkSummary,
   type AccessInviteLinks,
   type AccessTenantRole,
   type AccessWorkspaceLink,
@@ -80,7 +86,10 @@ import {
 import { oidcPrincipalSubject, type Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { TenantClaims } from "./projectCreation.ts";
-import type { AccessTenantNameStore } from "./accessTenantNames.ts";
+import {
+  accessTenantDisplayNames,
+  type AccessTenantNameStore,
+} from "./accessTenantNames.ts";
 import type { ProjectGrantWriter } from "./projectGrant.ts";
 import { asTenantId, type TenantId } from "./projectStore.ts";
 
@@ -105,6 +114,16 @@ export type AccessInviteLinkStored = AccessInviteLinkGrants & {
         readonly usedAtMs: number;
       }
   );
+
+/** The open link a digest names as its summary reads it, `mintedBy` a subject. */
+export type AccessInviteLinkPresented = { readonly mintedBy: string } & (
+  | { readonly kind: "Workspace" }
+  | {
+      readonly kind: "Tenant";
+      readonly tenant: TenantId;
+      readonly role: AccessTenantRole;
+    }
+);
 
 /** What one mint writes. */
 export interface AccessInviteLinkMint extends AccessInviteLinkGrants {
@@ -171,8 +190,8 @@ export interface AccessInviteLinkSpent extends AccessInviteLinkGrants {
  * bound and drops its ended links past the number kept, `spend` is the single
  * write taking an open tenant's link for `subject`, `revoke` the single write
  * ending an open one, `restore` gives back a spent link of either kind, and
- * `opened` and `presented` each read the open link a digest names without
- * spending it, `usedBy` reads the used link of either kind a digest names
+ * `opened`, `presented` and `summarized` each read the open link a digest
+ * names without spending it, `usedBy` reads the used link of either kind a digest names
  * whose user is `subject`, whatever the clock says; each `workspace` statement
  * is its tenant counterpart over the site's workspace links alone,
  * `workspaceSpend` also writing the workspace and refusing one another used
@@ -195,6 +214,7 @@ export interface AccessInviteLinkStore {
     digest: string,
   ): Promise<{ readonly newAccounts: boolean } | undefined>;
   presented(digest: string): Promise<"Tenant" | "Workspace" | undefined>;
+  summarized(digest: string): Promise<AccessInviteLinkPresented | undefined>;
   usedBy(
     digest: string,
     subject: string,
@@ -285,6 +305,13 @@ export type AccessInviteLinkRedemption =
   | AccessInviteLinkRefusal
   | { readonly outcome: "TenantTaken" };
 
+export type AccessInviteLinkSummaryResult =
+  | {
+      readonly outcome: "Summarized";
+      readonly summary: AccessInviteLinkSummary;
+    }
+  | { readonly outcome: "NotConfigured" };
+
 export interface AccessInviteLinkService {
   mint(
     caller: Principal,
@@ -311,6 +338,8 @@ export interface AccessInviteLinkService {
     caller: Principal,
     token: string,
   ): Promise<AccessInviteLinkRedemption>;
+  /** What the link `token` names gives, asked by anyone and spending nothing. */
+  summarized(token: string): Promise<AccessInviteLinkSummaryResult>;
   /** Whether a person with no account may register holding `token`: only while it is an open link whose maker could make accounts. */
   registrationAdmitted(token: string | undefined): Promise<boolean>;
 }
@@ -671,6 +700,33 @@ async function accessInviteLinkRedeemed(
   };
 }
 
+/** The summary of the open link `token` names, its maker named by the directory and a tenant's link's tenant by its display name, and `Ended` for any other token. */
+async function accessInviteLinkSummarized(
+  ports: AccessInviteLinkPorts,
+  links: AccessInviteLinkKept,
+  token: string,
+): Promise<AccessInviteLinkSummary> {
+  const presented = await links.store.summarized(links.secrets.digest(token));
+  if (presented === undefined) return { state: "Ended" };
+  const maker = (
+    await accessInviteLinkPeople(ports.directory, [presented.mintedBy])
+  )(presented.mintedBy);
+  const mintedBy =
+    maker.githubLogin === undefined ? {} : { mintedBy: maker.githubLogin };
+  if (presented.kind === "Workspace")
+    return { state: "Open", kind: "Workspace", ...mintedBy };
+  const displayName = await accessTenantDisplayNames(links.names, [
+    presented.tenant,
+  ]);
+  return {
+    state: "Open",
+    kind: "Tenant",
+    displayName: displayName(presented.tenant),
+    role: presented.role,
+    ...mintedBy,
+  };
+}
+
 /** The site's workspace link routes over a store. */
 function accessWorkspaceLinkRoutes(
   ports: AccessInviteLinkPorts,
@@ -717,6 +773,7 @@ export function accessInviteLinks(
       workspaceListed: notConfigured,
       workspaceRevoked: notConfigured,
       redeemed: notConfigured,
+      summarized: notConfigured,
       registrationAdmitted: () => Promise.resolve(false),
     };
   }
@@ -743,6 +800,10 @@ export function accessInviteLinks(
     ...accessWorkspaceLinkRoutes(ports, links, settings),
     redeemed: (caller, token) =>
       accessInviteLinkRedeemed(ports, links, settings, { caller, token }),
+    summarized: async (token) => ({
+      outcome: "Summarized",
+      summary: await accessInviteLinkSummarized(ports, links, token),
+    }),
     registrationAdmitted: async (token) =>
       token !== undefined &&
       token !== "" &&

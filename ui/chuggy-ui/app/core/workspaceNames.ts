@@ -5,19 +5,27 @@
  * sees only a project of. The id stays what every address names.
  */
 
-import type { AccessCallerTenants } from "../../../../src/contract/accessPlane.ts";
+import type {
+  AccessCallerTenant,
+  AccessCallerTenants,
+} from "../../../../src/contract/accessPlane.ts";
 
 import type { PanelState } from "./freshness.ts";
 
 export type WorkspaceNamed = (tenant: string) => string;
 
+/** The names a list of the reader's own workspaces gives, the id for any it leaves out. */
+export function workspaceNamesListed(
+  tenants: readonly AccessCallerTenant[],
+): WorkspaceNamed {
+  const named = new Map(
+    tenants.map((listed) => [listed.tenant, listed.displayName]),
+  );
+  return (tenant) => named.get(tenant) ?? tenant;
+}
+
 export function workspaceNames(
   held: PanelState<AccessCallerTenants>,
 ): WorkspaceNamed {
-  const named = new Map(
-    held.state === "Ready"
-      ? held.value.tenants.map((listed) => [listed.tenant, listed.displayName])
-      : [],
-  );
-  return (tenant) => named.get(tenant) ?? tenant;
+  return workspaceNamesListed(held.state === "Ready" ? held.value.tenants : []);
 }
