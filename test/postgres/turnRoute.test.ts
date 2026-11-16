@@ -85,11 +85,11 @@ const versioned = {
   "content-type": nativeHttpMediaType,
 };
 
-/** Publishes one route for every kind, as a scheduler does when it starts. */
+/** Publishes one route for threads, as a scheduler does when it starts. */
 async function published(route: PlacementRoute): Promise<void> {
   assert.deepEqual(
     await postgresSessionRoutingPrecondition(schedulerPool, {
-      routes: { Thread: route, Lead: route },
+      routes: { Thread: route },
       projectRoutes: new Map(),
     }).check(new AbortController().signal),
     { met: "Met" },
