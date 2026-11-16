@@ -80,6 +80,7 @@ import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketCreationStart.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import { ThemeFollowed } from "./ThemeFollowed.tsx";
 import { TicketLandingTab } from "./ticket/TicketLandingPage.tsx";
 import { TicketRunTab } from "./ticket/TicketRunPage.tsx";
 import { Welcome } from "./Welcome.tsx";
@@ -131,7 +132,17 @@ function PartitionLayout(): ReactNode {
   );
 }
 
-const rootRoute = createRootRoute({ component: Outlet });
+/** Every screen, under the theme its route wears. */
+function ConsoleRoot(): ReactNode {
+  return (
+    <>
+      <ThemeFollowed />
+      <Outlet />
+    </>
+  );
+}
+
+const rootRoute = createRootRoute({ component: ConsoleRoot });
 
 const landingRoute = createRoute({
   getParentRoute: () => rootRoute,

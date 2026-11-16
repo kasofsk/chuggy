@@ -1,6 +1,6 @@
 /**
- * The theme: what is stored, what is put on the document, and the control on
- * the preferences page that sets both.
+ * The light, dark or system scheme: what is stored, what is put on the
+ * document, and the control on the preferences page that sets both.
  *
  * `System` is the absence of the attribute rather than a third value, so the
  * cases read the attribute itself; a stored word this console does not know is
@@ -17,11 +17,12 @@ import { answer, drawnStrict } from "./screenHarness.tsx";
 import { atlas } from "./shellRouter.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
-  themeChoiceApply,
-  themeChoiceRead,
-  themeChoiceWrite,
-  themeStoreKey,
-} from "../app/browser/theme.ts";
+  schemeChoiceApply,
+  schemeChoiceRead,
+  schemeChoiceWrite,
+  schemeStoreKey,
+  schemeStoreKeyRetired,
+} from "../app/browser/scheme.ts";
 
 vi.mock("@tanstack/react-router", async (importOriginal) =>
   (await import("./shellRouter.tsx")).routerDouble(
@@ -44,7 +45,7 @@ function storeDouble(held: Record<string, string>): KeyValuePort {
 
 afterEach(() => {
   cleanup();
-  localStorage.removeItem(themeStoreKey);
+  localStorage.removeItem(schemeStoreKey);
   document.documentElement.removeAttribute("data-theme");
   vi.unstubAllGlobals();
 });
@@ -52,57 +53,77 @@ afterEach(() => {
 test("a choice is stored under its own key, and System stores nothing", () => {
   const held: Record<string, string> = {};
   const store = storeDouble(held);
-  themeChoiceWrite(store, "Dark");
-  expect(held[themeStoreKey]).toBe("Dark");
-  expect(themeChoiceRead(store)).toBe("Dark");
-  themeChoiceWrite(store, "System");
-  expect(themeStoreKey in held).toBe(false);
-  expect(themeChoiceRead(store)).toBe("System");
+  schemeChoiceWrite(store, "Dark");
+  expect(held[schemeStoreKey]).toBe("Dark");
+  expect(schemeChoiceRead(store)).toBe("Dark");
+  schemeChoiceWrite(store, "System");
+  expect(schemeStoreKey in held).toBe(false);
+  expect(schemeChoiceRead(store)).toBe("System");
 });
 
 test("a word this console does not know is read as System", () => {
-  expect(themeChoiceRead(storeDouble({ [themeStoreKey]: "Sepia" }))).toBe(
+  expect(schemeChoiceRead(storeDouble({ [schemeStoreKey]: "Sepia" }))).toBe(
     "System",
   );
 });
 
+test("a choice kept under the retired key is moved to its own and read as it was", () => {
+  const held: Record<string, string> = { [schemeStoreKeyRetired]: "Dark" };
+  expect(schemeChoiceRead(storeDouble(held))).toBe("Dark");
+  expect(held).toStrictEqual({ [schemeStoreKey]: "Dark" });
+});
+
+test("a choice under its own key wins over one left under the retired key", () => {
+  const held: Record<string, string> = {
+    [schemeStoreKey]: "Light",
+    [schemeStoreKeyRetired]: "Dark",
+  };
+  expect(schemeChoiceRead(storeDouble(held))).toBe("Light");
+});
+
+test("System under the retired key is moved as System, which keeps nothing", () => {
+  const held: Record<string, string> = { [schemeStoreKeyRetired]: "System" };
+  expect(schemeChoiceRead(storeDouble(held))).toBe("System");
+  expect(held).toStrictEqual({});
+});
+
 test("the attribute carries the choice, and System takes it off", () => {
   const root = document.documentElement;
-  themeChoiceApply(root, "Light");
+  schemeChoiceApply(root, "Light");
   expect(root.getAttribute("data-theme")).toBe("light");
-  themeChoiceApply(root, "Dark");
+  schemeChoiceApply(root, "Dark");
   expect(root.getAttribute("data-theme")).toBe("dark");
-  themeChoiceApply(root, "System");
+  schemeChoiceApply(root, "System");
   expect(root.hasAttribute("data-theme")).toBe(false);
 });
 
 /** The preferences page drawn afresh, which is what a reload does. */
-async function themePageDrawn(): Promise<void> {
+async function schemePageDrawn(): Promise<void> {
   cleanup();
   viewportAtEm(viewportDeskEm);
   await drawnStrict(<PreferencesPage />, () => answer({}, 404));
   await screen.findByRole("radio", { name: "Dark" });
 }
 
-function themeChecked(name: string): string | null {
+function schemeChecked(name: string): string | null {
   return screen.getByRole("radio", { name }).getAttribute("aria-checked");
 }
 
 test("the control checks one choice at a time, applies it, and writes what it applied", async () => {
-  await themePageDrawn();
+  await schemePageDrawn();
   expect(
     screen.getByRole("radiogroup", { name: "Light or dark" }),
   ).toBeDefined();
-  expect(themeChecked("System")).toBe("true");
-  expect(themeChecked("Dark")).toBe("false");
+  expect(schemeChecked("System")).toBe("true");
+  expect(schemeChecked("Dark")).toBe("false");
   fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-  expect(localStorage.getItem(themeStoreKey)).toBe("Dark");
+  expect(localStorage.getItem(schemeStoreKey)).toBe("Dark");
 
-  await themePageDrawn();
-  expect(themeChecked("Dark")).toBe("true");
-  expect(themeChecked("System")).toBe("false");
+  await schemePageDrawn();
+  expect(schemeChecked("Dark")).toBe("true");
+  expect(schemeChecked("System")).toBe("false");
   fireEvent.click(screen.getByRole("radio", { name: "System" }));
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
-  expect(localStorage.getItem(themeStoreKey)).toBeNull();
+  expect(localStorage.getItem(schemeStoreKey)).toBeNull();
 });

@@ -25,12 +25,12 @@ import type { Copy } from "../../core/copy.ts";
 import { persistentStore } from "../ports.ts";
 import { useChatPane } from "../shell/chatPaneHeld.ts";
 import {
-  themeChoiceApply,
-  themeChoiceRead,
-  themeChoiceWrite,
-  themeChoices,
-} from "../theme.ts";
-import type { ThemeChoice } from "../theme.ts";
+  schemeChoiceApply,
+  schemeChoiceRead,
+  schemeChoiceWrite,
+  schemeChoices,
+} from "../scheme.ts";
+import type { SchemeChoice } from "../scheme.ts";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
@@ -77,7 +77,7 @@ function PreferencesChoice<Option extends string>(props: {
   );
 }
 
-const preferencesSchemeWords: Readonly<Record<ThemeChoice, Copy>> = {
+const preferencesSchemeWords: Readonly<Record<SchemeChoice, Copy>> = {
   System: { id: "settings-preferences-scheme-system" },
   Light: { id: "settings-preferences-scheme-light" },
   Dark: { id: "settings-preferences-scheme-dark" },
@@ -86,18 +86,18 @@ const preferencesSchemeWords: Readonly<Record<ThemeChoice, Copy>> = {
 /** Light, dark or the system's, applied before it is stored so a store a
  * browser refuses still leaves the reader looking at what they asked for. */
 function PreferencesScheme(): ReactNode {
-  const [chosen, setChosen] = useState<ThemeChoice>(() =>
-    themeChoiceRead(persistentStore),
+  const [chosen, setChosen] = useState<SchemeChoice>(() =>
+    schemeChoiceRead(persistentStore),
   );
   return (
     <PreferencesChoice
       label={{ id: "settings-preferences-scheme" }}
       value={chosen}
-      options={themeChoices}
+      options={schemeChoices}
       words={preferencesSchemeWords}
       onChoose={(choice) => {
-        themeChoiceApply(document.documentElement, choice);
-        themeChoiceWrite(persistentStore, choice);
+        schemeChoiceApply(document.documentElement, choice);
+        schemeChoiceWrite(persistentStore, choice);
         setChosen(choice);
       }}
     />

@@ -32,6 +32,10 @@ import { afterEach, beforeEach, expect, vi } from "vitest";
 import { toJSONSchema } from "zod";
 import type { z } from "zod";
 
+import {
+  builtInThemeDefault,
+  builtInThemes,
+} from "../../../src/contract/appearance.ts";
 import { ticketActionReachResponseSchema } from "../../../src/contract/actionReach.ts";
 import {
   accessCallerAccountSchema,
@@ -49,6 +53,8 @@ import {
 } from "../../../src/contract/accessPlane.ts";
 import {
   agentAccountsResponseSchema,
+  projectAppearanceResponseSchema,
+  themeChoiceResponseSchema,
   agenticRefusalsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
@@ -607,6 +613,20 @@ const consoleReads: readonly ConsoleRead[] = [
       ],
       projects: [],
     }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/appearance`),
+    schema: projectAppearanceResponseSchema,
+    body: () => ({
+      theme: builtInThemes[builtInThemeDefault],
+      layer: "BuiltInDefault",
+      layers: {},
+    }),
+  },
+  {
+    path: consoleReadAt("/api/v1/appearance/choice"),
+    schema: themeChoiceResponseSchema,
+    body: () => ({}),
   },
   {
     path: consoleReadAt("/api/v1/agent-accounts"),

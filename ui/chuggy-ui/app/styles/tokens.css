@@ -182,10 +182,17 @@
 
     --focus: var(--ink-1);
 
-    /* type — the operator's own faces, because the policy admits no font */
-    --font-prose:
+    /* type — the operator's own faces, because the policy admits no font; a
+       theme puts one of the three stacks under prose */
+    --font-prose-system:
       system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
       sans-serif;
+    --font-prose-humanist:
+      Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", sans-serif;
+    --font-prose-serif:
+      "Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, Georgia,
+      serif;
+    --font-prose: var(--font-prose-system);
     --font-mono:
       ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo,
       Consolas, "Liberation Mono", monospace;
