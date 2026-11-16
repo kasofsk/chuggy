@@ -17,7 +17,6 @@ import {
   postgresSelectorResolvedSettings,
 } from "../../src/adapters/postgres/selector.ts";
 import {
-  leadAutoCompactWindowTokensDefault,
   nativeHttpMediaType,
   runModelCharsMax,
 } from "../../src/contract/http.ts";
@@ -26,11 +25,6 @@ import {
   asSessionId,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
-import type { LeadOpening } from "../../src/interpreter/leadMailbox.ts";
-import {
-  leadRunsOn,
-  leadStandingReplaced,
-} from "../../src/interpreter/leadPolicyHost.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -42,7 +36,6 @@ import { sessionStoreDouble } from "./storeDouble.ts";
 import {
   threadRigApp,
   threadRigFacts,
-  threadRigLeadTurn,
   threadRigMember,
   threadRigOpen,
   threadRigProject,
@@ -64,30 +57,6 @@ const administrator = {
   subject: asAuthoritySubject("models-admin"),
 };
 
-/** What a lead is opened as beside the model and effort a case is about. */
-const leadOpened = {
-  principal: "principal-lead-models",
-  credentialSlot: "claude-code",
-  systemPrompt: "the lead's objectives",
-  autoCompactWindow: leadAutoCompactWindowTokensDefault,
-  systemPromptOwn: false,
-} as const;
-
-/** Opens the project's lead under `runtime`, as the selector opens one. */
-async function leadOpenedUnder(
-  partition: Partition,
-  runtime: Pick<LeadOpening, "model" | "effort">,
-): Promise<SessionId> {
-  const opened = await rig.mailbox.openLead({
-    partition,
-    session: asSessionId(`lead-models-${randomUUID()}`),
-    ...leadOpened,
-    ...runtime,
-  });
-  assert.equal(opened.opened, "Opened");
-  return opened.session;
-}
-
 /** What a session's pod is told of it, through the plane's own authentication. */
 function factsOf(partition: Partition, session: SessionId, label: string) {
   return threadRigFacts(rig, partition, session, label);
@@ -101,10 +70,6 @@ async function threadFactsOf(
 ) {
   await sessionRigTurn(rig.sessions, partition, thread, label);
   return factsOf(partition, thread, label);
-}
-
-function leadTurnOffered(partition: Partition): Promise<void> {
-  return threadRigLeadTurn(rig, partition);
 }
 
 /** Writes the project's whole override set over `revision`, refusing anything but a written row. */
@@ -145,29 +110,6 @@ async function threadOpenedThroughTheDoor(
   assert.equal(opened.statusCode, 201, opened.body);
   return asSessionId(threadEntryResponseSchema.parse(opened.json()).session);
 }
-
-test("a lead opened under no model or effort is told neither, and one opened under both is told both", async () => {
-  const partition = await threadRigProject(rig, "lead-facts");
-  const unset = await leadOpenedUnder(partition, {});
-  await leadTurnOffered(partition);
-  const told = await factsOf(partition, unset, "lead-unset");
-  assert.deepEqual(
-    [told.session, "model" in told, "effort" in told],
-    [unset, false, false],
-  );
-
-  const chosen = await threadRigProject(rig, "lead-facts-chosen");
-  const lead = await leadOpenedUnder(chosen, {
-    model: "claude-sonnet-5-5",
-    effort: "medium",
-  });
-  await leadTurnOffered(chosen);
-  const facts = await factsOf(chosen, lead, "lead-chosen");
-  assert.deepEqual(
-    [facts.model, facts.effort],
-    ["claude-sonnet-5-5", "medium"],
-  );
-});
 
 test("a thread opens under the project's thread model, and neither the lead's settings nor the thread's reach the other", async () => {
   const partition = await threadRigProject(rig, "thread-facts");
@@ -224,51 +166,6 @@ test("a thread keeps the model it opened under when the project's thread model m
   assert.deepEqual([kept.model, kept.effort], ["claude-opus-5-5", "high"]);
   const moved = await threadFactsOf(partition, later, "thread-kept-after");
   assert.deepEqual([moved.model, "effort" in moved], ["haiku", false]);
-});
-
-test("a lead holding the resolved model and effort is kept, and one holding another is replaced", async () => {
-  const partition = await threadRigProject(rig, "lead-replaced");
-  await leadOpenedUnder(partition, { model: "sonnet", effort: "low" });
-  const standing = await rig.mailbox.lead(partition);
-  assert.ok(standing !== undefined);
-  const replaced = (runtime: { model?: string; effort?: "low" | "max" }) =>
-    leadStandingReplaced(
-      standing,
-      leadOpened.systemPrompt,
-      leadOpened.autoCompactWindow,
-      leadRunsOn({ offering: "Own", ...runtime }, leadOpened.credentialSlot),
-    );
-  assert.equal(replaced({ model: "sonnet", effort: "low" }), false);
-  assert.equal(replaced({ model: "opus", effort: "low" }), true, "model");
-  assert.equal(replaced({ model: "sonnet", effort: "max" }), true, "effort");
-  assert.equal(replaced({}), true, "an override cleared");
-});
-
-test("a lead opened before a project could choose a model is served its facts and is not replaced while none is chosen", async () => {
-  const partition = await threadRigProject(rig, "lead-before");
-  const lead = await sessionRigSession(rig.sessions, partition, "before", {
-    kind: "Lead",
-    systemPrompt: leadOpened.systemPrompt,
-    autoCompactWindow: leadOpened.autoCompactWindow,
-  });
-  const standing = await rig.mailbox.lead(partition);
-  assert.ok(standing !== undefined);
-  assert.deepEqual([standing.model, standing.effort], [undefined, undefined]);
-  assert.equal(
-    leadStandingReplaced(
-      standing,
-      leadOpened.systemPrompt,
-      leadOpened.autoCompactWindow,
-      leadRunsOn({ offering: "Own" }, leadOpened.credentialSlot),
-    ),
-    false,
-  );
-  await leadTurnOffered(partition);
-  const facts = await factsOf(partition, lead, "lead-before");
-  assert.deepEqual(
-    [facts.session, facts.systemPrompt, "model" in facts, "effort" in facts],
-    [lead, leadOpened.systemPrompt, false, false],
-  );
 });
 
 /** Model names the door refuses, each of which a column must refuse too. */

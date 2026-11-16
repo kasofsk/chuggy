@@ -73,6 +73,7 @@ import {
   leadRigNamed,
   leadRigPooled,
   leadRigProject,
+  leadRigTurnOffered,
   type LeadRig,
 } from "./leadHarness.ts";
 import {
@@ -104,12 +105,7 @@ async function claimedLead(label: string) {
     kind: "Lead",
   });
   const turn = sessionRigTurnId(label);
-  await rig.mailbox.offer({
-    partition,
-    turn,
-    input: '{"version":1}',
-    route: "InCluster",
-  });
+  await leadRigTurnOffered(rig, partition, turn, '{"version":1}', "InCluster");
   const attempt = await sessionRigAttempt(
     rig.sessions,
     partition,

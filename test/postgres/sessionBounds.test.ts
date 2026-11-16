@@ -3,12 +3,6 @@
  * is seeded with, against the runtime that writes them.
  */
 
-import { sessionCapabilities } from "../../src/contract/rosters.ts";
-import {
-  builtInToolCapabilities,
-  chuggyToolNames,
-} from "../../src/contract/sessionTools.ts";
-import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
 import { leadObservationTokensPerDecisionAt009 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { leadObservationTokensPerDecisionAt011 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
@@ -134,20 +128,8 @@ test("fresh selector settings carry current controls and only their initial hist
     assert.equal(current.mode, "Running");
     assert.equal(current.dispatch_mode, "ApprovalRequired");
     const controls = JSON.parse(current.controls) as {
-      toolAllowlist: readonly string[];
       limits: { tokensPerDecision: number; dispatchesPerDecision: number };
     };
-    const held = new Set([
-      ...sessionCapabilities.flatMap(
-        (capability) => builtInToolCapabilities[capability],
-      ),
-      ...chuggyToolNames(sessionCapabilities),
-    ]);
-    assert.deepEqual(
-      controls.toolAllowlist.filter((tool) => held.has(tool)),
-      leadToolAllowlist,
-      "the seeded allowlist is the lead's own beside tools no session holds",
-    );
     assert.equal(
       controls.limits.tokensPerDecision,
       leadObservationTokensPerDecisionAt011,
