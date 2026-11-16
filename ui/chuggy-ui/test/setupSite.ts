@@ -58,6 +58,7 @@ import type { RepositoryConfigurationReferenced } from "../../../src/contract/re
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
+  ExecutionSummary,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsHeldResponse,
@@ -72,9 +73,11 @@ import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/resp
 import type {
   ForgeAppName,
   OwnerFallback,
+  PersonalRunnerWait,
   PlacementRoute,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
+import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
 export interface SetupSiteRepository {
   readonly repository: string;
@@ -121,6 +124,7 @@ export interface SetupSiteProject {
   tickets: SetupSiteTicket[];
   drafts: number[];
   landings: Map<number, readonly TicketLandingResponse[]>;
+  executions: Map<number, readonly ExecutionSummary[]>;
   /** Whether the caller administers the project, which its abilities read says and the mint goes by. */
   administer: boolean;
   /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
@@ -153,7 +157,8 @@ export type SetupSiteRead =
   | "landed"
   | "moving"
   | "drafts"
-  | "landings";
+  | "landings"
+  | "executions";
 
 /** The caller's principal, which their chat host is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
 export const setupSiteMember =
@@ -251,6 +256,7 @@ export function setupSiteProject(
     tickets: [],
     drafts: [],
     landings: new Map(),
+    executions: new Map(),
     administer: true,
     pools: [],
     tokens: [],
@@ -1041,6 +1047,42 @@ function landings(
   );
 }
 
+/** The caller's own execution of `ticket`'s work, admitted and not begun, waiting on their personal runners as `wait` says, and short of `room` where a case says so. */
+export function setupSiteWaiting(
+  ticket: number,
+  wait: PersonalRunnerWait,
+  room?: ExecutionSummary["personalRunnerRoom"],
+): ExecutionSummary {
+  return {
+    ...ledgerExecution({
+      execution: `execution-${String(ticket)}`,
+      task: 1,
+      identity: workIdentity(1),
+      status: "Admitted",
+    }),
+    ticket,
+    mine: true,
+    ownerFallback: "Strict",
+    personalRunnerWait: wait,
+    ...(room === undefined ? {} : { personalRunnerRoom: room }),
+  };
+}
+
+/** A ticket's executions, the whole of them on one page unless a case cut it. */
+function executions(
+  site: SetupSite,
+  project: SetupSiteProject,
+  query: URLSearchParams,
+): SetupSiteAnswer {
+  return (
+    fated(site, "executions") ??
+    answered({
+      executions: project.executions.get(Number(query.get("ticket"))) ?? [],
+      ...(cut(site, "executions") ? { nextCursor: "more" } : {}),
+    })
+  );
+}
+
 const mintPath = "/worker-pool-registration-tokens";
 const redeemPath = "/api/v1/worker-pool-registrations";
 const chatMintPath = "/chat-host-registration-tokens";
@@ -1076,6 +1118,8 @@ function projectAnswered(
       );
     case "/execution-placement":
       return fated(site, "work") ?? answered(work(project));
+    case "/executions":
+      return executions(site, project, query);
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
     case "/owner-fallback":

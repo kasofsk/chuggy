@@ -58,8 +58,9 @@ import {
   setupSiteOpened,
   setupSiteProposed,
   setupSiteStages,
+  setupSiteWaiting,
 } from "./setupSite.ts";
-import type { SetupSite, SetupSiteStage } from "./setupSite.ts";
+import type { SetupSite, SetupSiteFate, SetupSiteStage } from "./setupSite.ts";
 import { nextOf, stoodSite } from "./setupStood.ts";
 import type { Asking } from "./setupStood.ts";
 
@@ -241,6 +242,7 @@ const mends: {
       phase: "Evaluation",
       pullRequest: false,
       bootstrapped: false,
+      wait: undefined,
     },
     hand(
       `Ticket 4 is in Evaluation. Setup is done when it finishes. ${pages}/tickets/4 shows where it is. Tell me when you want me to look again.`,
@@ -693,6 +695,68 @@ function landingWith(
   project.landings.set(6, landings);
   return own ? site : setupSiteBootstrap(site);
 }
+
+/** A site with everything but the ticket done and ticket 7 in its work with `executions`, its executions read meeting `fate` where a case says so. */
+function workingWith(
+  executions: Parameters<SetupSite["projects"][number]["executions"]["set"]>[1],
+  fate?: SetupSiteFate,
+): SetupSite {
+  const { site, project } = saidRunnable();
+  project.tickets.push({ ticket: 7, phase: "Work" });
+  project.executions.set(7, executions);
+  if (fate !== undefined) site.fates.set("executions", fate);
+  return site;
+}
+
+/** The tell of ticket 7 in its work, with what it waits on of the person's runners said after its phase. */
+const working = (waits: string): SaidThing =>
+  hand(
+    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${pages}/tickets/7 shows where it is. Tell me when you want me to look again.`,
+    "if the person asks to look again",
+  );
+
+const room = { freeMib: 1434, neededMib: 4096 };
+
+test.each([
+  [
+    "short of memory",
+    setupSiteWaiting(7, "Live", room),
+    " It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB.",
+  ],
+  [
+    "offline",
+    setupSiteWaiting(7, "Offline"),
+    " It is waiting on your personal runner, which is offline.",
+  ],
+  [
+    "unable to run it",
+    setupSiteWaiting(7, "Unable"),
+    " It is waiting on your personal runners, and none of them can run it.",
+  ],
+] as const)(
+  "a ticket whose starting execution waits on the person's runners %s is told that fact, and no remedy, in one sentence after its phase",
+  async (_, execution, waits) => {
+    expect((await nextSaid(workingWith([execution]))).thing).toEqual(
+      working(waits),
+    );
+  },
+);
+
+test("a ticket whose starting execution waits on runners that are live, with no room said, is told as it was before any wait was read", async () => {
+  expect(
+    (await nextSaid(workingWith([setupSiteWaiting(7, "Live")]))).thing,
+  ).toEqual(working(""));
+});
+
+test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
+  "a ticket's executions read answered as %s stops nothing, and the ticket is told as it was before any wait was read",
+  async (fate) => {
+    expect(
+      (await nextSaid(workingWith([setupSiteWaiting(7, "Live", room)], fate)))
+        .thing,
+    ).toEqual(working(""));
+  },
+);
 
 test("where the repository holds only the bootstrap, setup done on a ticket whose pull request stands closes on that pull request, by its address, as the one to merge so later tickets run on the repository's own configuration", async () => {
   expect(

@@ -798,10 +798,19 @@ export interface SetupCopy {
   readonly "setup-mend-finalization-tell": {
     readonly ticket: unknown;
     readonly phase: unknown;
+    readonly wait: unknown;
+    readonly free: unknown;
+    readonly needed: unknown;
     readonly ends: unknown;
     readonly bootstrap: unknown;
     readonly page: unknown;
   };
+  readonly "setup-mend-wait-room": {
+    readonly free: unknown;
+    readonly needed: unknown;
+  };
+  readonly "setup-mend-wait-offline": Record<never, never>;
+  readonly "setup-mend-wait-unable": Record<never, never>;
   readonly "setup-mend-decision-tell": {
     readonly ticket: unknown;
     readonly page: unknown;

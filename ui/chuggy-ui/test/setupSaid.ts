@@ -257,10 +257,13 @@ export const saidLanding: readonly Said[] = [
 /** The step each read leaves unread, and what the read is called there. The
  * owner fallback's leaves one unread only where the project has no pool, and
  * the person's personal runners' only where it also names a fallback, so
- * their cases are their own. */
+ * their cases are their own; a ticket's executions leave none unread. */
 export const saidUnread: Readonly<
   Record<
-    Exclude<SetupSiteRead, "workspaces" | "fallback" | "personal">,
+    Exclude<
+      SetupSiteRead,
+      "workspaces" | "fallback" | "personal" | "executions"
+    >,
     readonly [number, string]
   >
 > = {

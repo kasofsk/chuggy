@@ -41,6 +41,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
+import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import {
@@ -76,6 +77,7 @@ import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
   SetupAppPage,
   SetupLack,
+  SetupRunnerWait,
   SetupStanding,
   SetupStep,
 } from "./setupStanding.ts";
@@ -719,6 +721,28 @@ function setupBriefAsked(
   };
 }
 
+/** What a ticket's starting execution waits on of the person's runners, as the finalization tell says it: the fact, and no remedy. */
+function setupWaitSaid(wait: SetupRunnerWait | undefined): {
+  readonly wait: "room" | "offline" | "unable" | "none";
+  readonly free: CopyArgument;
+  readonly needed: CopyArgument;
+} {
+  switch (wait?.wait) {
+    case "Room":
+      return {
+        wait: "room",
+        free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
+        needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
+      };
+    case "Offline":
+      return { wait: "offline", free: "", needed: "" };
+    case "Unable":
+      return { wait: "unable", free: "", needed: "" };
+    case undefined:
+      return { wait: "none", free: "", needed: "" };
+  }
+}
+
 function setupTicketMend(
   lack: Extract<
     SetupLack,
@@ -771,6 +795,7 @@ function setupTicketMend(
             page,
             ends: lack.pullRequest ? "pull" : "finish",
             bootstrap: lack.bootstrapped ? "bootstrap" : "own",
+            ...setupWaitSaid(lack.wait),
           },
         },
         setupLookAgain,
