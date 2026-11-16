@@ -22,11 +22,10 @@ export type PlacementRead<View> =
   | { readonly result: "NotFound" }
   | { readonly result: "Found"; readonly view: View };
 
-/** A write's answer, and the refusal of its own kind of placement where it has one. */
-export type PlacementWritten<View, Refusal extends string = never> =
+/** A write's answer. */
+export type PlacementWritten<View> =
   | { readonly result: "NotFound" }
   | { readonly result: "HostedRunsNotGranted" }
-  | ([Refusal] extends [never] ? never : { readonly result: Refusal })
   | { readonly result: "Written" | "Unchanged"; readonly view: View };
 
 /** One project's placement of some kind of work, read under `Read` and written whole by an administrator. */
@@ -106,28 +105,22 @@ export interface PlacementHeld<Placement> {
  * A placement an administrator writes, refused where it names a hosted route
  * the tenant does not grant them, and answered with the view read after it.
  * `held` is asked only of an administrator, and answers the placement to write
- * with the routes the grant decides, or the write's own refusal.
+ * with the routes the grant decides.
  */
-export async function placementWritten<
-  Placement,
-  View,
-  Refusal extends string = never,
->(
+export async function placementWritten<Placement, View>(
   access: ProjectAccess,
   principal: Principal,
   partition: Partition,
-  held: () => Promise<PlacementHeld<Placement> | Refusal>,
+  held: () => Promise<PlacementHeld<Placement>>,
   write: (
     authority: Authority,
     placement: Placement,
   ) => Promise<PlacementWrite>,
   view: (hosted: boolean) => Promise<View>,
-): Promise<PlacementWritten<View, Refusal>> {
+): Promise<PlacementWritten<View>> {
   const authority = await access.authorize(principal, partition, "Administer");
   if (authority === undefined) return { result: "NotFound" };
   const decided = await held();
-  if (typeof decided === "string")
-    return { result: decided } as PlacementWritten<View, Refusal>;
   const hosted = await hostedRunsGranted(access, principal, partition.tenant);
   if (placementRefused(decided.routes, hosted))
     return { result: "HostedRunsNotGranted" };
