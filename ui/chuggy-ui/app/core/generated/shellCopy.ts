@@ -55,6 +55,8 @@ export interface ShellCopy {
     readonly login: unknown;
   };
   readonly "shell-welcome-next": Record<never, never>;
+  readonly "shell-welcome-claude-code-absent": Record<never, never>;
+  readonly "shell-welcome-claude-code-install": Record<never, never>;
   readonly "shell-welcome-admin": {
     readonly workspace: unknown;
   };

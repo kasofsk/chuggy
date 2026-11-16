@@ -1,8 +1,8 @@
 /**
  * The page a signed-in reader with no project lands on: who they are signed in
- * as, where they stand, and the setup prompt for their agent, with the line
- * that says what pasting it does. The agent walks them through the rest, so
- * this page only starts it.
+ * as, where they stand, and the setup prompt for their agent, open, with the
+ * line that says what pasting it does and where Claude Code is got. The agent
+ * walks them through the rest, so this page only starts it.
  *
  * The prompt is drawn before either read has answered. Under it, by where the
  * reader stands: for an admin of a workspace, that workspace, and nothing
@@ -26,6 +26,7 @@ import {
   welcomeAccountLine,
   welcomeAdminLine,
   welcomeAdminsLine,
+  welcomeClaudeCodeSetupAddress,
   welcomePeople,
   welcomeStanding,
   welcomeWords,
@@ -117,6 +118,23 @@ function WelcomeStandingLines(props: {
   }
 }
 
+/** Where a reader without Claude Code gets it, on Anthropic's own page. */
+function WelcomeClaudeCode(): ReactNode {
+  const text = useCopyText();
+  return (
+    <p className={welcomeLineClassName}>
+      {text(welcomeWords.claudeCodeAbsent)}{" "}
+      <a
+        href={welcomeClaudeCodeSetupAddress}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        {text(welcomeWords.claudeCodeInstall)}
+      </a>
+    </p>
+  );
+}
+
 export function Welcome(): ReactNode {
   const text = useCopyText();
   const standing = welcomeStanding(usePanelState(callerTenantsQuery()));
@@ -131,8 +149,9 @@ export function Welcome(): ReactNode {
           </p>
         )}
         <WelcomeStandingLines standing={standing} people={people} />
-        <SetupPrompt />
+        <SetupPrompt folded={false} />
         <p className={welcomeLineClassName}>{text(welcomeWords.next)}</p>
+        <WelcomeClaudeCode />
       </ProjectlessColumn>
     </ProjectlessFrame>
   );

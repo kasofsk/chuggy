@@ -389,7 +389,7 @@ function ProjectCreation(props: {
     );
   return (
     <ProjectlessColumn title={text({ id: "project-creation-new-title" })}>
-      <SetupPrompt />
+      <SetupPrompt folded />
       <ProjectCreationForm offer={offer} />
     </ProjectlessColumn>
   );

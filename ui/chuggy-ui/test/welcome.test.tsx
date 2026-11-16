@@ -1,8 +1,8 @@
 /**
  * The welcome page a signed-in reader with no project lands on at the root,
  * over each place they may stand: admin of a workspace, a plain member of
- * one, or in none. Each is drawn the folded setup prompt and the line saying
- * what pasting it does, and no form; each is told where they stand, and the
+ * one, or in none. Each is drawn the setup prompt open, the line saying what
+ * pasting it does and the one saying where Claude Code is got, and no form; each is told where they stand, and the
  * GitHub login their account records is said where a workspace's people list
  * answers it.
  */
@@ -124,24 +124,36 @@ function servedWelcome(
 }
 
 /** What every place a reader may stand is drawn alike: the page's heading,
- * the folded prompt with its control, the line saying what pasting it does,
- * and no form. */
+ * the open prompt with its control, the line saying what pasting it does,
+ * the line saying where Claude Code is got, and no form. */
 function welcomeDrawn(): void {
   expect(
     screen.getByRole("heading", { level: 1, name: "Welcome to chuggy" }),
   ).toBeDefined();
+  expect(screen.getByText(copyTextEn(claudeCodeLineAbout))).toBeDefined();
   expect(
-    screen.getByRole("button", { name: copyTextEn(claudeCodeLineAbout) }),
-  ).toBeDefined();
+    screen.queryByRole("button", { name: copyTextEn(claudeCodeLineAbout) }),
+  ).toBeNull();
   expect(
     screen.getByRole("button", { name: copyTextEn(claudeCodeLineCopy) }),
   ).toBeDefined();
-  expect(document.querySelector("code")).toBeNull();
+  expect(document.querySelector("code")?.textContent).toBe(
+    claudeCodeLine(site.origin),
+  );
   expect(
     screen.getByText(
       "Paste it into Claude Code in the repository you want chuggy on. It walks you through the rest.",
     ),
   ).toBeDefined();
+  const install = screen.getByRole("link", { name: "Install it" });
+  expect(install.getAttribute("href")).toBe(
+    "https://code.claude.com/docs/en/setup",
+  );
+  expect(install.getAttribute("target")).toBe("_blank");
+  expect(install.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(install.parentElement?.textContent).toBe(
+    "No Claude Code yet? Install it",
+  );
   expect(screen.queryAllByRole("textbox")).toStrictEqual([]);
   expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
 }
