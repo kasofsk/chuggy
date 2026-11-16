@@ -330,93 +330,30 @@ export function sessionRunnerServes(
 }
 
 /**
- * A member's turn admitted on the route it is stamped with, and whether on the
- * lead's subsidy rather than their grant, or the reason it is not. Only an
- * inquiry is refused `SubsidyExhausted`.
+ * A member's turn admitted on the route it is stamped with, which no subsidy
+ * pays for, or the reason it is not.
  */
 export type SessionSpend =
-  SessionSpendThread | { readonly spend: "SubsidyExhausted" };
-
-/** What a turn of a member's thread is answered, which no subsidy pays for. */
-export type SessionSpendThread =
   | {
       readonly spend: "Admitted";
       readonly route: PlacementRoute;
-      readonly subsidized: boolean;
+      readonly subsidized: false;
     }
   | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
 
 /**
- * Whether an inquiry on this route forks a lead its tenant or the deployment
- * may no longer spend the subsidy on. It forks the lead's own slot whoever
- * asks, so a member holding the hosted grant is refused it too.
+ * The route a member may spend a turn of their thread on now: a hosted one
+ * under the tenant's grant, and a runner one where a runner that would take it
+ * is registered, the turn stamped with this route and so both asked of the
+ * resolution it keeps. A turn of a member's own session is never in cluster,
+ * whatever the site's routing says, and only their chat host takes it.
  */
-async function sessionSpendSubsidyExhausted(
-  routes: SessionRouteReads,
-  partition: Partition,
-  route: PlacementRoute,
-): Promise<boolean> {
-  if (!placementRouteHosted[route]) return false;
-  const spend = await routes.subsidizedLeadSpend(partition);
-  return spend !== undefined && subsidizedLeadSpendExhausted(spend);
-}
-
-/**
- * Whether a member's turn of this kind on this route may be spent without
- * their hosted grant: an inquiry of a subsidized lead, which the offering pays
- * for. The inquiry door forks it only from a lead on the profile's slot, since
- * one opened before the project chose the subsidy stands on the hosted one, so
- * it is asked only of a member the grant does not already admit.
- */
-async function sessionSpendSubsidized(
-  routes: SessionRouteReads,
-  partition: Partition,
-  kind: SessionKind,
-  route: PlacementRoute,
-): Promise<boolean> {
-  return (
-    kind === "Inquiry" &&
-    placementRouteHosted[route] &&
-    (await routes.leadOffering(partition)) === "Subsidized"
-  );
-}
-
-/**
- * The route a member may spend a turn of this kind on now: a hosted one under
- * the tenant's grant, or under the lead's subsidy for an inquiry, and a runner
- * one where a runner that would take it is registered, the turn stamped with
- * this route and so both asked of the resolution it keeps. A turn of a
- * member's own session is never in cluster, whatever the site's routing says,
- * and only their chat host takes it, and an inquiry of a subsidized lead whose
- * tenant or deployment has reached its cap is refused before anything else.
- */
-export function sessionSpendRoute(
-  access: ProjectAccess,
-  routes: SessionRouteReads,
-  principal: Principal,
-  partition: Partition,
-  kind: "Inquiry",
-): Promise<SessionSpend>;
-export function sessionSpendRoute(
-  access: ProjectAccess,
-  routes: SessionRouteReads,
-  principal: Principal,
-  partition: Partition,
-  kind: "Thread",
-): Promise<SessionSpendThread>;
-export function sessionSpendRoute(
-  access: ProjectAccess,
-  routes: SessionRouteReads,
-  principal: Principal,
-  partition: Partition,
-  kind: Exclude<SessionKind, "Lead">,
-): Promise<SessionSpend>;
 export async function sessionSpendRoute(
   access: ProjectAccess,
   routes: SessionRouteReads,
   principal: Principal,
   partition: Partition,
-  kind: Exclude<SessionKind, "Lead">,
+  kind: "Thread",
 ): Promise<SessionSpend> {
   if (memberScopeReserved(partition))
     return sessionRunnerServes(
@@ -426,27 +363,15 @@ export async function sessionSpendRoute(
       ? { spend: "Admitted", route: "Pool", subsidized: false }
       : { spend: "NoRunner" };
   const { route } = await routes.route(partition, kind);
-  if (
-    kind === "Inquiry" &&
-    (await sessionSpendSubsidyExhausted(routes, partition, route))
-  )
-    return { spend: "SubsidyExhausted" };
-  const granted = await placementRouteGranted(
-    access,
-    principal,
-    partition,
-    route,
-  );
-  const subsidized =
-    !granted && (await sessionSpendSubsidized(routes, partition, kind, route));
-  if (!granted && !subsidized) return { spend: "HostedRunsNotGranted" };
+  if (!(await placementRouteGranted(access, principal, partition, route)))
+    return { spend: "HostedRunsNotGranted" };
   if (placementRouteHosted[route])
-    return { spend: "Admitted", route, subsidized };
+    return { spend: "Admitted", route, subsidized: false };
   return sessionRunnerServes(
     route,
     sessionRunnersServing(await routes.runners(partition, principal), kind),
   )
-    ? { spend: "Admitted", route, subsidized }
+    ? { spend: "Admitted", route, subsidized: false }
     : { spend: "NoRunner" };
 }
 

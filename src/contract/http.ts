@@ -388,24 +388,6 @@ export const leadTurnsAnsweredMax = 32;
  */
 export const agenticRefusalLedgerAnsweredMax = 32;
 
-/**
- * The longest question a member may ask the lead aside. A door a human types at
- * is bounded by what a human types rather than by what the mailbox column
- * holds, and an inquiry is one exchange and not a conversation: a member with
- * more to say than this has a thread.
- */
-export const inquiryQuestionCharsMax = 4_096;
-
-/**
- * How many inquiries one member may have unanswered at once. It is the whole of
- * what stops one member spending the project's shared account on questions, so
- * a member who asked and read neither answer waits.
- */
-export const inquiriesOpenPerMemberMax = 2;
-
-/** How many of a lead's inquiries one listing answers with, newest first. */
-export const inquiriesAnsweredMax = 32;
-
 /** The longest summary a result carries, which the manifest reader accepts and a later evaluation retains. */
 export const resultReportCharsMax = 8_192;
 
@@ -651,8 +633,6 @@ export const nativeHttpRoutes = {
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
   leadContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/context`,
-  leadInquiries: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries`,
-  leadInquiry: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries/:session`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,
@@ -827,12 +807,10 @@ export const sessionSystemPromptCharsMax =
   selectorSettingsTextCharsMax * 2 + leadObjectivesFixedCharsMax;
 
 /**
- * The most an inquiry's objectives weigh beyond the lead's own that it forks,
- * which is the sentence saying what being a fork means. It is named here rather
- * than derived because the column every kind's objectives share is generated
- * from the roster below and the contract may not read the interpreter that
- * composes the sentence; `test/contract/rosters.test.ts` holds that composition
- * to this bound, exactly as it holds a lead's.
+ * The most an inquiry's objectives weigh beyond the lead's own that it forked,
+ * which is the sentence saying what being a fork means. No door opens an
+ * inquiry now, but the rows already written hold one, and the column every
+ * kind's objectives share is generated from the roster below.
  */
 export const inquiryObjectivesFixedCharsMax = 1_024;
 

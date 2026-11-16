@@ -154,8 +154,6 @@ export const sessionBearerRouteClasses = {
   lead: partitionRead,
   leadTranscript: partitionRead,
   leadContext: partitionRead,
-  leadInquiries: readRefusedWrite,
-  leadInquiry: partitionRead,
   executions: partitionRead,
   execution: partitionRead,
   outputContent: partitionRead,

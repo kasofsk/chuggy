@@ -321,6 +321,26 @@ test.each([
   },
 );
 
+test("the reader's own run waiting on live runners short of memory says how much they have free and it needs, beside the link to where they are managed", async () => {
+  await runPageDrawn(
+    atlas,
+    ownRunAnswered({
+      personalRunnerWait: "Live",
+      personalRunnerRoom: { freeMib: 1_434, neededMib: 4_096 },
+    }),
+  );
+  const sentence = "Waiting on your personal runners";
+  expect(nowLineParts()).toStrictEqual([
+    sentence,
+    "· 1.4 GiB free, needs 4 GiB",
+  ]);
+  expect(
+    within(nowCard())
+      .getByRole("link", { name: sentence })
+      .getAttribute("href"),
+  ).toMatch(/\/settings\/workspace\/runner$/u);
+});
+
 test("the reader's own run the server answers no wait for says nothing of a runner", async () => {
   await runPageDrawn(atlas, ownRunAnswered({}));
   expect(nowCard().textContent).not.toContain("Waiting on your");

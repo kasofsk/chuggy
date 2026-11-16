@@ -377,7 +377,6 @@ function boundary(
     undefined,
     undefined,
     ports(held),
-    undefined,
     routes,
     projectArtifacts,
   );

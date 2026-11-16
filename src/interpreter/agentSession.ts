@@ -328,7 +328,6 @@ export interface AgentSessionOpening {
   readonly session: SessionId;
   readonly kind: SessionKind;
   readonly principal: Principal;
-  readonly parent?: SessionId;
   readonly capabilities: readonly SessionCapability[];
   readonly credentialSlot: string;
   /** What the session was told it is, recorded once and read by the pod as its system prompt. */

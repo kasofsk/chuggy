@@ -81,44 +81,8 @@ function grantingNoHostedRuns(asked: string[]): ProjectAccess {
   };
 }
 
-test("a member the tenant grants no hosted runs may ask a subsidized lead in cluster, on the subsidy", async () => {
-  const asked: string[] = [];
-  assert.deepEqual(
-    await sessionSpendRoute(
-      grantingNoHostedRuns(asked),
-      sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized"),
-      member,
-      project,
-      "Inquiry",
-    ),
-    { spend: "Admitted", route: "InCluster", subsidized: true },
-  );
-  assert.deepEqual(asked, ["ExecuteHosted"]);
-});
-
-test("a member the tenant grants hosted runs asks a subsidized lead in cluster on their grant, not the subsidy", async () => {
-  assert.deepEqual(
-    await sessionSpendRoute(
-      {
-        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
-        authorizeTenant: (principal) =>
-          Promise.resolve(memberAuthority(principal)),
-        authorizeSite: projectAccessSiteRefused,
-      },
-      sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized"),
-      member,
-      project,
-      "Inquiry",
-    ),
-    { spend: "Admitted", route: "InCluster", subsidized: false },
-  );
-});
-
-test("a member the tenant grants no hosted runs is refused an inquiry of an own lead in cluster, and a thread of a subsidized one", async () => {
-  for (const [offering, kind] of [
-    ["Own", "Inquiry"],
-    ["Subsidized", "Thread"],
-  ] as const) {
+test("a member the tenant grants no hosted runs is refused a thread in cluster, whichever offering the project's lead stands on", async () => {
+  for (const offering of ["Own", "Subsidized"] as const) {
     const asked: string[] = [];
     assert.deepEqual(
       await sessionSpendRoute(
@@ -130,12 +94,12 @@ test("a member the tenant grants no hosted runs is refused an inquiry of an own 
         ),
         member,
         project,
-        kind,
+        "Thread",
       ),
       { spend: "HostedRunsNotGranted" },
-      `${offering} ${kind}`,
+      offering,
     );
-    assert.deepEqual(asked, ["ExecuteHosted"], `${offering} ${kind}`);
+    assert.deepEqual(asked, ["ExecuteHosted"], offering);
   }
 });
 
@@ -151,54 +115,7 @@ const subsidySpent = {
   },
 } as const;
 
-test("an inquiry of a subsidized lead whose tenant or deployment has reached its cap is refused SubsidyExhausted, whatever grant its asker holds, and asks no grant", async () => {
-  for (const [cap, spend] of Object.entries(subsidySpent))
-    for (const granted of [false, true]) {
-      const asked: string[] = [];
-      assert.deepEqual(
-        await sessionSpendRoute(
-          {
-            authorize: (principal) =>
-              Promise.resolve(memberAuthority(principal)),
-            authorizeTenant: (principal, _tenant, kind) => {
-              asked.push(kind);
-              return Promise.resolve(
-                granted ? memberAuthority(principal) : undefined,
-              );
-            },
-            authorizeSite: projectAccessSiteRefused,
-          },
-          sessionRoutesAt(
-            { Lead: "InCluster" },
-            undefined,
-            "Subsidized",
-            spend,
-          ),
-          member,
-          project,
-          "Inquiry",
-        ),
-        { spend: "SubsidyExhausted" },
-        `${cap} ${String(granted)}`,
-      );
-      assert.deepEqual(asked, [], `${cap} ${String(granted)}`);
-    }
-});
-
-test("an inquiry of a subsidized lead under both caps, and a thread of one past them, are admitted as before", async () => {
-  assert.deepEqual(
-    await sessionSpendRoute(
-      grantingNoHostedRuns([]),
-      sessionRoutesAt({ Lead: "InCluster" }, undefined, "Subsidized", {
-        ...sessionRoutesSubsidyUnspent,
-        tenantMicros: sessionRoutesSubsidyUnspent.tenantMonthlyMicros - 1,
-      }),
-      member,
-      project,
-      "Inquiry",
-    ),
-    { spend: "Admitted", route: "InCluster", subsidized: true },
-  );
+test("a thread of a member the tenant grants hosted runs is admitted on their grant where the project's subsidized lead has reached its cap", async () => {
   assert.deepEqual(
     await sessionSpendRoute(
       {

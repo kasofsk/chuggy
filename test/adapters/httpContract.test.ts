@@ -70,8 +70,6 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/lead",
   "/api/v1/tenants/:tenant/projects/:project/lead/transcript",
   "/api/v1/tenants/:tenant/projects/:project/lead/context",
-  "/api/v1/tenants/:tenant/projects/:project/lead/inquiries",
-  "/api/v1/tenants/:tenant/projects/:project/lead/inquiries/:session",
   "/api/v1/tenants/:tenant/projects/:project/executions",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",

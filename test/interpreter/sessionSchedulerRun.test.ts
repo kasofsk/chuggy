@@ -1000,8 +1000,7 @@ test("a thread whose roster reads no tree is placed with no checkout, bound or n
 /**
  * The scheduler places what the row says rather than what a kind's default
  * roster says, so a session recorded with `RepositoryRead` gets its checkout
- * whatever kind it is. `inquiryCapabilities` does not hold it today; the
- * placement is not where that is decided.
+ * whatever kind it is: the placement is not where a kind's roster is decided.
  */
 test("a session recorded with a roster that reads the tree is placed with the binding", async () => {
   const asked: SessionPlacement[] = [];

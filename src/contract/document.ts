@@ -89,9 +89,6 @@ function nativeHttpContractDocumentSchemas(): unknown {
     projectRepositoryConfigure: nativeHttpContractDocumentInput(
       projectRepositoryConfigureSchema,
     ),
-    leadInquiry: nativeHttpContractDocumentInput(
-      nativeHttpEndpoints.askLead.body,
-    ),
     selectorProjectSettings: nativeHttpContractDocumentInput(
       selectorProjectSettingsSchema,
     ),

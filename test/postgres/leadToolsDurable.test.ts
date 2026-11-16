@@ -723,6 +723,29 @@ test("a session provisioned from an issuer and a subject is the membership's own
   );
 });
 
+test("the provisioning command refuses to open an inquiry, naming the kind, and opens none", async () => {
+  const partition = await leadToolsProject("provisioned-inquiry");
+  const session = `session-provisioned-inquiry-${randomUUID()}`;
+  const refused = await provisionSession({
+    CHUG_PROVISION_SESSION_TENANT: partition.tenant,
+    CHUG_PROVISION_SESSION_PROJECT: partition.project,
+    CHUG_PROVISION_SESSION_SESSION: session,
+    CHUG_PROVISION_SESSION_KIND: "Inquiry",
+    CHUG_PROVISION_SESSION_PRINCIPAL: "principal-provisioned-inquiry",
+  });
+  assert.equal(refused.code, 1, refused.output);
+  assert.match(
+    refused.output,
+    /CHUG_PROVISION_SESSION_KIND may not be Inquiry/u,
+  );
+  assert.deepEqual(
+    await harness.query(`SELECT 1 FROM agent_session WHERE session=$1`, [
+      session,
+    ]),
+    [],
+  );
+});
+
 test("a session may be named by one principal form and never by two", async () => {
   const partition = await leadToolsProject("bothforms");
   const both = await provisionSession({
