@@ -2,9 +2,9 @@
  * The folder's repository added by the setup program itself: `bind` named to
  * run at once wherever the next thing is a trip to GitHub or the repository
  * both apps are granted, reading the checklist again while GitHub is not yet
- * done and binding once it is, with the write the console's Add makes; and,
- * where an app is not granted it, one tell naming every such app with where
- * it is given it.
+ * done or a look went unanswered and binding once it is, with the write the
+ * console's Add makes; and, where an app is not granted it, one tell naming
+ * every such app with where it is given it.
  *
  * @vitest-environment node
  */
@@ -12,6 +12,8 @@
 import { expect, test } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { apiAttemptsMax } from "../app/core/apiRequest.ts";
+import { setupBindPollMs } from "../app/core/setupBind.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
@@ -20,7 +22,7 @@ import {
   machineSignedIn,
   machineSite,
 } from "./setupMachine.ts";
-import type { SetupMachine } from "./setupMachine.ts";
+import type { Answering, SetupMachine } from "./setupMachine.ts";
 import {
   setupSiteAccount,
   setupSiteAt,
@@ -149,6 +151,97 @@ test("a bind whose wait ends before GitHub is done binds nothing, says what GitH
   ]);
   expect(binds(machine)).toEqual([]);
   expect(setupReportExit(report)).toBe(0);
+});
+
+const workspacesPath = `${machineSite}/access/v1/workspaces`;
+const installationsPath = `${machineSite}/api/v1/tenants/acme/forge-installations`;
+const bound = `did: asked chuggy to add ${repository}, and it answered ${repository} · Default configuration added`;
+const unconfirmed = [
+  `site: ${machineSite}, sign-in not confirmed`,
+  "found: the site did not say which workspaces are yours (Unreachable)",
+];
+
+/** Has every request to `path` answered `how` until one look's read of it has used up its tries, and counts what is sent there. */
+function failingOnce(
+  machine: SetupMachine,
+  path: string,
+  how: Exclude<Answering, "Answers">,
+): { readonly asked: () => number } {
+  const tries = how === "Refuses" ? apiAttemptsMax : 1;
+  let asked = 0;
+  machine.answering = () => {
+    if (machine.sent.at(-1) !== `GET ${path}`) {
+      machine.api = "Answers";
+      return;
+    }
+    asked += 1;
+    machine.api = asked <= tries ? how : "Answers";
+  };
+  return { asked: () => asked };
+}
+
+for (const how of ["Silent", "Fails", "Refuses"] as const)
+  test(`a bind whose first look the site does not answer, answering ${how}, looks again and binds once`, async () => {
+    const machine = await inFolder(connected({ portal: true, worker: true }));
+    const workspaces = failingOnce(machine, workspacesPath, how);
+    const said = lines(await machine.command(["bind", ...flags]));
+    expect(workspaces.asked()).toBeGreaterThan(
+      how === "Refuses" ? apiAttemptsMax : 1,
+    );
+    expect(said[1]).toBe(bound);
+    expect(step(said, "repository")).toBe(
+      `step: repository  done     ${repository}`,
+    );
+    expect(binds(machine)).toHaveLength(1);
+  });
+
+test("a bind whose checklist read the site does not answer once looks again and binds", async () => {
+  const machine = await inFolder(connected({ portal: true, worker: true }));
+  const installations = failingOnce(machine, installationsPath, "Silent");
+  const said = lines(await machine.command(["bind", ...flags]));
+  expect(installations.asked()).toBeGreaterThan(1);
+  expect(said[1]).toBe(bound);
+  expect(binds(machine)).toHaveLength(1);
+});
+
+test("a bind whose site stays unanswering for the whole wait ends with that look's report, after more than one look", async () => {
+  const machine = await inFolder(connected({ portal: true, worker: true }));
+  const startedMs = machine.nowMs;
+  machine.api = "Silent";
+  let looks = 0;
+  machine.answering = () => {
+    if (machine.sent.at(-1) === `GET ${workspacesPath}`) looks += 1;
+  };
+  const said = lines(
+    await machine.command(["bind", ...flags, "--wait-secs", "9"]),
+  );
+  expect(said.slice(0, 2)).toEqual(unconfirmed);
+  expect(looks).toBeGreaterThan(1);
+  expect(machine.nowMs - startedMs).toBeGreaterThanOrEqual(9_000);
+  expect(binds(machine)).toEqual([]);
+});
+
+test("a bind the site refuses as signed out ends at its first look, with no poll and no bind", async () => {
+  const machine = await inFolder(connected({ portal: true, worker: true }));
+  machine.admits = false;
+  const startedMs = machine.nowMs;
+  const said = lines(await machine.command(["bind", ...flags]));
+  expect(said[0]).toBe(`site: ${machineSite}, not signed in`);
+  expect(machine.nowMs - startedMs).toBeLessThan(setupBindPollMs);
+  expect(binds(machine)).toEqual([]);
+});
+
+test("a bind whose first look fails while Connect GitHub is next opens the page once, at the look that reads where the person stands", async () => {
+  const machine = await machineSignedIn(setupSiteAt("Project"));
+  const connect = `${machineSite}/acme/widgets/repositories?connect=github`;
+  const before = machine.launched.length;
+  const workspaces = failingOnce(machine, workspacesPath, "Silent");
+  const said = lines(
+    await machine.command(["bind", ...flags, "--wait-secs", "9"]),
+  );
+  expect(workspaces.asked()).toBeGreaterThan(1);
+  expect(machine.launched.slice(before)).toEqual([["xdg-open", connect]]);
+  expect(said[1]).toBe(`did: opened ${connect} in a browser`);
 });
 
 test("bind run where GitHub is not connected opens the repositories page that begins Connect GitHub, with the opener sign-in uses, and says so", async () => {
