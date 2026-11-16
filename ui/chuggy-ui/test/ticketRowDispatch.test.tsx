@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
-import { ticketDispatchList } from "../app/core/ticketActions.ts";
+import { ticketDispatchList } from "../app/core/ticketQueries.ts";
 import {
   answer,
   apiDouble,

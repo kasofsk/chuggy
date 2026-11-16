@@ -13,7 +13,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationContextList } from "../app/core/configurationQueries.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";

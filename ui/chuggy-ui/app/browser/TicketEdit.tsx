@@ -51,14 +51,12 @@ import type {
   CreationOffer,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
-import {
-  TicketUpdateRefused,
-  reviseAndUpdateTicket,
-} from "../core/ticketCreationRun.ts";
+import { reviseAndUpdateTicket } from "../core/ticketCreationRun.ts";
 import type {
   CreationContext,
   TicketUpdateRequest,
 } from "../core/ticketCreationRun.ts";
+import { TicketUpdateRefused } from "../core/ticketCreationRefused.ts";
 import {
   editFormOf,
   editOfferListed,

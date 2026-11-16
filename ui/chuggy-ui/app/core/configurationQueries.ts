@@ -16,10 +16,32 @@ import {
   readProjectConfigurations,
   readProjectConfigurationsVersions,
 } from "./repositoryConfigurations.ts";
-import {
-  creationContextList,
-  readCreationContext,
-} from "./ticketCreationRun.ts";
+import { projectListReread } from "./projectQueryKeys.ts";
+import type { ProjectList } from "./projectQueryKeys.ts";
+import { readCreationContext } from "./ticketCreationRun.ts";
+import type { CreationContext } from "./ticketCreationRun.ts";
+
+/** The one list the creation screen reads under, the context being the
+ * project's rather than any one revision's. */
+export const creationContextName = "creation";
+
+/**
+ * Where the creation context is held, and what makes it stale.
+ *
+ * Every `Configuration` frame does, because the context is whichever revisions
+ * are offered and the frame's own revision does not say which those now are —
+ * a newer commit's import changes the answer without ever appearing in the
+ * entry the screen holds.
+ */
+export function creationContextList(
+  partition: PartitionIdentity,
+): ProjectList<CreationContext> {
+  return projectListReread<CreationContext>(
+    partition,
+    "Configuration",
+    creationContextName,
+  );
+}
 
 export function configurationQuery(
   partition: PartitionIdentity,

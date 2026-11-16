@@ -520,16 +520,6 @@ function unknownTicketsOf(body: unknown): readonly number[] {
     : [];
 }
 
-/** The refusal a draft creation into an epic is drawn as, none where it is not that. */
-export function epicDraftRefusal(failure: ApiFailure): Copy | undefined {
-  if (failure.outcome !== "Conflict") return undefined;
-  if (failure.code === "MissingEpic") return { id: "epics-draft-missing" };
-  if (failure.code === "ArchivedEpic") return { id: "epics-draft-archived" };
-  if (failure.code === "ManyTickets" || failure.code === "LargeContent")
-    return { id: "epics-draft-full" };
-  return undefined;
-}
-
 /** The write of an epic: the request, the sentence its refusal is drawn as, and the reads it leaves stale. */
 export function epicWrite(
   partition: PartitionIdentity,
