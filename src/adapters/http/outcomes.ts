@@ -36,9 +36,9 @@ import {
   type LeadAbsence,
   type LeadRead,
   type LeadRefused,
-  type LeadTranscriptRead,
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
+import type { SessionTranscriptRead } from "../../interpreter/sessionTranscriptPage.ts";
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
@@ -2785,7 +2785,7 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
  * parent links and the compaction metadata the walk needed, and a reader is
  * given neither: the wire says what the chain is, not how it was found.
  */
-function leadTranscriptEntryBody(entry: SessionStoreEntry): unknown {
+function sessionTranscriptEntryBody(entry: SessionStoreEntry): unknown {
   return {
     ...(entry.uuid === undefined ? {} : { uuid: entry.uuid }),
     type: entry.type,
@@ -2794,14 +2794,14 @@ function leadTranscriptEntryBody(entry: SessionStoreEntry): unknown {
   };
 }
 
-export function leadTranscriptResponse(
-  result: LeadTranscriptRead,
+export function sessionTranscriptResponse(
+  result: SessionTranscriptRead,
 ): NativeHttpResponse {
   switch (result.read) {
     case "Page":
       return response(200, {
         ...result.page,
-        entries: result.page.entries.map(leadTranscriptEntryBody),
+        entries: result.page.entries.map(sessionTranscriptEntryBody),
       });
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
