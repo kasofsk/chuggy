@@ -2,9 +2,9 @@
  * A project's resolved theme drawn under the served policy: the page's colours
  * are the theme's in the light scheme and the dark, the browser's chrome
  * follows them, and a reload puts them on the root from what this browser kept
- * before the console mounts, while the server has not yet answered. With no theme the root carries no
- * property, so the page is the sheet's own. zod's probe is the one violation
- * known, as `console.spec.ts` says.
+ * before the console mounts, while the server has not yet answered. With no
+ * theme the root carries no property, so the page is the sheet's own. zod's
+ * probe is the one violation known, as `console.spec.ts` says.
  */
 
 import type { Page } from "@playwright/test";
