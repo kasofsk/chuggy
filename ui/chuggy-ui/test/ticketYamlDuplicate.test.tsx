@@ -27,7 +27,7 @@ import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { CreationDuplicate } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { ticketDuplicateSeed } from "../app/core/ticketDuplicate.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationContextList } from "../app/core/configurationQueries.ts";
 import { answeringApi } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { openedStream, ScreenHarness } from "./screenHarness.tsx";

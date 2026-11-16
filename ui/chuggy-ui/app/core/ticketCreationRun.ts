@@ -45,7 +45,6 @@ import type {
 } from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
 
-import { epicDraftRefusal } from "./epics.ts";
 import {
   apiCreateDraft,
   apiDraft,
@@ -55,7 +54,6 @@ import {
   apiTicketDispatchView,
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
-import { ConsoleWriteRefused } from "./consoleWrite.ts";
 import { operationAbandonWords } from "./codeLabels.ts";
 import {
   draftRevisionFailureSentence,
@@ -70,8 +68,6 @@ import {
   operationFinished,
 } from "./operationFollow.ts";
 import type { OperationStep } from "./operationFollow.ts";
-import { projectListReread } from "./projectQueryKeys.ts";
-import type { ProjectList } from "./projectQueryKeys.ts";
 import { readProjectConfigurations } from "./repositoryConfigurations.ts";
 import { manualDispatchActionOf } from "./ticketActions.ts";
 import {
@@ -215,34 +211,6 @@ export type TicketUpdateUnmade = Exclude<
   { readonly created: "Created" }
 >;
 
-/** A creation's submit thrown as its refusal: the sentence its screen draws,
- * beside how it ended, which holds the draft the next submit goes back to,
- * and the failure that ended it, the held draft's read or its release. */
-export class TicketCreationRefused extends ConsoleWriteRefused {
-  readonly ended: TicketCreationUnmade;
-
-  constructor(sentence: string, ended: TicketCreationUnmade) {
-    super(
-      sentence,
-      ended.created === "Refused"
-        ? (ended.unread ?? ended.released)
-        : undefined,
-    );
-    this.ended = ended;
-  }
-}
-
-/** An edit's submit thrown as its refusal, beside how it ended and the
- * failure its release was answered with. */
-export class TicketUpdateRefused extends ConsoleWriteRefused {
-  readonly ended: TicketUpdateUnmade;
-
-  constructor(sentence: string, ended: TicketUpdateUnmade) {
-    super(sentence, ended.created === "Refused" ? ended.released : undefined);
-    this.ended = ended;
-  }
-}
-
 /** The conflict a creation route answers where the fence this body carries moved. */
 export const creationStaleSentence: Copy = { id: "ticket-authoring-stale" };
 
@@ -358,28 +326,6 @@ function creationContextUnoffered(
   };
 }
 
-/** The one list the creation screen reads under, the context being the
- * project's rather than any one revision's. */
-export const creationContextName = "creation";
-
-/**
- * Where the creation context is held, and what makes it stale.
- *
- * Every `Configuration` frame does, because the context is whichever revisions
- * are offered and the frame's own revision does not say which those now are —
- * a newer commit's import changes the answer without ever appearing in the
- * entry the screen holds.
- */
-export function creationContextList(
-  partition: PartitionIdentity,
-): ProjectList<CreationContext> {
-  return projectListReread<CreationContext>(
-    partition,
-    "Configuration",
-    creationContextName,
-  );
-}
-
 /** The configurations a ticket may be drawn under, each with the defaults it
  * is fenced with, and what the project binds. */
 export async function readCreationContext(
@@ -421,6 +367,16 @@ export async function readCreationContext(
       repositories,
     },
   };
+}
+
+/** The refusal a draft creation into an epic is drawn as, none where it is not that. */
+export function epicDraftRefusal(failure: ApiFailure): Copy | undefined {
+  if (failure.outcome !== "Conflict") return undefined;
+  if (failure.code === "MissingEpic") return { id: "epics-draft-missing" };
+  if (failure.code === "ArchivedEpic") return { id: "epics-draft-archived" };
+  if (failure.code === "ManyTickets" || failure.code === "LargeContent")
+    return { id: "epics-draft-full" };
+  return undefined;
 }
 
 async function creationDraftCreated(

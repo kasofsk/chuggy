@@ -39,18 +39,24 @@ setup-rule-site = Run { $command } with the address of the person's { setup-site
 setup-rule-ask = Run { $command } with the person's answer after it, only once the person has answered.
 # spells -run: to run is a verb here
 setup-rule-ask-name = Run { $command } with the person's answer after it, quoted as one word, only once the person has answered.
+# spells -run: to run is a verb here
+setup-rule-ticket = Run { $command } with { $title } and a short title for what the person wants done, then { $intent } and what they want done in their own words{ $choose ->
+    [choose] , then { $configuration } and the { -configuration } they chose
+   *[given] { "" }
+}, each quoted as one word, only once the person has said what they want done.
 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported } or as { $bound }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, and { $test } with { $configuration }, each once with a value, and no other flag
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound } or as { $filed }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
 setup-asked-project = { $mcp } and { $runner } each take { $workspace } and { $project }, both: the { -project } each is for
 setup-asked-workspace = { $chatHost } takes { $workspace }: the { -workspace } the { -chat-host } is for
 setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: the { -workspace } the { -project } is made in, and what it is called, on one line
+setup-asked-brief = { $filed } takes { $title } and { $intent }, both: what the { -ticket } is called, and what the person wants done
 setup-asked-test = { $flag } takes the command that tests this { -repository }, on one line, as { $configuration } writes it
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 
@@ -416,6 +422,18 @@ setup-mend-runner-or-running = { $when }, or that { -runner(form: "a") } is runn
 ## The ticket's step.
 
 setup-mend-ticket-create = Open { $page }, say what you want done and press { $create }
+setup-ask-ticket = What would you like done first in { $project }? Say it in a sentence or two, or ask me to suggest something small from this { -repository }. I will make it { -ticket(form: "a") } and start it.{ $choose ->
+    [choose] { " " }The { -project } offers { $names }: which { -configuration } should it use?
+   *[given] { "" }
+} If you would rather write it yourself: { $create }.
+setup-ticket-none = nothing to file: the next thing is not the { -project }'s first { -ticket }
+setup-ticket-did = asked { -brand-name } to file { -ticket } { $ticket } under { $configuration }, { -release(form: "ed") } and sent to start
+setup-ticket-unfiled = { -brand-name } did not file the { -ticket }: { $refusal }
+setup-ticket-unread = the { -configuration(form: "plural") } { -ticket(form: "a") } may use could not be read
+setup-ticket-choose = the { -project } offers { $names }, so the { -configuration } has to be chosen
+setup-ticket-unoffered = the { -configuration } named is not one the { -project } offers, which are { $names }
+setup-ticket-faults = { $faults }
+setup-ticket-refused = { $refusal }
 setup-mend-ticket-tell = { $create }. Tell me once it is created.
 setup-mend-ticket-when = once the person says the { -ticket } is created
 setup-mend-release-tell = { -ticket(case: "upper") } { $ticket } was drafted and never { -release(form: "ed") }, so nothing is working on it, and the console has no page that { -release(form: "s") } it. { $create }, which makes { -ticket(form: "a") } and { -release(form: "s") } it at once. Tell me once it is created.

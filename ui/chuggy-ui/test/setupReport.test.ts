@@ -38,6 +38,7 @@ import type {
   SetupFault,
   SetupProjectEnded,
   SetupBindAnswered,
+  SetupTicketAnswered,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
@@ -149,6 +150,28 @@ function asking(
   };
 }
 
+/** What the ticket step asks, with a choice of configurations or none. */
+function briefAsk(choose: "choose" | "given"): Copy {
+  return {
+    id: "setup-ask-ticket",
+    args: {
+      project: "acme/widgets",
+      choose,
+      names: {
+        id: "setup-listed",
+        args: { names: "development", last: "review" },
+      },
+      create: {
+        id: "setup-mend-ticket-create",
+        args: {
+          page: `${site}/acme/widgets/tickets/new`,
+          create: { id: "ticket-authoring-create-ticket" },
+        },
+      },
+    },
+  };
+}
+
 /** Every next thing a checklist ends on, one of each and both of those that come in two. */
 const things: {
   readonly [Kind in SetupThing["thing"]]: readonly Extract<
@@ -240,6 +263,22 @@ const things: {
       thing: "Ask",
       ask: asking("project", ["gadgets", "widgets"]),
       flag: "project",
+    },
+  ],
+  Brief: [
+    {
+      thing: "Brief",
+      ask: briefAsk("given"),
+      workspace: "acme",
+      project: "widgets",
+      choose: false,
+    },
+    {
+      thing: "Brief",
+      ask: briefAsk("choose"),
+      workspace: "acme",
+      project: "widgets",
+      choose: true,
     },
   ],
   Name: [
@@ -388,6 +427,16 @@ const importAnswers: readonly (SetupImportAnswered | undefined)[] = [
   },
 ];
 
+/** What a run of `ticket` can have had answered: nothing asked, filed, and refused. */
+const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
+  undefined,
+  { answered: "Filed", ticket: 3, configuration: "Default configuration" },
+  {
+    answered: "Refused",
+    refusal: { id: "setup-ticket-refused", args: { refusal: "It broke." } },
+  },
+];
+
 /** What a run of `bind` can have had answered: nothing asked, bound, and refused. */
 const bindAnswers: readonly (SetupBindAnswered | undefined)[] = [
   undefined,
@@ -466,6 +515,7 @@ const roster: {
     { report: "AskedWrongly", fault: "Replace" },
     { report: "AskedWrongly", fault: "ProjectName" },
     { report: "AskedWrongly", fault: "Test" },
+    { report: "AskedWrongly", fault: "Brief" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -608,6 +658,11 @@ const roster: {
     answered,
     checklist: checklist(things.Offer[3] as SetupThing),
   })),
+  Ticket: ticketAnswers.map((answered) => ({
+    report: "Ticket",
+    answered,
+    checklist: checklist(things.Brief[0] as SetupThing),
+  })),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -630,6 +685,7 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Check",
   "Import",
   "Bind",
+  "Ticket",
 ]);
 
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
@@ -716,11 +772,12 @@ function shellWords(text: string): readonly string[] {
   return word === undefined ? words : [...words, word];
 }
 
-/** A command a line names: the arguments after the program, and the flag left for a value to follow, where the line says one does. */
+/** A command a line names: the arguments after the program, whether a value is left to follow it, where the line says one does, and the flags it says to add each with a value of its own. */
 interface Named {
   readonly argv: readonly string[];
   readonly fetched: boolean;
   readonly open: boolean;
+  readonly fills: readonly string[];
 }
 
 const fetched = `curl -fsS ${site}/chuggy-setup.mjs -o ${machineScript} && `;
@@ -730,7 +787,7 @@ function commands(lines: readonly string[]): readonly Named[] {
   const named: Named[] = [];
   for (const text of lines) {
     const ruled =
-      /^rule: Run ((?:node|curl) .+?)(?<open> with the .+ after it\b.*| only (?:once|if|when) .+)\.$/u.exec(
+      /^rule: Run ((?:node|curl) .+?)(?<open> with the .+ after it\b.*| with --.+| only (?:once|if|when) .+)\.$/u.exec(
         text,
       );
     const run =
@@ -745,6 +802,9 @@ function commands(lines: readonly string[]): readonly Named[] {
       argv: words.slice(2),
       fetched: run.startsWith(fetched),
       open: ruled?.groups?.["open"]?.startsWith(" with the ") === true,
+      fills: ruled?.groups?.["open"]?.startsWith(" with --")
+        ? (ruled.groups["open"].match(/--[a-z]+/gu) ?? [])
+        : [],
     });
   }
   return named;
@@ -765,7 +825,11 @@ test("every line of every report is a word from the closed set and its text, and
 
 /** What the program reads a named command as, with a value put after a flag the line left open for one. */
 function read(named: Named, value: string): ReturnType<typeof setupAsked> {
-  return setupAsked(named.open ? [...named.argv, value] : named.argv);
+  return setupAsked([
+    ...named.argv,
+    ...(named.open ? [value] : []),
+    ...named.fills.flatMap((flag) => [flag, value]),
+  ]);
 }
 
 test("every command any line of any report names, on next: or in a rule:, is one the program reads as it is written", () => {
@@ -797,12 +861,17 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
   if (report.report === "Project") return projectCarried(report);
-  if (report.report === "Import" || report.report === "Bind")
+  if (
+    report.report === "Import" ||
+    report.report === "Bind" ||
+    report.report === "Ticket"
+  )
     return carried(report.checklist, answers);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
     return thing.thing === "Offer" ||
       thing.thing === "Name" ||
+      thing.thing === "Brief" ||
       thing.thing === "Configure"
       ? project(thing)
       : report.next.carried;
@@ -959,7 +1028,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -2230,6 +2299,49 @@ test("bind is offered for the project and named only once the person says yes to
     `rule: Run node ${machineScript} bind ${flags} only once the person says yes to adding acme-org/widgets to the project.`,
     stop,
   ]);
+});
+
+test("the ticket step asks what the person wants done, names the configurations where they choose, and names ticket only once they have said it", () => {
+  const [given, choose] = things.Brief;
+  if (given === undefined || choose === undefined) throw new Error("no ask");
+  const page = `${site}/acme/widgets/tickets/new`;
+  const said = `What would you like done first in acme/widgets? Say it in a sentence or two, or ask me to suggest something small from this repository. I will make it a ticket and start it.`;
+  const yourself = `If you would rather write it yourself: Open ${page}, say what you want done and press Create ticket.`;
+  const rule = `rule: Run node ${machineScript} ticket ${flags} with --title and a short title for what the person wants done, then --intent and what they want done in their own words`;
+  const once = `, each quoted as one word, only once the person has said what they want done.`;
+  expect(ended(given)).toEqual([
+    `ask: ${said} ${yourself}`,
+    `${rule}${once}`,
+    stop,
+  ]);
+  expect(ended(choose)).toEqual([
+    `ask: ${said} The project offers development or review: which configuration should it use? ${yourself}`,
+    `${rule}, then --configuration and the configuration they chose${once}`,
+    stop,
+  ]);
+});
+
+test("a run of ticket says what it filed or why it did not under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, filed, refused] = roster.Ticket;
+  const [, after] = (none && printed(none)) ?? [];
+  expect(after).toBe(
+    "found: nothing to file: the next thing is not the project's first ticket",
+  );
+  for (const [report, said] of [
+    [
+      filed,
+      [
+        "did: asked chuggy to file ticket 3 under Default configuration, released and sent to start",
+      ],
+    ],
+    [refused, ["found: chuggy did not file the ticket: It broke."]],
+  ] as const) {
+    if (report === undefined) throw new Error("no ticket report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
 });
 
 test("a run of bind says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
