@@ -379,8 +379,8 @@ const repositoryOffersNotConfigured: Copy = {
   id: "repositories-offers-not-configured",
 };
 
-/** How a repository comes to be one Add lists, drawn over Add on an empty
- * roster. */
+/** How a repository comes to be bound, drawn over Add on an empty roster:
+ * granted to both apps and then added, or added by the setup program. */
 export const repositoryAddHow: Copy = { id: "repositories-add-how" };
 
 /** What this reader takes from the page itself, under the line that names it. */
