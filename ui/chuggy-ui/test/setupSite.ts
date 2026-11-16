@@ -28,6 +28,12 @@
  * personal runners in a workspace are held apart from it, with the projects
  * they serve, and are not found where they hold none.
  *
+ * It binds a repository as the server does, only where a portal installation
+ * of the workspace's lists it, writing the bootstrap a binding of a repository
+ * declaring nothing holds; it answers the deployment's apps, each with its
+ * install page, and the client a person authorizes unless a case takes it
+ * away; and each installation's settings page.
+ *
  * It imports a repository's configuration as the server does: from what was
  * pushed to the repository's default branch, judged by the contract's own
  * judgment of a configuration directory, kept as the binding's last import,
@@ -131,9 +137,9 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner` asks, which a case moves likewise; `mint` and `chatMint` are writes. */
+/** What only `runner` or `bind` asks, which a case moves likewise; `mint`, `chatMint` and `bind` are writes. */
 export type SetupSiteRunnerAsk =
-  "abilities" | "pools" | "mint" | "permit" | "chat" | "chatMint";
+  "abilities" | "pools" | "mint" | "permit" | "chat" | "chatMint" | "bind";
 
 /** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
 export interface SetupSiteChatHost {
@@ -161,6 +167,8 @@ export interface SetupSite {
   /** The repositories an installation grants, by installation, where a case says other than every repository of the workspace's projects on its account. */
   grants: Map<string, string[]>;
   fates: Map<SetupSiteRead | SetupSiteRunnerAsk, SetupSiteFate>;
+  /** Whether the deployment answers a client to authorize, without which it offers no install the workspace can claim. */
+  authorizing: boolean;
   /** Every registration token and every runner credential the site handed out, in order. */
   readonly secrets: string[];
   /** The caller's subject, which their chat host is registered under. */
@@ -230,6 +238,7 @@ export function setupSiteEmpty(): SetupSite {
     installations: new Map(),
     grants: new Map(),
     fates: new Map(),
+    authorizing: true,
     secrets: [],
     member: setupSiteMember,
     withheld: new Set(),
@@ -894,17 +903,123 @@ function grant(
     ?.find((held) => held.installationId === installation);
   if (claim === undefined) return refused();
   const read = claim.app === "portal" ? "portalGrant" : "workerGrant";
-  const held =
-    site.grants.get(installation) ??
-    site.projects
-      .filter((project) => project.tenant === tenant)
-      .flatMap((project) => project.repositories)
-      .map((repository) => repository.repository)
-      .filter((address) => address.split("/").at(-2) === claim.account);
+  const held = grantedBy(site, tenant, claim);
   return (
     fated(site, read) ??
     answered({ repositories: held.map(granted), truncated: cut(site, read) })
   );
+}
+
+/** Every repository an installation grants: those a case names, or every repository of the workspace's projects on its account. */
+function grantedBy(
+  site: SetupSite,
+  tenant: string,
+  claim: ForgeInstallationResponse,
+): readonly string[] {
+  return (
+    site.grants.get(claim.installationId) ??
+    site.projects
+      .filter((project) => project.tenant === tenant)
+      .flatMap((project) => project.repositories)
+      .map((repository) => repository.repository)
+      .filter((address) => address.split("/").at(-2) === claim.account)
+  );
+}
+
+/** The forge's settings page of one installation of the workspace, which nobody is shown of an installation the workspace does not hold. */
+function settingsAnswered(
+  site: SetupSite,
+  tenant: string,
+  installation: string,
+): SetupSiteAnswer {
+  const claim = site.installations
+    .get(tenant)
+    ?.find((held) => held.installationId === installation);
+  return claim === undefined
+    ? refused()
+    : answered({
+        permissions: "Current",
+        settingsUrl: setupSiteSettingsUrl(claim),
+      });
+}
+
+/** The address the forge gives an installation's settings, as a case expects to be sent to it. */
+export function setupSiteSettingsUrl(claim: ForgeInstallationResponse): string {
+  return `https://github.com/organizations/${claim.account}/settings/installations/${claim.installationId}`;
+}
+
+/** The address each app is installed from, as the deployment answers it. */
+export function setupSiteInstallUrl(app: ForgeAppName): string {
+  return `https://github.com/apps/chuggy-${app}/installations/new`;
+}
+
+/** The deployment's apps, each with the page it is installed from, and the client a person authorizes where a case has not taken it away. */
+function appsAnswered(site: SetupSite): SetupSiteAnswer {
+  return answered({
+    apps: (["portal", "worker"] as const).map((app) => ({
+      app,
+      id: `${app}-id`,
+      slug: `chuggy-${app}`,
+      installUrl: setupSiteInstallUrl(app),
+    })),
+    ...(site.authorizing
+      ? {
+          authorization: {
+            clientId: "portal-client",
+            authorizeUrl: "https://github.com/login/oauth/authorize",
+          },
+        }
+      : {}),
+  });
+}
+
+/**
+ * A bind, as the server answers it: refused where no portal installation of
+ * the workspace lists the repository, answered as it stood where the project
+ * already binds it, and otherwise bound, holding the bootstrap.
+ */
+function bound(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "bind");
+  if (fate !== undefined) return fate;
+  const asked =
+    (JSON.parse(body ?? "{}") as { readonly repository?: string }).repository ??
+    "";
+  const listed = (site.installations.get(project.tenant) ?? []).some(
+    (claim) =>
+      claim.app === "portal" &&
+      grantedBy(site, project.tenant, claim).includes(asked),
+  );
+  if (!listed)
+    return {
+      status: 422,
+      body: {
+        error: { code: "RepositoryNotInstalled", message: "Not installed." },
+      },
+    };
+  if (
+    project.repositories.some(
+      (held) => held.repository === asked && held.retired !== true,
+    )
+  )
+    return answered({ repository: asked });
+  project.repositories.push({
+    repository: asked,
+    configured: true,
+    bootstrapped: true,
+  });
+  return {
+    status: 201,
+    body: {
+      repository: asked,
+      landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      configurations: { result: "Bootstrapped", revision: "bootstrap-widgets" },
+    },
+  };
 }
 
 const importsPath = "/configurations/imports";
@@ -1020,6 +1135,10 @@ function tenantWritten(
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
+  if (sent.method === "POST" && within?.[2] === "/repositories") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined ? refused() : bound(site, project, sent.body);
+  }
   if (sent.method === "POST" && within?.[2] === importsPath) {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined
@@ -1046,6 +1165,11 @@ function tenantAnswered(
     );
   if (rest === "/chat-host") return chatAnswered(site, tenant);
   if (rest === "/personal-runner") return personalAnswered(site, tenant);
+  const settings = /^\/forge-installations\/([^/]+)\/permissions$/u.exec(rest);
+  if (settings !== null)
+    return administers
+      ? settingsAnswered(site, tenant, decodeURIComponent(settings[1] ?? ""))
+      : refused();
   const listing = /^\/forge-installations\/([^/]+)\/repositories$/u.exec(rest);
   if (listing !== null)
     return administers
@@ -1183,6 +1307,7 @@ export function setupSiteAnswered(
       fated(site, "workspaces") ??
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
     );
+  if (url.pathname === "/api/v1/forge/github") return appsAnswered(site);
   return url.pathname === "/api/v1/projects"
     ? inventory(site, url.searchParams.get("cursor"))
     : undefined;

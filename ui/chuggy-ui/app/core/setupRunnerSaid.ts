@@ -17,17 +17,22 @@ import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
 import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 
-/** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone. */
+/** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone; `workspaceName` is the workspace's display name, where the run read it. */
 export interface SetupRunnerAt {
   readonly workspace: string;
   readonly project: string | undefined;
+  readonly workspaceName?: string;
+}
+
+/** The workspace a run was for, as a sentence names it: by its display name, and by its id where that was not read. */
+export function setupRunnerWorkspaceNamed(at: SetupRunnerAt): string {
+  return at.workspaceName ?? at.workspace;
 }
 
 /** The place a run was for, by its name: the workspace's and the project's, or the workspace's alone. */
 export function setupRunnerNamed(at: SetupRunnerAt): string {
-  return at.project === undefined
-    ? at.workspace
-    : `${at.workspace}/${at.project}`;
+  const workspace = setupRunnerWorkspaceNamed(at);
+  return at.project === undefined ? workspace : `${workspace}/${at.project}`;
 }
 
 /** The container engines the runner package runs its work in, the package's own default first. */
@@ -633,7 +638,7 @@ function setupChatNoteSaid(
         at.project === undefined
           ? {
               id: "setup-runner-note-chat-host-live-workspace",
-              args: { workspace: at.workspace },
+              args: { workspace: setupRunnerWorkspaceNamed(at) },
             }
           : { id: "setup-runner-note-chat-host-live", args: { project } },
       ];
@@ -981,7 +986,7 @@ function setupUnreadSaid(
         at.project === undefined
           ? {
               id: "setup-runner-unread-refused-workspace-tell",
-              args: { workspace: at.workspace, what, left },
+              args: { workspace: setupRunnerWorkspaceNamed(at), what, left },
             }
           : {
               id: "setup-runner-unread-refused-tell",

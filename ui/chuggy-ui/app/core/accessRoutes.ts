@@ -11,6 +11,7 @@ import {
   accessInvitedSchema,
   accessInviteLinkMintedSchema,
   accessInviteLinkRedeemedSchema,
+  accessInviteLinkSummarySchema,
   accessInviteLinksSchema,
   accessOwnerInvitedSchema,
   accessPlanePath,
@@ -30,6 +31,7 @@ import {
   type AccessInvited,
   type AccessInviteLinkMinted,
   type AccessInviteLinkRedeemed,
+  type AccessInviteLinkSummary,
   type AccessInviteLinks,
   type AccessGroup,
   type AccessOwnerInvitation,
@@ -481,6 +483,22 @@ export function apiRedeemInviteLink(
       body: { token },
     },
     (value) => accessInviteLinkRedeemedSchema.parse(value),
+  );
+}
+
+/** What the link `token` names gives, which the plane answers with or without a session and which spends nothing. */
+export function apiInviteLinkSummary(
+  ports: ApiPorts,
+  token: string,
+): Promise<ApiResult<AccessInviteLinkSummary>> {
+  return apiRead(
+    ports,
+    {
+      method: accessPlaneRoutes.inviteLinkSummary.method,
+      path: accessPlanePath("inviteLinkSummary", {}),
+      body: { token },
+    },
+    (value) => accessInviteLinkSummarySchema.parse(value),
   );
 }
 

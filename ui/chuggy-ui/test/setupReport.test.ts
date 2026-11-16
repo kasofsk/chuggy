@@ -37,6 +37,7 @@ import type { Copy } from "../app/core/copy.ts";
 import type {
   SetupFault,
   SetupProjectEnded,
+  SetupBindAnswered,
   SetupReport,
   SetupSignInEnded,
   SetupStepSaid,
@@ -214,6 +215,20 @@ const things: {
       workspace: "two words",
       project: undefined,
     },
+    {
+      thing: "Offer",
+      command: "Bind",
+      tell: {
+        id: "setup-mend-bind-offer",
+        args: { repository: "acme-org/widgets", project: "acme/widgets" },
+      },
+      when: {
+        id: "setup-offer-bind-when",
+        args: { repository: "acme-org/widgets" },
+      },
+      workspace: "acme",
+      project: "widgets",
+    },
   ],
   Ask: [
     {
@@ -371,6 +386,22 @@ const importAnswers: readonly (SetupImportAnswered | undefined)[] = [
     refusal: { id: "repositories-import-invalid" },
     faults: [{ ...refusedFault, fields: [] }],
   },
+];
+
+/** What a run of `bind` can have had answered: nothing asked, bound, and refused. */
+const bindAnswers: readonly (SetupBindAnswered | undefined)[] = [
+  undefined,
+  {
+    answered: "Bound",
+    said: {
+      id: "repositories-bound-named",
+      args: {
+        repository: "acme-org/widgets",
+        status: { id: "repositories-configuration-added" },
+      },
+    },
+  },
+  { answered: "Refused", refusal: { id: "repositories-not-installed" } },
 ];
 
 /** The stops a run for `at` can end on: every one, but for those only `chat-host` makes where the run is `runner`'s. */
@@ -571,6 +602,12 @@ const roster: {
       checklist: checklist(thing),
     })),
   ),
+  Bind: bindAnswers.map((answered) => ({
+    report: "Bind",
+    repository: answered === undefined ? undefined : "acme-org/widgets",
+    answered,
+    checklist: checklist(things.Offer[3] as SetupThing),
+  })),
   RunnerOut: pairs.flatMap(({ workspace, project }) =>
     outsOf(project === undefined ? "ChatHost" : "Runner").map((out) => ({
       report: "RunnerOut",
@@ -587,11 +624,12 @@ const every: readonly SetupReport[] = Object.values(roster).flat();
 /** What a stop's rule names where it names no run of the same command again. */
 const setupAskedOfAgain = { Status: "Status", Mcp: "Mcp" } as const;
 
-/** The reports of the repository's own configuration, which are said apart from the rest below. */
+/** The reports of the repository's own configuration, and of adding it, which are said apart from the rest below. */
 const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Configuration",
   "Check",
   "Import",
+  "Bind",
 ]);
 
 /** Every report but a checklist and a run of `mcp` or `runner`, which is every report a run that is not signed in can make. */
@@ -759,7 +797,8 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     return project(report);
   if (report.report === "RunnerOut") return carried(report.out, answers);
   if (report.report === "Project") return projectCarried(report);
-  if (report.report === "Import") return carried(report.checklist, answers);
+  if (report.report === "Import" || report.report === "Bind")
+    return carried(report.checklist, answers);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
     return thing.thing === "Offer" ||
@@ -1278,7 +1317,7 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
@@ -2178,6 +2217,37 @@ test("a run of import says what it asked and what the site answered under the si
     ],
   ] as const) {
     if (report === undefined) throw new Error("no import report");
+    const lines = setupReportLines(report, machineScript, copyTextEn);
+    const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
+    expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
+    expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
+  }
+});
+
+test("bind is offered for the project and named only once the person says yes to adding the repository", () => {
+  expect(ended(things.Offer[3] as SetupThing)).toEqual([
+    "tell: The portal app and the worker app are both let into acme-org/widgets, this folder's repository, and acme/widgets does not have it yet. With your yes I will add it to acme/widgets, as the repositories page's Add does. Tell me yes to go ahead.",
+    `rule: Run node ${machineScript} bind ${flags} only once the person says yes to adding acme-org/widgets to the project.`,
+    stop,
+  ]);
+});
+
+test("a run of bind says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {
+  const [none, bound, refused] = roster.Bind;
+  const [, after] = (none && printed(none)) ?? [];
+  expect(after).toBe(
+    "found: nothing to add: the next thing is not adding this folder's repository",
+  );
+  for (const [report, said] of [
+    [
+      bound,
+      [
+        "did: asked chuggy to add acme-org/widgets, and it answered acme-org/widgets · Default configuration added",
+      ],
+    ],
+    [refused, ["found: chuggy did not add acme-org/widgets: Not installed"]],
+  ] as const) {
+    if (report === undefined) throw new Error("no bind report");
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const alone = setupReportLines(report.checklist, machineScript, copyTextEn);
     expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);

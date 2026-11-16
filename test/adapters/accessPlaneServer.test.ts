@@ -29,6 +29,7 @@ import {
   accessInviteLinkLimitReachedCode,
   accessInviteLinkMintedSchema,
   accessInviteLinkRedeemedSchema,
+  accessInviteLinkSummarySchema,
   accessInviteLinksNotConfiguredCode,
   accessInviteLinksOpenMax,
   accessInviteLinksSchema,
@@ -893,13 +894,14 @@ test("a tenant's administrators are added to the site's account creators once th
   );
 });
 
-test("an authority that cannot answer is retryable on every route and unready on readiness", async () => {
+test("an authority that cannot answer is retryable on every route but a link's summary, which asks it nothing, and unready on readiness", async () => {
   const { memory, app } = await served();
   const open = accessInviteLinkMintedSchema.parse(
     (await linkMinted(app, "alice-token", { role: "Member" })).json(),
   );
   memory.unavailable = true;
   for (const name of Object.keys(accessPlaneRoutes) as AccessPlaneRouteName[]) {
+    if (name === "inviteLinkSummary") continue;
     const route = accessPlaneRoutes[name];
     const person = { github: "octo-cat", email: "octo@example.com" };
     const body =
@@ -1932,6 +1934,7 @@ test("a plane with no store answers every link route not configured, while an in
     "siteWorkspaceLinks",
     "siteWorkspaceLinkRevocation",
     "inviteLinkRedemption",
+    "inviteLinkSummary",
   ] as const) {
     const route = accessPlaneRoutes[name];
     const answered = await app.inject({
@@ -1944,7 +1947,7 @@ test("a plane with no store answers every link route not configured, while an in
       ...(route.method === "POST"
         ? {
             payload: JSON.stringify(
-              name === "inviteLinkRedemption"
+              name === "inviteLinkRedemption" || name === "inviteLinkSummary"
                 ? { token: "token-0" }
                 : name === "siteWorkspaceLinkCreation"
                   ? { createAccounts: false }
@@ -1980,6 +1983,20 @@ test("a plane with no store answers every link route not configured, while an in
   assert.ok([200, 201].includes(invited.statusCode), invited.body);
 });
 
+/** A summary of the link `body` names, sent with no bearer unless `token` names one. */
+function summaryAsked(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  body: unknown,
+  token?: string,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("inviteLinkSummary"),
+    headers: { ...(token === undefined ? {} : as(token)), ...typed },
+    payload: JSON.stringify(body),
+  });
+}
+
 /** A mint of a workspace link sent `body` with `token`. */
 function workspaceLinkMinted(
   app: Awaited<ReturnType<typeof served>>["app"],
@@ -2009,6 +2026,75 @@ function redemption(
 }
 
 const workspaceNote = "for Octo Cat, handed over at the meetup";
+
+test("a link is summarized 200 without a bearer, the same with one, spends nothing, and a spent link and a token nobody holds are answered byte for byte alike", async () => {
+  const { app, memory, links } = await served();
+  links?.names.rows.set(tenant, "Acme Co");
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await linkMinted(app, "alice-token", {
+        role: "Member",
+        projects: [{ project: "web", roles: ["Viewer"] }],
+      })
+    ).json(),
+  );
+  const rows = JSON.stringify(links?.rows);
+  const open = await summaryAsked(app, { token: minted.token });
+  assert.equal(open.statusCode, 200, open.body);
+  assert.ok(
+    String(open.headers["content-type"]).startsWith(nativeHttpMediaType),
+  );
+  assert.deepEqual(accessInviteLinkSummarySchema.parse(open.json()), {
+    state: "Open",
+    kind: "Tenant",
+    displayName: "Acme Co",
+    role: "Member",
+  });
+  assert.equal(
+    (await summaryAsked(app, { token: minted.token }, "sam-token")).body,
+    open.body,
+  );
+  assert.equal(JSON.stringify(links?.rows), rows);
+  assert.deepEqual(memory.batches, []);
+  enveloped(await summaryAsked(app, { token: "t".repeat(4_096) }), "Rejected");
+  enveloped(
+    await summaryAsked(app, { token: minted.token, kind: "Workspace" }),
+    "Rejected",
+  );
+  assert.equal(
+    (await redemption(app, "sam-token", { token: minted.token })).statusCode,
+    200,
+  );
+  const spent = await summaryAsked(app, { token: minted.token });
+  const unknown = await summaryAsked(app, { token: "token-nobody-holds" });
+  assert.deepEqual(spent.json(), { state: "Ended" });
+  for (const answered of [
+    unknown,
+    await summaryAsked(app, { token: minted.token }, "sam-token"),
+  ]) {
+    assert.equal(answered.statusCode, spent.statusCode);
+    assert.equal(
+      answered.headers["content-type"],
+      spent.headers["content-type"],
+    );
+    assert.equal(answered.body, spent.body);
+  }
+});
+
+test("a workspace link is summarized as its kind alone, its note unsaid", async () => {
+  const { app } = await served();
+  const { token } = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", {
+        createAccounts: true,
+        note: workspaceNote,
+      })
+    ).json(),
+  );
+  const summarized = await summaryAsked(app, { token });
+  assert.equal(summarized.statusCode, 200, summarized.body);
+  assert.deepEqual(summarized.json(), { state: "Open", kind: "Workspace" });
+});
 
 test("a workspace link is made 201 with its id, token, expiry and `newAccounts`, listed 200 with its note and without its token, revoked 204, and then a conflict", async () => {
   const { app } = await served();

@@ -22,6 +22,7 @@ import {
   accessInviteLinks,
   type AccessInviteLinkGrants,
   type AccessInviteLinkPorts,
+  type AccessInviteLinkPresented,
   type AccessInviteLinkService,
   type AccessInviteLinkStore,
   type AccessInviteLinkStored,
@@ -298,6 +299,25 @@ function inviteLinkUsedBy(
   } as const);
 }
 
+/** What a summary reads of the open link `digest` names. */
+function inviteLinkSummarized(
+  memory: InviteLinkMemory,
+  digest: string,
+): Promise<AccessInviteLinkPresented | undefined> {
+  const row = inviteLinkOpenNamed(memory, digest);
+  if (row === undefined) return Promise.resolve(undefined);
+  return Promise.resolve(
+    row.tenant === undefined
+      ? { kind: "Workspace", mintedBy: row.mintedBy }
+      : {
+          kind: "Tenant",
+          tenant: row.tenant,
+          role: row.role,
+          mintedBy: row.mintedBy,
+        },
+  );
+}
+
 function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
   const find = (tenant: string, link: string) =>
     inviteLinksOf(memory, tenant).find((row) => row.link === link);
@@ -350,6 +370,7 @@ function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
       if (row === undefined) return Promise.resolve(undefined);
       return Promise.resolve(row.tenant === undefined ? "Workspace" : "Tenant");
     },
+    summarized: (digest) => inviteLinkSummarized(memory, digest),
     usedBy: (digest, subject) => inviteLinkUsedBy(memory, digest, subject),
     ...workspaceLinkStore(memory),
     restore: (link) => {
