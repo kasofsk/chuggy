@@ -2684,7 +2684,7 @@ test("an empty roster carries Add under its line and how a repository comes to b
     copyTextEn(repositoryAddHow),
   );
   expect(copyTextEn(repositoryAddHow)).toBe(
-    "Install both apps on your repository on GitHub, then Add",
+    "Both apps on your repository on GitHub, then Add · chuggy setup adds it itself",
   );
   expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
     "No repository bound",

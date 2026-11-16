@@ -184,6 +184,7 @@ const sessionsInert: WorkerPoolSessions = {
   release: () => Promise.resolve(true),
   heldImages: () => Promise.resolve([]),
   polled: () => Promise.resolve(),
+  unlistedEnded: () => Promise.resolve(0),
 };
 
 const runnersInert: WorkerPoolRunners = { named: () => Promise.resolve() };
