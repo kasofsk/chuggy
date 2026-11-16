@@ -71,10 +71,10 @@ function attemptRow(
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
-        approval_required, outcome, candidate_commit, failure_kind,
+        outcome, candidate_commit, failure_kind,
         conflict_manifest, conflict_manifest_digest, attempt_digest,
         target_base_ref)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,$10,$11,$12,false,$13,$14,$15,$16,$17,$18,$19)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
     keys(
       identity,
       project.request,
@@ -275,6 +275,71 @@ test("an attempt keeps a re-check's reason only from its closed set on a re-chec
     });
 });
 
+test("an attempt keeps a re-stack's line exactly on a re-stack, as paired object identities no deeper than a stack", async () => {
+  const commit = finalizerCommit();
+  for (const [label, failureKind, restack, constraint] of [
+    ["unlined", "Restack", undefined, "restack_line"],
+    [
+      "lined",
+      "MergeConflict",
+      { tickets: [1], commits: [commit] },
+      "restack_line",
+    ],
+    ["empty", "Restack", { tickets: [], commits: [] }, "restack_line"],
+    [
+      "unpaired",
+      "Restack",
+      { tickets: [1, 2], commits: [commit] },
+      "restack_line",
+    ],
+    [
+      "deep",
+      "Restack",
+      { tickets: [1, 2, 3, 4], commits: [commit, commit, commit, commit] },
+      "restack_line",
+    ],
+    [
+      "unidentified",
+      "Restack",
+      { tickets: [1, 2], commits: [commit, "main"] },
+      "restack_line",
+    ],
+    ["null", "Restack", { tickets: [1], commits: [null] }, "restack_line"],
+  ] as const) {
+    await assert.rejects(
+      finalizerPrepare(rig, project, `restack-${label}`, {
+        outcome: "Failed",
+        failureKind,
+        ...(failureKind === "Restack" ? { recheckCommit: commit } : {}),
+        ...(restack === undefined
+          ? {}
+          : {
+              restack: {
+                tickets: restack.tickets,
+                commits: restack.commits as readonly string[],
+              },
+            }),
+      }),
+      new RegExp(`finalization_attempt_${constraint}_is_whole`, "u"),
+      label,
+    );
+  }
+  await assert.rejects(
+    finalizerPrepare(rig, project, "restack-uncommitted", {
+      outcome: "Failed",
+      failureKind: "Restack",
+      restack: { tickets: [1], commits: [commit] },
+    }),
+    /finalization_attempt_recheck_commit_is_whole/u,
+  );
+  await finalizerPrepare(rig, project, "restack-admitted", {
+    outcome: "Failed",
+    failureKind: "Restack",
+    recheckCommit: commit,
+    restack: { tickets: [1, 2, 3], commits: [commit, commit, commit] },
+  });
+});
+
 test("an attempt names a request, a repository and a configuration that were retained", async () => {
   for (const [values, constraint] of [
     [
@@ -314,8 +379,8 @@ test("an attempt names a request, a repository and a configuration that were ret
            (tenant, project, attempt, request, ticket, repository, input_bundle,
             input_bundle_digest, target_ref,
             target_commit, strategy, configuration_revision, configuration_digest,
-            approval_required, outcome, candidate_commit, attempt_digest)
-         VALUES ($1,$2,$3,$4,1,$5,$11,$12,'refs/heads/main',$8,'Merge',$6,$7,false,
+            outcome, candidate_commit, attempt_digest)
+         VALUES ($1,$2,$3,$4,1,$5,$11,$12,'refs/heads/main',$8,'Merge',$6,$7,
                  'Prepared',$9,$10)`,
         [
           ...values,
@@ -341,8 +406,8 @@ test("an attempt identity is never reused, in this project or another", async ()
          (tenant, project, attempt, request, ticket, repository, input_bundle,
           input_bundle_digest, target_ref,
           target_commit, strategy, configuration_revision, configuration_digest,
-          approval_required, outcome, candidate_commit, attempt_digest)
-       VALUES ($1,$2,$3,$4,$5,$6,$12,$13,'refs/heads/main',$7,'Merge',$8,$9,false,
+          outcome, candidate_commit, attempt_digest)
+       VALUES ($1,$2,$3,$4,$5,$6,$12,$13,'refs/heads/main',$7,'Merge',$8,$9,
                'Prepared',$10,$11)`,
       [
         other.partition.tenant,
@@ -707,10 +772,10 @@ test("an attempt and a registration each pin a bundle that was retained", async 
       `INSERT INTO finalization_attempt
          (tenant, project, attempt, request, ticket, repository, input_bundle,
           input_bundle_digest, target_ref, target_commit, strategy,
-          configuration_revision, configuration_digest, approval_required,
+          configuration_revision, configuration_digest,
           outcome, candidate_commit, attempt_digest)
        VALUES ($1,$2,$3,$4,$5,$6,'no-such-bundle',$7,'refs/heads/main',$8,'Merge',
-               $9,$10,false,'Prepared',$11,$12)`,
+               $9,$10,'Prepared',$11,$12)`,
       keys(
         finalizerIdentity("nobundle"),
         project.request,
@@ -785,35 +850,22 @@ test("a request's claim is fenced by an epoch and one stays live per ticket", as
   );
 });
 
-test("a native action names an attempt exactly when it asks for an approval", async () => {
-  for (const [kind, capability, named, constraint] of [
+test("a native action is of a kind it knows, under the capability its kind names", async () => {
+  for (const [kind, capability, constraint] of [
+    ["FinalizationApproval", "ResolveTicket", "native_action_kind_is_known"],
     [
-      "FinalizationApproval",
+      "TicketEscalation",
       "ApproveFinalization",
-      null,
-      "names_its_capability",
+      "native_action_capability_is_known",
     ],
-    ["TicketEscalation", "ResolveTicket", attempt, "names_its_capability"],
-    ["FinalizationApproval", "ResolveTicket", attempt, "names_its_capability"],
-    [
-      "Withdrawal",
-      "ApproveFinalization",
-      attempt,
-      "native_action_kind_is_known",
-    ],
-    [
-      "FinalizationApproval",
-      "ApproveFinalization",
-      "no-such-attempt",
-      "native_action_attempt_is_its_own",
-    ],
-  ] as readonly (readonly [string, string, string | null, string])[]) {
+    ["TicketEscalation", "ApproveEvaluation", "names_its_capability"],
+  ] as readonly (readonly [string, string, string])[]) {
     assert.match(
       await rig.ownerRefusal(
         `INSERT INTO native_action
            (tenant, project, action, authorizing_seq, effect_position, ticket,
-            action_version, kind, escalation, required_capability, attempt)
-         VALUES ($1,$2,$3,$4,$5,$6,$4,$7,'NoEscalation',$8,$9)`,
+            action_version, kind, escalation, required_capability)
+         VALUES ($1,$2,$3,$4,$5,$6,$4,$7,'NoEscalation',$8)`,
         keys(
           finalizerIdentity("action"),
           project.authorizingSeq,
@@ -821,11 +873,10 @@ test("a native action names an attempt exactly when it asks for an approval", as
           project.ticket,
           kind,
           capability,
-          named,
         ),
       ),
       new RegExp(constraint, "u"),
-      `${kind}/${capability}/${String(named)}`,
+      `${kind}/${capability}`,
     );
   }
 });

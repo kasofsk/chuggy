@@ -17,6 +17,7 @@
  * starts from.
  */
 
+import type { SessionCapability } from "./agentSession.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
 import type { TenantId } from "./projectStore.ts";
 import type {
@@ -45,8 +46,8 @@ export interface ChatHostRegistration extends ChatHostKey {
 /**
  * A member's chat host as its owner reads it, by the client it registered: its
  * newest poll, absent until it polls, whether that poll is within the window a
- * host is held live for, and the runner its newest poll named, absent where it
- * named none.
+ * host is held live for, and the runner and the threads' capabilities its
+ * newest poll named, each absent where it named none.
  */
 export interface ChatHostView {
   readonly id: string;
@@ -54,6 +55,8 @@ export interface ChatHostView {
   readonly polledAt?: string;
   readonly live: boolean;
   readonly runner?: WorkerRunnerListed;
+  /** The capabilities its newest poll named for the threads it hosts, absent where it named none. */
+  readonly sessionCapabilities?: readonly SessionCapability[];
 }
 
 /** What one registration came to: written, naming the client of the host it replaced where it replaced one, or no tenant to write it in. */

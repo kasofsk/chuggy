@@ -91,10 +91,10 @@ const proposed: ProjectTicket = {
   ...ticketInstants,
 };
 
-const finalizing: ProjectTicket = {
+const escalated: ProjectTicket = {
   ticket: 11,
   title: "Land the release notes",
-  phase: "Finalization",
+  phase: "Escalated",
   sequence: 6,
   latestExecution: failedRun,
   ...ticketInstants,
@@ -109,12 +109,12 @@ const refused: ProjectTicket = {
   ...ticketInstants,
 };
 
-const approval: ProjectNativeActionResponse = {
+const escalation: ProjectNativeActionResponse = {
   ticket: 11,
   action: "action-eleven",
-  kind: "FinalizationApproval",
+  kind: "TicketEscalation",
   authorizingSequence: 51,
-  admits: ["Approve", "Decline"],
+  admits: ["Resume", "Revoke"],
   answerable: true,
 };
 
@@ -165,12 +165,16 @@ function cell(ticket: number, column: string): string {
 }
 
 test("a ticket only an open action names draws its last execution", async () => {
-  drawInbox([inboxEntry(finalizing, { actions: [approval] })]);
+  drawInbox([inboxEntry(escalated, { actions: [escalation] })]);
   await settled();
-  expect(cell(11, "title")).toBe(`${finalizing.title ?? ""}11`);
+  expect(cell(11, "title")).toBe(`${escalated.title ?? ""}11`);
   expect(cell(11, "last run")).toContain("Failed");
   expect(cell(11, "last activity")).not.toBe("—");
-  expect(within(row(11)).getByText("awaiting your approval")).toBeDefined();
+  expect(
+    within(row(11))
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toStrictEqual(["resume", "revoke"]);
 });
 
 test("a ticket only a refusal names draws its last execution", async () => {
@@ -211,7 +215,7 @@ test("a proposed ticket's row names it, says it never ran, and offers the propos
 
 test("no ticket is read on its own, whatever put it in the inbox", async () => {
   const drawn = drawInbox([
-    inboxEntry(finalizing, { actions: [approval] }),
+    inboxEntry(escalated, { actions: [escalation] }),
     inboxEntry(proposed, {
       proposals: [{ decision: "dec-one", tickets: [7] }],
     }),

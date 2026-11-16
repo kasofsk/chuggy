@@ -201,3 +201,68 @@ test("a creator chosen is written to the address beside the filter, and Anyone t
   expect(namedCreators(site.reads.slice(clearedAt))).toStrictEqual(new Set());
   consoleSiteClean(site);
 });
+
+/** The owners the reads of the project's tickets named. */
+function namedOwners(reads: readonly string[]): ReadonlySet<string> {
+  return new Set(
+    reads
+      .map((read) => new URL(read, "http://console.test"))
+      .filter((read) =>
+        read.pathname.endsWith(`/projects/${consolePartition.project}`),
+      )
+      .flatMap((read) => read.searchParams.getAll("owner")),
+  );
+}
+
+function ownerDrawn(): string | null {
+  return screen.getByRole("button", { name: /^Owner/u }).textContent;
+}
+
+async function ownerChosen(name: string): Promise<void> {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Owner/u }), {
+    key: "ArrowDown",
+  });
+  await consoleAdvanced(ticketListAddressSettleMs);
+  fireEvent.click(screen.getByRole("menuitemradio", { name }));
+  await consoleAdvanced(ticketListAddressSettleMs);
+}
+
+test("a link naming an owner draws the list under them, by their email, and names no creator", async () => {
+  consoleMounted(`${projectAddress}?owner=s-ada`, consoleSession(), false);
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(ownerDrawn()).toContain("ada@example.com");
+  expect(creatorDrawn()).toContain("Anyone");
+  expect(namedOwners(site.reads)).toStrictEqual(new Set(["s-ada"]));
+  expect(namedCreators(site.reads)).toStrictEqual(new Set());
+  consoleSiteClean(site);
+});
+
+test("an owner chosen is written to the address beside the creator, and Anyone takes it away", async () => {
+  const history = createMemoryHistory({
+    initialEntries: [`${projectAddress}?creator=s-bob`],
+  });
+  consoleMounted(
+    `${projectAddress}?creator=s-bob`,
+    consoleSession(),
+    false,
+    history,
+  );
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(ownerDrawn()).toContain("Anyone");
+  const chosenAt = site.reads.length;
+  await ownerChosen("Me");
+  const address = new URLSearchParams(history.location.search);
+  expect(address.get("owner")).toBe(abilitiesEvery.principal);
+  expect(address.get("creator")).toBe("s-bob");
+  expect(ownerDrawn()).toContain("Me");
+  expect(namedOwners(site.reads.slice(chosenAt))).toStrictEqual(
+    new Set([abilitiesEvery.principal]),
+  );
+  const clearedAt = site.reads.length;
+  await ownerChosen("Anyone");
+  expect(history.location.search).toBe("?creator=s-bob");
+  expect(ownerDrawn()).toContain("Anyone");
+  expect(site.reads.length).toBeGreaterThan(clearedAt);
+  expect(namedOwners(site.reads.slice(clearedAt))).toStrictEqual(new Set());
+  consoleSiteClean(site);
+});

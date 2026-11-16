@@ -136,50 +136,6 @@ function AppStanding(props: {
   return <InstalledApp tenant={props.tenant} installationId={installationId} />;
 }
 
-function AccountRow(props: {
-  readonly tenant: string;
-  readonly installations: readonly ForgeInstallationResponse[];
-  readonly row: ForgeAccountRow;
-}): ReactNode {
-  const text = useCopyText();
-  const row = props.row;
-  return (
-    <tr>
-      <th scope="row">{row.account}</th>
-      <td>{text(forgeAccountKindLabel(row.kind))}</td>
-      <td>
-        <span className="flex items-center gap-2">
-          <AppStanding
-            tenant={props.tenant}
-            installations={props.installations}
-            account={row.account}
-            app="portal"
-            standing={row.portal}
-          />
-        </span>
-      </td>
-      <td>
-        <span className="flex items-center gap-2">
-          <AppStanding
-            tenant={props.tenant}
-            installations={props.installations}
-            account={row.account}
-            app="worker"
-            standing={row.worker}
-          />
-          {row.worker === "Missing" ? (
-            <InstallLink
-              tenant={props.tenant}
-              returnPath={currentPath()}
-              app="worker"
-            />
-          ) : null}
-        </span>
-      </td>
-    </tr>
-  );
-}
-
 function AccountTable(props: {
   readonly tenant: string;
   readonly installations: readonly ForgeInstallationResponse[];
@@ -188,27 +144,63 @@ function AccountTable(props: {
   const rows = forgeAccountRows(props.installations);
   if (rows.length === 0)
     return <EmptyState label={text({ id: "settings-accounts-none" })} />;
+  const standing = (row: ForgeAccountRow, app: ForgeAppName): ReactNode => (
+    <AppStanding
+      tenant={props.tenant}
+      installations={props.installations}
+      account={row.account}
+      app={app}
+      standing={app === "portal" ? row.portal : row.worker}
+    />
+  );
   return (
-    <Table caption={text({ id: "settings-accounts-table" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "settings-accounts-account" })}</th>
-          <th scope="col">{text({ id: "settings-accounts-kind" })}</th>
-          <th scope="col">{text({ id: "settings-accounts-portal" })}</th>
-          <th scope="col">{text({ id: "settings-accounts-worker" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <AccountRow
-            key={row.account}
-            tenant={props.tenant}
-            installations={props.installations}
-            row={row}
-          />
-        ))}
-      </tbody>
-    </Table>
+    <Table
+      caption={text({ id: "settings-accounts-table" })}
+      stacked={{
+        columns: [
+          {
+            key: "account",
+            label: text({ id: "settings-accounts-account" }),
+            rowHeader: true,
+          },
+          { key: "kind", label: text({ id: "settings-accounts-kind" }) },
+          {
+            key: "portal",
+            label: text({ id: "settings-accounts-portal" }),
+            wide: true,
+          },
+          {
+            key: "worker",
+            label: text({ id: "settings-accounts-worker" }),
+            wide: true,
+          },
+        ],
+        rows: rows.map((row) => ({
+          key: row.account,
+          cells: {
+            account: row.account,
+            kind: text(forgeAccountKindLabel(row.kind)),
+            portal: (
+              <span className="flex flex-wrap items-center gap-2">
+                {standing(row, "portal")}
+              </span>
+            ),
+            worker: (
+              <span className="flex flex-wrap items-center gap-2">
+                {standing(row, "worker")}
+                {row.worker === "Missing" ? (
+                  <InstallLink
+                    tenant={props.tenant}
+                    returnPath={currentPath()}
+                    app="worker"
+                  />
+                ) : null}
+              </span>
+            ),
+          },
+        })),
+      }}
+    />
   );
 }
 

@@ -70,6 +70,8 @@ export interface SessionPlaneIdentity {
   readonly forkFrom?: string;
   /** Present where the session runs on its own system prompt with none of its project's settings; an inquiry's is its lead's. */
   readonly systemPromptOwn?: true;
+  /** Present only for a thread a chat host whose poll named a capability set holds, whose shell is handed its credential. */
+  readonly shellCredentialHanded?: true;
   /** Whether the attempt may still act, which every route requires before anything else. */
   readonly live: boolean;
 }
@@ -90,7 +92,9 @@ export interface SessionAttemptBindingPort {
   binding(input: {
     readonly secret: SessionBearerSecret;
     readonly generation: number;
-  }): Promise<Omit<SessionBearerIdentity, "scope"> | undefined>;
+  }): Promise<
+    Omit<SessionBearerIdentity, "scope" | "capabilities"> | undefined
+  >;
 }
 
 /**
@@ -157,6 +161,22 @@ export interface SessionReferencePort {
     readonly generation: number;
     readonly reference: string;
   }): Promise<SessionReferenceBound>;
+}
+
+/**
+ * What recording whether a thread is standing found: recorded on its thread,
+ * the bearer no live attempt's, or an attempt that is not a thread's on a chat
+ * host, which no report makes standing.
+ */
+export type SessionStandingRecorded =
+  "Recorded" | "Fenced" | "NotChatHostThread";
+
+export interface SessionStandingPort {
+  stand(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+    readonly standing: boolean;
+  }): Promise<SessionStandingRecorded>;
 }
 
 /** One turn as the mailbox hands it over, its input opaque to everything here. */

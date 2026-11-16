@@ -655,14 +655,14 @@ test("a running exchange still takes a message, because the mailbox queues", asy
   styleless();
 });
 
-/** The composer's one button, by the word it says. */
+/** The composer's buttons that are drawn, by the word each says. */
 function buttonSaid(): readonly string[] {
   return ["Stop", "Send"].filter(
     (name) => screen.queryByRole("button", { name }) !== null,
   );
 }
 
-test("a page that takes a stop draws Stop while a turn is out, and one press hands it that turn", () => {
+test("a page that takes a stop draws Stop beside Send while a turn is out, and one press hands it that turn", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const onStop = vi.fn(() => Promise.resolve());
   const drawn = (standing: ConversationExchange["standing"]) => (
@@ -673,7 +673,7 @@ test("a page that takes a stop draws Stop while a turn is out, and one press han
     />
   );
   const view = renderCopied(drawn({ standing: "Running", state: "Claimed" }));
-  expect(buttonSaid()).toStrictEqual(["Stop"]);
+  expect(buttonSaid()).toStrictEqual(["Stop", "Send"]);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   expect(onStop.mock.calls).toStrictEqual([["turn-3"]]);
   expect(onSend).not.toHaveBeenCalled();
@@ -681,11 +681,11 @@ test("a page that takes a stop draws Stop while a turn is out, and one press han
   view.rerender(drawn({ standing: "Stopped" }));
   expect(buttonSaid()).toStrictEqual(["Send"]);
   view.rerender(drawn({ standing: "Running", state: "Queued" }));
-  expect(buttonSaid()).toStrictEqual(["Stop"]);
+  expect(buttonSaid()).toStrictEqual(["Stop", "Send"]);
   styleless();
 });
 
-test("a stop that fails has been answered all the same, so past the beat the button takes the next press", async () => {
+test("a stop that fails has been answered all the same, so past the beat Stop takes the next press", async () => {
   const clock = { ms: Math.floor(performance.now()) };
   vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
@@ -722,12 +722,12 @@ function oneTurnSurface(
   );
 }
 
-/** A clock the button's beat is both asked against and drawn by, moved by hand. */
+/** A clock Stop's beat is both asked against and drawn by, moved by hand. */
 function beatClock(): void {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
 }
 
-/** Whether the composer's button is drawn as one whose press does nothing. */
+/** Whether the button named is drawn as one whose press does nothing. */
 function buttonRests(name: "Stop" | "Send"): boolean {
   const button = screen.getByRole<HTMLButtonElement>("button", { name });
   return button.getAttribute("aria-disabled") === "true";
@@ -739,7 +739,7 @@ async function beatPassed(ms: number): Promise<void> {
   });
 }
 
-test("for the beat after a press of Stop the button says it takes no press, whichever it has become, and no longer", async () => {
+test("for the beat after a press of Stop it says it takes no press, and no longer, and Send beside it never does", async () => {
   beatClock();
   const onStop = vi.fn(() => Promise.resolve());
   const drawn = oneTurnSurface(onStop);
@@ -748,14 +748,14 @@ test("for the beat after a press of Stop the button says it takes no press, whic
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await beatPassed(0);
   expect(buttonRests("Stop")).toBe(true);
+  expect(buttonRests("Send")).toBe(false);
+  await beatPassed(conversationStopBeatMs - 1);
+  expect(buttonRests("Stop")).toBe(true);
+  await beatPassed(1);
+  expect(buttonRests("Stop")).toBe(false);
 
   view.rerender(drawn({ standing: "Stopped" }));
-  expect(buttonRests("Send")).toBe(true);
-  await beatPassed(conversationStopBeatMs - 1);
-  expect(buttonRests("Send")).toBe(true);
-  await beatPassed(1);
-  expect(buttonRests("Send")).toBe(false);
-
+  expect(buttonSaid()).toStrictEqual(["Send"]);
   view.rerender(drawn({ standing: "Running", state: "Queued" }));
   expect(buttonRests("Stop")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
@@ -822,7 +822,7 @@ test("a timer that runs ahead of the clock a press is asked against does not end
   styleless();
 });
 
-test("a click that sent begins the beat on the button it leaves under the pointer", async () => {
+test("a click that sent leaves Stop taking its first press at once", async () => {
   beatClock();
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const onStop = vi.fn(() => Promise.resolve());
@@ -838,7 +838,6 @@ test("a click that sent begins the beat on the button it leaves under the pointe
     target: { value: "one more thing" },
   });
   await beatPassed(0);
-  expect(buttonRests("Send")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await beatPassed(0);
   expect(onSend).toHaveBeenCalledTimes(1);
@@ -849,10 +848,6 @@ test("a click that sent begins the beat on the button it leaves under the pointe
     standing: { standing: "Running", state: "Queued" },
   });
   view.rerender(drawn([answered, sent]));
-  expect(buttonRests("Stop")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-  expect(onStop).not.toHaveBeenCalled();
-  await beatPassed(conversationStopBeatMs);
   expect(buttonRests("Stop")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   expect(onStop.mock.calls).toStrictEqual([["turn-3"]]);
@@ -899,63 +894,43 @@ function drafted(text: string): void {
   });
 }
 
-test("an older stop's late answer leaves a newer stop no door has answered saying it takes no press", async () => {
+test("a message sent after a stop no door has answered leaves Stop taking no press for the turn behind until the door answers", async () => {
   beatClock();
   const { answers, onStop, onSend, drawn } = heldDoors();
   const view = renderCopied(drawn(turnOut));
   pressed("Stop");
   view.rerender(drawn(turnStopped));
   drafted("one more thing");
-  await beatPassed(conversationStopBeatMs);
+  await beatPassed(0);
   pressed("Send");
   await beatPassed(0);
   expect(onSend).toHaveBeenCalledTimes(1);
 
   view.rerender(drawn(turnStopped, turnBehind));
   await beatPassed(conversationStopBeatMs);
-  pressed("Stop");
-  expect(onStop.mock.calls).toStrictEqual([["turn-0"], ["turn-1"]]);
-
-  view.rerender(drawn(turnStopped, turnStopped, turnBehind));
-  answers[0]?.();
-  await beatPassed(conversationStopBeatMs);
   expect(buttonRests("Stop")).toBe(true);
   pressed("Stop");
-  expect(onStop).toHaveBeenCalledTimes(2);
+  expect(onStop.mock.calls).toStrictEqual([["turn-0"]]);
 
-  answers[1]?.();
+  answers[0]?.();
   await beatPassed(0);
   expect(buttonRests("Stop")).toBe(false);
   pressed("Stop");
-  expect(onStop.mock.calls[2]).toStrictEqual(["turn-2"]);
+  expect(onStop.mock.calls).toStrictEqual([["turn-0"], ["turn-1"]]);
   styleless();
 });
 
-test("a press 250 ms behind a click that sent is a double click's and does nothing, and the two an audit found ignored are taken: Stop at 516 ms, and Send 331 ms after Stop", async () => {
+test("a click of Send right after a press of Stop is taken, since the two are not one button", async () => {
   beatClock();
   const { onStop, onSend, drawn } = heldDoors();
-  const view = renderCopied(drawn(turnStopped));
-  drafted("first");
+  renderCopied(drawn(turnOut));
+  drafted("one more thing");
   await beatPassed(0);
+  pressed("Stop");
   pressed("Send");
   await beatPassed(0);
-  view.rerender(drawn(turnStopped, turnBehind));
-  await beatPassed(250);
-  expect(buttonRests("Stop")).toBe(true);
-  pressed("Stop");
-  expect(onStop).not.toHaveBeenCalled();
-  await beatPassed(516 - 250);
-  expect(buttonRests("Stop")).toBe(false);
-  pressed("Stop");
-  expect(onStop.mock.calls).toStrictEqual([["turn-1"]]);
-
-  view.rerender(drawn(turnStopped, turnStopped));
-  drafted("second");
-  await beatPassed(331);
-  expect(buttonRests("Send")).toBe(false);
-  pressed("Send");
-  await beatPassed(0);
-  expect(onSend).toHaveBeenCalledTimes(2);
+  expect(onStop.mock.calls).toStrictEqual([["turn-0"]]);
+  expect(onSend).toHaveBeenCalledTimes(1);
   styleless();
 });
 
@@ -983,7 +958,7 @@ test("a press taken as a beat ends leaves no older timer to end its own beat ear
   styleless();
 });
 
-test("a pointer's press of the button takes no focus, so the caret stays in the box", () => {
+test("a pointer's press of Stop or of Send takes no focus, so the caret stays in the box", () => {
   const drawn = oneTurnSurface(() => Promise.resolve());
   const view = renderCopied(drawn({ standing: "Running", state: "Claimed" }));
   const refused = (name: string): boolean =>

@@ -48,6 +48,7 @@ import {
   sessionContainerEnds,
 } from "../../src/contract/rosters.ts";
 import {
+  allThreadJobWakeReasons,
   jsonTextBytes,
   sessionPlaneRoutes,
   type SessionPlaneRouteName,
@@ -387,6 +388,27 @@ test("a session on its own system prompt is told so, and a lead or a thread on i
     const answered = await factsAnswered({ kind }, workerContractRelease);
     assert.equal(answered.statusCode, 200, kind);
     assert.equal("systemPromptOwn" in answered.json<object>(), false, kind);
+  }
+});
+
+test("a session whose shell is handed its credential is told so, and a session told nothing is answered no such fact", async () => {
+  const told = await factsAnswered(
+    { kind: "Thread", shellCredentialHanded: true },
+    workerContractRelease,
+  );
+  assert.equal(told.statusCode, 200);
+  assert.equal(
+    told.json<{ shellCredentialHanded?: true }>().shellCredentialHanded,
+    true,
+  );
+  for (const kind of ["Lead", "Thread", "Inquiry"] as const) {
+    const answered = await factsAnswered({ kind }, workerContractRelease);
+    assert.equal(answered.statusCode, 200, kind);
+    assert.equal(
+      "shellCredentialHanded" in answered.json<object>(),
+      false,
+      kind,
+    );
   }
 });
 
@@ -2077,6 +2099,22 @@ const sessionHeaviest: Readonly<
     status: 204,
   },
   held: { headers: json, payload: "{}", status: 204 },
+  standing: {
+    headers: json,
+    payload: planeJsonHeaviest({ standing: false }),
+    status: 204,
+  },
+  wake: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      wake: allThreadJobWakeReasons.reduce((longest, wake) =>
+        wake.length > longest.length ? wake : longest,
+      ),
+      resource: planeTextHeaviest(sessionIdentityCharsMax),
+      event: planeTextHeaviest(sessionIdentityCharsMax),
+    }),
+    status: 404,
+  },
   storeStreams: undefined,
   storeBatch: {
     rest: "1a2b/1",

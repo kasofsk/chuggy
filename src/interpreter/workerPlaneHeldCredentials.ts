@@ -1,17 +1,16 @@
 /**
- * The credentials a deployment holds as files, and which of them one attempt
- * is answered with.
+ * The credentials a deployment holds as files, and the issuer that serves
+ * them.
  *
  * A HELD CREDENTIAL IS CONFIGURATION. A deployment names each one in a roster:
  * the name a grant gives it, the project it is held for, the variable a job's
  * environment names its file by, and the file it is in. One credential is held
- * at most once for a project, and several entries may name one file.
+ * at most once for a project, and several entries may name one file. No name
+ * is in the prefix chuggy issues its own under, so no file stands in for one.
  *
- * AN ATTEMPT IS ANSWERED ONLY WHAT IT ASKED, WAS GRANTED AND IS HELD FOR. The
- * pod contributes only the names it asks for. The grant is the one the
- * scheduler recorded for the attempt and the project is the attempt's own,
- * both read from what its bearer finds, so no pod widens either by what it
- * sends.
+ * A CREDENTIAL IS SERVED ONLY FOR THE PROJECT IT IS HELD FOR. The project is
+ * the requester's own, read from what its bearer finds, so no pod widens it by
+ * what it sends; which names it may ask for is the resolver's to decide.
  *
  * A FILE IS READ ON EVERY REQUEST, so a rotated secret is served without a
  * restart, and one that cannot be read is an outage rather than an absence:
@@ -22,12 +21,13 @@
 import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "../contract/http.ts";
+import { heldCredentialSecretCharsMax } from "../contract/workerPlane.ts";
 import {
-  heldCredentialSecretCharsMax,
-  type WorkerHeldCredentialAbsent,
-  type WorkerHeldCredentialBundle,
-} from "../contract/workerPlane.ts";
-import { isHeldCredentialVariable } from "../contract/workerEnvironment.ts";
+  isHeldCredentialVariable,
+  isIssuedCredential,
+  issuedCredentialPrefix,
+} from "../contract/workerEnvironment.ts";
+import type { CredentialIssuer } from "./credentialIssuers.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 
 /** The most credentials one deployment holds. */
@@ -44,41 +44,9 @@ export interface HeldCredential {
   readonly file: string;
 }
 
-/** One credential as an attempt is answered it. */
-export interface HeldCredentialServed {
-  readonly credential: string;
-  readonly variable: string;
-  readonly secret: string;
-  /** Absent for a credential held as a file, which does not expire. */
-  readonly expiresAtMs?: number;
-}
-
 export type HeldCredentialRosterRead =
   | { readonly read: "Roster"; readonly held: readonly HeldCredential[] }
   | { readonly read: "Refused"; readonly why: string };
-
-/** What one attempt's ask came to, an unreadable file kept apart from a credential not served, and those not served named where they are. */
-export type HeldCredentialsAnswered =
-  | {
-      readonly answered: "Credentials";
-      readonly credentials: readonly (
-        HeldCredentialServed | WorkerHeldCredentialBundle
-      )[];
-      readonly absent?: readonly WorkerHeldCredentialAbsent[];
-    }
-  | { readonly answered: "Unavailable" };
-
-/** What the plane answers an attempt from: the project the attempt is in, the names its recorded grant gives, and the names it asked for. */
-export interface HeldCredentialsAsk {
-  readonly partition: Partition;
-  readonly granted: readonly string[];
-  readonly asked: readonly string[];
-}
-
-/** Answers an attempt's ask with the credentials it is served, read as it asks. */
-export interface WorkerPlaneHeldCredentials {
-  served(ask: HeldCredentialsAsk): Promise<HeldCredentialsAnswered>;
-}
 
 /** The text a file holds, or nothing where it is not a readable regular file within its bound. */
 export type HeldCredentialFileRead = (
@@ -124,6 +92,10 @@ export function heldCredentialRoster(
   const keys = new Set<string>();
   const held: HeldCredential[] = [];
   for (const entry of parsed.data) {
+    if (isIssuedCredential(entry.credential))
+      return heldCredentialRosterRefused(
+        `names ${entry.credential}, which is in the prefix ${issuedCredentialPrefix} reserved to the credentials chuggy issues`,
+      );
     if (!isHeldCredentialVariable(entry.variable))
       return heldCredentialRosterRefused(
         `names ${entry.variable}, which is not a variable ending _FILE outside CHUG_, CLAUDE_ and GIT_`,
@@ -148,24 +120,6 @@ export function heldCredentialRoster(
   return { read: "Roster", held };
 }
 
-/** Each held credential an attempt asked for, was granted and is held for in its project, once each and in the order it asked. */
-export function heldCredentialsSelected(
-  held: readonly HeldCredential[],
-  ask: HeldCredentialsAsk,
-): readonly HeldCredential[] {
-  const keyed = new Map(
-    held.map((entry) => [
-      heldCredentialKey(entry.credential, entry.partition),
-      entry,
-    ]),
-  );
-  const granted = new Set(ask.granted);
-  return [...new Set(ask.asked)].flatMap((credential) => {
-    const entry = keyed.get(heldCredentialKey(credential, ask.partition));
-    return entry === undefined || !granted.has(credential) ? [] : [entry];
-  });
-}
-
 /** The secret a file's text is, its surrounding whitespace trimmed, or nothing where it holds none or more than the contract carries. */
 export function heldCredentialSecret(
   text: string | undefined,
@@ -178,26 +132,59 @@ export function heldCredentialSecret(
     : secret;
 }
 
-/** Answers an attempt from `held`, reading each selected credential's file through `read` as it is asked. */
-export function workerPlaneHeldCredentials(
+/** The secret `entry`'s file holds, read through `read` now, or nothing where it holds none. */
+async function heldCredentialFileSecret(
+  entry: HeldCredential,
+  read: HeldCredentialFileRead,
+): Promise<string | undefined> {
+  return heldCredentialSecret(await read(entry.file).catch(() => undefined));
+}
+
+/** The name a held credential's file is written under in the bundle it is served as. */
+export const heldCredentialBundleFile = "secret";
+
+/**
+ * Issues each credential `held` holds for the requester's project as a bundle
+ * of its one file, read through `read` as it is asked, the variable naming
+ * that file's path; a name not held for the project is not this issuer's.
+ */
+export function heldCredentialIssuer(
   held: readonly HeldCredential[],
   read: HeldCredentialFileRead,
-): WorkerPlaneHeldCredentials {
+): CredentialIssuer {
+  const keyed = new Map(
+    held.map((entry) => [
+      heldCredentialKey(entry.credential, entry.partition),
+      entry,
+    ]),
+  );
   return {
-    served: async (ask) => {
-      const credentials: HeldCredentialServed[] = [];
-      for (const entry of heldCredentialsSelected(held, ask)) {
-        const secret = heldCredentialSecret(
-          await read(entry.file).catch(() => undefined),
-        );
-        if (secret === undefined) return { answered: "Unavailable" };
-        credentials.push({
-          credential: entry.credential,
-          variable: entry.variable,
-          secret,
-        });
-      }
-      return { answered: "Credentials", credentials };
+    issue: async (requester, credential) => {
+      const entry = keyed.get(
+        heldCredentialKey(credential, requester.partition),
+      );
+      if (entry === undefined) return { issued: "NotServed" };
+      const secret = await heldCredentialFileSecret(entry, read);
+      if (secret === undefined) return { issued: "Unavailable" };
+      return {
+        issued: "Bundle",
+        bundle: {
+          credential,
+          files: [
+            {
+              file: heldCredentialBundleFile,
+              content: { kind: "Secret", secret },
+            },
+          ],
+          variables: [
+            {
+              kind: "Path",
+              variable: entry.variable,
+              file: heldCredentialBundleFile,
+            },
+          ],
+        },
+      };
     },
   };
 }

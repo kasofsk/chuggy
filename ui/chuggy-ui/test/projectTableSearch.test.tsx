@@ -269,7 +269,8 @@ test("the search is a button that opens out to a focused box and closes on Escap
   await drawnAt({ q: "#121" }, () => served([held(121, "Done")]));
   const toggle = screen.getByRole("button", { name: "Search tickets" });
   const box = screen.getByRole("textbox", { name: "Search tickets" });
-  const field = box.closest(".ticket-list-search-field");
+  const field = box.closest(".list-search-field");
+  expect(field?.closest(".list-controls .list-selects")).not.toBeNull();
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(toggle.hasAttribute("data-active")).toBe(true);
   expect(field?.hasAttribute("inert")).toBe(true);
@@ -400,6 +401,7 @@ test("an empty active list says so and offers the finished tickets behind one Sh
     "No active or recently finished tickets.",
   );
   expect(titlesDrawn()).toStrictEqual([]);
+  expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
   const activeReads = drawn.asked.filter((asked) => asked.has("active"));
   const finishedReads = drawn.asked.filter((asked) => asked.has("phase"));
   expect(finishedReads.length).toBe(activeReads.length);
@@ -589,3 +591,74 @@ test("a standing none of whose rows the first page holds says so of the rows rea
   expect(titlesDrawn()).toStrictEqual(["Ticket 130"]);
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+/** The rows a list holds for no reader: the skeletons standing in for rows. */
+function skeletonsDrawn(list: HTMLElement): number {
+  return list.querySelectorAll('li[aria-hidden="true"]').length;
+}
+
+test("the first read stands as skeleton rows a reader is not told of, under a list named as loading, until its rows replace them", async () => {
+  const first = heldAnswer();
+  await drawnAt({}, (asked) =>
+    asked.get("active") === "true" ? first.answered : served([]),
+  );
+  const loading = screen.getByRole("list", { name: "Loading…" });
+  expect(skeletonsDrawn(loading)).toBe(3);
+  expect(within(loading).queryAllByRole("listitem")).toStrictEqual([]);
+  first.release(served([held(150, "Work")]));
+  await settled();
+  expect(screen.queryByRole("list", { name: "Loading…" })).toBeNull();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+  expect(skeletonsDrawn(screen.getByRole("list", { name: "Tickets" }))).toBe(0);
+});
+
+test("a further page being read stands as skeleton rows at the list's end, under the rows already drawn", async () => {
+  const finished = heldAnswer();
+  await drawnAt({}, (asked) =>
+    asked.get("active") === "true"
+      ? served([held(150, "Work")])
+      : finished.answered,
+  );
+  await press("Show more");
+  const list = screen.getByRole("list", { name: "Tickets" });
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+  expect(skeletonsDrawn(list)).toBe(3);
+  expect(list.lastElementChild?.getAttribute("aria-hidden")).toBe("true");
+  expect(showMores()).toBe(0);
+  finished.release(served([held(120, "Done")]));
+  await settled();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 120"]);
+  expect(skeletonsDrawn(list)).toBe(0);
+});
+
+test.each([
+  [
+    "a state filter",
+    { filter: "Escalated" },
+    "No active or recently finished tickets.",
+  ],
+  [
+    "a search under a filter and a sort",
+    { q: "nomatch", filter: "Work", sort: "Oldest" },
+    "0 matching tickets",
+  ],
+] as const)(
+  "%s that matches nothing says so in one line beside Clear filters, which draws every ticket under the sort it had",
+  async (_narrowing, address, said) => {
+    const drawn = await drawnAt(address, (asked) =>
+      asked.has("q") || asked.has("phase")
+        ? served([], { matched: 0 })
+        : served([held(150, "Work")]),
+    );
+    expect(screen.getByRole("status").textContent).toBe(said);
+    expect(titlesDrawn()).toStrictEqual([]);
+    await press("Clear filters");
+    expect(drawn.written.at(-1)).toStrictEqual({
+      ...("sort" in address ? { sort: address.sort } : {}),
+      filter: "All",
+    });
+    expect(localStorage.getItem(ticketListFilterStored)).toBe("All");
+    expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+  },
+);

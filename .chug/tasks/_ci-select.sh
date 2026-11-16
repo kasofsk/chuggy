@@ -432,7 +432,7 @@ ci_declare() { # <gate id or suite path>
 	check-console)
 		ci_text ui
 		ci_code src/contract test/fixtures/configurations .chug/configurations \
-			scripts/console-policy.ts scripts/check-console-policy.ts package-lock.json \
+			scripts/console-policy.ts scripts/check-console-policy.ts images/chuggy-ui/nginx.conf package-lock.json \
 			tsconfig.json .gitignore .prettierrc.json .prettierignore .chug/tasks/check-console.sh
 		ci_probes .browserslistrc browserslist .editorconfig .npmrc .prettierrc package.yaml \
 			lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*'
@@ -467,9 +467,11 @@ ci_declare() { # <gate id or suite path>
 			src/roots/migrate.ts src/roots/provisionAgentSession.ts src/roots/provisionProjectAccess.ts \
 			src/roots/nativeHttp.ts src/roots/controlPlane.ts src/adapters/postgres/pool.ts \
 			test/postgres/schedulerRootPorts.ts
+		ci_ambient
 		ci_code deploy/rig/wipe-tickets.sql src/roots/runnerReleases.json test/fixtures/fluxDeliveries \
-			package.json .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
-			.chug/tasks/check-postgres.sh .chug/tasks/_test-timeout.sh
+			package.json tsconfig.json eslint.config.js .chug/tasks/_postgres.sh \
+			.chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh .chug/tasks/_test-timeout.sh
+		ci_probes ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
 		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
