@@ -1,8 +1,7 @@
 /**
  * A ticket's state as one label: its word, its tone and its mark, never a
  * button. The page's size heads the ticket; the small one sits in a bar or a
- * row, its word as wide as the widest any state says, and what the label is
- * given follows its word.
+ * row, its word as wide as the widest any state says.
  */
 
 import type { ReactNode } from "react";
@@ -114,7 +113,6 @@ export function TicketStateWord(props: {
 export function TicketStateLabel(props: {
   readonly standing: TicketStateStanding;
   readonly size: TicketStateLabelSize;
-  readonly children?: ReactNode;
 }): ReactNode {
   const label = ticketStateLabelOf(props.standing);
   const text = useCopyText();
@@ -137,7 +135,6 @@ export function TicketStateLabel(props: {
       >
         {text(label.word)}
       </span>
-      {props.children}
     </span>
   );
 }

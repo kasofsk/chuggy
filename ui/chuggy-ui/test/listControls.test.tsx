@@ -1,7 +1,6 @@
 /**
  * The bar over a list, which the tickets list and the epics list both draw:
- * what it is handed for its start before its search and pickers, and a search
- * that is a button naming the box it opens out to, focused, until Escape or
+ * its search and pickers together at its end, and a search that is a button naming the box it opens out to, focused, until Escape or
  * leaving it closes it again; and a bar scrolled out of the way that is inert
  * while focus is outside it.
  */
@@ -18,7 +17,7 @@ afterEach(cleanup);
 function Searched(props: { readonly held?: string }): ReactNode {
   const [search, setSearch] = useState(props.held ?? "");
   return (
-    <ListControls start={<span>12 shown</span>}>
+    <ListControls>
       <ListSearch
         label="Search rows"
         placeholder="Titles…"
@@ -36,11 +35,11 @@ function barOf(): HTMLElement {
   return bar;
 }
 
-test("the start stands before the search and the pickers, which sit together at the bar's end", () => {
+test("the search and the pickers are all the bar holds, together at its end", () => {
   render(<Searched />);
   const bar = barOf();
-  const [start, selects] = [...bar.children];
-  expect(start?.textContent).toBe("12 shown");
+  const [selects, ...rest] = [...bar.children];
+  expect(rest).toEqual([]);
   expect(selects?.classList.contains("list-selects")).toBe(true);
   const [search, sort] = [...(selects?.children ?? [])];
   expect(search?.classList.contains("list-search")).toBe(true);

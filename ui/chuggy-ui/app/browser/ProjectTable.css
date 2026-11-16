@@ -1,11 +1,9 @@
-/* The ticket list's own parts on the shared record list: the controls, each
-   count above the rows the button that filters them to its state, ringed
-   while it is the filter; the number and the meta in each row's line, and what
-   it waits on at its end; and the foot, whose state stands in a slot as wide
-   on every row, which on a ready row is the button that dispatches it. Where
-   the list is narrow the creator and an owner beside the meta move to the
-   start of the foot, opposite the state, each name shortened on its own so
-   neither is cut away; on a phone the controls stack full width and what a
+/* The ticket list's own parts on the shared record list: the number and the
+   meta in each row's line, and what it waits on at its end; and the foot,
+   whose state stands in a slot as wide on every row, which on a ready row is
+   the button that dispatches it. Where the list is narrow the creator and an
+   owner beside the meta move to the start of the foot, opposite the state,
+   each name shortened on its own so neither is cut away; on a phone what a
    row waits on wraps at its line's end. */
 
 @layer page {
@@ -14,75 +12,6 @@
     display: grid;
     gap: var(--space-3);
     min-width: 0;
-  }
-
-  .ticket-list-counts {
-    display: flex;
-    flex: 1 1 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  /* A count is its state's label holding the number, as tall as the controls
-     beside it and its number as wide as the widest count's, ringed in its tone
-     while it is the filter and faded while another is, until it is hovered. */
-  button.ticket-state-count {
-    display: inline-flex;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-3);
-    background: transparent;
-    cursor: pointer;
-  }
-
-  button.ticket-state-count > .ticket-state {
-    height: var(--control-height);
-    transition:
-      border-color var(--duration-1) var(--ease-out),
-      opacity var(--duration-1) var(--ease-out);
-  }
-
-  button.ticket-state-count > .ticket-state > .num {
-    margin-inline-start: auto;
-    text-align: end;
-  }
-
-  button.ticket-state-count .num[data-widest]::before {
-    content: attr(data-widest);
-    content: attr(data-widest) / "";
-    display: block;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-  }
-
-  button.ticket-state-count[data-dimmed] > .ticket-state {
-    opacity: 0.55;
-  }
-
-  button.ticket-state-count[data-dimmed]:is(:hover, :focus-visible)
-    > .ticket-state {
-    opacity: 1;
-  }
-
-  button.ticket-state-count:hover > .ticket-state {
-    border-color: var(--edge-strong);
-  }
-
-  button.ticket-state-count:focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  button.ticket-state-count[aria-pressed="true"] > .ticket-state {
-    box-shadow:
-      0 0 0 var(--hairline) var(--surface-0),
-      0 0 0 calc(3 * var(--hairline)) var(--state-tone);
   }
 
   .ticket-list-status {
@@ -279,41 +208,6 @@
   }
 
   @container (max-width: 40em) {
-    button.ticket-state-count,
-    button.ticket-state-count > .ticket-state {
-      border-radius: var(--radius-circle);
-    }
-
-    button.ticket-state-count > .ticket-state {
-      justify-content: center;
-      width: var(--control-height);
-      padding: 0;
-    }
-
-    button.ticket-state-count > .ticket-state > .num {
-      margin-inline-start: 0;
-      text-align: center;
-    }
-
-    .ticket-state-count .ticket-state-mark,
-    .ticket-state-count .ticket-state-word {
-      display: none;
-    }
-
-    .list-controls:has([data-open]) .ticket-list-counts {
-      display: none;
-    }
-
-    .ticket-list-counts {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-
-    .ticket-list-counts > li {
-      flex: none;
-    }
-
     /* On a phone every control a row draws is a finger's height, and the
        mark for what it waits on as wide; the text of each keeps its line,
        centred in that height. */

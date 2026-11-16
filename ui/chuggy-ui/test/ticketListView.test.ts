@@ -13,10 +13,10 @@ import {
   ticketSearchCharsMax,
 } from "../../../src/contract/http.ts";
 import {
-  ticketListCountDimmed,
-  ticketListCountTapped,
   ticketListCreatorsOffered,
   ticketListFiltered,
+  ticketListFiltersOn,
+  ticketListQueryFiltersCleared,
   ticketListQueryOf,
   ticketListQueryCleared,
   ticketListQueryWith,
@@ -193,26 +193,31 @@ test("a standing's filter draws the pending rows that stand in it, and any other
     expect(drawn(filter), filter).toStrictEqual([1, 2, 3, 4]);
 });
 
-test("a state's count tapped filters to that state, and tapped as the filter goes back to every ticket", () => {
-  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
-    expect(ticketListCountTapped("All", standing)).toBe(standing);
-    expect(ticketListCountTapped("Pending", standing)).toBe(standing);
-    expect(ticketListCountTapped(standing, standing)).toBe("All");
-  }
-  expect(ticketListCountTapped("Ready", "Blocked")).toBe("Blocked");
+test("the filters on are the state unless it is All, then the creator and the owner the address names, in the panel's order", () => {
+  expect(ticketListFiltersOn({}, "All")).toStrictEqual([]);
+  expect(ticketListFiltersOn({ q: "x", sort: "Newest" }, "All")).toStrictEqual(
+    [],
+  );
+  expect(ticketListFiltersOn({}, "Ready")).toStrictEqual(["filter"]);
+  expect(
+    ticketListFiltersOn({ owner: "o", creator: "c", filter: "Done" }, "Done"),
+  ).toStrictEqual(["filter", "creator", "owner"]);
+  expect(ticketListFiltersOn({ owner: "o" }, "All")).toStrictEqual(["owner"]);
 });
 
-test("a state's count is dimmed exactly while a filter is set that draws none of its tickets", () => {
-  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
-    expect(ticketListCountDimmed("All", standing), standing).toBe(false);
-    expect(ticketListCountDimmed(standing, standing), standing).toBe(false);
-    expect(ticketListCountDimmed("Done", standing), standing).toBe(true);
-  }
-  expect(ticketListCountDimmed("Ready", "Blocked")).toBe(true);
-  expect(ticketListCountDimmed("Work", "Escalated")).toBe(true);
-  expect(ticketListCountDimmed("Pending", "Ready")).toBe(false);
-  expect(ticketListCountDimmed("Pending", "Blocked")).toBe(false);
-  expect(ticketListCountDimmed("Pending", "Work")).toBe(true);
+test("clearing the panel's filters writes All and keeps the search and the sort", () => {
+  expect(
+    ticketListQueryFiltersCleared({
+      q: "billing",
+      sort: "Oldest",
+      filter: "Blocked",
+      creator: "c",
+      owner: "o",
+    }),
+  ).toStrictEqual({ q: "billing", sort: "Oldest", filter: "All" });
+  expect(ticketListQueryFiltersCleared({ creator: "c" })).toStrictEqual({
+    filter: "All",
+  });
 });
 
 test("the address holds a creator as the text it was written as, and drops one the server would refuse", () => {

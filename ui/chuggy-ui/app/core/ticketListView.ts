@@ -26,7 +26,6 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import {
   ticketFilterAll,
-  ticketFilterIsStanding,
   ticketFilterOf,
   ticketFilterStandingOf,
 } from "./projectTableFilters.ts";
@@ -123,6 +122,34 @@ export function ticketListQueryCleared(
   };
 }
 
+/** The filters the Filter panel holds, in the order it holds them. */
+export const ticketListFilterNames = ["filter", "creator", "owner"] as const;
+export type TicketListFilterName = (typeof ticketListFilterNames)[number];
+
+/** The panel's filters that are on: the state where it is not All, and the
+ * creator and the owner where the address names one. The state is the one the
+ * list is drawn under, which for an address naming none is this browser's. */
+export function ticketListFiltersOn(
+  query: TicketListQuery,
+  filter: TicketFilter,
+): readonly TicketListFilterName[] {
+  return ticketListFilterNames.filter((name) =>
+    name === "filter" ? filter !== ticketFilterAll : query[name] !== undefined,
+  );
+}
+
+/** The address with every filter the panel holds off and its search and its
+ * sort kept. All is written, as any filter is. */
+export function ticketListQueryFiltersCleared(
+  query: TicketListQuery,
+): TicketListQuery {
+  return {
+    ...(query.q === undefined ? {} : { q: query.q }),
+    ...(query.sort === undefined ? {} : { sort: query.sort }),
+    filter: ticketFilterAll,
+  };
+}
+
 /** What the router parsed a value written by hand to, as the text it was. */
 function ticketListQueryText(typed: unknown): string | undefined {
   return typeof typed === "string" ||
@@ -208,25 +235,6 @@ export function ticketListFiltered(
   const standing = ticketFilterStandingOf(filter);
   if (standing === undefined) return rows;
   return rows.filter((row) => ticketListStandingOf(row) === standing);
-}
-
-/** The filter a state's count leaves once tapped: that state, or every ticket
- * where that state was already the filter. */
-export function ticketListCountTapped(
-  filter: TicketFilter,
-  standing: TicketListStanding,
-): TicketFilter {
-  return filter === standing ? ticketFilterAll : standing;
-}
-
-/** Whether a state's count is drawn dimmed: a filter is set and the list it
- * draws holds none of that state's tickets. */
-export function ticketListCountDimmed(
-  filter: TicketFilter,
-  standing: TicketListStanding,
-): boolean {
-  if (filter === ticketFilterAll || filter === standing) return false;
-  return !(filter === "Pending" && ticketFilterIsStanding(standing));
 }
 
 /** The phases in the order the State sort draws them. */

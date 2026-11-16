@@ -224,9 +224,7 @@ test("a search under a standing counts only the rows of that standing, of those 
           nextCursor: "x-2",
         });
   });
-  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Pending", ""]),
-  );
+  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(new Set(["Pending"]));
   expect(titlesDrawn()).toStrictEqual(["Ticket 5"]);
   expect(screen.getByRole("status").textContent).toBe(
     "1 matching ticket so far",
@@ -505,13 +503,15 @@ test("a Show more pressed while no read of the list is running starts none", asy
   expect(pagesAsked(drawn.asked.slice(pressedAt))).toStrictEqual(["finished"]);
 });
 
-/** The filter the list is drawn under, as its control names it. */
-function filterDrawn(): string | null {
-  return screen.getByRole("button", { name: /^Filter/u }).textContent;
+/** The filters on, as their marks under the bar name them. */
+function filterDrawn(): readonly (string | null)[] {
+  const marks = screen.getByRole("list", { name: "Filters on" });
+  return [...marks.querySelectorAll(".chip-label")].map(
+    (mark) => mark.textContent,
+  );
 }
 
-/** The phases each read asked for, one read to an entry: the filter's, and
- * none for the counts, which are of every ticket. */
+/** The phases each read asked for, one read to an entry. */
 function phasesAsked(asked: readonly URLSearchParams[]): readonly string[] {
   return asked.map((each) => each.getAll("phase").join(","));
 }
@@ -535,9 +535,9 @@ test("a filter the address names is the list drawn, whatever this browser kept",
   const drawn = await drawnAt({ filter: "Escalated" }, servedByPhase);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated", ""]),
+    new Set(["Escalated"]),
   );
-  expect(filterDrawn()).toContain("Escalated");
+  expect(filterDrawn()).toStrictEqual(["State: Escalated"]);
   expect(drawn.written).toStrictEqual([]);
 });
 
@@ -555,17 +555,16 @@ test("where the address names no filter the kept one is drawn, and one kept by a
   expect(drawn.written).toStrictEqual([{ sort: "Oldest" }]);
   expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
   expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
-    new Set(["Escalated", ""]),
+    new Set(["Escalated"]),
   );
 });
 
 test("a filter chosen is written to the address and kept by this browser", async () => {
   const drawn = await drawnAt({ q: "gate" }, servedByPhase);
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
-    key: "ArrowDown",
+  await press("Filter");
+  fireEvent.change(screen.getByRole("combobox", { name: "State" }), {
+    target: { value: "Done" },
   });
-  await screen.findByRole("menu");
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Done" }));
   await settled();
   expect(drawn.written).toStrictEqual([{ q: "gate", filter: "Done" }]);
   expect(localStorage.getItem(ticketListFilterStored)).toBe("Done");

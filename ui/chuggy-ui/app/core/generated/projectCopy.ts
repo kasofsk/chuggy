@@ -41,14 +41,18 @@ export interface ProjectCopy {
   readonly "project-table-title": Record<never, never>;
   readonly "project-table-empty": Record<never, never>;
   readonly "project-table-aria-tickets": Record<never, never>;
-  readonly "project-table-aria-by-state": Record<never, never>;
   readonly "project-table-waits-on": Record<never, never>;
   readonly "project-table-creator-label": Record<never, never>;
   readonly "project-table-creator-anyone": Record<never, never>;
   readonly "project-table-creator-me": Record<never, never>;
   readonly "project-table-owner-label": Record<never, never>;
   readonly "project-table-sort-label": Record<never, never>;
-  readonly "project-table-filter-label": Record<never, never>;
+  readonly "project-table-filter-state": Record<never, never>;
+  readonly "project-table-filter-people": Record<never, never>;
+  readonly "project-table-filter-mark": {
+    readonly filter: unknown;
+    readonly value: unknown;
+  };
   readonly "project-table-filter-all": Record<never, never>;
   readonly "project-table-search": Record<never, never>;
   readonly "project-table-search-placeholder": Record<never, never>;

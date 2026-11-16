@@ -11,6 +11,15 @@ export interface UiCopy {
   readonly "ui-dismiss": Record<never, never>;
   readonly "ui-edit": Record<never, never>;
   readonly "ui-ledger-current": Record<never, never>;
+  readonly "ui-list-filter": Record<never, never>;
+  readonly "ui-list-filter-on": {
+    readonly count: unknown;
+  };
+  readonly "ui-list-filter-clear": Record<never, never>;
+  readonly "ui-list-filter-marks": Record<never, never>;
+  readonly "ui-list-filter-remove": {
+    readonly filter: unknown;
+  };
   readonly "ui-ledger-superseded": Record<never, never>;
   readonly "ui-locomotive": Record<never, never>;
   readonly "ui-no-match": Record<never, never>;

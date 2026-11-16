@@ -8,6 +8,14 @@ ui-copy-code = Copy code
 ui-dismiss = Dismiss
 ui-edit = Edit
 ui-ledger-current = Current
+ui-list-filter = Filter
+ui-list-filter-on = { $count ->
+    [one] { $count } filter on
+   *[other] { $count } filters on
+}
+ui-list-filter-clear = Clear all
+ui-list-filter-marks = Filters on
+ui-list-filter-remove = Remove { $filter }
 ui-ledger-superseded = Superseded
 ui-locomotive = { -brand-name } is under way
 ui-no-match = No match

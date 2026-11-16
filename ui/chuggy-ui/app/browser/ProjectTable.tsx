@@ -9,9 +9,9 @@
  * the owner, the search and the order a sort reads in are asked of the wire,
  * and the rows on screen stand until the read under a new choice answers; the
  * search, the sort, the filter, the creator and the owner are the page's
- * address, so a link holds the view. Each state's
- * count above the rows, read under every filter, chooses the filter as the
- * picker does. A project
+ * address, so a link holds the view. The bar holds the search, one Filter
+ * control holding the state, the creator and the owner, and the sort; each
+ * filter that is on is a mark under the bar. A project
  * holding no ticket at all says so in one line instead, and a list its reader
  * narrowed to nothing offers the way back to every ticket.
  *
@@ -67,11 +67,11 @@ import {
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
-  ticketListCountDimmed,
-  ticketListCountTapped,
   ticketListCreatorsOffered,
   ticketListFiltered,
+  ticketListFiltersOn,
   ticketListQueryCleared,
+  ticketListQueryFiltersCleared,
   ticketListQueryWith,
   ticketListSearchOf,
   ticketListSearchWaitMs,
@@ -84,6 +84,7 @@ import {
   type TicketListStanding,
 } from "../core/ticketListView.ts";
 import type {
+  TicketListFilterName,
   TicketListQuery,
   TicketListSort,
 } from "../core/ticketListView.ts";
@@ -94,9 +95,14 @@ import {
   ListControls,
   ListGlyph,
   ListSearch,
-  listFilterGlyph,
   listSortGlyph,
 } from "./ui/ListControls.tsx";
+import {
+  ListFilter,
+  ListFilterGroup,
+  ListFilterMarks,
+} from "./ui/ListFilter.tsx";
+import type { ListFilterMark } from "./ui/ListFilter.tsx";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
@@ -113,13 +119,14 @@ import { Identity } from "./ui/Identity.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { RecordList, RecordRow, RecordRowSkeleton } from "./ui/RecordList.tsx";
 import type { RecordListMore } from "./ui/RecordList.tsx";
+import { Select } from "./ui/Select.tsx";
+import type { SelectOption } from "./ui/Select.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 import {
   TicketDependencyChip,
   dependencyStandingOf,
   TicketStateChip,
-  TicketStateCount,
 } from "./ticket/TicketStateChip.tsx";
 import type { TicketStateChipLook } from "./ticket/TicketStateChip.tsx";
 import {
@@ -418,20 +425,6 @@ export function TicketListRow(props: {
   );
 }
 
-const ticketListCreatorGlyph = (
-  <ListGlyph>
-    <circle cx="8" cy="5" r="2.75" />
-    <path d="M2.75 14c0-2.9 2.35-4.75 5.25-4.75s5.25 1.85 5.25 4.75" />
-  </ListGlyph>
-);
-
-const ticketListOwnerGlyph = (
-  <ListGlyph>
-    <circle cx="10" cy="5" r="2.5" />
-    <path d="M5.5 14c0-2.6 2-4.25 4.5-4.25s4.5 1.65 4.5 4.25M1.5 8h4M4 6l2 2-2 2" />
-  </ListGlyph>
-);
-
 const ticketListDependencyGlyph = (
   <ListGlyph>
     <circle cx="4.5" cy="3.5" r="1.75" />
@@ -440,62 +433,7 @@ const ticketListDependencyGlyph = (
   </ListGlyph>
 );
 
-/** The standings that are not yet an end, in the order the State sort draws the rows, reversed. */
-const ticketListCounted = [
-  "Blocked",
-  "Ready",
-  "Work",
-  "Evaluation",
-  "Finalization",
-  "Escalated",
-] as const satisfies readonly TicketListStanding[];
-
-/** How many of the rows read under every filter stand in each state that is
- * not an end, each the button that filters the list to its state or, as the
- * filter, back to every ticket; dimmed while a filter is set that draws none
- * of its tickets. The filter's own state is drawn when no row stands in it, so
- * it can always be tapped away. */
-function TicketListCounts(props: {
-  readonly rows: readonly ProjectTableRow[];
-  readonly filter: TicketFilter;
-  readonly onFilter: (filter: TicketFilter) => void;
-}): ReactNode {
-  const text = useCopyText();
-  const counts = new Map<TicketListStanding, number>();
-  for (const row of props.rows) {
-    const standing = ticketListStandingOf(row);
-    counts.set(standing, (counts.get(standing) ?? 0) + 1);
-  }
-  const drawn = ticketListCounted.flatMap((standing) => {
-    const count =
-      counts.get(standing) ?? (standing === props.filter ? 0 : undefined);
-    return count === undefined ? [] : [{ standing, count }];
-  });
-  const countWidest = Math.max(0, ...drawn.map(({ count }) => count));
-  return (
-    <ul
-      className="ticket-list-counts"
-      aria-label={text({ id: "project-table-aria-by-state" })}
-    >
-      {drawn.map(({ standing, count }) => (
-        <li key={standing}>
-          <TicketStateCount
-            standing={standing}
-            count={count}
-            pressed={standing === props.filter}
-            dimmed={ticketListCountDimmed(props.filter, standing)}
-            countWidest={countWidest}
-            onPress={() => {
-              props.onFilter(ticketListCountTapped(props.filter, standing));
-            }}
-          />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** What the Filter picker offers past All: every phase, Pending followed by
+/** What the State filter offers past All: every phase, Pending followed by
  * the standings it narrows to. */
 const ticketListFilterChoices: readonly Exclude<
   TicketFilter,
@@ -504,44 +442,60 @@ const ticketListFilterChoices: readonly Exclude<
   phase === "Pending" ? [phase, ...ticketFilterStandings] : [phase],
 );
 
-function ticketListFilterText(
-  filter: Exclude<TicketFilter, typeof ticketFilterAll>,
-  text: CopyText,
-): string {
+const ticketListFilterOffered: readonly TicketFilter[] = [
+  ticketFilterAll,
+  ...ticketListFilterChoices,
+];
+
+function ticketListFilterText(filter: TicketFilter, text: CopyText): string {
+  if (filter === ticketFilterAll)
+    return text({ id: "project-table-filter-all" });
   return ticketFilterIsStanding(filter) ? filter : text(phaseLabel(filter));
 }
 
-/** Anyone, as the Creator and Owner pickers hold it, which no principal is. */
-const ticketListMemberAnyone = "";
-
-/** The member a picker narrows the list to, and how it is named and drawn. */
-const ticketListMemberPickers = {
-  creator: {
-    label: { id: "project-table-creator-label" },
-    glyph: ticketListCreatorGlyph,
-  },
-  owner: {
-    label: { id: "project-table-owner-label" },
-    glyph: ticketListOwnerGlyph,
-  },
-} as const satisfies Record<
-  "creator" | "owner",
-  { readonly label: Copy; readonly glyph: ReactNode }
->;
-
-/** Who filed, or who owns, the tickets the list holds: anyone, the reader,
- * or one of the project's people, each drawn as their row's creator is. */
-function TicketListMemberPicker(props: {
-  readonly member: keyof typeof ticketListMemberPickers;
-  readonly partition: PartitionIdentity;
-  readonly query: TicketListQuery;
-  readonly onQuery: (query: TicketListQuery) => void;
+function TicketListStateSelect(props: {
+  readonly filter: TicketFilter;
+  readonly onFilter: (filter: TicketFilter) => void;
 }): ReactNode {
   const text = useCopyText();
-  const chosen = props.query[props.member];
-  const reader = useProjectAbilities(props.partition)?.principal;
-  const people = useProjectPeople(props.partition);
-  const creatorEmails = useCreatorEmails(props.partition);
+  return (
+    <Select
+      label={text({ id: "project-table-filter-state" })}
+      labelShown
+      value={props.filter}
+      options={ticketListFilterOffered.map((filter) => ({
+        value: filter,
+        text: ticketListFilterText(filter, text),
+      }))}
+      onChange={(chosen) => {
+        props.onFilter(ticketListFilterOf(chosen));
+      }}
+    />
+  );
+}
+
+/** Anyone, as the Creator and Owner filters hold it, which no principal is. */
+const ticketListMemberAnyone = "";
+
+/** The member filters, and how each is named. */
+const ticketListMemberLabels = {
+  creator: { id: "project-table-creator-label" },
+  owner: { id: "project-table-owner-label" },
+} as const satisfies Record<"creator" | "owner", Copy>;
+
+type TicketListMember = keyof typeof ticketListMemberLabels;
+
+/** Whom a member filter offers: anyone, the reader as Me, and each of the
+ * project's people and the member the address names, each named as their
+ * row's creator is. */
+function useTicketListMemberOptions(
+  partition: PartitionIdentity,
+  chosen: string | undefined,
+): readonly SelectOption[] {
+  const text = useCopyText();
+  const reader = useProjectAbilities(partition)?.principal;
+  const people = useProjectPeople(partition);
+  const creatorEmails = useCreatorEmails(partition);
   const offered = ticketListCreatorsOffered(
     reader,
     people.state === "Ready"
@@ -549,29 +503,36 @@ function TicketListMemberPicker(props: {
       : [],
     chosen,
   );
-  const picker = ticketListMemberPickers[props.member];
+  return [
+    {
+      value: ticketListMemberAnyone,
+      text: text({ id: "project-table-creator-anyone" }),
+    },
+    ...(reader === undefined
+      ? []
+      : [{ value: reader, text: text({ id: "project-table-creator-me" }) }]),
+    ...offered.map((principal) => ({
+      value: principal,
+      text: creatorLabel(principal, creatorEmails).text,
+    })),
+  ];
+}
+
+/** Who filed, or who owns, the tickets the list holds. */
+function TicketListMemberSelect(props: {
+  readonly member: TicketListMember;
+  readonly options: readonly SelectOption[];
+  readonly query: TicketListQuery;
+  readonly onQuery: (query: TicketListQuery) => void;
+}): ReactNode {
+  const text = useCopyText();
   return (
-    <Picker
-      label={text(picker.label)}
-      iconOnly
-      glyph={picker.glyph}
-      value={chosen ?? ticketListMemberAnyone}
-      options={[
-        {
-          value: ticketListMemberAnyone,
-          text: text({ id: "project-table-creator-anyone" }),
-        },
-        ...(reader === undefined
-          ? []
-          : [
-              { value: reader, text: text({ id: "project-table-creator-me" }) },
-            ]),
-        ...offered.map((principal) => ({
-          value: principal,
-          text: creatorLabel(principal, creatorEmails).text,
-        })),
-      ]}
-      onChoose={(picked) => {
+    <Select
+      label={text(ticketListMemberLabels[props.member])}
+      labelShown
+      value={props.query[props.member] ?? ticketListMemberAnyone}
+      options={props.options}
+      onChange={(picked) => {
         const member = picked === ticketListMemberAnyone ? undefined : picked;
         props.onQuery(
           ticketListQueryWith(
@@ -582,7 +543,6 @@ function TicketListMemberPicker(props: {
           ),
         );
       }}
-      align="end"
     />
   );
 }
@@ -610,79 +570,126 @@ function TicketListSortPicker(props: {
   );
 }
 
-function TicketListFilterPicker(props: {
+/** What the list's filters are and do: its state and its members, read off
+ * the address, with what each member filter offers. */
+interface TicketListFilters {
   readonly filter: TicketFilter;
   readonly onFilter: (filter: TicketFilter) => void;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <Picker
-      label={text({ id: "project-table-filter-label" })}
-      iconOnly
-      glyph={listFilterGlyph}
-      value={props.filter}
-      options={[
-        {
-          value: ticketFilterAll,
-          text: text({ id: "project-table-filter-all" }),
-        },
-        ...ticketListFilterChoices.map((filter) => ({
-          value: filter,
-          text: ticketListFilterText(filter, text),
-        })),
-      ]}
-      onChoose={(chosen) => {
-        props.onFilter(ticketListFilterOf(chosen));
-      }}
-      align="end"
-    />
+  readonly query: TicketListQuery;
+  readonly onQuery: (query: TicketListQuery) => void;
+  readonly onClear: () => void;
+  readonly members: Readonly<Record<TicketListMember, readonly SelectOption[]>>;
+}
+
+/** The mark of one filter that is on, removed by turning that filter off. */
+function ticketListFilterMark(
+  name: TicketListFilterName,
+  filters: TicketListFilters,
+  text: CopyText,
+): ListFilterMark {
+  const mark = (label: string, value: string, onRemove: () => void) => ({
+    key: name,
+    text: text({
+      id: "project-table-filter-mark",
+      args: { filter: label, value },
+    }),
+    onRemove,
+  });
+  if (name === "filter")
+    return mark(
+      text({ id: "project-table-filter-state" }),
+      ticketListFilterText(filters.filter, text),
+      () => {
+        filters.onFilter(ticketFilterAll);
+      },
+    );
+  const chosen = filters.query[name];
+  return mark(
+    text(ticketListMemberLabels[name]),
+    filters.members[name].find((option) => option.value === chosen)?.text ??
+      String(chosen),
+    () => {
+      filters.onQuery(
+        ticketListQueryWith(
+          filters.query,
+          name === "creator" ? { creator: undefined } : { owner: undefined },
+        ),
+      );
+    },
   );
 }
 
+/** The one Filter control: the state alone, and then the people. */
+function TicketListFilterPanel(props: {
+  readonly filters: TicketListFilters;
+  readonly active: number;
+}): ReactNode {
+  const text = useCopyText();
+  const filters = props.filters;
+  return (
+    <ListFilter active={props.active} onClear={filters.onClear}>
+      <ListFilterGroup label={text({ id: "project-table-filter-state" })}>
+        <TicketListStateSelect
+          filter={filters.filter}
+          onFilter={filters.onFilter}
+        />
+      </ListFilterGroup>
+      <ListFilterGroup label={text({ id: "project-table-filter-people" })}>
+        {(["creator", "owner"] as const).map((member) => (
+          <TicketListMemberSelect
+            key={member}
+            member={member}
+            options={filters.members[member]}
+            query={filters.query}
+            onQuery={filters.onQuery}
+          />
+        ))}
+      </ListFilterGroup>
+    </ListFilter>
+  );
+}
+
+/** The bar: the search, the Filter control and the sort; and under it a
+ * mark for each filter that is on. */
 function TicketListControls(props: {
-  readonly rows: readonly ProjectTableRow[];
   readonly search: string;
   readonly onSearch: (search: string) => void;
   readonly sort: TicketListSort;
   readonly onSort: (sort: TicketListSort) => void;
-  readonly filter: TicketFilter;
-  readonly onFilter: (filter: TicketFilter) => void;
   readonly partition: PartitionIdentity;
-  readonly query: TicketListQuery;
-  readonly onQuery: (query: TicketListQuery) => void;
+  readonly filters: Omit<TicketListFilters, "members">;
 }): ReactNode {
   const text = useCopyText();
+  const filters: TicketListFilters = {
+    ...props.filters,
+    members: {
+      creator: useTicketListMemberOptions(
+        props.partition,
+        props.filters.query.creator,
+      ),
+      owner: useTicketListMemberOptions(
+        props.partition,
+        props.filters.query.owner,
+      ),
+    },
+  };
+  const on = ticketListFiltersOn(filters.query, filters.filter);
   return (
-    <ListControls
-      start={
-        <TicketListCounts
-          rows={props.rows}
-          filter={props.filter}
-          onFilter={props.onFilter}
+    <>
+      <ListControls>
+        <ListSearch
+          label={text({ id: "project-table-search" })}
+          placeholder={text({ id: "project-table-search-placeholder" })}
+          search={props.search}
+          onSearch={props.onSearch}
         />
-      }
-    >
-      <ListSearch
-        label={text({ id: "project-table-search" })}
-        placeholder={text({ id: "project-table-search-placeholder" })}
-        search={props.search}
-        onSearch={props.onSearch}
+        <TicketListFilterPanel filters={filters} active={on.length} />
+        <TicketListSortPicker sort={props.sort} onSort={props.onSort} />
+      </ListControls>
+      <ListFilterMarks
+        marks={on.map((name) => ticketListFilterMark(name, filters, text))}
       />
-      <TicketListSortPicker sort={props.sort} onSort={props.onSort} />
-      <TicketListFilterPicker filter={props.filter} onFilter={props.onFilter} />
-      <TicketListMemberPicker
-        member="creator"
-        partition={props.partition}
-        query={props.query}
-        onQuery={props.onQuery}
-      />
-      <TicketListMemberPicker
-        member="owner"
-        partition={props.partition}
-        query={props.query}
-        onQuery={props.onQuery}
-      />
-    </ListControls>
+    </>
   );
 }
 
@@ -917,6 +924,10 @@ function useTicketListFilter(
       persistentStore.write(ticketListFilterStoreKey, ticketFilterAll);
       onQuery(ticketListQueryCleared(query));
     },
+    filtersCleared: (): void => {
+      persistentStore.write(ticketListFilterStoreKey, ticketFilterAll);
+      onQuery(ticketListQueryFiltersCleared(query));
+    },
   };
 }
 
@@ -950,7 +961,7 @@ function useTicketListTyped(
 
 /** Everything the page needs before it draws: the partition, the filter,
  * sort and search the address and this browser's own keeping agree on, and
- * the rows under them and under every filter. */
+ * the rows under them. */
 function useProjectTableState(props: {
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
@@ -962,7 +973,6 @@ function useProjectTableState(props: {
   readonly sort: TicketListSort;
   readonly ask: TicketListAsk;
   readonly tickets: TicketRowsHeld;
-  readonly unfiltered: TicketRowsHeld;
   readonly nowMs: number;
 } {
   const partition = useParams({ from: "/$tenant/$project" });
@@ -977,10 +987,6 @@ function useProjectTableState(props: {
     owner: props.query.owner,
   };
   const tickets = useTicketRows(partition, ask);
-  const unfiltered = useTicketRows(partition, {
-    ...ask,
-    filter: ticketFilterAll,
-  });
   return {
     partition,
     choices,
@@ -989,7 +995,6 @@ function useProjectTableState(props: {
     sort,
     ask,
     tickets,
-    unfiltered,
     nowMs: useNowMs(),
   };
 }
@@ -1012,17 +1017,8 @@ export function ProjectTable(props: {
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const text = useCopyText();
-  const {
-    partition,
-    choices,
-    typed,
-    setTyped,
-    sort,
-    ask,
-    tickets,
-    unfiltered,
-    nowMs,
-  } = useProjectTableState(props);
+  const { partition, choices, typed, setTyped, sort, ask, tickets, nowMs } =
+    useProjectTableState(props);
   if (
     tickets.state.state === "Ready" &&
     !tickets.kept &&
@@ -1038,22 +1034,20 @@ export function ProjectTable(props: {
   return (
     <ProjectTableSection partition={partition}>
       <TicketListControls
-        rows={
-          unfiltered.state.state === "Ready"
-            ? unfiltered.state.value.tickets.map(projectTableRow)
-            : []
-        }
         search={typed}
         onSearch={setTyped}
         sort={sort}
         onSort={(next) => {
           props.onQuery(ticketListQueryWith(props.query, { sort: next }));
         }}
-        filter={choices.filter}
-        onFilter={choices.filtered}
         partition={partition}
-        query={props.query}
-        onQuery={props.onQuery}
+        filters={{
+          filter: choices.filter,
+          onFilter: choices.filtered,
+          query: props.query,
+          onQuery: props.onQuery,
+          onClear: choices.filtersCleared,
+        }}
       />
       <ProjectTableMoreFailed failure={partialFailure} />
       <TicketListRows

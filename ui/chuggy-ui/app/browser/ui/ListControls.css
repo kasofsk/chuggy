@@ -1,6 +1,5 @@
-/* The bar over a list: what the list counts at its start, and at its end the
-   search, a button that opens out to its box, and the pickers, each a round
-   glyph. It sticks to the top of the page it scrolls in, and the page that
+/* The bar over a list: at its end the search, a button that opens out to its
+   box, and the pickers, each a round glyph. It sticks to the top of the page it scrolls in, and the page that
    draws it is the container its narrow layout is measured against, where it
    runs edge to edge and an open search takes the row. */
 

@@ -8,7 +8,8 @@
  *
  * The order the list draws and the filter a kept word reads as are here too:
  * the selection is proved in the core, and only a drawn list proves the screen
- * draws it.
+ * draws it. So is the bar: the search, one Filter control holding each filter
+ * once, and the sort, with a mark under it for each filter on.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -35,6 +36,7 @@ import {
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import listSheet from "../app/browser/ProjectTable.css?raw";
+import filterSheet from "../app/browser/ui/ListFilter.css?raw";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -74,6 +76,7 @@ beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   executionsAsked.length = 0;
+  addressesWritten.length = 0;
   cleanup();
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -160,10 +163,23 @@ function ticketsCarrying(
   });
 }
 
+/** Every address the table wrote, in order. */
+const addressesWritten: TicketListQuery[] = [];
+
 /** The table under an address it writes, as the route holds it. */
-function ProjectTableAddressed(): ReactNode {
-  const [query, setQuery] = useState<TicketListQuery>({});
-  return <ProjectTable query={query} onQuery={setQuery} />;
+function ProjectTableAddressed(props: {
+  readonly initial: TicketListQuery;
+}): ReactNode {
+  const [query, setQuery] = useState<TicketListQuery>(props.initial);
+  return (
+    <ProjectTable
+      query={query}
+      onQuery={(next) => {
+        addressesWritten.push(next);
+        setQuery(next);
+      }}
+    />
+  );
 }
 
 /** The table drawn from whatever tickets and executions a case wants, the
@@ -173,6 +189,7 @@ async function drawTableWith(
   tickets: readonly unknown[],
   executions: readonly unknown[],
   over: (served: typeof fetch) => typeof fetch = (served) => served,
+  initial: TicketListQuery = {},
 ): Promise<void> {
   const carrying = ticketsCarrying(tickets, executions);
   const api = apiDouble({
@@ -203,7 +220,7 @@ async function drawTableWith(
       }
       transport={openedStream().ports.fetch}
     >
-      <ProjectTableAddressed />
+      <ProjectTableAddressed initial={initial} />
     </ScreenHarness>,
   );
   await settled();
@@ -565,26 +582,6 @@ test("pending rows are drawn nearest to dispatchable first, ready ones as Ready"
   ).toEqual(["Ready", "Blocked", "Blocked", "Blocked"]);
 });
 
-test("the counts above the list name each unfinished state the rows stand in, in order, and no finished one", async () => {
-  await drawTableWith(
-    [
-      finished,
-      escalated,
-      ticket,
-      pending(23, [{ ticket: 11, phase: "Work" }]),
-      pending(24, []),
-      pending(25, []),
-    ],
-    [execution],
-  );
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  expect(
-    within(counts)
-      .getAllByRole("listitem")
-      .map((item) => item.textContent),
-  ).toEqual(["Blocked1", "Ready2", "Working1", "Escalated1"]);
-});
-
 /** Each dependency chip of the row that waits on it, by the number it shows. */
 function dependencyChips(waiting: string): ReadonlyMap<string, string> {
   const row = screen.getByText(waiting).closest("li");
@@ -719,201 +716,186 @@ test("a project with no tickets still carries the notice of a refused import", a
   );
 });
 
-/** Each count above the list, by what it says, with whether it is pressed
- * or dimmed. */
-function countsDrawn(): readonly string[] {
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  return within(counts)
-    .getAllByRole("button")
-    .map(
-      (count) =>
-        `${count.textContent ?? ""}${count.getAttribute("aria-pressed") === "true" ? " pressed" : ""}${count.hasAttribute("data-dimmed") ? " dimmed" : ""}`,
-    );
+/** The Filter control in the bar, by the name it carries. */
+function filterControl(): HTMLElement {
+  return screen.getByRole("button", { name: /^Filter/u });
 }
 
-async function countTapped(standing: RegExp): Promise<void> {
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  fireEvent.click(within(counts).getByRole("button", { name: standing }));
+/** The Filter panel, opened from the bar. */
+async function filterPanelOpened(): Promise<HTMLElement> {
+  fireEvent.click(filterControl());
   await settled();
+  return screen.getByRole("dialog", { name: "Filter" });
 }
 
-function filterDrawn(): string | null {
-  return screen.getByRole("button", { name: /^Filter/u }).textContent;
-}
-
-async function filterChosen(choice: string): Promise<void> {
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
-    key: "ArrowDown",
-  });
-  await settled();
-  fireEvent.click(screen.getByRole("menuitemradio", { name: choice }));
-  await settled();
-}
-
-const countedTickets = [
-  ticket,
-  escalated,
-  pending(23, [{ ticket: 11, phase: "Work" }]),
-  pending(24, []),
-  pending(25, []),
-  pending(26, [], [9]),
-];
-
-test("a state's count filters the list to that state and is pressed, every other count still drawn dimmed, and tapped again draws every ticket", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1",
-    "Escalated1",
-  ]);
-  await countTapped(/^Working/u);
-  expect(titlesDrawn()).toEqual([title]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 dimmed",
-    "Working1 pressed",
-    "Escalated1 dimmed",
-  ]);
-  expect(filterDrawn()).toContain("Working");
-  await countTapped(/^Working/u);
-  expect(titlesDrawn()).toHaveLength(countedTickets.length);
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1",
-    "Escalated1",
-  ]);
-  expect(filterDrawn()).toContain("All states");
-  expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
-});
-
-test("Ready and Blocked each filter the list to the pending tickets of their own standing", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  await countTapped(/^Ready/u);
-  expect(titlesDrawn()).toEqual(["Pending 25", "Pending 24"]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 pressed",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  expect(filterDrawn()).toContain("Ready");
-  await countTapped(/^Ready/u);
-  await countTapped(/^Blocked/u);
-  expect(titlesDrawn()).toEqual(["Pending 23", "Pending 26"]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 pressed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  expect(filterDrawn()).toContain("Blocked");
-});
-
-test("a dimmed count tapped moves the filter to its state, and the counts stay those of every ticket", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  await countTapped(/^Working/u);
-  await countTapped(/^Escalated/u);
-  expect(titlesDrawn()).toEqual(["Escalated ticket"]);
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 pressed",
-  ]);
-  expect(filterDrawn()).toContain("Escalated");
-});
-
-test("the Filter picker and the counts are one filter, each drawing what the other chose", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  await filterChosen("Blocked");
-  expect(countsDrawn()).toEqual([
-    "Blocked2 pressed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  await filterChosen("Pending");
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1 dimmed",
-    "Escalated1 dimmed",
-  ]);
-  await countTapped(/^Ready/u);
-  expect(filterDrawn()).toContain("Ready");
-  await filterChosen("Escalated");
-  expect(countsDrawn()).toEqual([
-    "Blocked2 dimmed",
-    "Ready2 dimmed",
-    "Working1 dimmed",
-    "Escalated1 pressed",
-  ]);
-  await filterChosen("All states");
-  expect(countsDrawn()).toEqual([
-    "Blocked2",
-    "Ready2",
-    "Working1",
-    "Escalated1",
-  ]);
-});
-
-/** What the list's sheet gives a count for its shadow while a keyboard focuses
- * it. Whether jsdom counts a focus as a keyboard's depends on what an earlier
- * case pressed, so the focus is named by an attribute the sheet is read with. */
-function countFocusedShadow(count: Element): string {
-  const focused = "data-keyboard-focused";
-  const rules = sheetRules(
-    listSheet.replaceAll(":focus-visible", `[${focused}]`),
-    [],
+/** The marks under the bar, by what each says. */
+function filterMarks(): readonly (string | null)[] {
+  const marks = screen.queryByRole("list", { name: "Filters on" });
+  return [...(marks?.querySelectorAll(".chip-label") ?? [])].map(
+    (mark) => mark.textContent,
   );
-  const held = count.cloneNode() as Element;
-  held.setAttribute(focused, "");
-  return sheetDeclared(rules, held, "box-shadow");
 }
 
-test("a dimmed count is faded, and still a button that can be pressed", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  await countTapped(/^Working/u);
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  const rules = sheetRules(listSheet, []);
-  const faded = (count: HTMLElement): string =>
-    sheetDeclared(rules, count.firstElementChild as Element, "opacity");
-  const ready = within(counts).getByRole<HTMLButtonElement>("button", {
-    name: /^Ready/u,
-  });
-  const working = within(counts).getByRole<HTMLButtonElement>("button", {
-    name: /^Working/u,
-  });
-  expect(ready.disabled).toBe(false);
-  expect(Number(faded(ready))).toBeLessThan(1);
-  expect(faded(working)).toBe("");
+test("the bar holds the search, the Filter control and the sort, and nothing is drawn under it while no filter is on", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
+  const bar = document.querySelector<HTMLElement>(".list-controls");
+  expect(
+    within(bar as HTMLElement)
+      .getAllByRole("button")
+      .map((control) => control.getAttribute("title") ?? control.textContent),
+  ).toStrictEqual(["Search tickets", "Filter", "Sort State"]);
+  expect(filterControl().textContent).toBe("Filter");
+  expect(screen.queryByRole("list", { name: "Filters on" })).toBeNull();
 });
 
-test("a count a keyboard focuses is ringed, pressed or not", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  const working = (): Element =>
-    within(counts).getByRole("button", { name: /^Working/u });
-  expect(countFocusedShadow(working())).toBe("var(--ring-focus)");
-  await countTapped(/^Working/u);
-  expect(working().getAttribute("aria-pressed")).toBe("true");
-  expect(countFocusedShadow(working())).toContain("var(--ring-focus)");
+test("the panel offers every former filter once, grouped and labelled: each state, the creator and the owner", async () => {
+  await drawTableWith([ticket], [execution], abilitiesOver(abilitiesEvery));
+  const panel = await filterPanelOpened();
+  const groups = [...panel.querySelectorAll("fieldset")].map((group) => [
+    group.querySelector("legend")?.textContent,
+    within(group)
+      .getAllByRole("combobox")
+      .map((select) => select.getAttribute("id") ?? ""),
+  ]);
+  expect(groups.map(([legend, selects]) => [legend, selects?.length])).toEqual([
+    ["State", 1],
+    ["People", 2],
+  ]);
+  const options = (label: string): readonly (string | null)[] =>
+    within(within(panel).getByRole("combobox", { name: label }))
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+  expect(options("State")).toStrictEqual([
+    "All states",
+    "Pending",
+    "Ready",
+    "Blocked",
+    "Working",
+    "Evaluating",
+    "Finalizing",
+    "Done",
+    "Escalated",
+    "Revoked",
+  ]);
+  expect(options("Creator").slice(0, 2)).toStrictEqual(["Anyone", "Me"]);
+  expect(options("Owner").slice(0, 2)).toStrictEqual(["Anyone", "Me"]);
+  expect(within(panel).getAllByRole("combobox")).toHaveLength(3);
 });
 
-test("on a phone a count shows only its number, its label's mark and word hidden", async () => {
-  await drawTableWith(countedTickets, [execution]);
-  const counts = screen.getByRole("list", { name: "Tickets by state" });
-  const working = within(counts).getByRole("button", { name: /^Working/u });
-  const rules = sheetRules(listSheet, [sheetNarrowCondition]);
-  const shown = (selector: string): boolean =>
-    sheetDeclared(
-      rules,
-      working.querySelector(selector) as Element,
-      "display",
-    ) !== "none";
-  expect(shown(".ticket-state-mark")).toBe(false);
-  expect(shown(".ticket-state-word")).toBe(false);
-  expect(shown(".num")).toBe(true);
+test("the control counts the filters on, each also a mark under the bar that one press removes, the address keeping the rest", async () => {
+  await drawTableWith(
+    [ticket, escalated],
+    [execution],
+    abilitiesOver(abilitiesEvery),
+    {
+      filter: "Escalated",
+      owner: abilitiesEvery.principal,
+      sort: "Oldest",
+    },
+  );
+  expect(filterControl().textContent).toBe("Filter22 filters on");
+  expect(filterMarks()).toStrictEqual(["State: Escalated", "Owner: Me"]);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Owner: Me" }));
+  await settled();
+  expect(addressesWritten).toStrictEqual([
+    { sort: "Oldest", filter: "Escalated" },
+  ]);
+  expect(filterMarks()).toStrictEqual(["State: Escalated"]);
+  expect(filterControl().textContent).toBe("Filter11 filter on");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Remove State: Escalated" }),
+  );
+  await settled();
+  expect(addressesWritten.at(-1)).toStrictEqual({
+    sort: "Oldest",
+    filter: "All",
+  });
+  expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
+  expect(screen.queryByRole("list", { name: "Filters on" })).toBeNull();
+  expect(filterControl().textContent).toBe("Filter");
+});
+
+test("a filter chosen in the panel is written to the address as the picker wrote it, and draws the list under it", async () => {
+  await drawTableWith(
+    [ticket, escalated],
+    [execution],
+    abilitiesOver(abilitiesEvery),
+  );
+  const panel = await filterPanelOpened();
+  fireEvent.change(within(panel).getByRole("combobox", { name: "State" }), {
+    target: { value: "Escalated" },
+  });
+  await settled();
+  fireEvent.change(within(panel).getByRole("combobox", { name: "Creator" }), {
+    target: { value: abilitiesEvery.principal },
+  });
+  await settled();
+  expect(addressesWritten).toStrictEqual([
+    { filter: "Escalated" },
+    { filter: "Escalated", creator: abilitiesEvery.principal },
+  ]);
+  expect(filterMarks()).toStrictEqual(["State: Escalated", "Creator: Me"]);
+});
+
+test("Clear all turns every filter in the panel off, keeps the search and the sort, and closes the panel back onto its control", async () => {
+  await drawTableWith([ticket], [execution], abilitiesOver(abilitiesEvery), {
+    q: "gate",
+    sort: "Newest",
+    filter: "Work",
+    creator: abilitiesEvery.principal,
+  });
+  const panel = await filterPanelOpened();
+  fireEvent.click(within(panel).getByRole("button", { name: "Clear all" }));
+  await settled();
+  expect(addressesWritten).toStrictEqual([
+    { q: "gate", sort: "Newest", filter: "All" },
+  ]);
+  expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
+  expect(screen.queryByRole("dialog", { name: "Filter" })).toBeNull();
+  expect(document.activeElement).toBe(filterControl());
+  expect(filterMarks()).toStrictEqual([]);
+  const reopened = await filterPanelOpened();
+  expect(
+    within(reopened)
+      .getByRole<HTMLButtonElement>("button", { name: "Clear all" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+test("the panel takes the focus as it opens, holds its filters in reading order, and Escape closes it back onto its control", async () => {
+  await drawTableWith([ticket], [execution]);
+  const panel = await filterPanelOpened();
+  expect(panel.contains(document.activeElement)).toBe(true);
+  expect(
+    [...panel.querySelectorAll<HTMLElement>("select, button")].map((control) =>
+      control.getAttribute("id") === null
+        ? control.textContent
+        : panel.querySelector(`label[for="${control.id}"]`)?.textContent,
+    ),
+  ).toStrictEqual(["State", "Creator", "Owner", "Clear all", "Close"]);
+  fireEvent.keyDown(document.activeElement ?? panel, { key: "Escape" });
+  await settled();
+  expect(screen.queryByRole("dialog", { name: "Filter" })).toBeNull();
+  expect(document.activeElement).toBe(filterControl());
+  await filterPanelOpened();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  await settled();
+  expect(screen.queryByRole("dialog", { name: "Filter" })).toBeNull();
+  expect(document.activeElement).toBe(filterControl());
+});
+
+test("on a phone the panel is a sheet across the screen's foot over a scrim, and beside a wide list a popover with no scrim", async () => {
+  await drawTableWith([ticket], [execution]);
+  const panel = await filterPanelOpened();
+  const wrapper = panel.parentElement as Element;
+  const scrim = document.querySelector(".list-filter-scrim") as Element;
+  const wide = sheetRules(filterSheet, []);
+  const phone = sheetRules(filterSheet, [sheetNarrowCondition]);
+  expect(sheetDeclared(wide, scrim, "display")).toBe("none");
+  expect(sheetDeclared(phone, scrim, "display")).toBe("block");
+  expect(sheetDeclared(phone, scrim, "background")).toBe("var(--scrim)");
+  expect(sheetDeclared(phone, wrapper, "inset")).toBe("auto 0 0");
+  expect(sheetDeclared(phone, wrapper, "transform")).toBe("none");
+  expect(sheetDeclared(phone, panel, "width")).toBe("100%");
+  expect(sheetDeclared(wide, panel, "width")).toBe("var(--width-aside)");
 });

@@ -6,7 +6,10 @@
  * under a coarse pointer, as a phone's is. Neither scrolls the page
  * sideways, on the phone every control the page draws is at least the touch
  * height and the long title is drawn in two lines and no part of a third,
- * and every read is one the stub answers. The shell around the
+ * and every read is one the stub answers. On the phone the Filter control
+ * opens its panel as a sheet across the screen's foot, every control in it
+ * the touch height; a state chosen there is written to the address and drawn
+ * as a mark under the bar, and Escape closes the sheet. The shell around the
  * page is not this page's, so the touch height is held under the page's own
  * section.
  */
@@ -173,3 +176,63 @@ for (const viewport of ticketsViewports)
         await served.close();
       }
     });
+
+test("on the phone the Filter control opens a sheet across the screen's foot, and a state chosen there is the address's and a mark under the bar", async ({
+  browser,
+}) => {
+  const served = await servedOpen({
+    root: renderedDist,
+    reads: [
+      stubApiRead(ticketsProjectPath, projectResponseSchema, ticketsPage),
+    ],
+  });
+  try {
+    const rendered = await renderedOpen(browser, served.origin, {
+      route: ticketsPath,
+      viewport: "phone",
+      touch: true,
+      signedIn: true,
+      ready: (page) =>
+        page.getByRole("heading", { level: 3, name: ticketsTitleLong }),
+    });
+    const page = rendered.page;
+    await expect(page.getByRole("list", { name: "Filters on" })).toHaveCount(0);
+    await page.getByRole("button", { name: /^Filter/u }).tap();
+    const sheet = page.getByRole("dialog", { name: "Filter" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("combobox", { name: "State" })).toBeFocused();
+    await sheet.evaluate((element) =>
+      Promise.all(element.getAnimations().map((motion) => motion.finished)),
+    );
+    const viewport = page.viewportSize();
+    const box = await sheet.boundingBox();
+    expect(box?.x).toBe(0);
+    expect(box?.width).toBe(viewport?.width);
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeCloseTo(
+      viewport?.height ?? 0,
+      0,
+    );
+    await renderedNoOverflow(page);
+    await renderedTouchTargets(page, sheet);
+    await sheet
+      .getByRole("combobox", { name: "State" })
+      .selectOption("Escalated");
+    await expect(page).toHaveURL(/[?&]filter=Escalated(&|$)/u);
+    await expect(
+      page.getByRole("button", { name: /^Filter.*1 filter on$/u }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Filter/u })).toBeFocused();
+    await expect(
+      page
+        .getByRole("list", { name: "Filters on" })
+        .getByText("State: Escalated", { exact: true }),
+    ).toBeVisible();
+    await renderedTouchTargets(page, page.locator(".ticket-list-page"));
+    renderedNoViolations(rendered, [zodProbeViolation]);
+    expect(served.unanswered).toEqual([]);
+  } finally {
+    await served.close();
+  }
+});

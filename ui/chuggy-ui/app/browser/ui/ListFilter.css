@@ -1,0 +1,145 @@
+/* ListFilter: the control in the bar, round as the bar's others until it
+   counts a filter on and then as wide as its count; the panel, a popover at
+   the control, and on a phone a sheet across the screen's foot over a scrim;
+   and the marks under the bar. Radix places the panel by an inline style on
+   the element it wraps it in, so the sheet's place outranks that style. */
+
+@layer ui {
+  .list-selects > .btn.list-filter-toggle[data-active] {
+    width: auto;
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+    border-radius: calc(var(--control-height) / 2);
+  }
+
+  .list-filter-toggle[data-active] {
+    color: var(--tone-live);
+  }
+
+  .list-filter-layer {
+    display: contents;
+  }
+
+  .list-filter-scrim {
+    display: none;
+  }
+
+  .list-filter-panel {
+    z-index: calc(var(--z-overlay) + 30);
+    box-sizing: border-box;
+    display: grid;
+    gap: var(--space-4);
+    width: var(--width-aside);
+    max-width: var(--radix-popover-content-available-width);
+    max-height: var(--radix-popover-content-available-height);
+    overflow-y: auto;
+    padding: var(--space-4);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-3);
+    font: var(--weight-regular) var(--text-md) / var(--leading-dense)
+      var(--font-prose);
+  }
+
+  .list-filter-panel:focus-visible {
+    outline: none;
+  }
+
+  .list-filter-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-strong);
+  }
+
+  .list-filter-group {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .list-filter-legend {
+    margin-bottom: var(--space-2);
+    padding: 0;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+  }
+
+  .list-filter-group .select {
+    width: 100%;
+  }
+
+  .list-filter-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+
+  .list-filter-marks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .list-filter-marks > li {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  @media (max-width: 40em) {
+    .list-filter-scrim {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: calc(var(--z-overlay) + 20);
+      background: var(--scrim);
+    }
+
+    [data-radix-popper-content-wrapper]:has(> .list-filter-panel) {
+      inset: auto 0 0 !important;
+      transform: none !important;
+      min-width: 0 !important;
+    }
+
+    .list-filter-panel {
+      width: 100%;
+      max-width: none;
+      max-height: 100dvh;
+      padding: var(--space-4) max(var(--space-4), env(safe-area-inset-right))
+        max(var(--space-4), env(safe-area-inset-bottom))
+        max(var(--space-4), env(safe-area-inset-left));
+      border-width: var(--hairline) 0 0;
+      border-color: var(--edge-strong);
+      border-radius: var(--radius-3) var(--radius-3) 0 0;
+      animation: list-filter-sheet-in var(--duration-2) var(--ease-out);
+    }
+
+    .list-filter-foot > * {
+      flex: 1;
+      justify-content: center;
+    }
+  }
+
+  @keyframes list-filter-sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-filter-panel {
+      animation: none;
+    }
+  }
+}

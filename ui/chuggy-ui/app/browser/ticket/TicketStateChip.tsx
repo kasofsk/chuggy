@@ -1,7 +1,7 @@
 /**
  * A ticket's state where the ticket list draws it: the row's state, as the
- * ticket's own label or as a status badge, a dependency's number in its
- * state's colours, and each state's count. Where a dispatch is offered the
+ * ticket's own label or as a status badge, and a dependency's number in its
+ * state's colours. Where a dispatch is offered the
  * row's state is the button that asks for it, which cannot be pressed while
  * one is going or this tab is offline.
  */
@@ -126,44 +126,5 @@ export function TicketDependencyChip(props: {
     >
       {`#${String(props.ticket)}`}
     </span>
-  );
-}
-
-/** A state's label holding how many tickets stand in it, as the button that
- * filters the list to it; pressed while it is the filter, dimmed while another
- * filter is, and its number as wide as the widest count beside it. */
-export function TicketStateCount(props: {
-  readonly standing: TicketListStanding;
-  readonly count: number;
-  readonly pressed: boolean;
-  readonly dimmed?: boolean | undefined;
-  /** The widest count drawn beside this one. */
-  readonly countWidest?: number | undefined;
-  readonly onPress: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <button
-      type="button"
-      className="ticket-state-count"
-      data-standing={props.standing}
-      data-dimmed={props.dimmed === true || undefined}
-      title={standingWord(props.standing, text)}
-      aria-pressed={props.pressed}
-      onClick={props.onPress}
-    >
-      <TicketStateLabel standing={props.standing} size="small">
-        <b
-          className="num"
-          data-widest={
-            props.countWidest === undefined
-              ? undefined
-              : String(props.countWidest)
-          }
-        >
-          {props.count}
-        </b>
-      </TicketStateLabel>
-    </button>
   );
 }
