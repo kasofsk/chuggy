@@ -10,7 +10,8 @@
  * A run of the reader's own that has not begun says what the server answers
  * it waits on of their runners: a live one, one coming back online, or
  * runners none of which can run it, or their own account's agent where a
- * pause holds the live ones. Only such a run is read again on the clock a
+ * pause holds the live ones, or how much memory the live ones have free and
+ * the run needs where every one is short of it. Only such a run is read again on the clock a
  * session's standing is, since no frame says a runner polled or a pause ended.
  */
 
@@ -24,10 +25,12 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { conversationArgumentLine } from "../../core/conversation.ts";
 import { copyOrDataText } from "../../core/copy.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
+import { memoryMibFigure, quantityFigureText } from "../../core/figures.ts";
 import {
   runnerWait,
   runnerWaitLine,
   runnerWaitPause,
+  runnerWaitRoom,
   runnerWaitWord,
 } from "../../core/myRunner.ts";
 import {
@@ -128,7 +131,7 @@ function TicketNowLine(props: {
 }
 
 /** A run of the reader's held for their own runners, the line itself a link to
- * where they are managed; or, where their own account holds the live ones paused, the pause
+ * where they are managed, with the memory the live ones are short of; or, where their own account holds the live ones paused, the pause
  * and where it is set. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
@@ -159,6 +162,7 @@ function TicketNowRunnerWait(props: {
       </AgentPause>
     );
   const word = runnerWaitWord(wait);
+  const room = runnerWaitRoom(execution);
   return (
     <Notice tone="parked" inline>
       <LinePart first>
@@ -167,6 +171,17 @@ function TicketNowRunnerWait(props: {
         </Link>
       </LinePart>
       {word === undefined ? null : <LinePart>{text(word)}</LinePart>}
+      {room === undefined ? null : (
+        <LinePart>
+          {text({
+            id: "runners-wait-room",
+            args: {
+              free: quantityFigureText(memoryMibFigure(room.freeMib), text),
+              needed: quantityFigureText(memoryMibFigure(room.neededMib), text),
+            },
+          })}
+        </LinePart>
+      )}
     </Notice>
   );
 }

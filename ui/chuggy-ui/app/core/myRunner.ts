@@ -202,6 +202,17 @@ export function runnerWaitPause(
   return wait === "Live" ? execution.paused : undefined;
 }
 
+/** The memory the server answered the live runners of the reader's a run
+ * waits on are short of, said only where it waits on live ones no pause holds. */
+export function runnerWaitRoom(
+  execution: ExecutionSummary,
+): ExecutionSummary["personalRunnerRoom"] {
+  const wait = runnerWait(execution);
+  if (wait !== "Live" || runnerWaitPause(execution, wait) !== undefined)
+    return undefined;
+  return execution.personalRunnerRoom;
+}
+
 /**
  * What taking a member's runners off came to, in one line: taken off, none the
  * caller may take, or why it was refused. The server answers a caller it will
