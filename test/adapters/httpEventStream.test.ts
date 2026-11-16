@@ -162,7 +162,6 @@ function servedWeb(
     operationalStatus: notFound,
     hostedRuns: notFound,
     abilities: notFound,
-    selectorOperationalContext: notFound,
     outputContent: () => Promise.resolve({ read: "NotFound" }),
     uploadProjectArtifact: notFound,
     projectArtifact: () => Promise.resolve({ fetched: "NotFound" }),

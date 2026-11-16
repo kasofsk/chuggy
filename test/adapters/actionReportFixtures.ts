@@ -46,7 +46,6 @@ export function actionReportsApp(
     undefined,
     undefined,
     undefined,
-    undefined,
     reports,
   );
 }

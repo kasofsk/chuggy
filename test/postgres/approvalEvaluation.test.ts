@@ -25,7 +25,6 @@ import {
 import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import { projectInbox } from "../../src/interpreter/projectInbox.ts";
-import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { unaskedNativeWebPorts } from "../interpreter/nativeWebFixtures.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import type { Config } from "../../src/domain/config.ts";
@@ -324,13 +323,6 @@ function answerableReads(at: Evaluating) {
     store: postgresInboxReads(ingress),
     operationalReads: postgresOperationalReads(ingress),
     refusals: { binding: () => Promise.resolve([]) },
-    proposals: selectorProposalReviews(access, {
-      awaitingApproval: () => Promise.resolve([]),
-      approve: () => Promise.resolve(false),
-      reject: () => Promise.resolve(false),
-      reviewFeedback: () => Promise.resolve([]),
-      recentReviewFeedback: () => Promise.resolve([]),
-    }),
   });
   return { web, desk };
 }

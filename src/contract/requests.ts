@@ -23,7 +23,6 @@ import {
   leadDispatchesMax,
   selectorAllowlistNameCharsMax,
   selectorAllowlistNamesMax,
-  selectorReviewFeedbackCharsMax,
   selectorSettingsTextCharsMax,
   sessionEfforts,
   sessionModelSchema,
@@ -54,7 +53,6 @@ import {
   placementRoutes,
   selectorDispatchModes,
   selectorModes,
-  selectorReviewOutcomes,
 } from "./rosters.ts";
 import {
   workerPoolCapabilitiesSchema,
@@ -429,12 +427,6 @@ export const selectorProjectOverridesSchema = z.strictObject({
 export const selectorProjectSettingsSchema = z.strictObject({
   expectedRevision: countSchema,
   overrides: selectorProjectOverridesSchema,
-});
-
-/** A reviewer's answer to one held proposal, with the note the lead reads beside it. */
-export const selectorProposalReviewSchema = z.strictObject({
-  outcome: z.enum(selectorReviewOutcomes),
-  feedback: z.string().min(1).max(selectorReviewFeedbackCharsMax).optional(),
 });
 
 /**

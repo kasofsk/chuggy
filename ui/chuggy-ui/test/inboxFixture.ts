@@ -1,7 +1,6 @@
 /**
  * The inbox's one read as a suite answers it: an entry is a ticket's row and
- * whatever of an open action, a refusal and a held decision the case names on
- * it, and a page is those entries with the count the server says it holds.
+ * whatever of an open action and a refusal the case names on it, and a page is those entries with the count the server says it holds.
  */
 
 import type {
@@ -10,7 +9,6 @@ import type {
   InboxResponse,
   ProjectNativeActionResponse,
   ProjectTicket,
-  SelectorProposalResponse,
 } from "../../../src/contract/responses.ts";
 import { answer } from "./screenHarness.tsx";
 
@@ -18,7 +16,6 @@ import { answer } from "./screenHarness.tsx";
 export interface InboxEntryNamed {
   readonly actions?: readonly ProjectNativeActionResponse[];
   readonly refusals?: readonly AgenticRefusalResponse[];
-  readonly proposals?: readonly SelectorProposalResponse[];
 }
 
 export function inboxEntry(
@@ -29,7 +26,6 @@ export function inboxEntry(
     ticket,
     actions: [...(named.actions ?? [])],
     refusals: [...(named.refusals ?? [])],
-    proposals: [...(named.proposals ?? [])],
   };
 }
 

@@ -29,9 +29,8 @@
  * mint, because enrolling a machine is provisioning rather than work, as
  * deleting the project is; every write of a personal runner, its allowlist
  * among them;
- * the answer to a lead's held proposal and a reply to a thread's offer, each a
- * person's word on what a session put to them; and every write of a thread or
- * a member's own chat, which is its owner's. The confinement is by route and
+ * a reply to a thread's offer, a person's word on what a session put to them;
+ * and every write of a thread or a member's own chat, which is its owner's. The confinement is by route and
  * method, so a route two capabilities' tools write admits either's whole body:
  * a session holding `DraftAuthor` alone may still post a draft no parent bears.
  *
@@ -149,12 +148,9 @@ export const sessionBearerRouteClasses = {
   agenticRefusals: partitionRead,
   inbox: partitionRead,
   operationalStatus: partitionRead,
-  selectorContext: partitionRead,
   selectorSettings: readRefusedReplace,
   selectorSettingsHistory: partitionRead,
   selectorHistory: partitionRead,
-  selectorProposals: partitionRead,
-  selectorProposalReview: refusedWrite,
   lead: partitionRead,
   leadTranscript: partitionRead,
   leadContext: partitionRead,
