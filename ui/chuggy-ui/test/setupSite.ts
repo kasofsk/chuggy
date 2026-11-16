@@ -31,7 +31,8 @@
  * It binds a repository as the server does, only where a portal installation
  * of the workspace's lists it, writing the bootstrap a binding of a repository
  * declaring nothing holds; it answers the deployment's apps, each with its
- * install page, and each installation's settings page.
+ * install page, and the client a person authorizes unless a case takes it
+ * away; and each installation's settings page.
  *
  * It imports a repository's configuration as the server does: from what was
  * pushed to the repository's default branch, judged by the contract's own
@@ -166,6 +167,8 @@ export interface SetupSite {
   /** The repositories an installation grants, by installation, where a case says other than every repository of the workspace's projects on its account. */
   grants: Map<string, string[]>;
   fates: Map<SetupSiteRead | SetupSiteRunnerAsk, SetupSiteFate>;
+  /** Whether the deployment answers a client to authorize, without which it offers no install the workspace can claim. */
+  authorizing: boolean;
   /** Every registration token and every runner credential the site handed out, in order. */
   readonly secrets: string[];
   /** The caller's subject, which their chat host is registered under. */
@@ -235,6 +238,7 @@ export function setupSiteEmpty(): SetupSite {
     installations: new Map(),
     grants: new Map(),
     fates: new Map(),
+    authorizing: true,
     secrets: [],
     member: setupSiteMember,
     withheld: new Set(),
@@ -949,8 +953,8 @@ export function setupSiteInstallUrl(app: ForgeAppName): string {
   return `https://github.com/apps/chuggy-${app}/installations/new`;
 }
 
-/** The deployment's apps, each with the page it is installed from. */
-function appsAnswered(): SetupSiteAnswer {
+/** The deployment's apps, each with the page it is installed from, and the client a person authorizes where a case has not taken it away. */
+function appsAnswered(site: SetupSite): SetupSiteAnswer {
   return answered({
     apps: (["portal", "worker"] as const).map((app) => ({
       app,
@@ -958,6 +962,14 @@ function appsAnswered(): SetupSiteAnswer {
       slug: `chuggy-${app}`,
       installUrl: setupSiteInstallUrl(app),
     })),
+    ...(site.authorizing
+      ? {
+          authorization: {
+            clientId: "portal-client",
+            authorizeUrl: "https://github.com/login/oauth/authorize",
+          },
+        }
+      : {}),
   });
 }
 
@@ -1295,7 +1307,7 @@ export function setupSiteAnswered(
       fated(site, "workspaces") ??
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
     );
-  if (url.pathname === "/api/v1/forge/github") return appsAnswered();
+  if (url.pathname === "/api/v1/forge/github") return appsAnswered(site);
   return url.pathname === "/api/v1/projects"
     ? inventory(site, url.searchParams.get("cursor"))
     : undefined;

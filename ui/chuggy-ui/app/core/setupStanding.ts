@@ -17,17 +17,20 @@
  * do. Before any repository is added, the repository step carries what the
  * apps on the account that owns the folder's remote grant it, where every
  * read that says so was got: both granted it, which is the repository the
- * program may add itself, or each app that is not, with the page on the
- * forge it is given it on. Which repositories the worker app lacks and
- * whether work or a chat waits on a runner are the console's own deciders,
- * so this program and the pages do not say different things. Beside its few words each step that is
- * not done carries what it lacks as a member of a closed set, which is what
+ * program may add itself, or each app that is not, with where it is given
+ * it: the forge's settings page of an app installed there, and the console's
+ * own install of one that is not, since only that install is claimed for the
+ * workspace. Which repositories the worker app lacks, whether an app's
+ * install is offered, and whether work or a chat waits on a runner are the
+ * console's own deciders, so this program and the pages do not say different
+ * things. Beside its few words each step that is not done carries what it lacks as a member of a closed set, which is what
  * the next thing is decided from. Nothing is remembered between runs: the
  * server is the record.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
   RepositoryConfigurationImportAttemptResponse,
@@ -43,7 +46,7 @@ import type {
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
-import { forgeAccountRows } from "./forgeInstallation.ts";
+import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
@@ -153,12 +156,24 @@ export type SetupLack =
 
 type TicketPhase = TicketResponse["phase"];
 
-/** One app that is not granted the folder's repository, and the forge's page it is given it on: its installation's settings where the app is installed on that account, and its install page where it is not. */
-export interface SetupAppPage {
-  readonly app: ForgeAppName;
-  readonly installed: boolean;
-  readonly page: string;
-}
+/**
+ * One app that is not granted the folder's repository, and where it is given
+ * it: its installation's settings page on the forge, where the app is
+ * installed on `account`; and where it is not, the console's own install of
+ * it, which mints the state the setup landing claims the install by, so the
+ * next read finds it on `account`.
+ */
+export type SetupAppPage =
+  | {
+      readonly app: ForgeAppName;
+      readonly page: "Settings";
+      readonly settings: string;
+    }
+  | {
+      readonly app: ForgeAppName;
+      readonly page: "Install";
+      readonly account: string;
+    };
 
 /**
  * What both apps grant the folder's repository before any is added: both
@@ -672,6 +687,18 @@ function setupWorkerEntry(
   return listed.find((held) => held.url === portal.url);
 }
 
+/**
+ * Whether the accounts page draws the console's install of `app`: the
+ * worker app's on the row of an account once it holds the portal app, and
+ * the portal app's, as Add account, only once the workspace lists an account.
+ */
+function setupInstallDrawn(
+  installations: readonly ForgeInstallationResponse[],
+  app: ForgeAppName,
+): boolean {
+  return app === "worker" || installations.length > 0;
+}
+
 function setupAppReach(
   reads: SetupReads,
   remote: SetupRemote,
@@ -687,14 +714,11 @@ function setupAppReach(
   if (claim === undefined) {
     const apps = reads.apps;
     const offered =
-      apps.read === "Got"
-        ? apps.value.apps.find((held) => held.app === app)
-        : undefined;
-    return installations.whole && offered !== undefined
-      ? {
-          app: "Lacking",
-          page: { app, installed: false, page: offered.installUrl },
-        }
+      apps.read === "Got" ? forgeInstallOffered(apps.value, app) : undefined;
+    return installations.whole &&
+      offered !== undefined &&
+      setupInstallDrawn(installations.value, app)
+      ? { app: "Lacking", page: { app, page: "Install", account: owner } }
       : undefined;
   }
   const grant = reads.grants.find((held) => held.app === app);
@@ -710,7 +734,10 @@ function setupAppReach(
   if (entry !== "Lacking") return { app: "Granted", entry };
   const settings = grant?.settings;
   return settings?.read === "Got"
-    ? { app: "Lacking", page: { app, installed: true, page: settings.value } }
+    ? {
+        app: "Lacking",
+        page: { app, page: "Settings", settings: settings.value },
+      }
     : undefined;
 }
 

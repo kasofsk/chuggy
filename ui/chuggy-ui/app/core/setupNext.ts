@@ -33,6 +33,7 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
@@ -80,6 +81,7 @@ export const setupPressed = {
   edit: { id: "ui-edit" },
   save: { id: "ui-save" },
   connect: { id: "repositories-connect-github" },
+  addAccount: { id: "settings-accounts-add" },
   add: { id: "repositories-add" },
   runner: { id: "runners-register" },
   runnerProject: { id: "runners-personal-project-add" },
@@ -256,20 +258,49 @@ function setupGithubMend(
   );
 }
 
-/** An app as a line of the tell names it, with its page on the forge. */
-function setupAppPageSaid(page: SetupAppPage): Copy {
-  return {
-    id: page.installed
-      ? "setup-mend-reach-settings"
-      : "setup-mend-reach-install",
-    args: { app: setupAppNames[page.app], page: page.page },
-  };
+/**
+ * An app as a line of the tell names it: with its settings page on the forge,
+ * or with the press on the workspace's accounts page that installs it. The
+ * worker app's install is on the row of an account holding the portal app, so
+ * where the portal app is to be installed there too, its row is waited on.
+ */
+function setupAppPageSaid(
+  page: SetupAppPage,
+  pages: readonly SetupAppPage[],
+  at: SetupAt,
+): Copy {
+  const app = setupAppNames[page.app];
+  if (page.page === "Settings")
+    return {
+      id: "setup-mend-reach-settings",
+      args: { app, page: page.settings },
+    };
+  const accounts = setupPage(at, settingsRoutes.workspace.accounts);
+  const { account } = page;
+  if (page.app === "portal")
+    return {
+      id: "setup-mend-reach-install-portal",
+      args: { app, page: accounts, press: setupPressed.addAccount, account },
+    };
+  const after = pages.some(
+    (other) => other.app === "portal" && other.page === "Install",
+  );
+  const press = forgeInstallLabel("worker");
+  return after
+    ? {
+        id: "setup-mend-reach-install-worker-after",
+        args: { app, press, account },
+      }
+    : {
+        id: "setup-mend-reach-install-worker",
+        args: { app, page: accounts, press, account },
+      };
 }
 
 /**
  * The folder's repository before it is added: where both apps are granted it,
  * `bind` adds it on the person's yes, as the console's Add does; where an app
- * is not, every such app is named in the one tell with its page on the forge,
+ * is not, every such app is named in the one tell with where it is given it,
  * and the checklist is read again once the person says they are done there.
  * Where what the apps grant was not read, the console's Add is the way.
  */
@@ -295,7 +326,11 @@ function setupBindingMend(
       project: at.project,
     };
   if (reach?.reach === "Ungranted") {
-    const [first, second] = reach.apps.map(setupAppPageSaid);
+    if (reach.apps.length < 1 || reach.apps.length > forgeApps.length)
+      throw new Error("a tell of the apps not granted names one or both");
+    const [first, second] = reach.apps.map((page) =>
+      setupAppPageSaid(page, reach.apps, at),
+    );
     return setupHand(
       {
         id: "setup-mend-reach-tell",

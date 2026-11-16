@@ -2,8 +2,8 @@
  * The folder's repository added by the setup program itself: offered where
  * both apps are granted it and bound by `bind` on the person's yes, with the
  * write the console's Add makes; and, where an app is not granted it, one
- * tell naming every such app's own page on the forge, with the checklist read
- * again once the person says they are done there.
+ * tell naming every such app with where it is given it, with the checklist
+ * read again once the person says they are done there.
  *
  * @vitest-environment node
  */
@@ -17,6 +17,7 @@ import {
   machineScript,
   machineServing,
   machineSignedIn,
+  machineSite,
 } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 import {
@@ -34,6 +35,8 @@ const flags = ["--workspace", "acme", "--project", "widgets"];
 const at = flags.join(" ");
 const repository = "acme-org/widgets";
 const bindPath = "/api/v1/tenants/acme/projects/widgets/repositories";
+const accounts = `${machineSite}/tenants/acme/settings/accounts`;
+const granting = `On GitHub choose ${repository} among the repositories each app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.`;
 
 /** A site with both apps on the account that owns the folder's repository and nothing added, each app granted what `granted` says. */
 function connected(granted: { portal: boolean; worker: boolean }): SetupSite {
@@ -122,7 +125,7 @@ test("where neither app is granted the folder's repository, one tell names each 
     throw new Error("no claims");
   const said = lines(await machine.command(flags));
   expect(said.slice(-3)).toEqual([
-    `tell: GitHub does not let these apps into ${repository}, this folder's repository: the portal app, on its settings page ${setupSiteSettingsUrl(portal)}; and the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. On each page choose ${repository} among the repositories the app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.`,
+    `tell: GitHub does not let these apps into ${repository}, this folder's repository: the portal app, on its settings page ${setupSiteSettingsUrl(portal)}; and the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. ${granting}`,
     `rule: Run node ${machineScript} ${at} only once the person says each app named is given ${repository} on GitHub.`,
     "next: stop",
   ]);
@@ -133,7 +136,7 @@ test("where one app is granted the folder's repository, the tell names only the 
   const worker = setupSiteClaim(setupSiteAccount, "worker");
   const said = lines(await machine.command(flags));
   expect(said.at(-3)).toBe(
-    `tell: GitHub does not let this app into ${repository}, this folder's repository: the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. On each page choose ${repository} among the repositories the app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.`,
+    `tell: GitHub does not let this app into ${repository}, this folder's repository: the worker app, on its settings page ${setupSiteSettingsUrl(worker)}. ${granting}`,
   );
   machine.world.grants.set(worker.installationId, [setupSiteRepositoryAddress]);
   expect(lines(await machine.command(flags)).at(-2)).toBe(
@@ -141,16 +144,56 @@ test("where one app is granted the folder's repository, the tell names only the 
   );
 });
 
-test("an app not installed on the account that owns the folder's repository is named with its install page", async () => {
+/** A site where `elsewhere` holds both apps and the account that owns the folder's repository holds those `held` names. */
+function owning(held: readonly ("portal" | "worker")[]): SetupSite {
   const site = connected({ portal: true, worker: true });
   site.installations.set(setupSiteWorkspace, [
     setupSiteClaim("elsewhere", "portal"),
     setupSiteClaim("elsewhere", "worker"),
-    setupSiteClaim(setupSiteAccount, "portal"),
+    ...held.map((app) => setupSiteClaim(setupSiteAccount, app)),
   ]);
+  return site;
+}
+
+/** What the setup landing comes to once the console's install of `app` on the owner's account is claimed. */
+function claimed(machine: SetupMachine, app: "portal" | "worker"): void {
+  machine.world.installations
+    .get(setupSiteWorkspace)
+    ?.push(setupSiteClaim(setupSiteAccount, app));
+}
+
+test("an app not installed on the account that owns the folder's repository is sent to the console's install of it, whose claim the next read finds, and then bind is offered", async () => {
+  const machine = await inFolder(owning(["portal"]));
+  const tell = lines(await machine.command(flags)).at(-3);
+  expect(tell).toBe(
+    `tell: GitHub does not let this app into ${repository}, this folder's repository: the worker app, which is not installed there yet: on ${accounts} press Install worker on the row of ${setupSiteAccount}. ${granting}`,
+  );
+  expect(tell).not.toContain(setupSiteInstallUrl("worker"));
+  claimed(machine, "worker");
+  expect(lines(await machine.command(flags)).at(-2)).toBe(
+    `rule: Run node ${machineScript} bind ${at} only once the person says yes to adding ${repository} to the project.`,
+  );
+});
+
+test("where neither app is installed on the account that owns the folder's repository, one tell names Add account for the portal app and the worker app's install on the row that follows it", async () => {
+  const machine = await inFolder(owning([]));
+  const tell = lines(await machine.command(flags)).at(-3);
+  expect(tell).toBe(
+    `tell: GitHub does not let these apps into ${repository}, this folder's repository: the portal app, which is not installed there yet: on ${accounts} press Add account and install it on ${setupSiteAccount}; and the worker app, which is not installed there either: once ${setupSiteAccount} is listed on that page, press Install worker on its row. ${granting}`,
+  );
+  claimed(machine, "portal");
+  claimed(machine, "worker");
+  expect(lines(await machine.command(flags)).at(-2)).toBe(
+    `rule: Run node ${machineScript} bind ${at} only once the person says yes to adding ${repository} to the project.`,
+  );
+});
+
+test("where the deployment offers no install the workspace can claim, an app not installed there leaves the console's Add the way", async () => {
+  const site = owning(["portal"]);
+  site.authorizing = false;
   const machine = await inFolder(site);
-  expect(lines(await machine.command(flags)).at(-3)).toBe(
-    `tell: GitHub does not let this app into ${repository}, this folder's repository: the worker app, which is not installed there yet, on its install page ${setupSiteInstallUrl("worker")}. On each page choose ${repository} among the repositories the app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.`,
+  expect(lines(await machine.command(flags)).at(-3)).toMatch(
+    /^tell: Open \S+\/repositories, press Add and choose acme-org\/widgets, this folder's repository\./u,
   );
 });
 

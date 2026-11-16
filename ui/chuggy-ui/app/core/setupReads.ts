@@ -820,7 +820,7 @@ async function setupGrantsRead(
   );
 }
 
-/** The deployment's apps, asked only where the repository step's account holds no claim of one of them, which is when its install page is named. */
+/** The deployment's apps, asked only where the repository step's account holds no claim of one of them, which is when whether its install is offered decides the tell. */
 async function setupAppsRead(
   ports: ApiPorts,
   installations: SetupReads["installations"],

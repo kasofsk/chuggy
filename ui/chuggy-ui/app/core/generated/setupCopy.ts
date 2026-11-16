@@ -455,9 +455,22 @@ export interface SetupCopy {
     readonly app: unknown;
     readonly page: unknown;
   };
-  readonly "setup-mend-reach-install": {
+  readonly "setup-mend-reach-install-portal": {
     readonly app: unknown;
     readonly page: unknown;
+    readonly press: unknown;
+    readonly account: unknown;
+  };
+  readonly "setup-mend-reach-install-worker": {
+    readonly app: unknown;
+    readonly page: unknown;
+    readonly press: unknown;
+    readonly account: unknown;
+  };
+  readonly "setup-mend-reach-install-worker-after": {
+    readonly app: unknown;
+    readonly account: unknown;
+    readonly press: unknown;
   };
   readonly "setup-mend-reach-tell": {
     readonly count: unknown;

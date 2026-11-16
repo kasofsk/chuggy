@@ -265,14 +265,17 @@ setup-mend-worker-when = once the person says the { -worker-app } is installed o
 setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
 # The pages are the forge's own, one an app that is not let into the repository.
 setup-mend-reach-settings = the { $app }, on its settings page { $page }
-setup-mend-reach-install = the { $app }, which is not installed there yet, on its install page { $page }
+# The press is the console's own install, which is the one the workspace claims.
+setup-mend-reach-install-portal = the { $app }, which is not installed there yet: on { $page } press { $press } and install it on { $account }
+setup-mend-reach-install-worker = the { $app }, which is not installed there yet: on { $page } press { $press } on the row of { $account }
+setup-mend-reach-install-worker-after = the { $app }, which is not installed there either: once { $account } is listed on that page, press { $press } on its row
 setup-mend-reach-tell = { -github } does not let { $count ->
         [two] these apps
        *[one] this app
     } into { $repository }, this folder's { -repository }: { $count ->
         [two] { $first }; and { $second }
        *[one] { $first }
-    }. On each page choose { $repository } among the { -repository(form: "plural") } the app may reach, and save. { -github } may ask you to confirm access first, with a code it emails you. Tell me once you are done there.
+    }. On { -github } choose { $repository } among the { -repository(form: "plural") } each app may reach, and save. { -github } may ask you to confirm access first, with a code it emails you. Tell me once you are done there.
 setup-mend-reach-when = once the person says each app named is given { $repository } on { -github }
 setup-mend-bind-offer = The { -portal-app } and the { -worker-app } are both let into { $repository }, this folder's { -repository }, and { $project } does not have it yet. With your yes I will add it to { $project }, as the { -repository(form: "plural") } page's Add does. Tell me yes to go ahead.
 setup-offer-bind-when = once the person says yes to adding { $repository } to the { -project }

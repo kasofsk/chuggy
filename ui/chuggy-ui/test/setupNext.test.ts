@@ -1109,14 +1109,14 @@ test("every app the folder's repository is not granted to is named in one tell, 
       reach: "Ungranted",
       repository: "acme-org/widgets",
       apps: [
-        { app: "portal", installed: true, page: "https://forge/settings" },
-        { app: "worker", installed: false, page: "https://forge/install" },
+        { app: "portal", page: "Settings", settings: "https://forge/settings" },
+        { app: "worker", page: "Install", account: "acme-org" },
       ],
     },
   };
   expect(thing(lack)).toEqual(
     hand(
-      "GitHub does not let these apps into acme-org/widgets, this folder's repository: the portal app, on its settings page https://forge/settings; and the worker app, which is not installed there yet, on its install page https://forge/install. On each page choose acme-org/widgets among the repositories the app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.",
+      `GitHub does not let these apps into acme-org/widgets, this folder's repository: the portal app, on its settings page https://forge/settings; and the worker app, which is not installed there yet: on ${stoodSite}/tenants/acme/settings/accounts press Install worker on the row of acme-org. On GitHub choose acme-org/widgets among the repositories each app may reach, and save. GitHub may ask you to confirm access first, with a code it emails you. Tell me once you are done there.`,
       "once the person says each app named is given acme-org/widgets on GitHub",
     ),
   );

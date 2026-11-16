@@ -45,12 +45,14 @@ type SetupPressedCatalogued =
   | "fallback"
   | "chatHost"
   | "connect"
-  | "add";
+  | "add"
+  | "addAccount";
 
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
 const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
+const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
@@ -83,12 +85,12 @@ const drawnFromCatalog: Readonly<
   },
   connect: { page: connectButton, id: "repositories-connect-github" },
   add: { page: addPicker, id: "repositories-add" },
+  addAccount: { page: accountsPage, id: "settings-accounts-add" },
 };
 
 const leadTextSection =
   "ui/chuggy-ui/app/browser/settings/lead/SelectorTextSection.tsx";
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
-const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
 
 /** Whether a page's source draws `name` as the whole of a text or of a label, and not as part of a longer one. */
 function draws(source: string, name: string): boolean {
@@ -143,6 +145,18 @@ test("the workspace's GitHub accounts page, where the program sends a person who
     /^import \{ ConnectGithub \} from "\.\.\/repositories\/ConnectGithub\.tsx";$/mu,
   );
   assert.match(source, /<ConnectGithub tenant=\{tenant\} /u);
+});
+
+test("the workspace's GitHub accounts page, where the program sends a person to install an app on the account that owns her repository, draws Add account as the portal app's install and the worker app's install on the row of an account lacking it", () => {
+  const source = readFileSync(accountsPage, "utf8");
+  assert.match(
+    source,
+    /<InstallLink\s+tenant=\{tenant\}\s+returnPath=\{currentPath\(\)\}\s+app="portal"\s+label=\{\{ id: "settings-accounts-add" \}\}/u,
+  );
+  assert.match(
+    source,
+    /\{row\.worker === "Missing" \? \(\s*<InstallLink\s+tenant=\{props\.tenant\}\s+returnPath=\{currentPath\(\)\}\s+app="worker"\s*\/>/u,
+  );
 });
 
 test("the Add picker draws, under its list, the line and the link the program sends a person to for an app not granted her repository: the portal app's always, the worker app's where a row lacks it", () => {
