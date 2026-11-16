@@ -705,6 +705,7 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly runs: unknown;
     readonly job: unknown;
+    readonly fit: unknown;
     readonly chat: unknown;
     readonly ask: unknown;
   };
@@ -736,6 +737,7 @@ export interface SetupCopy {
   };
   readonly "setup-mend-runner-offer": {
     readonly put: unknown;
+    readonly fit: unknown;
     readonly chat: unknown;
     readonly ask: unknown;
     readonly page: unknown;
@@ -786,6 +788,36 @@ export interface SetupCopy {
   };
   readonly "setup-mend-runner-or-running": {
     readonly when: unknown;
+  };
+  readonly "setup-mend-runner-fit": {
+    readonly told: unknown;
+    readonly instead: unknown;
+  };
+  readonly "setup-mend-fit-job": {
+    readonly job: unknown;
+    readonly spare: unknown;
+  };
+  readonly "setup-mend-fit-small": {
+    readonly machine: unknown;
+    readonly has: unknown;
+    readonly job: unknown;
+    readonly spare: unknown;
+    readonly engine: unknown;
+  };
+  readonly "setup-mend-fit-colima": {
+    readonly vm: unknown;
+    readonly gives: unknown;
+    readonly target: unknown;
+    readonly job: unknown;
+    readonly spare: unknown;
+    readonly commands: unknown;
+    readonly short: unknown;
+    readonly has: unknown;
+  };
+  readonly "setup-mend-fit-commands": {
+    readonly first: unknown;
+    readonly then: unknown;
+    readonly second: unknown;
   };
   readonly "setup-mend-ticket-create": {
     readonly page: unknown;

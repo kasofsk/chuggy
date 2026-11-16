@@ -406,4 +406,51 @@ setup-runner-chat-login-tell = Your { -chat-host } { $why }, so this machine is 
 setup-runner-chat-login-when = once the person says the { -runner }'s { $credential } is copied alone into a directory of its own and its services have restarted
 setup-runner-chat-not-live-found = your { -chat-host }'s service is running, and after { $secs } s the { -site } still does not see this machine live as your { -chat-host }
 setup-runner-chat-not-live-tell = Your { -chat-host } is installed, registered and started on this machine, and the { -brand-name } { -site } does not see it live yet. It can take a little longer. Tell me when you want me to look again.
+
+## Colima's VM on a Mac, given what { -run(form: "a") } naming no memory or platform needs.
+
+setup-runner-act-colima-stop = { $case ->
+    [upper] Stopping Colima's VM
+   *[lower] stopping Colima's VM
+}
+setup-runner-act-colima-start = { $case ->
+    [upper] Starting Colima's VM
+   *[lower] starting Colima's VM
+}
+setup-runner-note-colima-ran = ran { $command }
+setup-runner-note-colima-vm = { $has }
+# spells -run: to run is a verb here
+setup-runner-colima-has = Colima's VM { $memory ->
+    [said] has { $has }
+   *[unsaid] did not say its memory
+} and { $amd64 ->
+    [yes] runs amd64 images
+    [no] runs no amd64 images
+   *[unsaid] did not say whether it runs amd64 images
+}
+setup-runner-colima-short-found = once started again, { $has }, still short of what { -run(form: "a") } naming no memory or platform needs
+setup-runner-colima-short-tell = Colima's VM was started again and is still short of what { -run(form: "a") } naming no memory or platform needs, so the { -runner } is not set up yet. { setup-runner-picked-up }
+setup-runner-fit-tell = { $told }
+setup-runner-fit-unchanged = { $unchanged ->
+    [yes] , { setup-runner-unchanged }
+   *[no] { "" }
+}
+# spells -run: to run is a verb here
+setup-runner-amd64-runs = { -run(case: "upper", form: "a") } naming no platform runs amd64 images
+# spells -run: to run is a verb here
+setup-runner-rosettaless-found = Colima's VM on this Apple-silicon Mac runs no amd64 images, and macOS has no Rosetta to run them with
+# spells -run: to run is a verb here
+setup-runner-rosettaless-told = { setup-runner-amd64-runs }, which Colima's VM on this Apple-silicon Mac runs only with Rosetta, and macOS has none{ setup-runner-fit-unchanged }. Install it with { $install }, which can ask for your password, and tell me once it is installed.
+setup-runner-rosettaless-when = once the person says Rosetta is installed
+# spells -run: to run is a verb here
+setup-runner-rebuild-found = Colima's VM runs no amd64 images and { $why ->
+    [qemu] is a QEMU one, which cannot use Rosetta
+   *[unrosetta] asks for Rosetta and still runs none
+}
+# spells -run: to run is a verb here
+setup-runner-rebuild-told = { setup-runner-amd64-runs }, and Colima's VM { $why ->
+    [qemu] is a QEMU one, which cannot use Rosetta
+   *[unrosetta] asks for Rosetta and still runs none
+}{ setup-runner-fit-unchanged }. Making it again as a vz VM with Rosetta mends that: { $remove }, which asks you a yes and removes the VM and its settings, then { $make }. Its images, containers and volumes stay on Colima's data disk, except for a VM made before Colima 0.9.0, whose go with it. Tell me once it is made again.
+setup-runner-rebuild-when = once the person says Colima's VM is made again
 `;

@@ -70,7 +70,30 @@ export type BoxAct =
   | "agent"
   | "unload"
   | "load"
-  | "kick";
+  | "kick"
+  | "colimaStop"
+  | "colimaStart";
+
+/** A Mac's Colima VM, as `status`, `list`, `ssh` and its profile's settings show it. */
+export interface BoxColimaVm {
+  running: boolean;
+  vmType: "vz" | "qemu";
+  vzRosetta: boolean;
+  /** The memory `status` and `list` say it has, in bytes, or nothing where they say none. */
+  memoryBytes: number | undefined;
+  arch: "aarch64" | "x86_64";
+  /** Whether it runs amd64 programs through Rosetta, as its binfmt_misc shows. */
+  rosettaOn: boolean;
+}
+
+/** A Mac: whether it is Apple silicon, whether Rosetta is installed, its memory in bytes, and Colima's profile with its VM where there is one. */
+export interface BoxMac {
+  silicon: boolean;
+  rosetta: boolean;
+  memoryBytes: number;
+  readonly profile: string;
+  vm: BoxColimaVm | undefined;
+}
 
 /** The acts that change the machine or the site, in the order a first run does them for the project's runner. */
 export const boxActs = [
@@ -129,6 +152,8 @@ export interface RunnerBox {
   desktop: boolean;
   /** What `doctor` prints aside and exits with, where a case has it find something. */
   doctor: { readonly aside: string; readonly exit: number } | undefined;
+  /** The Mac this is, where docker runs in Colima, or nothing where it is no such Mac. */
+  mac: BoxMac | undefined;
 }
 
 export function exited(exit: number, out = "", err = ""): SetupChildEnded {
@@ -170,6 +195,7 @@ export function runnerBox(): RunnerBox {
     polls: true,
     desktop: true,
     doctor: undefined,
+    mac: undefined,
   };
 }
 
@@ -306,6 +332,8 @@ const told: readonly (readonly [BoxAct, string, readonly string[]])[] = [
   ["kick", "launchctl", ["kickstart", "-k"]],
   ["mcpAdd", "claude", ["mcp", "add", "--scope", "local"]],
   ["mcpRemove", "claude", ["mcp", "remove", "--scope", "local"]],
+  ["colimaStop", "colima", ["stop"]],
+  ["colimaStart", "colima", ["start"]],
 ];
 
 export function boxActOf(command: readonly string[]): BoxAct | undefined {
@@ -372,8 +400,143 @@ export function boxEngineInfo(
   return JSON.stringify(
     name === "podman"
       ? { host: { memTotal: box.memoryBytes, os: "linux" } }
-      : { MemTotal: box.memoryBytes, NCPU: 4 },
+      : {
+          MemTotal: box.memoryBytes,
+          NCPU: 4,
+          ...(box.mac === undefined ? {} : { Name: boxColimaName(box.mac) }),
+        },
   );
+}
+
+/** The name docker's info gives Colima's VM, and its context's. */
+function boxColimaName(mac: BoxMac): string {
+  return mac.profile === "default" ? "colima" : `colima-${mac.profile}`;
+}
+
+/** The profile a Colima command names, which is the default where it names none. */
+function boxColimaProfile(command: readonly string[]): string {
+  const at = command.indexOf("--profile");
+  return at < 0 ? "default" : (command[at + 1] ?? "");
+}
+
+/** Where the box keeps a Colima profile's settings. */
+export function boxColimaYaml(profile: string): string {
+  return `${boxHome}/.colima/${profile}/colima.yaml`;
+}
+
+/** The settings Colima writes for a VM, of which a run reads only its type and Rosetta. */
+function boxColimaSettings(vm: BoxColimaVm): string {
+  return `cpu: 2\nmemory: 2\nvmType: ${vm.vmType}\nvzRosetta: ${String(vm.vzRosetta)}\n`;
+}
+
+/** What a Mac answers of a read of itself or its Colima, or nothing where the read is not one; a box that is no such Mac answers none of them. */
+export function boxMacRead(
+  box: RunnerBox,
+  command: readonly string[],
+): string | undefined {
+  const { mac } = box;
+  const said = command.join(" ");
+  if (said === "arch -x86_64 /usr/bin/true")
+    return mac?.rosetta === true ? "" : undefined;
+  if (said === "sysctl -n hw.optional.arm64")
+    return mac === undefined ? undefined : mac.silicon ? "1\n" : "0\n";
+  if (said === "sysctl -n hw.memsize")
+    return mac === undefined ? undefined : `${String(mac.memoryBytes)}\n`;
+  if (said === "docker context show")
+    return mac === undefined ? undefined : `${boxColimaName(mac)}\n`;
+  if (mac === undefined || command[0] !== "colima") return undefined;
+  if (boxColimaProfile(command) !== mac.profile) return undefined;
+  const { vm } = mac;
+  switch (command[1] ?? "") {
+    case "status":
+      return vm?.running === true
+        ? JSON.stringify({
+            display_name: boxColimaName(mac),
+            driver:
+              vm.vmType === "vz" ? "macOS Virtualization.Framework" : "QEMU",
+            arch: vm.arch,
+            cpu: 2,
+            ...(vm.memoryBytes === undefined ? {} : { memory: vm.memoryBytes }),
+          })
+        : undefined;
+    case "list":
+      return vm === undefined
+        ? ""
+        : `${JSON.stringify({
+            name: mac.profile,
+            status: vm.running ? "Running" : "Stopped",
+            arch: vm.arch,
+            cpus: 2,
+            ...(vm.memoryBytes === undefined ? {} : { memory: vm.memoryBytes }),
+          })}\n`;
+    case "ssh":
+      if (vm?.running !== true) return undefined;
+      if (command.at(-1) === "/proc/sys/fs/binfmt_misc")
+        return vm.rosettaOn
+          ? "register\nrosetta\nstatus\n"
+          : "register\nstatus\n";
+      return vm.rosettaOn
+        ? "enabled\ninterpreter /mnt/lima-rosetta/rosetta\n"
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/** Colima's VM stopped, which stops docker with it. */
+function boxColimaStopped(box: RunnerBox): SetupChildEnded {
+  const vm = box.mac?.vm;
+  if (vm === undefined) return exited(1, "", "colima is not running\n");
+  vm.running = false;
+  box.engines.docker = "No";
+  return exited(0);
+}
+
+/** Colima's VM started, made where there is none, with what the command's flags change of it, as Colima keeps what it has unless a flag says otherwise. */
+function boxColimaStarted(
+  box: RunnerBox,
+  command: readonly string[],
+): SetupChildEnded {
+  const { mac } = box;
+  if (mac === undefined) return { ended: "Unstarted" };
+  const memory = command.indexOf("--memory");
+  const gib = memory < 0 ? undefined : Number(command[memory + 1]);
+  const type = command.indexOf("--vm-type");
+  const vm: BoxColimaVm = mac.vm ?? {
+    running: false,
+    vmType: command[type + 1] === "qemu" ? "qemu" : "vz",
+    vzRosetta: false,
+    memoryBytes: 2 * 2 ** 30,
+    arch: "aarch64",
+    rosettaOn: false,
+  };
+  if (gib !== undefined) vm.memoryBytes = gib * 2 ** 30;
+  if (command.includes("--vz-rosetta")) vm.vzRosetta = true;
+  vm.rosettaOn =
+    vm.vmType === "vz" && vm.vzRosetta && mac.silicon && mac.rosetta;
+  vm.running = true;
+  mac.vm = vm;
+  box.paths.set(boxColimaYaml(mac.profile), boxColimaSettings(vm));
+  box.engines.docker = "Yes";
+  box.memoryBytes = vm.memoryBytes;
+  return exited(0);
+}
+
+/** The box made a Mac whose docker runs in Colima's VM `vm` of the profile `profile`, with what the box's engine reports being the VM's. */
+export function boxMacMade(
+  box: RunnerBox,
+  mac: Omit<BoxMac, "vm" | "profile"> & {
+    readonly profile?: string;
+    readonly vm: BoxColimaVm | undefined;
+  },
+): void {
+  const made: BoxMac = { profile: "default", ...mac };
+  box.mac = made;
+  const { vm } = made;
+  if (vm !== undefined)
+    box.paths.set(boxColimaYaml(made.profile), boxColimaSettings(vm));
+  box.engines.docker = vm?.running === true ? "Yes" : "No";
+  box.memoryBytes = vm?.memoryBytes;
 }
 
 /** Installs the package the command's last word names, chuggy-darwin's or chuggy-linux's, at the box's release. */
@@ -774,6 +937,10 @@ function done(
       return world.platform === "darwin"
         ? agentServed(box, command[0] ?? "", last)
         : served(box, command[0] ?? "", last);
+    case "colimaStop":
+      return boxColimaStopped(box);
+    case "colimaStart":
+      return boxColimaStarted(box, command);
     case "reload":
       return exited(0);
     case "enabled":

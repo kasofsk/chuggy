@@ -78,7 +78,9 @@ import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
-import { setupChatSized, setupJobMemoryMib } from "./setupRunnerMachine.ts";
+import { setupEngineSpareMib, setupJobMemoryMib } from "./setupFit.ts";
+import type { SetupFit } from "./setupFit.ts";
+import { setupChatSized } from "./setupRunnerMachine.ts";
 import type { SetupChatSize, SetupRunnerHere } from "./setupRunnerMachine.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
@@ -86,6 +88,8 @@ import {
   setupChatCost,
   setupDockerBarredTold,
   setupEnginesNone,
+  setupFitStopOf,
+  setupFitToldSaid,
 } from "./setupRunnerSaid.ts";
 import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
@@ -96,7 +100,7 @@ import type {
   SetupStep,
   SetupUnmerged,
 } from "./setupStanding.ts";
-import { setupFlat } from "./setupText.ts";
+import { setupCommandLine, setupFlat } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
 import { workspaceNamesListed } from "./workspaceNames.ts";
 import type { WorkspaceNamed } from "./workspaceNames.ts";
@@ -538,6 +542,92 @@ function setupChatHostAsk(here: SetupRunnerHere): Copy {
   };
 }
 
+/** Memory as an offer says it. */
+function setupMemorySaid(mib: number): Copy {
+  return quantityFigureCopy(memoryMibFigure(mib));
+}
+
+/** What Colima's VM is short of for a job, as the word an offer's sentence picks its clause by. */
+function setupColimaShort(
+  fit: Extract<SetupFit, { readonly fit: "Colima" }>,
+): string {
+  if (fit.short && fit.hasMib !== undefined)
+    return fit.amd64 ? "both" : "memory";
+  return fit.amd64 ? "amd64" : "none";
+}
+
+/** What a yes to `runner` gives Colima's VM, as the word an offer's sentence picks its clause by. */
+function setupColimaGives(
+  fit: Extract<SetupFit, { readonly fit: "Colima" }>,
+): string {
+  if (fit.vm === "None") return fit.rosetta ? "both" : "memory";
+  const memory = fit.targetMib !== undefined;
+  if (memory && fit.rosetta) return "both";
+  if (memory) return "memory";
+  return fit.rosetta ? "rosetta" : "none";
+}
+
+/** What an offer of `runner` says this machine is short of for a job naming no memory or platform, and what a yes does for it, or nothing where it is short of nothing. */
+function setupFitSaid(here: SetupRunnerHere): CopyArgument {
+  const { fit } = here;
+  const engine = here.room.room === "Open" ? here.room.engine : "docker";
+  const job = setupMemorySaid(setupJobMemoryMib);
+  const spare = setupMemorySaid(setupEngineSpareMib);
+  switch (fit.fit) {
+    case "Small":
+      return {
+        id: "setup-mend-fit-small",
+        args: {
+          machine: fit.machine === "Mac" ? "mac" : "engine",
+          engine,
+          has: setupMemorySaid(fit.hasMib),
+          job,
+          spare,
+        },
+      };
+    case "Colima":
+      return {
+        id: "setup-mend-fit-colima",
+        args: {
+          vm: fit.vm.toLowerCase(),
+          short: setupColimaShort(fit),
+          has: fit.hasMib === undefined ? "" : setupMemorySaid(fit.hasMib),
+          job,
+          spare,
+          gives: setupColimaGives(fit),
+          target:
+            fit.targetMib === undefined ? "" : setupMemorySaid(fit.targetMib),
+          commands: {
+            id: "setup-mend-fit-commands",
+            args: {
+              first: setupCommandLine(fit.commands[0] ?? []),
+              then: fit.commands.length > 1 ? "then" : "alone",
+              second: setupCommandLine(fit.commands[1] ?? []),
+            },
+          },
+        },
+      };
+    case "Room":
+    case "Rosettaless":
+    case "Rebuild":
+      return "";
+  }
+}
+
+/** Where this machine is short of what a job naming no platform needs and only the person can mend it, what they are told to do, with `instead` for another machine. */
+function setupFitToldMend(
+  fit: SetupFit,
+  instead: Copy,
+): SetupThing | undefined {
+  const stop = setupFitStopOf(fit);
+  if (stop === undefined) return undefined;
+  const { told, when } = setupFitToldSaid(stop, false);
+  return setupHand(
+    { id: "setup-mend-runner-fit", args: { told, instead } },
+    { id: "setup-mend-runner-or-running", args: { when } },
+  );
+}
+
 /** The answer an offer of `runner` carries for the chat host, where it asks of one: where the person's chats run on a chat host they lack. */
 function setupChatHostOffered(
   chat: boolean,
@@ -551,23 +641,28 @@ function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
   chat: boolean,
+  instead: Copy,
 ): SetupThing {
-  return here?.held === true
-    ? setupOffer(
-        {
-          id: "setup-mend-runner-live-offer",
-          args: {
-            project: setupNamed(at),
-            runs: setupRunsOn(here.claude),
-            job: setupJobSaid,
-            chat: setupWith(chat),
-            ask: chat ? setupChatHostAsk(here) : "",
-          },
+  if (here?.held !== true)
+    return setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
+  return (
+    setupFitToldMend(here.fit, instead) ??
+    setupOffer(
+      {
+        id: "setup-mend-runner-live-offer",
+        args: {
+          project: setupNamed(at),
+          runs: setupRunsOn(here.claude),
+          job: setupJobSaid,
+          fit: setupFitSaid(here),
+          chat: setupWith(chat),
+          ask: chat ? setupChatHostAsk(here) : "",
         },
-        at,
-        setupChatHostOffered(chat, here),
-      )
-    : setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
+      },
+      at,
+      setupChatHostOffered(chat, here),
+    )
+  );
 }
 
 /**
@@ -626,9 +721,6 @@ function setupRunnerMend(
   here: SetupRunnerHere | undefined,
   platform: SetupPlatform,
 ): SetupThing {
-  const { program } = runnerPackages[platform];
-  if (lack.lacks === "RunnerLive")
-    return setupRunnerLiveMend(at, here, lack.chat);
   const page = setupPage(at, settingsRoutes.project.myRunner);
   const add = setupPressed.runner;
   const elsewhere: Copy = {
@@ -639,41 +731,67 @@ function setupRunnerMend(
     id: "setup-mend-runner-instead",
     args: { page, add },
   };
-  const room = here?.room;
-  switch (room?.room) {
-    case undefined:
-      return setupHand(elsewhere, setupRunnerRunning);
+  if (lack.lacks === "RunnerLive")
+    return setupRunnerLiveMend(at, here, lack.chat, instead);
+  if (here === undefined) return setupHand(elsewhere, setupRunnerRunning);
+  const { room } = here;
+  switch (room.room) {
     case "Open":
-      return setupOffer(
-        {
-          id: "setup-mend-runner-offer",
-          args: {
-            put: {
-              id: "setup-mend-runner-put",
-              args: {
-                program,
-                runs: setupRunsOn(here?.claude),
-                job: setupJobSaid,
-              },
-            },
-            chat: setupWith(lack.chat),
-            ask: here !== undefined && lack.chat ? setupChatHostAsk(here) : "",
-            page,
-            add,
-          },
-        },
-        at,
-        here === undefined ? undefined : setupChatHostOffered(lack.chat, here),
-      );
+      return setupRunnerPutMend(lack.chat, at, here, platform, instead);
     case "Serviceless":
       return setupHand(
         { id: "setup-mend-runner-serviceless", args: { elsewhere } },
         setupRunnerRunning,
       );
     case "Engineless":
+      return setupColimaMends(here.fit)
+        ? setupRunnerPutMend(lack.chat, at, here, platform, instead)
+        : setupRunnerBarredMend(room, instead);
     case "DockerBarred":
       return setupRunnerBarredMend(room, instead);
   }
+}
+
+/** Whether a fit is one where Colima's VM is what a yes or the person mends, which is so also where docker does not answer yet. */
+function setupColimaMends(fit: SetupFit): boolean {
+  return (
+    fit.fit === "Colima" || fit.fit === "Rosettaless" || fit.fit === "Rebuild"
+  );
+}
+
+/** What `runner` would put on this machine, offered on the person's yes with what a yes changes of Colima first, or what they are to mend first where only they can. */
+function setupRunnerPutMend(
+  chat: boolean,
+  at: SetupAt,
+  here: SetupRunnerHere,
+  platform: SetupPlatform,
+  instead: Copy,
+): SetupThing {
+  const told = setupFitToldMend(here.fit, instead);
+  if (told !== undefined) return told;
+  const page = setupPage(at, settingsRoutes.project.myRunner);
+  return setupOffer(
+    {
+      id: "setup-mend-runner-offer",
+      args: {
+        put: {
+          id: "setup-mend-runner-put",
+          args: {
+            program: runnerPackages[platform].program,
+            runs: setupRunsOn(here.claude),
+            job: setupJobSaid,
+          },
+        },
+        fit: setupFitSaid(here),
+        chat: setupWith(chat),
+        ask: chat ? setupChatHostAsk(here) : "",
+        page,
+        add: setupPressed.runner,
+      },
+    },
+    at,
+    setupChatHostOffered(chat, here),
+  );
 }
 
 /** A machine that could hold a runner once its engine is mended, told what to mend, with `instead` for not mending it. */
