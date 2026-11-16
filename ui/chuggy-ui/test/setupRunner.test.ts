@@ -78,7 +78,7 @@ import {
   boxVersion,
   exited,
 } from "./setupRunnerBox.ts";
-import type { BoxAct } from "./setupRunnerBox.ts";
+import type { BoxAct, BoxContainer } from "./setupRunnerBox.ts";
 import {
   rosterColimaAtLogin,
   rosterLines,
@@ -2392,6 +2392,66 @@ test("where the person's chats run on a chat host, the bare command asks of it o
   );
   for (const machine of [roomy, short, unsaid])
     expect(writes(machine)).toEqual([]);
+});
+
+/** What an engine may run beside a run that is no runner's: a buildkitd and a postgres. */
+const boxBesideContainers: BoxContainer[] = [
+  {
+    id: "b1",
+    name: "buildkitd",
+    labels: {},
+    memoryBytes: 0,
+    usage: "1.6GiB",
+  },
+  {
+    id: "p2",
+    name: "postgres",
+    labels: {},
+    memoryBytes: 0,
+    usage: "409.6MiB",
+  },
+];
+
+test("the bare command sizes the chat host to the room what the engine already runs leaves: 11.7 GiB with 2 GiB in use is recommended two chats in 4 GiB and a yes writes two, and a run's own container that leaves no room is recommended none, saying what is in use", async () => {
+  const used = await both();
+  used.box.containers.push(...boxBesideContainers);
+  expect((await ran(used, [])).lines.slice(-4)).toEqual(
+    chatOffer(
+      "chuggy-linux",
+      "4 GiB whenever it runs: 2 GiB a chat, for up to 2",
+      "There is room for it here beside a run, so I recommend it.",
+      "yes",
+    ),
+  );
+  const crowded = await both();
+  crowded.box.containers.push(...boxBesideContainers, {
+    id: "j3",
+    name: "job",
+    labels: { "io.chuggy.pool": "shame" },
+    memoryBytes: 4 * 2 ** 30,
+    usage: "1GiB",
+  });
+  expect((await ran(crowded, [])).lines.slice(-4)).toEqual(
+    chatOffer(
+      "chuggy-linux",
+      "2 GiB whenever it runs: 2 GiB a chat, for up to 1",
+      "I recommend against it here: docker here has 11.7 GiB, 6 GiB of it in use, too little for a run and a chat host at once.",
+      "no",
+    ),
+  );
+  const uncounted = await both();
+  uncounted.box.containers.push(...boxBesideContainers);
+  uncounted.box.stats = undefined;
+  expect((await ran(uncounted, [])).lines.at(-4)).toContain(
+    "I recommend against it here: docker here did not say what its containers use.",
+  );
+  for (const machine of [used, crowded, uncounted])
+    expect(writes(machine)).toEqual([]);
+
+  await ran(used);
+  expect(JSON.parse(used.box.paths.get(boxSettings) ?? "")).toMatchObject({
+    chat: { sessionsMax: 2, sessionMemoryMib: 2048 },
+  });
 });
 
 test("on a Mac the bare command asks of the chat host as Linux does, with the Mac's own package, on the memory its engine reports", async () => {

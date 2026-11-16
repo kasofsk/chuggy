@@ -93,6 +93,7 @@ import {
   setupChatSized,
   setupChildFailed,
   setupColimaAtLogin,
+  setupEngineInUseRead,
   setupEngineMemoryRead,
   setupInstallCommand,
   setupInstallCommandPath,
@@ -582,8 +583,8 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
 
 /**
  * The chat host's size, written into the runner's settings where they name
- * no sessions for it: as many as the engine's memory has room for beside a
- * job, and one where it has room for none, each taking the memory the
+ * no sessions for it: as many as the engine's memory has room for beside
+ * what it runs and a job, and one where it has room for none, each taking the memory the
  * settings name or the package's own, keeping every other key. Answers
  * whether it wrote them, which is whether a running chat host is now stale.
  */
@@ -599,7 +600,12 @@ async function setupChatSettingsHad(
     return halt({ stop: "SettingsUnread", path, guide });
   if (chat.sessionsMax !== undefined) return { written: false };
   const engineMib = await setupEngineMemoryRead(run.ports, machine.engine);
-  const { sessionsMax, sessionMemoryMib } = setupChatSized(engineMib, chat);
+  const inUseMib = await setupEngineInUseRead(run.ports, machine.engine);
+  const { sessionsMax, sessionMemoryMib } = setupChatSized(
+    engineMib,
+    inUseMib,
+    chat,
+  );
   try {
     run.ports.disk.replace(
       path,

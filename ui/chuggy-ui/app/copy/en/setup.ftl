@@ -457,6 +457,8 @@ setup-mend-chat-host-ask = I can also make this machine your { -chat-host }, a s
 }
 setup-mend-chat-host-short = { $said ->
     [said] { $engine } here has only { $memory }, too little for a { -run } and a { -chat-host } at once
+    [used] { $engine } here has { $memory }, { $used } of it in use, too little for a { -run } and a { -chat-host } at once
+    [uncounted] { $engine } here did not say what its containers use
    *[unsaid] { $engine } here did not say how much memory it has
 }
 # spells -work-stage: the work in general

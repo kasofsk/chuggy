@@ -139,6 +139,10 @@ export interface RunnerBox {
   engines: Record<SetupEngine, "Yes" | "No" | "Absent">;
   /** The memory every engine here reports in its `info`, in bytes, or nothing where it reports none. */
   memoryBytes: number | undefined;
+  /** The containers running on every engine here, which none are unless a case says so. */
+  containers: BoxContainer[];
+  /** What `stats` prints: null for a line of each container's own use, and nothing where it fails. */
+  stats: string | undefined | null;
   /** Whether the user's service manager answers. */
   services: boolean;
   /** What the login manager says of lingering, or nothing where it does not say; and whether turning it on wants a password. */
@@ -154,6 +158,15 @@ export interface RunnerBox {
   doctor: { readonly aside: string; readonly exit: number } | undefined;
   /** The Mac this is, where docker runs in Colima, or nothing where it is no such Mac. */
   mac: BoxMac | undefined;
+}
+
+/** A container running on the box's engine: its id and name, its labels, its memory cap in bytes, 0 for none, and its use as `stats` prints it. */
+export interface BoxContainer {
+  readonly id: string;
+  readonly name: string;
+  readonly labels: Readonly<Record<string, string>>;
+  readonly memoryBytes: number;
+  readonly usage: string;
 }
 
 export function exited(exit: number, out = "", err = ""): SetupChildEnded {
@@ -187,6 +200,8 @@ export function runnerBox(): RunnerBox {
     release: boxVersion,
     engines: { docker: "Yes", podman: "Absent" },
     memoryBytes: boxEngineBytes,
+    containers: [],
+    stats: null,
     services: true,
     linger: "no",
     lingerAsks: false,
@@ -406,6 +421,33 @@ export function boxEngineInfo(
           ...(box.mac === undefined ? {} : { Name: boxColimaName(box.mac) }),
         },
   );
+}
+
+/** What an engine here prints of its running containers where it answers this user: their ids, an inspection of them as docker lays it out, or what each uses. */
+export function boxEngineContainers(
+  box: RunnerBox,
+  command: readonly string[],
+): string | undefined {
+  const name = command[0] === "podman" ? "podman" : "docker";
+  if (box.engines[name] !== "Yes") return undefined;
+  const { containers } = box;
+  if (command[1] === "ps")
+    return containers.map(({ id }) => `${id}\n`).join("");
+  if (command[1] === "container")
+    return JSON.stringify(
+      containers
+        .filter(({ id }) => command.slice(3).includes(id))
+        .map((container) => ({
+          Name: `/${container.name}`,
+          Config: { Labels: container.labels },
+          HostConfig: { Memory: container.memoryBytes },
+        })),
+    );
+  return box.stats === null
+    ? containers
+        .map(({ name: named, usage }) => `${named} ${usage} / 11.7GiB\n`)
+        .join("")
+    : box.stats;
 }
 
 /** The name docker's info gives Colima's VM, and its context's. */

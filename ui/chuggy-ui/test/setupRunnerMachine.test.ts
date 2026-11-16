@@ -21,6 +21,7 @@ import {
   setupChatPackageLeast,
   setupChatSized,
   setupChildFailed,
+  setupEngineInUseRead,
   setupLingerByHand,
   setupLingerCommand,
   setupLingerRead,
@@ -728,6 +729,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     chat: false,
     chatSize: {
       engineMib: 11_980,
+      inUseMib: 0,
       room: 3,
       sessionsMax: 3,
       sessionMemoryMib: 2_048,
@@ -803,6 +805,7 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
     chat: false,
     chatSize: {
       engineMib: 11_980,
+      inUseMib: 0,
       room: 3,
       sessionsMax: 3,
       sessionMemoryMib: 2_048,
@@ -1030,14 +1033,28 @@ test("a program's failure keeps of what it printed only an excerpt the redactor 
   });
 });
 
-test("the chat host is sized to the engine's memory less a run's and a spare, in chats of the size the settings count one by, four at most; one with no room, or an engine that said none, is still given one chat on a yes, and a most the settings name is kept", () => {
-  const sized = (engineMib: number | undefined, chat = {}) => {
+test("the chat host is sized to the engine's memory less what it runs, a run's and a spare, in chats of the size the settings count one by, four at most; one with no room, or an engine that said none or whose use was not counted, is still given one chat on a yes, and a most the settings name is kept", () => {
+  const sized = (
+    engineMib: number | undefined,
+    chat = {},
+    inUseMib: number | undefined = 0,
+  ) => {
     const { room, sessionsMax, sessionMemoryMib } = setupChatSized(
       engineMib,
+      inUseMib,
       chat,
     );
     return [room, sessionsMax, sessionMemoryMib];
   };
+  expect(sized(11_980, {}, 2_048)).toEqual([2, 2, 2_048]);
+  expect(sized(11_980, {}, 4_812)).toEqual([1, 1, 2_048]);
+  expect(sized(11_980, {}, 4_813)).toEqual([0, 1, 2_048]);
+  expect(sized(11_980, {}, 20_000)).toEqual([0, 1, 2_048]);
+  expect(setupChatSized(11_980, undefined, {})).toMatchObject({
+    room: 0,
+    sessionsMax: 1,
+  });
+  expect(sized(11_980, { sessionsMax: 3 }, 2_048)).toEqual([2, 3, 2_048]);
   expect(sized(11_980)).toEqual([3, 3, 2_048]);
   expect(sized(6_144)).toEqual([0, 1, 2_048]);
   expect(sized(7_167)).toEqual([0, 1, 2_048]);
@@ -1048,4 +1065,73 @@ test("the chat host is sized to the engine's memory less a run's and a spare, in
   expect(sized(11_980, { sessionMemoryMib: 3_072 })).toEqual([2, 2, 3_072]);
   expect(sized(11_980, { sessionsMax: 1 })).toEqual([3, 1, 2_048]);
   expect(sized(6_144, { sessionsMax: 6 })).toEqual([0, 6, 2_048]);
+});
+
+test("what an engine's running containers take is counted as the runner counts it: one of a pool with a cap at its cap, and every other at the use stats prints, in docker's units or podman's; a listing, an inspection or a use that could not be read is no count", async () => {
+  const gib = 2 ** 30;
+  const inUse = async (
+    engine: SetupEngine,
+    prepare: (machine: SetupMachine) => void,
+  ) => {
+    const machine = setupMachine();
+    machine.box.engines[engine] = "Yes";
+    prepare(machine);
+    return setupEngineInUseRead(machine.ports(), engine);
+  };
+  const pooled = {
+    id: "a1",
+    name: "job",
+    labels: { "io.chuggy.pool": "shame" },
+    memoryBytes: 6 * gib,
+    usage: "300MiB",
+  };
+  const buildkit = {
+    id: "b2",
+    name: "buildkitd",
+    labels: {},
+    memoryBytes: 0,
+    usage: "1.6GiB",
+  };
+  const capped = { ...buildkit, id: "c3", name: "capped", memoryBytes: gib };
+  expect(await inUse("docker", () => undefined)).toBe(0);
+  expect(
+    await inUse("docker", (machine) => {
+      machine.box.containers.push(pooled);
+    }),
+  ).toBe(6_144);
+  expect(
+    await inUse("docker", (machine) => {
+      machine.box.containers.push(pooled, buildkit, capped);
+    }),
+  ).toBe(Math.ceil(6_144 + 2 * 1.6 * 1_024));
+  expect(
+    await inUse("podman", (machine) => {
+      machine.box.containers.push({ ...buildkit, usage: "2.1GB" });
+    }),
+  ).toBe(Math.ceil(2.1e9 / 2 ** 20));
+  expect(
+    await inUse("docker", (machine) => {
+      machine.box.containers.push(pooled);
+      machine.box.stats = undefined;
+    }),
+  ).toBe(6_144);
+  expect(
+    await inUse("docker", (machine) => {
+      machine.box.containers.push(buildkit);
+      machine.box.stats =
+        "buildkitd 1.6GiB / 11.7GiB\nbuildkitd lots / 11.7GiB\n";
+    }),
+  ).toBeUndefined();
+  expect(
+    await inUse("docker", (machine) => {
+      machine.box.containers.push(buildkit);
+      machine.box.stats = undefined;
+    }),
+  ).toBeUndefined();
+  expect(
+    await inUse("docker", (machine) => {
+      machine.box.containers.push(buildkit);
+      machine.box.engines.docker = "No";
+    }),
+  ).toBeUndefined();
 });
