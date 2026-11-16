@@ -1,6 +1,7 @@
 /* The epic page's Overview tab: the description at reading width and, beside
    it, what is running and next, the graph in small and the details. Narrow,
-   that side comes first, its lists side by side and without the graph. */
+   that side comes first, its lists side by side and the graph and the details
+   each across both. */
 
 @layer page {
   .epic-overview {
@@ -116,102 +117,93 @@
     border-color: var(--edge-strong);
   }
 
+  /* The drawing at its own size, centred where the link is wider. */
   .epic-overview-graph-canvas {
     display: block;
+    max-width: 100%;
     height: auto;
+    margin-inline: auto;
+    overflow: visible;
   }
 
-  .epic-overview-graph-line {
+  .epic-overview-graph-spine rect {
+    fill: var(--edge);
+  }
+
+  .epic-overview-graph-spine .epic-overview-graph-spine-done {
+    fill: var(--tone-pass);
+  }
+
+  .epic-overview-graph-link {
     fill: none;
-    stroke: var(--edge-strong);
-    stroke-width: 4;
+    stroke: var(--ink-2);
+    stroke-width: 1;
   }
 
-  /* A block drawn in its state's form: filled in its tone, tinted with its
-     wash and edged in it, or outlined; the form, not hue alone, sets them
-     apart. */
-  .epic-overview-graph-block,
-  .epic-overview-graph-number {
-    --epic-overview-tone: var(--ink-3);
-    --epic-overview-wash: var(--surface-1);
-  }
-
-  .epic-overview-graph-block {
-    stroke-width: 3;
-  }
-
-  .epic-overview-graph-block[data-form="Filled"] {
-    fill: var(--epic-overview-tone);
-    stroke: var(--epic-overview-tone);
-  }
-
-  .epic-overview-graph-block[data-form="Tinted"] {
-    fill: var(--epic-overview-wash);
-    stroke: var(--epic-overview-tone);
-  }
-
-  .epic-overview-graph-block[data-form="Outlined"] {
+  /* A tile by its group: filled where it is done, running or escalated,
+     washed and edged where it may start, and the chip's own surface with a
+     strong edge where it may not. The form, not hue alone, sets them apart. */
+  .epic-overview-graph-tile rect,
+  .epic-overview-graph-goal rect {
     fill: var(--surface-1);
-    stroke: var(--epic-overview-tone);
-    stroke-dasharray: 8 6;
+    stroke: var(--edge-strong);
+    stroke-width: 1;
   }
 
-  /* A block's number: the surface's colour on a filled block, its tone on a
-     tinted one, ink on an outline. */
-  .epic-overview-graph-number {
+  .epic-overview-graph-tile[data-group="Done"] rect {
+    fill: var(--fill-pass);
+    stroke: var(--fill-pass);
+  }
+
+  .epic-overview-graph-tile[data-group="Running"] rect {
+    fill: var(--fill-live);
+    stroke: var(--fill-live);
+  }
+
+  .epic-overview-graph-tile[data-group="Escalated"] rect {
+    fill: var(--fill-parked);
+    stroke: var(--fill-parked);
+  }
+
+  .epic-overview-graph-tile[data-group="Ready"] rect {
+    fill: var(--wash-pass);
+    stroke: var(--tone-pass);
+  }
+
+  .epic-overview-graph-tile circle {
+    fill: var(--tone-pass);
+  }
+
+  /* The longest chain, ringed. */
+  .epic-overview-graph-tile[data-step] rect,
+  .epic-overview-graph-goal[data-step] rect {
+    stroke: var(--ink-1);
+    stroke-width: 1.5;
+  }
+
+  .epic-overview-graph-goal .epic-overview-graph-goal-done {
+    fill: var(--tone-pass);
+    stroke: none;
+  }
+
+  .epic-overview-graph-tile text {
     fill: var(--ink-1);
-    font-weight: var(--weight-strong);
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
 
-  .epic-overview-graph-number[data-form="Filled"] {
-    fill: var(--surface-1);
+  .epic-overview-graph-tile:is(
+      [data-group="Done"],
+      [data-group="Running"],
+      [data-group="Escalated"]
+    )
+    text {
+    fill: var(--ink-inverse);
   }
 
-  .epic-overview-graph-number[data-form="Tinted"] {
-    fill: var(--epic-overview-tone);
-  }
-
-  .epic-overview-graph-block[data-tone="pass"],
-  .epic-overview-graph-number[data-tone="pass"] {
-    --epic-overview-tone: var(--tone-pass);
-    --epic-overview-wash: var(--wash-pass);
-  }
-
-  .epic-overview-graph-block[data-tone="queued"],
-  .epic-overview-graph-number[data-tone="queued"] {
-    --epic-overview-tone: var(--tone-queued);
-    --epic-overview-wash: var(--wash-queued);
-  }
-
-  .epic-overview-graph-block[data-tone="live"],
-  .epic-overview-graph-number[data-tone="live"] {
-    --epic-overview-tone: var(--tone-live);
-    --epic-overview-wash: var(--wash-live);
-  }
-
-  .epic-overview-graph-block[data-tone="evaluation"],
-  .epic-overview-graph-number[data-tone="evaluation"] {
-    --epic-overview-tone: var(--tone-evaluation);
-    --epic-overview-wash: var(--wash-evaluation);
-  }
-
-  .epic-overview-graph-block[data-tone="finalization"],
-  .epic-overview-graph-number[data-tone="finalization"] {
-    --epic-overview-tone: var(--tone-finalization);
-    --epic-overview-wash: var(--wash-finalization);
-  }
-
-  .epic-overview-graph-block[data-tone="parked"],
-  .epic-overview-graph-number[data-tone="parked"] {
-    --epic-overview-tone: var(--tone-parked);
-    --epic-overview-wash: var(--wash-parked);
-  }
-
-  .epic-overview-graph-block[data-tone="retired"],
-  .epic-overview-graph-number[data-tone="retired"] {
-    --epic-overview-tone: var(--tone-retired);
+  .epic-overview-graph-tile[data-group="Ready"] text {
+    fill: var(--tone-pass);
   }
 
   .epic-overview-details {
@@ -250,11 +242,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .epic-overview-part[data-part="graph"] {
-      display: none;
-    }
-
-    .epic-overview-part[data-part="details"] {
+    .epic-overview-part:is([data-part="graph"], [data-part="details"]) {
       grid-column: 1 / -1;
     }
   }

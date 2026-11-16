@@ -199,7 +199,9 @@ function PermissionRowAsked<Authority extends PermissionAuthority>(props: {
   );
 }
 
-function PermissionRowDrawn<Authority extends PermissionAuthority>(props: {
+/** A permission's holders as chips, or `Nobody`, then its `Add`, and under
+ * them what a removal asked or was refused with. */
+function PermissionHolders<Authority extends PermissionAuthority>(props: {
   readonly row: PermissionRow<Authority>;
   readonly removable: boolean;
   readonly removing: PermissionsRemovalState<Authority>;
@@ -209,41 +211,36 @@ function PermissionRowDrawn<Authority extends PermissionAuthority>(props: {
   const row = props.row;
   const removing = props.removing;
   return (
-    <tr>
-      <th scope="row">{text(row.name)}</th>
-      <td>
-        <div className="grid min-w-0 gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {row.holders.length === 0 ? (
-              <span className="text-ink-3">{text(permissionsNobody)}</span>
-            ) : (
-              <ul className="contents">
-                {row.holders.map((holder) => (
-                  <PermissionHolderItem
-                    key={permissionHolderKey(holder)}
-                    holder={holder}
-                    permission={row.name}
-                    removable={
-                      props.removable && permissionHolderRemovable(row, holder)
-                    }
-                    busy={removing.busy || removing.asking !== undefined}
-                    onRemove={() => {
-                      removing.press({ row, holder });
-                    }}
-                  />
-                ))}
-              </ul>
-            )}
-            {props.addition.addable(row) ? (
-              <span className="permissions-add">
-                <PermissionAddition row={row} addition={props.addition} />
-              </span>
-            ) : null}
-          </div>
-          <PermissionRowAsked row={row} removing={removing} />
-        </div>
-      </td>
-    </tr>
+    <div className="grid min-w-0 gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {row.holders.length === 0 ? (
+          <span className="text-ink-3">{text(permissionsNobody)}</span>
+        ) : (
+          <ul className="contents">
+            {row.holders.map((holder) => (
+              <PermissionHolderItem
+                key={permissionHolderKey(holder)}
+                holder={holder}
+                permission={row.name}
+                removable={
+                  props.removable && permissionHolderRemovable(row, holder)
+                }
+                busy={removing.busy || removing.asking !== undefined}
+                onRemove={() => {
+                  removing.press({ row, holder });
+                }}
+              />
+            ))}
+          </ul>
+        )}
+        {props.addition.addable(row) ? (
+          <span className="permissions-add">
+            <PermissionAddition row={row} addition={props.addition} />
+          </span>
+        ) : null}
+      </div>
+      <PermissionRowAsked row={row} removing={removing} />
+    </div>
   );
 }
 
@@ -256,27 +253,38 @@ function PermissionsTable<Authority extends PermissionAuthority>(props: {
 }): ReactNode {
   const text = useCopyText();
   return (
-    <Table caption={props.label}>
-      <thead>
-        <tr>
-          <th scope="col" className="permissions-name">
-            {text({ id: "settings-permissions-permission" })}
-          </th>
-          <th scope="col">{text({ id: "settings-permissions-held-by" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.rows.map((row) => (
-          <PermissionRowDrawn
-            key={row.authority}
-            row={row}
-            removable={props.removal.removable(row)}
-            removing={props.removing}
-            addition={props.addition}
-          />
-        ))}
-      </tbody>
-    </Table>
+    <Table
+      caption={props.label}
+      stacked={{
+        framed: true,
+        columns: [
+          {
+            key: "permission",
+            label: text({ id: "settings-permissions-permission" }),
+            rowHeader: true,
+            headClassName: "permissions-name",
+          },
+          {
+            key: "holders",
+            label: text({ id: "settings-permissions-held-by" }),
+          },
+        ],
+        rows: props.rows.map((row) => ({
+          key: row.authority,
+          cells: {
+            permission: text(row.name),
+            holders: (
+              <PermissionHolders
+                row={row}
+                removable={props.removal.removable(row)}
+                removing={props.removing}
+                addition={props.addition}
+              />
+            ),
+          },
+        })),
+      }}
+    />
   );
 }
 

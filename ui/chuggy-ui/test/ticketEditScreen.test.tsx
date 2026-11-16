@@ -49,6 +49,7 @@ import {
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { disclosed } from "./creationMore.ts";
 
 /**
  * Whether a wait ever ends. Held while the screen is drawn, so the fallback a
@@ -249,9 +250,12 @@ function revised(sent: readonly SentRequest[]): unknown {
 }
 
 async function retitleAndSubmit(): Promise<void> {
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: "Renamed" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: "Renamed" },
+    },
+  );
   waiting.held = false;
   await press("revise and release");
 }
@@ -332,8 +336,11 @@ test("the form waits for the read of a revision no longer offered, and then open
   });
   await settled();
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Ship it");
   expect(configurationChosen()).toContain("development-opus");
 });

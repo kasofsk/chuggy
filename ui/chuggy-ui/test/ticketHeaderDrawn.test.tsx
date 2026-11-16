@@ -18,11 +18,12 @@ import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
 import { intersectionObserverStubbed } from "./intersectionObserver.ts";
 
-vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { readonly children?: ReactNode }) => (
+vi.mock("@tanstack/react-router", () => {
+  const stub = (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
-  ),
-}));
+  );
+  return { createLink: () => stub, Link: stub };
+});
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
@@ -84,7 +85,7 @@ function headerDrawn(): void {
 test("the bar holding the small label and the title shows once the header has scrolled out of view, and goes when it is back", () => {
   const report = intersectionObserverStubbed();
   headerDrawn();
-  const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
+  const bar = document.querySelector<HTMLElement>(".page-header-sticky-bar");
   expect(bar?.hidden).toBe(true);
   act(() => {
     report(false);
@@ -108,7 +109,7 @@ test("a browser without the observer never shows the bar", () => {
   vi.stubGlobal("IntersectionObserver", undefined);
   headerDrawn();
   expect(
-    document.querySelector<HTMLElement>(".ticket-sticky-bar")?.hidden,
+    document.querySelector<HTMLElement>(".page-header-sticky-bar")?.hidden,
   ).toBe(true);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
     "Lock the contract #335",
@@ -129,7 +130,7 @@ test("the epics the header is given are drawn in it, after the title", () => {
       notes={null}
     />,
   );
-  const header = document.querySelector<HTMLElement>(".ticket-header");
+  const header = document.querySelector<HTMLElement>("header.page-header");
   const epics = within(header as HTMLElement).getByText("Billing");
   expect(
     screen.getByRole("heading", { level: 1 }).compareDocumentPosition(epics) &

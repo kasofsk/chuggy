@@ -10,7 +10,6 @@ import { after, before, test } from "node:test";
 
 import {
   apiRole,
-  approvalRequestFunction,
   finalizationFunction,
   finalizerRole,
   schedulerRole,
@@ -360,7 +359,7 @@ const writeSurface = [
     table_name: "finalization_attempt",
     privilege_type: "INSERT",
     columns:
-      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,proposal_base_commit,proposal_base_ref,queue_group_commit,recheck_base_ref,recheck_commit,recheck_reason,repository,request,strategy,target_base_ref,target_commit,target_ref,tenant,ticket",
+      "attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,proposal_base_commit,proposal_base_ref,queue_group_commit,recheck_base_ref,recheck_commit,recheck_reason,repository,request,restack_commits,restack_tickets,strategy,target_base_ref,target_commit,target_ref,tenant,ticket",
   },
   {
     table_name: "finalization_change_proposal",
@@ -455,8 +454,6 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "forge_installation",
       "input_bundle",
       "input_bundle_reference",
-      "native_action",
-      "native_action_resolution",
       "project",
       "project_repository",
       "recovery_epoch",
@@ -467,18 +464,14 @@ test("the finalizer's read surface is exactly the relations its view is gathered
   );
 });
 
-test("the finalizer's five doors are its own and no prior role may open them", async () => {
+test("the finalizer's four doors are its own and no prior role may open them", async () => {
   const doors = [
     [
       `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
       finalizationFunction,
     ],
     [
-      `SELECT * FROM ${approvalRequestFunction}('t','p','a','n','e')`,
-      approvalRequestFunction,
-    ],
-    [
-      `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e')`,
+      `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e',NULL,NULL)`,
       holdFunction,
     ],
     [
@@ -502,7 +495,7 @@ test("the finalizer's five doors are its own and no prior role may open them", a
   }
 });
 
-test("all five doors are security definer, boundary-owned and search-path pinned", async () => {
+test("all four doors are security definer, boundary-owned and search-path pinned", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT p.proname, p.prosecdef, r.rolname AS owner,
@@ -512,7 +505,6 @@ test("all five doors are security definer, boundary-owned and search-path pinned
       [
         [
           finalizationFunction,
-          approvalRequestFunction,
           holdFunction,
           stackInvalidationFunction,
           ticketFinalizationRankFunction,
@@ -522,12 +514,6 @@ test("all five doors are security definer, boundary-owned and search-path pinned
     [
       {
         proname: holdFunction,
-        prosecdef: true,
-        owner: "chuggy_boundary_owner",
-        settings: "search_path=pg_catalog, public, pg_temp",
-      },
-      {
-        proname: approvalRequestFunction,
         prosecdef: true,
         owner: "chuggy_boundary_owner",
         settings: "search_path=pg_catalog, public, pg_temp",

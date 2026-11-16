@@ -6,8 +6,12 @@ export const settingsFtl = `## The settings pages.
 settings-nav = Settings
 settings-nav-project = { -project(case: "upper") }
 settings-nav-lead = { -lead(case: "upper") }
+settings-nav-lead-session = { -lead(case: "upper") } session
 settings-nav-placement = { -placement(case: "upper") }
+settings-nav-pools = Pools
 settings-nav-permissions = Permissions
+settings-nav-repositories = { -repository(case: "upper", form: "plural") }
+settings-nav-catalog = { -catalog(case: "upper") }
 settings-nav-workspace = { -workspace(case: "upper") }
 settings-nav-people = People
 settings-nav-accounts = { -github } accounts
@@ -15,6 +19,38 @@ settings-nav-personal-runners = { -personal-runner(case: "upper", form: "plural"
 settings-nav-usage = Usage
 settings-nav-site = { -site(case: "upper") }
 settings-nav-workspaces = { -workspace(case: "upper", form: "plural") }
+settings-nav-person = You
+settings-nav-preferences = Preferences
+settings-nav-index = All settings
+settings-nav-lead-summary = What the { -lead } aims at, the rules it keeps and its models
+settings-nav-lead-session-summary = What the { -lead } has decided, and why
+settings-nav-placement-summary = The image each { -stage } is given, and what it requires
+settings-nav-pools-summary = The shared machines registered for this { -project }
+settings-nav-permissions-summary = Who may do what in this { -project }
+settings-nav-repositories-summary = The { -repository(form: "plural") } this { -project } works in
+settings-nav-catalog-summary = The { -configuration(form: "plural") } { -ticket(form: "a") } can be given
+settings-nav-people-summary = Who is in this { -workspace }, and their roles
+settings-nav-accounts-summary = The { -github } accounts this { -workspace } is installed on
+settings-nav-workspace-permissions-summary = Who may do what across this { -workspace }
+settings-nav-usage-summary = What this { -workspace }'s { -run(form: "plural") } have spent
+settings-nav-site-workspaces-summary = Every { -workspace } on this { -site }, and a way to start one
+settings-nav-site-permissions-summary = Who may administer this { -site }
+settings-nav-personal-runners-summary = The { -personal-runner(form: "plural") } you have registered
+settings-nav-preferences-summary = How the console looks and reads for you
+
+settings-preferences-appearance = Appearance
+settings-preferences-scheme = Light or dark
+settings-preferences-scheme-system = System
+settings-preferences-scheme-light = Light
+settings-preferences-scheme-dark = Dark
+settings-preferences-wording = Wording
+settings-preferences-wording-standard = Standard
+settings-preferences-wording-pseudo = Pseudo
+settings-preferences-wording-vernacular = { $name }
+settings-preferences-chat = { -thread(case: "upper") } position
+settings-preferences-chat-right = Right
+settings-preferences-chat-left = Left
+settings-preferences-chat-bottom = Bottom
 
 settings-cancel = Cancel
 settings-done = Done
@@ -104,6 +140,7 @@ settings-invitation-send = Invite
 settings-invitation-sending = Inviting…
 # spells -invite: to invite is a verb here
 settings-invitation-title = Invite to { $tenant }
+settings-invitation-joins = This adds them to { $tenant }. { -workspace(case: "upper", form: "a") } of their own comes from a signup link, under Settings → { -workspace(case: "upper", form: "plural") }.
 
 settings-invite-link-create = Create link
 settings-invite-link-made = { -invite(case: "upper") } link
@@ -129,18 +166,20 @@ settings-invite-link-expired = Expired
 ## The page an invite link is opened at.
 
 settings-invite-brand = { -brand-name }
-settings-invite-needed = { -invite(case: "upper") } needed
-settings-invite-invited = Invited
+settings-invite-needed-title = { -invite(case: "upper", form: "a") } is needed
+settings-invite-needed = This account has no { -invite } to { -brand-name }. Ask for { -invite(form: "a") } link, then sign in again.
+settings-invite-invited-title = You are invited to { -brand-name }
+settings-invite-invited = Sign in to accept.
+settings-invite-joining-title = Joining { -brand-name }
 settings-invite-joining = Joining…
-settings-invite-not-valid = Link not valid
+settings-invite-not-valid-title = This link can no longer be used
+settings-invite-not-valid = It may have expired or been used already. Ask whoever sent it for a new one.
+settings-invite-failed-title = The { -invite } was not accepted
+settings-invite-failed-next = Retry. If it keeps failing, ask whoever sent the link.
+settings-invite-naming-title = Name your { -workspace }
 settings-invite-sign-in = Sign in
 settings-invite-open = Open { -brand-name }
 settings-invite-retry = Retry
-settings-invite-naming = New { -workspace }
-settings-invite-workspace-name = { -workspace(case: "upper") } name
-settings-invite-workspace-about = Your { -workspace }. { -project(case: "upper", form: "plural") } go inside.
-settings-invite-create = Create
-settings-invite-name-not-valid = Name not valid
 
 ## Adding a holder to a permission, and removing one.
 
@@ -186,6 +225,9 @@ settings-workspaces-owner = Owner
 settings-workspaces-create = Create
 settings-workspaces-note = Note
 settings-workspaces-note-lines = One line
+settings-workspaces-link-mode = Signup link
+settings-workspaces-link-about = Whoever opens it signs in with { -github } and gets { -workspace(form: "a") } of their own.
+settings-workspaces-links = Signup links
 
 ## The workspace's connected GitHub accounts.
 
@@ -204,4 +246,36 @@ settings-accounts-installed = Installed
 settings-accounts-missing = Missing
 settings-accounts-update-pending = Update pending
 settings-accounts-review = Review on { -github }
+
+## Deleting a project, or a workspace, that nothing ran in.
+
+settings-delete-project-title = Delete this { -project }
+settings-delete-project-about = Only { -project(form: "a") } with no { -ticket } ever { -release(form: "ed") } and no { -run(form: "plural") } can be deleted. Its { -draft(form: "plural") }, { -epic(form: "plural") }, { -repository(form: "plural") } and settings go with it.
+settings-delete-project = Delete { -project }
+settings-delete-project-question = Delete { $project }?
+settings-delete-project-line = { $project } and everything in it is deleted. This cannot be undone.
+settings-delete-project-done = { $project } is deleted.
+settings-rename-workspace-title = Name
+settings-rename-workspace-about = What this { -workspace } is called wherever it is shown. Its address stays { $workspace }.
+settings-rename-workspace-label = { -workspace(case: "upper") } name
+settings-rename-workspace = Save name
+settings-rename-workspace-writing = Saving the name…
+settings-rename-workspace-written = The name is saved.
+settings-delete-workspace-title = Delete this { -workspace }
+settings-delete-workspace-about = Only { -workspace(form: "a") } that holds no { -project } and no { -runner } can be deleted. Its people, { -invite } links and settings go with it, and its name can be taken again.
+settings-delete-workspace = Delete { -workspace }
+settings-delete-workspace-question = Delete { $workspace }?
+settings-delete-workspace-line = { $workspace } and everything in it is deleted, and its name is free. This cannot be undone.
+settings-delete-workspace-done = { $workspace } is deleted.
+settings-delete-back = Back to the start
+settings-delete-held = It cannot be deleted: { $held }.
+settings-delete-held-released-ticket = { -ticket(form: "a") } was { -release(form: "ed") }
+settings-delete-held-execution = it has { -run(form: "plural") }
+settings-delete-held-session = it has { -thread(form: "plural") } or { -lead(form: "a") }
+settings-delete-held-worker-pool = { -runner(form: "a") } is registered for it
+settings-delete-held-action-observation = an action reported what it did
+settings-delete-held-project = it holds { -project(form: "a") }
+settings-delete-held-personal-runner = { -personal-runner(form: "a") } is registered in it
+settings-delete-held-chat-host = { -chat-host(form: "a") } is registered in it
+settings-delete-held-joined = { $lead }, { $rest }
 `;

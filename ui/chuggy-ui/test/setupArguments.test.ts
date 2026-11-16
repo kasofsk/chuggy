@@ -229,3 +229,161 @@ test("the arguments a sign-in starts its listener with are read back as that lis
     setupAsked(setupListenArguments(site, setupListenSecsDefault)),
   ).toEqual({ asked: "Listen", site, lifeSecs: setupListenSecsDefault });
 });
+
+test("chat-host is read for a workspace named whole and no project, with --replace at most once and read by no other command, and is run again as itself", () => {
+  const answers = { workspace: "acme", project: undefined };
+  expect(setupAsked(["chat-host", "--workspace", "acme"])).toEqual({
+    asked: "ChatHost",
+    site: undefined,
+    waitSecs: setupWaitSecsDefault,
+    answers,
+    workspace: "acme",
+    replace: undefined,
+  });
+  expect(
+    setupAsked(["chat-host", "--workspace=acme", "--replace", "0f3a9c21"]),
+  ).toMatchObject({ asked: "ChatHost", replace: "0f3a9c21" });
+  expect(setupAsked(["chat-host"])).toEqual(wrongly("Workspace"));
+  expect(setupAsked(["chat-host", "--project", "widgets"])).toEqual(
+    wrongly("Flag"),
+  );
+  for (const replace of ["..", "two\nlines"])
+    expect(
+      setupAsked(["chat-host", "--workspace", "acme", "--replace", replace]),
+      replace,
+    ).toEqual(wrongly("Replace"));
+  expect(
+    setupAsked([
+      "chat-host",
+      "--workspace",
+      "acme",
+      "--replace",
+      "a",
+      "--replace",
+      "a",
+    ]),
+  ).toEqual(wrongly("Flag"));
+  for (const command of [
+    [],
+    ["sign-in"],
+    ["runner", "--workspace", "acme", "--project", "widgets"],
+  ])
+    expect(
+      setupAsked([...command, "--replace", "0f3a9c21"]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+  expect(setupAsked(["chat-host", "runner"])).toEqual(wrongly("Command"));
+  expect(setupCommandArguments("ChatHost")).toEqual(["chat-host"]);
+  expect(setupAnswersAsked(["chat-host", "--workspace", "acme"])).toEqual(
+    answers,
+  );
+});
+
+test("project is read for a workspace named whole and a name on one line, with an address only where one is given, and --name is read by no other command", () => {
+  expect(
+    setupAsked(["project", "--workspace", "acme", "--name", "Atlas Web"]),
+  ).toEqual({
+    asked: "Project",
+    site: undefined,
+    answers: { workspace: "acme", project: undefined, name: "Atlas Web" },
+    workspace: "acme",
+    name: "Atlas Web",
+  });
+  expect(
+    setupAsked([
+      "project",
+      "--site",
+      site,
+      "--workspace=acme",
+      "--project",
+      "atlas",
+      "--name=it's --site",
+    ]),
+  ).toMatchObject({
+    asked: "Project",
+    site,
+    answers: { workspace: "acme", project: "atlas", name: "it's --site" },
+  });
+  expect(setupAsked(["project", "--name", "Atlas"])).toEqual(
+    wrongly("Workspace"),
+  );
+  for (const name of [undefined, "", "two\nlines", " Atlas", "Atlas  Web"])
+    expect(
+      setupAsked([
+        "project",
+        "--workspace",
+        "acme",
+        ...(name === undefined ? [] : ["--name", name]),
+      ]),
+      String(name),
+    ).toEqual(wrongly("ProjectName"));
+  for (const command of [[], ["sign-in"], ["mcp"], ["runner"], ["chat-host"]])
+    expect(
+      setupAsked([
+        ...command,
+        "--workspace",
+        "acme",
+        "--project",
+        "widgets",
+        "--name",
+        "Atlas",
+      ]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+});
+
+test("the arguments a report names for project carry its name, and those it names for any other command carry none", () => {
+  const answers = { workspace: "acme", project: "atlas", name: "Atlas Web" };
+  expect(
+    setupAsked([
+      ...setupCommandArguments("Project"),
+      ...setupAnswerArguments(answers, "Project"),
+    ]),
+  ).toMatchObject({ asked: "Project", answers });
+  expect(setupAnswerArguments(answers)).toEqual([
+    "--workspace",
+    "acme",
+    "--project",
+    "atlas",
+  ]);
+  expect(setupAnswerArguments(answers, "Runner")).not.toContain("--name");
+});
+
+test("configuration and check read the workspace and project and no site, configuration a test command on one line too, and import a site besides; --test is read by no other command", () => {
+  const both = { workspace: "acme", project: "widgets" };
+  const flags = ["--workspace", "acme", "--project", "widgets"];
+  expect(setupAsked(["configuration", ...flags, "--test", "npm test"])).toEqual(
+    {
+      asked: "Configuration",
+      site: undefined,
+      answers: both,
+      test: "npm test",
+    },
+  );
+  expect(setupAsked(["configuration"])).toMatchObject({
+    asked: "Configuration",
+    test: undefined,
+  });
+  for (const test of ["", "two\nlines"])
+    expect(setupAsked(["configuration", "--test", test]), test).toEqual(
+      wrongly("Test"),
+    );
+  expect(setupAsked(["check", ...flags])).toEqual({
+    asked: "Check",
+    site: undefined,
+    answers: both,
+  });
+  expect(setupAsked(["import", "--site", site, ...flags])).toEqual({
+    asked: "Import",
+    site,
+    answers: both,
+  });
+  for (const argv of [
+    ["configuration", "--site", site],
+    ["check", "--site", site],
+    ["check", "--test", "make"],
+    ["import", "--test", "make"],
+    ["--test", "make"],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Flag"));
+});

@@ -44,6 +44,7 @@ export const projectInventoryResponseSchema =
     projects: value.projects.map((project) => ({
       tenant: asTenantId(project.tenant),
       project: asProjectId(project.project),
+      name: project.name,
     })),
     ...(value.nextCursor === undefined
       ? {}

@@ -1,7 +1,7 @@
 /** One version 1 configuration as a repository declares it, which every import reads as ready. */
 
-import type { RepositoryDeclarationFile } from "../../src/interpreter/repositoryDeclaration.ts";
-import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
+import type { RepositoryDeclarationFile } from "../../src/contract/repositoryDeclaration.ts";
+import { repositoryDeclarationRoot } from "../../src/contract/repositoryDeclaration.ts";
 
 export const repositoryConfigurationWorkFile: RepositoryDeclarationFile = {
   path: `${repositoryDeclarationRoot}configurations/work.json`,
