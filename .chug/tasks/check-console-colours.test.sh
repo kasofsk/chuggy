@@ -50,6 +50,7 @@ module_saying 'export const pill = <path fill="#b3261ecc" />;'
 check "an eight-digit hex in a JSX attribute is a finding" 1 "$RC" "#b3261ecc — a literal colour"
 
 for form in "rgb(20 30 20)" "rgba(20, 30, 20, 0.5)" "hsl(120 40% 50%)" "hsla(120, 40%, 50%, 1)" \
+	"hwb(120 10% 20%)" "lab(50% 40 59)" "lch(52% 72 50)" \
 	"oklch(0.7 0.1 150)" "oklab(0.7 0.1 0.1)" "color(display-p3 1 0 0)"; do
 	module_saying "export const pill = { background: \"$form\" };"
 	check "${form%%(*}() is a finding" 1 "$RC" "${form%%(*}() — a literal colour"
