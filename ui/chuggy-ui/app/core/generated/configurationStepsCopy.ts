@@ -57,8 +57,6 @@ export interface ConfigurationStepsCopy {
   readonly "configuration-steps-yes": Record<never, never>;
   readonly "configuration-steps-no": Record<never, never>;
   readonly "configuration-steps-policy": Record<never, never>;
-  readonly "configuration-steps-approval": Record<never, never>;
-  readonly "configuration-steps-required": Record<never, never>;
   readonly "configuration-steps-approvers": Record<never, never>;
   readonly "configuration-steps-motivation": Record<never, never>;
   readonly "configuration-steps-acceptance-criteria": Record<never, never>;

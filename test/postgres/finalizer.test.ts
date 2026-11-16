@@ -184,6 +184,23 @@ test("an attempt keeps its own repository though the project's oldest binding di
   assert.equal(view?.repository?.repository, used);
 });
 
+test("the durable view says whether the bound repository's jobs may write pipelines, as its binding does", async () => {
+  const project = await finalizerProject(rig, "pipelines");
+  const claim = await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity("owner-pipelines"),
+  );
+  const store = postgresFinalizer(rig.pool);
+  assert.equal((await store.durableView(claim))?.pipelinesWritable, false);
+  await rig.harness.query(
+    `UPDATE project_repository SET pipelines_writable=true
+      WHERE tenant=$1 AND project=$2 AND repository=$3`,
+    [project.partition.tenant, project.partition.project, project.repository],
+  );
+  assert.equal((await store.durableView(claim))?.pipelinesWritable, true);
+});
+
 test("a permit is spent once and never re-identified", async () => {
   const project = await finalizerProject(rig, "spend");
   const attempt = await finalizerPrepare(rig, project, "spend");
@@ -412,7 +429,6 @@ test("each relation carries exactly the indexes its recovery, its identities and
       "input_bundle_pkey",
       "input_bundle_reference_is_declared_once",
       "input_bundle_reference_pkey",
-      "native_action_approves_an_attempt_once",
       "native_action_asks_for_an_execution_once",
       "native_action_decision_opens_one_desk",
       "native_action_names_its_execution",

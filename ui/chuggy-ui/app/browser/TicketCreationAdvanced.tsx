@@ -1,12 +1,11 @@
 /**
- * Everything a ticket's creation does not ask a human about, behind one
- * disclosure and prefilled from the initialization.
+ * What a ticket's creation does not ask a human about, prefilled from the
+ * initialization and drawn among the form's disclosed fields.
  *
  * Every field here offers exactly what the initialization offered and nothing
  * else, so a form cannot submit a value the project would refuse; what the
  * initialization derived is not drawn at all. A reader who may not skip
- * planned evaluations is offered no program that runs less than its plan. The
- * disclosure is the element's own, so a closed panel costs no script.
+ * planned evaluations is offered no program that runs less than its plan.
  */
 
 import type { ReactNode } from "react";
@@ -38,7 +37,8 @@ import type {
 } from "../core/ticketCreation.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { Button } from "./ui/Button.tsx";
-import { Panel } from "./ui/Panel.tsx";
+import { Checkbox } from "./ui/Checkbox.tsx";
+import { Select } from "./ui/Select.tsx";
 
 interface FormEdit {
   readonly form: TicketCreationForm;
@@ -55,24 +55,19 @@ function ChoiceRow<T>(props: {
   const options = creationOffered(props.offered, props.chosen, props.render);
   const { onChoose, render } = props;
   return (
-    <label className="creation-row">
-      <span>{props.label}</span>
-      <select
-        value={render(props.chosen)}
-        onChange={(event) => {
-          const found = options.findIndex(
-            (value) => render(value) === event.target.value,
-          );
-          if (found !== -1) onChoose(options[found] as T);
-        }}
-      >
-        {options.map((value) => (
-          <option key={render(value)} value={render(value)}>
-            {render(value)}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Select
+      labelShown
+      label={props.label}
+      value={render(props.chosen)}
+      options={options.map((value) => ({
+        value: render(value),
+        text: render(value),
+      }))}
+      onChange={(chosen) => {
+        const found = options.findIndex((value) => render(value) === chosen);
+        if (found !== -1) onChoose(options[found] as T);
+      }}
+    />
   );
 }
 
@@ -92,28 +87,26 @@ function Dependencies(
     );
   return (
     <fieldset className="creation-set">
-      <legend>{text({ id: "ticket-authoring-dependencies" })}</legend>
+      <legend className="form-field-label">
+        {text({ id: "ticket-authoring-dependencies" })}
+      </legend>
       {props.candidates.map((candidate) => (
-        <label key={candidate} className="creation-check">
-          <input
-            type="checkbox"
-            checked={form.dependencies.includes(candidate)}
-            onChange={(event) => {
-              onChange({
-                ...form,
-                dependencies: event.target.checked
-                  ? [...form.dependencies, candidate]
-                  : form.dependencies.filter((held) => held !== candidate),
-              });
-            }}
-          />
-          <span>
-            {text({
-              id: "ticket-authoring-ticket",
-              args: { ticket: String(candidate) },
-            })}
-          </span>
-        </label>
+        <Checkbox
+          key={candidate}
+          label={text({
+            id: "ticket-authoring-ticket",
+            args: { ticket: String(candidate) },
+          })}
+          checked={form.dependencies.includes(candidate)}
+          onChange={(checked) => {
+            onChange({
+              ...form,
+              dependencies: checked
+                ? [...form.dependencies, candidate]
+                : form.dependencies.filter((held) => held !== candidate),
+            });
+          }}
+        />
       ))}
       {props.truncated ? (
         <p className="panel-note">
@@ -215,7 +208,9 @@ function Program(
   const text = useCopyText();
   return (
     <fieldset className="creation-set">
-      <legend>{text({ id: "ticket-authoring-evaluators-per-stage" })}</legend>
+      <legend className="form-field-label">
+        {text({ id: "ticket-authoring-evaluators-per-stage" })}
+      </legend>
       {form.program.map((stage, index) => (
         <div
           key={`${String(index)}-${creationStageLabel(stage)}`}
@@ -277,36 +272,30 @@ export function TicketCreationAdvanced(
   },
 ): ReactNode {
   const { form, initialization, onChange } = props;
-  const text = useCopyText();
   return (
-    <Panel
-      title={text({ id: "ticket-authoring-advanced" })}
-      collapsible={{ open: false }}
-    >
-      <div className="grid gap-2">
-        <ConfigurationVersion
-          form={form}
-          onChange={onChange}
-          initialization={initialization}
-        />
-        <Dependencies
-          form={form}
-          onChange={onChange}
-          candidates={initialization.dependencyCandidates}
-          truncated={initialization.dependencyCandidatesTruncated}
-        />
-        <Program
-          form={form}
-          onChange={onChange}
-          evaluatorsMax={initialization.choices.evaluatorsMax}
-          stagesMax={initialization.choices.programStagesMax}
-          planned={
-            props.maySkipPlanned === false
-              ? programPlanned(initialization)
-              : undefined
-          }
-        />
-      </div>
-    </Panel>
+    <>
+      <ConfigurationVersion
+        form={form}
+        onChange={onChange}
+        initialization={initialization}
+      />
+      <Dependencies
+        form={form}
+        onChange={onChange}
+        candidates={initialization.dependencyCandidates}
+        truncated={initialization.dependencyCandidatesTruncated}
+      />
+      <Program
+        form={form}
+        onChange={onChange}
+        evaluatorsMax={initialization.choices.evaluatorsMax}
+        stagesMax={initialization.choices.programStagesMax}
+        planned={
+          props.maySkipPlanned === false
+            ? programPlanned(initialization)
+            : undefined
+        }
+      />
+    </>
   );
 }

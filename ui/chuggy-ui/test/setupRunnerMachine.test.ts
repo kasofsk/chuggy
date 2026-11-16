@@ -59,9 +59,11 @@ import { setupSiteMember } from "./setupSite.ts";
 const surroundings = {
   platform: "linux",
   browser: undefined,
-  directory: "~/.chuggy-setup",
+  directory: "~/.config/chuggy/sign-ins",
+  folder: `${boxHome}/work`,
   home: boxHome,
   configHome: undefined,
+  claudeHome: undefined,
   user: "1000",
 };
 

@@ -192,11 +192,9 @@ import {
   type WaitingAttempt,
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
-import type { FinalizerConfig, GitRefName, RepositoryId } from "./finalizer.ts";
-import {
-  finalizerLandingBaseRef,
-  finalizerLandingRef,
-} from "./finalizerLanding.ts";
+import type { WorkTaskTargetMerge } from "../contract/workerTask.ts";
+import type { FinalizerConfig, RepositoryId } from "./finalizer.ts";
+import { finalizerLandingBaseRef } from "./finalizerLanding.ts";
 import { runEndedLoss } from "./runEvidence.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
@@ -260,6 +258,8 @@ export interface ExecutionSchedulerService {
   /** The binding a ticket's brief names, which is what its finalization lands through. */
   readonly bindings: ProjectRepositoryBindingRead;
   readonly practices: PracticeCatalog;
+  /** The pathspecs the deployment's forge treats as pipeline definitions, which a task whose binding withholds pipelines may not push a change to. */
+  readonly pipelinePaths: readonly string[];
   /** The image chuggy's runtime is copied from, which every attempt a pass opens keeps. */
   readonly workerRuntime: string;
   /** The memory, in MiB, a pool runs an execution naming none with, which is the size a pass reads one routed to pools as. */
@@ -612,8 +612,9 @@ async function schedulerRuntimeFacts(
 
 /**
  * Reads the repositories this execution's project binds beside its own, which
- * its pod reads and never delivers to, and whether its own binding lets
- * pipelines be written.
+ * its pod reads and never delivers to, whether its own binding lets pipelines
+ * be written, and the paths its push may not change: the forge's pipeline
+ * definitions, where that binding withholds pipelines and the forge names any.
  */
 async function schedulerReadOnlyRepositories(
   service: ExecutionSchedulerService,
@@ -622,6 +623,7 @@ async function schedulerReadOnlyRepositories(
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
       readonly pipelinesWritable?: boolean;
+      readonly pushPathsRefused?: readonly string[];
     }
   | BriefingUnready
 > {
@@ -636,6 +638,9 @@ async function schedulerReadOnlyRepositories(
         ...(read.pipelinesWritable === undefined
           ? {}
           : { pipelinesWritable: read.pipelinesWritable }),
+        ...(read.pipelinesWritable === false && service.pipelinePaths.length > 0
+          ? { pushPathsRefused: service.pipelinePaths }
+          : {}),
       };
     case "Unavailable":
       return { gathered: "Unavailable" };
@@ -662,7 +667,7 @@ async function schedulerDependencyDeliveries(
   }
 }
 
-/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, and what its dependencies delivered. */
+/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, the paths its push may not change, and what its dependencies delivered. */
 async function schedulerProjectContext(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
@@ -670,6 +675,7 @@ async function schedulerProjectContext(
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
       readonly pipelinesWritable?: boolean;
+      readonly pushPathsRefused?: readonly string[];
       readonly dependencyDeliveries: readonly DependencyDelivery[];
     }
   | BriefingUnready
@@ -796,29 +802,44 @@ interface TaskLaunch {
   readonly profile: ExecutionProfile;
   readonly image?: string;
   readonly invocation: TaskInvocation;
-  readonly targetRef?: GitRefName;
+  readonly targetMerge?: WorkTaskTargetMerge;
+  readonly pushPathsRefused?: readonly string[];
 }
 
 /**
- * The ref the ticket's finalization lands on and the base a work task merges
- * in, each resolved from its brief and the binding it names as the finalizer
- * resolves it.
+ * The base a work task merges in, resolved from its brief and the binding it
+ * names as the finalizer resolves it.
  */
 async function schedulerLanding(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   brief: DraftBrief | undefined,
-): Promise<{ readonly targetRef?: GitRefName; readonly baseRef?: string }> {
-  if (brief?.repository === undefined) return {};
+): Promise<string | undefined> {
+  if (brief?.repository === undefined) return undefined;
   const binding = await service.bindings.binding(
     execution.partition,
     brief.repository,
   );
-  const targetRef = finalizerLandingRef(brief, binding);
-  const baseRef = finalizerLandingBaseRef(brief, binding);
+  return finalizerLandingBaseRef(brief, binding);
+}
+
+/**
+ * What a work task's core merges in: the base its landing resolves to, whether
+ * its own binding lets pipelines be written as its briefing reads it, and the
+ * change commit the failed landing it follows recorded. Nothing where the
+ * ticket lands on no base.
+ */
+function schedulerTargetMerge(
+  ref: string | undefined,
+  pipelinesWritable: boolean | undefined,
+  failedLanding: FailedLanding | undefined,
+): WorkTaskTargetMerge | undefined {
+  if (ref === undefined) return undefined;
+  const change = failedLanding?.changeCommit;
   return {
-    ...(targetRef === undefined ? {} : { targetRef }),
-    ...(baseRef === undefined ? {} : { baseRef }),
+    ref,
+    pipelinesWritable: pipelinesWritable !== false,
+    ...(change === undefined ? {} : { change }),
   };
 }
 
@@ -854,8 +875,9 @@ async function schedulerPrepared(
     return schedulerUnready(service, configuration);
   const runtime = await schedulerRuntimeFacts(service, execution);
   if ("gathered" in runtime) return schedulerUnready(service, runtime);
-  const project = await schedulerProjectContext(service, execution);
-  if ("gathered" in project) return schedulerUnready(service, project);
+  const context = await schedulerProjectContext(service, execution);
+  if ("gathered" in context) return schedulerUnready(service, context);
+  const { pipelinesWritable, ...project } = context;
   const priorWorkReports = await schedulerPriorWorkReports(service, execution);
   if ("gathered" in priorWorkReports)
     return schedulerUnready(service, priorWorkReports);
@@ -865,10 +887,11 @@ async function schedulerPrepared(
     execution.partition,
     execution.ticket,
   );
-  const { targetRef, baseRef } = await schedulerLanding(
-    service,
-    execution,
-    brief,
+  const baseRef = await schedulerLanding(service, execution, brief);
+  const targetMerge = schedulerTargetMerge(
+    baseRef,
+    pipelinesWritable,
+    rework.failedLanding,
   );
   const composed = composeTaskInvocation(service.practices, {
     purpose: schedulerTaskPurpose(execution, configuration),
@@ -879,7 +902,6 @@ async function schedulerPrepared(
     ...project,
     priorWorkReports,
     ...rework,
-    ...(baseRef === undefined ? {} : { targetRef: baseRef }),
     ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });
@@ -889,7 +911,10 @@ async function schedulerPrepared(
         profile: policy.profile,
         ...(policy.image === undefined ? {} : { image: policy.image }),
         invocation: composed.invocation,
-        ...(targetRef === undefined ? {} : { targetRef }),
+        ...(targetMerge === undefined ? {} : { targetMerge }),
+        ...(project.pushPathsRefused === undefined
+          ? {}
+          : { pushPathsRefused: project.pushPathsRefused }),
       };
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
@@ -950,7 +975,12 @@ async function schedulerPlace(
     profile: launch.profile,
     ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,
-    ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
+    ...(launch.targetMerge === undefined
+      ? {}
+      : { targetMerge: launch.targetMerge }),
+    ...(launch.pushPathsRefused === undefined
+      ? {}
+      : { pushPathsRefused: launch.pushPathsRefused }),
     capability: attempt.capability,
   });
   recordScheduler(service.metrics, (metrics) => {

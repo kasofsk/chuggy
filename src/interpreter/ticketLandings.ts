@@ -5,11 +5,9 @@
  * IT IS AUTHORIZED AS THE TICKET'S OWN READ IS, and a ticket the caller may
  * not read is answered as one that does not exist.
  *
- * A LANDING'S STATE IS READ FROM THE REQUEST, ITS CONCLUSION, ITS HOLD, ITS
- * APPROVAL AND ITS MERGE, and `ticketLandingState` is the whole of that
- * reading. A request the finalizer still holds is `AwaitingApproval` while its
- * newest attempt waits on an approval a person still has open, `Held` where its
- * hold columns are set, `AwaitingMerge` where its pull request's merge waits on
+ * A LANDING'S STATE IS READ FROM THE REQUEST, ITS CONCLUSION, ITS HOLD AND ITS
+ * MERGE, and `ticketLandingState` is the whole of that reading. A request the
+ * finalizer still holds is `Held` where its hold columns are set, `AwaitingMerge` where its pull request's merge waits on
  * the forge, and `Running` otherwise. A concluded one is what its journal event
  * says: `Failed` for the ticket sent back to work, `Unavailable` for the one
  * escalated, and for a success `Landed` where a commit it landed at is
@@ -19,9 +17,7 @@
  * WHERE THE ROWS CANNOT TELL TWO STATES APART THE ONE ANSWERED CLAIMS LESS.
  * Only the holds a resume could clear are recorded, and a pass held for any
  * other reason writes nothing either way, so a live landing's hold is the last
- * one recorded and may be older than what holds it now. An open approval is
- * no such record: nothing moves the attempt past it, so it is answered over a
- * hold recorded beside it. A wait is answered under a recorded hold, because a
+ * one recorded and may be older than what holds it now. A wait is answered under a recorded hold, because a
  * pass that found the proposal open clears the record and so one that stands
  * is newer than the last reading. A concluded landing answers neither, whatever
  * its columns still carry, except that an escalated one answers the hold it
@@ -96,12 +92,17 @@ export interface TicketLandingQueueRemoval {
   readonly actor?: ProposalQueueWord;
 }
 
-/** The hold a request was last recorded at, and the removal it escalates where it is a queue's. */
+/**
+ * The hold a request was last recorded at, the removal it escalates where it
+ * is a queue's, and the files a job may not push that the target changed where
+ * it is `TargetPathsRefused`.
+ */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
   readonly passes: number;
   readonly since: PublicInstant;
   readonly removal?: TicketLandingQueueRemoval;
+  readonly refused?: ConflictSummary;
 }
 
 /**
@@ -164,9 +165,7 @@ export interface TicketLandingWait {
 }
 
 /**
- * What the store reads of one request. `approvalOpen` is the request live,
- * its newest attempt prepared and asking an approval, no permit for it, and
- * the approval its action asks still open; `landedCommit` is where the request
+ * What the store reads of one request. `landedCommit` is where the request
  * landed by the rule `read_ticket_landed_commit` states, wherever it ended.
  */
 export interface TicketLandingRecord {
@@ -179,7 +178,6 @@ export interface TicketLandingRecord {
   readonly attempt?: TicketLandingAttempt;
   /** The conflict manifest the newest attempt recorded, where it recorded one. */
   readonly conflictManifest?: ProjectArtifactId;
-  readonly approvalOpen: boolean;
   readonly proposal?: TicketLandingProposal;
   readonly wait?: TicketLandingWait;
   readonly landedCommit?: GitObjectId;
@@ -198,8 +196,12 @@ export interface TicketLandingsStore {
   ): Promise<readonly TicketLandingRecord[] | undefined>;
 }
 
-/** What one work cycle's evaluation was prepared over: a stack, or the decision to evaluate it unstacked. */
-export type TicketLandingStack =
+/**
+ * What one work cycle's evaluation was prepared over: a stack, or the decision
+ * to evaluate it unstacked, `restacked` where the cycle before it was sent back
+ * to re-stack.
+ */
+export type TicketLandingStack = { readonly restacked?: true } & (
   | {
       readonly cycle: number;
       readonly prepared: "Stacked";
@@ -211,7 +213,8 @@ export type TicketLandingStack =
       readonly cycle: number;
       readonly prepared: "Unstacked";
       readonly reason: UnstackedReason;
-    };
+    }
+);
 
 export interface TicketLandingStacksStore {
   /**
@@ -308,9 +311,8 @@ function ticketLandingConcluded(
   }
 }
 
-/** Where a request the finalizer still holds stands, an open approval over a recorded hold over a wait. */
+/** Where a request the finalizer still holds stands, a recorded hold over a wait. */
 function ticketLandingLive(record: TicketLandingRecord): TicketLandingStanding {
-  if (record.approvalOpen) return { state: "AwaitingApproval" };
   if (record.hold !== undefined) return { state: "Held", hold: record.hold };
   if (record.wait !== undefined)
     return { state: "AwaitingMerge", wait: record.wait };
@@ -381,6 +383,20 @@ export function ticketLandingProposal(
   return url !== undefined && isActionReportLink(url) ? { url, ...rest } : rest;
 }
 
+/** A standing whose hold names refused files, those files cut as a conflict's are. */
+function ticketLandingRefusedBounded(
+  standing: TicketLandingStanding,
+): TicketLandingStanding {
+  if (standing.state !== "Held" && standing.state !== "Unavailable")
+    return standing;
+  const refused = standing.hold?.refused;
+  if (standing.hold === undefined || refused === undefined) return standing;
+  return {
+    ...standing,
+    hold: { ...standing.hold, refused: ticketLandingConflictBounded(refused) },
+  };
+}
+
 async function ticketLanding(
   ports: TicketLandingPorts,
   partition: Partition,
@@ -392,7 +408,7 @@ async function ticketLanding(
       ? undefined
       : await ticketLandingConflict(ports, partition, conflictManifest);
   return {
-    ...ticketLandingState(record),
+    ...ticketLandingRefusedBounded(ticketLandingState(record)),
     cycle: record.cycle,
     generation: record.generation,
     attempts: record.attempts,

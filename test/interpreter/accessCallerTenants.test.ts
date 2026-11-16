@@ -35,6 +35,7 @@ import {
   accessFixturePrincipal,
   accessMemory,
   accessMemoryCallerTenants,
+  tenantNameMemory,
   type AccessMemory,
 } from "./accessPlaneFixture.ts";
 
@@ -76,8 +77,18 @@ test("a caller holding `Admin` on one tenant and `Member` on another is answered
   ]);
   assert.deepEqual(await listed(memory), {
     tenants: [
-      { tenant: "acme", roles: ["Admin"], administer: true },
-      { tenant: "beta", roles: ["Member"], administer: false },
+      {
+        tenant: "acme",
+        displayName: "acme",
+        roles: ["Admin"],
+        administer: true,
+      },
+      {
+        tenant: "beta",
+        displayName: "beta",
+        roles: ["Member"],
+        administer: false,
+      },
     ],
     truncated: false,
   });
@@ -89,7 +100,14 @@ test("a caller holding both roles on one tenant is answered it once, with both r
     heldBy("alice", "acme"),
   ]);
   assert.deepEqual(await listed(memory), {
-    tenants: [{ tenant: "acme", roles: ["Admin", "Member"], administer: true }],
+    tenants: [
+      {
+        tenant: "acme",
+        displayName: "acme",
+        roles: ["Admin", "Member"],
+        administer: true,
+      },
+    ],
     truncated: false,
   });
 });
@@ -101,7 +119,14 @@ test("another person's tuples, on the caller's tenants and on one the caller hol
     heldBy("bo", "beta"),
   ]);
   assert.deepEqual(await listed(memory), {
-    tenants: [{ tenant: "acme", roles: ["Admin"], administer: true }],
+    tenants: [
+      {
+        tenant: "acme",
+        displayName: "acme",
+        roles: ["Admin"],
+        administer: true,
+      },
+    ],
     truncated: false,
   });
   const across = await accessTuplesRead(
@@ -152,7 +177,14 @@ test("a role tuple held in two copies lists its tenant once, with the role once"
   assert.ok(stored !== undefined);
   memory.tuples.push({ ...stored });
   assert.deepEqual(await listed(memory), {
-    tenants: [{ tenant: "acme", roles: ["Admin"], administer: true }],
+    tenants: [
+      {
+        tenant: "acme",
+        displayName: "acme",
+        roles: ["Admin"],
+        administer: true,
+      },
+    ],
     truncated: false,
   });
 });
@@ -187,8 +219,18 @@ test("`administer` is the authority's answer and not the role's", async () => {
   assert.deepEqual(
     (await listed(memory, accessPlaneBoundsDefault, opposite)).tenants,
     [
-      { tenant: "acme", roles: ["Admin"], administer: false },
-      { tenant: "beta", roles: ["Member"], administer: true },
+      {
+        tenant: "acme",
+        displayName: "acme",
+        roles: ["Admin"],
+        administer: false,
+      },
+      {
+        tenant: "beta",
+        displayName: "beta",
+        roles: ["Member"],
+        administer: true,
+      },
     ],
   );
   assert.deepEqual(memory.asked, [
@@ -243,4 +285,42 @@ test("an authority that cannot answer fails the list as every list fails", async
   const memory = await written([heldBy("alice", "acme")]);
   memory.unavailable = true;
   await assert.rejects(listed(memory), ProjectAccessUnavailable);
+});
+
+test("each tenant listed is named as the store names it and one it names none of by its id, the store asked once and only of the tenants answered", async () => {
+  const memory = await written([
+    heldBy("alice", "acme"),
+    heldBy("alice", "beta", "members"),
+    heldBy("alice", "cut"),
+  ]);
+  const names = tenantNameMemory({ acme: "Acme Co.", cut: "Cut Ltd." });
+  const answer = await accessMemoryCallerTenants(
+    memory,
+    { ...accessPlaneBoundsDefault, tenantsMax: 2 },
+    memory.access,
+    names,
+  ).callerTenants(alice);
+  assert.deepEqual(
+    answer.tenants.map((one) => [one.tenant, one.displayName]),
+    [
+      ["acme", "Acme Co."],
+      ["beta", "beta"],
+    ],
+  );
+  assert.equal(answer.truncated, true);
+  assert.deepEqual(names.asked, [["acme", "beta"]]);
+});
+
+test("a caller written into nothing asks the store nothing", async () => {
+  const names = tenantNameMemory();
+  assert.deepEqual(
+    await accessMemoryCallerTenants(
+      accessMemory(),
+      accessPlaneBoundsDefault,
+      undefined,
+      names,
+    ).callerTenants(alice),
+    { tenants: [], truncated: false },
+  );
+  assert.deepEqual(names.asked, []);
 });

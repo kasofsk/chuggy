@@ -10,9 +10,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionRequirement } from "../../src/contract/executionRequirement.ts";
 
 import {
+  agentAccountsResponse,
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
@@ -55,6 +56,7 @@ import {
 } from "../../src/adapters/http/outcomes.ts";
 import { operationResponseSchema as decodedOperationResponseSchema } from "../../src/adapters/http/codecs.ts";
 import {
+  agentAccountsResponseSchema,
   configurationResponseSchema,
   configurationsResponseSchema,
   dispatchViewResponseSchema,
@@ -93,6 +95,7 @@ import {
   repositoryConfigurationsAbsentSchema,
   runConfigurationResponseSchema,
   runErrorResponseSchema,
+  runStepFailureSchema,
   runTranscriptResponseSchema,
   runContextResponseSchema,
   runTurnsResponseSchema,
@@ -105,6 +108,7 @@ import {
   ticketAgenticRefusalsResponseSchema,
   ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
   ticketResponseSchema,
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
@@ -118,6 +122,7 @@ import {
   leadAbsencesUntimed,
   leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
+  workerHeldCredentialAbsences,
 } from "../../src/contract/rosters.ts";
 import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
@@ -133,6 +138,7 @@ import {
   forgeInstallationsAnsweredMax,
   forgeRepositoriesAnsweredMax,
   nativeHttpPageItemsMax,
+  nativeHttpPathSegmentCharsMax,
   projectRepositoriesAnsweredMax,
   repositoryConfigurationIgnoredAnsweredMax,
   runModelCharsMax,
@@ -174,6 +180,7 @@ import {
   digest,
   draft as draftResource,
   evidencedExecution,
+  executionRun,
   execution,
   executionSummary,
   runTotals,
@@ -334,6 +341,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     title: "The ticket the contract names",
     repository: "https://github.com/acme/widgets.git",
     creator: "23:https://issuer.example/alice",
+    owner: "21:https://issuer.example/bob",
     phase: "Escalated",
     sequence: 9,
     escalation: ticketEscalationResource(
@@ -500,6 +508,54 @@ test("a wall a failed run step parked names the step and the attempt it stopped 
     );
 });
 
+test("a step failed for a credential not delivered names the credential and why, and no other step names one", () => {
+  const failed = {
+    execution: "execution-1",
+    attempt: "attempt-1",
+    error: { bytes: 61 },
+  };
+  for (const reason of workerHeldCredentialAbsences)
+    for (const credential of ["a", "c".repeat(nativeHttpPathSegmentCharsMax)]) {
+      const named = {
+        ...failed,
+        evidence: "RunCredentialAbsent",
+        absent: { credential, reason },
+      };
+      assert.deepEqual(runStepFailureSchema.parse(named), named, reason);
+    }
+  for (const [offered, why] of [
+    [{ ...failed, evidence: "RunCredentialAbsent" }, "the step without it"],
+    [
+      {
+        ...failed,
+        evidence: "RunPushFailed",
+        absent: { credential: "chuggy.github", reason: "NotHeld" },
+      },
+      "another step with it",
+    ],
+    [
+      {
+        ...failed,
+        evidence: "RunCredentialAbsent",
+        absent: { credential: "chuggy.github", reason: "Lost" },
+      },
+      "a reason the roster does not hold",
+    ],
+    [
+      {
+        ...failed,
+        evidence: "RunCredentialAbsent",
+        absent: {
+          credential: "c".repeat(nativeHttpPathSegmentCharsMax + 1),
+          reason: "NotHeld",
+        },
+      },
+      "a name past its bound",
+    ],
+  ] as const)
+    assert.equal(runStepFailureSchema.safeParse(offered).success, false, why);
+});
+
 test("a wall a runner lost names the runner, the attempt and how often", () => {
   const lost = {
     runner: { kind: "Personal" as const, owner: asPrincipal("member-1") },
@@ -591,6 +647,47 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
       ],
     }),
   );
+});
+
+test("a ticket's action history carries an answer on a resolved action alone, of its kind, with its answerer whole", () => {
+  const answered = {
+    action: "approval",
+    kind: "EvaluationApproval",
+    authorizingSequence: 4,
+    state: "Resolved",
+    resolution: "Approve",
+    execution: "execution",
+    answeredBy: "person",
+    answeredAt: "2026-01-01T00:00:00.000000Z",
+  } as const;
+  assert.deepEqual(
+    ticketNativeActionHistoryResponseSchema
+      .parse({
+        actions: [
+          answered,
+          {
+            action: "withdrawn",
+            kind: "TicketEscalation",
+            authorizingSequence: 5,
+            state: "Withdrawn",
+          },
+        ],
+      })
+      .actions.map(({ action }) => action),
+    ["approval", "withdrawn"],
+  );
+  const unanswered = { ...answered, resolution: undefined };
+  const undated = { ...answered, answeredAt: undefined };
+  for (const refused of [
+    unanswered,
+    undated,
+    { ...answered, resolution: "Resume" },
+    { ...answered, state: "Withdrawn" },
+    { ...answered, state: "Open", resolution: undefined },
+  ])
+    assert.throws(() =>
+      ticketNativeActionHistoryResponseSchema.parse({ actions: [refused] }),
+    );
 });
 
 test("a project's selector settings parse as its overrides beside what they resolve to", () => {
@@ -709,9 +806,14 @@ test("the settings history parses every retained override and its administrator"
 
 test("a project inventory page parses with the cursor the server encoded", () => {
   const page = projectInventoryResponseSchema.parse(
-    inventoryResponse({ projects: [partition], nextAfter: partition }).body,
+    inventoryResponse({
+      projects: [{ ...partition, name: "Acme Atlas" }],
+      nextAfter: partition,
+    }).body,
   );
-  assert.deepEqual(page.projects, [{ tenant: "acme", project: "atlas" }]);
+  assert.deepEqual(page.projects, [
+    { tenant: "acme", project: "atlas", name: "Acme Atlas" },
+  ]);
   assert.ok((page.nextCursor ?? "").length > 0);
 });
 
@@ -1259,27 +1361,23 @@ const readyConfiguration = {
   workInstructionsCount: 2,
   reviewInstructionsCount: 1,
   provenance: { source: "Authored" },
-  finalization: { approvalRequired: true },
   evaluationStagesCount: 2,
 } as const;
 
-test("a ready configuration names its finalization facts and its evaluation stages", () => {
+test("a ready configuration names its evaluation stages", () => {
   const summary = configurationsResponseSchema.parse({
     configurations: [readyConfiguration],
   }).configurations[0];
   assert.deepEqual(summary?.readiness === "Ready" ? summary : undefined, {
     ...readyConfiguration,
   });
-  for (const configuration of [
-    { ...readyConfiguration, finalization: undefined },
-    { ...readyConfiguration, evaluationStagesCount: undefined },
-    { ...readyConfiguration, finalization: {} },
-  ])
-    assert.throws(
-      () =>
-        configurationsResponseSchema.parse({ configurations: [configuration] }),
-      `a ready summary is refused: ${JSON.stringify(configuration.finalization)}`,
-    );
+  assert.throws(() =>
+    configurationsResponseSchema.parse({
+      configurations: [
+        { ...readyConfiguration, evaluationStagesCount: undefined },
+      ],
+    }),
+  );
 });
 
 test("a configuration read and its page parse with readiness and provenance", () => {
@@ -1722,6 +1820,26 @@ test("a run's evidence rides on the attempt that produced it", () => {
     "claude-representation",
   );
   assert.equal(detail.result?.report, "The fixture ran.");
+});
+
+test("an attempt's totals carry the credential its run named, and a name outside the pattern is refused", () => {
+  const named = (credential: string) =>
+    executionResponse({
+      ...evidencedExecution,
+      attempts: evidencedExecution.attempts.map((attempt) => ({
+        ...attempt,
+        run: { ...executionRun, totals: { ...runTotals, credential } },
+      })),
+    }).body;
+  assert.equal(
+    executionResponseSchema.parse(named("max-2")).attempts[0]?.run?.totals
+      ?.credential,
+    "max-2",
+  );
+  assert.equal(
+    executionResponseSchema.safeParse(named("max 2")).success,
+    false,
+  );
 });
 
 test("a run that wrote nothing carries neither evidence nor a total", () => {
@@ -2252,6 +2370,7 @@ test("a binding and a project's bindings name the repository and its moment", ()
     boundAt: instant,
     landing: onboardingPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
   };
   const listed: readonly ProjectRepositoryListed[] = [
     {
@@ -2337,6 +2456,7 @@ test("a binding names a landing by its kind and by its mode alone, and both answ
     boundAt: instant,
     landing: { kind: "GitMerge", mode: "Push", policy: "Serialized" } as const,
     pipelinesWritable: true,
+    pipelinesRunnable: true,
   };
   const binding = {
     ...stands,
@@ -2394,6 +2514,24 @@ test("a binding names a landing by its kind and by its mode alone, and both answ
   );
 });
 
+test("a binding always answers whether its jobs may start and read its pipeline runs", () => {
+  const binding = {
+    repository: onboardingRepository,
+    boundAt: instant,
+    landing: { mode: "Push" as const },
+    finalization: onboardingPush,
+    pipelinesWritable: false,
+  };
+  assert.deepEqual(
+    projectRepositoryResponseSchema.parse({
+      ...binding,
+      pipelinesRunnable: true,
+    }).pipelinesRunnable,
+    true,
+  );
+  assert.throws(() => projectRepositoryResponseSchema.parse(binding));
+});
+
 test("a retirement answers the row it left, carrying the instant it was retired at", () => {
   const retired = {
     repository: onboardingRepository,
@@ -2401,6 +2539,7 @@ test("a retirement answers the row it left, carrying the instant it was retired 
     landing: { mode: "Push" as const },
     finalization: onboardingPush,
     pipelinesWritable: false,
+    pipelinesRunnable: false,
     retiredAt: instant,
   };
   assert.deepEqual(
@@ -2679,4 +2818,82 @@ test("a lead route's no-lead answer parses without its reason and with fields it
     }).success,
     false,
   );
+});
+
+/** A server that predates `held`, or a lead nothing holds, answers a lead without it, and a console reads that body rather than refusing it. */
+test("a lead route's lead answer parses with what holds it and without it", () => {
+  const lead = {
+    session: "lead-atlas",
+    state: "Open",
+    attention: "Monitoring",
+    notificationCursor: 4,
+    handoffNote: { bytes: 2, preview: "{}", truncated: false },
+    turns: [],
+    streams: [],
+  };
+  assert.deepEqual(leadReadResponseSchema.parse(lead), lead);
+  for (const reason of ["Paused", "SelectorNotGranted"] as const)
+    assert.deepEqual(
+      leadReadResponseSchema.parse({ ...lead, held: { reason } }),
+      { ...lead, held: { reason } },
+    );
+  for (const held of [{ reason: "NotNeeded" }, "Paused", true])
+    assert.equal(
+      leadReadResponseSchema.safeParse({ ...lead, held }).success,
+      false,
+      JSON.stringify(held),
+    );
+});
+
+test("a pause names exactly one of until and off, on an agent's own pause and on a credential's", () => {
+  const until = "2026-11-03T15:00:00.000Z";
+  const body = (pause: object) =>
+    agentAccountsResponse([
+      {
+        agent: "Claude",
+        settings: {
+          fiveHourPercent: 80,
+          sevenDayPercent: 90,
+          pausesThreads: false,
+        },
+        readings: [],
+        pause: {
+          ...(pause as { until: string }),
+          reasons: ["off"],
+          pressed: false,
+          credentials: ["work"],
+        },
+        credentials: [
+          {
+            name: "work",
+            readings: [],
+            pause: {
+              ...(pause as { until: string }),
+              reasons: ["off"],
+              pressed: false,
+            },
+          },
+        ],
+      },
+      {
+        agent: "Codex",
+        settings: {
+          fiveHourPercent: 80,
+          sevenDayPercent: 90,
+          pausesThreads: false,
+        },
+        readings: [],
+        credentials: [],
+      },
+    ]).body;
+  for (const admitted of [{ until }, { off: true }])
+    assert.ok(
+      agentAccountsResponseSchema.safeParse(body(admitted)).success,
+      JSON.stringify(admitted),
+    );
+  for (const refused of [{}, { until, off: true }])
+    assert.ok(
+      !agentAccountsResponseSchema.safeParse(body(refused)).success,
+      JSON.stringify(refused),
+    );
 });

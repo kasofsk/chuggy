@@ -26,12 +26,14 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
+  RepositoryConfigurationImportAttemptResponse,
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
   PlacementRoute,
+  SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
@@ -59,6 +61,7 @@ import type {
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
+import { workRunnerStanding } from "./workRunner.ts";
 import type {
   SetupStepName,
   SetupStepSaid,
@@ -76,6 +79,8 @@ export type SetupReadName =
   | "repositories"
   | "work"
   | "placement"
+  | "fallback"
+  | "personal"
   | "tickets"
   | "drafts"
   | "landings";
@@ -110,14 +115,25 @@ export type SetupLack =
       readonly account: string;
       readonly repository: string;
     }
+  | { readonly lacks: "Mcp" }
   | { readonly lacks: "Binding" }
-  | { readonly lacks: "Configuration"; readonly repository: string }
-  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
-  | { readonly lacks: "Runner"; readonly chat: boolean }
+  /** `bound` is the repository as the binding names it, and `lastImport` the import of it that finished last, where one did. */
+  | {
+      readonly lacks: "Configuration";
+      readonly repository: string;
+      readonly bound: string;
+      readonly lastImport:
+        RepositoryConfigurationImportAttemptResponse | undefined;
+    }
+  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner; `named` where the project names an owner fallback, so a personal runner of the person's serving it would take its work. */
+  | {
+      readonly lacks: "Runner";
+      readonly chat: boolean;
+      readonly named: boolean;
+    }
   | { readonly lacks: "RunnerLive"; readonly chat: boolean }
-  /** `pooled` where the project's work goes to runners, which `runner` registers a machine for where it holds no registration of the project. */
-  | { readonly lacks: "ChatHost"; readonly pooled: boolean }
-  | { readonly lacks: "ChatHostLive"; readonly pooled: boolean }
+  | { readonly lacks: "ChatHost" }
+  | { readonly lacks: "ChatHostLive" }
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
@@ -154,7 +170,6 @@ export interface SetupStanding {
  */
 export const setupSeen = {
   northStar: { id: "lead-settings-section-north-star-title" },
-  workspaceNaming: { id: "settings-invite-naming" },
 } as const satisfies Readonly<Record<string, Copy>>;
 
 /** Each forge app, as a sentence names it. */
@@ -171,7 +186,7 @@ export function setupPhaseSaid(phase: TicketPhase): Copy {
     case "Evaluation":
       return { id: "ticket-steps-phase-evaluation" };
     case "Finalization":
-      return { id: "ticket-steps-phase-landing" };
+      return { id: "ticket-steps-phase-finalization" };
     case "Pending":
       return { id: "standing-pending" };
     case "Done":
@@ -208,9 +223,11 @@ const setupReadSubjects: Readonly<Record<SetupReadName, Copy>> = {
   repositories: { id: "setup-read-repositories" },
   work: { id: "setup-read-work" },
   placement: { id: "setup-read-placement" },
+  fallback: { id: "setup-read-fallback" },
+  personal: { id: "setup-read-personal" },
   tickets: { id: "setup-read-tickets" },
   drafts: { id: "setup-read-drafts" },
-  landings: { id: "setup-read-landings" },
+  landings: { id: "setup-read-finalizations" },
 };
 
 function setupFateSaid(fate: SetupFate): Copy {
@@ -618,7 +635,12 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
             "repository",
             "waiting",
             { id: "setup-step-unconfigured", args: { repository } },
-            { lacks: "Configuration", repository },
+            {
+              lacks: "Configuration",
+              repository,
+              bound: meant.binding.repository,
+              lastImport: meant.binding.lastImport,
+            },
           );
     }
   }
@@ -630,10 +652,45 @@ export function setupHosted(route: PlacementRoute): boolean {
 }
 
 /**
+ * How the runners the project's work would go to stand, by the console's own
+ * decider, and whether the project names an owner fallback; or the step
+ * unread, where a read it turns on was not got. The fallback is read only
+ * where the project has no pool to say it has a runner, and the person's
+ * personal runners only where it also names one.
+ */
+function setupWorkStanding(
+  reads: SetupReads,
+  route: PlacementRoute,
+  project: SessionRunnerStanding,
+):
+  | SetupStep
+  | { readonly standing: SessionRunnerStanding; readonly named: boolean } {
+  const pooled = sessionRunnerShort(route, project) !== "NoRunner";
+  const fallback = reads.fallback;
+  if (fallback.read !== "Got")
+    return pooled
+      ? { standing: project, named: false }
+      : setupUnread("runner", "fallback", setupFateOf(fallback));
+  const named = fallback.value.fallback !== undefined;
+  const personal = reads.personal;
+  if (personal.read !== "Got")
+    return pooled || !named
+      ? { standing: project, named }
+      : setupUnread("runner", "personal", setupFateOf(personal));
+  return {
+    standing: workRunnerStanding(project, named, personal.value),
+    named,
+  };
+}
+
+/**
  * Done where the project's work has a runner live or the cluster runs it, and
  * the person's chats in it have their chat host live or the cluster runs
- * them; waiting where a runner is registered and is not running. The
- * project's runner is said first, and the person's chat host once it is done.
+ * them; waiting where a runner is registered and is not running, its runner
+ * being a pool or, where it has none and names an owner fallback, a personal
+ * runner of the person's that serves the project, as the console's own
+ * decider counts one, and never their chat host, which takes no work. The
+ * project's runner is said first, and the chat host once it is done.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
@@ -642,15 +699,19 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       ? setupUndone("runner", "todo", undefined, {
           lacks: "Runner",
           chat: true,
+          named: false,
         })
       : setupUnread("runner", "work", setupFateOf(work));
   const read = reads.placement;
   if (read.read !== "Got")
     return setupUnread("runner", "placement", setupFateOf(read));
   const route = work.value.work.route;
+  const standing = setupWorkStanding(reads, route, read.value.runners.project);
+  if ("step" in standing) return standing;
+  const { named } = standing;
   const mine = sessionPlacementShort(read.value, "thread", "mine");
   const chat = mine !== undefined;
-  switch (sessionRunnerShort(route, read.value.runners.project)) {
+  switch (sessionRunnerShort(route, standing.standing)) {
     case "RunnerOffline":
       return setupUndone(
         "runner",
@@ -662,12 +723,12 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       return setupUndone("runner", "todo", undefined, {
         lacks: "Runner",
         chat,
+        named,
       });
     case undefined:
       break;
   }
-  const pooled = !setupHosted(route);
-  const said: Copy = pooled
+  const said: Copy = !setupHosted(route)
     ? { id: "setup-step-runner-live" }
     : { id: "setup-step-runner-hosted" };
   switch (mine) {
@@ -678,14 +739,14 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
         "runner",
         "waiting",
         { id: "setup-step-chat-host-offline", args: { runner: said } },
-        { lacks: "ChatHostLive", pooled },
+        { lacks: "ChatHostLive" },
       );
     case "NoRunner":
       return setupUndone(
         "runner",
         "todo",
         { id: "setup-step-chat-host-none", args: { runner: said } },
-        { lacks: "ChatHost", pooled },
+        { lacks: "ChatHost" },
       );
   }
 }
@@ -699,7 +760,6 @@ function setupProposed(landing: TicketLandingResponse): boolean {
       return false;
     case "Running":
     case "Held":
-    case "AwaitingApproval":
     case "AwaitingMerge":
     case "Unavailable":
     case "Landed":
@@ -741,7 +801,7 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
     const args = { ticket: String(held.ticket) };
     if (held.landings.value.some((landing) => landing.state === "Landed"))
       return {
-        detail: { id: "setup-step-ticket-landed", args },
+        detail: { id: "setup-step-ticket-finalized", args },
         unmerged: undefined,
       };
     if (held.landings.value.some(setupProposed))
@@ -881,12 +941,33 @@ function setupRemoteFound(reads: SetupReads): readonly Copy[] {
   }
 }
 
+/** Done where the agent's configuration for this folder names chuggy's server for the project; it is to do while the project is, since no server can serve one that is not there. */
+function setupMcpStep(
+  partition: PartitionIdentity | undefined,
+  none: boolean,
+  named: boolean,
+): SetupStep {
+  if (partition === undefined || none)
+    return setupUndone("mcp", "todo", undefined, { lacks: "Mcp" });
+  const project = setupNamed(partition);
+  return named
+    ? setupDone("mcp", { id: "setup-step-mcp-named", args: { project } })
+    : setupUndone(
+        "mcp",
+        "todo",
+        { id: "setup-step-mcp-none", args: { project } },
+        { lacks: "Mcp" },
+      );
+}
+
 /**
- * One state a step, in the order the steps are done. A step whose reads were
+ * One state a step, in the order the steps are done; a step whose reads were
  * never asked is to do where the workspace or the project it belongs to is
- * itself to do, since a read that was got is what said so.
+ * itself to do, since a read that was got is what said so. `named`, whether
+ * the agent's configuration here names chuggy's server for the project
+ * chosen, is the machine's to say and no read's.
  */
-export function setupStanding(reads: SetupReads): SetupStanding {
+export function setupStanding(reads: SetupReads, named = false): SetupStanding {
   const standing = {
     site: reads.site,
     choice: reads.choice,
@@ -896,10 +977,11 @@ export function setupStanding(reads: SetupReads): SetupStanding {
   if (reads.choice.choice === "Open")
     return { ...standing, steps: [], unmerged: undefined };
   const workspace = setupWorkspaceStep(reads, reads.choice.workspace);
+  const partition = setupPartition(reads.choice, reads.inventory);
   const project = setupProjectStep(
     reads,
     reads.choice.workspace,
-    setupPartition(reads.choice, reads.inventory),
+    partition,
     workspace.state === "done",
   );
   const none = workspace.state === "todo" || project.state === "todo";
@@ -909,6 +991,7 @@ export function setupStanding(reads: SetupReads): SetupStanding {
     steps: [
       workspace,
       project,
+      setupMcpStep(partition, none, named),
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),
       setupRunnerStep(reads, none),

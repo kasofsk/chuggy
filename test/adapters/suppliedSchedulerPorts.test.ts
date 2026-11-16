@@ -13,7 +13,7 @@ import {
   type SuppliedOfferedImage,
 } from "../../src/adapters/supplied/schedulerPorts.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import type { ExecutionCapability } from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionCapability } from "../../src/contract/executionRequirement.ts";
 import {
   asCapacityAccountId,
   asClusterId,

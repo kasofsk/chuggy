@@ -20,7 +20,13 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -780,6 +786,42 @@ test("a genuine conflict is the conflicting paths, the merge base, and no commit
     conflict: { paths: ["base.txt"], truncated: false },
     base: target.commit,
   });
+});
+
+test("the files a target differs from a pushed candidate in are read under the paths asked about alone, from a scratch that never held either", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const pushed = await fixtureTarget(fixturePort(fixture), binding);
+  for (const directory of [".github/workflows", ".github/workflows-old"])
+    mkdirSync(join(fixture.seed, directory), { recursive: true });
+  fixtureCommit(fixture, ".github/workflows/ci.yml", "on: push\n", "ci");
+  fixtureCommit(fixture, ".github/workflows-old/ci.yml", "old\n", "old");
+  fixtureCommit(fixture, "keep.txt", "moved\n", "moved");
+  const moved = await fixtureTarget(fixturePort(fixture), binding);
+  const fresh = fixturePort(fixture, fixtureGranted, "fresh");
+  const question = {
+    repository: binding,
+    target: moved,
+    candidate: pushed.commit,
+    paths: [".github/workflows/"],
+  };
+
+  assert.deepEqual(await fresh.readPathsDiffering(question), {
+    read: "Paths",
+    differing: { paths: [".github/workflows/ci.yml"], truncated: false },
+  });
+  assert.deepEqual(
+    await fresh.readPathsDiffering({ ...question, paths: ["src/"] }),
+    { read: "Paths", differing: { paths: [], truncated: false } },
+  );
+  assert.deepEqual(
+    await fixturePort(
+      fixture,
+      { resolved: "Denied" },
+      "denied",
+    ).readPathsDiffering(question),
+    { read: "Unread" },
+  );
 });
 
 test("a clean promotion advances the ref, and repeating it moves nothing and sends nothing a queued branch would refuse", async (t) => {

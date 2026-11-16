@@ -13,7 +13,8 @@
  * page, which is where it is drawn. Every opening starts from nothing typed
  * and nothing said.
  *
- * Where the site keeps workspace links the same dialog makes one: the box and
+ * Where the site keeps workspace links the same dialog makes one, called a
+ * signup link and said to make its opener a workspace of their own: the box and
  * a note, and no workspace and no person, since whoever opens the link names
  * the workspace and owns it. A link made replaces the form with its address,
  * which only `Done` or Escape puts away, because the address is shown this
@@ -249,6 +250,7 @@ function SiteWorkspaceLink(props: SiteWorkspaceDrawn): ReactNode {
   const noteFault = siteWorkspaceLinkNoteFault(note);
   return (
     <>
+      <p className="text-sm text-ink-2">{text(siteWorkspaceLinkWords.about)}</p>
       <SiteWorkspaceCreateAccounts {...props} />
       <InvitationText
         label={text(siteWorkspaceLinkWords.note)}
@@ -272,6 +274,7 @@ function SiteWorkspaceFields(
           mode={creating.mode}
           busy={creating.busy}
           onChoose={creating.choose}
+          linkLabel={siteWorkspaceLinkWords.mode}
         />
       ) : null}
       {creating.mode === "Person" ? (

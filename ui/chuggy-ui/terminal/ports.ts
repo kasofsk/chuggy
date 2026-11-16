@@ -17,13 +17,17 @@ import type { FetchJsonPort } from "../app/core/sessionHolder.ts";
 import { setupPacingRead } from "../app/core/setupPacing.ts";
 import type { SetupPacing } from "../app/core/setupPacing.ts";
 import {
+  signInStoreDirectory,
+  signInStorePlatforms,
+} from "../../../src/contract/signInStore.ts";
+import {
   SetupMachineError,
   setupDirectoryName,
 } from "../app/core/setupPorts.ts";
 import type { SetupPorts } from "../app/core/setupPorts.ts";
 import { setupFetchTimeoutMs } from "../app/core/setupSession.ts";
 import { disk } from "./disk.ts";
-import { filesIn } from "./files.ts";
+import { filesIn, storeIn } from "./files.ts";
 import { listen } from "./listener.ts";
 import { lockIn } from "./lock.ts";
 import { processesOf } from "./processes.ts";
@@ -64,21 +68,51 @@ function homeless(): never {
   throw new SetupMachineError({ fault: "Homeless" });
 }
 
-/** The files and the lock of a machine that names no home: nothing is read and nothing kept, and each says why. */
-const nowhere: Pick<SetupPorts, "files" | "lock"> = {
-  files: {
-    read: homeless,
-    write: homeless,
-    reserve: homeless,
-    remove: homeless,
-    sweep: homeless,
-  },
+const homelessFiles = {
+  read: homeless,
+  write: homeless,
+  reserve: homeless,
+  remove: homeless,
+  sweep: homeless,
+};
+
+/** The files, the store and the lock of a machine that names no home, or of a platform the store is not defined on: nothing is read and nothing kept, and each says why. */
+const nowhere: Pick<SetupPorts, "files" | "store" | "lock"> = {
+  files: homelessFiles,
+  store: homelessFiles,
   lock: { read: homeless, swap: homeless },
 };
 
-function keptIn(home: string): Pick<SetupPorts, "files" | "lock"> {
-  const directory = join(home, setupDirectoryName);
-  return { files: filesIn(directory), lock: lockIn(directory) };
+function storeDefined(platform: string): boolean {
+  return signInStorePlatforms.some((named) => named === platform);
+}
+
+/** The shared sign-in store's directory on this machine, or nothing where it has no home or the store is not defined on its platform. */
+function storeOf(home: string | undefined): string | undefined {
+  return home === undefined || !storeDefined(process.platform)
+    ? undefined
+    : signInStoreDirectory({
+        home,
+        configHome: process.env["XDG_CONFIG_HOME"],
+      });
+}
+
+function keptIn(
+  home: string,
+  store: string,
+): Pick<SetupPorts, "files" | "store" | "lock"> {
+  return {
+    files: filesIn(join(home, setupDirectoryName)),
+    store: storeIn(store),
+    lock: lockIn(store),
+  };
+}
+
+/** A path as a person would write it: under `~` where it is in their home. */
+function saidFrom(home: string | undefined, path: string): string {
+  return home !== undefined && path.startsWith(`${home}/`)
+    ? join("~", path.slice(home.length + 1))
+    : path;
 }
 
 /** The variable a suite that runs this program names a quicker pacing in. */
@@ -92,8 +126,11 @@ export function pacingOf(): SetupPacing {
 /** `script` is the file this program was run from, which a sign-in runs again. */
 export function portsOf(script: string): SetupPorts {
   const home = homeOf(homedir);
+  const store = storeOf(home);
   return {
-    ...(home === undefined ? nowhere : keptIn(home)),
+    ...(home === undefined || store === undefined
+      ? nowhere
+      : keptIn(home, store)),
     nowMs: () => Date.now(),
     sleepMs: (ms, signal) => slept(ms, undefined, { signal }),
     drawBytes: (count) => crypto.getRandomValues(new Uint8Array(count)),
@@ -106,9 +143,11 @@ export function portsOf(script: string): SetupPorts {
     surroundings: {
       platform: process.platform,
       browser: process.env["BROWSER"],
-      directory: join("~", setupDirectoryName),
+      directory: saidFrom(home, store ?? join("~", setupDirectoryName)),
+      folder: process.cwd(),
       home,
       configHome: process.env["XDG_CONFIG_HOME"],
+      claudeHome: process.env["CLAUDE_CONFIG_DIR"],
       user: process.getuid === undefined ? undefined : String(process.getuid()),
     },
   };
