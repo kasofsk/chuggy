@@ -19,7 +19,9 @@
  * `configuration`, `check` and `import` are each named under a rule that waits
  * on what the agent and the person do between them: the blanks filled in, the
  * faults fixed, the commit pushed. `bind` adds a repository to the project at
- * the site, and is named only under a rule that waits on her yes. `ticket`
+ * the site, which her permit to administer the project already guards, so it
+ * is named to run at once, beside whatever she does on GitHub meanwhile, and
+ * it waits on GitHub rather than on her. `ticket`
  * files a ticket at the site, and is named only under a rule that waits on
  * her saying what she wants done. `plugin` installs chuggy's Claude Code
  * plugin, and is named only under a rule that waits on her yes, beside one
@@ -53,6 +55,8 @@ import {
   setupConfigurationFlag,
   setupIntentFlag,
   setupNameFlag,
+  setupOpenedFlag,
+  setupOpenedGithub,
   setupPluginFlag,
   setupPluginSkip,
   setupTestFlag,
@@ -159,7 +163,9 @@ export interface SetupStepSaid {
  * read again under; something `plugin` would do on this machine, with the way
  * past it; something `mcp` or `runner` would do on this machine for
  * the project named, or `chat-host` for the workspace where no project is, or
- * `bind` or `serve` at the site for the project named, and the yes it waits on; a question only she answers, and the
+ * `serve` at the site for the project named, and the yes it waits on; `bind`
+ * run at once for the project named, beside what the person does on GitHub
+ * where there is anything; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; what she wants done
  * first, which `ticket` files for the project named, with the configuration
@@ -184,6 +190,13 @@ export type SetupThing =
       readonly command: "Plugin";
       readonly tell: Copy;
       readonly when: Copy;
+    }
+  | {
+      readonly thing: "Run";
+      readonly command: "Bind";
+      readonly tell: Copy | undefined;
+      readonly workspace: string;
+      readonly project: string;
     }
   | {
       readonly thing: "Ask";
@@ -409,8 +422,10 @@ export type SetupReport =
       >;
     }
   | {
-      /** A run of `bind`: the repository it asked the site to add and what the site answered, where the checklist's next thing was that, and the checklist read after. */
+      /** A run of `bind`: the page it opened in a browser for connecting GitHub, where it opened one, whether a `bind` before it had, the repository it asked the site to add and what the site answered, where the checklist's next thing came to that, and the checklist read after. */
       readonly report: "Bind";
+      readonly opened: string | undefined;
+      readonly openBefore: boolean;
       readonly repository: string | undefined;
       readonly answered: SetupBindAnswered | undefined;
       readonly checklist: Extract<
@@ -452,9 +467,9 @@ export type SetupMachineCommand = Extract<
   "Mcp" | "Runner" | "ChatHost"
 >;
 
-/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, `bind`, which adds a repository at the site, and `serve`, which has the person's runners take the project's work there. */
+/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, and `serve`, which has the person's runners take the project's work at the site. */
 export type SetupOfferCommand =
-  SetupMachineCommand | Extract<SetupCommand, "Bind" | "Serve" | "Plugin">;
+  SetupMachineCommand | Extract<SetupCommand, "Serve" | "Plugin">;
 
 /** The command a run of the runner package's service is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
 function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
@@ -483,11 +498,13 @@ type SetupLine =
 /** What `next:` says where no command is left to run. */
 export const setupNextStop = "stop";
 
-/** How a report is said: where the program is kept, the choice each of its commands carries, and whether the report ends a run that had already gone some way. */
+/** How a report is said: where the program is kept, the choice each of its commands carries, whether the report ends a run that had already gone some way, whether it ends a `bind` whose wait ran out, so a command to run at once is one to run again, and whether a page connecting GitHub is open from that `bind` or one before it, so running it again opens none. */
 interface SetupSaying {
   readonly script: string;
   readonly answers: SetupAnswers;
   readonly partWay: boolean;
+  readonly again: boolean;
+  readonly opened: boolean;
 }
 
 const setupWentNoFurther: Copy = { id: "setup-came-no-further" };
@@ -577,33 +594,42 @@ function setupCommandWords() {
   };
 }
 
+/** Every flag the program takes, each with the command it alone is read by. */
+function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
+  const { made, chatHost, configuration, filed, bound } = words;
+  return {
+    id: "setup-asked-flag",
+    args: {
+      workspace: setupFlagWorkspace,
+      project: setupFlagProject,
+      site: setupFlagSite,
+      wait: "--wait-secs",
+      replace: setupReplaceFlag,
+      chatHost,
+      name: setupNameFlag,
+      made,
+      test: setupTestFlag,
+      configuration,
+      title: setupTitleFlag,
+      intent: setupIntentFlag,
+      chosen: setupConfigurationFlag,
+      filed,
+      plugin: setupPluginFlag,
+      opened: setupOpenedFlag,
+      bound,
+    },
+  };
+}
+
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const words = setupCommandWords();
-  const { made, chatHost, configuration, filed } = words;
+  const { made, chatHost, configuration, filed, bound } = words;
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
       return { id: "setup-asked-command", args: words };
     case "Flag":
-      return {
-        id: "setup-asked-flag",
-        args: {
-          ...names,
-          site: setupFlagSite,
-          wait: "--wait-secs",
-          replace: setupReplaceFlag,
-          chatHost,
-          name: setupNameFlag,
-          made,
-          test: setupTestFlag,
-          configuration,
-          title: setupTitleFlag,
-          intent: setupIntentFlag,
-          chosen: setupConfigurationFlag,
-          filed,
-          plugin: setupPluginFlag,
-        },
-      };
+      return setupAskFlagSaid(words);
     case "Site":
       return {
         id: "setup-asked-site",
@@ -644,6 +670,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       return {
         id: "setup-asked-plugin",
         args: { flag: setupPluginFlag, skip: setupPluginSkip },
+      };
+    case "Opened":
+      return {
+        id: "setup-asked-opened",
+        args: { flag: setupOpenedFlag, github: setupOpenedGithub, bound },
       };
   }
 }
@@ -1163,6 +1194,29 @@ function setupOfferLines(
   ];
 }
 
+/** `bind` to run at once, beside what the tell has the person do on GitHub, and again where a wait of its own ran out first. */
+function setupRunLines(
+  thing: Extract<SetupThing, { readonly thing: "Run" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const rule: Copy =
+    saying.again && thing.tell !== undefined
+      ? { id: "setup-rule-bind-again" }
+      : {
+          id: "setup-rule-bind",
+          args: { told: thing.tell === undefined ? "untold" : "told" },
+        };
+  return [
+    ...(thing.tell === undefined ? [] : [["tell", thing.tell] as const]),
+    ["rule", rule],
+    setupNextLine(
+      setupSayingOf(saying, thing),
+      thing.command,
+      saying.opened ? [setupOpenedFlag, setupOpenedGithub] : [],
+    ),
+  ];
+}
+
 /** The command an answer is passed to: the flag it goes in last, and never twice, whatever was carried under that name. */
 function setupAnswered(
   saying: SetupSaying,
@@ -1191,6 +1245,8 @@ function setupThingLines(
       ];
     case "Offer":
       return setupOfferLines(thing, saying);
+    case "Run":
+      return setupRunLines(thing, saying);
     case "Ask":
       return [
         ["ask", thing.ask],
@@ -1448,13 +1504,30 @@ function setupImportSaid(
       ];
 }
 
+/** Whether a `bind` that asked nothing of the site ran out its wait with the next thing still `bind`. */
+function setupBindWaited(
+  report: Extract<SetupReport, { readonly report: "Bind" }>,
+): boolean {
+  return (
+    report.answered === undefined && report.checklist.next.thing.thing === "Run"
+  );
+}
+
 /** What `bind` asked of the site and what it answered, said where the checklist read after it says the site. */
 function setupBindSaid(
   report: Extract<SetupReport, { readonly report: "Bind" }>,
 ): readonly SetupLine[] {
   const repository = report.repository ?? "";
   const answered = report.answered;
-  if (answered === undefined) return [["found", { id: "setup-bind-none" }]];
+  if (answered === undefined)
+    return [
+      [
+        "found",
+        {
+          id: setupBindWaited(report) ? "setup-bind-waited" : "setup-bind-none",
+        },
+      ],
+    ];
   return answered.answered === "Bound"
     ? [
         [
@@ -1478,9 +1551,17 @@ function setupBindLines(
   report: Extract<SetupReport, { readonly report: "Bind" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
-  const [site, ...rest] = setupLines(report.checklist, saying);
+  const [site, ...rest] = setupLines(report.checklist, {
+    ...saying,
+    again: setupBindWaited(report),
+    opened: report.opened !== undefined || report.openBefore,
+  });
+  const address = report.opened;
   return [
     ...(site === undefined ? [] : [site]),
+    ...(address === undefined
+      ? []
+      : [["did", { id: "setup-waiting-opened", args: { address } }] as const]),
     ...setupBindSaid(report),
     ...rest,
   ];
@@ -1962,9 +2043,13 @@ export function setupReportLines(
   text: CopyText,
   answers: SetupAnswers = setupAnswersNone,
 ): readonly string[] {
-  return setupLines(report, { script, answers, partWay: false }).map((line) =>
-    setupPrinted(line, text),
-  );
+  return setupLines(report, {
+    script,
+    answers,
+    partWay: false,
+    again: false,
+    opened: false,
+  }).map((line) => setupPrinted(line, text));
 }
 
 const setupEndedFailures: ReadonlySet<SetupSignInEnded> = new Set([
