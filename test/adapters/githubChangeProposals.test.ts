@@ -55,6 +55,7 @@ import {
   type ChangeProposalUpdated,
   type ChangeProposalMergeRequest,
   type ChangeProposalPort,
+  type ChangeProposalReplied,
   type ChangeProposalRequest,
   type ForgeCredentialPort,
 } from "../../src/interpreter/changeProposal.ts";
@@ -64,7 +65,10 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { proposalMergeStateCharsMax } from "../../src/contract/http.ts";
+import {
+  proposalForgeMessageCharsMax,
+  proposalMergeStateCharsMax,
+} from "../../src/contract/http.ts";
 import { fixtureForge, type ForgeRecorder } from "./forgeFixtures.ts";
 
 /** The secret the fixture composition hands out, which must reach one header and nothing else. */
@@ -144,7 +148,7 @@ function fixtureCredentials(
  * The adapter over one recorder, every bound left at the value a deployment
  * gets by default and every merge refusal it reports kept in `refusals`.
  */
-function fixtureAdapter(
+function fixtureReplying(
   recorder: ForgeRecorder,
   resolved: "Credential" | "Denied" | "Unavailable" = "Credential",
   responseBytesMax: number = githubChangeProposalsDefaults.responseBytesMax,
@@ -156,6 +160,40 @@ function fixtureAdapter(
     responseBytesMax,
     mergeRefused: (refusal) => refusals.push(refusal),
   });
+}
+
+/** One answer with what the forge replied taken off, leaving the variant a case compares. */
+function fixtureVariant<Answer extends object>(
+  answer: ChangeProposalReplied<Answer>,
+): Answer {
+  const variant: {
+    -readonly [Key in keyof typeof answer]: (typeof answer)[Key];
+  } = { ...answer };
+  delete variant.reply;
+  return variant;
+}
+
+/** The adapter over one recorder answering variants alone, which is what every case not about the reply compares. */
+function fixtureAdapter(
+  recorder: ForgeRecorder,
+  resolved: "Credential" | "Denied" | "Unavailable" = "Credential",
+  responseBytesMax: number = githubChangeProposalsDefaults.responseBytesMax,
+  refusals: GithubMergeRefusal[] = [],
+): ChangeProposalPort {
+  const port = fixtureReplying(recorder, resolved, responseBytesMax, refusals);
+  return {
+    create: async (request) => fixtureVariant(await port.create(request)),
+    readByMarker: async (request) =>
+      fixtureVariant(await port.readByMarker(request)),
+    readByNumber: async (request) =>
+      fixtureVariant(await port.readByNumber(request)),
+    merge: async (request) => fixtureVariant(await port.merge(request)),
+    updateBranch: async (request) =>
+      fixtureVariant(await port.updateBranch(request)),
+    readQueue: async (request) => fixtureVariant(await port.readQueue(request)),
+    enqueue: async (request) => fixtureVariant(await port.enqueue(request)),
+    dequeue: async (request) => fixtureVariant(await port.dequeue(request)),
+  };
 }
 
 /** One pull request as this forge lists it, which every case narrows to what it is about. */
@@ -589,7 +627,7 @@ test("the credential reaches one header and nothing the adapter returns", async 
     fixtureAnswer(201, fixturePull(request)),
     fixtureAnswer(200, [fixtureListedPull(request)]),
   ]);
-  const adapter = fixtureAdapter(recorder);
+  const adapter = fixtureReplying(recorder);
   const created = await adapter.create(request);
   const read = await adapter.readByMarker(request);
   assert.equal(JSON.stringify([created, read]).includes(fixtureSecret), false);
@@ -906,6 +944,65 @@ test("a merge is one request, addressed by number and conditional on the head", 
   });
   assert.equal(call?.headers["authorization"], `Bearer ${fixtureSecret}`);
   assert.equal(JSON.stringify(merged).includes(fixtureSecret), false);
+});
+
+test("what the forge answered a merge is kept beside its variant", async () => {
+  const recorder = fixtureForge([
+    fixtureAnswer(405, { message: "Repository rule violations found" }),
+  ]);
+  assert.deepEqual(
+    await fixtureReplying(recorder).merge(fixtureMergeRequest()),
+    {
+      merged: "NotMergeable",
+      reason: "Unknown",
+      reply: {
+        reached: "Answered",
+        status: 405,
+        message: "Repository rule violations found",
+      },
+    },
+  );
+});
+
+test("a forge's message naming the credential keeps a mark in its place", async () => {
+  const recorder = fixtureForge([
+    fixtureAnswer(401, { message: `Bad credentials: ${fixtureSecret}` }),
+  ]);
+  const merged = await fixtureReplying(recorder).merge(fixtureMergeRequest());
+  assert.deepEqual(merged.reply, {
+    reached: "Answered",
+    status: 401,
+    message: "Bad credentials: [credential]",
+  });
+  assert.equal(JSON.stringify(merged).includes(fixtureSecret), false);
+});
+
+test("a forge's message past its bound is cut to it and says so", async () => {
+  const recorder = fixtureForge([
+    fixtureAnswer(405, {
+      message: "\u{1F600}".repeat(proposalForgeMessageCharsMax + 1),
+    }),
+  ]);
+  const merged = await fixtureReplying(recorder).merge(fixtureMergeRequest());
+  assert.deepEqual(merged.reply, {
+    reached: "Answered",
+    status: 405,
+    message: "\u{1F600}".repeat(proposalForgeMessageCharsMax),
+    messageCut: true,
+  });
+});
+
+test("an act that reached no forge keeps the name of what stopped it, and an answer without a message its status", async () => {
+  const stopped = fixtureForge([new TypeError("the forge stopped")]);
+  assert.deepEqual(
+    (await fixtureReplying(stopped).merge(fixtureMergeRequest())).reply,
+    { reached: "Unreached", failure: "TypeError" },
+  );
+  const bare = fixtureForge([fixtureRefusal(409)]);
+  assert.deepEqual(
+    (await fixtureReplying(bare).updateBranch(fixtureMergeRequest())).reply,
+    { reached: "Answered", status: 409 },
+  );
 });
 
 test("every way this forge answers a merge is its own value", async () => {

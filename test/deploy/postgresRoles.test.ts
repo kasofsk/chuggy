@@ -101,12 +101,16 @@ function migrationReceivingRoles(): ReadonlySet<string> {
   return found;
 }
 
-/** Every role the migrations leave able to read the ledger the shared precondition reads, a later revoke undoing an earlier grant. */
+/**
+ * Every role the migrations leave able to read the ledger the shared
+ * precondition reads, a later revoke undoing an earlier grant, whether it names
+ * the ledger or every table in the schema.
+ */
 function migrationLedgerReaders(): ReadonlySet<string> {
   const found = new Set<string>();
   for (const statement of migrationStatements)
     for (const [, verb, roles] of statement.matchAll(
-      /(GRANT|REVOKE) SELECT ON (?:TABLE public\.)?schema_migration (?:TO|FROM) ((?:\s*chuggy_\w+\s*,?)+)/gu,
+      /(GRANT|REVOKE) (?:SELECT|ALL) ON (?:(?:TABLE public\.)?schema_migration|ALL TABLES IN SCHEMA public) (?:TO|FROM) ((?:\s*chuggy_\w+\s*,?)+)/gu,
     ))
       for (const [role] of String(roles).matchAll(/chuggy_\w+/gu))
         if (verb === "GRANT") found.add(role);
@@ -134,9 +138,9 @@ function rootAssertedRoles(): ReadonlySet<string> {
 }
 
 /**
- * The group roles a login is granted and a ledger read is granted to though no
- * command under `src/roots/` serves as them: the selector's process is gone,
- * and its login and grants are kept until a migration revokes them.
+ * The group roles a login is granted though no command under `src/roots/`
+ * serves as them: the selector's process is gone, and its login is kept
+ * holding nothing.
  */
 const unservedLoginRoles: ReadonlySet<string> = new Set([selectorServiceRole]);
 
@@ -244,7 +248,7 @@ test("every group role a serving command asserts is granted to a login role", ()
 });
 
 test("only serving groups with the schema-readiness contract read the ledger", () => {
-  const expected = new Set(loginGroupRoles());
+  const expected = new Set(rootAssertedRoles());
   expected.delete(workerPlaneRole);
   assert.deepEqual(
     migrationLedgerReaders(),

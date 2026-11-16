@@ -8,20 +8,12 @@ import {
   apiRole,
   boundaryOwnerRole,
   dispatchAcceptanceFunction,
-  selectorClaimFunction,
   selectorControlRole,
-  selectorDeliveryFunction,
-  selectorProjectDispatchModeFunction,
   selectorProjectSettingsFunction,
-  selectorProposalInitialStateFunction,
-  selectorInteractionsReadFunction,
-  selectorReconcileClaimFunction,
-  selectorReviewFunction,
   selectorReviewRole,
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { interactionsReadSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { phaseOf } from "../../src/domain/phase.ts";
@@ -362,59 +354,6 @@ test("one decision's proposals over the same observed page each dispatch", async
   }
 });
 
-test("runtime roles cannot cross the selector and ticket-service storage boundary", async () => {
-  for (const role of [apiRole, ticketServiceRole]) {
-    const refusal = await harness.attemptAs(
-      role,
-      "INSERT INTO selector_project_state (tenant,project) VALUES ('t','p')",
-    );
-    assert.match(refusal ?? "", /permission denied/);
-  }
-  const ticketRefusal = await harness.attemptAs(
-    selectorServiceRole,
-    "SELECT * FROM journal_entry LIMIT 1",
-  );
-  assert.match(ticketRefusal ?? "", /permission denied/);
-  for (const role of [selectorServiceRole, selectorControlRole]) {
-    const settingsRefusal = await harness.attemptAs(
-      role,
-      "UPDATE selector_runtime_settings SET mode='Paused' WHERE singleton=1",
-    );
-    assert.match(settingsRefusal ?? "", /permission denied/);
-    const historyRefusal = await harness.attemptAs(
-      role,
-      `INSERT INTO selector_runtime_settings_history
-       (revision,mode,dispatch_mode,base_prompt,controls)
-       VALUES (999,'Running','Automatic','forged','{}')`,
-    );
-    assert.match(historyRefusal ?? "", /permission denied/);
-  }
-  for (const sql of [
-    "UPDATE selector_proposal_delivery SET state='Pending' WHERE false",
-    "DELETE FROM selector_interaction WHERE false",
-  ]) {
-    const refusal = await harness.attemptAs(selectorServiceRole, sql);
-    assert.match(refusal ?? "", /permission denied/);
-  }
-  const selectorReviewRefusal = await harness.attemptAs(
-    selectorServiceRole,
-    `SELECT ${selectorReviewFunction}('missing','t','p','Approved','User','reviewer',NULL)`,
-  );
-  assert.match(selectorReviewRefusal ?? "", /permission denied/);
-  const reviewClaimRefusal = await harness.attemptAs(
-    selectorReviewRole,
-    `SELECT * FROM ${selectorClaimFunction}(1)`,
-  );
-  assert.match(reviewClaimRefusal ?? "", /permission denied/);
-  assert.equal(
-    await harness.attemptAs(
-      selectorReviewRole,
-      `SELECT ${selectorReviewFunction}('missing','t','p','Approved','User','reviewer',NULL)`,
-    ),
-    undefined,
-  );
-});
-
 test("dispatch acceptance refuses every command the wire parser cannot read", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -474,50 +413,6 @@ test("dispatch acceptance refuses every command the wire parser cannot read", as
 });
 
 /**
- * What the delivery relation can hold, said by the relation rather than assumed
- * by its caller: keyed on the decision alone it holds exactly
- * `dispatchesPerDecisionUnstated` rows, which is why that constant is the
- * budget a controls row without one resolves to. Raising the constant past what
- * the relation holds reds the first half here rather than shipping a budget no
- * decision could spend; the rekey on `(decision, ticket)` is what lifts both.
- */
-/**
- * The resolution is a definer like every other here: owned, `search_path`
- * pinned and revoked from the world. It is granted to no role of its own,
- * because its only caller is the trigger and that runs as the owner.
- */
-test("the dispatch-mode resolution is owned, pinned and world-revoked", async () => {
-  const identity = `${selectorProjectDispatchModeFunction}(text,text)`;
-  assert.deepEqual(
-    await harness.query(
-      `SELECT prosecdef AS definer,pg_get_userbyid(proowner) AS owner,
-              array_to_string(proconfig,',') AS settings,
-              EXISTS(SELECT 1 FROM aclexplode(proacl) entry
-                      WHERE entry.grantee=0) AS world
-         FROM pg_proc WHERE oid=$1::regprocedure`,
-      [identity],
-    ),
-    [
-      {
-        definer: true,
-        owner: boundaryOwnerRole,
-        settings: "search_path=pg_catalog, public, pg_temp",
-        world: false,
-      },
-    ],
-  );
-  for (const role of i5SelectorRoles)
-    assert.deepEqual(
-      await harness.query(
-        `SELECT has_function_privilege($1,$2::regprocedure,'EXECUTE') AS held`,
-        [role, identity],
-      ),
-      [{ held: false }],
-      `${identity} to ${role}`,
-    );
-});
-
-/**
  * Every definer this slice re-created, with the roles it answers to: a drop
  * takes the owner, the `search_path` pin, the revoke and the grants with it,
  * `CREATE OR REPLACE` drops the pin the same way by taking everything but the
@@ -532,20 +427,11 @@ const i5SliceDefiners: readonly (readonly [
   string,
   readonly string[],
 ])[] = [
-  [selectorClaimFunction, "integer", [selectorServiceRole]],
-  [selectorReconcileClaimFunction, "integer", [selectorServiceRole]],
-  [selectorDeliveryFunction, "text,bigint,text,text", [selectorServiceRole]],
   [
     selectorProjectSettingsFunction,
     "text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text,text,text,text,text",
-    [apiRole, selectorControlRole],
+    [apiRole],
   ],
-  [
-    selectorInteractionsReadFunction,
-    interactionsReadSignature,
-    [apiRole, selectorServiceRole],
-  ],
-  [selectorProposalInitialStateFunction, "", []],
 ];
 
 const i5SelectorRoles = [

@@ -202,6 +202,8 @@ import { migration201 } from "./201-queued-landings.ts";
 import { migration202 } from "./202-chat-host-unlisted-attempts.ts";
 import { migration203 } from "./203-landing-queue-holder-since.ts";
 import { migration204 } from "./204-pool-memory-room.ts";
+import { migration205 } from "./205-selector-retired.ts";
+import { migration206 } from "./206-forge-answers.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -409,4 +411,6 @@ export const migrations: readonly Migration[] = [
   migration202,
   migration203,
   migration204,
+  migration205,
+  migration206,
 ];
