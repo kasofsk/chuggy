@@ -10,12 +10,16 @@ import type { SelectorProjectSettingsResponse } from "../../../src/contract/resp
 import {
   selectorSettingsConflictOf,
   selectorSettingsDispatchCell,
+  selectorSettingsDraft,
   selectorSettingsModeCell,
+  selectorSettingsModelTyped,
+  selectorSettingsTextTyped,
   selectorSettingsRefusal,
   selectorSettingsTextOverriddenAtRead,
   selectorSettingsWrite,
 } from "../app/core/selectorSettingsForm.ts";
 import type {
+  SelectorProjectOverrides,
   SelectorSettingsDraft,
   SelectorSettingsDrawn,
 } from "../app/core/selectorSettingsForm.ts";
@@ -112,6 +116,41 @@ test("a dispatch press is built from the read, not an open section's unsaved tex
   expect(cell.pressed.dispatchMode).toBe("ApprovalRequired");
 });
 
+/** The settings page draws boxes for fewer overrides than the read returns,
+ * and the route replaces the whole set, so a box it never draws must survive an
+ * edit to one it does. */
+test("an edit to a drawn box writes every override the read returned, as read", () => {
+  const overrides: SelectorProjectOverrides = {
+    northStar: "ship the console",
+    threadStandingRules: "- Ask before deleting.",
+    basePrompt: "choose the next ticket",
+    mode: "Paused",
+    dispatchMode: "ApprovalRequired",
+    limits: { tokensPerDecision: 12_000, dispatchesPerDecision: 2 },
+    leadModel: "sonnet",
+    leadEffort: "low",
+    threadModel: "opus",
+    threadEffort: "high",
+    modelAllowlist: ["opus"],
+    toolAllowlist: ["Read"],
+    operationalContextMaxAgeMs: 30_000,
+  };
+  const read = selectorSettingsDraft({ ...settings, overrides });
+  const edited = selectorSettingsModelTyped(
+    selectorSettingsTextTyped(read, "northStar", "ship the settings"),
+    "threadEffort",
+    "max",
+  );
+  expect(selectorSettingsWrite(edited)).toStrictEqual({
+    overrides: {
+      ...overrides,
+      northStar: "ship the settings",
+      threadEffort: "max",
+    },
+    faults: {},
+  });
+});
+
 /** A limit typed with grouped digits is the same value as its bare digits. */
 test("a limit accepts grouped digits and refuses anything else", () => {
   const grouped = selectorSettingsWrite(
@@ -184,7 +223,9 @@ test("an effort outside the five is refused", () => {
 test("overridden-at-read reads the read side, not a live edit", () => {
   const draft = draftOf({ northStar: "typed but not saved" });
   expect(selectorSettingsTextOverriddenAtRead(draft, "northStar")).toBe(true);
-  expect(selectorSettingsTextOverriddenAtRead(draft, "basePrompt")).toBe(false);
+  expect(
+    selectorSettingsTextOverriddenAtRead(draft, "threadStandingRules"),
+  ).toBe(false);
 });
 
 /** The route's own nit: `movedBy` reaches the section only through the

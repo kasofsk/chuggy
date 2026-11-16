@@ -73,7 +73,7 @@ test("a person with a workspace and no project is asked what to call it, the pro
     report: "Checklist",
     steps: [
       { step: "workspace", state: "done" },
-      { step: "project", state: "waiting" },
+      { step: "project", state: "done" },
       ...Array.from({ length: 5 }, () => expect.anything() as unknown),
     ],
   });

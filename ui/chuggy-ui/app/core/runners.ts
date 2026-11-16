@@ -7,7 +7,6 @@
 
 import type {
   ExecutionPlacementResponse,
-  SelectorProjectSettingsResponse,
   SessionPlacementResponse,
 } from "../../../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
@@ -243,16 +242,14 @@ export interface RunnersLeadPlacement {
 }
 
 /** Every kind's route, the lead's with its offering, written as two
- * placements: work and evaluation, and a thread and the lead. */
+ * placements: work and evaluation, and a thread and the lead. The lead is held
+ * as read and never moved here; the session placement's write still names it. */
 export interface RunnersPlacementDraft {
   readonly work: PlacementRoute;
   readonly evaluation: PlacementRoute;
   readonly thread: PlacementRoute;
   readonly lead: RunnersLeadPlacement;
 }
-
-/** What one kind is placed on: a route, or for the lead a route and offering. */
-export type RunnersPlacementChoice = PlacementRoute | RunnersLeadPlacement;
 
 /** Every kind's route as read, which a save is told apart from. */
 export function runnersPlacementDraft(
@@ -267,8 +264,11 @@ export function runnersPlacementDraft(
   };
 }
 
-/** The kinds the reader has chosen a route for since opening the editor. */
-export type RunnersPlacementMoves = Partial<RunnersPlacementDraft>;
+/** The kinds the reader has chosen a route for since opening the editor, which
+ * never include the lead. */
+export type RunnersPlacementMoves = Partial<
+  Omit<RunnersPlacementDraft, "lead">
+>;
 
 /** Each kind the reader moved where they moved it, and every other kind as the
  * newest read says, so a move made since the editor opened is kept. */
@@ -279,83 +279,29 @@ export function runnersPlacementMoved(
   return { ...read, ...moves };
 }
 
-/** The value a radio group answers a choice under: its route, and
- * `Subsidized` for the subsidized lead. */
-export function runnersPlacementValue(choice: RunnersPlacementChoice): string {
-  if (typeof choice === "string") return choice;
-  switch (choice.offering) {
-    case "Own":
-      return choice.route;
-    case "Subsidized":
-      return "Subsidized";
-  }
-}
-
-/** The word a choice is drawn under, beside the route labels. */
-export function runnersPlacementLabel(choice: RunnersPlacementChoice): Copy {
-  if (typeof choice === "string") return runnerRouteLabel(choice);
-  switch (choice.offering) {
-    case "Own":
-      return runnerRouteLabel(choice.route);
-    case "Subsidized":
-      return { id: "runners-route-subsidized" };
-  }
-}
-
-/** The lead's choices: each route the reader may choose, as the members' own,
- * and the subsidized lead in cluster wherever the deployment admits it. */
-export function runnersLeadPlacementChoices(
-  session: SessionPlacementResponse,
-): readonly RunnersLeadPlacement[] {
-  const own = session.choices.map((route): RunnersLeadPlacement => ({
-    route,
-    offering: "Own",
-  }));
-  return session.leadOfferings.includes("Subsidized")
-    ? [...own, { route: "InCluster", offering: "Subsidized" }]
-    : own;
-}
-
-/**
- * The subsidized lead's line: that it is chuggy's, the model it runs, and that
- * it is free up to a monthly allowance. The effective settings name the
- * profile's model only once the project's lead is subsidized, so before then
- * the line names none.
- */
-export function runnersSubsidizedLine(
-  effective: SelectorProjectSettingsResponse["effective"] | undefined,
-): Copy {
-  const model =
-    effective?.leadOffering === "Subsidized" ? effective.leadModel : undefined;
-  return model === undefined
-    ? { id: "runners-subsidized-about-unnamed" }
-    : { id: "runners-subsidized-about", args: { model } };
-}
-
 /** One choice a kind draws, and whether the reader may choose it. */
-export interface RunnersPlacementOption<T extends RunnersPlacementChoice> {
-  readonly choice: T;
+export interface RunnersPlacementOption {
+  readonly choice: PlacementRoute;
   readonly choosable: boolean;
 }
 
 /** The choices the reader may make, after the one the kind was read on where
  * it is not among them, which is drawn as standing and kept until another is
  * chosen. */
-export function runnersPlacementOptions<T extends RunnersPlacementChoice>(
-  read: T,
-  choices: readonly T[],
-): readonly RunnersPlacementOption<T>[] {
+export function runnersPlacementOptions(
+  read: PlacementRoute,
+  choices: readonly PlacementRoute[],
+): readonly RunnersPlacementOption[] {
   const offered = choices.map((choice) => ({ choice, choosable: true }));
-  const value = runnersPlacementValue(read);
-  return choices.some((choice) => runnersPlacementValue(choice) === value)
+  return choices.includes(read)
     ? offered
     : [{ choice: read, choosable: false }, ...offered];
 }
 
 /** What a save writes: each placement only where one of its own kinds differs
  * from the read, since a write names both its kinds, and the session's with
- * the lead's offering always named, since one left out is the row's stored
- * offering rather than the one read. */
+ * the lead as read and its offering always named, since one left out is the
+ * row's stored offering rather than the one read. */
 export interface RunnersPlacementWrites {
   readonly execution:
     | { readonly work: PlacementRoute; readonly evaluation: PlacementRoute }
@@ -379,14 +325,12 @@ export function runnersPlacementWrites(
         ? undefined
         : { work: draft.work, evaluation: draft.evaluation },
     session:
-      draft.thread === read.thread &&
-      draft.lead.route === read.lead.route &&
-      draft.lead.offering === read.lead.offering
+      draft.thread === read.thread
         ? undefined
         : {
             thread: draft.thread,
-            lead: draft.lead.route,
-            leadOffering: draft.lead.offering,
+            lead: read.lead.route,
+            leadOffering: read.lead.offering,
           },
   };
 }

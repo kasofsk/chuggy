@@ -56,6 +56,7 @@ test("the folder's remote proposes the one project it is added to and says so, p
   const one = await read(session, setupSiteTwo());
   assert.deepEqual(asks(one), [[proposed], 0]);
   assert.deepEqual(await ruled(one), [
+    "mcp",
     "--workspace",
     "acme",
     "--project",

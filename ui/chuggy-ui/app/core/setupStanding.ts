@@ -114,7 +114,6 @@ export type SetupLack =
   | { readonly lacks: "Workspace"; readonly workspace: string | undefined }
   | { readonly lacks: "Administration"; readonly workspace: string }
   | { readonly lacks: "Project" }
-  | { readonly lacks: "NorthStar" }
   | { readonly lacks: "Account" }
   | {
       readonly lacks: "App";
@@ -216,15 +215,6 @@ export interface SetupStanding {
   /** The address of the pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
   readonly unmerged: string | undefined;
 }
-
-/**
- * What the program names on the console's pages beside what is pressed there,
- * by the message each page draws it as, so a case holds each against the
- * page.
- */
-export const setupSeen = {
-  northStar: { id: "lead-settings-section-north-star-title" },
-} as const satisfies Readonly<Record<string, Copy>>;
 
 /** Each forge app, as a sentence names it. */
 export const setupAppNames: Readonly<Record<ForgeAppName, Copy>> = {
@@ -433,7 +423,7 @@ function setupProjectAbsent(
   );
 }
 
-/** Done where the project is there and its lead settings carry a North Star of its own. */
+/** Done where the project is there and its settings could be read. */
 function setupProjectStep(
   reads: SetupReads,
   workspace: string | undefined,
@@ -462,17 +452,7 @@ function setupProjectStep(
       },
     };
   }
-  return settings.value.overrides.northStar === undefined
-    ? setupUndone(
-        "project",
-        "waiting",
-        {
-          id: "setup-step-north-star",
-          args: { project: name, section: setupSeen.northStar },
-        },
-        { lacks: "NorthStar" },
-      )
-    : setupDone("project", name);
+  return setupDone("project", name);
 }
 
 /**

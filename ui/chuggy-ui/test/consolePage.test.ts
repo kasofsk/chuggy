@@ -225,7 +225,7 @@ test("a page is named in the console's own words for it", () => {
     "New ticket from #12",
     "New ticket · draft #7",
     "Repository acme/atlas",
-    "Settings · Project · Lead",
+    "Settings · Project · Chats",
     "Settings · Project · Placement",
     "Settings · Project · Pools",
     "Settings · Project · Permissions",

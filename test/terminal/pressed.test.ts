@@ -1,6 +1,6 @@
 /**
- * The names the setup program tells a person to press, and the section it
- * names beside one, held against the console pages that draw them.
+ * The names the setup program tells a person to press, held against the
+ * console pages that draw them.
  *
  * The program sends her to a page and names what to press there, and the
  * pages write those names in their own markup, where the program's code
@@ -29,16 +29,12 @@ import {
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 import { ticketActionLabel } from "../../ui/chuggy-ui/app/core/codeLabels.ts";
 import type { CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
-import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
 import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
-import { setupSeen } from "../../ui/chuggy-ui/app/core/setupStanding.ts";
 
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
 type SetupPressedCatalogued =
-  | "edit"
-  | "save"
   | "ticket"
   | "runner"
   | "runnerProject"
@@ -48,7 +44,6 @@ type SetupPressedCatalogued =
   | "add"
   | "addAccount";
 
-const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
 const myRunnerPage = "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx";
@@ -67,8 +62,6 @@ const drawnIn: Readonly<
 const drawnFromCatalog: Readonly<
   Record<SetupPressedCatalogued, { readonly page: string; readonly id: CopyId }>
 > = {
-  edit: { page: settingsSection, id: "ui-edit" },
-  save: { page: settingsSection, id: "ui-save" },
   ticket: {
     page: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
     id: "ticket-authoring-create-ticket",
@@ -88,8 +81,6 @@ const drawnFromCatalog: Readonly<
   addAccount: { page: accountsPage, id: "settings-accounts-add" },
 };
 
-const leadTextSection =
-  "ui/chuggy-ui/app/browser/settings/lead/SelectorTextSection.tsx";
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
 
 /** Whether a page's source draws `name` as the whole of a text or of a label, and not as part of a longer one. */
@@ -114,15 +105,6 @@ for (const [key, drawn] of Object.entries(drawnFromCatalog))
     );
     assert.deepEqual(setupPressed[key as SetupPressed], { id: drawn.id });
   });
-
-test("the lead's settings page draws, from the catalog, the section the program says Edit is pressed beside", () => {
-  const source = readFileSync(leadTextSection, "utf8");
-  assert.match(source, /const title = text\(section\.title\);/u);
-  assert.deepEqual(
-    selectorSettingsSection("northStar").title,
-    setupSeen.northStar,
-  );
-});
 
 test("a ticket's page draws each action it offers as a button under the action's label, Dispatch's being the program's word, and has a line of its own for a project with no runner", () => {
   const source = readFileSync(ticketPage, "utf8");

@@ -17,7 +17,7 @@ import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 /** Every settings page's address, in a project and under the workspace alone. */
 export const settingsRoutes = {
   project: {
-    lead: "/$tenant/$project/settings/lead",
+    threads: "/$tenant/$project/settings/threads",
     placement: "/$tenant/$project/settings/placement",
     pools: "/$tenant/$project/settings/pools",
     permissions: "/$tenant/$project/settings/permissions",
@@ -102,7 +102,7 @@ export function settingsNavSiteDrawn(
 
 /** Each entry's word, by its id. */
 const settingsNavLabels = {
-  lead: { id: "settings-nav-lead" },
+  threads: { id: "settings-nav-threads" },
   placement: { id: "settings-nav-placement" },
   pools: { id: "settings-nav-pools" },
   permissions: { id: "settings-nav-permissions" },
@@ -132,7 +132,7 @@ export function settingsNav(
     label: { id: "settings-nav-project" },
     name: project?.name,
     entries: [
-      entry("lead", settingsRoutes.project.lead),
+      entry("threads", settingsRoutes.project.threads),
       entry("placement", settingsRoutes.project.placement),
       entry("pools", settingsRoutes.project.pools),
       entry("permissions", settingsRoutes.project.permissions),
