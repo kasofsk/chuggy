@@ -118,6 +118,7 @@ import {
   setupSettingsText,
   setupFitRead,
   setupUnitIs,
+  setupUnitShown,
   setupUnitOf,
   setupUnitText,
 } from "./setupRunnerMachine.ts";
@@ -127,6 +128,7 @@ import type {
   SetupPoolFile,
   SetupRunnerPlaces,
   SetupRunnerRoom,
+  SetupServiceIs,
   SetupServicesAt,
   SetupSettingsRead,
   SetupUnit,
@@ -171,8 +173,22 @@ export const setupActWaitMs: Readonly<Record<SetupRunnerAct, number>> = {
   ColimaStart: 600_000,
 };
 
-/** How often the site is asked again whether it sees a runner live. */
+/** How often the site is asked again whether it sees a runner live, and a service just started whether it is running. */
 export const setupLivePollMs = 3_000;
+
+/**
+ * How long a service just started, restarted or loaded is asked after until it
+ * is running, which bounds a hang and not the work: thrice the longer restart
+ * interval of either package, so a runner that exits as it starts is seen
+ * started again.
+ */
+export const setupServiceUpWaitMs =
+  3 *
+  Math.max(
+    runnerPackages.linux.restartIntervalSecs,
+    runnerPackages.darwin.restartIntervalSecs,
+  ) *
+  1_000;
 
 /** A sign-in a run works under: the site, its API, and the bearer the run got while it held the lock. */
 export interface SetupRunnerSession {
@@ -920,7 +936,7 @@ async function setupStarted(
       unit: unit.name,
     });
   }
-  return setupInactive(run, unit, undefined);
+  return setupInactive(run, unit);
 }
 
 /**
@@ -950,7 +966,7 @@ async function setupAgentStarted(
     );
     if (halted(again)) return again;
     run.notes.push({ note: "Restarted", unit: unit.name });
-    return setupInactive(run, unit, undefined);
+    return setupInactive(run, unit);
   }
   await run.ports.process.run(
     setupRunnerCommands.unload(domain, unit),
@@ -967,30 +983,64 @@ async function setupAgentStarted(
     note: before.is ? "Restarted" : "Started",
     unit: unit.name,
   });
-  return setupInactive(run, unit, undefined);
+  return setupInactive(run, unit);
 }
 
-/** Whether a service is running now, as the platform's service manager says, and the one word it said of it. */
+/** What the platform's service manager says of a service now. */
 async function setupRunning(
   run: Run,
   unit: SetupUnit,
-): Promise<{ readonly is: boolean; readonly said: string | undefined }> {
-  if (run.platform === "linux")
-    return setupUnitIs(run.ports, "is-active", unit);
+): Promise<SetupServiceIs> {
+  if (run.platform === "linux") return setupUnitShown(run.ports, unit);
   const domain = await setupAgentDomain(run.ports);
   return setupAgentIs(run.ports, domain, unit);
 }
 
-/** Asks the service manager whether the runner's service is running now, and answers the stop it is where it is not. */
+/**
+ * Asks the service manager, every poll, until the runner's service just
+ * started is running, for no longer than `setupServiceUpWaitMs` or the run's
+ * wait, and answers the stop it is where it is still not.
+ */
 async function setupInactive(
   run: Run,
   unit: SetupUnit,
-  waitedSecs: number | undefined,
 ): Promise<Halt | undefined> {
-  const now = await setupRunning(run, unit);
-  return now.is
-    ? undefined
-    : halt({ stop: "Inactive", unit: unit.name, state: now.said, waitedSecs });
+  const beganMs = run.ports.nowMs();
+  const endsAtMs =
+    beganMs + Math.min(setupServiceUpWaitMs, run.waitSecs * 1_000);
+  for (;;) {
+    const now = await setupRunning(run, unit);
+    if (now.is) return undefined;
+    const atMs = run.ports.nowMs();
+    if (atMs >= endsAtMs)
+      return halt(
+        setupInactiveStop(run, unit, now, {
+          waited: "Started",
+          waitedSecs: Math.round((atMs - beganMs) / 1_000),
+        }),
+      );
+    await run.ports.sleepMs(Math.min(run.livePollMs, endsAtMs - atMs));
+  }
+}
+
+/** The stop a service the service manager says is not running is, with what it said of it. */
+function setupInactiveStop(
+  run: Run,
+  unit: SetupUnit,
+  now: SetupServiceIs,
+  waited: Pick<
+    Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
+    "waited" | "waitedSecs"
+  >,
+): SetupRunnerStop {
+  return {
+    stop: "Inactive",
+    unit: unit.name,
+    platform: run.platform,
+    state: now.said,
+    exit: now.exit,
+    ...waited,
+  };
 }
 
 /** One look at the site for a runner live: the read that saw it, or what the read said instead. */
@@ -1007,18 +1057,24 @@ async function setupWaited<Seen extends object, Unseen>(
   run: Run,
   unit: SetupUnit,
   look: () => Promise<SetupLook<Seen, Unseen>>,
-  unseen: (last: Unseen) => SetupRunnerStop,
+  unseen: (last: Unseen, pid: number | undefined) => SetupRunnerStop,
 ): Promise<Seen | Halt> {
   const endsAtMs = run.ports.nowMs() + run.waitSecs * 1_000;
   for (;;) {
     const looked = await look();
     if (halted(looked)) return looked;
     if ("seen" in looked) return looked.seen;
-    if (run.ports.nowMs() >= endsAtMs)
-      return (
-        (await setupInactive(run, unit, run.waitSecs)) ??
-        halt(unseen(looked.unseen))
+    if (run.ports.nowMs() >= endsAtMs) {
+      const now = await setupRunning(run, unit);
+      return halt(
+        now.is
+          ? unseen(looked.unseen, now.pid)
+          : setupInactiveStop(run, unit, now, {
+              waited: "Live",
+              waitedSecs: run.waitSecs,
+            }),
       );
+    }
     await run.ports.sleepMs(run.livePollMs);
   }
 }
@@ -1411,10 +1467,11 @@ async function setupWalked(run: ProjectRun): Promise<SetupRunnerEnded | Halt> {
     run,
     unit,
     () => setupProjectLooked(run, project.route),
-    (short) => ({
+    (short, pid) => ({
       stop: "NotLive",
       waitedSecs: run.waitSecs,
       registered: short === "RunnerOffline",
+      pid,
     }),
   );
   if (halted(seen)) return seen;

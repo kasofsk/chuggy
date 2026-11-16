@@ -38,7 +38,18 @@ export interface RunnerPackage {
   readonly guideAddress: string;
   /** Where the package says what is left to do after registering a chat host. */
   readonly chatHostGuideAddress: string;
+  /** How long the package's service manager waits before starting its runner again after an exit it restarts. */
+  readonly restartIntervalSecs: number;
+  /** The exit statuses the release pinned gives a meaning, each by what it means. */
+  readonly exitsMeant: Readonly<Partial<Record<number, RunnerExitMeant>>>;
 }
+
+/**
+ * What a runner's exit status means where its package gives it one: that no
+ * restart would be answered differently, so it is not started again, or that
+ * it installed a release of itself and is started again on it.
+ */
+export type RunnerExitMeant = "Unrestarted" | "Updated";
 
 const runnerReleasePattern =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
@@ -73,6 +84,14 @@ export const runnerPackages = {
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/download/v0.55.0/chuggy-linux-0.55.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
+    /** `RestartSec=` of the unit `serviceUnit` writes, in chuggy-linux's `systemdUnit.mjs`. */
+    restartIntervalSecs: 10,
+    exitsMeant: {
+      /** `unrestartedExitStatus`, in chuggy-linux's `systemdUnit.mjs`. */
+      3: "Unrestarted",
+      /** `updatedExitStatus`, in chuggy-linux's `systemdUnit.mjs`. */
+      75: "Updated",
+    },
   },
   darwin: {
     label: { id: "runners-package-darwin" },
@@ -82,6 +101,14 @@ export const runnerPackages = {
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/download/v0.25.0/chuggy-darwin-0.25.0.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-darwin#chat-host",
+    /** `restartIntervalSecs`, the agent's `ThrottleInterval`, in chuggy-darwin's `launchAgent.mjs`. */
+    restartIntervalSecs: 10,
+    exitsMeant: {
+      /** The one exit launchd does not restart, as chuggy-darwin's `launchAgent.mjs` says in its header. */
+      0: "Unrestarted",
+      /** `updatedExitStatus`, in chuggy-darwin's `launchAgent.mjs`. */
+      75: "Updated",
+    },
   },
 } as const satisfies Record<string, RunnerPackage>;
 

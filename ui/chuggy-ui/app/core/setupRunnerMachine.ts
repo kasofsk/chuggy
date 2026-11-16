@@ -1209,36 +1209,114 @@ export async function setupAgentDomain(ports: SetupPorts): Promise<string> {
   return `${setupWell(desktop) ? "gui" : "user"}/${user}`;
 }
 
+/** What the service manager says of a service: whether it is running, its state, the process it runs as, and the status it last exited with. */
+export interface SetupServiceIs {
+  readonly is: boolean;
+  /** The state in the service manager's own words, empty where what it said is no words, and nothing where it did not answer. */
+  readonly said: string | undefined;
+  /** The process the service runs as, or nothing where none is said. */
+  readonly pid: number | undefined;
+  /** The status its process last exited with, or nothing where it has not exited or none is said. */
+  readonly exit: number | undefined;
+}
+
+/** A state as a service manager says it: words, kept whole, or empty where it is not words. */
+function setupServiceWords(said: string): string {
+  return /^[a-z-]+( [a-z-]+)*$/u.test(said) ? said : "";
+}
+
+/** A process id or exit status as a service manager prints it, or nothing where it is not one. */
+function setupServiceWhole(said: string | undefined): number | undefined {
+  return said !== undefined && /^(0|[1-9][0-9]{0,9})$/u.test(said)
+    ? Number(said)
+    : undefined;
+}
+
 /**
- * Whether an agent is loaded in `domain` and running, and the one word launchd
- * said of its state: empty where it is not loaded or said no word, and nothing
+ * Whether an agent is loaded in `domain`, and what launchd says of it: its
+ * state, its pid and its last exit code, each read from the agent's own keys,
+ * which `print` indents by one tab, and never from a section nested in it.
+ * The state is empty where it is not loaded or said no words, and nothing
  * where launchctl could not be run.
  */
 export async function setupAgentIs(
   ports: SetupPorts,
   domain: string,
   unit: SetupUnit,
-): Promise<{
-  readonly loaded: boolean;
-  readonly is: boolean;
-  readonly said: string | undefined;
-}> {
+): Promise<SetupServiceIs & { readonly loaded: boolean }> {
   const ended = await setupProbed(ports, [
     "launchctl",
     "print",
     `${domain}/${unit.name}`,
   ]);
+  const none = { pid: undefined, exit: undefined };
   if (ended.ended !== "Exited")
-    return { loaded: false, is: false, said: undefined };
-  if (!setupWell(ended)) return { loaded: false, is: false, said: "" };
-  const said = /^\s*state = ([a-z-]+)$/mu.exec(ended.out)?.[1] ?? "";
-  return { loaded: true, is: said === "running", said };
+    return { loaded: false, is: false, said: undefined, ...none };
+  if (!setupWell(ended)) return { loaded: false, is: false, said: "", ...none };
+  const key = (name: string) =>
+    new RegExp(`^\\t${name} = (.*)$`, "mu").exec(ended.out)?.[1];
+  const said = setupServiceWords(key("state") ?? "");
+  return {
+    loaded: true,
+    is: said === "running",
+    said,
+    pid: setupServiceWhole(key("pid")),
+    exit: setupServiceWhole(
+      /^([0-9]+)(: .*)?$/u.exec(key("last exit code") ?? "")?.[1],
+    ),
+  };
 }
 
 /** Where a machine's runner services are: on Linux, or on a Mac in the launchd domain they are loaded in. */
 export type SetupServicesAt =
   | { readonly platform: "linux" }
   | { readonly platform: "darwin"; readonly domain: string };
+
+/**
+ * What systemd says of a unit: active is running, its state is its active
+ * state with its sub-state beside it, and the status its main process exited
+ * with is said only where no main process runs and it is not 0, which systemd
+ * shows alike for a process that has not exited and one that exited well, and
+ * which chuggy-linux gives no meaning. One that ends badly or prints no active
+ * state did not answer, which is how it ends where it cannot reach the
+ * person's services.
+ */
+export async function setupUnitShown(
+  ports: SetupPorts,
+  unit: SetupUnit,
+): Promise<SetupServiceIs> {
+  const ended = await setupProbed(ports, [
+    "systemctl",
+    "--user",
+    "show",
+    unit.name,
+    "--property=ActiveState,SubState,MainPID,ExecMainStatus",
+  ]);
+  const shown = new Map(
+    ended.ended === "Exited"
+      ? ended.out.split("\n").flatMap((line) => {
+          const at = line.indexOf("=");
+          return at < 0
+            ? []
+            : [[line.slice(0, at), line.slice(at + 1)] as const];
+        })
+      : [],
+  );
+  const active = shown.get("ActiveState");
+  if (!setupWell(ended) || active === undefined)
+    return { is: false, said: undefined, pid: undefined, exit: undefined };
+  const state = setupServiceWords(active);
+  const sub = setupServiceWords(shown.get("SubState") ?? "");
+  const pid = setupServiceWhole(shown.get("MainPID"));
+  const running = pid !== undefined && pid !== 0;
+  const exit = setupServiceWhole(shown.get("ExecMainStatus"));
+  return {
+    is: state === "active",
+    said: state === "" || sub === "" ? state : `${state} (${sub})`,
+    pid: running ? pid : undefined,
+    exit: running || exit === 0 ? undefined : exit,
+  };
+}
 
 /** Restarts every runner service of this machine's, each of which reads the runner's settings only as it starts: on a Mac, each agent by the label its file is named for. */
 export function setupRestartAll(

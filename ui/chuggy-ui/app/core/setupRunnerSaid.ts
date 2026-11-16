@@ -16,7 +16,10 @@
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
 import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
+import { runnerPackages } from "./runners.ts";
+import type { RunnerPackage } from "./runners.ts";
 import type { SetupFit } from "./setupFit.ts";
+import type { SetupPlatform } from "./setupPorts.ts";
 import { setupCommandLine } from "./setupText.ts";
 
 /** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone; `workspaceName` is the workspace's display name, where the run read it. */
@@ -409,15 +412,22 @@ export type SetupRunnerStop =
   | {
       readonly stop: "Inactive";
       readonly unit: string;
-      /** The one word the service manager said of the service, empty where what it said is no word, or nothing where it did not answer. */
+      /** The platform whose package's service it is, which says what its exit statuses mean. */
+      readonly platform: SetupPlatform;
+      /** The state the service manager said of the service, empty where what it said is no words, or nothing where it did not answer. */
       readonly state: string | undefined;
-      /** How long the site had been waited on when the service was found stopped, or nothing where it was asked straight after it was started. */
-      readonly waitedSecs: number | undefined;
+      /** The status the service last exited with, or nothing where it has not exited or none was said. */
+      readonly exit: number | undefined;
+      /** What was waited on before the service was found stopped: the service itself, after it was started, or the site, while it ran. */
+      readonly waited: "Started" | "Live";
+      readonly waitedSecs: number;
     }
   | {
       readonly stop: "NotLive";
       readonly waitedSecs: number;
       readonly registered: boolean;
+      /** The process the service runs as, or nothing where the service manager said none. */
+      readonly pid: number | undefined;
     }
   | {
       /** The workspace does not let the person register a chat host; `work` is what the project's work has, said as set up, and nothing where the run was for the workspace alone. */
@@ -1556,17 +1566,17 @@ function setupMachineSaid(
   }
 }
 
-/** A service not read as running: the state the service manager gave it, or that the service manager did not answer, which is not a service that stopped. */
+/** A service not read as running: the state the service manager gave it, and its last exit with what that means, or that the service manager did not answer, which is not a service that stopped. */
 function setupInactiveSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
 ): SetupRunnerStopSaid {
-  const was: Copy =
-    stop.waitedSecs === undefined
-      ? { id: "setup-runner-inactive-started" }
-      : {
-          id: "setup-runner-inactive-waited",
-          args: { secs: String(stop.waitedSecs) },
-        };
+  const was: Copy = {
+    id:
+      stop.waited === "Started"
+        ? "setup-runner-inactive-started"
+        : "setup-runner-inactive-waited",
+    args: { secs: String(stop.waitedSecs) },
+  };
   const { unit } = stop;
   if (stop.state === undefined)
     return {
@@ -1575,22 +1585,40 @@ function setupInactiveSaid(
       when: setupTryAgain,
       again: "Again",
     };
+  const state =
+    stop.state === ""
+      ? ({ id: "setup-runner-inactive-not-running" } as const)
+      : stop.state;
   return {
-    found: {
-      id: "setup-runner-inactive-found",
-      args: {
-        unit,
-        was,
-        state:
-          stop.state === ""
-            ? { id: "setup-runner-inactive-not-running" }
-            : stop.state,
-      },
+    found: { id: "setup-runner-inactive-found", args: { unit, was, state } },
+    tell: {
+      id: "setup-runner-inactive-tell",
+      args: { state, exited: setupInactiveExited(stop) },
     },
-    tell: { id: "setup-runner-inactive-tell" },
     when: setupTryAgain,
     again: "Again",
   };
+}
+
+/** What a stopped service's last exit was and what follows it, by what its package means by the status, or that it has not exited. */
+function setupInactiveExited(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
+): Copy {
+  if (stop.exit === undefined) return { id: "setup-runner-inactive-unexited" };
+  const offered: RunnerPackage = runnerPackages[stop.platform];
+  const status = String(stop.exit);
+  const meant = offered.exitsMeant[stop.exit];
+  if (meant === undefined)
+    return {
+      id: "setup-runner-inactive-exit-other",
+      args: { status, secs: String(offered.restartIntervalSecs) },
+    };
+  switch (meant) {
+    case "Unrestarted":
+      return { id: "setup-runner-inactive-exit-unrestarted", args: { status } };
+    case "Updated":
+      return { id: "setup-runner-inactive-exit-updated", args: { status } };
+  }
 }
 
 function setupCheckFailedSaid(
@@ -1659,7 +1687,17 @@ function setupServiceSaid(
           id: stop.registered
             ? "setup-runner-not-live-found"
             : "setup-runner-not-live-unregistered-found",
-          args: { secs: String(stop.waitedSecs), project },
+          args: {
+            secs: String(stop.waitedSecs),
+            project,
+            running:
+              stop.pid === undefined
+                ? { id: "setup-runner-not-live-running" }
+                : {
+                    id: "setup-runner-not-live-running-pid",
+                    args: { pid: String(stop.pid) },
+                  },
+          },
         },
         tell: { id: "setup-runner-not-live-tell" },
         when: setupLookAgain,

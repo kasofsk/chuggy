@@ -48,6 +48,9 @@ export const boxEngineBytes = 12_562_779_340;
 /** The version an install puts here unless a case has the release be another. */
 export const boxVersion = "0.35.0";
 
+/** The process every running service of the box's runs as. */
+export const boxPid = 69807;
+
 /** Everything the command runs on the machine, by what it is for. */
 export type BoxAct =
   | "services"
@@ -60,6 +63,7 @@ export type BoxAct =
   | "reload"
   | "enabled"
   | "active"
+  | "shown"
   | "start"
   | "restart"
   | "linger"
@@ -152,6 +156,11 @@ export interface RunnerBox {
   /** Whether a service that is started stays up, and whether one that is up polls, which is what the site sees as live. */
   stays: boolean;
   polls: boolean;
+  /** How many looks at a service just started find it mid-spawn before it is running, and how many each started service has left. */
+  spawns: number;
+  readonly spawnsLeft: Map<string, number>;
+  /** The status a service that does not stay up last exited with, or nothing where it has not exited. */
+  exit: number | undefined;
   /** Whether launchd answers for the person's desktop session, which it does where they are logged in at the Mac's screen. */
   desktop: boolean;
   /** What `doctor` prints aside and exits with, where a case has it find something. */
@@ -209,6 +218,9 @@ export function runnerBox(): RunnerBox {
     units: new Map(),
     stays: true,
     polls: true,
+    spawns: 0,
+    spawnsLeft: new Map(),
+    exit: undefined,
     desktop: true,
     doctor: undefined,
     mac: undefined,
@@ -360,6 +372,7 @@ export function boxActOf(command: readonly string[]): BoxAct | undefined {
     ([, runs, first]) =>
       runs === name && first.every((word, at) => words[at] === word),
   )?.[0];
+  if (act === "services" && words[1] !== "--property") return "shown";
   return act === "domain" && (words[1] ?? "").split("/").length > 2
     ? "agent"
     : act;
@@ -854,6 +867,7 @@ function up(
   box.units.set(name, unit);
   unit.enabled ||= enable;
   unit.active = box.stays;
+  box.spawnsLeft.set(name, box.spawns);
   if (unit.active && box.polls) polled(box, world, name);
   return exited(0);
 }
@@ -867,6 +881,61 @@ function unitSaid(
   if (asks === "enabled")
     return exited(is ? 0 : 1, is ? "enabled\n" : "disabled\n");
   return exited(is ? 0 : 3, is ? "active\n" : "inactive\n");
+}
+
+/** Whether a look at a running service finds it mid-spawn, which spends one of the looks it has left. */
+function spawning(box: RunnerBox, name: string): boolean {
+  const left = box.spawnsLeft.get(name) ?? 0;
+  if (left > 0) box.spawnsLeft.set(name, left - 1);
+  return left > 0;
+}
+
+/**
+ * How systemd shows a unit's state, its main process and the status that
+ * last exited with: a unit running, mid-spawn, waiting to be started again
+ * after an exit, or dead after one it does not restart or before any.
+ */
+function unitShown(box: RunnerBox, name: string): SetupChildEnded {
+  const unit = box.units.get(name);
+  const shown = (active: string, sub: string, pid: number, exit: number) =>
+    exited(
+      0,
+      `ActiveState=${active}\nSubState=${sub}\nMainPID=${String(pid)}\nExecMainStatus=${String(exit)}\n`,
+    );
+  if (unit?.active === true)
+    return spawning(box, name)
+      ? shown("activating", "start", 0, 0)
+      : shown("active", "running", boxPid, 0);
+  if (box.exit === undefined || box.exit === 3)
+    return shown("inactive", "dead", 0, box.exit ?? 0);
+  return shown("activating", "auto-restart", 0, box.exit);
+}
+
+/** What `launchctl print` says of a loaded agent's own state, pid and last exit, beside a nested section's state, which is not the agent's. */
+function agentPrinted(
+  box: RunnerBox,
+  target: string,
+  label: string,
+  active: boolean,
+): SetupChildEnded {
+  const state = !active
+    ? "not running"
+    : spawning(box, label)
+      ? "spawn scheduled"
+      : "running";
+  const lines = [
+    `${target} = {`,
+    `\tactive count = ${active ? 1 : 0}`,
+    `\tpath = ${boxAgents}/${label}.plist`,
+    `\tstate = ${state}`,
+    ...(state === "running" ? [`\tpid = ${String(boxPid)}`] : []),
+    `\tlast exit code = ${box.exit === undefined ? "(never exited)" : `${String(box.exit)}: ${box.exit === 75 ? "EX_TEMPFAIL" : "Undefined error"}`}`,
+    "\tendpoints = {",
+    "\t\tstate = active",
+    "\t}",
+    "}",
+  ];
+  return exited(0, `${lines.join("\n")}\n`);
 }
 
 /** The domain launchd answers for this user: the desktop session's where they are logged in at the screen, and the background one always. */
@@ -916,10 +985,7 @@ function launchd(
         );
   switch (act) {
     case "agent":
-      return exited(
-        0,
-        `${target} = {\n\tactive count = ${unit.active ? 1 : 0}\n\tpath = ${boxAgents}/${label}.plist\n\tstate = ${unit.active ? "running" : "not running"}\n}\n`,
-      );
+      return agentPrinted(box, target, label, unit.active);
     case "unload":
       unit.enabled = false;
       unit.active = false;
@@ -990,6 +1056,8 @@ function done(
     case "enabled":
     case "active":
       return unitSaid(box, last, act);
+    case "shown":
+      return unitShown(box, command.at(-2) ?? "");
     case "start":
       return up(box, world, last, true);
     case "restart":

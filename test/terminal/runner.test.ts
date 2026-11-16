@@ -533,7 +533,7 @@ interface Loss {
   readonly sent: readonly string[];
 }
 
-const restarted = ["reload", "restart", "active"];
+const restarted = ["reload", "restart", "shown"];
 
 const losses: readonly Loss[] = [
   {
@@ -547,7 +547,7 @@ const losses: readonly Loss[] = [
         project.runner = "Offline";
     },
     did: (did) => [did.started],
-    acts: [...rerun, "reload", "start", "active"],
+    acts: [...rerun, "reload", "start", "shown"],
     sent: [],
   },
   {
@@ -559,7 +559,7 @@ const losses: readonly Loss[] = [
       });
     },
     did: (did) => [did.enabled],
-    acts: [...rerun, "reload", "start", "active"],
+    acts: [...rerun, "reload", "start", "shown"],
     sent: [],
   },
   {

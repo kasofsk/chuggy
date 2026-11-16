@@ -422,12 +422,24 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
   ],
   Inactive: [
-    [`${rosterUnit} was started and is failed`, 1, "Again"],
-    [`${rosterUnit} was started and is not running`, 1, "Again"],
+    [`${rosterUnit} was started and after 30 s is failed`, 1, "Again"],
+    [`${rosterUnit} was started and after 30 s is not running`, 1, "Again"],
+    [
+      `${rosterUnit} was started and after 30 s is activating (auto-restart)`,
+      1,
+      "Again",
+    ],
+    [
+      `${rosterUnit} was started and after 30 s is activating (auto-restart)`,
+      1,
+      "Again",
+    ],
+    [`${rosterUnit} was started and after 30 s is not running`, 1, "Again"],
+    [`${rosterUnit} was started and after 30 s is spawn scheduled`, 1, "Again"],
     [`${rosterUnit} was running and after 90 s is activating`, 1, "Again"],
     [`${rosterUnit} was running and after 0 s is not running`, 1, "Again"],
     [
-      `${rosterUnit} was started and this machine's user services did not answer whether it is running`,
+      `${rosterUnit} was started and after 30 s this machine's user services did not answer whether it is running`,
       1,
       "Again",
     ],
@@ -439,7 +451,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   NotLive: [
     [
-      "the runner's service is running, and after 90 s the site still sees no runner of acme/widgets live",
+      "the runner's service is running as process 69807, and after 90 s the site still sees no runner of acme/widgets live",
       1,
       "Again",
     ],
@@ -683,21 +695,45 @@ test("a registration the package refused for what running again does not mend is
   ]);
 });
 
+const picksUp =
+  "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
+
 test("a service manager that did not answer is said as that, and never as a service that is not running", () => {
-  const [, stopped, , , unasked, silent] = runnerStops.Inactive.map((stop) =>
+  const said = runnerStops.Inactive.map((stop) =>
     setupRunnerStopSaid(stop, widgets),
   );
-  const picksUp =
-    "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
-  expect(stopped?.tell).toBe(
-    `The runner's service was started and is not running, so the runner is not set up yet. ${picksUp}`,
-  );
-  for (const one of [unasked, silent]) {
+  for (const one of [said[8], said[9]]) {
     expect(one?.tell).toBe(
       `This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${picksUp}`,
     );
     expect(one?.found).not.toContain("not running");
   }
+});
+
+test("a service not running is told by its state and its last exit, with what its own package means by that status: no restart, a restart on a release it installed, or a restart after its interval for any other, and no exit where it never exited", () => {
+  const tells = runnerStops.Inactive.slice(0, 6).map(
+    (stop) => setupRunnerStopSaid(stop, widgets).tell,
+  );
+  const was = (state: string, exited: string) =>
+    `The runner's service was started and is ${state}, so the runner is not set up yet. ${exited} ${picksUp}`;
+  const unrestarted = (status: number) =>
+    `It last exited with status ${String(status)}, which it exits with where chuggy denied its registration or its settings leave it no work, and it is not started again.`;
+  const updated =
+    "It last exited with status 75, which it exits with once it has installed a new release of itself, and it is started again on that release.";
+  expect(tells).toEqual([
+    was(
+      "failed",
+      "It last exited with status 1, and it is started again 10 s after each such exit.",
+    ),
+    was(
+      "not running",
+      "Its service manager gives no status it last exited with.",
+    ),
+    was("activating (auto-restart)", unrestarted(3)),
+    was("activating (auto-restart)", updated),
+    was("not running", unrestarted(0)),
+    was("spawn scheduled", updated),
+  ]);
 });
 
 test("a user the package bars from docker is told the package's reason and who they are, then its own way out: the settings changed where they name docker, and podman answering where there are none", () => {

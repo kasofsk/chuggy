@@ -32,6 +32,7 @@ import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
   setupChatHostWrites,
   setupLivePollMs,
+  setupServiceUpWaitMs,
   setupMintLifetimeSecs,
   setupRunnerWrites,
   setupWritePorts,
@@ -57,6 +58,7 @@ import {
   boxAgentLabel,
   boxAgentText,
   boxAgents,
+  boxPid,
   boxChatFile,
   boxChatUnitName,
   boxFolder,
@@ -238,7 +240,7 @@ test("on a machine with an engine, a Claude login and the runner package and not
     "active",
     "reload",
     "start",
-    "active",
+    "shown",
   ]);
   expect(JSON.parse(machine.box.paths.get(boxSettings) ?? "")).toEqual({
     engine: "docker",
@@ -1510,7 +1512,7 @@ test("a pool file the site lists no pool for is said and registered over, and a 
     "active",
     "reload",
     "restart",
-    "active",
+    "shown",
   ]);
   expect(writes(machine)).toEqual([mint, mint]);
 });
@@ -1629,7 +1631,7 @@ test("a service found running and not set to start at login is set to by the one
   machine.box.acts.length = 0;
   const done = await ran(machine);
   expect(done.lines.slice(-4)).toEqual([found.linger, did.enabled, live, next]);
-  const started = ["enabled", "active", "reload", "start", "active"];
+  const started = ["enabled", "active", "reload", "start", "shown"];
   expect(machine.box.acts.slice(-5)).toEqual(started);
   expect(machine.box.units.get(unit)).toEqual({ enabled: true, active: true });
 
@@ -1745,18 +1747,65 @@ test("lingering already on is left, one that is off or unread is turned on, and 
   );
 });
 
-test("a service that was started and is not running is a stop that says the state the service manager gave", async () => {
+/** What the tell says of a service not running after its last exit, by what its package means by the status. */
+const exitedSaid = {
+  unrestarted: (status: number) =>
+    `It last exited with status ${String(status)}, which it exits with where chuggy denied its registration or its settings leave it no work, and it is not started again.`,
+  updated:
+    "It last exited with status 75, which it exits with once it has installed a new release of itself, and it is started again on that release.",
+  other: (status: number) =>
+    `It last exited with status ${String(status)}, and it is started again 10 s after each such exit.`,
+};
+
+test("a service that was started and is not running is asked after every poll for the service's own wait, and only then is a stop that says how long it waited, the state the service manager gave and its last exit with what the package means by it", async () => {
   const machine = await fresh();
   machine.box.stays = false;
+  machine.box.exit = 3;
+  const before = machine.box.acts.length;
+  const beganMs = machine.nowMs;
   const done = await ran(machine);
   expect(done.exit).toBe(1);
   expect(done.lines.slice(-5)).toEqual([
     did.started,
-    `found: ${unit} was started and is inactive`,
-    `tell: The runner's service was started and is not running, so the runner is not set up yet. ${pickedUp}`,
+    `found: ${unit} was started and after 30 s is inactive (dead)`,
+    `tell: The runner's service was started and is inactive (dead), so the runner is not set up yet. ${exitedSaid.unrestarted(3)} ${pickedUp}`,
     again(asksAgain),
     stop,
   ]);
+  const looks = setupServiceUpWaitMs / setupLivePollMs + 1;
+  const acts = machine.box.acts.slice(before);
+  expect(acts.slice(acts.indexOf("start") + 1)).toEqual(
+    Array<string>(looks).fill("shown"),
+  );
+  expect(machine.nowMs - beganMs).toBeGreaterThanOrEqual(setupServiceUpWaitMs);
+});
+
+test("the service's own wait is no longer than the run's", async () => {
+  const machine = await fresh();
+  machine.box.stays = false;
+  const done = await ran(machine, [...runner, "--wait-secs", "7"]);
+  expect(done.lines.at(-4)).toBe(
+    `found: ${unit} was started and after 7 s is inactive (dead)`,
+  );
+  expect(done.lines.at(-3)).toContain(
+    "Its service manager gives no status it last exited with.",
+  );
+  expect(machine.box.acts.slice(-5)).toEqual([
+    "start",
+    "shown",
+    "shown",
+    "shown",
+    "shown",
+  ]);
+});
+
+test("a unit still activating at its first look after its start is asked again and goes on to live with no stop", async () => {
+  const machine = await fresh();
+  machine.box.spawns = 1;
+  const done = await ran(machine);
+  expect(done.exit).toBe(0);
+  expect(done.lines.slice(-2)).toEqual([live, next]);
+  expect(machine.box.acts.slice(-3)).toEqual(["start", "shown", "shown"]);
 });
 
 /** How many times a run asked the site how the project's runners stand: every read of the session placement but the first, which asks where the person's chats run before anything is done. */
@@ -1774,14 +1823,14 @@ test("the site is asked until it sees the runner live and no longer than the wai
   const done = await ran(machine, [...runner, "--wait-secs", "7"]);
   expect(done.exit).toBe(1);
   expect(done.lines.slice(-4)).toEqual([
-    "found: the runner's service is running, and after 7 s the site still sees no runner of acme/widgets live",
+    `found: the runner's service is running as process ${String(boxPid)}, and after 7 s the site still sees no runner of acme/widgets live`,
     "tell: The runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
     again("if the person asks to look again"),
     stop,
   ]);
   expect(polls(machine)).toBe(4);
   expect(machine.nowMs - before).toBe(3 * setupLivePollMs);
-  expect(machine.box.acts.slice(-3)).toEqual(["start", "active", "active"]);
+  expect(machine.box.acts.slice(-3)).toEqual(["start", "shown", "shown"]);
 
   machine.sent.length = 0;
   expect((await ran(machine, [...runner, "--wait-secs", "0"])).exit).toBe(1);
@@ -1790,7 +1839,7 @@ test("the site is asked until it sees the runner live and no longer than the wai
   for (const held of machine.world.projects) held.runner = "Unregistered";
   const unlisted = await ran(machine, [...runner, "--wait-secs", "0"]);
   expect(unlisted.lines.at(-4)).toBe(
-    "found: the runner's service is running, and after 0 s the site lists no runner of acme/widgets",
+    `found: the runner's service is running as process ${String(boxPid)}, and after 0 s the site lists no runner of acme/widgets`,
   );
   for (const held of machine.world.projects) held.runner = "Offline";
 
@@ -1821,48 +1870,55 @@ test("a service that stops while the site is waited on is what the run says when
     const held = machine.box.units.get(unit);
     if (polls(machine) === 2 && held !== undefined) held.active = false;
   };
+  machine.box.exit = 75;
   const done = await ran(machine, [...runner, "--wait-secs", "7"]);
   expect(done.exit).toBe(1);
   expect(done.lines.slice(-5)).toEqual([
     did.started,
-    `found: ${unit} was running and after 7 s is inactive`,
-    `tell: The runner's service was started and is not running, so the runner is not set up yet. ${pickedUp}`,
+    `found: ${unit} was running and after 7 s is activating (auto-restart)`,
+    `tell: The runner's service was started and is activating (auto-restart), so the runner is not set up yet. ${exitedSaid.updated} ${pickedUp}`,
     again(asksAgain),
     stop,
   ]);
   expect(polls(machine)).toBe(4);
-  expect(machine.box.acts.slice(-3)).toEqual(["start", "active", "active"]);
+  expect(machine.box.acts.slice(-3)).toEqual(["start", "shown", "shown"]);
 });
 
-test("a service manager that does not answer whether the service is running, or ends badly having printed nothing as one that cannot reach the person's services does, is said as that, straight after the start and after the wait, and never as a service that is not running", async () => {
+test("a service manager that does not answer whether the service is running, or ends badly having printed nothing as one that cannot reach the person's services does, is said as that, after the service's own wait and after the site's, and never as a service that is not running", async () => {
   const silentFrom = async (ask: number, silent: SetupChildEnded) => {
     const machine = await fresh();
     machine.box.polls = false;
     let asked = 0;
-    machine.box.answers.set("active", (): SetupChildEnded => {
+    machine.box.answers.set("shown", (): SetupChildEnded => {
       asked += 1;
-      if (asked >= ask) return silent;
-      return asked === 1 ? exited(3, "inactive\n") : exited(0, "active\n");
+      return asked >= ask
+        ? silent
+        : exited(
+            0,
+            `ActiveState=active\nSubState=running\nMainPID=${String(boxPid)}\nExecMainStatus=0\n`,
+          );
     });
     const done = await ran(machine, [...runner, "--wait-secs", "3"]);
-    expect([done.exit, asked]).toEqual([1, ask]);
+    expect(done.exit).toBe(1);
     expect(done.lines.slice(-3)).toEqual([
       `tell: This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${pickedUp}`,
       again(asksAgain),
       stop,
     ]);
-    return done.lines.at(-4);
+    return [done.lines.at(-4), asked];
   };
   const unanswered =
     "this machine's user services did not answer whether it is running";
   const busless = exited(1, "", "Failed to connect to bus: No medium found\n");
   for (const silent of [{ ended: "Unended" } as const, busless]) {
-    expect(await silentFrom(2, silent)).toBe(
-      `found: ${unit} was started and ${unanswered}`,
-    );
-    expect(await silentFrom(3, silent)).toBe(
+    expect(await silentFrom(1, silent)).toEqual([
+      `found: ${unit} was started and after 3 s ${unanswered}`,
+      2,
+    ]);
+    expect(await silentFrom(2, silent)).toEqual([
       `found: ${unit} was running and after 3 s ${unanswered}`,
-    );
+      2,
+    ]);
   }
 });
 
@@ -2077,6 +2133,45 @@ test("on a Mac runner takes Linux's path through chuggy-darwin: settings with no
     network: "chuggy-jobs",
   });
   expect(machine.box.paths.has(boxSettings)).toBe(false);
+});
+
+test("on a Mac an agent launchd has not yet spawned when it is first asked after its load is asked again, every poll, and goes on to live with no stop, having run only further prints", async () => {
+  const machine = await mac();
+  machine.box.spawns = 2;
+  const done = await ran(machine);
+  expect(done.exit).toBe(0);
+  expect(done.lines.slice(-3)).toEqual([live, colima, next]);
+  const print = [
+    ["launchctl", "print", "gui/1000"],
+    ["launchctl", "print", `gui/1000/${agent}`],
+  ];
+  expect(machine.box.ran.filter((run) => run[0] === "launchctl")).toEqual([
+    ...print,
+    ["launchctl", "bootout", `gui/1000/${agent}`],
+    ["launchctl", "bootstrap", "gui/1000", `${boxAgents}/${agent}.plist`],
+    ...print,
+    ...print,
+    ...print,
+  ]);
+});
+
+test("on a Mac an agent not running after its load is a stop once the service's own wait is out, saying its state and its last exit by what chuggy-darwin means by it, and any status it gives no meaning as a number", async () => {
+  const stopped = async (exit: number) => {
+    const machine = await mac();
+    machine.box.stays = false;
+    machine.box.exit = exit;
+    const done = await ran(machine);
+    expect(done.exit).toBe(1);
+    expect(done.lines.at(-4)).toBe(
+      `found: ${agent} was started and after 30 s is not running`,
+    );
+    return done.lines.at(-3);
+  };
+  const tell = (exited: string) =>
+    `tell: The runner's service was started and is not running, so the runner is not set up yet. ${exited} ${pickedUp}`;
+  expect(await stopped(75)).toBe(tell(exitedSaid.updated));
+  expect(await stopped(0)).toBe(tell(exitedSaid.unrestarted(0)));
+  expect(await stopped(78)).toBe(tell(exitedSaid.other(78)));
 });
 
 test("on a Mac a second run finds the agent running and loads nothing, and a person not at the screen has the agent loaded into their background session", async () => {
@@ -2905,7 +3000,7 @@ test("chat-host makes this machine the person's chat host in the workspace on th
     "active",
     "reload",
     "start",
-    "active",
+    "shown",
   ]);
   expect(writes(machine)).toEqual([chatMint]);
   expect(projectAsked(machine)).toBe(false);

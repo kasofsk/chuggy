@@ -38,6 +38,7 @@ import {
   setupSettingsRead,
   setupSettingsText,
   setupUnitIs,
+  setupUnitShown,
   setupUnitOf,
 } from "../app/core/setupRunnerMachine.ts";
 import type { SetupSettingsNamed } from "../app/core/setupRunnerMachine.ts";
@@ -941,7 +942,75 @@ test("a unit is what it is asked to be where the service manager ends well, the 
     });
 });
 
-test("an agent is loaded into the person's desktop session where launchd answers for it and into their background session otherwise, is running where launchd says its state is, and said nothing where launchctl did not run", async () => {
+test("a unit is running where systemd shows it active, its state is its active state beside its sub-state, its process is its main pid, and its last exit is said only where no main process runs and it is not 0; one that ends badly or shows no state did not answer", async () => {
+  const unit = { name: "u.service", path: `${boxUnits}/u.service` };
+  const asked = async (answer: SetupChildEnded) => {
+    const machine = setupMachine();
+    machine.box.answers.set("shown", answer);
+    const said = await setupUnitShown(machine.ports(), unit);
+    expect(machine.box.ran).toEqual([
+      [
+        "systemctl",
+        "--user",
+        "show",
+        "u.service",
+        "--property=ActiveState,SubState,MainPID,ExecMainStatus",
+      ],
+    ]);
+    return said;
+  };
+  const shown = (active: string, sub: string, pid: string, status: string) =>
+    asked(
+      exited(
+        0,
+        `ActiveState=${active}\nSubState=${sub}\nMainPID=${pid}\nExecMainStatus=${status}\n`,
+      ),
+    );
+  expect(await shown("active", "running", "69807", "0")).toEqual({
+    is: true,
+    said: "active (running)",
+    pid: 69807,
+    exit: undefined,
+  });
+  expect(await shown("activating", "auto-restart", "0", "75")).toEqual({
+    is: false,
+    said: "activating (auto-restart)",
+    pid: undefined,
+    exit: 75,
+  });
+  expect(await shown("inactive", "dead", "0", "0")).toEqual({
+    is: false,
+    said: "inactive (dead)",
+    pid: undefined,
+    exit: undefined,
+  });
+  expect(await shown("inactive", "dead", "0", "3")).toEqual({
+    is: false,
+    said: "inactive (dead)",
+    pid: undefined,
+    exit: 3,
+  });
+  expect(await shown("failed", "rm -rf ~", "0", "x")).toEqual({
+    is: false,
+    said: "failed",
+    pid: undefined,
+    exit: undefined,
+  });
+  const silent = {
+    is: false,
+    said: undefined,
+    pid: undefined,
+    exit: undefined,
+  };
+  for (const ended of [
+    exited(1, "", "Failed to connect to bus: No medium found\n"),
+    exited(0, "\n"),
+    { ended: "Unended" } as const,
+  ])
+    expect(await asked(ended)).toEqual(silent);
+});
+
+test("an agent is loaded into the person's desktop session where launchd answers for it and into their background session otherwise", async () => {
   const domain = async (desktop: boolean) => {
     const machine = setupMachine();
     machine.platform = "darwin";
@@ -956,42 +1025,94 @@ test("an agent is loaded into the person's desktop session where launchd answers
     "user/1000",
     [["launchctl", "print", "gui/1000"]],
   ]);
-  const agent = {
+});
+
+/** What `setupAgentIs` reads of an agent from launchctl answering `answer`, having run only the agent's `print`. */
+async function agentAsked(answer: SetupChildEnded) {
+  const machine = setupMachine();
+  machine.box.answers.set("agent", answer);
+  const said = await setupAgentIs(machine.ports(), "gui/1000", {
     name: "chuggy-darwin.x",
     path: `${boxAgents}/chuggy-darwin.x.plist`,
-  };
-  const asked = async (answer: SetupChildEnded) => {
-    const machine = setupMachine();
-    machine.box.answers.set("agent", answer);
-    const said = await setupAgentIs(machine.ports(), "gui/1000", agent);
-    expect(machine.box.ran).toEqual([
-      ["launchctl", "print", "gui/1000/chuggy-darwin.x"],
-    ]);
-    return said;
-  };
+  });
+  expect(machine.box.ran).toEqual([
+    ["launchctl", "print", "gui/1000/chuggy-darwin.x"],
+  ]);
+  return said;
+}
+
+/** A running agent's `print`, as captured from chuggy-darwin 0.25.0 and filtered to these keys: its own indented one tab, and a section's in it two. */
+const agentRunning = [
+  "gui/1000/chuggy-darwin.x = {",
+  "\tactive count = 1",
+  "\tstate = running",
+  "\truns = 11",
+  "\tpid = 69807",
+  "\timmediate reason = semaphore",
+  "\tlast exit code = 75: EX_TEMPFAIL",
+  "\t\tstate = active",
+  "\t\tactive count = 1",
+  "}",
+].join("\n");
+
+test("a running agent is running with its pid and its last exit, and a stopped one not running with its last exit, each read from the agent's own keys and never a nested section's", async () => {
+  expect(await agentAsked(exited(0, agentRunning))).toEqual({
+    loaded: true,
+    is: true,
+    said: "running",
+    pid: 69807,
+    exit: 75,
+  });
+  const stopped = agentRunning
+    .replace("\tstate = running", "\tstate = not running")
+    .replace("\tpid = 69807\n", "")
+    .replace("75: EX_TEMPFAIL", "1: Operation not permitted");
+  expect(await agentAsked(exited(0, stopped))).toEqual({
+    loaded: true,
+    is: false,
+    said: "not running",
+    pid: undefined,
+    exit: 1,
+  });
+  const unworded = agentRunning.replace(
+    "\tstate = running",
+    "\tstate = rm -rf ~",
+  );
+  expect(await agentAsked(exited(0, unworded))).toMatchObject({
+    is: false,
+    said: "",
+  });
+  const unexited = agentRunning.replace("75: EX_TEMPFAIL", "(never exited)");
+  expect(await agentAsked(exited(0, unexited))).toMatchObject({
+    exit: undefined,
+  });
+});
+
+test("an agent's state is kept whole, one launchd does not know is not loaded, and launchctl that did not run said nothing", async () => {
   const printed = (state: string) =>
     exited(
       0,
       `gui/1000/chuggy-darwin.x = {\n\tactive count = 1\n\tstate = ${state}\n}\n`,
     );
-  expect(await asked(printed("running"))).toEqual({
-    loaded: true,
-    is: true,
-    said: "running",
-  });
-  expect(await asked(printed("spawn scheduled"))).toEqual({
-    loaded: true,
-    is: false,
-    said: "",
-  });
-  expect(await asked(exited(113, "", "Could not find service\n"))).toEqual({
+  for (const state of ["spawn scheduled", "not running"])
+    expect(await agentAsked(printed(state))).toEqual({
+      loaded: true,
+      is: false,
+      said: state,
+      pid: undefined,
+      exit: undefined,
+    });
+  const unloaded = {
     loaded: false,
     is: false,
-    said: "",
-  });
-  expect(await asked({ ended: "Unstarted" })).toEqual({
-    loaded: false,
-    is: false,
+    pid: undefined,
+    exit: undefined,
+  };
+  expect(await agentAsked(exited(113, "", "Could not find service\n"))).toEqual(
+    { ...unloaded, said: "" },
+  );
+  expect(await agentAsked({ ended: "Unstarted" })).toEqual({
+    ...unloaded,
     said: undefined,
   });
 });

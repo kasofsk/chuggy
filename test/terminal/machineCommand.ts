@@ -359,14 +359,27 @@ function unitSaid(unit: string, asks: "enabled" | "active"): number {
   return said(is === true ? 0 : 3, is === true ? "active\n" : "inactive\n");
 }
 
+/** How systemd shows a unit's state, its main process and the status that last exited with, where the case has none exit. */
+function unitShown(unit: string): number {
+  const is = held<MachineState>(machineFiles.state).units[unit]?.active;
+  return said(
+    0,
+    is === true
+      ? "ActiveState=active\nSubState=running\nMainPID=4242\nExecMainStatus=0\n"
+      : "ActiveState=inactive\nSubState=dead\nMainPID=0\nExecMainStatus=0\n",
+  );
+}
+
 function systemctl(): number {
   const [verb = "", ...rest] = argv.filter((word) => word !== "--user");
   const unit = rest.at(-1) ?? "";
   switch (verb) {
     case "show":
-      return knobs.services
+      if (!knobs.services)
+        return said(1, "", "Failed to connect to bus: No medium found\n");
+      return rest[0] === "--property"
         ? said(0, "Version=255.4-1ubuntu8\n")
-        : said(1, "", "Failed to connect to bus: No medium found\n");
+        : unitShown(rest[0] ?? "");
     case "daemon-reload":
       return failing("reload") ?? said(0);
     case "is-enabled":
