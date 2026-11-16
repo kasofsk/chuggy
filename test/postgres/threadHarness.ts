@@ -129,9 +129,7 @@ export function threadRigMember(
   rig: ThreadRig,
   partition: Partition,
   label: string,
-  access: ReadonlySet<
-    "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch"
-  > = threadRigAccess,
+  access: ReadonlySet<"Read" | "Mutate" | "DispatchTicket"> = threadRigAccess,
 ): ThreadRigMember {
   const principal = oidcPrincipal(
     threadRigIssuer,
@@ -177,9 +175,7 @@ export function threadRigMemberAlso(
   rig: ThreadRig,
   partition: Partition,
   member: ThreadRigMember,
-  access: ReadonlySet<
-    "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch"
-  > = threadRigAccess,
+  access: ReadonlySet<"Read" | "Mutate" | "DispatchTicket"> = threadRigAccess,
 ): void {
   rig.sessions.harness.access.grant({
     partition,

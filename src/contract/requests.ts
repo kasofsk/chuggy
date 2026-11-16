@@ -12,7 +12,6 @@ import { z } from "zod";
 import {
   countSchema,
   digestSchema,
-  dispatchViewSchemaVersion,
   forgeAuthorizationTextCharsMax,
   forgeAuthorizationVerifierCharsMax,
   forgeAuthorizationVerifierCharsMin,
@@ -123,20 +122,6 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
     mutation: z.literal("ManualDispatch"),
     ticket: ticketNumberSchema,
     expectedTicketVersion: countSchema,
-  }),
-  z.strictObject({
-    mutation: z.literal("ProposeDispatch"),
-    ticket: ticketNumberSchema,
-    expectedTicketVersion: countSchema,
-    observedViewToken: z.strictObject({
-      tenant: bodyIdentitySchema,
-      project: bodyIdentitySchema,
-      recoveryEpoch: bodyIdentitySchema,
-      schemaVersion: z.literal(dispatchViewSchemaVersion),
-      watermark: countSchema,
-      digest: digestSchema,
-    }),
-    selectorDecisionReference: z.string(),
   }),
 ]);
 

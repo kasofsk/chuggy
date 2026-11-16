@@ -16,7 +16,6 @@ import {
   type PrincipalAuthentication,
   type UnrunDeletions,
 } from "../adapters/http/server.ts";
-import type { TicketTakes } from "../interpreter/ticketTake.ts";
 import {
   projectResourceReader,
   threadLiveFramed,
@@ -155,7 +154,6 @@ import type {
 } from "../interpreter/repositoryConfiguration.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 import type { ProjectInbox } from "../interpreter/projectInbox.ts";
-import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
@@ -272,12 +270,6 @@ const poolPlaneMemoryVariable = "CHUG_POOL_PLANE_MEMORY_MIB";
 const threadCredentialSlotVariable = "CHUG_API_THREAD_CREDENTIAL_SLOT";
 const selectorReviewDatabaseUrlVariable =
   "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
-/**
- * The subject the site's selector authenticates as under this API's issuer.
- * Naming one grants the selector each project created here; naming none leaves
- * granting it to an operator.
- */
-const selectorSubjectVariable = "CHUG_API_SELECTOR_SUBJECT";
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
@@ -484,27 +476,17 @@ export function nativeActionReports(
   });
 }
 
-/** The site's selector as the authority knows it, or nothing where this deployment names none. */
-function nativeSelectorPrincipal(issuer: string): Principal | undefined {
-  const subject = process.env[selectorSubjectVariable];
-  if (subject === undefined || subject.length === 0) return undefined;
-  return oidcPrincipal(issuer, subject);
-}
-
-/** The project inbox, knowing the site's selector under this API's issuer as the agent no person's approval is asked of. */
+/** The project inbox over the API pool, reading held decisions through the review pool. */
 function nativeProjectInbox(
   pools: NativePools,
   access: ProjectAccess,
   usageResume: TicketUsageResumeBounds | undefined,
-  issuer: string,
 ): ProjectInbox {
-  const selector = nativeSelectorPrincipal(issuer);
   return composeProjectInbox(
     pools.pool,
     pools.selectorReviewPool,
     access,
     usageResume,
-    selector === undefined ? {} : { selector },
   );
 }
 
@@ -514,15 +496,6 @@ function nativeHttpLimitsUploading(uploadBytesMax: number): NativeHttpLimits {
     ...nativeHttpLimitsDefault,
     projectArtifactUploadBytesMax: uploadBytesMax,
   };
-}
-
-/** A ticket's takes and returns, refusing the site's selector under this API's issuer. */
-function nativeTicketTakes(
-  pool: pg.Pool,
-  access: ProjectAccess,
-  issuer: string,
-): TicketTakes {
-  return composeTicketTakes(pool, access, nativeSelectorPrincipal(issuer));
 }
 
 /** What writes the authority's tuples, or nothing where this deployment names no write port. */
@@ -1542,16 +1515,13 @@ export async function nativeDatabasesReady(
  * The lead's read side over the API pool and the artifact volume, taking both
  * pools and choosing for the reason `nativeAuthentication` does: only the API
  * role holds `EXECUTE` on the read doors, and choosing here is what lets a case
- * observe which pool was reached. The site's selector is named under `issuer`
- * where this deployment names one, so a read can say it may not read a project.
+ * observe which pool was reached.
  */
 export function nativeLeadPorts(
   pools: NativePools,
   artifacts: SessionStoreReadPort,
-  issuer: string,
 ): NativeLeadPorts {
   const leads = postgresLeadReads(pools.pool);
-  const selector = nativeSelectorPrincipal(issuer);
   return {
     leads,
     store: artifacts,
@@ -1560,7 +1530,6 @@ export function nativeLeadPorts(
     history: leads,
     settings: postgresSelectorResolvedSettings(pools.pool),
     candidates: postgresDispatchViews(pools.pool),
-    ...(selector === undefined ? {} : { selector }),
   };
 }
 
@@ -1664,7 +1633,7 @@ async function main(): Promise<void> {
   const usageResume = nativeUsageResumeBounds();
   const web = nativeComposedWeb(pools, keying, access, artifacts, {
     repositories: forge.repositories,
-    leads: nativeLeadPorts(pools, artifacts, authenticationConfig.issuer),
+    leads: nativeLeadPorts(pools, artifacts),
     threads,
     usageResume,
   });
@@ -1688,7 +1657,6 @@ async function main(): Promise<void> {
       grants === undefined || erasure === undefined
         ? undefined
         : { grants, erasure },
-      nativeSelectorPrincipal(authenticationConfig.issuer),
     ),
     composeExecutionPlacement(pool, access),
     composeSessionPlacement(pool, access),
@@ -1701,12 +1669,12 @@ async function main(): Promise<void> {
     composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
     composeMemberChat(pool, access, threads),
-    nativeProjectInbox(pools, access, usageResume, authenticationConfig.issuer),
+    nativeProjectInbox(pools, access, usageResume),
     postgresAgentAccounts(pool),
     runnerReleasesPinned(),
     nativeLandingQueues(pools, access),
     nativeUnrunDeletions(pool, access, erasure),
-    nativeTicketTakes(pool, access, authenticationConfig.issuer),
+    composeTicketTakes(pool, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

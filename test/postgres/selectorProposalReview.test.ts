@@ -399,7 +399,7 @@ async function deliveryRow(decision: string) {
 }
 
 test("a reader who may not dispatch neither sees nor answers a held proposal", async () => {
-  const on = await served(new Set(["Read", "ProposeDispatch"]));
+  const on = await served(new Set(["Read"]));
   try {
     const held = await heldDecision(on, "proposal-stranger");
     assert.equal((await proposals(on, held.partition)).status, 404);

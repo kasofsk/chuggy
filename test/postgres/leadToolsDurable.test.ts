@@ -714,10 +714,10 @@ test("a session provisioned from an issuer and a subject is the membership's own
   harness.access.grant({
     partition,
     principal,
-    access: new Set(["Read", "Mutate", "ProposeDispatch"] as const),
+    access: new Set(["Read", "Mutate"] as const),
   });
   assert.notEqual(
-    await harness.access.authorize(principal, partition, "ProposeDispatch"),
+    await harness.access.authorize(principal, partition, "Mutate"),
     undefined,
     "a one-character difference here is a session refused NotFound with nothing saying why",
   );

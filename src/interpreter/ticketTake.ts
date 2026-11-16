@@ -4,12 +4,9 @@
  *
  * WORK MOVES ONTO A MEMBER'S RUNNER AND ACCOUNT ONLY BY THAT MEMBER'S OWN ACT.
  * A take names no member: the store records the caller's own authority, so no
- * door here makes anyone but the caller an owner. The site's selector is the
- * lead's identity, a developer on every project with a lead and authorized as
- * a member, so its kind cannot refuse it; it is refused by name before its
- * permit is asked. A thread's bearer reaches this door as its owner, since a
- * thread's session acts under its member's own principal; every other session
- * bearer is refused at the route.
+ * door here makes anyone but the caller an owner. A thread's bearer reaches
+ * this door as its owner, since a thread's session acts under its member's own
+ * principal; every other session bearer is refused at the route.
  *
  * THE PERMIT IS `Mutate`, the one filing a draft asks, since filing is what
  * makes a member an owner and a take is that same ownership of work already
@@ -30,7 +27,7 @@ import type { Partition } from "./projectStore.ts";
 /** Which of the two acts: taking a ticket, or returning it to its creator. */
 export type TicketTakeKind = "Take" | "Return";
 
-/** Why the store wrote nothing, beside a ticket it does not hold: every refusal but the agent's, which is decided here. */
+/** Why the store wrote nothing, beside a ticket it does not hold. */
 export const ticketTakeStoreRefusals = [
   "Unreleased",
   "TicketDone",
@@ -80,15 +77,9 @@ export interface TicketTakes {
   ): Promise<TicketTakeWritten>;
 }
 
-/** The principals that are agents rather than people, which is the site's selector where the deployment names one. */
-export interface TicketTakeAgents {
-  readonly selector?: Principal;
-}
-
 async function ticketTakesWrite(
   access: ProjectAccess,
   store: TicketTakeStore,
-  agents: TicketTakeAgents,
   request: {
     readonly principal: Principal;
     readonly partition: Partition;
@@ -99,8 +90,6 @@ async function ticketTakesWrite(
   const { principal, partition, ticket, kind } = request;
   if ((await access.authorize(principal, partition, "Read")) === undefined)
     return { result: "NotFound" };
-  if (principal === agents.selector)
-    return { result: "Refused", reason: "TakerNotAPerson" };
   const authority = await access.authorize(principal, partition, "Mutate");
   if (authority === undefined) return { result: "Forbidden" };
   const stored = await store.write(partition, ticket, kind, authority);
@@ -123,11 +112,10 @@ async function ticketTakesWrite(
 export function ticketTakes(
   access: ProjectAccess,
   store: TicketTakeStore,
-  agents: TicketTakeAgents,
 ): TicketTakes {
   return {
     write: (principal, partition, ticket, kind) =>
-      ticketTakesWrite(access, store, agents, {
+      ticketTakesWrite(access, store, {
         principal,
         partition,
         ticket,

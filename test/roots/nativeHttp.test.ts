@@ -138,7 +138,6 @@ const leadPortsProgram = `
   const ports = root.nativeLeadPorts(
     pools,
     { readBatch: async () => ({ read: 'NotFound' }) },
-    'https://issuer.example',
   );
   const partition = { tenant: 'tenant', project: 'project' };
   await ports.leads.standing(partition, 1);
