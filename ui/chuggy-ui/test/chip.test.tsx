@@ -255,7 +255,7 @@ test("every small state label's word is sized by every state's word, whatever it
     ),
   ).toStrictEqual([
     ["Done", every],
-    ["Landing", every],
+    ["Finalizing", every],
     ["Ready", every],
   ]);
   expect(

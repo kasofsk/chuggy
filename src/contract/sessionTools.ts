@@ -7,29 +7,42 @@
  * schemas are not: those are the zod raw shapes the agent runtime's own
  * `tool()` takes, and they live in the image beside the handlers.
  *
- * TWO CHANNELS, TOLD APART BY WHAT THEY WRITE. A project tool is a command a
- * console user has: it goes over HTTP to the API presenting the pod's session
- * bearer, the API resolves that bearer to the session's principal and
- * authorizes it through the project membership exactly as it authorizes a
- * human's, and the operation row records which session issued it. The API
- * also confines that bearer to its own session's tenant and project, answering
- * another project's routes 404 and a tenant's or the site's 403. A decision
- * tool writes nothing at all: it accumulates in the pod and becomes the turn's
- * answer, which the selector runtime still reads and acts on under its own
- * fence, so the runtime remains the single writer of a lead's dispatch and of
- * the refusal ledger. An offer tool writes nothing and reaches no route
+ * THE CHANNELS ARE TOLD APART BY WHAT THEY WRITE AND WHOSE BEARER THEY PRESENT.
+ * A project tool is a command a console user has: it goes over HTTP to the API
+ * presenting the pod's session bearer, the API resolves that bearer to the
+ * session's principal and authorizes it through the project membership
+ * exactly as it authorizes a human's, and the operation row records which
+ * session issued it. The API also confines that bearer to its own session's
+ * tenant and project, answering another project's routes 404 and a tenant's
+ * or the site's 403, and to the routes its session's capabilities admit,
+ * answering one they do not 404. A person's own agent's tool presents no
+ * session bearer: it reaches the API as that person, authorized as the
+ * console's own call is, and an agent-account tool's route is that person's
+ * own, at no tenant and no project, which every session bearer is refused. A
+ * decision tool writes nothing at all: it accumulates in the pod and becomes
+ * the turn's answer, which the selector runtime still reads and acts on under
+ * its own fence, so the runtime remains the single writer of a lead's dispatch
+ * and of the refusal ledger. An offer tool writes nothing and reaches no route
  * either: its call stands in the thread's transcript like any other, and what
  * it offers is done by the member, as the member, or not at all.
  *
- * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
- * by the agent runtime inside the pod, and the pod is the thing being
- * controlled. Two controls that are not the pod's are the membership,
- * enforced by the database when it authorizes a project access, and the
- * decision controls the selector applies to a finished turn — and the second is
- * post-hoc: the tool has already run and its command has already landed, and
- * what the selector refuses is the decision that used it. A third is the API's
- * confinement of a session bearer to its own session's tenant and project. A
- * control described as stronger than it is, is worse than none.
+ * A ROSTER IS A CONTROL AS FAR AS THE API HOLDS IT, WHICH IS BY ROUTE AND
+ * METHOD. The agent runtime enforces a roster inside the pod, and the pod is
+ * the thing being controlled; the API admits a session bearer to a read of
+ * its own scope under that scope's read capability, and otherwise only to the
+ * routes some tool of its session row's capabilities calls, so a call to a
+ * route none of them calls is refused. A route two capabilities' tools share
+ * admits either one's whole body: `release_draft` posts an operation, so a
+ * session holding `DraftAuthor` without `DraftOriginate` or `TicketDispatch`,
+ * a lead among them, may still post any operation, `ManualDispatch`,
+ * `RevokeTicket` and `UpdateTicket` among them, and a draft no parent bears,
+ * though no tool its roster holds does. The runtime's own tools reach no
+ * route, and what a roster grants them is the pod's alone. Beside it stand the
+ * membership, enforced by the database when it authorizes a project access,
+ * and the decision controls the selector applies to a finished turn — and the
+ * last is post-hoc: the tool has already run and its command has already
+ * landed, and what the selector refuses is the decision that used it. A control described as stronger than it is, is worse
+ * than none.
  *
  * DERIVED WORK IS A FACT ABOUT THE MAP. `DraftAuthor` carries no bare create: a
  * dependent is filed against a parent that already exists, and a roster holding
@@ -162,6 +175,10 @@ export { selectorProjectOverridesSchema } from "./requests.ts";
 export { selectorSettingsTextCharsMax } from "./http.ts";
 export { leadOfferings, placementRoutes } from "./rosters.ts";
 
+/** What `update_usage_settings`, `retry_paused_agent` and `retire_credential` publish as their arguments' shapes: an agent's settings, written whole, and the agents an account names. */
+export { agentAccountSettingsSchema } from "./requests.ts";
+export { accountAgents } from "./rosters.ts";
+
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
 export const chuggyToolPrefix = "mcp__chuggy__";
@@ -225,12 +242,14 @@ export const chuggyToolTicketLandingBytesMax =
 /**
  * What one work cycle's stack `read_ticket_landings`'s route answers weighs
  * beside its reference: the deepest stack there may be, its cycle and the
- * tickets beneath it at the largest number a ticket's may be, and its comma. A
- * cycle decided unstacked carries none of these and weighs less.
+ * tickets beneath it at the largest number a ticket's may be, its mark of a
+ * re-stack, and its comma. A cycle decided unstacked carries none of the stack's
+ * and weighs less.
  */
 const chuggyToolTicketLandingStackFieldsBytesMax = textUtf8Bytes(
   `${JSON.stringify({
     cycle: Number.MAX_SAFE_INTEGER,
+    restacked: true,
     prepared: "Stacked",
     beneath: Array.from({ length: ticketLandingStackDepthMax }, () => ({
       ticket: Number.MAX_SAFE_INTEGER,
@@ -544,15 +563,20 @@ const chuggyToolRoster = {
    * What a thread does on its member's own word, which no lead roster carries:
    * it files the draft its owner asked for, against no parent, because the
    * member asking is where the work came from; it revokes the ticket its owner
-   * said to end; and it releases the revision of a Pending ticket's draft its
+   * said to end; it takes the ticket its owner said to take onto their own
+   * runner and account, and returns the one they said to give back to its
+   * creator; and it releases the revision of a Pending ticket's draft its
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
-   * exists, and `revoke_ticket`, `update_ticket` and the epic writes, which
-   * the API authorizes as the member's `Mutate`, are here because a thread
-   * holds this capability and a lead does not.
+   * exists, and `revoke_ticket`, `take_ticket`, `return_ticket`,
+   * `update_ticket` and the epic writes, which the API authorizes as the
+   * member's `Mutate`, are here because a thread holds this capability and a
+   * lead does not.
    */
   DraftOriginate: [
     "create_draft",
     "revoke_ticket",
+    "take_ticket",
+    "return_ticket",
     "update_ticket",
     "create_epic",
     "revise_epic",
@@ -596,14 +620,28 @@ const chuggyToolRoster = {
     "read_placement",
     "update_placement",
   ],
+  /**
+   * What a person's own agent reads and does to their agent accounts, which
+   * only that person's agent holds and no session can, because a session must
+   * not change the thresholds it runs under or retire the credential whose
+   * reading pauses it. The API authorizes these tools as it does the console's
+   * own reads and writes of the account, and each acts on the person's own
+   * account, whichever project the server is bound to.
+   */
+  AgentAccounts: [
+    "read_usage",
+    "update_usage_settings",
+    "retry_paused_agent",
+    "retire_credential",
+  ],
 } as const satisfies Readonly<Record<ToolCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
  * session may see of the project, what it may author, what it may decide, what
  * a member's own session reads of them, what a thread may offer its member,
- * and what a person's own agent may do to a project's settings, each named
- * once.
+ * and what a person's own agent may do to a project's settings and to their
+ * own agent accounts, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
@@ -614,6 +652,7 @@ export const allChuggyTools = [
   ...chuggyToolMemberReads,
   ...chuggyToolRoster.ThreadOffer,
   ...chuggyToolRoster.ProjectSettings,
+  ...chuggyToolRoster.AgentAccounts,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -655,6 +694,7 @@ export const builtInToolCapabilities: Readonly<
   MemberRead: [],
   ThreadOffer: [],
   ProjectSettings: [],
+  AgentAccounts: [],
 };
 
 /**
@@ -668,7 +708,7 @@ export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
 export type DependentRelation = (typeof allDependentRelations)[number];
 export const dependentRelationsAdmitted = ["FollowUp"] as const;
 
-/** The public API routes the project tools call; each is the route table's own entry. */
+/** The public API routes the chuggy tools call; each is the route table's own entry. */
 export const chuggyToolRoutes = {
   project: nativeHttpRoutes.project,
   ticket: nativeHttpRoutes.ticket,
@@ -691,6 +731,12 @@ export const chuggyToolRoutes = {
    * `Unchosen`, `Conflicted` or `Unpublished`.
    */
   ticketLandings: nativeHttpRoutes.ticketLandings,
+  /**
+   * What `take_ticket` and `return_ticket` post, taking nothing: the caller
+   * becomes the ticket's owner, or its taker gives it back to its creator.
+   */
+  ticketTake: nativeHttpRoutes.ticketTake,
+  ticketReturn: nativeHttpRoutes.ticketReturn,
   /**
    * What `read_landing_queues` answers, taking nothing: the project's landing
    * queues, one for each reference a Serialized or Stacked ticket lands on, by
@@ -742,4 +788,15 @@ export const chuggyToolRoutes = {
   chatThread: nativeHttpRoutes.chatThread,
   personalRunner: nativeHttpRoutes.personalRunner,
   chatHost: nativeHttpRoutes.chatHost,
+  /**
+   * What a person's own agent reads and writes of their own agent accounts,
+   * each the caller's own, at no tenant and no project: `read_usage` every
+   * agent's readings, pause and credentials, `update_usage_settings` an
+   * agent's settings, `retry_paused_agent` a press, and `retire_credential`
+   * one credential.
+   */
+  agentAccounts: nativeHttpRoutes.agentAccounts,
+  agentAccountSettings: nativeHttpRoutes.agentAccountSettings,
+  agentAccountPresses: nativeHttpRoutes.agentAccountPresses,
+  agentAccountCredential: nativeHttpRoutes.agentAccountCredential,
 } as const;

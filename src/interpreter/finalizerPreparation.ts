@@ -59,9 +59,7 @@
 
 import { z } from "zod";
 
-import type { releaseConfigurationSchema } from "../contract/configurationDocument.ts";
 import { asBoundedText } from "./boundedText.ts";
-import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
   finalizerIdentityCharsMax,
   type CandidateFile,
@@ -81,11 +79,7 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
-import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
-import {
-  catalogSelectedFinalizer,
-  declaredConfigurationIsCatalog,
-} from "./workloadConfiguration.ts";
+import type { StackMember } from "./stackChoice.ts";
 import {
   candidateBytesMax,
   candidateExecutionsMax,
@@ -128,10 +122,6 @@ export const conflictManifestBytesMax = 262_144;
 /** The directory no handoff may write into, because git reads it as the repository itself. */
 export const handoffReservedDirectory = ".git";
 
-/** The pinned revision's field saying whether a person must approve a candidate before it is promoted. */
-export const approvalRequiredField =
-  "finalizationApprovalRequired" satisfies keyof typeof releaseConfigurationSchema.shape;
-
 /** Brands an opaque project-owned artifact identity. */
 export function asProjectArtifactId(value: string): ProjectArtifactId {
   return asBoundedText(
@@ -147,11 +137,7 @@ export interface PinnedConfiguration {
   readonly digest: string;
 }
 
-/**
- * One passed work execution of the ticket, as the durable authority holds it.
- * The canonical configuration is carried so the approval policy is read in this
- * layer rather than by an adapter.
- */
+/** One passed work execution of the ticket, as the durable authority holds it. */
 export interface HandoffWork {
   readonly execution: ExecutionId;
   readonly attempt: AttemptId;
@@ -161,7 +147,6 @@ export interface HandoffWork {
   readonly task: number;
   readonly manifest: ResultManifestId;
   readonly configuration: PinnedConfiguration;
-  readonly canonical: CanonicalConfiguration;
 }
 
 /** One declared handoff artifact, named by the attempt whose storage holds its bytes. */
@@ -189,15 +174,12 @@ export interface HandoffGathering {
   readonly work: readonly HandoffWork[];
   readonly artifacts: readonly HandoffArtifact[];
   readonly sources: readonly HandoffSource[];
-  /** The catalog entries the ticket was released selecting, which a version 1 ticket holds none of. */
-  readonly selection?: ConfigurationSelection;
 }
 
 /** The passed work one finalization promotes, and the revision that work ran under. */
 interface TicketHandoffBase {
   readonly manifests: readonly ResultManifestId[];
   readonly configuration: PinnedConfiguration;
-  readonly approvalRequired: boolean;
 }
 
 /** The one form of authoritative work a finalizer may prepare. */
@@ -217,7 +199,6 @@ export type TicketHandoff =
  */
 export type HandoffRefusal =
   | "ConfigurationDisagrees"
-  | "ApprovalPolicyUnreadable"
   | "PathIsReserved"
   | "PathIsDeclaredTwice"
   | "TooManyArtifacts"
@@ -230,7 +211,6 @@ export type HandoffRefusal =
 /** Every refusal, so a suite iterates rather than restates. */
 export const allHandoffRefusals: readonly HandoffRefusal[] = [
   "ConfigurationDisagrees",
-  "ApprovalPolicyUnreadable",
   "PathIsReserved",
   "PathIsDeclaredTwice",
   "TooManyArtifacts",
@@ -255,35 +235,6 @@ export type HandoffAccepted =
     }
   | { readonly accepted: "NoPassedWork" };
 
-/**
- * Whether the pinned revision asks a person to approve one candidate, or says
- * nothing this module reads. A catalog asks it of the finalizer the ticket's
- * selection lands with, and one that selects none asks for no approval.
- */
-export function handoffApprovalRequired(
-  canonical: CanonicalConfiguration,
-  selection?: ConfigurationSelection,
-): boolean | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(canonical);
-  } catch {
-    return undefined;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return undefined;
-  }
-  if (declaredConfigurationIsCatalog(parsed)) {
-    const selected = catalogSelectedFinalizer(parsed, selection);
-    return selected === undefined
-      ? undefined
-      : (selected.finalizer?.approvalRequired ?? false);
-  }
-  const asked = (parsed as Record<string, unknown>)[approvalRequiredField];
-  if (asked === undefined) return false;
-  return typeof asked === "boolean" ? asked : undefined;
-}
-
 /** Whether every passed execution pins the same revision, which one attempt records once. */
 function handoffOneConfiguration(work: readonly HandoffWork[]): boolean {
   const first = work[0];
@@ -291,8 +242,7 @@ function handoffOneConfiguration(work: readonly HandoffWork[]): boolean {
   return work.every(
     (each) =>
       each.configuration.revision === first.configuration.revision &&
-      each.configuration.digest === first.configuration.digest &&
-      each.canonical === first.canonical,
+      each.configuration.digest === first.configuration.digest,
   );
 }
 
@@ -389,23 +339,11 @@ export function handoffAccepted(gathering: HandoffGathering): HandoffAccepted {
       configuration,
     };
   }
-  const approvalRequired = handoffApprovalRequired(
-    first.canonical,
-    gathering.selection,
-  );
-  if (approvalRequired === undefined) {
-    return {
-      accepted: "Refused",
-      refusal: "ApprovalPolicyUnreadable",
-      configuration,
-    };
-  }
   return {
     accepted: "Handoff",
     handoff: {
       manifests: [...new Set(gathering.work.map((each) => each.manifest))],
       configuration,
-      approvalRequired,
       ...(gathering.sources[0] === undefined
         ? { kind: "Artifacts", artifacts: gathering.artifacts }
         : { kind: "Source", source: gathering.sources[0] }),
@@ -504,7 +442,6 @@ export interface AttemptRecord {
   readonly target: ObservedTarget;
   readonly strategy: IntegrationStrategy;
   readonly configuration: PinnedConfiguration;
-  readonly approvalRequired: boolean;
   readonly outcome: FinalizationAttemptOutcome;
   readonly candidate?: GitObjectId;
   readonly failureKind?: FinalizationFailureKind;
@@ -514,12 +451,14 @@ export interface AttemptRecord {
   readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
   /** The commit a merge queue built and whose checks failed. */
   readonly groupCommit?: GitObjectId;
-  /** The accepted commit a `RecheckRequired` failure sends back to be re-reported on the moved target. */
+  /** The accepted commit a `RecheckRequired` or `Restack` failure sends back to be re-reported. */
   readonly recheckCommit?: GitObjectId;
   /** Why a `RecheckRequired` failure was sent back, absent on every other attempt. */
   readonly recheckReason?: FinalizationRecheckReason;
   /** The base a proposing ticket's re-check read where it lands, which the target — the proposal's head — cannot say. */
   readonly recheckBaseRef?: GitRefName;
+  /** The tickets ahead, bottom first, a `Restack` failure was sent back to stack over, absent on every other attempt. */
+  readonly restackBeneath?: readonly StackMember[];
   readonly attemptDigest: string;
 }
 
@@ -530,32 +469,9 @@ export interface AttemptRecord {
 export type AttemptRecorded =
   { readonly recorded: "Attempt" } | { readonly recorded: "Fenced" };
 
-/** One approval asked of a person, naming the prepared attempt the question is about. */
-export interface ApprovalAsk {
-  readonly claim: FinalizationClaim;
-  readonly attempt: FinalizationAttemptId;
-}
-
-/** Why no approval was opened, each arm a durable fact the caller reads rather than an error. */
-export type ApprovalRefusal =
-  "UnknownAttempt" | "BindingMismatch" | "TicketHasAnOpenAction";
-
-/** Every refusal, so a suite iterates rather than restates. */
-export const allApprovalRefusals: readonly ApprovalRefusal[] = [
-  "UnknownAttempt",
-  "BindingMismatch",
-  "TicketHasAnOpenAction",
-];
-
-/** What asking for one approval found, an ask already standing kept apart from a fresh one. */
-export type ApprovalAsked =
-  | { readonly asked: "Requested" }
-  | { readonly asked: "AlreadyRequested" }
-  | { readonly asked: "Refused"; readonly refusal: ApprovalRefusal };
-
 /**
  * The durable moves preparation owns, held apart from the rest of the
- * finalizer's authority because these three are the only ones that write a row
+ * finalizer's authority because these two are the only ones that write a row
  * a candidate was built from.
  */
 export interface FinalizerPreparationStore {
@@ -568,9 +484,6 @@ export interface FinalizerPreparationStore {
 
   /** Writes the immutable attempt and the bundle it pinned in one transaction, or refuses both. */
   recordAttempt(record: AttemptRecord): Promise<AttemptRecorded>;
-
-  /** Opens the approval one prepared attempt needs, through the one door that may open it. */
-  requestApproval(ask: ApprovalAsk): Promise<ApprovalAsked>;
 }
 
 /** The label that separates this construction from any other digest this tree computes. */
@@ -629,10 +542,17 @@ export function canonicalChangeProposalRequest(
 }
 
 /**
+ * The part where an attempt once recorded whether a person had to approve its
+ * candidate. Every attempt recorded said no, so every attempt still spells it,
+ * and a digest taken before is re-derived from the same bytes.
+ */
+const attemptApprovalRetiredPart = "false";
+
+/**
  * The exact bytes one attempt's digest is taken over, binding it to the request
  * it answers. The base ref an unheld target was read from, a proposal's base,
- * a queue's group commit and a re-check's commit, reason and base are last
- * parts only where there is one, all but the first each behind its own label,
+ * a queue's group commit, a re-check's commit, reason and base, and a
+ * re-stack's line are last parts only where there is one, all but the first each behind its own label,
  * so every attempt without them keeps the bytes it had.
  */
 export function canonicalFinalizationAttempt(
@@ -654,7 +574,7 @@ export function canonicalFinalizationAttempt(
     record.strategy,
     record.configuration.revision,
     record.configuration.digest,
-    String(record.approvalRequired),
+    attemptApprovalRetiredPart,
     record.outcome,
     record.candidate ?? "",
     record.failureKind ?? "",
@@ -676,6 +596,15 @@ export function canonicalFinalizationAttempt(
     ...(record.recheckBaseRef === undefined
       ? []
       : ["recheckBaseRef", record.recheckBaseRef]),
+    ...(record.restackBeneath === undefined
+      ? []
+      : [
+          "restackBeneath",
+          ...record.restackBeneath.flatMap((member) => [
+            String(member.ticket),
+            member.commit,
+          ]),
+        ]),
   ]);
 }
 
@@ -704,7 +633,7 @@ export interface FinalizationEvidence {
   readonly proposalBase?: GitObjectId;
   /** Which failure this was, so a rework can tell a re-check from a conflict by what the attempt recorded. */
   readonly failureKind: FinalizationFailureKind;
-  /** The accepted commit to re-report, present exactly for a `RecheckRequired` failure. */
+  /** The accepted commit to re-report, present exactly for a `RecheckRequired` or `Restack` failure. */
   readonly recheckCommit?: GitObjectId;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictManifestDigest?: string;

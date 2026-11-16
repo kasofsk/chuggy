@@ -59,7 +59,7 @@ import type {
   RepositoryActionId,
   RepositoryActionName,
 } from "./repositoryAction.ts";
-import { repositoryDeclarationsMax } from "./repositoryDeclaration.ts";
+import { repositoryDeclarationsMax } from "../contract/repositoryDeclaration.ts";
 import type { RuntimePacing } from "./serviceRuntime.ts";
 
 /** How many questions one read puts to the port beneath the ancestry its process keeps, over all its actions. */

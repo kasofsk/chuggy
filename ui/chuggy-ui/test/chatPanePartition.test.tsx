@@ -31,6 +31,7 @@ import {
 } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { chatPaneHistoryChosen } from "./chatPaneMenu.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -205,14 +206,7 @@ function picksStubbed(): void {
 
 /** The thread titled `title` picked out of the history. */
 async function pickedOutOfHistory(title: string): Promise<void> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
-    key: "ArrowDown",
-  });
-  const row = await screen.findByRole("menuitemradio", {
-    name: new RegExp(`^${title},`, "u"),
-  });
-  fireEvent.click(row);
-  await settled();
+  await chatPaneHistoryChosen(new RegExp(`^${title},`, "u"));
 }
 
 test("a pick in one project is held through a pick in another and a return to the first", async () => {

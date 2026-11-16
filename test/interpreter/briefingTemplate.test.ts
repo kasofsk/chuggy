@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 
+import { resultReportCharsMax } from "../../src/contract/http.ts";
+
 import {
   allBriefingCarriers,
   allTaskPurposes,
@@ -24,8 +26,6 @@ import {
   briefingReworkPreface,
   briefingRoleInstructions,
   briefingSectionOrder,
-  briefingTargetMergeFirstLines,
-  briefingTargetMergeLastLines,
   briefingTemplateSections,
   briefingTemplateVersion,
   briefingDependencyLines,
@@ -47,7 +47,9 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { allChangeProposalStatuses } from "../../src/interpreter/changeProposal.ts";
-import { finalizerRemoteDefaultRef } from "../../src/interpreter/finalizerLanding.ts";
+
+/** A path a forge might name for its pipeline definitions, fixed so only the wording moves the digest. */
+const pushPathsRefused: readonly string[] = [".forge/pipelines/"];
 
 /** Every shape a failed landing is told in, its commits fixed so only the wording moves the digest. */
 const failedLandings: readonly FailedLanding[] = [
@@ -183,14 +185,8 @@ function templateWording(): readonly string[] {
     ...briefingSectionOrder,
     ...briefingTemplateSections,
     ...briefingReworkPreface,
-    ...briefingPipelinesUnwritable,
+    ...briefingPipelinesUnwritable(pushPathsRefused),
     ...failedLandings.flatMap(briefingFailedLandingLines),
-    ...briefingTargetMergeFirstLines("refs/heads/target", true),
-    ...briefingTargetMergeFirstLines("refs/heads/target", false),
-    ...briefingTargetMergeLastLines("refs/heads/target", true),
-    ...briefingTargetMergeLastLines("refs/heads/target", false),
-    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, true),
-    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, true),
     ...dependencyWording(),
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
@@ -223,7 +219,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [17, "5894c78881ca5a536df15b28c5dd69a38cb0c8e9e7b14d433602f33c38e8a276"],
+    [21, "ede0068dbbe2fd10586d4bded695a9b4f3adb08524e601a83744d30e8ee243bd"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -249,16 +245,35 @@ test("the digest reads every string the template states", () => {
   for (const text of [
     ...Object.values(briefingLabels),
     ...briefingReworkPreface,
-    ...briefingPipelinesUnwritable,
+    ...briefingPipelinesUnwritable(pushPathsRefused),
     ...failedLandings.flatMap(briefingFailedLandingLines),
-    ...briefingTargetMergeFirstLines("refs/heads/target", true),
-    ...briefingTargetMergeFirstLines("refs/heads/target", false),
-    ...briefingTargetMergeLastLines("refs/heads/target", true),
-    ...briefingTargetMergeLastLines("refs/heads/target", false),
-    ...briefingTargetMergeFirstLines(finalizerRemoteDefaultRef, true),
-    ...briefingTargetMergeLastLines(finalizerRemoteDefaultRef, true),
     ...dependencyWording(),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);
+  }
+});
+
+test("an agent's required result says how long its report may be, and a commanded one does not", () => {
+  const bound = `at most ${String(resultReportCharsMax)} characters`;
+  const destinations = {
+    Work: "detail that does not fit belongs in the commit messages",
+    Review: "the findings are the report",
+  };
+  for (const purpose of allTaskPurposes) {
+    const lines = briefingRequiredResult(purpose, "Agent").filter((line) =>
+      line.includes(bound),
+    );
+    assert.equal(lines.length, 1, `${purpose} states the bound once`);
+    assert.match(lines[0] ?? "", /refused/);
+    assert.doesNotMatch(lines[0] ?? "", /belongs in the findings/);
+    if (purpose !== "Check") {
+      assert.ok(lines[0]?.includes(destinations[purpose]), purpose);
+    }
+    assert.ok(
+      !briefingRequiredResult(purpose, "Commands").some((line) =>
+        line.includes("characters"),
+      ),
+      `a commanded ${purpose} writes no report of its own`,
+    );
   }
 });

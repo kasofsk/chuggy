@@ -177,7 +177,7 @@ function landingSaid(group: HTMLElement): string | undefined {
   return [...group.querySelectorAll(".ticket-runs-rows > li")]
     .find(
       (row) =>
-        row.querySelector(".ticket-runs-name")?.textContent === "Landing",
+        row.querySelector(".ticket-runs-name")?.textContent === "Finalization",
     )
     ?.querySelector(".ticket-runs-line")?.textContent;
 }
@@ -185,7 +185,7 @@ function landingSaid(group: HTMLElement): string | undefined {
 /** What the Overview's steps block says of the current cycle's landing. */
 function stepsLanding(container: HTMLElement): HTMLElement {
   const box = container.querySelector<HTMLElement>(
-    '.ticket-steps-column[aria-label="Landing"] .ticket-steps-name',
+    '.ticket-steps-column[aria-label="Finalization"] .ticket-steps-name',
   )?.parentElement;
   if (box === null || box === undefined)
     throw new Error("no Landing box drawn");
@@ -198,7 +198,7 @@ function landingMarkOf(group: HTMLElement): string | null | undefined {
   return [...group.querySelectorAll(".ticket-runs-rows > li")]
     .find(
       (row) =>
-        row.querySelector(".ticket-runs-name")?.textContent === "Landing",
+        row.querySelector(".ticket-runs-name")?.textContent === "Finalization",
     )
     ?.querySelector(".ticket-run-mark")
     ?.getAttribute("data-mark");
@@ -217,7 +217,7 @@ function landingRows(scope: HTMLElement): readonly HTMLElement[] {
   ]
     .filter(
       (block) =>
-        block.querySelector(".ledger-eyebrow")?.textContent === "Landing",
+        block.querySelector(".ledger-eyebrow")?.textContent === "Finalization",
     )
     .flatMap((block) => [
       ...block.querySelectorAll<HTMLElement>(".ledger-row"),
@@ -275,18 +275,18 @@ test("a ticket with no landings, and one whose read never answered, draws its cy
   const page = await landingPage(() =>
     answer({ landings: [], truncated: false }),
   );
-  expect(page.textContent).toContain("No landing");
+  expect(page.textContent).toContain("No finalization");
 });
 
 test("a cycle whose landing failed on a conflict draws it failed, and its page every record of it", async () => {
   const container = await drawn(conflicted68);
-  expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
+  expect(summaryOf(groupOf(container, 2))).toBe("Finalization failed");
   expect(landingSaid(groupOf(container, 2))).toBe("Failed");
   expect(landingMarkOf(groupOf(container, 2))).toBe("Cross");
   cleanup();
   const page = await landingPage(conflicted68);
   expect(page.querySelector(".ticket-run-heading")?.textContent).toBe(
-    "LandingCycle 2Failed",
+    "FinalizationCycle 2Failed",
   );
   expect(
     page
@@ -314,7 +314,7 @@ test("a landed landing draws its pull request as a link named as its forge names
   const landed = () => answer(landingsRead([landingLanded(3)]));
   const container = await drawn(landed);
   expect(summaryOf(groupOf(container, 3))).toBe("Running work");
-  expect(landingSaid(groupOf(container, 3))).toBe("Landed");
+  expect(landingSaid(groupOf(container, 3))).toBe("Finalized");
   cleanup();
   const page = await landingPage(landed);
   const link = within(fieldOf(page, "Pull request")).getByRole("link");
@@ -322,7 +322,7 @@ test("a landed landing draws its pull request as a link named as its forge names
   expect(link.getAttribute("href")).toBe(landingPullRequest);
   expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   expect(fieldOf(page, "Pull request").textContent).toBe(
-    "acme/atlas#68 · Landed",
+    "acme/atlas#68 · Finalized",
   );
   expect(fieldOf(page, "Head").textContent).toBe("b51d9f0");
   expect(fieldOf(page, "Merge commit").textContent).toBe("e0f3a7c");
@@ -337,11 +337,11 @@ test("a pull request a person merged at another head draws its merge commit and 
   if (row === undefined) throw new Error("no Landing row drawn");
   expect(rowSaid(row)).toEqual([
     "Cycle 3",
-    "Landed",
+    "Finalized",
     "forge.example.testMergede0f3a7c·Unevaluated head",
   ]);
   expect(
-    [...row.querySelectorAll(".ledger-note .ticket-landing-part")].map(
+    [...row.querySelectorAll(".ledger-note .ticket-finalization-part")].map(
       (commit) => commit.textContent,
     ),
   ).toEqual(["Mergede0f3a7c", "·Unevaluated head"]);
@@ -387,7 +387,7 @@ test("a held landing draws its age and hold on its record, and on the steps bloc
   const held = () => answer(landingsRead([landingHeld(3, since)]));
   const container = await drawn(held, { phase: "Finalization" });
   expect(stepsLanding(container).textContent).toBe(
-    "LandingHeld 12m · Target unreadable",
+    "FinalizationHeld 12m · Target unreadable",
   );
   cleanup();
   const [row] = landingRows(await landingPage(held, { phase: "Finalization" }));
@@ -446,7 +446,7 @@ test("a failed landing's box draws the failed mark and why, never the merge mark
   expect(box.querySelector(".ticket-run-mark")?.getAttribute("data-tone")).toBe(
     "fail",
   );
-  expect(box.textContent).toBe("LandingMerge conflict");
+  expect(box.textContent).toBe("FinalizationMerge conflict");
 });
 
 test("two landings of one cycle draw two records in the read's order, the cycle naming the newer", async () => {
@@ -521,7 +521,7 @@ test("a frame naming the ticket asks the read again, and one naming another does
   });
   await settled();
   expect(landingsAsked).toHaveLength(2);
-  expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
+  expect(summaryOf(groupOf(container, 2))).toBe("Finalization failed");
 });
 
 async function clockMoved(ms: number): Promise<void> {
@@ -538,7 +538,7 @@ test("the clock asks the read again, and a read that fails keeps the last answer
   await settled();
   expect(landingsAsked).toHaveLength(2);
   expect(container.querySelectorAll(".ticket-runs-cycle")).toHaveLength(3);
-  expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
+  expect(summaryOf(groupOf(container, 2))).toBe("Finalization failed");
 });
 
 test("a ticket that lands nothing reads None for its Landing on the Runs tab, the rail and the steps block, with no mark and no link", async () => {
@@ -551,11 +551,11 @@ test("a ticket that lands nothing reads None for its Landing on the Runs tab, th
   expect(landingMarkOf(current)).toBeNull();
   const row = [...current.querySelectorAll(".ticket-runs-rows > li")].find(
     (held) =>
-      held.querySelector(".ticket-runs-name")?.textContent === "Landing",
+      held.querySelector(".ticket-runs-name")?.textContent === "Finalization",
   );
   expect(row?.querySelector("a")).toBeNull();
   const box = stepsLanding(container);
-  expect(box.textContent).toBe("LandingNone");
+  expect(box.textContent).toBe("FinalizationNone");
   expect(box.querySelector("svg")).toBeNull();
   expect(box.closest("a")).toBeNull();
   cleanup();
@@ -565,7 +565,7 @@ test("a ticket that lands nothing reads None for its Landing on the Runs tab, th
       finalization: { kind: "None" },
     }),
   ).getByRole("navigation", { name: "Runs" });
-  const landing = within(rail).getByText("Landing");
+  const landing = within(rail).getByText("Finalization");
   expect(landing.closest("a")).toBeNull();
   expect(landing.parentElement?.querySelector("svg")).toBeNull();
 });

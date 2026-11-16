@@ -1,0 +1,12 @@
+/* TextLink: a link in a line of text, a finger's size on a narrow screen. */
+
+@layer ui {
+  @media (max-width: 40em) {
+    .text-link {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+  }
+}

@@ -29,18 +29,14 @@
  * mailbox still says of it, and nothing moves for it.
  *
  * THE TURN THAT MOVES IS THE ONE STOP ENDS. Where the page takes a stop the
- * composer's button is Stop for as long as a turn is the thing moving, and one
- * press hands the page that turn through the library's own cancel.
+ * composer draws Stop beside Send for as long as a turn is the thing moving,
+ * and one press hands the page that turn through the library's own cancel.
  *
- * ONE PRESS STOPS ONE TURN. The button stays under the pointer and can be Stop
- * again at once, aimed at the turn behind, so a press that follows one of Stop
- * within a beat is taken for the same press and does nothing, and so is a
- * second Stop until the page's door has answered the first. The button is
- * drawn as taking no press for exactly as long as it takes none.
- *
- * A CLICK THAT SENDS BEGINS THE SAME BEAT. The button it leaves under the
- * pointer is Stop for the message just sent, and the second click of a double
- * click would end it.
+ * ONE PRESS STOPS ONE TURN. Stop stays under the pointer and is aimed at the
+ * turn behind as soon as the one it stopped ends, so a press of Stop that
+ * follows one within a beat is taken for the same press and does nothing, and so is one
+ * before the page's door has answered the last. Stop is drawn as taking no
+ * press for exactly as long as it takes none; Send is never in that beat.
  *
  * A MESSAGE HANDED BACK IS PUT BACK. The words the page could not take go back
  * in the box ahead of anything typed since, a blank line between, so neither
@@ -125,7 +121,6 @@ import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type {
   ConversationComposerAttached,
-  ConversationComposerButton,
   ConversationComposerProps,
 } from "./ConversationComposer.tsx";
 import {
@@ -248,27 +243,25 @@ function conversationAppendedText(message: AppendMessage): string {
     .join("");
 }
 
-/** How long after a press of Stop, or a click that sent, the composer's button
- * takes no other: the second press of a double click, and nothing a member
- * pressed after seeing what the button had become. */
+/** How long after a press of Stop it takes no other: the second press of a
+ * double click, and nothing a member pressed after seeing the turn behind take
+ * the place of the one stopped. */
 export const conversationStopBeatMs = 300;
 
-/** The last press of its button the surface took. */
+/** The last press of Stop the surface took. */
 interface ConversationStopPress {
   readonly atMs: number;
   answered: boolean;
 }
 
-/** What the surface holds of the presses of its button. */
+/** What the surface holds of the presses of Stop. */
 interface ConversationStopBeat {
-  /** Whether a press of `button` now is one to do nothing for. */
-  readonly ignores: (button: ConversationComposerButton) => boolean;
-  /** Whether `button` is drawn as one whose press does nothing. */
-  readonly rests: (button: ConversationComposerButton) => boolean;
+  /** Whether a press of Stop now is one to do nothing for. */
+  readonly ignores: () => boolean;
+  /** Whether Stop is drawn as one whose press does nothing. */
+  readonly rests: boolean;
   /** Notes a press of Stop as taken, answered when `stop` is. */
   readonly pressed: (stop: Promise<void>) => void;
-  /** Notes a click that sent, which no door answers. */
-  readonly sent: () => void;
 }
 
 /** What is drawn of the last press: its beat, and a stop no door has answered. */
@@ -277,10 +270,9 @@ interface ConversationStopResting {
   readonly unanswered: boolean;
 }
 
-/** The presses the surface took of its button, and what is drawn of the last:
- * an older stop's answer changes nothing drawn of a newer press. The beat is
- * drawn as over by the clock a press is asked against, so a timer that fires
- * ahead of that clock waits out what is left of it. */
+/** The presses the surface took of Stop, and what is drawn of the last. The
+ * beat is drawn as over by the clock a press is asked against, so a timer that
+ * fires ahead of that clock waits out what is left of it. */
 function useConversationStopBeat(): ConversationStopBeat {
   const last = useRef<ConversationStopPress | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -294,8 +286,14 @@ function useConversationStopBeat(): ConversationStopBeat {
     },
     [],
   );
-  const taken = useCallback((answered: boolean): ConversationStopPress => {
-    const press = { atMs: performance.now(), answered };
+  const ignores = useCallback(() => {
+    const press = last.current;
+    if (press === undefined) return false;
+    if (performance.now() - press.atMs < conversationStopBeatMs) return true;
+    return !press.answered;
+  }, []);
+  const pressed = useCallback((stop: Promise<void>) => {
+    const press = { atMs: performance.now(), answered: false };
     last.current = press;
     const over = (): void => {
       const leftMs = conversationStopBeatMs - (performance.now() - press.atMs);
@@ -304,39 +302,17 @@ function useConversationStopBeat(): ConversationStopBeat {
     };
     clearTimeout(timer.current);
     timer.current = setTimeout(over, conversationStopBeatMs);
-    setResting({ beat: true, unanswered: !answered });
-    return press;
+    setResting({ beat: true, unanswered: true });
+    const answered = (): void => {
+      press.answered = true;
+      setResting((was) => ({ ...was, unanswered: false }));
+    };
+    stop.then(answered, answered);
   }, []);
-  const ignores = useCallback((button: ConversationComposerButton) => {
-    const press = last.current;
-    if (press === undefined) return false;
-    if (performance.now() - press.atMs < conversationStopBeatMs) return true;
-    return button === "Stop" && !press.answered;
-  }, []);
-  const pressed = useCallback(
-    (stop: Promise<void>) => {
-      const press = taken(false);
-      const answered = (): void => {
-        press.answered = true;
-        if (last.current === press)
-          setResting((was) => ({ ...was, unanswered: false }));
-      };
-      stop.then(answered, answered);
-    },
-    [taken],
-  );
-  const sent = useCallback(() => {
-    taken(true);
-  }, [taken]);
+  const rests = resting.beat || resting.unanswered;
   return useMemo(
-    () => ({
-      ignores,
-      rests: (button) =>
-        resting.beat || (button === "Stop" && resting.unanswered),
-      pressed,
-      sent,
-    }),
-    [ignores, pressed, sent, resting],
+    () => ({ ignores, rests, pressed }),
+    [ignores, rests, pressed],
   );
 }
 
@@ -688,8 +664,8 @@ export interface ConversationProps {
   ) => ReactNode;
 }
 
-/** The foot of the column: the composer, with what the surface holds of its
- * button and its images, or the line a page hands in its place. */
+/** The foot of the column: the composer, with what the surface holds of Stop
+ * and of the images, or the line a page hands in its place. */
 function ConversationFoot(props: {
   readonly composer: ConversationComposerProps | undefined;
   readonly unsendable: ReactNode;
@@ -712,9 +688,8 @@ function ConversationFoot(props: {
           {...composer}
           busy={props.sending}
           stops={props.stoppable !== undefined}
-          ignores={beat.ignores}
-          rests={beat.rests(props.stoppable === undefined ? "Send" : "Stop")}
-          onSendClick={beat.sent}
+          stopIgnores={beat.ignores}
+          stopRests={beat.rests}
           attached={attachments.attached}
           attachRefused={attachments.attachRefused}
           onAttach={attachments.onAttach}

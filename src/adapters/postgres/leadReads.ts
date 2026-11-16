@@ -189,14 +189,16 @@ async function leadRefusal(
     refusal: string | null;
     refused_since: Date | null;
     paused_until: Date | null;
+    off: boolean | null;
   }>(
-    sql`SELECT refusal,refused_since,paused_until
+    sql`SELECT refusal,refused_since,paused_until,off
           FROM read_lead_refusal(${partition.tenant},${partition.project},
                                  ${sessionRunnerPolledSecsMax})`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
   return {
+    ...(row.off === true ? { off: true } : {}),
     ...(row.paused_until === null
       ? {}
       : {

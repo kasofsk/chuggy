@@ -16,9 +16,12 @@
  * asserting about whatever an earlier case left running.
  */
 
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
+
+import type pg from "pg";
 
 import {
   asSessionAttemptId,
@@ -62,6 +65,26 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import type { PlacementRoute } from "../../src/contract/rosters.ts";
+import type { SessionLaunchFacts } from "../../src/interpreter/workerPoolSessions.ts";
+import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
+import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
+import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
+import {
+  postgresWorkerPoolAssignments,
+  postgresWorkerPoolRunners,
+} from "../../src/adapters/postgres/workerPool.ts";
+import {
+  postgresSessionLaunchPrecondition,
+  postgresWorkerPoolSessions,
+} from "../../src/adapters/postgres/workerPoolSessions.ts";
+import type {
+  WorkerPoolPollSettings,
+  WorkerPoolPorts,
+} from "../../src/interpreter/workerPool.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -73,7 +96,80 @@ import {
 /** A ceiling no case reaches, so only the case that names its own is about one. */
 export const sessionRigBoundless = 1_000_000;
 
+/** What a runner-held session is launched with, its backoff short of any dwell. */
+export const sessionRigLaunch: SessionLaunchFacts = {
+  image: "registry.invalid/session:1",
+  authority: {
+    tools: [],
+    credentials: ["claude-code"],
+    network: true,
+    filesystem: "ReadWorkspace",
+    mayCompleteTask: false,
+  },
+  mirrors: {},
+  bounds: {
+    mailboxPollMs: 1,
+    idleMs: 2,
+    resultDrainMs: 3,
+    loadTimeoutMs: 4,
+    turnsMax: 5,
+    budgetUsd: 6,
+  },
+  model: "session-model",
+  deadlineSecs: 900,
+  placementBackoffSecs: 60,
+};
+
 /** A lease long enough that no case races its own expiry. */
+/** Asserts the scheduler holds every fact {@link sessionRigLaunch} needs. */
+export async function sessionRigLaunchMet(pool: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    await postgresSessionLaunchPrecondition(pool, sessionRigLaunch).check(
+      new AbortController().signal,
+    ),
+    { met: "Met" },
+  );
+}
+
+/** An authority answering every read, so a case turns on the rows alone. */
+export const sessionRigReadingEverything: ProjectAccess = {
+  authorize: (caller) => Promise.resolve(memberAuthority(caller)),
+  authorizeTenant: (caller) => Promise.resolve(memberAuthority(caller)),
+  authorizeSite: projectAccessSiteRefused,
+};
+
+/** The pool plane's ports over `pool`, under an authority answering every read, as a chat host's poll reaches them. */
+export function sessionRigPoolPorts(pool: pg.Pool): WorkerPoolPorts {
+  return {
+    assignments: postgresWorkerPoolAssignments(pool),
+    runners: postgresWorkerPoolRunners(pool),
+    access: sessionRigReadingEverything,
+    sessions: {
+      store: postgresWorkerPoolSessions(pool),
+      bindings: postgresProjectRepositoryBinding(pool),
+      bearers: sessionAttemptMint(),
+    },
+    mint: () => randomUUID(),
+  };
+}
+
+/** What a chat host's poll is answered under, with room for a few sessions and one poll's wait. */
+export const sessionRigPollSettings: WorkerPoolPollSettings = {
+  leaseSecs: 3600,
+  cpuMillis: 500,
+  memoryMib: 256,
+  assignmentsPerPollMax: 1,
+  heldMax: 1,
+  sessionsPerPollMax: 4,
+  sessionsHeldMax: 4,
+  deadlineSecs: 600,
+  callbackUrl: "http://127.0.0.1:1/",
+  sessionApiUrl: "https://api.invalid/",
+  pollIntervalMs: 1,
+  pollsMax: 1,
+  imageHosts: new Map(),
+};
+
 export const sessionRigLeaseSecs = 60;
 
 /** One opened subject: the harness, the three stores over it and the live epoch. */
@@ -460,6 +556,7 @@ export function sessionRigPlaneService(
     heartbeats: rig.plane,
     heartbeatLeaseSecs: 300,
     references: rig.plane,
+    standings: rig.plane,
     turns: rig.plane,
     settlements: rig.plane,
     watches: rig.plane,

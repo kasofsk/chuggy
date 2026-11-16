@@ -2,7 +2,7 @@
   "version": 1,
   "name": "basic-coding",
   "configuration": {
-    "version": 2,
+    "version": 3,
     "image": "worker:v1",
     "workloads": {
       "build": {
@@ -87,9 +87,19 @@
         }
       ]
     },
+    "finalizers": {
+      "stacked": {
+        "finalization": {
+          "kind": "GitMerge",
+          "mode": "PullRequestMerge",
+          "policy": "Stacked"
+        }
+      }
+    },
     "defaults": {
       "work": "build",
-      "evaluation": "standard"
+      "evaluation": "standard",
+      "finalization": "stacked"
     }
   }
 }

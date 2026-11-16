@@ -240,7 +240,7 @@ const configurationStepPhaseWords: Readonly<
 > = {
   Work: { id: "ticket-steps-phase-work" },
   Evaluation: { id: "ticket-steps-phase-evaluation" },
-  Finalization: { id: "ticket-steps-phase-landing" },
+  Finalization: { id: "ticket-steps-phase-finalization" },
 };
 
 function ConfigurationStepGroupDrawn(props: {

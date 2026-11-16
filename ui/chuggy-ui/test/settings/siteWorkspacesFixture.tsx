@@ -22,6 +22,7 @@ import { CopyProvider } from "../../app/browser/ui/copyHeld.tsx";
 import { answer, drawnStrict } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 import { siteAbilitiesNone, siteAbilitiesPath } from "./permissionsFixture.tsx";
+import { tableText } from "../tableText.ts";
 
 /** Where the site's workspaces are listed, and where one is made. */
 export const siteWorkspacesPath = "/access/v1/site/workspaces";
@@ -60,6 +61,7 @@ export const workspacesListed: AccessSiteTenants = {
   tenants: [
     {
       tenant: "globex-co",
+      displayName: "Globex",
       administrators: [
         {
           subject: "s-bob",
@@ -75,6 +77,7 @@ export const workspacesListed: AccessSiteTenants = {
     },
     {
       tenant: "acme-co",
+      displayName: "Acme",
       administrators: [
         {
           subject: "s-ada",
@@ -90,12 +93,14 @@ export const workspacesListed: AccessSiteTenants = {
     },
     {
       tenant: "umbrella-co",
+      displayName: "Umbrella",
       administrators: [],
       unnamed: 3,
       createAccounts: true,
     },
     {
       tenant: "initech-co",
+      displayName: "Initech",
       administrators: [],
       unnamed: 0,
       createAccounts: false,
@@ -256,7 +261,7 @@ export function workspacesDrawn(): readonly (readonly string[])[] {
       return [
         header.textContent,
         ...within(row).queryAllByRole("listitem").map(adminDrawn),
-        row.lastElementChild?.textContent ?? "",
+        row.lastElementChild === null ? "" : tableText(row.lastElementChild),
       ];
     });
 }

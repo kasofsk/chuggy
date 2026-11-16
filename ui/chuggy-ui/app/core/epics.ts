@@ -416,14 +416,6 @@ export interface EpicForm {
   readonly tickets: string;
 }
 
-export const epicFormEmpty: EpicForm = {
-  title: "",
-  summary: "",
-  description: "",
-  visibility: "Active",
-  tickets: "",
-};
-
 export function epicFormFrom(view: EpicViewResponse): EpicForm {
   return {
     title: view.title,
@@ -464,6 +456,32 @@ export function epicFormFaults(form: EpicForm): readonly Copy[] {
       args: { words: tickets.words.join(", ") },
     });
   return faults;
+}
+
+/** The fields of the edit form a fault can be about. */
+export type EpicFormField = "title" | "summary";
+
+const epicFormFieldsFaulted: Readonly<Record<string, EpicFormField>> = {
+  "epics-fault-title-empty": "title",
+  "epics-fault-title-long": "title",
+  "epics-fault-summary-long": "summary",
+};
+
+/** The field a fault or a refusal is about, none where it is about the whole
+ * epic. */
+export function epicFormFieldOf(said: Copy): EpicFormField | undefined {
+  return epicFormFieldsFaulted[said.id];
+}
+
+/** Whether what is typed differs from the epic as it was read. */
+export function epicFormChanged(read: EpicForm, typed: EpicForm): boolean {
+  return (
+    read.title !== typed.title ||
+    read.summary !== typed.summary ||
+    read.description !== typed.description ||
+    read.visibility !== typed.visibility ||
+    read.tickets !== typed.tickets
+  );
 }
 
 /** The request a form is sent as, a creation or a revision at the revision read. */

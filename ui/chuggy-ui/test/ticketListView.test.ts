@@ -18,6 +18,7 @@ import {
   ticketListCreatorsOffered,
   ticketListFiltered,
   ticketListQueryOf,
+  ticketListQueryCleared,
   ticketListQueryWith,
   ticketListSearchOf,
   ticketListShown,
@@ -36,6 +37,7 @@ function row(
     title: `Ticket ${String(ticket)}`,
     repository: undefined,
     creator: undefined,
+    owner: undefined,
     phase,
     sequence: 1,
     badge: undefined,
@@ -145,6 +147,21 @@ test("a search or a sort written to the address keeps the other, and State is wr
   ).toStrictEqual({ sort: "Newest" });
 });
 
+test("a cleared address keeps only its sort, and writes All as its filter", () => {
+  expect(
+    ticketListQueryCleared({
+      q: "gate",
+      sort: "Oldest",
+      filter: "Escalated",
+      creator: "alice",
+      owner: "bob",
+    }),
+  ).toStrictEqual({ sort: "Oldest", filter: "All" });
+  expect(ticketListQueryCleared({ q: "gate" })).toStrictEqual({
+    filter: "All",
+  });
+});
+
 test("a filter written to the address keeps the search and the sort, and All is written as itself", () => {
   expect(
     ticketListQueryWith({ q: "gate", sort: "Oldest" }, { filter: "Done" }),
@@ -240,4 +257,34 @@ test("the creators offered are the project's people under the reader's issuer, t
   expect(
     ticketListCreatorsOffered(undefined, ["s-bob"], undefined),
   ).toStrictEqual([]);
+});
+
+test("the address holds an owner beside a creator as the text it was written as, and drops one the server would refuse", () => {
+  const issued = "17:https://idp.test/s-ada";
+  expect(
+    ticketListQueryOf(
+      defaultParseSearch(`?owner=${encodeURIComponent(issued)}&creator=s-bob`),
+    ),
+  ).toStrictEqual({ owner: issued, creator: "s-bob" });
+  expect(ticketListQueryOf(defaultParseSearch("?owner=121"))).toStrictEqual({
+    owner: "121",
+  });
+  for (const owner of [
+    "",
+    "p".repeat(nativeHttpPathSegmentCharsMax + 1),
+    ["s-ada"],
+  ])
+    expect(ticketListQueryOf({ owner })).toStrictEqual({});
+  expect(
+    ticketListQueryWith(
+      { creator: "s-bob", owner: issued },
+      { owner: undefined },
+    ),
+  ).toStrictEqual({ creator: "s-bob" });
+  expect(
+    ticketListQueryWith(
+      { filter: "Done", creator: "s-bob" },
+      { owner: issued },
+    ),
+  ).toStrictEqual({ filter: "Done", creator: "s-bob", owner: issued });
 });

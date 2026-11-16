@@ -2,7 +2,7 @@
  * Duplicate on a ticket's page: drawn in the header in every phase, leading
  * where the ticket is Done or Revoked and in the menu otherwise, as a link to
  * the new-ticket address naming this ticket. It writes nothing. Beside it,
- * which of Edit and Revoke a reader is offered.
+ * the header menu's entries by what the reader may do.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -28,22 +28,20 @@ import {
   ScreenHarness,
   settled,
   queryClientUnretried,
+  turned,
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
-import {
-  abilitiesEvery,
-  abilitiesOver,
-  abilitiesUnrefusing,
-} from "./projectAbilitiesFixture.ts";
+import { abilitiesEvery, abilitiesOver } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   TicketPageEveryTab,
   ticketHeader,
+  ticketHeaderMenuEntries,
   ticketHeaderMenuOpened,
 } from "./ticketPageEveryTab.tsx";
 
@@ -139,7 +137,7 @@ async function bar(
     </ScreenHarness>,
   );
   await settled();
-  const drawn = container.querySelector<HTMLElement>("header.ticket-header");
+  const drawn = container.querySelector<HTMLElement>("header.page-header");
   if (drawn === null) throw new Error("no ticket header drawn");
   return { api, header: drawn };
 }
@@ -187,46 +185,55 @@ test("a reader who may not mutate is offered no Duplicate", async () => {
   ).toBeNull();
 });
 
-/** Which of what a Pending ticket's page and an Escalated one's offer a
- * reader are drawn: Edit, and the Revoke the header's menu holds. */
+/** The header menu's entries on a Pending ticket's page and on an Escalated
+ * one's, for a reader the abilities read answers as `abilities` says. */
 async function offeredTo(
   abilities: AbilitiesAnswer,
-): Promise<Record<string, boolean>> {
+): Promise<Record<"pending" | "escalated", readonly string[]>> {
   const over = abilitiesOver(abilities);
-  const named = (role: string, name: string): boolean =>
-    screen.queryByRole(role, { name }) !== null;
   await bar("Pending", true, over);
-  const pending = {
-    edit: named("link", "Edit"),
-  };
+  const pending = await ticketHeaderMenuEntries();
   cleanup();
   await bar("Escalated", true, over);
-  return {
-    ...pending,
-    revoke:
-      named("button", "More actions") &&
-      within(await ticketHeaderMenuOpened()).queryByRole("menuitem", {
-        name: "Revoke…",
-      }) !== null,
-  };
+  return { pending, escalated: await ticketHeaderMenuEntries() };
 }
 
-test("a reader who may not mutate is offered no Edit or Revoke", async () => {
+test("a reader who may not mutate is offered no menu: no Edit, Duplicate or Revoke", async () => {
   expect(await offeredTo({ ...abilitiesEvery, mutate: false })).toStrictEqual({
-    edit: false,
-    revoke: false,
+    pending: [],
+    escalated: [],
   });
 });
 
-test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered Edit and Revoke",
-  async (_said, abilities) => {
-    expect(await offeredTo(abilities)).toStrictEqual({
-      edit: true,
-      revoke: true,
-    });
-  },
-);
+test("a reader who may is offered Edit, Take, Duplicate and the destructive Revoke in the menu", async () => {
+  expect(await offeredTo(abilitiesEvery)).toStrictEqual({
+    pending: ["Edit", "Take", "Duplicate", "Revoke…"],
+    escalated: ["Take", "Duplicate", "Revoke…"],
+  });
+});
+
+/** Take names the reader, whom an unanswered read has not said. */
+test("a reader the abilities read has not answered for is offered the menu but Take", async () => {
+  expect(await offeredTo(undefined)).toStrictEqual({
+    pending: ["Edit", "Duplicate", "Revoke…"],
+    escalated: ["Duplicate", "Revoke…"],
+  });
+});
+
+test("Revoke is marked destructive in the menu and asks before it submits", async () => {
+  const { api } = await bar("Escalated");
+  const menu = await ticketHeaderMenuOpened();
+  const revoke = within(menu).getByRole("menuitem", { name: "Revoke…" });
+  expect(revoke.classList.contains("more-menu-destructive")).toBe(true);
+  for (const other of within(menu).getAllByRole("menuitem"))
+    if (other !== revoke)
+      expect(other.classList.contains("more-menu-destructive")).toBe(false);
+  await turned(() => {
+    fireEvent.click(revoke);
+  });
+  expect(screen.getByRole("dialog", { name: /revoke/iu })).toBeDefined();
+  expect(api.submissions()).toBe(0);
+});
 
 test("Copy link writes the ticket page's whole address, and says it did", async () => {
   const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
@@ -256,3 +263,26 @@ test("a write the browser refused claims nothing", async () => {
   expect(within(menu).queryByRole("menuitem", { name: "Copied" })).toBeNull();
   expect(within(ticketHeader()).getByRole("status").textContent).toBe("");
 });
+
+/** What the header draws to press outside its menu. */
+function headerPressesDrawn(): readonly string[] {
+  return [
+    ...within(ticketHeader()).queryAllByRole("button"),
+    ...within(ticketHeader()).queryAllByRole("link"),
+  ]
+    .map((press) => press.textContent ?? "")
+    .filter((name) => name !== "");
+}
+
+test.each(phaseRoster)(
+  "a %s ticket's title is the page's one heading, and the header leads with Duplicate only where it is finished",
+  async (phase) => {
+    await bar(phase);
+    const headings = screen.getAllByRole("heading", { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(ticketHeader().contains(headings[0] ?? null)).toBe(true);
+    expect(headerPressesDrawn()).toStrictEqual(
+      phase === "Done" || phase === "Revoked" ? ["Duplicate"] : [],
+    );
+  },
+);

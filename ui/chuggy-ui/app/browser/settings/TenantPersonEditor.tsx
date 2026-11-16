@@ -266,6 +266,7 @@ function TenantPersonEditorBody(props: {
         />
       ) : null}
       <TenantProjectsGrid
+        tenant={props.tenant}
         projects={props.projects.filter((project) =>
           tenantPersonProjectDrawn(abilities, person, project),
         )}

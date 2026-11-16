@@ -21,7 +21,7 @@ import {
   creationBranchProposed,
   creationBranchProposedCharsMax,
   creationFormProposed,
-  creationLandingBranchSentence,
+  creationFinalizationBranchSentence,
 } from "../app/core/ticketCreation.ts";
 import type {
   CreationAssembly,
@@ -223,14 +223,14 @@ test.each(["", "!!!"])(
   "with a title of %j the refusal stands as it was",
   (title) => {
     expect(refusals(sent(proposing({ title })))).toStrictEqual([
-      `branch: ${copyTextEn(creationLandingBranchSentence)}`,
+      `branch: ${copyTextEn(creationFinalizationBranchSentence)}`,
     ]);
   },
 );
 
 test("a branch box holding only a space is refused, not filled", () => {
   expect(refusals(sent(proposing({ branchName: " " })))).toStrictEqual([
-    `branch: ${copyTextEn(creationLandingBranchSentence)}`,
+    `branch: ${copyTextEn(creationFinalizationBranchSentence)}`,
   ]);
 });
 
@@ -255,5 +255,7 @@ test("a proposal naming the target branch is refused at the target", () => {
 test("the assembly itself proposes nothing: the same form is refused unproposed", () => {
   expect(
     refusals(creationBodyFrom(creationOffers, proposing(), [])),
-  ).toStrictEqual([`branch: ${copyTextEn(creationLandingBranchSentence)}`]);
+  ).toStrictEqual([
+    `branch: ${copyTextEn(creationFinalizationBranchSentence)}`,
+  ]);
 });

@@ -10,6 +10,7 @@ import {
 import { releaseConfigurationVersion } from "../contract/configurationDocument.ts";
 import {
   configurationWithOverrides,
+  overridesPlanShort,
   type ConfigurationOverrides,
 } from "../contract/configurationOverrides.ts";
 import {
@@ -44,21 +45,20 @@ import type {
   RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import type { Worker } from "./workerCatalog.ts";
-import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
-import { handoffApprovalRequired } from "./finalizerPreparation.ts";
+import {
+  canonicalJson,
+  releaseDocumentConfigurationReadiness,
+  type DeclaredConfiguration,
+  type DeclaredConfigurationFault,
+  type ReleaseConfiguration,
+} from "../contract/repositoryConfigurationReadiness.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type {
   BriefFinalization,
   DraftBrief,
   ReleaseBrief,
 } from "./ticketBrief.ts";
-import {
-  authoredTaskConfigurationReadiness,
-  briefsAnyAgent,
-  firstCommandedCheckStage,
-  type AuthoredTaskConfiguration,
-  type TaskConfigurationFault,
-} from "./taskConfiguration.ts";
+import { firstCommandedCheckStage } from "../contract/taskConfiguration.ts";
 import {
   catalogPlansCommanded,
   declaredConfigurationIsCatalog,
@@ -67,12 +67,11 @@ import {
   workloadConfigurationReadiness,
   type CatalogSelection,
   type WorkloadConfiguration,
-  type WorkloadConfigurationFault,
-} from "./workloadConfiguration.ts";
+} from "../contract/workloadConfiguration.ts";
 export {
   declaredConfigurationIsCatalog,
   declaredConfigurationVersion,
-} from "./workloadConfiguration.ts";
+} from "../contract/workloadConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
 
@@ -82,15 +81,7 @@ export type ConfigurationRevisionId = string & {
 
 export type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 
-/** A ready version 1 configuration: one document whose stages are its blocks. */
-export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
-  readonly version: 1;
-  readonly image: string;
-} & AuthoredTaskConfiguration;
-
-/** A ready configuration of either version, told apart by its own `version`. */
-export type DeclaredConfiguration =
-  ReleaseConfiguration | WorkloadConfiguration;
+export type { DeclaredConfiguration, ReleaseConfiguration };
 
 /**
  * What one ticket runs on: a version 1 configuration as it stands, or a catalog
@@ -113,11 +104,7 @@ export {
 
 /** Why one configuration is not releasable: a fault of the document, or of its pairing with a brief. */
 export type ReleaseConfigurationFault =
-  | "ReleaseShapeInvalid"
-  | "WorkerUndeclared"
-  | TaskConfigurationFault
-  | WorkloadConfigurationFault
-  | ReleasePairingFault;
+  DeclaredConfigurationFault | ReleasePairingFault;
 
 /**
  * What a release refused for one fault is answered with: a pairing fault under
@@ -295,25 +282,15 @@ function releaseDocumentReadiness(
   value: unknown,
   brief: ReleaseBrief | undefined,
 ): ReleaseDocumentReadiness {
-  const authored = authoredTaskConfigurationReadiness(value);
-  if (!executionRequirementConfigurationIsValid(value))
-    return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
-  if (authored.readiness === "Incomplete") return authored;
-  if (
-    authored.configuration.worker === undefined &&
-    briefsAnyAgent(authored.configuration)
-  )
-    return { readiness: "Incomplete", fault: "WorkerUndeclared" };
+  const readiness = releaseDocumentConfigurationReadiness(value);
+  if (readiness.readiness === "Incomplete") return readiness;
   if (
     brief !== undefined &&
     brief.checks.length > 0 &&
-    firstCommandedCheckStage(authored.configuration) === undefined
+    firstCommandedCheckStage(readiness.configuration) === undefined
   )
     return { readiness: "Incomplete", fault: "BriefChecksUncommanded" };
-  return {
-    readiness: "Ready",
-    configuration: value as ReleaseConfiguration,
-  };
+  return readiness;
 }
 
 /**
@@ -328,7 +305,7 @@ function releaseDocumentTicketReadiness(
 ): TicketConfigurationReadiness {
   if (!configurationSelectionEmpty(selection))
     return { readiness: "Incomplete", fault: "SelectionUnsupported" };
-  if (overrides?.workloads !== undefined)
+  if (overrides?.workloads !== undefined || overrides?.plans !== undefined)
     return { readiness: "Incomplete", fault: "OverridesUnsupported" };
   const readiness = releaseDocumentReadiness(
     configurationWithOverrides(value, overrides),
@@ -342,10 +319,16 @@ function releaseDocumentTicketReadiness(
       };
 }
 
-/** Whether a catalog ticket's overrides name a workload, or a prompt file, its catalog does not hold. */
+/**
+ * Whether a catalog ticket's overrides name what neither the catalog nor they
+ * hold: a prompt file the catalog's import did not read, a workload one of
+ * their plans names, or a workload they add that no plan names, which is what
+ * a misspelt override of a held one reads as.
+ */
 function workloadTicketOverridesUnknown(
   catalog: WorkloadConfiguration,
   workloads: NonNullable<ConfigurationOverrides["workloads"]>,
+  plans: NonNullable<ConfigurationOverrides["plans"]>,
 ): boolean {
   const prompts = new Set(
     Object.values(catalog.workloads).flatMap((workload) =>
@@ -354,25 +337,43 @@ function workloadTicketOverridesUnknown(
         : [],
     ),
   );
-  return Object.entries(workloads).some(
-    ([name, override]) =>
-      !Object.hasOwn(catalog.workloads, name) ||
-      (override.prompt !== undefined &&
-        "path" in override.prompt &&
-        !prompts.has(override.prompt.path)),
+  const named = new Set(
+    Object.values({ ...catalog.plans, ...plans }).flatMap((stages) =>
+      stages.flatMap((stage) => stage.evaluators),
+    ),
+  );
+  return (
+    Object.entries(workloads).some(
+      ([name, override]) =>
+        (!Object.hasOwn(catalog.workloads, name) && !named.has(name)) ||
+        (override.prompt !== undefined &&
+          "path" in override.prompt &&
+          !prompts.has(override.prompt.path)),
+    ) ||
+    Object.values(plans).some((stages) =>
+      stages.some((stage) =>
+        stage.evaluators.some(
+          (name) =>
+            !Object.hasOwn(catalog.workloads, name) &&
+            !Object.hasOwn(workloads, name),
+        ),
+      ),
+    )
   );
 }
 
 /**
- * Whether a catalog ticket's overrides make a workload an approval or one no
- * longer: an approval is answered by a person and every other runner by a
- * machine, so no field of either carries over to the other.
+ * Whether a catalog ticket's overrides make a workload the catalog holds an
+ * approval or one no longer: an approval is answered by a person and every
+ * other runner by a machine, so no field of either carries over to the other.
+ * A workload they add is written whole, and carries nothing over.
  */
 function workloadTicketOverridesChangeApproval(
   catalog: WorkloadConfiguration,
   workloads: NonNullable<ConfigurationOverrides["workloads"]>,
 ): boolean {
   return Object.entries(workloads).some(([name, override]) => {
+    if (!Object.hasOwn(catalog.workloads, name)) return false;
     const runner = catalog.workloads[name]?.runner;
     return (
       override.runner !== undefined &&
@@ -383,10 +384,11 @@ function workloadTicketOverridesChangeApproval(
 }
 
 /**
- * A version 2 ticket: the catalog with the ticket's workload overrides
- * applied, and the entries the ticket selected from it. A catalog ticket
- * overrides workloads alone, since every other field it could name is one a
- * catalog does not have.
+ * A version 2 ticket: the catalog with the ticket's workload and plan
+ * overrides applied, and the entries the ticket selected from it, its work
+ * from the catalog's own workloads, so a workload the ticket adds is only ever
+ * an evaluator. A catalog ticket overrides workloads and plans alone, since
+ * every other field it could name is one a catalog does not have.
  */
 function workloadTicketReadiness(
   value: unknown,
@@ -394,14 +396,18 @@ function workloadTicketReadiness(
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
 ): TicketConfigurationReadiness {
-  const { workloads, ...unsupported } = overrides ?? {};
+  const { workloads, plans, ...unsupported } = overrides ?? {};
   if (Object.values(unsupported).some((field) => field !== undefined))
     return { readiness: "Incomplete", fault: "OverridesUnsupported" };
   const pinned = workloadConfigurationReadiness(value);
   if (pinned.readiness === "Incomplete") return pinned;
   if (
-    workloads !== undefined &&
-    workloadTicketOverridesUnknown(pinned.configuration, workloads)
+    (workloads !== undefined || plans !== undefined) &&
+    workloadTicketOverridesUnknown(
+      pinned.configuration,
+      workloads ?? {},
+      plans ?? {},
+    )
   )
     return { readiness: "Incomplete", fault: "OverridesUnknown" };
   if (
@@ -409,11 +415,16 @@ function workloadTicketReadiness(
     workloadTicketOverridesChangeApproval(pinned.configuration, workloads)
   )
     return { readiness: "Incomplete", fault: "OverridesChangeApprovalRunner" };
+  if (
+    selection?.work !== undefined &&
+    !Object.hasOwn(pinned.configuration.workloads, selection.work)
+  )
+    return { readiness: "Incomplete", fault: "SelectionUnknown" };
   const readiness =
-    workloads === undefined
+    workloads === undefined && plans === undefined
       ? pinned
       : workloadConfigurationReadiness(
-          configurationWithOverrides(value, { workloads }),
+          configurationWithOverrides(value, { workloads, plans }),
         );
   if (readiness.readiness === "Incomplete") return readiness;
   const selected = selectedCatalogEntries(readiness.configuration, selection);
@@ -476,6 +487,16 @@ function ticketProgramFits(
   );
 }
 
+/**
+ * Whether each stage of a program is keyed by its place in it, counted from
+ * one, which is the key the stage is released under and so the only one a
+ * released plan admits. A program keeping a later stage of its plan and
+ * leaving out an earlier one is not, whatever it runs.
+ */
+function ticketProgramPositional(program: ReleaseAuthoringProgram): boolean {
+  return program.every((stage, index) => stage.key === index + 1);
+}
+
 /** Whether a program runs one task: the stage keyed `stage`, and in it the evaluator keyed `evaluator` where one is named. */
 function ticketProgramRuns(
   program: ReleaseAuthoringProgram,
@@ -509,6 +530,45 @@ export function ticketProgramShort(
       (_entry, position) =>
         !ticketProgramRuns(program, index + 1, position + 1),
     ),
+  );
+}
+
+/**
+ * Whether a ticket runs less than its configuration plans: a program short of
+ * the plan its ticket selected, by `ticketProgramShort`, or one running less
+ * than the plan it would select without its overrides, by
+ * `overridesPlanShort`, which is the catalog's plan its selection names or the
+ * catalog's default where the catalog names none. Only plans an override
+ * replaces or adds can make the two plans differ.
+ */
+export function ticketRunsLessThanPlanned(
+  configuration: CanonicalConfiguration,
+  overrides: ConfigurationOverrides | undefined,
+  selection: ConfigurationSelection | undefined,
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticketProgramShort(ticket, program)) return true;
+  if (ticket.version === 1 || overrides?.plans === undefined) return false;
+  const pinned = workloadConfigurationReadiness(JSON.parse(configuration));
+  if (pinned.readiness === "Incomplete")
+    throw new RangeError(
+      "ticket plan: a ticket resolved from a catalog that is not ready",
+    );
+  const { plans, defaults } = pinned.configuration;
+  const named = selection?.evaluation;
+  const planned =
+    named !== undefined && Object.hasOwn(plans, named)
+      ? plans[named]
+      : plans[defaults.evaluation];
+  if (planned === undefined)
+    throw new RangeError("ticket plan: the catalog's default plan is absent");
+  return overridesPlanShort(
+    planned.map((stage) => stage.evaluators),
+    ticket.selection.plan.stages.map((stage) =>
+      stage.evaluators.map((evaluator) => evaluator.name),
+    ),
+    program,
   );
 }
 
@@ -556,6 +616,8 @@ export function draftReleaseReadiness(
   if (readiness.readiness === "Incomplete") return readiness;
   if (program !== undefined && !ticketProgramFits(readiness.ticket, program))
     return { readiness: "Incomplete", fault: "ProgramExceedsPlan" };
+  if (program !== undefined && !ticketProgramPositional(program))
+    return { readiness: "Incomplete", fault: "ProgramStageOutOfPosition" };
   if (
     program !== undefined &&
     brief !== undefined &&
@@ -575,36 +637,6 @@ export function draftReleaseReadiness(
       fault: "ConfigurationFromAnotherRepository",
     };
   return readiness;
-}
-
-const prohibitedConfigurationKeys =
-  /(?:password|secret|token|credential(?!s$))/iu;
-
-function canonicalValue(value: unknown): unknown {
-  if (value === null || typeof value === "string" || typeof value === "boolean")
-    return value;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (typeof value !== "object")
-    throw new TypeError("canonical configuration: unsupported JSON value");
-  const record = value as Record<string, unknown>;
-  const result: Record<string, unknown> = {};
-  for (const key of Object.keys(record).sort()) {
-    if (prohibitedConfigurationKeys.test(key))
-      throw new RangeError(
-        `canonical configuration: prohibited secret-bearing field ${key}`,
-      );
-    result[key] = canonicalValue(record[key]);
-  }
-  return result;
-}
-
-/** One parsed configuration as JSON with its keys sorted and no whitespace, refusing what no configuration may hold. */
-export function canonicalJson(value: unknown): string {
-  const encoded = JSON.stringify(canonicalValue(value));
-  if (encoded === undefined)
-    throw new TypeError("canonical configuration: value is not JSON");
-  return encoded;
 }
 
 /**
@@ -704,14 +736,6 @@ export type ConfigurationRevisionProvenance =
       readonly name: RepositoryConfigurationName;
     };
 
-/**
- * What one ready configuration decides about finishing, for a reader choosing
- * between configurations without opening either.
- */
-export interface ConfigurationFinalization {
-  readonly approvalRequired: boolean;
-}
-
 export type ConfigurationRevisionSummary =
   | (ConfigurationRevisionSummaryBase & { readonly readiness: "Incomplete" })
   | (ConfigurationRevisionSummaryBase & {
@@ -719,7 +743,6 @@ export type ConfigurationRevisionSummary =
       readonly image: string;
       readonly worker?: Worker;
       readonly practices: readonly string[];
-      readonly finalization: ConfigurationFinalization;
       readonly evaluationStagesCount: number;
     } & ConfigurationDocumentSummary);
 
@@ -775,18 +798,6 @@ export interface ConfigurationPageQuery {
 
 export const configurationPageLimitMax = 100;
 
-/**
- * What a ready configuration decides about finishing. An approval policy this
- * tree cannot read is not read as no approval: the finalizer refuses such a
- * candidate rather than promoting it, so the summary says a person is in the
- * way of one.
- */
-function configurationFinalizationOf(
-  canonical: CanonicalConfiguration,
-): ConfigurationFinalization {
-  return { approvalRequired: handoffApprovalRequired(canonical) ?? true };
-}
-
 export function configurationRevisionSummary(input: {
   readonly revision: ConfigurationRevisionId;
   readonly parent?: ConfigurationRevisionId;
@@ -812,7 +823,6 @@ export function configurationRevisionSummary(input: {
     ...base,
     readiness: "Ready" as const,
     image: configuration.image,
-    finalization: configurationFinalizationOf(input.canonical),
   };
   if (configuration.version !== releaseConfigurationVersion)
     return {

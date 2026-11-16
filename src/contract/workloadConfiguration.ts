@@ -1,0 +1,446 @@
+/**
+ * A version 2 or 3 configuration: a catalog of workloads, the evaluation plans
+ * that run them, the finalizers that land their work, and the defaults a ticket
+ * selecting nothing takes. The two versions differ only in a finalizer: a
+ * version 2 one names a landing mode, which is read forward as the finalization
+ * it names, and a version 3 one names its finalization whole.
+ *
+ * A WORKLOAD IS WHOLE. Its prompt, its worker, its authority and where it runs
+ * are its own, so nothing one workload says reaches another, and nothing the
+ * catalog says reaches a workload except the image a workload naming none runs
+ * in. Every framing a version 1 briefing imposes is opt-in here.
+ *
+ * AN APPROVAL IS AN EVALUATOR AND NEVER THE WORK. A person approving or
+ * rejecting a change has no change to make, so a catalog whose defaults name
+ * one as the work is not ready, and a selection naming one is refused.
+ *
+ * READY MEANS RESOLVED. A repository's catalog names workload files and prompt
+ * files by path, and the import stores what it read inline beside each path;
+ * only a document holding every workload inline and every prompt's text is
+ * ready, so nothing past readiness reads a repository.
+ *
+ * A TICKET SELECTS, AND THE SELECTION IS JUDGED HERE. `selectedCatalogEntries`
+ * resolves a selection against one catalog into the work, the plan's stages and
+ * the finalizer a ticket runs on, and refuses a name the catalog lacks. The
+ * evaluator key a program draws in a stage is that stage's evaluator at the
+ * same position, counting from one.
+ */
+
+import type { z } from "zod";
+
+import {
+  briefFinalizationForward,
+  type BriefFinalizationBody,
+} from "./brief.ts";
+import {
+  type agentWorkloadSchema,
+  type approvalApproversSchema,
+  type approvalWorkloadSchema,
+  type commandsWorkloadSchema,
+  type ConfigurationFollowing,
+  type EvaluationPlanStageNameFault,
+  evaluationPlanStageNameFaults,
+  type evaluationPlanStageSchema,
+  finalizationConfigurationSchema,
+  finalizationConfigurationVersion,
+  type finalizerSchema,
+  workloadConfigurationSchema,
+  workloadConfigurationVersion,
+} from "./configurationDocument.ts";
+import {
+  type ConfigurationOverrides,
+  configurationWithOverrides,
+} from "./configurationOverrides.ts";
+import type { ConfigurationSelection } from "./configurationSelection.ts";
+
+type WorkloadReadonly<Value> = Value extends object
+  ? { readonly [Key in keyof Value]: WorkloadReadonly<Value[Key]> }
+  : Value;
+
+/** The version a parsed document says it is, which is how every reader tells a document of stages from a catalog. */
+export function declaredConfigurationVersion(value: unknown): unknown {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as { readonly version?: unknown }).version
+    : undefined;
+}
+
+/** The versions a catalog is declared under, which differ only in how a finalizer names its landing. */
+export const catalogConfigurationVersions = [
+  workloadConfigurationVersion,
+  finalizationConfigurationVersion,
+] as const;
+
+/** Whether a parsed document says it is a catalog rather than a document of stages. */
+export function declaredConfigurationIsCatalog(value: unknown): boolean {
+  const version = declaredConfigurationVersion(value);
+  return catalogConfigurationVersions.some((known) => known === version);
+}
+
+/** An agent workload whose prompt text is held, which is the only kind a ready catalog holds. */
+export type AgentWorkload = WorkloadReadonly<
+  Omit<z.output<typeof agentWorkloadSchema>, "prompt"> & {
+    readonly prompt: { readonly path?: string; readonly text: string };
+  }
+>;
+
+/** A workload the worker runs itself. */
+export type CommandsWorkload = WorkloadReadonly<
+  z.output<typeof commandsWorkloadSchema>
+>;
+
+/** A workload a person answers, which runs on no runner and names no image or worker. */
+export type ApprovalWorkload = WorkloadReadonly<
+  z.output<typeof approvalWorkloadSchema>
+>;
+
+/** Who may answer an approval workload. */
+export type ApprovalApprovers = WorkloadReadonly<
+  z.output<typeof approvalApproversSchema>
+>;
+
+/** A workload placed on a runner, which is every one but an approval. */
+export type PlacedWorkload = AgentWorkload | CommandsWorkload;
+
+/** One resolved workload. */
+export type Workload = PlacedWorkload | ApprovalWorkload;
+
+/** Who may answer an approval workload, `Developer` where it names nobody. */
+export function approvalWorkloadApprovers(
+  workload: ApprovalWorkload,
+): ApprovalApprovers {
+  return workload.approvers ?? "Developer";
+}
+
+/**
+ * One finalizer of a catalog, its finalization named whole. A version 2
+ * finalizer's landing mode is read as the finalization it maps forward to,
+ * ordered `Direct`, and the `approvalRequired` a stored finalizer may name is
+ * not read.
+ */
+export interface Finalizer {
+  readonly finalization?: WorkloadReadonly<BriefFinalizationBody> | undefined;
+}
+
+/** A ready catalog: every workload inline and every prompt read, and every finalizer named whole. */
+export type WorkloadConfiguration = Readonly<Record<string, unknown>> & {
+  readonly version: (typeof catalogConfigurationVersions)[number];
+  readonly image: string;
+  readonly workloads: Readonly<Record<string, Workload>>;
+  readonly plans: Readonly<
+    Record<
+      string,
+      readonly WorkloadReadonly<z.output<typeof evaluationPlanStageSchema>>[]
+    >
+  >;
+  readonly finalizers?: Readonly<Record<string, Finalizer>>;
+  readonly defaults: {
+    readonly work: string;
+    readonly evaluation: string;
+    readonly finalization?: string;
+    readonly configuration?: ConfigurationFollowing;
+  };
+  readonly outputs?: unknown;
+};
+
+/** Why a catalog is not ready: its shape or a stage's name, an entry still named by path, a name it lacks, an approval as its default work, or a workload's placement. */
+export type WorkloadConfigurationFault =
+  | "ReleaseShapeInvalid"
+  | EvaluationPlanStageNameFault
+  | "WorkloadUnresolved"
+  | "CatalogNameUnknown"
+  | "ApprovalAsWork"
+  | "WorkloadPlacementInvalid";
+
+export type WorkloadConfigurationReadiness =
+  | {
+      readonly readiness: "Ready";
+      readonly configuration: WorkloadConfiguration;
+    }
+  | {
+      readonly readiness: "Incomplete";
+      readonly fault: WorkloadConfigurationFault;
+    };
+
+/** One catalog of either version, as its schema parses it. */
+type ParsedCatalog =
+  | z.output<typeof workloadConfigurationSchema>
+  | z.output<typeof finalizationConfigurationSchema>;
+
+/** One version 2 finalizer read forward: its landing mode the finalization it names, ordered `Direct`. */
+function workloadConfigurationFinalizerForward(
+  finalizer: z.output<typeof finalizerSchema>,
+): Finalizer {
+  const forward = briefFinalizationForward(finalizer.landing, undefined);
+  if (forward.forward === "Refused")
+    throw new Error(`catalog finalizer: ${forward.reason}`);
+  return {
+    ...(forward.finalization === undefined
+      ? {}
+      : { finalization: forward.finalization }),
+  };
+}
+
+/** A catalog's finalizers named whole, whichever version declared them. */
+function workloadConfigurationFinalizers(
+  parsed: ParsedCatalog,
+): Readonly<Record<string, Finalizer>> | undefined {
+  if (parsed.finalizers === undefined) return undefined;
+  if (parsed.version === finalizationConfigurationVersion)
+    return Object.fromEntries(
+      Object.entries(parsed.finalizers).map(([name, finalizer]) => [
+        name,
+        finalizer.finalization === undefined
+          ? {}
+          : { finalization: finalizer.finalization },
+      ]),
+    );
+  return Object.fromEntries(
+    Object.entries(parsed.finalizers).map(([name, finalizer]) => [
+      name,
+      workloadConfigurationFinalizerForward(finalizer),
+    ]),
+  );
+}
+
+/** One parsed catalog entry as a resolved workload, or undefined where it is a path still to read. */
+function workloadConfigurationResolved(
+  entry: ParsedCatalog["workloads"][string],
+): Workload | undefined {
+  if (typeof entry === "string") return undefined;
+  switch (entry.runner) {
+    case "Agent":
+      return entry.prompt.text === undefined ? undefined : (entry as Workload);
+    case "Commands":
+    case "Approval":
+      return entry;
+  }
+}
+
+/** Whether every name the plans and the defaults use is one the catalog holds. */
+function workloadConfigurationNamesKnown(
+  configuration: ParsedCatalog,
+): boolean {
+  const { workloads, plans, finalizers = {}, defaults } = configuration;
+  return (
+    Object.hasOwn(workloads, defaults.work) &&
+    Object.hasOwn(plans, defaults.evaluation) &&
+    (defaults.finalization === undefined ||
+      Object.hasOwn(finalizers, defaults.finalization)) &&
+    Object.values(plans).every((stages) =>
+      stages.every((stage) =>
+        stage.evaluators.every((name) => Object.hasOwn(workloads, name)),
+      ),
+    )
+  );
+}
+
+/** The fault a catalog's shape earns: its first issue's, which is a stage name's own where it names one. */
+function workloadConfigurationShapeFault(
+  issues: readonly z.core.$ZodIssue[],
+): WorkloadConfigurationFault {
+  const message = issues[0]?.message;
+  return (
+    evaluationPlanStageNameFaults.find((fault) => fault === message) ??
+    "ReleaseShapeInvalid"
+  );
+}
+
+/** Whether a workload names where it runs at most once: by image, or by a requirement carrying its own. An approval runs nowhere. */
+function workloadPlacementSingular(workload: Workload): boolean {
+  if (workload.runner === "Approval") return true;
+  return (
+    workload.image === undefined || workload.executionRequirement === undefined
+  );
+}
+
+/**
+ * Whether one parsed document is a ready catalog, and the first fault where it
+ * is not. The order is the order a reader fixes them in: the shape, then what
+ * an import still has to read, then the names, then the default work, then
+ * each workload's placement.
+ */
+export function workloadConfigurationReadiness(
+  value: unknown,
+): WorkloadConfigurationReadiness {
+  const parsed =
+    declaredConfigurationVersion(value) === finalizationConfigurationVersion
+      ? finalizationConfigurationSchema.safeParse(value)
+      : workloadConfigurationSchema.safeParse(value);
+  if (!parsed.success)
+    return {
+      readiness: "Incomplete",
+      fault: workloadConfigurationShapeFault(parsed.error.issues),
+    };
+  const entries = Object.values(parsed.data.workloads).map(
+    workloadConfigurationResolved,
+  );
+  const resolved = entries.filter((entry) => entry !== undefined);
+  if (resolved.length !== entries.length)
+    return { readiness: "Incomplete", fault: "WorkloadUnresolved" };
+  if (!workloadConfigurationNamesKnown(parsed.data))
+    return { readiness: "Incomplete", fault: "CatalogNameUnknown" };
+  const work = parsed.data.workloads[parsed.data.defaults.work];
+  if (typeof work !== "string" && work?.runner === "Approval")
+    return { readiness: "Incomplete", fault: "ApprovalAsWork" };
+  if (!resolved.every(workloadPlacementSingular))
+    return { readiness: "Incomplete", fault: "WorkloadPlacementInvalid" };
+  const finalizers = workloadConfigurationFinalizers(parsed.data);
+  return {
+    readiness: "Ready",
+    configuration: {
+      ...(value as WorkloadConfiguration),
+      ...(finalizers === undefined ? {} : { finalizers }),
+    },
+  };
+}
+
+/** One workload a ticket runs, by the name the catalog holds it under. */
+export interface SelectedWorkload {
+  readonly name: string;
+  readonly workload: Workload;
+}
+
+/** One stage of the plan a ticket runs: its name, and its evaluators' workloads in position order. */
+export interface SelectedStage {
+  readonly name: string;
+  readonly evaluators: readonly SelectedWorkload[];
+}
+
+/** Everything a ticket runs on from one catalog. */
+export interface CatalogSelection {
+  readonly work: SelectedWorkload;
+  readonly plan: {
+    readonly name: string;
+    readonly stages: readonly SelectedStage[];
+  };
+  readonly finalizer?: { readonly name: string; readonly finalizer: Finalizer };
+}
+
+export type CatalogSelectionRead =
+  | { readonly selected: "Selected"; readonly value: CatalogSelection }
+  | {
+      readonly selected: "Unknown";
+      readonly field: Exclude<keyof ConfigurationSelection, "configuration">;
+    }
+  | { readonly selected: "ApprovalAsWork" };
+
+/** The workload a catalog holds under a name, which readiness has already held to exist. */
+function selectedCatalogWorkload(
+  configuration: WorkloadConfiguration,
+  name: string,
+): SelectedWorkload {
+  const workload = configuration.workloads[name];
+  if (workload === undefined)
+    throw new RangeError(`catalog: no workload is named ${name}`);
+  return { name, workload };
+}
+
+/** Resolves one ticket's selection against a ready catalog, each absent field the default, refusing an approval as the work. */
+export function selectedCatalogEntries(
+  configuration: WorkloadConfiguration,
+  selection: ConfigurationSelection | undefined,
+): CatalogSelectionRead {
+  const workName = selection?.work ?? configuration.defaults.work;
+  if (!Object.hasOwn(configuration.workloads, workName))
+    return { selected: "Unknown", field: "work" };
+  if (configuration.workloads[workName]?.runner === "Approval")
+    return { selected: "ApprovalAsWork" };
+  const planName = selection?.evaluation ?? configuration.defaults.evaluation;
+  const stages = Object.hasOwn(configuration.plans, planName)
+    ? configuration.plans[planName]
+    : undefined;
+  if (stages === undefined) return { selected: "Unknown", field: "evaluation" };
+  const finalizerName =
+    selection?.finalization ?? configuration.defaults.finalization;
+  const finalizer =
+    finalizerName === undefined ||
+    !Object.hasOwn(configuration.finalizers ?? {}, finalizerName)
+      ? undefined
+      : configuration.finalizers?.[finalizerName];
+  if (finalizerName !== undefined && finalizer === undefined)
+    return { selected: "Unknown", field: "finalization" };
+  return {
+    selected: "Selected",
+    value: {
+      work: selectedCatalogWorkload(configuration, workName),
+      plan: {
+        name: planName,
+        stages: stages.map((stage) => ({
+          name: stage.name,
+          evaluators: stage.evaluators.map((name) =>
+            selectedCatalogWorkload(configuration, name),
+          ),
+        })),
+      },
+      ...(finalizerName === undefined || finalizer === undefined
+        ? {}
+        : { finalizer: { name: finalizerName, finalizer } }),
+    },
+  };
+}
+
+/** The workload one evaluator of a selected plan runs, by its stage and evaluator keys, each counting from one. */
+export function selectedEvaluatorWorkload(
+  selection: CatalogSelection,
+  stage: number,
+  evaluator: number,
+): SelectedWorkload | undefined {
+  return selection.plan.stages[stage - 1]?.evaluators[evaluator - 1];
+}
+
+/**
+ * The first evaluator of a selected plan the worker runs itself, which is where
+ * a ticket's own check lines join, by its stage and evaluator keys. A plan
+ * commanding none has nowhere for them to go.
+ */
+export function selectedFirstCommandsEvaluator(
+  selection: CatalogSelection,
+): { readonly stage: number; readonly evaluator: number } | undefined {
+  for (const [stageIndex, stage] of selection.plan.stages.entries()) {
+    const evaluatorIndex = stage.evaluators.findIndex(
+      (entry) => entry.workload.runner === "Commands",
+    );
+    if (evaluatorIndex !== -1)
+      return { stage: stageIndex + 1, evaluator: evaluatorIndex + 1 };
+  }
+  return undefined;
+}
+
+/** The plans of a ready catalog a ticket's own check lines can join, by name: each runs commands in some stage. */
+export function catalogPlansCommanded(
+  configuration: WorkloadConfiguration,
+): readonly string[] {
+  return Object.keys(configuration.plans).filter((name) => {
+    const selected = selectedCatalogEntries(configuration, {
+      evaluation: name,
+    });
+    if (selected.selected !== "Selected")
+      throw new RangeError(`catalog: plan ${name} does not resolve`);
+    return selectedFirstCommandsEvaluator(selected.value) !== undefined;
+  });
+}
+
+/**
+ * The finalizer a ticket's selection lands it with, read out of the stored
+ * catalog with the ticket's workload and plan overrides applied, since its
+ * selection may name a plan only they define: none where the selection and the
+ * defaults name none, and undefined where the catalog or the selection cannot
+ * be read.
+ */
+export function catalogSelectedFinalizer(
+  value: unknown,
+  selection: ConfigurationSelection | undefined,
+  overrides?: ConfigurationOverrides,
+): { readonly finalizer?: Finalizer } | undefined {
+  const ready = workloadConfigurationReadiness(
+    configurationWithOverrides(value, {
+      workloads: overrides?.workloads,
+      plans: overrides?.plans,
+    }),
+  );
+  if (ready.readiness !== "Ready") return undefined;
+  const selected = selectedCatalogEntries(ready.configuration, selection);
+  if (selected.selected !== "Selected") return undefined;
+  const finalizer = selected.value.finalizer?.finalizer;
+  return finalizer === undefined ? {} : { finalizer };
+}

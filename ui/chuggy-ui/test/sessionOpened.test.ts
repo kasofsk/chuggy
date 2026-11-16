@@ -158,7 +158,7 @@ test("the console's session renews under the origin's turn, and is ended when an
 
   localStorage.removeItem(sessionRefreshTokenKey);
   dispatchEvent(new StorageEvent("storage", { key: sessionRefreshTokenKey }));
-  await drawn("Signed out");
+  await drawn("Sign in to chuggy");
 });
 
 test("it is ended as the document is shown again out of the back-forward cache, the store emptied meanwhile", async () => {
@@ -170,7 +170,7 @@ test("it is ended as the document is shown again out of the back-forward cache, 
   localStorage.removeItem(sessionRefreshTokenKey);
   dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
 
-  await drawn("Signed out");
+  await drawn("Sign in to chuggy");
 });
 
 test("a document the redirect brought back presents nothing of the stored session, and is the sign-in it completes", async () => {
