@@ -359,7 +359,15 @@ async function setupRunnerEntry(
       };
     if (held.signed === "Out") return { entered: "Out", report: held.report };
     const { site, api } = held.opened;
-    return { entered: "In", session: { site, api, bearer: held.bearer } };
+    return {
+      entered: "In",
+      session: {
+        site,
+        api,
+        bearer: held.bearer,
+        workspaces: held.workspaces.tenants,
+      },
+    };
   } catch (failure: unknown) {
     return { entered: "Out", report: setupFaulted(asked, failure) };
   }
