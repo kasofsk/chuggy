@@ -2117,16 +2117,16 @@ test("a personal runner renews, settles and pulls the images of its executions t
   ]);
 });
 
-test("a personal runner's every poll is recorded, and a pool's or a personal runner's as one that could take an execution where it has room for one, holds one or names a memory room above nothing, a personal runner's never as one that could take a session, and a chat host's not at all", async () => {
+test("a personal runner's and a pool's every poll is recorded with the memory room it named, as one that could take an execution where it has room for one, holds one or names a memory room above nothing, a personal runner's never as one that could take a session, and a chat host's not at all", async () => {
   for (const [caller, over, recorded] of [
     [runner, { wanted: 1 }, ["executions"]],
     [runner, { held: ["j1"] }, ["executions"]],
     [runner, { memoryRoomMib: 1 }, ["executions"]],
     [runner, { memoryRoomMib: 0 }, ["polled"]],
-    [identity, { memoryRoomMib: 4_096 }, ["executions"]],
-    [identity, { memoryRoomMib: 0 }, []],
+    [identity, { memoryRoomMib: 4_096 }, ["executions:4096"]],
+    [identity, { memoryRoomMib: 0 }, ["polled:0"]],
     [runner, {}, ["polled"]],
-    [identity, {}, []],
+    [identity, {}, ["polled"]],
     [runner, { wantedSessions: 1 }, ["polled"]],
     [runner, { wanted: 1, wantedSessions: 1 }, ["executions"]],
     [identity, { wanted: 1 }, ["executions"]],
@@ -2138,9 +2138,15 @@ test("a personal runner's every poll is recorded, and a pool's or a personal run
       ports(
         {
           ...idle,
-          polled: (_, executions) =>
+          polled: (polling, executions, memoryRoomMib) =>
             Promise.resolve(
-              void reached.push(executions ? "executions" : "polled"),
+              void reached.push(
+                `${executions ? "executions" : "polled"}${
+                  polling.kind === "Dedicated" && memoryRoomMib !== undefined
+                    ? `:${String(memoryRoomMib)}`
+                    : ""
+                }`,
+              ),
             ),
         },
         {

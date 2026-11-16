@@ -847,9 +847,9 @@ function setupBriefAsked(
   };
 }
 
-/** What a ticket's starting execution waits on of the person's runners, as the finalization tell says it: the fact, and no remedy. */
+/** What a ticket's starting execution waits on of the person's runners or the project's pools, as the finalization tell says it: the fact, and no remedy. */
 function setupWaitSaid(wait: SetupRunnerWait | undefined): {
-  readonly wait: "room" | "offline" | "unable" | "none";
+  readonly wait: "room" | "pool-room" | "offline" | "unable" | "none";
   readonly free: CopyArgument;
   readonly needed: CopyArgument;
 } {
@@ -857,6 +857,12 @@ function setupWaitSaid(wait: SetupRunnerWait | undefined): {
     case "Room":
       return {
         wait: "room",
+        free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
+        needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
+      };
+    case "PoolRoom":
+      return {
+        wait: "pool-room",
         free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
         needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
       };

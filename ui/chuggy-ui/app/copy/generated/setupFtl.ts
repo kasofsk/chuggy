@@ -560,6 +560,7 @@ setup-mend-dispatch-when = once the person says { -ticket } { $ticket } has star
 # spells -run: to run is a verb here
 setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }.{ $wait ->
     [room] { " " }{ setup-mend-wait-room }
+    [pool-room] { " " }{ setup-mend-wait-pool-room }
     [offline] { " " }{ setup-mend-wait-offline }
     [unable] { " " }{ setup-mend-wait-unable }
    *[none] { "" }
@@ -571,6 +572,7 @@ setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $p
    *[finish] Setup is done when it finishes.
 } { $page } shows where it is. Tell me when you want me to look again.
 setup-mend-wait-room = It is waiting on your { -personal-runner }, which has { $free } free; this { -run } needs { $needed }.
+setup-mend-wait-pool-room = It is waiting on this { -project }'s { -runner(form: "plural") }, which have { $free } free; this { -run } needs { $needed }.
 setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is offline.
 # spells -run: to run is a verb here
 setup-mend-wait-unable = It is waiting on your { -personal-runner(form: "plural") }, and none of them can run it.

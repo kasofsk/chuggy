@@ -1051,6 +1051,45 @@ async function ownerReadsProbed(
     await waitingCountedProbed(pools.pool, named.project.partition);
 }
 
+/**
+ * That a reader's read of the case's run says the pools of its project are
+ * short of memory exactly where the case's pool, the one live and short,
+ * could take it by the probe with its slots aside. An owner the case revokes
+ * is what the claim is told, not what a reader's view knows.
+ */
+async function poolRoomProbed(
+  identity: PlantedIdentity,
+  pools: PlantedPools,
+  home: Partition,
+  execution: string,
+): Promise<void> {
+  if (identity.kind !== "Dedicated" || pools.ownersRevoked.length > 0) return;
+  await rig.harness.query(
+    `UPDATE worker_pool SET memory_room_mib=1,executions_polled_at=now()
+      WHERE tenant=$1 AND project=$2 AND pool=$3 AND principal=$4`,
+    [
+      identity.partition.tenant,
+      identity.partition.project,
+      identity.pool,
+      identity.principal,
+    ],
+  );
+  const read = await operationalReads.execution(
+    home,
+    asExecutionId(execution),
+    asPrincipal(`reader-${randomUUID()}`),
+  );
+  assert.equal(
+    read?.poolRoom !== undefined,
+    await waiting(
+      identity,
+      { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER, memoryMibDefault },
+      home,
+    ),
+    "a reader reads the run short of its pools' memory where the pool could take it with its slots aside",
+  );
+}
+
 /** Whether the case's claim took its execution's attempt, from the rows the case planted, a live runner's last poll `polledSecsAgo` before now. */
 async function claimTook(
   c: RunnerCase,
@@ -1081,6 +1120,7 @@ async function claimTook(
   const home = named.project.partition;
   await ownerReadsProbed(c, named, pools, target.execution, polledSecsAgo);
   const identity = sessionIdentity(c, named, pools);
+  await poolRoomProbed(identity, pools, home, target.execution);
   const asked = await waiting(
     identity,
     { leaseSecs, heldMax: session.heldMax, memoryMibDefault },
