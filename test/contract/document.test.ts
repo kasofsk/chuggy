@@ -134,6 +134,7 @@ const documentRouteNames = [
   "ticketLandings",
   "ticketNativeActionHistory",
   "ticketNativeActions",
+  "ticketProposalMerge",
   "ticketReturn",
   "ticketTake",
   "tickets",

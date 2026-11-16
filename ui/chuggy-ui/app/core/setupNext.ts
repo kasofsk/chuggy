@@ -25,6 +25,8 @@
  * work and one for their chat host or the first alone, or, where their chat
  * host is all that is lacking, what `chat-host` would; the command is named
  * under a rule that waits on their yes; where the machine could not take a runner, they are told that instead.
+ * Where a personal runner of theirs is registered and does not take the
+ * project's work, `serve` is offered on the same yes.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -41,14 +43,14 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { Copy, CopyArgument } from "./copy.ts";
+import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
-import { ownerFallbackLabel } from "./myRunner.ts";
-import { runnerPackageOffered, runnerPackages } from "./runners.ts";
+import { runnerPackages } from "./runners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import {
   repositoryImportRefusedFile,
@@ -76,6 +78,7 @@ import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
   SetupAppPage,
   SetupLack,
+  SetupRunnerWait,
   SetupStanding,
   SetupStep,
 } from "./setupStanding.ts";
@@ -94,7 +97,6 @@ export const setupPressed = {
   addAccount: { id: "settings-accounts-add" },
   add: { id: "repositories-add" },
   runner: { id: "runners-register" },
-  runnerProject: { id: "runners-personal-project-add" },
   fallback: { id: "runners-fallback-title" },
   chatHost: setupChatHostPressed,
   ticket: { id: "ticket-authoring-create-ticket" },
@@ -486,9 +488,6 @@ function setupRunsOn(claude: SetupClaudeKind | undefined): Copy {
     : { id: "setup-runs-on", args: { claude: setupClaudeOn[claude] } };
 }
 
-/** The runner package an offer would put here, by the name its program goes by. */
-const setupProgram = runnerPackageOffered.program;
-
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
@@ -510,12 +509,13 @@ function setupRunnerLiveMend(
     : setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
 }
 
-/** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's chat host where that is lacking too. */
+/** What `runner` puts here where the project's runner is lacking: its service, run by the platform's package `program`, and beside it the person's chat host where that is lacking too. */
 function setupRunnerPut(
   chat: boolean,
   claude: SetupClaudeKind | undefined,
+  program: string,
 ): Copy {
-  const args = { program: setupProgram, runs: setupRunsOn(claude) };
+  const args = { program, runs: setupRunsOn(claude) };
   return chat
     ? { id: "setup-mend-runner-put-chat", args }
     : { id: "setup-mend-runner-put", args };
@@ -542,6 +542,7 @@ function setupChatMend(
   lack: Extract<SetupLack, { readonly lacks: "ChatHost" | "ChatHostLive" }>,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
+  program: string,
 ): SetupThing {
   const project = setupNamed(at);
   const chats: Copy = { id: "setup-mend-chats", args: { project } };
@@ -551,7 +552,7 @@ function setupChatMend(
       ? setupChatOffer(
           {
             id: "setup-mend-chat-live-offer",
-            args: { chats, program: setupProgram },
+            args: { chats, program },
           },
           at,
         )
@@ -565,7 +566,7 @@ function setupChatMend(
         id: "setup-mend-chat-offer",
         args: {
           chats,
-          program: setupProgram,
+          program,
           runs: setupRunsOn(here.claude),
         },
       },
@@ -585,33 +586,54 @@ function setupChatMend(
 }
 
 /**
- * What a runner of the person's own, registered by hand on Personal runners,
- * needs there before it takes the project's work: the project given to it,
- * and where the project names no owner fallback, one set on its Placement
- * page, which the person is told of and this program never sets.
+ * A personal runner of the person's that does not take the project's work.
+ * `serve` gives it the project where it is not given, and names Preferred
+ * where the project names no owner fallback and the person may name one;
+ * where they may not, the tell names the project's Placement page, where an
+ * admin of it does, and where the project is given already that is all there
+ * is to do.
  */
-function setupRunnerServes(at: SetupAt, named: boolean): Copy {
-  const choose = setupPressed.runnerProject;
-  const project = at.project;
-  if (named)
-    return { id: "setup-mend-runner-serves", args: { choose, project } };
+function setupServingMend(
+  lack: Extract<SetupLack, { readonly lacks: "Serving" }>,
+  at: SetupAt,
+): SetupThing {
+  const project = setupNamed(at);
+  const setting = setupPressed.fallback;
+  const placement = setupPage(at, settingsRoutes.project.placement);
+  const allow = !lack.named && lack.administers;
+  const admin = !lack.named && !lack.administers;
+  if (lack.given && !allow)
+    return setupHand(
+      {
+        id: "setup-mend-serving-admin-tell",
+        args: { project, setting, placement },
+      },
+      { id: "setup-mend-serving-admin-when", args: { setting } },
+    );
   return {
-    id: "setup-mend-runner-serves-unnamed",
-    args: {
-      choose,
-      project,
-      placement: setupPage(at, settingsRoutes.project.placement),
-      setting: setupPressed.fallback,
-      strict: ownerFallbackLabel("Strict"),
-      preferred: ownerFallbackLabel("Preferred"),
+    thing: "Offer",
+    command: "Serve",
+    tell: {
+      id: "setup-mend-serving-offer",
+      args: {
+        project,
+        does: lack.given ? "allow" : allow ? "both" : "give",
+        admin: admin ? "admin" : "none",
+        setting,
+        placement,
+      },
     },
+    when: { id: "setup-offer-serve-when" },
+    workspace: at.workspace,
+    project: at.project,
   };
 }
 
 /**
  * No runner yet. Where this machine could take one the person is told what
- * `runner` would put here before it may be run; where it could not, why not;
- * and where the machine was not looked at, the console's own page.
+ * `runner` would put here, with the package of the platform the program runs
+ * on, before it may be run; where it could not, why not; and where the
+ * machine was not looked at, the console's own page.
  */
 function setupRunnerMend(
   lack: Extract<
@@ -620,21 +642,22 @@ function setupRunnerMend(
   >,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
+  platform: SetupPlatform,
 ): SetupThing {
+  const { program } = runnerPackages[platform];
   if (lack.lacks === "ChatHost" || lack.lacks === "ChatHostLive")
-    return setupChatMend(lack, at, here);
+    return setupChatMend(lack, at, here, program);
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
   const page = setupPage(at, settingsRoutes.project.myRunner);
   const add = setupPressed.runner;
-  const serves = setupRunnerServes(at, lack.named);
   const elsewhere: Copy = {
     id: "setup-mend-runner-elsewhere",
-    args: { page, add, serves },
+    args: { page, add },
   };
   const instead: Copy = {
     id: "setup-mend-runner-instead",
-    args: { page, add, serves },
+    args: { page, add },
   };
   const room = here?.room;
   switch (room?.room) {
@@ -645,26 +668,12 @@ function setupRunnerMend(
         {
           id: "setup-mend-runner-offer",
           args: {
-            put: setupRunnerPut(lack.chat, here?.claude),
+            put: setupRunnerPut(lack.chat, here?.claude, program),
             page,
             add,
-            serves,
           },
         },
         at,
-      );
-    case "Mac":
-      return setupHand(
-        {
-          id: "setup-mend-runner-mac",
-          args: {
-            program: runnerPackages.darwin.program,
-            page,
-            add,
-            serves,
-          },
-        },
-        setupRunnerRunning,
       );
     case "Serviceless":
       return setupHand(
@@ -685,17 +694,21 @@ function setupRunnerBarredMend(
   >,
   instead: Copy,
 ): SetupThing {
-  if (room.room === "Engineless")
+  if (room.room === "Engineless") {
+    const none = setupEnginesNone(room.asked);
     return setupHand(
-      {
-        id: "setup-mend-runner-engineless",
-        args: { none: setupEnginesNone(room.asked), instead },
-      },
+      room.start === undefined
+        ? { id: "setup-mend-runner-engineless", args: { none, instead } }
+        : {
+            id: "setup-mend-runner-engineless-colima",
+            args: { start: room.start, instead },
+          },
       {
         id: "setup-mend-runner-or-running",
         args: { when: { id: "setup-runner-engineless-when" } },
       },
     );
+  }
   const { why, state, mend, when } = setupDockerBarredTold(room.user, room.how);
   return setupHand(
     { id: "setup-mend-runner-docker", args: { why, state, mend, instead } },
@@ -724,6 +737,28 @@ function setupBriefAsked(
     project: at.project,
     choose: offers.choose,
   };
+}
+
+/** What a ticket's starting execution waits on of the person's runners, as the finalization tell says it: the fact, and no remedy. */
+function setupWaitSaid(wait: SetupRunnerWait | undefined): {
+  readonly wait: "room" | "offline" | "unable" | "none";
+  readonly free: CopyArgument;
+  readonly needed: CopyArgument;
+} {
+  switch (wait?.wait) {
+    case "Room":
+      return {
+        wait: "room",
+        free: quantityFigureCopy(memoryMibFigure(wait.freeMib)),
+        needed: quantityFigureCopy(memoryMibFigure(wait.neededMib)),
+      };
+    case "Offline":
+      return { wait: "offline", free: "", needed: "" };
+    case "Unable":
+      return { wait: "unable", free: "", needed: "" };
+    case undefined:
+      return { wait: "none", free: "", needed: "" };
+  }
 }
 
 function setupTicketMend(
@@ -778,6 +813,7 @@ function setupTicketMend(
             page,
             ends: lack.pullRequest ? "pull" : "finish",
             bootstrap: lack.bootstrapped ? "bootstrap" : "own",
+            ...setupWaitSaid(lack.wait),
           },
         },
         setupLookAgain,
@@ -858,7 +894,9 @@ function setupMend(
     case "RunnerLive":
     case "ChatHost":
     case "ChatHostLive":
-      return setupRunnerMend(lack, at, here);
+      return setupRunnerMend(lack, at, here, mcp.platform);
+    case "Serving":
+      return setupServingMend(lack, at);
     case "Ticket":
     case "Release":
     case "Dispatch":
@@ -1010,6 +1048,25 @@ export function setupBindDue(standing: SetupStanding):
   return reach?.reach === "Granted"
     ? { partition, repository: reach.repository, url: reach.url }
     : undefined;
+}
+
+/** What `serve` writes for a project: the project given to the person's runners, and Preferred named as its owner fallback. */
+export interface SetupServeDue {
+  readonly partition: PartitionIdentity;
+  readonly give: boolean;
+  readonly allow: boolean;
+}
+
+/** What `serve` writes where a personal runner of the person's taking the project's work is the one next thing, and something of it is theirs to write. */
+export function setupServeDue(
+  standing: SetupStanding,
+): SetupServeDue | undefined {
+  const partition = setupDue(standing, ["Serving"]);
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  if (partition === undefined || lack?.lacks !== "Serving") return undefined;
+  const give = !lack.given;
+  const allow = !lack.named && lack.administers;
+  return give || allow ? { partition, give, allow } : undefined;
 }
 
 /** The project whose ticket step is the one next and has no ticket at all, which is when what a ticket may be drawn under is read and `ticket` files one. */

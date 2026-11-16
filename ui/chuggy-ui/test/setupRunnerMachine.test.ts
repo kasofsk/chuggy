@@ -15,6 +15,8 @@ import { runnerPackages } from "../app/core/runners.ts";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import {
+  setupAgentDomain,
+  setupAgentIs,
   setupChatFiles,
   setupChatPackageLeast,
   setupChildFailed,
@@ -26,6 +28,7 @@ import {
   setupPoolFilePrefix,
   setupPoolFiles,
   setupRegisterFailed,
+  setupRestartAll,
   setupRunnerCommands,
   setupRunnerHere,
   setupRunnerPlaces,
@@ -40,8 +43,12 @@ import type { SetupEngine } from "../app/core/setupRunnerSaid.ts";
 import { setupMachine } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 import {
+  boxAgentLabel,
+  boxAgents,
   boxHome,
   boxLogin,
+  boxMacLogin,
+  boxMacSettings,
   boxNamePart,
   boxChatFile,
   boxChatUnitName,
@@ -69,6 +76,7 @@ const surroundings = {
 };
 
 const places = setupRunnerPlaces(surroundings);
+const mac = { ...surroundings, platform: "darwin" };
 const acme = { tenant: "acme", project: "widgets" };
 
 test("the package's things are under the person's configuration directory: the one they set where it is a whole path, and the usual one in their home otherwise", () => {
@@ -91,6 +99,20 @@ test("the package's things are under the person's configuration directory: the o
     });
   expect(() => setupRunnerPlaces({ ...surroundings, home: undefined })).toThrow(
     SetupMachineError,
+  );
+});
+
+test("on a Mac the package's settings and login are in its Application Support, its agents in LaunchAgents, and its pools in the usual configuration directory whatever the person set", () => {
+  const darwin = {
+    settings: boxMacSettings,
+    login: boxMacLogin,
+    pools: boxPools,
+    units: boxAgents,
+    own: boxOwn,
+  };
+  expect(setupRunnerPlaces(mac)).toEqual(darwin);
+  expect(setupRunnerPlaces({ ...mac, configHome: "/data/config" })).toEqual(
+    darwin,
   );
 });
 
@@ -145,6 +167,7 @@ test("a pool file's service is named as the package names it, which the registra
   };
   expect(
     setupUnitOf(
+      "linux",
       setupRunnerPlaces({ ...surroundings, home: "/home/geoff" }),
       file,
     ),
@@ -153,11 +176,20 @@ test("a pool file's service is named as the package names it, which the registra
     path: "/home/geoff/.config/systemd/user/chuggy-linux-scoop.second.shame.service",
   });
   expect(
-    setupUnitOf(places, { path: boxPoolFile("acme", "widgets") }).name,
+    setupUnitOf("linux", places, { path: boxPoolFile("acme", "widgets") }).name,
   ).toBe(boxUnitName("acme", "widgets"));
   expect(
-    setupUnitOf(places, { path: boxChatFile("acme", setupSiteMember) }).name,
+    setupUnitOf("linux", places, { path: boxChatFile("acme", setupSiteMember) })
+      .name,
   ).toBe(boxChatUnitName("acme", setupSiteMember));
+  expect(
+    setupUnitOf("darwin", setupRunnerPlaces(mac), {
+      path: boxPoolFile("acme", "widgets"),
+    }),
+  ).toEqual({
+    name: boxAgentLabel(boxPoolFile("acme", "widgets")),
+    path: `${boxAgents}/${boxAgentLabel(boxPoolFile("acme", "widgets"))}.plist`,
+  });
 });
 
 test("the files of the person's chat host in a workspace are the files named for it, one whole part and then chat.host, beside the pool files, found by name and never opened", () => {
@@ -190,11 +222,27 @@ test("the commands run on the machine are the package's and the service manager'
     "--pool",
     "/p/a b.json",
   ]);
-  expect(setupRunnerCommands.service("/bin/c", file)).toEqual([
+  expect(setupRunnerCommands.service("linux", "/bin/c", file)).toEqual([
     "/bin/c",
     "install-service",
     "--pool",
     "/p/a b.json",
+  ]);
+  expect(setupRunnerCommands.service("darwin", "/bin/c", file)).toEqual([
+    "/bin/c",
+    "install-agent",
+    "--pool",
+    "/p/a b.json",
+  ]);
+  const agent = { name: "chuggy-darwin.x", path: "/a/chuggy-darwin.x.plist" };
+  expect([
+    setupRunnerCommands.unload("gui/501", agent),
+    setupRunnerCommands.load("gui/501", agent),
+    setupRunnerCommands.kick("gui/501", agent),
+  ]).toEqual([
+    ["launchctl", "bootout", "gui/501/chuggy-darwin.x"],
+    ["launchctl", "bootstrap", "gui/501", "/a/chuggy-darwin.x.plist"],
+    ["launchctl", "kickstart", "-k", "gui/501/chuggy-darwin.x"],
   ]);
   expect(setupRunnerCommands.reload).toEqual([
     "systemctl",
@@ -348,8 +396,8 @@ test("settings naming a credential beside a login, or one missing or doubling it
     expect(settled(held), held).toEqual({ settings: "Unread" });
 });
 
-test("the settings a machine with none is given are the package's guide's own, and read back as settings", () => {
-  const text = setupSettingsText("podman", boxLogin);
+test("the settings a machine with none is given are the package's guide's own, and read back as settings, which on a Mac name no engine", () => {
+  const text = setupSettingsText("linux", "podman", boxLogin);
   expect(text.endsWith("}\n")).toBe(true);
   expect(JSON.parse(text)).toEqual({
     engine: "podman",
@@ -366,6 +414,17 @@ test("the settings a machine with none is given are the package's guide's own, a
     path: boxSettings,
     engine: "podman",
     credential: { kind: "Subscription", path: boxLogin },
+  });
+  expect(
+    JSON.parse(setupSettingsText("darwin", "docker", boxMacLogin)),
+  ).toEqual({
+    concurrencyMax: 1,
+    sessionsMax: 2,
+    claudeTokenFile: boxMacLogin,
+    timeoutSecsMax: 7200,
+    outputBytesMax: 1_048_576,
+    environment: {},
+    network: "chuggy-jobs",
   });
 });
 
@@ -541,6 +600,7 @@ test("a machine could take a runner where its user services answer and an engine
         { engine: "docker", answered: "Absent" },
         { engine: "podman", answered: "No" },
       ],
+      start: undefined,
     },
     ["services", "docker", "podman"],
   ]);
@@ -549,7 +609,11 @@ test("a machine could take a runner where its user services answer and an engine
       machine.box.engines = { docker: "Yes", podman: "No" };
     }, "podman"),
   ).toEqual([
-    { room: "Engineless", asked: [{ engine: "podman", answered: "No" }] },
+    {
+      room: "Engineless",
+      asked: [{ engine: "podman", answered: "No" }],
+      start: undefined,
+    },
     ["services", "podman"],
   ]);
   expect(
@@ -562,11 +626,31 @@ test("a machine could take a runner where its user services answer and an engine
       machine.box.answers.set("services", { ended: "Unended" });
     }),
   ).toEqual([{ room: "Serviceless" }, ["services"]]);
-  expect(
-    await room((machine) => {
-      machine.platform = "darwin";
-    }),
-  ).toEqual([{ room: "Mac" }, []]);
+});
+
+test("a Mac could take a runner where docker answers this user, its user services never asked, and is otherwise told to start Colima, whatever engine the settings name", async () => {
+  const room = async (answered: "Yes" | "No" | "Absent") => {
+    const machine = setupMachine();
+    machine.platform = "darwin";
+    machine.box.engines = { docker: answered, podman: "Yes" };
+    return [
+      await setupRunnerRoom(machine.ports(), naming("podman")),
+      machine.box.acts,
+    ];
+  };
+  expect(await room("Yes")).toEqual([
+    { room: "Open", engine: "docker" },
+    ["docker"],
+  ]);
+  for (const answered of ["No", "Absent"] as const)
+    expect(await room(answered)).toEqual([
+      {
+        room: "Engineless",
+        asked: [{ engine: "docker", answered }],
+        start: "colima start",
+      },
+      ["docker"],
+    ]);
 });
 
 test("docker is asked only of the user the package takes it from: any other is asked podman alone, and has no engine where podman does not answer or the settings set the runner to use docker", async () => {
@@ -612,7 +696,11 @@ test("docker is asked only of the user the package takes it from: any other is a
   expect(await room("1001", both, "podman")).toEqual(podman);
   expect(await room("1001", { docker: "Yes", podman: "No" }, "podman")).toEqual(
     [
-      { room: "Engineless", asked: [{ engine: "podman", answered: "No" }] },
+      {
+        room: "Engineless",
+        asked: [{ engine: "podman", answered: "No" }],
+        start: undefined,
+      },
       ["services", "podman"],
     ],
   );
@@ -651,6 +739,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
   expect((await here(named)).room).toEqual({
     room: "Engineless",
     asked: [{ engine: "podman", answered: "Absent" }],
+    start: undefined,
   });
 
   const barred = pooled(["acme.widgets.shame.json"]);
@@ -684,18 +773,23 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     room: { room: "Open", engine: "docker" },
     claude: undefined,
   });
+});
 
-  const mac = pooled(["acme.widgets.shame.json"]);
-  mac.box.paths.set(boxSettings, JSON.stringify({ claudeTokenFile: boxLogin }));
-  mac.platform = "darwin";
-  expect(await here(mac)).toEqual({
-    room: { room: "Mac" },
-    held: false,
+test("on a Mac the bare command reads the settings at chuggy-darwin's place and asks docker alone, and a registration there is held", async () => {
+  const darwin = pooled(["acme.widgets.shame.json"]);
+  darwin.box.paths.set(
+    boxMacSettings,
+    JSON.stringify({ claudeTokenFile: boxMacLogin }),
+  );
+  darwin.platform = "darwin";
+  expect(await setupRunnerHere(darwin.ports(), acme)).toEqual({
+    room: { room: "Open", engine: "docker" },
+    held: true,
     chat: false,
-    claude: undefined,
+    claude: "Subscription",
   });
-  expect(mac.box.ran).toEqual([]);
-  expect(mac.box.read).toEqual([]);
+  expect(darwin.box.acts).toEqual(["docker"]);
+  expect(darwin.box.read).toEqual([boxMacSettings]);
 });
 
 test("of a registration that failed nothing it printed is kept, on either stream: its exit, and which of the package's refusals it said aside", () => {
@@ -820,6 +914,75 @@ test("a unit is what it is asked to be where the service manager ends well, the 
       is: false,
       said: undefined,
     });
+});
+
+test("an agent is loaded into the person's desktop session where launchd answers for it and into their background session otherwise, is running where launchd says its state is, and said nothing where launchctl did not run", async () => {
+  const domain = async (desktop: boolean) => {
+    const machine = setupMachine();
+    machine.platform = "darwin";
+    machine.box.desktop = desktop;
+    return [await setupAgentDomain(machine.ports()), machine.box.ran];
+  };
+  expect(await domain(true)).toEqual([
+    "gui/1000",
+    [["launchctl", "print", "gui/1000"]],
+  ]);
+  expect(await domain(false)).toEqual([
+    "user/1000",
+    [["launchctl", "print", "gui/1000"]],
+  ]);
+  const agent = {
+    name: "chuggy-darwin.x",
+    path: `${boxAgents}/chuggy-darwin.x.plist`,
+  };
+  const asked = async (answer: SetupChildEnded) => {
+    const machine = setupMachine();
+    machine.box.answers.set("agent", answer);
+    const said = await setupAgentIs(machine.ports(), "gui/1000", agent);
+    expect(machine.box.ran).toEqual([
+      ["launchctl", "print", "gui/1000/chuggy-darwin.x"],
+    ]);
+    return said;
+  };
+  const printed = (state: string) =>
+    exited(
+      0,
+      `gui/1000/chuggy-darwin.x = {\n\tactive count = 1\n\tstate = ${state}\n}\n`,
+    );
+  expect(await asked(printed("running"))).toEqual({
+    loaded: true,
+    is: true,
+    said: "running",
+  });
+  expect(await asked(printed("spawn scheduled"))).toEqual({
+    loaded: true,
+    is: false,
+    said: "",
+  });
+  expect(await asked(exited(113, "", "Could not find service\n"))).toEqual({
+    loaded: false,
+    is: false,
+    said: "",
+  });
+  expect(await asked({ ended: "Unstarted" })).toEqual({
+    loaded: false,
+    is: false,
+    said: undefined,
+  });
+});
+
+test("every runner service of a machine's is restarted by one command: on Linux by the units' pattern, and on a Mac each agent of the package's by its file's label", () => {
+  expect(setupRestartAll(places, { platform: "linux" })).toBe(
+    "systemctl --user restart 'chuggy-linux-*.service'",
+  );
+  expect(
+    setupRestartAll(setupRunnerPlaces(mac), {
+      platform: "darwin",
+      domain: "user/1000",
+    }),
+  ).toBe(
+    `for agent in '${boxAgents}'/chuggy-darwin.*.plist; do launchctl kickstart -k user/1000/"$(basename "$agent" .plist)"; done`,
+  );
 });
 
 test("a program's failure keeps of what it printed only an excerpt the redactor has been through: what it said aside, or what it printed where it said nothing aside", () => {

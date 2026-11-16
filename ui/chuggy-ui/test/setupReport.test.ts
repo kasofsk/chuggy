@@ -38,11 +38,13 @@ import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
 import { copyTextOf } from "../app/copy/copyBundle.ts";
 import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { Copy } from "../app/core/copy.ts";
+import { memoryMibFigure, quantityFigureCopy } from "../app/core/figures.ts";
 import type {
   SetupFault,
   SetupPluginEnded,
   SetupProjectEnded,
   SetupBindAnswered,
+  SetupServeAnswered,
   SetupTicketAnswered,
   SetupReport,
   SetupSignInEnded,
@@ -59,11 +61,16 @@ import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
 import { machineScript } from "./setupMachine.ts";
 import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
 import {
+  rosterColimaAtLogin,
   rosterChatHostStops,
   rosterRunnerStops,
+  runnerNotes,
   runnerNotesAll,
   runnerStopsAll,
 } from "./setupRunnerRoster.ts";
+
+/** Every note a run can say on any end: the Colima line is said only once a Mac's runner is live. */
+const runNotes = runnerNotesAll.filter((note) => note.note !== "Colima");
 
 const site = "https://chuggy.example";
 const next = `next: node ${machineScript}`;
@@ -205,6 +212,23 @@ const things: {
       },
       when: { id: "setup-mend-admin-when", args: { workspace: "acme" } },
     },
+    {
+      thing: "Hand",
+      tell: {
+        id: "setup-mend-finalization-tell",
+        args: {
+          ticket: "7",
+          phase: { id: "ticket-steps-phase-work" },
+          page: "the page",
+          ends: "finish",
+          bootstrap: "own",
+          wait: "room",
+          free: quantityFigureCopy(memoryMibFigure(1434)),
+          needed: quantityFigureCopy(memoryMibFigure(4096)),
+        },
+      },
+      when: { id: "setup-runner-when-look-again" },
+    },
   ],
   Offer: [
     {
@@ -256,6 +280,23 @@ const things: {
       command: "Plugin",
       tell: { id: "setup-mend-plugin-offer-off" },
       when: { id: "setup-offer-plugin-when" },
+    },
+    {
+      thing: "Offer",
+      command: "Serve",
+      tell: {
+        id: "setup-mend-serving-offer",
+        args: {
+          project: "acme/widgets",
+          does: "both",
+          admin: "none",
+          setting: { id: "runners-fallback-title" },
+          placement: "https://chuggy.example/acme/widgets/settings/placement",
+        },
+      },
+      when: { id: "setup-offer-serve-when" },
+      workspace: "acme",
+      project: "widgets",
     },
   ],
   Ask: [
@@ -469,6 +510,18 @@ const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
   },
 ];
 
+/** What a run of `serve` can have had answered: nothing asked, each write written, and each refused. */
+const serveAnswers: readonly (SetupServeAnswered | undefined)[] = [
+  undefined,
+  { given: { written: true }, allowed: { written: true } },
+  { given: { written: true }, allowed: undefined },
+  { given: undefined, allowed: { written: true } },
+  {
+    given: { written: false, failure: { id: "failure-refused" } },
+    allowed: { written: false, failure: { id: "failure-no-connection" } },
+  },
+];
+
 /** What a run of `bind` can have had answered: nothing asked, bound, and refused. */
 const bindAnswers: readonly (SetupBindAnswered | undefined)[] = [
   undefined,
@@ -490,11 +543,6 @@ function stopsOf(at: SetupRunnerAt): typeof runnerStopsAll {
   const others =
     at.project === undefined ? rosterRunnerStops : rosterChatHostStops;
   return runnerStopsAll.filter((one) => !others.includes(one.stop));
-}
-
-/** Whether a stop is said before any site is asked. */
-function siteless(stop: (typeof runnerStopsAll)[number]): boolean {
-  return stop.stop === "Mac" || stop.stop === "MacChatHost";
 }
 
 function checklist(
@@ -633,11 +681,10 @@ const roster: {
       ...(project === undefined ? [] : [{ ended: "Hosted" as const }]),
     ].map((ended) => ({
       report: "Runner",
-      site:
-        ended.ended === "Stopped" && siteless(ended.stop) ? undefined : site,
+      site,
       workspace,
       project,
-      notes: runnerNotesAll,
+      notes: runNotes,
       ended,
     })),
   ),
@@ -667,7 +714,7 @@ const roster: {
           site,
           workspace,
           project,
-          notes: runnerNotesAll,
+          notes: runNotes,
           ended,
         })),
   ),
@@ -691,6 +738,12 @@ const roster: {
     answered,
     checklist: checklist(things.Offer[3] as SetupThing),
   })),
+  Serve: serveAnswers.map((answered) => ({
+    report: "Serve",
+    project: answered === undefined ? undefined : "widgets",
+    answered,
+    checklist: checklist(things.Offer.at(-1) as SetupThing),
+  })),
   Ticket: ticketAnswers.map((answered) => ({
     report: "Ticket",
     answered,
@@ -701,7 +754,7 @@ const roster: {
       report: "RunnerOut",
       workspace,
       project,
-      notes: runnerNotesAll,
+      notes: runNotes,
       out,
     })),
   ),
@@ -718,6 +771,7 @@ const configuring: ReadonlySet<SetupReport["report"]> = new Set([
   "Check",
   "Import",
   "Bind",
+  "Serve",
   "Ticket",
 ]);
 
@@ -899,6 +953,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
   if (
     report.report === "Import" ||
     report.report === "Bind" ||
+    report.report === "Serve" ||
     report.report === "Ticket"
   )
     return carried(report.checklist, answers);
@@ -1271,6 +1326,14 @@ test("a step done by hand is told, and the checklist is named to be read again o
   ]);
 });
 
+test("a ticket waiting on the person's runners short of memory is told how much they have free and the run needs, each as the ticket page sizes it", () => {
+  expect(ended(things.Hand[1] as SetupThing)).toEqual([
+    "tell: Ticket 7 is in Work. It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB. Setup is done when it finishes. the page shows where it is. Tell me when you want me to look again.",
+    `rule: Run node ${machineScript} only if the person asks to look again.`,
+    stop,
+  ]);
+});
+
 test("a question is put as ask:, and the rule names the flag the answer is passed in, last, after whatever is already chosen", () => {
   expect(
     ended(things.Ask[0] as SetupThing, {
@@ -1431,10 +1494,10 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   const exits = (kind: SetupThing["thing"]) =>
     things[kind].map((thing) => setupReportExit(checklist(thing)));
   expect(exits("Done")).toEqual([0]);
-  expect(exits("Hand")).toEqual([0]);
+  expect(exits("Hand")).toEqual([0, 0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
@@ -1482,24 +1545,39 @@ test("a run of runner that stopped says what it found and did, then the stop as 
   }
 });
 
-test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to, and a Mac is said with no site asked", () => {
+test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to", () => {
   for (const report of roster.Runner) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const head = report.site === undefined ? [] : [`site: ${site}, signed in`];
     expect(lines.slice(0, head.length), JSON.stringify(report.ended)).toEqual(
       head,
     );
-    expect(
-      lines.slice(head.length, head.length + runnerNotesAll.length),
-    ).toEqual(
+    expect(lines.slice(head.length, head.length + runNotes.length)).toEqual(
       lines
-        .slice(head.length, head.length + runnerNotesAll.length)
+        .slice(head.length, head.length + runNotes.length)
         .filter((text) => /^(?:found|did): /u.test(text)),
     );
   }
-  expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
-    pairs.reduce((count, at) => count + stopsOf(at).filter(siteless).length, 0),
+});
+
+test("a Mac's runner live tells the person that Colima has to run for it, and how it starts at login, before the checklist next", () => {
+  const lines = setupReportLines(
+    {
+      report: "Runner",
+      site,
+      workspace: "acme",
+      project: "widgets",
+      notes: runnerNotes.Colima,
+      ended: { ended: "Live" },
+    },
+    machineScript,
+    copyTextEn,
   );
+  expect(lines.slice(0, 2)).toEqual([
+    `site: ${site}, signed in`,
+    `tell: Docker runs in Colima on this Mac, which has to be running for the runner's services to work, and after a restart is not until it is started again. ${rosterColimaAtLogin} starts it whenever you log in.`,
+  ]);
+  expect(lines[2]).toMatch(/^next: /u);
 });
 
 /** What a report says that only a run that had done nothing can say. */
@@ -1535,7 +1613,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
       both,
     );
     expect(lines.slice(0, -ending.length), said).toEqual(
-      went.slice(1, 1 + runnerNotesAll.length),
+      went.slice(1, 1 + runNotes.length),
     );
     expect(setupReportExit(report), said).toBe(setupReportExit(report.out));
   }

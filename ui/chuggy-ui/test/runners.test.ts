@@ -24,7 +24,6 @@ import {
   runnerCapabilitiesTyped,
   runnerCapabilityLabel,
   runnerOutdated,
-  runnerPackageOffered,
   runnerPackages,
   runnerRegisterCommand,
   runnerRouteLabel,
@@ -211,9 +210,8 @@ test("a write refused for the hosted grant is told apart from any other refusal"
   );
 });
 
-test("setup offers the Linux package: what it needs, the command that installs its pinned release, and its guide", () => {
-  expect(runnerPackageOffered).toBe(runnerPackages.linux);
-  expect(runnerPackageOffered).toStrictEqual({
+test("the Linux package: what it needs, the command that installs its pinned release, and its guide", () => {
+  expect(runnerPackages.linux).toStrictEqual({
     label: { id: "runners-package-linux" },
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
@@ -222,8 +220,8 @@ test("setup offers the Linux package: what it needs, the command that installs i
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
     chatHostGuideAddress: "https://github.com/kasofsk/chuggy-linux#a-chat-host",
   });
-  expect(copyTextEn(runnerPackageOffered.label)).toBe("Linux");
-  expect(copyTextEn(runnerPackageOffered.needs)).toBe(
+  expect(copyTextEn(runnerPackages.linux.label)).toBe("Linux");
+  expect(copyTextEn(runnerPackages.linux.needs)).toBe(
     "Linux · Node 24 · Docker or Podman",
   );
 });
@@ -295,7 +293,7 @@ test("capabilities typed are refused where one is not a capability, is a platfor
 test("the register command names the package's program, the console's own origin and the token, and what was asked of it", () => {
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
       "Pool",
@@ -303,7 +301,7 @@ test("the register command names the package's program, the console's own origin
   ).toBe("chuggy-linux register --api https://chuggy.test --token=tok_en-1");
   expect(
     runnerRegisterCommand(
-      { ...runnerPackageOffered, program: "chuggy-darwin" },
+      runnerPackages.darwin,
       "https://chuggy.test",
       "tok_en-1",
       "Pool",
@@ -322,7 +320,7 @@ test("the register command names the package's program, the console's own origin
   );
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
       "Pool",
@@ -336,7 +334,7 @@ test("the register command names the package's program, the console's own origin
 test("a member's own runner is registered by the same command, marked personal", () => {
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "tok_en-1",
       "Personal",
@@ -351,7 +349,7 @@ test("a member's own runner is registered by the same command, marked personal",
 test("a token that starts with a dash stays the token's value", () => {
   expect(
     runnerRegisterCommand(
-      runnerPackageOffered,
+      runnerPackages.linux,
       "https://chuggy.test",
       "-tok",
       "Pool",

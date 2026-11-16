@@ -382,12 +382,20 @@ export function memoryMibFigure(mib: number): QuantityFigure {
   };
 }
 
-/** A quantity as the words of a line it stands in, its number and its unit as `Figure` draws them. */
+/** A quantity as a line hands it to another, its number and its unit as `Figure` draws them. */
+export function quantityFigureCopy(figure: QuantityFigure): Copy {
+  return {
+    id: "figures-quantity",
+    args: { figure: figure.text, unit: figure.unit },
+  };
+}
+
+/** A quantity as the words of a line it stands in. */
 export function quantityFigureText(
   figure: QuantityFigure,
   text: CopyText,
 ): string {
-  return `${figure.text} ${text(figure.unit)}`;
+  return text(quantityFigureCopy(figure));
 }
 
 function clockOf(at: Date): string {

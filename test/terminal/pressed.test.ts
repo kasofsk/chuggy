@@ -37,7 +37,6 @@ type SetupPressed = keyof typeof setupPressed;
 type SetupPressedCatalogued =
   | "ticket"
   | "runner"
-  | "runnerProject"
   | "fallback"
   | "chatHost"
   | "connect"
@@ -67,7 +66,6 @@ const drawnFromCatalog: Readonly<
     id: "ticket-authoring-create-ticket",
   },
   runner: { page: myRunnerPage, id: "runners-register" },
-  runnerProject: { page: myRunnerPage, id: "runners-personal-project-add" },
   fallback: {
     page: "ui/chuggy-ui/app/browser/settings/OwnerFallbackSection.tsx",
     id: "runners-fallback-title",

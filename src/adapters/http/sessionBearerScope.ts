@@ -142,6 +142,7 @@ export const sessionBearerRouteClasses = {
   ticketLandings: partitionRead,
   ticketTake: { POST: sessionBearerPartition("DraftOriginate") },
   ticketReturn: { POST: sessionBearerPartition("DraftOriginate") },
+  ticketProposalMerge: refusedWrite,
   landingQueues: partitionRead,
   nativeActions: partitionRead,
   inbox: partitionRead,

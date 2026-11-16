@@ -58,6 +58,7 @@ import {
   composeProjectInbox,
   composeProjectOwnerFallback,
   composeTicketTakes,
+  composeTicketProposalMerges,
   composeThreadLimits,
   composeMemberChat,
   composeProjectCreation,
@@ -133,6 +134,7 @@ import {
 } from "../interpreter/bootstrapConfiguration.ts";
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
+import type { TicketProposalMerges } from "../interpreter/ticketProposalMerge.ts";
 import {
   forgeAppKeyOf,
   githubForgeId,
@@ -957,6 +959,7 @@ export interface NativeForge {
   readonly credentials: RepositoryCredentialPort;
   readonly minting: ForgeCredentialMinting | undefined;
   readonly onboarding: RepositoryOnboarding;
+  readonly proposalMerges: TicketProposalMerges;
   readonly repositories:
     | (RepositoryConfigurationSnapshotPort & RepositoryDefaultBranchPort)
     | undefined;
@@ -997,6 +1000,11 @@ async function nativeForge(
       minting === undefined
         ? undefined
         : composeForgeCredentialMinting(pools.pool, access, minting.tokens),
+    proposalMerges: composeTicketProposalMerges(
+      pools.pool,
+      access,
+      minting?.tokens,
+    ),
     repositories,
     onboarding: composeRepositoryOnboarding({
       apiPool: pools.pool,
@@ -1586,6 +1594,7 @@ async function main(): Promise<void> {
     nativeLandingQueues(pools, access),
     nativeUnrunDeletions(pool, access, erasure),
     composeTicketTakes(pool, access),
+    forge.proposalMerges,
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

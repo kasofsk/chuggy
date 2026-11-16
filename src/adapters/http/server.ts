@@ -235,6 +235,7 @@ import {
   unrunDeletedResponse,
   unrunDeletionStandingResponse,
   ticketTakeResponse,
+  ticketProposalMergeResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
@@ -267,6 +268,7 @@ import type { ExecutionPlacementAdministration } from "../../interpreter/executi
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { TicketTakes } from "../../interpreter/ticketTake.ts";
+import type { TicketProposalMerges } from "../../interpreter/ticketProposalMerge.ts";
 import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
@@ -2564,6 +2566,24 @@ function registerTicketTakes(app: FastifyInstance, takes: TicketTakes): void {
     );
 }
 
+/** A ticket's pull request merged on a person's word. */
+function registerTicketProposalMerges(
+  app: FastifyInstance,
+  merges: TicketProposalMerges,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketProposalMerge,
+    (request, principal, partition) =>
+      merges.merge(
+        principal,
+        partition,
+        asTicketIdField(record(request.params), "ticket"),
+      ),
+    ticketProposalMergeResponse,
+  );
+}
+
 function registerLandingQueues(
   app: FastifyInstance,
   queues: LandingQueueReads,
@@ -2596,16 +2616,19 @@ function registerActions(
   if (reach !== undefined) registerActionReach(app, reach);
 }
 
-/** What a ticket landed and the queues it waits in, and the doors a member takes and returns it through. */
+/** What a ticket landed and the queues it waits in, the doors a member takes and returns it through, and the one its pull request is merged through. */
 function registerTicketDoors(
   app: FastifyInstance,
   landings: TicketLandingReads | undefined,
   landingQueues: LandingQueueReads | undefined,
   takes: TicketTakes | undefined,
+  proposalMerges: TicketProposalMerges | undefined,
 ): void {
   if (landings !== undefined) registerTicketLandings(app, landings);
   if (landingQueues !== undefined) registerLandingQueues(app, landingQueues);
   if (takes !== undefined) registerTicketTakes(app, takes);
+  if (proposalMerges !== undefined)
+    registerTicketProposalMerges(app, proposalMerges);
 }
 
 function registerEndpointSession(request: FastifyRequest): SessionId {
@@ -3356,6 +3379,7 @@ export function createNativeHttpApp(
   landingQueues?: LandingQueueReads,
   deletions?: UnrunDeletions,
   takes?: TicketTakes,
+  proposalMerges?: TicketProposalMerges,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   registerCapacity(app, limits.concurrentRequestsMax);
@@ -3389,7 +3413,7 @@ export function createNativeHttpApp(
   registerRunners(app, nativeHttpPartitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   registerActions(app, actionReports, actionReach);
-  registerTicketDoors(app, landings, landingQueues, takes);
+  registerTicketDoors(app, landings, landingQueues, takes, proposalMerges);
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
   registerFailures(app);
   return app;

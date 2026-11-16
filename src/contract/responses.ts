@@ -200,6 +200,7 @@ import {
   repositoryConfigurationImportResults,
   workerHeldCredentialAbsences,
   ticketTakeOutcomes,
+  proposalMergeRefusals,
 } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
 
@@ -2756,6 +2757,8 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   manageSelector: z.boolean(),
   overrideTicketConfig: z.boolean(),
   skipPlannedEvaluations: z.boolean(),
+  /** Whether the reader may have chuggy merge a pull request one of the project's tickets opened. */
+  mergeProposals: z.boolean(),
   administer: z.boolean(),
   /** Whether the reader may create and revise epics, which is the `Mutate` kind. */
   writeEpic: z.boolean(),
@@ -3272,6 +3275,31 @@ export const ticketLandingsResponseSchema = z.strictObject({
 });
 export type TicketLandingsResponse = z.infer<
   typeof ticketLandingsResponseSchema
+>;
+
+/**
+ * What a merge of a ticket's pull request answers where the pull request is
+ * merged, by this press or before it: the commit the merge left, absent where
+ * the forge named none, and the pull request's link where a report could
+ * carry it.
+ */
+export const ticketProposalMergeResponseSchema = z.strictObject({
+  outcome: z.literal("Merged"),
+  mergeCommit: landingCommitSchema.optional(),
+  url: actionReportDocumentSchema.shape.link,
+});
+export type TicketProposalMergeResponse = z.infer<
+  typeof ticketProposalMergeResponseSchema
+>;
+
+/** What a merge of a ticket's pull request the forge did not make answers: why, and the pull request's link where a report could carry it. */
+export const ticketProposalMergeRefusedResponseSchema = z.strictObject({
+  error: z.strictObject({ code: identitySchema, message: z.string() }),
+  refused: z.enum(proposalMergeRefusals),
+  url: actionReportDocumentSchema.shape.link,
+});
+export type TicketProposalMergeRefusedResponse = z.infer<
+  typeof ticketProposalMergeRefusedResponseSchema
 >;
 
 /**

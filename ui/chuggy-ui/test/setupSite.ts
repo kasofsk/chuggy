@@ -58,6 +58,7 @@ import type { RepositoryConfigurationReferenced } from "../../../src/contract/re
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
+  ExecutionSummary,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsHeldResponse,
@@ -72,9 +73,11 @@ import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/resp
 import type {
   ForgeAppName,
   OwnerFallback,
+  PersonalRunnerWait,
   PlacementRoute,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
+import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
 export interface SetupSiteRepository {
   readonly repository: string;
@@ -121,6 +124,7 @@ export interface SetupSiteProject {
   tickets: SetupSiteTicket[];
   drafts: number[];
   landings: Map<number, readonly TicketLandingResponse[]>;
+  executions: Map<number, readonly ExecutionSummary[]>;
   /** Whether the caller administers the project, which its abilities read says and the mint goes by. */
   administer: boolean;
   /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
@@ -153,15 +157,18 @@ export type SetupSiteRead =
   | "landed"
   | "moving"
   | "drafts"
-  | "landings";
+  | "landings"
+  | "executions";
 
 /** The caller's principal, which their chat host is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner`, `bind` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind` and `file` are writes, `file` the draft's creation. */
+/** What only `runner`, `bind`, `serve` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow` and `file` are writes, `file` the draft's creation, `serve` the project given the caller's runners and `allow` the owner fallback named. */
 export type SetupSiteRunnerAsk =
   | "abilities"
+  | "serve"
+  | "allow"
   | "pools"
   | "mint"
   | "permit"
@@ -251,6 +258,7 @@ export function setupSiteProject(
     tickets: [],
     drafts: [],
     landings: new Map(),
+    executions: new Map(),
     administer: true,
     pools: [],
     tokens: [],
@@ -815,6 +823,7 @@ function abilities(
       manageSelector: administer,
       overrideTicketConfig: administer,
       skipPlannedEvaluations: administer,
+      mergeProposals: administer,
       administer,
       writeEpic: true,
     })
@@ -1040,6 +1049,42 @@ function landings(
   );
 }
 
+/** The caller's own execution of `ticket`'s work, admitted and not begun, waiting on their personal runners as `wait` says, and short of `room` where a case says so. */
+export function setupSiteWaiting(
+  ticket: number,
+  wait: PersonalRunnerWait,
+  room?: ExecutionSummary["personalRunnerRoom"],
+): ExecutionSummary {
+  return {
+    ...ledgerExecution({
+      execution: `execution-${String(ticket)}`,
+      task: 1,
+      identity: workIdentity(1),
+      status: "Admitted",
+    }),
+    ticket,
+    mine: true,
+    ownerFallback: "Strict",
+    personalRunnerWait: wait,
+    ...(room === undefined ? {} : { personalRunnerRoom: room }),
+  };
+}
+
+/** A ticket's executions, the whole of them on one page unless a case cut it. */
+function executions(
+  site: SetupSite,
+  project: SetupSiteProject,
+  query: URLSearchParams,
+): SetupSiteAnswer {
+  return (
+    fated(site, "executions") ??
+    answered({
+      executions: project.executions.get(Number(query.get("ticket"))) ?? [],
+      ...(cut(site, "executions") ? { nextCursor: "more" } : {}),
+    })
+  );
+}
+
 const mintPath = "/worker-pool-registration-tokens";
 const redeemPath = "/api/v1/worker-pool-registrations";
 const chatMintPath = "/chat-host-registration-tokens";
@@ -1075,6 +1120,8 @@ function projectAnswered(
       );
     case "/execution-placement":
       return fated(site, "work") ?? answered(work(project));
+    case "/executions":
+      return executions(site, project, query);
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(site, project));
     case "/owner-fallback":
@@ -1363,7 +1410,45 @@ function projectOf(
   );
 }
 
-/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, or nothing the site answers. */
+/** The caller's runners given a project they are shown, where they hold any. */
+function personalServed(
+  site: SetupSite,
+  tenant: string,
+  project: SetupSiteProject,
+): SetupSiteAnswer {
+  const held = site.personal.get(tenant);
+  if (held === undefined) return refused();
+  const fate = fated(site, "serve");
+  if (fate !== undefined) return fate;
+  if (!held.projects.includes(project.project))
+    held.projects.push(project.project);
+  return answered({});
+}
+
+/** A project's owner fallback named whole, by a caller who administers it. */
+function fallbackWritten(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "allow");
+  if (fate !== undefined) return fate;
+  if (!project.administer)
+    return {
+      status: 403,
+      body: { error: { code: "Forbidden", message: "Forbidden." } },
+    };
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly fallback?: OwnerFallback;
+  };
+  project.fallback = asked.fallback;
+  return answered({
+    ...(asked.fallback === undefined ? {} : { fallback: asked.fallback }),
+    administers: true,
+  });
+}
+
+/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, a project's owner fallback named, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
@@ -1372,10 +1457,23 @@ function tenantWritten(
 ): SetupSiteAnswer | undefined {
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
+  const served = /^\/personal-runner\/projects\/([^/]+)$/u.exec(rest);
+  if (sent.method === "PUT" && served !== null) {
+    const project = projectOf(site, tenant, served[1]);
+    return project === undefined
+      ? refused()
+      : personalServed(site, tenant, project);
+  }
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
   if (sent.method === "POST" && within?.[2] === "/repositories") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : bound(site, project, sent.body);
+  }
+  if (sent.method === "PUT" && within?.[2] === "/owner-fallback") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : fallbackWritten(site, project, sent.body);
   }
   if (sent.method === "POST" && within?.[2] === "/drafts") {
     const project = projectOf(site, tenant, within[1]);

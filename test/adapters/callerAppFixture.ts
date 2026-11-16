@@ -16,6 +16,7 @@ import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/p
 import type { TicketActionReaches } from "../../src/interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
 import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
+import type { TicketProposalMerges } from "../../src/interpreter/ticketProposalMerge.ts";
 import type { TicketTakes } from "../../src/interpreter/ticketTake.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -30,6 +31,7 @@ export interface CallerAppServices {
   readonly landingQueues?: LandingQueueReads;
   readonly deletions?: UnrunDeletions;
   readonly takes?: TicketTakes;
+  readonly proposalMerges?: TicketProposalMerges;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -77,5 +79,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.landingQueues,
     services.deletions,
     services.takes,
+    services.proposalMerges,
   );
 }

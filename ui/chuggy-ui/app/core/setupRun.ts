@@ -14,12 +14,7 @@
 
 import { base64urlFromBytes } from "./base64url.ts";
 import { operationIdBytesCount } from "./operationFollow.ts";
-import {
-  setupAgentRead,
-  setupMcpPackaged,
-  setupServer,
-  setupServerPlatform,
-} from "./setupAgent.ts";
+import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
 import { setupAsked } from "./setupArguments.ts";
 import type {
   SetupAnswers,
@@ -39,10 +34,15 @@ import {
   setupMcpDue,
   setupNext,
   setupRunnerDue,
+  setupServeDue,
   setupTicketDue,
 } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
-import { SetupMachineError, setupPlatformServed } from "./setupPorts.ts";
+import {
+  SetupMachineError,
+  setupPlatformOf,
+  setupPlatformServed,
+} from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import { setupPlugin, setupPluginHad } from "./setupPlugin.ts";
 import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
@@ -50,6 +50,7 @@ import type { SetupReads } from "./setupReads.ts";
 import { setupProject } from "./setupProject.ts";
 import type { SetupProjectAsked } from "./setupProject.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
+import { setupServeAsked, setupServeWrites } from "./setupServe.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
 import { setupChatHost, setupRunner, setupWritePorts } from "./setupRunner.ts";
 import type {
@@ -257,7 +258,7 @@ async function setupChecklist(
     next: setupNext(
       standing,
       answers,
-      setupServerPlatform(ports),
+      setupPlatformOf(ports.surroundings),
       here,
       packaged,
       offers,
@@ -413,6 +414,39 @@ async function setupBind(
   return {
     report: "Bind",
     repository: due?.repository,
+    answered,
+    checklist: await setupChecklist(ports, held, asked.answers, pacing),
+  };
+}
+
+/**
+ * `serve` works under the remembered sign-in as `bind` does. Where the
+ * checklist's next thing is a personal runner of the person's taking the
+ * project's work, it asks the site for the writes that are due, the only ones
+ * its ports let through, and reads the checklist again; where it is not, it
+ * writes nothing and says the checklist.
+ */
+async function setupServe(
+  ports: SetupPorts,
+  asked: Extract<SetupAsked, { readonly asked: "Serve" }>,
+  pacing: SetupPacing,
+): Promise<SetupReport> {
+  const held = await setupEntered(ports, asked.site, "Serve");
+  if (held === undefined) return setupBusy(ports, "Serve", asked.site);
+  if (held.signed === "Out") return held.report;
+  const due = setupServeDue(
+    await setupStandingRead(ports, held, asked.answers, pacing),
+  );
+  const answered =
+    due === undefined
+      ? undefined
+      : await setupServeAsked(
+          setupWritePorts(held.opened.api, held.bearer, setupServeWrites(due)),
+          due,
+        );
+  return {
+    report: "Serve",
+    project: due?.partition.project,
     answered,
     checklist: await setupChecklist(ports, held, asked.answers, pacing),
   };
@@ -627,6 +661,8 @@ export async function setupRun(
         return await setupImport(ports, asked, pacing);
       case "Bind":
         return await setupBind(ports, asked, pacing);
+      case "Serve":
+        return await setupServe(ports, asked, pacing);
       case "Ticket":
         return await setupTicket(ports, asked, pacing);
       case "Listen":

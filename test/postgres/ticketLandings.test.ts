@@ -49,7 +49,6 @@ import type {
   FinalizationUnavailableKind,
 } from "../../src/contract/rosters.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
   asFinalizationAttemptId,
   asGitObjectId,
@@ -71,7 +70,6 @@ import {
 } from "../../src/interpreter/ticketLandings.ts";
 import { recordStack } from "./evaluationStackLandings.ts";
 import {
-  finalizerAccept,
   finalizerBriefBranch,
   finalizerBriefLanding,
   finalizerBriefFinalizationTarget,
@@ -81,13 +79,12 @@ import {
   finalizerDigest,
   finalizerDrain,
   finalizerEntering,
-  finalizerEvaluation,
   finalizerIdentity,
   finalizerPrepare,
   finalizerProject,
   finalizerPromote,
+  finalizerReworked,
   finalizerRigOpen,
-  finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
@@ -733,54 +730,6 @@ test("a landing in the mode that stops at an open pull request answers Proposed 
   assert.equal(landing.proposal?.url, pullRequest);
 });
 
-/**
- * Drives the project's ticket back to finalization after a landing sent it
- * to work: the rework's work passes and its evaluation passes, and the request
- * that decision opens is the project's next landing.
- */
-async function finalizingAgain(
-  project: FinalizerProject,
-  memory: ProjectMemory,
-  label: string,
-): Promise<FinalizerProject> {
-  let carried = memory;
-  for (const task of [
-    workTaskIdentity(project.ticket, 2),
-    finalizerEvaluation(2),
-  ]) {
-    assert.equal(
-      await finalizerAccept(
-        rig.harness,
-        project.partition,
-        `${label}-${task.type}`,
-        finalizerTaskDone(carried.graph, task),
-      ),
-      "Accepted",
-    );
-    const drained = await finalizerDrain(
-      rig.harness,
-      project.partition,
-      carried,
-    );
-    assert.deepEqual(drained.decided, ["Committed"]);
-    carried = drained.memory;
-  }
-  const [row] = await rig.harness.query(
-    `SELECT request, authorizing_seq::text AS seq, request_generation::text AS generation
-       FROM finalization_request
-      WHERE tenant=$1 AND project=$2 AND state='Open'`,
-    [project.partition.tenant, project.partition.project],
-  );
-  assert.ok(row !== undefined, "the second evaluation opened a landing");
-  return {
-    ...project,
-    request: String(row["request"]),
-    authorizingSeq: Number(row["seq"]),
-    requestGeneration: Number(row["generation"]),
-    memory: carried,
-  };
-}
-
 test("a ticket that failed a landing and landed the next answers both in order, each with its own cycle and its own commit", async () => {
   const first = await finalizing("twice", "PullRequestMerge");
   const firstPromoted = await promotion(first, "twice-first");
@@ -794,7 +743,8 @@ test("a ticket that failed a landing and landed the next answers both in order, 
     outcome: "Failed",
     failureKind: "MergeConflict",
   });
-  const second = await finalizingAgain(
+  const second = await finalizerReworked(
+    rig,
     first,
     await concluded(first, needsWork, failed),
     "twice",

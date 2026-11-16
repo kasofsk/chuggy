@@ -151,7 +151,23 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "update_usage_settings",
     "retry_paused_agent",
     "retire_credential",
+    "merge_pull_request",
   ]);
+});
+
+test("merge_pull_request is named under ProposalMerge alone, a capability no session may hold", () => {
+  assert.deepEqual(
+    Object.entries(chuggyToolCapabilities)
+      .filter(([, tools]) => tools.includes("merge_pull_request"))
+      .map(([capability]) => capability),
+    ["ProposalMerge"],
+  );
+  assert.deepEqual(chuggyToolCapabilities.ProposalMerge, [
+    "merge_pull_request",
+  ]);
+  assert.ok(
+    !(sessionCapabilities as readonly string[]).includes("ProposalMerge"),
+  );
 });
 
 test("no tool re-authors a released ticket, whatever roster holds it", () => {
@@ -287,6 +303,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     ThreadOffer: [],
     ProjectSettings: [],
     AgentAccounts: [],
+    ProposalMerge: [],
   });
 });
 

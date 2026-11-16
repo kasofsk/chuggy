@@ -9,7 +9,6 @@ export const setupRunnerFtl = `## Setting up a runner: what a run of the setup p
 ## Shared words.
 
 setup-runner-unchanged = so nothing was changed on this machine
-setup-runner-mac-none = { setup-program } puts { -runner(form: "a") } only on Linux
 setup-runner-picked-up = What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.
 setup-runner-unknown = so I cannot say the { -runner } is set up. What was done before stays done
 setup-runner-when-try-again = if the person asks to try again
@@ -65,6 +64,9 @@ setup-runner-note-unit-written = installed the { -runner }'s service, { $unit }
 setup-runner-note-server-found = { -claude-code } in this folder runs { -brand-name }'s MCP server for { $project }, as { $path } names it
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
 setup-runner-note-server-added = named { -brand-name }'s MCP server for { $project } in { -claude-code }'s configuration for this folder, in { $path }; a { -claude-code } session started here from now on has its tools
+# spells -run: to run is a verb here
+# spells -work-stage: to work is a verb here
+setup-runner-note-colima = Docker runs in Colima on this Mac, which has to be running for the { -runner }'s services to work, and after a restart is not until it is started again. { $start } starts it whenever you log in.
 setup-runner-note-linger = your services keep running after you log out
 setup-runner-note-linger-on = set your services to keep running after you log out
 setup-runner-note-linger-on-unread = set your services to keep running after you log out, not having learned whether they already did
@@ -107,6 +109,9 @@ setup-runner-engines-neither = neither { $engines } answered
 setup-runner-engine-needs-password = Installing a container engine, or letting your user reach one, takes a password, and { setup-program } never takes one.
 # spells -work-stage: the work in general
 setup-runner-engineless-tell = { -runner(case: "upper", form: "a") } does its work in containers, and { $none } on this machine without a password, { setup-runner-unchanged }. { setup-runner-engine-needs-password } Tell me once one answers you.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-runner-engineless-colima-tell = { -runner(case: "upper", form: "a") } does its work in containers, and Docker did not answer on this machine, { setup-runner-unchanged }. On a Mac, Docker runs in Colima, which { $start } starts without a password. Tell me once Docker answers you.
 setup-runner-engineless-when = once the person says a container engine answers them on this machine
 
 ## A user the runner package takes docker from no user but one.
@@ -152,12 +157,6 @@ setup-runner-not-admin-tell = Putting { -runner(form: "a") } on { -project(form:
 
 ## What this machine lacks.
 
-setup-runner-mac-found = this machine is a Mac, and { setup-runner-mac-none }
-# spells -run: to run is a verb here
-setup-runner-mac-tell = { setup-runner-mac-none } and cannot set one up here, { setup-runner-unchanged }. A Mac runs one with { $program }, added by hand, and a Linux machine runs one too. Tell me once one is running.
-setup-runner-mac-when = once the person says { -runner(form: "a") } is running
-setup-runner-mac-chat-found = this machine is a Mac, and { setup-program } makes a machine your { -chat-host } only on Linux
-setup-runner-mac-chat-tell = { setup-program } makes a machine your { -chat-host } only on Linux and cannot make this one it, { setup-runner-unchanged }. To make it your { -chat-host } by hand, { $byHand }. Tell me once it is running.
 setup-runner-serviceless-found = this machine's user services did not answer { $command }
 # spells -run: to run is a verb here
 setup-runner-serviceless-tell = { setup-program } runs the { -runner } as a service of yours, and this machine's user services did not answer, { setup-runner-unchanged }. The { -runner }'s guide says how it is run by hand: { $guide }. Tell me if you want me to try again.
