@@ -200,6 +200,7 @@ import { migration199 } from "./199-thread-ticket-wakes.ts";
 import { migration200 } from "./200-project-thread-settings.ts";
 import { migration201 } from "./201-queued-landings.ts";
 import { migration202 } from "./202-chat-host-unlisted-attempts.ts";
+import { migration203 } from "./203-landing-queue-holder-since.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -405,4 +406,5 @@ export const migrations: readonly Migration[] = [
   migration200,
   migration201,
   migration202,
+  migration203,
 ];
