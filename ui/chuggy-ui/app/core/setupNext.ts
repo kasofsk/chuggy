@@ -757,7 +757,13 @@ function setupTicketMend(
       return setupHand(
         {
           id: "setup-mend-finalization-tell",
-          args: { ticket, phase: setupPhaseSaid(lack.phase), page },
+          args: {
+            ticket,
+            phase: setupPhaseSaid(lack.phase),
+            page,
+            ends: lack.pullRequest ? "pull" : "finish",
+            bootstrap: lack.bootstrapped ? "bootstrap" : "own",
+          },
         },
         setupLookAgain,
       );

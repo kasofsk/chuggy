@@ -2166,7 +2166,7 @@ test("the bare command, where a runner is next and this machine could take one, 
   expect(done.lines.slice(-5)).toEqual([
     "step: runner      todo",
     "step: ticket      todo",
-    `tell: ${runnerIs}. I can make this machine one. That puts here a background service of yours, run by the runner package, chuggy-linux, that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, and on ${pages}/settings/placement set Personal runners to Strict or Preferred, so the runner takes its work.`,
+    `tell: ${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, and on ${pages}/settings/placement set Personal runners to Strict or Preferred, so the runner takes its work.`,
     offer,
     stop,
   ]);
@@ -2200,7 +2200,7 @@ test("where the person's chats run on a chat host, the bare command offers two s
   const machine = await both();
   const offered = await ran(machine, []);
   expect(offered.lines.slice(-3)).toEqual([
-    `tell: ${runnerIs}. I can make this machine one. That puts here two background services of yours, run by the runner package, chuggy-linux, that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, and on ${pages}/settings/placement set Personal runners to Strict or Preferred, so the runner takes its work.`,
+    `tell: ${runnerIs}. I can make this machine one. That puts two background services of yours here. The runner package, chuggy-linux, runs them, and they start when you log in. One does the work on your project's tickets. The other is your chat host: your chats with chuggy run there and nowhere else. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, and on ${pages}/settings/placement set Personal runners to Strict or Preferred, so the runner takes its work.`,
     offer,
     stop,
   ]);

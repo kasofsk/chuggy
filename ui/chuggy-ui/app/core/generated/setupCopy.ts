@@ -730,6 +730,7 @@ export interface SetupCopy {
   readonly "setup-ticket-did": {
     readonly ticket: unknown;
     readonly configuration: unknown;
+    readonly bootstrap: unknown;
   };
   readonly "setup-ticket-unfiled": {
     readonly refusal: unknown;
@@ -766,6 +767,8 @@ export interface SetupCopy {
   readonly "setup-mend-finalization-tell": {
     readonly ticket: unknown;
     readonly phase: unknown;
+    readonly ends: unknown;
+    readonly bootstrap: unknown;
     readonly page: unknown;
   };
   readonly "setup-mend-decision-tell": {

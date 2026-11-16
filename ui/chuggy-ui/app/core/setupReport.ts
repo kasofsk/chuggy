@@ -201,12 +201,13 @@ export type SetupBindAnswered =
   | { readonly answered: "Bound"; readonly said: Copy }
   | { readonly answered: "Refused"; readonly refusal: Copy };
 
-/** What the site answered a filing: the ticket made, released and sent to start, under the configuration named, or refused, in the console's creation's words where they are its. */
+/** What the site answered a filing: the ticket made, released and sent to start, under the configuration named and whether that is a bootstrap, or refused, in the console's creation's words where they are its. */
 export type SetupTicketAnswered =
   | {
       readonly answered: "Filed";
       readonly ticket: number;
       readonly configuration: string;
+      readonly bootstrap: boolean;
     }
   | { readonly answered: "Refused"; readonly refusal: Copy };
 
@@ -1380,6 +1381,7 @@ function setupTicketSaid(
             args: {
               ticket: String(answered.ticket),
               configuration: answered.configuration,
+              bootstrap: answered.bootstrap ? "bootstrap" : "own",
             },
           },
         ],

@@ -150,10 +150,13 @@ export type SetupLack =
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
+  /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges, and `bootstrapped` where it holds only the bootstrap. */
   | {
       readonly lacks: "Landing";
       readonly ticket: number;
       readonly phase: TicketPhase;
+      readonly pullRequest: boolean;
+      readonly bootstrapped: boolean;
     }
   | { readonly lacks: "Decision"; readonly ticket: number };
 
@@ -999,8 +1002,12 @@ function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
 /** The phase a ticket is in between its release and its start, where pressing is what starts one nothing else has. */
 export const setupUnstartedPhase = "Pending" satisfies TicketPhase;
 
-/** A ticket on its way, by what it waits on: a decision where it is escalated, a start where it is released and not started, and its landing otherwise. */
-function setupTicketMoving(ticket: number, phase: TicketPhase): SetupStep {
+/** A ticket on its way, by what it waits on: a decision where it is escalated, a start where it is released and not started, and its landing otherwise, told by the landing the repository meant defaults to. */
+function setupTicketMoving(
+  reads: SetupReads,
+  ticket: number,
+  phase: TicketPhase,
+): SetupStep {
   const args = { ticket: String(ticket) };
   if (phase === "Escalated")
     return setupUndone(
@@ -1023,7 +1030,15 @@ function setupTicketMoving(ticket: number, phase: TicketPhase): SetupStep {
       id: "setup-step-ticket-moving",
       args: { ...args, phase: setupPhaseSaid(phase) },
     },
-    { lacks: "Landing", ticket, phase },
+    {
+      lacks: "Landing",
+      ticket,
+      phase,
+      pullRequest:
+        setupBindingMeant(reads.repositories)?.finalization.kind ===
+        "PullRequest",
+      bootstrapped: setupBootstrapped(reads.repositories),
+    },
   );
 }
 
@@ -1041,7 +1056,7 @@ function setupTicketStep(
   const [moving] = reads.moving.read === "Got" ? reads.moving.value : [];
   const [draft] = reads.drafts.read === "Got" ? reads.drafts.value : [];
   if (moving !== undefined)
-    return setupTicketMoving(moving.ticket, moving.phase);
+    return setupTicketMoving(reads, moving.ticket, moving.phase);
   if (draft !== undefined)
     return setupUndone(
       "ticket",

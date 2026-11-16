@@ -252,7 +252,7 @@ test("where the person's chats run on a chat host and they have none, the bare c
   assert.equal(offered.code, 0, offered.stdout);
   assert.match(
     offered.lines.at(-3) ?? "",
-    / two background services of yours, run by the runner package, chuggy-linux, that start when you log in: one for the work on your project's tickets, one your chat host, /u,
+    / two background services of yours here\. The runner package, chuggy-linux, runs them, and they start when you log in\. One does the work on your project's tickets\. The other is your chat host: your chats with chuggy run there and nowhere else\. /u,
   );
   const rule = offered.lines.at(-2) ?? "";
   const yes = " only once the person says yes to a runner on this machine.";

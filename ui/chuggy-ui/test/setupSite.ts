@@ -68,6 +68,7 @@ import type {
   TicketLandingResponse,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
+import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
   OwnerFallback,
@@ -83,8 +84,8 @@ export interface SetupSiteRepository {
   readonly bootstrapped?: boolean;
   /** The import of it that finished last, where one did. */
   readonly lastImport?: RepositoryConfigurationImportAttemptResponse;
-  /** How its work is finalized, pushed unless a case has it merged through a pull request. */
-  readonly mode?: "Push" | "PullRequestMerge";
+  /** How its work is finalized: pushed unless a case has it merged through a pull request, or left in one for the person to merge. */
+  readonly mode?: "Push" | "PullRequestMerge" | "PullRequest";
 }
 
 /** A draft as it was created: the revision it is drawn under, and its brief. */
@@ -506,12 +507,20 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
   };
 }
 
+/** A stand-in for the revision the server authors a repository's bootstrap at, which names the repository. */
+export function setupSiteBootstrapRevision(repository: string): string {
+  return `${bootstrapConfigurationRevisionPrefix}${repository}`;
+}
+
 /** What the project holds for a repository it holds a configuration for. */
 function configurations(
   repository: SetupSiteRepository,
 ): ProjectRepositoryConfigurationsHeldResponse {
   return repository.bootstrapped === true
-    ? { result: "Bootstrapped", revision: "bootstrap-widgets" }
+    ? {
+        result: "Bootstrapped",
+        revision: setupSiteBootstrapRevision(repository.repository),
+      }
     : { result: "Imported", count: 1 };
 }
 
@@ -522,11 +531,14 @@ function binding(
     repository: repository.repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: repository.mode ?? "Push" },
-    finalization: {
-      kind: "GitMerge",
-      mode: repository.mode ?? "Push",
-      policy: "Direct",
-    },
+    finalization:
+      repository.mode === "PullRequest"
+        ? { kind: "PullRequest" }
+        : {
+            kind: "GitMerge",
+            mode: repository.mode ?? "Push",
+            policy: "Direct",
+          },
     pipelinesWritable: false,
     pipelinesRunnable: false,
     ...(repository.retired === true
@@ -1248,7 +1260,10 @@ function bound(
       repository: asked,
       landing: { mode: "Push" },
       finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
-      configurations: { result: "Bootstrapped", revision: "bootstrap-widgets" },
+      configurations: {
+        result: "Bootstrapped",
+        revision: setupSiteBootstrapRevision(asked),
+      },
     },
   };
 }
