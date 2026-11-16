@@ -22,6 +22,7 @@ import { CopyProvider } from "../../app/browser/ui/copyHeld.tsx";
 import { answer, drawnStrict } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 import { siteAbilitiesNone, siteAbilitiesPath } from "./permissionsFixture.tsx";
+import { tableText } from "../tableText.ts";
 
 /** Where the site's workspaces are listed, and where one is made. */
 export const siteWorkspacesPath = "/access/v1/site/workspaces";
@@ -260,7 +261,7 @@ export function workspacesDrawn(): readonly (readonly string[])[] {
       return [
         header.textContent,
         ...within(row).queryAllByRole("listitem").map(adminDrawn),
-        row.lastElementChild?.textContent ?? "",
+        row.lastElementChild === null ? "" : tableText(row.lastElementChild),
       ];
     });
 }

@@ -669,7 +669,8 @@ test("the configurations are this repository's own, incomplete rows saying so", 
 });
 
 /** On a narrow container a configuration is a card, so the table is the
- * stacked one, whose every cell carries its column's label. */
+ * stacked one: the configuration titles its card, and every other cell carries
+ * its column's label. */
 test("the configurations are a table that stacks into cards", async () => {
   await drawPage();
   const section = sectionOf("Configurations");
@@ -677,9 +678,10 @@ test("the configurations are a table that stacks into cards", async () => {
     "tabular-stacked",
   );
   const [first] = within(section).getAllByRole("rowheader");
-  expect(first?.querySelector(".tabular-label")?.textContent).toBe(
-    "Configuration",
-  );
+  expect(first?.querySelector(".tabular-label")).toBeNull();
+  expect(
+    first?.parentElement?.querySelector("td .tabular-label")?.textContent,
+  ).toBe("Workload worker");
 });
 
 /**
