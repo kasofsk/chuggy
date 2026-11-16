@@ -162,6 +162,10 @@ export interface RunnersCopy {
   readonly "runners-wait-waiting": Record<never, never>;
   readonly "runners-wait-offline": Record<never, never>;
   readonly "runners-wait-unable": Record<never, never>;
+  readonly "runners-wait-room": {
+    readonly free: unknown;
+    readonly needed: unknown;
+  };
   readonly "runners-fallback-title": Record<never, never>;
   readonly "runners-fallback-about": Record<never, never>;
   readonly "runners-fallback-none": Record<never, never>;

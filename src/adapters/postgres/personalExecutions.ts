@@ -314,16 +314,18 @@ export async function personalExecutionsAllowlisted(
   return found.rows.map((row) => asProjectId(row.project));
 }
 
-/** Stamps the runner's poll, and as one that could take an execution where `executions` says it could, while this registration is one of its member's runners. */
+/** Stamps the runner's poll, and as one that could take an execution where `executions` says it could, with the memory room it named or none, while this registration is one of its member's runners. */
 export async function personalExecutionsPolled(
   pool: pg.Pool,
   identity: PersonalRunnerIdentity,
   executions: boolean,
+  memoryRoomMib: number | undefined,
 ): Promise<void> {
   await pool.query(
     sql`UPDATE personal_runner r SET last_polled_at=now(),
           executions_polled_at=CASE WHEN ${executions}::boolean THEN now()
-                                    ELSE r.executions_polled_at END
+                                    ELSE r.executions_polled_at END,
+          memory_room_mib=${memoryRoomMib ?? null}::bigint
           WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
             AND r.principal=${identity.principal}`,
   );

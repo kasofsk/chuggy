@@ -483,10 +483,11 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
-  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, and a personal runner's whatever it could take, under its current registration alone. */
+  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, and a personal runner's whatever it could take with the memory room it named, under its current registration alone. */
   polled(
     identity: WorkerPoolExecutionPoller,
     executions: boolean,
+    memoryRoomMib: number | undefined,
   ): Promise<void>;
 }
 
@@ -1067,7 +1068,8 @@ async function workerPoolHoldingRead(
  * runner taking nothing names as 0. That is what a pool's claim reads a
  * personal runner as live by, and what a project's pools are read as live by
  * beside their session polls; every poll of a personal runner is recorded too,
- * as what its owner reads it as live by.
+ * as what its owner reads it as live by, with the memory room it named, which
+ * its owner's wait reads it as short of memory by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -1101,7 +1103,7 @@ async function workerPoolPollRecorded(
     identity.kind === "Personal" ||
     (identity.kind === "Dedicated" && executions)
   )
-    await ports.assignments.polled(identity, executions);
+    await ports.assignments.polled(identity, executions, asked.memoryRoomMib);
 }
 
 /** How many passes a poll makes at most: the plane's own, or no more than the wait its poll named lets follow the first. */

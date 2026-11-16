@@ -153,6 +153,7 @@ runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
 runners-wait-offline = offline
 # spells -run: to run is a verb here
 runners-wait-unable = none can run it
+runners-wait-room = { $free } free, needs { $needed }
 
 ## Whether personal runners take a member's work in a project.
 

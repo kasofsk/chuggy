@@ -1034,9 +1034,9 @@ export function postgresWorkerPoolAssignments(
       personalExecutionCredentialOutcomes(pool, identity, assignments),
     credentialPauses: (identity, credentials) =>
       workerPoolCredentialPauses(pool, identity, credentials),
-    polled: (identity, executions) =>
+    polled: (identity, executions, memoryRoomMib) =>
       identity.kind === "Personal"
-        ? personalExecutionsPolled(pool, identity, executions)
+        ? personalExecutionsPolled(pool, identity, executions, memoryRoomMib)
         : workerPoolExecutionsPolled(pool, identity, executions),
     ...postgresExecutionHoldsRouted(pool),
   };
