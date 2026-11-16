@@ -11,6 +11,7 @@
 
 import { expect, test } from "vitest";
 
+import { runnerPackages } from "../app/core/runners.ts";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import {
@@ -380,7 +381,12 @@ function packaged(held: string | undefined): SetupMachine {
 
 test("the package is found under the prefix npm names or under the person's own, by its command's whole path, with the version its manifest names where that is one", async () => {
   const probed = (machine: SetupMachine) =>
-    setupPackageProbed(machine.ports(), places, setupPackageLeast);
+    setupPackageProbed(
+      machine.ports(),
+      places,
+      setupPackageLeast,
+      runnerPackages.linux,
+    );
   const command = `${boxPrefix}/bin/chuggy-linux`;
   expect(await probed(setupMachine())).toEqual({
     found: undefined,
@@ -422,7 +428,14 @@ test("where the machine's prefix and the person's own both hold the package, the
       `${boxOwn}/lib/node_modules/chuggy-linux/package.json`,
       JSON.stringify({ version: theirs }),
     );
-    return (await setupPackageProbed(machine.ports(), places, least)).found;
+    return (
+      await setupPackageProbed(
+        machine.ports(),
+        places,
+        least,
+        runnerPackages.linux,
+      )
+    ).found;
   };
   const own = `${boxOwn}/bin/chuggy-linux`;
   const machineWide = `${boxPrefix}/bin/chuggy-linux`;
@@ -461,6 +474,7 @@ test("the prefix npm prints is taken only as one whole path, and is this person'
       machine.ports(),
       places,
       setupPackageLeast,
+      runnerPackages.linux,
     );
     return [read, mine];
   };
