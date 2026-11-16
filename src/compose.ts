@@ -101,6 +101,12 @@ import {
 import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import { postgresProjectAppearance } from "./adapters/postgres/projectAppearance.ts";
+import { postgresAppearance } from "./adapters/postgres/appearance.ts";
+import {
+  projectAppearanceService,
+  type ProjectAppearanceService,
+} from "./interpreter/projectAppearance.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
 import {
@@ -359,6 +365,18 @@ export function composeProjectOwnerFallback(
   return projectOwnerFallbackAdministration(
     access,
     postgresProjectOwnerFallback(apiPool),
+  );
+}
+
+/** Wires a project's appearance to API-role credentials, the access that gates it, and each person's own themes. */
+export function composeProjectAppearance(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): ProjectAppearanceService {
+  return projectAppearanceService(
+    access,
+    postgresProjectAppearance(apiPool),
+    postgresAppearance(apiPool),
   );
 }
 

@@ -6,7 +6,7 @@
  */
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -21,6 +21,7 @@ import {
   test,
 } from "./driver.ts";
 import type { Rendered } from "./driver.ts";
+import configuration from "./playwright.config.ts";
 import { servedOpen } from "./served.ts";
 import type { Served } from "./served.ts";
 import { servedHeadersParse, servedHeadersRead } from "./servedHeaders.ts";
@@ -75,6 +76,11 @@ async function harnessOpen(
     ready: (opened) => opened.getByRole("button", { name: "ok" }),
   });
 }
+
+test("the pool runs no more browsers than the CPUs this process may use", () => {
+  expect(configuration.workers).toBeGreaterThanOrEqual(1);
+  expect(configuration.workers).toBeLessThanOrEqual(availableParallelism());
+});
 
 test("a document is served with the policy nginx.conf states", async ({
   request,

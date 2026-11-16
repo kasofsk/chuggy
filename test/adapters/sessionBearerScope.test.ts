@@ -204,6 +204,7 @@ function scopedApp(
     },
     recorded(reached, "takes"),
     recorded(reached, "appearance"),
+    recorded(reached, "projectAppearance"),
   );
 }
 

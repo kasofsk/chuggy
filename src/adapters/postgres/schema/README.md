@@ -765,6 +765,24 @@ another person's. Its key and identity are `principal`, and it points at
 `owned_theme` by `(principal, owned)`, so deleting the theme deletes the choice
 and the person reads none. It has no unfinished work.
 
+`project_theme` — one project's default theme, the document itself rather than
+a reference to a person's, and who set it. Owned by the boundary owner, which
+is what `set_project_theme` runs as; the API role writes it through that door
+alone and reads it. Its key and identity are `(tenant, project)` and it points
+at `project`, cascading from it, so `delete_unrun_project` takes it with the
+project row. It is changed by that door alone, which answers `Unchanged` where
+nothing moved; a row naming no document is a project that cleared it. It has
+no unfinished work.
+
+`project_theme_override` — the theme one person chose for one project: a
+built-in by its id or a theme of their own, never both. Owned by the boundary
+owner; the API reads it through `read_project_theme_override` and writes or
+clears it through `write_project_theme_override` alone, which refuses a theme
+of another person's. Its key and identity are `(tenant, project, principal)`;
+it points at `project`, cascading from it as `project_theme` does, and at
+`owned_theme` by `(principal, owned)`, so deleting the theme deletes the
+override and the person reads none. It has no unfinished work.
+
 `epic` — a project's epic as it stands: its number, its revision and its
 content. Owned by the boundary owner, which `save_epic` runs as and which is the
 only role that may write it; the API role is granted SELECT and EXECUTE on that

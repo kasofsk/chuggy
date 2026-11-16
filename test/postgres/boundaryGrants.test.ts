@@ -32,6 +32,9 @@ import {
   ownedThemeWriteFunction,
   themeChoiceReadFunction,
   themeChoiceWriteFunction,
+  projectThemeSetFunction,
+  projectThemeOverrideReadFunction,
+  projectThemeOverrideWriteFunction,
   configurationFollowingMoveFunction,
   configurationImporterRole,
   draftCreateFunction,
@@ -968,6 +971,9 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${ownedThemeDeleteFunction}(text,bigint)`,
     `${themeChoiceReadFunction}(text)`,
     `${themeChoiceWriteFunction}(text,text,bigint)`,
+    `${projectThemeSetFunction}(text,text,jsonb,text,text)`,
+    `${projectThemeOverrideReadFunction}(text,text,text)`,
+    `${projectThemeOverrideWriteFunction}(text,text,text,text,bigint)`,
   ].map((signature) =>
     boundaryGrantsDoor(
       signature,
@@ -1142,6 +1148,13 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["theme_choice", null, "SELECT", apiRole, false],
   ["theme_choice", null, "UPDATE", boundaryOwnerRole, true],
   ["theme_choice", null, "DELETE", boundaryOwnerRole, true],
+  ["project_theme", null, "SELECT", apiRole, true],
+  ["project_theme", null, "UPDATE", apiRole, false],
+  ["project_theme", null, "INSERT", boundaryOwnerRole, true],
+  ["project_theme", null, "SELECT", schedulerRole, false],
+  ["project_theme_override", null, "SELECT", apiRole, false],
+  ["project_theme_override", null, "UPDATE", boundaryOwnerRole, true],
+  ["project_theme_override", null, "DELETE", boundaryOwnerRole, true],
 ];
 
 test("each role holds of a relation the columns it reaches it by, and is refused the ones it does not", async () => {

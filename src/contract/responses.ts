@@ -217,6 +217,7 @@ import { accessProjectRoles } from "./accessPlane.ts";
 import {
   themeChoiceSchema,
   themeDocumentSchema,
+  themeLayers,
   themeNumberSchema,
   themesOwnedMax,
 } from "./appearance.ts";
@@ -3243,6 +3244,31 @@ export const themeChoiceResponseSchema = z.strictObject({
   choice: themeChoiceSchema.optional(),
 });
 export type ThemeChoiceResponse = z.infer<typeof themeChoiceResponseSchema>;
+
+/** A project's default theme, absent where it names none, and whether this caller may change it. */
+export const projectThemeResponseSchema = z.strictObject({
+  document: themeDocumentSchema.optional(),
+  administers: z.boolean(),
+});
+export type ProjectThemeResponse = z.infer<typeof projectThemeResponseSchema>;
+
+/**
+ * The theme a project wears for the caller, the layer it came from, and each
+ * layer's own value, absent where it names none or names a theme that no
+ * longer exists, which resolves as that layer unset.
+ */
+export const projectAppearanceResponseSchema = z.strictObject({
+  theme: themeDocumentSchema,
+  layer: z.enum(themeLayers),
+  layers: z.strictObject({
+    override: themeChoiceSchema.optional(),
+    projectDefault: themeDocumentSchema.optional(),
+    global: themeChoiceSchema.optional(),
+  }),
+});
+export type ProjectAppearanceResponse = z.infer<
+  typeof projectAppearanceResponseSchema
+>;
 
 /**
  * What retiring a credential of the caller's own account is refused with while

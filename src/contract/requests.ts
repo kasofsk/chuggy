@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 
+import { themeDocumentSchema } from "./appearance.ts";
 import {
   countSchema,
   digestSchema,
@@ -323,6 +324,11 @@ export const sessionPlacementSchema = z.strictObject({
 /** Whether a project's members' personal runners serve them there, and under which fallback; a body naming none takes them out. */
 export const projectOwnerFallbackSchema = z.strictObject({
   fallback: z.enum(ownerFallbacks).optional(),
+});
+
+/** A project's default theme, the document itself; a body naming none clears it. */
+export const projectThemeSchema = z.strictObject({
+  document: themeDocumentSchema.optional(),
 });
 
 /** The priority a project on its member's allowlist is written at; a write with no body adds one at `Normal` and leaves one already there as it was. */
