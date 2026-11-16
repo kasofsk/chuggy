@@ -2991,9 +2991,9 @@ const ticketLandingMergeAnswerSchema = z.strictObject({
  * where its row holds it. `url` is absent where none was recorded or the one
  * recorded is not a link a report could carry; `creation` is absent where the
  * proposal was found by reading it back; `status` and `mergeability` are what
- * the forge last said of it, and `mergeState` its own word for the second; and
+ * the forge last said of it, and `mergeState` its own word for the second;
  * `mergedHead` is the head the forge merged, present only where it is not the
- * one this landing opened it at. `mergesAsked` is how many merges of it the
+ * one this landing opened it at; and `mergesAsked` is how many merges of it the
  * forge was asked for, absent where none was, and `mergeAnswer` what the forge
  * answered the newest of them.
  */
