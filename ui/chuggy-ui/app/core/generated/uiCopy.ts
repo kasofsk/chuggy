@@ -21,4 +21,15 @@ export interface UiCopy {
   readonly "ui-reload": Record<never, never>;
   readonly "ui-required": Record<never, never>;
   readonly "ui-save": Record<never, never>;
+  readonly "ui-filter-set": {
+    readonly count: unknown;
+  };
+  readonly "ui-filter-clear-all": Record<never, never>;
+  readonly "ui-filter-mark": {
+    readonly field: unknown;
+    readonly value: unknown;
+  };
+  readonly "ui-filter-remove": {
+    readonly filter: unknown;
+  };
 }
