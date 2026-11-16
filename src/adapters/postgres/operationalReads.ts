@@ -703,7 +703,7 @@ async function executionsRunnerWaits(
 
 interface ExecutionPoolRow {
   readonly execution: string;
-  readonly least_room_mib: string;
+  readonly least_room_mib: string | null;
   readonly most_room_mib: string | null;
   readonly memory_mib: string;
 }
