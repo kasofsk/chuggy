@@ -230,8 +230,21 @@ export interface SetupStanding {
   readonly found: readonly Copy[];
   /** One a step in order, or none where which project is meant is still open. */
   readonly steps: readonly SetupStep[];
-  /** The address of the pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
-  readonly unmerged: string | undefined;
+  /** The pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
+  readonly unmerged: SetupUnmerged | undefined;
+  /** The repository meant, where it holds only the bootstrap, with the import of it that finished last. */
+  readonly bootstrap: SetupBootstrap | undefined;
+}
+
+/** A ticket's pull request that stands unmerged: its address, and the ticket that opened it. */
+export interface SetupUnmerged {
+  readonly url: string;
+  readonly ticket: number;
+}
+
+/** A repository holding only the bootstrap, and the import of it that finished last, where one did. */
+export interface SetupBootstrap {
+  readonly lastImport: RepositoryConfigurationImportAttemptResponse | undefined;
 }
 
 /** Each forge app, as a sentence names it. */
@@ -930,21 +943,23 @@ function setupProposed(landing: TicketLandingResponse): boolean {
   }
 }
 
-/** The ticket setup is done on, as the ticket step says it, and the address of its pull request where one stands unmerged. */
+/** The ticket setup is done on, as the ticket step says it, and its pull request where one stands unmerged. */
 interface SetupTicketDone {
   readonly detail: Copy;
-  readonly unmerged: string | undefined;
+  readonly unmerged: SetupUnmerged | undefined;
 }
 
 /** The pull request of a ticket's landings that stands and is not merged, from landings got whole: none where one of them landed, or where the newest that stands says it merged. */
 function setupUnmerged(
   held: SetupTicketLandings | undefined,
-): string | undefined {
+): SetupUnmerged | undefined {
   if (held?.landings.read !== "Got" || !held.landings.whole) return undefined;
   const landings = held.landings.value;
   if (landings.some((landing) => landing.state === "Landed")) return undefined;
   const proposal = landings.findLast(setupProposed)?.proposal;
-  return proposal?.merge === "Merged" ? undefined : proposal?.url;
+  return proposal?.merge === "Merged" || proposal?.url === undefined
+    ? undefined
+    : { url: proposal.url, ticket: held.ticket };
 }
 
 /** The ticket setup is done on, where a read that was got shows one, said as what was read of it: a ticket that is done, or a landing that landed or whose pull request stands. */
@@ -1225,7 +1240,12 @@ export function setupStanding(
     found: setupRemoteFound(reads, workspaceNamed),
   };
   if (reads.choice.choice === "Open")
-    return { ...standing, steps: [], unmerged: undefined };
+    return {
+      ...standing,
+      steps: [],
+      unmerged: undefined,
+      bootstrap: undefined,
+    };
   const workspace = setupWorkspaceStep(
     reads,
     reads.choice.workspace,
@@ -1255,6 +1275,9 @@ export function setupStanding(
     ],
     unmerged: setupBootstrapped(reads.repositories)
       ? done?.unmerged
+      : undefined,
+    bootstrap: setupBootstrapped(reads.repositories)
+      ? { lastImport: setupBindingMeant(reads.repositories)?.lastImport }
       : undefined,
   };
 }

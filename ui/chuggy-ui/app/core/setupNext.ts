@@ -39,7 +39,11 @@
  * Where which project is meant is still open, the next thing is the question,
  * one flag at a time. chuggy's Claude Code plugin is offered first, since its
  * setup skill holds the talk of every step after it: `plugin` installs it on
- * the person's yes, and on their no the checklist is read past it.
+ * the person's yes, and on their no the checklist is read past it. Where every
+ * step is done and the first ticket's pull request, holding the repository's
+ * own configuration, stands unmerged, `merge` is offered on the person's yes,
+ * leaning towards leaving the merge to them where the repository has a history
+ * of its own; on their no, setup is done.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -66,6 +70,8 @@ import type { SetupMcpPackaged } from "./setupAgent.ts";
 import { setupAnswersPlugin, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
+import { setupMergeImportFailed } from "./setupMerge.ts";
+import type { SetupHistory, SetupMergeSince } from "./setupMerge.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
@@ -85,6 +91,7 @@ import type {
   SetupRunnerWait,
   SetupStanding,
   SetupStep,
+  SetupUnmerged,
 } from "./setupStanding.ts";
 import { setupFlat } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
@@ -965,22 +972,101 @@ function setupCarried(
     : { workspace: choice.workspace, project: undefined, ...plugin };
 }
 
-/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with the pull request to merge where one writes the repository's own configuration. */
-function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
+/** What setup said to be done says of the repository's own configuration, after a `merge` run: in place, being imported, or refused by its import with what the import said. */
+type SetupDoneConfiguration =
+  | { readonly configuration: "imported" | "importing" | "none" }
+  | { readonly configuration: "refused"; readonly last: Copy };
+
+/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with what became of the repository's own configuration where a `merge` run waited on it. */
+function setupDoneTell(
+  standing: SetupStanding,
+  at: SetupAt,
+  done: SetupDoneConfiguration,
+): Copy {
   const detail = standing.steps.find((step) => step.step === "ticket")?.detail;
   return {
-    thing: "Done",
+    id: "setup-done",
+    args: {
+      project: setupNamed(at),
+      how: detail === undefined ? "unsaid" : "said",
+      detail: detail ?? "",
+      configuration: done.configuration,
+      last: done.configuration === "refused" ? done.last : "",
+      page: setupPage(at, navRoutes.ticketNew),
+    },
+  };
+}
+
+/** The first ticket's pull request, which `merge` merges on the person's yes, leaning towards leaving it to them where the folder's history is long. */
+function setupMergeOffer(
+  unmerged: SetupUnmerged,
+  at: SetupAt,
+  history: SetupHistory,
+): SetupThing {
+  return {
+    thing: "Offer",
+    command: "Merge",
     tell: {
-      id: "setup-done",
+      id: "setup-mend-merge-offer",
       args: {
-        project: setupNamed(at),
-        how: detail === undefined ? "unsaid" : "said",
-        detail: detail ?? "",
-        merge: standing.unmerged === undefined ? "merged" : "unmerged",
-        url: standing.unmerged ?? "",
-        page: setupPage(at, navRoutes.ticketNew),
+        ticket: String(unmerged.ticket),
+        url: unmerged.url,
+        lean: history === "Long" ? "leave" : "ask",
       },
     },
+    when: { id: "setup-offer-merge-when" },
+    workspace: at.workspace,
+    project: at.project,
+  };
+}
+
+/**
+ * What the merge offer turns on beyond the reads: the folder's history, where
+ * the offer is looked at; that a `merge` run merged, with what it looked at
+ * before; or that the site refused it.
+ */
+export type SetupMergeSeen =
+  | { readonly seen: "Offered"; readonly history: SetupHistory }
+  | ({ readonly seen: "Merged" } & SetupMergeSince)
+  | { readonly seen: "Refused" };
+
+/** The merge offer looked at with nothing read of the folder's history. */
+export const setupMergeUnseen: SetupMergeSeen = {
+  seen: "Offered",
+  history: "Unread",
+};
+
+/**
+ * Every step done: the merge offered where the first ticket's pull request
+ * stands unmerged, and otherwise setup said to be done; after a merge, with
+ * the import of the repository's own configuration in place, refused, or
+ * still under way, which is `merge` run again.
+ */
+function setupDoneThing(
+  standing: SetupStanding,
+  at: SetupAt,
+  merge: SetupMergeSeen,
+): SetupThing {
+  const done = (configuration: SetupDoneConfiguration): SetupThing => ({
+    thing: "Done",
+    tell: setupDoneTell(standing, at, configuration),
+  });
+  if (merge.seen === "Refused") return done({ configuration: "none" });
+  if (merge.seen === "Offered")
+    return standing.unmerged === undefined
+      ? done({ configuration: "none" })
+      : setupMergeOffer(standing.unmerged, at, merge.history);
+  if (standing.bootstrap === undefined)
+    return done({ configuration: "imported" });
+  const last = standing.bootstrap.lastImport;
+  if (setupMergeImportFailed(merge, last))
+    return done({ configuration: "refused", last: setupLastImport(last) });
+  return {
+    thing: "Run",
+    command: "Merge",
+    tell: setupDoneTell(standing, at, { configuration: "importing" }),
+    workspace: at.workspace,
+    project: at.project,
   };
 }
 
@@ -1087,6 +1173,36 @@ export function setupServeDue(
   return give || allow ? { partition, give, allow } : undefined;
 }
 
+/** The project of a checklist whose every step is done. */
+function setupAllDone(standing: SetupStanding): PartitionIdentity | undefined {
+  if (standing.choice.choice === "Open") return undefined;
+  const { workspace, project } = standing.choice;
+  if (workspace === undefined || project === undefined) return undefined;
+  return standing.steps.some((step) => step.lacks !== undefined)
+    ? undefined
+    : { tenant: workspace, project };
+}
+
+/** The project and the first ticket's pull request, where every step is done and that pull request stands unmerged, which is when the merge is offered and `merge` asks the site to merge it. */
+export function setupMergeDue(
+  standing: SetupStanding,
+):
+  | { readonly partition: PartitionIdentity; readonly unmerged: SetupUnmerged }
+  | undefined {
+  const partition = setupAllDone(standing);
+  const unmerged = standing.unmerged;
+  return partition === undefined || unmerged === undefined
+    ? undefined
+    : { partition, unmerged };
+}
+
+/** Whether every step is done and the repository still holds only the bootstrap, which is what `merge` waits out once it has merged. */
+export function setupMergeAwaited(standing: SetupStanding): boolean {
+  return (
+    setupAllDone(standing) !== undefined && standing.bootstrap !== undefined
+  );
+}
+
 /** The project whose ticket step is the one next and has no ticket at all, which is when what a ticket may be drawn under is read and `ticket` files one. */
 export function setupTicketDue(
   standing: SetupStanding,
@@ -1112,6 +1228,7 @@ function setupThing(
   here: SetupRunnerHere | undefined,
   mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
+  merge: SetupMergeSeen,
 ): SetupThing {
   const named = workspaceNamesListed(standing.workspaces);
   if (standing.choice.choice === "Open")
@@ -1123,7 +1240,7 @@ function setupThing(
     named,
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
-  if (undone?.lacks === undefined) return setupDoneThing(standing, at);
+  if (undone?.lacks === undefined) return setupDoneThing(standing, at, merge);
   const mine =
     standing.remote === undefined
       ? undefined
@@ -1139,7 +1256,8 @@ function setupThing(
  * project, and nothing where it was not looked at; `packaged` is what `mcp`
  * would find of the platform's runner package here, where `setupMcpDue`
  * named one; `offers` is what a ticket may be drawn under where
- * `setupTicketDue` named a project and it was read.
+ * `setupTicketDue` named a project and it was read; `merge` is what the merge
+ * offer turns on beyond the reads.
  */
 export function setupNext(
   standing: SetupStanding,
@@ -1148,9 +1266,10 @@ export function setupNext(
   here?: SetupRunnerHere,
   packaged: SetupMcpPackaged = "Absent",
   offers?: SetupTicketOffers,
+  merge: SetupMergeSeen = setupMergeUnseen,
 ): SetupNext {
   return {
     carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing, here, { platform, packaged }, offers),
+    thing: setupThing(standing, here, { platform, packaged }, offers, merge),
   };
 }

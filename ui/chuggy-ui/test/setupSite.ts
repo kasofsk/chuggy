@@ -75,7 +75,12 @@ import type {
   OwnerFallback,
   PersonalRunnerWait,
   PlacementRoute,
+  ProposalMergeRefusal,
   SessionRunnerStanding,
+} from "../../../src/contract/rosters.ts";
+import {
+  proposalMergeForbiddenCode,
+  proposalMergeRefusedCode,
 } from "../../../src/contract/rosters.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
@@ -224,7 +229,30 @@ export interface SetupSite {
   readonly pushed: Map<string, ReadonlyMap<string, string>>;
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
   letters: string;
+  /** How the site meets a merge of a ticket's pull request, which it merges unless a case says otherwise, and the import that merge brings on while it is still to finish. */
+  merging?: SetupSiteMerging;
+  importing?: SetupSiteImporting | undefined;
 }
+
+/** How a merge is met: merged, its import finishing as `outcome` after the project's repositories are read `reads` times, or refused for a reason, or refused to a caller without the permit. */
+export type SetupSiteMerging =
+  | {
+      readonly merging: "Merged";
+      readonly reads: number;
+      readonly outcome: RepositoryConfigurationImportAttemptResponse["outcome"];
+    }
+  | { readonly merging: "Refused"; readonly refused: ProposalMergeRefusal }
+  | { readonly merging: "Forbidden" };
+
+/** The import a merge brought on, which finishes once the project's repositories have been read `reads` more times. */
+export interface SetupSiteImporting {
+  readonly project: SetupSiteProject;
+  reads: number;
+  readonly outcome: RepositoryConfigurationImportAttemptResponse["outcome"];
+}
+
+/** The commit a merge leaves, which the import it brings on is of. */
+export const setupSiteMergeCommit = "c".repeat(40);
 
 export interface SetupSiteMint {
   readonly lifetimeSecs: number;
@@ -1114,6 +1142,7 @@ function projectAnswered(
         (project.settled ? answered(settings(project)) : refused())
       );
     case "/repositories":
+      importedAfterMerge(site, project);
       return (
         fated(site, "repositories") ??
         answered({ repositories: bindings(site, project) })
@@ -1398,6 +1427,80 @@ function imported(
       };
 }
 
+/** A merge of `ticket`'s pull request, as `site.merging` says it is met: its landings' pull request marked merged, and an import of the repository brought on. */
+function merged(
+  site: SetupSite,
+  project: SetupSiteProject,
+  ticket: number,
+): SetupSiteAnswer {
+  const held = project.landings.get(ticket) ?? [];
+  const url = held.find((landing) => landing.proposal !== undefined)?.proposal
+    ?.url;
+  if (url === undefined) return refused();
+  const merging = site.merging ?? {
+    merging: "Merged",
+    reads: 0,
+    outcome: { result: "Imported" },
+  };
+  if (merging.merging === "Forbidden")
+    return {
+      status: 403,
+      body: {
+        error: { code: proposalMergeForbiddenCode, message: "Forbidden." },
+      },
+    };
+  if (merging.merging === "Refused")
+    return {
+      status: 409,
+      body: {
+        error: { code: proposalMergeRefusedCode, message: "Refused." },
+        refused: merging.refused,
+        url,
+      },
+    };
+  const already = held.some((landing) => landing.proposal?.merge === "Merged");
+  project.landings.set(
+    ticket,
+    held.map((landing) =>
+      landing.proposal === undefined
+        ? landing
+        : { ...landing, proposal: { ...landing.proposal, merge: "Merged" } },
+    ),
+  );
+  if (!already)
+    site.importing = {
+      project,
+      reads: merging.reads,
+      outcome: merging.outcome,
+    };
+  return answered({
+    outcome: "Merged",
+    mergeCommit: setupSiteMergeCommit,
+    url,
+  });
+}
+
+/** The import a merge brought on finished where its reads have run out: the repository's own configuration held, or the outcome recorded as the import of the merge's commit. */
+function importedAfterMerge(site: SetupSite, project: SetupSiteProject): void {
+  const importing = site.importing;
+  if (importing?.project !== project) return;
+  if (importing.reads > 0) {
+    importing.reads -= 1;
+    return;
+  }
+  site.importing = undefined;
+  const done = importing.outcome.result === "Imported";
+  project.repositories = project.repositories.map((held) => ({
+    ...held,
+    bootstrapped: !done && held.bootstrapped === true,
+    lastImport: {
+      attemptedAt: "2026-11-16T00:00:00Z",
+      commit: setupSiteMergeCommit,
+      outcome: importing.outcome,
+    },
+  }));
+}
+
 function projectOf(
   site: SetupSite,
   tenant: string,
@@ -1482,6 +1585,13 @@ function tenantWritten(
   if (sent.method === "POST" && within?.[2] === "/operations") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : submitted(project, sent.body);
+  }
+  const merging = /^\/tickets\/(\d+)\/proposal-merge$/u.exec(within?.[2] ?? "");
+  if (sent.method === "POST" && merging !== null) {
+    const project = projectOf(site, tenant, within?.[1]);
+    return project === undefined
+      ? refused()
+      : merged(site, project, Number(merging[1]));
   }
   if (sent.method === "POST" && within?.[2] === importsPath) {
     const project = projectOf(site, tenant, within[1]);

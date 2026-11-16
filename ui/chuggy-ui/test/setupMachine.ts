@@ -120,6 +120,8 @@ export interface SetupMachine {
   remote: string | undefined;
   /** What git prints of the top of the checkout the folder is in, or nothing where it is in none. */
   top: string | undefined;
+  /** What git prints of how many commits the checkout's head has, or nothing where it could say none. */
+  history?: string | undefined;
   browser: string | undefined;
   platform: string;
   /** The number the machine knows its user by, or nothing where it numbers none. */
@@ -497,13 +499,14 @@ function lockOf(machine: SetupMachine): SetupPorts["lock"] {
   };
 }
 
-/** What a command run to read its answer prints here: npm's prefix, Claude Code's plugins, the checkout's top, or the folder's remote. */
+/** What a command run to read its answer prints here: npm's prefix, Claude Code's plugins, the checkout's top, its history, or the folder's remote. */
 function machineRead(
   machine: SetupMachine,
   command: readonly string[],
 ): string | undefined {
   if (command[0] === "npm") return machine.box.prefix;
   if (command[0] === "claude") return machine.box.plugins;
+  if (command[1] === "rev-list") return machine.history;
   return command[1] === "rev-parse" ? machine.top : machine.remote;
 }
 

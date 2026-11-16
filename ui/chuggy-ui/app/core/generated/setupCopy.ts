@@ -65,6 +65,7 @@ export interface SetupCopy {
     readonly check: unknown;
     readonly imported: unknown;
     readonly bound: unknown;
+    readonly merged: unknown;
     readonly served: unknown;
     readonly filed: unknown;
     readonly plugged: unknown;
@@ -498,6 +499,7 @@ export interface SetupCopy {
     readonly told: unknown;
   };
   readonly "setup-rule-bind-again": Record<never, never>;
+  readonly "setup-rule-merge-again": Record<never, never>;
   readonly "setup-mend-binding-yours": Record<never, never>;
   readonly "setup-mend-binding-mine": {
     readonly repository: unknown;
@@ -582,6 +584,26 @@ export interface SetupCopy {
     readonly repository: unknown;
     readonly refusal: unknown;
   };
+  readonly "setup-merge-none": Record<never, never>;
+  readonly "setup-merge-did": {
+    readonly url: unknown;
+  };
+  readonly "setup-merge-refused": {
+    readonly url: unknown;
+    readonly refusal: unknown;
+  };
+  readonly "setup-merge-failed": {
+    readonly url: unknown;
+    readonly failure: unknown;
+  };
+  readonly "setup-merge-refusal-closed": Record<never, never>;
+  readonly "setup-merge-refusal-conflicting": Record<never, never>;
+  readonly "setup-merge-refusal-blocked": Record<never, never>;
+  readonly "setup-merge-refusal-behind": Record<never, never>;
+  readonly "setup-merge-refusal-head-moved": Record<never, never>;
+  readonly "setup-merge-refusal-not-mergeable": Record<never, never>;
+  readonly "setup-merge-refusal-app-denied": Record<never, never>;
+  readonly "setup-merge-refusal-forbidden": Record<never, never>;
   readonly "setup-serve-none": Record<never, never>;
   readonly "setup-serve-given": {
     readonly project: unknown;
@@ -741,6 +763,12 @@ export interface SetupCopy {
     readonly placement: unknown;
   };
   readonly "setup-offer-serve-when": Record<never, never>;
+  readonly "setup-mend-merge-offer": {
+    readonly ticket: unknown;
+    readonly url: unknown;
+    readonly lean: unknown;
+  };
+  readonly "setup-offer-merge-when": Record<never, never>;
   readonly "setup-mend-serving-admin-when": {
     readonly setting: unknown;
   };
@@ -879,8 +907,8 @@ export interface SetupCopy {
     readonly project: unknown;
     readonly how: unknown;
     readonly detail: unknown;
-    readonly merge: unknown;
-    readonly url: unknown;
+    readonly configuration: unknown;
+    readonly last: unknown;
     readonly page: unknown;
   };
   readonly "setup-page-brand": Record<never, never>;

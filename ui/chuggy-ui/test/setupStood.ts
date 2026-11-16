@@ -8,6 +8,7 @@ import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import { setupNext } from "../app/core/setupNext.ts";
+import type { SetupMergeSeen } from "../app/core/setupNext.ts";
 import { readSetup } from "../app/core/setupReads.ts";
 import type { SetupReads } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
@@ -34,6 +35,8 @@ export interface Asking {
   readonly named?: boolean;
   /** How Claude Code here has chuggy's plugin, which is on unless a case says otherwise. */
   readonly plugin?: SetupPluginHere;
+  /** What the merge offer turns on beyond the reads, which is a history git could not read unless a case says otherwise. */
+  readonly merge?: SetupMergeSeen;
 }
 
 /** Ports that answer from `site` by path, as the ports a session is opened with are asked, and fail whatever it has no answer for. */
@@ -96,5 +99,9 @@ export async function nextOf(
       ...asking.answers,
     },
     "linux",
+    undefined,
+    undefined,
+    undefined,
+    asking.merge,
   );
 }
