@@ -103,6 +103,7 @@ async function pressed(answers: readonly Response[]): Promise<{
           }),
       },
       fetch: forge.requestFetch,
+      mergeRefused: () => undefined,
     }),
   });
   const merged = await merges.merge(member, partition, asTicketId(7));
@@ -133,13 +134,26 @@ test("a 405 is named by the reading taken after it, and is NotMergeable where th
     pull(),
     refusal(405),
     pull({ mergeable_state: "blocked" }),
+    new Response(
+      JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              viewerCanMergeAsAdmin: false,
+              isMergeQueueEnabled: false,
+            },
+          },
+        },
+      }),
+      { status: 200 },
+    ),
   ]);
   assert.deepEqual(blocked.merged, {
     result: "Refused",
     refused: "Blocked",
     url,
   });
-  assert.deepEqual(blocked.asked, [read, merge, read]);
+  assert.deepEqual(blocked.asked, [read, merge, read, "POST /graphql"]);
   const unnamed = await pressed([pull(), refusal(405), pull()]);
   assert.deepEqual(unnamed.merged, {
     result: "Refused",

@@ -1188,19 +1188,22 @@ test("every stop says what was found, tells the person, names one command the pr
   }
 });
 
-test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to, and only that one and a platform not served end on stop", () => {
+test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to and the checklist a plugin left on waits to name, and only those and a platform not served end on stop", () => {
   for (const report of sessions.filter((one) => !stopped(one))) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report);
     const unknown = report.report === "SiteUnknown";
-    expect(ruled(lines), said).toEqual(unknown ? [["--site"]] : []);
+    const reloading = report.report === "Plugin" && report.ended.ended === "On";
+    expect(ruled(lines), said).toEqual(
+      unknown ? [["--site"]] : reloading ? [["--site", site]] : [],
+    );
     expect(lines.at(-1) === stop, said).toBe(
-      unknown || report.report === "Unserved",
+      unknown || reloading || report.report === "Unserved",
     );
   }
 });
 
-test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, a sign-in the site refused, and a run of plugin, which goes on to the checklist", () => {
+test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, a sign-in the site refused, and a run of plugin that did not leave it on, which goes on to the checklist past it", () => {
   const running = new Set(
     sessions
       .filter(
@@ -2704,23 +2707,34 @@ test("a run given --plugin skip carries it on every command it prints, whatever 
       );
 });
 
-test("a run of plugin that left it on says what it did and how to remove it, hands the agent the setup skill where sessions read it from, and names the checklist without the way past", () => {
-  const report: SetupReport = {
-    report: "Plugin",
-    site,
-    ended: { ended: "On", did: "Installed", folder: "/home/me/plugin" },
+test("a run of plugin that left it on says what it did and how to remove it, asks the person to reload, hands the agent the setup skill with its file as the fallback, and names the checklist without the way past only once she has", () => {
+  const did = {
+    Installed: "installed",
+    Updated: "updated",
+    Enabled: "turned on",
   };
-  expect(
-    setupReportLines(report, machineScript, copyTextEn, {
-      ...both,
-      plugin: setupPluginSkip,
-    }),
-  ).toEqual([
-    "did: installed chuggy's plugin in Claude Code for you; a Claude Code session started from now on has its setup skill as /chuggy:setup, and claude plugin uninstall chuggy@chuggy removes it",
-    "rule: Read /home/me/plugin/skills/setup/SKILL.md now and follow it for the rest of setup. Where it and a rule: line of chuggy setup differ, the rule: line wins.",
-    `next: node ${machineScript} ${flags} --site ${site}`,
+  const on = pluginEndings.filter((ended) => ended.ended === "On");
+  expect(on.map((ended) => ended.did)).toEqual([
+    "Installed",
+    "Updated",
+    "Enabled",
   ]);
-  expect(setupReportExit(report)).toBe(0);
+  for (const ended of on) {
+    const report: SetupReport = { report: "Plugin", site, ended };
+    expect(
+      setupReportLines(report, machineScript, copyTextEn, {
+        ...both,
+        plugin: setupPluginSkip,
+      }),
+    ).toEqual([
+      `did: ${did[ended.did]} chuggy's plugin in Claude Code for you, and claude plugin uninstall chuggy@chuggy removes it`,
+      "tell: To use it in this session, type /reload-plugins here and tell me once it says Reloaded.",
+      `rule: Once the person says /reload-plugins has run, invoke the chuggy:setup skill (/chuggy:setup) and follow it for the rest of setup. Where your skills do not list chuggy:setup, or the person would rather not reload, read ${ended.folder}/skills/setup/SKILL.md by its path instead. Where it and a rule: line of chuggy setup differ, the rule: line wins.`,
+      `rule: Run node ${machineScript} ${flags} --site ${site} only once the person says /reload-plugins has run, or that they would rather not.`,
+      stop,
+    ]);
+    expect(setupReportExit(report)).toBe(0);
+  }
 });
 
 test("a run of plugin that did not leave it on says why and names the checklist past the plugin's step", () => {

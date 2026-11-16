@@ -28,7 +28,9 @@
  * files a ticket at the site, and is named only under a rule that waits on
  * her saying what she wants done. `plugin` installs chuggy's Claude Code
  * plugin, and is named only under a rule that waits on her yes, beside one
- * that names the way past it on her no.
+ * that names the way past it on her no; once it has left the plugin on, the
+ * checklist is named under a rule that waits on her reloading the plugins or
+ * saying she would rather not.
  *
  * A report of a sign-in holds a site's origin, a directory, a path of the
  * program's own, numbers and members of closed sets. A checklist holds
@@ -2006,9 +2008,10 @@ function setupPluginOffSaid(
 }
 
 /**
- * A run of `plugin`: what it did and the skill the agent reads now, then the
- * checklist; or why the plugin is not on, and the checklist with the plugin
- * step passed over.
+ * A run of `plugin`: what it did, the person asked to reload Claude Code's
+ * plugins, the skill the agent is handed once she has, and the checklist under
+ * a rule that waits on her; or why the plugin is not on, and the checklist with
+ * the plugin step passed over.
  */
 function setupPluginLines(
   report: Extract<SetupReport, { readonly report: "Plugin" }>,
@@ -2044,6 +2047,7 @@ function setupPluginLines(
         },
       },
     ],
+    ["tell", { id: "setup-plugin-reload-tell" }],
     [
       "rule",
       {
@@ -2051,10 +2055,13 @@ function setupPluginLines(
         args: { skill: setupPluginSkill(ended.folder) },
       },
     ],
-    setupNextLine(
-      { ...saying, answers: { workspace, project } },
-      "Status",
-      site,
+    ...setupStopRule(
+      { when: { id: "setup-plugin-reload-when" } },
+      setupCommandOf(
+        { ...saying, answers: { workspace, project } },
+        "Status",
+        site,
+      ),
     ),
   ];
 }

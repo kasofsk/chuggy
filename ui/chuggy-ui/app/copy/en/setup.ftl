@@ -396,13 +396,17 @@ setup-mend-plugin-offer-off = The first step is { -brand-name }'s plugin for { -
 ## A run of the plugin command: the plugin on and its setup skill handed to
 ## the agent, or why it is not, which passes the step over.
 
-# spells -brand-name: /chuggy:setup is the skill's command
 setup-plugin-did = { $did ->
     [Installed] installed
     [Updated] updated
    *[Enabled] turned on
-} { -brand-name }'s plugin in { -claude-code } for you; a { -claude-code } session started from now on has its setup skill as /chuggy:setup, and { $uninstall } removes it
-setup-rule-skill = Read { $skill } now and follow it for the rest of setup. Where it and a rule: line of { setup-program } differ, the rule: line wins.
+} { -brand-name }'s plugin in { -claude-code } for you, and { $uninstall } removes it
+setup-plugin-reload-tell = To use it in this session, type /reload-plugins here and tell me once it says Reloaded.
+# spells -brand-name: /chuggy:setup is the skill's command
+# spells -run: to run is a verb here
+setup-rule-skill = Once the person says /reload-plugins has run, invoke the chuggy:setup skill (/chuggy:setup) and follow it for the rest of setup. Where your skills do not list chuggy:setup, or the person would rather not reload, read { $skill } by its path instead. Where it and a rule: line of { setup-program } differ, the rule: line wins.
+# spells -run: to run is a verb here
+setup-plugin-reload-when = once the person says /reload-plugins has run, or that they would rather not
 setup-plugin-passed = { $found }, so setup goes on without { -brand-name }'s plugin
 # spells -claude: claude is the command's name
 setup-plugin-claudeless = no claude command answered here
