@@ -7,7 +7,11 @@
     "mode": {
       "type": "SingleAgent",
       "agent": "Claude",
-      "arguments": ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep", "--model=opus"]
+      "arguments": [
+        "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+        "--model=opus",
+        "--settings={\"autoCompactWindow\":250000}"
+      ]
     },
     "setup": ["npm ci"],
     "files": []
