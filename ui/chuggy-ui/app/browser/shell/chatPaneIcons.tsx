@@ -10,7 +10,7 @@
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/Button.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { Tooltip, tooltipTriggerWrapping } from "../ui/Tooltip.tsx";
 
 function ChatPaneGlyph(props: { readonly children: ReactNode }): ReactNode {
   return (
@@ -140,9 +140,9 @@ export function ChatPaneIcon(props: {
  * An icon button of the pane's own quiet look, its name spoken once and
  * read twice: as the hidden label that stays its accessible name, and as the
  * tooltip a pointer or a keyboard focus reveals. The tooltip wraps the button
- * rather than sitting on it, so it still opens on focus even where the button
- * itself is disabled and so cannot take focus directly — New, while the open
- * it asked is out.
+ * rather than sitting on it, so it still opens on hover where the button is
+ * disabled, and the wrapper takes the focus a disabled button cannot — New,
+ * while the open it asked is out.
  */
 export function ChatPaneIconButton(props: {
   readonly glyph: ChatPaneGlyphName;
@@ -152,7 +152,10 @@ export function ChatPaneIconButton(props: {
   readonly disabled?: boolean;
 }): ReactNode {
   return (
-    <Tooltip trigger="control" text={props.label}>
+    <Tooltip
+      trigger={tooltipTriggerWrapping(props.disabled === true)}
+      text={props.label}
+    >
       <span className="flex">
         <Button
           variant="quiet"

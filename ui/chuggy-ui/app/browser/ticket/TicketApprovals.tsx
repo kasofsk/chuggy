@@ -39,7 +39,7 @@ import { Dialog } from "../ui/Dialog.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Input } from "../ui/Input.tsx";
-import { Tooltip } from "../ui/Tooltip.tsx";
+import { Tooltip, tooltipTriggerWrapping } from "../ui/Tooltip.tsx";
 
 /** The name a question's group is read by, which tells it from another open one. */
 export function approvalQuestionName(
@@ -183,32 +183,33 @@ export function ApprovalAnswers(props: {
         }}
       />
       <div className="flex gap-2 items-baseline">
-        {props.answers.map((offer) => (
-          <Tooltip
-            trigger="control"
-            key={nativeActionAnswerKey(offer)}
-            text={ticketActionSentence(offer.action)}
-          >
-            <span>
-              <Button
-                variant={offer === reject ? "quiet" : "primary"}
-                size="sm"
-                disabled={
-                  props.busy ||
-                  (offer !== reject &&
-                    !approvalAnswerSendable(offer.action, note))
-                }
-                {...(offer === reject ? { expanded: rejecting } : {})}
-                onClick={() => {
-                  if (offer === reject) setRejecting(!rejecting);
-                  else props.onAnswer(approvalAnswerWith(offer, note));
-                }}
-              >
-                {text(ticketActionLabel(offer.action))}
-              </Button>
-            </span>
-          </Tooltip>
-        ))}
+        {props.answers.map((offer) => {
+          const disabled =
+            props.busy ||
+            (offer !== reject && !approvalAnswerSendable(offer.action, note));
+          return (
+            <Tooltip
+              trigger={tooltipTriggerWrapping(disabled)}
+              key={nativeActionAnswerKey(offer)}
+              text={ticketActionSentence(offer.action)}
+            >
+              <span>
+                <Button
+                  variant={offer === reject ? "quiet" : "primary"}
+                  size="sm"
+                  disabled={disabled}
+                  {...(offer === reject ? { expanded: rejecting } : {})}
+                  onClick={() => {
+                    if (offer === reject) setRejecting(!rejecting);
+                    else props.onAnswer(approvalAnswerWith(offer, note));
+                  }}
+                >
+                  {text(ticketActionLabel(offer.action))}
+                </Button>
+              </span>
+            </Tooltip>
+          );
+        })}
       </div>
       {reject === undefined || !rejecting ? null : (
         <ApprovalReject

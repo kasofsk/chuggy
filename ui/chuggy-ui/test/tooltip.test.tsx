@@ -1,14 +1,16 @@
 /**
  * The tooltip: no tab stop of its own around a control, a focusable trigger
  * only where the caller says the child abbreviates the text, the text bound as
- * the trigger's description, Escape closing it where focus is, and no runtime
+ * the trigger's description, a disabled control's text still reachable from
+ * the keyboard, Escape closing it where focus is, and no runtime
  * `<style>` element while it is open — the served policy refuses one.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { Tooltip } from "../app/browser/ui/Tooltip.tsx";
+import { ChatPaneIconButton } from "../app/browser/shell/chatPaneIcons.tsx";
+import { Tooltip, tooltipTriggerWrapping } from "../app/browser/ui/Tooltip.tsx";
 import { renderCopied } from "./copied.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { styleless } from "./styleless.ts";
@@ -37,6 +39,50 @@ test("around a control the tooltip adds no tab stop, and the control's focus ope
     screen.getByRole("button", { description: "what pressing does" }),
   ).toBe(button);
 });
+
+test("a wrapper around a disabled control takes the focus the control cannot, and its focus opens the text", async () => {
+  render(
+    <Tooltip trigger={tooltipTriggerWrapping(true)} text="why it waits">
+      <span>
+        <button type="button" disabled>
+          Send
+        </button>
+      </span>
+    </Tooltip>,
+  );
+  const button = screen.getByRole("button", { name: "Send" });
+  const wrapper = button.parentElement;
+  if (wrapper === null) throw new Error("no wrapper around Send");
+  expect(wrapper.getAttribute("tabindex")).toBe("0");
+  wrapper.focus();
+  expect(document.activeElement).toBe(wrapper);
+  const content = await screen.findByRole("tooltip");
+  expect(content.textContent).toBe("why it waits");
+});
+
+test.each([
+  { disabled: true, stops: 1 },
+  { disabled: false, stops: 0 },
+])(
+  "an icon button disabled=$disabled keeps its label reachable from the keyboard, with $stops stop added",
+  async ({ disabled, stops }) => {
+    const { container } = render(
+      <ChatPaneIconButton
+        glyph="new"
+        label="New"
+        disabled={disabled}
+        onClick={() => undefined}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "New" });
+    expect(container.querySelectorAll("[tabindex]").length).toBe(stops);
+    const focused = disabled ? button.parentElement : button;
+    if (focused === null) throw new Error("no wrapper around New");
+    focused.focus();
+    expect(document.activeElement).toBe(focused);
+    expect((await screen.findByRole("tooltip")).textContent).toBe("New");
+  },
+);
 
 test("an abbreviation is focusable, and the text appears on focus as its description", async () => {
   const { container } = render(

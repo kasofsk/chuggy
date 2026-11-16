@@ -7,7 +7,9 @@
  * `trigger` says what the child is, and has no default, so no caller makes a
  * keyboard stop by accident:
  * - `control`: the child is a button, link or input, or wraps one. Its own
- *   focus opens the text, which describes it; nothing is added to the tab order.
+ *   focus opens the text; nothing is added to the tab order. The text
+ *   describes the child, so it describes the control only where the child is
+ *   the control.
  * - `abbreviation`: the child shortens what the text spells out. It becomes
  *   focusable, and the text is its description.
  * - `decoration`: nothing becomes focusable; the text is also drawn visually
@@ -22,6 +24,12 @@ import type { Copy, CopyOrData } from "../../core/copy.ts";
 import "./Tooltip.css";
 
 export type TooltipTrigger = "control" | "abbreviation" | "decoration";
+
+/** The trigger for a child wrapping a control that may be disabled: a
+ * disabled control takes no focus, so its wrapper does instead. */
+export function tooltipTriggerWrapping(disabled: boolean): TooltipTrigger {
+  return disabled ? "abbreviation" : "control";
+}
 
 function TooltipCopy(props: { readonly copy: Copy }): ReactNode {
   return useCopyText()(props.copy);

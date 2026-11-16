@@ -133,7 +133,7 @@ import { Button } from "./ui/Button.tsx";
 import { useRunReason } from "./RunEvidence.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
-import { Tooltip } from "./ui/Tooltip.tsx";
+import { Tooltip, tooltipTriggerWrapping } from "./ui/Tooltip.tsx";
 import type { CopyText } from "../core/copy.ts";
 
 export interface InboxRowsHeld {
@@ -249,7 +249,9 @@ function InboxActions(props: {
       <div className="flex gap-2 items-baseline">
         {actions.map((action) => (
           <Tooltip
-            trigger="control"
+            trigger={tooltipTriggerWrapping(
+              inboxAnswerInFlight(props.answer?.step),
+            )}
             key={nativeActionAnswerKey(action)}
             text={ticketActionSentence(action.action, {
               kind: inboxEntryPhased(props.entry)?.escalation?.kind,
