@@ -14,12 +14,12 @@
  *
  * THE WORKLOAD NAMES BELOW ARE THIS INSTALLATION'S. Most drills act on the
  * cluster rather than on the console — they terminate the listener, restart the
- * API, and ask whether the journalled actor and the selector are up — and none
+ * API, and ask whether the journalled actor is up — and none
  * of that can be said without naming what to act on. They are gathered here so
  * a rig that names its workloads differently is one edit rather than a search.
  *
  * A DRAFT IS THE CHANGE THE API MAKES ALONE. Releasing one is the journalled
- * actor's and running it is the selector's, so a drill about the stream creates,
+ * actor's and running it is a dispatch's, so a drill about the stream creates,
  * revises and then deletes a draft: the frame is a real one off the durable
  * change log, and nothing but the API had to be up to produce it.
  */
@@ -83,7 +83,6 @@ export const rigNamespace = "chuggy";
 export const rigDeploymentKind = "deployment";
 export const rigApiDeployment = "chuggy-api";
 export const rigActorDeployment = "chuggy-ticket-service";
-export const rigSelectorDeployment = "chuggy-selector";
 export const rigDatabasePod = "postgres-0";
 export const rigDatabase = "chuggy";
 

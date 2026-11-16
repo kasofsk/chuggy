@@ -270,20 +270,16 @@ test("an answer's button still opens the sentence it sends", async () => {
   );
 });
 
-/**
- * A refused ticket keeps its phase and has no open question behind it, so the
- * reason the refusal names is what the reader came for.
- */
-test("a ticket the lead refused is a row of its own, marked and reasoned", async () => {
+/** A refused ticket keeps its phase and has no open question behind it, so its
+ * row says no answer can be sent and marks the refusal with nothing. */
+test("a ticket only a refusal names is a row of its own, offering no answer", async () => {
   drawInbox(servedWithRefusal);
   await settled();
-  expect(screen.getByRole("link", { name: "42" })).toBeDefined();
-  const trigger = screen.getByText("Standing").closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around Standing");
-  fireEvent.focus(trigger);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "the brief names no reference",
-  );
+  const link = screen.getByRole("link", { name: "42" });
+  const row = link.closest("tr");
+  if (row === null) throw new Error("no row around ticket 42");
+  expect(row.textContent).toContain("no action can be sent from here yet");
+  expect(screen.queryByText("Standing")).toBeNull();
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this screen
@@ -292,8 +288,9 @@ test("nothing the inbox screen draws is a runtime style element", async () => {
   drawInbox(servedWithRefusal);
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
-  const trigger = screen.getByText("Standing").closest('[tabindex="0"]');
-  if (trigger === null) throw new Error("no tooltip trigger around Standing");
+  const button = screen.getByRole("button", { name: "resume" });
+  const trigger = button.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around resume");
   fireEvent.focus(trigger);
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);

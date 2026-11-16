@@ -118,7 +118,6 @@ import type {
   RegistrationTokenRequest,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
-  selectorProposalReviewSchema,
   sessionPlacementSchema,
   submissionSchema,
   threadMessageSchema,
@@ -1329,16 +1328,6 @@ export const apiHostedRuns = apiProjectEndpoint(
 export const apiProjectAbilities = apiProjectEndpoint(
   nativeHttpEndpoints.abilities,
   (partition) => ({ parameters: partition }),
-);
-
-/** One held decision answered whole, every ticket it names at once. */
-export const apiReviewSelectorProposal = apiProjectEndpoint(
-  nativeHttpEndpoints.reviewSelectorProposal,
-  (
-    partition,
-    decision: string,
-    review: z.infer<typeof selectorProposalReviewSchema>,
-  ) => ({ parameters: { ...partition, decision }, body: review }),
 );
 
 export interface LeadTranscriptPage {

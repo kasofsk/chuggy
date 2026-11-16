@@ -26,32 +26,4 @@ export interface InboxCopy {
   readonly "inbox-step-busy": Record<never, never>;
   readonly "inbox-step-waiting": Record<never, never>;
   readonly "inbox-step-updating": Record<never, never>;
-  readonly "inbox-proposal-pill": Record<never, never>;
-  readonly "inbox-proposal-why": Record<never, never>;
-  readonly "inbox-proposal-why-others": {
-    readonly others: unknown;
-  };
-  readonly "inbox-proposal-approve": Record<never, never>;
-  readonly "inbox-proposal-reject": Record<never, never>;
-  readonly "inbox-proposal-reject-question": Record<never, never>;
-  readonly "inbox-proposal-reject-confirm": Record<never, never>;
-  readonly "inbox-proposal-note-label": Record<never, never>;
-  readonly "inbox-proposal-note-placeholder": Record<never, never>;
-  readonly "inbox-proposal-stale": Record<never, never>;
-  readonly "inbox-proposal-failed": Record<never, never>;
-  readonly "inbox-proposal-failed-unauthenticated": Record<never, never>;
-  readonly "inbox-proposal-failed-absent": Record<never, never>;
-  readonly "inbox-proposal-failed-unreachable": Record<never, never>;
-  readonly "inbox-proposal-failed-unreadable": Record<never, never>;
-  readonly "inbox-proposal-outcome-approved": Record<never, never>;
-  readonly "inbox-proposal-outcome-rejected": Record<never, never>;
-  readonly "inbox-proposal-sentence": {
-    readonly tickets: unknown;
-    readonly word: unknown;
-  };
-  readonly "inbox-proposal-sentence-why": {
-    readonly tickets: unknown;
-    readonly word: unknown;
-    readonly why: unknown;
-  };
 }

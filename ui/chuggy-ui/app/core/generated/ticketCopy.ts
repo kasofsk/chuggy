@@ -55,7 +55,6 @@ export interface TicketCopy {
   readonly "ticket-header-merged-into": {
     readonly base: unknown;
   };
-  readonly "ticket-header-waiting-lead": Record<never, never>;
   readonly "ticket-header-waiting-dispatch": Record<never, never>;
   readonly "ticket-header-unfinished": {
     readonly count: unknown;
@@ -78,7 +77,6 @@ export interface TicketCopy {
   readonly "ticket-cancel-refused": {
     readonly reason: unknown;
   };
-  readonly "ticket-no-lead-dispatched-by-hand": Record<never, never>;
   readonly "ticket-header-menu-label": Record<never, never>;
   readonly "ticket-revoke-menu-item": Record<never, never>;
   readonly "ticket-draft-delete": Record<never, never>;

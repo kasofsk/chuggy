@@ -7,8 +7,8 @@
  *
  * EVERY SCREEN IN A PROJECT READS THE INBOX ONCE, mounted once as a production
  * build mounts it, and none of the reads it was once joined from: the tickets
- * an inbox phase holds, the project's open actions, the lead's refusals, its
- * held decisions, or a ticket the inbox holds read on its own.
+ * an inbox phase holds, the project's open actions, the lead's refusals, or a
+ * ticket the inbox holds read on its own.
  *
  * UNDER THE PSEUDO WORDING EVERY ROUTE SAYS NOTHING BUT DATA beside the
  * catalog's altered words, in its text and in what a reader hears of it, which
@@ -30,7 +30,6 @@ import { z } from "zod";
 
 import { consoleRouterOver } from "../app/browser/routes.tsx";
 import { copyPseudoLocale } from "../app/copy/copyPseudo.ts";
-import { inboxProposalsPolledMs } from "../app/core/inboxProposals.ts";
 import { repositoryConfigurationsDirectory } from "../app/core/repositoryConfigurations.ts";
 import { creationImageTypesLabel } from "../app/core/ticketCreation.ts";
 import { inboxPhases } from "../../../src/contract/http.ts";
@@ -274,6 +273,9 @@ test.each(consoleRoutePaths)("%s draws over the site", async (path) => {
   consoleSiteClean(site);
 });
 
+/** What the inbox's one row draws in place of an answer, since it offers none. */
+const consoleInboxNoAction = "no action can be sent from here yet";
+
 /** What one mount reads that the inbox is, or was once joined from. */
 function consoleInboxReads(reads: readonly string[]) {
   const phased = new RegExp(`[?&]phase=(${inboxPhases.join("|")})(&|$)`, "u");
@@ -282,9 +284,7 @@ function consoleInboxReads(reads: readonly string[]) {
     joined: reads.filter(
       (read) =>
         phased.test(read) ||
-        /\/projects\/[^/]+\/(native-actions|selector-proposals)(\?|$)/u.test(
-          read,
-        ) ||
+        /\/projects\/[^/]+\/native-actions(\?|$)/u.test(read) ||
         new RegExp(`/tickets/${String(consoleInboxTicket)}(/|\\?|$)`, "u").test(
           read,
         ),
@@ -305,7 +305,7 @@ test.each(consoleRoutePaths)(
   },
 );
 
-/** The inbox screen draws a refused and proposed ticket and reads no refusal of its own. */
+/** The inbox screen draws a refused ticket's row and reads no refusal of its own. */
 test("the inbox screen reads no refusals beside the inbox", async () => {
   consoleMounted(
     consoleRouteAddress("/$tenant/$project/inbox"),
@@ -313,23 +313,10 @@ test("the inbox screen reads no refusals beside the inbox", async () => {
     false,
   );
   await consoleAdvanced(consoleRouteWalkSettleMs);
-  expect(screen.getByText("Standing")).toBeDefined();
+  expect(screen.getByText(consoleInboxNoAction)).toBeDefined();
   expect(
     site.reads.filter((read) => read.includes("/agentic-refusals")),
   ).toStrictEqual([]);
-});
-
-/** No frame names a held decision, so whatever draws the inbox reads it again on the clock. */
-test("a screen drawing the inbox reads it again every poll", async () => {
-  consoleMounted(
-    consoleRouteAddress("/$tenant/$project"),
-    consoleSession(),
-    false,
-  );
-  await consoleAdvanced(consoleRouteWalkSettleMs);
-  expect(consoleInboxReads(site.reads).inbox).toBe(1);
-  await consoleAdvanced(inboxProposalsPolledMs);
-  expect(consoleInboxReads(site.reads).inbox).toBe(2);
 });
 
 /** A frame of each kind that can move a ticket into or out of the inbox, and
@@ -398,7 +385,7 @@ test.each(consoleInboxFrames)(
       false,
     );
     await consoleAdvanced(consoleRouteWalkSettleMs);
-    expect(screen.getByText("Standing")).toBeDefined();
+    expect(screen.getByText(consoleInboxNoAction)).toBeDefined();
     site.reads.length = 0;
     site.emit(event, data);
     await consoleAdvanced(consoleRouteWalkSettleMs);

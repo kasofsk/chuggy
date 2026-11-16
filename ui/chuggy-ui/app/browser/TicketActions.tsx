@@ -686,8 +686,6 @@ export interface TicketHeaderActionsProps {
   readonly withheld: readonly TicketActionName[];
   /** Whether the reader may start a new ticket from this one. */
   readonly duplicates: boolean;
-  /** Whether Dispatch is offered in a project no lead dispatches or will open to. */
-  readonly byHand: boolean;
   /** Whether a Dispatch gave way because the project's work has no runner. */
   readonly noRunner: boolean;
   /** The one of Take and Return the reader is offered, for themselves. */
@@ -801,13 +799,6 @@ export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
         <ReadFailed
           subject={text(ticketActionLabel("Dispatch"))}
           failure={props.dispatchState.failure}
-        />
-      ) : null}
-      {props.byHand ? (
-        <Notice
-          tone="info"
-          inline
-          detail={text({ id: "ticket-no-lead-dispatched-by-hand" })}
         />
       ) : null}
       <FollowNotes submitting={props.acting.submitting} />
