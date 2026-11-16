@@ -33,7 +33,7 @@ const ticketsList: RenderedOpening = {
   route: `/${stubApiTenant}/${stubApiProject}/`,
   viewport: "phone",
   signedIn: true,
-  ready: (page) => page.getByRole("link", { name: "#1", exact: true }),
+  ready: (page) => page.getByText("#1", { exact: true }),
 };
 
 const zodProbe = "zod's Function(\"\") probe is refused by script-src 'self'";

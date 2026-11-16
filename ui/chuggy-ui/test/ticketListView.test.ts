@@ -18,6 +18,7 @@ import {
   ticketListCreatorsOffered,
   ticketListFiltered,
   ticketListQueryOf,
+  ticketListQueryCleared,
   ticketListQueryWith,
   ticketListSearchOf,
   ticketListShown,
@@ -144,6 +145,21 @@ test("a search or a sort written to the address keeps the other, and State is wr
   expect(
     ticketListQueryWith({ q: "gate", sort: "Newest" }, { q: undefined }),
   ).toStrictEqual({ sort: "Newest" });
+});
+
+test("a cleared address keeps only its sort, and writes All as its filter", () => {
+  expect(
+    ticketListQueryCleared({
+      q: "gate",
+      sort: "Oldest",
+      filter: "Escalated",
+      creator: "alice",
+      owner: "bob",
+    }),
+  ).toStrictEqual({ sort: "Oldest", filter: "All" });
+  expect(ticketListQueryCleared({ q: "gate" })).toStrictEqual({
+    filter: "All",
+  });
 });
 
 test("a filter written to the address keeps the search and the sort, and All is written as itself", () => {

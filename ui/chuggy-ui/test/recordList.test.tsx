@@ -85,6 +85,7 @@ test("a row given no meta, trailing or foot still draws the line and the foot th
   expect(recordListParts(bare)).toEqual([
     "record-row-head",
     "record-row-title",
+    "record-row-title-words",
     "record-row-line",
     "record-row-meta",
     "record-row-foot",
@@ -143,6 +144,8 @@ test("a skeleton row has a row's parts, and no reader is told of it", () => {
   expect(skeleton.getAttribute("aria-hidden")).toBe("true");
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
   expect(screen.queryAllByRole("heading")).toHaveLength(1);
-  expect(recordListParts(skeleton)).toEqual(recordListParts(row));
+  expect(recordListParts(skeleton)).toEqual(
+    recordListParts(row).filter((part) => part !== "record-row-title-words"),
+  );
   expect(skeleton.querySelectorAll(".record-row-bone")).toHaveLength(2);
 });

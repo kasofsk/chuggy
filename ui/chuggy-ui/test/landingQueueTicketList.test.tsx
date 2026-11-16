@@ -97,10 +97,11 @@ async function listDrawn(queues: () => Response): Promise<QueryClient> {
 }
 
 function rowOf(ticket: number): HTMLElement {
-  const row = document.querySelector<HTMLElement>(
-    `.ticket-list-item[data-ticket="${String(ticket)}"]`,
-  );
-  if (row === null) throw new Error(`no row for #${String(ticket)}`);
+  const row = [...document.querySelectorAll<HTMLElement>(".ticket-list-number")]
+    .find((number) => number.textContent === `#${String(ticket)}`)
+    ?.closest("li");
+  if (row === null || row === undefined)
+    throw new Error(`no row for #${String(ticket)}`);
   return row;
 }
 

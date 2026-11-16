@@ -72,7 +72,9 @@ export function RecordRow(props: {
       <article className="record-row">
         <div className="record-row-head">
           <Heading className="record-row-title">
-            <RecordRowLink {...props.link}>{props.title}</RecordRowLink>
+            <RecordRowLink {...props.link}>
+              <span className="record-row-title-words">{props.title}</span>
+            </RecordRowLink>
           </Heading>
           <div className="record-row-line">
             <span className="record-row-meta">{props.meta}</span>
