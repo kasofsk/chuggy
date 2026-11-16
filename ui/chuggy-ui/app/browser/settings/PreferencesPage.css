@@ -1,5 +1,6 @@
-/* The preferences page: its sections in one column, each choice's options
-   wrapping onto as many rows as the column needs. In a narrow column every
+/* The preferences page: its sections in one column, a section's choices
+   stacked in it, each choice's options wrapping onto as many rows as the
+   column needs. In a narrow column every
    option is given a finger's height, its ring still 1em and drawn in the
    middle of it, where the focus ring is drawn too. */
 
@@ -10,8 +11,18 @@
     gap: var(--space-4);
   }
 
+  .preferences-section {
+    display: grid;
+    gap: var(--space-4);
+  }
+
   .preferences-section [role="radiogroup"] {
     flex-wrap: wrap;
+  }
+
+  .preferences-theme {
+    display: grid;
+    gap: var(--space-2);
   }
 
   @container (max-width: 40em) {

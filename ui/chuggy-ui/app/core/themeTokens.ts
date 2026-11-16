@@ -100,21 +100,29 @@ function themeAssignmentsDefault(theme: ThemeDocument): boolean {
   );
 }
 
+/** The colour tokens a theme defines, the built-in default's as well, so an
+ * element carrying them draws in the theme whatever its root wears. */
+export function themeColourAssignmentsOf(
+  theme: ThemeDocument,
+): readonly ThemeAssignment[] {
+  const schemes = themePaletteSchemes(theme.palette);
+  const light = themeAssignmentsSide(schemes, "Light");
+  const dark = themeAssignmentsSide(schemes, "Dark");
+  return themeRoles.flatMap((role) =>
+    themeRoleTokens[role].map((property) => ({
+      property,
+      value: `light-dark(${light[role]}, ${dark[role]})`,
+    })),
+  );
+}
+
 /** The properties to set for a theme, none for the built-in default. */
 export function themeAssignmentsOf(
   theme: ThemeDocument,
 ): readonly ThemeAssignment[] {
   if (themeAssignmentsDefault(theme)) return [];
-  const schemes = themePaletteSchemes(theme.palette);
-  const light = themeAssignmentsSide(schemes, "Light");
-  const dark = themeAssignmentsSide(schemes, "Dark");
   return [
-    ...themeRoles.flatMap((role) =>
-      themeRoleTokens[role].map((property) => ({
-        property,
-        value: `light-dark(${light[role]}, ${dark[role]})`,
-      })),
-    ),
+    ...themeColourAssignmentsOf(theme),
     { property: themeFontToken, value: themeFontStacks[theme.font] },
     {
       property: themeTextRootToken,
