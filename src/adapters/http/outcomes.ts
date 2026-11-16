@@ -2023,6 +2023,10 @@ export function forgeRepositoriesResponse(
       return response(200, {
         repositories: result.repositories,
         truncated: result.truncated,
+        selection: result.selection,
+        ...(result.accountId === undefined
+          ? {}
+          : { accountId: result.accountId }),
       });
     case "NotConfigured":
       return forgeNotConfigured();

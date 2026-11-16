@@ -20,6 +20,12 @@
  * not there. The forge's own count is what decides that flag, so a bound that
  * happens to land exactly on the last page does not report more.
  *
+ * THE SELECTION AND THE ACCOUNT ARE THE FORGE'S OWN ACCOUNT OF THE LISTING:
+ * whether the installation was given every repository or chosen ones is read
+ * from the listing's top level, and the account's number from the owner of the
+ * rows, which one installation's rows all share. Rows naming two owners are an
+ * answer this side cannot read.
+ *
  * A REFUSED MINT IS `Denied` AND EVERY OTHER FAILURE IS AN OUTAGE, as at every
  * other forge edge: an installation this app no longer holds is settled, and a
  * forge that could not be reached, would not answer, or answered something this
@@ -31,10 +37,13 @@ import { z } from "zod";
 import type {
   ForgeInstallationRepositories,
   ForgeRepositoriesRead,
+  ForgeRepositorySelection,
   ForgeRepositorySummary,
 } from "../../interpreter/forgeDirectory.ts";
 import {
+  asForgeAccountId,
   asForgeRepositoryName,
+  type ForgeAccountId,
   type ForgeInstallation,
   type ForgeInstallationTokens,
 } from "../../interpreter/forgeInstallation.ts";
@@ -59,8 +68,11 @@ const githubListingStatus = 200;
 /** The fields of a listing this tree reads, the rest being the forge's own account of it. */
 const githubRepositoriesSchema = z.object({
   total_count: z.number().int().nonnegative(),
+  repository_selection: z.enum(["all", "selected"]),
   repositories: z.array(
     z.object({
+      id: z.number().int().positive(),
+      owner: z.object({ id: z.number().int().positive() }),
       name: z.string().min(1),
       full_name: z.string().min(1),
       clone_url: z.string().min(1),
@@ -103,6 +115,7 @@ function githubRepositorySummary(
   row: GithubRepositoryRow,
 ): ForgeRepositorySummary {
   return {
+    id: String(row.id),
     name: asForgeRepositoryName(row.name),
     fullName: row.full_name,
     url: row.clone_url,
@@ -111,13 +124,31 @@ function githubRepositorySummary(
   };
 }
 
+/** The forge's word for an installation's selection, in this tree's. */
+const githubRepositorySelections = {
+  all: "All",
+  selected: "Selected",
+} as const satisfies Record<string, ForgeRepositorySelection>;
+
+/** The one account every row stands on, nothing where no row is listed and a refusal where two are named. */
+function githubRepositoriesAccount(
+  owners: readonly number[],
+): ForgeAccountId | undefined | "Mixed" {
+  const first = owners[0];
+  if (first === undefined) return undefined;
+  if (owners.some((owner) => owner !== first)) return "Mixed";
+  return asForgeAccountId(String(first));
+}
+
 /** Pages the listing under one minted bearer, stopping at the bound or at the last page. */
 async function githubRepositoriesPaged(
   own: GithubInstallationRepositoriesState,
   bearer: string,
 ): Promise<ForgeRepositoriesRead> {
   const collected: ForgeRepositorySummary[] = [];
+  const owners: number[] = [];
   let total = 0;
+  let selection: ForgeRepositorySelection | undefined;
   for (let page = 1; collected.length < own.repositoriesMax; page += 1) {
     const answered = await githubBearerSend(
       own.bounds,
@@ -137,6 +168,8 @@ async function githubRepositoriesPaged(
     );
     if (read === undefined) return { read: "Unavailable" };
     total = read.total_count;
+    selection = githubRepositorySelections[read.repository_selection];
+    owners.push(...read.repositories.map((row) => row.owner.id));
     try {
       collected.push(...read.repositories.map(githubRepositorySummary));
     } catch {
@@ -145,10 +178,15 @@ async function githubRepositoriesPaged(
     if (read.repositories.length < own.pageSize) break;
   }
   const repositories = collected.slice(0, own.repositoriesMax);
+  const accountId = githubRepositoriesAccount(owners);
+  if (accountId === "Mixed" || selection === undefined)
+    return { read: "Unavailable" };
   return {
     read: "Repositories",
     repositories,
     truncated: total > repositories.length,
+    selection,
+    ...(accountId === undefined ? {} : { accountId }),
   };
 }
 

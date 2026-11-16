@@ -95,11 +95,13 @@ import type {
   ForgeInstallationDirectory,
   ForgeInstallationPermissions,
   ForgeInstallationRepositories,
+  ForgeRepositorySelection,
   ForgeRepositorySummary,
 } from "./forgeDirectory.ts";
 import {
   workerPodForgeApp,
   type ForgeAccount,
+  type ForgeAccountId,
   type ForgeAccountKind,
   type ForgeApp,
   type ForgeId,
@@ -207,6 +209,8 @@ export type ForgeRepositoriesResult =
       readonly result: "Repositories";
       readonly repositories: readonly ForgeRepositorySummary[];
       readonly truncated: boolean;
+      readonly selection: ForgeRepositorySelection;
+      readonly accountId?: ForgeAccountId;
     }
   | { readonly result: "NotConfigured" }
   | { readonly result: "NotFound" }
@@ -735,6 +739,8 @@ async function installationRepositories(
         result: "Repositories",
         repositories: read.repositories,
         truncated: read.truncated,
+        selection: read.selection,
+        ...(read.accountId === undefined ? {} : { accountId: read.accountId }),
       };
     case "Denied":
       return { result: "NotFound" };
