@@ -438,7 +438,6 @@ async function setupCallbackExchanged(
 }
 
 const setupPages = {
-  signedIn: { id: "setup-page-signed-in" },
   unfinished: { id: "setup-page-unfinished" },
   answered: { id: "setup-page-answered" },
   nothing: { id: "setup-page-nothing" },
@@ -480,7 +479,7 @@ async function setupStateMatched(
   return differing === 0;
 }
 
-/** One request of the browser's: sent on to the issuer, read as its answer, or told there is nothing here. */
+/** One request of the browser's: sent on to the issuer, read as its answer and sent on to the site once signed in, or told there is nothing here. */
 async function setupListenerAnswered(
   listener: SetupListener,
   heard: SetupHeard,
@@ -506,7 +505,7 @@ async function setupListenerAnswered(
     listener.decide(ended);
   }
   return ended === "SignedIn"
-    ? setupPage(200, setupPages.signedIn)
+    ? { status: 303, location: `${listener.opened.site}/` }
     : setupPage(400, setupPages.unfinished);
 }
 

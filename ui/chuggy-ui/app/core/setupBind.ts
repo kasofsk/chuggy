@@ -21,7 +21,7 @@ import {
 } from "./projectRepositories.ts";
 import type { SetupBindAnswered } from "./setupReport.ts";
 
-/** How often `bind` reads the checklist again while what is next waits on GitHub. */
+/** How often `bind` reads the checklist again while what is next waits on GitHub, or after a look the site did not answer. */
 export const setupBindPollMs = 3_000;
 
 /** The one write `bind` makes for a project: the binding of one repository. */

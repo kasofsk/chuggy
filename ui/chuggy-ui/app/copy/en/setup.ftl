@@ -613,11 +613,11 @@ setup-done = { -brand-name } is set up for { $project }{ $how ->
    *[none] { "" }
 } The next { -ticket } is made at { $page }.
 
-## The page a sign-in returns to, in the person's browser: the program's name,
-## what happened as its heading, and what to do next under it.
+## The page a sign-in returns to unless it ends signed in, in the person's
+## browser: the program's name, what happened as its heading, and what to do
+## next under it.
 
 setup-page-brand = { -brand-name }
-setup-page-signed-in = Signed in to { -brand-name }
 setup-page-unfinished = This sign-in did not finish
 setup-page-answered = This sign-in page has already been answered
 setup-page-nothing = There is nothing here
