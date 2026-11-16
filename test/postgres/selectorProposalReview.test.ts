@@ -1,20 +1,16 @@
 /**
- * A lead's proposal held for approval, answered over the real API and carried
- * to the writer by the selector's own delivery path, so what is under test is
- * that a reviewer's answer reaches the ticket rather than only the row.
+ * A lead's proposal held for approval, answered over the real API, so what is
+ * under test is who may read and answer a held decision and what a lead's next
+ * observation carries of the answer.
  *
  * Every pool here runs as the role a deployment binds it to: the API's, the
  * review role the API answers reviews through, and the selector service's.
- * The selector submits over HTTP as its own principal, exactly as its process
- * does, so an approval that the review role could write but the selector could
- * not deliver is a failure here and not a pass.
  */
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { nativeHttpClient } from "../../src/adapters/http/client.ts";
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
@@ -39,7 +35,6 @@ import {
   composeNativeWeb,
   composeSelectorProposalReviews,
 } from "../../src/compose.ts";
-import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { nativeHttpMediaType } from "../../src/contract/http.ts";
 import { selectorProposalNotHeldCode } from "../../src/contract/rosters.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
@@ -49,20 +44,11 @@ import {
   type ProjectAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import {
-  projectWriterDecide,
-  type ProjectMemory,
-} from "../../src/interpreter/projectWriter.ts";
+import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
 import {
   proposalCommand,
   type SelectorDecisionProposals,
-  type SelectorStateStore,
 } from "../../src/interpreter/selector.ts";
-import {
-  deliverPendingSelectorProposals,
-  reconcileSubmittedSelectorProposals,
-} from "../../src/interpreter/selectorDeliveryRuntime.ts";
-import { selectorNativeSource } from "../../src/interpreter/selectorNativeSource.ts";
 import { selectorOperationalContextRead } from "../../src/interpreter/selectorOperationalContext.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
@@ -86,11 +72,7 @@ after(async () => {
 });
 
 const reviewer = asPrincipal("issuer reviewer");
-const selector = asPrincipal("issuer selector");
-const bearers = new Map([
-  ["reviewer", reviewer],
-  ["selector", selector],
-]);
+const bearers = new Map([["reviewer", reviewer]]);
 
 /** A pool as `role`, which gives up on a lock after `lockTimeout` where one is named. */
 function rolePool(role: string, lockTimeout?: string) {
@@ -140,28 +122,6 @@ function servedApp(
   );
 }
 
-/** The selector's door to the API listening at `address`, as its process builds it. */
-function selectorSource(address: string) {
-  return selectorNativeSource(
-    nativeHttpClient({
-      baseUrl: address,
-      accessToken: {
-        token: () => Promise.resolve("selector"),
-        invalidate: () => undefined,
-      },
-      requestTimeoutMs: 10_000,
-      responseBytesMax: 1_048_576,
-    }),
-    selector,
-    {
-      currentTimeEpochMs: () => Promise.resolve(Date.now()),
-      currentInstant: () => Promise.resolve(new Date().toISOString()),
-      decisionDeadline: () => new Promise<never>(() => undefined),
-      operationalContext: () => Promise.resolve(postgresHarnessSelectorContext),
-    },
-  );
-}
-
 /** What the lead's next observation carries of its reviews, newest `count` of them. */
 async function observedFeedback(
   apiPool: ReturnType<typeof rolePool>,
@@ -188,7 +148,7 @@ async function observedFeedback(
   ).reviewFeedback;
 }
 
-/** The API listening, the selector's door to it, and the selector's state beside them. */
+/** The API listening, and the selector's state beside it. */
 async function served(reviewing: ReadonlySet<ProjectAccessKind>) {
   const access = memoryProjectAccess();
   const apiPool = rolePool(apiRole);
@@ -199,17 +159,11 @@ async function served(reviewing: ReadonlySet<ProjectAccessKind>) {
   return {
     apiPool,
     state: postgresSelectorState(selectorPool),
-    source: selectorSource(address),
     address,
     feedback: (partition: Partition, count: number) =>
       observedFeedback(apiPool, reviewPool, partition, count),
     grant: (partition: Partition) => {
       access.grant({ partition, principal: reviewer, access: reviewing });
-      access.grant({
-        partition,
-        principal: selector,
-        access: new Set(["Read", "ProposeDispatch"]),
-      });
     },
     close: async () => {
       await app.close();
@@ -261,7 +215,7 @@ async function answer(
   };
 }
 
-/** A project with `releases` released tickets, readable by the reviewer and the selector. */
+/** A project with `releases` released tickets, readable by the reviewer. */
 async function releasedProject(on: Served, label: string, releases = 1) {
   const partition = await postgresHarnessProject(harness.store, label);
   let memory = await postgresHarnessHistory(harness, partition, label, 1);
@@ -443,160 +397,6 @@ async function deliveryRow(decision: string) {
   );
   return row;
 }
-
-/** Everything the selector runtime does in one pass over deliveries, as the selector. */
-async function selectorPass(state: SelectorStateStore, on: Served) {
-  return {
-    delivered: (await deliverPendingSelectorProposals(state, on.source, 10))
-      .delivered,
-    reconciled: (
-      await reconcileSubmittedSelectorProposals(state, on.source, 10)
-    ).reconciled,
-  };
-}
-
-async function writerTurn(partition: Partition, memory: ProjectMemory) {
-  const input = await harness.discovery.next(partition, 300);
-  assert.ok(input !== undefined, "the submitted dispatch reached no writer");
-  return (
-    await projectWriterDecide(postgresHarnessWriter(harness), memory, input)
-  ).decided.decided;
-}
-
-/** The approved dispatch sent by the selector, committed by the writer, and settled as the ticket's operation. */
-async function assertLanded(
-  on: Served,
-  held: Awaited<ReturnType<typeof heldDecision>>,
-) {
-  assert.equal(
-    (await deliverPendingSelectorProposals(on.state, on.source, 10)).delivered,
-    1,
-  );
-  assert.equal(await writerTurn(held.partition, held.memory), "Committed");
-  assert.equal(
-    (await reconcileSubmittedSelectorProposals(on.state, on.source, 10))
-      .reconciled,
-    1,
-  );
-  const row = await deliveryRow(held.decision);
-  assert.equal(row?.["state"], "Terminal");
-  assert.equal(
-    (JSON.parse(String(row?.["outcome"])) as { state: string }).state,
-    "Succeeded",
-  );
-  const operation = await fetch(
-    projectUrl(on, held.partition, `/operations/${held.operation}`),
-    { headers: { authorization: "Bearer reviewer" } },
-  );
-  assert.equal(
-    ((await operation.json()) as { state: string }).state,
-    "Succeeded",
-  );
-}
-
-test("an approved proposal is delivered, and its ticket's dispatch lands", async () => {
-  const on = await served(new Set(["Read", "DispatchTicket"]));
-  try {
-    const held = await heldDecision(on, "proposal-approved");
-    assert.equal(
-      (await deliveryRow(held.decision))?.["state"],
-      "AwaitingApproval",
-    );
-    assert.deepEqual(
-      await selectorPass(on.state, on),
-      { delivered: 0, reconciled: 0 },
-      "a held proposal is not the selector's to send",
-    );
-    const listed = await proposals(on, held.partition);
-    assert.equal(listed.status, 200);
-    assert.deepEqual(
-      nativeHttpEndpoints.selectorProposals.response.parse(listed.body),
-      {
-        proposals: [{ decision: held.decision, tickets: [held.ticket] }],
-        more: false,
-      },
-    );
-    const approved = await answer(on, held.partition, held.decision, {
-      outcome: "Approved",
-      feedback: "ship it",
-    });
-    assert.deepEqual(approved, {
-      status: 200,
-      body: { decision: held.decision, outcome: "Approved" },
-    });
-    assert.deepEqual((await proposals(on, held.partition)).body, {
-      proposals: [],
-      more: false,
-    });
-    await assertLanded(on, held);
-    assert.deepEqual(
-      (await on.feedback(held.partition, 10)).map((review) => ({
-        decision: review.selectorDecision,
-        outcome: review.outcome,
-        reviewer: review.reviewer,
-        feedback: review.feedback,
-      })),
-      [
-        {
-          decision: held.decision,
-          outcome: "Approved",
-          reviewer: memberAuthority(reviewer),
-          feedback: "ship it",
-        },
-      ],
-    );
-  } finally {
-    await on.close();
-  }
-});
-
-test("a rejected proposal ends unsent, and the lead reads why", async () => {
-  const on = await served(new Set(["Read", "DispatchTicket"]));
-  try {
-    const held = await heldDecision(on, "proposal-rejected");
-    const rejected = await answer(on, held.partition, held.decision, {
-      outcome: "Rejected",
-      feedback: "not before the migration",
-    });
-    assert.equal(rejected.status, 200);
-    const row = await deliveryRow(held.decision);
-    assert.equal(row?.["state"], "Terminal");
-    assert.deepEqual(JSON.parse(String(row?.["outcome"])), {
-      state: "RejectedByUser",
-      feedback: "not before the migration",
-    });
-    assert.deepEqual(await selectorPass(on.state, on), {
-      delivered: 0,
-      reconciled: 0,
-    });
-    const operation = await fetch(
-      projectUrl(on, held.partition, `/operations/${held.operation}`),
-      { headers: { authorization: "Bearer reviewer" } },
-    );
-    assert.equal(
-      operation.status,
-      404,
-      "a rejected dispatch is never submitted",
-    );
-    assert.deepEqual(
-      (await on.feedback(held.partition, 10)).map((review) => [
-        review.outcome,
-        review.feedback,
-      ]),
-      [["Rejected", "not before the migration"]],
-    );
-    const again = await answer(on, held.partition, held.decision, {
-      outcome: "Approved",
-    });
-    assert.equal(again.status, 409);
-    assert.equal(
-      (again.body as { error: { code: string } }).error.code,
-      selectorProposalNotHeldCode,
-    );
-  } finally {
-    await on.close();
-  }
-});
 
 test("a reader who may not dispatch neither sees nor answers a held proposal", async () => {
   const on = await served(new Set(["Read", "ProposeDispatch"]));

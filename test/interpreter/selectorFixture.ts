@@ -27,7 +27,7 @@ export const selectorOperationalContext = {
 } as const;
 
 /** The installation settings the selector suites run a project under where a case sets none. */
-export const selectorRuntimeSettings: SelectorRuntimeSettings = {
+export const selectorSettingsFixture: SelectorRuntimeSettings = {
   revision: 1,
   mode: "Running",
   dispatchMode: "Automatic",

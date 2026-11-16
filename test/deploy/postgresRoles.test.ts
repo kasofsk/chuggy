@@ -69,7 +69,13 @@ import { test } from "node:test";
 
 import * as schema from "../../src/adapters/postgres/schema.ts";
 
-const { apiRole, migrations, selectorReviewRole, workerPlaneRole } = schema;
+const {
+  apiRole,
+  migrations,
+  selectorReviewRole,
+  selectorServiceRole,
+  workerPlaneRole,
+} = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
 const rolesFile = readFileSync(rolesFilePath, "utf8")
   .replaceAll(/--.*$/gmu, " ")
@@ -130,6 +136,18 @@ function rootAssertedRoles(): ReadonlySet<string> {
     }
   }
   return found;
+}
+
+/**
+ * The group roles a login is granted and a ledger read is granted to though no
+ * command under `src/roots/` serves as them: the selector's process is gone,
+ * and its login and grants are kept until a migration revokes them.
+ */
+const unservedLoginRoles: ReadonlySet<string> = new Set([selectorServiceRole]);
+
+/** Every group role a login is granted: the ones a serving command asserts, and the unserved ones kept beside them. */
+function loginGroupRoles(): ReadonlySet<string> {
+  return new Set([...rootAssertedRoles(), ...unservedLoginRoles]);
 }
 
 /** Every role name one repeated statement of the file names, and the shape it names them in. */
@@ -226,12 +244,12 @@ test("a role a migration makes an owner may create in the schema it owns in", ()
 test("every group role a serving command asserts is granted to a login role", () => {
   assert.deepEqual(
     rolesFileRepeated(/GRANT (chuggy_\w+) TO chuggy_\w+_login;/gu),
-    rootAssertedRoles(),
+    loginGroupRoles(),
   );
 });
 
 test("only serving groups with the schema-readiness contract read the ledger", () => {
-  const expected = new Set(rootAssertedRoles());
+  const expected = new Set(loginGroupRoles());
   expected.delete(workerPlaneRole);
   assert.deepEqual(
     migrationLedgerReaders(),
