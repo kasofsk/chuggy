@@ -29,6 +29,8 @@ import {
 } from "../../interpreter/projectStore.ts";
 import type { RepositoryBindingListing } from "../../interpreter/repositoryConfiguration.ts";
 import type {
+  ProjectNorthStarPort,
+  ProjectNorthStarRead,
   ReadOnlyRepositoriesPort,
   ReadOnlyRepositoriesRead,
 } from "../../interpreter/taskBriefing.ts";
@@ -177,6 +179,32 @@ export function postgresReadOnlyRepositories(
         return { read: "Unavailable" };
       }
       return postgresReadOnlyRepositoriesRead(found.rows);
+    },
+  };
+}
+
+/**
+ * What a project's members wrote it is for, read from its selector settings
+ * under the scheduler's own role, and none where no row or no text is there. A
+ * failed read is `Unavailable` for the same reason the repositories' is.
+ */
+export function postgresProjectNorthStar(pool: pg.Pool): ProjectNorthStarPort {
+  return {
+    northStar: async (partition): Promise<ProjectNorthStarRead> => {
+      let found: pg.QueryResult<{ north_star: string | null }>;
+      try {
+        found = await pool.query<{ north_star: string | null }>(
+          sql`SELECT north_star
+                FROM selector_project_settings
+               WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+        );
+      } catch {
+        return { read: "Unavailable" };
+      }
+      const northStar = found.rows[0]?.north_star ?? null;
+      return northStar === null
+        ? { read: "NorthStar" }
+        : { read: "NorthStar", northStar };
     },
   };
 }

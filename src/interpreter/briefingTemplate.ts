@@ -85,6 +85,7 @@ export const allBriefingCarriers: readonly BriefingCarrier[] = [
 export type BriefingSectionId =
   | "Prompt"
   | "RoleInstructions"
+  | "ProjectNorthStar"
   | "TicketIntent"
   | "TicketLinks"
   | "TicketImages"
@@ -104,6 +105,7 @@ export type BriefingSectionId =
 export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "Prompt",
   "RoleInstructions",
+  "ProjectNorthStar",
   "TicketIntent",
   "TicketLinks",
   "TicketImages",
@@ -127,7 +129,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 22;
+export const briefingTemplateVersion = 23;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -140,6 +142,8 @@ export function briefingHeading(
       return "Prompt";
     case "RoleInstructions":
       return carrier === "Commands" ? "What this stage is" : "Your role";
+    case "ProjectNorthStar":
+      return "This project's North Star";
     case "TicketIntent":
       return "What this ticket asks for";
     case "TicketLinks":
@@ -437,6 +441,47 @@ export function briefingDependencyName(delivery: DependencyDelivery): string {
   return delivery.title === undefined
     ? `Ticket ${String(delivery.dependency)}`
     : `Ticket ${String(delivery.dependency)}: ${delivery.title}`;
+}
+
+/** What opens every North Star a role is told, before the role's own use of it. */
+const briefingNorthStarOpening =
+  "What this project is for, as its members wrote it.";
+
+/**
+ * The standing line that leads the project's North Star: the work makes the
+ * choices its ticket leaves open the way the North Star says, and an
+ * evaluation holds the work to the same.
+ */
+export function briefingNorthStarPreface(purpose: TaskPurpose): string {
+  return purpose === "Work"
+    ? `${briefingNorthStarOpening} Where the ticket below leaves a choice open, such as a language, a dependency or a layout, make it the way this says; where the ticket asks otherwise, the ticket wins.`
+    : `${briefingNorthStarOpening} Where the ticket leaves a choice open, the work should have made it the way this says; where it did not, say so.`;
+}
+
+/**
+ * What closes a North Star that was not carried whole: how many of its lines
+ * held a character a briefing cannot print, and how many of its characters
+ * fell past the room the section has. Nothing where neither is any.
+ */
+export function briefingNorthStarUncarried(
+  linesUnreadable: number,
+  codePointsUncarried: number,
+): string | undefined {
+  const parts = [
+    ...(linesUnreadable === 0
+      ? []
+      : [
+          `${String(linesUnreadable)} of its lines, which hold a character this briefing cannot print`,
+        ]),
+    ...(codePointsUncarried === 0
+      ? []
+      : [
+          `${String(codePointsUncarried)} of its characters, past the room this briefing gives it`,
+        ]),
+  ];
+  return parts.length === 0
+    ? undefined
+    : `Not carried from the North Star above: ${parts.join("; and ")}.`;
 }
 
 /** What a commanded stage is, stated rather than addressed to anyone. */
