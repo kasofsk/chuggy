@@ -658,9 +658,11 @@ export interface SetupCopy {
     readonly did: unknown;
     readonly uninstall: unknown;
   };
+  readonly "setup-plugin-reload-tell": Record<never, never>;
   readonly "setup-rule-skill": {
     readonly skill: unknown;
   };
+  readonly "setup-plugin-reload-when": Record<never, never>;
   readonly "setup-plugin-passed": {
     readonly found: unknown;
   };
@@ -939,7 +941,6 @@ export interface SetupCopy {
     readonly page: unknown;
   };
   readonly "setup-page-brand": Record<never, never>;
-  readonly "setup-page-signed-in": Record<never, never>;
   readonly "setup-page-unfinished": Record<never, never>;
   readonly "setup-page-answered": Record<never, never>;
   readonly "setup-page-nothing": Record<never, never>;

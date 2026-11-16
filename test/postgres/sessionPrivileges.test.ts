@@ -25,6 +25,7 @@ import {
   chatHostSessionReleaseFunction,
   chatHostSessionRenewFunction,
   chatHostSessionsAwaitingFunction,
+  chatHostSessionUnlistedEndFunction,
   memberThreadsReadFunction,
   personalRunnerFenceFunction,
   poolPlaneRole,
@@ -187,6 +188,7 @@ const boundaries: readonly (readonly [string, string | undefined])[] = [
   [chatHostSessionRefuseFunction, poolPlaneRole],
   [chatHostSessionReleaseFunction, poolPlaneRole],
   [chatHostSessionImagesFunction, poolPlaneRole],
+  [chatHostSessionUnlistedEndFunction, poolPlaneRole],
   [chatHostFenceFunction, apiRole],
 ];
 

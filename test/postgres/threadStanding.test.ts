@@ -300,6 +300,31 @@ test("a standing thread whose attempt ended is placed again with an empty mailbo
   );
 });
 
+test("a standing thread whose host's poll stops listing its attempt is ended Vanished at once and placed again on that host once its backoff runs", async () => {
+  const { partition, member, host } = await hosted("standing-unlisted");
+  const { session, held } = await threadAnswered(
+    partition,
+    member,
+    host,
+    "standing-unlisted",
+  );
+  assert.equal(await reported(held, true), "Recorded");
+
+  assert.deepEqual((await polled(host)).sessions, []);
+  assert.deepEqual(
+    [
+      (await attemptOf(held.assignment))["state"],
+      (await attemptOf(held.assignment))["evidence"],
+    ],
+    ["Lost", "Vanished"],
+  );
+  await endedLongAgo(held.assignment);
+  const [again, ...more] = (await polled(host)).sessions;
+  assert.deepEqual(more, []);
+  assert.ok(again !== undefined, "a standing thread was not placed again");
+  assert.equal((await attemptOf(again.assignment))["session"], session);
+});
+
 test("a thread that is not standing, or that an attempt reported not standing, is placed again only once a turn waits", async () => {
   const { partition, member, host } = await hosted("standing-cleared");
   const { session, held } = await threadAnswered(
