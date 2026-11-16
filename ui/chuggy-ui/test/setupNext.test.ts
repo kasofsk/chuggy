@@ -170,7 +170,7 @@ const mends: {
   Account: [
     { lacks: "Account" },
     hand(
-      `Open ${pages}/repositories and press Connect GitHub, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
+      `Open ${pages}/repositories and press Connect GitHub. GitHub then asks for two installs, one after the other: the portal app, then the worker app, each on the GitHub account that owns your repository. On each you can choose "Only select repositories" and pick your repository, so the app is let into that one alone rather than every repository the account owns. Tell me once GitHub is connected.`,
       "once the person says GitHub is connected",
     ),
   ],
@@ -422,6 +422,13 @@ test("the repository to add is named as this folder's where the folder has a rem
   ).toMatchObject({
     tell: `Open ${pages}/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
   });
+});
+
+test("connecting GitHub names the folder's repository as the one to select on each app's install where the folder has a remote", () => {
+  const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
+  expect(told({ lacks: "Account" }, { remote })).toContain(
+    'On each you can choose "Only select repositories" and pick acme-org/widgets, this folder\'s repository, so the app is let into that one alone',
+  );
 });
 
 test("a workspace named that the person is not in is said by its name", () => {

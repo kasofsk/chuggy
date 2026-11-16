@@ -229,9 +229,17 @@ function setupGrantMend(
   );
 }
 
+/** The folder's repository by its remote, or the person's where it has none. */
+function setupMendBindingSaid(mine: string | undefined): Copy {
+  return mine === undefined
+    ? { id: "setup-mend-binding-yours" }
+    : { id: "setup-mend-binding-mine", args: { repository: mine } };
+}
+
 function setupGithubMend(
   lack: Extract<SetupLack, { readonly lacks: "Account" | "App" | "Grant" }>,
   at: SetupAt,
+  mine: string | undefined,
 ): SetupThing {
   const page = setupPage(at, navRoutes.repositories);
   const connected: Copy = { id: "setup-mend-github-when" };
@@ -240,7 +248,11 @@ function setupGithubMend(
     return setupHand(
       {
         id: "setup-mend-account-tell",
-        args: { page, connect: setupPressed.connect },
+        args: {
+          page,
+          connect: setupPressed.connect,
+          repository: setupMendBindingSaid(mine),
+        },
       },
       connected,
     );
@@ -358,10 +370,7 @@ function setupBindingMend(
       args: {
         page: setupPage(at, navRoutes.repositories),
         add: setupPressed.add,
-        repository:
-          mine === undefined
-            ? { id: "setup-mend-binding-yours" }
-            : { id: "setup-mend-binding-mine", args: { repository: mine } },
+        repository: setupMendBindingSaid(mine),
       },
     },
     { id: "setup-mend-binding-when" },
@@ -828,7 +837,7 @@ function setupMend(
     case "Account":
     case "App":
     case "Grant":
-      return setupGithubMend(lack, at);
+      return setupGithubMend(lack, at, mine);
     case "Binding":
     case "Configuration":
       return setupRepositoryMend(lack, at, mine);

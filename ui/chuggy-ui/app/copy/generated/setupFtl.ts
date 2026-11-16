@@ -263,7 +263,8 @@ setup-mend-north-star-when = once the person says the { $section } is saved
 # The status and the label are the picker's own words, which another section holds.
 setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach. Tell me once it is granted.
 setup-mend-grant-when = once the person says the { $app } is granted { $repository }
-setup-mend-account-tell = Open { $page } and press { $connect }, then install the { -brand-name } app on the { -github } account that owns your { -repository }. Tell me once { -github } is connected.
+# spells -repository: GitHub's own label
+setup-mend-account-tell = Open { $page } and press { $connect }. { -github } then asks for two installs, one after the other: the { -portal-app }, then the { -worker-app }, each on the { -github } account that owns your { -repository }. On each you can choose "Only select repositories" and pick { $repository }, so the app is let into that one alone rather than every { -repository } the account owns. Tell me once { -github } is connected.
 setup-mend-github-when = once the person says { -github } is connected
 # The install button's label is the accounts page's own, which another section holds.
 setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them. Tell me once it is installed.
