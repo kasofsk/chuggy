@@ -295,6 +295,7 @@ test("a runner is read with its newest poll, live only while that poll is inside
   await postgresWorkerPoolAssignments(plane).polled(
     { ...key, principal: registered.principal, kind: "Personal" },
     false,
+    undefined,
   );
   const full = (await runners.runners(key, everyProject))?.runners[0];
   assert.equal(full?.live, true, "a poll with no room for an execution");

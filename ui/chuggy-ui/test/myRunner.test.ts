@@ -30,6 +30,7 @@ import {
   runnerWait,
   runnerWaitPause,
   runnerWaitLine,
+  runnerWaitRoom,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
 import {
@@ -197,6 +198,31 @@ test("a run of the reader's waiting on their live runners says the pause the ser
   }
   const elsewhere = { ...paused, mine: false };
   expect(runnerWaitPause(elsewhere, runnerWait(elsewhere))).toBeUndefined();
+});
+
+/** The server sends a room only where every live runner a run waits on is short of memory, and the console says it only there, and not over a pause. */
+test("a run of the reader's waiting on their live runners says the memory they are short of, and one paused, offline, unable or another member's says none", () => {
+  const room = { freeMib: 1_434, neededMib: 4_096 };
+  const short = {
+    ...waiting,
+    personalRunnerWait: "Live" as const,
+    personalRunnerRoom: room,
+  };
+  expect(runnerWaitRoom(short)).toStrictEqual(room);
+  expect(
+    runnerWaitRoom({ ...waiting, personalRunnerWait: "Live" }),
+  ).toBeUndefined();
+  expect(
+    runnerWaitRoom({
+      ...short,
+      paused: { until: "2026-10-01T05:00:00Z", reasons: [], pressed: false },
+    }),
+  ).toBeUndefined();
+  for (const wait of ["Offline", "Unable"] as const)
+    expect(
+      runnerWaitRoom({ ...short, personalRunnerWait: wait }),
+    ).toBeUndefined();
+  expect(runnerWaitRoom({ ...short, mine: false })).toBeUndefined();
 });
 
 test("taking a member's runners off says whether there were any it could take", () => {
