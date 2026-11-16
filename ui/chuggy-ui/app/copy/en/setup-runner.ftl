@@ -352,16 +352,25 @@ setup-runner-linger-found-said = your services stop when you log out, and { setu
 setup-runner-linger-tell = The { -runner } is installed and registered on this machine. For it to keep running after you log out, one command is yours to run, because it may ask for your password and { setup-program } never takes one. In a terminal of your own, run { $command } and tell me once you have.
 # spells -run: "have run" is the verb, not the noun
 setup-runner-linger-when = once the person says they have run it
-setup-runner-inactive-started = was started and
+setup-runner-inactive-started = was started and after { $secs } s
 setup-runner-inactive-waited = was running and after { $secs } s
 setup-runner-inactive-silent-found = { $unit } { $was } this machine's user services did not answer whether it is running
 setup-runner-inactive-silent-tell = This machine's user services did not answer when I asked whether the { -runner }'s service is running, so I cannot say the { -runner } is set up. { setup-runner-picked-up }
 # The state is the service manager's own word, which is data.
 setup-runner-inactive-found = { $unit } { $was } is { $state }
 setup-runner-inactive-not-running = not running
-setup-runner-inactive-tell = The { -runner }'s service was started and is not running, so the { -runner } is not set up yet. { setup-runner-picked-up }
-setup-runner-not-live-found = the { -runner }'s service is running, and after { $secs } s the { -site } still sees no { -runner } of { $project } live
-setup-runner-not-live-unregistered-found = the { -runner }'s service is running, and after { $secs } s the { -site } lists no { -runner } of { $project }
+# The state is the service manager's own word, which is data.
+setup-runner-inactive-tell = The { -runner }'s service was started and is { $state }, so the { -runner } is not set up yet. { $exited } { setup-runner-picked-up }
+setup-runner-inactive-unexited = Its service manager gives no status it last exited with.
+# spells -work-stage: the work in general
+setup-runner-inactive-exit-unrestarted = It last exited with status { $status }, which it exits with where { -brand-name } denied its registration or its settings leave it no work, and it is not started again.
+# spells -release: a package's release
+setup-runner-inactive-exit-updated = It last exited with status { $status }, which it exits with once it has installed a new release of itself, and it is started again on that release.
+setup-runner-inactive-exit-other = It last exited with status { $status }, and it is started again { $secs } s after each such exit.
+setup-runner-not-live-running = is running
+setup-runner-not-live-running-pid = is running as process { $pid }
+setup-runner-not-live-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } still sees no { -runner } of { $project } live
+setup-runner-not-live-unregistered-found = the { -runner }'s service { $running }, and after { $secs } s the { -site } lists no { -runner } of { $project }
 setup-runner-not-live-tell = The { -runner } is installed, registered and started on this machine, and the { -brand-name } { -site } does not see it live yet. It can take a little longer. Tell me when you want me to look again.
 
 ## The person's chat host.

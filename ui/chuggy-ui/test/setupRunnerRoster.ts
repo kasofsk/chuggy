@@ -36,6 +36,22 @@ const guide = runnerPackages.linux.guideAddress;
 export const rosterCommand = `${boxPrefix}/bin/chuggy-linux`;
 export const rosterPool = boxPoolFile("acme", "widgets");
 export const rosterUnit = boxUnitName("acme", "widgets");
+
+/** An `Inactive` stop of the roster's unit, on Linux and straight after its start unless `given` says otherwise. */
+function rosterInactive(
+  given: Partial<Extract<SetupRunnerStop, { readonly stop: "Inactive" }>>,
+): Extract<SetupRunnerStop, { readonly stop: "Inactive" }> {
+  return {
+    stop: "Inactive",
+    unit: rosterUnit,
+    platform: "linux",
+    state: "inactive (dead)",
+    exit: undefined,
+    waited: "Started",
+    waitedSecs: 30,
+    ...given,
+  };
+}
 export const rosterChat = boxChatFile("acme", setupSiteMember);
 export const rosterChatUnit = boxChatUnitName("acme", setupSiteMember);
 
@@ -299,26 +315,20 @@ export const runnerStops: {
     },
   ],
   Inactive: [
-    {
-      stop: "Inactive",
-      unit: rosterUnit,
-      state: "failed",
-      waitedSecs: undefined,
-    },
-    { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: undefined },
-    { stop: "Inactive", unit: rosterUnit, state: "activating", waitedSecs: 90 },
-    { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: 0 },
-    {
-      stop: "Inactive",
-      unit: rosterUnit,
-      state: undefined,
-      waitedSecs: undefined,
-    },
-    { stop: "Inactive", unit: rosterUnit, state: undefined, waitedSecs: 3 },
+    rosterInactive({ state: "failed", exit: 1 }),
+    rosterInactive({ state: "" }),
+    rosterInactive({ state: "activating (auto-restart)", exit: 3 }),
+    rosterInactive({ state: "activating (auto-restart)", exit: 75 }),
+    rosterInactive({ platform: "darwin", state: "not running", exit: 0 }),
+    rosterInactive({ platform: "darwin", state: "spawn scheduled", exit: 75 }),
+    rosterInactive({ waited: "Live", waitedSecs: 90, state: "activating" }),
+    rosterInactive({ waited: "Live", waitedSecs: 0, state: "" }),
+    rosterInactive({ state: undefined }),
+    rosterInactive({ waited: "Live", waitedSecs: 3, state: undefined }),
   ],
   NotLive: [
-    { stop: "NotLive", waitedSecs: 90, registered: true },
-    { stop: "NotLive", waitedSecs: 5, registered: false },
+    { stop: "NotLive", waitedSecs: 90, registered: true, pid: 69807 },
+    { stop: "NotLive", waitedSecs: 5, registered: false, pid: undefined },
   ],
   PermitWithheld: [
     { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },

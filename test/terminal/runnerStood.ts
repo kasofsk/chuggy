@@ -181,7 +181,7 @@ export const first = [
   "active",
   "reload",
   "start",
-  "active",
+  "shown",
 ];
 
 export const probes = [

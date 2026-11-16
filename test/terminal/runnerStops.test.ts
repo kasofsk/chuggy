@@ -337,13 +337,13 @@ test("a runner that is started and that the site does not see live within the wa
   assert.equal(waited.code, 1, waited.stdout);
   assert.ok(
     waited.lines.includes(
-      "found: the runner's service is running, and after 1 s the site still sees no runner of acme/widgets live",
+      "found: the runner's service is running as process 4242, and after 1 s the site still sees no runner of acme/widgets live",
     ),
     waited.stdout,
   );
   assert.equal(waited.lines.at(-1), "next: stop");
   assert.ok(waited.lines.at(-2)?.startsWith(again), waited.stdout);
-  assert.deepEqual(acts(on).slice(-3), ["start", "active", "active"]);
+  assert.deepEqual(acts(on).slice(-3), ["start", "shown", "shown"]);
 
   on.machine.tell({ polls: true });
   cleared(on);

@@ -515,7 +515,9 @@ export interface SetupRunnerCopy {
     readonly command: unknown;
   };
   readonly "setup-runner-linger-when": Record<never, never>;
-  readonly "setup-runner-inactive-started": Record<never, never>;
+  readonly "setup-runner-inactive-started": {
+    readonly secs: unknown;
+  };
   readonly "setup-runner-inactive-waited": {
     readonly secs: unknown;
   };
@@ -530,12 +532,32 @@ export interface SetupRunnerCopy {
     readonly state: unknown;
   };
   readonly "setup-runner-inactive-not-running": Record<never, never>;
-  readonly "setup-runner-inactive-tell": Record<never, never>;
+  readonly "setup-runner-inactive-tell": {
+    readonly state: unknown;
+    readonly exited: unknown;
+  };
+  readonly "setup-runner-inactive-unexited": Record<never, never>;
+  readonly "setup-runner-inactive-exit-unrestarted": {
+    readonly status: unknown;
+  };
+  readonly "setup-runner-inactive-exit-updated": {
+    readonly status: unknown;
+  };
+  readonly "setup-runner-inactive-exit-other": {
+    readonly status: unknown;
+    readonly secs: unknown;
+  };
+  readonly "setup-runner-not-live-running": Record<never, never>;
+  readonly "setup-runner-not-live-running-pid": {
+    readonly pid: unknown;
+  };
   readonly "setup-runner-not-live-found": {
+    readonly running: unknown;
     readonly secs: unknown;
     readonly project: unknown;
   };
   readonly "setup-runner-not-live-unregistered-found": {
+    readonly running: unknown;
     readonly secs: unknown;
     readonly project: unknown;
   };
