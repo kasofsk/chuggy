@@ -56,6 +56,7 @@ import {
   landingTarget,
   landingWrite,
   recordStack,
+  recordStackBeneathNobody,
   type Landing,
 } from "./evaluationStackLandings.ts";
 import { releasedEvaluatorDefinition } from "./migrationHarness.ts";
@@ -801,6 +802,40 @@ test("B already stacked over A is not sent back to re-stack", async () => {
     (await bRestacks(pair)).map((row) => row["failure_kind"]),
     [],
   );
+});
+
+test("B pending over a stack that no longer stands is restackable with its stack recorded, and is sent back to re-stack over A", async () => {
+  const pair = await pairOpened("flow-restack-dead", "Finalization");
+  await recordStackBeneathNobody(rig.pool, pair.b);
+  const { stands } = await bStanding(pair);
+  assert.equal(stands, false);
+  const restackable = await postgresEvaluationStack(rig.pool).restackable(
+    1000,
+    0,
+  );
+  assert.deepEqual(
+    restackable
+      .filter(
+        (each) =>
+          each.partition.tenant === pair.b.partition.tenant &&
+          each.partition.project === pair.b.partition.project,
+      )
+      .map((each) => [Number(each.ticket), each.cycle]),
+    [[pair.b.ticket, 1]],
+  );
+
+  await finalizerPassOnce(
+    rig,
+    pair.b,
+    finalizerRemotePort(rig),
+    "flow-restack-dead",
+  );
+
+  const [attempt, ...rest] = await bRestacks(pair);
+  assert.deepEqual(rest, []);
+  assert.equal(attempt?.["failure_kind"], "Restack");
+  assert.deepEqual(attempt?.["restack_tickets"], [String(pair.aTicket)]);
+  assert.deepEqual(attempt?.["restack_commits"], [pair.aCommit]);
 });
 
 /** B's phase as the writer's projection holds it. */

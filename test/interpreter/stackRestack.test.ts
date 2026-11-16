@@ -203,6 +203,73 @@ test("restackEndingUnstackedWaitsForTheLineToChange: the line last sent back ove
     );
 });
 
+/** A Stacked ticket pending over `beneath`, its stack broken by ticket 7 landing since its tip, though 7 was not first beneath it. */
+function deadStacked(ticket: number, beneath: readonly number[]): StackEntry {
+  return entry(ticket, "Stacked", "Pending", {
+    stack: { beneath: beneath.map((at) => member(at)), landings: [member(7)] },
+  });
+}
+
+test("a pending Stacked ticket whose stack stopped standing is sent back over the line it could now stack on", () => {
+  const queue = [entry(1, "Stacked", "Evaluation"), deadStacked(2, [6])];
+  assert.deepEqual(tickets(restackLine(candidate(2), queue)), [1]);
+  const holderPending = [
+    entry(1, "Serialized", "Pending"),
+    deadStacked(2, [6]),
+  ];
+  assert.deepEqual(tickets(restackLine(candidate(2), holderPending)), [1]);
+});
+
+test("a pending ticket whose stack stands, the holder, and a line equal to its latest re-stack's are not sent back", () => {
+  const standing = [
+    entry(1, "Stacked", "Pending"),
+    entry(2, "Stacked", "Pending", {
+      stack: { beneath: [member(1)], landings: [] },
+    }),
+  ];
+  assert.equal(restackLine(candidate(2), standing), undefined);
+  assert.equal(
+    restackLine(candidate(1), [
+      deadStacked(1, [6]),
+      entry(2, "Stacked", "Pending"),
+    ]),
+    undefined,
+  );
+  assert.equal(
+    restackLine(candidate(2, { restackedOver: [member(1)] }), [
+      entry(1, "Stacked", "Pending"),
+      deadStacked(2, [6]),
+    ]),
+    undefined,
+  );
+});
+
+test("a holder pending over a stack that stopped standing is no member, so nothing behind it is sent back over it", () => {
+  for (const behind of [entry(2, "Stacked", "Pending"), deadStacked(2, [6])])
+    assert.equal(
+      restackLine(candidate(2), [deadStacked(1, [6]), behind]),
+      undefined,
+    );
+});
+
+test("a ticket behind one whose stack stopped standing waits until that one is pending over a stack that stands", () => {
+  const holder = entry(1, "Stacked", "Evaluation");
+  assert.equal(
+    restackLine(candidate(3), [
+      holder,
+      deadStacked(2, [6]),
+      deadStacked(3, [6]),
+    ]),
+    undefined,
+  );
+  assert.deepEqual(
+    tickets(
+      restackLine(candidate(3), [holder, stacked(2, [1]), deadStacked(3, [6])]),
+    ),
+    [1, 2],
+  );
+});
+
 const partition = {
   tenant: asTenantId("tenant"),
   project: asProjectId("project"),
