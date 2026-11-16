@@ -21,7 +21,6 @@ import {
 } from "./apiRoutes.ts";
 import { inboxList, inboxPage, inboxRowsRead } from "./inboxList.ts";
 import { landingQueuesList, landingQueuesPolledMs } from "./landingQueues.ts";
-import { inboxProposalsPolledMs } from "./inboxProposals.ts";
 import { consoleListQuery, consoleProjectQuery } from "./consoleQuery.ts";
 import type { ConsoleQueryKept } from "./consoleQuery.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
@@ -187,15 +186,12 @@ export function ticketRowsQuery(
   );
 }
 
-/** The inbox, read under its one key and polled for the held decisions no
- * frame names, gathering as many pages as the entry it replaces had. */
+/** The inbox, read under its one key, gathering as many pages as the entry it
+ * replaces had. */
 export function inboxQuery(partition: PartitionIdentity) {
-  return consoleListQuery(
-    inboxList(partition),
-    (ports, _signal, held) =>
-      inboxRowsRead(held, (cursor) =>
-        apiInbox(ports, partition, inboxPage(cursor)),
-      ),
-    inboxProposalsPolledMs,
+  return consoleListQuery(inboxList(partition), (ports, _signal, held) =>
+    inboxRowsRead(held, (cursor) =>
+      apiInbox(ports, partition, inboxPage(cursor)),
+    ),
   );
 }

@@ -9,7 +9,6 @@ import type { LeadReadResponse } from "../../../src/contract/responses.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   projectLeadAbsenceLine,
-  projectLeadDispatches,
   projectLeadFound,
   projectLeadPanelState,
   projectLeadPolled,
@@ -187,44 +186,6 @@ test("a refusal for no live runner is drawn only until the placement has said wh
   expect(projectLeadAbsenceLine(ready(none), sameDayMs, live, copyTextEn)).toBe(
     "Tickets are dispatched by hand",
   );
-});
-
-/** A lead that has not opened only because nothing has needed one yet, or the
- * selector's next pass has not come, is one that will dispatch, as is one that
- * stands unless something holds it or a refusal is kept beside it; every other
- * reason, or none given, leaves it to a press. */
-test("a lead dispatches where one stands unheld and unrefused or will open, and not otherwise", () => {
-  expect(projectLeadDispatches(ready(lead))).toBe(true);
-  for (const reason of ["Paused", "SelectorNotGranted"] as const)
-    expect(projectLeadDispatches(ready({ ...lead, held: { reason } }))).toBe(
-      false,
-    );
-  expect(
-    projectLeadDispatches(
-      ready({ ...lead, refusal: { reason: "RunnerOffline", since: sinceIso } }),
-    ),
-  ).toBe(false);
-  for (const reason of ["NotNeeded", "AwaitingSelector"] as const)
-    expect(
-      projectLeadDispatches(ready({ lead: "None", absence: { reason } })),
-    ).toBe(true);
-  for (const absence of [
-    { reason: "Paused" },
-    { reason: "SelectorNotGranted" },
-    { reason: "SelectorUnnamed" },
-    { reason: "RunnerOffline", since: sinceIso },
-    { reason: "HostedRunsNotGranted", since: sinceIso },
-    { reason: "UsagePaused", since: sinceIso },
-  ] as const)
-    expect(projectLeadDispatches(ready({ lead: "None", absence }))).toBe(false);
-  expect(projectLeadDispatches(ready(none))).toBe(false);
-  expect(projectLeadDispatches({ state: "Pending" })).toBeUndefined();
-  expect(
-    projectLeadDispatches({
-      state: "Failed",
-      failure: { outcome: "Unreachable", reason: "no" },
-    }),
-  ).toBeUndefined();
 });
 
 test("a server that gives no reason reads as tickets run by hand, and a lead or no read draws no line", () => {

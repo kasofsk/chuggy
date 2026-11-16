@@ -116,19 +116,6 @@ export function ticketOffersStartable(
   };
 }
 
-/** Whether the header offers Dispatch in a project no lead dispatches or will open
- * to, where a press is how the ticket comes to run at all. */
-export function offersDispatchByHand(
-  offers: TicketOffers,
-  leadDispatches: boolean | undefined,
-): boolean {
-  return (
-    leadDispatches === false &&
-    offers.offers === "Actions" &&
-    offers.actions.some((action) => action.action === "Dispatch")
-  );
-}
-
 /** The ticket's owner where that is not its creator: the member who took it.
  * A creator who owns their own ticket is not drawn twice and has nothing to
  * return. */

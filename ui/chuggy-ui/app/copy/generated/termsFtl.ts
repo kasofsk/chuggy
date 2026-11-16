@@ -697,20 +697,6 @@ export const termsFtl = `## The product's own nouns, and the verbs done to a tic
     }
 }
 
-# The lead's proposal to dispatch, only; a forge's request is a pull request.
--proposal = { $case ->
-    [upper] { $form ->
-        [plural] Proposals
-        [a] A proposal
-       *[one] Proposal
-    }
-   *[lower] { $form ->
-        [plural] proposals
-        [a] a proposal
-       *[one] proposal
-    }
-}
-
 # A person's leave for work to proceed: an approval evaluator's, or a lead dispatch's.
 -approval = { $case ->
     [upper] { $form ->

@@ -81,7 +81,6 @@ function fragmentOf(over: Partial<TicketHeaderFragmentReads>) {
     {
       ticket: read,
       standing: ticketListStandingOf(read),
-      leadDispatches: true,
       slot: { slot: "Nothing" },
       landings: [],
       ...over,
@@ -90,17 +89,10 @@ function fragmentOf(over: Partial<TicketHeaderFragmentReads>) {
   );
 }
 
-test("a ready ticket waits for the lead, or for a dispatch where no lead dispatches, and says nothing while the lead is unread", () => {
-  expect(fragmentOf({ leadDispatches: true })).toStrictEqual({
-    fragment: "Words",
-    words: "Waiting for the lead",
-  });
-  expect(fragmentOf({ leadDispatches: false })).toStrictEqual({
+test("a ready ticket waits for a dispatch", () => {
+  expect(fragmentOf({})).toStrictEqual({
     fragment: "Words",
     words: "Waiting for dispatch",
-  });
-  expect(fragmentOf({ leadDispatches: undefined })).toStrictEqual({
-    fragment: "None",
   });
 });
 

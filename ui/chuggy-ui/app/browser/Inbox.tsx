@@ -13,9 +13,8 @@
  * ANSWERING NEVER TOUCHES THE ROWS. The follow reports its steps into the row it
  * came from and writes into no entry; the row leaves when the inbox, read again
  * on a frame or a poll, no longer holds it. That is the only account of where a
- * ticket is that a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx`,
- * `ui/chuggy-ui/test/inboxEscalation.test.tsx` and
- * `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
+ * ticket is that a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx` and
+ * `ui/chuggy-ui/test/inboxEscalation.test.tsx` hold that.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -68,10 +67,6 @@ import {
 } from "../core/inboxList.ts";
 import type { InboxRows } from "../core/inboxList.ts";
 import {
-  agenticRefusalStandingLabel,
-  type AgenticRefusalStanding,
-} from "../core/leadTranscript.ts";
-import {
   approvalApproversOf,
   evaluationApprovalsAsked,
 } from "../core/evaluationApprovals.ts";
@@ -94,18 +89,10 @@ import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
-import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { DataPanel, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import {
-  InboxProposalActions,
-  InboxProposalNotice,
-  InboxProposalWhy,
-  useInboxProposalAnswers,
-} from "./InboxProposals.tsx";
-import type { InboxProposalAnswers } from "./InboxProposals.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { useConsoleDispatch } from "./store.ts";
@@ -144,9 +131,9 @@ export interface InboxRowsHeld {
 }
 
 /**
- * The inbox, read under its one key and polled for the held decisions no frame
- * names. The badge and the panel take the same value through this, which is
- * what makes the header's claim above true rather than merely intended.
+ * The inbox, read under its one key. The badge and the panel take the same
+ * value through this, which is what makes the header's claim above true rather
+ * than merely intended.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const query = inboxQuery(partition);
@@ -234,7 +221,7 @@ function InboxActions(props: {
   );
   const revoking = actions.find((action) => action.action === "Revoke");
   if (offered.length === 0)
-    return props.entry.proposals.length > 0 ? null : (
+    return (
       <span className="text-ink-3">{text({ id: "inbox-no-action" })}</span>
     );
   return (
@@ -416,27 +403,6 @@ function InboxWhy(props: {
   );
 }
 
-const inboxRefusalStanding: AgenticRefusalStanding = "Standing";
-
-/** That the lead is declining to dispatch this ticket. The reason is on hover,
- * because a row is one line. */
-function InboxRefusal(props: {
-  readonly entry: InboxEntryResponse;
-}): ReactNode {
-  const text = useCopyText();
-  const refusal = props.entry.refusals[0];
-  if (refusal === undefined) return null;
-  return (
-    <Tooltip text={refusal.reason}>
-      <span>
-        <Pill tone={agenticRefusalStandingTone(inboxRefusalStanding)}>
-          {text(agenticRefusalStandingLabel(inboxRefusalStanding))}
-        </Pill>
-      </span>
-    </Tooltip>
-  );
-}
-
 /** One press of a row's answer: the ticket's attempt it follows, the step it
  * starts from, and where its follow reports. */
 interface InboxAnswerPressed {
@@ -525,7 +491,6 @@ function useInboxAnswer(
 function InboxRow(props: {
   readonly entry: InboxEntryResponse;
   readonly partition: PartitionIdentity;
-  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
   const row = projectTableRow(props.entry.ticket);
@@ -545,11 +510,6 @@ function InboxRow(props: {
           row={row}
           nowMs={props.nowMs}
         />
-        <InboxProposalWhy
-          ticket={row.ticket}
-          proposals={props.entry.proposals}
-        />
-        <InboxRefusal entry={props.entry} />
       </td>
       <td>
         <TicketRowExecutionCell row={row} />
@@ -561,10 +521,6 @@ function InboxRow(props: {
           entry={props.entry}
           answer={answer}
           onAnswer={onAnswer}
-        />
-        <InboxProposalActions
-          proposals={props.entry.proposals}
-          answers={props.proposed}
         />
       </td>
       <td className="text-ink-3">
@@ -583,7 +539,6 @@ function InboxRow(props: {
 function InboxTable(props: {
   readonly entries: readonly InboxEntryResponse[];
   readonly partition: PartitionIdentity;
-  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
@@ -605,7 +560,6 @@ function InboxTable(props: {
             key={entry.ticket.ticket}
             entry={entry}
             partition={props.partition}
-            proposed={props.proposed}
             nowMs={props.nowMs}
           />
         ))}
@@ -633,14 +587,12 @@ export function InboxScreen(props: {
   const text = useCopyText();
   const partition = props.partition;
   const inbox = useInboxRows(partition);
-  const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
   return (
     <>
       <ScreenTitle>{text({ id: "inbox-title" })}</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
       <InboxPageFailure rows={inbox.rows} />
-      <InboxProposalNotice answers={proposed} />
       <DataPanel
         title={text(ticketSectionTitles[inboxSection])}
         state={inbox.panel}
@@ -652,7 +604,6 @@ export function InboxScreen(props: {
             <InboxTable
               entries={rows.entries}
               partition={partition}
-              proposed={proposed}
               nowMs={nowMs}
             />
           )

@@ -12,8 +12,7 @@
  * `NativeAction` or `AgenticRefusal` frame may move any ticket into or out of
  * the inbox, so each rereads it; a `Ticket` frame does where the inbox holds
  * that ticket or its phase is one the inbox holds, and is nothing to the inbox
- * otherwise. No frame names a held decision, so the read is polled while
- * anything draws it.
+ * otherwise.
  *
  * A REREAD IS NOT A FIRST READ: it gathers as many pages as the rows it
  * replaces had, so a reader's "more" is not taken away on a frame, and one that

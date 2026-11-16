@@ -40,9 +40,8 @@ precondition.
 
 - `creation.spec.ts` — two drills. A ticket created from the form reaches a
   project table in a tab that was opened once and never navigated again, and so
-  does the transition that follows it; separately, a dispatched ticket's
-  execution appears with its status. The second needs a selector at more than no
-  replicas and says so.
+  does the transition that follows it; separately, a ticket dispatched by hand
+  from its page has its execution appear with its status.
 - `stranding.spec.ts` — revoking a ticket another depends on strands the
   second; its page says what it is waiting on without a reload, it stays in the
   project's up-next rows, the desk is left alone, and revoking it too is what
@@ -71,8 +70,7 @@ operator supplies those and never types a principal. The project needs one
 ready configuration revision for a draft to be shaped by.
 
 Three drills need the journalled actor up, because releasing a draft is its work
-and no console action can settle a release without it; one of those also needs
-the selector, because dispatch is the selector's. The rest need only the API:
+and no console action can settle a release without it. The rest need only the API:
 they create, revise and delete a draft, which is the change the API appends to
 the durable log on its own, so a stream is exercised without the rest of the
 installation being involved in whether it worked.

@@ -218,7 +218,7 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
 };
 
 /** The ticket the lead refuses, which a held decision of its own also names:
- * the one entry the inbox holds, and the one Reject's note is typed under. */
+ * the one entry the inbox holds. */
 export const consoleInboxTicket = 42;
 
 const consoleInbox: InboxResponse = {

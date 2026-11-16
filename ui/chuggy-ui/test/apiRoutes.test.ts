@@ -57,7 +57,6 @@ import {
   apiProjectInventoryAll,
   apiProjectRepositories,
   apiRenameThread,
-  apiReviewSelectorProposal,
   apiSelectorHistory,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
@@ -534,37 +533,6 @@ test("the settings are read, written whole and paged for their revisions", async
   expect(held.urls[2]).toBe(
     `${partitionPath}/selector-settings/history?before=3`,
   );
-});
-
-/** A review names its decision in the path and carries the answer and the note
- * as the body, so a decision's identity is escaped like any other segment. */
-test("a held proposal is answered under the project's own segment", async () => {
-  const held = recordingRequests(() => ({
-    decision: "dec one",
-    outcome: "Rejected",
-  }));
-  expect(
-    await apiReviewSelectorProposal(held.ports, partition, "dec one", {
-      outcome: "Rejected",
-      feedback: "after the migration",
-    }),
-  ).toStrictEqual({
-    outcome: "Ok",
-    value: { decision: "dec one", outcome: "Rejected" },
-  });
-  expect(
-    held.requests.map((request) => [
-      request.init.method,
-      request.url,
-      request.init.body,
-    ]),
-  ).toStrictEqual([
-    [
-      "POST",
-      `${partitionPath}/selector-proposals/dec%20one/review`,
-      JSON.stringify({ outcome: "Rejected", feedback: "after the migration" }),
-    ],
-  ]);
 });
 
 /** The thread door takes only versioned JSON, and a request with no body has
