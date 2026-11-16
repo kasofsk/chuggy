@@ -54,15 +54,13 @@ import {
 let harness: PostgresHarness;
 let apiPool: pg.Pool;
 let schedulerPool: pg.Pool;
-let selectorPool: pg.Pool;
 before(async () => {
   harness = await postgresHarnessOpen();
   apiPool = postgresHarnessRolePool(apiRole);
   schedulerPool = postgresHarnessRolePool(schedulerRole);
-  selectorPool = postgresHarnessRolePool(selectorServiceRole);
 });
 after(async () => {
-  await Promise.all([apiPool.end(), schedulerPool.end(), selectorPool.end()]);
+  await Promise.all([apiPool.end(), schedulerPool.end()]);
   await harness.close();
 });
 
@@ -80,9 +78,9 @@ async function published(routing: SessionRouting): Promise<void> {
   );
 }
 
-/** The thread's route and its source, as the selector's role reads them. */
+/** The thread's route and its source, as the scheduler's role reads them. */
 async function routed(partition: Partition): Promise<string> {
-  const resolved = await postgresSessionPlacement(selectorPool).route(
+  const resolved = await postgresSessionPlacement(schedulerPool).route(
     partition,
     "Thread",
   );
@@ -325,7 +323,7 @@ test("a member's personal runner is no runner of theirs or of the project's, how
   assert.deepEqual(await reads.runners(partition, member), hosted("Offline"));
 });
 
-test("only the API writes a placement, the API and the selector resolve one, and only the scheduler publishes a routing", async () => {
+test("only the API writes a placement, the API and the scheduler resolve one, and only the scheduler publishes a routing", async () => {
   const partition = await postgresHarnessProject(harness.store, "privileges");
   const project = `'${partition.tenant}','${partition.project}'`;
   const door = `SELECT ${sessionPlacementSetFunction}(${project},'Pool','Pool','Own','Member','someone')`;
@@ -355,9 +353,14 @@ test("only the API writes a placement, the API and the selector resolve one, and
     );
   assert.equal(await harness.attemptAs(apiRole, door), undefined);
   for (const [named, read] of reads) {
-    for (const role of [apiRole, selectorServiceRole])
+    for (const role of [apiRole, schedulerRole])
       assert.equal(await harness.attemptAs(role, read), undefined, role);
-    for (const role of [ticketServiceRole, workerPlaneRole, poolPlaneRole])
+    for (const role of [
+      ticketServiceRole,
+      selectorServiceRole,
+      workerPlaneRole,
+      poolPlaneRole,
+    ])
       assert.match(
         (await harness.attemptAs(role, read)) ?? "",
         postgresHarnessDenial(named),

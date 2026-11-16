@@ -117,7 +117,6 @@ test("the finalizer cannot reach a prior slice's own relations", async () => {
     "scheduler_incident",
     "capacity_account",
     "dispatch_view",
-    "selector_proposal_delivery",
     "draft",
   ]) {
     for (const statement of await everyVerb(relation)) {

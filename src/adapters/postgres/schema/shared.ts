@@ -10,31 +10,15 @@ export const apiRole = "chuggy_api";
 export const selectorServiceRole = "chuggy_selector_service";
 export const selectorControlRole = "chuggy_selector_control";
 export const selectorReviewRole = "chuggy_selector_review";
-export const selectorSettingsFunction = "update_selector_runtime_settings";
 export const selectorProjectSettingsFunction =
   "update_selector_project_settings";
 /** Writes a project's four thread settings, clearing every other override it held. */
 export const selectorProjectThreadSettingsFunction =
   "update_selector_project_thread_settings";
-/** The durable resolution of one project's dispatch mode over the installation default. */
-export const selectorProjectDispatchModeFunction =
-  "selector_project_dispatch_mode";
-/** The trigger that stamps a delivery with the state its project resolves to. */
-export const selectorProposalInitialStateFunction =
-  "enforce_selector_proposal_initial_state";
 
 export const selectorReviewFunction = "review_selector_proposal";
 /** Ends every held decision of a project naming a ticket moved past the version its command was fenced at. */
 export const selectorProposalRetireFunction = "retire_moved_selector_proposals";
-export const selectorReconcileClaimFunction =
-  "claim_selector_proposal_reconciliation";
-export const selectorClaimFunction = "claim_selector_deliveries";
-export const selectorDeliveryFunction = "advance_selector_delivery";
-export const selectorAttemptAllocateFunction = "allocate_selector_attempt";
-export const selectorAttemptAdvanceFunction = "advance_selector_attempt";
-export const selectorAttemptReconcileFunction =
-  "claim_selector_attempt_reconciliation";
-export const selectorHostReadinessFunction = "set_selector_host_readiness";
 export const cancellationFunction = "cancel_pending_operation";
 export const acceptanceFunction = "accept_operation";
 export const dispatchAcceptanceFunction = "accept_dispatch_operation";
@@ -259,26 +243,15 @@ export const sessionReferenceWrittenOnceFunction =
   "agent_session_is_written_once";
 export const sessionSystemPromptSetFunction = "set_session_system_prompt";
 export const projectDraftsReadFunction = "read_project_drafts";
-export const agenticRefusalRecordFunction = "record_agentic_refusals";
-export const agenticRefusalStandingFunction = "standing_agentic_refusals";
-export const agenticRefusalStandingAmongFunction =
-  "standing_agentic_refusals_among";
 export const leadOpenFunction = "open_project_lead";
 export const leadSessionFunction = "lead_session";
 export const leadCloseFunction = "close_project_lead";
 export const leadTurnEnqueueFunction = "enqueue_lead_turn";
 export const leadTurnReadFunction = "read_lead_turn";
 export const leadTurnWithdrawFunction = "withdraw_lead_turn";
-export const agenticRefusalLedgerReadFunction = "read_agentic_refusals";
-export const agenticRefusalStandingReadFunction =
-  "read_standing_agentic_refusals";
 export const agenticRefusalBindingReadFunction =
   "read_binding_agentic_refusals";
 export const agenticRefusalThreadReadFunction = "read_thread_agentic_refusals";
-export const selectorInteractionsReadFunction = "read_selector_interactions";
-export const selectorPlanningIntentReadFunction =
-  "read_selector_planning_intent";
-export const leadStandingReadFunction = "read_lead_standing";
 /** The refusal the selector keeps for a project's lead, as the API reads it. */
 export const leadRefusalReadFunction = "read_lead_refusal";
 export const sessionStoreBatchesReadFunction = "read_session_store_batches";
@@ -315,7 +288,6 @@ export const leadInquiriesReadFunction = "read_lead_inquiries";
 export const leadInquiryReadFunction = "read_lead_inquiry";
 export const inquiryStoreRefusalFunction = "inquiry_writes_no_store_batch";
 export const inquiryCloseFunction = "inquiry_closes_with_its_turn";
-export const agenticRefusalImmutableFunction = "selector_refusal_is_immutable";
 export const projectChangeSessionTurnFunction = "session_turn_appends_a_change";
 export const projectChangeSessionStoreFunction =
   "session_store_batch_appends_a_change";

@@ -1,11 +1,7 @@
-/**
- * The bounds an installed session holds, and the lead settings an installation
- * is seeded with, against the runtime that writes them.
- */
+/** The bounds an installed session holds, against the runtime that writes them. */
 
 import { leadObservationTokensPerDecisionAt009 } from "../../src/adapters/postgres/schema/migrations/009-work-fanout.ts";
 import { leadObservationTokensPerDecisionAt011 } from "../../src/adapters/postgres/schema/migrations/011-evaluator-keys.ts";
-import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
@@ -111,50 +107,11 @@ test("the installed session constraints match the runtime", async () => {
   });
 });
 
-test("fresh selector settings carry current controls and only their initial history", async () => {
-  await migratedDatabase("defaults", async (subject) => {
-    const current = (
-      await subject.query<{
-        revision: string;
-        mode: string;
-        dispatch_mode: string;
-        controls: string;
-      }>(
-        "SELECT revision::text,mode,dispatch_mode,controls FROM selector_runtime_settings",
-      )
-    ).rows[0];
-    assert.ok(current !== undefined);
-    assert.equal(current.revision, "1");
-    assert.equal(current.mode, "Running");
-    assert.equal(current.dispatch_mode, "ApprovalRequired");
-    const controls = JSON.parse(current.controls) as {
-      limits: { tokensPerDecision: number; dispatchesPerDecision: number };
-    };
-    assert.equal(
-      controls.limits.tokensPerDecision,
-      leadObservationTokensPerDecisionAt011,
-    );
-    assert.equal(
-      controls.limits.dispatchesPerDecision,
-      leadDispatchesPerDecision,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT revision::text,mode,dispatch_mode,controls FROM selector_runtime_settings_history",
-        )
-      ).rows,
-      [current],
-    );
-  });
-});
-
 /**
- * The mailbox bound and the seeded budget move together, as they did at 009:
- * a stage weighs its roster, so the widest observation is wider and the
- * floor argued from it follows.
+ * The mailbox bound moves as it did at 011: a stage weighs its roster, so the
+ * widest observation is wider.
  */
-test("the roster arriving widens the mailbox bound and re-seeds the budget with it", async () => {
+test("the roster arriving widens the mailbox bound", async () => {
   await migratedDatabase("evaluatorkeys_mailbox", async (subject) => {
     const bound = (
       await subject.query<{ definition: string }>(
@@ -167,28 +124,5 @@ test("the roster arriving widens the mailbox bound and re-seeds the budget with 
     assert.ok(bound !== undefined, "the mailbox bound was not found");
     assert.ok(bound.includes(String(leadObservationTokensPerDecisionAt011)));
     assert.ok(!bound.includes(String(leadObservationTokensPerDecisionAt009)));
-    for (const relation of [
-      "selector_runtime_settings",
-      "selector_runtime_settings_history",
-    ]) {
-      const rows = (
-        await subject.query<{ controls: string }>(
-          `SELECT controls FROM ${relation}`,
-        )
-      ).rows;
-      assert.ok(rows.length >= 1, `${relation} is seeded`);
-      for (const { controls } of rows) {
-        assert.ok(
-          controls.includes(
-            `"tokensPerDecision":${String(leadObservationTokensPerDecisionAt011)}`,
-          ),
-          `${relation} carries the re-seeded budget`,
-        );
-        assert.ok(
-          !controls.includes(String(leadObservationTokensPerDecisionAt009)),
-          `${relation} no longer carries 009's`,
-        );
-      }
-    }
   });
 });
