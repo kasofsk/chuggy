@@ -658,9 +658,11 @@ export interface SetupCopy {
     readonly did: unknown;
     readonly uninstall: unknown;
   };
+  readonly "setup-plugin-reload-tell": Record<never, never>;
   readonly "setup-rule-skill": {
     readonly skill: unknown;
   };
+  readonly "setup-plugin-reload-when": Record<never, never>;
   readonly "setup-plugin-passed": {
     readonly found: unknown;
   };

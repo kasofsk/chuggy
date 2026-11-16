@@ -7,9 +7,11 @@
  * Every command that changes the plugin is run with `--json`, and of what it
  * prints only the last line is read, since a marketplace may print ahead of
  * it. The list is read whole. No settings file of Claude Code's is read or
- * written here. Where the plugin is not left on, the run says why and names
- * the checklist past the step, as the person's no would, so nothing here holds
- * setup up.
+ * written here, so a session that has reloaded its plugins looks no different
+ * from one that has not: where the plugin is left on, the run asks the person
+ * to reload and leaves the agent to tell from its own skills. Where it is not
+ * left on, the run says why and names the checklist past the step, as the
+ * person's no would, so nothing here holds setup up.
  */
 
 import { z } from "zod";
