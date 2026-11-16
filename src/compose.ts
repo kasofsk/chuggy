@@ -101,6 +101,11 @@ import { postgresExecutionPlacement } from "./adapters/postgres/executionPlaceme
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
 import { postgresTicketTakes } from "./adapters/postgres/ticketTake.ts";
 import { ticketTakes, type TicketTakes } from "./interpreter/ticketTake.ts";
+import { postgresTicketProposedLandings } from "./adapters/postgres/ticketProposedLanding.ts";
+import {
+  ticketProposalMerges,
+  type TicketProposalMerges,
+} from "./interpreter/ticketProposalMerge.ts";
 import {
   postgresProjectDeletion,
   postgresTenantDeletion,
@@ -289,6 +294,30 @@ export function composeTicketTakes(
   access: ProjectAccess,
 ): TicketTakes {
   return ticketTakes(access, postgresTicketTakes(apiPool));
+}
+
+/**
+ * Wires a person's merge of a ticket's pull request to API-role credentials
+ * and the portal app's minting. Only the minted credential is ever asked for,
+ * so a repository on a host the app does not mint for is denied rather than
+ * read from a file, and a deployment with no portal key merges nothing.
+ */
+export function composeTicketProposalMerges(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  tokens: ForgeRepositoryTokens | undefined,
+): TicketProposalMerges {
+  const store = postgresTicketProposedLandings(apiPool);
+  if (tokens === undefined) return ticketProposalMerges({ access, store });
+  const credentials = forgeCredentialsByHost(
+    [{ repositoryHost: githubRepositoryHost, tokens, permissions: "propose" }],
+    { credential: () => Promise.resolve({ resolved: "Denied" }) },
+  );
+  return ticketProposalMerges({
+    access,
+    store,
+    proposals: githubChangeProposals({ credentials, fetch }),
+  });
 }
 
 /** Wires how many threads each member may hold open to API-role credentials and the access that gates setting it. */

@@ -821,6 +821,7 @@ function abilities(
       manageSelector: administer,
       overrideTicketConfig: administer,
       skipPlannedEvaluations: administer,
+      mergeProposals: administer,
       administer,
       writeEpic: true,
     })

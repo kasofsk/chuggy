@@ -42,6 +42,7 @@ import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
 import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
+import type { TicketProposalMerged } from "../../interpreter/ticketProposalMerge.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type { SessionStoreEntry } from "../../interpreter/sessionTranscript.ts";
 import type {
@@ -83,11 +84,14 @@ import {
   leadOfferingNotAdmittedCode,
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
+  proposalMergeForbiddenCode,
+  proposalMergeRefusedCode,
   threadLimitReachedCode,
   briefFinalizationModeOf,
   type BriefFinalizationMode,
   type NativeActionAnswerRefusalCode,
   type TicketTakeRefusalCode,
+  type ProposalMergeRefusal,
   type ProjectArtifactUploadRefusalCode,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
@@ -3290,5 +3294,65 @@ export function ticketTakeResponse(
         outcome: result.outcome,
         ...(result.owner === undefined ? {} : { owner: result.owner }),
       });
+  }
+}
+
+const proposalMergeRefusalMessage: Readonly<
+  Record<ProposalMergeRefusal, string>
+> = {
+  Closed: "The pull request is closed without being merged.",
+  Conflicting: "The pull request conflicts with its base.",
+  Blocked:
+    "The forge's own rules block the merge: a branch protection, a required review or check, or a draft.",
+  Behind: "The pull request's base has moved past it.",
+  HeadMoved:
+    "The pull request's head was pushed after it was evaluated, so chuggy will not merge it.",
+  NotMergeable: "The forge would not merge the pull request.",
+  AppDenied: "The forge refused this deployment's app the merge.",
+};
+
+/**
+ * A merge of a ticket's pull request: merged, by this press or before it, or
+ * refused by name with the pull request's link, a `409` whatever the forge's
+ * reason. A reader not holding `merge_proposals` meets `403`; a ticket the
+ * caller cannot see, or whose newest success opened no pull request, `404`;
+ * and a deployment with no portal app, or a forge that cannot be reached,
+ * `503`.
+ */
+export function ticketProposalMergeResponse(
+  result: TicketProposalMerged,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Forbidden":
+      return response(
+        403,
+        nativeHttpError(
+          proposalMergeForbiddenCode,
+          "Merging a ticket's pull request needs the project's merge_proposals permit, which its administrators hold.",
+        ),
+      );
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    case "Merged":
+      return response(200, {
+        outcome: "Merged",
+        ...(result.mergeCommit === undefined
+          ? {}
+          : { mergeCommit: result.mergeCommit }),
+        ...(result.url === undefined ? {} : { url: result.url }),
+      });
+    case "Refused":
+      return response(409, {
+        ...nativeHttpError(
+          proposalMergeRefusedCode,
+          proposalMergeRefusalMessage[result.refused],
+        ),
+        refused: result.refused,
+        ...(result.url === undefined ? {} : { url: result.url }),
+      });
+    default:
+      return assertNever(result);
   }
 }

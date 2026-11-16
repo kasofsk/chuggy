@@ -61,6 +61,7 @@ test("a member is answered exactly its abilities", async () => {
     manageSelector: false,
     overrideTicketConfig: true,
     skipPlannedEvaluations: true,
+    mergeProposals: false,
     administer: false,
     writeEpic: false,
   });
