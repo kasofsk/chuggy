@@ -302,7 +302,8 @@ opens the repositories page that begins Connect GitHub, with `sign-in`'s
 opener. Once both are granted it, `bind` adds it to the project with the
 request the console's Add sends, its one write, says what the site answered,
 and reads the checklist again. A wait that ends first says what GitHub still
-lacks and names `bind` again.
+lacks and names `bind` again, with `--opened github` where a page connecting
+GitHub is already open, so the run again opens none.
 Where an app is not granted it, one `tell:` names every such app: the
 installation's settings page on GitHub where it is installed on that account,
 and where it is not, the press on the workspace's accounts page that installs

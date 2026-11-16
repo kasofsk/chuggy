@@ -55,6 +55,8 @@ import {
   setupConfigurationFlag,
   setupIntentFlag,
   setupNameFlag,
+  setupOpenedFlag,
+  setupOpenedGithub,
   setupPluginFlag,
   setupPluginSkip,
   setupTestFlag,
@@ -420,9 +422,10 @@ export type SetupReport =
       >;
     }
   | {
-      /** A run of `bind`: the page it opened in a browser for connecting GitHub, where it opened one, the repository it asked the site to add and what the site answered, where the checklist's next thing came to that, and the checklist read after. */
+      /** A run of `bind`: the page it opened in a browser for connecting GitHub, where it opened one, whether a `bind` before it had, the repository it asked the site to add and what the site answered, where the checklist's next thing came to that, and the checklist read after. */
       readonly report: "Bind";
       readonly opened: string | undefined;
+      readonly openBefore: boolean;
       readonly repository: string | undefined;
       readonly answered: SetupBindAnswered | undefined;
       readonly checklist: Extract<
@@ -495,12 +498,13 @@ type SetupLine =
 /** What `next:` says where no command is left to run. */
 export const setupNextStop = "stop";
 
-/** How a report is said: where the program is kept, the choice each of its commands carries, whether the report ends a run that had already gone some way, and whether it ends a `bind` whose wait ran out, so a command to run at once is one to run again. */
+/** How a report is said: where the program is kept, the choice each of its commands carries, whether the report ends a run that had already gone some way, whether it ends a `bind` whose wait ran out, so a command to run at once is one to run again, and whether a page connecting GitHub is open from that `bind` or one before it, so running it again opens none. */
 interface SetupSaying {
   readonly script: string;
   readonly answers: SetupAnswers;
   readonly partWay: boolean;
   readonly again: boolean;
+  readonly opened: boolean;
 }
 
 const setupWentNoFurther: Copy = { id: "setup-came-no-further" };
@@ -590,33 +594,42 @@ function setupCommandWords() {
   };
 }
 
+/** Every flag the program takes, each with the command it alone is read by. */
+function setupAskFlagSaid(words: ReturnType<typeof setupCommandWords>): Copy {
+  const { made, chatHost, configuration, filed, bound } = words;
+  return {
+    id: "setup-asked-flag",
+    args: {
+      workspace: setupFlagWorkspace,
+      project: setupFlagProject,
+      site: setupFlagSite,
+      wait: "--wait-secs",
+      replace: setupReplaceFlag,
+      chatHost,
+      name: setupNameFlag,
+      made,
+      test: setupTestFlag,
+      configuration,
+      title: setupTitleFlag,
+      intent: setupIntentFlag,
+      chosen: setupConfigurationFlag,
+      filed,
+      plugin: setupPluginFlag,
+      opened: setupOpenedFlag,
+      bound,
+    },
+  };
+}
+
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const words = setupCommandWords();
-  const { made, chatHost, configuration, filed } = words;
+  const { made, chatHost, configuration, filed, bound } = words;
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
       return { id: "setup-asked-command", args: words };
     case "Flag":
-      return {
-        id: "setup-asked-flag",
-        args: {
-          ...names,
-          site: setupFlagSite,
-          wait: "--wait-secs",
-          replace: setupReplaceFlag,
-          chatHost,
-          name: setupNameFlag,
-          made,
-          test: setupTestFlag,
-          configuration,
-          title: setupTitleFlag,
-          intent: setupIntentFlag,
-          chosen: setupConfigurationFlag,
-          filed,
-          plugin: setupPluginFlag,
-        },
-      };
+      return setupAskFlagSaid(words);
     case "Site":
       return {
         id: "setup-asked-site",
@@ -657,6 +670,11 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
       return {
         id: "setup-asked-plugin",
         args: { flag: setupPluginFlag, skip: setupPluginSkip },
+      };
+    case "Opened":
+      return {
+        id: "setup-asked-opened",
+        args: { flag: setupOpenedFlag, github: setupOpenedGithub, bound },
       };
   }
 }
@@ -1191,7 +1209,11 @@ function setupRunLines(
   return [
     ...(thing.tell === undefined ? [] : [["tell", thing.tell] as const]),
     ["rule", rule],
-    setupNextLine(setupSayingOf(saying, thing), thing.command),
+    setupNextLine(
+      setupSayingOf(saying, thing),
+      thing.command,
+      saying.opened ? [setupOpenedFlag, setupOpenedGithub] : [],
+    ),
   ];
 }
 
@@ -1532,6 +1554,7 @@ function setupBindLines(
   const [site, ...rest] = setupLines(report.checklist, {
     ...saying,
     again: setupBindWaited(report),
+    opened: report.opened !== undefined || report.openBefore,
   });
   const address = report.opened;
   return [
@@ -2025,6 +2048,7 @@ export function setupReportLines(
     answers,
     partWay: false,
     again: false,
+    opened: false,
   }).map((line) => setupPrinted(line, text));
 }
 

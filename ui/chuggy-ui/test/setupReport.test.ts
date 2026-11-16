@@ -605,6 +605,7 @@ const roster: {
     { report: "AskedWrongly", fault: "ProjectName" },
     { report: "AskedWrongly", fault: "Test" },
     { report: "AskedWrongly", fault: "Brief" },
+    { report: "AskedWrongly", fault: "Opened" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -745,6 +746,7 @@ const roster: {
     ...bindAnswers.map((answered) => ({
       report: "Bind" as const,
       opened: undefined,
+      openBefore: false,
       repository: answered === undefined ? undefined : "acme-org/widgets",
       answered,
       checklist: checklist(
@@ -756,6 +758,15 @@ const roster: {
     {
       report: "Bind",
       opened: `${site}/acme/widgets/repositories?connect=github`,
+      openBefore: false,
+      repository: undefined,
+      answered: undefined,
+      checklist: checklist(things.Run[1] as SetupThing),
+    },
+    {
+      report: "Bind",
+      opened: undefined,
+      openBefore: true,
       repository: undefined,
       answered: undefined,
       checklist: checklist(things.Run[1] as SetupThing),
@@ -1149,7 +1160,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -2514,7 +2525,7 @@ test("a run of ticket says what it filed or why it did not under the site's line
   }
 });
 
-test("a bind whose wait ran out before GitHub was done says so, says the page it opened, and has the next run of bind made again", () => {
+test("a bind whose wait ran out before GitHub was done says so, says the page it opened, and has the next run of bind made again, as having opened it", () => {
   const waited = roster.Bind[3];
   if (waited === undefined) throw new Error("no waited bind");
   const lines = setupReportLines(waited, machineScript, copyTextEn);
@@ -2526,9 +2537,29 @@ test("a bind whose wait ran out before GitHub was done says so, says the page it
   expect(lines.slice(3, -2)).toEqual(alone.slice(1, -2));
   expect(lines.slice(-2)).toEqual([
     "rule: Run the command on the next: line again, and go on running it while GitHub still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.",
-    `next: node ${machineScript} bind ${flags}`,
+    `next: node ${machineScript} bind ${flags} --opened github`,
   ]);
   expect(setupReportExit(waited)).toBe(0);
+});
+
+test("an --opened that is not github is said as the one value it takes, with bind", () => {
+  expect(
+    setupReportLines(
+      { report: "AskedWrongly", fault: "Opened" },
+      machineScript,
+      copyTextEn,
+    )[0],
+  ).toBe("found: --opened takes only github, with bind");
+});
+
+test("a bind run again as having opened the page says no page opened and goes on naming itself so", () => {
+  const rerun = roster.Bind[4];
+  if (rerun === undefined) throw new Error("no rerun bind");
+  const lines = setupReportLines(rerun, machineScript, copyTextEn);
+  expect(lines.some((line) => line.startsWith("did: opened "))).toBe(false);
+  expect(lines.at(-1)).toBe(
+    `next: node ${machineScript} bind ${flags} --opened github`,
+  );
 });
 
 test("a run of bind says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {

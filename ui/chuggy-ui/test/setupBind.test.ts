@@ -169,6 +169,22 @@ test("bind run where GitHub is not connected opens the repositories page that be
   expect(binds(machine)).toEqual([]);
 });
 
+test("a bind whose wait ran out with Connect GitHub still next names itself again as having opened the page, and that run opens nothing", async () => {
+  const machine = await machineSignedIn(setupSiteAt("Project"));
+  const wait = ["--wait-secs", "0"];
+  const first = lines(await machine.command(["bind", ...flags, ...wait]));
+  const rerun = `${runBind} --opened github`;
+  expect(first.at(-1)).toBe(rerun);
+  const before = machine.launched.length;
+  const said = lines(
+    await machine.command(["bind", ...flags, "--opened", "github", ...wait]),
+  );
+  expect(machine.launched.slice(before)).toEqual([]);
+  expect(said.some((line) => line.startsWith("did: opened "))).toBe(false);
+  expect(said.at(-1)).toBe(rerun);
+  expect(binds(machine)).toEqual([]);
+});
+
 test("a later project whose repository an All installation already reaches has bind run at once, with no trip to GitHub", async () => {
   const site = setupSiteAt("Apps");
   for (const app of ["portal", "worker"] as const)

@@ -401,7 +401,12 @@ async function setupBound(
   checklist: () => Promise<
     Extract<SetupReport, { readonly report: "Checklist" }>
   >,
-): Promise<Omit<Extract<SetupReport, { readonly report: "Bind" }>, "opened">> {
+): Promise<
+  Omit<
+    Extract<SetupReport, { readonly report: "Bind" }>,
+    "opened" | "openBefore"
+  >
+> {
   const answered = await setupBindAsked(
     setupWritePorts(
       held.opened.api,
@@ -425,7 +430,7 @@ async function setupBound(
  * each look so a wait outlasts its first bearer, and reads the checklist again
  * at `pacing.bindPollMs`, for as long as the run was given, while the next
  * thing waits on GitHub, opening the page that connects GitHub where its first
- * look finds that next. Once the next thing is adding the folder's repository
+ * look finds that next and no `bind` before it opened one. Once the next thing is adding the folder's repository
  * it binds it, the one write its ports let through, and reads the checklist
  * again; where the next thing waits on neither, it binds nothing.
  */
@@ -448,13 +453,16 @@ async function setupBind(
       pacing,
     );
     const due = setupBindDue(standing);
+    const open = { opened, openBefore: asked.opened };
     if (due !== undefined)
-      return { ...(await setupBound(ports, held, due, checklist)), opened };
-    if (!looked) opened = await setupBindConnectOpened(ports, standing);
+      return { ...(await setupBound(ports, held, due, checklist)), ...open };
+    if (!looked && !asked.opened)
+      opened = await setupBindConnectOpened(ports, standing);
     if (!setupBindAwaited(standing) || ports.nowMs() >= endsAtMs)
       return {
         report: "Bind",
         opened,
+        openBefore: asked.opened,
         repository: undefined,
         answered: undefined,
         checklist: await checklist(),

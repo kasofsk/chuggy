@@ -77,6 +77,8 @@ export interface SetupCopy {
     readonly wait: unknown;
     readonly name: unknown;
     readonly made: unknown;
+    readonly opened: unknown;
+    readonly bound: unknown;
     readonly replace: unknown;
     readonly chatHost: unknown;
     readonly test: unknown;
@@ -129,6 +131,11 @@ export interface SetupCopy {
   readonly "setup-asked-plugin": {
     readonly flag: unknown;
     readonly skip: unknown;
+  };
+  readonly "setup-asked-opened": {
+    readonly flag: unknown;
+    readonly github: unknown;
+    readonly bound: unknown;
   };
   readonly "setup-platforms-and": {
     readonly one: unknown;
