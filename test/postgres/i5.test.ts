@@ -680,11 +680,11 @@ test("selector provenance and its observed cursor roll back together", async () 
       /selector_planning_intent.*check|violates check constraint/,
     );
     assert.equal(await state.project(partition), undefined);
-    assert.deepEqual(await state.history(partition, undefined, 10), []);
+    assert.deepEqual(await state.tail(partition, 10), []);
 
     await state.recordInteraction(interaction, first, selectorTestFence);
     assert.equal((await state.project(partition))?.notificationCursor, 17);
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.equal((await state.tail(partition, 10)).length, 1);
     await state.recordInteraction(interaction, later, selectorTestFence);
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     assert.equal(
@@ -697,7 +697,7 @@ test("selector provenance and its observed cursor roll back together", async () 
       "a decision whose attempt completed is recorded once, whatever a second record says",
     );
     assert.equal((await state.project(partition))?.notificationCursor, 17);
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.equal((await state.tail(partition, 10)).length, 1);
   } finally {
     await pool.end();
   }
@@ -728,7 +728,7 @@ test("selector provenance round-trips resources larger than one audit column", a
       ),
       true,
     );
-    const recorded = (await state.history(partition, undefined, 1))[0];
+    const recorded = (await state.tail(partition, 1))[0];
     assert.deepEqual(recorded?.context, interaction.context);
     assert.deepEqual(recorded?.toolActivity, interaction.toolActivity);
   } finally {
@@ -776,10 +776,11 @@ test("selector state fencing and audit ordinals survive out-of-order identities"
       ),
       false,
     );
-    const first = await state.history(partition, undefined, 1);
-    const second = await state.history(partition, first[0]?.ordinal, 1);
-    assert.equal(first[0]?.decision, laterSorting.decision);
-    assert.equal(second[0]?.decision, earlierSorting.decision);
+    const newestFirst = await state.tail(partition, 2);
+    assert.deepEqual(
+      newestFirst.map((recorded) => recorded.decision),
+      [earlierSorting.decision, laterSorting.decision],
+    );
     assert.equal((await state.project(partition))?.notificationCursor, 1);
   } finally {
     await pool.end();
@@ -842,7 +843,7 @@ test("a quiet cycle writes the selector state alone and a stale one writes nothi
       (await state.project(partition))?.revision,
       decided.revision + 1,
     );
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.equal((await state.tail(partition, 10)).length, 1);
     assert.deepEqual((await state.planningIntent(partition))?.intent, {
       tickets: [3],
     });
@@ -873,7 +874,7 @@ test("a database-linearized pause suppresses proposal creation", async () => {
       { retained: true, dispatched: [] },
       "the interaction is retained and its trigger drops every delivery row",
     );
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.equal((await state.tail(partition, 10)).length, 1);
     assert.deepEqual(await state.pending(10), []);
   } finally {
     const current = await control.settings();
@@ -1370,7 +1371,7 @@ test("a decision re-sent writes its rows once and none of them twice", async () 
       (await i5DeliveryRows(decision)).map((row) => row["ticket"]),
       ["5", "6"],
     );
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.equal((await state.tail(partition, 10)).length, 1);
   } finally {
     await selectorPool.end();
   }
@@ -2142,7 +2143,7 @@ test("a paused installation admits none of a decision's deliveries", async () =>
       0,
     );
     assert.deepEqual(await i5DeliveryRows(decision), []);
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.equal((await state.tail(partition, 10)).length, 1);
   } finally {
     const current = await control.settings();
     await control.unpause(current.revision, selectorAdministrator);

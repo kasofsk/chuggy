@@ -35,7 +35,6 @@ import type {
 } from "../../interpreter/selector.ts";
 import {
   dispatchesPerDecisionUnstated,
-  leadDispatchesMax,
   resolvedSelectorSettings,
 } from "../../interpreter/selector.ts";
 import type {
@@ -684,34 +683,6 @@ export function selectorInteractionResource<T>(
     schema,
     "selector interaction resource",
   );
-}
-
-/**
- * One resource's chunks in the order they were written, over the selector's
- * own grant on the relation. A gap in the ordinals is a resource the reader
- * cannot reassemble, and what the reassembly itself answers for is the
- * manifest's count, length and digest.
- */
-async function readInteractionChunks(
-  pool: pg.Pool,
-  decision: string,
-  kind: InteractionResourceKind,
-): Promise<readonly string[]> {
-  const resourceKind: string = kind;
-  const found = await pool.query<{ ordinal: string; content: string }>(
-    sql`SELECT ordinal::text,content
-       FROM selector_interaction_resource
-       WHERE selector_decision=${decision} AND kind=${resourceKind}
-       ORDER BY selector_interaction_resource.ordinal`,
-  );
-  if (
-    found.rows.some(
-      (row, ordinal) =>
-        projectRowCounter(row.ordinal, "selector resource ordinal") !== ordinal,
-    )
-  )
-    throw new Error("selector interaction resource manifest is incomplete");
-  return found.rows.map((row) => row.content);
 }
 
 /**
@@ -2171,58 +2142,6 @@ export function selectorInteractionRecord(
   };
 }
 
-async function selectorInteractionOf(
-  pool: pg.Pool,
-  partition: Partition,
-  row: SelectorInteractionRow,
-): Promise<SelectorInteractionRecord> {
-  return selectorInteractionRecord(partition, row, {
-    observedView: await readInteractionChunks(
-      pool,
-      row.selector_decision,
-      "ObservedView",
-    ),
-    context: await readInteractionChunks(
-      pool,
-      row.selector_decision,
-      "Context",
-    ),
-    toolActivity: await readInteractionChunks(
-      pool,
-      row.selector_decision,
-      "ToolActivity",
-    ),
-  });
-}
-
-async function readSelectorHistory(
-  pool: pg.Pool,
-  partition: Partition,
-  after: number | undefined,
-  limit: number,
-): Promise<readonly SelectorInteractionRecord[]> {
-  checkedSelectorLimit(limit, "selector history");
-  const found = await pool.query<SelectorInteractionRow>(
-    sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,observed_view,
-       observed_token,context,tool_activity,result,implementation_revision,model_revision,
-       policy_revision,accounting,started_at,completed_at,
-       (SELECT json_agg(json_build_object(
-                 'ticket',landed.ticket,'state',landed.state,'outcome',landed.outcome)
-                 ORDER BY landed.ticket)
-          FROM (SELECT d.ticket,d.state,d.outcome
-                  FROM selector_proposal_delivery d
-                 WHERE d.selector_decision=selector_interaction.selector_decision
-                 ORDER BY d.ticket LIMIT ${leadDispatchesMax}) landed)::text
-         AS dispatches
-       FROM selector_interaction WHERE tenant=${partition.tenant}
-         AND project=${partition.project} AND ordinal>${after ?? 0}
-       ORDER BY ordinal LIMIT ${limit}`,
-  );
-  return Promise.all(
-    found.rows.map((row) => selectorInteractionOf(pool, partition, row)),
-  );
-}
-
 /**
  * One `read_selector_interactions` row. Every column of a set-returning
  * function is nullable to the query checker, because a function that answers
@@ -2371,8 +2290,6 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
           ${decision},${ticket},'Terminal',${encode(outcome)})::text`,
       );
     },
-    history: (partition, after, limit) =>
-      readSelectorHistory(pool, partition, after, limit),
     tail: (partition, limit) =>
       readSelectorInteractions(pool, partition, undefined, limit, true),
     project: (partition) => readSelectorProject(pool, partition),

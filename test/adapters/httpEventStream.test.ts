@@ -343,17 +343,15 @@ const kindResources: Readonly<Record<ProjectChangeKind, string>> = {
   Project: "project",
   Execution: "execution-one",
   NativeAction: "3",
-  AgenticRefusal: "3",
   Session: "lead-atlas",
 };
 
 /**
  * The kinds the reader holds no read for. They must read as tombstones rather
  * than raise, because `framesForRow` turns a read that keeps raising into a
- * stream reset and the session turn triggers append one of these on every lead
- * turn.
+ * stream reset and the session turn triggers append one on every lead turn.
  */
-const kindsWithoutReads = ["AgenticRefusal", "Session"] as const;
+const kindsWithoutReads = ["Session"] as const;
 
 test("a kind whose read the API does not hold is a tombstone, not a raise", async () => {
   const reader = projectResourceReader(servedWeb(true, () => []));

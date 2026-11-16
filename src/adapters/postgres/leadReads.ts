@@ -1,8 +1,8 @@
 /**
  * What the API may read of a project's lead and of the decisions behind it:
  * the session with the tail of its mailbox, the store rows a transcript is
- * drawn from, the decision log with the planning intent it left, and the
- * admission refusal the selector keeps for the project's lead.
+ * drawn from, the planning intent the decisions left, and the admission
+ * refusal the selector keeps for the project's lead.
  *
  * THE API HOLDS NO GRANT ON ANY OF THESE RELATIONS. Every read below is a
  * `SECURITY DEFINER` function, bounded and partitioned by its own arguments,
@@ -11,10 +11,9 @@
  * role unnecessary, and a second credential in a deployment is a second thing
  * to leak.
  *
- * THE SHAPES ARE THE INTERPRETER'S. `LeadReadStore` and `SelectorHistoryStore`
- * are declared beside the reads that need them, and this module answers them; a
- * shape declared here would be an adapter telling the layer above it what it may
- * ask for.
+ * THE SHAPES ARE THE INTERPRETER'S. `LeadReadStore` is declared beside the
+ * reads that need it, and this module answers it; a shape declared here would
+ * be an adapter telling the layer above it what it may ask for.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -40,7 +39,6 @@ import type {
 } from "../../interpreter/leadRead.ts";
 import { leadAdmissionRefusals } from "../../contract/rosters.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
-import type { SelectorHistoryStore } from "../../interpreter/selectorHistory.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   sessionStoreBatchRows,
@@ -61,10 +59,7 @@ import {
  * answers yet.
  */
 export interface PostgresLeadReads
-  extends
-    LeadReadStore,
-    SelectorHistoryStore,
-    Pick<SelectorStateStore, "planningIntent"> {
+  extends LeadReadStore, Pick<SelectorStateStore, "planningIntent"> {
   /** The newest decisions first, which is what seeds a lead that has no transcript. */
   tail(
     partition: Partition,
@@ -226,14 +221,6 @@ export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
     batches: (query) => sessionStoreBatchRows(pool, query),
     streams: (partition, session, limit) =>
       sessionStoreStreamRows(pool, partition, session, limit),
-    history: (partition, query) =>
-      readSelectorInteractions(
-        pool,
-        partition,
-        query.after,
-        query.limit,
-        query.order === "newest",
-      ),
     tail: (partition, limit) =>
       readSelectorInteractions(pool, partition, undefined, limit, true),
     planningIntent: (partition) => leadPlanningIntent(pool, partition),

@@ -4,8 +4,8 @@
  *
  * A change frame's representation comes from `src/adapters/http/outcomes.ts`,
  * so these cases start there and feed what it emits to the stream's parser.
- * `AgenticRefusal` and `Session` are written out instead: the stream sends both
- * as tombstones, so what is held here is that their schemas admit a body.
+ * `Session` is written out instead: the stream sends it as a tombstone, so
+ * what is held here is that its schema admits a body.
  */
 
 import assert from "node:assert/strict";
@@ -47,27 +47,6 @@ const ticketRepresentation = ticketResponse({
   sequence: 9,
   ...ticketCarried,
 }).body;
-
-/** One ticket's refusal ledger with the standing the latest entry induces. */
-const ticketAgenticRefusalsRepresentation = {
-  ticket: 42,
-  more: false,
-  entries: [
-    {
-      ordinal: 91,
-      event: "Refused",
-      ticketVersion: 2,
-      reason: "the dependency is still failing",
-      decision: "selector-decision-one",
-      recordedAt: "2026-09-02T12:00:00.000Z",
-    },
-  ],
-  standing: {
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    recordedAt: "2026-09-02T12:00:00.000Z",
-  },
-};
 
 /** The lead read, which is what a `Session` frame carries under the session id. */
 const leadRepresentation = {
@@ -118,7 +97,6 @@ const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
     project: { partition, sequence: 9, tickets: [] },
   }).body,
   NativeAction: nativeActionRepresentation,
-  AgenticRefusal: ticketAgenticRefusalsRepresentation,
   Session: leadRepresentation,
 };
 

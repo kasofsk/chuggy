@@ -1,6 +1,6 @@
 /**
  * The wake pass over a real PostgreSQL, driven by the role its three definers
- * are granted to: a refusal against a ticket a member's draft revision
+ * are granted to: an escalation of a ticket a member's draft revision
  * authored, one pass, one `Wake` turn in that member's mailbox, and a second
  * pass that writes nothing.
  *
@@ -60,7 +60,6 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessStalled,
 } from "./harness.ts";
-import { leadRigDecision } from "./leadHarness.ts";
 import {
   sessionRigPersonalRunner,
   sessionRigRouted,
@@ -157,29 +156,19 @@ async function draft(
   return created.draft.ticket;
 }
 
-/** Refuses one of the member's tickets, which is the change a `TicketRefused` wake is derived from. */
-async function refuse(
-  partition: Partition,
-  label: string,
-  ticket: TicketId,
-): Promise<void> {
-  const decision = await leadRigDecision(rig, partition, `${label}-refusal`);
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: [{ ticket, ticketVersion: 1, reason: "not yet" }],
-    lifts: [],
-  });
+/** Escalates one of the member's tickets, which is the change a `TicketEscalated` wake is derived from. */
+function escalate(partition: Partition, ticket: TicketId): Promise<void> {
+  return threadRigTicketPhase(rig, partition, ticket, "Escalated");
 }
 
-test("a refusal against a member's own ticket becomes one Wake turn, once", async () => {
+test("an escalation of a member's own ticket becomes one Wake turn, once", async () => {
   const partition = await threadRigProject(rig, "wakepass");
   const member = threadRigMember(rig, partition, "wakepass");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   const started = await fromTheHead();
-  await refuse(partition, "wakepass", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
@@ -204,7 +193,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
     threadWakeTurn({
       sequence: report.cursor,
       partition,
-      reason: "TicketRefused",
+      reason: "TicketEscalated",
       resource: String(ticket),
       principal: member.principal,
       session: thread.session,
@@ -214,7 +203,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
     "the turn the door holds is the identity the pass derives, or a replay is a second turn",
   );
   const document = parseThreadWake(turn.input);
-  assert.equal(document.wake, "TicketRefused");
+  assert.equal(document.wake, "TicketEscalated");
   assert.equal(document.resource, String(ticket));
   assert.equal(document.at, instant);
 
@@ -271,7 +260,7 @@ test("a pass whose cursor was not moved re-offers the same turn and is told so",
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   const started = await fromTheHead();
-  await refuse(partition, "wakereplay", ticket);
+  await escalate(partition, ticket);
 
   const raising: ThreadWakeService = {
     ...service(threadWakesPerPassMax),
@@ -314,7 +303,7 @@ test("a change for a closed thread is read by nobody and moves the cursor by its
   const ticket = await draft(partition, revision, member, thread.session);
   await rig.sessions.sessions.close(partition, thread.session);
   const started = await fromTheHead();
-  await refuse(partition, "wakeclosed", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(
@@ -353,21 +342,6 @@ test("the wake door wakes a thread the project no longer admits its owner to", a
   );
 });
 
-/** Lifts the standing refusal on one of the member's tickets, which is a second change on it. */
-async function lift(
-  partition: Partition,
-  label: string,
-  ticket: TicketId,
-): Promise<void> {
-  const decision = await leadRigDecision(rig, partition, `${label}-lift`);
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: [],
-    lifts: [{ ticket }],
-  });
-}
-
 /**
  * The window holds BOTH changes on one ticket and the cursor is below both, so
  * what separates them is the log's position the thread was opened after — a
@@ -382,7 +356,7 @@ test("a thread is woken by a change after it opened, and by none the log held be
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, undefined);
   const started = await fromTheHead();
-  await refuse(partition, "wakestart", ticket);
+  await escalate(partition, ticket);
   const thread = await threadRigThread(rig, partition, member);
   await rig.sessions.harness.query(
     `UPDATE draft SET origin_session=$4
@@ -407,7 +381,7 @@ test("a thread is woken by a change after it opened, and by none the log held be
     "the thread's mailbox holds a notice about something that happened before it existed",
   );
 
-  await lift(partition, "wakestart", ticket);
+  await threadRigTicketPhase(rig, partition, ticket, "Done");
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.equal(report.read, 1, "the window holds both changes and read both");
   assert.equal(report.woken, 1);
@@ -419,7 +393,7 @@ test("a thread is woken by a change after it opened, and by none the log held be
   assert.equal(standing?.turns.length, 1);
   const turn = standing?.turns[0];
   assert.ok(turn !== undefined);
-  assert.equal(parseThreadWake(turn.input).wake, "RefusalLifted");
+  assert.equal(parseThreadWake(turn.input).wake, "TicketCompleted");
 });
 
 /**
@@ -573,7 +547,7 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
-  await refuse(partition, "wakeroute", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
@@ -600,7 +574,7 @@ test("a wake on a thread routed to runners is skipped where its member has regis
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
-  await refuse(partition, "wakerunnerless", ticket);
+  await escalate(partition, ticket);
 
   const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
@@ -658,7 +632,7 @@ test("a project's own standing rules reach the wake through the candidate", asyn
     [partition.tenant, partition.project, stated],
   );
   await fromTheHead();
-  await refuse(partition, "wakestanding", ticket);
+  await escalate(partition, ticket);
 
   await threadWakePass(service(threadWakesPerPassMax));
 
