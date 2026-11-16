@@ -5,6 +5,8 @@
  * THE WORD IS SAID, AND SHOWN ONLY WHERE THERE IS ROOM FOR IT. It is a status
  * a screen reader hears either way; `worded` draws it beside the mark, which a
  * code block's own bar has the room for and the line under an answer does not.
+ * `labelled` draws the control's name as a word on it instead, and the status
+ * in the name's place once pressed; the name is what it is heard as either way.
  *
  * NOTHING IS CLAIMED THE BROWSER DID NOT DO. The tick is drawn once the write
  * answers that it happened, and a write that was refused leaves the control as
@@ -87,27 +89,58 @@ export function CopySaid(props: {
   );
 }
 
+/** The word on a labelled control: its name, or the status once pressed, in a
+ * cell as wide as the wider of them so the press moves nothing beside it. */
+function CopyButtonWord(props: {
+  readonly copied: boolean;
+  readonly label: string;
+}): ReactNode {
+  const text = useCopyText();
+  const said = text({ id: "ui-copied" });
+  return (
+    <span className="copy-word" aria-hidden="true">
+      <span className={props.copied ? "copy-word-unshown" : undefined}>
+        {props.label}
+      </span>
+      <span className={props.copied ? undefined : "copy-word-unshown"}>
+        {said}
+      </span>
+    </span>
+  );
+}
+
 export function CopyButton(props: {
   /** What is copied, read when the control is pressed. */
   readonly text: string;
   /** What the control is called before it is pressed. */
   readonly label: string;
   readonly worded?: boolean;
+  /** Whether the name is drawn on the control as a word beside its mark. */
+  readonly labelled?: boolean;
 }): ReactNode {
   const copy = useCopyPress();
   if (copy === undefined) return null;
+  const labelled = props.labelled === true;
   return (
     <span className="copy">
-      <CopySaid copied={copy.copied} worded={props.worded === true} />
+      <CopySaid
+        copied={copy.copied}
+        worded={props.worded === true && !labelled}
+      />
       <button
         type="button"
-        className="copy-button"
+        className={
+          labelled ? "copy-button copy-button-labelled" : "copy-button"
+        }
         aria-label={props.label}
         onClick={() => {
           copy.press(props.text);
         }}
       >
         <CopyMark copied={copy.copied} />
+        {labelled ? (
+          <CopyButtonWord copied={copy.copied} label={props.label} />
+        ) : null}
       </button>
     </span>
   );
