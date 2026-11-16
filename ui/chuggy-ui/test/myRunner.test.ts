@@ -30,7 +30,9 @@ import {
   runnerWait,
   runnerWaitPause,
   runnerWaitLine,
+  runnerWaitPoolRoom,
   runnerWaitRoom,
+  runnerWaitRoomLine,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
 import {
@@ -223,6 +225,27 @@ test("a run of the reader's waiting on their live runners says the memory they a
       runnerWaitRoom({ ...short, personalRunnerWait: wait }),
     ).toBeUndefined();
   expect(runnerWaitRoom({ ...short, mine: false })).toBeUndefined();
+});
+
+/** The server sends a pool room only where every live pool a run waits on is short of memory, to any reader, and the console says it of a run not begun and not queued. */
+test("a run waiting on its project's live pools says the memory they are short of to any reader, and one queued or begun says none", () => {
+  const room = { freeMib: 3_686, neededMib: 4_096 };
+  const short = {
+    ...waiting,
+    mine: false,
+    ownerFallback: undefined,
+    poolRoom: room,
+  };
+  expect(runnerWaitPoolRoom(short)).toStrictEqual(room);
+  expect(runnerWaitPoolRoom({ ...short, mine: true })).toStrictEqual(room);
+  expect(runnerWaitPoolRoom({ ...waiting, mine: false })).toBeUndefined();
+  expect(runnerWaitPoolRoom({ ...short, status: "Queued" })).toBeUndefined();
+  expect(
+    runnerWaitPoolRoom({ ...short, runStartedAt: "2026-10-01T05:00:00Z" }),
+  ).toBeUndefined();
+  expect(copyOrDataText(copyTextEn, runnerWaitRoomLine(room))).toBe(
+    "3.6 GiB free, needs 4 GiB",
+  );
 });
 
 test("taking a member's runners off says whether there were any it could take", () => {

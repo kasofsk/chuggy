@@ -50,7 +50,7 @@ import {
   type LatestExecutionPage,
   type OperationalReadStore,
   type OutputDefinition,
-  type PersonalRunnerRoom,
+  type RunnerRoom,
   type ResultArtifactResource,
 } from "../../interpreter/operationsView.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -538,7 +538,7 @@ interface ExecutionRunnerRow {
 interface ExecutionRunnerWait {
   readonly wait: PersonalRunnerWait;
   readonly paused?: AgentAccountPause;
-  readonly room?: PersonalRunnerRoom;
+  readonly room?: RunnerRoom;
 }
 
 /**
@@ -548,8 +548,8 @@ interface ExecutionRunnerWait {
  * at `memoryMibDefault` where it names none), with whether that runner polled
  * for executions within the deferral's window, whether it is offered the
  * attempt's agent, its pause by the credentials it named, the memory room its
- * last poll named, and the memory the execution needs. This fourth of
- * the five copies of the claim's predicate `./personalRunner.ts` counts is
+ * last poll named, and the memory the execution needs. It is one
+ * of the copies of the claim's predicate `./personalRunner.ts` counts, and is
  * held to the claim's answers in `test/postgres/workerPoolClaim.test.ts`.
  */
 async function executionsRunnerRows(
@@ -636,8 +636,8 @@ export function executionRunnerPausedEvery(
 
 /** The largest room of `live` and the memory the execution needs, where every one named a room above nothing and below that, and nothing where any did not. */
 function executionRunnerWaitRoom(
-  live: readonly Pick<ExecutionRunnerRow, "memory_room_mib" | "memory_mib">[],
-): PersonalRunnerRoom | undefined {
+  live: readonly Pick<ExecutionPoolRow, "memory_room_mib" | "memory_mib">[],
+): RunnerRoom | undefined {
   const [first] = live;
   if (first === undefined) return undefined;
   const neededMib = projectRowCounter(first.memory_mib, "execution memory");
@@ -699,6 +699,87 @@ async function executionsRunnerWaits(
     if (wait !== undefined) waits.set(execution, wait);
   }
   return waits;
+}
+
+interface ExecutionPoolRow {
+  readonly execution: string;
+  readonly memory_room_mib: string | null;
+  readonly memory_mib: string;
+}
+
+/**
+ * Each of `executions` whose attempt waits unclaimed, beside every pool of its
+ * project live for executions within a personal runner's window that a claim
+ * on `workerPoolWaiting`'s terms could take it from, with the room it last
+ * named and the memory the execution needs, sized at `memoryMibDefault` where
+ * it names none; the room a poll names, the slots a pool holds, the pause of
+ * the account it spends and owners revoked are left out, since none is a fact
+ * of the execution a reader's view knows.
+ * It is one of the copies of the claim's predicate `./personalRunner.ts`
+ * counts, and is held to the claim's answers in
+ * `test/postgres/workerPoolClaim.test.ts`.
+ */
+async function executionsPoolRows(
+  pool: pg.Pool,
+  partition: Partition,
+  executions: readonly string[],
+  memoryMibDefault: number,
+): Promise<readonly ExecutionPoolRow[]> {
+  if (executions.length === 0) return [];
+  const found = await pool.query<ExecutionPoolRow>(
+    sql`SELECT e.execution,w.memory_room_mib::text AS memory_room_mib,
+               COALESCE(e.memory_mib,${memoryMibDefault}::bigint)::text AS memory_mib
+          FROM execution e
+          JOIN execution_attempt a
+            ON a.tenant=e.tenant AND a.project=e.project AND a.execution=e.execution
+          JOIN worker_pool w ON w.tenant=e.tenant AND w.project=e.project
+         WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+           AND e.execution=ANY(${[...executions]}::text[])
+           AND a.state='Placing' AND a.pool IS NULL AND a.invoked
+           AND e.placement='Pool' AND e.status='Launching'
+           AND a.recovery_epoch=(SELECT p.epoch FROM recovery_epoch p ORDER BY p.ordinal DESC LIMIT 1)
+           AND w.class<>'Personal'
+           AND w.executions_polled_at
+                 > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)
+           AND worker_pool_inventory_matches(e.requirement_value,w.capabilities)
+           AND (w.memory_ceiling_mib IS NULL
+                OR COALESCE(e.memory_mib,${memoryMibDefault}::bigint)<=w.memory_ceiling_mib)
+           AND NOT EXISTS(SELECT 1 FROM personal_runner r
+             JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
+             WHERE e.owner_fallback IS NOT NULL
+               AND r.tenant=e.tenant AND r.owner=e.owner AND l.project=e.project
+               AND worker_pool_inventory_matches(e.requirement_value,r.capabilities)
+               AND (r.memory_ceiling_mib IS NULL
+                    OR COALESCE(e.memory_mib,${memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+               AND (e.owner_fallback='Strict'
+                    OR (r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)
+                        AND worker_pool_agent_offered(a.agent,r.capabilities,r.agents_advertised))))
+           AND EXISTS(SELECT 1 FROM project p
+             WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active')
+         ORDER BY e.execution,w.pool`,
+  );
+  return found.rows;
+}
+
+/** The memory each of `executions` that waits on live pools of its project is short of, by execution, for those every such pool is short of it. */
+async function executionsPoolRooms(
+  pool: pg.Pool,
+  partition: Partition,
+  executions: readonly string[],
+  memoryMibDefault: number,
+): Promise<ReadonlyMap<string, RunnerRoom>> {
+  const rows = await executionsPoolRows(
+    pool,
+    partition,
+    executions,
+    memoryMibDefault,
+  );
+  const rooms = new Map<string, RunnerRoom>();
+  for (const [execution, pools] of Map.groupBy(rows, (row) => row.execution)) {
+    const room = executionRunnerWaitRoom(pools);
+    if (room !== undefined) rooms.set(execution, room);
+  }
+  return rooms;
 }
 
 interface ExecutionTakenRow {
@@ -785,7 +866,7 @@ async function executionsCarried(
   );
 }
 
-/** A page's summaries with their workers labelled, their runs totalled, when each was taken, what those of the reader's waiting wait on of their runners, and the run each carried one was carried from. */
+/** A page's summaries with their workers labelled, their runs totalled, when each was taken, what those of the reader's waiting wait on of their runners, the memory those waiting on their project's pools are short of, and the run each carried one was carried from. */
 async function executionPageAnswered(
   pool: pg.Pool,
   partition: Partition,
@@ -807,6 +888,12 @@ async function executionPageAnswered(
     executions,
     memoryMibDefault,
   );
+  const poolRooms = await executionsPoolRooms(
+    pool,
+    partition,
+    executions,
+    memoryMibDefault,
+  );
   const carried = await executionsCarried(pool, partition, executions);
   return summaries.map((summary) => {
     const answered = executionSummaryTotalled(
@@ -815,6 +902,7 @@ async function executionPageAnswered(
     );
     const takenAt = taken.get(summary.execution);
     const wait = waits.get(summary.execution);
+    const poolRoom = poolRooms.get(summary.execution);
     const carriedFrom = carried.get(summary.execution);
     return {
       ...answered,
@@ -822,6 +910,7 @@ async function executionPageAnswered(
       ...(wait === undefined ? {} : { personalRunnerWait: wait.wait }),
       ...(wait?.paused === undefined ? {} : { paused: wait.paused }),
       ...(wait?.room === undefined ? {} : { personalRunnerRoom: wait.room }),
+      ...(poolRoom === undefined ? {} : { poolRoom }),
       ...(carriedFrom === undefined ? {} : { carriedFrom }),
     };
   });

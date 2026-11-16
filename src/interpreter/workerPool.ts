@@ -492,7 +492,7 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
-  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, and a personal runner's whatever it could take with the memory room it named, under its current registration alone. */
+  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, a personal runner's whatever it could take, and either's memory room it named, under its current registration alone. */
   polled(
     identity: WorkerPoolExecutionPoller,
     executions: boolean,
@@ -1083,8 +1083,8 @@ async function workerPoolHoldingRead(
  * runner taking nothing names as 0. That is what a pool's claim reads a
  * personal runner as live by, and what a project's pools are read as live by
  * beside their session polls; every poll of a personal runner is recorded too,
- * as what its owner reads it as live by, with the memory room it named, which
- * its owner's wait reads it as short of memory by.
+ * as what its owner reads it as live by, and every poll of either with the
+ * memory room it named, which a run's wait reads it as short of memory by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -1115,10 +1115,7 @@ async function workerPoolPollRecorded(
     asked.wanted > 0 ||
     holding.jobs.length > 0 ||
     (asked.memoryRoomMib ?? 0) > 0;
-  if (
-    identity.kind === "Personal" ||
-    (identity.kind === "Dedicated" && executions)
-  )
+  if (identity.kind !== "ChatHost")
     await ports.assignments.polled(identity, executions, asked.memoryRoomMib);
 }
 
