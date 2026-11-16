@@ -69,7 +69,9 @@
  * where it names none; no other caller's poll is read for one. Its
  * sessions run in one container it starts before it holds any, so each answer
  * to it names the session image the scheduler publishes, and it may pull that
- * image while it holds nothing. Each answer to one implementing
+ * image while it holds nothing. Its poll names every session it holds, so an
+ * attempt its registration holds that the poll does not name is ended at
+ * once, before anything the poll claims. Each answer to one implementing
  * `ChatThreadsClosed` also names the threads it last ran that have since
  * closed, so it may remove what it keeps for them, and each session it hands
  * one implementing `ChatSessionThreads` names the thread that session is an
@@ -1120,6 +1122,25 @@ async function workerPoolPollRecorded(
     await ports.assignments.polled(identity, executions, asked.memoryRoomMib);
 }
 
+/**
+ * Ends what a chat host's registration holds and its poll did not list,
+ * judged against the list the poll arrived with: an attempt this poll opens
+ * is judged by the next, which its host sends once it has placed it.
+ */
+async function workerPoolUnlistedEnded(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  holding: WorkerPoolHolding,
+  settings: WorkerPoolPollSettings,
+): Promise<void> {
+  if (identity.kind !== "ChatHost") return;
+  await ports.sessions.store.unlistedEnded(
+    identity,
+    holding.sessions,
+    settings.sessionsHeldMax,
+  );
+}
+
 /** How many passes a poll makes at most: the plane's own, or no more than the wait its poll named lets follow the first. */
 function workerPoolPollPasses(
   settings: WorkerPoolPollSettings,
@@ -1169,6 +1190,7 @@ export async function workerPoolPoll(
     holding.sessions.length > settings.sessionsHeldMax
   )
     return { polled: "HeldOverBound" };
+  await workerPoolUnlistedEnded(ports, identity, holding, settings);
   await workerPoolPollRecorded(ports, identity, asked, holding, settings);
   let answer = await workerPoolReconcile(
     ports,
