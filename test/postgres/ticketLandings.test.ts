@@ -86,17 +86,12 @@ import {
   finalizerPrepare,
   finalizerProject,
   finalizerPromote,
-  finalizerRequestApproval,
   finalizerRigOpen,
   finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
-import {
-  postgresHarnessDenial,
-  postgresHarnessRolePool,
-  postgresHarnessSubmission,
-} from "./harness.ts";
+import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 let rig: FinalizerRig;
@@ -995,53 +990,25 @@ test("a concluded landing whose hold columns are still set answers how it conclu
   assert.equal("removal" in unavailable.hold, false);
 });
 
-test("a landing waiting on an approval answers AwaitingApproval, and one whose approval was declined or whose permit was granted does not", async () => {
-  for (const label of ["awaiting", "declined", "permitted"]) {
-    const project = await finalizing(label, "Push");
-    await finalizerClaim(rig, project, finalizerIdentity("owner"));
-    const attempt = await finalizerPrepare(rig, project, label, {
-      approvalRequired: true,
-    });
-    const action = finalizerIdentity(`action-${label}`);
-    assert.equal(
-      (await finalizerRequestApproval(rig, project, attempt, action))["result"],
-      "Requested",
-    );
-    if (label === "declined") {
-      const answered = await rig.harness.inbox.accept({
-        ...postgresHarnessSubmission(project.partition, label),
-        command: {
-          version: 1,
-          command: "ResolveNativeAction",
-          action,
-          authorizingSeq: project.authorizingSeq,
-          resolution: "Decline",
-        },
-      });
-      assert.equal(answered.accepted, "Accepted");
-      await finalizerDrain(rig.harness, project.partition, project.memory);
-    }
-    if (label === "permitted")
-      await rig.as(
-        `INSERT INTO commit_permit
-           (tenant, project, permit, attempt, recovery_epoch, lifecycle_generation)
-         VALUES ($1,$2,$3,$4,$5,1)`,
-        [
-          project.partition.tenant,
-          project.partition.project,
-          finalizerIdentity("permit"),
-          attempt,
-          project.epoch,
-        ],
-      );
-    const [landing] = (await landingsOf(project))?.landings ?? [];
-    assert.equal(
-      landing?.state,
-      label === "awaiting" ? "AwaitingApproval" : "Running",
-      label,
-    );
-    assert.equal(landing.attempt?.outcome, "Prepared", label);
-  }
+test("a landing escalated because the target changed paths no job may push answers the files its hold names", async () => {
+  const project = await finalizing("refused", "Push");
+  const claim = await finalizerClaim(rig, project, finalizerIdentity("owner"));
+  const refused = { paths: [".github/workflows/ci.yml"], truncated: true };
+  await postgresFinalizer(rig.pool).recordHold({
+    claim,
+    kind: "TargetPathsRefused",
+    refused,
+  });
+  await concluded(
+    project,
+    { outcome: "FinalizationResultUnavailable", kind: "TargetPathsRefused" },
+    undefined,
+    claim,
+  );
+  const [landing] = (await landingsOf(project))?.landings ?? [];
+  assert.equal(landing?.state, "Unavailable");
+  assert.equal(landing.hold?.kind, "TargetPathsRefused");
+  assert.deepEqual(landing.hold.refused, refused);
 });
 
 test("a pull request found by reading it back answers the link its reading recorded, and a link that is not an https one that parses is left out", async () => {
@@ -1523,6 +1490,40 @@ test("a cycle decided unstacked answers its reason, each cycle in order, and a c
   const read = await landingsOf(undecided);
   assert.ok(read !== undefined);
   assert.equal(read.stacks, undefined);
+});
+
+test("a landing sent back to re-stack answers its kind and no re-check, and the cycle after it answers that it came from a re-stack", async () => {
+  const project = await landingAs("stacks-restack", "Stacked");
+  const target = finalizerCommit();
+  const commit = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, "stacks-restack", {
+    outcome: "Failed",
+    failureKind: "Restack",
+    recheckCommit: commit,
+    restack: { tickets: [3], commits: [commit] },
+    target,
+  });
+  await unstacked(project, 1, "Unchosen");
+  const { beneath, tip } = await stacked(project, 2);
+  const read = await landingsOf(project);
+  assert.deepEqual(read?.landings[0]?.attempt, {
+    outcome: "Failed",
+    failureKind: "Restack",
+    targetRef: "refs/heads/main",
+    targetCommit: target,
+    preparedAt: await preparedAt(project, attempt),
+  });
+  assert.deepEqual(read?.stacks?.cycles, [
+    { cycle: 1, prepared: "Unstacked", reason: "Unchosen" },
+    {
+      cycle: 2,
+      restacked: true,
+      prepared: "Stacked",
+      beneath,
+      reference: stackTarget,
+      tip,
+    },
+  ]);
 });
 
 test("a ticket that is not Stacked answers no stacks, though the finalizer left one for it", async () => {

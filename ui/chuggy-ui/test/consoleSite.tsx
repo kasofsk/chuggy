@@ -34,6 +34,7 @@ import type { z } from "zod";
 
 import { ticketActionReachResponseSchema } from "../../../src/contract/actionReach.ts";
 import {
+  accessCallerAccountSchema,
   accessCallerTenantsSchema,
   accessInviteLinksSchema,
   accessSiteTenantsSchema,
@@ -82,6 +83,8 @@ import {
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  projectDeletionResponseSchema,
+  tenantDeletionResponseSchema,
   sessionPlacementResponseSchema,
   threadResponseSchema,
   threadsResponseSchema,
@@ -326,7 +329,9 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt("/api/v1/projects"),
     schema: projectInventoryResponseSchema,
-    body: () => ({ projects: [consolePartition] }),
+    body: () => ({
+      projects: [{ ...consolePartition, name: consolePartition.project }],
+    }),
   },
   {
     path: consoleReadAt(projectPath),
@@ -414,6 +419,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt(`${projectPath}/owner-fallback`),
     schema: projectOwnerFallbackResponseSchema,
     body: () => ({ administers: false }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/deletion`),
+    schema: projectDeletionResponseSchema,
+    body: () => ({ held: ["ReleasedTicket"] }),
   },
   {
     path: consoleReadAt(`${projectPath}/hosted-runs`),
@@ -614,6 +624,11 @@ const consoleReads: readonly ConsoleRead[] = [
     }),
   },
   {
+    path: consoleReadAt(`${tenantPath}/deletion`),
+    schema: tenantDeletionResponseSchema,
+    body: () => ({ held: ["Project"] }),
+  },
+  {
     path: consoleReadAt(`${tenantPath}/chat-host`),
     schema: chatHostResponseSchema,
     body: () => ({
@@ -646,6 +661,16 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadAt("/access/v1/workspaces"),
     schema: accessCallerTenantsSchema,
     body: () => ({ tenants: [], truncated: false }),
+  },
+  {
+    path: consoleReadAt("/access/v1/account"),
+    schema: accessCallerAccountSchema,
+    body: () => ({
+      subject: "subject-one",
+      principal: "issuer subject-one",
+      githubLogin: "ada-lovelace",
+      email: "ada@example.com",
+    }),
   },
   {
     path: consoleReadAt(`${accessTenantPath}/abilities`),

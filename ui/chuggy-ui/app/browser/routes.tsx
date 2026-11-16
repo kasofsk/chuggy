@@ -13,6 +13,7 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
   useNavigate,
   useParams,
   useRouter,
@@ -40,6 +41,7 @@ import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { memberChatRoutes } from "../core/memberChat.ts";
+import { navMoved } from "../core/shellNav.ts";
 import {
   projectCreationQueryOf,
   projectCreationRoutePath,
@@ -52,7 +54,6 @@ import type { TicketCreationQuery } from "../core/ticketCreationQuery.ts";
 import { ticketListQueryOf } from "../core/ticketListView.ts";
 import type { TicketListQuery } from "../core/ticketListView.ts";
 import { usePanelState } from "./api.ts";
-import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { EpicPage } from "./EpicPage.tsx";
 import { EpicEditPage } from "./epic/EpicEditPage.tsx";
@@ -65,18 +66,10 @@ import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { InvitePage } from "./InvitePage.tsx";
-import { LeadPage } from "./LeadPage.tsx";
 import { MemberChatPage } from "./MemberChatPage.tsx";
 import { persistentStore } from "./ports.ts";
-import {
-  ProjectCreation,
-  ProjectCreationPage,
-  ProjectlessFrame,
-} from "./ProjectCreation.tsx";
+import { ProjectCreationPage, ProjectlessFrame } from "./ProjectCreation.tsx";
 import { ProjectTable } from "./ProjectTable.tsx";
-import { RepositoriesPage } from "./RepositoriesPage.tsx";
-import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
-import { RunnersPage } from "./RunnersPage.tsx";
 import {
   projectSettingsRoutes,
   workspaceSettingsRoutes,
@@ -89,6 +82,7 @@ import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 import { TicketLandingTab } from "./ticket/TicketLandingPage.tsx";
 import { TicketRunTab } from "./ticket/TicketRunPage.tsx";
+import { Welcome } from "./Welcome.tsx";
 import {
   TicketConfigurationTab,
   TicketOverviewTab,
@@ -98,6 +92,8 @@ import {
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
+/** The root: the project last opened or else the first, and for a reader
+ * with none the welcome page. */
 export function Landing(): ReactNode {
   const text = useCopyText();
   const navigate = useNavigate();
@@ -114,22 +110,7 @@ export function Landing(): ReactNode {
       replace: true,
     });
   }, [navigate, chosen]);
-  if (state.state === "Ready" && state.value.length === 0)
-    return (
-      <ProjectlessFrame>
-        <div className="grid justify-items-center gap-4">
-          <ProjectCreation
-            lead={
-              <EmptyState
-                variant="page"
-                label={text({ id: "shell-projects-none" })}
-                detail={text({ id: "shell-projects-none-detail" })}
-              />
-            }
-          />
-        </div>
-      </ProjectlessFrame>
-    );
+  if (state.state === "Ready" && state.value.length === 0) return <Welcome />;
   return (
     <ProjectlessFrame>
       <DataPanel title={text({ id: "shell-projects" })} state={state}>
@@ -251,8 +232,11 @@ const epicTicketsRoute = createRoute({
 function EpicGraphRoute(): ReactNode {
   const navigate = useNavigate({ from: epicGraphRoute.fullPath });
   const onTicket = useCallback(
-    (ticket: number) => {
-      void navigate({ search: { ticket }, replace: true });
+    (ticket: number | undefined) => {
+      void navigate({
+        search: ticket === undefined ? {} : { ticket },
+        replace: true,
+      });
     },
     [navigate],
   );
@@ -285,34 +269,72 @@ const epicEditRoute = createRoute({
   component: EpicEditPage,
 });
 
-const leadRoute = createRoute({
+const leadMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/lead",
-  component: LeadPage,
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/lead"],
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
-function CatalogRoute(): ReactNode {
-  return <CatalogPage query={catalogRoute.useSearch()} />;
-}
-
-const catalogRoute = createRoute({
+const catalogMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/catalog",
-  component: CatalogRoute,
   validateSearch: (search: Readonly<Record<string, unknown>>): CatalogQuery =>
     catalogQueryOf(search),
+  beforeLoad: ({ params, search }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/catalog"],
+      params,
+      search,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
-const repositoriesRoute = createRoute({
+const repositoriesMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
-  component: RepositoriesPage,
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/repositories"],
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
-const runnersRoute = createRoute({
+const repositoryMovedRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/repositories/$repository",
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/repositories/$repository"],
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
+});
+
+const runnersMovedRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/runners",
-  component: RunnersPage,
+  beforeLoad: ({ params }) => {
+    redirect({
+      to: navMoved["/$tenant/$project/runners"],
+      params,
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
 function ThreadRoute(): ReactNode {
@@ -359,14 +381,6 @@ const memberChatThreadRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: memberChatRoutes.thread,
   component: MemberChatThreadRoute,
-});
-
-/** One binding's own page. The repository is an address, which the router
- * encodes into the segment and decodes back out of it. */
-const repositoryRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/repositories/$repository",
-  component: RepositoryPage,
 });
 
 /**
@@ -517,12 +531,12 @@ const routeTree = rootRoute.addChildren([
       epicHistoryRoute,
       epicEditRoute,
     ]),
-    leadRoute,
-    catalogRoute,
+    leadMovedRoute,
+    catalogMovedRoute,
     projectSettingsRoutes(partitionRoute),
-    repositoriesRoute,
-    repositoryRoute,
-    runnersRoute,
+    repositoriesMovedRoute,
+    repositoryMovedRoute,
+    runnersMovedRoute,
     threadRoute,
     ticketCreationRoute,
     ticketRoute.addChildren([
@@ -546,6 +560,7 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
   return (
     <EmptyState
       variant="page"
+      level={1}
       label={text({ id: "shell-page-failed" })}
       action={
         <Button
@@ -564,7 +579,11 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
 function RouteNotFound(): ReactNode {
   const text = useCopyText();
   return (
-    <EmptyState variant="page" label={text({ id: "shell-page-absent" })} />
+    <EmptyState
+      variant="page"
+      level={1}
+      label={text({ id: "shell-page-absent" })}
+    />
   );
 }
 

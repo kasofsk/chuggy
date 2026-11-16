@@ -20,16 +20,13 @@ import { after, before, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+  packWorkerContract,
   type PublishedManifest,
   publishedManifest,
   workerContractFilesDigest,
   workspaceManifest,
   workspaceManifestOf,
 } from "../../scripts/pack-worker-contract.ts";
-import {
-  workerContractFilesRefusal,
-  workerContractHistory,
-} from "../../scripts/worker-contract-wire.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -87,17 +84,6 @@ test("the printed digests are the tarball's own and its extracted files'", () =>
   assert.equal(printed, `${sha256}  ${tarball}\nfiles ${files}\n`);
 });
 
-test("the history records the pack this tree makes as the release's files", () => {
-  assert.equal(
-    workerContractFilesRefusal(
-      workerContractHistory(),
-      workerContractRelease,
-      workerContractFilesDigest(join(consumer, "node_modules", manifest.name)),
-    ),
-    undefined,
-  );
-});
-
 test("the files digest moves with a file's bytes or its path, and refuses a link and a package that is not a directory", () => {
   const copy = join(work, "copy");
   cpSync(join(consumer, "node_modules", manifest.name), copy, {
@@ -115,7 +101,7 @@ test("the files digest moves with a file's bytes or its path, and refuses a link
   assert.throws(() => workerContractFilesDigest(copy), /linked\.json/u);
 });
 
-test("the tarball's manifest is the workspace's, versioned by the release and pointed at the emit", () => {
+test("the tarball's manifest is the workspace's, versioned by the contract's release where no label is given and pointed at the emit", () => {
   const packed = JSON.parse(
     readFileSync(
       join(consumer, "node_modules", manifest.name, "package.json"),
@@ -126,6 +112,29 @@ test("the tarball's manifest is the workspace's, versioned by the release and po
   assert.deepEqual(Object.keys(packed.exports), entries);
   assert.equal(packed.version, workerContractRelease);
   assert.equal(packed.license, "MIT");
+});
+
+test("a pack given a label is versioned by it, and the contract inside still names its own release", () => {
+  const label = "7.8.9";
+  const labelled = packWorkerContract(join(work, "labelled"), label);
+  const extracted = join(work, "labelled-extracted");
+  mkdirSync(extracted);
+  const untarred = spawnSync(
+    "tar",
+    ["-xzf", labelled.tarball, "-C", extracted],
+    {
+      encoding: "utf8",
+    },
+  );
+  assert.equal(untarred.status, 0, untarred.stderr);
+  const packed = JSON.parse(
+    readFileSync(join(extracted, "package", "package.json"), "utf8"),
+  ) as PublishedManifest;
+  assert.deepEqual(packed, publishedManifest(manifest, label));
+  assert.match(
+    readFileSync(join(extracted, "package", "workerContract.js"), "utf8"),
+    new RegExp(`workerContractRelease = "${workerContractRelease}"`, "u"),
+  );
 });
 
 test("the tarball carries the workspace's licence", () => {

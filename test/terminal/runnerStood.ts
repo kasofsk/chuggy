@@ -52,9 +52,12 @@ export const chatUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.c
 export const next = `next: node ${program} ${flags}`;
 export const again = `rule: Run node ${program} runner ${flags} only `;
 
-/** A machine a runner could be put on, signed in to an installation whose project is set up as far as a runner and whose chats run where `chats` says, with nothing yet kept of what was asked or run. */
+export const mcp = ["mcp", "--workspace", "acme", "--project", "widgets"];
+
+/** A machine a runner could be put on, signed in to an installation whose project is set up as far as a runner and whose chats run where `chats` says, with nothing yet kept of what was asked or run; where `served`, `mcp` has been run there, so the runner package is installed and the agent has chuggy's MCP server. */
 export async function stood(
   chats: PlacementRoute = "InCluster",
+  served = true,
 ): Promise<Stood> {
   const installation = await made.installation();
   const home = made.machine();
@@ -63,6 +66,10 @@ export async function stood(
   assert.equal(done.code, 0, done.stdout);
   installation.world = setupSiteAt("Configured");
   for (const project of installation.world.projects) project.threads = chats;
+  if (served) {
+    const installed = await home.run(mcp, { [userSaid]: user });
+    assert.equal(installed.code, 0, installed.stdout);
+  }
   installation.asked.length = 0;
   machine.forget();
   const on = { installation, home, machine };
@@ -155,7 +162,6 @@ export function unasked(on: Stood): void {
 export const first = [
   "services",
   "docker",
-  "install",
   "register",
   "doctor",
   "service",

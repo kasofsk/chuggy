@@ -1,6 +1,8 @@
 /* Checkbox: the box a press fills, the mark in it, and a box drawn but not
    pressable, whether never or only for now. A press lands a little past the
-   box's edge, because the box is smaller than a finger. */
+   box's edge, because the box is smaller than a finger; under a coarse
+   pointer the box keeps its drawn size and is pressed through a square a
+   control's height, centred on it, as a radio is. */
 
 @layer ui {
   .checkbox {
@@ -44,5 +46,16 @@
   .checkbox-mark {
     width: 0.75em;
     height: 0.75em;
+  }
+
+  @media (pointer: coarse) {
+    .checkbox::after {
+      inset: auto;
+      top: 50%;
+      left: 50%;
+      width: var(--height-control);
+      height: var(--height-control);
+      translate: -50% -50%;
+    }
   }
 }

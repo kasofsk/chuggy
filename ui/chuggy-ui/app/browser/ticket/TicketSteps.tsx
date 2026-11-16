@@ -155,7 +155,7 @@ function ticketStepsPhaseLabel(phase: TicketStepPhase): Copy {
     case "Evaluation":
       return { id: "ticket-steps-phase-evaluation" };
     case "Finalization":
-      return { id: "ticket-steps-phase-landing" };
+      return { id: "ticket-steps-phase-finalization" };
   }
 }
 

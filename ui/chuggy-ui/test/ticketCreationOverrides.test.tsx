@@ -28,6 +28,7 @@ import {
   creationOffer,
 } from "./ticketCreationFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { creationMoreOpened } from "./creationMore.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -126,13 +127,16 @@ async function submitted(
   return draft?.body as Readonly<Record<string, unknown>>;
 }
 
-test("the overrides are a disclosure of their own, drawn closed and only once a configuration is chosen", async () => {
+test("the overrides are drawn under the disclosure only once a configuration is chosen", async () => {
   draw(api().ports);
-  expect(screen.queryByRole("button", { name: "Overrides" })).toBeNull();
+  creationMoreOpened();
+  expect(
+    screen.queryByRole("heading", { level: 4, name: "Overrides" }),
+  ).toBeNull();
   await chooseConfiguration("development-sonnet");
-  const disclosure = screen.getByRole("button", { name: "Overrides" });
-  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(disclosure);
+  expect(
+    screen.getByRole("heading", { level: 4, name: "Overrides" }),
+  ).toBeDefined();
   expect(model().placeholder).toBe("sonnet");
   expect(model().value).toBe("");
   expect(screen.getByText("npm ci")).toBeDefined();
@@ -151,7 +155,7 @@ test.each([
     const held = api();
     draw(held.ports);
     await chooseConfiguration(name);
-    fireEvent.click(screen.getByRole("button", { name: "Overrides" }));
+    creationMoreOpened();
     typeModel("opus");
     expect((await submitted(held.sent))["overrides"]).toStrictEqual({
       worker: {
@@ -165,7 +169,7 @@ test("the configuration's own model typed is kept in the box and sends no overri
   const held = api();
   draw(held.ports);
   await chooseConfiguration("development-sonnet");
-  fireEvent.click(screen.getByRole("button", { name: "Overrides" }));
+  creationMoreOpened();
   typeModel("sonnet");
   expect(model().value).toBe("sonnet");
   expect("overrides" in (await submitted(held.sent))).toBe(false);
@@ -175,7 +179,7 @@ test("a field overridden and given back sends no override for it", async () => {
   const held = api();
   draw(held.ports);
   await chooseConfiguration("development-sonnet");
-  fireEvent.click(screen.getByRole("button", { name: "Overrides" }));
+  creationMoreOpened();
   fireEvent.click(screen.getByRole("button", { name: "Override setup" }));
   const setup = screen.getByRole<HTMLTextAreaElement>("textbox", {
     name: "Setup",
@@ -193,7 +197,7 @@ test("choosing another configuration keeps what was overridden, and draws the re
   const held = api();
   draw(held.ports);
   await chooseConfiguration("development-sonnet");
-  fireEvent.click(screen.getByRole("button", { name: "Overrides" }));
+  creationMoreOpened();
   fireEvent.click(screen.getByRole("button", { name: "Override setup" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Setup" }), {
     target: { value: "make" },

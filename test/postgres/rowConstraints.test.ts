@@ -11,7 +11,11 @@ import {
   configurationMemoryMibMax,
   configurationMemoryMibMin,
 } from "../../src/contract/configurationDocument.ts";
-import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
+import {
+  configurationCanonicalCharsMax,
+  nativeHttpPathSegmentCharsMax,
+} from "../../src/contract/http.ts";
+import { workerHeldCredentialAbsences } from "../../src/contract/rosters.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import type pg from "pg";
@@ -297,6 +301,66 @@ test("an attempt admits exactly the image faults the contract names", async () =
       [...(known ?? "").matchAll(/'([^']+)'::text/gu)].map((each) => each[1]),
       [...workerImageFaults],
     );
+  });
+});
+
+test("an attempt ended for a credential not delivered keeps exactly the reasons and names the contract admits", async () => {
+  await migratedDatabase("credential_absent", async (subject) => {
+    const known = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c
+          WHERE c.conrelid = 'execution_attempt'::regclass
+            AND c.conname = 'execution_attempt_credential_absent_is_whole'`,
+      )
+    ).rows[0]?.definition;
+    const reasons = /credential_absent_reason = ANY \(ARRAY\[([^\]]*)\]/u.exec(
+      known ?? "",
+    )?.[1];
+    assert.deepEqual(
+      [...(reasons ?? "").matchAll(/'([^']+)'::text/gu)].map((each) => each[1]),
+      [...workerHeldCredentialAbsences],
+    );
+    await releasedSeeded(subject);
+    await subject.query(
+      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null),
+    );
+    const client = await subject.connect();
+    const ended = async (credential: string, reason: string) => {
+      await client.query("BEGIN");
+      try {
+        await client.query(
+          `UPDATE execution_attempt
+              SET state='Lost',evidence='RunCredentialAbsent',ended_at=now(),
+                  credential_absent=$1,credential_absent_reason=$2`,
+          [credential, reason],
+        );
+        return undefined;
+      } catch (failure: unknown) {
+        return String(failure);
+      } finally {
+        await client.query("ROLLBACK");
+      }
+    };
+    try {
+      for (const reason of workerHeldCredentialAbsences)
+        assert.equal(await ended("c", reason), undefined, reason);
+      assert.equal(
+        await ended("c".repeat(nativeHttpPathSegmentCharsMax), "NotHeld"),
+        undefined,
+      );
+      for (const [credential, reason] of [
+        ["", "NotHeld"],
+        ["c".repeat(nativeHttpPathSegmentCharsMax + 1), "NotHeld"],
+        ["c", "Unknown"],
+      ] as const)
+        assert.match(
+          String(await ended(credential, reason)),
+          /execution_attempt_credential_absent_is_whole/u,
+          `${String(credential.length)} ${reason}`,
+        );
+    } finally {
+      client.release();
+    }
   });
 });
 

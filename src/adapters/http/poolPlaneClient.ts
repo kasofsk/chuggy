@@ -33,6 +33,7 @@
 import {
   contractVersionRefusalSchema,
   contractVersionRefusalStatus,
+  workerContractFeaturesHeader,
   workerContractHeader,
   workerContractRelease,
   workerContractVersionOf,
@@ -44,6 +45,7 @@ import {
   workerPoolSettlementPath,
   type AssignmentOutcome,
 } from "../../contract/workerPool.ts";
+import { workerContractClientFeatures } from "../../interpreter/workerContractClientFeatures.ts";
 import type {
   WorkerPoolPlane,
   WorkerPoolPolled,
@@ -215,6 +217,7 @@ async function poolPlanePolled(
         accept: "application/json",
         authorization: `Bearer ${token}`,
         [workerContractHeader]: workerContractRelease,
+        [workerContractFeaturesHeader]: workerContractClientFeatures,
       },
     });
   } catch {
@@ -284,6 +287,7 @@ async function poolPlaneSettled(
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
         [workerContractHeader]: workerContractRelease,
+        [workerContractFeaturesHeader]: workerContractClientFeatures,
       },
       body: poolPlaneOutcomeBody(outcome),
     });

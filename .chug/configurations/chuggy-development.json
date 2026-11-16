@@ -265,7 +265,11 @@
         }
       },
       "ci": ".chug/workloads/ci.json",
-      "review": ".chug/workloads/review.json"
+      "review": ".chug/workloads/review.json",
+      "approval": {
+        "runner": "Approval",
+        "instructions": "Read the ticket's brief and its change, and approve only what you would merge yourself."
+      }
     },
     "plans": {
       "standard": [
@@ -279,6 +283,26 @@
           "name": "review",
           "evaluators": [
             "review"
+          ]
+        }
+      ],
+      "approved": [
+        {
+          "name": "checks",
+          "evaluators": [
+            "ci"
+          ]
+        },
+        {
+          "name": "review",
+          "evaluators": [
+            "review"
+          ]
+        },
+        {
+          "name": "approval",
+          "evaluators": [
+            "approval"
           ]
         }
       ]

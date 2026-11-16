@@ -20,7 +20,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { configurationFollowings } from "../../src/contract/configurationDocument.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
-import { canonicalJson } from "../../src/interpreter/authoring.ts";
+import { canonicalJson } from "../../src/contract/repositoryConfigurationReadiness.ts";
 import {
   importRepositoryConfigurations,
   repositoryConfigurationImportReadiness,
@@ -28,15 +28,15 @@ import {
   type RepositoryConfigurationDeclaration,
   type RepositoryConfigurationReferenced,
 } from "../../src/interpreter/repositoryConfiguration.ts";
-import { repositoryConfigurationReferencesMax } from "../../src/interpreter/repositoryConfigurationReference.ts";
+import { repositoryConfigurationReferencesMax } from "../../src/contract/repositoryConfigurationReference.ts";
 import {
   selectedCatalogEntries,
   workloadConfigurationReadiness,
-} from "../../src/interpreter/workloadConfiguration.ts";
+} from "../../src/contract/workloadConfiguration.ts";
 import {
   repositoryDeclarationRoot,
   type RepositoryDeclarationFile,
-} from "../../src/interpreter/repositoryDeclaration.ts";
+} from "../../src/contract/repositoryDeclaration.ts";
 
 const repository = asRepositoryId("repository-one");
 const commit = asGitObjectId("a".repeat(40));
