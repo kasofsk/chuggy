@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
+import { githubPipelinePaths } from "../adapters/forge/githubPipelines.ts";
 import { kubernetesSessionLaunch } from "../adapters/kubernetes/sessionLaunch.ts";
 import {
   kubernetesNamespacePrecondition,
@@ -29,6 +30,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       policy: suppliedExecutionPolicy(config.policy),
       runtimeFacts: suppliedRuntimeFacts(config.runtimeFacts),
       practices: blessedPracticeCatalog,
+      pipelinePaths: githubPipelinePaths,
       workerRuntime: config.workers.runtimeImage,
       poolMemoryMib: config.poolMemoryMib,
       config: config.scheduler,

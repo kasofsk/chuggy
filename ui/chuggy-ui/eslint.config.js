@@ -58,6 +58,7 @@ export default tseslint.config(
         project: [
           "./tsconfig.json",
           "./tsconfig.tools.json",
+          "./tsconfig.rendered.json",
           "./tsconfig.terminal.json",
         ],
         tsconfigRootDir: import.meta.dirname,

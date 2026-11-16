@@ -7,10 +7,11 @@
  * live `Execution` frame lands in each and the card follows the same
  * high-water mark the run page's transcript does.
  *
- * A run of the reader's own that their runner may take, and has not begun,
- * says where it waits: on their runner, or on it coming back online where no
- * other runner may take it, or on their own account's agent where a pause
- * holds it. Only such a run reads the reader's runner.
+ * A run of the reader's own that has not begun says what the server answers
+ * it waits on of their runners: a live one, one coming back online, or
+ * runners none of which can run it, or their own account's agent where a
+ * pause holds the live ones. Only such a run is read again on the clock a
+ * session's standing is, since no frame says a runner polled or a pause ended.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -25,6 +26,7 @@ import { copyOrDataText } from "../../core/copy.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
 import {
   runnerWait,
+  runnerWaitLine,
   runnerWaitPause,
   runnerWaitWord,
 } from "../../core/myRunner.ts";
@@ -37,14 +39,15 @@ import {
 import type { RunNowAttempt } from "../../core/runNow.ts";
 import type { RunTimed } from "../../core/runTotals.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
-import { cycleLabel } from "../../core/ticketLedger.ts";
+import { sessionPlacementPolledMs } from "../../core/sessionRunners.ts";
+import { cycleLabel, executionStarting } from "../../core/ticketLedger.ts";
 import type { RunningNow } from "../../core/ticketSituation.ts";
 import { usePanelState } from "../api.ts";
 import { AgentPause } from "../AgentPause.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
-import { usePersonalRunner } from "../personalRunner.ts";
 import { useRunTranscript } from "../RunTranscript.tsx";
 import { ButtonLink } from "../ui/Button.tsx";
+import { LinePart } from "../ui/LinePart.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
@@ -124,40 +127,46 @@ function TicketNowLine(props: {
   );
 }
 
-/** A run of the reader's held for their own runners, with where they are
- * managed; or, where their own account has its agent paused, the pause and
- * where it is set. */
+/** A run of the reader's held for their own runners, the line itself a link to
+ * where they are managed; or, where their own account holds the live ones paused, the pause
+ * and where it is set. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionSummary;
   readonly nowMs: number;
 }): ReactNode {
-  const runner = usePersonalRunner(props.partition.tenant);
-  const text = useCopyText();
-  const wait = runnerWait(
-    props.execution,
-    runner.state === "Ready" ? runner.value : undefined,
-    props.partition.project,
+  const state = usePanelState(
+    executionQuery(
+      props.partition,
+      props.execution.execution,
+      "Streamed",
+      sessionPlacementPolledMs,
+    ),
   );
+  const text = useCopyText();
+  const execution = state.state === "Ready" ? state.value : props.execution;
+  const wait = runnerWait(execution);
   if (wait === undefined) return null;
-  const paused = runnerWaitPause(props.execution, wait);
+  const paused = runnerWaitPause(execution, wait);
   if (paused !== undefined)
     return (
       <AgentPause pause={paused} nowMs={props.nowMs}>
-        {" · "}
-        <Link to={settingsRoutes.project.usage} params={props.partition}>
-          {text({ id: "ticket-tab-usage" })}
-        </Link>
+        <LinePart>
+          <Link to={settingsRoutes.project.usage} params={props.partition}>
+            {text({ id: "ticket-tab-usage" })}
+          </Link>
+        </LinePart>
       </AgentPause>
     );
+  const word = runnerWaitWord(wait);
   return (
-    <Notice tone="parked" inline detail={text(runnerWaitWord(wait))}>
-      <span className="text-ink-3">
-        {" · "}
+    <Notice tone="parked" inline>
+      <LinePart first>
         <Link to={settingsRoutes.project.myRunner} params={props.partition}>
-          {text({ id: "ticket-now-personal-runners" })}
+          {text(runnerWaitLine)}
         </Link>
-      </span>
+      </LinePart>
+      {word === undefined ? null : <LinePart>{text(word)}</LinePart>}
     </Notice>
   );
 }
@@ -201,7 +210,9 @@ export function TicketNow(props: {
           highWaterBatch={transcript.highWaterBatch}
         />
       )}
-      {summary.mine === true && summary.ownerFallback !== undefined ? (
+      {summary.mine === true &&
+      summary.ownerFallback !== undefined &&
+      executionStarting(summary) ? (
         <TicketNowRunnerWait
           partition={partition}
           execution={summary}

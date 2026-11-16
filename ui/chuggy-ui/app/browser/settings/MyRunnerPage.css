@@ -1,0 +1,13 @@
+/* A member's own runners: in a narrow listing every press, menu, link and
+   value a finger opens is given a finger's height. */
+
+@layer page {
+  @container (max-width: 40em) {
+    .my-runner :is(.btn, a[href], [tabindex="0"]) {
+      display: inline-flex;
+      align-items: center;
+      min-width: var(--height-touch);
+      min-height: var(--height-touch);
+    }
+  }
+}

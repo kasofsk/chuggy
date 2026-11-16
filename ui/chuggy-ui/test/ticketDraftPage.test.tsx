@@ -31,6 +31,7 @@ import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   TicketPageEveryTab,
   ticketHeader,
+  ticketHeaderMenuEntries,
   ticketHeaderMenuOpened,
 } from "./ticketPageEveryTab.tsx";
 
@@ -208,11 +209,11 @@ function drawn(
 
 function standing(): string | null | undefined {
   return ticketHeader()
-    .querySelector(".ticket-header-state .ticket-state")
+    .querySelector(".page-header-status .ticket-state")
     ?.getAttribute("data-standing");
 }
 
-test("a draft never released draws the ticket page in Draft state, read from the draft", async () => {
+test("a draft never released draws the ticket page in Draft state, read from the draft, leading with Release and Edit in the menu", async () => {
   drawn();
   await settled();
   const header = ticketHeader();
@@ -222,8 +223,16 @@ test("a draft never released draws the ticket page in Draft state, read from the
   expect(within(header).getByRole("heading", { level: 1 }).textContent).toBe(
     "worker: lock contract 1.36.0 #335",
   );
-  expect(within(header).getByRole("button", { name: "Release" })).toBeDefined();
-  expect(within(header).getByText("Edit")).toBeDefined();
+  expect(
+    [...header.querySelectorAll(".btn-primary")].map(
+      (primary) => primary.textContent,
+    ),
+  ).toStrictEqual(["Release"]);
+  expect(await ticketHeaderMenuEntries()).toStrictEqual([
+    "Edit",
+    "Duplicate",
+    "Delete draft…",
+  ]);
   expect(screen.getByRole("navigation", { name: "Ticket" })).toBeDefined();
   expect(screen.getByText("None run yet")).toBeDefined();
   expect(screen.getByText(intent)).toBeDefined();
@@ -399,7 +408,7 @@ test("a reader the draft read refuses as well as the ticket read draws the page'
   drawn("Refused");
   await settled();
 
-  expect(document.querySelector("header.ticket-header")).toBeNull();
+  expect(document.querySelector("header.page-header")).toBeNull();
   expect(document.querySelector('[data-standing="Draft"]')).toBeNull();
   expect(screen.getByText(/^Not found/u)).toBeDefined();
 });

@@ -17,6 +17,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { TicketEdit } from "../app/browser/TicketEdit.tsx";
 import { operationStateSentence } from "../app/core/codeSentences.ts";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
@@ -49,6 +50,7 @@ import {
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { disclosed } from "./creationMore.ts";
 
 /**
  * Whether a wait ever ends. Held while the screen is drawn, so the fallback a
@@ -214,6 +216,7 @@ async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
       transport={openedStream().ports.fetch}
     >
       <TicketEdit />
+      <ConsoleWriteToasts />
     </ScreenHarness>,
   );
   await settled();
@@ -249,9 +252,12 @@ function revised(sent: readonly SentRequest[]): unknown {
 }
 
 async function retitleAndSubmit(): Promise<void> {
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: "Renamed" },
-  });
+  fireEvent.change(
+    disclosed(() => screen.getByPlaceholderText("what this ticket is called")),
+    {
+      target: { value: "Renamed" },
+    },
+  );
   waiting.held = false;
   await press("revise and release");
 }
@@ -332,8 +338,11 @@ test("the form waits for the read of a revision no longer offered, and then open
   });
   await settled();
   expect(
-    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
-      .value,
+    disclosed(() =>
+      screen.getByPlaceholderText<HTMLInputElement>(
+        "what this ticket is called",
+      ),
+    ).value,
   ).toBe("Ship it");
   expect(configurationChosen()).toContain("development-opus");
 });
@@ -353,6 +362,17 @@ test("a ticket moved off a name no longer offered leaves the screen once its upd
     configurationRevision: "n-development",
   });
   expect(left.to).toStrictEqual(["/$tenant/$project/tickets/$ticket"]);
+});
+
+test("an update that lands says so in a success toast, since the screen it was sent from is left", async () => {
+  await drawEdit({ draft: pinned("development-opus", "o-opus") });
+  await chooseConfiguration("development");
+  await retitleAndSubmit();
+  const toast = document.querySelector(".toast");
+  expect(toast?.getAttribute("data-tone")).toBe("Success");
+  expect(toast?.querySelector(".toast-line")?.textContent).toBe(
+    "Ticket 12 saved",
+  );
 });
 
 test("a refused update of a ticket moved off such a name is said over what was typed", async () => {

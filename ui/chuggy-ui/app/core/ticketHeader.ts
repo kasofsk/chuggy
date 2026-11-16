@@ -213,7 +213,7 @@ function ticketHeaderLanded(
       newest.state === "Proposed"
         ? newest.word
         : base === undefined
-          ? text({ id: "ticket-landing-merged" })
+          ? text({ id: "ticket-finalization-merged" })
           : text({ id: "ticket-header-merged-into", args: { base } }),
     link: ticketHeaderLinkOf(newest.link, text),
   };
@@ -276,8 +276,6 @@ export interface TicketHeaderActions {
 const ticketHeaderMainOrder: readonly TicketActionName[] = [
   "ApproveEvaluation",
   "Reject",
-  "Approve",
-  "Decline",
   "Resume",
   "Dispatch",
 ];

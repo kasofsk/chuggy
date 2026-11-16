@@ -1,0 +1,144 @@
+/* ListFilter: the Filter control in a list's bar, marked while a filter is
+   set and holding how many; the panel it opens, a popover beside it or, on a
+   narrow page, a sheet risen from the screen's foot over a scrim, whose fields
+   stand in a column above its foot; and under the bar a mark for each filter
+   set, each a finger's height where the page is narrow. */
+
+@layer ui {
+  .list-selects > .btn.list-filter-toggle {
+    gap: var(--space-1);
+  }
+
+  .list-selects > .btn.list-filter-toggle[data-active] {
+    width: auto;
+    padding-inline: var(--space-2);
+    border-radius: calc(var(--control-height) / 2);
+    color: var(--tone-live);
+  }
+
+  .list-filter-panel {
+    z-index: var(--z-overlay);
+    box-sizing: border-box;
+    display: grid;
+    gap: var(--space-3);
+    width: var(--width-aside);
+    max-width: var(--radix-popover-content-available-width);
+    max-height: var(--radix-popover-content-available-height);
+    overflow-y: auto;
+    padding: var(--space-4);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-3);
+    font: var(--weight-regular) var(--text-md) / var(--leading-dense)
+      var(--font-prose);
+  }
+
+  .list-filter-panel:focus-visible {
+    outline: none;
+  }
+
+  .list-filter-title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  .list-filter-fields {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .list-filter-fields .select {
+    width: 100%;
+  }
+
+  .list-filter-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .list-filter-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-overlay) + 20);
+    background: var(--scrim);
+  }
+
+  .list-filter-panel.list-filter-sheet {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: calc(var(--z-overlay) + 30);
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - var(--space-7));
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    border-width: var(--hairline) 0 0;
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
+    animation: list-filter-sheet-in var(--duration-2) var(--ease-out);
+  }
+
+  /* In the sheet every control is a finger's height, and a field is typed at
+     the size a phone does not zoom to. */
+  .list-filter-sheet .select,
+  .list-filter-sheet .list-filter-foot > .btn {
+    min-height: var(--height-touch);
+    font-size: var(--text-unzoomed);
+  }
+
+  @keyframes list-filter-sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .list-filter-panel.list-filter-sheet {
+      animation: none;
+    }
+  }
+
+  .list-filter-marks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .list-filter-marks > li {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .btn.list-filter-mark {
+    max-width: 100%;
+    gap: var(--space-1);
+  }
+
+  .list-filter-mark-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .list-filter-cross {
+    flex: none;
+    width: var(--space-3);
+    height: var(--space-3);
+  }
+
+  @container (max-width: 40em) {
+    .btn.list-filter-mark {
+      min-height: var(--height-touch);
+    }
+  }
+}

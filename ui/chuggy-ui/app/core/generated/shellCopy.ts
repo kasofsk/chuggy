@@ -6,38 +6,22 @@ export interface ShellCopy {
   readonly "shell-nav": Record<never, never>;
   readonly "shell-nav-tickets": Record<never, never>;
   readonly "shell-nav-epics": Record<never, never>;
-  readonly "shell-nav-lead": Record<never, never>;
-  readonly "shell-nav-catalog": Record<never, never>;
-  readonly "shell-nav-settings": Record<never, never>;
-  readonly "shell-nav-repositories": Record<never, never>;
-  readonly "shell-nav-runners": Record<never, never>;
+  readonly "shell-nav-more": Record<never, never>;
   readonly "shell-view-only": Record<never, never>;
   readonly "shell-inbox": Record<never, never>;
   readonly "shell-inbox-unread": {
     readonly count: unknown;
   };
   readonly "shell-crumbs": Record<never, never>;
+  readonly "shell-skip": Record<never, never>;
   readonly "shell-details": Record<never, never>;
-  readonly "shell-settings": Record<never, never>;
-  readonly "shell-settings-theme": Record<never, never>;
-  readonly "shell-settings-theme-system": Record<never, never>;
-  readonly "shell-settings-theme-light": Record<never, never>;
-  readonly "shell-settings-theme-dark": Record<never, never>;
-  readonly "shell-settings-wording": Record<never, never>;
-  readonly "shell-settings-wording-standard": Record<never, never>;
-  readonly "shell-settings-wording-pseudo": Record<never, never>;
-  readonly "shell-settings-wording-vernacular": {
-    readonly name: unknown;
-  };
-  readonly "shell-settings-chat": Record<never, never>;
-  readonly "shell-settings-chat-right": Record<never, never>;
-  readonly "shell-settings-chat-left": Record<never, never>;
-  readonly "shell-settings-chat-bottom": Record<never, never>;
+  readonly "shell-account": Record<never, never>;
   readonly "shell-sign-out": Record<never, never>;
   readonly "shell-project": Record<never, never>;
   readonly "shell-projects-unavailable": Record<never, never>;
   readonly "shell-project-new": Record<never, never>;
   readonly "shell-project-none": Record<never, never>;
+  readonly "shell-project-welcome": Record<never, never>;
   readonly "shell-stream-reconnecting": Record<never, never>;
   readonly "shell-stream-not-live": Record<never, never>;
   readonly "shell-version": Record<never, never>;
@@ -46,10 +30,25 @@ export interface ShellCopy {
   readonly "shell-chat-size": Record<never, never>;
   readonly "shell-footer": Record<never, never>;
   readonly "shell-projects": Record<never, never>;
-  readonly "shell-projects-none": Record<never, never>;
-  readonly "shell-projects-none-detail": Record<never, never>;
   readonly "shell-projects-loading": Record<never, never>;
   readonly "shell-page-failed": Record<never, never>;
   readonly "shell-page-reload": Record<never, never>;
   readonly "shell-page-absent": Record<never, never>;
+  readonly "shell-welcome-title": Record<never, never>;
+  readonly "shell-welcome-account": {
+    readonly login: unknown;
+  };
+  readonly "shell-welcome-next": Record<never, never>;
+  readonly "shell-welcome-admin": {
+    readonly workspace: unknown;
+  };
+  readonly "shell-welcome-member": {
+    readonly workspace: unknown;
+    readonly roles: unknown;
+  };
+  readonly "shell-welcome-member-detail": Record<never, never>;
+  readonly "shell-welcome-admins": {
+    readonly admins: unknown;
+  };
+  readonly "shell-welcome-none-detail": Record<never, never>;
 }

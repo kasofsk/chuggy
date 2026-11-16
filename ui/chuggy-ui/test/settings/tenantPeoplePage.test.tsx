@@ -47,6 +47,8 @@ import {
   unscopedChatPath,
 } from "./tenantPeopleFixture.tsx";
 import { readFailedLines } from "../readFailedLines.ts";
+import { tableCards } from "../tableText.ts";
+import type { TableCard } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -97,6 +99,36 @@ test("the people are counted over their table, and a subject that is no account 
   ).toBeTruthy();
   expect(namedIn("Other identities")).toStrictEqual(["s-bob", "s-selector"]);
   expect(screen.queryByText("No account")).toBeNull();
+});
+
+test("each person is a card titled by their name, what they hold labelled under it, their Edit last, and what they hold none of left out", async () => {
+  await drawPeople();
+  const cards = (table: string): readonly TableCard[] =>
+    tableCards(screen.getByRole("table", { name: table }));
+  expect(cards("People")).toStrictEqual([
+    {
+      title: "ada@example.comYouada-l",
+      labels: ["Workspace", "Projects", undefined],
+      actionsLast: true,
+    },
+  ]);
+  expect(cards("Other identities").map((card) => card.title)).toStrictEqual([
+    "s-bob",
+    "s-selector",
+  ]);
+  const left = (name: string): readonly (string | null)[] =>
+    Array.from(
+      personRow(name).querySelectorAll("[data-empty]"),
+      (cell) => cell.querySelector(".tabular-label")?.textContent ?? null,
+    );
+  expect(left("ada@example.com")).toStrictEqual([]);
+  expect(left("s-bob")).toStrictEqual(["Projects"]);
+  expect(
+    within(personRow("ada@example.com"))
+      .getByRole("button", { name: "Edit ada@example.com" })
+      .closest("td")
+      ?.classList.contains("tabular-actions"),
+  ).toBe(true);
 });
 
 test("an answer with no account field draws its subjects among the people", async () => {
@@ -204,6 +236,33 @@ test("removing a project role sends that removal alone, and a project admin asks
     },
   ]);
   expect(listReads(drawn)).toBeGreaterThan(read);
+});
+
+test("a project is named by its name in a row and in the editor's grid, and addressed by its slug", async () => {
+  const drawn = await drawPeople({
+    inventory: () =>
+      answer({
+        projects: [
+          { tenant: peopleTenant, project: "atlas-web", name: "Atlas Web" },
+        ],
+      }),
+  });
+  await settled();
+  expect(projectsIn(personRow("ada@example.com"))).toStrictEqual([
+    "Atlas Web: Admin, Developer",
+  ]);
+  const editor = await editorOf("ada@example.com");
+  expect(boxesIn(editor, "Atlas Web")).toStrictEqual([
+    "Atlas Web Admin+",
+    "Atlas Web Developer+",
+    "Atlas Web Dispatcher",
+    "Atlas Web Viewer",
+  ]);
+  expect(boxesIn(editor, "beacon-api")[0]).toBe("beacon-api Admin");
+  await boxPressed(editor, "Atlas Web Admin");
+  expect(changesSent(drawn).map((sent) => sent.url)).toStrictEqual([
+    `/access/v1/tenants/${peopleTenant}/projects/atlas-web/people/s-ada/roles/Admin`,
+  ]);
 });
 
 test("granting a project role sends that grant alone", async () => {

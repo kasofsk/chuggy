@@ -50,7 +50,7 @@ import {
   repositoryDeclarationFileCharsMax,
   repositoryDeclarationRoot,
   repositoryDeclarationsMax,
-} from "../../src/interpreter/repositoryDeclaration.ts";
+} from "../../src/contract/repositoryDeclaration.ts";
 import {
   gitStandInEchoed,
   gitStandInFaulted,

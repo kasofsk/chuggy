@@ -1,14 +1,20 @@
-## The card drawn before there is a console, and why a session is not held.
+## The page drawn before there is a console, and why a session is not held.
 
-session-brand = { -brand-name }
+session-opening = Opening { -brand-name }
 session-loading = Loading…
-session-unconfigured = Not configured
+session-unconfigured = { -brand-name } is not configured
 session-unconfigured-unsaid = No reason given
-session-unreachable = Unreachable
+session-unconfigured-next = Ask whoever looks after this deployment to fix its settings.
+session-unreachable = { -brand-name } cannot be reached
 session-unreachable-unsaid = No answer
+session-unreachable-next = Make sure you are online, then retry.
 session-retry = Retry
-session-signed-out = Signed out
+session-sign-in-title = Sign in to { -brand-name }
+session-signed-out = You are signed out.
+session-signed-out-next = Sign in again to carry on.
 session-sign-in = Sign in
+session-changed-title = Signed in from another tab
+session-changed-next = Reload to carry on in that session.
 session-reload = Reload
 session-ended = Session ended
 session-unrenewed = this session could not be renewed

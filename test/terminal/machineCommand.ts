@@ -1,13 +1,14 @@
 /**
- * Every command `runner` runs on a machine, stood in for by one script: the
- * package manager, the runner package, the service manager, the login
- * manager, a container engine, git, and the commands that would ask for a
- * password.
+ * Every command `mcp` and `runner` run on a machine, stood in for by one
+ * script: the package manager, the runner package, Claude Code, the service
+ * manager, the login manager, a container engine, git, and the commands that
+ * would ask for a password.
  *
  * It is run as whichever of them a wrapper names, writes down the words it
  * was run with, what it was given to read and whether it leads a session of
  * its own, and then answers as the real one was found to: the runner
- * package's own lines, the files it writes under the home it is run in, and a
+ * package's own lines, the files it writes under the home it is run in, the
+ * servers Claude Code names in the configuration under that home, and a
  * registration, a pool's or with `--chat` the person's chat host's, redeemed
  * at the site it is pointed to. It answers from what a
  * case told the machine, and keeps what it changed beside the home. Nothing
@@ -112,6 +113,52 @@ function npm(): number {
     JSON.stringify({ name: "chuggy-linux", version: knobs.version }),
   );
   return said(0, "\nadded 12 packages in 3s\n");
+}
+
+/** The person's Claude Code configuration, where Claude Code keeps it. */
+const claudeConfig = join(
+  process.env["CLAUDE_CONFIG_DIR"] ?? home,
+  ".claude.json",
+);
+
+interface ClaudeConfig {
+  readonly projects?: Readonly<
+    Record<string, { readonly mcpServers?: Readonly<Record<string, unknown>> }>
+  >;
+}
+
+/** `claude mcp add|remove --scope local`, as Claude Code does them for the folder it is run in: a server named there, a name already there refused, and one removed only where it is there. */
+function claude(): number {
+  const [group, verb, scopeFlag, scope, server = ""] = argv;
+  if (group !== "mcp" || scopeFlag !== "--scope" || scope !== "local")
+    return said(1, "", "claude: no\n");
+  const config = existsSync(claudeConfig)
+    ? (JSON.parse(readFileSync(claudeConfig, "utf8")) as ClaudeConfig)
+    : {};
+  const folder = process.cwd();
+  const servers: Record<string, unknown> = {
+    ...config.projects?.[folder]?.mcpServers,
+  };
+  const added = verb === "add";
+  if (!added && verb !== "remove") return said(1, "", "claude: no\n");
+  if (added === Object.hasOwn(servers, server))
+    return said(
+      1,
+      "",
+      `MCP server ${server} ${added ? "already exists" : "not found"} in local config\n`,
+    );
+  if (added) {
+    const [command = "", ...args] = argv.slice(argv.indexOf("--") + 1);
+    servers[server] = { type: "stdio", command, args, env: {} };
+  } else delete servers[server];
+  written(
+    claudeConfig,
+    JSON.stringify({
+      ...config,
+      projects: { ...config.projects, [folder]: { mcpServers: servers } },
+    }),
+  );
+  return said(0, `${added ? "Added" : "Removed"} MCP server ${server}\n`);
 }
 
 function unitOf(file: string): string {
@@ -350,6 +397,8 @@ async function answered(): Promise<number> {
       return npm();
     case "chuggy-linux":
       return runner();
+    case "claude":
+      return claude();
     case "systemctl":
       return systemctl();
     case "loginctl":

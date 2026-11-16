@@ -1,7 +1,6 @@
 /**
  * The form's workspace as each answer of its two reads draws it, on the page
- * a project is made at and on the landing a reader with no project meets: the
- * choice and where it stands, which among several is on none until the reader
+ * a project is made at: the choice and where it stands, which among several is on none until the reader
  * says, the name field the making of a workspace shows, the loading field
  * nothing is sent from, the typed name a failed or cut-short read leaves, and
  * the empty state that stands in for the form.
@@ -23,7 +22,6 @@ import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ProjectCreationPage } from "../app/browser/ProjectCreation.tsx";
-import { Landing } from "../app/browser/routes.tsx";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { projectNameRule } from "../app/core/projectCreation.ts";
 import {
@@ -31,6 +29,9 @@ import {
   administered,
   answerLine,
   drawn,
+  errorOf,
+  errorUnder,
+  faulted,
   joined,
   pressed,
   ruleUnder,
@@ -82,7 +83,9 @@ afterEach(() => {
 });
 
 function created(): Promise<Response> {
-  return Promise.resolve(answer({ tenant: "acme", project: "atlas" }, 201));
+  return Promise.resolve(
+    answer({ tenant: "acme", project: "atlas", name: "atlas" }, 201),
+  );
 }
 
 function refused(): Promise<Response> {
@@ -101,8 +104,10 @@ const several = [
   administered("northwind"),
 ];
 
+/** The workspace's name box: the workspace itself where it is typed, or the
+ * name of the one New workspace makes. */
 function workspaceBox(): HTMLElement | null {
-  return screen.queryByRole("textbox", { name: "Workspace" });
+  return screen.queryByRole("textbox", { name: /^Workspace( name)?$/u });
 }
 
 /** The trigger of a choice that stands on no entry. */
@@ -117,14 +122,14 @@ test("one workspace the reader may add to is shown chosen, and the project is th
   expect(
     screen.getByRole("button", { name: "Workspace mimage" }),
   ).toBeDefined();
-  expect(
-    screen.getAllByRole("textbox").map((box) => box.getAttribute("aria-label")),
-  ).toStrictEqual(["Project"]);
+  expect(screen.getAllByRole("textbox")).toStrictEqual([
+    screen.getByRole("textbox", { name: "Project" }),
+  ]);
   expect(await workspaceEntries()).toStrictEqual(["mimage"]);
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "mimage", project: "atlas" },
+    { tenant: "mimage", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -204,7 +209,7 @@ test("the form sends the workspace the reader chose", async () => {
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -214,13 +219,13 @@ test("choosing another workspace takes a refusal's line down and sends under a n
   await workspaceChosen("acme");
   typed("Project", "atlas");
   await pressed();
-  expect(answerLine()?.textContent).toBe("Exists");
+  expect(errorUnder("Address")).toBe("Exists");
   await workspaceChosen("northwind");
-  expect(answerLine()).toBeNull();
+  expect(errorUnder("Address")).toBeNull();
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "acme", project: "atlas" },
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
   expect(posted[1]?.key).not.toBe(posted[0]?.key);
 });
@@ -238,13 +243,13 @@ test("the two names an answer never came for, stood on again, show its line agai
   expect(answerLine()?.textContent).toBe("Unreachable");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "acme", project: "atlas" },
-    { tenant: "acme", project: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
   ]);
   expect(posted[1]?.key).toBe(posted[0]?.key);
 });
 
-test("a press takes the last answer's line down until its own answer comes", async () => {
+test("a press takes the last answer's line down and says the project is being made until its own answer comes", async () => {
   const second = heldAnswer();
   const answers = [refused(), second.answered];
   const posted = served(
@@ -255,12 +260,14 @@ test("a press takes the last answer's line down until its own answer comes", asy
   await drawn(<ProjectCreationPage />);
   typed("Project", "atlas");
   await pressed();
-  expect(answerLine()?.textContent).toBe("Exists");
+  expect(errorUnder("Address")).toBe("Exists");
   await pressed();
-  expect(answerLine()).toBeNull();
+  expect(errorUnder("Address")).toBeNull();
+  expect(answerLine()?.textContent).toBe("Creating project…");
   second.release(await refused());
   await settled();
-  expect(answerLine()?.textContent).toBe("Exists");
+  expect(errorUnder("Address")).toBe("Exists");
+  expect(answerLine()).toBeNull();
   expect(posted).toHaveLength(2);
 });
 
@@ -324,8 +331,8 @@ test("a read arriving again that moves where the form stands takes the unanswere
   expect(answerLine()).toBeNull();
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
-    { tenant: "acme", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
+    { tenant: "acme", project: "atlas", name: "atlas" },
   ]);
   expect(again.posted[1]?.key).not.toBe(again.posted[0]?.key);
 });
@@ -346,7 +353,7 @@ test("a read arriving again moves nothing the reader chose", async () => {
   typed("Project", "atlas");
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -373,7 +380,7 @@ test.each([
     ).toBeDefined();
     await pressed();
     expect(again.posted.map((one) => one.body)).toStrictEqual([
-      { tenant: "northwind", project: "atlas" },
+      { tenant: "northwind", project: "atlas", name: "atlas" },
     ]);
   },
 );
@@ -433,7 +440,7 @@ test("a read arriving again that takes away the making of a workspace leaves not
     workspace: "acme",
   });
   await workspaceChosen("New workspace");
-  typed("Workspace", "brand-new");
+  typed("Workspace name", "brand-new");
   typed("Project", "atlas");
   await again.arrives(answer({}, 404));
   expect(workspaceUnchosen()).not.toBeNull();
@@ -490,7 +497,7 @@ test("a name typed over a read that answered none that no workspace is called is
   expect(workspaceBox()).toHaveProperty("value", "brand-new");
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "brand-new", project: "atlas" },
+    { tenant: "brand-new", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -537,7 +544,7 @@ test("the only workspace to add to is where a reader who may make another starts
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "mimage", project: "atlas" },
+    { tenant: "mimage", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -547,20 +554,22 @@ test("choosing New workspace shows its name field under the rule, and choosing a
   typed("Project", "atlas");
   await workspaceChosen("New workspace");
   expect(workspaceBox()).toHaveProperty("value", "");
-  expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
-  expect(ruleUnder("Workspace").className).not.toContain("text-tone-fail");
+  expect(ruleUnder("Workspace name").textContent).toBe(
+    copyTextEn(projectNameRule),
+  );
+  expect(faulted("Workspace name")).toBe(false);
   expect(submit()).toHaveProperty("disabled", true);
-  typed("Workspace", "Brand New");
-  expect(ruleUnder("Workspace").className).toContain("text-tone-fail");
+  typed("Workspace name", "Brand New");
+  expect(faulted("Workspace name")).toBe(true);
   expect(workspaceBox()?.getAttribute("aria-invalid")).toBe("true");
   expect(submit()).toHaveProperty("disabled", true);
   await workspaceChosen("northwind");
   expect(workspaceBox()).toBeNull();
-  expect(document.querySelector(".text-tone-fail")).toBeNull();
+  expect(document.querySelector(".form-field-error")).toBeNull();
   expect(submit()).toHaveProperty("disabled", false);
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "northwind", project: "atlas" },
+    { tenant: "northwind", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -568,7 +577,7 @@ test("a name typed for a new workspace that an entry is called is still the name
   served([], created, accessHolding(several, true));
   await drawn(<ProjectCreationPage />);
   await workspaceChosen("New workspace");
-  typed("Workspace", "acme");
+  typed("Workspace name", "acme");
   expect(
     screen.getByRole("button", { name: "Workspace New workspace" }),
   ).toBeDefined();
@@ -579,7 +588,7 @@ test("a name typed for a new workspace is gone once another entry is chosen", as
   served([], created, accessHolding(several, true));
   await drawn(<ProjectCreationPage />);
   await workspaceChosen("New workspace");
-  typed("Workspace", "abandoned");
+  typed("Workspace name", "abandoned");
   await workspaceChosen("northwind");
   await workspaceChosen("New workspace");
   expect(workspaceBox()).toHaveProperty("value", "");
@@ -589,13 +598,13 @@ test("the form sends the name typed for a new workspace, which choosing New work
   const posted = served([], created, accessHolding(several, true));
   await drawn(<ProjectCreationPage />);
   await workspaceChosen("New workspace");
-  typed("Workspace", "brand-new");
+  typed("Workspace name", "brand-new");
   await workspaceChosen("New workspace");
   expect(workspaceBox()).toHaveProperty("value", "brand-new");
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "brand-new", project: "atlas" },
+    { tenant: "brand-new", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -687,7 +696,7 @@ test.each([
     typed("Project", "atlas");
     await pressed();
     expect(posted.map((one) => one.body)).toStrictEqual([
-      { tenant: "typed-here", project: "atlas" },
+      { tenant: "typed-here", project: "atlas", name: "atlas" },
     ]);
   },
 );
@@ -702,7 +711,7 @@ test("the abilities read failing over one workspace to add to starts the typed n
   typed("Project", "atlas");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
-    { tenant: "mimage", project: "atlas" },
+    { tenant: "mimage", project: "atlas", name: "atlas" },
   ]);
 });
 
@@ -731,28 +740,24 @@ const unheld = {
 
 const unadministered = {
   access: accessHolding([joined("harbour"), joined("zephyr")]),
-  label: "No workspace to add to",
+  label: "Not a workspace admin",
   detail: "A workspace admin adds projects",
 };
 
 test.each([
-  ["the page a project is made at", "no workspace", "page", unheld],
-  ["the page a project is made at", "none to add to", "page", unadministered],
-  ["the no-project landing", "no workspace", "landing", unheld],
-  ["the no-project landing", "none to add to", "landing", unadministered],
+  ["no workspace", unheld],
+  ["none to add to", unadministered],
 ] as const)(
-  "%s draws one empty state and no form for a reader with %s",
-  async (_page, _reader, page, withheld) => {
+  "the page a project is made at draws one empty state and no form for a reader with %s",
+  async (_reader, withheld) => {
     const posted = served([], created, withheld.access);
-    await drawn(page === "page" ? <ProjectCreationPage /> : <Landing />);
+    await drawn(<ProjectCreationPage />);
     expect(
       screen
         .getAllByRole("heading", { level: 1 })
         .map((heading) => heading.textContent),
     ).toStrictEqual([withheld.label]);
     expect(screen.getByText(withheld.detail)).toBeDefined();
-    expect(screen.queryByText("No projects")).toBeNull();
-    expect(screen.queryByText("Create one to start")).toBeNull();
     expect(screen.queryByText("New project")).toBeNull();
     expect(screen.queryAllByRole("textbox")).toStrictEqual([]);
     expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
@@ -761,17 +766,49 @@ test.each([
   },
 );
 
-test("the no-project landing leads the choice with its own empty state", async () => {
-  served([], created, accessHolding([administered("mimage")]));
-  await drawn(<Landing />);
+test("the page's head is its one first-level heading", async () => {
+  served([], created, accessHolding(several));
+  await drawn(<ProjectCreationPage />);
   expect(
-    screen
-      .getAllByRole("heading", { level: 1 })
-      .map((heading) => heading.textContent),
-  ).toStrictEqual(["No projects"]);
-  expect(screen.getByText("Create one to start")).toBeDefined();
-  expect(
-    screen.getByRole("button", { name: "Workspace mimage" }),
-  ).toBeDefined();
-  expect(submit()).toBeDefined();
+    screen.getAllByRole("heading", { level: 1 }).map((one) => one.textContent),
+  ).toStrictEqual(["New project"]);
+});
+
+test("a refusal of the workspace chosen is drawn under the choice, which takes the focus", async () => {
+  served(
+    [],
+    () =>
+      Promise.resolve(
+        answer({ error: { code: "TenantNameReserved", message: "no" } }, 422),
+      ),
+    accessHolding(several),
+  );
+  await drawn(<ProjectCreationPage />);
+  await workspaceChosen("acme");
+  typed("Project", "atlas");
+  submit().focus();
+  await pressed();
+  expect(errorOf(workspaceChoice())).toBe("Reserved");
+  expect(workspaceChoice().getAttribute("aria-invalid")).toBe("true");
+  expect(document.activeElement).toBe(workspaceChoice());
+  expect(answerLine()).toBeNull();
+});
+
+test("a refusal of a new workspace is drawn under its name, which takes the focus", async () => {
+  served(
+    [],
+    () =>
+      Promise.resolve(
+        answer({ error: { code: "TenantTaken", message: "taken" } }, 409),
+      ),
+    accessHolding(several, true),
+  );
+  await drawn(<ProjectCreationPage />);
+  await workspaceChosen("New workspace");
+  typed("Workspace name", "brand-new");
+  typed("Project", "atlas");
+  await pressed();
+  expect(errorUnder("Workspace name")).toBe("Taken");
+  expect(errorOf(workspaceChoice())).toBeNull();
+  expect(document.activeElement).toBe(workspaceBox());
 });

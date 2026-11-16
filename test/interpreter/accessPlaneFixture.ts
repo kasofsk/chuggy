@@ -61,6 +61,7 @@ import {
   type SiteAccessKind,
   type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
+import type { AccessTenantNameStore } from "../../src/interpreter/accessTenantNames.ts";
 import {
   projectTenantGrant,
   type ProjectGrant,
@@ -444,8 +445,46 @@ export function accessMemoryCallerTenants(
   memory: AccessMemory,
   bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
   access: ProjectAccess = memory.access,
+  names?: AccessTenantNameStore,
 ): AccessCallerTenantsList {
-  return accessCallerTenants({ access, tuples: memory.reader }, { bounds });
+  return accessCallerTenants(
+    { access, tuples: memory.reader, names },
+    { bounds },
+  );
+}
+
+/** A display name store held in memory, `asked` each question it was put. */
+export interface TenantNameMemory extends AccessTenantNameStore {
+  readonly rows: Map<TenantId, string>;
+  readonly asked: (readonly TenantId[])[];
+}
+
+export function tenantNameMemory(
+  rows: Readonly<Record<string, string>> = {},
+): TenantNameMemory {
+  const held = new Map<TenantId, string>(
+    Object.entries(rows).map(([tenant, name]) => [asTenantId(tenant), name]),
+  );
+  const asked: (readonly TenantId[])[] = [];
+  return {
+    rows: held,
+    asked,
+    named: (tenants) => {
+      asked.push(tenants);
+      return Promise.resolve(
+        new Map(
+          tenants.flatMap((tenant) => {
+            const name = held.get(tenant);
+            return name === undefined ? [] : [[tenant, name] as const];
+          }),
+        ),
+      );
+    },
+    renamed: (tenant, displayName) => {
+      held.set(tenant, displayName);
+      return Promise.resolve();
+    },
+  };
 }
 
 /** The principal a subject is under the fixture's issuer. */
@@ -477,9 +516,10 @@ export function accessMemorySiteTenants(
   memory: AccessMemory,
   bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
   directory?: AccessDirectory,
+  names?: AccessTenantNameStore,
 ): AccessSiteTenantsList {
   return accessSiteTenants(
-    { access: memory.access, tuples: memory.reader, directory },
+    { access: memory.access, tuples: memory.reader, directory, names },
     { issuer: accessFixtureIssuer, bounds },
   );
 }

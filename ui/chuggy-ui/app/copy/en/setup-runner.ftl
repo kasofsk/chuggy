@@ -58,6 +58,10 @@ setup-runner-note-checked = the { -runner }'s own check passed
 setup-runner-note-checked-warned = the { -runner }'s own check passed, with a warning: { $warned }
 setup-runner-note-unit = the { -runner }'s service is installed: { $unit }
 setup-runner-note-unit-written = installed the { -runner }'s service, { $unit }
+# spells -run: to run is a verb here
+setup-runner-note-server-found = { -claude-code } in this folder runs { -brand-name }'s MCP server for { $project }, as { $path } names it
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-runner-note-server-added = named { -brand-name }'s MCP server for { $project } in { -claude-code }'s configuration for this folder, in { $path }; a { -claude-code } session started here from now on has its tools
 setup-runner-note-linger = your services keep running after you log out
 setup-runner-note-linger-on = set your services to keep running after you log out
 setup-runner-note-linger-on-unread = set your services to keep running after you log out, not having learned whether they already did
@@ -72,6 +76,7 @@ setup-runner-note-hosted = { -hosted-runs } take the work of { $project }, so th
 setup-runner-note-chat-host = this machine is registered as your { -chat-host }, in { $path }
 setup-runner-note-chat-host-gone = { $path } registered this machine as your { -chat-host }, and the { -site } no longer knows that registration
 setup-runner-note-chat-host-registered = registered this machine as your { -chat-host }, in { $path }
+setup-runner-note-chat-host-replaced = registered this machine as your { -chat-host }, in { $path }, in place of { $short }, whose sessions end
 # spells -brief-check: the chat host's own check is no brief's
 setup-runner-note-chat-checked = the { -chat-host }'s own check passed
 # spells -brief-check: the chat host's own check is no brief's
@@ -80,6 +85,8 @@ setup-runner-note-chat-unit = your { -chat-host }'s service is installed: { $uni
 setup-runner-note-chat-unit-written = installed your { -chat-host }'s service, { $unit }
 # spells -run: to run is a verb here
 setup-runner-note-chat-host-live = the { -site } sees this machine live as your { -chat-host }, so your { -thread(form: "plural") } in { $project } can run on it
+# spells -run: to run is a verb here
+setup-runner-note-chat-host-live-workspace = the { -site } sees this machine live as your { -chat-host }, so your { -thread(form: "plural") } in every { -project } of { $workspace } can run on it
 # spells -run: to run is a verb here
 setup-runner-note-chat-host-elsewhere = the { -site } sees your { -chat-host } live on another machine, so your { -thread(form: "plural") } in { $project } run there
 
@@ -132,6 +139,7 @@ setup-runner-read-permit = whether you may register { -chat-host(form: "a") }
 setup-runner-read-chat = whether you have { -chat-host(form: "a") }
 setup-runner-unread-refused-found = the { -site } does not show you { $project } or { $what }
 setup-runner-unread-refused-tell = The { -brand-name } { -site } does not show you what { -runner(form: "a") } for { $project } is set up from, { $left }. { -role-admin(case: "upper", form: "a") } of the { -workspace } can see it, or can give you the access to. Tell me if your access changes.
+setup-runner-unread-refused-workspace-tell = The { -brand-name } { -site } does not show you { $workspace } or { $what }, { $left }. { -role-admin(case: "upper", form: "a") } of the { -workspace } can see it, or can give you the access to. Tell me if your access changes.
 setup-runner-unread-refused-when = if the person says their access has changed
 # The outcome is the reading's own name for how it failed, which is code.
 setup-runner-unread-found = the { -site } did not say of { $project } { $what } ({ $outcome })
@@ -145,6 +153,8 @@ setup-runner-mac-found = this machine is a Mac, and { setup-runner-mac-none }
 # spells -run: to run is a verb here
 setup-runner-mac-tell = { setup-runner-mac-none } and cannot set one up here, { setup-runner-unchanged }. A Mac runs one with { $program }, added by hand, and a Linux machine runs one too. Tell me once one is running.
 setup-runner-mac-when = once the person says { -runner(form: "a") } is running
+setup-runner-mac-chat-found = this machine is a Mac, and { setup-program } makes a machine your { -chat-host } only on Linux
+setup-runner-mac-chat-tell = { setup-program } makes a machine your { -chat-host } only on Linux and cannot make this one it, { setup-runner-unchanged }. To make it your { -chat-host } by hand, { $byHand }. Tell me once it is running.
 setup-runner-serviceless-found = this machine's user services did not answer { $command }
 # spells -run: to run is a verb here
 setup-runner-serviceless-tell = { setup-program } runs the { -runner } as a service of yours, and this machine's user services did not answer, { setup-runner-unchanged }. The { -runner }'s guide says how it is run by hand: { $guide }. Tell me if you want me to try again.
@@ -170,6 +180,15 @@ setup-runner-unwritten-when = once { $path } can be made
 setup-runner-act-install = { $case ->
     [upper] Installing the { -runner } package
    *[lower] installing the { -runner } package
+}
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-runner-act-server-removed = { $case ->
+    [upper] Removing the other { -brand-name } MCP server from { -claude-code }'s configuration for this folder
+   *[lower] removing the other { -brand-name } MCP server from { -claude-code }'s configuration for this folder
+}
+setup-runner-act-server-added = { $case ->
+    [upper] Adding { -brand-name }'s MCP server to { -claude-code }
+   *[lower] adding { -brand-name }'s MCP server to { -claude-code }
 }
 setup-runner-act-register = { $case ->
     [upper] Registering this machine
@@ -222,6 +241,14 @@ setup-runner-failed-unseen = ended well, and what it makes is not at { $path }
 setup-runner-act-found = { $act } { $failed }
 # spells -work-stage: to work is a verb here
 setup-runner-act-tell = { $act } did not work, so the { -runner } is not set up yet. { setup-runner-picked-up }
+# spells -work-stage: to work is a verb here
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-runner-act-tell-server = { $act } did not work, so your agent has no { -brand-name } tools yet. { setup-runner-picked-up }
+setup-runner-unpackaged-found-none = the { -runner } package, { $program }, is not installed here
+setup-runner-unpackaged-found = the { -runner } package here is { $versioned }, and { setup-program } needs { $least } or later
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-runner-unpackaged-tell = The { -runner } package, { $program }, is installed by the MCP step, which gives your agent { -brand-name }'s tools for { $project }, and it is not here at a version this step can use, { setup-runner-unchanged }. With your yes I will install it and name its MCP server in { -claude-code } here, and then set up the { -runner }. Tell me if you want me to go ahead.
+setup-runner-unpackaged-when = once the person says yes to { $program } and { -brand-name }'s MCP server on this machine
 # spells -work-stage: to work is a verb here
 setup-runner-service-refused-tell = { $act } did not work, so the { -runner } is not set up yet: the { -runner } package would not write it over the service already at { $path }. If that one is left from { -runner(form: "a") } set up before, remove it, and tell me once you have or if you want me to try again.
 setup-runner-service-refused-when = once the person says { $path } is removed, or asks to try again
@@ -321,11 +348,23 @@ setup-runner-permit-hosted = { -hosted-runs(case: "upper") } take the work on { 
 # spells -run: to run is a verb here
 # spells -turn: to turn on is a verb here
 setup-runner-permit-tell = { $work } Your { -thread(form: "plural") } there run only on your { -chat-host }, and the { -workspace } does not let you register one yet. { -role-admin(case: "upper", form: "a") } of the { -workspace }, you if you are one, turns on { -personal-runner(case: "upper", form: "plural") } for you on its People page, { $people }, with Edit on your row. Tell me once it is on.
+# A page and a button are named as the console draws them.
+# spells -turn: to turn on is a verb here
+setup-runner-permit-workspace-tell = The { -workspace } does not let you register { -chat-host(form: "a") } yet. { -role-admin(case: "upper", form: "a") } of the { -workspace }, you if you are one, turns on { -personal-runner(case: "upper", form: "plural") } for you on its People page, { $people }, with Edit on your row. Tell me once it is on.
 setup-runner-permit-when = once the person says { -personal-runner(case: "upper", form: "plural") } is on for them in the { -workspace }
 setup-runner-offline-found = your { -chat-host } is another machine, registered and not running
 # spells -run: to run is a verb here
 setup-runner-offline-tell = Your { -thread(form: "plural") } in { $project } run only on your { -chat-host }, which is another machine, registered and not running. { -role-member(case: "upper", form: "a") } has one { -chat-host }, so making this machine it would replace that one. Start it on its machine, or remove it on your { -personal-runner(case: "upper", form: "plural") } page, { $runners }, for this machine to be it instead. Tell me once you have done either.
 setup-runner-offline-when = once the person says their { -chat-host } is running, or that they removed it
+setup-runner-held-live = live
+setup-runner-held-offline = registered and not running
+setup-runner-held-found = your { -chat-host } is another machine, { $short }, { $state }
+setup-runner-held-replacing = With your yes I will register this machine in its place, running this command again with { $flag } { $short }.
+# spells -run: to run is a verb here
+setup-runner-held-tell = Your { -chat-host } is another machine, { $short }, { $state }, and your { -thread(form: "plural") } run only on it. { -role-member(case: "upper", form: "a") } has one { -chat-host }, so registering this machine ends the sessions of { $short }. { $replacing } Tell me if you want this machine to be it.
+setup-runner-held-when = once the person says yes to this machine as their { -chat-host } in place of { $short }, ending its sessions
+setup-runner-mismatched-found = the { -chat-host } { $flag } names is not your { -chat-host }, { $short }, so nothing was replaced
+setup-runner-mismatched-tell = The { -chat-host } { $flag } names is not the one the { -site } holds for you, so nothing was replaced. Your { -chat-host } is another machine, { $short }, { $state }, and registering this machine ends its sessions. { $replacing } Tell me if you want this machine to be it.
 setup-runner-chat-login-linked-why = is handed the { -runner }'s { $credential } only as a file of its own, and { $path } is a symbolic link
 setup-runner-chat-login-shared-why = is handed the directory of the { -runner }'s { $credential } whole, and { $path } shares its directory with other files
 # The setting's name is the settings file's own, which is code.

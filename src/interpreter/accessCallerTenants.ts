@@ -13,6 +13,9 @@
  * tenant listed and never inferred from a role, for the reason
  * `./accessAbilities.ts` gives.
  *
+ * EACH TENANT IS NAMED BY ITS DISPLAY NAME, read for the tenants listed in one
+ * question of the store, as `./accessTenantNames.ts` answers one.
+ *
  * TWO BOUNDS HOLD. The listing spends the budget every read spends, and
  * `tenantsMax` bounds the tenants listed, the first in name order, which are
  * all `AdministerTenant` is asked of. Either cutting the answer says so as
@@ -35,6 +38,10 @@ import {
 } from "./accessPlane.ts";
 import type { Principal } from "./principal.ts";
 import {
+  accessTenantDisplayNames,
+  type AccessTenantNameStore,
+} from "./accessTenantNames.ts";
+import {
   projectAccessObjectTenant,
   projectAccessTenantNamespace,
   type ProjectAccess,
@@ -44,6 +51,7 @@ import type { TenantId } from "./projectStore.ts";
 export interface AccessCallerTenantsPorts {
   readonly access: ProjectAccess;
   readonly tuples: AccessTupleReader;
+  readonly names?: AccessTenantNameStore | undefined;
 }
 
 export interface AccessCallerTenantsSettings {
@@ -79,11 +87,14 @@ async function accessCallerTenantsRead(
   }
   const listed = [...held.keys()].sort();
   if (listed.length > settings.bounds.tenantsMax) budget.truncated = true;
+  const answered = listed.slice(0, settings.bounds.tenantsMax);
+  const displayName = await accessTenantDisplayNames(ports.names, answered);
   const tenants: AccessCallerTenant[] = [];
-  for (const tenant of listed.slice(0, settings.bounds.tenantsMax)) {
+  for (const tenant of answered) {
     const roles = held.get(tenant) ?? new Set();
     tenants.push({
       tenant,
+      displayName: displayName(tenant),
       roles: accessTenantRoles.filter((role) => roles.has(role)),
       administer: await accessTenantHeld(
         ports.access,

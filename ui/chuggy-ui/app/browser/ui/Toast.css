@@ -1,5 +1,8 @@
-/* Toast: lines stacked in the page's lower corner, across the foot on a
-   phone, each a danger wash with its Dismiss at the end. */
+/* Toast: lines stacked in the page's lower corner, each its tone's word and
+   mark, its line, and its Dismiss at the end; a failure on a danger wash, a
+   success on the surface. On a phone the lines are across the head of the
+   screen, clear of its unsafe edge, since the foot holds the chat's strip and
+   a composer that grows as it is written in. */
 
 @layer ui {
   .toast-viewport {
@@ -16,6 +19,16 @@
     outline: none;
   }
 
+  @media (max-width: 40em) {
+    .toast-viewport {
+      inset-block-start: 0;
+      inset-block-end: auto;
+      padding-block-start: calc(var(--space-2) + env(safe-area-inset-top));
+      padding-inline-start: calc(var(--space-2) + env(safe-area-inset-left));
+      padding-inline-end: calc(var(--space-2) + env(safe-area-inset-right));
+    }
+  }
+
   .toast-viewport:empty {
     display: none;
   }
@@ -25,12 +38,25 @@
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-    background: var(--wash-fail);
+    background: var(--surface-1);
     color: var(--ink-1);
     border: var(--hairline) solid var(--edge-strong);
     border-radius: var(--radius-3);
     font: var(--weight-regular) var(--text-md) / var(--leading-dense)
       var(--font-prose);
+  }
+
+  .toast[data-tone="Failure"] {
+    background: var(--wash-fail);
+  }
+
+  .toast-said {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
   }
 
   .toast-line {

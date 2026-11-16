@@ -23,6 +23,7 @@
   "ticketListQuery": {
     "search": "q: from 1 to 200 characters once trimmed; a ticket matches where its title holds them, ignoring case and with every character as itself, or where they are its number, whole, with or without a leading #; the answer carries matched, how many tickets the read selects across the project",
     "creator": "creator: one principal, encoded as a ticket's creator is; only the tickets that member filed, and the answer carries matched as a search's does",
+    "owner": "owner: one principal, encoded as a ticket's owner is; only the tickets that member owns, and the answer carries matched as a search's does",
     "active": "active=true: the tickets neither Done nor Revoked, and those that became either within the last 24 hours",
     "order": "omit order: by ticket, ascending, resumed by after; RecentActivity: last activity first; Newest and Oldest: by ticket, descending and ascending; each resumed by a cursor of its own that another order refuses",
     "composition": "each composes with phase and with the others",
@@ -58,22 +59,27 @@
   "inbox": "one entry for each ticket a person is needed for: one in Escalated, one with an open native action, one a refusal of the lead's stands on that the ticket has not moved past, and one a decision held for approval names, which a reader who may not dispatch is shown none of, nor counted; each entry is the row the tickets list answers, latestExecution included, with the ticket's open actions, those refusals and held decisions; last activity first as the tickets list orders it, resumed by the cursor a page answers, and count is every ticket the inbox holds, on every page",
   "landingQueues": "for each reference a Serialized or Stacked ticket of the project holds or waits on, by repository and then target: its repository, the target its briefs name, absent where they name none, which is not resolved to the repository's default, so a ticket naming the default and one naming none are in two queues; the ticket holding it and the tickets waiting on it in rank order, each by number; a ticket ranks from its first finalization request while it is in Work, Evaluation or Finalization, and a Direct ticket, a pull request, a landing of nothing and a ticket naming no repository are in none; where more tickets rank than one read answers, the earliest-ranked are answered and truncated is true, so a queue answered has its holder and its earliest waiters and one whose every ticket ranks later is left out; it is read as the project's tickets are, written with no event, and polled",
   "threadLimit": "a member holds at most their limit of open threads in a project, 10 until an administrator of the project sets theirs; opening is idempotent on the key its client sends, answering the thread that key opened whatever its state, and an open at the limit is refused ThreadLimitReached; a limit lowered below what a member holds closes nothing",
-  "forgeInstallations": "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
-  "projectCreation": "a principal creates a project in a tenant it administers, or, where the site permits it to create a tenant, in a tenant no grant holds, which it then administers, and a caller the site does not permit is refused for such a tenant before anything is written; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most 39 lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named access, api, auth, forge, health, invite, projects, tenants, and its creator repeating the request, under any idempotency key, answers the same project",
+  "forgeInstallations": "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is released only with its workspace's deletion",
+  "projectCreation": "a principal creates a project in a tenant it administers, or, where the site permits it to create a tenant, in a tenant no grant holds, which it then administers, and a caller the site does not permit is refused for such a tenant before anything is written; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most 39 lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named access, api, auth, forge, health, invite, projects, tenants, the project's display name is any text of at most 100 characters once trimmed that is not empty and holds no control character, and is answered with the project when it is created and listed, and its creator repeating the request, under any idempotency key, answers the same project",
+  "unrunDeletion": "a tenant's administrator deletes a project that has never run work, and the site's administrator then a workspace holding no project: GET on the deletion route answers held, what keeps it — for a project a ReleasedTicket, an Execution, a Session, a WorkerPool or an ActionObservation, for a workspace a Project, a PersonalRunner, a ChatHost or a Session — empty where DELETE would delete it, which answers 204, or 409 DeletionHeld with held; a project's deletion removes its drafts, epics, bound repositories, imported configurations, settings and grants, and a workspace's its grants, invite links, forge claims and row, so its name may be taken again; a caller who may not delete it is answered not found",
+  "ticketTake": "a member who may file drafts takes a released ticket that is neither Done nor Revoked, which makes them its owner, the member its next execution is placed for: a take names no member but its caller, replaces a taker before them, and answers AlreadyOwner where the caller owns it already; its taker alone returns it, to its creator; an execution keeps the owner it was registered under; a draft never released is refused Unreleased, a Done or Revoked ticket TicketDone or TicketRevoked, a return by anyone but the taker NotTaker, the site's selector TakerNotAPerson, and every session bearer but a thread's, which takes and returns as its member; every take and return is kept",
   "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
   "repositoryLanding": "a repository's landing default is the finalization a ticket in it lands by unless its brief or its finalizer names one: a GitMerge by its mode and its policy, a PullRequest, or None, and never a reference, which stays the brief's; a binding answers it as finalization and its mode alone as landing, a write names it either way, one named by its mode alone ordered Direct, and it is written whole against the value the writer read; a ticket whose landing is None names no reference to land on",
   "repositoryRetirement": "a retired repository stays readable by name, stops being the one a session is placed against, the importer or the import route reads, a brief may name or the credential route mints for, and is free for any project to bind; this route only retires and repeating it changes nothing, and binding the repository again here reinstates it unless another project now holds it",
   "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
   "executionPlacement": "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
   "sessionPlacement": "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead: a thread and an inquiry to its member's chat host and the lead to any of the project's pools, so a member with no chat host for their thread or inquiry is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner or host is registered and has polled lately",
-  "ownerFallback": "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
+  "ownerFallback": "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs offered its agent has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
   "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
-  "personalRunnerRegistration": "a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold 16, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read, each at a priority, High, Normal or Low, Normal where the addition names none; of the work they could take now, a ticket's that a runner has already started is taken first, then a higher project's; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live",
-  "agentAccounts": "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries pause with it, the lead of a pool they registered always pausing with it, each window's newest reading and when it was read, the newest limit a provider stopped it at, and the pause these come to now, which lasts until the latest reason holding it ends; a paused agent's work is taken by none of their runners and pools; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent",
+  "personalRunnerRegistration": "a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold 16, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read, each at a priority, High, Normal or Low, Normal where the addition names none; of the work they could take now, a ticket's that a runner has already started is taken first, then a higher project's; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, each of their runners' newest poll and whether it is live, and each agent their runners are paused for, which is one where every runner of theirs offered it, of those polling now where any is, holds the pause of the credentials it named, or the agent's own where it named none, with the one that ends first",
+  "agentAccounts": "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries pause with it, the lead of a pool they registered always pausing with it, each window's newest reading across its credentials and when it was read, the newest limit a provider stopped it at across them, and the pause these come to now, which holds only while every credential their live runners name of it is paused and lasts until the earliest of those ends, or, where those runners name none, holds while any credential is paused and lasts until the latest reason holding it ends; and each credential it holds a reading or a limit of, by name, with each window's reading of that credential and the pause holding it alone, which a press of the agent lets one claim through as it does the agent's; a runner, pool or chat host of theirs that named credentials of a paused agent takes its work, a pool's lead and a chat host's threads and inquiries among it, while any of those is free, and one that named none takes none of it; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent; retiring a credential by its name drops its readings and its limit, so the account reads it no more until a run reports it again, is not found where none is held under that name, and is refused CredentialInUse while a live runner of theirs names it unless it is off; turning a credential off by its name, which needs no reading or limit of it, holds every runner of theirs off it until they turn it on again, its pause reading off with no end, a thread or inquiry waiting on it whatever their option, a ticket held only by it reading off rather than a resume time, and an off credential pausing an agent no live runner names credentials of only by its own readings and limit; it is refused OffFull while as many of that agent's credentials are off as the bound admits, and turning on one that is not off is not found",
   "chatHostRegistration": "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
+  "appearance": "a caller reads and writes their own themes and their own global choice alone, keyed by their principal and no workspace, and no route names another principal: a theme is a document, created under a number never given to another theme and answered with it, read, written whole, which is also how it is renamed, and deleted; a caller holds at most 24, and a creation past that is refused ThemeLimitReached; a document is refused InvalidRequest where it fails its schema and ThemeContrastInsufficient where it draws a pair below the contrast the pair needs; the choice is a built-in by its id or a theme of the caller's by its number, written whole, refused ThemeNotFound where it names none of theirs, and cleared; deleting the theme it names clears it, and a caller holding none reads no choice",
+  "projectAppearance": "a project wears for each reader the first theme of four layers that names one: their own for the project, the project's default, their global choice, and the built-in default; the project's default is a document the project keeps, not a reference, read by anyone who may read the project, written whole and cleared by an administrator, and refused as a theme of a person's own is; a reader's own for the project is a built-in by its id or a theme of theirs by its number, written whole, refused ThemeNotFound where it names none of theirs, cleared, and read and written by that reader alone; deleting the theme it names clears it; the resolved read answers the document that applies, the layer it came from and each layer's own value, a layer naming a theme that no longer exists answered as unset",
   "actionReports": "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
   "actionReach": "for each action a ticket's repository declares, whether what was reported of the action holds the commit the ticket landed at: Reached where its newest success does, Failed where its newest report is a failure that does, RolledBack where only a success beneath its newest, reported since the ticket landed, does, NotYet where none does, and Unknown where this server could not find out inside the time one read is given, which it answers rather than wait and a later read may answer otherwise; a mark read from a report shows it; a ticket that has landed nowhere, which one whose proposal a person is left to merge is, answers no repository, commit or actions; it is read as the ticket is and derived each time it is asked",
-  "ticketLandings": "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, AwaitingApproval while a person has an approval open, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
+  "nativeActionHistory": "every native action a ticket has had, open and settled, oldest fence first, resumed by the cursor a page answers, which names the ticket and no other read takes: its kind, its state, Open, Resolved or Withdrawn, the answer a Resolved one was given, the execution an EvaluationApproval asked about, and who answered it and when where that is recorded, which is on an answered EvaluationApproval alone; it is read as the ticket is",
+  "ticketLandings": "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
   "routes": {
     "contract": "/api/v1/contract",
     "configurationSchema": "/api/v1/configuration-schema",
@@ -86,12 +92,17 @@
     "forgeInstallationPermissions": "/api/v1/tenants/:tenant/forge-installations/:installationId/permissions",
     "projects": "/api/v1/projects",
     "project": "/api/v1/tenants/:tenant/projects/:project",
+    "projectDeletion": "/api/v1/tenants/:tenant/projects/:project/deletion",
+    "tenantDeletion": "/api/v1/tenants/:tenant/deletion",
     "tickets": "/api/v1/tenants/:tenant/projects/:project/tickets",
     "ticket": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket",
     "ticketNativeActions": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/native-actions",
+    "ticketNativeActionHistory": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/native-action-history",
     "ticketAgenticRefusals": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals",
     "ticketActionReach": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/action-reach",
     "ticketLandings": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/landings",
+    "ticketTake": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/take",
+    "ticketReturn": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/return",
     "landingQueues": "/api/v1/tenants/:tenant/projects/:project/landing-queues",
     "nativeActions": "/api/v1/tenants/:tenant/projects/:project/native-actions",
     "agenticRefusals": "/api/v1/tenants/:tenant/projects/:project/agentic-refusals",
@@ -134,6 +145,9 @@
     "executionPlacement": "/api/v1/tenants/:tenant/projects/:project/execution-placement",
     "sessionPlacement": "/api/v1/tenants/:tenant/projects/:project/session-placement",
     "ownerFallback": "/api/v1/tenants/:tenant/projects/:project/owner-fallback",
+    "projectTheme": "/api/v1/tenants/:tenant/projects/:project/appearance/theme",
+    "projectThemeOverride": "/api/v1/tenants/:tenant/projects/:project/appearance/override",
+    "projectAppearance": "/api/v1/tenants/:tenant/projects/:project/appearance",
     "hostedRuns": "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
     "abilities": "/api/v1/tenants/:tenant/projects/:project/abilities",
     "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
@@ -149,6 +163,11 @@
     "agentAccounts": "/api/v1/agent-accounts",
     "agentAccountSettings": "/api/v1/agent-accounts/:agent/settings",
     "agentAccountPresses": "/api/v1/agent-accounts/:agent/presses",
+    "agentAccountCredential": "/api/v1/agent-accounts/:agent/credentials/:credential",
+    "agentAccountCredentialOff": "/api/v1/agent-accounts/:agent/credentials/:credential/off",
+    "ownThemes": "/api/v1/appearance/themes",
+    "ownTheme": "/api/v1/appearance/themes/:theme",
+    "themeChoice": "/api/v1/appearance/choice",
     "chatHostRegistrationTokens": "/api/v1/tenants/:tenant/chat-host-registration-tokens",
     "chatHost": "/api/v1/tenants/:tenant/chat-host",
     "chatAbilities": "/api/v1/tenants/:tenant/chat/abilities",
@@ -874,7 +893,53 @@
                     },
                     "additionalProperties": false,
                     "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
-                  }
+                  },
+                  "description": "A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most 64 entries."
+                },
+                "plans": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                  },
+                  "additionalProperties": {
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "allOf": [
+                            {
+                              "pattern": "^(?:\\S(?:[\\s\\S]*\\S)?)?$"
+                            },
+                            {
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]*$"
+                            }
+                          ],
+                          "description": "The importer also holds that it is at most 64 UTF-16 code units."
+                        },
+                        "evaluators": {
+                          "minItems": 1,
+                          "maxItems": 100,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                          }
+                        }
+                      },
+                      "required": ["name", "evaluators"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "description": "A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most 64 entries."
                 }
               },
               "additionalProperties": false
@@ -906,7 +971,7 @@
             },
             "resolution": {
               "type": "string",
-              "enum": ["Resume", "Revoke", "Approve", "Decline", "Reject"]
+              "enum": ["Resume", "Revoke", "Approve", "Reject"]
             },
             "feedback": {
               "type": "string",
@@ -1835,7 +1900,53 @@
                 },
                 "additionalProperties": false,
                 "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
-              }
+              },
+              "description": "A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most 64 entries."
+            },
+            "plans": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "minItems": 1,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "allOf": [
+                        {
+                          "pattern": "^(?:\\S(?:[\\s\\S]*\\S)?)?$"
+                        },
+                        {
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]*$"
+                        }
+                      ],
+                      "description": "The importer also holds that it is at most 64 UTF-16 code units."
+                    },
+                    "evaluators": {
+                      "minItems": 1,
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                      }
+                    }
+                  },
+                  "required": ["name", "evaluators"],
+                  "additionalProperties": false
+                }
+              },
+              "description": "A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most 64 entries."
             }
           },
           "additionalProperties": false
@@ -2685,7 +2796,53 @@
                 },
                 "additionalProperties": false,
                 "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
-              }
+              },
+              "description": "A catalog's workloads this ticket overrides, by name: under a name the catalog holds, the fields of that workload it replaces, and under one it lacks, an evaluator this ticket adds, written whole in the catalog's workload shape and named by some plan. At most 64 entries."
+            },
+            "plans": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "minItems": 1,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "allOf": [
+                        {
+                          "pattern": "^(?:\\S(?:[\\s\\S]*\\S)?)?$"
+                        },
+                        {
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\ud800-\\udfff]*$"
+                        }
+                      ],
+                      "description": "The importer also holds that it is at most 64 UTF-16 code units."
+                    },
+                    "evaluators": {
+                      "minItems": 1,
+                      "maxItems": 100,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                      }
+                    }
+                  },
+                  "required": ["name", "evaluators"],
+                  "additionalProperties": false
+                }
+              },
+              "description": "A catalog's evaluation plans this ticket replaces or adds, by name, each written whole in the catalog's plan shape and naming workloads the catalog or this ticket's workloads hold. A plan running fewer positions of some workload than the plan the ticket's selection names in the catalog, or its default where the catalog names none, needs the project's skip_planned_evaluations permit. At most 64 entries."
             }
           },
           "additionalProperties": false
@@ -2771,6 +2928,380 @@
       },
       "additionalProperties": false
     },
+    "projectTheme": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "document": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "palette": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemes": {
+                      "type": "string",
+                      "const": "Light"
+                    },
+                    "light": {
+                      "type": "object",
+                      "properties": {
+                        "surface-0": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "bubble": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-3": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-strong": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-control": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-on-accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        }
+                      },
+                      "required": [
+                        "surface-0",
+                        "surface-1",
+                        "surface-2",
+                        "surface-inverse",
+                        "bubble",
+                        "ink-1",
+                        "ink-2",
+                        "ink-3",
+                        "ink-inverse",
+                        "edge",
+                        "edge-strong",
+                        "edge-control",
+                        "accent",
+                        "ink-on-accent"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["schemes", "light"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemes": {
+                      "type": "string",
+                      "const": "Dark"
+                    },
+                    "dark": {
+                      "type": "object",
+                      "properties": {
+                        "surface-0": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "bubble": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-3": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-strong": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-control": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-on-accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        }
+                      },
+                      "required": [
+                        "surface-0",
+                        "surface-1",
+                        "surface-2",
+                        "surface-inverse",
+                        "bubble",
+                        "ink-1",
+                        "ink-2",
+                        "ink-3",
+                        "ink-inverse",
+                        "edge",
+                        "edge-strong",
+                        "edge-control",
+                        "accent",
+                        "ink-on-accent"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["schemes", "dark"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemes": {
+                      "type": "string",
+                      "const": "Both"
+                    },
+                    "light": {
+                      "type": "object",
+                      "properties": {
+                        "surface-0": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "bubble": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-3": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-strong": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-control": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-on-accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        }
+                      },
+                      "required": [
+                        "surface-0",
+                        "surface-1",
+                        "surface-2",
+                        "surface-inverse",
+                        "bubble",
+                        "ink-1",
+                        "ink-2",
+                        "ink-3",
+                        "ink-inverse",
+                        "edge",
+                        "edge-strong",
+                        "edge-control",
+                        "accent",
+                        "ink-on-accent"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "dark": {
+                      "type": "object",
+                      "properties": {
+                        "surface-0": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "surface-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "bubble": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-1": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-2": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-3": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-inverse": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-strong": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "edge-control": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "ink-on-accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        }
+                      },
+                      "required": [
+                        "surface-0",
+                        "surface-1",
+                        "surface-2",
+                        "surface-inverse",
+                        "bubble",
+                        "ink-1",
+                        "ink-2",
+                        "ink-3",
+                        "ink-inverse",
+                        "edge",
+                        "edge-strong",
+                        "edge-control",
+                        "accent",
+                        "ink-on-accent"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["schemes", "light", "dark"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "textSize": {
+              "type": "string",
+              "enum": ["Small", "Standard", "Large", "Larger"]
+            },
+            "font": {
+              "type": "string",
+              "enum": ["System", "Humanist", "Serif"]
+            }
+          },
+          "required": ["name", "palette", "textSize", "font"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "personalRunnerProject": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -2837,9 +3368,12 @@
         "project": {
           "type": "string",
           "minLength": 1
+        },
+        "name": {
+          "type": "string"
         }
       },
-      "required": ["tenant", "project"],
+      "required": ["tenant", "project", "name"],
       "additionalProperties": false
     },
     "projectRepositoryBind": {
@@ -2983,6 +3517,19 @@
           ]
         },
         "pipelinesWritable": {
+          "type": "object",
+          "properties": {
+            "expected": {
+              "type": "boolean"
+            },
+            "wanted": {
+              "type": "boolean"
+            }
+          },
+          "required": ["expected", "wanted"],
+          "additionalProperties": false
+        },
+        "pipelinesRunnable": {
           "type": "object",
           "properties": {
             "expected": {
@@ -3249,6 +3796,410 @@
       "required": ["fiveHourPercent", "sevenDayPercent", "pausesThreads"],
       "additionalProperties": false
     },
+    "themeDocument": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "palette": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "schemes": {
+                  "type": "string",
+                  "const": "Light"
+                },
+                "light": {
+                  "type": "object",
+                  "properties": {
+                    "surface-0": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "bubble": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-3": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-strong": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-control": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-on-accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    }
+                  },
+                  "required": [
+                    "surface-0",
+                    "surface-1",
+                    "surface-2",
+                    "surface-inverse",
+                    "bubble",
+                    "ink-1",
+                    "ink-2",
+                    "ink-3",
+                    "ink-inverse",
+                    "edge",
+                    "edge-strong",
+                    "edge-control",
+                    "accent",
+                    "ink-on-accent"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["schemes", "light"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "schemes": {
+                  "type": "string",
+                  "const": "Dark"
+                },
+                "dark": {
+                  "type": "object",
+                  "properties": {
+                    "surface-0": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "bubble": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-3": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-strong": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-control": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-on-accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    }
+                  },
+                  "required": [
+                    "surface-0",
+                    "surface-1",
+                    "surface-2",
+                    "surface-inverse",
+                    "bubble",
+                    "ink-1",
+                    "ink-2",
+                    "ink-3",
+                    "ink-inverse",
+                    "edge",
+                    "edge-strong",
+                    "edge-control",
+                    "accent",
+                    "ink-on-accent"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["schemes", "dark"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "schemes": {
+                  "type": "string",
+                  "const": "Both"
+                },
+                "light": {
+                  "type": "object",
+                  "properties": {
+                    "surface-0": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "bubble": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-3": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-strong": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-control": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-on-accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    }
+                  },
+                  "required": [
+                    "surface-0",
+                    "surface-1",
+                    "surface-2",
+                    "surface-inverse",
+                    "bubble",
+                    "ink-1",
+                    "ink-2",
+                    "ink-3",
+                    "ink-inverse",
+                    "edge",
+                    "edge-strong",
+                    "edge-control",
+                    "accent",
+                    "ink-on-accent"
+                  ],
+                  "additionalProperties": false
+                },
+                "dark": {
+                  "type": "object",
+                  "properties": {
+                    "surface-0": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "surface-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "bubble": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-1": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-2": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-3": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-inverse": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-strong": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "edge-control": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "ink-on-accent": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-f]{6}$"
+                    }
+                  },
+                  "required": [
+                    "surface-0",
+                    "surface-1",
+                    "surface-2",
+                    "surface-inverse",
+                    "bubble",
+                    "ink-1",
+                    "ink-2",
+                    "ink-3",
+                    "ink-inverse",
+                    "edge",
+                    "edge-strong",
+                    "edge-control",
+                    "accent",
+                    "ink-on-accent"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["schemes", "light", "dark"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "textSize": {
+          "type": "string",
+          "enum": ["Small", "Standard", "Large", "Larger"]
+        },
+        "font": {
+          "type": "string",
+          "enum": ["System", "Humanist", "Serif"]
+        }
+      },
+      "required": ["name", "palette", "textSize", "font"],
+      "additionalProperties": false
+    },
+    "themeChoice": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "BuiltIn"
+            },
+            "theme": {
+              "type": "string",
+              "enum": ["chuggy", "harbour", "ember", "high-contrast"]
+            }
+          },
+          "required": ["kind", "theme"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "Owned"
+            },
+            "theme": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["kind", "theme"],
+          "additionalProperties": false
+        }
+      ]
+    },
     "threadMessage": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -3455,6 +4406,7 @@
                   "enum": [
                     "ProjectLead",
                     "ProjectPlacement",
+                    "ProjectPools",
                     "ProjectPermissions",
                     "WorkspacePeople",
                     "WorkspaceAccounts",
