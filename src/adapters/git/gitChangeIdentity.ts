@@ -9,6 +9,12 @@
  * and text conversion turned off, so prefixes, algorithm and drivers set on the
  * host's git do not change the answer.
  *
+ * THE DIFF CARRIES NO CONTEXT AND IS HASHED VERBATIM. Without context, an edit
+ * the target gained beside the ticket's lines is not part of the diff. A
+ * patch-id that strips whitespace reads a context line ` +x` as the added line
+ * `+x`; keeping the newlines a stripped hash never holds means no identity read
+ * here equals one taken from a diff with context and stripped.
+ *
  * A READ THAT DID NOT END WITH GIT'S ANSWER ANSWERS NOTHING: a commit pair
  * sharing no history, a diff past the output bound, and a git stopped at its
  * bound included. A diff git wrote empty is the empty change.
@@ -62,6 +68,7 @@ async function gitChangeIdentityDiff(
       "--no-replace-objects",
       "diff-tree",
       "-p",
+      "--unified=0",
       "--no-renames",
       "--no-ext-diff",
       "--no-textconv",
@@ -74,7 +81,7 @@ async function gitChangeIdentityDiff(
   return ran.stdout;
 }
 
-/** The stable patch-id of one diff, and nothing where git did not print one. */
+/** The verbatim patch-id of one diff, and nothing where git did not print one. */
 async function gitChangeIdentityPatchId(
   scratch: GitScratch,
   repository: RepositoryId,
@@ -84,7 +91,7 @@ async function gitChangeIdentityPatchId(
     repository,
     timeoutMsMax: scratch.options.localTimeoutMsMax,
     input: Buffer.from(diff, "latin1"),
-    argv: ["patch-id", "--stable"],
+    argv: ["patch-id", "--verbatim"],
   });
   if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
   const [patchId] = ran.stdout.trim().split(" ");

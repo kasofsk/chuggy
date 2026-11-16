@@ -1593,9 +1593,9 @@ test("a timeout that is no positive count of its unit, or is named in both units
   }
 });
 
-test("a git too old to write merge trees is refused by the floor", () => {
-  assert.equal(gitVersionAdmits("git version 2.37.9"), false);
-  assert.equal(gitVersionAdmits("git version 2.38.0"), true);
+test("a git too old to write merge trees or verbatim patch-ids is refused by the floor", () => {
+  assert.equal(gitVersionAdmits("git version 2.38.9"), false);
+  assert.equal(gitVersionAdmits("git version 2.39.0"), true);
   assert.equal(gitVersionAdmits("git version 3.0.1"), true);
   assert.equal(gitVersionAdmits("no version at all"), false);
 });
