@@ -563,7 +563,7 @@ test("only the address the issuer was given is read as its answer", async () => 
     statuses.push((await machine.browse(back.href)).status);
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
-  expect(statuses).toEqual([404, 404, 302, 400, 200]);
+  expect(statuses).toEqual([404, 404, 302, 400, 303]);
 });
 
 test("an answer with a code and no state, or sent as anything but a page load, is not read and the page goes on waiting", async () => {
@@ -582,7 +582,7 @@ test("an answer with a code and no state, or sent as anything but a page load, i
     statuses.push((await machine.browse(back.href)).status);
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
-  expect(statuses).toEqual([400, 405, 405, 200]);
+  expect(statuses).toEqual([400, 405, 405, 303]);
 });
 
 test("a page answered once answers nothing a second time", async () => {
@@ -674,7 +674,7 @@ test("an answer being read when the bound passes is read to its end", async () =
   expect(machine.files.get(setupFiles.signIn)).toContain("Waiting");
   machine.lock = undefined;
   await machine.advance(1_000);
-  expect((await answering).status).toBe(200);
+  expect((await answering).status).toBe(303);
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
 });
 
@@ -809,23 +809,28 @@ test("a wait that finds its listener gone writes over no page started since", as
   expect(noted(machine)).toMatchObject({ note: "Waiting", site: other });
 });
 
-test("each page the browser is shown is the catalog's words: nothing here for a request that is not the answer, already answered for a second answer, and signed in for the person's own", async () => {
+test("the person's own answer is sent to the site's home with no page, and a forged or second answer is shown the catalog's words", async () => {
   const machine = setupMachine();
-  const pages: string[] = [];
-  const shown = (answered: SetupAnswered): void => {
-    pages.push(answered.page === undefined ? "" : copyTextEn(answered.page));
-  };
+  const answers: SetupAnswered[] = [];
   machine.opened = async (address) => {
     const first = await machine.browse(address);
     const back = machine.authorized(first.location ?? "", true);
-    shown(await machine.browse(answer(machine, "code=code-1&state=forged")));
-    shown(await machine.browse(back));
-    shown(await machine.browse(back));
+    answers.push(
+      await machine.browse(answer(machine, "code=code-1&state=forged")),
+      await machine.browse(back),
+      await machine.browse(back),
+    );
   };
   expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
-  expect(pages).toEqual([
+  const [forged, own, second] = answers;
+  expect(own).toEqual({ status: 303, location: `${machineSite}/` });
+  expect([forged, second].map((shown) => shown?.status)).toEqual([400, 409]);
+  expect(
+    [forged, second].map((shown) =>
+      shown?.page === undefined ? "" : copyTextEn(shown.page),
+    ),
+  ).toEqual([
     "There is nothing here",
-    "Signed in to chuggy",
     "This sign-in page has already been answered",
   ]);
 });

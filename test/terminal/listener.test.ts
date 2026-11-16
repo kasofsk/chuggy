@@ -23,7 +23,6 @@ const closeWaitMs = 1_000;
 
 /** Every page the sign-in answers with, as `setupSignIn.ts` names them. */
 const outcomes: readonly Copy[] = [
-  { id: "setup-page-signed-in" },
   { id: "setup-page-unfinished" },
   { id: "setup-page-answered" },
   { id: "setup-page-nothing" },
