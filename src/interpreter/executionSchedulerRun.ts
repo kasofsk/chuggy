@@ -210,6 +210,7 @@ import {
   type PriorEvaluationReportsPort,
   type PriorWorkReports,
   type PriorWorkReportsPort,
+  type ProjectNorthStarPort,
   type ReadOnlyRepositoriesPort,
   type RuntimeFacts,
   type RuntimeFactsPort,
@@ -250,6 +251,8 @@ export interface ExecutionSchedulerService {
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
   readonly readOnlyRepositories: ReadOnlyRepositoriesPort;
+  /** What the execution's project is for, read at each prepare so a briefing carries the North Star as it stands. */
+  readonly northStar: ProjectNorthStarPort;
   readonly dependencyDeliveries: DependencyDeliveriesPort;
   readonly priorWorkReports: PriorWorkReportsPort;
   readonly priorEvaluationReports: PriorEvaluationReportsPort;
@@ -667,12 +670,27 @@ async function schedulerDependencyDeliveries(
   }
 }
 
-/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, the paths its push may not change, and what its dependencies delivered. */
+/** Reads what the execution's project is for, as its members last wrote it. */
+async function schedulerNorthStar(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<{ readonly northStar?: string } | BriefingUnready> {
+  const read = await service.northStar.northStar(execution.partition);
+  switch (read.read) {
+    case "NorthStar":
+      return read.northStar === undefined ? {} : { northStar: read.northStar };
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
+/** What a job is told of its project beyond its own ticket: what the project is for, the repositories it reads beside its own, whether its own lets pipelines be written, the paths its push may not change, and what its dependencies delivered. */
 async function schedulerProjectContext(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<
   | {
+      readonly northStar?: string;
       readonly readOnlyRepositories: readonly RepositoryId[];
       readonly pipelinesWritable?: boolean;
       readonly pushPathsRefused?: readonly string[];
@@ -684,7 +702,9 @@ async function schedulerProjectContext(
   if ("gathered" in readOnly) return readOnly;
   const dependencies = await schedulerDependencyDeliveries(service, execution);
   if ("gathered" in dependencies) return dependencies;
-  return { ...readOnly, ...dependencies };
+  const northStar = await schedulerNorthStar(service, execution);
+  if ("gathered" in northStar) return northStar;
+  return { ...northStar, ...readOnly, ...dependencies };
 }
 
 /** The refusal an ungatherable briefing input earns, one arm each. */

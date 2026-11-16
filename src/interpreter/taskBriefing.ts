@@ -175,6 +175,8 @@ import {
   briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
+  briefingNorthStarPreface,
+  briefingNorthStarUncarried,
   briefingPipelinesUnwritable,
   briefingRequiredResult,
   briefingReworkPreface,
@@ -313,6 +315,18 @@ export interface ReadOnlyRepositoriesPort {
   ): Promise<ReadOnlyRepositoriesRead>;
 }
 
+/**
+ * What reading an execution's project for its North Star found: the text its
+ * members wrote, none where they wrote none, or an outage kept apart from both.
+ */
+export type ProjectNorthStarRead =
+  | { readonly read: "NorthStar"; readonly northStar?: string }
+  | { readonly read: "Unavailable" };
+
+export interface ProjectNorthStarPort {
+  northStar(partition: Partition): Promise<ProjectNorthStarRead>;
+}
+
 /** The bounded summaries earlier work tasks reported for a review to understand, not verify. */
 export interface PriorWorkReports {
   readonly reports: readonly string[];
@@ -402,6 +416,16 @@ export const taskEnvelopeFabricBytesMax =
 /** What one composed invocation may weigh, which is what is left of the carrier. */
 export const taskInvocationBytesMax =
   taskEnvelopeBytesMax - taskEnvelopeFabricBytesMax;
+
+/**
+ * The most UTF-8 bytes a briefing's North Star section renders as, heading and
+ * standing lines included, which bounds the far longer text the settings door
+ * admits so it cannot take every ticket of its project past the carrier. It is
+ * half what a ticket's own intent may hold, so standing text never outweighs
+ * the ticket's own, and in bytes because the carrier `taskInvocationBytesMax`
+ * bounds counts bytes.
+ */
+export const briefingNorthStarBytesMax = briefIntentCharsMax / 2;
 
 /** Why a briefing could not be composed, each of them a fact about the pinned configuration. */
 export type BriefingFault =
@@ -567,6 +591,8 @@ export interface BriefingView {
   readonly pin: ConfigurationPin;
   readonly configuration: PinnedConfiguration;
   readonly runtime: RuntimeFacts;
+  /** What the project is for, as its members wrote it, absent where they wrote nothing. */
+  readonly northStar?: string;
   readonly readOnlyRepositories: readonly RepositoryId[];
   /** The paths a work task's push may not change, absent where its binding allows pipelines or its forge names none. */
   readonly pushPathsRefused?: readonly string[];
@@ -1037,6 +1063,97 @@ function briefingRuntimeLines(view: BriefingView): readonly string[] {
   ];
 }
 
+/** The UTF-8 bytes one text takes, which is what the carrier of a task counts. */
+function briefingUtf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).byteLength;
+}
+
+/** The UTF-8 bytes one code point takes. */
+function briefingUtf8CodePointBytes(codePoint: number): number {
+  if (codePoint < 0x80) return 1;
+  if (codePoint < 0x800) return 2;
+  return codePoint < 0x10000 ? 3 : 4;
+}
+
+/** The longest leading run of whole code points of `line` whose UTF-8 bytes fit `room`. */
+function briefingNorthStarLinesCut(line: string, room: number): string {
+  let bytes = 0;
+  let cut = 0;
+  for (const codePoint of line) {
+    const each = briefingUtf8CodePointBytes(codePoint.codePointAt(0) ?? 0);
+    if (bytes + each > room) break;
+    bytes += each;
+    cut += codePoint.length;
+  }
+  return line.slice(0, cut);
+}
+
+/**
+ * The North Star's lines a briefing carries, with a line it cannot print left
+ * out and counted rather than refusing the briefing, since the text is the
+ * project's and not the ticket's. The rest are admitted whole while they fit
+ * the room the heading, the standing line and the longest closing line could
+ * leave, and the first that does not is cut at its last whole code point that
+ * fits, with nothing after it carried.
+ */
+function briefingNorthStarLines(
+  northStar: string,
+  purpose: TaskPurpose,
+): readonly string[] {
+  const lines = northStar
+    .split(/\r\n|\r|\n/)
+    .filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return [];
+  const readable = lines.filter(
+    (line) => !taskConfigurationLineUnreadable(line),
+  );
+  const linesUnreadable = lines.length - readable.length;
+  const preface = briefingNorthStarPreface(purpose);
+  const heading = `## ${briefingHeading("ProjectNorthStar", purpose, "Agent")}`;
+  const closingMost = briefingNorthStarUncarried(
+    linesUnreadable,
+    readable.reduce((sum, line) => sum + textCodePointsCount(line), 0),
+  );
+  let room =
+    briefingNorthStarBytesMax -
+    briefingUtf8Bytes(`${heading}\n${preface}`) -
+    (closingMost === undefined ? 0 : briefingUtf8Bytes(closingMost) + 1);
+  const carried: string[] = [];
+  let codePointsUncarried = 0;
+  for (const line of readable) {
+    if (codePointsUncarried > 0) {
+      codePointsUncarried += textCodePointsCount(line);
+      continue;
+    }
+    const bytes = briefingUtf8Bytes(line) + 1;
+    if (bytes <= room) {
+      carried.push(line);
+      room -= bytes;
+      continue;
+    }
+    const cut = briefingNorthStarLinesCut(line, room - 1);
+    if (cut.length > 0) carried.push(cut);
+    codePointsUncarried += textCodePointsCount(line) - textCodePointsCount(cut);
+  }
+  const closing = briefingNorthStarUncarried(
+    linesUnreadable,
+    codePointsUncarried,
+  );
+  const section = [
+    preface,
+    ...carried,
+    ...(closing === undefined ? [] : [closing]),
+  ];
+  if (
+    briefingUtf8Bytes([heading, ...section].join("\n")) >
+    briefingNorthStarBytesMax
+  )
+    throw new RangeError(
+      "task briefing: the North Star section is past the room it is given",
+    );
+  return section;
+}
+
 /** A body for every section identity, which is what makes the order below a filter. */
 function briefingBodies(
   view: BriefingView,
@@ -1051,6 +1168,10 @@ function briefingBodies(
     RoleInstructions: task.framed
       ? briefingRoleInstructions(view.purpose, carrier)
       : [],
+    ProjectNorthStar:
+      briefed && view.northStar !== undefined
+        ? briefingNorthStarLines(view.northStar, view.purpose)
+        : [],
     TicketIntent:
       view.brief === undefined ? [] : briefingTicketIntentLines(view.brief),
     TicketLinks:
