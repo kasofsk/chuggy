@@ -34,6 +34,10 @@ import type { SessionEffort } from "../contract/http.ts";
 import type { SessionContextOffered } from "../contract/responses.ts";
 import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { SessionLiveEvent } from "../contract/sessionLive.ts";
+import type {
+  ThreadTicketWakeSetting,
+  ThreadTicketWakes,
+} from "../contract/threadWake.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   sessionPodEvidence,
@@ -177,6 +181,28 @@ export interface SessionStandingPort {
     readonly generation: number;
     readonly standing: boolean;
   }): Promise<SessionStandingRecorded>;
+}
+
+/**
+ * What a thread's attempt choosing whether it is woken for its tickets found:
+ * the thread's choice and its host's setting after it, the bearer no live
+ * attempt's, or a session that is no thread.
+ */
+export type SessionTicketWakesChosen =
+  | { readonly chosen: "Recorded"; readonly wakes: ThreadTicketWakes }
+  | { readonly chosen: "Fenced" | "NotThread" };
+
+/** A thread's ticket wake settings under its own live attempt's bearer, `thread` absent to follow its host. */
+export interface SessionTicketWakesPort {
+  readTicketWakes(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+  }): Promise<ThreadTicketWakes | undefined>;
+  chooseTicketWakes(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+    readonly thread?: ThreadTicketWakeSetting;
+  }): Promise<SessionTicketWakesChosen>;
 }
 
 /** One turn as the mailbox hands it over, its input opaque to everything here. */

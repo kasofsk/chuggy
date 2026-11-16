@@ -87,6 +87,7 @@ import {
   sessionRowMember,
   sessionRowText,
   sessionTurnStandingOf,
+  threadTicketWakesOf,
   type SessionTurnStandingRow,
 } from "./sessionRows.ts";
 
@@ -773,6 +774,8 @@ function threadWakeCandidateOf(row: {
   readonly route: string | null;
   readonly runner: string | null;
   readonly thread_standing_rules: string | null;
+  readonly ticket_wakes_thread: string | null;
+  readonly ticket_wakes_host: string | null;
 }): ThreadWakeCandidate {
   return {
     ...(row.thread_standing_rules === null
@@ -800,11 +803,16 @@ function threadWakeCandidateOf(row: {
       row.runner,
       "runner standing",
     ),
+    ticketWakes: threadTicketWakesOf(
+      row.ticket_wakes_thread,
+      row.ticket_wakes_host,
+    ),
   };
 }
 
 /**
- * One page of candidates, with the thread route, the member's runners and the
+ * One page of candidates, with the thread route, the member's runners, the
+ * thread's ticket wake settings and the
  * standing rules of the project each names hung off it: each is keyed by what
  * the candidate already carries, so none adds one. It restates the definer's
  * order, which a join over a function's rows does not preserve.
@@ -825,12 +833,16 @@ async function threadWakeCandidates(
     route: string | null;
     runner: string | null;
     thread_standing_rules: string | null;
+    ticket_wakes_thread: string | null;
+    ticket_wakes_host: string | null;
   }>(
     sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
                candidate.project,candidate.resource,candidate.reason,
                candidate.principal,candidate.session,routed.route,
                runners.member_standing AS runner,
-               settings.thread_standing_rules
+               settings.thread_standing_rules,
+               wakes.thread AS ticket_wakes_thread,
+               wakes.host AS ticket_wakes_host
           FROM thread_wake_candidates(${after},${limit}) candidate
           CROSS JOIN LATERAL session_route(candidate.tenant,candidate.project,
                                            'Thread') routed
@@ -840,6 +852,8 @@ async function threadWakeCandidates(
           LEFT JOIN selector_project_settings settings
             ON settings.tenant=candidate.tenant
            AND settings.project=candidate.project
+          LEFT JOIN LATERAL thread_ticket_wakes(candidate.tenant,
+            candidate.project,candidate.session) wakes ON true
          ORDER BY candidate.sequence,candidate.session`,
   );
   return found.rows.map(threadWakeCandidateOf);

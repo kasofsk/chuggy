@@ -12,6 +12,10 @@
  */
 
 import {
+  threadTicketWakeSettings,
+  type ThreadTicketWakes,
+} from "../../contract/threadWake.ts";
+import {
   allSessionCapabilities,
   allSessionKinds,
   allSessionStates,
@@ -332,5 +336,32 @@ export function sessionTurnMeasuredOf(
       "session turn duration",
     ),
     tools: row.tools ?? [],
+  };
+}
+
+/** A thread's own ticket wake choice and its member's chat host's setting, as two columns hold them, each absent where NULL. */
+export function threadTicketWakesOf(
+  thread: string | null,
+  host: string | null,
+): ThreadTicketWakes {
+  return {
+    ...(thread === null
+      ? {}
+      : {
+          thread: sessionRowMember(
+            threadTicketWakeSettings,
+            thread,
+            "thread ticket wakes",
+          ),
+        }),
+    ...(host === null
+      ? {}
+      : {
+          host: sessionRowMember(
+            threadTicketWakeSettings,
+            host,
+            "chat host ticket wakes",
+          ),
+        }),
   };
 }

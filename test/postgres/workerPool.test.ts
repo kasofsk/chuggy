@@ -663,12 +663,12 @@ const poolPlaneColumns = [
   [
     "chat_host",
     "SELECT",
-    "credentials_named,owner,principal,runner_package,runner_version,session_capabilities,tenant",
+    "credentials_named,owner,principal,runner_package,runner_version,session_capabilities,tenant,ticket_wakes",
   ],
   [
     "chat_host",
     "UPDATE",
-    "credentials_named,last_polled_at,runner_package,runner_version,session_capabilities",
+    "credentials_named,last_polled_at,runner_package,runner_version,session_capabilities,ticket_wakes",
   ],
   [
     "execution",

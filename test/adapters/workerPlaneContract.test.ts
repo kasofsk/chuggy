@@ -129,6 +129,7 @@ import type {
   SessionReferenceBound,
   SessionStandingRecorded,
   SessionStoreStreamRow,
+  SessionTicketWakesChosen,
   SessionTurnAnswered,
   SessionTurnFailed,
   SessionTurnWatched,
@@ -1310,6 +1311,7 @@ const sessionPlaneCalls: Readonly<
   turnStopped: { headers: json, payload: { turn: "turn" } },
   held: { headers: json, payload: {} },
   standing: { headers: json, payload: { standing: true } },
+  ticketWakes: { headers: json, payload: { thread: "On" } },
   wake: {
     headers: json,
     payload: { wake: "JobExited", resource: "dispatcher", event: "exit-1" },
@@ -1398,6 +1400,7 @@ const sessionPlaneRequests: Readonly<
   turnStopped: { schema: "sessionTurnStoppedSchema", bodies: [] },
   held: "Unparsed",
   standing: { schema: "sessionStandingSchema", bodies: [] },
+  ticketWakes: { schema: "sessionTicketWakesChoiceSchema", bodies: [] },
   wake: { schema: "sessionWakeSchema", bodies: [] },
   storeStreams: "Unparsed",
   storeBatch: "Unparsed",
@@ -1487,6 +1490,14 @@ const standingsRecorded: Readonly<Record<SessionStandingRecorded, true>> = {
   Fenced: true,
   NotChatHostThread: true,
 };
+
+/** Every arm a thread's choice of its ticket wakes comes to. */
+const ticketWakesChosen: readonly SessionTicketWakesChosen[] = [
+  { chosen: "Recorded", wakes: {} },
+  { chosen: "Recorded", wakes: { thread: "Off", host: "On" } },
+  { chosen: "Fenced" },
+  { chosen: "NotThread" },
+];
 
 const turnsAnswered: Readonly<Record<SessionTurnAnswered, true>> = {
   Answered: true,
@@ -1633,6 +1644,19 @@ const sessionPlaneCases: Readonly<
         shellCredentialHanded: true,
       }),
     },
+    ...[{ host: "On" as const }, { thread: "Off" as const }].map((wakes) => ({
+      name: `a thread told its ticket wake settings ${JSON.stringify(wakes)}`,
+      service: sessionPorts({
+        authority: {
+          authenticate: () =>
+            Promise.resolve({ ...liveSession, kind: "Thread" as const }),
+        },
+        ticketWakes: {
+          readTicketWakes: () => Promise.resolve(wakes),
+          chooseTicketWakes: () => Promise.reject(new Error("not chosen")),
+        },
+      }),
+    })),
     ...allSessionKinds.map((kind) => ({
       name: `a ${kind} session holding every capability`,
       service: sessionAuthority({
@@ -1748,6 +1772,23 @@ const sessionPlaneCases: Readonly<
       name: `a report recorded as ${recorded}`,
       service: sessionPorts({
         standings: { stand: () => Promise.resolve(recorded) },
+      }),
+    })),
+  ],
+  ticketWakes: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    {
+      name: "a thread following its host",
+      call: { headers: json, payload: { thread: null } },
+    },
+    ...ticketWakesChosen.map((chosen) => ({
+      name: `a choice answered ${JSON.stringify(chosen)}`,
+      service: sessionPorts({
+        ticketWakes: {
+          readTicketWakes: () => Promise.resolve(undefined),
+          chooseTicketWakes: () => Promise.resolve(chosen),
+        },
       }),
     })),
   ],

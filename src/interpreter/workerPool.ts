@@ -113,6 +113,7 @@ import {
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
+import type { ThreadTicketWakeSetting } from "../contract/threadWake.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import type { ExecutionRequirement } from "../contract/executionRequirement.ts";
 import type { TaskResources } from "./taskResources.ts";
@@ -169,7 +170,7 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle, the capabilities a chat host's threads may hold and the release and features its request offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the credentials it would run each agent's job on, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle, the capabilities a chat host's threads may hold, whether they are woken for their tickets and the release and features its request offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
@@ -182,13 +183,19 @@ export interface WorkerPoolAsked {
   readonly pollWaitSecs?: number;
   readonly idleSecs?: number;
   readonly sessionCapabilities?: readonly SessionCapability[];
+  readonly ticketWakes?: ThreadTicketWakeSetting;
   readonly contract?: WorkerContractPeer;
 }
 
 /** What of a poll its query names, the rest being its headers. */
 export type WorkerPoolAskedQuery = Pick<
   WorkerPoolAsked,
-  "held" | "wanted" | "wantedSessions" | "idleSecs" | "sessionCapabilities"
+  | "held"
+  | "wanted"
+  | "wantedSessions"
+  | "idleSecs"
+  | "sessionCapabilities"
+  | "ticketWakes"
 >;
 
 /** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
@@ -520,8 +527,8 @@ export interface WorkerPoolPollSettings {
  * those capabilities name exactly the agents it takes, which every poll writes
  * afresh from its peer, so a runner moved back to an earlier one is read as
  * that one; the credentials it named, which a poll naming none clears; and
- * for a chat host, the capabilities it named for its threads, which a poll
- * naming none clears too.
+ * for a chat host, the capabilities it named for its threads and whether they
+ * are woken for their tickets, each of which a poll naming none clears too.
  */
 export interface WorkerPoolRunners {
   named(
@@ -532,6 +539,7 @@ export interface WorkerPoolRunners {
     agentsAdvertised?: boolean,
     credentials?: WorkerRunnerCredentials,
     sessionCapabilities?: readonly SessionCapability[],
+    ticketWakes?: ThreadTicketWakeSetting,
   ): Promise<void>;
 }
 
@@ -1059,7 +1067,8 @@ async function workerPoolHoldingRead(
  * memory ceiling it takes jobs under where it named them, whether a personal
  * runner's peer implements `RunnerAgentsAdvertised`, the credentials it
  * named, which its claims read, the capabilities a chat host named for its
- * threads, which its owner reads, and the poll as the
+ * threads, which its owner reads, whether a chat host's threads are woken for
+ * their tickets, which the wake pass reads, and the poll as the
  * caller's last of each kind of work it could take: for a pool or a chat host,
  * a session, with room for one or holding one from a plane that names the API
  * a session reaches, and, for a pool or a personal runner, an execution, with
@@ -1087,6 +1096,7 @@ async function workerPoolPollRecorded(
       workerPoolPeerImplements("RunnerAgentsAdvertised", asked.contract),
     asked.credentials ?? {},
     identity.kind === "ChatHost" ? asked.sessionCapabilities : undefined,
+    identity.kind === "ChatHost" ? asked.ticketWakes : undefined,
   );
   const claimant = workerPoolSessionClaimant(identity);
   if (
