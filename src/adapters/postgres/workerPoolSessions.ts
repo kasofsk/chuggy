@@ -386,6 +386,25 @@ async function chatHostThreadsClosed(
   }));
 }
 
+/** Ends the attempts a chat host's registration holds that its poll did not list. */
+async function chatHostUnlistedEnded(
+  pool: pg.Pool,
+  identity: ChatHostIdentity,
+  listed: readonly string[],
+  max: number,
+): Promise<number> {
+  const found = await pool.query<{ ended: string | null }>(
+    sql`SELECT end_unlisted_chat_host_session_attempts(
+          ${identity.tenant},${identity.owner},${identity.principal},
+          ${[...listed]}::text[],
+          ${workerPoolSessionBound(max, "unlisted bound")})::text AS ended`,
+  );
+  return projectRowCounter(
+    sessionRowText(found.rows[0]?.ended ?? null, "unlisted attempts ended"),
+    "unlisted attempts ended",
+  );
+}
+
 /** What a chat host holds, through the registration that claimed it. */
 function postgresChatHostSessionHolds(
   pool: pg.Pool,
@@ -481,6 +500,8 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
     launch: () => sessionLaunch(pool),
     threadsClosed: (identity, max) =>
       chatHostThreadsClosed(pool, identity, max),
+    unlistedEnded: (identity, listed, max) =>
+      chatHostUnlistedEnded(pool, identity, listed, max),
     among: (identity, assignments) =>
       sessionsRouted(identity, sides, (side, held) =>
         side.among(held, assignments),

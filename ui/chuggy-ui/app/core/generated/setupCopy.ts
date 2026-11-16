@@ -941,7 +941,6 @@ export interface SetupCopy {
     readonly page: unknown;
   };
   readonly "setup-page-brand": Record<never, never>;
-  readonly "setup-page-signed-in": Record<never, never>;
   readonly "setup-page-unfinished": Record<never, never>;
   readonly "setup-page-answered": Record<never, never>;
   readonly "setup-page-nothing": Record<never, never>;
