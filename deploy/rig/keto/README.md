@@ -25,6 +25,9 @@ ask for them roll out, since until then no new pod is ready. So are its
 `open_unscoped_chat` and `grant_unscoped_chat` permits, and the `Project`
 namespace's `chat_metadata` permit.
 
+No image asks for the `Project` namespace's `propose` permit, so the deployed
+model can drop it once these images run.
+
 ## Before migration 26
 
 Link every project a person was granted on before
@@ -195,20 +198,21 @@ a project whose `tenant` it is. A project granted to a person before the
 command wrote the link holds nothing, and is linked under
 [Before migration 26](#before-migration-26).
 
-**The selector needs the hosted grant too.** A project's lead runs on the
-shared credential as the principal the selector's `identity.principal` setting
-names, and the selector passes over every project whose tenant does not grant
-that principal `hosted_execution`. Where the access plane verifies the issuer
-the selector's tokens carry, the selector is a person in the tenant's list with
-hosted runs, and whoever holds `GrantHostedExecution` there can take them from
-it, which stops hosted dispatch in that tenant; nothing guards it. The rig's setting is the principal of issuer
-`https://auth.vteng.io` and subject `chuggy-selector`, so with the write URL
-exported as above, tenant `vteng` is granted with:
+**The `chuggy-selector` subject holds grants nothing uses.** The API no
+longer knows a selector principal, but what was written for one stays until it
+is revoked: `developers` on each project created while the API named it, and
+`hosted_execution` on each tenant an operator granted it. With the write URL
+exported as above, each is revoked under [Reversing it](#reversing-it), naming
+issuer `https://auth.vteng.io` and subject `chuggy-selector`; for tenant
+`vteng` and one of its projects:
 
 ```sh
-CHUG_API_OIDC_ISSUER=https://auth.vteng.io CHUG_PROVISION_SUBJECT=chuggy-selector \
-  CHUG_PROVISION_TENANT=vteng CHUG_PROVISION_PROJECT= \
-  CHUG_PROVISION_RELATION=hosted_execution CHUG_PROVISION_ACTION=grant \
+export CHUG_API_OIDC_ISSUER=https://auth.vteng.io CHUG_PROVISION_SUBJECT=chuggy-selector
+CHUG_PROVISION_TENANT=vteng CHUG_PROVISION_PROJECT= \
+  CHUG_PROVISION_RELATION=hosted_execution CHUG_PROVISION_ACTION=revoke \
+  npm run provision:project-access
+CHUG_PROVISION_TENANT=vteng CHUG_PROVISION_PROJECT=project \
+  CHUG_PROVISION_RELATION=developers CHUG_PROVISION_ACTION=revoke \
   npm run provision:project-access
 ```
 

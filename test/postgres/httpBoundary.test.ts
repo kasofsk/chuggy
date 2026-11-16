@@ -160,7 +160,7 @@ test("real HTTP ingress accepts once and observes the separate writer", async ()
   harness.access.grant({
     partition,
     principal,
-    access: new Set(["Read", "Mutate", "DispatchTicket", "ProposeDispatch"]),
+    access: new Set(["Read", "Mutate", "DispatchTicket"]),
   });
   const { pool, app } = composedIngress(harness.access);
   const address = await app.listen({ host: "127.0.0.1", port: 0 });

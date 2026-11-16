@@ -1,8 +1,7 @@
 /**
  * The boundary of a ticket's takes and returns: the store is written only
- * under the caller's own `Mutate` authority, the site's selector is refused
- * before any permit is asked, and what the store decides is answered as it
- * decided it.
+ * under the caller's own `Mutate` authority, and what the store decides is
+ * answered as it decided it.
  */
 
 import assert from "node:assert/strict";
@@ -22,27 +21,21 @@ import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 
 const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const member = asPrincipal("issuer-member");
-const selector = asPrincipal("issuer-selector");
 const ticket = asTicketId(7);
 
 function boundary(
   kinds: readonly ProjectAccessKind[],
   stored: TicketTakeStored = { stored: "Taken", owner: member },
-  principal = member,
 ) {
   const calls: { kind: TicketTakeKind; authority: Authority }[] = [];
   const access = memoryProjectAccess();
-  access.grant({ partition, principal, access: new Set(kinds) });
-  const takes = ticketTakes(
-    access,
-    {
-      write: (_partition, _ticket, kind, authority) => {
-        calls.push({ kind, authority });
-        return Promise.resolve(stored);
-      },
+  access.grant({ partition, principal: member, access: new Set(kinds) });
+  const takes = ticketTakes(access, {
+    write: (_partition, _ticket, kind, authority) => {
+      calls.push({ kind, authority });
+      return Promise.resolve(stored);
     },
-    { selector },
-  );
+  });
   return { calls, takes };
 }
 
@@ -63,20 +56,6 @@ test("a take and a return are written under the caller's own Mutate authority an
     { result: "Written", outcome: "Returned" },
     "a ticket returned to a creator who is no member is answered with no owner",
   );
-});
-
-test("the site's selector is refused before any permit is asked, though it holds every one", async () => {
-  const { calls, takes } = boundary(
-    ["Read", "Mutate", "DispatchTicket", "Administer"],
-    undefined,
-    selector,
-  );
-  for (const kind of ["Take", "Return"] as const)
-    assert.deepEqual(await takes.write(selector, partition, ticket, kind), {
-      result: "Refused",
-      reason: "TakerNotAPerson",
-    });
-  assert.deepEqual(calls, [], "the store is never reached");
 });
 
 test("a reader without Mutate is forbidden, and a caller who cannot read is not told the project is there", async () => {

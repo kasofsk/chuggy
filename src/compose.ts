@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { NativeActionAgents } from "./interpreter/nativeActionAnswer.ts";
 import type pg from "pg";
 
 import { artifactRootPrecondition } from "./adapters/artifacts/artifactRoot.ts";
@@ -141,7 +140,6 @@ import {
   type ProjectCreationAuthority,
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
-import type { Principal } from "./interpreter/principal.ts";
 import {
   postgresSelectorProjectSettings,
   postgresSelectorProposalReviews,
@@ -236,14 +234,12 @@ export function composeProjectCreation(
   access: ProjectAccess,
   claims: TenantClaims,
   authority: ProjectCreationAuthority | undefined,
-  selector?: Principal,
 ): ProjectCreation {
   return projectCreation({
     access,
     claims,
     store: postgresProjectCreation(apiPool),
     ...(authority === undefined ? {} : { authority }),
-    ...(selector === undefined ? {} : { selector }),
   });
 }
 
@@ -282,17 +278,12 @@ export function composeProjectOwnerFallback(
   );
 }
 
-/** Wires a ticket's takes and returns to API-role credentials, the access that gates them, and the site's selector they refuse. */
+/** Wires a ticket's takes and returns to API-role credentials and the access that gates them. */
 export function composeTicketTakes(
   apiPool: pg.Pool,
   access: ProjectAccess,
-  selector: Principal | undefined,
 ): TicketTakes {
-  return ticketTakes(
-    access,
-    postgresTicketTakes(apiPool),
-    selector === undefined ? {} : { selector },
-  );
+  return ticketTakes(access, postgresTicketTakes(apiPool));
 }
 
 /** Wires how many threads each member may hold open to API-role credentials and the access that gates setting it. */
@@ -358,10 +349,8 @@ export function composeProjectInbox(
   selectorReviewPool: pg.Pool,
   access: ProjectAccess,
   usageResume?: TicketUsageResumeBounds,
-  agents: NativeActionAgents = {},
 ): ProjectInbox {
   return projectInbox(access, {
-    agents,
     store: postgresInboxReads(apiPool, usageResume),
     operationalReads: postgresOperationalReads(apiPool),
     refusals: postgresAgenticRefusalBinding(apiPool),

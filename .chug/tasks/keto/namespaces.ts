@@ -123,7 +123,6 @@ class Project implements Namespace {
       this.permits.develop(ctx) ||
       this.related.agents.includes(ctx.subject) ||
       this.related.viewers.includes(ctx.subject),
-    propose: (ctx: Context): boolean => this.permits.develop(ctx),
     dispatch: (ctx: Context): boolean =>
       this.related.dispatchers.includes(ctx.subject) ||
       this.permits.administer(ctx),

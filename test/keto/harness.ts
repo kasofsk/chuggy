@@ -163,7 +163,6 @@ export const ketoHarnessRoleKinds: readonly ProjectAccessKind[] = [
   "Read",
   "Mutate",
   "DispatchTicket",
-  "ProposeDispatch",
   "ManageProjectSelector",
   "OverrideTicketConfig",
   "SkipPlannedEvaluations",
