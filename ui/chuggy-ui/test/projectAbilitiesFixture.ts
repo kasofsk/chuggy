@@ -15,6 +15,7 @@ export const abilitiesEvery: ProjectAbilitiesResponse = {
   manageSelector: true,
   overrideTicketConfig: true,
   skipPlannedEvaluations: true,
+  mergeProposals: true,
   administer: true,
   writeEpic: true,
 };
@@ -26,6 +27,7 @@ export const abilitiesNone: ProjectAbilitiesResponse = {
   manageSelector: false,
   overrideTicketConfig: false,
   skipPlannedEvaluations: false,
+  mergeProposals: false,
   administer: false,
   writeEpic: false,
 };

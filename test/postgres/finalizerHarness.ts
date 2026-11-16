@@ -511,6 +511,48 @@ async function finalizerReport(
 }
 
 /**
+ * Drives the project's ticket back to finalization after a landing sent it to
+ * work: the rework's work passes and its evaluation passes, and the request
+ * that decision opens is the project's next landing.
+ */
+export async function finalizerReworked(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  memory: ProjectMemory,
+  label: string,
+): Promise<FinalizerProject> {
+  let carried = memory;
+  for (const task of [
+    workTaskIdentity(project.ticket, 2),
+    finalizerEvaluation(2),
+  ])
+    carried = await finalizerReport(
+      rig.harness,
+      project.partition,
+      carried,
+      `${label}-${task.type}`,
+      task,
+    );
+  const [row] = await rig.harness.query(
+    `SELECT request, authorizing_seq::text AS seq, request_generation::text AS generation
+       FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND state='Open'`,
+    [project.partition.tenant, project.partition.project],
+  );
+  if (row === undefined)
+    throw new Error(
+      "finalizer harness: the second evaluation opened no landing",
+    );
+  return {
+    ...project,
+    request: String(row["request"]),
+    authorizingSeq: Number(row["seq"]),
+    requestGeneration: Number(row["generation"]),
+    memory: carried,
+  };
+}
+
+/**
  * Binds the repository this project's ticket works in, before the release that
  * names it: the released brief names the project's binding, and a second one
  * bound afterwards would be the one nothing reads.

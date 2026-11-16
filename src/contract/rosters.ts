@@ -849,6 +849,7 @@ export type SessionCapability = (typeof sessionCapabilities)[number];
 export const personalAgentCapabilities = [
   "ProjectSettings",
   "AgentAccounts",
+  "ProposalMerge",
 ] as const;
 export type PersonalAgentCapability =
   (typeof personalAgentCapabilities)[number];
@@ -1065,6 +1066,35 @@ export const ticketTakeRefusalCodes = [
   "NotTaker",
 ] as const;
 export type TicketTakeRefusalCode = (typeof ticketTakeRefusalCodes)[number];
+
+/**
+ * What a caller not holding the project's `merge_proposals` permit is refused
+ * a merge of a ticket's pull request under. A console says which permit it
+ * lacked, so the code is shared.
+ */
+export const proposalMergeForbiddenCode = "ProposalMergeForbidden";
+
+/** The code a merge of a ticket's pull request the forge did not make is answered under, beside the reason it names. */
+export const proposalMergeRefusedCode = "ProposalMergeRefused";
+
+/**
+ * Why chuggy did not merge a ticket's pull request when a person asked: it is
+ * closed unmerged; it conflicts with its base; the forge's own rules block it,
+ * a branch protection, a required review or check, or a draft; its base has
+ * moved past it; its head was pushed after it was evaluated; the forge would
+ * not merge it and said nothing of why; or the forge refused this deployment's
+ * app.
+ */
+export const proposalMergeRefusals = [
+  "Closed",
+  "Conflicting",
+  "Blocked",
+  "Behind",
+  "HeadMoved",
+  "NotMergeable",
+  "AppDenied",
+] as const;
+export type ProposalMergeRefusal = (typeof proposalMergeRefusals)[number];
 
 /**
  * What the project-artifact routes answer while the store cannot, and what the
