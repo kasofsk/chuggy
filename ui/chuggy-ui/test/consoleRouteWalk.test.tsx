@@ -7,8 +7,8 @@
  *
  * EVERY SCREEN IN A PROJECT READS THE INBOX ONCE, mounted once as a production
  * build mounts it, and none of the reads it was once joined from: the tickets
- * an inbox phase holds, the project's open actions, the lead's refusals, or a
- * ticket the inbox holds read on its own.
+ * an inbox phase holds, the project's open actions, or a ticket the inbox
+ * holds read on its own.
  *
  * UNDER THE PSEUDO WORDING EVERY ROUTE SAYS NOTHING BUT DATA beside the
  * catalog's altered words, in its text and in what a reader hears of it, which
@@ -305,20 +305,6 @@ test.each(consoleRoutePaths)(
   },
 );
 
-/** The inbox screen draws a refused ticket's row and reads no refusal of its own. */
-test("the inbox screen reads no refusals beside the inbox", async () => {
-  consoleMounted(
-    consoleRouteAddress("/$tenant/$project/inbox"),
-    consoleSession(),
-    false,
-  );
-  await consoleAdvanced(consoleRouteWalkSettleMs);
-  expect(screen.getByText(consoleInboxNoAction)).toBeDefined();
-  expect(
-    site.reads.filter((read) => read.includes("/agentic-refusals")),
-  ).toStrictEqual([]);
-});
-
 /** A frame of each kind that can move a ticket into or out of the inbox, and
  * one that cannot, each pushed to the inbox screen with the top bar's badge
  * drawing the same key beside the panel. */
@@ -332,12 +318,6 @@ const consoleInboxFrames: readonly (readonly [
     "an open action",
     "NativeAction",
     { version: 1, resource: "42", representation: { actions: [] } },
-    1,
-  ],
-  [
-    "a refusal",
-    "AgenticRefusal",
-    { version: 1, resource: "42", representation: null },
     1,
   ],
   [

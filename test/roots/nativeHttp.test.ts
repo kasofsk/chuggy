@@ -135,9 +135,6 @@ const leadPortsProgram = `
     after: 0,
     limit: 1,
   });
-  await ports.history.history(partition, { limit: 1, order: 'oldest' });
-  await ports.refusals.standing(partition, 1);
-  await ports.refusals.ledger(partition, 1, 1);
   await ports.settings.projectSettings(partition).catch(() => undefined);
   await ports.candidates.read(partition, { limit: 1 });
   process.stdout.write(JSON.stringify(asked));
@@ -166,7 +163,7 @@ test("the lead's reads stand on the API pool", async () => {
   const asked = await leadPortsAsked();
   assert.equal(
     asked.pool.length,
-    12,
+    9,
     "every lead read was handed the API pool, the dispatch view in its own transaction",
   );
 });
@@ -189,9 +186,6 @@ test("each lead read reaches the definer function the plan names for it", async 
     "read_lead_refusal",
     "list_session_store_streams",
     "read_session_store_batches",
-    "read_selector_interactions",
-    "read_standing_agentic_refusals",
-    "read_agentic_refusals",
   ])
     assert.ok(
       asked.pool.some((statement) => statement.includes(named)),

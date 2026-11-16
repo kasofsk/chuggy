@@ -1,5 +1,5 @@
 /**
- * The five lead-side reads, served through the real boundary rather than a
+ * The lead-side reads, served through the real boundary rather than a
  * double of it, so the authorization gate, the page assembly and the response
  * mapping are all under the same assertion.
  *
@@ -21,12 +21,9 @@ import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import { leadHolds } from "../../src/contract/rosters.ts";
 import {
-  agenticRefusalsResponseSchema,
   leadFoundResponseSchema,
   leadTranscriptResponseSchema,
   sessionContextResponseSchema,
-  selectorHistoryResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
   asPrincipal,
@@ -36,11 +33,6 @@ import {
   type NativeReadStore,
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
-import {
-  agenticRefusalIsSuperseded,
-  type AgenticRefusalEntry,
-  type AgenticRefusalStanding,
-} from "../../src/interpreter/agenticRefusal.ts";
 import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import type {
   LeadRefused,
@@ -53,12 +45,9 @@ import type {
 } from "../../src/interpreter/sessionContext.ts";
 import {
   resolvedSelectorSettings,
-  type SelectorInteractionRecord,
   type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
 import { selectorDefaults } from "../contract/representations.ts";
-import { selectorOperationalContext } from "../interpreter/selectorFixture.ts";
-import type { SelectorHistoryStore } from "../../src/interpreter/selectorHistory.ts";
 import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import {
@@ -67,12 +56,8 @@ import {
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
-import {
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalsAnsweredMax,
-  sessionTranscriptHeldBatchesMax,
-} from "../../src/contract/http.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import { sessionTranscriptHeldBatchesMax } from "../../src/contract/http.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -156,59 +141,6 @@ const leadReadings: SessionContextTurn = {
   ],
 };
 
-const refusalEntries: readonly AgenticRefusalEntry[] = [
-  {
-    ordinal: 91,
-    partition,
-    ticket: asTicketId(42),
-    event: "Refused",
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: "selector-decision-one",
-    recordedAt: "2026-09-02T00:00:00.000Z",
-  },
-];
-
-const interaction: SelectorInteractionRecord = {
-  ordinal: 11,
-  decision: "selector-decision-one",
-  partition,
-  instructionsVersion: "12.4",
-  instructions: "x".repeat(4_096),
-  observedView: [],
-  context: {
-    operationalContext: selectorOperationalContext,
-    handoffNote: {},
-  },
-  toolActivity: [],
-  result: {
-    dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
-    refusals: [{ ticket: 42, ticketVersion: 2, reason: "still failing" }],
-    lifts: [{ ticket: 40 }],
-    attention: "Attention",
-  },
-  implementationRevision: "build",
-  modelRevision: "claude-haiku-4-5",
-  policyRevision: stream,
-  accounting: { tokens: 41_234, durationMs: 74_210, costMicros: 182_000 },
-  deliveries: [
-    {
-      ticket: asTicketId(41),
-      state: "Terminal",
-      outcome: { state: "Refused", code: "SelectionChanged" },
-    },
-  ],
-  startedAt: "2026-09-02T00:00:00.000Z",
-  completedAt: "2026-09-02T00:01:14.210Z",
-};
-
-/** Three decisions, oldest first, so both ends of the log are distinguishable. */
-const decisions: readonly SelectorInteractionRecord[] = [
-  { ...interaction, ordinal: 9, decision: "selector-decision-nine" },
-  { ...interaction, ordinal: 10, decision: "selector-decision-ten" },
-  interaction,
-];
-
 interface LeadCase {
   readonly allowed?: boolean;
   readonly standing?: LeadStanding | undefined;
@@ -222,44 +154,11 @@ interface LeadCase {
   /** Whether the site's selector may read the project, where the deployment names one. */
   readonly selectorReads?: boolean;
   readonly draws?: readonly SessionStoreRead[];
-  /** The version every ticket the read store answers holds, and what each standing refusal is compared against. */
-  readonly ticketVersion?: number;
-  /** Where the read store records each ticket it is asked for, so a case can hold that a route asked for none. */
-  readonly ticketsRead?: TicketId[];
-  /** How many rows each refusal read answers, so a short page can be driven. */
-  readonly refusalRows?: number;
-  /** Whether the ledger's newest entry lifts the refusal before it. */
-  readonly lifted?: boolean;
   /** What the project's subsidy has spent this month, where its lead resolves `Subsidized`. */
   readonly subsidy?: SubsidizedLeadSpend;
 }
 
-/**
- * A ledger of `rows` entries, oldest first, alternating so the newest is a lift
- * where a case asks for one. The port answers one past the page bound the way
- * the definer function does, which is what lets `more` be true at all.
- */
-function ledgerOf(
-  rows: number,
-  lifted: boolean,
-): readonly AgenticRefusalEntry[] {
-  return Array.from({ length: rows }, (_unused, index) => ({
-    ordinal: index + 1,
-    partition,
-    ticket: asTicketId(42),
-    event:
-      lifted && index === rows - 1 ? ("Lifted" as const) : ("Refused" as const),
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: `selector-decision-${String(index)}`,
-    recordedAt: "2026-09-02T00:00:00.000Z",
-  }));
-}
-
-function readStore(
-  ticketVersion: number,
-  ticketsRead: TicketId[] = [],
-): NativeReadStore {
+function readStore(): NativeReadStore {
   return {
     operation: () => Promise.resolve(undefined),
     project: () =>
@@ -267,40 +166,20 @@ function readStore(
         result: "Found",
         project: { partition, sequence: 0, tickets: [] },
       }),
-    ticket: (_partition, ticket) => {
-      ticketsRead.push(ticket);
-      return Promise.resolve({
+    ticket: (_partition, ticket) =>
+      Promise.resolve({
         ticket,
         phase: "Work",
-        sequence: ticketVersion,
+        sequence: 2,
         changedAt: asPublicInstant("2026-09-02T00:00:00Z"),
         revision: 1,
         revokedDependencies: [],
         openDependencies: [],
-      });
-    },
+      }),
     ticketNativeActions: () => Promise.resolve([]),
     nativeActions: () => Promise.resolve({ actions: [] }),
     nativeActionAsked: () => Promise.resolve(undefined),
     ticketNativeActionHistory: () => Promise.resolve(undefined),
-  };
-}
-
-/** The standing refusal of the ticket `index` past 42, compared against the version the case's tickets hold. */
-function leadPortsStandingRefusal(
-  shape: LeadCase,
-  index: number,
-): AgenticRefusalStanding {
-  const refusal = {
-    ticket: asTicketId(42 + index),
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: "selector-decision-one",
-    recordedAt: "2026-09-02T00:00:00.000Z",
-  };
-  return {
-    ...refusal,
-    superseded: agenticRefusalIsSuperseded(refusal, shape.ticketVersion ?? 2),
   };
 }
 
@@ -319,16 +198,6 @@ const leadContext: SessionContextRead = {
 
 function leadPorts(shape: LeadCase): NativeLeadPorts {
   const draws = shape.draws ?? [];
-  const history: SelectorHistoryStore = {
-    history: (_partition, query) =>
-      Promise.resolve(
-        query.order === "newest"
-          ? [...decisions].reverse().slice(0, query.limit)
-          : decisions
-              .filter((each) => each.ordinal > (query.after ?? 0))
-              .slice(0, query.limit),
-      ),
-  };
   return {
     leads: {
       standing: () =>
@@ -353,25 +222,6 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
         Promise.resolve(draws[object.batch - 1] ?? { read: "NotFound" }),
     },
     context: leadContext,
-    refusals: {
-      standing: (_partition, limit) =>
-        Promise.resolve(
-          Array.from(
-            { length: Math.min(shape.refusalRows ?? 1, limit) },
-            (_unused, index) => leadPortsStandingRefusal(shape, index),
-          ),
-        ),
-      ledger: (_partition, _ticket, limit) =>
-        Promise.resolve(
-          shape.refusalRows === undefined
-            ? refusalEntries
-            : ledgerOf(shape.refusalRows, shape.lifted ?? false).slice(
-                0,
-                limit,
-              ),
-        ),
-    },
-    history,
     settings: leadPortsSettings(shape),
     candidates: { read: () => Promise.resolve(dispatchPage(shape)) },
     ...(shape.selectorReads === undefined
@@ -451,7 +301,7 @@ function appOf(shape: LeadCase = {}) {
   };
   const web = nativeWeb(
     access,
-    readStore(shape.ticketVersion ?? 2, shape.ticketsRead),
+    readStore(),
     inbox,
     {} as AuthoringStore,
     notifications,
@@ -530,9 +380,6 @@ test("a project with no lead answers that it has none, and one nobody may read a
     `${root}/lead`,
     `${root}/lead/transcript`,
     `${root}/lead/context`,
-    `${root}/agentic-refusals`,
-    `${root}/tickets/42/agentic-refusals`,
-    `${root}/selector-history`,
   ]) {
     const found = await refused.inject({ url: path, headers: authorized });
     assert.equal(found.statusCode, 404, path);
@@ -1112,177 +959,6 @@ test("a lead that has bound no stream has no transcript to answer", async () => 
   assert.equal(found.statusCode, 404);
 });
 
-test("standing refusals carry the supersession the reader computes, reading no ticket for it", async () => {
-  const ticketsRead: TicketId[] = [];
-  await using standing = appOf({
-    ticketVersion: 2,
-    refusalRows: 3,
-    ticketsRead,
-  });
-  const held = agenticRefusalsResponseSchema.parse(
-    (
-      await standing.inject({
-        url: `${root}/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    held.refusals.map((refusal) => refusal.superseded),
-    [false, false, false],
-  );
-  assert.equal(held.more, false);
-  await using authored = appOf({
-    ticketVersion: 3,
-    refusalRows: 3,
-    ticketsRead,
-  });
-  const cleared = agenticRefusalsResponseSchema.parse(
-    (
-      await authored.inject({
-        url: `${root}/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    cleared.refusals.map((refusal) => refusal.superseded),
-    [true, true, true],
-  );
-  assert.deepEqual(
-    ticketsRead,
-    [],
-    "the page is answered without a ticket read",
-  );
-});
-
-test("a page that stops short of the ledger says so and claims no standing", async () => {
-  await using app = appOf({
-    refusalRows: agenticRefusalLedgerAnsweredMax + 5,
-    lifted: true,
-  });
-  const body = ticketAgenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}/tickets/42/agentic-refusals`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.equal(body.more, true, "more must be able to come out true");
-  assert.equal(body.entries.length, agenticRefusalLedgerAnsweredMax);
-  assert.ok(
-    body.entries.every((entry) => entry.event === "Refused"),
-    "the page ends on a refusal the ledger's own latest entry has lifted",
-  );
-  assert.equal(
-    body.standing,
-    undefined,
-    "standing is not read off a page that stops short of the latest entry",
-  );
-});
-
-test("a standing page that stops short says so", async () => {
-  await using app = appOf({ refusalRows: agenticRefusalsAnsweredMax + 1 });
-  const body = agenticRefusalsResponseSchema.parse(
-    (
-      await app.inject({ url: `${root}/agentic-refusals`, headers: authorized })
-    ).json(),
-  );
-  assert.equal(body.more, true, "more must be able to come out true");
-  assert.equal(body.refusals.length, agenticRefusalsAnsweredMax);
-});
-
-test("a ticket's ledger answers its entries and the refusal it stands on", async () => {
-  await using app = appOf();
-  const found = await app.inject({
-    url: `${root}/tickets/42/agentic-refusals`,
-    headers: authorized,
-  });
-  assert.equal(found.statusCode, 200);
-  const body = ticketAgenticRefusalsResponseSchema.parse(found.json());
-  assert.equal(body.ticket, 42);
-  assert.equal(body.entries[0]?.event, "Refused");
-  assert.equal(body.standing?.ticketVersion, 2);
-  assert.equal(body.more, false);
-});
-
-test("the decision log draws what a decision did, never what it saw", async () => {
-  await using app = appOf();
-  const found = await app.inject({
-    url: `${root}/selector-history?limit=1`,
-    headers: authorized,
-  });
-  assert.equal(found.statusCode, 200);
-  const body = selectorHistoryResponseSchema.parse(found.json());
-  assert.equal(body.decisions.length, 1);
-  const decision = body.decisions.at(-1);
-  assert.deepEqual(decision?.dispatches, [
-    { ticket: 41, state: "Terminal", outcome: "SelectionChanged" },
-  ]);
-  assert.deepEqual(decision?.refused, [42]);
-  assert.deepEqual(decision?.lifted, [40]);
-  assert.equal(decision?.attention, "Attention");
-  assert.equal(decision?.costMicros, 182_000);
-  assert.equal(
-    body.nextAfter,
-    9,
-    "a full page names where the next one starts",
-  );
-  assert.ok(!found.body.includes(interaction.instructions));
-});
-
-test("the newest arm answers one page of the log, from its far end", async () => {
-  await using app = appOf();
-  const newest = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}/selector-history?order=newest&limit=2`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    newest.decisions.map((each) => each.ordinal),
-    [11, 10],
-    "the last decisions, newest first",
-  );
-  assert.equal(
-    newest.nextAfter,
-    undefined,
-    "the newest page is one page and continues nowhere",
-  );
-  const oldest = selectorHistoryResponseSchema.parse(
-    (
-      await app.inject({
-        url: `${root}/selector-history?limit=2`,
-        headers: authorized,
-      })
-    ).json(),
-  );
-  assert.deepEqual(
-    oldest.decisions.map((each) => each.ordinal),
-    [9, 10],
-    "and the default arm still walks forward",
-  );
-  assert.equal(oldest.nextAfter, 10);
-});
-
-test("a cursor into the newest page, and an order nobody knows, are refused", async () => {
-  await using app = appOf();
-  for (const query of [
-    "order=newest&after=10",
-    "order=sideways",
-    "order=Newest",
-  ]) {
-    const found = await app.inject({
-      url: `${root}/selector-history?${query}`,
-      headers: authorized,
-    });
-    assert.equal(found.statusCode, 400, query);
-  }
-});
-
 test("a page bound the wire does not admit is refused, never clamped", async () => {
   await using app = appOf({
     draws: storedBatches(stream, 2).map(
@@ -1293,8 +969,6 @@ test("a page bound the wire does not admit is refused, never clamped", async () 
     `${root}/lead/transcript?limit=99`,
     `${root}/lead/context?limit=99`,
     `${root}/lead/context?after=-1`,
-    `${root}/agentic-refusals?limit=99`,
-    `${root}/selector-history?limit=999`,
   ]) {
     const found = await app.inject({ url: path, headers: authorized });
     assert.equal(found.statusCode, 400, path);
