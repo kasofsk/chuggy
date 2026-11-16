@@ -7,7 +7,7 @@
  * naming none. The workspace its use made is a column of its own.
  *
  * THE DATABASE'S CLOCK DECIDES. A spend, a revocation, the count of open links,
- * the open link a registration reads and the state a list answers are each judged by `now()` in the statement
+ * the open link a registration or a summary reads and the state a list answers are each judged by `now()` in the statement
  * itself, so this process holds no clock a link's state could disagree with.
  *
  * A SPEND IS ONE CONDITIONAL UPDATE, so two callers presenting one token are
@@ -40,6 +40,7 @@ import {
 import type {
   AccessInviteLinkGrants,
   AccessInviteLinkMint,
+  AccessInviteLinkPresented,
   AccessInviteLinkStore,
   AccessInviteLinkStored,
   AccessInviteLinkUsed,
@@ -183,6 +184,30 @@ async function inviteLinkPresented(
   const row = found.rows[0];
   if (row === undefined) return undefined;
   return row.workspace ? "Workspace" : "Tenant";
+}
+
+/** What a summary reads of the open link `digest` names, without spending it. */
+async function inviteLinkSummarized(
+  pool: pg.Pool,
+  digest: string,
+): Promise<AccessInviteLinkPresented | undefined> {
+  const found = await pool.query<{
+    tenant: string | null;
+    role: string | null;
+    minted_by: string;
+  }>(sql`SELECT l.tenant,l.role,l.minted_by FROM invite_link l
+    WHERE l.token_digest=${digest}
+      AND l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>now()`);
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  if (row.tenant === null)
+    return { kind: "Workspace", mintedBy: row.minted_by };
+  return {
+    kind: "Tenant",
+    tenant: asTenantId(row.tenant),
+    role: accessTenantRoleSchema.parse(row.role),
+    mintedBy: row.minted_by,
+  };
 }
 
 /** The used link of either kind `digest` names whose user is `subject`, whatever the clock says. */
@@ -457,6 +482,7 @@ export function postgresInviteLinks(pool: pg.Pool): AccessInviteLinkStore {
       return row === undefined ? undefined : { newAccounts: row.new_accounts };
     },
     presented: (digest) => inviteLinkPresented(pool, digest),
+    summarized: (digest) => inviteLinkSummarized(pool, digest),
     usedBy: (digest, subject) => inviteLinkUsedBy(pool, digest, subject),
     ...workspaceLinks(pool),
   };

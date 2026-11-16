@@ -2,7 +2,7 @@
  * A tenant's invite links and the site's workspace links against a real
  * PostgreSQL, driven as the access plane's own role: one spend of a token
  * where two race, the database's clock deciding what has expired, a spend
- * given back, an open link read without spending it, the tenant's bounds and
+ * given back, an open link read and summarized without spending it, the tenant's bounds and
  * the site's kept under each mint's lock, the two kinds never meeting, and
  * one workspace made by one link where two race for its name.
  *
@@ -121,6 +121,49 @@ test("an open link is read with its `newAccounts` and is still open, and a spent
   assert.notEqual(await links.spend(link.digest, "user"), undefined);
   assert.equal(await links.opened(link.digest), undefined);
   assert.equal(await links.opened(digestNext()), undefined);
+});
+
+test("an open link of either kind is summarized with its maker, and still open; a used, revoked or expired one and a digest nobody holds are not read", async () => {
+  await siteCleared();
+  const tenant = asTenantId("links-summarized");
+  const link = await minted(tenant);
+  const site = await workspaceMinted("unsaid");
+  assert.deepEqual(await links.summarized(link.digest), {
+    kind: "Tenant",
+    tenant,
+    role: "Member",
+    mintedBy: "minter",
+  });
+  assert.deepEqual(await links.summarized(site.digest), {
+    kind: "Workspace",
+    mintedBy: "site-minter",
+  });
+  assert.deepEqual(await states(tenant), [[link.link, "Open"]]);
+  assert.deepEqual(await siteStates(), [[site.link, "Open"]]);
+  const revoked = await minted(tenant);
+  const expired = await minted(tenant);
+  assert.notEqual(await links.spend(link.digest, "user"), undefined);
+  assert.notEqual(
+    await links.workspaceSpend(
+      site.digest,
+      "user",
+      asTenantId("summarized-works"),
+    ),
+    undefined,
+  );
+  assert.equal(await links.revoke(tenant, revoked.link), true);
+  await harness.query(
+    "UPDATE invite_link SET minted_at=now()-interval '2 days', expires_at=now()-interval '1 day' WHERE link=$1",
+    [expired.link],
+  );
+  for (const digest of [
+    link.digest,
+    site.digest,
+    revoked.digest,
+    expired.digest,
+    digestNext(),
+  ])
+    assert.equal(await links.summarized(digest), undefined);
 });
 
 test("two redemptions of one token started together: exactly one is given the link", async () => {

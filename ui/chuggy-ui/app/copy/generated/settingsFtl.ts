@@ -132,7 +132,24 @@ settings-invite-link-expired = Expired
 
 settings-invite-brand = { -brand-name }
 settings-invite-needed = { -invite(case: "upper") } needed
-settings-invite-invited = Invited
+settings-invite-reading = Reading the link…
+settings-invite-own-title = Your own { -brand-name } { -workspace }
+# spells -invite: to invite is a verb here
+settings-invite-own-from = { $inviter } invites you to make { -workspace(form: "a") } of your own, as its { -role-admin }.
+settings-invite-own = This link makes you { -workspace(form: "a") } of your own, as its { -role-admin }.
+settings-invite-join-title = Join { $workspace }
+# spells -invite: to invite is a verb here
+settings-invite-join-from = { $inviter } invites you to join as { $role ->
+    [Admin] { -role-admin(form: "a") }
+   *[Member] { -role-member(form: "a") }
+}.
+settings-invite-join = This link makes you { $role ->
+    [Admin] { -role-admin(form: "a") }
+   *[Member] { -role-member(form: "a") }
+} of { $workspace }.
+# spells -revoke: a link is revoked, not a ticket
+settings-invite-ended = This link has been used or revoked, has expired, or was never made. Ask whoever sent it for a new one.
+settings-invite-sign-in-github = Sign in with { -github }
 settings-invite-joining = Joining…
 settings-invite-not-valid = Link not valid
 settings-invite-sign-in = Sign in
