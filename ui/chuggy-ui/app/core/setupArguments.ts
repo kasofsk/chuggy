@@ -21,7 +21,9 @@
  * import would; neither asks the site anything. `import` asks the site to
  * import the repository the checklist means, and reads the checklist again.
  * `bind` asks the site to add the folder's repository to the project, where
- * that is the checklist's next thing, and reads the checklist again.
+ * that is the checklist's next thing, and reads the checklist again. `serve`,
+ * for a project named whole, has the person's own runners take its work,
+ * where that is the checklist's next thing, and reads the checklist again.
  * `ticket` files the project's first ticket, titled what `--title` says and
  * asking what `--intent` says, under the configuration `--configuration`
  * names where the project offers more than one, where that is the
@@ -79,6 +81,7 @@ export type SetupCommand =
   | "Check"
   | "Import"
   | "Bind"
+  | "Serve"
   | "Ticket"
   | "Plugin";
 
@@ -181,6 +184,14 @@ export type SetupAsked =
       readonly answers: SetupAnswers;
     }
   | {
+      readonly asked: "Serve";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+      /** The project the person's runners are to take the work of, which the command is not run without. */
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
       readonly asked: "Ticket";
       readonly site: string | undefined;
       readonly answers: SetupAnswers;
@@ -214,6 +225,7 @@ const setupCommandWords = {
   check: "Check",
   import: "Import",
   bind: "Bind",
+  serve: "Serve",
   ticket: "Ticket",
   plugin: "Plugin",
   listen: "Listen",
@@ -250,6 +262,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Check: ["workspace", "project", "plugin"],
   Import: ["site", "workspace", "project", "plugin"],
   Bind: ["site", "workspace", "project", "plugin"],
+  Serve: ["site", "workspace", "project", "plugin"],
   Ticket: [
     "site",
     "workspace",
@@ -433,13 +446,14 @@ function setupAskedOf(
     case "Project":
       return setupProjectAsked(site, answers);
     case "Mcp":
+    case "Serve":
     case "Runner": {
       const { workspace, project } = answers;
       if (workspace === undefined || project === undefined)
         return { asked: "Wrongly", fault: "Project" };
-      return asked === "Mcp"
-        ? { asked, site, answers, workspace, project }
-        : { asked, site, waitSecs: wait, answers, workspace, project };
+      return asked === "Runner"
+        ? { asked, site, waitSecs: wait, answers, workspace, project }
+        : { asked, site, answers, workspace, project };
     }
     case "ChatHost":
       return setupChatHostAsked(site, wait, answers, flags.get("replace"));
@@ -496,6 +510,8 @@ export function setupCommandArguments(
       return ["import"];
     case "Bind":
       return ["bind"];
+    case "Serve":
+      return ["serve"];
     case "Ticket":
       return ["ticket"];
     case "Plugin":

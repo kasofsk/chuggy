@@ -71,6 +71,7 @@ import type {
   SetupConfigurationEnded,
   SetupImportAnswered,
 } from "./setupConfigurationEnded.ts";
+import { ownerFallbackLabel } from "./myRunner.ts";
 import { setupPlatforms } from "./setupPorts.ts";
 import type { SetupMachineFault, SetupPlatform } from "./setupPorts.ts";
 import {
@@ -158,7 +159,7 @@ export interface SetupStepSaid {
  * read again under; something `plugin` would do on this machine, with the way
  * past it; something `mcp` or `runner` would do on this machine for
  * the project named, or `chat-host` for the workspace where no project is, or
- * `bind` at the site for the project named, and the yes it waits on; a question only she answers, and the
+ * `bind` or `serve` at the site for the project named, and the yes it waits on; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; what she wants done
  * first, which `ticket` files for the project named, with the configuration
@@ -218,6 +219,17 @@ export type SetupThing =
 export type SetupBindAnswered =
   | { readonly answered: "Bound"; readonly said: Copy }
   | { readonly answered: "Refused"; readonly refusal: Copy };
+
+/** What the site answered one write of `serve`: written, or not, in the word a failed request is drawn as. */
+export type SetupServeWritten =
+  | { readonly written: true }
+  | { readonly written: false; readonly failure: Copy };
+
+/** What the site answered each write `serve` made, where it made it: the project given to the person's runners, and Preferred named as its owner fallback. */
+export interface SetupServeAnswered {
+  readonly given: SetupServeWritten | undefined;
+  readonly allowed: SetupServeWritten | undefined;
+}
 
 /** What the site answered a filing: the ticket made, released and sent to start, under the configuration named and whether that is a bootstrap, or refused, in the console's creation's words where they are its. */
 export type SetupTicketAnswered =
@@ -407,6 +419,16 @@ export type SetupReport =
       >;
     }
   | {
+      /** A run of `serve`: the project it wrote for and what the site answered each write, where the checklist's next thing was that, and the checklist read after. */
+      readonly report: "Serve";
+      readonly project: string | undefined;
+      readonly answered: SetupServeAnswered | undefined;
+      readonly checklist: Extract<
+        SetupReport,
+        { readonly report: "Checklist" }
+      >;
+    }
+  | {
       /** A run of `ticket`: what the site answered the filing, where the checklist's next thing was that, and the checklist read after. */
       readonly report: "Ticket";
       readonly answered: SetupTicketAnswered | undefined;
@@ -430,9 +452,9 @@ export type SetupMachineCommand = Extract<
   "Mcp" | "Runner" | "ChatHost"
 >;
 
-/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, and `bind`, which adds a repository at the site. */
+/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, `bind`, which adds a repository at the site, and `serve`, which has the person's runners take the project's work there. */
 export type SetupOfferCommand =
-  SetupMachineCommand | Extract<SetupCommand, "Bind" | "Plugin">;
+  SetupMachineCommand | Extract<SetupCommand, "Bind" | "Serve" | "Plugin">;
 
 /** The command a run of the runner package's service is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
 function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
@@ -522,6 +544,7 @@ function setupCommandWords() {
     check = "",
     imported = "",
     bound = "",
+    served = "",
     filed = "",
     plugged = "",
   ] = [
@@ -534,6 +557,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Check"),
     ...setupCommandArguments("Import"),
     ...setupCommandArguments("Bind"),
+    ...setupCommandArguments("Serve"),
     ...setupCommandArguments("Ticket"),
     ...setupCommandArguments("Plugin"),
   ];
@@ -547,6 +571,7 @@ function setupCommandWords() {
     check,
     imported,
     bound,
+    served,
     filed,
     plugged,
   };
@@ -554,7 +579,7 @@ function setupCommandWords() {
 
 function setupAskFaultSaid(fault: SetupAskFault): Copy {
   const words = setupCommandWords();
-  const { made, mcp, runner, chatHost, configuration, filed } = words;
+  const { made, chatHost, configuration, filed } = words;
   const names = { workspace: setupFlagWorkspace, project: setupFlagProject };
   switch (fault) {
     case "Command":
@@ -592,7 +617,7 @@ function setupAskFaultSaid(fault: SetupAskFault): Copy {
     case "Name":
       return { id: "setup-asked-name", args: names };
     case "Project":
-      return { id: "setup-asked-project", args: { ...names, mcp, runner } };
+      return { id: "setup-asked-project", args: { ...names, ...words } };
     case "Workspace":
       return {
         id: "setup-asked-workspace",
@@ -1461,6 +1486,59 @@ function setupBindLines(
   ];
 }
 
+/** One write `serve` made, as what it did or what the site answered it instead. */
+function setupServeWrittenSaid(
+  written: SetupServeWritten | undefined,
+  did: Copy,
+  failed: (failure: Copy) => Copy,
+): readonly SetupLine[] {
+  if (written === undefined) return [];
+  return written.written
+    ? [["did", did]]
+    : [["found", failed(written.failure)]];
+}
+
+/** What `serve` asked of the site and what it answered, each write in the order it was made. */
+function setupServeSaid(
+  report: Extract<SetupReport, { readonly report: "Serve" }>,
+): readonly SetupLine[] {
+  const project = report.project ?? "";
+  const answered = report.answered;
+  if (answered === undefined) return [["found", { id: "setup-serve-none" }]];
+  const preferred = ownerFallbackLabel("Preferred");
+  return [
+    ...setupServeWrittenSaid(
+      answered.given,
+      { id: "setup-serve-given", args: { project } },
+      (failure) => ({
+        id: "setup-serve-given-failed",
+        args: { project, failure },
+      }),
+    ),
+    ...setupServeWrittenSaid(
+      answered.allowed,
+      { id: "setup-serve-allowed", args: { project, preferred } },
+      (failure) => ({
+        id: "setup-serve-allowed-failed",
+        args: { project, failure },
+      }),
+    ),
+  ];
+}
+
+/** A run of `serve`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
+function setupServeLines(
+  report: Extract<SetupReport, { readonly report: "Serve" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const [site, ...rest] = setupLines(report.checklist, saying);
+  return [
+    ...(site === undefined ? [] : [site]),
+    ...setupServeSaid(report),
+    ...rest,
+  ];
+}
+
 /** What `ticket` asked of the site and what it answered, said where the checklist read after it says the site. */
 function setupTicketSaid(
   report: Extract<SetupReport, { readonly report: "Ticket" }>,
@@ -1836,6 +1914,8 @@ function setupLines(
       return setupImportLines(report, saying);
     case "Bind":
       return setupBindLines(report, saying);
+    case "Serve":
+      return setupServeLines(report, saying);
     case "Ticket":
       return setupTicketLines(report, saying);
     case "Mcp":
@@ -1929,6 +2009,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
         : 0;
     case "Import":
     case "Bind":
+    case "Serve":
     case "Ticket":
       return setupReportExit(report.checklist);
     case "Plugin":

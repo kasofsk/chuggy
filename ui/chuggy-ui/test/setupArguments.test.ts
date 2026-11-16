@@ -421,3 +421,29 @@ test("plugin is read with a site, a workspace and a project, --plugin takes only
   expect(setupAnswerArguments(skip)).toEqual(["--plugin", "skip"]);
   expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
 });
+
+test("serve is read only with the workspace and the project it is for, takes a site and no wait, and is run again as itself", () => {
+  const named = ["--workspace", "acme", "--project", "widgets"];
+  const answers = { workspace: "acme", project: "widgets" };
+  expect(setupAsked(["serve", ...named, "--site", site])).toEqual({
+    asked: "Serve",
+    site,
+    answers,
+    ...answers,
+  });
+  for (const argv of [
+    ["serve"],
+    ["serve", "--workspace", "acme"],
+    ["serve", "--project", "widgets"],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Project"));
+  expect(setupAsked(["serve", ...named, "--wait-secs", "5"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(
+    setupAsked([
+      ...setupCommandArguments("Serve"),
+      ...setupAnswerArguments(answers),
+    ]).asked,
+  ).toBe("Serve");
+});
