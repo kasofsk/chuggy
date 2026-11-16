@@ -271,10 +271,12 @@ test("with more than one workspace the person is asked which and then which proj
     const first = await read(session, awkward(), named);
     assert.deepEqual(steps(first).slice(0, 2), [
       ["done", "two words"],
-      ["waiting", `two words/${project} has no North Star yet`],
+      ["done", `two words/${project}`],
     ]);
-    assert.deepEqual(await ruled(first), named);
-    const again = await read(session, awkward(), await ruled(first));
+    const [command, ...flags] = await ruled(first);
+    assert.equal(command, "mcp");
+    assert.deepEqual(flags, named);
+    const again = await read(session, awkward(), flags);
     assert.equal(again.stdout, first.stdout);
   }
 });
@@ -306,7 +308,7 @@ test("with a workspace and no project, the command the rule names, split by a sh
   );
   assert.deepEqual(steps(next).slice(0, 2), [
     ["done", "acme"],
-    ["waiting", "acme/atlas-web has no North Star yet"],
+    ["done", "acme/atlas-web"],
   ]);
 });
 

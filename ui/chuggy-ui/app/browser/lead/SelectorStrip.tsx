@@ -26,10 +26,10 @@ import { Pill } from "../ui/Pill.tsx";
 import {
   SelectorSettingsSavedNotice,
   selectorSettingsNoticed,
-} from "../settings/lead/SelectorSection.tsx";
+} from "../settings/threads/SelectorSection.tsx";
 import type { SelectorSettingsShown } from "../selectorSettingsWriting.ts";
 
-import "../settings/lead/selector.css";
+import "../settings/threads/selector.css";
 
 function SelectorStripCell(props: {
   readonly cell: SelectorSettingsStripCell;
@@ -53,7 +53,7 @@ function SelectorStripCell(props: {
         )}
         {text(cell.value)}
         {cell.inherited ? (
-          <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+          <Pill tone="neutral">{text({ id: "settings-threads-default" })}</Pill>
         ) : null}
       </span>
       <Button

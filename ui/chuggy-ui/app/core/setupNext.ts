@@ -67,7 +67,7 @@ import {
   setupDockerBarredTold,
   setupEnginesNone,
 } from "./setupRunnerSaid.ts";
-import { setupAppNames, setupPhaseSaid, setupSeen } from "./setupStanding.ts";
+import { setupAppNames, setupPhaseSaid } from "./setupStanding.ts";
 import type {
   SetupAppPage,
   SetupLack,
@@ -85,8 +85,6 @@ import type { WorkspaceNamed } from "./workspaceNames.ts";
  * each page for it and fails where a page renamed it.
  */
 export const setupPressed = {
-  edit: { id: "ui-edit" },
-  save: { id: "ui-save" },
   connect: { id: "repositories-connect-github" },
   addAccount: { id: "settings-accounts-add" },
   add: { id: "repositories-add" },
@@ -165,43 +163,23 @@ function setupWorkspaceMend(
   );
 }
 
-function setupProjectMend(
-  lack: Extract<SetupLack, { readonly lacks: "Project" | "NorthStar" }>,
-  at: SetupAt,
-): SetupThing {
-  if (lack.lacks === "Project") {
-    const { workspace, project } = at;
-    const address = project === "" ? undefined : project;
-    return {
-      thing: "Name",
-      ask: {
-        id: "setup-ask-project-name",
-        args: {
-          workspace: at.named(workspace),
-          address: address === undefined ? "made" : "given",
-          project: address ?? "",
-          flag: setupNameFlag,
-        },
-      },
-      workspace,
-      project: address,
-    };
-  }
-  return setupHand(
-    {
-      id: "setup-mend-north-star-tell",
+function setupProjectMend(at: SetupAt): SetupThing {
+  const { workspace, project } = at;
+  const address = project === "" ? undefined : project;
+  return {
+    thing: "Name",
+    ask: {
+      id: "setup-ask-project-name",
       args: {
-        page: setupPage(at, settingsRoutes.project.lead),
-        edit: setupPressed.edit,
-        section: setupSeen.northStar,
-        save: setupPressed.save,
+        workspace: at.named(workspace),
+        address: address === undefined ? "made" : "given",
+        project: address ?? "",
+        flag: setupNameFlag,
       },
     },
-    {
-      id: "setup-mend-north-star-when",
-      args: { section: setupSeen.northStar },
-    },
-  );
+    workspace,
+    project: address,
+  };
 }
 
 /** An app that is installed and not let into the repository: the picker draws a line for it under its list, with a link to that app's own page on the forge. */
@@ -838,8 +816,7 @@ function setupMend(
     case "Administration":
       return setupWorkspaceMend(lack, at);
     case "Project":
-    case "NorthStar":
-      return setupProjectMend(lack, at);
+      return setupProjectMend(at);
     case "Account":
     case "App":
     case "Grant":

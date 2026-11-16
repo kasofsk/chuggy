@@ -108,13 +108,7 @@ lead-inquiry-refusal-not-subsidized = Moving to { -brand-name } · Takes { -inqu
 lead-inquiry-refusal-unknown = Refused
 lead-inquiry-refusal-no-lead = No { -lead }
 
-## The strip and the settings page.
-
-lead-settings-title = { -lead(case: "upper") }
-lead-settings-revision = { -revision(case: "upper") } { $revision }
-lead-settings-default = Default
-lead-settings-default-lower = default
-lead-settings-effective-none = None
+## The strip.
 
 lead-mode-name = { -lead(case: "upper") }
 lead-mode-running = Running
@@ -129,78 +123,3 @@ lead-dispatch-approval = { -dispatch(case: "upper") } approval
 # spells -approval: approving a dispatch, never a finalization
 lead-dispatch-action-require = Require { -dispatch } approval
 lead-dispatch-action-automatic = { -dispatch(case: "upper") } automatically
-
-lead-settings-fault-invalid = Invalid
-lead-settings-fault-at-least = At least { $min }
-lead-settings-fault-at-most = At most { $max }
-lead-settings-fault-at-most-characters = At most { $max } characters
-lead-settings-fault-model-flag = Cannot start with -
-lead-settings-fault-model-spaced = No spaces or control characters
-
-lead-settings-limit-tokens = Tokens
-lead-settings-limit-time = Time
-lead-settings-limit-tool-calls = Tool calls
-lead-settings-limit-dispatches = { -dispatch(case: "upper", form: "s") }
-lead-settings-limit-input = Input
-lead-settings-limit-candidate-pages = Candidate pages
-lead-settings-limit-compaction-window = { -compaction(case: "upper") } { -window }
-
-lead-settings-model-lead-model = { -lead(case: "upper") } model
-lead-settings-model-lead-effort = { -lead(case: "upper") } effort
-lead-settings-model-thread-model = { -thread(case: "upper") } model
-lead-settings-model-thread-effort = { -thread(case: "upper") } effort
-lead-settings-model-alias = Alias
-lead-settings-model-pinned = Pinned
-lead-settings-model-pinned-about = Set by { -brand-name } for its subsidized { -lead }
-lead-settings-subsidy = Allowance
-
-lead-settings-effort-low = Low
-lead-settings-effort-medium = Medium
-lead-settings-effort-high = High
-lead-settings-effort-xhigh = Extra high
-lead-settings-effort-max = Max
-
-lead-settings-unit-tokens = tokens
-lead-settings-unit-ms = ms
-lead-settings-unit-calls = calls
-lead-settings-unit-tickets = { -ticket(form: "plural") }
-lead-settings-unit-bytes = bytes
-lead-settings-unit-pages = pages
-
-lead-settings-section-north-star-title = North Star
-lead-settings-section-north-star-about = What this { -project } is for. Every { -lead } decision is judged against it.
-lead-settings-section-standing-rules-title = Standing rules
-lead-settings-section-standing-rules-about = How { -thread(form: "plural") } act on this { -project }.
-lead-settings-section-base-prompt-title = Base prompt
-lead-settings-section-base-prompt-about = The { -lead }'s system prompt. An edit replaces the { -lead } at its next decision.
-lead-settings-section-limits-title = Limits
-lead-settings-section-limits-about = What one decision may spend, and how much { -context } the { -lead } holds before it { -compaction(form: "s") }.
-lead-settings-section-models-title = Models
-lead-settings-section-models-about = The model and effort of the { -lead } and of each new { -thread }. A change replaces the { -lead } at its next decision; open { -thread(form: "plural") } keep theirs.
-lead-settings-reset-default = Reset to default
-lead-settings-reset = Reset
-
-lead-settings-writing = Writing
-lead-settings-written = Written · { $revision }
-lead-settings-changed-by = Changed by
-lead-settings-changed-at = at
-lead-settings-conflict-moved-by = Changed by { $subject } at { $time }
-lead-settings-conflict-revision = Conflict · { $revision }
-
-## The settings history.
-
-lead-history-none = None
-lead-history-mode-label = Mode
-lead-history-dispatch-label = { -dispatch(case: "upper") }
-lead-history-models-label = Models
-lead-history-tools-label = Tools
-# spells -context: the lead's operational context, a document it is handed
-lead-history-context-age-label = Context age
-lead-history-no-change = No change
-lead-history-diff = Diff
-lead-history-hide-diff = Hide diff
-lead-history-restore = Restore
-lead-history-show-all = Show all { $count }
-lead-history-none-recorded = No { -revision(form: "plural") }
-lead-history-title = { -revision(case: "upper", form: "plural") }
-lead-history-about = Every save, newest first.

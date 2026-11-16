@@ -25,11 +25,6 @@ export interface RunnersCopy {
   readonly "runners-standing-live": Record<never, never>;
   readonly "runners-route-hosted": Record<never, never>;
   readonly "runners-route-pool": Record<never, never>;
-  readonly "runners-route-subsidized": Record<never, never>;
-  readonly "runners-subsidized-about": {
-    readonly model: unknown;
-  };
-  readonly "runners-subsidized-about-unnamed": Record<never, never>;
   readonly "runners-source-override": Record<never, never>;
   readonly "runners-source-project": Record<never, never>;
   readonly "runners-source-default": Record<never, never>;
@@ -186,7 +181,6 @@ export interface RunnersCopy {
   readonly "runners-placement-work": Record<never, never>;
   readonly "runners-placement-evaluation": Record<never, never>;
   readonly "runners-placement-chat": Record<never, never>;
-  readonly "runners-placement-lead": Record<never, never>;
   readonly "runners-placement-landed": Record<never, never>;
   readonly "runners-placement-unhosted": Record<never, never>;
 }

@@ -51,7 +51,7 @@ test("the checklist names a workspace by its display name in its steps and its q
 
 test("a tell names the project by its workspace's display name, and the address it gives is the id's", async () => {
   const offered = await said(
-    await machineSignedIn(siteNamed("NorthStar"), false),
+    await machineSignedIn(siteNamed("Project"), false),
   );
   const tell = offered.find((line) => line.startsWith("tell: "));
   expect(tell).toContain(`for ${named}/widgets at ${machineSite}`);

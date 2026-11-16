@@ -50,9 +50,7 @@ import type {
   SetupConfigurationEnded,
   SetupImportAnswered,
 } from "../app/core/setupConfigurationEnded.ts";
-import { setupPressed } from "../app/core/setupNext.ts";
 import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
-import { setupSeen } from "../app/core/setupStanding.ts";
 import { machineScript } from "./setupMachine.ts";
 import type { SetupRunnerAt } from "../app/core/setupRunnerSaid.ts";
 import {
@@ -86,14 +84,7 @@ const held = setupSignInEndings.filter(
 /** A checklist's steps, one in each state and two with nothing to say. */
 const steps: readonly SetupStepSaid[] = [
   { step: "workspace", state: "done", detail: "acme" },
-  {
-    step: "project",
-    state: "waiting",
-    detail: {
-      id: "setup-step-north-star",
-      args: { project: "acme/widgets", section: setupSeen.northStar },
-    },
-  },
+  { step: "project", state: "done", detail: "acme/widgets" },
   {
     step: "mcp",
     state: "todo",
@@ -111,7 +102,11 @@ const steps: readonly SetupStepSaid[] = [
     },
   },
   { step: "repository", state: "todo", detail: undefined },
-  { step: "runner", state: "todo", detail: undefined },
+  {
+    step: "runner",
+    state: "waiting",
+    detail: { id: "setup-step-runner-offline" },
+  },
   { step: "ticket", state: "todo", detail: undefined },
 ];
 
@@ -199,18 +194,10 @@ const things: {
     {
       thing: "Hand",
       tell: {
-        id: "setup-mend-north-star-tell",
-        args: {
-          page: "the page",
-          edit: setupPressed.edit,
-          section: setupSeen.northStar,
-          save: setupPressed.save,
-        },
+        id: "setup-mend-admin-tell",
+        args: { workspace: "acme", people: "the page" },
       },
-      when: {
-        id: "setup-mend-north-star-when",
-        args: { section: setupSeen.northStar },
-      },
+      when: { id: "setup-mend-admin-when", args: { workspace: "acme" } },
     },
   ],
   Offer: [
@@ -749,7 +736,9 @@ test("every line a report prints but next: is one message of the catalog, so a w
     )) {
       if (line.startsWith("next: ")) continue;
       if (line.startsWith("step: "))
-        expect(line).toMatch(/^step: \S+ +\S+(?: +(?:\[.*\]|acme))?$/u);
+        expect(line).toMatch(
+          /^step: \S+ +\S+(?: +(?:\[.*\]|acme(?:\/widgets)?))?$/u,
+        );
       else expect(line).toMatch(/^[a-z]+: \[.*\]$/u);
     }
 });
@@ -1140,14 +1129,14 @@ test("signed in, the bare command prints what was found, each step in columns, a
     `site: ${site}, signed in`,
     "found: this folder's remote github.com/acme-org/widgets is added to no project the site shows you, so it proposes none",
     "step: workspace   done     acme",
-    "step: project     waiting  acme/widgets has no North Star yet",
+    "step: project     done     acme/widgets",
     "step: mcp         todo     Claude Code here has no chuggy MCP server for acme/widgets",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
-    "step: runner      todo",
+    "step: runner      waiting  registered, not running",
     "step: ticket      todo",
-    "tell: Open the page, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.",
-    `rule: Run node ${machineScript} ${flags} only once the person says the North Star is saved.`,
+    "tell: Setting chuggy up takes an admin of the workspace, and you are not one in acme. Ask an admin of acme to make you one on its People page, the page. Tell me once you are an admin.",
+    `rule: Run node ${machineScript} ${flags} only once the person says they are an admin of acme.`,
     stop,
   ]);
 });
@@ -1222,8 +1211,8 @@ test("setup that is done is told, and nothing is named to run", () => {
 
 test("a step done by hand is told, and the checklist is named to be read again only once the person says it is done", () => {
   expect(ended(things.Hand[0] as SetupThing)).toEqual([
-    "tell: Open the page, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.",
-    `rule: Run node ${machineScript} only once the person says the North Star is saved.`,
+    "tell: Setting chuggy up takes an admin of the workspace, and you are not one in acme. Ask an admin of acme to make you one on its People page, the page. Tell me once you are an admin.",
+    `rule: Run node ${machineScript} only once the person says they are an admin of acme.`,
     stop,
   ]);
 });

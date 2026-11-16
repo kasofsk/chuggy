@@ -23,15 +23,8 @@ import { SelectorSection } from "./SelectorSection.tsx";
 
 import "./selector.css";
 
-function SelectorTextBody(props: {
-  readonly text: string;
-  readonly mono: boolean;
-}): ReactNode {
-  return (
-    <div className="selector-prose" data-mono={props.mono ? "" : undefined}>
-      {props.text}
-    </div>
-  );
+function SelectorTextBody(props: { readonly text: string }): ReactNode {
+  return <div className="selector-prose">{props.text}</div>;
 }
 
 export function SelectorTextSection(props: {
@@ -52,7 +45,6 @@ export function SelectorTextSection(props: {
   const text = useCopyText();
   const section = selectorSettingsSection(props.name);
   const title = text(section.title);
-  const mono = props.name === "basePrompt";
   const placeholder = selectorSettingsTextOverriddenAtRead(
     props.draft,
     props.name,
@@ -74,14 +66,13 @@ export function SelectorTextSection(props: {
       onReload={props.onReload}
       footLead={
         <Button variant="quiet" size="sm" onClick={props.onReset}>
-          {text({ id: "lead-settings-reset-default" })}
+          {text({ id: "settings-threads-reset-default" })}
         </Button>
       }
     >
       {props.editing ? (
         <Textarea
           label={title}
-          mono={mono}
           value={props.draft[props.name]}
           {...(placeholder === undefined ? {} : { placeholder })}
           onChange={(text) => {
@@ -91,7 +82,7 @@ export function SelectorTextSection(props: {
           }}
         />
       ) : (
-        <SelectorTextBody text={props.effective} mono={mono} />
+        <SelectorTextBody text={props.effective} />
       )}
     </SelectorSection>
   );
