@@ -47,9 +47,10 @@ import {
   asClusterId,
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
-import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
-import type { SelectorRuntimeSettings } from "../../src/interpreter/selector.ts";
-import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
+import {
+  selectorEffectiveSettings,
+  type SelectorProjectSettingsRecord,
+} from "../../src/interpreter/selectorProjectSettings.ts";
 
 export const partition = {
   tenant: asTenantId("acme"),
@@ -371,30 +372,8 @@ export const evidencedExecution: ExecutionResource = {
     : { result: { ...execution.result, report: "The fixture ran." } }),
 };
 
-/** The installation defaults every project resolves against. */
-export const selectorDefaults: SelectorRuntimeSettings = {
-  revision: 5,
-  mode: "Running",
-  dispatchMode: "ApprovalRequired",
-  basePrompt: "Select at most one currently dispatchable ticket.",
-  modelAllowlist: ["*"],
-  toolAllowlist: ["*"],
-  limits: {
-    tokensPerDecision: 8192,
-    millisecondsPerDecision: 120_000,
-    toolCallsPerDecision: 20,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1_048_576,
-    candidatePagesPerDecision: 1,
-    autoCompactWindow: 200_000,
-    concurrentDecisions: 4,
-    selectionsPerMinute: 60,
-  },
-  operationalContextMaxAgeMs: 30_000,
-};
-
 /** One project that has set a North Star and its threads' standing rules, and
- * inherited everything else. */
+ * left its threads' model and effort at their defaults. */
 const selectorProjectOverrides = {
   northStar: "Ship the console.",
   threadStandingRules: "- You draft, and nothing else.",
@@ -404,10 +383,5 @@ export const selectorProjectSettings: SelectorProjectSettingsRecord = {
   partition,
   revision: 2,
   overrides: selectorProjectOverrides,
-  effective: resolvedSelectorSettings(
-    partition,
-    selectorDefaults,
-    2,
-    selectorProjectOverrides,
-  ),
+  effective: selectorEffectiveSettings(selectorProjectOverrides),
 };

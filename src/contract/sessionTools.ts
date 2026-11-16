@@ -71,8 +71,6 @@ import {
   runModelCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
-  selectorAllowlistNameCharsMax,
-  selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
   sessionEfforts,
   textUtf8Bytes,
@@ -89,13 +87,7 @@ import {
   epicStatusRoster,
   type SelectorProjectSettingsResponse,
 } from "./responses.ts";
-import {
-  leadOfferings,
-  phaseRoster,
-  selectorDispatchModes,
-  selectorModes,
-  type ToolCapability,
-} from "./rosters.ts";
+import { phaseRoster, type ToolCapability } from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
@@ -383,28 +375,10 @@ function chuggyToolLeadSettingsLongest<Member extends string>(
   );
 }
 
-/** Every limit a project's settings name, each at the largest a count may be. */
-const chuggyToolLeadSettingsLimits = {
-  tokensPerDecision: Number.MAX_SAFE_INTEGER,
-  millisecondsPerDecision: Number.MAX_SAFE_INTEGER,
-  toolCallsPerDecision: Number.MAX_SAFE_INTEGER,
-  dispatchesPerDecision: Number.MAX_SAFE_INTEGER,
-  inputBytesPerDecision: Number.MAX_SAFE_INTEGER,
-  candidatePagesPerDecision: Number.MAX_SAFE_INTEGER,
-  autoCompactWindow: Number.MAX_SAFE_INTEGER,
-};
-
-/** The limits the selector runs a project under, which add the shared pool's to a project's own. */
-const chuggyToolLeadSettingsEffectiveLimits = {
-  ...chuggyToolLeadSettingsLimits,
-  concurrentDecisions: Number.MAX_SAFE_INTEGER,
-  selectionsPerMinute: Number.MAX_SAFE_INTEGER,
-};
-
 /**
- * The lead settings' body with every field present, every string empty and
- * every allowlist naming nothing, and each other field at its heaviest: every
- * count the largest a count may be and every word its roster's longest.
+ * The lead settings' body with every field present and every string empty, and
+ * each other field at its heaviest: every count the largest a count may be and
+ * every word its roster's longest.
  */
 const chuggyToolLeadSettingsFieldsBytesMax = textUtf8Bytes(
   JSON.stringify({
@@ -413,36 +387,10 @@ const chuggyToolLeadSettingsFieldsBytesMax = textUtf8Bytes(
     overrides: {
       northStar: "",
       threadStandingRules: "",
-      mode: chuggyToolLeadSettingsLongest(selectorModes),
-      dispatchMode: chuggyToolLeadSettingsLongest(selectorDispatchModes),
-      basePrompt: "",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits: chuggyToolLeadSettingsLimits,
-      operationalContextMaxAgeMs: Number.MAX_SAFE_INTEGER,
-      leadModel: "",
-      leadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
       threadModel: "",
       threadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
     },
-    effective: {
-      revision: Number.MAX_SAFE_INTEGER,
-      projectRevision: Number.MAX_SAFE_INTEGER,
-      mode: chuggyToolLeadSettingsLongest(selectorModes),
-      installationMode: chuggyToolLeadSettingsLongest(selectorModes),
-      dispatchMode: chuggyToolLeadSettingsLongest(selectorDispatchModes),
-      basePrompt: "",
-      northStar: "",
-      threadStandingRules: "",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits: chuggyToolLeadSettingsEffectiveLimits,
-      installationLimits: chuggyToolLeadSettingsEffectiveLimits,
-      operationalContextMaxAgeMs: Number.MAX_SAFE_INTEGER,
-      leadModel: "",
-      leadEffort: chuggyToolLeadSettingsLongest(sessionEfforts),
-      leadOffering: chuggyToolLeadSettingsLongest(leadOfferings),
-    },
+    effective: { northStar: "", threadStandingRules: "" },
   } satisfies SelectorProjectSettingsResponse),
 );
 
@@ -451,26 +399,18 @@ function chuggyToolLeadSettingsStringBytesMax(chars: number): number {
   return jsonStringChars(chars) - jsonStringChars(0);
 }
 
-/** What an allowlist at its most names adds to that body over the empty one: each name at its heaviest, and the commas between them. */
-const chuggyToolLeadSettingsAllowlistBytesMax =
-  selectorAllowlistNamesMax *
-    (jsonStringChars(selectorAllowlistNameCharsMax) + 1) -
-  1;
-
 /**
  * What the lead settings' route may answer, which a write answers on success
- * and inside its conflict alike: the body's fields at their heaviest; the
- * three texts of its overrides and the three of its effective settings, each
- * at the longest a settings text may be; the two allowlists of each; its
- * partition's two identities; the three models it names; and an ordinary
- * answer's bound for the answer around them.
+ * and inside its conflict alike: the body's fields at their heaviest; the two
+ * texts of its overrides and the two of its effective settings, each at the
+ * longest a settings text may be; its partition's two identities; the one
+ * model it names; and an ordinary answer's bound for the answer around them.
  */
 export const chuggyToolLeadSettingsResponseBytesMax =
   chuggyToolLeadSettingsFieldsBytesMax +
-  6 * chuggyToolLeadSettingsStringBytesMax(selectorSettingsTextCharsMax) +
-  4 * chuggyToolLeadSettingsAllowlistBytesMax +
+  4 * chuggyToolLeadSettingsStringBytesMax(selectorSettingsTextCharsMax) +
   2 * chuggyToolLeadSettingsStringBytesMax(nativeHttpPathSegmentCharsMax) +
-  3 * chuggyToolLeadSettingsStringBytesMax(runModelCharsMax) +
+  chuggyToolLeadSettingsStringBytesMax(runModelCharsMax) +
   nativeHttpBodyBytesMax;
 
 /**

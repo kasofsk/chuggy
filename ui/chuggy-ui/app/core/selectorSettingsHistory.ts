@@ -7,9 +7,6 @@
  * between it and the one before — standing rule 3, and the reason no server
  * change is needed to say `North Star, Chat model` beside a row.
  *
- * ONLY WHAT THE SETTINGS PAGE DRAWS IS DIFFED. A revision that moved nothing
- * else reads as no change, and its Restore still writes its whole override set.
- *
  * THE OLDEST ROW OF A PAGE HAS NO PREDECESSOR HERE. The read is a page and the
  * revision before its last one may simply not have been fetched, so that row's
  * changes are absent rather than a diff against nothing — which would claim the

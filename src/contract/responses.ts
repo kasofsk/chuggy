@@ -26,8 +26,6 @@ import {
   agentAccountCredentialsMax,
   imageMediaTypes,
   projectArtifactEncoding,
-  sessionEfforts,
-  sessionModelSchema,
   agentSessionPromptCharsMax,
   countSchema,
   cursorSchema,
@@ -169,8 +167,6 @@ import {
   runStepEvidences,
   runUsageWindows,
   schedulerFreshnesses,
-  selectorDispatchModes,
-  selectorModes,
   sessionCapabilities,
   sessionRunnerStandings,
   sessionScopes,
@@ -840,45 +836,13 @@ export type OperationalStatusResponse = z.infer<
   typeof operationalStatusResponseSchema
 >;
 
-const selectorLimitsResponseSchema = z.object({
-  tokensPerDecision: countSchema,
-  millisecondsPerDecision: countSchema,
-  toolCallsPerDecision: countSchema,
-  dispatchesPerDecision: countSchema,
-  inputBytesPerDecision: countSchema,
-  candidatePagesPerDecision: countSchema,
-  autoCompactWindow: countSchema,
-  concurrentDecisions: countSchema,
-  selectionsPerMinute: countSchema,
-});
-
 /**
- * What the selector actually runs a project under: every field is either the
- * project's own or the installation default, and both revisions are named
- * because a decision is fenced on the pair. `installationMode` is beside the
- * resolved `mode` so a reader can tell a project's own pause from the
- * installation-wide one it cannot lift, and `installationLimits` is beside the
- * resolved `limits` so a reader can tell an overridden limit from an inherited
- * one and say what it would fall back to.
+ * What a project's threads run under: its North Star where it set one, and the
+ * standing rules, which are the project's own or the default.
  */
 export const selectorEffectiveSettingsResponseSchema = z.strictObject({
-  revision: countSchema,
-  projectRevision: countSchema,
-  mode: z.enum(selectorModes),
-  installationMode: z.enum(selectorModes),
-  dispatchMode: z.enum(selectorDispatchModes),
-  basePrompt: z.string().min(1),
   northStar: z.string().min(1).optional(),
   threadStandingRules: z.string().min(1),
-  modelAllowlist: z.array(z.string()),
-  toolAllowlist: z.array(z.string()),
-  limits: selectorLimitsResponseSchema,
-  installationLimits: selectorLimitsResponseSchema,
-  operationalContextMaxAgeMs: countSchema,
-  /** The model and effort the lead runs on, each absent where it takes the site's model or the runtime's effort, and whether they are the subsidized lead's. */
-  leadModel: sessionModelSchema.optional(),
-  leadEffort: z.enum(sessionEfforts).optional(),
-  leadOffering: z.enum(leadOfferings),
 });
 
 export const selectorProjectSettingsResponseSchema = z.strictObject({

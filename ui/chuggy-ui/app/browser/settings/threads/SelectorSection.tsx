@@ -1,6 +1,6 @@
 /**
- * One selector setting group as a card: whether it stands on the installation's
- * value, and what its own last write answered.
+ * One selector setting group as a card: whether it stands on the default,
+ * and what its own last write answered.
  *
  * The chrome is `SettingsSection`'s and only what is the selector's is here:
  * the Default pill, and the notice this route's five answers are drawn as.

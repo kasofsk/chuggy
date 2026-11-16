@@ -26,6 +26,7 @@ import {
   parseDraftCreation,
   parseDraftRevision,
   parsePartition,
+  parseSelectorProjectSettings,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
 import { failureResponse } from "../../src/adapters/http/outcomes.ts";
@@ -754,4 +755,38 @@ test("a draft creation names the epic it joins as a positive number, or none", (
   assert.equal("epic" in parseDraftCreation(base), false);
   for (const epic of [0, -1, 1.5, "3"])
     assert.throws(() => parseDraftCreation({ ...base, epic }), String(epic));
+});
+
+test("a settings write crosses the door as its four thread fields, an absent one absent", () => {
+  assert.deepEqual(
+    parseSelectorProjectSettings({
+      expectedRevision: 3,
+      overrides: {
+        northStar: "Ship the console.",
+        threadStandingRules: "- You draft, and nothing else.",
+        threadModel: "opus",
+        threadEffort: "high",
+      },
+    }),
+    {
+      expectedRevision: 3,
+      overrides: {
+        northStar: "Ship the console.",
+        threadStandingRules: "- You draft, and nothing else.",
+        threadModel: "opus",
+        threadEffort: "high",
+      },
+    },
+  );
+  const cleared = parseSelectorProjectSettings({
+    expectedRevision: 3,
+    overrides: { threadModel: "opus" },
+  });
+  assert.deepEqual(Object.keys(cleared.overrides), ["threadModel"]);
+  assert.throws(() =>
+    parseSelectorProjectSettings({
+      expectedRevision: 3,
+      overrides: { dispatchMode: "Automatic" },
+    }),
+  );
 });

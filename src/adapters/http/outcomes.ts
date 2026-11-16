@@ -654,39 +654,15 @@ export function projectAbilitiesResponse(
     : response(200, result.value);
 }
 
-/** The record on the wire, whose effective half names no partition twice. */
+/** The record as the wire carries it. */
 function selectorProjectSettingsBody(
   settings: SelectorProjectSettingsRecord,
 ): unknown {
-  const effective = settings.effective;
   return {
     partition: settings.partition,
     revision: settings.revision,
     overrides: settings.overrides,
-    effective: {
-      revision: effective.revision,
-      projectRevision: effective.projectRevision,
-      mode: effective.mode,
-      installationMode: effective.installationMode,
-      dispatchMode: effective.dispatchMode,
-      basePrompt: effective.basePrompt,
-      ...(effective.northStar === undefined
-        ? {}
-        : { northStar: effective.northStar }),
-      threadStandingRules: effective.threadStandingRules,
-      modelAllowlist: effective.modelAllowlist,
-      toolAllowlist: effective.toolAllowlist,
-      limits: effective.limits,
-      installationLimits: effective.installationLimits,
-      operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
-      ...(effective.lead.model === undefined
-        ? {}
-        : { leadModel: effective.lead.model }),
-      ...(effective.lead.effort === undefined
-        ? {}
-        : { leadEffort: effective.lead.effort }),
-      leadOffering: effective.lead.offering,
-    },
+    effective: settings.effective,
   };
 }
 
@@ -706,14 +682,6 @@ function selectorProjectSettingsRefusal(
   refusal: SelectorProjectSettingsRefusal,
 ): NativeHttpResponse {
   switch (refusal) {
-    case "AutomaticDispatchUnavailable":
-      return response(
-        409,
-        nativeHttpError(
-          refusal,
-          "Automatic dispatch needs a production-ready selector policy host.",
-        ),
-      );
     case "SettingsWriteContended":
       return retry(503, 1, refusal);
     default:

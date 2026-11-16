@@ -16,15 +16,11 @@ import {
   agentAccountCredentialsMax,
   configurationCanonicalCharsMax,
   dispatchViewSchemaVersion,
-  leadAutoCompactWindowTokensMax,
-  leadDispatchesMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   runModelCharsMax,
-  selectorAllowlistNameCharsMax,
-  selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
   sessionEfforts,
   sessionStoreBatchBytesMax,
@@ -49,8 +45,6 @@ import {
   phaseRoster,
   placementRoutes,
   runUsageWindows,
-  selectorDispatchModes,
-  selectorModes,
   sessionCapabilities,
 } from "../../src/contract/rosters.ts";
 import {
@@ -572,74 +566,25 @@ function longestOf<Member extends string>(roster: readonly Member[]): Member {
 }
 
 /**
- * The heaviest lead settings the wire admits: every text, allowlist name and
- * identity of control characters, which JSON escapes heaviest, at its longest;
- * every allowlist at its most names; every model of the heaviest character a
- * model may hold; and every count the largest a count may be.
+ * The heaviest lead settings the wire admits: every text and identity of
+ * control characters, which JSON escapes heaviest, at its longest; the model of
+ * the heaviest character a model may hold; and every count the largest a count
+ * may be.
  */
 function heaviestLeadSettings(): unknown {
   const escaped = "\u0001";
   const text = escaped.repeat(selectorSettingsTextCharsMax);
-  const allowlist = Array.from({ length: selectorAllowlistNamesMax }, () =>
-    escaped.repeat(selectorAllowlistNameCharsMax),
-  );
   const identity = escaped.repeat(nativeHttpPathSegmentCharsMax);
-  const model = "€".repeat(runModelCharsMax);
-  const count = Number.MAX_SAFE_INTEGER;
-  const limits = {
-    tokensPerDecision: count,
-    millisecondsPerDecision: count,
-    toolCallsPerDecision: count,
-    dispatchesPerDecision: count,
-    inputBytesPerDecision: count,
-    candidatePagesPerDecision: count,
-    autoCompactWindow: count,
-  };
-  const effectiveLimits = {
-    ...limits,
-    concurrentDecisions: count,
-    selectionsPerMinute: count,
-  };
   return {
     partition: { tenant: identity, project: identity },
-    revision: count,
+    revision: Number.MAX_SAFE_INTEGER,
     overrides: {
       northStar: text,
       threadStandingRules: text,
-      mode: longestOf(selectorModes),
-      dispatchMode: longestOf(selectorDispatchModes),
-      basePrompt: text,
-      modelAllowlist: allowlist,
-      toolAllowlist: allowlist,
-      limits: {
-        ...limits,
-        dispatchesPerDecision: leadDispatchesMax,
-        autoCompactWindow: leadAutoCompactWindowTokensMax,
-      },
-      operationalContextMaxAgeMs: count,
-      leadModel: model,
-      leadEffort: longestOf(sessionEfforts),
-      threadModel: model,
+      threadModel: "€".repeat(runModelCharsMax),
       threadEffort: longestOf(sessionEfforts),
     },
-    effective: {
-      revision: count,
-      projectRevision: count,
-      mode: longestOf(selectorModes),
-      installationMode: longestOf(selectorModes),
-      dispatchMode: longestOf(selectorDispatchModes),
-      basePrompt: text,
-      northStar: text,
-      threadStandingRules: text,
-      modelAllowlist: allowlist,
-      toolAllowlist: allowlist,
-      limits: effectiveLimits,
-      installationLimits: effectiveLimits,
-      operationalContextMaxAgeMs: count,
-      leadModel: model,
-      leadEffort: longestOf(sessionEfforts),
-      leadOffering: longestOf(leadOfferings),
-    },
+    effective: { northStar: text, threadStandingRules: text },
   };
 }
 

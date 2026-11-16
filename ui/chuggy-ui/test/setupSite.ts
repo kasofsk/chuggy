@@ -497,36 +497,11 @@ function cut(
 }
 
 function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
-  const limits = {
-    tokensPerDecision: 1,
-    millisecondsPerDecision: 1,
-    toolCallsPerDecision: 1,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1,
-    candidatePagesPerDecision: 1,
-    autoCompactWindow: 200_000,
-    concurrentDecisions: 1,
-    selectionsPerMinute: 1,
-  };
   return {
     partition: { tenant: project.tenant, project: project.project },
     revision: 1,
     overrides: {},
-    effective: {
-      revision: 1,
-      projectRevision: 1,
-      mode: "Running",
-      installationMode: "Running",
-      dispatchMode: "Automatic",
-      basePrompt: "Lead the project.",
-      threadStandingRules: "Be brief.",
-      modelAllowlist: [],
-      toolAllowlist: [],
-      limits,
-      installationLimits: limits,
-      operationalContextMaxAgeMs: 1,
-      leadOffering: "Own",
-    },
+    effective: { threadStandingRules: "Be brief." },
   };
 }
 

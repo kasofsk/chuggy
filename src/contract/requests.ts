@@ -17,11 +17,6 @@ import {
   forgeAuthorizationVerifierCharsMin,
   approvalFeedbackCharsMax,
   isApprovalFeedback,
-  leadAutoCompactWindowTokensMax,
-  leadAutoCompactWindowTokensMin,
-  leadDispatchesMax,
-  selectorAllowlistNameCharsMax,
-  selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
   sessionEfforts,
   sessionModelSchema,
@@ -50,8 +45,6 @@ import {
   leadOfferings,
   personalRunnerPriorities,
   placementRoutes,
-  selectorDispatchModes,
-  selectorModes,
 } from "./rosters.ts";
 import {
   workerPoolCapabilitiesSchema,
@@ -375,49 +368,20 @@ export const submissionSchema = z.strictObject({
   mutation: publicMutationSchema,
 });
 
-const selectorLimitSchema = z.number().int().safe().positive();
 const selectorSettingsTextSchema = z
   .string()
   .min(1)
   .max(selectorSettingsTextCharsMax);
-const selectorAllowlistSchema = z
-  .array(z.string().min(1).max(selectorAllowlistNameCharsMax))
-  .max(selectorAllowlistNamesMax);
 
 /**
- * What one project sets for itself, an absent field meaning the installation
- * default (for a model the site's session model, for an effort the runtime's
- * own choice), so a write clears an override by omitting it.
- * `concurrentDecisions` and `selectionsPerMinute` are not here, because they
- * bound one shared pool rather than one project's behaviour.
+ * What one project sets for its threads, an absent field meaning the default
+ * (for the standing rules the code's own, for the model the site's session
+ * model, for the effort the runtime's own choice), so a write clears an
+ * override by omitting it.
  */
 export const selectorProjectOverridesSchema = z.strictObject({
   northStar: selectorSettingsTextSchema.optional(),
   threadStandingRules: selectorSettingsTextSchema.optional(),
-  mode: z.enum(selectorModes).optional(),
-  dispatchMode: z.enum(selectorDispatchModes).optional(),
-  basePrompt: selectorSettingsTextSchema.optional(),
-  modelAllowlist: selectorAllowlistSchema.optional(),
-  toolAllowlist: selectorAllowlistSchema.optional(),
-  limits: z
-    .strictObject({
-      tokensPerDecision: selectorLimitSchema.optional(),
-      millisecondsPerDecision: selectorLimitSchema.optional(),
-      toolCallsPerDecision: selectorLimitSchema.optional(),
-      dispatchesPerDecision: selectorLimitSchema
-        .max(leadDispatchesMax)
-        .optional(),
-      inputBytesPerDecision: selectorLimitSchema.optional(),
-      candidatePagesPerDecision: selectorLimitSchema.optional(),
-      autoCompactWindow: selectorLimitSchema
-        .min(leadAutoCompactWindowTokensMin)
-        .max(leadAutoCompactWindowTokensMax)
-        .optional(),
-    })
-    .optional(),
-  operationalContextMaxAgeMs: selectorLimitSchema.optional(),
-  leadModel: sessionModelSchema.optional(),
-  leadEffort: z.enum(sessionEfforts).optional(),
   threadModel: sessionModelSchema.optional(),
   threadEffort: z.enum(sessionEfforts).optional(),
 });

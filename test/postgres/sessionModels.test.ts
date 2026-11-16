@@ -1,5 +1,5 @@
 /**
- * The model and effort a project chooses for its lead and for its threads:
+ * The model and effort a project chooses for its threads:
  * held on the session it opened under, served in that session's facts, and
  * bounded by the columns as the door bounds them.
  *
@@ -12,10 +12,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import {
-  postgresSelectorProjectSettings,
-  postgresSelectorResolvedSettings,
-} from "../../src/adapters/postgres/selector.ts";
+import { postgresSelectorProjectSettings } from "../../src/adapters/postgres/selectorProjectSettings.ts";
 import {
   nativeHttpMediaType,
   runModelCharsMax,
@@ -30,7 +27,7 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { SelectorProjectOverrides } from "../../src/interpreter/selector.ts";
+import type { SelectorProjectOverrides } from "../../src/interpreter/selectorProjectSettings.ts";
 import { sessionRigSession, sessionRigTurn } from "./sessionHarness.ts";
 import { sessionStoreDouble } from "./storeDouble.ts";
 import {
@@ -111,43 +108,18 @@ async function threadOpenedThroughTheDoor(
   return asSessionId(threadEntryResponseSchema.parse(opened.json()).session);
 }
 
-test("a thread opens under the project's thread model, and neither the lead's settings nor the thread's reach the other", async () => {
+test("a thread opens under the project's thread model and effort", async () => {
   const partition = await threadRigProject(rig, "thread-facts");
   const member = threadRigMember(rig, partition, "thread-facts");
   await settingsWritten(partition, 0, {
-    leadModel: "claude-sonnet-5-5",
-    leadEffort: "medium",
     threadModel: "claude-opus-5-5",
+    threadEffort: "high",
   });
   const thread = await threadOpenedThroughTheDoor(partition, member);
   const facts = await threadFactsOf(partition, thread, "thread-facts");
   assert.deepEqual(
-    [facts.kind, facts.model, "effort" in facts],
-    ["Thread", "claude-opus-5-5", false],
-    "a thread takes the thread's model and none of the lead's effort",
-  );
-  assert.deepEqual(
-    (
-      await postgresSelectorResolvedSettings(rig.apiPool).projectSettings(
-        partition,
-      )
-    ).lead,
-    { offering: "Own", model: "claude-sonnet-5-5", effort: "medium" },
-  );
-
-  const threadsOnly = await threadRigProject(rig, "thread-facts-only");
-  await settingsWritten(threadsOnly, 0, {
-    threadModel: "claude-opus-5-5",
-    threadEffort: "high",
-  });
-  assert.deepEqual(
-    (
-      await postgresSelectorResolvedSettings(rig.apiPool).projectSettings(
-        threadsOnly,
-      )
-    ).lead,
-    { offering: "Own" },
-    "a thread's model and effort are not the lead's",
+    [facts.kind, facts.model, facts.effort],
+    ["Thread", "claude-opus-5-5", "high"],
   );
 });
 
@@ -208,47 +180,27 @@ test("a session's model and effort columns refuse what the door refuses", async 
 
 test("a project's model and effort columns refuse what the door refuses", async () => {
   const partition = await threadRigProject(rig, "settings-columns");
-  const write = (
-    values: readonly [
-      string | null,
-      string | null,
-      string | null,
-      string | null,
-    ],
-  ) =>
+  const write = (values: readonly [string | null, string | null]) =>
     rig.sessions.harness.query(
-      `SELECT revision::text FROM update_selector_project_settings(
-         $1,$2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-         NULL,NULL,NULL,NULL,$3,$4,$5,$6,'User','models-admin')`,
+      `SELECT revision::text FROM update_selector_project_thread_settings(
+         $1,$2,0,NULL,NULL,$3,$4,'User','models-admin')`,
       [partition.tenant, partition.project, ...values],
     );
-  for (const model of modelsRefused) {
+  for (const model of modelsRefused)
     await assert.rejects(
-      write([model, null, null, null]),
-      /selector_project_lead_model_is_a_model/u,
-      JSON.stringify(model),
-    );
-    await assert.rejects(
-      write([null, null, model, null]),
+      write([model, null]),
       /selector_project_thread_model_is_a_model/u,
       JSON.stringify(model),
     );
-  }
   await assert.rejects(
-    write([null, "ultra", null, null]),
-    /selector_project_lead_effort_is_known/u,
-  );
-  await assert.rejects(
-    write([null, null, null, "none"]),
+    write([null, "none"]),
     /selector_project_thread_effort_is_known/u,
   );
 });
 
-test("the settings history records the lead's and the threads' model and effort", async () => {
+test("the settings history records the threads' model and effort", async () => {
   const partition = await threadRigProject(rig, "settings-history");
   const chosen: SelectorProjectOverrides = {
-    leadModel: "claude-sonnet-5-5",
-    leadEffort: "medium",
     threadModel: "claude-opus-5-5",
     threadEffort: "xhigh",
   };

@@ -105,27 +105,6 @@ test("a text override that spells the default's word is a change from the defaul
   });
 });
 
-/** The page draws only what threads run under, so a revision that moved
- * nothing else has nothing on the page to name. */
-test("a revision that moved only overrides the page does not draw reads as no change", () => {
-  const diffs = selectorSettingsHistoryDiffs([
-    revisionAt(14, {
-      northStar: "ship the console",
-      mode: "Paused",
-      dispatchMode: "ApprovalRequired",
-      basePrompt: "choose the newest",
-      limits: { tokensPerDecision: 100 },
-      modelAllowlist: ["opus"],
-      toolAllowlist: ["Read", "Grep"],
-      operationalContextMaxAgeMs: 30_000,
-      leadModel: "sonnet",
-      leadEffort: "low",
-    }),
-    revisionAt(13, { northStar: "ship the console" }),
-  ]);
-  expect(diffs[0]?.changes).toStrictEqual([]);
-});
-
 /** A prompt of many paragraphs whose last sentence moved is unreadable drawn
  * whole on both sides of an arrow. */
 test("a long text is diffed to the first line the two differ on", () => {
