@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import { EpicPage } from "../app/browser/EpicPage.tsx";
 import { EpicOverviewTab } from "../app/browser/epic/EpicOverviewTab.tsx";
 import { renderCopied } from "./copied.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesFetch } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import {
@@ -174,14 +174,14 @@ function epicServed(
     if (url.endsWith("/epics/8")) return answer(epicOtherView);
     if (url.endsWith("/people"))
       return answer({
-        ...leadPartition,
+        ...projectPartition,
         people: epicServing.people,
         otherIssuers: 0,
         truncated: false,
       });
     if (url.includes("/projects/atlas?"))
       return answer({
-        partition: leadPartition,
+        partition: projectPartition,
         sequence: 900,
         tickets: new URL(url, "http://x").searchParams.has("epic")
           ? epicServing.rows
@@ -202,7 +202,7 @@ export function EpicPageHarness(props: {
 }): ReactNode {
   return (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={props.client}
       transport={openedStream().ports.fetch}
     >

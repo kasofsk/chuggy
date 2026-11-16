@@ -16,7 +16,7 @@ import type { ReactNode } from "react";
 
 import { CatalogPage } from "../app/browser/catalog/CatalogPage.tsx";
 import type { CatalogQuery } from "../app/core/catalogConfigurations.ts";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import {
   answer,
   openedStream,
@@ -58,7 +58,7 @@ vi.mock("@tanstack/react-router", () => ({
       {props.children}
     </a>
   ),
-  useParams: () => leadPartition,
+  useParams: () => projectPartition,
   useNavigate: () => (to: unknown) => {
     navigated.push(to);
     return Promise.resolve();
@@ -159,7 +159,7 @@ async function drawPage(
     if (revision !== undefined)
       return Promise.resolve(
         answer({
-          partition: leadPartition,
+          partition: projectPartition,
           revision,
           canonical: canonicals[revision] ?? "{}",
           digest: "a".repeat(64),
@@ -169,7 +169,7 @@ async function drawPage(
   });
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }

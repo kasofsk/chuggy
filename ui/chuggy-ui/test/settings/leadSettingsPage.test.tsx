@@ -35,7 +35,8 @@ import {
   settled,
   turned,
 } from "../screenHarness.tsx";
-import { leadBody, leadPartition } from "../leadFixture.ts";
+import { leadBody } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 import { sessionPlacementBody } from "../sessionPlacementFixture.ts";
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
 import { styleless } from "../styleless.ts";
@@ -51,7 +52,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -95,7 +96,7 @@ function settingsBody(
   resolved: Readonly<Record<string, unknown>> = {},
 ): unknown {
   return {
-    partition: leadPartition,
+    partition: projectPartition,
     revision,
     overrides,
     effective: {
@@ -180,7 +181,7 @@ async function drawSettings(
   });
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={client}
       transport={openedStream().ports.fetch}
     >

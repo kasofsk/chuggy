@@ -29,16 +29,16 @@ import type {
   ConversationTurn,
 } from "./conversation.ts";
 import type {
-  LeadTranscriptEntry,
-  LeadTranscriptHeld,
-} from "./leadTranscript.ts";
+  SessionTranscriptEntry,
+  SessionTranscriptHeld,
+} from "./sessionTranscript.ts";
 import { runCountLabel } from "./runTotals.ts";
 
 /** One session's store as a page holds it: what the walk gathered, the stream
  * the session's own read names, whether the store's listing carries it, and
  * whether the session has taken a turn at all. */
 export interface SessionConversationRead {
-  readonly held: LeadTranscriptHeld;
+  readonly held: SessionTranscriptHeld;
   readonly stream: string | undefined;
   readonly listed: boolean;
   /** Whether a store is due of this session. The first turn writes it, so a
@@ -53,7 +53,7 @@ export interface SessionConversationRead {
  * nothing more about the entries it did draw, so it is the only word said.
  */
 function sessionConversationShortfall(
-  held: LeadTranscriptHeld,
+  held: SessionTranscriptHeld,
 ): ConversationMarker | undefined {
   if (held.unreached) return { marker: "Unreached" };
   return held.truncated ? { marker: "Truncated" } : undefined;
@@ -112,7 +112,7 @@ function sessionConversationMessage(message: unknown): string | undefined {
  * where it gave none. The route answers user and assistant lines and drops the
  * runtime's bookkeeping, which is why the role is a question with two answers. */
 function sessionConversationEntry(
-  entry: LeadTranscriptEntry,
+  entry: SessionTranscriptEntry,
   at: number,
 ): ConversationEntry {
   const message = sessionConversationMessage(entry.message);
@@ -128,7 +128,7 @@ function sessionConversationEntry(
 /** Whether an entry is a line the runtime wrote for itself, which nobody
  * said: its note that a turn was interrupted, in the member's role, or its
  * filler for a turn that ended without an answer, in the assistant's. */
-function sessionConversationUnsaid(entry: LeadTranscriptEntry): boolean {
+function sessionConversationUnsaid(entry: SessionTranscriptEntry): boolean {
   return entry.type === "user"
     ? conversationMessageInterruption(entry.message)
     : conversationMessageFiller(entry.message);

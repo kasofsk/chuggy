@@ -10,7 +10,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { EpicChips } from "../app/browser/EpicChips.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: (props: {
@@ -35,7 +35,7 @@ afterEach(cleanup);
 test("each epic is a link to its page and an archived one says so", () => {
   renderCopied(
     <EpicChips
-      partition={leadPartition}
+      partition={projectPartition}
       epics={[
         { number: 7, title: "Billing", visibility: "Active" },
         { number: 9, title: "Search", visibility: "Archived" },
@@ -51,7 +51,7 @@ test("each epic is a link to its page and an archived one says so", () => {
 
 test("a ticket in no epic draws nothing", () => {
   const { container } = renderCopied(
-    <EpicChips partition={leadPartition} epics={undefined} />,
+    <EpicChips partition={projectPartition} epics={undefined} />,
   );
   expect(container.textContent).toBe("");
 });
