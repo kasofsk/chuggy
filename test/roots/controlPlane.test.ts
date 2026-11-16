@@ -520,3 +520,56 @@ test("the composed finalizer writes a held request to stderr, and not on every p
     ],
   );
 });
+
+/** The same composition, asked what a forge answered and where a hold was recorded. */
+test("the composed finalizer writes one JSON line to stderr per forge act and per hold", async () => {
+  const program = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const telemetry = await import('./src/interpreter/finalizerTelemetry.ts');
+    const proposals = await import('./src/interpreter/changeProposal.ts');
+    const pool = { query: async () => { throw new Error('a composition queried the database'); } };
+    const service = roots.finalizerProcessRootService(pool, {
+      service: () => ({ git: {}, forges: {}, artifactRoot: '/nonexistent' }),
+    });
+    telemetry.recordFinalizer(service.metrics, (metrics) => {
+      metrics.forgeAnswered({
+        ticket: 7, request: 'request-merged', act: 'merge', outcome: 'NotMergeable',
+        reply: proposals.changeProposalAnsweredReply(405, 'Repository rule violations found'),
+      });
+      metrics.holdRecorded({
+        ticket: 7, request: 'request-merged', kind: 'ProposalMergesExhausted',
+        passes: 1, escalated: false,
+      });
+    });
+  `;
+  const result = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    { cwd: process.cwd() },
+  );
+  assert.deepEqual(
+    result.stderr
+      .split("\n")
+      .filter((line) => line.startsWith('{"finalizer"'))
+      .map((line) => JSON.parse(line) as unknown),
+    [
+      {
+        finalizer: "forgeAct",
+        ticket: 7,
+        request: "request-merged",
+        act: "merge",
+        outcome: "NotMergeable",
+        status: 405,
+        message: "Repository rule violations found",
+      },
+      {
+        finalizer: "hold",
+        ticket: 7,
+        request: "request-merged",
+        hold: "ProposalMergesExhausted",
+        passes: 1,
+        escalated: false,
+      },
+    ],
+  );
+});

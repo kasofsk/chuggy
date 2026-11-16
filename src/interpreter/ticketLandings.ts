@@ -56,6 +56,7 @@ import { authorizedProjectRead } from "./authorizedProject.ts";
 import type {
   ChangeProposalCreationStored,
   ChangeProposalMergeAnswer,
+  ChangeProposalMerged,
   ChangeProposalMergeability,
   ChangeProposalMergeWait,
   ChangeProposalStatus,
@@ -156,6 +157,24 @@ export interface TicketLandingProposal {
   readonly mergeCommit?: GitObjectId;
   /** The head the forge merged, where it is not `headCommit`: a person moved it before merging. */
   readonly mergedHead?: GitObjectId;
+  /** How many merges of it the forge was asked for, where it was asked for any. */
+  readonly mergesAsked?: number;
+  readonly mergeAnswer?: TicketLandingMergeAnswer;
+}
+
+/**
+ * What the forge answered the newest merge it was asked for: when it was asked
+ * and, once heard, when it answered, what that came to, and its status and
+ * message, cut where `messageCut` says so, or the failure that reached no forge.
+ */
+export interface TicketLandingMergeAnswer {
+  readonly askedAt: PublicInstant;
+  readonly answeredAt?: PublicInstant;
+  readonly outcome?: ChangeProposalMerged["merged"];
+  readonly status?: number;
+  readonly failure?: string;
+  readonly message?: string;
+  readonly messageCut?: true;
 }
 
 /** What a request's merge waits on at the forge, and when the forge was last heard about it. */

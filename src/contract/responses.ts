@@ -31,6 +31,8 @@ import {
   cursorSchema,
   forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
+  proposalForgeFailureCharsMax,
+  proposalForgeMessageCharsMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
   forgeRepositoriesAnsweredMax,
@@ -124,6 +126,7 @@ import {
   changeProposalMergeReasons,
   changeProposalMergeWaits,
   changeProposalStatuses,
+  changeProposalMergeOutcomes,
   changeProposalMerges,
   draftLandingSources,
   draftReleaseRefusalCodes,
@@ -2968,14 +2971,40 @@ const ticketLandingConflictSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** Text a forge answered with, bounded as the row keeps it. */
+function ticketLandingForgeTextSchema(charsMax: number) {
+  return z.string().refine((value) => isBoundedText(value, charsMax));
+}
+
+/**
+ * What the forge answered the newest merge it was asked for: when it was asked
+ * and, once heard, when it answered, what that came to, and its status and
+ * message, cut where `messageCut` says so, or the failure that reached no forge.
+ */
+const ticketLandingMergeAnswerSchema = z.strictObject({
+  askedAt: instantSchema,
+  answeredAt: instantSchema.optional(),
+  outcome: z.enum(changeProposalMergeOutcomes).optional(),
+  status: countSchema.optional(),
+  failure: ticketLandingForgeTextSchema(
+    proposalForgeFailureCharsMax,
+  ).optional(),
+  message: ticketLandingForgeTextSchema(
+    proposalForgeMessageCharsMax,
+  ).optional(),
+  messageCut: z.literal(true).optional(),
+});
+
 /**
  * The pull request one landing opened at `headCommit`, each other field present
  * where its row holds it. `url` is absent where none was recorded or the one
  * recorded is not a link a report could carry; `creation` is absent where the
  * proposal was found by reading it back; `status` and `mergeability` are what
- * the forge last said of it, and `mergeState` its own word for the second; and
+ * the forge last said of it, and `mergeState` its own word for the second;
  * `mergedHead` is the head the forge merged, present only where it is not the
- * one this landing opened it at.
+ * one this landing opened it at; and `mergesAsked` is how many merges of it the
+ * forge was asked for, absent where none was, and `mergeAnswer` what the forge
+ * answered the newest of them.
  */
 const ticketLandingProposalSchema = z.strictObject({
   url: actionReportDocumentSchema.shape.link,
@@ -2990,6 +3019,8 @@ const ticketLandingProposalSchema = z.strictObject({
   mergeState: z.string().min(1).max(proposalMergeStateCharsMax).optional(),
   mergeCommit: landingCommitSchema.optional(),
   mergedHead: landingCommitSchema.optional(),
+  mergesAsked: countSchema.optional(),
+  mergeAnswer: ticketLandingMergeAnswerSchema.optional(),
 });
 
 const ticketLandingFields = {
