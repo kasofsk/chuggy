@@ -133,7 +133,7 @@ test("an evaluation that is not current names its work cycle", () => {
 test("a finalization that is not current names its work cycle", () => {
   expect(
     copyTextEn(operationRefusalSentence(samples.FinalizationNotCurrent)),
-  ).toContain("Landing result for cycle 3 of #41");
+  ).toContain("Finalization result for cycle 3 of #41");
 });
 
 test("a release refused for its pairing names the brief, and one refused for its configuration does not", () => {

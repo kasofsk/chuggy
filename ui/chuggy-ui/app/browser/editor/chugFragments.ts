@@ -181,7 +181,7 @@ function chugFragmentsLabel(root: TicketYamlFragmentRoot, name: string): Copy {
     case "Plan":
       return { id: "ticket-authoring-fragment-plan", args: { name } };
     case "Finalizer":
-      return { id: "ticket-authoring-fragment-landing", args: { name } };
+      return { id: "ticket-authoring-fragment-finalizer", args: { name } };
     case "Prompt":
       return { id: "ticket-authoring-fragment-prompt", args: { name } };
   }

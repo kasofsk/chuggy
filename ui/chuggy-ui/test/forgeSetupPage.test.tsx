@@ -6,12 +6,12 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
 
 import { ForgeSetupPage } from "../app/browser/ForgeSetupPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { forgeReturnKey } from "../app/core/forgeReturn.ts";
+import { centeredPageSaid } from "./centeredPageDrawn.ts";
 import { answer, drawnStrict, press, settled } from "./screenHarness.tsx";
 import type { DrawnStrict } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -48,11 +48,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: { readonly to: string; readonly children?: ReactNode }) => (
-    <a href={props.to}>{props.children}</a>
-  ),
+vi.mock("@tanstack/react-router", async () => ({
+  ...(await import("./routerLinkStubbed.tsx")),
   useSearch: () => held.arrived,
   useNavigate: () => (to: unknown) => {
     held.navigated.push(to);
@@ -98,6 +95,12 @@ function drawLanding(
   return drawnStrict(<ForgeSetupPage />, answered);
 }
 
+/** A return this tab cannot place: what happened, what to do, and Home. */
+const unexpected = {
+  title: "GitHub sent you back unexpectedly",
+  actions: ["Home"],
+};
+
 /** The navigation that puts the person back where they followed the install. */
 const returned = { href: transaction.returnPath, replace: true };
 
@@ -126,7 +129,13 @@ test("a matching install sends the person to authorize, with this tab's transact
     installs: transaction.installs,
   });
   expect(held.navigated).toStrictEqual([]);
-  expect(screen.getByRole("main").textContent).toBe("SetupConnecting");
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Connecting GitHub",
+    actions: [],
+  });
+  expect(screen.getByRole("status").textContent).toBe(
+    "Finishing the connection…",
+  );
 });
 
 /** Left as an entry of its own, the landing is what Back from the next
@@ -154,7 +163,7 @@ test("a state that is not this tab's asks nothing, stays and links home", async 
   expect(sent).toStrictEqual([]);
   expect(held.replaced).toStrictEqual([]);
   expect(held.navigated).toStrictEqual([]);
-  expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual(unexpected);
   expect(
     screen.getByRole<HTMLAnchorElement>("link", { name: "Home" }).pathname,
   ).toBe("/");
@@ -179,12 +188,12 @@ test("an update with nothing stored asks nothing, says where from without alarm 
   const landed = await drawLanding();
   expect(landingActs(landed)).toStrictEqual([]);
   expect(heldWord()).toBeNull();
-  expect(screen.getByRole("main").textContent).toBe(
-    "SetupBack from GitHubHome",
-  );
-  expect(
-    screen.getByText("Back from GitHub").classList.contains("notice-info"),
-  ).toBe(true);
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Back from GitHub",
+    actions: ["Home"],
+  });
+  expect(screen.getByText("Go home to carry on.")).toBeTruthy();
+  expect(document.querySelector(".notice-danger")).toBeNull();
   expect(
     screen.getByRole<HTMLAnchorElement>("link", { name: "Home" }).pathname,
   ).toBe("/");
@@ -198,9 +207,10 @@ test.each([[undefined], ["someone-else"]])(
     held.arrived = { action: "update", state };
     const landed = await drawLanding();
     expect(landingActs(landed)).toStrictEqual([]);
-    expect(screen.getByRole("main").textContent).toBe(
-      "SetupBack from GitHubContinue",
-    );
+    expect(centeredPageSaid()).toStrictEqual({
+      title: "Back from GitHub",
+      actions: ["Continue"],
+    });
     expect(sessionStorage.getItem(forgeInstallTransactionKey)).toBeNull();
     await press("Continue");
     expect(landingActs(landed)).toStrictEqual([returned]);
@@ -209,14 +219,12 @@ test.each([[undefined], ["someone-else"]])(
 );
 
 test.each([["install"], ["request"]])(
-  "an %s with nothing stored is still refused, in the danger tone",
+  "an %s with nothing stored is still refused, not drawn as an update",
   async (action) => {
     sessionStorage.clear();
     held.arrived = { action, state: "a-state" };
     expect(landingActs(await drawLanding())).toStrictEqual([]);
-    expect(
-      screen.getByText("Not expected").classList.contains("notice-danger"),
-    ).toBe(true);
+    expect(centeredPageSaid()).toStrictEqual(unexpected);
     expect(screen.queryByText("Back from GitHub")).toBeNull();
   },
 );
@@ -224,7 +232,7 @@ test.each([["install"], ["request"]])(
 test("a landing carrying no state asks nothing", async () => {
   held.arrived = { action: "install" };
   expect((await drawLanding()).sent).toStrictEqual([]);
-  expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual(unexpected);
 });
 
 /** The transaction is spent on the first landing, so a reload — which is the
@@ -236,14 +244,18 @@ test("the transaction is spent, and the landing opened again asks nothing", asyn
   held.replaced.length = 0;
   expect((await drawLanding()).sent).toStrictEqual([]);
   expect(held.replaced).toStrictEqual([]);
-  expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(centeredPageSaid()).toStrictEqual(unexpected);
 });
 
 /** A `request` is somebody asking an owner to install; nothing is installed
  * to authorize for yet, so the person goes back with that word. */
-test("a request that awaits an owner asks nothing and returns with Requested", async () => {
+test("a request that awaits an owner asks nothing and returns with Requested, on the landing's frame", async () => {
   held.arrived = { ...held.arrived, action: "request" };
   expect((await drawLanding()).sent).toStrictEqual([]);
+  expect(centeredPageSaid()).toStrictEqual({
+    title: "Back from GitHub",
+    actions: [],
+  });
   expect(held.replaced).toStrictEqual([]);
   expect(held.navigated).toStrictEqual([returned]);
   expect(heldWord()).toMatchObject({
@@ -263,5 +275,5 @@ test("the decision survives the page being drawn again", async () => {
   await settled();
   expect(landed.sent).toHaveLength(1);
   expect(held.replaced).toHaveLength(1);
-  expect(screen.queryByText("Not expected")).toBeNull();
+  expect(centeredPageSaid().title).toBe("Connecting GitHub");
 });

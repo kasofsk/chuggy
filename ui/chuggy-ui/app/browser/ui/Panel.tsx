@@ -59,9 +59,16 @@ function PanelMeta(props: { readonly meta: ReactNode }): ReactNode {
 
 /** The one line under the title saying what the region holds, for a region
  * whose title is not enough on its own. */
-function PanelAbout(props: { readonly about: string | undefined }): ReactNode {
+function PanelAbout(props: {
+  readonly about: string | undefined;
+  readonly id?: string;
+}): ReactNode {
   if (props.about === undefined) return null;
-  return <span className="panel-about">{props.about}</span>;
+  return (
+    <span className="panel-about" id={props.id}>
+      {props.about}
+    </span>
+  );
 }
 
 function PanelFoot(props: { readonly foot: ReactNode }): ReactNode {
@@ -78,6 +85,7 @@ interface PanelOpen {
 
 function PanelCollapsible(props: {
   readonly title: ReactNode;
+  readonly about: string | undefined;
   readonly meta: ReactNode;
   readonly level: 2 | 3 | undefined;
   readonly look: PanelLook;
@@ -86,6 +94,18 @@ function PanelCollapsible(props: {
 }): ReactNode {
   const Heading = props.level === 3 ? "h3" : "h2";
   const open = props.open;
+  const aboutId = useId();
+  const trigger = (
+    <Heading className="panel-title min-w-0 grow">
+      <Collapsible.Trigger
+        className="panel-trigger flex w-full min-w-0 items-center gap-2"
+        aria-describedby={props.about === undefined ? undefined : aboutId}
+      >
+        <span className="min-w-0 grow">{props.title}</span>
+        <Chevron className="panel-chevron" />
+      </Collapsible.Trigger>
+    </Heading>
+  );
   return (
     <Collapsible.Root
       className={props.look.root}
@@ -94,12 +114,14 @@ function PanelCollapsible(props: {
         : { open: open.open, onOpenChange: open.onOpenChange })}
     >
       <div className={props.look.head}>
-        <Heading className="panel-title min-w-0 grow">
-          <Collapsible.Trigger className="panel-trigger flex w-full min-w-0 items-center gap-2">
-            <span className="min-w-0 grow">{props.title}</span>
-            <Chevron className="panel-chevron" />
-          </Collapsible.Trigger>
-        </Heading>
+        {props.about === undefined ? (
+          trigger
+        ) : (
+          <span className="panel-named">
+            {trigger}
+            <PanelAbout about={props.about} id={aboutId} />
+          </span>
+        )}
         <PanelMeta meta={props.meta} />
       </div>
       <Collapsible.Content>
@@ -126,6 +148,7 @@ export function Panel(props: {
     return (
       <PanelCollapsible
         title={props.title}
+        about={props.about}
         meta={props.meta}
         level={props.level}
         look={look}

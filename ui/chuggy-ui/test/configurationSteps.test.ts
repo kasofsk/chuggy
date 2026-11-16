@@ -66,7 +66,7 @@ test("a catalog is grouped as its work, its plan's stages in order and its landi
     ["gates", undefined],
   ]);
   expect(rowsOf(read, "Finalization").map((row) => row.step)).toEqual([
-    "Landing",
+    "Finalization",
   ]);
 });
 
@@ -435,7 +435,7 @@ test("the selection's default is said in its group, once each, and a choice is s
   const chosen = steps(undefined, {
     work: "quick",
     evaluation: "gated",
-    finalization: "approved",
+    finalization: "proposed",
   });
   expect(chosen.groups.map((group) => group.note)).toEqual([
     undefined,
@@ -448,18 +448,6 @@ test("the selection's default is said in its group, once each, and a choice is s
         expect(row.details.map((detail) => detail.name)).not.toContain(
           "Default",
         );
-});
-
-test("a landing a person approves says so, and one that needs no approval says nothing of it", () => {
-  const [approved] = rowsOf(
-    steps(undefined, { finalization: "approved" }),
-    "Finalization",
-  );
-  expect(approved?.details).toEqual([
-    { name: "Approval", lines: ["Required"], code: false, overridden: false },
-  ]);
-  const [landed] = rowsOf(steps(), "Finalization");
-  expect(landed?.details).toEqual([]);
 });
 
 test("a version 1 mode override that changes only the arguments is named as the arguments", () => {

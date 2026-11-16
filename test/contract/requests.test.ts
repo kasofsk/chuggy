@@ -73,6 +73,34 @@ test("a landing write names the repository, and each setting as read and as want
     );
 });
 
+test("a landing write may name pipeline runs as read and as wanted, and one written before them still parses", () => {
+  const before = {
+    repository: "https://github.com/kasofsk/chuggy.git",
+    expected: { mode: "Push" },
+    landing: { mode: "PullRequest" },
+    pipelinesWritable: { expected: false, wanted: true },
+  };
+  assert.deepEqual(projectRepositoryLandingSchema.parse(before), before);
+  const runnable = {
+    ...before,
+    pipelinesRunnable: { expected: false, wanted: true },
+  };
+  assert.deepEqual(projectRepositoryLandingSchema.parse(runnable), runnable);
+  for (const pipelinesRunnable of [
+    { wanted: true },
+    { expected: false },
+    { expected: false, wanted: "on" },
+    true,
+    null,
+  ])
+    assert.equal(
+      projectRepositoryLandingSchema.safeParse({ ...before, pipelinesRunnable })
+        .success,
+      false,
+      `a landing write is refused: ${JSON.stringify(pipelinesRunnable)}`,
+    );
+});
+
 test("a landing default names a kind, a git merge's mode and policy beside it, and never a reference", () => {
   for (const value of [
     { kind: "GitMerge", mode: "Push", policy: "Serialized" },

@@ -36,7 +36,7 @@ import "./epicHistory.css";
 /** Who made a revision, as data: a name is not the catalog's to word. */
 export function EpicActor(props: { readonly label: Label }): ReactNode {
   return (
-    <Tooltip text={props.label.title}>
+    <Tooltip trigger="abbreviation" text={props.label.title}>
       <span translate="no">{props.label.text}</span>
     </Tooltip>
   );

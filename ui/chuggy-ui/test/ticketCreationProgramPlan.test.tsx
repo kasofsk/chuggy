@@ -24,6 +24,7 @@ import {
 } from "./ticketCreationFixture.ts";
 import { ticketReleasing } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { creationMoreOpened, disclosed } from "./creationMore.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -49,7 +50,7 @@ function draw(
   extra: Partial<ComponentProps<typeof CreationForm>> = {},
 ): void {
   renderCopied(creationFormDrawn(ports, offers, extra));
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  creationMoreOpened();
 }
 
 function widths(label: string): readonly string[] {
@@ -104,9 +105,10 @@ test("a plan whose stages are named in free text is picked by those names, and i
     ),
   );
   expect(
-    screen.getByRole("button", { name: /^Evaluation/u }).textContent,
+    disclosed(() => screen.getByRole("button", { name: /^Evaluation/u }))
+      .textContent,
   ).toContain("gated (default) · Code Review → Checks · étape 2");
-  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  creationMoreOpened();
   expect(widths("Stage 1")).toStrictEqual(["2", "3"]);
   expect(widths("Stage 2")).toStrictEqual(["1", "2", "3"]);
 });

@@ -15,7 +15,7 @@
  * it stored one and Home where it did not.
  */
 
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -25,6 +25,7 @@ import type { ApiPorts } from "../core/apiRequest.ts";
 import { apiForgeApps } from "../core/apiRoutes.ts";
 import type { Copy } from "../core/copy.ts";
 import { forgeInstallTake } from "../core/forgeInstallation.ts";
+import type { ForgePress } from "../core/forgePress.ts";
 import {
   forgeSetupDecision,
   forgeSetupRequested,
@@ -34,12 +35,16 @@ import {
 } from "../core/forgeSetup.ts";
 import type { ForgeSetupDecision } from "../core/forgeSetup.ts";
 import { useApiPorts } from "./api.ts";
-import { Footer } from "./Footer.tsx";
 import { forgeAuthorizeRedirect } from "./forgeAuthorizeRedirect.ts";
 import { forgeReturnNavigate } from "./forgeReturnNavigate.ts";
 import { replaceLocation, transientStore } from "./ports.ts";
-import { Button } from "./ui/Button.tsx";
-import { Notice } from "./ui/Notice.tsx";
+import { Button, ButtonLink } from "./ui/Button.tsx";
+import { CenteredPage } from "./ui/CenteredPage.tsx";
+
+/** What either landing is for while it reads where to send the person. */
+const forgeLandingConnectingTitle: Copy = {
+  id: "repositories-connecting-title",
+};
 
 /** What this page says while it reads where to send the person. */
 export const forgeSetupConnecting: Copy = { id: "repositories-connecting" };
@@ -81,59 +86,103 @@ async function forgeSetupAnswer(
   );
 }
 
+/** A landing waiting on what it asked, or on the navigation it started. */
+export function ForgeLandingConnecting(): ReactNode {
+  const text = useCopyText();
+  return (
+    <CenteredPage landmark title={text(forgeLandingConnectingTitle)}>
+      <p role="status">{text(forgeSetupConnecting)}</p>
+    </CenteredPage>
+  );
+}
+
+/** A landing this tab cannot place, whose way on is Home. */
+export function ForgeLandingUnexpected(): ReactNode {
+  const text = useCopyText();
+  return (
+    <CenteredPage
+      landmark
+      title={text({ id: "repositories-setup-unexpected-title" })}
+      primary={
+        <ButtonLink to="/" variant="primary">
+          {text({ id: "repositories-home" })}
+        </ButtonLink>
+      }
+    >
+      <p>{text(forgeSetupUnexpected)}</p>
+      <p>{text({ id: "repositories-setup-unexpected-next" })}</p>
+    </CenteredPage>
+  );
+}
+
+/** A landing that has sent the person back where they were, drawn until the
+ * navigation lands. */
+export function ForgeLandingBack(): ReactNode {
+  const text = useCopyText();
+  return <CenteredPage landmark title={text(forgeSetupUpdated)} />;
+}
+
+function ForgeSetupUpdatedPage(props: {
+  readonly press: ForgePress | undefined;
+  readonly navigate: UseNavigateResult<string>;
+}): ReactNode {
+  const text = useCopyText();
+  const press = props.press;
+  return (
+    <CenteredPage
+      landmark
+      title={text(forgeSetupUpdated)}
+      primary={
+        press === undefined ? (
+          <ButtonLink to="/" variant="primary">
+            {text({ id: "repositories-home" })}
+          </ButtonLink>
+        ) : (
+          <Button
+            variant="primary"
+            onClick={() => {
+              void forgeReturnNavigate(props.navigate, press, undefined);
+            }}
+          >
+            {text({ id: "repositories-continue" })}
+          </Button>
+        )
+      }
+    >
+      <p>
+        {text(
+          press === undefined
+            ? { id: "repositories-setup-updated-home" }
+            : { id: "repositories-setup-updated-continue" },
+        )}
+      </p>
+    </CenteredPage>
+  );
+}
+
 function ForgeSetupDrawn(props: {
   readonly decision: ForgeSetupDecision;
   readonly navigate: UseNavigateResult<string>;
 }): ReactNode {
-  const text = useCopyText();
   const decision = props.decision;
   switch (decision.decision) {
     case "Authorize":
+      return <ForgeLandingConnecting />;
+    case "Requested":
+      return <ForgeLandingBack />;
+    case "Updated":
       return (
-        <Notice
-          tone="info"
-          inline
-          role="status"
-          detail={text(forgeSetupConnecting)}
+        <ForgeSetupUpdatedPage
+          press={decision.press}
+          navigate={props.navigate}
         />
       );
-    case "Requested":
-      return null;
-    case "Updated": {
-      const press = decision.press;
-      return (
-        <>
-          <Notice tone="info" inline detail={text(forgeSetupUpdated)} />
-          {press === undefined ? (
-            <Link to="/">{text({ id: "repositories-home" })}</Link>
-          ) : (
-            <div className="flex">
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => {
-                  void forgeReturnNavigate(props.navigate, press, undefined);
-                }}
-              >
-                {text({ id: "repositories-continue" })}
-              </Button>
-            </div>
-          )}
-        </>
-      );
-    }
     case "Unexpected":
-      return (
-        <>
-          <Notice tone="danger" inline detail={text(forgeSetupUnexpected)} />
-          <Link to="/">{text({ id: "repositories-home" })}</Link>
-        </>
-      );
+      return <ForgeLandingUnexpected />;
   }
 }
 
 export function ForgeSetupPage(): ReactNode {
-  const text = useCopyText();
   const query = useSearch({ from: forgeSetupRoutePath });
   const navigate = useNavigate();
   const ports = useApiPorts();
@@ -146,15 +195,5 @@ export function ForgeSetupPage(): ReactNode {
     answered.current = true;
     void forgeSetupAnswer(ports, navigate, decision);
   }, [ports, navigate, decision]);
-  return (
-    <div className="grid min-h-dvh content-start gap-4 p-4">
-      <main className="grid gap-3">
-        <h1 className="text-md font-strong text-ink-1">
-          {text({ id: "repositories-setup-title" })}
-        </h1>
-        <ForgeSetupDrawn decision={decision} navigate={navigate} />
-      </main>
-      <Footer />
-    </div>
-  );
+  return <ForgeSetupDrawn decision={decision} navigate={navigate} />;
 }

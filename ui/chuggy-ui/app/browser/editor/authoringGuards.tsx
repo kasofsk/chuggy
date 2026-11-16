@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import { persistentStore } from "../ports.ts";
 
 /** The browser refuses the unload only if the handler is attached when it fires. */
@@ -35,12 +36,15 @@ function useUnloadGuard(dirty: boolean): void {
 }
 
 /**
- * Both guards over one screen's dirtiness. A route away asks first and the
- * author's answer decides, except after `release`: the navigation a settled
- * submit makes is the one exit the text is not lost by, and it happens before
- * a render could clear the dirtiness it would otherwise be asked about.
+ * Both guards over one screen's dirtiness. A route away asks `question` first
+ * and the author's answer decides, except after `release`: the navigation a
+ * settled submit makes is the one exit the text is not lost by, and it happens
+ * before a render could clear the dirtiness it would otherwise be asked about.
  */
-export function useAuthoringGuards(dirty: boolean): {
+export function useAuthoringGuards(
+  dirty: boolean,
+  question: Copy = { id: "ticket-authoring-leave-question" },
+): {
   readonly release: () => void;
 } {
   const held = useRef(dirty);
@@ -50,9 +54,7 @@ export function useAuthoringGuards(dirty: boolean): {
   }, [dirty]);
   useUnloadGuard(dirty);
   useBlocker({
-    shouldBlockFn: () =>
-      held.current &&
-      !window.confirm(text({ id: "ticket-authoring-leave-question" })),
+    shouldBlockFn: () => held.current && !window.confirm(text(question)),
     enableBeforeUnload: false,
   });
   return {

@@ -26,6 +26,7 @@ import {
   contractVersionAccepted,
   workerContractAccepted,
 } from "../../src/interpreter/workerPlane.ts";
+import { workerContractWireOf } from "../contract/workerContractReleases.ts";
 
 const pinPath = new URL("../../images/worker/core.json", import.meta.url);
 const dockerfilePath = new URL(
@@ -120,15 +121,16 @@ function imageEnvironment(text: string): Map<string, string> {
   return new Map(chain.flatMap((built) => [...built.environment]));
 }
 
-test("the release the pin names is one the job and session planes accept", () => {
+test("the package the pin names is a release, and the one its contract names is one the job and session planes accept", () => {
   const { contractRelease } = JSON.parse(readFileSync(pinPath, "utf8")) as {
     contractRelease?: unknown;
   };
   assert.equal(typeof contractRelease, "string");
   assert.notEqual(workerContractVersionOf(String(contractRelease)), undefined);
+  const named = workerContractWireOf(String(contractRelease));
   assert.ok(
-    contractVersionAccepted(workerContractAccepted, String(contractRelease)),
-    `${String(contractRelease)} is refused by the planes the core calls`,
+    contractVersionAccepted(workerContractAccepted, named),
+    `${String(contractRelease)} names ${named}, which the planes the core calls refuse`,
   );
 });
 
@@ -231,4 +233,24 @@ test("the runtime is built only on the pins' lag behind npm, read again whenever
     ),
     "the runtime binds no agent-lag verdict",
   );
+});
+
+/** Catches a session's shell left without `chuggy`, and one handed the runtime's own `bin/` with it. */
+test("the image's PATH finds the core's chuggy command through a directory holding only it, and never the runtime's bin", () => {
+  const text = readFileSync(dockerfilePath, "utf8");
+  const path = (imageEnvironment(text).get("PATH") ?? "").split(":");
+  assert.equal(path[0], "${PATH}", "the image's PATH drops the base's own");
+  assert.ok(path.includes("/opt/chuggy/path"), "the image's PATH has no path/");
+  assert.ok(!path.includes("/opt/chuggy/bin"), "the image's PATH has bin/");
+  assert.ok(
+    dockerStageInstructions(text, "runtime").some((instruction) =>
+      / ln -s "\.\.\/lib\/chuggy\/\$bin" \/opt\/chuggy\/path\/chuggy( |$)/u.test(
+        instruction,
+      ),
+    ),
+    "the runtime links no chuggy into path/",
+  );
+  for (const instruction of dockerInstructions(text))
+    for (const [named] of instruction.matchAll(/\/opt\/chuggy\/path\/\S*/gu))
+      assert.equal(named, "/opt/chuggy/path/chuggy", instruction);
 });

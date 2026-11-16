@@ -23,7 +23,7 @@ import type {
 } from "../app/core/sessionHolder.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import type { SetupPacing } from "../app/core/setupPacing.ts";
-import { SetupMachineError } from "../app/core/setupPorts.ts";
+import { SetupMachineError, setupFiles } from "../app/core/setupPorts.ts";
 import type {
   SetupAnswered,
   SetupFile,
@@ -33,8 +33,20 @@ import type {
 } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
-import { boxDisk, boxHome, boxRan, runnerBox } from "./setupRunnerBox.ts";
+import {
+  boxDisk,
+  boxFolder,
+  boxHome,
+  boxRan,
+  boxServing,
+  runnerBox,
+} from "./setupRunnerBox.ts";
 import type { RunnerBox } from "./setupRunnerBox.ts";
+import {
+  signInStoreFileName,
+  signInStoreText,
+  signInStoreTokenRead,
+} from "../../../src/contract/signInStore.ts";
 import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
@@ -42,9 +54,15 @@ export const machineSite = "https://chuggy.example";
 export const machineIssuer = "https://auth.example";
 export const machineAudience = "https://chuggy.example/api";
 export const machineScript = `${boxHome}/chuggy-setup.mjs`;
-export const machineDirectory = "~/.chuggy-setup";
+/** The shared sign-in store's directory, as a person would write it and as the machine names it. */
+export const machineDirectory = "~/.config/chuggy/sign-ins";
+export const machineStore = `${boxHome}/.config/chuggy/sign-ins`;
 /** The program's directory as the machine names it, which is how a path it would not write is said. */
 export const machineKept = `${boxHome}/.chuggy-setup`;
+/** The folder the program is run in. */
+export const machineFolder = boxFolder;
+/** What the swept log says for a sweep of the shared store, which is of every file in it. */
+export const machineStoreSwept = "sign-ins";
 /** The number the machine knows its user by unless a case says another: the one the runner package takes docker from. */
 export const machineUser = "1000";
 
@@ -65,18 +83,20 @@ interface Timer {
 }
 
 export interface SetupMachine {
-  /** The files by name, as the program wrote them. */
+  /** The program's own files by name, as the program wrote them. */
   readonly files: Map<SetupFile, string>;
-  /** What the lock says: its holder's word, or nothing where it is free. */
+  /** The shared sign-in store's files by name, as the program wrote them. */
+  readonly store: Map<string, string>;
+  /** What the store's lock says: its holder's word, or nothing where it is free. */
   lock: string | undefined;
-  /** Each file the program asked to have its unfinished writes removed, in order, and whether the machine removes them, given which ask it is. */
-  readonly swept: SetupFile[];
+  /** Each file the program asked to have its unfinished writes removed, the store's as `machineStoreSwept`, in order, and whether the machine removes them, given which ask it is. */
+  readonly swept: string[];
   sweeps: (turn: number) => boolean;
   /** Each file room was asked for, in order, and whether the machine gives it, given which ask it is. */
-  readonly reserved: SetupFile[];
+  readonly reserved: string[];
   room: (turn: number) => boolean;
-  /** Whether the machine takes a write of a file. */
-  takes: (file: SetupFile) => boolean;
+  /** Whether the machine takes a write of a file, of either directory. */
+  takes: (file: string) => boolean;
   nowMs: number;
   /** How the site's own configuration, the issuer's discovery, its token endpoint and the API answer. */
   site: Answering;
@@ -91,10 +111,14 @@ export interface SetupMachine {
   admits: boolean;
   /** What happens as the API is sent a request, before it answers. */
   answering: () => void;
+  /** Whether the API takes each write and its answer never arrives. */
+  drops: boolean;
   /** What the site holds, which is what its reads answer. */
   world: SetupSite;
   /** What git prints of the folder's `origin`, or nothing where it has none to print. */
   remote: string | undefined;
+  /** What git prints of the top of the checkout the folder is in, or nothing where it is in none. */
+  top: string | undefined;
   browser: string | undefined;
   platform: string;
   /** The number the machine knows its user by, or nothing where it numbers none. */
@@ -297,6 +321,8 @@ function apiFetch(
       : unreached;
   if (machine.api === "Silent")
     return Promise.reject(new Error("no route to host"));
+  if (machine.drops && init.method !== "GET")
+    return Promise.reject(new Error("connection reset"));
   if (machine.api === "Refuses" || answer === undefined)
     return Promise.resolve(
       new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
@@ -372,10 +398,10 @@ export function folded(message: Uint8Array): Uint8Array {
 export const machineDraftSuffix = ".draft";
 
 /** What the files throw where the machine would not write: which path, as the real ones do. */
-function unwritable(file: string): SetupMachineError {
+function unwritable(file: string, directory = machineKept): SetupMachineError {
   return new SetupMachineError({
     fault: "Unwritable",
-    path: `${machineKept}/${file}`,
+    path: `${directory}/${file}`,
   });
 }
 
@@ -402,6 +428,63 @@ function filesOf(machine: SetupMachine): SetupPorts["files"] {
   };
 }
 
+/** The file the shared store keeps a site's sign-in in. */
+export function machineTokenFile(site = machineSite): string {
+  return signInStoreFileName(site);
+}
+
+/** The sign-in the shared store holds for a site, or nothing. */
+export function machineHeld(
+  machine: SetupMachine,
+  site = machineSite,
+): string | undefined {
+  const text = machine.store.get(machineTokenFile(site));
+  return text === undefined ? undefined : signInStoreTokenRead(text);
+}
+
+/** What the machine remembers: the site its own file names, and the sign-in the shared store holds for that site. */
+export function machineRemembered(machine: SetupMachine): unknown {
+  const text = machine.files.get(setupFiles.session);
+  if (text === undefined) return undefined;
+  const kept = JSON.parse(text) as { readonly site: string };
+  const held = machineHeld(machine, kept.site);
+  return held === undefined ? kept : { ...kept, refreshToken: held };
+}
+
+/** The machine as one that remembers `site` and holds `token` for it in the shared store. */
+export function machineHolding(
+  machine: SetupMachine,
+  token: string,
+  site = machineSite,
+): void {
+  machine.files.set(setupFiles.session, JSON.stringify({ site }));
+  machine.store.set(machineTokenFile(site), signInStoreText(token));
+}
+
+function storeOf(machine: SetupMachine): SetupPorts["store"] {
+  const { store } = machine;
+  return {
+    read: (file) => store.get(file),
+    write: (file, text) => {
+      if (!machine.takes(file)) throw unwritable(file, machineStore);
+      store.set(file, text);
+    },
+    reserve: (file) => {
+      machine.reserved.push(file);
+      if (!machine.room(machine.reserved.length))
+        throw unwritable(file, machineStore);
+    },
+    remove: (file) => {
+      store.delete(file);
+    },
+    sweep: () => {
+      machine.swept.push(machineStoreSwept);
+      if (!machine.sweeps(machine.swept.length))
+        throw unwritable(machineStoreSwept, machineStore);
+    },
+  };
+}
+
 function lockOf(machine: SetupMachine): SetupPorts["lock"] {
   return {
     read: () => machine.lock,
@@ -411,6 +494,15 @@ function lockOf(machine: SetupMachine): SetupPorts["lock"] {
       return true;
     },
   };
+}
+
+/** What a command run to read its answer prints here: npm's prefix, the checkout's top, or the folder's remote. */
+function machineRead(
+  machine: SetupMachine,
+  command: readonly string[],
+): string | undefined {
+  if (command[0] === "npm") return machine.box.prefix;
+  return command[1] === "rev-parse" ? machine.top : machine.remote;
 }
 
 function aliveAsked(machine: SetupMachine, asked: number): boolean {
@@ -431,6 +523,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
     fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
     apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
     files: filesOf(machine),
+    store: storeOf(machine),
     lock: lockOf(machine),
     listen: (host, answer) => {
       if (host !== "127.0.0.1") throw new Error(`listened on ${host}`);
@@ -464,9 +557,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       read: (command, waitMs) => {
         machine.ran.push(command);
         machine.ranWaitMs.push(waitMs);
-        return Promise.resolve(
-          command[0] === "npm" ? machine.box.prefix : machine.remote,
-        );
+        return Promise.resolve(machineRead(machine, command));
       },
       run: (command) =>
         Promise.resolve(
@@ -478,14 +569,20 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
         ),
     },
     disk: boxDisk(machine.box),
-    surroundings: {
-      platform: machine.platform,
-      browser: machine.browser,
-      directory: machineDirectory,
-      home: boxHome,
-      configHome: machine.configHome,
-      user: machine.user,
-    },
+    surroundings: surroundingsOf(machine),
+  };
+}
+
+function surroundingsOf(machine: SetupMachine): SetupPorts["surroundings"] {
+  return {
+    platform: machine.platform,
+    browser: machine.browser,
+    directory: machineDirectory,
+    folder: machineFolder,
+    home: boxHome,
+    configHome: machine.configHome,
+    claudeHome: undefined,
+    user: machine.user,
   };
 }
 
@@ -571,6 +668,7 @@ export function setupMachine(): SetupMachine {
   const issuer = issuerNew();
   const machine: SetupMachine = {
     files: new Map(),
+    store: new Map(),
     lock: undefined,
     swept: [],
     sweeps: () => true,
@@ -586,8 +684,10 @@ export function setupMachine(): SetupMachine {
     accessSecs: 600,
     admits: true,
     answering: () => undefined,
+    drops: false,
     world: setupSiteAt("Workspace"),
     remote: undefined,
+    top: undefined,
     browser: undefined,
     platform: "linux",
     user: machineUser,
@@ -635,11 +735,20 @@ export function setupMachine(): SetupMachine {
   return machine;
 }
 
-/** A machine already signed in to a site holding `world`, as a sign-in the person finished leaves it, with nothing yet recorded as asked. */
+/** The project a machine signed in serves to its agent unless a case says it serves none. */
+export const machineServing = {
+  site: machineSite,
+  workspace: "acme",
+  project: "widgets",
+} as const;
+
+/** A machine already signed in to a site holding `world`, as a sign-in the person finished leaves it, with nothing yet recorded as asked; `served` is whether `mcp` has already been run there for acme/widgets. */
 export async function machineSignedIn(
   world: SetupSite = setupSiteAt("Workspace"),
+  served = true,
 ): Promise<SetupMachine> {
   const machine = setupMachine();
+  if (served) boxServing(machine.box, machineServing);
   machine.world = world;
   machine.opened = async () => {
     await machine.person();

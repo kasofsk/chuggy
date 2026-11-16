@@ -20,10 +20,15 @@ replayed establish is refused rather than absorbed. It is changed by
 restore is found by comparing the current epoch to the one every live lease
 and journal entry carries.
 
-`tenant` — one row per tenant name, which is what makes a name first-come.
-Owned by the boundary owner, which `create_project` runs as, and the control
-plane for insertion. Its key and identity are the tenant name, it is the parent
-`project` points at, and `tenant_is_immutable` refuses every change and delete.
+`tenant` — one row per tenant name, which is what makes a name first-come,
+and the tenant's display name. Owned by the boundary owner, which
+`create_project` runs as, and the control plane for insertion; the access
+plane inserts a row naming its display name and changes that column alone. Its
+key and identity are the tenant name, it is the parent `project` points at, a
+row inserted naming no display name is given its name, and
+`tenant_is_immutable` refuses every change but the display name's and the
+delete of a tenant any project names, so `delete_unrun_tenant` is its only
+deletion.
 It has no unfinished work.
 
 `project` — one authoritative lifecycle and ownership row per partition.
@@ -35,7 +40,23 @@ at; a project identity never begins `@`, which names a member's own partition
 in the relations that hold one. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
 the same transaction as the entry it counts. Unfinished work is found by selecting
-active projects whose lease has expired by database time.
+active projects whose lease has expired by database time. Its `name` is what
+the creation that made it called it, written by `create_project`,
+and absent where no creation named it, which reads as its
+identity. It is deleted by
+`delete_unrun_project` alone, with every relation keyed by it, under its row
+lock and after moving it to `Deleting`, and only while it holds no journal
+entry and no execution, session, pool or action observation.
+
+`project_vacancy` — one row per name a deleted project vacated, so a project
+later made under it is not granted on before the authority's tuples left on the
+object are erased. Owned by the boundary owner, and the API role reaches it
+through `delete_unrun_project`, which inserts it, `project_vacated`, which
+reads it, and `fill_project_vacancy`, which deletes it only while a project
+stands under the name. Its key and identity are `(tenant, project)`, and it
+points at no row, because it outlives the project and its tenant. Its
+unfinished work is a row whose project stands, which the creator's next
+request for that tenant and project finishes before it writes the grants.
 
 `journal_entry` — the append-only decision log, partitioned by the composite
 key it carries into its own primary key `(tenant, project, seq)`. The
@@ -189,7 +210,8 @@ because an update re-resolves them; the boundary owner reads it, the scheduler
 reads it for the requirement each execution is created at, and the finalizer
 reads the brief a landing is bound by. Neither of the last two reads the draft's
 brief. The API reads the brief and the key and nothing else, so a ticket's page
-shows the brief the ticket runs. Its composite key is `(tenant, project)` and its identity is `(tenant, project,
+shows the brief the ticket runs. Its `repository` is generated from the brief, and the
+metrics plane reads that and the key, and not the brief. Its composite key is `(tenant, project)` and its identity is `(tenant, project,
 ticket)`. It is written by the release and by each update, in the transaction
 that journals it, so unfinished work does not exist for it.
 
@@ -245,18 +267,8 @@ that both rules live in.
 
 WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
 the finalization request it is answering, then the project whose mailbox it
-writes into — and `request_finalization_approval` and
-`record_finalization_hold` take the first of those alone, all in the global
-order `src/interpreter/finalizer.ts` declares.
-
-WHY AN APPROVAL SUPERSEDES RATHER THAN QUEUES. `native_action_one_open`
-admits one open action per ticket, and the revision fence prepares again when
-the observed target moves, so the ask a person is holding is about a
-candidate that no longer exists. Withdrawing it is what keeps that invariant
-and the question in agreement, and it is the same `Withdrawn` a phase exit
-writes. The uniqueness the same relation carried over an effect position
-moves with it: an effect materializes one action, and an approval no effect
-produced is unique by the attempt it names instead.
+writes into — and `record_finalization_hold` takes the first of those alone,
+all in the global order `src/interpreter/finalizer.ts` declares.
 
 A QUESTION AND ITS ANSWERS ARE ONE ROSTER, AND THE SERVER HOLDS THEM TO IT.
 `src/interpreter/projectCommand.ts` pairs each action kind with the answers it
@@ -264,8 +276,9 @@ admits, and `native_action_resolution_pairs_with_its_kind` refuses a row
 offering the other kind's answer — which a CHECK cannot see, because the kind
 is on the action and the answer is on a row of its own.
 
-AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
-`Decline` name no domain command, so the input that carried one settles
+AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. An evaluation
+approval's `Approve` and `Reject` name no domain command, so the input that
+carried one settles
 `Answered`: the state a decision input reaches without a decided sequence, and
 the one public operation state that carries no sequence for a client to read.
 
@@ -283,7 +296,9 @@ scheduler taking an attempt number, by the worker plane binding the runtime's
 session id once, by the selector moving the project's lead onto the objectives
 it now holds, by `set_session_capabilities` reconfiguring one session's roster
 and by `rename_member_thread` and `hide_member_thread` writing the member's own
-name for a thread and their own way of putting it away; a trigger refuses every
+name for a thread and their own way of putting it away, and by a chat host's
+thread attempt reporting whether its thread is standing through
+`report_session_standing`, which `close_agent_session` clears; a trigger refuses every
 other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead and any number of
 closed ones — a closed lead is the context that ended, and the successor the
 selector opens is how a project whose lead ended decides again — so the
@@ -395,7 +410,8 @@ was made under and whether it made the tenant; the tenant's creator is read
 here, and at most one row per tenant says it made it. Owned by the boundary
 owner, and the API role reaches it only through `create_project`. Its key and
 identity are the operation, it is written by that door alone, and
-`project_creation_operation_is_immutable` refuses every change and delete. It
+`project_creation_operation_is_immutable` refuses every change and every
+delete but of a project standing `Deleting`. It
 has no unfinished work: a refusal writes no row, so a retry is decided again.
 
 `project_creation_grant` — that an accepted creation's grants were written to
@@ -403,7 +419,7 @@ the authority, so a replay stops re-asserting them. Owned by the boundary
 owner, and the API role reaches it through `create_project`, which reads it,
 and `record_project_creation_grants`, which inserts it once. Its key and
 identity are the operation, and `project_creation_grant_is_immutable` refuses
-every change and delete. Its unfinished work is an operation row with no row
+every change and every delete but of a project standing `Deleting`. Its unfinished work is an operation row with no row
 here, which the creator's next request for that tenant and project finishes
 under any identity.
 
@@ -418,7 +434,9 @@ holds its own row and no tenant's claim excludes another's. It is changed by
 that door alone, which moves a standing claim onto a new installation identity
 when an app is removed and installed again, and
 `forge_installation_keeps_its_claim` refuses
-every delete and every change to the forge, the app, the account or the tenant.
+every change to the forge, the app, the account or the tenant, and the delete
+of a claim whose tenant any project names, so a claim is released only with its
+tenant, by `delete_unrun_tenant`.
 It has no unfinished work: a claim is committed or it was rolled back, and a
 repository whose owner carries no row has no credential rather than a partial
 one.
@@ -500,8 +518,11 @@ it.
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
 registered, last polled and last polled as one that could take an execution,
-the runner package and version its newest poll named, and whether that poll's
-release names among its capabilities exactly the agents it takes. Written by the API
+the runner package and version its newest poll named, whether that poll's
+release names among its capabilities exactly the agents it takes, and the
+credentials that poll named, per agent, which a poll naming none clears and
+its claims and the scheduler's resume of a job a usage limit stopped read.
+Written by the API
 role, which registers and removes it whole, and by the pool plane, which
 stamps its polls and what they name; the pool plane, the scheduler and the
 boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
@@ -535,8 +556,10 @@ it paid for was lost. It has no unfinished work: an unredeemed token expires,
 and the minter's next mint removes it.
 
 `chat_host` — a member's chat host in one tenant: its principal, the issuer
-client it is removed by, when it registered and last polled, and the runner
-package and version its newest poll named. Written by the API role, which
+client it is removed by, when it registered and last polled, the runner
+package and version its newest poll named, and the credentials that poll
+named, per agent, which a poll naming none clears and its session claims read.
+Written by the API role, which
 registers and removes it whole, and by the pool plane, which stamps its polls
 and what they name; the pool plane and the boundary owner read it. Its key and
 identity are `(tenant, owner)`, so a member holds one in a tenant, and it names
@@ -592,7 +615,9 @@ nothing.
 to a link, each keeping the digest of its token and never the token. The
 access plane's role holds what its routes need on it and nothing else in the
 schema: it inserts and deletes rows, and updates only `used_by`, `used_at`,
-`revoked_at` and `workspace`. Its key is `link`, a text the insert draws, and
+`revoked_at` and `workspace`. `delete_unrun_project` deletes every link naming
+its project, and `delete_unrun_tenant` a tenant's links and the workspace link
+that made it. Its key is `link`, a text the insert draws, and
 `tenant` points at no row, because a tenant the plane makes has none until its
 first project. A workspace link names no tenant, role or projects, and keeps
 whether its workspace's administrators may make accounts and its maker's note;
@@ -608,39 +633,52 @@ takes an advisory lock on the tenant, or for a workspace link on the site,
 drops that set's ended links past the most recently ended it keeps, and counts
 its open ones before it inserts. A link is not a ticket, and the wipe keeps it.
 
-`agent_account_usage` — the latest reading of each window of an agent account's
-usage: how much of the window was used, when it reopens, when it was observed,
-and the attempt whose run reported it. Owned by the boundary owner, which is
-what `record_worker_run_usage` runs as; the worker plane writes it through that
-door alone. The API reads one person's rows through `agent_account_standing`,
-and the metrics plane reads the key of every row and nothing else. Its key and
-identity are
-`(principal, agent, usage_window)`, the principal being the account an attempt
-spent as `execution_attempt_agent_account` derives it from the attempt's own
-claim and the agent the one its invocation names, so a window appears once per
-account and agent. It departs from #180's composite project key because one
-login serves every workspace its owner works in: a key carrying a tenant and a
-project would hold one account's readings apart, as `capacity_account` and
-`recovery_epoch` are keyed by what they are rather than by a project. It points
-at the attempt its reading came from. It is changed by that door alone, in the
-transaction that stores the run's totals or finds them already stored, and a
-reading replaces the one kept only where it was observed later. It has no
-unfinished work: a reading is kept with its totals or not at all, and the
-latest of each window is the row itself.
+`agent_account_usage` — the latest reading of each window of each credential
+of an agent account: how much of the window was used, when it reopens, when it
+was observed, and the attempt whose run reported it. Owned by the boundary
+owner, which is what `record_worker_run_usage` runs as; the worker plane writes
+it through that door alone. The API reads one person's rows through
+`agent_account_standing`, which answers each window's newest reading across the
+account's credentials, and `agent_account_credential_standing`, which answers
+each credential's own by its name, and the metrics plane reads the principal
+and agent of every row and nothing else. Its key and identity are
+`(principal, agent, credential, usage_window)`, the principal being the account
+an attempt spent as `execution_attempt_agent_account` derives it from the
+attempt's own claim, the agent the one its invocation names, and the credential
+the one the run named, or its agent's default name where it named none, so a
+window appears once per credential. It departs from #180's composite project
+key because one login serves every workspace its owner works in: a key carrying
+a tenant and a project would hold one account's readings apart, as
+`capacity_account` and `recovery_epoch` are keyed by what they are rather than
+by a project. It points at the attempt its reading came from. It is written by
+that door alone, in the transaction that stores the run's totals or finds them
+already stored, and a reading replaces the one kept of its credential only where
+it was observed later. The credentials kept of one account's agent, across this
+relation and `agent_account_limit`, are bounded by
+`agentAccountCredentialsKeptMaxAt163`: one arriving at the bound drops every row
+of the credential observed least recently, through
+`agent_account_credential_kept`. The API drops one person's rows of one
+credential through `retire_agent_account_credential`, under the same lock,
+refused while a live runner of theirs names it, and the credential is kept
+again where a run reports it after. It has no unfinished work: a reading is kept
+with its totals or not at all, and the latest of each window is the row itself.
 
-`agent_account_limit` — the latest hard limit a provider stopped an agent
-account at: the window and the instant it reopens where the run named them,
-when the plane received it, and the attempt it stopped. Owned by the boundary
-owner, which is what `record_worker_run_limit` runs as; the worker plane writes
-it through that door alone. The API reads one person's row through
-`agent_account_standing`, and the metrics plane reads the key of every row and
-nothing else. Its key and identity
-are `(principal, agent)`, derived as `agent_account_usage`'s are, and it departs
-from #180's composite project key for the same reason. It points at the attempt
-it stopped. It is changed by that door alone, in the transaction that withdraws
-that attempt `RunRateLimited`, and a limit replaces the one kept unless that one
-was received later. It has no unfinished work: the limit is kept with its
-attempt's ending or not at all.
+`agent_account_limit` — the latest hard limit a provider stopped each credential
+of an agent account at: the window and the instant it reopens where the run
+named them, when the plane received it, and the attempt it stopped. Owned by the
+boundary owner, which is what `record_worker_run_limit` runs as; the worker
+plane writes it through that door alone. The API reads one person's newest
+limit across the account's credentials through `agent_account_standing`, and
+which credentials hold one through `agent_account_credential_standing`, and
+the metrics plane reads the principal and agent of every row and nothing else.
+Its key and identity are `(principal, agent, credential)`, derived as
+`agent_account_usage`'s are and bounded with it, and it departs from #180's
+composite project key for the same reason. It points at the attempt it stopped.
+It is written by that door alone, in the transaction that withdraws that attempt
+`RunRateLimited`, and a limit replaces the one kept of its credential unless
+that one was received later; it is dropped with its credential's readings
+through `retire_agent_account_credential`. It has no unfinished work: the limit
+is kept with its attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their
@@ -648,13 +686,54 @@ threads and inquiries pause with it; the lead of a pool they registered always
 does. The API writes one person's row whole through `write_agent_account_setting`, and no
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
-and the metrics plane may call and `ticket_rate_limit_resumable` asks for the
-scheduler, reads it through that, as `agent_account_standing` does for the API.
+and the metrics plane may call, reads it through that, as
+`agent_account_standing` does for the API: `agent_account_named_pause` of the
+credentials the account's live runners name of the agent, and paused while any
+credential is where they name none;
+`agent_account_credential_standing` answers the API each credential's own
+pause, `agent_account_named_pause` of its one name.
+`agent_account_named_pause`, which the pool plane and the API may call, answers
+`agent_account_pause`'s columns for the credentials a runner, a pool or a chat
+host named:
+paused only while every one of them is, until the earliest of those ends, a
+name that never reported being free. A credential in
+`agent_account_credential_off` is paused by `off` alone, whatever its readings
+and limit say, until `agentAccountCredentialOffSecsAt191` past each read, so it
+never ends by itself and ranks after every real end; where no live runner names
+a credential of the agent, an off credential pauses it by its own readings and
+limit alone. A pause held by `off` alone also holds a thread or an inquiry,
+whatever the setting says. `agent_account_named_credential_pauses`
+answers the pool plane each of them that is paused, and until when.
+`ticket_rate_limit_resumable` asks for the scheduler, and `ticket_usage_resume`
+for the API, `agent_account_pause` of the agent a limited task spent, and
+`agent_account_named_pause` of the credentials each runner of that account
+names, so the task is free where either would let that runner's claim through.
+`agent_account_session_paused`, which no role may call, answers the session
+claims of a pool and a chat host, and `lead_runner_standing`, whether a session
+waits on its account: `agent_account_named_pause` of the Claude credentials the
+caller's runner named, and `agent_account_pause` where it named none.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived
 from it at each claim, each scheduler pass and each read, so a changed row is
 the answer at the next.
+
+`agent_account_credential_off` — each credential of an agent account its owner
+turned off by name, so every runner of theirs is held off it. Owned by the
+boundary owner, the only role granted it, which
+`turn_off_agent_account_credential` and `turn_on_agent_account_credential` run
+as; the API turns one person's credential off and on through those doors alone,
+under the lock `agent_account_credential_kept` takes, and reads it only through
+the pause functions and `agent_account_credential_standing`, which lists every
+off name among the person's credentials. Its key and identity are
+`(principal, agent, credential)`, held to `agent_account_usage`'s account key
+and name pattern, and it departs from #180's composite project key as that
+relation does. It points at nothing: a name needs no reading or limit to be
+turned off, and `retire_agent_account_credential` leaves its row. The names
+off of one account's agent are bounded by `agentAccountCredentialsOffMaxAt191`,
+apart from the credentials `agentAccountCredentialsKeptMaxAt163` bounds, so no
+reading evicts one. It has no unfinished work: a credential is off or it is
+not, and the pause is derived from it at each read.
 
 `agent_account_press` — a person's latest press to try an agent account again
 after a provider refused it, and when the claim it let through spent it. The API
@@ -666,6 +745,43 @@ its being unspent, so two claims cannot spend one. Its key and identity are
 `(principal, agent)`, as `agent_account_setting`'s are. It points at nothing. A
 press lets a claim through only a limit received before it. It has no
 unfinished work: a press is spent or it is not.
+
+`owned_theme` — a theme document one person made for the console. Owned by the
+boundary owner, which its doors run as; the API reads one person's through
+`owned_themes` and writes them through `create_owned_theme`,
+`write_owned_theme` and `delete_owned_theme` alone, and no other role reaches
+it. Its key and identity are `theme`, a number never given twice, and
+`(principal, theme)` is unique so a choice can point at a person's own; it
+departs from #180's composite project key as `agent_account_setting` does,
+because a person's appearance follows them into every workspace. It points at
+nothing. A creation locks the person's principal and is refused at the bound
+the API hands it. It has no unfinished work.
+
+`theme_choice` — the one theme a person chose for every console they sign in
+to: a built-in by its id or a theme of their own, never both. Owned by the
+boundary owner; the API reads it through `read_theme_choice` and writes or
+clears it through `write_theme_choice` alone, which refuses a theme of
+another person's. Its key and identity are `principal`, and it points at
+`owned_theme` by `(principal, owned)`, so deleting the theme deletes the choice
+and the person reads none. It has no unfinished work.
+
+`project_theme` — one project's default theme, the document itself rather than
+a reference to a person's, and who set it. Owned by the boundary owner, which
+is what `set_project_theme` runs as; the API role writes it through that door
+alone and reads it. Its key and identity are `(tenant, project)` and it points
+at `project`, cascading from it, so `delete_unrun_project` takes it with the
+project row. It is changed by that door alone, which answers `Unchanged` where
+nothing moved; a row naming no document is a project that cleared it. It has
+no unfinished work.
+
+`project_theme_override` — the theme one person chose for one project: a
+built-in by its id or a theme of their own, never both. Owned by the boundary
+owner; the API reads it through `read_project_theme_override` and writes or
+clears it through `write_project_theme_override` alone, which refuses a theme
+of another person's. Its key and identity are `(tenant, project, principal)`;
+it points at `project`, cascading from it as `project_theme` does, and at
+`owned_theme` by `(principal, owned)`, so deleting the theme deletes the
+override and the person reads none. It has no unfinished work.
 
 `epic` — a project's epic as it stands: its number, its revision and its
 content. Owned by the boundary owner, which `save_epic` runs as and which is the
@@ -690,9 +806,21 @@ unfinished work.
 `epic_change` — every revision an epic has had, with the whole content it
 saved, which is what history is read from. Owned by the boundary owner, granted
 INSERT and SELECT, read by the API, and `epic_change_is_immutable` refuses every change and
-delete. Its identity is `(tenant, project, epic, revision)` and it points at
+every delete but of a project standing `Deleting`. Its identity is `(tenant, project, epic, revision)` and it points at
 `project`. Its newest row per epic is the content `epic` holds, which is why a
 save writes both in one transaction. It has no unfinished work.
+
+`ticket_take` — every take and return of a released ticket: who acted, under
+which authority, and when. Owned by the boundary owner, which `take_ticket` runs
+as and which is granted INSERT and SELECT; the API and the scheduler are granted
+SELECT, and `ticket_take_is_immutable` refuses every change and every delete but
+of a project standing `Deleting`. Its identity is `(tenant, project, ticket,
+number)` and it points at `project`; numbers run from 1 per ticket without a gap
+because the door takes the project row's lock and allocates `max(number) + 1`.
+The taker is its newest row where that row is a take, and `ticket_taker` and
+`ticket_owner` derive it and the owner from it, so neither is stored. It is
+changed by `take_ticket` alone. It has no unfinished work: a take is committed
+or it was rolled back.
 
 `evaluation_stack` — the stack one ticket's work cycle was first evaluated over:
 the tip of its reference, and the commit and tree of the stack. Owned by the

@@ -24,7 +24,7 @@ import {
   type RepositoryActionImportOutcome,
   type RepositoryActionsImported,
 } from "../../src/interpreter/repositoryAction.ts";
-import type { RepositoryDeclarationFile } from "../../src/interpreter/repositoryDeclaration.ts";
+import type { RepositoryDeclarationFile } from "../../src/contract/repositoryDeclaration.ts";
 import type { RepositoryDeclarationSnapshotRead } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 
 const binding: RepositoryBinding = {

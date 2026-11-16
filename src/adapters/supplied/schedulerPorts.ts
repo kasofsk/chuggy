@@ -27,7 +27,7 @@ import type {
   CapabilityExecutionRequirement,
   ExecutionCapability,
   OperatingSystem,
-} from "../../interpreter/executionRequirement.ts";
+} from "../../contract/executionRequirement.ts";
 import { grantTaskAuthority } from "../../interpreter/taskAuthority.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import type { RuntimeFactsPort } from "../../interpreter/taskBriefing.ts";

@@ -274,6 +274,12 @@ function readStore(calls: string[]): NativeReadStore {
       calls.push(`read:nativeActions:page:${String(query.limit)}`);
       return Promise.resolve({ actions: [] });
     },
+    ticketNativeActionHistory: (_partition, ticket, query) => {
+      calls.push(
+        `read:nativeActionHistory:${String(ticket)}:${String(query.limit)}`,
+      );
+      return Promise.resolve({ actions: [] });
+    },
     nativeActionAsked: () => {
       calls.push("read:nativeActionAsked");
       return Promise.resolve({ kind: "TicketEscalation" as const });
@@ -552,6 +558,7 @@ function repositoryImportLanding(
           policy: "Direct",
         }),
         pipelinesWritable: false,
+        pipelinesRunnable: false,
         ...(retiredAt === undefined ? {} : { retiredAt }),
       });
     },
@@ -709,6 +716,36 @@ test("a project's open actions authorize and enforce their page bound", async ()
   await assert.rejects(
     () =>
       allowed.web.nativeActions(principal, partition, {
+        limit: nativeActionPageLimitMax + 1,
+      }),
+    RangeError,
+  );
+});
+
+test("a ticket's action history conceals a ticket its caller may not read, and enforces its page bound", async () => {
+  const denied = boundary(false);
+  assert.equal(
+    await denied.web.ticketNativeActionHistory(principal, partition, id(1), {
+      limit: 10,
+    }),
+    undefined,
+  );
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.ticketNativeActionHistory(principal, partition, id(1), {
+      limit: 10,
+    }),
+    { actions: [] },
+  );
+  assert.deepEqual(allowed.calls, [
+    "authorize:Read",
+    "read:nativeActionHistory:1:10",
+  ]);
+  await assert.rejects(
+    () =>
+      allowed.web.ticketNativeActionHistory(principal, partition, id(1), {
         limit: nativeActionPageLimitMax + 1,
       }),
     RangeError,
@@ -1466,6 +1503,40 @@ test("a release or an update whose program leaves out a stage or an evaluator of
     }
 });
 
+test("a release whose overrides select a plan running less than the catalog's for its selection asks SkipPlannedEvaluations, and one running as much does not", async () => {
+  const approval = { runner: "Approval" } as const;
+  const short = releasing(["Mutate"], {
+    canonical: plannedCatalog,
+    overrides: {
+      workloads: { approval },
+      plans: { gate: [{ name: "approval", evaluators: ["approval"] }] },
+    },
+    selection: { evaluation: "gate" },
+    program: programOf([[1]]),
+  });
+  assert.deepEqual(
+    await short.web.submit(principal, submissionOf(releaseOf())),
+    { result: "ProgramSkipsPlannedEvaluations" },
+  );
+  const whole = releasing(["Mutate"], {
+    canonical: plannedCatalog,
+    overrides: {
+      workloads: { approval },
+      plans: {
+        thorough: [
+          { name: "all", evaluators: ["build", "tests", "build", "approval"] },
+        ],
+      },
+    },
+    program: programOf([[1, 2, 3, 4]]),
+  });
+  assert.deepEqual(
+    await whole.web.submit(principal, submissionOf(releaseOf())),
+    { result: "Authorized", acceptance: { accepted: "IdempotencyConflict" } },
+  );
+  assert.deepEqual(whole.calls, ["authorize:Mutate", revisionRead, "accept"]);
+});
+
 test("a release running its whole plan asks what a release asks and nothing more", async () => {
   for (const command of ["ReleaseDraft", "UpdateTicket"] as const) {
     const { web, calls } = releasing(["Mutate"], {
@@ -1870,6 +1941,35 @@ test("a created draft answers the landing its brief was stored with and who name
       JSON.stringify(each.brief),
     );
   }
+});
+
+test("a draft selecting a plan only its overrides define lands with its catalog's default finalizer", async () => {
+  const created = await landingBoundary(catalogConfiguration).createDraft(
+    principal,
+    {
+      partition,
+      configurationRevision: asConfigurationRevisionId("revision"),
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 0,
+      authoring: noAuthoring,
+      brief: asDraftBrief({
+        intent: "Land it.",
+        links: [],
+        repository: landingRepository,
+        branch: landingBranch,
+      }),
+      overrides: {
+        plans: { gate: [{ name: "review", evaluators: ["build"] }] },
+      },
+      selection: { evaluation: "gate" },
+    },
+  );
+  assert.deepEqual(
+    created.result === "Authorized" && created.value.created === "Created"
+      ? created.value.landing
+      : created,
+    landingCases[1].landing,
+  );
 });
 
 test("a revised draft answers its landing the same way, the brief's own or the repository's", async () => {
