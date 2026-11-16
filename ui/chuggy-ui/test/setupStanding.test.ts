@@ -64,6 +64,7 @@ import {
   setupSiteProject,
   setupSiteProposed,
   setupSiteRepositoryAddress,
+  setupSitePoolWaiting,
   setupSiteWaiting,
   setupSiteWorkspace,
 } from "./setupSite.ts";
@@ -155,8 +156,15 @@ test.each([
   ["Work", setupSiteWaiting(7, "Live"), undefined],
   ["Work", { ...setupSiteWaiting(7, "Offline"), mine: false }, undefined],
   ["Work", { ...setupSiteWaiting(7, "Offline"), status: "Queued" }, undefined],
+  ["Work", setupSitePoolWaiting(7, room), { wait: "PoolRoom", ...room }],
+  ["Work", { ...setupSitePoolWaiting(7, room), status: "Queued" }, undefined],
+  [
+    "Work",
+    { ...setupSiteWaiting(7, "Offline"), poolRoom: room },
+    { wait: "Offline" },
+  ],
 ] as const)(
-  "a ticket in %s carries what its starting execution of the person's waits on of their runners, by the console's own decider: %j",
+  "a ticket in %s carries what its starting execution of the person's waits on of their runners, or else what any starting execution waits on of the project's pools, by the console's own deciders: %j",
   async (phase, execution, wait) => {
     const step = await runningStep(phase, [execution]);
     expect(step?.state).toBe("waiting");

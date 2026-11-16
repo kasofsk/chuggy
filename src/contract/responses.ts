@@ -1071,6 +1071,14 @@ export const executionSummarySchema = z.object({
     .strictObject({ freeMib: countSchema, neededMib: countSchema })
     .optional(),
   /**
+   * The largest memory room, in MiB, of the live pools of its project it waits
+   * on and the memory it needs, present only where every one of them named a
+   * room above nothing and below that.
+   */
+  poolRoom: z
+    .strictObject({ freeMib: countSchema, neededMib: countSchema })
+    .optional(),
+  /**
    * The earlier execution of the same ticket whose passing verdict settled
    * this one, its task and the work cycle it ran in, present only on an
    * execution settled that way rather than run: its one attempt is `Carried`,

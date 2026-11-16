@@ -32,6 +32,7 @@
 import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ExecutionSummary,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
@@ -49,7 +50,7 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
-import { runnerWait, runnerWaitRoom } from "./myRunner.ts";
+import { runnerWait, runnerWaitPoolRoom, runnerWaitRoom } from "./myRunner.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
@@ -169,10 +170,10 @@ export type SetupLack =
 
 type TicketPhase = TicketResponse["phase"];
 
-/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it. */
+/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it; or else too little memory free on the project's pools. */
 export type SetupRunnerWait =
   | {
-      readonly wait: "Room";
+      readonly wait: "Room" | "PoolRoom";
       readonly freeMib: number;
       readonly neededMib: number;
     }
@@ -1019,13 +1020,28 @@ function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
 /** The phase a ticket is in between its release and its start, where pressing is what starts one nothing else has. */
 export const setupUnstartedPhase = "Pending" satisfies TicketPhase;
 
-/** What the starting execution of a ticket's executions, read whole, waits on of the person's runners, by the console's own decider: none where they were not read whole, none is starting, or its runners are live and short of nothing said. */
+/** What the starting execution of a ticket's executions, read whole, waits on of the person's runners, by the console's own decider, or else of the project's pools: none where they were not read whole, none is starting, or the runners it waits on are live and short of nothing said. */
 function setupRunnerWaitOf(
   held: SetupTicketExecutions | undefined,
 ): SetupRunnerWait | undefined {
   if (held?.executions.read !== "Got" || !held.executions.whole)
     return undefined;
-  const starting = held.executions.value.find(
+  const executions = held.executions.value;
+  const personal = setupRunnerWaitPersonal(executions);
+  if (personal !== undefined) return personal;
+  const room = executions
+    .map(runnerWaitPoolRoom)
+    .find((each) => each !== undefined);
+  return room === undefined
+    ? undefined
+    : { wait: "PoolRoom", freeMib: room.freeMib, neededMib: room.neededMib };
+}
+
+/** What the starting execution of `executions` waits on of the person's runners, by the console's own decider. */
+function setupRunnerWaitPersonal(
+  executions: readonly ExecutionSummary[],
+): SetupRunnerWait | undefined {
+  const starting = executions.find(
     (execution) => runnerWait(execution) !== undefined,
   );
   if (starting === undefined) return undefined;

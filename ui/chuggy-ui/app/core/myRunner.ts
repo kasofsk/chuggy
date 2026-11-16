@@ -31,6 +31,7 @@ import type {
 import type { ApiResult } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
+import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
 /** What a member is told where the workspace has not let them register one. */
@@ -213,6 +214,17 @@ export function runnerWaitRoom(
   return execution.personalRunnerRoom;
 }
 
+/** The memory the server answered the live pools of a run's project it waits
+ * on are short of, said to any reader of a run admitted but not begun and not
+ * queued, since a queued run waits on capacity rather than on a pool. */
+export function runnerWaitPoolRoom(
+  execution: ExecutionSummary,
+): ExecutionSummary["poolRoom"] {
+  if (execution.status === "Queued" || !executionStarting(execution))
+    return undefined;
+  return execution.poolRoom;
+}
+
 /**
  * What taking a member's runners off came to, in one line: taken off, none the
  * caller may take, or why it was refused. The server answers a caller it will
@@ -226,6 +238,22 @@ export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
 
 /** What a run of the reader's waits on: their personal runners. */
 export const runnerWaitLine: Copy = { id: "runners-wait-waiting" };
+
+/** What a run waits on where it waits on none of the reader's: its project's pools. */
+export const runnerWaitPoolsLine: Copy = { id: "runners-wait-pools" };
+
+/** How much memory the runners a run waits on have free and it needs. */
+export function runnerWaitRoomLine(
+  room: NonNullable<ExecutionSummary["poolRoom"]>,
+): Copy {
+  return {
+    id: "runners-wait-room",
+    args: {
+      free: quantityFigureCopy(memoryMibFigure(room.freeMib)),
+      needed: quantityFigureCopy(memoryMibFigure(room.neededMib)),
+    },
+  };
+}
 
 /** The state of the runners a run waits on, where it has one beside waiting. */
 export function runnerWaitWord(wait: RunnerWait): Copy | undefined {

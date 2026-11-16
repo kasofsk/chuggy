@@ -166,6 +166,7 @@ export interface RunnersCopy {
     readonly free: unknown;
     readonly needed: unknown;
   };
+  readonly "runners-wait-pools": Record<never, never>;
   readonly "runners-fallback-title": Record<never, never>;
   readonly "runners-fallback-about": Record<never, never>;
   readonly "runners-fallback-none": Record<never, never>;

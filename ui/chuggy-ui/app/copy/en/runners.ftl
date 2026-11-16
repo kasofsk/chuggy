@@ -144,13 +144,14 @@ runners-member-remove = Remove { -personal-runner(form: "plural") }
 runners-member-removed = { -personal-runner(case: "upper", form: "plural") } removed
 runners-member-none = No { -personal-runner } you may remove
 
-## Whether a run of the reader's waits on their personal runners.
+## Whether a run of the reader's waits on their personal runners, or a run on its project's pools.
 
 runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
 runners-wait-offline = offline
 # spells -run: to run is a verb here
 runners-wait-unable = none can run it
 runners-wait-room = { $free } free, needs { $needed }
+runners-wait-pools = Waiting on this { -project }'s { -runner(form: "plural") }
 
 ## Whether personal runners take a member's work in a project.
 

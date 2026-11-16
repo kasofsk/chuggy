@@ -66,6 +66,7 @@ import {
   setupSiteOpened,
   setupSiteProposed,
   setupSiteStages,
+  setupSitePoolWaiting,
   setupSiteWaiting,
 } from "./setupSite.ts";
 import type { SetupSite, SetupSiteFate, SetupSiteStage } from "./setupSite.ts";
@@ -772,6 +773,16 @@ test.each([
     );
   },
 );
+
+test("a ticket whose starting execution waits on its project's pools short of memory is told how much they have free and it needs, and no remedy, in one sentence after its phase", async () => {
+  expect(
+    (await nextSaid(workingWith([setupSitePoolWaiting(7, room)]))).thing,
+  ).toEqual(
+    working(
+      " It is waiting on this project's runners, which have 1.4 GiB free; this run needs 4 GiB.",
+    ),
+  );
+});
 
 test("a ticket whose starting execution waits on runners that are live, with no room said, is told as it was before any wait was read", async () => {
   expect(

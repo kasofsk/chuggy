@@ -884,6 +884,10 @@ export interface SetupCopy {
     readonly free: unknown;
     readonly needed: unknown;
   };
+  readonly "setup-mend-wait-pool-room": {
+    readonly free: unknown;
+    readonly needed: unknown;
+  };
   readonly "setup-mend-wait-offline": Record<never, never>;
   readonly "setup-mend-wait-unable": Record<never, never>;
   readonly "setup-mend-decision-tell": {

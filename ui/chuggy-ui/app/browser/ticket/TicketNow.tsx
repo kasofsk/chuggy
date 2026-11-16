@@ -11,7 +11,10 @@
  * it waits on of their runners: a live one, one coming back online, or
  * runners none of which can run it, or their own account's agent where a
  * pause holds the live ones, or how much memory the live ones have free and
- * the run needs where every one is short of it. Only such a run is read again on the clock a
+ * the run needs where every one is short of it. Any reader's run that has not
+ * begun says, where it waits on none of the reader's runners, how much memory
+ * the live pools of its project have free and it needs where every one is
+ * short of it. Only a run that has not begun is read again on the clock a
  * session's standing is, since no frame says a runner polled or a pause ended.
  */
 
@@ -25,12 +28,14 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { conversationArgumentLine } from "../../core/conversation.ts";
 import { copyOrDataText } from "../../core/copy.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
-import { memoryMibFigure, quantityFigureText } from "../../core/figures.ts";
 import {
   runnerWait,
   runnerWaitLine,
   runnerWaitPause,
+  runnerWaitPoolRoom,
+  runnerWaitPoolsLine,
   runnerWaitRoom,
+  runnerWaitRoomLine,
   runnerWaitWord,
 } from "../../core/myRunner.ts";
 import {
@@ -132,7 +137,8 @@ function TicketNowLine(props: {
 
 /** A run of the reader's held for their own runners, the line itself a link to
  * where they are managed, with the memory the live ones are short of; or, where their own account holds the live ones paused, the pause
- * and where it is set. */
+ * and where it is set; or else a run held by the memory its project's live
+ * pools are short of, the line a link to where they are managed. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionSummary;
@@ -149,7 +155,10 @@ function TicketNowRunnerWait(props: {
   const text = useCopyText();
   const execution = state.state === "Ready" ? state.value : props.execution;
   const wait = runnerWait(execution);
-  if (wait === undefined) return null;
+  if (wait === undefined)
+    return (
+      <TicketNowPoolWait partition={props.partition} execution={execution} />
+    );
   const paused = runnerWaitPause(execution, wait);
   if (paused !== undefined)
     return (
@@ -172,16 +181,29 @@ function TicketNowRunnerWait(props: {
       </LinePart>
       {word === undefined ? null : <LinePart>{text(word)}</LinePart>}
       {room === undefined ? null : (
-        <LinePart>
-          {text({
-            id: "runners-wait-room",
-            args: {
-              free: quantityFigureText(memoryMibFigure(room.freeMib), text),
-              needed: quantityFigureText(memoryMibFigure(room.neededMib), text),
-            },
-          })}
-        </LinePart>
+        <LinePart>{text(runnerWaitRoomLine(room))}</LinePart>
       )}
+    </Notice>
+  );
+}
+
+/** A run held by the memory the live pools of its project are short of, the
+ * line a link to where they are managed, with what they have free and it needs. */
+function TicketNowPoolWait(props: {
+  readonly partition: PartitionIdentity;
+  readonly execution: ExecutionSummary;
+}): ReactNode {
+  const text = useCopyText();
+  const room = runnerWaitPoolRoom(props.execution);
+  if (room === undefined) return null;
+  return (
+    <Notice tone="parked" inline>
+      <LinePart first>
+        <Link to={settingsRoutes.project.pools} params={props.partition}>
+          {text(runnerWaitPoolsLine)}
+        </Link>
+      </LinePart>
+      <LinePart>{text(runnerWaitRoomLine(room))}</LinePart>
     </Notice>
   );
 }
@@ -225,9 +247,7 @@ export function TicketNow(props: {
           highWaterBatch={transcript.highWaterBatch}
         />
       )}
-      {summary.mine === true &&
-      summary.ownerFallback !== undefined &&
-      executionStarting(summary) ? (
+      {executionStarting(summary) ? (
         <TicketNowRunnerWait
           partition={partition}
           execution={summary}
