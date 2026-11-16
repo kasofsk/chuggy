@@ -193,6 +193,16 @@ export function setupPlatformServed(
   return setupPlatforms.find((served) => served === platform);
 }
 
+/** The platform the program runs on, which `setupRun` has already refused where it is not one served. */
+export function setupPlatformOf(
+  surroundings: SetupSurroundings,
+): SetupPlatform {
+  const platform = setupPlatformServed(surroundings.platform);
+  if (platform === undefined)
+    throw new Error(`unserved platform ${surroundings.platform}`);
+  return platform;
+}
+
 /** Where the program is running, as plain facts read once at its start. */
 export interface SetupSurroundings {
   readonly platform: string;

@@ -31,7 +31,7 @@ import { z } from "zod";
 import { runnerPackages } from "./runners.ts";
 import type { RunnerPackage } from "./runners.ts";
 import type { SetupAsked } from "./setupArguments.ts";
-import { setupPlatformServed } from "./setupPorts.ts";
+import { setupPlatformOf } from "./setupPorts.ts";
 import type { SetupPlatform, SetupPorts } from "./setupPorts.ts";
 import type { SetupReport } from "./setupReport.ts";
 import { setupActedStop, setupPackageReady } from "./setupRunner.ts";
@@ -65,16 +65,8 @@ export const setupServerPackages: Readonly<
   darwin: { offered: runnerPackages.darwin, least: "0.23.0" },
 };
 
-/** The platform the program runs on, which `setupRun` has already refused where it is not one served. */
-export function setupServerPlatform(ports: SetupPorts): SetupPlatform {
-  const platform = setupPlatformServed(ports.surroundings.platform);
-  if (platform === undefined)
-    throw new Error(`unserved platform ${ports.surroundings.platform}`);
-  return platform;
-}
-
 function setupServerPackage(ports: SetupPorts): SetupServerPackage {
-  return setupServerPackages[setupServerPlatform(ports)];
+  return setupServerPackages[setupPlatformOf(ports.surroundings)];
 }
 
 /** The name the server is given in the agent's configuration. */

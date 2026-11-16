@@ -32,7 +32,7 @@ import {
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { runnerPackageOffered } from "../../ui/chuggy-ui/app/core/runners.ts";
+import { runnerPackages } from "../../ui/chuggy-ui/app/core/runners.ts";
 import { setupSiteChatAdded } from "../../ui/chuggy-ui/test/setupSite.ts";
 import { pacingVariable } from "../../ui/chuggy-ui/terminal/ports.ts";
 
@@ -466,7 +466,7 @@ test("a machine that was set up and has since come to have no runner package run
     assert.ok(served.lines.includes(did.package), served.stdout);
     assert.deepEqual(
       installs(),
-      [runnerPackageOffered.installCommand.split(" ").slice(1)],
+      [runnerPackages.linux.installCommand.split(" ").slice(1)],
       how,
     );
 
@@ -625,7 +625,7 @@ test("where the machine's own prefix is not this person's to write, mcp puts the
     assert.equal(served.code, 0, served.stdout);
     const done = await ran(on);
     assert.equal(done.code, 0, done.stdout);
-    const address = runnerPackageOffered.installCommand.split(" ").at(-1);
+    const address = runnerPackages.linux.installCommand.split(" ").at(-1);
     assert.deepEqual(words(on, "npm")[1], [
       "i",
       "-g",

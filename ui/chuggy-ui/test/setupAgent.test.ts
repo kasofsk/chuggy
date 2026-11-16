@@ -15,10 +15,7 @@ import {
   setupServerPackages,
 } from "../app/core/setupAgent.ts";
 import { runnerPackages } from "../app/core/runners.ts";
-import {
-  setupChatPackageLeast,
-  setupRunnerPlaces,
-} from "../app/core/setupRunnerMachine.ts";
+import { setupChatPackageLeast } from "../app/core/setupRunnerMachine.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
@@ -238,9 +235,8 @@ test("mcp on a Mac whose person set a configuration directory names the Mac's ow
   expect(JSON.parse(machine.box.paths.get(boxClaudeConfig) ?? "{}")).toEqual(
     local(entry("widgets", darwinCommand)),
   );
-  const surroundings = machine.ports().surroundings;
   expect(signInStoreDirectory({ home: boxHome, configHome: "/xdg" })).toBe(
-    setupRunnerPlaces(surroundings).pools.replace(/pools$/u, "sign-ins"),
+    "/xdg/chuggy/sign-ins",
   );
 });
 
