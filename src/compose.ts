@@ -123,7 +123,6 @@ import {
   type ProjectOwnerFallbackAdministration,
 } from "./interpreter/projectOwnerFallback.ts";
 import {
-  postgresLeadRouteReads,
   postgresSessionPlacement,
   postgresSessionRouteReads,
 } from "./adapters/postgres/sessionPlacement.ts";
@@ -146,32 +145,9 @@ import type { Principal } from "./interpreter/principal.ts";
 import {
   postgresSelectorProjectSettings,
   postgresSelectorProposalReviews,
-  postgresSelectorRuntimeControl,
-  postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import {
-  postgresAgenticRefusalBinding,
-  postgresAgenticRefusalLedger,
-} from "./adapters/postgres/agenticRefusal.ts";
-import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
-import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
-import {
-  leadSelectorPolicy,
-  type LeadPolicyClock,
-  type LeadPolicyConfig,
-} from "./interpreter/leadPolicyHost.ts";
-import {
-  selectorPolicyHost,
-  type SelectorHostDeadline,
-} from "./interpreter/selectorPolicyHost.ts";
-import {
-  selectorRunOnce,
-  type SelectorIdentityFactory,
-  type SelectorRunResult,
-  type SelectorRuntimeConfig,
-  type SelectorRuntimeSource,
-} from "./interpreter/selectorRuntime.ts";
+import { postgresAgenticRefusalBinding } from "./adapters/postgres/agenticRefusal.ts";
 import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
@@ -252,63 +228,6 @@ export interface TicketService {
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
   readonly projects: ProjectStore;
-}
-
-export interface SelectorRuntimeService {
-  runOnce(): Promise<SelectorRunResult>;
-}
-
-/**
- * Wires the independently operated selector runtime to its owned persistence
- * and to the lead whose turn each decision is. The policy is built here rather
- * than passed in, because every door it opens is on the pool this function
- * already holds and a caller handed the host would need that pool to build it.
- */
-export function composeSelectorRuntime(
-  selectorPool: pg.Pool,
-  source: SelectorRuntimeSource,
-  lead: SelectorLeadRuntime,
-  access: ProjectAccess,
-  identities: SelectorIdentityFactory,
-  config?: SelectorRuntimeConfig,
-): SelectorRuntimeService {
-  const store = postgresSelectorState(selectorPool);
-  const settings = postgresSelectorRuntimeControl(selectorPool);
-  const refusals = postgresAgenticRefusalLedger(selectorPool);
-  const policy = selectorPolicyHost(
-    leadSelectorPolicy(
-      postgresLeadMailbox(selectorPool),
-      store,
-      lead.sessions,
-      lead.clock,
-      access,
-      postgresLeadRouteReads(selectorPool),
-      lead.policy,
-    ),
-    lead.deadline,
-    { controlDeadlineMs: lead.controlDeadlineMs },
-  );
-  return {
-    runOnce: () =>
-      selectorRunOnce(
-        refusals,
-        store,
-        source,
-        policy,
-        identities,
-        settings,
-        config,
-      ),
-  };
-}
-
-/** What the selector process answers the lead host's own ports with. */
-export interface SelectorLeadRuntime {
-  readonly sessions: LeadSessionMint;
-  readonly clock: LeadPolicyClock;
-  readonly deadline: SelectorHostDeadline;
-  readonly policy: LeadPolicyConfig;
-  readonly controlDeadlineMs: number;
 }
 
 /** Project creation over the API role's door, answering `NotConfigured` where no authority to write to is composed. */

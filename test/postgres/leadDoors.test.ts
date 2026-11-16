@@ -14,9 +14,6 @@
  * holds EXECUTE on everything, so a case run as the owner would be green over
  * any grant at all and would say nothing about the control.
  *
- * The same composed process publishes the subsidized lead it is configured
- * with as it starts, which the API then reads.
- *
  * A SIGNATURE NO FUNCTION HAS IS A RAISE, NOT A REFUSAL.
  * `has_function_privilege` resolves a signature exactly, so a hand-copied
  * argument type does not answer false — it throws, and the precondition that
@@ -40,22 +37,13 @@ import {
   selectorHostReadinessFunction,
   selectorReconcileClaimFunction,
   sessionRunnerStandingFunction,
-  sessionSystemPromptSetFunction,
-  subsidizedLeadReadFunction,
 } from "../../src/adapters/postgres/schema/shared.ts";
 import {
   apiRole,
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { systemPromptSetSignature } from "../../src/adapters/postgres/schema/lead.ts";
-import { postgresHarnessRolePool, postgresHarnessUrl } from "./harness.ts";
+import { postgresHarnessRolePool } from "./harness.ts";
 import type pg from "pg";
-
-const execute = promisify(execFile);
 
 let selectorPool: pg.Pool;
 let apiPool: pg.Pool;
@@ -155,142 +143,5 @@ test("the list is every decision door this role is granted and no other", async 
     doors.toSorted(),
     [...leadDoorSignatures].toSorted(),
     "a door granted and unlisted starts a process that cannot decide, and a door listed and revoked stops one that can",
-  );
-});
-
-/** The connection string the selector process itself would be given. */
-function selectorDatabaseUrl(): string {
-  const url = new URL(postgresHarnessUrl());
-  url.searchParams.set("options", `-c role=${selectorServiceRole}`);
-  return url.toString();
-}
-
-/**
- * The root is composed in a child process because nothing in this tree may
- * import a process root, which `check-boundaries` holds; the existing root
- * suite spawns one for the same reason.
- */
-const composedRootProgram = `
-  const roots = await import('./src/roots/controlPlane.ts');
-  const reject = () => Promise.reject(new Error('no pass was expected'));
-  const runtime = roots.selectorProcessRoot(
-    {
-      database: { url: process.env.CHUG_SELECTOR_URL },
-      runtime: { idleIntervalMilliseconds: 60000, shutdownDrainMilliseconds: 1000 },
-    },
-    {
-      projects: reject, moved: reject, notifications: reject,
-      dispatchView: reject, operationalContext: reject,
-      currentTimeEpochMs: async () => 0,
-      currentInstant: async () => '2026-09-03T12:00:00.000Z',
-      decisionDeadline: () => new Promise(() => undefined),
-      submit: reject, operation: reject,
-    },
-    {
-      clock: {
-        now: async () => ({ instant: '2026-09-03T12:00:00.000Z', epochMs: 0 }),
-        wait: async () => undefined,
-      },
-      deadline: { after: () => new Promise(() => undefined) },
-      policy: {
-        pollIntervalMs: 1,
-        implementationRevision: 'test',
-        principal: 'principal-lead-doors',
-        credentialSlot: 'claude-code',
-        ...(process.env.CHUG_SELECTOR_SUBSIDIZED_LEAD === undefined
-          ? {}
-          : { subsidizedLead: JSON.parse(process.env.CHUG_SELECTOR_SUBSIDIZED_LEAD) }),
-      },
-      controlDeadlineMs: 1000,
-    },
-    { next: () => ({ operation: 'unused', selectorDecisionReference: 'unused' }) },
-  );
-  const started = await runtime.start();
-  await runtime.stop();
-  process.stdout.write(JSON.stringify(started));
-`;
-
-/** Starts and stops the composed selector process, answering what its start said. */
-async function composedRootStarted(
-  environment: NodeJS.ProcessEnv = {},
-): Promise<{ readonly started: string; readonly precondition?: string }> {
-  const { stdout } = await execute(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      composedRootProgram,
-    ],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        CHUG_SELECTOR_URL: selectorDatabaseUrl(),
-        ...environment,
-      },
-    },
-  );
-  return JSON.parse(stdout) as {
-    readonly started: string;
-    readonly precondition?: string;
-  };
-}
-
-test("the composed selector process publishes the subsidized lead it starts with, and withdraws it when it starts with none", async () => {
-  const published = async () =>
-    (
-      await apiPool.query<{ credential_slot: string; model: string }>(
-        `SELECT credential_slot,model FROM ${subsidizedLeadReadFunction}()`,
-      )
-    ).rows;
-  const profile = {
-    credentialSlot: "anthropic-api",
-    model: "claude-haiku-5-5",
-    effort: "low",
-    autoCompactWindow: 100_000,
-    inputBytesPerDecision: 65_536,
-    turnTokensMax: 200_000,
-    tenantMonthlyMicros: 5_000_000,
-    deploymentMonthlyMicros: 50_000_000,
-    unmeasuredTurnMicros: 100_000,
-  };
-  assert.deepEqual(
-    await composedRootStarted({
-      CHUG_SELECTOR_SUBSIDIZED_LEAD: JSON.stringify(profile),
-    }),
-    { started: "Started" },
-  );
-  assert.deepEqual(await published(), [
-    { credential_slot: "anthropic-api", model: "claude-haiku-5-5" },
-  ]);
-  assert.deepEqual(await composedRootStarted(), { started: "Started" });
-  assert.deepEqual(await published(), []);
-});
-
-test("the composed selector process refuses to start when one door is not granted", async () => {
-  const owner = postgresPool(postgresHarnessUrl());
-  const door = `${sessionSystemPromptSetFunction}(${systemPromptSetSignature})`;
-  let started: Awaited<ReturnType<typeof composedRootStarted>>;
-  await owner.query(
-    `REVOKE EXECUTE ON FUNCTION ${door} FROM ${selectorServiceRole}`,
-  );
-  try {
-    started = await composedRootStarted();
-  } finally {
-    await owner.query(
-      `GRANT EXECUTE ON FUNCTION ${door} TO ${selectorServiceRole}`,
-    );
-    await owner.end();
-  }
-  assert.equal(
-    started.started,
-    "CouldNotRun",
-    "a half-granted migration must stop the process, not let it run blind",
-  );
-  assert.equal(
-    started.precondition,
-    "selector-lead-doors",
-    "and it must say which control refused",
   );
 });
