@@ -2541,9 +2541,9 @@ test("on a Mac whose running Colima VM a yes restarts, the yes counts what ran b
 
   expect((await ran(machine)).exit).toBe(0);
   expect(machine.box.containers).toEqual([]);
-  expect(
-    JSON.parse(machine.box.paths.get(boxMacSettings) ?? ""),
-  ).toMatchObject({ chat: { sessionsMax: 2, sessionMemoryMib: 2048 } });
+  expect(JSON.parse(machine.box.paths.get(boxMacSettings) ?? "")).toMatchObject(
+    { chat: { sessionsMax: 2, sessionMemoryMib: 2048 } },
+  );
 });
 
 test("--chat-host no sets up the project's runner alone, minting and registering no chat host, and the runner's step is done with it live, saying chat-host where the chat host is missing or not running", async () => {

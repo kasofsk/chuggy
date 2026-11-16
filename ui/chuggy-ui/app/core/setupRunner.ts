@@ -586,9 +586,9 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
  * no sessions for it: as many as the engine's memory has room for beside
  * what it runs and a job, and one where it has room for none, each taking
  * the memory the settings name or the package's own, keeping every other
- * key. What it runs is counted as `colima` says the yes found it too, before
- * restarting Colima's VM. Answers
- * whether it wrote them, which is whether a running chat host is now stale.
+ * key, counting what it runs as `colima` found it before any restart too.
+ * Answers whether it wrote them, which is whether a running chat host is now
+ * stale.
  */
 async function setupChatSettingsHad(
   run: Run,
