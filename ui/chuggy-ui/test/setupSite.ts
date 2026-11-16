@@ -164,9 +164,11 @@ export type SetupSiteRead =
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner`, `bind` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind` and `file` are writes, `file` the draft's creation. */
+/** What only `runner`, `bind`, `serve` or `ticket` asks, which a case moves likewise; `mint`, `chatMint`, `bind`, `serve`, `allow` and `file` are writes, `file` the draft's creation, `serve` the project given the caller's runners and `allow` the owner fallback named. */
 export type SetupSiteRunnerAsk =
   | "abilities"
+  | "serve"
+  | "allow"
   | "pools"
   | "mint"
   | "permit"
@@ -1408,7 +1410,45 @@ function projectOf(
   );
 }
 
-/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, or nothing the site answers. */
+/** The caller's runners given a project they are shown, where they hold any. */
+function personalServed(
+  site: SetupSite,
+  tenant: string,
+  project: SetupSiteProject,
+): SetupSiteAnswer {
+  const held = site.personal.get(tenant);
+  if (held === undefined) return refused();
+  const fate = fated(site, "serve");
+  if (fate !== undefined) return fate;
+  if (!held.projects.includes(project.project))
+    held.projects.push(project.project);
+  return answered({});
+}
+
+/** A project's owner fallback named whole, by a caller who administers it. */
+function fallbackWritten(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "allow");
+  if (fate !== undefined) return fate;
+  if (!project.administer)
+    return {
+      status: 403,
+      body: { error: { code: "Forbidden", message: "Forbidden." } },
+    };
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly fallback?: OwnerFallback;
+  };
+  project.fallback = asked.fallback;
+  return answered({
+    ...(asked.fallback === undefined ? {} : { fallback: asked.fallback }),
+    administers: true,
+  });
+}
+
+/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, the caller's runners given a project, a project's owner fallback named, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
@@ -1417,10 +1457,23 @@ function tenantWritten(
 ): SetupSiteAnswer | undefined {
   if (sent.method === "POST" && rest === chatMintPath)
     return chatMinted(site, tenant, sent.body);
+  const served = /^\/personal-runner\/projects\/([^/]+)$/u.exec(rest);
+  if (sent.method === "PUT" && served !== null) {
+    const project = projectOf(site, tenant, served[1]);
+    return project === undefined
+      ? refused()
+      : personalServed(site, tenant, project);
+  }
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
   if (sent.method === "POST" && within?.[2] === "/repositories") {
     const project = projectOf(site, tenant, within[1]);
     return project === undefined ? refused() : bound(site, project, sent.body);
+  }
+  if (sent.method === "PUT" && within?.[2] === "/owner-fallback") {
+    const project = projectOf(site, tenant, within[1]);
+    return project === undefined
+      ? refused()
+      : fallbackWritten(site, project, sent.body);
   }
   if (sent.method === "POST" && within?.[2] === "/drafts") {
     const project = projectOf(site, tenant, within[1]);

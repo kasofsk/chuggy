@@ -18,10 +18,11 @@ import {
   sessionRunnerStandings,
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
+import type { SessionRunnerStanding } from "../../../src/contract/rosters.ts";
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { repositoriesWorkerless } from "../app/core/projectRepositories.ts";
 import { setupLandingsMax } from "../app/core/setupReads.ts";
-import type { SetupRead } from "../app/core/setupReads.ts";
+import type { SetupPersonal, SetupRead } from "../app/core/setupReads.ts";
 import { setupSteps } from "../app/core/setupReport.ts";
 import { setupStanding } from "../app/core/setupStanding.ts";
 import type { SetupPluginHere, SetupStep } from "../app/core/setupStanding.ts";
@@ -877,6 +878,19 @@ function settled<T>(read: SetupRead<T>): WorkRunnerRead<T> {
   };
 }
 
+/** The person's personal runners as the console's decider takes them: unregistered where none is, or the project is not given them. */
+function settledPersonal(
+  read: SetupRead<SetupPersonal>,
+): WorkRunnerRead<SessionRunnerStanding> {
+  const held = settled(read);
+  const personal = held.state.state === "Ready" ? held.state.value : undefined;
+  return settled({
+    read: "Got",
+    value: personal?.registered === true ? personal.standing : "Unregistered",
+    whole: true,
+  });
+}
+
 test("for every route a project's work can take and every standing its runners can have, the runner step is to do exactly where the console says the work has no runner, and done wherever the cluster runs it", async () => {
   const said: Record<string, Said | undefined> = {};
   for (const route of placementRoutes)
@@ -927,7 +941,7 @@ test("a project with no pool that names an owner fallback takes the person's own
         settled(reads.work),
         settled(reads.placement),
         settled(reads.fallback),
-        settled(reads.personal),
+        settledPersonal(reads.personal),
         "Reader",
       );
       expect(step?.[0] === "todo", `${String(fallback)} ${own}`).toBe(
@@ -966,7 +980,7 @@ test("a project with no pool that names an owner fallback takes neither the pers
         settled(reads.work),
         settled(reads.placement),
         settled(reads.fallback),
-        settled(reads.personal),
+        settledPersonal(reads.personal),
         "Reader",
       ),
       held,
@@ -974,15 +988,16 @@ test("a project with no pool that names an owner fallback takes neither the pers
   }
 });
 
-test("the person's personal runners unread leave the runner step unread only where the project has no pool and names a fallback", async () => {
+test("the person's personal runners unread leave the runner step unread wherever the project has no pool, so a person holding one is never told to register one", async () => {
   const unread: Said = [
     "unread",
     "your personal runners were not answered (Fault)",
   ];
   for (const [runner, fallback, said] of [
     ["Unregistered", "Strict", unread],
-    ["Unregistered", undefined, saidTodo],
+    ["Unregistered", undefined, unread],
     ["Live", "Strict", saidLive],
+    ["Live", undefined, saidLive],
   ] as const) {
     const { site, project } = saidRunnable();
     project.runner = runner;
@@ -994,18 +1009,46 @@ test("the person's personal runners unread leave the runner step unread only whe
   }
 });
 
-test("a project with no pool says whether it names an owner fallback in what its runner step lacks", async () => {
-  for (const fallback of [undefined, "Strict"] as const) {
-    const { site, project } = saidRunnable();
-    project.runner = "Unregistered";
-    project.fallback = fallback;
-    site.chat.clear();
-    expect((await stood(site)).steps[6]?.lacks).toEqual({
-      lacks: "Runner",
-      chat: true,
-      named: fallback !== undefined,
-    });
-  }
+test("a project with no pool lacks a runner where the person holds no personal runner, and where they hold one that does not take its work, lacks that runner serving it, saying whether it is given the project, whether a fallback is named and whether the person may name one", async () => {
+  const lacks: Record<string, unknown> = {};
+  for (const held of ["none", "another project", "given"] as const)
+    for (const fallback of [undefined, "Preferred"] as const)
+      for (const administer of [true, false]) {
+        const { site, project } = saidRunnable();
+        project.runner = "Unregistered";
+        project.fallback = fallback;
+        project.administer = administer;
+        site.chat.clear();
+        if (held !== "none")
+          site.personal.set("acme", {
+            live: [true],
+            projects: [held === "given" ? project.project : "gadgets"],
+          });
+        lacks[`${held} ${fallback ?? "None"} ${String(administer)}`] = (
+          await stood(site)
+        ).steps[6]?.lacks;
+      }
+  const runner = { lacks: "Runner", chat: true };
+  const serving = (given: boolean, named: boolean, administers: boolean) => ({
+    lacks: "Serving",
+    given,
+    named,
+    administers,
+  });
+  expect(lacks).toEqual({
+    "none None true": runner,
+    "none None false": runner,
+    "none Preferred true": runner,
+    "none Preferred false": runner,
+    "another project None true": serving(false, false, true),
+    "another project None false": serving(false, false, false),
+    "another project Preferred true": serving(false, true, true),
+    "another project Preferred false": serving(false, true, false),
+    "given None true": serving(true, false, true),
+    "given None false": serving(true, false, false),
+    "given Preferred true": { lacks: "ChatHost" },
+    "given Preferred false": { lacks: "ChatHost" },
+  });
 });
 
 test("the owner fallback unread leaves the runner step unread only where the project has no pool", async () => {
@@ -1069,21 +1112,9 @@ test("where the person's chats run on runners the runner step is done only once 
     }
   const chat = (lacks: "ChatHost" | "ChatHostLive") => ({ lacks });
   expect(said).toEqual({
-    "Unregistered Unregistered": [
-      "todo",
-      "",
-      { lacks: "Runner", chat: true, named: false },
-    ],
-    "Unregistered Offline": [
-      "todo",
-      "",
-      { lacks: "Runner", chat: true, named: false },
-    ],
-    "Unregistered Live": [
-      "todo",
-      "",
-      { lacks: "Runner", chat: false, named: false },
-    ],
+    "Unregistered Unregistered": ["todo", "", { lacks: "Runner", chat: true }],
+    "Unregistered Offline": ["todo", "", { lacks: "Runner", chat: true }],
+    "Unregistered Live": ["todo", "", { lacks: "Runner", chat: false }],
     "Offline Unregistered": [
       "waiting",
       "registered, not running",
