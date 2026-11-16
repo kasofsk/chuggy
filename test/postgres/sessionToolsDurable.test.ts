@@ -1,18 +1,12 @@
 /**
- * The lead's tools, driven against a real PostgreSQL by the role each door is
- * granted to.
+ * The doors a session's tools reach, driven against a real PostgreSQL by the
+ * role each door is granted to.
  *
  * EVERY CASE HERE IS ABOUT A CONTROL AND NOT ABOUT A SHAPE. A column bound, a
  * grant, a revoke and a filter are each a claim about what the server refuses,
  * and the only way to hold one is to attempt the thing it refuses as the
  * identity that would attempt it. So the drafts page is read through the API's
- * own role, the objectives door is driven through the selector's, and every
- * other role is asked for the same door and refused.
- *
- * THE OBJECTIVES ARE A COLUMN A LATER WRITE MAY MOVE, which is the one thing
- * `agent_session_is_written_once` does not freeze. A case that only ever wrote
- * the column at open would pass with the trigger widened to freeze it, so the
- * second write is what this suite asserts.
+ * own role, and every other role is asked for the same door and refused.
  */
 
 import assert from "node:assert/strict";
@@ -21,7 +15,6 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
-import { postgresLeadSystemPrompt } from "../../src/adapters/postgres/leadMailbox.ts";
 import { postgresSessionPlane } from "../../src/adapters/postgres/sessionPlane.ts";
 import {
   apiRole,
@@ -38,13 +31,11 @@ import {
   ticketServiceRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { agentSessionPromptCharsMax } from "../../src/contract/http.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import {
   asConfigurationRevisionId,
   type ConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
-import type { LeadSystemPromptPort } from "../../src/interpreter/agentSession.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { asPrincipal, oidcPrincipal } from "../../src/interpreter/principal.ts";
 import {
@@ -82,36 +73,31 @@ import {
 let rig: SessionRig;
 let harness: PostgresHarness;
 let apiPool: pg.Pool;
-let selectorPool: pg.Pool;
 let drafts: AuthoringStore;
-let prompts: LeadSystemPromptPort;
 
 before(async () => {
   rig = await sessionRigOpen();
   harness = rig.harness;
   apiPool = postgresHarnessRolePool(apiRole);
-  selectorPool = postgresHarnessRolePool(selectorServiceRole);
   drafts = postgresAuthoring(apiPool);
-  prompts = postgresLeadSystemPrompt(selectorPool);
 });
 
 after(async () => {
   await apiPool.end();
-  await selectorPool.end();
   await rig.close();
 });
 
-function leadToolsProject(label: string): Promise<Partition> {
-  return postgresHarnessProject(harness.store, `lead-tools-${label}`);
+function sessionToolsProject(label: string): Promise<Partition> {
+  return postgresHarnessProject(harness.store, `session-tools-${label}`);
 }
 
 const draftAuthority: Authority = {
   kind: asAuthorityKind("OidcUser"),
-  subject: asAuthoritySubject("lead-tools"),
+  subject: asAuthoritySubject("session-tools"),
 };
 
 /** One configuration a draft may be authored against, on the owner's own pool. */
-async function leadToolsConfiguration(
+async function sessionToolsConfiguration(
   partition: Partition,
 ): Promise<ConfigurationRevisionId> {
   const revision = asConfigurationRevisionId(`config-drafts-${randomUUID()}`);
@@ -122,12 +108,12 @@ async function leadToolsConfiguration(
     canonical: postgresHarnessConfiguration,
   });
   if (created.created !== "Created")
-    throw new Error(`lead tools: configuration answered ${created.created}`);
+    throw new Error(`session tools: configuration answered ${created.created}`);
   return revision;
 }
 
 /** One open draft, through the doors a member's own command goes through. */
-async function leadToolsDraft(
+async function sessionToolsDraft(
   partition: Partition,
   revision: ConfigurationRevisionId,
   brief: DraftBrief = postgresHarnessBrief,
@@ -138,7 +124,7 @@ async function leadToolsDraft(
     100,
   );
   if (initialized === undefined || initialized === "PolicyUnavailable")
-    throw new Error("lead tools: the draft was not initialized");
+    throw new Error("session tools: the draft was not initialized");
   const created = await harness.authoring.createDraft({
     partition,
     authority: draftAuthority,
@@ -149,7 +135,7 @@ async function leadToolsDraft(
     brief,
   });
   if (created.created !== "Created")
-    throw new Error(`lead tools: the draft answered ${created.created}`);
+    throw new Error(`session tools: the draft answered ${created.created}`);
   return {
     ticket: created.draft.ticket,
     version: created.draft.authoringVersion,
@@ -157,11 +143,11 @@ async function leadToolsDraft(
 }
 
 test("a page of drafts answers the open ones ascending, and pages past them", async () => {
-  const partition = await leadToolsProject("page");
-  const revision = await leadToolsConfiguration(partition);
-  const first = await leadToolsDraft(partition, revision);
-  const second = await leadToolsDraft(partition, revision);
-  const third = await leadToolsDraft(partition, revision);
+  const partition = await sessionToolsProject("page");
+  const revision = await sessionToolsConfiguration(partition);
+  const first = await sessionToolsDraft(partition, revision);
+  const second = await sessionToolsDraft(partition, revision);
+  const third = await sessionToolsDraft(partition, revision);
 
   const page = await drafts.drafts(partition, { limit: 2 });
   assert.deepEqual(
@@ -191,11 +177,11 @@ test("a page of drafts answers the open ones ascending, and pages past them", as
  * the page filters on, so this case moves the column the filter reads.
  */
 test("a page that ends the collection says so, however it ends", async () => {
-  const partition = await leadToolsProject("boundary");
-  const revision = await leadToolsConfiguration(partition);
-  const first = await leadToolsDraft(partition, revision);
-  const second = await leadToolsDraft(partition, revision);
-  const third = await leadToolsDraft(partition, revision);
+  const partition = await sessionToolsProject("boundary");
+  const revision = await sessionToolsConfiguration(partition);
+  const first = await sessionToolsDraft(partition, revision);
+  const second = await sessionToolsDraft(partition, revision);
+  const third = await sessionToolsDraft(partition, revision);
   const held = [first, second, third];
 
   const exact = await drafts.drafts(partition, { limit: held.length });
@@ -250,14 +236,14 @@ test("a draft's brief is read from its own project, not its tenant", async () =>
       checks: [`just check-${which}`],
       branch: `refs/heads/${which}`,
     });
-  const held = await leadToolsDraft(
+  const held = await sessionToolsDraft(
     mine,
-    await leadToolsConfiguration(mine),
+    await sessionToolsConfiguration(mine),
     briefOf("mine"),
   );
-  const other = await leadToolsDraft(
+  const other = await sessionToolsDraft(
     theirs,
-    await leadToolsConfiguration(theirs),
+    await sessionToolsConfiguration(theirs),
     briefOf("theirs"),
   );
   assert.equal(
@@ -287,11 +273,11 @@ test("a draft's brief is read from its own project, not its tenant", async () =>
 });
 
 test("a released or deleted draft is not one of a project's open drafts", async () => {
-  const partition = await leadToolsProject("state");
-  const revision = await leadToolsConfiguration(partition);
-  const open = await leadToolsDraft(partition, revision);
-  const deleted = await leadToolsDraft(partition, revision);
-  const released = await leadToolsDraft(partition, revision);
+  const partition = await sessionToolsProject("state");
+  const revision = await sessionToolsConfiguration(partition);
+  const open = await sessionToolsDraft(partition, revision);
+  const deleted = await sessionToolsDraft(partition, revision);
+  const released = await sessionToolsDraft(partition, revision);
 
   const gone = await harness.authoring.deleteDraft({
     partition,
@@ -318,10 +304,10 @@ test("a released or deleted draft is not one of a project's open drafts", async 
 });
 
 test("one project's drafts are not another's", async () => {
-  const mine = await leadToolsProject("mine");
-  const theirs = await leadToolsProject("theirs");
-  const revision = await leadToolsConfiguration(mine);
-  const held = await leadToolsDraft(mine, revision);
+  const mine = await sessionToolsProject("mine");
+  const theirs = await sessionToolsProject("theirs");
+  const revision = await sessionToolsConfiguration(mine);
+  const held = await sessionToolsDraft(mine, revision);
 
   assert.deepEqual(
     (await drafts.drafts(theirs, { limit: 100 })).drafts.map(
@@ -337,106 +323,8 @@ test("one project's drafts are not another's", async () => {
   );
 });
 
-test("the lead's objectives are set, left alone, and refused a project with no lead", async () => {
-  const partition = await leadToolsProject("prompt");
-  const empty = await leadToolsProject("noprompt");
-  assert.equal(await prompts.setSystemPrompt(empty, "anything"), "NoLead");
-
-  await sessionRigSession(rig, partition, "prompted", {
-    kind: "Lead",
-    capabilities: ["RepositoryRead", "ProjectRead", "DraftAuthor"],
-    systemPrompt: "what this project wants",
-  });
-  assert.equal(
-    await prompts.setSystemPrompt(partition, "what this project wants"),
-    "Unchanged",
-  );
-  assert.equal(
-    await prompts.setSystemPrompt(partition, "what it wants now"),
-    "Set",
-  );
-  assert.equal(
-    await prompts.setSystemPrompt(partition, "what it wants now"),
-    "Unchanged",
-  );
-  assert.deepEqual(
-    await harness.query(
-      `SELECT system_prompt FROM agent_session
-        WHERE tenant=$1 AND project=$2 AND kind='Lead'`,
-      [partition.tenant, partition.project],
-    ),
-    [{ system_prompt: "what it wants now" }],
-  );
-});
-
-/**
- * The second project's only session is a member's thread: a door that resolved
- * any session would find it and rewrite it, which is what `kind='Lead'` is for.
- */
-test("a member's thread keeps its own objectives when the lead's move", async () => {
-  const partition = await leadToolsProject("thread");
-  await sessionRigSession(rig, partition, "lead", {
-    kind: "Lead",
-    systemPrompt: "the lead's own",
-  });
-  await sessionRigSession(rig, partition, "member", {
-    kind: "Thread",
-    principal: `member-${randomUUID()}`,
-    systemPrompt: "the member's own",
-  });
-
-  assert.equal(await prompts.setSystemPrompt(partition, "moved"), "Set");
-  assert.deepEqual(
-    await harness.query(
-      `SELECT kind,system_prompt FROM agent_session
-        WHERE tenant=$1 AND project=$2 ORDER BY kind`,
-      [partition.tenant, partition.project],
-    ),
-    [
-      { kind: "Lead", system_prompt: "moved" },
-      { kind: "Thread", system_prompt: "the member's own" },
-    ],
-  );
-
-  const leadless = await leadToolsProject("leadless");
-  await sessionRigSession(rig, leadless, "alone", {
-    kind: "Thread",
-    principal: `member-${randomUUID()}`,
-    systemPrompt: "the only session there is",
-  });
-  assert.equal(await prompts.setSystemPrompt(leadless, "moved"), "NoLead");
-  assert.deepEqual(
-    await harness.query(
-      `SELECT kind,system_prompt FROM agent_session
-        WHERE tenant=$1 AND project=$2`,
-      [leadless.tenant, leadless.project],
-    ),
-    [{ kind: "Thread", system_prompt: "the only session there is" }],
-  );
-});
-
-test("objectives longer than one row holds are refused", async () => {
-  const partition = await leadToolsProject("bound");
-  await sessionRigSession(rig, partition, "bounded", { kind: "Lead" });
-  await assert.rejects(
-    () =>
-      prompts.setSystemPrompt(
-        partition,
-        "o".repeat(agentSessionPromptCharsMax + 1),
-      ),
-    /agent_session_prompt_is_bounded/u,
-  );
-  assert.equal(
-    await prompts.setSystemPrompt(
-      partition,
-      "o".repeat(agentSessionPromptCharsMax),
-    ),
-    "Set",
-  );
-});
-
 test("reopening a session compares the objectives it would be opened with", async () => {
-  const partition = await leadToolsProject("reopen");
+  const partition = await sessionToolsProject("reopen");
   const session = await sessionRigSession(rig, partition, "reopened", {
     kind: "Lead",
     principal: "reopened",
@@ -462,7 +350,7 @@ test("reopening a session compares the objectives it would be opened with", asyn
 });
 
 test("the pod is answered the objectives its session was opened with", async () => {
-  const partition = await leadToolsProject("facts");
+  const partition = await sessionToolsProject("facts");
   const session = await sessionRigSession(rig, partition, "facts", {
     kind: "Lead",
     capabilities: ["RepositoryRead", "ProjectRead"],
@@ -473,13 +361,7 @@ test("the pod is answered the objectives its session was opened with", async () 
   const authenticated = await rig.plane.authenticate(attempt.secret);
   assert.equal(authenticated?.systemPrompt, "what the pod is told it is");
 
-  assert.equal(await prompts.setSystemPrompt(partition, "and now this"), "Set");
-  assert.equal(
-    (await rig.plane.authenticate(attempt.secret))?.systemPrompt,
-    "and now this",
-  );
-
-  const bare = await leadToolsProject("bare");
+  const bare = await sessionToolsProject("bare");
   const spare = await sessionRigSession(rig, bare, "bare", { kind: "Lead" });
   await sessionRigTurn(rig, bare, spare, "bare");
   const other = await sessionRigAttempt(rig, bare, spare, "bare");
@@ -490,12 +372,12 @@ test("the pod is answered the objectives its session was opened with", async () 
 });
 
 /**
- * The reads a lead's tools reach, beside every role that holds one — the pool
+ * The reads a session's tools reach, beside every role that holds one — the pool
  * plane among them, whose claim of a session records the repository its pod
  * reads — so the case names them all rather than asserting a door has one
  * holder it never had.
  */
-const leadToolDoors: readonly {
+const sessionToolDoors: readonly {
   readonly door: string;
   readonly holders: readonly string[];
 }[] = [
@@ -543,7 +425,7 @@ test("a drafts page and a repository binding are each held by exactly the roles 
         [role, signature],
       )
     )[0]?.["granted"];
-  for (const { door, holders } of leadToolDoors) {
+  for (const { door, holders } of sessionToolDoors) {
     for (const role of [...runtimeRoles, "public"])
       assert.equal(
         await executes(role, door),
@@ -570,7 +452,7 @@ test("a drafts page and a repository binding are each held by exactly the roles 
 });
 
 test("the scheduler's own credential can read a project's repository binding", async () => {
-  const partition = await leadToolsProject("binding");
+  const partition = await sessionToolsProject("binding");
   const scheduling = postgresHarnessRolePool(schedulerRole);
   try {
     assert.deepEqual(
@@ -595,7 +477,7 @@ test("the scheduler's own credential can read a project's repository binding", a
  * never which projects bind anything.
  */
 test("the worker plane's own credential reads a binding through the function and nowhere else", async () => {
-  const partition = await leadToolsProject("plane-binding");
+  const partition = await sessionToolsProject("plane-binding");
   const plane = postgresHarnessRolePool(workerPlaneRole);
   try {
     assert.deepEqual(
@@ -617,29 +499,10 @@ test("the worker plane's own credential reads a binding through the function and
   }
 });
 
-test("no role but the selector's may move a lead's objectives", async () => {
-  for (const role of [apiRole, schedulerRole, workerPlaneRole]) {
-    const pool = postgresHarnessRolePool(role);
-    try {
-      await assert.rejects(
-        () =>
-          postgresLeadSystemPrompt(pool).setSystemPrompt(
-            { tenant: "tenant", project: "project" } as Partition,
-            "moved",
-          ),
-        /permission denied for function set_session_system_prompt/u,
-        role,
-      );
-    } finally {
-      await pool.end();
-    }
-  }
-});
-
 test("the API's own credential is what pages a project's drafts", async () => {
-  const partition = await leadToolsProject("apirole");
-  const revision = await leadToolsConfiguration(partition);
-  const held = await leadToolsDraft(partition, revision);
+  const partition = await sessionToolsProject("apirole");
+  const revision = await sessionToolsConfiguration(partition);
+  const held = await sessionToolsDraft(partition, revision);
   assert.deepEqual(
     (await drafts.drafts(partition, { limit: 100 })).drafts.map(
       (draft) => draft.ticket,
@@ -687,7 +550,7 @@ function provisionSession(
 }
 
 test("a session provisioned from an issuer and a subject is the membership's own principal", async () => {
-  const partition = await leadToolsProject("provisioned");
+  const partition = await sessionToolsProject("provisioned");
   const issuer = "https://auth.invalid/realm";
   const subject = `chuggy-selector-${randomUUID()}`;
   const session = `session-provisioned-${randomUUID()}`;
@@ -724,7 +587,7 @@ test("a session provisioned from an issuer and a subject is the membership's own
 });
 
 test("the provisioning command refuses to open an inquiry, naming the kind, and opens none", async () => {
-  const partition = await leadToolsProject("provisioned-inquiry");
+  const partition = await sessionToolsProject("provisioned-inquiry");
   const session = `session-provisioned-inquiry-${randomUUID()}`;
   const refused = await provisionSession({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
@@ -747,7 +610,7 @@ test("the provisioning command refuses to open an inquiry, naming the kind, and 
 });
 
 test("a session may be named by one principal form and never by two", async () => {
-  const partition = await leadToolsProject("bothforms");
+  const partition = await sessionToolsProject("bothforms");
   const both = await provisionSession({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
     CHUG_PROVISION_SESSION_PROJECT: partition.project,
@@ -774,7 +637,7 @@ test("a session may be named by one principal form and never by two", async () =
  * variable the deployment did not mean to set.
  */
 test("an empty issuer or subject is a variable nobody set", async () => {
-  const partition = await leadToolsProject("emptyforms");
+  const partition = await sessionToolsProject("emptyforms");
   const session = `session-empty-${randomUUID()}`;
   const opened = await provisionSession({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
