@@ -227,13 +227,11 @@ export interface SessionRigOpening {
   readonly parent?: SessionId;
   readonly capabilities?: readonly SessionCapability[];
   readonly systemPrompt?: string;
-  /** The window a lead holds, written as `open_project_lead` writes it: the administrative door takes none. */
-  readonly autoCompactWindow?: number;
-  /** The model and effort the session runs on, written as the lead's and a thread's doors write them. */
+  /** The model and effort the session runs on, written as a thread's doors write them. */
   readonly model?: string;
   readonly effort?: string;
   readonly credentialSlot?: string;
-  /** Whether it runs on its own system prompt, written as `open_project_lead` writes it for a subsidized lead. */
+  /** Whether it runs on its own system prompt, written to its column: no door the rig opens through takes it. */
   readonly systemPromptOwn?: boolean;
 }
 
@@ -273,7 +271,7 @@ export async function sessionRigSession(
   const opens: AgentSessionOpening = {
     partition,
     session,
-    kind: opening.kind ?? "Lead",
+    kind: opening.kind ?? "Thread",
     principal: asPrincipal(opening.principal ?? `principal-${label}`),
     capabilities: opening.capabilities ?? ["RepositoryRead"],
     credentialSlot: opening.credentialSlot ?? "claude-code",
@@ -287,11 +285,6 @@ export async function sessionRigSession(
       : await sessionRigForkOpen(rig, { ...opens, parent: opening.parent });
   if (opened !== "Opened")
     throw new Error(`session rig: opening ${label} answered ${opened}`);
-  if (opening.autoCompactWindow !== undefined)
-    await rig.harness.query(
-      `UPDATE agent_session SET auto_compact_window=$2 WHERE session=$1`,
-      [session, opening.autoCompactWindow],
-    );
   if (opening.model !== undefined || opening.effort !== undefined)
     await rig.harness.query(
       `UPDATE agent_session SET model=$2,effort=$3 WHERE session=$1`,
@@ -332,16 +325,15 @@ export async function sessionRigTurn(
   return turn;
 }
 
-/** Routes a project's threads and its lead, as an administrator's write would. */
+/** Routes a project's threads, as an administrator's write would. */
 export async function sessionRigRouted(
   rig: SessionRig,
   partition: Partition,
   thread: PlacementRoute,
-  lead: PlacementRoute,
 ): Promise<void> {
   await rig.harness.query(
-    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Own','Member','an-owner')`,
-    [partition.tenant, partition.project, thread, lead],
+    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,'InCluster','Own','Member','an-owner')`,
+    [partition.tenant, partition.project, thread],
   );
 }
 

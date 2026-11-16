@@ -182,8 +182,8 @@ test("a member's own turn is routed to runners whatever the installation routes,
   const routing = await rig.sessions.harness.begin();
   try {
     await routing.query(
-      `INSERT INTO session_routing(singleton,thread_route,lead_route,project_routes)
-       VALUES(1,'InCluster','InCluster',jsonb_build_object($1::text,
+      `INSERT INTO session_routing(singleton,thread_route,project_routes)
+       VALUES(1,'InCluster',jsonb_build_object($1::text,
          jsonb_build_object($2::text,jsonb_build_object('Thread','InCluster'))))
        ON CONFLICT (singleton) DO UPDATE
          SET thread_route=excluded.thread_route,

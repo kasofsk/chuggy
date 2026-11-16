@@ -1,10 +1,10 @@
 /**
- * What every thread case needs of a real PostgreSQL: the lead rig the lead
- * suites already stand on, the two thread stores over the roles their doors
- * are granted to, and a member the project admits for a thread to act under.
+ * What every thread case needs of a real PostgreSQL: the session rig and API
+ * pool of the lead rig, the two thread stores over the roles their doors are
+ * granted to, and a member the project admits for a thread to act under.
  *
- * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The five API-side doors run as
- * `chuggy_api` and the three wake-side ones as `chuggy_selector_service`,
+ * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The API-side doors run as
+ * `chuggy_api` and the wake-side ones as `chuggy_scheduler`,
  * because a suite that drove either as the migration owner would be green over
  * a grant that had never been made — which is a defect only the deployed
  * credential meets.

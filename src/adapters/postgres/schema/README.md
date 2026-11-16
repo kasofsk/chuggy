@@ -290,23 +290,16 @@ a role that could open one could mint an authority to act as a principal. Its
 composite key is `(tenant, project)` and its identity is `(tenant, project,
 session)`, with the opaque session unique globally so a reused one cannot answer
 another project's mailbox. It is changed by those three doors, by
-`open_member_thread` and `close_member_thread`, by `open_project_lead` and
-`close_project_lead`, by the
+`open_member_thread` and `close_member_thread`, by the
 scheduler taking an attempt number, by the worker plane binding the runtime's
-session id once, by the selector moving the project's lead onto the objectives
-it now holds, by `set_session_capabilities` reconfiguring one session's roster
+session id once, by `set_session_capabilities` reconfiguring one session's roster
 and by `rename_member_thread` and `hide_member_thread` writing the member's own
 name for a thread and their own way of putting it away, and by a chat host's
 thread attempt reporting whether its thread is standing through
 `report_session_standing`, which `close_agent_session` clears; a trigger refuses every
-other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead and any number of
-closed ones — a closed lead is the context that ended, and the successor the
-selector opens is how a project whose lead ended decides again — so the
-uniqueness is a partial index over `state='Open'` and `open_project_lead` is the
-selector service's own door onto it. The selector closes a lead through
-`close_project_lead`, which closes only the project's open lead it names and
-refuses while a turn of it is in flight or an inquiry forked from it is open;
-`close_agent_session`, which abandons such turns, no runtime role may execute.
+other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead at most, by a partial index over `state='Open'`,
+and no door opens one. `close_agent_session`, which abandons a session's queued
+and claimed turns, no runtime role may execute.
 A member holds any number of open threads up to `member_thread_limit`, which
 is a count rather than an index: `open_member_thread` and `open_agent_session`
 each take an advisory lock on the member before counting, and a thread the API
@@ -467,37 +460,20 @@ door alone, which answers `Unchanged` where nothing moved. It has no unfinished
 work: a limit lowered below what a member holds closes nothing, and refuses
 their next open until they are under it.
 
-`project_session_placement` — where one project's threads and its lead run,
-the lead's offering, and who set it; an inquiry runs where the lead does.
-Owned by the boundary owner, which is what `set_project_session_placement`
+`project_session_placement` — where one project's threads run, and who set
+it. Owned by the boundary owner, which is what `set_project_session_placement`
 runs as; the API role writes it through that door alone, and every reader
-reaches it through `session_route`, `session_lead_offering` and
-`stored_lead_offering`. Its key and identity are `(tenant, project)` and it points at `project`. It is changed by
-that door alone, which answers `Unchanged` and keeps the setter where nothing
-moved; a row backfilled for a project that ran before it names no setter.
-`project_session_placement_subsidized_lead_is_in_cluster` holds a `Subsidized`
-offering to an `InCluster` lead. It has no unfinished work: a project with no
-row runs where the published routing's default sends it.
-
-`subsidized_lead` — the subsidized lead the selector offers: its credential
-slot, model, effort and bounds, and its monthly caps per tenant and on every
-tenant together, with what a turn that failed or never settled is charged. Owned by the selector service, which writes it
-at boot and deletes it at a boot that offers none; the API role reads it
-through `read_subsidized_lead` alone. It has no project key, being the
-deployment's: it is a single row, keyed `singleton` and held to it by a CHECK.
-It has no unfinished work: `session_lead_offering` reads it when asked, so a
-stored `Subsidized` reads `Own` while no row stands. The selector's settings
-read and the API's reach it, per project, through `session_lead_profile`, and
-`open_lead_inquiry` holds an inquiry admitted on the subsidy to its slot,
-and to a lead on its own system prompt.
-Both reach what a project's tenant and the deployment spent of it this month
-through `subsidized_lead_spend`, which sums the Lead and Inquiry turns on its
-slot by `session_turn_enqueued`.
+reaches it through `session_route`. Its key and identity are
+`(tenant, project)` and it points at `project`. It is changed by that door
+alone, which answers `Unchanged` and keeps the setter where nothing moved; a
+row backfilled for a project that ran before it names no setter. It has no
+unfinished work: a project with no row runs where the published routing's
+default sends it.
 
 `session_routing` — the session routing the scheduler last published: the
-default per kind and each project's override. It is a single row, keyed
+thread's default and each project's override. It is a single row, keyed
 `singleton` and held to it by a CHECK, written by the scheduler at boot and
-read through `session_route`, which resolves a session's kind against it and
+read through `session_route`, which resolves a thread against it and
 `project_session_placement` and answers in cluster where no row was ever
 published. It has no unfinished work: the resolution is read when a turn is
 admitted and stamped on it, so a newer publish moves what is admitted after
@@ -697,8 +673,7 @@ for the API, `agent_account_pause` of the agent a limited task spent, and
 `agent_account_named_pause` of the credentials each runner of that account
 names, so the task is free where either would let that runner's claim through.
 `agent_account_session_paused`, which no role may call, answers the session
-claims of a pool and a chat host, and `lead_runner_standing`, whether a session
-waits on its account: `agent_account_named_pause` of the Claude credentials the
+claims of a pool and a chat host whether a session waits on its account: `agent_account_named_pause` of the Claude credentials the
 caller's runner named, and `agent_account_pause` where it named none.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It

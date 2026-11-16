@@ -90,11 +90,8 @@ function principal(label: string): Principal {
   return asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`);
 }
 
-/** A project whose sessions run on runners, its member, and a thread of theirs, or an inquiry forked from one, that member's chat host holds. */
-async function chatHostThread(
-  label: string,
-  kind: "Thread" | "Inquiry" = "Thread",
-): Promise<{
+/** A project whose sessions run on runners, its member, and a thread of theirs that member's chat host holds. */
+async function chatHostThread(label: string): Promise<{
   readonly partition: Partition;
   readonly member: Principal;
   readonly session: SessionId;
@@ -102,7 +99,7 @@ async function chatHostThread(
   readonly held: WorkerPoolSessionAssignment;
 }> {
   const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal(`member-${label}`);
   const registered = principal("host");
   const written = await postgresChatHostRegistry(apiPool).register({
@@ -118,18 +115,9 @@ async function chatHostThread(
     owner: member,
     principal: registered,
   };
-  const thread = await sessionRigSession(rig, partition, label, {
-    kind: "Thread",
+  const session = await sessionRigSession(rig, partition, label, {
     principal: member,
   });
-  const session =
-    kind === "Thread"
-      ? thread
-      : await sessionRigSession(rig, partition, `${label}-inquiry`, {
-          kind,
-          principal: member,
-          parent: thread,
-        });
   await sessionRigTurn(rig, partition, session, label);
   const answered = await workerPoolPoll(
     ports,
@@ -202,32 +190,13 @@ test("a wake through the door is one turn in the thread's mailbox, and the same 
   ]);
 });
 
-test("an attempt that is not a thread's on a chat host is refused a wake at the view and at the door", async () => {
+test("a thread's attempt in the cluster is refused a wake at the view and at the door", async () => {
   const partition = await sessionRigProject(rig, "job-wake-elsewhere");
-  for (const kind of ["Thread", "Lead"] as const) {
-    const label = `job-wake-elsewhere-${kind}`;
-    const session = await sessionRigSession(rig, partition, label, { kind });
-    await sessionRigTurn(rig, partition, session, label);
-    const placed = await sessionRigAttempt(rig, partition, session, label);
-    const bearer = { secret: placed.secret, generation: 1 };
-    assert.equal(await wakes.wakeView(bearer), "NotChatHostThread", kind);
-    assert.equal(
-      await wakes.wakeThread({
-        ...bearer,
-        turn: threadJobWakeTurn(session, "e"),
-        input: "{}",
-        route: "Pool",
-      }),
-      "NotChatHostThread",
-      kind,
-    );
-    assert.deepEqual(await wakeTurns(session), [], kind);
-  }
-});
-
-test("an inquiry a chat host holds is refused a wake at the view and at the door", async () => {
-  const { session, held } = await chatHostThread("job-wake-inquiry", "Inquiry");
-  const bearer = bearerOf(held);
+  const label = "job-wake-elsewhere";
+  const session = await sessionRigSession(rig, partition, label);
+  await sessionRigTurn(rig, partition, session, label);
+  const placed = await sessionRigAttempt(rig, partition, session, label);
+  const bearer = { secret: placed.secret, generation: 1 };
   assert.equal(await wakes.wakeView(bearer), "NotChatHostThread");
   assert.equal(
     await wakes.wakeThread({

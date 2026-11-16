@@ -33,8 +33,7 @@ import { sessionRowMember } from "./sessionRows.ts";
 
 /**
  * Publishes the session routing this scheduler places under, before its loop
- * reads anything, with the fixed lead route in `lead_route`, which the table
- * still requires.
+ * reads anything.
  */
 export function postgresSessionRoutingPrecondition(
   pool: pg.Pool,
@@ -47,13 +46,10 @@ export function postgresSessionRoutingPrecondition(
       signal.throwIfAborted();
       await pool.query(
         sql`INSERT INTO session_routing
-              (singleton,thread_route,lead_route,project_routes,published_at)
-            VALUES (1,${routing.routes.Thread},
-                    ${sessionPlacementLeadCompatibility.lead.route},
-                    ${document}::jsonb,now())
+              (singleton,thread_route,project_routes,published_at)
+            VALUES (1,${routing.routes.Thread},${document}::jsonb,now())
             ON CONFLICT (singleton) DO UPDATE
               SET thread_route=EXCLUDED.thread_route,
-                  lead_route=EXCLUDED.lead_route,
                   project_routes=EXCLUDED.project_routes,
                   published_at=EXCLUDED.published_at`,
       );

@@ -34,9 +34,6 @@ import {
   executionPlacementSetFunction,
   finalizerRole,
   forgeInstallationRecordFunction,
-  leadOpenFunction,
-  leadRunnerStandingFunction,
-  leadSessionFunction,
   metricsPlaneRole,
   poolPlaneRole,
   projectChangeAppendFunction,
@@ -65,15 +62,10 @@ import {
   selectorControlRole,
   selectorProjectThreadSettingsFunction,
   selectorServiceRole,
-  sessionLeadOfferingFunction,
   sessionPlacementSetFunction,
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   statusMoveFunction,
-  storedLeadOfferingFunction,
-  subsidizedLeadReadFunction,
-  sessionLeadProfileFunction,
-  subsidizedLeadSpendFunction,
   ticketLandingsReadFunction,
   ticketRateLimitResumableFunction,
   ticketServiceRole,
@@ -582,9 +574,6 @@ function boundaryGrantsDoor(
   return { signature, definer: true, callers, strangers };
 }
 
-const boundaryGrantsSettingsWrite =
-  "update_selector_project_settings(text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text,text,text,text,text)";
-
 /** The doors and functions a role reaches the schema through, and the roles each is shut to. */
 const boundaryGrantsDoors: readonly DoorDeclared[] = [
   boundaryGrantsDoor(
@@ -669,60 +658,9 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${sessionLeadOfferingFunction}(text,text)`,
-    [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${storedLeadOfferingFunction}(text,text)`,
-    [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${subsidizedLeadReadFunction}()`,
-    [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${sessionLeadProfileFunction}(text,text)`,
-    [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${subsidizedLeadSpendFunction}(text,text)`,
-    [apiRole],
-    [selectorServiceRole, schedulerRole, workerPlaneRole, poolPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadSessionFunction}(text,text)`,
-    [],
-    [selectorServiceRole, apiRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadOpenFunction}(text,text,text,text,text,text,bigint,text,text,boolean)`,
-    [],
-    [selectorServiceRole, apiRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    boundaryGrantsSettingsWrite,
-    [apiRole],
-    [selectorServiceRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
     `${selectorProjectThreadSettingsFunction}(text,text,bigint,text,text,text,text,text,text)`,
     [apiRole],
     [selectorServiceRole, selectorControlRole, schedulerRole, workerPlaneRole],
-  ),
-  boundaryGrantsDoor(
-    `${leadRunnerStandingFunction}(text,text,bigint)`,
-    [],
-    [
-      selectorServiceRole,
-      apiRole,
-      schedulerRole,
-      workerPlaneRole,
-      poolPlaneRole,
-    ],
   ),
   boundaryGrantsDoor(
     `${repositoryBindingListFunction}(text,text,bigint)`,
@@ -997,8 +935,6 @@ const boundaryGrantsColumns: readonly ColumnGrant[] = [
   ["invite_link", "tenant", "UPDATE", accessPlaneRole, false],
   ["invite_link", "note", "UPDATE", accessPlaneRole, false],
   ["invite_link", "create_accounts", "UPDATE", accessPlaneRole, false],
-  ["subsidized_lead", null, "DELETE", selectorServiceRole, false],
-  ["subsidized_lead", null, "SELECT", apiRole, false],
   [
     "project_repository",
     "pipelines_writable",

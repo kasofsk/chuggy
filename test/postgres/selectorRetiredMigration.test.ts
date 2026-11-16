@@ -1,7 +1,6 @@
 /**
- * 205 drops the selector's tables and every function over them, leaves the
- * selector roles holding nothing, and keeps a project's settings and their
- * history whole.
+ * 205 drops the selector's tables and every function over them, and leaves the
+ * selector roles holding nothing.
  */
 
 import assert from "node:assert/strict";
@@ -18,32 +17,6 @@ import {
   selectorRetiredTables,
 } from "../../src/adapters/postgres/schema/migrations/205-selector-retired.ts";
 import { migratedBefore, migrationDatabase } from "./migrationHarness.ts";
-import type pg from "pg";
-
-/** A project's settings at their second revision, with both revisions' history. */
-const settingsKept = `
-  INSERT INTO tenant(tenant) VALUES('tenant-205');
-  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-205','project-205','Active');
-  INSERT INTO selector_project_settings
-    (tenant,project,revision,north_star,thread_standing_rules,mode,dispatch_mode,
-     base_prompt,lead_model,lead_effort,thread_model,thread_effort)
-  VALUES('tenant-205','project-205',2,'Ship it.','Be brief.','Running',
-         'ApprovalRequired','Lead well.','lead-model','high','thread-model','low');
-  INSERT INTO selector_project_settings_history
-    (tenant,project,revision,north_star,administrator_kind,administrator_subject)
-  VALUES('tenant-205','project-205',1,'Ship.','User','alice'),
-        ('tenant-205','project-205',2,'Ship it.','User','alice');`;
-
-async function settingsRead(subject: pg.Pool): Promise<unknown[]> {
-  return (
-    await subject.query<{ relation: string; row: unknown }>(
-      `SELECT 'settings' AS relation, to_jsonb(s) AS row FROM selector_project_settings s
-       UNION ALL
-       SELECT 'history', to_jsonb(h) FROM selector_project_settings_history h
-       ORDER BY 1, 2`,
-    )
-  ).rows;
-}
 
 const droppedTablesStanding = `SELECT c.relname FROM pg_class c
     JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -115,18 +88,5 @@ test("205 drops the selector's tables and every function naming one, and the sel
         true,
         `${role} keeps the schema's usage`,
       );
-  });
-});
-
-test("205 keeps a project's settings and their history whole", async () => {
-  await migrationDatabase("selector_retired_settings", async (subject) => {
-    await migratedBefore(subject, migration205.version);
-    await subject.query(settingsKept);
-    const before = await settingsRead(subject);
-    assert.equal(before.length, 3);
-
-    assert.ok((await postgresMigrate(subject)).includes(migration205.version));
-
-    assert.deepEqual(await settingsRead(subject), before);
   });
 });

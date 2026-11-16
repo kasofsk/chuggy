@@ -40,7 +40,7 @@ test("a session opens once, and offering the same one again is already open", as
     await rig.sessions.open({
       partition,
       session,
-      kind: "Lead",
+      kind: "Thread",
       principal: asPrincipal("principal-reopen"),
       capabilities: ["RepositoryRead"],
       credentialSlot: "claude-code",
@@ -48,7 +48,7 @@ test("a session opens once, and offering the same one again is already open", as
     "AlreadyOpen",
   );
   const stored = await rig.sessions.session(partition, session);
-  assert.equal(stored?.kind, "Lead");
+  assert.equal(stored?.kind, "Thread");
   assert.equal(stored?.state, "Open");
   assert.deepEqual(stored?.capabilities, ["RepositoryRead"]);
 });
@@ -60,7 +60,7 @@ test("the same identity offered different facts is a conflict and changes nothin
     await rig.sessions.open({
       partition,
       session,
-      kind: "Lead",
+      kind: "Thread",
       principal: asPrincipal("someone-else"),
       capabilities: ["RepositoryRead"],
       credentialSlot: "claude-code",
@@ -75,7 +75,7 @@ test("the same identity offered different facts is a conflict and changes nothin
 
 test("a project holds one lead, and a member holds open threads up to their limit", async () => {
   const partition = await sessionRigProject(rig, "one-of-each");
-  await sessionRigSession(rig, partition, "lead");
+  await sessionRigSession(rig, partition, "lead", { kind: "Lead" });
   assert.equal(
     await rig.sessions.open({
       partition,
@@ -278,7 +278,9 @@ test("a member nobody set a limit for opens a second thread beside their first",
 
 test("the server itself admits one lead per project and one thread per member's open key", async () => {
   const partition = await sessionRigProject(rig, "indexed");
-  const lead = await sessionRigSession(rig, partition, "indexed-lead");
+  const lead = await sessionRigSession(rig, partition, "indexed-lead", {
+    kind: "Lead",
+  });
   const thread = await sessionRigSession(rig, partition, "indexed-thread", {
     kind: "Thread",
     principal: "member-indexed",

@@ -77,7 +77,6 @@ import {
   sessionRigAttempt,
   sessionRigRouted,
   sessionRigRunner,
-  sessionRigSession,
   sessionRigTurn,
   sessionRigTurnRoutes,
 } from "./sessionHarness.ts";
@@ -566,7 +565,7 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
     access: new Set(),
   });
   await sessionRigRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const thread = await threadRigThread(rig, partition, member);
   await threadRigTicketWakes(rig, thread.session, "On");
   const revision = await configuration(partition);
@@ -594,7 +593,7 @@ test("a wake on a thread routed to runners is skipped where its member has regis
   const other = threadRigMember(rig, partition, "wakerunnerless-other");
   await sessionRigRunner(rig.sessions, partition, other.principal);
   await sessionRigPersonalRunner(rig.sessions, partition, member.principal);
-  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  await sessionRigRouted(rig.sessions, partition, "Pool");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member, thread.session);
@@ -619,7 +618,7 @@ test("a wake on a thread routed to runners is skipped where its member has regis
 test("the wake door stamps the route it is handed rather than the one the thread resolves to", async () => {
   const partition = await threadRigProject(rig, "wakestamp");
   const member = threadRigMember(rig, partition, "wakestamp");
-  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  await sessionRigRouted(rig.sessions, partition, "InCluster");
   const thread = await threadRigThread(rig, partition, member);
 
   const woken = await rig.wakes.wake({
@@ -802,7 +801,7 @@ test("a thread that made no choice follows its chat host's last poll, and a poll
   );
 });
 
-test("only a thread's own live attempt chooses its ticket wakes, and its facts and the door answer what follows", async () => {
+test("a thread's own live attempt alone chooses its ticket wakes, and its facts and the door answer what follows", async () => {
   const partition = await threadRigProject(rig, "wakedoor");
   const member = threadRigMember(rig, partition, "wakedoor");
   const thread = await threadRigThread(rig, partition, member);
@@ -848,22 +847,4 @@ test("only a thread's own live attempt chooses its ticket wakes, and its facts a
     chosen: "Recorded",
     wakes: { host: "Off" },
   });
-
-  const lead = await sessionRigSession(rig.sessions, partition, "wakedoorlead");
-  await sessionRigTurn(rig.sessions, partition, lead, "wakedoorlead");
-  const leadPod = await sessionRigAttempt(
-    rig.sessions,
-    partition,
-    lead,
-    "wakedoorlead",
-  );
-  const leadBearer = {
-    secret: leadPod.secret,
-    generation: leadPod.attempt.generation,
-  };
-  assert.deepEqual(
-    await rig.sessions.plane.chooseTicketWakes({ ...leadBearer, thread: "On" }),
-    { chosen: "NotThread" },
-  );
-  assert.equal(await rig.sessions.plane.readTicketWakes(leadBearer), undefined);
 });

@@ -307,23 +307,22 @@ test("the read offers only sessions with queued work and no attempt already runn
  */
 test("the cluster offers a session only where its oldest queued turn was admitted in cluster", async () => {
   const partition = await sessionRigProject(rig, "routed");
-  await sessionRigRouted(rig, partition, "Pool", "InCluster");
-  const lead = await sessionRigSession(rig, partition, "routed-lead");
-  await sessionRigTurn(rig, partition, lead, "routed-lead");
+  const cluster = await sessionRigSession(rig, partition, "routed-cluster");
+  await sessionRigTurn(rig, partition, cluster, "routed-cluster");
+  await sessionRigRouted(rig, partition, "Pool");
   const thread = await sessionRigSession(rig, partition, "routed-thread", {
-    kind: "Thread",
     principal: "member-routed",
   });
   await sessionRigTurn(rig, partition, thread, "routed-thread");
   const offered = async () =>
     (await rig.scheduler.awaitingPlacement(rig.epoch, sessionRigBoundless))
       .map((candidate: AgentSession) => candidate.session)
-      .filter((session) => session === lead || session === thread);
-  assert.deepEqual(await offered(), [lead]);
-  await sessionRigRouted(rig, partition, "InCluster", "Pool");
+      .filter((session) => session === cluster || session === thread);
+  assert.deepEqual(await offered(), [cluster]);
+  await sessionRigRouted(rig, partition, "InCluster");
   assert.deepEqual(
     await offered(),
-    [lead],
+    [cluster],
     "a route changed after a turn was queued moved the turn",
   );
   await sessionRigTurn(rig, partition, thread, "routed-thread-later");
@@ -333,7 +332,7 @@ test("the cluster offers a session only where its oldest queued turn was admitte
   ]);
   assert.deepEqual(
     await offered(),
-    [lead],
+    [cluster],
     "a turn admitted in cluster was placed ahead of an older one admitted for a runner",
   );
 });
@@ -688,17 +687,19 @@ test("an attempt that ended two turns is read as the second, not the first", asy
 });
 
 /**
- * Withdraws one turn by identity, which is what the selector's own door does
- * and what no attempt is party to. `withdraw_lead_turn` is driven directly
- * because the withdrawal is the subject: what a session's other turns do to
- * this attempt's row is a claim about the definer, not about a port.
+ * Abandons one queued turn by identity as `TurnWithdrawn`, written directly:
+ * no attempt is party to it, and what a session's other turns do to this
+ * attempt's row is a claim about the definer, not about a port.
  */
 async function withdrawn(turn: SessionTurnId): Promise<void> {
   const answered = await rig.harness.query(
-    `SELECT withdraw_lead_turn($1) AS withdrawn`,
+    `UPDATE session_turn
+        SET state='Abandoned',failure='TurnWithdrawn',ended_at=now(),
+            attempt=NULL,claim_generation=NULL,claimed_at=NULL
+      WHERE turn=$1 AND state='Queued' RETURNING turn`,
     [turn],
   );
-  assert.equal(answered[0]?.["withdrawn"], "Withdrawn");
+  assert.equal(answered.length, 1);
 }
 
 /**

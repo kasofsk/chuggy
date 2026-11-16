@@ -97,7 +97,7 @@ async function provisionedSession(
         CHUG_PROVISION_SESSION_TENANT: partition.tenant,
         CHUG_PROVISION_SESSION_PROJECT: partition.project,
         CHUG_PROVISION_SESSION_SESSION: session,
-        CHUG_PROVISION_SESSION_KIND: "Lead",
+        CHUG_PROVISION_SESSION_KIND: "Thread",
         CHUG_PROVISION_SESSION_PRINCIPAL: `21:https://auth.invalid${session}`,
         CHUG_PROVISION_SESSION_CAPABILITIES: "RepositoryRead,RunCommands",
         CHUG_PROVISION_SESSION_CREDENTIAL_SLOT: "claude-code",
@@ -307,7 +307,7 @@ async function resumeClosed(drive: Resumed): Promise<void> {
 test("a session that lost its attempt is given a second one, numbered after it", async () => {
   const drive = await resumeDrive();
   try {
-    assert.match(drive.opened, /^Opened: Lead session /u);
+    assert.match(drive.opened, /^Opened: Thread session /u);
     const attempts = await drive.rig.harness.query(
       `SELECT attempt,attempt_number::text AS attempt_number,state,evidence
          FROM session_attempt
@@ -343,7 +343,7 @@ test("the second attempt is told the runtime session the first one bound", async
   try {
     assert.equal(drive.facts["agentReference"], reference);
     assert.equal(drive.facts["session"], drive.session);
-    assert.equal(drive.facts["kind"], "Lead");
+    assert.equal(drive.facts["kind"], "Thread");
   } finally {
     await resumeClosed(drive);
   }

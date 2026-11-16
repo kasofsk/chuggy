@@ -75,7 +75,7 @@ const admittedWorkerColumns = "image,name,published_at,version";
 const executionRoutingColumns =
   "evaluation_route,project_routes,published_at,singleton,work_route";
 const sessionRoutingColumns =
-  "lead_route,project_routes,published_at,singleton,thread_route";
+  "project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
   "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
 /** The relations one run's evidence lives in, named once for every case. */

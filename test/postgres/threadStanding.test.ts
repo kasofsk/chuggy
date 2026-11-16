@@ -83,7 +83,7 @@ async function hosted(label: string): Promise<{
   readonly host: ChatHostPlaneIdentity;
 }> {
   const partition = await sessionRigProject(rig, label);
-  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  await sessionRigRouted(rig, partition, "Pool");
   const member = principal(`member-${label}`);
   return { partition, member, host: await chatHost(partition, member) };
 }
@@ -253,24 +253,21 @@ test("a chat host's thread attempt records its thread standing and then not, and
   assert.equal(await standingOf(session), false);
 });
 
-test("an attempt that is not a thread's on a chat host is refused a standing", async () => {
+test("a thread's attempt in the cluster is refused a standing", async () => {
   const partition = await sessionRigProject(rig, "standing-elsewhere");
-  for (const kind of ["Thread", "Lead"] as const) {
-    const label = `standing-elsewhere-${kind}`;
-    const session = await sessionRigSession(rig, partition, label, { kind });
-    await sessionRigTurn(rig, partition, session, label);
-    const placed = await sessionRigAttempt(rig, partition, session, label);
-    assert.equal(
-      await rig.plane.stand({
-        secret: placed.secret,
-        generation: 1,
-        standing: true,
-      }),
-      "NotChatHostThread",
-      kind,
-    );
-    assert.equal(await standingOf(session), false, kind);
-  }
+  const label = "standing-elsewhere";
+  const session = await sessionRigSession(rig, partition, label);
+  await sessionRigTurn(rig, partition, session, label);
+  const placed = await sessionRigAttempt(rig, partition, session, label);
+  assert.equal(
+    await rig.plane.stand({
+      secret: placed.secret,
+      generation: 1,
+      standing: true,
+    }),
+    "NotChatHostThread",
+  );
+  assert.equal(await standingOf(session), false);
 });
 
 test("a standing thread whose attempt ended is placed again with an empty mailbox on the host that ran it, and on no host registered in that host's place", async () => {
