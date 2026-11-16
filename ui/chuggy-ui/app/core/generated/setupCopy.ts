@@ -593,7 +593,12 @@ export interface SetupCopy {
     readonly site: unknown;
     readonly program: unknown;
   };
-  readonly "setup-mend-mcp-offer-package": {
+  readonly "setup-mend-mcp-offer-absent": {
+    readonly project: unknown;
+    readonly site: unknown;
+    readonly program: unknown;
+  };
+  readonly "setup-mend-mcp-offer-behind": {
     readonly project: unknown;
     readonly site: unknown;
     readonly program: unknown;

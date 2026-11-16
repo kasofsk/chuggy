@@ -8,7 +8,6 @@ import { postgresNotifications } from "../../src/adapters/postgres/notifications
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   postgresSelectorProjectSettings,
-  postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "../../src/adapters/postgres/selector.ts";
@@ -235,6 +234,30 @@ async function i5DeliveryRows(
       WHERE selector_decision=$1 ORDER BY ticket`,
     [decision],
   );
+}
+
+/** A reviewer's answer to a held decision, through the review role's definer. */
+async function i5Reviewed(
+  reviewPool: pg.Pool,
+  partition: Partition,
+  decision: string,
+  outcome: "Approved" | "Rejected",
+  reviewer: typeof selectorAdministrator,
+  feedback?: string,
+): Promise<boolean> {
+  const changed = await reviewPool.query<{ changed: boolean | null }>(
+    `SELECT ${selectorReviewFunction}($1,$2,$3,$4,$5,$6,$7)::boolean AS changed`,
+    [
+      decision,
+      partition.tenant,
+      partition.project,
+      outcome,
+      reviewer.kind,
+      reviewer.subject,
+      feedback ?? null,
+    ],
+  );
+  return changed.rows[0]?.changed ?? false;
 }
 
 /**
@@ -935,7 +958,7 @@ test("selector controls hot-reload with a revision fence", async () => {
   }
 });
 
-test("proposal review retains reviewer authority and readable feedback", async () => {
+test("proposal review records the reviewer's authority and feedback", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "i5-review-audit",
@@ -944,7 +967,6 @@ test("proposal review retains reviewer authority and readable feedback", async (
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const control = postgresSelectorRuntimeControl(pool);
   const originalSettings = await control.settings();
   const approvalSettings = await control.setDispatchMode(
@@ -967,94 +989,36 @@ test("proposal review retains reviewer authority and readable feedback", async (
       subject: asAuthoritySubject("admin-reviewer"),
     };
     assert.equal(
-      await reviews.approve(
+      await i5Reviewed(
+        reviewPool,
         partition,
         decision,
+        "Approved",
         reviewer,
         "ship after migration",
       ),
       true,
     );
-    const feedback = await reviews.reviewFeedback(partition, undefined, 10);
-    assert.deepEqual(feedback[0], {
-      ordinal: feedback[0]?.ordinal,
-      selectorDecision: decision,
-      outcome: "Approved",
-      reviewer,
-      feedback: "ship after migration",
-      reviewedAt: feedback[0]?.reviewedAt,
-    });
+    assert.deepEqual(
+      await harness.query(
+        `SELECT outcome,reviewer_kind,reviewer_subject,feedback
+           FROM selector_proposal_review WHERE selector_decision=$1`,
+        [decision],
+      ),
+      [
+        {
+          outcome: "Approved",
+          reviewer_kind: reviewer.kind,
+          reviewer_subject: reviewer.subject,
+          feedback: "ship after migration",
+        },
+      ],
+    );
   } finally {
     const currentSettings = await control.settings();
     await control.setDispatchMode(
       currentSettings.revision,
       originalSettings.dispatchMode,
-      selectorAdministrator,
-    );
-    await selectorPool.end();
-    await reviewPool.end();
-    await pool.end();
-  }
-});
-
-test("review feedback cursors follow review order rather than proposal order", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-review-order",
-  );
-  const pool = postgresPool(postgresHarnessUrl());
-  const selectorPool = postgresRolePool(selectorServiceRole);
-  const reviewPool = postgresRolePool(selectorReviewRole);
-  const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
-  const control = postgresSelectorRuntimeControl(pool);
-  const original = await control.settings();
-  const approval = await control.setDispatchMode(
-    original.revision,
-    "ApprovalRequired",
-    selectorAdministrator,
-  );
-  assert.equal(approval.updated, true);
-  const earlier = `review-earlier-${crypto.randomUUID()}`;
-  const later = `review-later-${crypto.randomUUID()}`;
-  const reviewer = {
-    kind: asAuthorityKind("User"),
-    subject: asAuthoritySubject("ordered-reviewer"),
-  };
-  try {
-    assert.equal(
-      await wrote(
-        state.record(
-          selectorTestProposal(partition, earlier),
-          selectorTestState(partition, 0),
-        ),
-      ),
-      1,
-    );
-    assert.equal(
-      await wrote(
-        state.record(
-          selectorTestProposal(partition, later),
-          selectorTestState(partition, 1),
-        ),
-      ),
-      1,
-    );
-    assert.equal(await reviews.approve(partition, later, reviewer), true);
-    const first = await reviews.reviewFeedback(partition, undefined, 1);
-    assert.equal(first[0]?.selectorDecision, later);
-    assert.equal(await reviews.reject(partition, earlier, reviewer), true);
-    const second = await reviews.reviewFeedback(
-      partition,
-      first[0]?.ordinal,
-      1,
-    );
-    assert.equal(second[0]?.selectorDecision, earlier);
-  } finally {
-    const current = await control.settings();
-    await control.setDispatchMode(
-      current.revision,
-      original.dispatchMode,
       selectorAdministrator,
     );
     await selectorPool.end();
@@ -1071,7 +1035,6 @@ test("submitted proposal reconciliation claims do not starve later work", async 
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const firstDecision = `reconcile-a-${crypto.randomUUID()}`;
   const secondDecision = `reconcile-b-${crypto.randomUUID()}`;
   try {
@@ -1094,18 +1057,22 @@ test("submitted proposal reconciliation claims do not starve later work", async 
       1,
     );
     assert.equal(
-      await reviews.approve(
+      await i5Reviewed(
+        reviewPool,
         partition,
         firstDecision,
+        "Approved",
         selectorAdministrator,
         "reconciliation fairness fixture",
       ),
       true,
     );
     assert.equal(
-      await reviews.approve(
+      await i5Reviewed(
+        reviewPool,
         partition,
         secondDecision,
+        "Approved",
         selectorAdministrator,
         "reconciliation fairness fixture",
       ),
@@ -1297,10 +1264,8 @@ test("a stored delivery names the ticket its command dispatches", async () => {
     "i5-delivery-ticket",
   );
   const selectorPool = postgresRolePool(selectorServiceRole);
-  const reviewPool = postgresRolePool(selectorReviewRole);
   const controlPool = postgresRolePool(selectorControlRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const control = postgresSelectorRuntimeControl(controlPool);
   const original = await control.settings();
   const held = await control.setDispatchMode(
@@ -1321,11 +1286,12 @@ test("a stored delivery names the ticket its command dispatches", async () => {
       1,
     );
     assert.deepEqual(
-      (await reviews.awaitingApproval(partition, 10)).map((delivery) => [
-        delivery.ticket,
-        delivery.operation,
-      ]),
-      [[asTicketId(7), asOperationId(`operation-${decision}-t7`)]],
+      await harness.query(
+        `SELECT ticket::text AS ticket,operation FROM selector_proposal_delivery
+          WHERE selector_decision=$1`,
+        [decision],
+      ),
+      [{ ticket: "7", operation: `operation-${decision}-t7` }],
     );
   } finally {
     const current = await control.settings();
@@ -1335,63 +1301,7 @@ test("a stored delivery names the ticket its command dispatches", async () => {
       selectorAdministrator,
     );
     await selectorPool.end();
-    await reviewPool.end();
     await controlPool.end();
-  }
-});
-
-/**
- * The held read orders by decision before ticket, so a decision's rows stay
- * adjacent where another decision's ticket falls between them, and a page is
- * cut at a decision's edge rather than through one.
- */
-test("the held read keeps a decision's rows together when their tickets interleave", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-held-interleaved",
-  );
-  const selectorPool = postgresRolePool(selectorServiceRole);
-  const reviewPool = postgresRolePool(selectorReviewRole);
-  const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
-  const restore = await i5HeldDispatchMode("ApprovalRequired");
-  const suffix = crypto.randomUUID();
-  const first = `interleaved-a-${suffix}`;
-  const second = `interleaved-b-${suffix}`;
-  try {
-    assert.equal(
-      await wrote(
-        state.record(
-          selectorTestProposal(partition, first, [1, 3]),
-          selectorTestState(partition, 0),
-        ),
-      ),
-      2,
-    );
-    assert.equal(
-      await wrote(
-        state.record(
-          selectorTestProposal(partition, second, [2]),
-          selectorTestState(partition, 1),
-        ),
-      ),
-      1,
-    );
-    assert.deepEqual(
-      (await reviews.awaitingApproval(partition, 10)).map((delivery) => [
-        delivery.decision,
-        delivery.ticket,
-      ]),
-      [
-        [first, 1],
-        [first, 3],
-        [second, 2],
-      ],
-    );
-  } finally {
-    await restore();
-    await reviewPool.end();
-    await selectorPool.end();
   }
 });
 
@@ -1515,7 +1425,6 @@ test("a decision's two deliveries are claimed as two rows", async () => {
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `claimed-${crypto.randomUUID()}`;
   try {
@@ -1530,7 +1439,13 @@ test("a decision's two deliveries are claimed as two rows", async () => {
       2,
     );
     assert.equal(
-      await reviews.approve(partition, decision, selectorAdministrator),
+      await i5Reviewed(
+        reviewPool,
+        partition,
+        decision,
+        "Approved",
+        selectorAdministrator,
+      ),
       true,
     );
     const first = await state.pending(1);
@@ -1573,7 +1488,6 @@ test("the delivery claim's order is total over the whole key", async () => {
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decisions = [
     `order-a-${crypto.randomUUID()}`,
@@ -1594,7 +1508,13 @@ test("the delivery claim's order is total over the whole key", async () => {
       );
       revision += 1;
       assert.equal(
-        await reviews.approve(partition, decision, selectorAdministrator),
+        await i5Reviewed(
+          reviewPool,
+          partition,
+          decision,
+          "Approved",
+          selectorAdministrator,
+        ),
         true,
       );
     }
@@ -1627,7 +1547,6 @@ test("one delivery of a decision settles and its sibling is left alone", async (
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `partial-${crypto.randomUUID()}`;
   try {
@@ -1641,7 +1560,13 @@ test("one delivery of a decision settles and its sibling is left alone", async (
       2,
     );
     assert.equal(
-      await reviews.approve(partition, decision, selectorAdministrator),
+      await i5Reviewed(
+        reviewPool,
+        partition,
+        decision,
+        "Approved",
+        selectorAdministrator,
+      ),
       true,
     );
     await state.submitted(decision, asTicketId(2));
@@ -1694,7 +1619,6 @@ test("approving a decision moves all of its rows and records one review", async 
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `approved-${crypto.randomUUID()}`;
   try {
@@ -1707,17 +1631,12 @@ test("approving a decision moves all of its rows and records one review", async 
       ),
       3,
     );
-    assert.deepEqual(
-      (await reviews.awaitingApproval(partition, 10)).map(
-        (delivery) => delivery.ticket,
-      ),
-      [asTicketId(1), asTicketId(5), asTicketId(9)],
-      "a reviewer reads a decision's rows in the order its key gives",
-    );
     assert.equal(
-      await reviews.approve(
+      await i5Reviewed(
+        reviewPool,
         partition,
         decision,
+        "Approved",
         selectorAdministrator,
         "all three",
       ),
@@ -1751,7 +1670,6 @@ test("rejecting a decision terminates all of its rows under one outcome", async 
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `rejected-${crypto.randomUUID()}`;
   try {
@@ -1765,9 +1683,11 @@ test("rejecting a decision terminates all of its rows under one outcome", async 
       2,
     );
     assert.equal(
-      await reviews.reject(
+      await i5Reviewed(
+        reviewPool,
         partition,
         decision,
+        "Rejected",
         selectorAdministrator,
         "not yet",
       ),
@@ -2296,10 +2216,10 @@ test("a delivery keyed by a ticket its command does not dispatch is unreadable",
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `disagreeing-${crypto.randomUUID()}`;
   try {
+    await i5Drain((limit) => state.pending(limit));
     assert.equal(
       await wrote(
         state.record(
@@ -2309,13 +2229,23 @@ test("a delivery keyed by a ticket its command does not dispatch is unreadable",
       ),
       1,
     );
+    assert.equal(
+      await i5Reviewed(
+        reviewPool,
+        partition,
+        decision,
+        "Approved",
+        selectorAdministrator,
+      ),
+      true,
+    );
     await harness.query(
       `UPDATE selector_proposal_delivery SET ticket=6
         WHERE selector_decision=$1`,
       [decision],
     );
     await assert.rejects(
-      () => reviews.awaitingApproval(partition, 10),
+      () => state.pending(100),
       /keyed by a ticket its command does not dispatch/,
     );
   } finally {
@@ -2413,7 +2343,6 @@ test("a decision's submitted deliveries are reconciled one row at a time", async
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `reconciled-${crypto.randomUUID()}`;
   try {
@@ -2428,7 +2357,13 @@ test("a decision's submitted deliveries are reconciled one row at a time", async
       4,
     );
     assert.equal(
-      await reviews.approve(partition, decision, selectorAdministrator),
+      await i5Reviewed(
+        reviewPool,
+        partition,
+        decision,
+        "Approved",
+        selectorAdministrator,
+      ),
       true,
     );
     for (const ticket of [40, 30, 20, 10])
@@ -2509,7 +2444,6 @@ test("a second claimer of a decision's deliveries takes the row the first did no
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `rival-claim-${crypto.randomUUID()}`;
   try {
@@ -2524,7 +2458,13 @@ test("a second claimer of a decision's deliveries takes the row the first did no
       2,
     );
     assert.equal(
-      await reviews.approve(partition, decision, selectorAdministrator),
+      await i5Reviewed(
+        reviewPool,
+        partition,
+        decision,
+        "Approved",
+        selectorAdministrator,
+      ),
       true,
     );
     assert.deepEqual(await i5RivalClaims(selectorClaimFunction), [
@@ -2546,7 +2486,6 @@ test("a second claimer of a decision's reconciliations takes the row the first d
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
-  const reviews = postgresSelectorProposalReviews(reviewPool);
   const restore = await i5HeldDispatchMode("ApprovalRequired");
   const decision = `rival-reconcile-${crypto.randomUUID()}`;
   try {
@@ -2561,7 +2500,13 @@ test("a second claimer of a decision's reconciliations takes the row the first d
       2,
     );
     assert.equal(
-      await reviews.approve(partition, decision, selectorAdministrator),
+      await i5Reviewed(
+        reviewPool,
+        partition,
+        decision,
+        "Approved",
+        selectorAdministrator,
+      ),
       true,
     );
     for (const ticket of [6, 7])

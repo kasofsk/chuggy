@@ -14,7 +14,12 @@
 
 import { base64urlFromBytes } from "./base64url.ts";
 import { operationIdBytesCount } from "./operationFollow.ts";
-import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
+import {
+  setupAgentRead,
+  setupMcpPackaged,
+  setupServer,
+  setupServerPlatform,
+} from "./setupAgent.ts";
 import { setupAsked } from "./setupArguments.ts";
 import type {
   SetupAnswers,
@@ -37,7 +42,7 @@ import {
   setupTicketDue,
 } from "./setupNext.ts";
 import type { SetupPacing } from "./setupPacing.ts";
-import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
+import { SetupMachineError, setupPlatformServed } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import { setupPlugin, setupPluginHad } from "./setupPlugin.ts";
 import { readSetup, setupPartition, setupReadPorts } from "./setupReads.ts";
@@ -229,7 +234,9 @@ async function setupChecklist(
   const here =
     due === undefined ? undefined : await setupRunnerHere(ports, due);
   const packaged =
-    setupMcpDue(standing) !== undefined && (await setupMcpPackaged(ports));
+    setupMcpDue(standing) === undefined
+      ? undefined
+      : await setupMcpPackaged(ports);
   const filing = setupTicketDue(standing);
   const offers =
     filing === undefined
@@ -247,7 +254,14 @@ async function setupChecklist(
       state,
       detail,
     })),
-    next: setupNext(standing, answers, here, packaged, offers),
+    next: setupNext(
+      standing,
+      answers,
+      setupServerPlatform(ports),
+      here,
+      packaged,
+      offers,
+    ),
   };
 }
 
@@ -575,7 +589,7 @@ export async function setupRun(
   pacing: SetupPacing,
 ): Promise<SetupReport> {
   const platform = ports.surroundings.platform;
-  if (!setupPlatforms.some((served) => served === platform))
+  if (setupPlatformServed(platform) === undefined)
     return { report: "Unserved", platform };
   const asked = setupAsked(argv);
   if (asked.asked === "Wrongly")

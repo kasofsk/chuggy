@@ -5,7 +5,7 @@ import { postgresApiReady } from "../../src/adapters/postgres/apiReadiness.ts";
 import { currentRuntimeSchemaContract } from "../../src/adapters/postgres/runtimeSchema.ts";
 import {
   apiRole,
-  selectorReviewRole,
+  ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 
 function apiPool(
@@ -37,7 +37,7 @@ test("API readiness verifies role, grant and schema", async () => {
   assert.equal(
     await postgresApiReady(
       apiPool({
-        current_role: selectorReviewRole,
+        current_role: ticketServiceRole,
         authorized: true,
       }) as never,
     ),

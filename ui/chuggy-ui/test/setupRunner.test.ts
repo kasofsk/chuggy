@@ -46,6 +46,7 @@ import {
   machineScript,
   machineSignedIn,
   machineSite,
+  machineServing,
   machineStore,
   machineTokenFile,
   setupMachine,
@@ -64,6 +65,7 @@ import {
   boxPoolName,
   boxPools,
   boxPrefix,
+  boxServing,
   boxSettings,
   boxUnitName,
   boxUnitText,
@@ -2237,6 +2239,7 @@ test("the bare command says why this machine cannot take a runner where it canno
   expect(
     await told((machine) => {
       machine.platform = "darwin";
+      boxServing(machine.box, machineServing, "chuggy-darwin");
     }),
   ).toEqual([
     `tell: ${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand`.slice(

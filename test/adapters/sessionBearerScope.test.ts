@@ -185,7 +185,6 @@ function scopedApp(
     recorded(reached, "creation"),
     recorded(reached, "placement"),
     recorded(reached, "sessionPlacement"),
-    recorded(reached, "proposalReviews"),
     recorded(reached, "threadLive"),
     recorded(reached, "actionReports"),
     recorded(reached, "actionReach"),
@@ -855,27 +854,6 @@ test("a session bearer is refused a route addressed to no partition, and one tha
   }
   assert.deepEqual(reached, []);
   assert.deepEqual(asked, []);
-});
-
-test("a session bearer reads its own project's held proposals and may not answer one", async () => {
-  const reached: string[] = [];
-  await using app = scopedApp(reached);
-  const answered = await app.inject({
-    method: "POST",
-    url: `${projectPath(own)}/selector-proposals/decision/review`,
-    headers: {
-      authorization: `Bearer ${sessionToken}`,
-      "content-type": nativeHttpMediaType,
-    },
-    payload: { outcome: "Approved" },
-  });
-  assert.ok(scopeRefused(answered));
-  assert.deepEqual(reached, []);
-  await app.inject({
-    url: `${projectPath(own)}/selector-proposals`,
-    headers: { authorization: `Bearer ${sessionToken}` },
-  });
-  assert.deepEqual(reached, ["proposalReviews.pending"]);
 });
 
 test("a thread's own session bearer neither replies to an offer in its member's name nor writes to its thread", async () => {

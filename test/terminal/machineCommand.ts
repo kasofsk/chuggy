@@ -106,14 +106,17 @@ function npm(): number {
   if (failed !== undefined) return failed;
   const at = argv.indexOf("--prefix");
   const prefix = at < 0 ? knobs.prefix : (argv[at + 1] ?? "");
+  const program = (argv.at(-1) ?? "").includes("chuggy-darwin")
+    ? "chuggy-darwin"
+    : "chuggy-linux";
   written(
-    join(prefix, "bin", "chuggy-linux"),
-    machineWrapper(process.execPath, script, state, "chuggy-linux"),
+    join(prefix, "bin", program),
+    machineWrapper(process.execPath, script, state, program),
     0o755,
   );
   written(
-    join(prefix, "lib", "node_modules", "chuggy-linux", "package.json"),
-    JSON.stringify({ name: "chuggy-linux", version: knobs.version }),
+    join(prefix, "lib", "node_modules", program, "package.json"),
+    JSON.stringify({ name: program, version: knobs.version }),
   );
   return said(0, "\nadded 12 packages in 3s\n");
 }

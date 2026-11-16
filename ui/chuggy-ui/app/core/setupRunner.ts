@@ -71,7 +71,7 @@ import {
 import { myRunnerShort } from "./myRunner.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
 import { runnerPackageOffered, runnerTokenLifetimeSecs } from "./runners.ts";
-import type { RunnerKind } from "./runners.ts";
+import type { RunnerKind, RunnerPackage } from "./runners.ts";
 import { sessionRunnerShort } from "./sessionRunners.ts";
 import type { SessionRunnerShort } from "./sessionRunners.ts";
 import { settingsRoutes } from "./settingsNav.ts";
@@ -377,6 +377,8 @@ interface Machine {
   >;
   readonly credential: SetupClaudeCredential;
   readonly probe: SetupPackageProbe;
+  /** The package the run installs and runs. */
+  readonly offered: RunnerPackage;
   /** The oldest package the run can use. */
   readonly least: string;
 }
@@ -404,13 +406,14 @@ async function setupMachineProbed(
   if (ports.disk.kind(credential.path) !== "File")
     return halt({ stop: "LoginMissing", credential, guide });
   notes.push({ note: "Login", credential });
-  const probe = await setupPackageProbed(ports, places, least);
+  const offered = runnerPackageOffered;
+  const probe = await setupPackageProbed(ports, places, least, offered);
   const usable =
     probe.found !== undefined && setupPackageCurrent(probe.found, least);
   if (!usable && !run.installs)
     return halt({ stop: "Unpackaged", found: probe.found, least });
   if (!usable && probe.prefix === undefined) return halt({ stop: "Npmless" });
-  return { engine: room.engine, settings, credential, probe, least };
+  return { engine: room.engine, settings, credential, probe, offered, least };
 }
 
 interface Exited {
@@ -463,9 +466,9 @@ interface Packaged {
 /** The runner package a run can use: the one found, or one installed by the console's command where none is found, or where the one found is older than the least or of a version that cannot be read. */
 async function setupPackageHad(
   run: Packaging,
-  machine: Pick<Machine, "probe" | "least">,
+  machine: Pick<Machine, "probe" | "offered" | "least">,
 ): Promise<Packaged | Stopped> {
-  const { least } = machine;
+  const { offered, least } = machine;
   const found = machine.probe.found;
   if (found !== undefined && setupPackageCurrent(found, least)) {
     run.notes.push({ note: "Package", ...found });
@@ -476,18 +479,25 @@ async function setupPackageHad(
   const acted = await setupActed(
     run,
     "Install",
-    setupInstallCommand(run.places, machine.probe),
+    setupInstallCommand(run.places, machine.probe, offered),
   );
   if (halted(acted)) return acted;
-  const after = (await setupPackageProbed(run.ports, run.places, least)).found;
+  const after = (
+    await setupPackageProbed(run.ports, run.places, least, offered)
+  ).found;
   if (after === undefined || !setupPackageCurrent(after, least)) {
-    const made = setupPackageInstalled(run.ports, run.places, machine.probe);
+    const made = setupPackageInstalled(
+      run.ports,
+      run.places,
+      machine.probe,
+      offered,
+    );
     return halt(
       made === undefined
         ? {
             stop: "Unseen",
             act: "Install",
-            path: setupInstallCommandPath(run.places, machine.probe),
+            path: setupInstallCommandPath(run.places, machine.probe, offered),
           }
         : { stop: "Behind", ...made, least },
     );
@@ -503,25 +513,27 @@ async function setupPackageHad(
 }
 
 /**
- * The runner package for a command that needs no more of the machine than
- * it: the one found where it is none older than `least`, and otherwise one
- * the console's command installs, with what was found and done noted in
- * `notes`. Nothing is installed where npm did not say where it installs.
+ * The runner package `offered` for a command that needs no more of the
+ * machine than it: the one found where it is none older than `least`, and
+ * otherwise one the console's command installs, with what was found and done
+ * noted in `notes`. Nothing is installed where npm did not say where it
+ * installs.
  */
 export async function setupPackageReady(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
   notes: SetupRunnerNote[],
   least: string,
+  offered: RunnerPackage,
 ): Promise<{ readonly command: string } | { readonly stop: SetupRunnerStop }> {
-  const probe = await setupPackageProbed(ports, places, least);
+  const probe = await setupPackageProbed(ports, places, least, offered);
   const usable =
     probe.found !== undefined && setupPackageCurrent(probe.found, least);
   if (!usable && probe.prefix === undefined)
     return { stop: { stop: "Npmless" } };
   const packaged = await setupPackageHad(
     { ports, places, notes, secrets: [] },
-    { probe, least },
+    { probe, offered, least },
   );
   return "halt" in packaged ? { stop: packaged.halt } : packaged;
 }

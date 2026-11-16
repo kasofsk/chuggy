@@ -344,7 +344,7 @@ means chuggy-fabric moved the binding, and the header is what to re-read.
 ### The credentials
 
 With the label back on, every login role with the password this procedure
-issued it, and the API's twice because its second pool becomes a second group:
+issued it:
 
 ```sh
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
@@ -352,7 +352,6 @@ kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_boundary_owner
 as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
-as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_selector_review
 as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
 as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
 as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer

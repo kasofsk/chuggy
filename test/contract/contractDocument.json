@@ -55,8 +55,7 @@
   },
   "briefFinalization": "a finalization is named by its kind: a GitMerge by its mode and its policy, a PullRequest, or None; one written by its mode, with a landing beside it, is read as the kind it maps to, and a PullRequest or None landing Serialized or Stacked maps to none and is refused, as is a Serialized or Stacked landing with no finalization and a landing beside a finalization naming its kind; a finalization that opens a proposal, a PullRequest or a GitMerge by PullRequestMerge, requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
   "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
-  "selectorProposals": "where a project's dispatch mode is ApprovalRequired each lead decision is held until a principal who may dispatch its tickets answers it whole: an approval dispatches each ticket it named that has not moved since, and a rejection ends it; the note given with either is in the lead's next observation, and answering a decision no longer held is a conflict",
-  "inbox": "one entry for each ticket a person is needed for: one in Escalated, one with an open native action, one a refusal of the lead's stands on that the ticket has not moved past, and one a decision held for approval names, which a reader who may not dispatch is shown none of, nor counted; each entry is the row the tickets list answers, latestExecution included, with the ticket's open actions, those refusals and held decisions; last activity first as the tickets list orders it, resumed by the cursor a page answers, and count is every ticket the inbox holds, on every page",
+  "inbox": "one entry for each ticket a person is needed for: one in Escalated, one with an open native action, and one a refusal of the lead's stands on that the ticket has not moved past; each entry is the row the tickets list answers, latestExecution included, with the ticket's open actions and those refusals; last activity first as the tickets list orders it, resumed by the cursor a page answers, and count is every ticket the inbox holds, on every page",
   "landingQueues": "for each reference a Serialized or Stacked ticket of the project holds or waits on, by repository and then target: its repository, the target its briefs name, absent where they name none, which is not resolved to the repository's default, so a ticket naming the default and one naming none are in two queues; the ticket holding it and the tickets waiting on it in rank order, each by number; a ticket ranks from its first finalization request while it is in Work, Evaluation or Finalization, and a Direct ticket, a pull request, a landing of nothing and a ticket naming no repository are in none; where more tickets rank than one read answers, the earliest-ranked are answered and truncated is true, so a queue answered has its holder and its earliest waiters and one whose every ticket ranks later is left out; it is read as the project's tickets are, written with no event, and polled",
   "threadLimit": "a member holds at most their limit of open threads in a project, 10 until an administrator of the project sets theirs; opening is idempotent on the key its client sends, answering the thread that key opened whatever its state, and an open at the limit is refused ThreadLimitReached; a limit lowered below what a member holds closes nothing",
   "forgeInstallations": "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is released only with its workspace's deletion",
@@ -106,12 +105,9 @@
     "agenticRefusals": "/api/v1/tenants/:tenant/projects/:project/agentic-refusals",
     "inbox": "/api/v1/tenants/:tenant/projects/:project/inbox",
     "operationalStatus": "/api/v1/tenants/:tenant/projects/:project/operational-status",
-    "selectorContext": "/api/v1/tenants/:tenant/projects/:project/selector-context",
     "selectorSettings": "/api/v1/tenants/:tenant/projects/:project/selector-settings",
     "selectorSettingsHistory": "/api/v1/tenants/:tenant/projects/:project/selector-settings/history",
     "selectorHistory": "/api/v1/tenants/:tenant/projects/:project/selector-history",
-    "selectorProposals": "/api/v1/tenants/:tenant/projects/:project/selector-proposals",
-    "selectorProposalReview": "/api/v1/tenants/:tenant/projects/:project/selector-proposals/:decision/review",
     "lead": "/api/v1/tenants/:tenant/projects/:project/lead",
     "leadTranscript": "/api/v1/tenants/:tenant/projects/:project/lead/transcript",
     "leadContext": "/api/v1/tenants/:tenant/projects/:project/lead/context",
@@ -3278,23 +3274,6 @@
         }
       },
       "required": ["expectedRevision", "overrides"],
-      "additionalProperties": false
-    },
-    "selectorProposalReview": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "outcome": {
-          "type": "string",
-          "enum": ["Approved", "Rejected"]
-        },
-        "feedback": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024
-        }
-      },
-      "required": ["outcome"],
       "additionalProperties": false
     },
     "threadOpen": {

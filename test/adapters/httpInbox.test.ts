@@ -21,7 +21,6 @@ import {
   type InboxReadStore,
 } from "../../src/interpreter/projectInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -70,24 +69,15 @@ const store: InboxReadStore = {
 function appOver(access: ReadonlySet<ProjectAccessKind>) {
   const granted = memoryProjectAccess();
   granted.grant({ partition, principal: caller, access });
-  const proposals = selectorProposalReviews(granted, {
-    awaitingApproval: () => Promise.resolve([]),
-    approve: () => Promise.resolve(false),
-    reject: () => Promise.resolve(false),
-    reviewFeedback: () => Promise.resolve([]),
-    recentReviewFeedback: () => Promise.resolve([]),
-  });
   return servedNativeHttpApp(
     unservedNativeWeb,
     undefined,
     undefined,
     undefined,
-    proposals,
     projectInbox(granted, {
       store,
       operationalReads: { ticketLatestExecutions: () => Promise.resolve([]) },
       refusals: { binding: () => Promise.resolve([]) },
-      proposals,
     }),
   );
 }
@@ -122,7 +112,6 @@ test("an entry answers the tickets list's row and every other read's part of it,
     ticket: { ...held[0], changedAt: "2026-10-01T00:00:00Z" },
     actions: [],
     refusals: [],
-    proposals: [],
   });
 });
 

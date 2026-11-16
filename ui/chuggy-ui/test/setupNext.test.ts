@@ -18,6 +18,7 @@ import { expect, test } from "vitest";
 
 import { setupConfigurationPath } from "../app/core/setupConfiguration.ts";
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
+import type { SetupMcpPackaged } from "../app/core/setupAgent.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
@@ -93,7 +94,9 @@ function lacking(
 const lacking_ = (lack: SetupLack): SetupStanding => lacking(lack);
 
 function thing(lack: SetupLack, given?: Partial<SetupStanding>): SaidThing {
-  return saidThing(setupNext(lacking(lack, given), setupAnswersNone).thing);
+  return saidThing(
+    setupNext(lacking(lack, given), setupAnswersNone, "linux").thing,
+  );
 }
 
 /** The next thing for a site, in the catalog's words. */
@@ -306,20 +309,84 @@ const mcpServes =
 
 test("the MCP step offers mcp, which installs the runner package first where none here is one it leaves as it is, and names its server in the agent", () => {
   const lacking = { lacks: "Mcp" } as const;
-  expect(thing(lacking)).toEqual(
-    mcpOffered(
-      `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}. The runner package, chuggy-linux, serves them as an MCP server, and it is not here at a version chuggy setup uses. With your yes I will install it with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
-    ),
-  );
-  expect(
+  const offered = (packaged?: SetupMcpPackaged) =>
     saidThing(
-      setupNext(lacking_(lacking), setupAnswersNone, undefined, true).thing,
-    ),
-  ).toEqual(
+      setupNext(
+        lacking_(lacking),
+        setupAnswersNone,
+        "linux",
+        undefined,
+        packaged,
+      ).thing,
+    );
+  const opening = `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}.`;
+  const installing = `With your yes I will install it with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`;
+  expect(thing(lacking)).toEqual(offered("Absent"));
+  expect(offered("Absent")).toEqual(
     mcpOffered(
-      `The next step is chuggy's tools in your agent, for acme/widgets at ${stoodSite}. The runner package here, chuggy-linux, serves them as an MCP server. With your yes I will name that server in Claude Code's configuration for this folder. ${mcpServes}`,
+      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and it is not installed here. ${installing}`,
     ),
   );
+  expect(offered("Behind")).toEqual(
+    mcpOffered(
+      `${opening} The runner package, chuggy-linux, serves them as an MCP server, and the one installed here is not at a version chuggy setup uses. With your yes I will install the one it uses with npm, without a password, and then name its server in Claude Code's configuration for this folder. ${mcpServes}`,
+    ),
+  );
+  expect(offered("Current")).toEqual(
+    mcpOffered(
+      `${opening} The runner package here, chuggy-linux, serves them as an MCP server. With your yes I will name that server in Claude Code's configuration for this folder. ${mcpServes}`,
+    ),
+  );
+});
+
+/** What a next thing tells the person, where it tells them anything. */
+function toldOf(said: SaidThing): string {
+  if (!("tell" in said)) throw new Error(said.thing);
+  return said.tell;
+}
+
+test("on a Mac the MCP step offers the Mac's own package, and the runner and chat-host offers still name the Linux one", () => {
+  const mcp = (packaged: SetupMcpPackaged) =>
+    toldOf(
+      saidThing(
+        setupNext(
+          lacking_({ lacks: "Mcp" }),
+          setupAnswersNone,
+          "darwin",
+          undefined,
+          packaged,
+        ).thing,
+      ),
+    );
+  for (const packaged of ["Current", "Behind", "Absent"] as const) {
+    expect(mcp(packaged)).toContain(", chuggy-darwin, serves them");
+    expect(mcp(packaged)).not.toContain("chuggy-linux");
+  }
+  const looked: SetupRunnerHere = {
+    room: { room: "Open", engine: "docker" },
+    held: false,
+    chat: false,
+    claude: "Subscription",
+  };
+  for (const lack of [
+    { lacks: "Runner", chat: false, named: true },
+    { lacks: "ChatHost" },
+  ] as const) {
+    const tell = toldOf(
+      saidThing(
+        setupNext(lacking(lack), setupAnswersNone, "darwin", looked).thing,
+      ),
+    );
+    expect(tell).toEqual(
+      toldOf(
+        saidThing(
+          setupNext(lacking(lack), setupAnswersNone, "linux", looked).thing,
+        ),
+      ),
+    );
+    expect(tell).toContain("chuggy-linux");
+    expect(tell).not.toContain("chuggy-darwin");
+  }
 });
 
 test("the MCP step is the one next only while it is the first step not done, which is when the package here is looked for", () => {
@@ -579,6 +646,7 @@ test("with every step done, setup is said to be done in the ticket step's own wo
         setupNext(
           lacking({ lacks: "Runner", chat: false, named: true }, { steps }),
           setupAnswersNone,
+          "linux",
         ),
       ),
     ).toEqual({
@@ -712,7 +780,9 @@ function here(
   chat = false,
 ): SaidThing {
   const looked: SetupRunnerHere = { room, held, chat, claude: "Subscription" };
-  return saidThing(setupNext(lacking(lack), setupAnswersNone, looked).thing);
+  return saidThing(
+    setupNext(lacking(lack), setupAnswersNone, "linux", looked).thing,
+  );
 }
 
 const roomy: SetupRunnerRoom = { room: "Open", engine: "docker" };
@@ -879,7 +949,7 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
       ] as const
     ).map(([lack, held]) => {
       const { thing } = saidNext(
-        setupNext(lacking(lack), setupAnswersNone, {
+        setupNext(lacking(lack), setupAnswersNone, "linux", {
           room: roomy,
           held,
           chat: false,
@@ -1051,7 +1121,11 @@ const open = (
 test("a choice that is the person's is asked one flag at a time, among the names the site gave", () => {
   expect(
     saidNext(
-      setupNext(open("workspace", ["acme", "globex"]), setupAnswersNone),
+      setupNext(
+        open("workspace", ["acme", "globex"]),
+        setupAnswersNone,
+        "linux",
+      ),
     ),
   ).toEqual({
     carried: setupAnswersNone,
@@ -1066,6 +1140,7 @@ test("a choice that is the person's is asked one flag at a time, among the names
       setupNext(
         open("project", ["gadgets", "sprockets", "widgets"]),
         setupAnswersNone,
+        "linux",
       ),
     ),
   ).toEqual({
@@ -1081,25 +1156,32 @@ test("a choice that is the person's is asked one flag at a time, among the names
 test("a question about the workspace keeps the project the run named, and one about the project keeps the workspace it is of", () => {
   const named = { workspace: undefined, project: "widgets" };
   expect(
-    saidNext(setupNext(open("workspace", ["acme", "globex"]), named)).carried,
+    saidNext(setupNext(open("workspace", ["acme", "globex"]), named, "linux"))
+      .carried,
   ).toEqual(named);
   expect(
-    setupNext(open("project", ["gadgets"]), {
-      workspace: "acme",
-      project: undefined,
-    }).carried,
+    setupNext(
+      open("project", ["gadgets"]),
+      {
+        workspace: "acme",
+        project: undefined,
+      },
+      "linux",
+    ).carried,
   ).toEqual({ workspace: "acme", project: undefined });
 });
 
 test("a question says where the site sent only part of the names, and lists a bounded few of a long list", () => {
   expect(
-    saidNext(setupNext(open("project", ["widgets"], false), setupAnswersNone))
-      .thing,
+    saidNext(
+      setupNext(open("project", ["widgets"], false), setupAnswersNone, "linux"),
+    ).thing,
   ).toMatchObject({
     ask: "Which project of acme is this for: widgets? The site sent only part of the list, so the one meant may not be named here. Pass the name as --project.",
   });
   expect(
-    saidNext(setupNext(open("project", [], false), setupAnswersNone)).thing,
+    saidNext(setupNext(open("project", [], false), setupAnswersNone, "linux"))
+      .thing,
   ).toMatchObject({
     ask: "Which project of acme is this for? The site sent only part of the list, so the one meant may not be named here. Pass the name as --project.",
   });
@@ -1109,7 +1191,7 @@ test("a question says where the site sent only part of the names, and lists a bo
   );
   const shown = many.slice(0, setupAskNamesMax).join(", ");
   expect(
-    saidNext(setupNext(open("project", many), setupAnswersNone)).thing,
+    saidNext(setupNext(open("project", many), setupAnswersNone, "linux")).thing,
   ).toMatchObject({
     ask: `Which project of acme is this for: ${shown} and 3 more? Pass the name as --project.`,
   });

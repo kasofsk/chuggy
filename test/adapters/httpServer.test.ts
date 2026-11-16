@@ -273,7 +273,6 @@ function fakeOperations(
 ): Pick<
   NativeWeb,
   | "operationalStatus"
-  | "selectorOperationalContext"
   | "executions"
   | "latestExecutions"
   | "execution"
@@ -287,10 +286,6 @@ function fakeOperations(
   | "runError"
 > {
   return {
-    selectorOperationalContext: () => {
-      calls.push("selectorOperationalContext");
-      return Promise.resolve({ result: "NotFound" });
-    },
     operationalStatus: () => {
       calls.push("operationalStatus");
       return Promise.resolve({ result: "NotFound" });
@@ -1177,7 +1172,6 @@ function appPinning(calls: string[], releases = pinnedFixture) {
     },
     { ready: () => Promise.resolve(true) },
     authority,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -2212,17 +2206,6 @@ test("the bearer scheme is matched without regard to its case", async () => {
   });
   assert.equal(found.statusCode, 200);
   assert.deepEqual(calls, ["inventory:50"]);
-});
-
-test("selector context is an authenticated project resource", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const found = await app.inject({
-    url: "/api/v1/tenants/tenant/projects/project/selector-context",
-    headers: { authorization: "bearer valid" },
-  });
-  assert.equal(found.statusCode, 404);
-  assert.deepEqual(calls, ["selectorOperationalContext"]);
 });
 
 test("a failing NativeWeb call is a server fault, not a client fault", async () => {

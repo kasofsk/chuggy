@@ -365,6 +365,8 @@ test("on a Mac runner says it cannot set one up and asks nothing of the machine 
   assert.deepEqual(on.machine.calls(), []);
   assert.deepEqual(on.installation.asked, []);
 
+  assert.equal((await ran(on, mcp, mac)).code, 0);
+  on.machine.forget();
   const bare = await ran(on, [], mac);
   assert.equal(bare.code, 0, bare.stdout);
   assert.match(

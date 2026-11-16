@@ -348,7 +348,10 @@ setup-mend-mcp-serves = { -claude-code } is the agent it is named in, for this f
 setup-mend-mcp-offer = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package here, { $program }, serves them as an MCP server. With your yes I will name that server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
 # spells -agent: the person's own coding agent, not one of chuggy's
 # spells -configuration: Claude Code's own settings, not a chuggy configuration
-setup-mend-mcp-offer-package = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not here at a version { setup-program } uses. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+setup-mend-mcp-offer-absent = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and it is not installed here. With your yes I will install it with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
+# spells -agent: the person's own coding agent, not one of chuggy's
+# spells -configuration: Claude Code's own settings, not a chuggy configuration
+setup-mend-mcp-offer-behind = The next step is { -brand-name }'s tools in your agent, for { $project } at { $site }. The { -runner } package, { $program }, serves them as an MCP server, and the one installed here is not at a version { setup-program } uses. With your yes I will install the one it uses with npm, without a password, and then name its server in { -claude-code }'s configuration for this folder. { setup-mend-mcp-serves } Tell me yes to go ahead.
 
 ## The plugin step, which the plugin command does in Claude Code with the
 ## person's yes, and passes over on their no.

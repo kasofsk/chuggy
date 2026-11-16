@@ -292,17 +292,21 @@ function boxServed(
   return exited(0, `${added ? "Added" : "Removed"} MCP server ${name}\n`);
 }
 
+/** Installs the package the command's last word names, chuggy-darwin's or chuggy-linux's, at the box's release. */
 function installed(box: RunnerBox, command: readonly string[]): void {
   const at = command.indexOf("--prefix");
   const prefix = at < 0 ? (box.prefix ?? "") : (command[at + 1] ?? "");
-  box.paths.set(`${prefix}/bin/chuggy-linux`, "#!/usr/bin/env node");
+  const program = (command.at(-1) ?? "").includes("chuggy-darwin")
+    ? "chuggy-darwin"
+    : "chuggy-linux";
+  box.paths.set(`${prefix}/bin/${program}`, "#!/usr/bin/env node");
   box.paths.set(
-    `${prefix}/lib/node_modules/chuggy-linux/package.json`,
-    JSON.stringify({ name: "chuggy-linux", version: box.release }),
+    `${prefix}/lib/node_modules/${program}/package.json`,
+    JSON.stringify({ name: program, version: box.release }),
   );
 }
 
-/** The box as `mcp` leaves it for `at`: the runner package installed machine-wide, and its server named in the folder's local configuration. */
+/** The box as `mcp` leaves it for `at`: the runner package `program` installed machine-wide, and its server named in the folder's local configuration in place of any of the same name. */
 export function boxServing(
   box: RunnerBox,
   at: {
@@ -310,8 +314,14 @@ export function boxServing(
     readonly workspace: string;
     readonly project: string;
   },
+  program: "chuggy-linux" | "chuggy-darwin" = "chuggy-linux",
 ): void {
-  installed(box, ["npm", "install", "--global", "chuggy-linux"]);
+  installed(box, ["npm", "install", "--global", program]);
+  boxServed(
+    box,
+    ["claude", "mcp", "remove", "--scope", "local", "chuggy"],
+    false,
+  );
   boxServed(
     box,
     [
@@ -322,7 +332,7 @@ export function boxServing(
       "local",
       "chuggy",
       "--",
-      `${boxPrefix}/bin/chuggy-linux`,
+      `${boxPrefix}/bin/${program}`,
       "mcp",
       "--site",
       at.site,
