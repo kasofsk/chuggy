@@ -80,8 +80,12 @@ export async function nextOf(
   site: SetupSite,
   asking: Asking = {},
 ): Promise<SetupNext> {
-  return setupNext(await stood(site, asking), {
-    ...setupAnswersNone,
-    ...asking.answers,
-  });
+  return setupNext(
+    await stood(site, asking),
+    {
+      ...setupAnswersNone,
+      ...asking.answers,
+    },
+    "linux",
+  );
 }

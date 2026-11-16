@@ -172,15 +172,11 @@ import type {
 } from "../contract/responses.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
-import type {
-  SelectorOperationalContext,
-  SelectorRuntimeSettingsSource,
-} from "./selector.ts";
+import type { SelectorRuntimeSettingsSource } from "./selector.ts";
 import {
   sessionSpendRoute,
   type SessionRouteReads,
 } from "./sessionPlacement.ts";
-import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 import {
   agenticRefusals,
   checkedAgenticRefusalsLimit,
@@ -903,10 +899,6 @@ export interface NativeWeb extends NativeEpics {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<ProjectOperationalStatus>>;
-  selectorOperationalContext(
-    principal: Principal,
-    partition: Partition,
-  ): Promise<AuthorizedResult<SelectorOperationalContext>>;
   hostedRuns(
     principal: Principal,
     partition: Partition,
@@ -3250,7 +3242,6 @@ export function nativeWeb(
   inventory?: ProjectInventory,
   operationalReads?: OperationalReadStore,
   outputContents?: OutputContentPort,
-  selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationImports?: NativeRepositoryConfigurationImportPorts,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
@@ -3288,10 +3279,6 @@ export function nativeWeb(
       projectArtifacts,
       projectArtifactMinting,
     ),
-    selectorOperationalContext: nativeSelectorContextMethod(
-      access,
-      selectorContexts,
-    ),
     ...nativeDeskMethods(access, reads, inbox, backlog, authoring, {
       operationalReads,
     }),
@@ -3315,16 +3302,5 @@ function nativeDispatchViewMethod(
     if (views === undefined)
       throw new Error("native web: no dispatch-view store was composed");
     return views.read(partition, checkedDispatchViewQuery(query));
-  });
-}
-
-function nativeSelectorContextMethod(
-  access: ProjectAccess,
-  contexts?: SelectorOperationalContextRead,
-): NativeWeb["selectorOperationalContext"] {
-  return authorizedProjectValue(access, (partition) => {
-    if (contexts === undefined)
-      throw new Error("native web: no selector context source was composed");
-    return contexts.context(partition);
   });
 }

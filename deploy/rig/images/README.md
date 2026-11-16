@@ -101,8 +101,7 @@ to start without the required ones.
 
 | Variable | | |
 |---|---|---|
-| `CHUG_API_DATABASE_URL` | required | see below |
-| `CHUG_API_SELECTOR_REVIEW_DATABASE_URL` | required | see below |
+| `CHUG_API_DATABASE_URL` | required | the PostgreSQL the API serves, connecting as `chuggy_api_login` with the group named as `?options=-c%20role%3Dchuggy_api`, which the login role holds by grant rather than by default; the API refuses to start unless `current_user` is `chuggy_api` |
 | `CHUG_API_IDEMPOTENCY_KEYING` | required | JSON: a `current` version and the `versions` that may still be verified |
 | `CHUG_API_OIDC_ISSUER` | required | an HTTPS URL with no credentials, query or fragment |
 | `CHUG_API_OIDC_AUDIENCE` | required | |
@@ -154,9 +153,6 @@ to start without the required ones.
 | `CHUG_API_THREAD_LIVE_SESSION_IDLE_MS` | | how long a session may report nothing before what is held of its message is dropped |
 | `CHUG_API_THREAD_LIVE_WINDOW_MS` | | the span the live events arriving from every session are counted over |
 | `CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX` | | how many of them are read in one such span, past which the rest are left unread and everything held is dropped |
-| `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
-| `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
-| `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |
 | `CHUG_SCHEDULER_PASS_BOUNDS` | | the scheduler's own pass bounds, of which `attemptRetriesMax` and `attemptRateLimitsMax` are read, so that an escalation the API says the scheduler resumes once its usage pauses end is one the scheduler does; set it to what the scheduler is given |
 
 **The app id and the key file are named together or not at all.** A deployment
@@ -166,22 +162,6 @@ answers nothing. A deployment naming one of the two meant to mint and cannot, so
 it refuses to start rather than reporting an outage at every mint for as long as
 it runs. Where both are named, repositories on the forge the app is installed on
 are minted for and every other repository is still read from the files.
-
-**Both database URLs must become a group role, and they become different ones.**
-The API authenticates as `chuggy_api_login` for each and refuses to start unless
-`current_user` is `chuggy_api` on the first and `chuggy_selector_review` on the
-second, which the login role holds by grant rather than by default. Each
-connection string carries its own switch:
-
-```
-postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_api
-postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_selector_review
-```
-
-The second carries the selector's proposal reviews both ways — the operational
-context the API serves reads them, and a reviewer's approval or rejection is
-recorded through them — over a surface `chuggy_api` is granted nothing on: the
-split is the privilege, not a second credential.
 
 **The artifact root is data, not image content.** It is a filesystem path the
 API reads artifacts from and writes a member's uploads under — the web

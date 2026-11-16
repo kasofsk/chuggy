@@ -4,9 +4,7 @@
  * A representation the server assembles by hand is parsed leniently — the
  * named fields are guaranteed and anything further is dropped — while the
  * shapes the server itself pins before sending are strict here too, because
- * those are the ones a missing field would be a server fault in. The
- * selector's operational context is not among them: it is an agent's resource
- * rather than a browser's.
+ * those are the ones a missing field would be a server fault in.
  */
 
 import {
@@ -48,7 +46,6 @@ import {
   dispatchViewSchemaVersion,
   identitySchema,
   inquiriesAnsweredMax,
-  leadDispatchesMax,
   inquiryQuestionCharsMax,
   instantSchema,
   isBoundedText,
@@ -78,7 +75,6 @@ import {
   selectorHandoffNoteBytesMax,
   selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
-  selectorProposalDispatchesAnsweredMax,
   sessionContextPageTurnsMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
@@ -184,7 +180,6 @@ import {
   schedulerFreshnesses,
   selectorAttentions,
   selectorDeliveryStates,
-  selectorReviewOutcomes,
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
@@ -2129,30 +2124,9 @@ export type SelectorHistoryResponse = z.infer<
   typeof selectorHistoryResponseSchema
 >;
 
-/** One decision held for a reviewer, and every ticket an approval would dispatch. */
-export const selectorProposalResponseSchema = z.object({
-  decision: identitySchema,
-  tickets: z.array(ticketNumberSchema).min(1).max(leadDispatchesMax),
-});
-export type SelectorProposalResponse = z.infer<
-  typeof selectorProposalResponseSchema
->;
-
-/** `more` says a held decision was left unread, which answering these reaches. */
-export const selectorProposalsResponseSchema = z.object({
-  proposals: z
-    .array(selectorProposalResponseSchema)
-    .max(selectorProposalDispatchesAnsweredMax),
-  more: z.boolean(),
-});
-export type SelectorProposalsResponse = z.infer<
-  typeof selectorProposalsResponseSchema
->;
-
 /**
  * One ticket the inbox holds: the row the tickets list answers for it, its
- * open actions, the refusals it has not moved past and the decisions naming
- * it, any of them empty.
+ * open actions and the refusals it has not moved past, either of them empty.
  */
 export const inboxEntryResponseSchema = z.object({
   ticket: projectTicketSchema,
@@ -2160,9 +2134,6 @@ export const inboxEntryResponseSchema = z.object({
   refusals: z
     .array(agenticRefusalResponseSchema)
     .max(agenticRefusalsAnsweredMax),
-  proposals: z
-    .array(selectorProposalResponseSchema)
-    .max(selectorProposalDispatchesAnsweredMax),
 });
 export type InboxEntryResponse = z.infer<typeof inboxEntryResponseSchema>;
 
@@ -2174,14 +2145,6 @@ export const inboxResponseSchema = z.object({
   nextCursor: cursorSchema.optional(),
 });
 export type InboxResponse = z.infer<typeof inboxResponseSchema>;
-
-export const selectorProposalReviewResponseSchema = z.object({
-  decision: identitySchema,
-  outcome: z.enum(selectorReviewOutcomes),
-});
-export type SelectorProposalReviewResponse = z.infer<
-  typeof selectorProposalReviewResponseSchema
->;
 
 /**
  * One member thread as a listing names it, `owner` being the authority its

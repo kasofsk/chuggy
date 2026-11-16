@@ -26,7 +26,6 @@ import type {
   TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
-import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
 import type {
   AgenticRefusalsRead,
   TicketAgenticRefusalsRead,
@@ -44,10 +43,6 @@ import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
 import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
-import type {
-  SelectorProposalReviews,
-  SelectorReviewResult,
-} from "../../interpreter/selectorReview.ts";
 import type { SessionStoreEntry } from "../../interpreter/sessionTranscript.ts";
 import type {
   SelectorProjectSettingsHistoryRead,
@@ -89,7 +84,6 @@ import {
   leadOfferingNotAdmittedCode,
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
-  selectorProposalNotHeldCode,
   subsidyExhaustedCode,
   threadLimitReachedCode,
   briefFinalizationModeOf,
@@ -97,7 +91,6 @@ import {
   type NativeActionAnswerRefusalCode,
   type TicketTakeRefusalCode,
   type ProjectArtifactUploadRefusalCode,
-  type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
 import type { RepositoryFinalization } from "../../interpreter/repositoryBinding.ts";
@@ -670,14 +663,6 @@ export function hostedRunsResponse(
 
 export function projectAbilitiesResponse(
   result: AuthorizedResult<ProjectAbilitiesResponse>,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, result.value);
-}
-
-export function selectorOperationalContextResponse(
-  result: AuthorizedResult<SelectorOperationalContext>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
@@ -2873,14 +2858,6 @@ export function selectorHistoryResponse(
       });
 }
 
-export function selectorProposalsResponse(
-  result: Awaited<ReturnType<SelectorProposalReviews["pending"]>>,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, { proposals: result.proposals, more: result.more });
-}
-
 /** One page of the inbox, its cursor the tickets list's own for the same order. */
 export function inboxResponse(
   result: AuthorizedResult<ProjectInboxPage>,
@@ -2897,30 +2874,6 @@ export function inboxResponse(
       ? {}
       : { nextCursor: encodeTicketActivityCursor(partition, page.nextAfter) }),
   });
-}
-
-/** A decision no longer held — answered by someone else, or never held — is the conflict. */
-export function selectorProposalReviewResponse(
-  result: SelectorReviewResult,
-  decision: string,
-  outcome: SelectorReviewOutcome,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "Stale":
-      return response(
-        409,
-        nativeHttpError(
-          selectorProposalNotHeldCode,
-          "This proposal is no longer awaiting approval.",
-        ),
-      );
-    case "Changed":
-      return response(200, { decision, outcome });
-    default:
-      return assertNever(result);
-  }
 }
 
 /** One turn as the wire carries it, dropping the fields a pod has not measured. */

@@ -186,6 +186,13 @@ export const setupPlatforms = ["linux", "darwin"] as const;
 
 export type SetupPlatform = (typeof setupPlatforms)[number];
 
+/** The platform as one the program is served on, or nothing where it is not. */
+export function setupPlatformServed(
+  platform: string,
+): SetupPlatform | undefined {
+  return setupPlatforms.find((served) => served === platform);
+}
+
 /** Where the program is running, as plain facts read once at its start. */
 export interface SetupSurroundings {
   readonly platform: string;

@@ -58,16 +58,10 @@ import {
 } from "../random/random.ts";
 import {
   asAuthorityKind,
-  asAuthoritySubject,
   asOperationId,
   operationIdentityCharsMax,
 } from "../../src/interpreter/operationInbox.ts";
 import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
-import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
-import {
-  selectorProposalReviews,
-  selectorProposalReviewsHeld,
-} from "../../src/interpreter/selectorReview.ts";
 import {
   selectorOperationalContext,
   selectorSettingsFixture,
@@ -77,7 +71,6 @@ import {
   allLeadAdmissions,
   type SubsidizedLeadProfile,
 } from "../../src/interpreter/sessionPlacement.ts";
-import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -1381,70 +1374,6 @@ test("invalid policy JSON is recorded as a bounded failed interaction", async ()
     outcome: "Failed",
     code: "InvalidResult",
   });
-});
-
-test("proposal review requires dispatch authority and preserves feedback", async () => {
-  let approvedFeedback: string | undefined;
-  const reviews = selectorProposalReviews(
-    {
-      authorize: (_principal, _partition, access) =>
-        Promise.resolve(
-          access === "DispatchTicket"
-            ? {
-                kind: asAuthorityKind("User"),
-                subject: asAuthoritySubject("reviewer"),
-              }
-            : undefined,
-        ),
-      authorizeTenant: () => Promise.resolve(undefined),
-      authorizeSite: projectAccessSiteRefused,
-    },
-    {
-      awaitingApproval: () => Promise.resolve([delivery]),
-      approve: (_partition, _decision, _reviewer, feedback) => {
-        approvedFeedback = feedback;
-        return Promise.resolve(true);
-      },
-      reject: () => Promise.resolve(false),
-      reviewFeedback: () => Promise.resolve([]),
-      recentReviewFeedback: () => Promise.resolve([]),
-    },
-  );
-  const listed = await reviews.pending(asPrincipal("reviewer"), partition, 10);
-  assert.deepEqual(listed, {
-    result: "Found",
-    proposals: [{ decision: delivery.decision, tickets: [delivery.ticket] }],
-    more: false,
-  });
-  const approved = await reviews.approve(
-    asPrincipal("reviewer"),
-    partition,
-    delivery.decision,
-    "start this after the database migration",
-  );
-  assert.deepEqual(approved, { result: "Changed" });
-  assert.equal(approvedFeedback, "start this after the database migration");
-});
-
-test("held proposals are read whole, a full page leaving its last decision unread", () => {
-  const held = (decision: string, ticket: number): SelectorDelivery => ({
-    ...delivery,
-    decision,
-    ticket: asTicketId(ticket),
-  });
-  const page = [held("first", 1), held("first", 2), held("second", 3)];
-  assert.deepEqual(selectorProposalReviewsHeld(page, 4), {
-    proposals: [
-      { decision: "first", tickets: [1, 2] },
-      { decision: "second", tickets: [3] },
-    ],
-    more: false,
-  });
-  assert.deepEqual(
-    selectorProposalReviewsHeld(page, 3),
-    { proposals: [{ decision: "first", tickets: [1, 2] }], more: true },
-    "a page the limit filled may have cut its last decision short",
-  );
 });
 
 test("the selector policy host answers the admission its policy answers", async () => {

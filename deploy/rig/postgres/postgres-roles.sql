@@ -117,15 +117,6 @@
 -- `src/roots/provisionProjectAccess.ts` states in its own header why it checks
 -- a privilege instead.
 --
--- A PROCESS WITH TWO POOLS STILL HAS ONE CREDENTIAL. The API opens a second
--- connection for the selector context — the proposal reviews it reads and the
--- approvals and rejections it records — and refuses to start unless it
--- becomes `chuggy_selector_review`, which is a group `chuggy_api` is not a
--- member of and is a real widening of `chuggy_api_login`. It is the widening
--- that process needs, and holding it through the group leaves what it reaches
--- editable in the migration rather than here. The connection string names the
--- group the same way the API's first one does.
---
 -- chuggy_selector_control IS CREATED WITH NO LOGIN ROLE, DELIBERATELY. The
 -- migration grants it the selector administration surface and no command under
 -- `src/roots/` connects as it, so there is no process for a credential to
@@ -261,7 +252,6 @@ GRANT chuggy_pool_plane TO chuggy_pool_plane_login;
 GRANT chuggy_access_plane TO chuggy_access_plane_login;
 GRANT chuggy_configuration_importer TO chuggy_configuration_importer_login;
 GRANT chuggy_metrics_plane TO chuggy_metrics_plane_login;
-GRANT chuggy_selector_review TO chuggy_api_login;
 GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_service,
       chuggy_selector_control, chuggy_selector_review, chuggy_scheduler,
       chuggy_finalizer, chuggy_worker_plane, chuggy_pool_plane,

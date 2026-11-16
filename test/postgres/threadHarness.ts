@@ -347,7 +347,6 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     undefined,
-    undefined,
     threadRigLeadPorts(pool, input.store),
     {
       threads: postgresThreads(pool, {
@@ -372,7 +371,6 @@ export function threadRigApp(input: {
     },
     { ready: () => Promise.resolve(true) },
     postgresInstallationAuthority(pool),
-    undefined,
     undefined,
     undefined,
     undefined,

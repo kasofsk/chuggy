@@ -1,10 +1,9 @@
 /**
- * The inbox against a real server: the union its four sources make, one entry
- * per ticket, walked by its cursor under one count, and what a reader who may
- * not dispatch is shown. The phases and the open actions are the store's own
- * reads, so they are seeded rows; the refusals and the held decisions are
- * ports the service is handed, so they are doubles of what their own suites
- * already hold the server to.
+ * The inbox against a real server: the union its three sources make, one entry
+ * per ticket, walked by its cursor under one count. The phases and the open
+ * actions are the store's own reads, so they are seeded rows; the refusals are
+ * a port the service is handed, so they are a double of what their own suite
+ * already holds the server to.
  *
  * A PAGE IS A FIXED NUMBER OF STATEMENTS. A hundred entries are read in as many
  * statements as one, and none of them correlates a subquery on an outer row's
@@ -33,8 +32,6 @@ import {
 } from "../../src/interpreter/projectInbox.ts";
 import type { ProjectAccessKind } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { SelectorDelivery } from "../../src/interpreter/selector.ts";
-import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { executionSummary } from "../contract/representations.ts";
 import { postgresHarnessProject } from "./harness.ts";
 import { seedJournalEntry, seedOpenAction } from "./nativeActionFixture.ts";
@@ -48,7 +45,6 @@ const subject = postgresReadHarness();
 
 const reader = asPrincipal("inbox-reader");
 const dispatcher = new Set<ProjectAccessKind>(["Read", "DispatchTicket"]);
-const readOnly = new Set<ProjectAccessKind>(["Read"]);
 
 /** One ticket a case seeds: its phase, the entry dating it, and whether an action is open on it. */
 interface InboxSeeded {
@@ -111,24 +107,6 @@ function inboxRefusals(
   };
 }
 
-/** One held decision naming `tickets`, carrying only what the read groups by. */
-function inboxHeld(
-  partition: Partition,
-  decision: string,
-  tickets: readonly number[],
-): SelectorDelivery[] {
-  return tickets.map(
-    (ticket) =>
-      ({
-        decision,
-        ticket: asTicketId(ticket),
-        partition,
-        operation: `${decision}-${String(ticket)}`,
-        attempts: 0,
-      }) as unknown as SelectorDelivery,
-  );
-}
-
 /** Every ticket the latest-executions read was asked for, each answered with a run. */
 function inboxLatest(): {
   readonly reads: Pick<OperationalReadStore, "ticketLatestExecutions">;
@@ -154,9 +132,7 @@ function inboxLatest(): {
 
 interface InboxOver {
   readonly pool?: pg.Pool;
-  readonly access?: ReadonlySet<ProjectAccessKind>;
   readonly refused?: readonly number[];
-  readonly proposed?: readonly number[];
   readonly latest?: Pick<OperationalReadStore, "ticketLatestExecutions">;
 }
 
@@ -166,22 +142,13 @@ function inboxOf(partition: Partition, over: InboxOver = {}) {
   access.grant({
     partition,
     principal: reader,
-    access: over.access ?? dispatcher,
+    access: dispatcher,
   });
   const pool = over.pool ?? subject.pool;
-  const held = inboxHeld(partition, "proposed", over.proposed ?? []);
   const inbox = projectInbox(access, {
     store: postgresInboxReads(pool),
     operationalReads: over.latest ?? postgresOperationalReads(pool),
     refusals: inboxRefusals(partition, over.refused ?? []),
-    proposals: selectorProposalReviews(access, {
-      awaitingApproval: (_partition, limit) =>
-        Promise.resolve(held.slice(0, limit)),
-      approve: () => Promise.resolve(false),
-      reject: () => Promise.resolve(false),
-      reviewFeedback: () => Promise.resolve([]),
-      recentReviewFeedback: () => Promise.resolve([]),
-    }),
   });
   return async (query: ProjectInboxQuery): Promise<ProjectInboxPage> => {
     const read = await inbox.read(reader, partition, query);
@@ -216,8 +183,8 @@ async function inboxWalked(
 
 /**
  * Six tickets, newest activity last: 1 escalated with an action open, 2 past
- * the section with an action open, 3 refused, 4 proposed, 5 escalated alone,
- * 6 working with nothing on it.
+ * the section with an action open, 3 refused, 4 pending with nothing on it,
+ * 5 escalated alone, 6 working with nothing on it.
  */
 const inboxUnion: readonly InboxSeeded[] = [
   { ticket: 1, phase: "Escalated", seq: 1, action: true },
@@ -228,12 +195,11 @@ const inboxUnion: readonly InboxSeeded[] = [
   { ticket: 6, phase: "Work", seq: 6 },
 ];
 
-test("the inbox is one entry for each ticket any of its four sources names, each with its row and latest execution", async () => {
+test("the inbox is one entry for each ticket any of its three sources names, each with its row and latest execution", async () => {
   const partition = await inboxProject("inbox-union", inboxUnion);
   const latest = inboxLatest();
   const page = await inboxOf(partition, {
     refused: [3],
-    proposed: [4],
     latest: latest.reads,
   })({ limit: 10 });
   assert.deepEqual(
@@ -242,53 +208,31 @@ test("the inbox is one entry for each ticket any of its four sources names, each
       entry.ticket.phase,
       entry.actions.map((action) => action.action),
       entry.refusals.map((refusal) => refusal.decision),
-      entry.proposals.map((proposal) => proposal.decision),
       entry.ticket.latestExecution?.execution,
     ]),
     [
-      [5, "Escalated", [], [], [], "run-5"],
-      [4, "Pending", [], [], ["proposed"], "run-4"],
-      [3, "Pending", [], ["refused-3"], [], "run-3"],
-      [2, "Finalization", ["inbox-union-2"], [], [], "run-2"],
-      [1, "Escalated", ["inbox-union-1"], [], [], "run-1"],
+      [5, "Escalated", [], [], "run-5"],
+      [3, "Pending", [], ["refused-3"], "run-3"],
+      [2, "Finalization", ["inbox-union-2"], [], "run-2"],
+      [1, "Escalated", ["inbox-union-1"], [], "run-1"],
     ],
   );
-  assert.equal(page.count, 5);
+  assert.equal(page.count, 4);
   assert.equal(page.nextAfter, undefined);
-  assert.deepEqual(latest.asked, [5, 4, 3, 2, 1]);
+  assert.deepEqual(latest.asked, [5, 3, 2, 1]);
 });
 
 test("a walk of the cursor answers every entry once, the whole count on every page, and no more on the last", async () => {
   const partition = await inboxProject("inbox-walk", inboxUnion);
-  const read = inboxOf(partition, { refused: [3], proposed: [4] });
+  const read = inboxOf(partition, { refused: [3] });
   assert.deepEqual(await inboxWalked(read, 2), [
-    [[5, 4], 5, true],
-    [[3, 2], 5, true],
-    [[1], 5, false],
+    [[5, 3], 4, true],
+    [[2, 1], 4, false],
   ]);
-  assert.deepEqual(await inboxWalked(read, 5), [[[5, 4, 3, 2, 1], 5, false]]);
+  assert.deepEqual(await inboxWalked(read, 4), [[[5, 3, 2, 1], 4, false]]);
 });
 
-test("a reader who may not dispatch is shown no held decision, nor the ticket only one names", async () => {
-  const partition = await inboxProject("inbox-undispatched", inboxUnion);
-  const read = inboxOf(partition, {
-    access: readOnly,
-    refused: [3],
-    proposed: [4, 5],
-  });
-  const page = await read({ limit: 10 });
-  assert.deepEqual(
-    page.entries.map((entry) => entry.ticket.ticket),
-    [5, 3, 2, 1],
-  );
-  assert.equal(page.count, 4);
-  assert.deepEqual(
-    page.entries.flatMap((entry) => entry.proposals),
-    [],
-  );
-});
-
-test("another project's tickets, actions, refusals and decisions are never in the inbox", async () => {
+test("another project's tickets, actions and refusals are never in the inbox", async () => {
   const mine = await inboxProject("inbox-mine", [
     { ticket: 1, phase: "Work", seq: 1 },
   ]);
@@ -296,9 +240,8 @@ test("another project's tickets, actions, refusals and decisions are never in th
   const read = inboxOf(mine);
   assert.deepEqual(await read({ limit: 10 }), { entries: [], count: 0 });
   assert.equal(
-    (await inboxOf(theirs, { refused: [3], proposed: [4] })({ limit: 10 }))
-      .count,
-    5,
+    (await inboxOf(theirs, { refused: [3] })({ limit: 10 })).count,
+    4,
   );
 });
 
