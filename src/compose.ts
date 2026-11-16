@@ -220,6 +220,20 @@ import {
   type TicketServiceConfig,
   type TicketServiceMetrics,
 } from "./interpreter/ticketService.ts";
+import type { ExecutionSchedulerService } from "./interpreter/executionSchedulerRun.ts";
+import { dependencyDeliveriesRead } from "./interpreter/dependencyDelivery.ts";
+import { postgresDependencyPins } from "./adapters/postgres/dependencyDeliveries.ts";
+import {
+  postgresFailedLanding,
+  postgresPriorEvaluationReports,
+  postgresPriorWorkReports,
+} from "./adapters/postgres/evaluationReports.ts";
+import { postgresPinnedConfigurations } from "./adapters/postgres/pinnedConfigurations.ts";
+import {
+  postgresProjectNorthStar,
+  postgresReadOnlyRepositories,
+} from "./adapters/postgres/repositoryBinding.ts";
+import { postgresTicketLandings } from "./adapters/postgres/ticketLandings.ts";
 
 export interface TicketService {
   readonly inbox: OperationInbox;
@@ -928,5 +942,37 @@ export function composeTicketService(
     discovery: postgresProjectDiscovery(writerPool, metrics),
     decisions: postgresProjectDecision(writerPool, metrics),
     projects: postgresProjectStore(writerPool),
+  };
+}
+
+/** Every read the scheduler gathers a briefing from, over one pool. */
+export function composeSchedulerBriefingReads(
+  pool: pg.Pool,
+): Pick<
+  ExecutionSchedulerService,
+  | "configurations"
+  | "priorWorkReports"
+  | "priorEvaluationReports"
+  | "failedLanding"
+  | "readOnlyRepositories"
+  | "northStar"
+  | "dependencyDeliveries"
+  | "ticketBriefs"
+  | "bindings"
+> {
+  return {
+    configurations: postgresPinnedConfigurations(pool),
+    priorWorkReports: postgresPriorWorkReports(pool),
+    priorEvaluationReports: postgresPriorEvaluationReports(pool),
+    failedLanding: postgresFailedLanding(pool),
+    readOnlyRepositories: postgresReadOnlyRepositories(pool),
+    northStar: postgresProjectNorthStar(pool),
+    dependencyDeliveries: dependencyDeliveriesRead({
+      pinned: postgresDependencyPins(pool),
+      landings: postgresTicketLandings(pool),
+      briefs: postgresTicketBrief(pool),
+    }),
+    ticketBriefs: postgresTicketBrief(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
   };
 }

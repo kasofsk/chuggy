@@ -50,7 +50,7 @@ import type {
   ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
-import { schedulerProcessRootBriefingReads } from "../../src/roots/controlPlane.ts";
+import { composeSchedulerBriefingReads } from "../../src/compose.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
@@ -105,7 +105,7 @@ import {
 } from "./harness.ts";
 
 /** Every read a briefing is gathered from, over one pool, as the scheduler's root composes them. */
-export const schedulerBriefingReads = schedulerProcessRootBriefingReads;
+export const schedulerBriefingReads = composeSchedulerBriefingReads;
 
 /** A pool whose every session runs as the execution scheduler's own role. */
 export function schedulerRolePool(): pg.Pool {
