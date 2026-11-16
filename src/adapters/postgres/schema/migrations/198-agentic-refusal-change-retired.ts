@@ -26,8 +26,8 @@ const changeKinds = [
   "Session",
 ];
 
-export const migration197: Migration = {
-  version: 197,
+export const migration198: Migration = {
+  version: 198,
   name: "a refusal of the lead's appends no change",
   statements: [
     `DROP TRIGGER selector_refusal_appends_a_change ON public.selector_agentic_refusal`,
