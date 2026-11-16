@@ -164,7 +164,7 @@ test("a finalization's kind, mode and policy name the roster each is one of", ()
       (problem) => problem.message,
     );
   expect(messages("  kind: Teleport\n")).toStrictEqual([
-    "land by one of GitMerge, PullRequest, None",
+    "finalize by one of GitMerge, PullRequest, None",
   ]);
   expect(
     messages("  kind: GitMerge\n  mode: Rebase\n  policy: Direct\n"),
@@ -173,19 +173,21 @@ test("a finalization's kind, mode and policy name the roster each is one of", ()
     messages("  kind: GitMerge\n  mode: Push\n  policy: Ordered\n"),
   ).toStrictEqual(["order the merge as one of Direct, Serialized, Stacked"]);
   expect(messages("  mode: Push\n")).toStrictEqual([
-    "a landing names its kind: one of GitMerge, PullRequest, None",
+    "a finalization names its kind: one of GitMerge, PullRequest, None",
   ]);
   expect(messages("  kind: GitMerge\n  mode: Push\n")).toStrictEqual([
     "a GitMerge names its policy",
   ]);
   expect(messages("  kind: GitMerge\n  base: main\n")).toStrictEqual([
-    "a landing names kind, mode, target, policy",
+    "a finalization names kind, mode, target, policy",
   ]);
   expect(
     readForm("intent: y\nfinalization: GitMerge\n").problems.map(
       (problem) => problem.message,
     ),
-  ).toStrictEqual(["write the landing as a map of kind, mode, target, policy"]);
+  ).toStrictEqual([
+    "write the finalization as a map of kind, mode, target, policy",
+  ]);
 });
 
 /** A policy orders a git merge and nothing else, and landing nothing names no
@@ -210,7 +212,7 @@ test("a field a finalization's kind does not name is refused at its own key", ()
     [true, "a None names no mode; only a GitMerge does"],
   ]);
   expect(refused("  kind: None\n  target: main\n", "target")).toStrictEqual([
-    [true, "None lands nothing, so it names no target"],
+    [true, "None finalizes onto nothing, so it names no target"],
   ]);
 });
 

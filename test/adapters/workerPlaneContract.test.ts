@@ -18,9 +18,9 @@
  * optional field a status's schema names must be present in some case of that
  * route and absent in another.
  *
- * AN OLDER RELEASE A PLANE STILL SERVES IS DRIVEN THE SAME WAY. Every case is
- * driven again naming that release, and read by that release's own answer map,
- * which is how a pod built with it reads the answer. Every body that release's
+ * EACH RELEASE REPLAYED ON A PLANE IS DRIVEN THE SAME WAY. Every case is
+ * driven again naming the release its contract names, and read by that
+ * release's own answer map, which is how a pod built with it reads the answer. Every body that release's
  * request schemas build, each roster value in turn, is offered at its route and
  * must not be refused. The releases are `workerContractReleases.ts`'s.
  */
@@ -57,10 +57,15 @@ import {
 import {
   contractVersionRefusalSchema,
   contractVersionRefusalStatus,
+  workerContractFeaturesHeader,
+  workerContractFeaturesText,
   workerContractHeader,
   workerContractRelease,
+  type WorkerContractFeature,
 } from "../../src/contract/workerContract.ts";
 import {
+  heldCredentialSecretCharsMax,
+  workerHeldCredentialAbsences,
   workerPlaneAnswers,
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
@@ -92,7 +97,20 @@ import {
 } from "../../src/interpreter/forgeInstallation.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  ProjectAccessUnavailable,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import type {
+  ThreadJobWakeService,
+  ThreadJobWakeUnbound,
+  ThreadJobWakeView,
+  ThreadJobWoken,
+  ThreadWakeOffered,
+} from "../../src/interpreter/threadWake.ts";
 import {
   allArtifactFailures,
   allArtifactRoles,
@@ -109,6 +127,7 @@ import type {
   SessionLivePublished,
   SessionPlaneIdentity,
   SessionReferenceBound,
+  SessionStandingRecorded,
   SessionStoreStreamRow,
   SessionTurnAnswered,
   SessionTurnFailed,
@@ -123,7 +142,7 @@ import { filesystemAccessOrder } from "../../src/interpreter/taskAuthority.ts";
 import type {
   WorkerConfiguration,
   WorkerMode,
-} from "../../src/interpreter/taskConfiguration.ts";
+} from "../../src/contract/taskConfiguration.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,
@@ -138,9 +157,10 @@ import {
   type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
-import type { HeldCredentialsAnswered } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import type { CredentialsResolved } from "../../src/interpreter/credentialIssuers.ts";
 import type { SessionTaskLaunch } from "../../src/interpreter/workerTask.ts";
 import {
+  workerContractEnumsSeen,
   workerContractEnumsWalked,
   workerContractOptionalsSeen,
   workerContractReleasePlane,
@@ -209,6 +229,7 @@ const liveInvocation: WorkTaskInvocation = {
 /** A work task's recorded identity and invocation, carrying neither a stage nor a worker configuration. */
 const liveTask: WorkerTaskRead = {
   live: true,
+  inputs: liveAuthority.inputs,
   identity: {
     partition: liveAuthority.partition,
     execution: liveAuthority.execution,
@@ -251,6 +272,8 @@ interface WorkerPlaneCase {
   readonly bearer?: string;
   readonly release?: string;
   readonly named?: true;
+  /** The features the caller lists, which no older release is driven listing. */
+  readonly features?: readonly WorkerContractFeature[];
   readonly status?: number;
   /** The versions of pod that can provoke this case; a release outside it is not driven with it. */
   readonly sent?: WorkerContractRange;
@@ -397,6 +420,11 @@ const workerPlaneRequests: Readonly<
       },
       { ...runTotalsBody, usage: { five_hour: usageReading } },
       { ...runTotalsBody, usage: { seven_day: usageReading } },
+      {
+        ...runTotalsBody,
+        usage: { five_hour: usageReading },
+        credential: "work",
+      },
     ],
   },
   runContext: {
@@ -437,6 +465,11 @@ const workerPlaneRequests: Readonly<
         limit: { window: "five_hour", resetsAt: usageReading.resetsAt },
       },
       { evidence: "RunRateLimited", limit: {} },
+      { evidence: "RunRateLimited", limit: { credential: "work" } },
+      {
+        evidence: "RunCredentialAbsent",
+        absent: { credential: "work", reason: "NotGranted" },
+      },
     ],
   },
   credential: {
@@ -510,6 +543,48 @@ const workTaskRosterCases: readonly WorkerPlaneCase[] = [
     service: workerPlaneTask({
       ...liveTask,
       invocation: { ...liveInvocation, targetRef: "refs/heads/main" },
+    }),
+  },
+  ...[
+    { ref: "HEAD", pipelinesWritable: true },
+    {
+      ref: "refs/heads/main",
+      pipelinesWritable: false,
+      change: "2".repeat(40),
+    },
+  ].map((targetMerge) => ({
+    name: `a work task naming what its core merges in, ${JSON.stringify(targetMerge)}, to a peer listing the feature`,
+    features: ["TargetMerge"] as const,
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: { ...liveInvocation, targetMerge },
+    }),
+  })),
+  {
+    name: "a work task naming the paths its push may not change, to a pod that lists reading them",
+    call: {
+      headers: {
+        [workerContractFeaturesHeader]: workerContractFeaturesText([
+          "PushPathsRefused",
+        ]),
+      },
+    },
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: {
+        ...liveInvocation,
+        pushPathsRefused: [".forgejo/workflows/"],
+      },
+    }),
+  },
+  {
+    name: "a work task listing a credential its grant does not carry",
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: {
+        ...liveInvocation,
+        credentialsListed: [...liveInvocation.authority.credentials, "absent"],
+      },
     }),
   },
 ];
@@ -675,47 +750,81 @@ const heldGrantedTask: WorkerTaskRead = {
   },
 };
 
-/** Every answer the held credentials can give, one served credential with an expiry and one without. */
-const heldAnswers: readonly HeldCredentialsAnswered[] = [
-  { answered: "Credentials", credentials: [] },
-  {
-    answered: "Credentials",
-    credentials: [
-      {
-        credential: heldName,
-        variable: "TRACK_RECORD_TOKEN_FILE",
-        secret: "s",
-      },
-    ],
-  },
-  {
-    answered: "Credentials",
-    credentials: [
-      {
-        credential: heldName,
-        variable: "TRACK_RECORD_TOKEN_FILE",
-        secret: "s",
-        expiresAtMs: 1,
-      },
-    ],
-  },
-  { answered: "Unavailable" },
-];
-
-/** A credential served as a bundle, with an expiry and without, and one named absent beside it. */
+/** A credential served as one secret file whose path one variable names, which a pod of any release reads. */
 const heldBundle: WorkerHeldCredentialBundle = {
   credential: heldName,
   files: [{ file: "token", content: { kind: "Secret", secret: "s" } }],
   variables: [{ kind: "Path", variable: "GH_TOKEN_FILE", file: "token" }],
 };
-const heldBundleAnswers: readonly HeldCredentialsAnswered[] = [
-  { answered: "Credentials", credentials: [heldBundle] },
+
+/** Credentials that are more than one secret file and one variable naming it, which only a pod reading bundles is sent. */
+const heldBundlesWide: readonly WorkerHeldCredentialBundle[] = [
   {
-    answered: "Credentials",
-    credentials: [{ ...heldBundle, expiresAtMs: 1 }],
-    absent: [{ credential: "unheld", reason: "NotHeld" }],
+    credential: "two-files",
+    files: [
+      ...heldBundle.files,
+      { file: "config", content: { kind: "Text", text: "{{file:token}}" } },
+    ],
+    variables: heldBundle.variables,
+  },
+  {
+    credential: "a-value",
+    files: heldBundle.files,
+    variables: [
+      ...heldBundle.variables,
+      { kind: "Value", variable: "GH_HOST", value: "github.com" },
+    ],
+  },
+  {
+    credential: "a-text",
+    files: [{ file: "token", content: { kind: "Text", text: "t" } }],
+    variables: heldBundle.variables,
+  },
+  {
+    credential: "no-file",
+    files: [],
+    variables: [{ kind: "Value", variable: "GH_HOST", value: "github.com" }],
+  },
+  {
+    credential: "a-long-secret",
+    files: [
+      {
+        file: "token",
+        content: {
+          kind: "Secret",
+          secret: "s".repeat(heldCredentialSecretCharsMax + 1),
+        },
+      },
+    ],
+    variables: heldBundle.variables,
   },
 ];
+
+/** Every answer the resolver can give: nothing, each shape of credential with an expiry and without, each reason a name is absent, and an outage. */
+const heldResolutions: Readonly<Record<string, CredentialsResolved>> = {
+  "nothing served or absent": {
+    resolved: "Credentials",
+    credentials: [],
+    absent: [],
+  },
+  "every shape served and every reason absent": {
+    resolved: "Credentials",
+    credentials: [heldBundle, ...heldBundlesWide],
+    absent: workerHeldCredentialAbsences.map((reason) => ({
+      credential: `absent-${reason.toLowerCase()}`,
+      reason,
+    })),
+  },
+  "every shape served with an expiry": {
+    resolved: "Credentials",
+    credentials: [heldBundle, ...heldBundlesWide].map((bundle) => ({
+      ...bundle,
+      expiresAtMs: 1,
+    })),
+    absent: [],
+  },
+  "an outage": { resolved: "Unavailable" },
+};
 
 const heldCredentialCases: readonly WorkerPlaneCase[] = [
   workerContractStranger,
@@ -728,7 +837,11 @@ const heldCredentialCases: readonly WorkerPlaneCase[] = [
   { ...workerPlaneMalformed, service: workerPlaneTask(heldGrantedTask) },
   {
     name: "an attempt not yet invoked",
-    service: workerPlaneTask({ live: true, identity: liveTask.identity }),
+    service: workerPlaneTask({
+      live: true,
+      identity: liveTask.identity,
+      inputs: liveTask.inputs,
+    }),
     status: 409,
   },
   {
@@ -736,27 +849,20 @@ const heldCredentialCases: readonly WorkerPlaneCase[] = [
     service: workerPlaneTask(heldGrantedTask),
     status: 200,
   },
-  ...heldAnswers.map((answered) => ({
-    name: `the held credentials answering ${JSON.stringify(answered)}`,
-    service: {
-      ...workerPlaneTask(heldGrantedTask),
-      heldCredentials: { served: () => Promise.resolve(answered) },
-    },
-  })),
-  ...heldBundleAnswers.flatMap((answered) => [
+  ...Object.entries(heldResolutions).flatMap(([answered, resolved]) => [
     {
-      name: `the held credentials answering ${JSON.stringify(answered)} to a pod that reads a bundle`,
+      name: `the resolver answering ${answered} to a pod that reads a bundle`,
       named: true as const,
       service: {
         ...workerPlaneTask(heldGrantedTask),
-        heldCredentials: { served: () => Promise.resolve(answered) },
+        heldCredentials: { resolve: () => Promise.resolve(resolved) },
       },
     },
     {
-      name: `the held credentials answering ${JSON.stringify(answered)} to a pod naming no release`,
+      name: `the resolver answering ${answered} to a pod naming no release`,
       service: {
         ...workerPlaneTask(heldGrantedTask),
-        heldCredentials: { served: () => Promise.resolve(answered) },
+        heldCredentials: { resolve: () => Promise.resolve(resolved) },
       },
     },
   ]),
@@ -861,6 +967,15 @@ function sessionTaskPorts(
   };
 }
 
+/**
+ * The releases a session with no idle limit is launched by: only a chat host
+ * that names no idle bound is, and every host before this release names one.
+ */
+const workerContractIdleUnbounded: WorkerContractRange = {
+  min: { major: 1, minor: 76 },
+  max: workerContractAccepted.max,
+};
+
 /** A pool-held session's task, asked by a release whose runners launch a session and so are told what it is launched with. */
 function poolHeldSessionTaskCase(): WorkerPlaneCase {
   return {
@@ -875,6 +990,28 @@ function poolHeldSessionTaskCase(): WorkerPlaneCase {
         agentReference: "runtime-session",
         authority: liveInvocation.authority,
         repository: { reference: "github.com/owner/name" },
+      },
+    }),
+  };
+}
+
+/** A chat host's session's task, launched with no idle limit because its host named none. */
+function idleUnboundedSessionTaskCase(): WorkerPlaneCase {
+  return {
+    name: "a chat host's session's task, launched with no idle limit",
+    release: workerContractRelease,
+    sent: workerContractIdleUnbounded,
+    service: sessionTaskPorts({
+      ...liveSessionTask,
+      launch: {
+        ...poolSessionLaunch,
+        bounds: {
+          mailboxPollMs: poolSessionLaunch.bounds.mailboxPollMs,
+          resultDrainMs: poolSessionLaunch.bounds.resultDrainMs,
+          loadTimeoutMs: poolSessionLaunch.bounds.loadTimeoutMs,
+          turnsMax: poolSessionLaunch.bounds.turnsMax,
+          budgetUsd: poolSessionLaunch.bounds.budgetUsd,
+        },
       },
     }),
   };
@@ -915,6 +1052,7 @@ function sessionTaskCases(): readonly WorkerPlaneCase[] {
       service: sessionTaskPorts(liveSessionTask),
     },
     poolHeldSessionTaskCase(),
+    idleUnboundedSessionTaskCase(),
     ...allSessionKinds.map((kind) => ({
       name: `a ${kind} session's task holding every capability`,
       service: sessionTaskPorts({
@@ -994,7 +1132,11 @@ const workerPlaneCases: Readonly<
     },
     {
       name: "an attempt not yet invoked",
-      service: workerPlaneTask({ live: true, identity: liveTask.identity }),
+      service: workerPlaneTask({
+        live: true,
+        identity: liveTask.identity,
+        inputs: liveTask.inputs,
+      }),
     },
     { name: "a work task", service: workerPlaneTask(liveTask) },
     ...workTaskRosterCases,
@@ -1167,6 +1309,11 @@ const sessionPlaneCalls: Readonly<
   },
   turnStopped: { headers: json, payload: { turn: "turn" } },
   held: { headers: json, payload: {} },
+  standing: { headers: json, payload: { standing: true } },
+  wake: {
+    headers: json,
+    payload: { wake: "JobExited", resource: "dispatcher", event: "exit-1" },
+  },
   storeStreams: {},
   storeBatch: {
     rest: "stream/1",
@@ -1250,6 +1397,8 @@ const sessionPlaneRequests: Readonly<
   },
   turnStopped: { schema: "sessionTurnStoppedSchema", bodies: [] },
   held: "Unparsed",
+  standing: { schema: "sessionStandingSchema", bodies: [] },
+  wake: { schema: "sessionWakeSchema", bodies: [] },
   storeStreams: "Unparsed",
   storeBatch: "Unparsed",
   storePage: "Unparsed",
@@ -1273,6 +1422,70 @@ const referencesBound: Readonly<Record<SessionReferenceBound, true>> = {
   AlreadyBound: true,
   Conflict: true,
   Fenced: true,
+};
+
+/** A job wake's service whose view, door and authority answer as one outcome needs. */
+function jobWakes(
+  over: {
+    readonly view?: ThreadJobWakeView | ThreadJobWakeUnbound;
+    readonly door?: ThreadWakeOffered | ThreadJobWakeUnbound;
+    readonly authorize?: ProjectAccess["authorize"];
+  } = {},
+): ThreadJobWakeService {
+  return {
+    store: {
+      wakeView: () =>
+        Promise.resolve(
+          over.view ?? {
+            partition: liveSession.partition,
+            principal: asPrincipal("oidc:member"),
+            session: liveSession.session,
+            route: "Pool",
+            runner: "Live",
+            inquiryRunner: "Live",
+          },
+        ),
+      wakeThread: () =>
+        Promise.resolve(over.door ?? { woken: "Woken", ordinal: 1 }),
+    },
+    access: {
+      authorize:
+        over.authorize ??
+        ((principal) => Promise.resolve(memberAuthority(principal))),
+      authorizeTenant: (principal) =>
+        Promise.resolve(memberAuthority(principal)),
+      authorizeSite: () => Promise.resolve(undefined),
+    },
+    clock: { nowIso: () => "2026-11-14T12:00:00.000Z" },
+  };
+}
+
+/** Every outcome a job wake comes to, keyed by its answer so a new one fails to compile here. */
+const jobWakesWoken: Readonly<
+  Record<
+    | ThreadWakeOffered["woken"]
+    | Extract<ThreadJobWoken, { refused: string }>["refused"],
+    ThreadJobWakeService
+  >
+> = {
+  Woken: jobWakes(),
+  AlreadyWoken: jobWakes({ door: { woken: "AlreadyWoken", ordinal: 1 } }),
+  NoThread: jobWakes({ door: { woken: "NoThread" } }),
+  Closed: jobWakes({ door: { woken: "Closed" } }),
+  Backlogged: jobWakes({ door: { woken: "Backlogged" } }),
+  Fenced: jobWakes({ view: "Fenced" }),
+  NotChatHostThread: jobWakes({ door: "NotChatHostThread" }),
+  NotAdmitted: jobWakes({ authorize: () => Promise.resolve(undefined) }),
+  AccessUnavailable: jobWakes({
+    authorize: () =>
+      Promise.reject(new ProjectAccessUnavailable("the authority is down")),
+  }),
+};
+
+const standingsRecorded: Readonly<Record<SessionStandingRecorded, true>> = {
+  Recorded: true,
+  Fenced: true,
+  NotChatHostThread: true,
 };
 
 const turnsAnswered: Readonly<Record<SessionTurnAnswered, true>> = {
@@ -1412,6 +1625,14 @@ const sessionPlaneCases: Readonly<
       status: 409,
       service: sessionAuthority({ ...liveSession, systemPromptOwn: true }),
     },
+    {
+      name: "a thread on a chat host naming its threads' capabilities, whose shell is handed its credential",
+      service: sessionAuthority({
+        ...liveSession,
+        kind: "Thread",
+        shellCredentialHanded: true,
+      }),
+    },
     ...allSessionKinds.map((kind) => ({
       name: `a ${kind} session holding every capability`,
       service: sessionAuthority({
@@ -1519,6 +1740,30 @@ const sessionPlaneCases: Readonly<
       name: `a hold answering ${String(held)}`,
       service: sessionPorts({ holds: { hold: () => Promise.resolve(held) } }),
     })),
+  ],
+  standing: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...keysOf(standingsRecorded).map((recorded) => ({
+      name: `a report recorded as ${recorded}`,
+      service: sessionPorts({
+        standings: { stand: () => Promise.resolve(recorded) },
+      }),
+    })),
+  ],
+  wake: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    {
+      name: "a plane composed without project access",
+      service: sessionPorts({}),
+    },
+    ...(Object.keys(jobWakesWoken) as (keyof typeof jobWakesWoken)[]).map(
+      (woken) => ({
+        name: `a wake that came to ${woken}`,
+        service: sessionPorts({ wakes: jobWakesWoken[woken] }),
+      }),
+    ),
   ],
   storeStreams: [
     ...sessionPlaneStrangers,
@@ -1639,6 +1884,13 @@ async function workerPlaneDriven<Name extends string>(
       ...(driven.release === undefined
         ? {}
         : { [workerContractHeader]: driven.release }),
+      ...(driven.features === undefined
+        ? {}
+        : {
+            [workerContractFeaturesHeader]: workerContractFeaturesText(
+              driven.features,
+            ),
+          }),
       ...call.headers,
     },
     ...(call.payload === undefined ? {} : { payload: call.payload }),
@@ -1803,14 +2055,15 @@ function workerPlaneReplayed<Name extends string>(
       );
       for (const driven of plane.cases[name]) {
         if (
-          driven.sent !== undefined &&
-          !contractVersionAccepted(driven.sent, older.release)
+          driven.features !== undefined ||
+          (driven.sent !== undefined &&
+            !contractVersionAccepted(driven.sent, older.wire))
         )
           continue;
         const answered = await workerPlaneDriven(
           plane,
           name,
-          { ...driven, release: driven.release ?? older.release },
+          { ...driven, release: driven.release ?? older.wire },
           route,
         );
         workerPlaneReadBy(older, called, driven.name, answered);
@@ -1827,7 +2080,7 @@ function workerPlaneReplayed<Name extends string>(
     if (
       request !== "Unparsed" &&
       (request.sent === undefined ||
-        contractVersionAccepted(request.sent, older.release))
+        contractVersionAccepted(request.sent, older.wire))
     )
       test(`${route.method} ${route.path} takes every body a ${older.release} pod builds`, () =>
         workerPlaneBodiesTaken(plane, name, route, older, request));
@@ -1835,9 +2088,10 @@ function workerPlaneReplayed<Name extends string>(
 }
 
 /**
- * Offers one JSON route every body `older` builds of those `request` names, each
- * roster value in turn, and asserts none is refused. The bodies it builds must
- * between them offer each optional field its schema names and leave it out.
+ * Offers one JSON route every body `older` builds of those `request` names,
+ * each roster value in turn in some body that release takes, and asserts none
+ * is refused. The bodies must between them offer each optional field its
+ * schema names and leave it out.
  */
 async function workerPlaneBodiesTaken<Name extends string>(
   plane: WorkerPlaneDriven<Name>,
@@ -1853,18 +2107,23 @@ async function workerPlaneBodiesTaken<Name extends string>(
   );
   assert.ok(built.length > 0, `${older.release} builds no body offered`);
   const seen = new Map<string, Set<boolean>>();
+  const walked = new Map<string, Set<unknown>>();
+  const taken = new Map<string, Set<unknown>>();
   for (const body of built) {
     workerContractOptionalsSeen(schema, body, request.schema, seen);
-    for (const offered of workerContractEnumsWalked(schema, body)) {
+    const offers: readonly unknown[] = workerContractEnumsWalked(schema, body);
+    for (const offered of offers) {
+      workerContractEnumsSeen(schema, offered, request.schema, walked);
+      if (!schema.safeParse(offered).success) continue;
+      workerContractEnumsSeen(schema, offered, request.schema, taken);
       const what = JSON.stringify(offered);
-      assert.ok(schema.safeParse(offered).success, what);
       const answered = await workerPlaneDriven(
         plane,
         name,
         {
           name: what,
           call: { headers: json, payload: offered as object },
-          release: older.release,
+          release: older.wire,
         },
         route,
       );
@@ -1878,6 +2137,12 @@ async function workerPlaneBodiesTaken<Name extends string>(
       held.size,
       2,
       `${field} is ${held.has(true) ? "present" : "absent"} in every body offered`,
+    );
+  for (const [field, values] of walked)
+    assert.deepEqual(
+      [...values].filter((value) => taken.get(field)?.has(value) !== true),
+      [],
+      `${field} holds values no body ${older.release} takes offers`,
     );
 }
 

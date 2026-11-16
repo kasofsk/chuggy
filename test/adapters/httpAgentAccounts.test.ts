@@ -2,7 +2,9 @@
  * A person's own agent accounts as their routes answer them: what each outcome
  * of the service is sent as, that every route hands the service the caller's
  * own principal and no other, that a threshold outside a whole percentage from
- * 1 to 100 never reaches it, and that an agent no account lends is not found.
+ * 1 to 100 never reaches it, that a credential is retired, turned off and
+ * turned on only by a name a credential is written in, and that an agent no
+ * account lends is not found.
  */
 
 import assert from "node:assert/strict";
@@ -12,9 +14,15 @@ import {
   nativeHttpMediaType,
   nativeHttpRoutes,
 } from "../../src/contract/http.ts";
-import { agentAccountsResponseSchema } from "../../src/contract/responses.ts";
+import {
+  agentAccountCredentialsOffFullCode,
+  agentAccountsResponseSchema,
+} from "../../src/contract/responses.ts";
 import type {
+  AgentAccountRetired,
   AgentAccountService,
+  AgentAccountTurnedOff,
+  AgentAccountTurnedOn,
   AgentAccountView,
 } from "../../src/interpreter/agentAccount.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -50,10 +58,65 @@ const accounts: readonly AgentAccountView[] = [
       until: "2026-11-03T15:00:00.000Z",
       reasons: ["five_hour", "limit"],
       pressed: false,
+      credentials: ["home"],
     },
+    credentials: [
+      {
+        name: "home",
+        readings: [
+          {
+            window: "five_hour",
+            utilization: 0.82,
+            resetsAt: "2026-11-03T15:00:00.000Z",
+            observedAt: "2026-11-03T12:00:00.000Z",
+          },
+        ],
+        pause: {
+          until: "2026-11-03T15:00:00.000Z",
+          reasons: ["five_hour", "limit"],
+          pressed: true,
+        },
+      },
+      { name: "work", readings: [] },
+      {
+        name: "spare",
+        readings: [],
+        pause: { off: true, reasons: ["off"], pressed: false },
+      },
+    ],
   },
-  { agent: "Codex", settings: defaults, readings: [] },
+  {
+    agent: "Codex",
+    settings: defaults,
+    readings: [],
+    pause: {
+      off: true,
+      reasons: ["off"],
+      pressed: false,
+      credentials: ["codex"],
+    },
+    credentials: [
+      {
+        name: "codex",
+        readings: [],
+        pause: { off: true, reasons: ["off"], pressed: false },
+      },
+    ],
+  },
 ];
+
+const retirements: Readonly<Record<string, AgentAccountRetired>> = {
+  home: "Retired",
+  work: "CredentialInUse",
+};
+
+const turnsOff: Readonly<Record<string, AgentAccountTurnedOff>> = {
+  full: "OffFull",
+};
+
+const turnsOn: Readonly<Record<string, AgentAccountTurnedOn>> = {
+  home: "On",
+};
 
 /** A service answering every caller the same accounts, recording what it was asked and as whom. */
 function fakeAccounts(calls: string[]): AgentAccountService {
@@ -70,6 +133,18 @@ function fakeAccounts(calls: string[]): AgentAccountService {
       calls.push(`press:${principal}:${agent}`);
       return Promise.resolve(agent === "Claude" ? "Pressed" : "NotHardPaused");
     },
+    retire: (principal, agent, credential) => {
+      calls.push(`retire:${principal}:${agent}:${credential}`);
+      return Promise.resolve(retirements[credential] ?? "NotHeld");
+    },
+    turnOff: (principal, agent, credential) => {
+      calls.push(`off:${principal}:${agent}:${credential}`);
+      return Promise.resolve(turnsOff[credential] ?? "Off");
+    },
+    turnOn: (principal, agent, credential) => {
+      calls.push(`on:${principal}:${agent}:${credential}`);
+      return Promise.resolve(turnsOn[credential] ?? "NotOff");
+    },
   };
 }
 
@@ -81,6 +156,14 @@ const settings = (agent: string) =>
   nativeHttpRoutes.agentAccountSettings.replace(":agent", agent);
 const presses = (agent: string) =>
   nativeHttpRoutes.agentAccountPresses.replace(":agent", agent);
+const credential = (agent: string, name: string) =>
+  nativeHttpRoutes.agentAccountCredential
+    .replace(":agent", agent)
+    .replace(":credential", name);
+const credentialOff = (agent: string, name: string) =>
+  nativeHttpRoutes.agentAccountCredentialOff
+    .replace(":agent", agent)
+    .replace(":credential", name);
 
 test("the caller reads their own accounts as the response schema has them, and an unauthenticated read is refused", async () => {
   const calls: string[] = [];
@@ -100,6 +183,27 @@ test("the caller reads their own accounts as the response schema has them, and a
     headers: bearer,
   });
   assert.equal(named.statusCode, 200);
+  assert.deepEqual(
+    read
+      .json<{
+        accounts: { credentials: { name: string; pause?: unknown }[] }[];
+      }>()
+      .accounts.map((account) =>
+        account.credentials.map((credential) => [
+          credential.name,
+          credential.pause !== undefined,
+        ]),
+      ),
+    [
+      [
+        ["home", true],
+        ["work", false],
+        ["spare", true],
+      ],
+      [["codex", true]],
+    ],
+    "each credential is sent by its name, in the service's order, its pause only where one holds it",
+  );
   assert.equal(
     (
       await app.inject({
@@ -183,15 +287,86 @@ test("the caller presses their own agent, a press no limit lets through is a con
   ]);
 });
 
-test("no account route names a principal in its path, so no caller can reach another's", () => {
-  for (const route of [
-    nativeHttpRoutes.agentAccounts,
-    nativeHttpRoutes.agentAccountSettings,
-    nativeHttpRoutes.agentAccountPresses,
-  ])
-    assert.deepEqual(
-      route.match(/:[a-z]+/gu) ?? [],
-      route === nativeHttpRoutes.agentAccounts ? [] : [":agent"],
-      route,
+test("the caller retires a credential of their own agent, one a live runner names is a conflict, and a name no credential is written in is not found", async () => {
+  const calls: string[] = [];
+  await using app = accountsApp(calls);
+  const retire = (
+    agent: string,
+    name: string,
+    headers: Record<string, string> = bearer,
+  ) => app.inject({ method: "DELETE", url: credential(agent, name), headers });
+  assert.equal((await retire("Claude", "home")).statusCode, 204);
+  const refused = await retire("Codex", "work");
+  assert.equal(refused.statusCode, 409);
+  assert.equal(
+    refused.json<{ error: { code: string } }>().error.code,
+    "CredentialInUse",
+  );
+  assert.equal((await retire("Claude", "gone")).statusCode, 404);
+  for (const unnamed of ["has.dot", "x".repeat(65), "%20"])
+    assert.equal(
+      (await retire("Claude", unnamed)).statusCode,
+      404,
+      `${unnamed} never reaches the service`,
     );
+  assert.equal((await retire("Gemini", "home")).statusCode, 404);
+  assert.equal((await retire("Claude", "home", {})).statusCode, 401);
+  assert.deepEqual(calls, [
+    `retire:${caller}:Claude:home`,
+    `retire:${caller}:Codex:work`,
+    `retire:${caller}:Claude:gone`,
+  ]);
+});
+
+test("the caller turns a credential of their own agent off with a put and on with a delete, off at the bound is a conflict, on of one not off is not found, and a name no credential is written in is not found", async () => {
+  const calls: string[] = [];
+  await using app = accountsApp(calls);
+  const turned = (
+    method: "PUT" | "DELETE",
+    agent: string,
+    name: string,
+    headers: Record<string, string> = bearer,
+  ) => app.inject({ method, url: credentialOff(agent, name), headers });
+  assert.equal((await turned("PUT", "Claude", "home")).statusCode, 204);
+  assert.equal(
+    (await turned("PUT", "Claude", "home", { ...bearer, ...json })).statusCode,
+    204,
+    "a bodyless put reaches the service however it is framed",
+  );
+  const full = await turned("PUT", "Codex", "full");
+  assert.equal(full.statusCode, 409);
+  assert.equal(
+    full.json<{ error: { code: string } }>().error.code,
+    agentAccountCredentialsOffFullCode,
+  );
+  assert.equal((await turned("DELETE", "Claude", "home")).statusCode, 204);
+  assert.equal((await turned("DELETE", "Claude", "work")).statusCode, 404);
+  for (const method of ["PUT", "DELETE"] as const) {
+    for (const unnamed of ["has.dot", "x".repeat(65), "%20"])
+      assert.equal(
+        (await turned(method, "Claude", unnamed)).statusCode,
+        404,
+        `${method} ${unnamed} never reaches the service`,
+      );
+    assert.equal((await turned(method, "Gemini", "home")).statusCode, 404);
+    assert.equal((await turned(method, "Claude", "home", {})).statusCode, 401);
+  }
+  assert.deepEqual(calls, [
+    `off:${caller}:Claude:home`,
+    `off:${caller}:Claude:home`,
+    `off:${caller}:Codex:full`,
+    `on:${caller}:Claude:home`,
+    `on:${caller}:Claude:work`,
+  ]);
+});
+
+test("no account route names a principal in its path, so no caller can reach another's", () => {
+  for (const [route, named] of [
+    [nativeHttpRoutes.agentAccounts, []],
+    [nativeHttpRoutes.agentAccountSettings, [":agent"]],
+    [nativeHttpRoutes.agentAccountPresses, [":agent"]],
+    [nativeHttpRoutes.agentAccountCredential, [":agent", ":credential"]],
+    [nativeHttpRoutes.agentAccountCredentialOff, [":agent", ":credential"]],
+  ] as const)
+    assert.deepEqual(route.match(/:[a-z]+/gu) ?? [], named, route);
 });

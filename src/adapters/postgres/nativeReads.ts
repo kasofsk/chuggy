@@ -25,6 +25,7 @@ import {
   asPublicInstant,
   type EvaluationApprovalAsked,
   type NativeActionAskedPage,
+  type NativeActionPageQuery,
   type NativeReadStore,
   type OperationResource,
   type ProjectRead,
@@ -34,6 +35,8 @@ import {
   type RunnerLossResource,
   type RunStepFailureResource,
   type TicketNativeActionAsked,
+  type TicketNativeActionHistoryPage,
+  type TicketNativeActionRecord,
   type TicketDependencyResource,
   type TicketPhaseFilter,
   type TicketResource,
@@ -63,6 +66,7 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
+import { workerHeldCredentialAbsences } from "../../contract/rosters.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -81,7 +85,7 @@ import {
   type ConfigurationFollowingTicket,
 } from "../../interpreter/configurationFollowing.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
-import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
+import { approvalWorkloadApprovers } from "../../contract/workloadConfiguration.ts";
 import type { NativeActionAsked } from "../../interpreter/nativeActionAnswer.ts";
 import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
 import {
@@ -149,6 +153,8 @@ interface TicketProjectionRow {
    * under, where that authority is a member's; null where it is not.
    */
   readonly creator: string | null;
+  /** The member the ticket's next execution is placed for, as `ticket_owner` answers it; null where none is. */
+  readonly owner: string | null;
   readonly phase: string;
   readonly seq: string;
   readonly escalation: string;
@@ -207,6 +213,18 @@ interface ProjectNativeActionRow {
   readonly kind: string;
   readonly authorizing_seq: string;
   readonly resolutions: string[] | null;
+}
+
+/** One action a ticket has had, or a ticket with none after the cursor: every column is then null. */
+interface NativeActionHistoryRow {
+  readonly action: string | null;
+  readonly kind: string | null;
+  readonly authorizing_seq: string | null;
+  readonly state: string | null;
+  readonly resolution: string | null;
+  readonly execution: string | null;
+  readonly answered_by: string | null;
+  readonly answered_at: string | null;
 }
 
 /** What one evaluation approval stands for: its execution, that execution's place, and the configuration it was released under. */
@@ -520,6 +538,8 @@ interface StoredRunStepFailure {
   readonly attempt?: unknown;
   readonly evidence?: unknown;
   readonly error_bytes?: unknown;
+  readonly credential_absent?: unknown;
+  readonly credential_absent_reason?: unknown;
 }
 
 /** The task a parked ticket waits on, where `ticket_run_step_failure` reads its run as stopped at a failed step. */
@@ -549,7 +569,23 @@ function projectionRunStepFailure(
             ),
           },
         }),
+    ...projectionRunStepAbsent(failed),
   };
+}
+
+/** The credential a failed step names not delivered and why, which the row holds both or neither of. */
+function projectionRunStepAbsent(
+  failed: StoredRunStepFailure,
+): Pick<RunStepFailureResource, "absent"> {
+  const credential = failed.credential_absent;
+  const reason = workerHeldCredentialAbsences.find(
+    (each) => each === failed.credential_absent_reason,
+  );
+  if (credential === null && failed.credential_absent_reason === null)
+    return {};
+  if (typeof credential !== "string" || reason === undefined)
+    throw new Error("native read: a run step's absent credential is not whole");
+  return { absent: { credential, reason } };
 }
 
 function ticketUsageResumeTicket(ticket: string | null): string {
@@ -560,9 +596,11 @@ function ticketUsageResumeTicket(ticket: string | null): string {
 
 /**
  * What `ticket_usage_resume` reads of each of `rows` under the scheduler's
- * `bounds`, by ticket: the instant the latest pause holding its escalation
- * ends, or none where none holds any longer, and nothing for a ticket the
- * scheduler does not resume so.
+ * `bounds`, by ticket: the instant the last of its limited tasks is free,
+ * each free at the earliest end among its account's pauses as its runners
+ * would claim it, or none where each is free already, `off` where one waits
+ * only on credentials turned off, and nothing for a ticket no usage pause
+ * holds so.
  */
 async function ticketUsageResumes(
   client: pg.Pool | pg.PoolClient,
@@ -575,9 +613,11 @@ async function ticketUsageResumes(
   const found = await client.query<{
     ticket: string | null;
     paused_until: string | null;
+    off: boolean;
   }>(
     sql`SELECT t.ticket::text AS ticket,
-               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until
+               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+               COALESCE(x.off,false) AS off
           FROM unnest(${tickets}::bigint[]) AS t(ticket)
          CROSS JOIN LATERAL ticket_usage_resume(${partition.tenant},${partition.project},
                t.ticket,${bounds.lossesMax},${bounds.rateLimitsMax}) x`,
@@ -585,9 +625,11 @@ async function ticketUsageResumes(
   return new Map(
     found.rows.map((row) => [
       ticketUsageResumeTicket(row.ticket),
-      row.paused_until === null
-        ? {}
-        : { until: nativeReadInstant(row.paused_until) },
+      row.off === true
+        ? { off: true }
+        : row.paused_until === null
+          ? {}
+          : { until: nativeReadInstant(row.paused_until) },
     ]),
   );
 }
@@ -605,6 +647,7 @@ function ticketResource(
       : { repository: row.ticket_repository }),
     revision: projectRowCounter(row.revision, "ticket revision"),
     ...(row.creator === null ? {} : { creator: row.creator }),
+    ...(row.owner === null ? {} : { owner: row.owner }),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -712,7 +755,8 @@ async function evaluationApprovalsAsked(
   const found = await client.query<EvaluationApprovalRow>(
     sql`SELECT a.action,e.execution,k.cycle::text AS cycle,k.stage::text AS stage,
                k.generation::text AS generation,k.evaluator::text AS evaluator,
-               c.canonical,d.overrides,d.selection
+               c.canonical,d.overrides::text AS overrides,
+               d.selection::text AS selection
           FROM native_action a
           JOIN execution e
             ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
@@ -849,7 +893,7 @@ async function readProject(
 }
 
 /**
- * A read naming no search, no creator, no activity and no order by number is the page it
+ * A read naming no search, no creator, no owner, no activity and no order by number is the page it
  * always was. Any other is picked as positions first and its rows read after,
  * in that order, by identity.
  */
@@ -862,6 +906,7 @@ async function readProjectTickets(
     query.search === undefined &&
     query.epic === undefined &&
     query.creator === undefined &&
+    query.owner === undefined &&
     query.active !== true &&
     (query.order === undefined ||
       query.order === "Identity" ||
@@ -885,7 +930,7 @@ interface TicketPositionsRow {
 
 /**
  * The positions of one more than a page, in the order the read names, with
- * how many tickets its search, creator, epic, phases and activity select
+ * how many tickets its search, creator, owner, epic, phases and activity select
  * across the project.
  * The count is over the selection before any cursor, so every page of one
  * walk answers the same count.
@@ -922,6 +967,8 @@ async function readTicketPositions(
                              AND e.ticket=t.ticket AND e.epic=${query.epic ?? null}::bigint))
              AND (${query.creator ?? null}::text IS NULL
                OR m.authority_subject = ${query.creator ?? null}::text)
+             AND (${query.owner ?? null}::text IS NULL
+               OR ticket_owner(${partition.tenant},${partition.project},t.ticket) = ${query.owner ?? null}::text)
              AND (${query.active === true}::boolean IS FALSE
                OR t.phase NOT IN ('Done','Revoked')
                OR (SELECT c.committed_at FROM journal_entry c
@@ -998,7 +1045,9 @@ async function readTicketsByPosition(
     }),
     next: positions.length > query.limit ? page.at(-1) : undefined,
     matched:
-      query.search === undefined && query.creator === undefined
+      query.search === undefined &&
+      query.creator === undefined &&
+      query.owner === undefined
         ? undefined
         : matched,
   };
@@ -1017,6 +1066,7 @@ async function readTicketsByActivity(
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner,
                  to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                  to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1085,6 +1135,7 @@ async function readTicketsByIdentity(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               ticket_owner(${partition.tenant},${partition.project},t.ticket)::text AS owner,
                to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
                to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -1145,7 +1196,7 @@ async function readTicketRow(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               b.brief::text AS brief,
+               ticket_owner(t.tenant,t.project,t.ticket)::text AS owner, b.brief::text AS brief,
                b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
@@ -1367,14 +1418,119 @@ async function nativeReadsActionAsked(
   return { kind, approvers: approval.approvers };
 }
 
-/** The desk reads: the open native actions a ticket and a project carry, and what one action asks of whoever answers it. */
+/**
+ * One stored action as its history answers it. A resolution its kind does not
+ * ask for, one on an action not resolved, and an answerer on one no answer
+ * settled are this layer and the database disagreeing, so each raises.
+ */
+function nativeActionRecord(
+  row: NativeActionHistoryRow,
+): TicketNativeActionRecord {
+  if (
+    row.action === null ||
+    row.kind === null ||
+    row.authorizing_seq === null ||
+    row.state === null
+  )
+    throw new Error("native read: a ticket's action is missing its fence");
+  const kind = nativeActionKind(row.kind);
+  const named = {
+    action: row.action,
+    kind,
+    authorizingSequence: projectRowCounter(
+      row.authorizing_seq,
+      "native action authorizing sequence",
+    ),
+    ...(row.execution === null
+      ? {}
+      : { execution: asExecutionId(row.execution) }),
+  };
+  if (row.state === "Open" || row.state === "Withdrawn") {
+    if (row.resolution !== null || row.answered_by !== null)
+      throw new Error(`native read: a ${row.state} action records an answer`);
+    return { ...named, state: row.state };
+  }
+  if (row.state !== "Resolved")
+    throw new Error(`native read: ${row.state} is not a native action state`);
+  const resolution = nativeActionResolutions[kind].find(
+    (each) => each === row.resolution,
+  );
+  if (resolution === undefined)
+    throw new Error(
+      `native read: a resolved ${kind} names an answer it cannot ask for`,
+    );
+  return {
+    ...named,
+    state: "Resolved",
+    resolution,
+    ...(row.answered_by === null
+      ? {}
+      : {
+          answeredBy: asPrincipal(row.answered_by),
+          answeredAt: projectRowInstant(row.answered_at, "answering time"),
+        }),
+  };
+}
+
+/**
+ * A page of every action a ticket has had, oldest fence first, read one past
+ * the page so a further page is known without a count. The ticket's own row
+ * is the outer side, so a ticket with nothing after the cursor answers an
+ * empty page and one the project does not hold answers nothing.
+ */
+async function nativeReadsActionHistory(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: TicketId,
+  query: NativeActionPageQuery,
+): Promise<TicketNativeActionHistoryPage | undefined> {
+  const found = await pool.query<NativeActionHistoryRow>(
+    sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
+               a.state,a.resolution,a.execution,a.answered_by,
+               to_char(a.answered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS answered_at
+          FROM ticket_projection t
+          LEFT JOIN native_action a
+            ON a.tenant=t.tenant AND a.project=t.project AND a.ticket=t.ticket
+           AND (${query.after?.authorizingSequence ?? null}::bigint IS NULL
+             OR (a.authorizing_seq,a.action) >
+                (${query.after?.authorizingSequence ?? null},${query.after?.action ?? null}))
+         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+           AND t.ticket=${ticket}
+         ORDER BY a.authorizing_seq,a.action
+         LIMIT ${query.limit + 1}`,
+  );
+  if (found.rows.length === 0) return undefined;
+  const actions = found.rows
+    .filter((row) => row.action !== null)
+    .map(nativeActionRecord);
+  const listed = actions.slice(0, query.limit);
+  const next = actions.length > query.limit ? listed.at(-1) : undefined;
+  return {
+    actions: listed,
+    ...(next === undefined
+      ? {}
+      : {
+          nextAfter: {
+            authorizingSequence: next.authorizingSequence,
+            action: next.action,
+          },
+        }),
+  };
+}
+
+/** The desk reads: the open native actions a ticket and a project carry, every action a ticket has had, and what one action asks of whoever answers it. */
 function nativeReadsActions(
   pool: pg.Pool,
 ): Pick<
   NativeReadStore,
-  "ticketNativeActions" | "nativeActions" | "nativeActionAsked"
+  | "ticketNativeActions"
+  | "nativeActions"
+  | "nativeActionAsked"
+  | "ticketNativeActionHistory"
 > {
   return {
+    ticketNativeActionHistory: (partition, ticket, query) =>
+      nativeReadsActionHistory(pool, partition, ticket, query),
     nativeActionAsked: (partition, action) =>
       nativeReadsActionAsked(pool, partition, action),
     ticketNativeActions: async (partition, ticket) => {
@@ -1478,8 +1634,8 @@ async function readInboxPositions(
 }
 
 /**
- * The open actions of the page's tickets. A ticket holds one escalation or
- * finalization approval, or an evaluation approval for each approval evaluator
+ * The open actions of the page's tickets. A ticket holds one escalation, or an
+ * evaluation approval for each approval evaluator
  * of the stage it evaluates, and a stage lists no more evaluators than a draft
  * may.
  */

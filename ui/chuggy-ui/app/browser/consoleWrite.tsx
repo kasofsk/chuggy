@@ -1,6 +1,7 @@
 /**
  * The one way a screen writes: `useConsoleWrite` over a mutation, the words a
- * refusal is drawn in, and the toast that draws one whose screen was left.
+ * refusal is drawn in, and the toasts that draw one whose screen was left and
+ * a landing whose write says one.
  *
  * A WRITE OUTLIVES ITS SCREEN. Nothing aborts it on unmount, and a screen that
  * mounts while one is in flight under its key takes it up and draws it as its
@@ -36,14 +37,17 @@ import type {
   ConsoleWriteProgress,
   ConsoleWriteRefused,
 } from "../core/consoleWrite.ts";
+import { copyOrDataText } from "../core/copy.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { useApiPorts } from "./api.ts";
 import {
+  consoleWriteLandedOf,
   consoleWriteUnseenLetGo,
   consoleWriteUnseenOf,
 } from "./consoleWriteUnseen.ts";
 import { useConsoleDispatch, useConsoleSelector } from "./store.ts";
 import { Toasts } from "./ui/Toast.tsx";
+import type { ToastLine } from "./ui/Toast.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 /** What a screen draws of its write, and the press that makes one. What a
@@ -140,8 +144,10 @@ function useConsoleWriteWatched<V>(
 /**
  * One write, sent once per press and never again on its own. Its refusal is
  * `error`, in the sentence the write names; it is pending until what it
- * changed has been read again; and a refusal under its key that `shown.drawn`
- * says this screen draws is the screen's and not the shell's.
+ * changed has been read again; a refusal under its key that `shown.drawn`
+ * says this screen draws is the screen's and not the shell's; and a landing
+ * the write says a line of is the shell's toast, wherever its reader is by
+ * then.
  */
 export function useConsoleWrite<V, T>(
   write: ConsoleWrite<V, T>,
@@ -166,6 +172,10 @@ export function useConsoleWrite<V, T>(
     },
     onSuccess: async (value, variables) => {
       await write.landed?.(client, value, variables);
+      if (write.landedUnseen !== undefined)
+        consoleWriteWatchOf(client).landed(
+          copyOrDataText(text, write.landedUnseen(value, variables)),
+        );
     },
     onError: (error, variables) => {
       write.refused?.(error, variables);
@@ -210,17 +220,28 @@ export function useConsoleWriteProgress<S>(
   );
 }
 
-/** The refusals no mounted screen took, drawn once for the whole console. */
+/** The refusals no mounted screen took, and the last landing a write said,
+ * drawn once for the whole console. */
 export function ConsoleWriteToasts(): ReactNode {
   const dispatch = useConsoleDispatch();
   const unseen = useConsoleSelector(consoleWriteUnseenOf);
+  const landed = useConsoleSelector(consoleWriteLandedOf);
+  const refusals = unseen.map((refused): ToastLine => ({
+    id: refused.id,
+    tone: "Failure",
+    line: refused.sentence,
+    detail: refused.detail,
+  }));
   return (
     <Toasts
-      toasts={unseen.map((refused) => ({
-        id: refused.id,
-        line: refused.sentence,
-        detail: refused.detail,
-      }))}
+      toasts={
+        landed === undefined
+          ? refusals
+          : [
+              ...refusals,
+              { id: landed.id, tone: "Success", line: landed.sentence },
+            ]
+      }
       onDismiss={(id) => {
         dispatch(consoleWriteUnseenLetGo(id));
       }}

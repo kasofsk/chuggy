@@ -33,6 +33,9 @@ export const boxOwn = `${boxHome}/.local`;
 export const boxPoolName = "shame";
 /** What the Claude login file holds, which nothing may read or print. */
 export const boxLoginSecret = "sk-ant-oat01-box-claude-login-never-read";
+/** The folder the program and every command it runs are run in, and where Claude Code keeps the person's configuration. */
+export const boxFolder = `${boxHome}/work`;
+export const boxClaudeConfig = `${boxHome}/.claude.json`;
 /** The version an install puts here unless a case has the release be another. */
 export const boxVersion = "0.35.0";
 
@@ -51,7 +54,9 @@ export type BoxAct =
   | "start"
   | "restart"
   | "linger"
-  | "lingerOn";
+  | "lingerOn"
+  | "mcpAdd"
+  | "mcpRemove";
 
 /** The acts that change the machine or the site, in the order a first run does them for the project's runner. */
 export const boxActs = [
@@ -221,6 +226,8 @@ const told: readonly (readonly [BoxAct, string, readonly string[]])[] = [
   ["register", "chuggy-linux", ["register"]],
   ["doctor", "chuggy-linux", ["doctor"]],
   ["service", "chuggy-linux", ["install-service"]],
+  ["mcpAdd", "claude", ["mcp", "add", "--scope", "local"]],
+  ["mcpRemove", "claude", ["mcp", "remove", "--scope", "local"]],
 ];
 
 export function boxActOf(command: readonly string[]): BoxAct | undefined {
@@ -233,6 +240,46 @@ export function boxActOf(command: readonly string[]): BoxAct | undefined {
   )?.[0];
 }
 
+/** The person's Claude Code configuration as the box holds it, or an empty one. */
+function boxClaude(box: RunnerBox): {
+  projects?: Record<string, { mcpServers?: Record<string, unknown> }>;
+} {
+  const held = box.paths.get(boxClaudeConfig);
+  return held === undefined
+    ? {}
+    : (JSON.parse(held) as ReturnType<typeof boxClaude>);
+}
+
+/** A server in the folder's local configuration, as Claude Code writes one, or none removed; a name already there is refused, as Claude Code refuses it. */
+function boxServed(
+  box: RunnerBox,
+  command: readonly string[],
+  added: boolean,
+): SetupChildEnded {
+  const name = command[5] ?? "";
+  const config = boxClaude(box);
+  const projects = config.projects ?? {};
+  const servers = { ...projects[boxFolder]?.mcpServers };
+  if (added === Object.hasOwn(servers, name))
+    return exited(
+      1,
+      "",
+      `MCP server ${name} ${added ? "already exists" : "not found"} in local config\n`,
+    );
+  if (added) {
+    const [run = "", ...args] = command.slice(command.indexOf("--") + 1);
+    servers[name] = { type: "stdio", command: run, args, env: {} };
+  } else delete servers[name];
+  box.paths.set(
+    boxClaudeConfig,
+    JSON.stringify({
+      ...config,
+      projects: { ...projects, [boxFolder]: { mcpServers: servers } },
+    }),
+  );
+  return exited(0, `${added ? "Added" : "Removed"} MCP server ${name}\n`);
+}
+
 function installed(box: RunnerBox, command: readonly string[]): void {
   const at = command.indexOf("--prefix");
   const prefix = at < 0 ? (box.prefix ?? "") : (command[at + 1] ?? "");
@@ -240,6 +287,39 @@ function installed(box: RunnerBox, command: readonly string[]): void {
   box.paths.set(
     `${prefix}/lib/node_modules/chuggy-linux/package.json`,
     JSON.stringify({ name: "chuggy-linux", version: box.release }),
+  );
+}
+
+/** The box as `mcp` leaves it for `at`: the runner package installed machine-wide, and its server named in the folder's local configuration. */
+export function boxServing(
+  box: RunnerBox,
+  at: {
+    readonly site: string;
+    readonly workspace: string;
+    readonly project: string;
+  },
+): void {
+  installed(box, ["npm", "install", "--global", "chuggy-linux"]);
+  boxServed(
+    box,
+    [
+      "claude",
+      "mcp",
+      "add",
+      "--scope",
+      "local",
+      "chuggy",
+      "--",
+      `${boxPrefix}/bin/chuggy-linux`,
+      "mcp",
+      "--site",
+      at.site,
+      "--workspace",
+      at.workspace,
+      "--project",
+      at.project,
+    ],
+    true,
   );
 }
 
@@ -477,6 +557,10 @@ function done(
         : exited(0, `Linger=${box.linger}\n`);
     case "lingerOn":
       return lingered(box);
+    case "mcpAdd":
+      return boxServed(box, command, true);
+    case "mcpRemove":
+      return boxServed(box, command, false);
   }
 }
 

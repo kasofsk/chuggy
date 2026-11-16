@@ -43,18 +43,10 @@ export const ticketResumablePhases: readonly TicketPhase[] = ["Escalated"];
  * two from the phase alone; the rest arrive with an open native action, whose
  * admitted answers `nativeActionAnswers.ts` maps onto this same pair of fields
  * so that one component draws both; `Release` is a draft's, which no phase
- * reaches, and `Approve` is a finalization approval's where `ApproveEvaluation`
- * is an evaluation approval's.
+ * reaches, and `ApproveEvaluation` is an evaluation approval's.
  */
 export type TicketActionName =
-  | "Dispatch"
-  | "Resume"
-  | "Revoke"
-  | "Approve"
-  | "Decline"
-  | "ApproveEvaluation"
-  | "Reject"
-  | "Release";
+  "Dispatch" | "Resume" | "Revoke" | "ApproveEvaluation" | "Reject" | "Release";
 
 export interface TicketAction {
   readonly action: TicketActionName;
@@ -245,10 +237,6 @@ export function ticketActionSentence(
       return resumeSentence(context);
     case "Revoke":
       return { id: "ticket-actions-sentence-revoke" };
-    case "Approve":
-      return { id: "ticket-actions-sentence-approve" };
-    case "Decline":
-      return { id: "ticket-actions-sentence-decline" };
     case "ApproveEvaluation":
       return { id: "ticket-actions-sentence-approve-evaluation" };
     case "Reject":

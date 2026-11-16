@@ -39,6 +39,7 @@ import {
   projectNativeActionsResponseSchema,
   selectorSettingsConflictResponseSchema,
   ticketNativeActionsResponseSchema,
+  ticketNativeActionHistoryResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
   asAuthorityKind,
@@ -130,7 +131,7 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
   };
 }
 
-/** One ticket per kind, one whose action was resolved, and one that never existed. */
+/** One ticket with an escalation, one whose escalation offers only a revoke, and one with none. */
 const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
   [
     1,
@@ -148,10 +149,10 @@ const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
     2,
     [
       {
-        action: "approval",
-        kind: "FinalizationApproval",
+        action: "revocation",
+        kind: "TicketEscalation",
         authorizingSequence: 13,
-        admits: ["Approve", "Decline"],
+        admits: ["Revoke"],
         answerable: true,
       },
     ],
@@ -182,9 +183,51 @@ function fakeNativeActions(calls: string[]): NativeWeb["nativeActions"] {
       value: {
         actions: listed,
         ...(query.after === undefined
-          ? { nextAfter: { authorizingSequence: 13, action: "approval" } }
+          ? { nextAfter: { authorizingSequence: 13, action: "revocation" } }
           : {}),
       },
+    });
+  };
+}
+
+/**
+ * Ticket 1's actions, an escalation resumed, one withdrawn and one open, with a
+ * further page where none was resumed; any other ticket is one its caller may
+ * not read.
+ */
+function fakeNativeActionHistory(
+  calls: string[],
+): NativeWeb["ticketNativeActionHistory"] {
+  return (_principal, _partition, ticket, query) => {
+    calls.push(
+      `nativeActionHistory:${String(ticket)}:${String(query.limit)}:${query.after?.action ?? ""}`,
+    );
+    if (ticket !== 1) return Promise.resolve(undefined);
+    return Promise.resolve({
+      actions: [
+        {
+          action: "resumed",
+          kind: "TicketEscalation",
+          authorizingSequence: 3,
+          state: "Resolved",
+          resolution: "Resume",
+        },
+        {
+          action: "withdrawn",
+          kind: "TicketEscalation",
+          authorizingSequence: 5,
+          state: "Withdrawn",
+        },
+        {
+          action: "open",
+          kind: "TicketEscalation",
+          authorizingSequence: 8,
+          state: "Open",
+        },
+      ],
+      ...(query.after === undefined
+        ? { nextAfter: { authorizingSequence: 8, action: "open" } }
+        : {}),
     });
   };
 }
@@ -466,6 +509,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
     ticket: fakeTicket(calls),
     ticketNativeActions: fakeTicketNativeActions(calls),
     nativeActions: fakeNativeActions(calls),
+    ticketNativeActionHistory: fakeNativeActionHistory(calls),
   };
 }
 
@@ -796,7 +840,7 @@ const forgeCredentialsPath =
   "/api/v1/tenants/acme/projects/atlas/forge-credentials";
 
 /** One credential request, the repository being what each case is about. */
-function forgeCredentialRequest(repository: string) {
+function forgeCredentialRequest(repository: string, permissions = "write") {
   return {
     method: "POST" as const,
     url: forgeCredentialsPath,
@@ -804,7 +848,7 @@ function forgeCredentialRequest(repository: string) {
       authorization: "Bearer valid",
       "content-type": "application/vnd.chuggy.v1+json",
     },
-    payload: JSON.stringify({ repository, permissions: "write" }),
+    payload: JSON.stringify({ repository, permissions }),
   };
 }
 
@@ -822,6 +866,16 @@ test("a bound repository is answered with a token and when it stops working", as
   assert.deepEqual(calls, [
     "forge-credentials:https://github.com/kasofsk/chuggy:write",
   ]);
+});
+
+test("a credential request naming the set only a job is issued is refused and reaches no minting", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/chuggy", "runPipelines"),
+  );
+  assert.equal(refused.statusCode, 400);
+  assert.deepEqual(calls, []);
 });
 
 test("a repository this caller may not mint for is not found and a forge that is down is a wait", async () => {
@@ -862,6 +916,7 @@ const realForgeCredentialsBindings: Pick<
         policy: "Direct",
       }),
       pipelinesWritable: false,
+      pipelinesRunnable: false,
     }),
 };
 
@@ -1353,10 +1408,10 @@ test("a ticket's open actions answer per kind with the fence and the answers", a
   ]);
   assert.deepEqual(await listed(2), [
     {
-      action: "approval",
-      kind: "FinalizationApproval",
+      action: "revocation",
+      kind: "TicketEscalation",
       authorizingSequence: 13,
-      admits: ["Approve", "Decline"],
+      admits: ["Revoke"],
       answerable: true,
     },
   ]);
@@ -1390,6 +1445,96 @@ test("an unreadable ticket's actions are a not-found, and a bad identity a fault
   assert.deepEqual(calls, ["nativeActions:9"]);
 });
 
+test("a ticket's settled actions read back oldest first behind a cursor bound to that ticket", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const first = await app.inject({
+    url: `${root}/1/native-action-history?limit=3`,
+    headers,
+  });
+  assert.equal(first.statusCode, 200);
+  const page = ticketNativeActionHistoryResponseSchema.parse(first.json());
+  assert.deepEqual(
+    page.actions.map(({ action, state, resolution }) => [
+      action,
+      state,
+      resolution,
+    ]),
+    [
+      ["resumed", "Resolved", "Resume"],
+      ["withdrawn", "Withdrawn", undefined],
+      ["open", "Open", undefined],
+    ],
+  );
+  const cursor = page.nextCursor;
+  assert.ok(cursor !== undefined);
+  const next = await app.inject({
+    url: `${root}/1/native-action-history?cursor=${encodeURIComponent(cursor)}`,
+    headers,
+  });
+  assert.equal(next.statusCode, 200);
+  assert.equal(
+    ticketNativeActionHistoryResponseSchema.parse(next.json()).nextCursor,
+    undefined,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/2/native-action-history?cursor=${encodeURIComponent(cursor)}`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `/api/v1/tenants/tenant/projects/project/native-actions?cursor=${encodeURIComponent(cursor)}`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, [
+    "nativeActionHistory:1:3:",
+    "nativeActionHistory:1:50:open",
+  ]);
+});
+
+test("an unreadable ticket's action history is a not-found, and a bad identity a fault", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const concealed = await app.inject({
+    url: `${root}/9/native-action-history`,
+    headers,
+  });
+  assert.equal(concealed.statusCode, 404);
+  assert.equal(concealed.json<HttpErrorEnvelope>().error.code, "NotFound");
+  assert.equal(
+    (await app.inject({ url: `${root}/0/native-action-history`, headers }))
+      .statusCode,
+    400,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/9/native-action-history?cursor=not-a-cursor`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}/9/native-action-history` })).statusCode,
+    401,
+  );
+  assert.deepEqual(calls, ["nativeActionHistory:9:50:"]);
+});
+
 test("a project's open actions page behind an opaque cursor of its own", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
@@ -1402,7 +1547,7 @@ test("a project's open actions page behind an opaque cursor of its own", async (
     page.actions.map(({ ticket, kind }) => [ticket, kind]),
     [
       [1, "TicketEscalation"],
-      [2, "FinalizationApproval"],
+      [2, "TicketEscalation"],
     ],
   );
   const cursor = page.nextCursor;
@@ -1424,7 +1569,7 @@ test("a project's open actions page behind an opaque cursor of its own", async (
   assert.equal((await app.inject({ url: root })).statusCode, 401);
   assert.deepEqual(calls, [
     "nativeActionsPage:2:",
-    "nativeActionsPage:50:approval",
+    "nativeActionsPage:50:revocation",
   ]);
 });
 
@@ -2293,6 +2438,7 @@ function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
                   kind: "Thread" as const,
                   principal: asPrincipal("issuer subject"),
                   scope: "Project" as const,
+                  capabilities: ["DraftAuthor"] as const,
                 }
               : undefined,
           );
