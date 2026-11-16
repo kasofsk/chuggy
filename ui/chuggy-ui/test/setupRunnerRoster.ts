@@ -4,7 +4,8 @@
  * the suites that print them check every one.
  */
 
-import { runnerPackageOffered } from "../app/core/runners.ts";
+import { runnerPackages } from "../app/core/runners.ts";
+import { setupRestartAll } from "../app/core/setupRunnerMachine.ts";
 import { setupRegisterRefusals } from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupClaudeCredential,
@@ -31,7 +32,7 @@ import {
 } from "./setupRunnerBox.ts";
 import { setupSiteMember } from "./setupSite.ts";
 
-const guide = runnerPackageOffered.guideAddress;
+const guide = runnerPackages.linux.guideAddress;
 export const rosterCommand = `${boxPrefix}/bin/chuggy-linux`;
 export const rosterPool = boxPoolFile("acme", "widgets");
 export const rosterUnit = boxUnitName("acme", "widgets");
@@ -55,6 +56,21 @@ export const rosterPeople =
 /** The page a person's runners and chat host are listed and removed on. */
 export const rosterMyRunners =
   "https://chuggy.example/tenants/acme/settings/runner";
+
+/** What restarts every runner service of a Linux machine's. */
+export const rosterRestart = setupRestartAll(
+  {
+    settings: boxSettings,
+    login: boxLogin,
+    pools: boxPools,
+    units: boxUnits,
+    own: boxOwn,
+  },
+  { platform: "linux" },
+);
+
+/** What starts Colima whenever the person logs in. */
+export const rosterColimaAtLogin = "brew services start colima";
 
 /** What `loginctl` says where turning lingering on wants a password. */
 export const rosterLingerRefusal =
@@ -84,11 +100,22 @@ export const runnerStops: {
     readonly stop: Kind;
   })[];
 } = {
-  Mac: [{ stop: "Mac" }],
   Unpackaged: [
-    { stop: "Unpackaged", found: undefined, least: "0.14.0" },
     {
       stop: "Unpackaged",
+      program: "chuggy-linux",
+      found: undefined,
+      least: "0.14.0",
+    },
+    {
+      stop: "Unpackaged",
+      program: "chuggy-darwin",
+      found: undefined,
+      least: "0.23.0",
+    },
+    {
+      stop: "Unpackaged",
+      program: "chuggy-linux",
       found: { command: rosterCommand, version: "0.13.0" },
       least: "0.14.0",
     },
@@ -112,8 +139,18 @@ export const runnerStops: {
         { engine: "docker", answered: "No" },
         { engine: "podman", answered: "Absent" },
       ],
+      start: undefined,
     },
-    { stop: "Engineless", asked: [{ engine: "podman", answered: "No" }] },
+    {
+      stop: "Engineless",
+      asked: [{ engine: "podman", answered: "No" }],
+      start: undefined,
+    },
+    {
+      stop: "Engineless",
+      asked: [{ engine: "docker", answered: "No" }],
+      start: "colima start",
+    },
   ],
   DockerBarred: [
     {
@@ -299,6 +336,7 @@ export const runnerStops: {
       credential,
       settings: boxSettings,
       login: boxLogin,
+      restart: rosterRestart,
     })),
     {
       stop: "ChatLogin",
@@ -306,6 +344,7 @@ export const runnerStops: {
       credential: { kind: "Subscription", path: boxLogin },
       settings: boxSettings,
       login: boxLogin,
+      restart: rosterRestart,
     },
   ],
   ChatHostNotLive: [{ stop: "ChatHostNotLive", waitedSecs: 90 }],
@@ -317,19 +356,12 @@ export const runnerStops: {
     { stop: "ReplaceMismatched", short: "0f3a9c21", live: true },
     { stop: "ReplaceMismatched", short: "0f3a9c21", live: false },
   ],
-  MacChatHost: [
-    {
-      stop: "MacChatHost",
-      page: rosterMyRunners,
-    },
-  ],
 };
 
 /** The stops only `chat-host` makes, whose rule may name `--replace`, which `runner` does not read. */
 export const rosterChatHostStops: readonly SetupRunnerStop["stop"][] = [
   "ChatHostHeld",
   "ReplaceMismatched",
-  "MacChatHost",
 ];
 
 /** The stops only `runner` makes, which `chat-host` does not since it installs the package itself. */
@@ -416,6 +448,7 @@ export const runnerNotes: {
   Enabled: [{ note: "Enabled", unit: rosterUnit }],
   Started: [{ note: "Started", unit: rosterUnit }],
   Restarted: [{ note: "Restarted", unit: rosterUnit }],
+  Colima: [{ note: "Colima", start: rosterColimaAtLogin }],
 };
 
 /** Where a machine keeps the things a run names in its lines, and the engine it runs its work in where that is not docker. */
@@ -428,18 +461,21 @@ export interface RosterPlaces {
   readonly chat: string;
   readonly chatUnit: string;
   readonly engine?: SetupEngine;
+  /** The runner package's program, where it is not chuggy-linux. */
+  readonly program?: string;
 }
 
 /** What a run prints of each thing it found as it should be, and of each thing it did, for acme/widgets on a machine whose things are at `places`. */
 export function rosterLines(places: RosterPlaces) {
   const { command, settings, login, pool, unit, chat, chatUnit } = places;
   const engine = places.engine ?? "docker";
+  const program = places.program ?? "chuggy-linux";
   return {
     found: {
       engine: `found: ${engine} answers you without a password`,
       login: `found: the runner's Claude login is in ${login}`,
       settings: `found: the runner's settings are in ${settings}`,
-      package: `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${command}`,
+      package: `found: the runner package is installed: ${program} ${boxVersion}, at ${command}`,
       pool: `found: this machine is registered as a runner of acme/widgets, in ${pool}`,
       check: "found: the runner's own check passed",
       unit: `found: the runner's service is installed: ${unit}`,
@@ -457,7 +493,7 @@ export function rosterLines(places: RosterPlaces) {
         "found: the site sees your chat host live on another machine, so your chats in acme/widgets run there",
     },
     did: {
-      package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
+      package: `did: installed the runner package, ${program} ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
       pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
       unit: `did: installed the runner's service, ${unit}`,

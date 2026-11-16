@@ -727,17 +727,15 @@ export interface SetupCopy {
     readonly add: unknown;
     readonly serves: unknown;
   };
-  readonly "setup-mend-runner-mac": {
-    readonly program: unknown;
-    readonly page: unknown;
-    readonly add: unknown;
-    readonly serves: unknown;
-  };
   readonly "setup-mend-runner-serviceless": {
     readonly elsewhere: unknown;
   };
   readonly "setup-mend-runner-engineless": {
     readonly none: unknown;
+    readonly instead: unknown;
+  };
+  readonly "setup-mend-runner-engineless-colima": {
+    readonly start: unknown;
     readonly instead: unknown;
   };
   readonly "setup-mend-runner-docker": {
