@@ -118,6 +118,7 @@ import {
   finalizerChangeProposalRefuse,
   finalizerChangeProposalAdopt,
   finalizerChangeProposalAdoption,
+  finalizerChangeProposalAnswerRecord,
   finalizerChangeProposalTicket,
   finalizerChangeProposalQueueChecksFailures,
   finalizerChangeProposalUpdateMark,
@@ -929,6 +930,19 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
         finalizerChangeProposalAdopt(client, claim, head),
       ),
     ...postgresFinalizerProposalQueue(pool),
+    ...postgresFinalizerProposalAnswers(pool),
+  };
+}
+
+/** The record of what the forge answered each act a proposal keeps answers to. */
+function postgresFinalizerProposalAnswers(
+  pool: pg.Pool,
+): Pick<FinalizerProposalStore, "recordChangeProposalAnswer"> {
+  return {
+    recordChangeProposalAnswer: (claim, act, answer) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalAnswerRecord(client, claim, act, answer),
+      ),
   };
 }
 

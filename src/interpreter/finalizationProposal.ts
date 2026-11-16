@@ -105,6 +105,7 @@ import {
   type ChangeProposalPublication,
   type ChangeProposalPublicationBounds,
   type ChangeProposalEnqueued,
+  type ChangeProposalForgeReply,
   type ChangeProposalQueueing,
   type ChangeProposalQueueRead,
   type ChangeProposalQueueStanding,
@@ -759,6 +760,23 @@ export type FinalizationProposalUpdateRecording =
 /** The writes an answered update makes against the row. */
 export type ChangeProposalUpdateWrite = "Asked" | "Refused" | "Declined";
 
+/**
+ * The acts a row keeps the newest answer to, each stamped asked by the write
+ * that counts it before the forge is asked, so an answer is paired with the
+ * ask it answers.
+ */
+export type ChangeProposalAnsweredAct = "merge" | "updateBranch";
+
+/** Every act a row keeps an answer to, so a suite and a database CHECK iterate. */
+export const allChangeProposalAnsweredActs: readonly ChangeProposalAnsweredAct[] =
+  ["merge", "updateBranch"];
+
+/** What a forge answered one act, as a row keeps it: the arm it mapped to, and the forge's reply where it sent anything. */
+export interface ChangeProposalAnswer {
+  readonly outcome: string;
+  readonly reply?: ChangeProposalForgeReply;
+}
+
 export function finalizationProposalUpdateRecording(
   updated: ChangeProposalUpdated,
 ): FinalizationProposalUpdateRecording {
@@ -1062,6 +1080,16 @@ export interface FinalizerProposalStore {
   recordChangeProposalUpdate(
     claim: FinalizationClaim,
     write: ChangeProposalUpdateWrite,
+  ): Promise<ChangeProposalWritten>;
+
+  /**
+   * Keeps what the forge answered the newest ask of one act, refused where
+   * that ask is already answered or none was stamped.
+   */
+  recordChangeProposalAnswer(
+    claim: FinalizationClaim,
+    act: ChangeProposalAnsweredAct,
+    answer: ChangeProposalAnswer,
   ): Promise<ChangeProposalWritten>;
 
   /** Pins the head the last reading found as the one merged at, a moved head's answer giving way to it. */

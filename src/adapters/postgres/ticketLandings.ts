@@ -16,6 +16,7 @@
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
+import { z } from "zod";
 
 import {
   finalizationUnavailableKinds,
@@ -26,6 +27,7 @@ import {
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
+  allChangeProposalMerges,
   allChangeProposalMergeWaits,
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
@@ -48,6 +50,7 @@ import {
   type TicketLandingAttempt,
   type TicketLandingConclusion,
   type TicketLandingHold,
+  type TicketLandingMergeAnswer,
   type TicketLandingProposal,
   type TicketLandingQueueRemoval,
   type TicketLandingRecheck,
@@ -101,6 +104,47 @@ interface TicketLandingRow {
   readonly queue_removal_actor: string | null;
   readonly recheck_reason: string | null;
   readonly recheck_base_ref: string | null;
+  readonly merges_asked: number | null;
+  readonly merge_answer: unknown;
+}
+
+/** The newest merge answer as its row keeps it, every time already written as the wire's instant. */
+const ticketLandingMergeAnswerSchema = z.strictObject({
+  askedAt: z.string().min(1),
+  answeredAt: z.string().min(1).optional(),
+  outcome: z.string().min(1).optional(),
+  status: z.number().int().optional(),
+  failure: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
+  messageCut: z.literal(true).optional(),
+});
+
+/** The newest merge answer a row keeps, absent where no merge was asked for. */
+function ticketLandingMergeAnswer(
+  row: TicketLandingRow,
+): TicketLandingMergeAnswer | undefined {
+  if (row.merge_answer === null || row.merge_answer === undefined)
+    return undefined;
+  const kept = ticketLandingMergeAnswerSchema.parse(row.merge_answer);
+  return {
+    askedAt: asPublicInstant(kept.askedAt),
+    ...(kept.answeredAt === undefined
+      ? {}
+      : { answeredAt: asPublicInstant(kept.answeredAt) }),
+    ...(kept.outcome === undefined
+      ? {}
+      : {
+          outcome: finalizerRowValue(
+            allChangeProposalMerges,
+            kept.outcome,
+            "merge outcome",
+          ),
+        }),
+    ...(kept.status === undefined ? {} : { status: kept.status }),
+    ...(kept.failure === undefined ? {} : { failure: kept.failure }),
+    ...(kept.message === undefined ? {} : { message: kept.message }),
+    ...(kept.messageCut === undefined ? {} : { messageCut: kept.messageCut }),
+  };
 }
 
 /** The event names a conclusion is journalled under, beside the conclusion each names. */
@@ -281,6 +325,7 @@ function ticketLandingProposal(
   row: TicketLandingRow,
 ): TicketLandingProposal | undefined {
   if (row.proposed !== true) return undefined;
+  const mergeAnswer = ticketLandingMergeAnswer(row);
   return {
     ...(row.url === null ? {} : { url: row.url }),
     headRef: finalizerRowPresent(row.head_ref, "head ref"),
@@ -298,6 +343,10 @@ function ticketLandingProposal(
     ...(row.merged_head === null
       ? {}
       : { mergedHead: asGitObjectId(row.merged_head) }),
+    ...(row.merges_asked === null || row.merges_asked === 0
+      ? {}
+      : { mergesAsked: row.merges_asked }),
+    ...(mergeAnswer === undefined ? {} : { mergeAnswer }),
   };
 }
 
@@ -375,7 +424,8 @@ async function ticketLandingsRead(
                l.head_commit,l.merged_head,l.proposal_status,
                l.queue_removal_reason,l.queue_removal_actor,
                l.recheck_reason,l.recheck_base_ref,
-               l.hold_paths,l.hold_paths_truncated
+               l.hold_paths,l.hold_paths_truncated,l.merges_asked,
+               l.merge_answer
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true
