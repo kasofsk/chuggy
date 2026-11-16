@@ -13,6 +13,8 @@ import { expect, test } from "vitest";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import { setupAsked } from "../app/core/setupArguments.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
+import { setupTicketFiledUnder } from "../app/core/setupTicket.ts";
+import { creationConfigurationsOffered } from "../app/core/ticketCreation.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import {
   machineScript,
@@ -23,9 +25,17 @@ import type { SetupMachine } from "./setupMachine.ts";
 import {
   setupSiteAt,
   setupSiteBootstrap,
+  setupSiteBootstrapRevision,
   setupSiteDeclaredRevision,
+  setupSiteRepositoryAddress,
 } from "./setupSite.ts";
 import type { SetupSite, SetupSiteProject } from "./setupSite.ts";
+import {
+  creationBinding,
+  creationListed,
+  creationOffer,
+  creationSummary,
+} from "./ticketCreationFixture.ts";
 
 const flags = ["--workspace", "acme", "--project", "widgets"];
 const at = flags.join(" ");
@@ -86,7 +96,7 @@ test("where the repository holds no configuration of its own, the ticket step as
   const report = await machine.command(filing());
   const said = lines(report);
   expect(said[1]).toBe(
-    "did: asked chuggy to file ticket 1 under bootstrap, released and sent to start",
+    "did: asked chuggy to file ticket 1, released and sent to start, under bootstrap, so the ticket also writes this repository's own configuration",
   );
   expect(step(said, "ticket")).toBe(
     "step: ticket      waiting  ticket 1 is in Work",
@@ -97,7 +107,9 @@ test("where the repository holds no configuration of its own, the ticket step as
     `POST ${projectBase}/operations`,
   ]);
   expect(project(machine).filed.get(1)).toMatchObject({
-    configurationRevision: "bootstrap-widgets",
+    configurationRevision: setupSiteBootstrapRevision(
+      setupSiteRepositoryAddress,
+    ),
     brief: { title, intent },
   });
   expect(setupReportExit(report)).toBe(0);
@@ -119,7 +131,7 @@ test("where the repository declares one configuration, the ticket is filed under
   expect(lines(await machine.command(flags)).at(-2)).toBe(`${rule}${once}`);
   const said = lines(await machine.command(filing()));
   expect(said[1]).toBe(
-    "did: asked chuggy to file ticket 1 under development, released and sent to start",
+    "did: asked chuggy to file ticket 1, released and sent to start, under development",
   );
   expect(project(machine).filed.get(1)?.configurationRevision).toBe(
     setupSiteDeclaredRevision("development"),
@@ -151,7 +163,7 @@ test("where the repository declares several configurations, the ask names them, 
     await machine.command(filing("--configuration", "review")),
   );
   expect(chosen[1]).toBe(
-    "did: asked chuggy to file ticket 1 under review, released and sent to start",
+    "did: asked chuggy to file ticket 1, released and sent to start, under review",
   );
   expect(project(machine).filed.get(1)?.configurationRevision).toBe(
     setupSiteDeclaredRevision("review"),
@@ -205,4 +217,79 @@ test("ticket is not run without both a title and what is wanted done", () => {
   expect(
     setupAsked(["ticket", ...flags, "--title", title, "--intent", intent]),
   ).toMatchObject({ asked: "Ticket", title, intent, configuration: undefined });
+});
+
+test("a ticket filed under one of several bootstraps, each named beside its repository, is filed under a bootstrap, and one under a declared configuration is not", () => {
+  const offered = creationConfigurationsOffered(
+    [],
+    [
+      "https://forge.test/acme-org/widgets",
+      "https://forge.test/acme-org/gadgets",
+    ].map((repository) =>
+      creationListed(creationBinding(repository), "Bootstrapped"),
+    ),
+  );
+  expect(offered.map((offer) => offer.name)).toEqual([
+    "bootstrap · acme-org/gadgets",
+    "bootstrap · acme-org/widgets",
+  ]);
+  for (const { name, revision } of offered)
+    expect(
+      setupTicketFiledUnder(1, {
+        ...creationOffer(creationSummary(revision, "Ready")),
+        name,
+        listed: undefined,
+      }),
+    ).toEqual({
+      answered: "Filed",
+      ticket: 1,
+      configuration: name,
+      bootstrap: true,
+    });
+  expect(setupTicketFiledUnder(1, creationOffer())).toMatchObject({
+    bootstrap: false,
+  });
+});
+
+/** The tell the bare command says once the first ticket is filed and in Work, on a site whose one repository holds what `held` says and lands its work as `mode` does. */
+async function landingTold(
+  held: "Bootstrap" | readonly string[],
+  mode: "PullRequest" | "PullRequestMerge",
+): Promise<string | undefined> {
+  const site = live(held);
+  const only = site.projects[0];
+  if (only === undefined) throw new Error("no project");
+  only.repositories = only.repositories.map((one) => ({ ...one, mode }));
+  const machine = await machineSignedIn(site);
+  await machine.command(
+    filing(...(held === "Bootstrap" ? [] : ["--configuration", held[0] ?? ""])),
+  );
+  return lines(await machine.command(flags)).find((line) =>
+    line.startsWith("tell: "),
+  );
+}
+
+const told = (ends: string): string =>
+  `tell: Ticket 1 is in Work. ${ends} https://chuggy.example/acme/widgets/tickets/1 shows where it is. Tell me when you want me to look again.`;
+
+test("a first ticket under the bootstrap, in a repository that lands work in a pull request the person merges, is told to end in one, whose merge makes later tickets run on the repository's own configuration", async () => {
+  expect(await landingTold("Bootstrap", "PullRequest")).toBe(
+    told(
+      "It ends in a pull request for you to merge on GitHub, and merging it makes later tickets run on this repository's own configuration. Setup is done once that pull request is open.",
+    ),
+  );
+});
+
+test("a first ticket in a repository whose pull requests chuggy merges itself is told no pull request is the person's to merge", async () => {
+  expect(await landingTold("Bootstrap", "PullRequestMerge")).toBe(
+    told("Setup is done when it finishes."),
+  );
+});
+
+test("a first ticket under the repository's own configuration is told its pull request is the person's to merge, and nothing of later tickets' configuration", async () => {
+  expect(await landingTold(["development"], "PullRequest")).toBe(
+    told(
+      "It ends in a pull request for you to merge on GitHub. Setup is done once that pull request is open.",
+    ),
+  );
 });

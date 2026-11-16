@@ -20,6 +20,7 @@ import type { Copy, CopyText } from "./copy.ts";
 import type { SetupTicketAnswered } from "./setupReport.ts";
 import {
   creationBodyFrom,
+  creationBootstrapLine,
   creationConfigurationStart,
   creationFormFrom,
   creationFormProposed,
@@ -107,6 +108,19 @@ function setupTicketOffer(
   });
 }
 
+/** A ticket filed under `offer`: the name it is offered under, and whether it is a bootstrap, whose ticket also writes the repository's own configuration. */
+export function setupTicketFiledUnder(
+  ticket: number,
+  offer: CreationOffer,
+): SetupTicketAnswered {
+  return {
+    answered: "Filed",
+    ticket,
+    configuration: offer.name,
+    bootstrap: creationBootstrapLine(offer) !== undefined,
+  };
+}
+
 /**
  * Files the ticket through `ports`, which let out only the writes
  * `setupTicketWrites` names: the creation context read, the form drawn under
@@ -155,7 +169,7 @@ export async function setupTicketFiled(
     text,
   );
   return created.created === "Created" || created.created === "Exists"
-    ? { answered: "Filed", ticket: created.ticket, configuration: offer.name }
+    ? setupTicketFiledUnder(created.ticket, offer)
     : setupTicketRefused({
         id: "setup-ticket-refused",
         args: { refusal: created.reason },

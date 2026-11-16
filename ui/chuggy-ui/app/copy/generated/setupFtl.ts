@@ -387,10 +387,10 @@ setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is register
 setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put-chat = That puts here two background services of yours, run by the { -runner } package, { $program }, that start when you log in: one for the work on your { -project }'s { -ticket(form: "plural") }, one your { -chat-host }, which your { -thread(form: "plural") } run on and only on. Both run on this machine { $runs }.
+setup-mend-runner-put-chat = That puts two background services of yours here. The { -runner } package, { $program }, runs them, and they start when you log in. One does the work on your { -project }'s { -ticket(form: "plural") }. The other is your { -chat-host }: your { -thread(form: "plural") } with { -brand-name } run there and nowhere else. Both run on this machine { $runs }.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put = That puts here a background service of yours, run by the { -runner } package, { $program }, that starts when you log in; work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
+setup-mend-runner-put = That puts a background service of yours here. The { -runner } package, { $program }, runs it, and it starts when you log in. Work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
 # spells -run: to run is a verb here
 setup-mend-chat-by-hand = open { $page }, press { $register }, choose the machine and run the commands it shows
 # spells -run: to run is a verb here
@@ -430,7 +430,10 @@ setup-ask-ticket = What would you like done first in { $project }? Say it in a s
    *[given] { "" }
 } If you would rather write it yourself: { $create }.
 setup-ticket-none = nothing to file: the next thing is not the { -project }'s first { -ticket }
-setup-ticket-did = asked { -brand-name } to file { -ticket } { $ticket } under { $configuration }, { -release(form: "ed") } and sent to start
+setup-ticket-did = asked { -brand-name } to file { -ticket } { $ticket }, { -release(form: "ed") } and sent to start, under { $configuration }{ $bootstrap ->
+    [bootstrap] , so the { -ticket } also writes this { -repository }'s own { -configuration }
+   *[own] { "" }
+}
 setup-ticket-unfiled = { -brand-name } did not file the { -ticket }: { $refusal }
 setup-ticket-unread = the { -configuration(form: "plural") } { -ticket(form: "a") } may use could not be read
 setup-ticket-choose = the { -project } offers { $names }, so the { -configuration } has to be chosen
@@ -442,7 +445,14 @@ setup-mend-ticket-when = once the person says the { -ticket } is created
 setup-mend-release-tell = { -ticket(case: "upper") } { $ticket } was drafted and never { -release(form: "ed") }, so nothing is working on it, and the console has no page that { -release(form: "s") } it. { $create }, which makes { -ticket(form: "a") } and { -release(form: "s") } it at once. Tell me once it is created.
 setup-mend-dispatch-tell = { -ticket(case: "upper") } { $ticket } is { -release(form: "ed") } and has not started. Open { $page } and press { $dispatch } to start it. Tell me once it has started.
 setup-mend-dispatch-when = once the person says { -ticket } { $ticket } has started
-setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }, and setup is done when it is { -finalization(form: "ed") }. { $page } shows where it is. Tell me when you want me to look again.
+# spells -run: to run is a verb here
+setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }. { $ends ->
+    [pull] It ends in { -pull-request(form: "a") } for you to merge on { -github }{ $bootstrap ->
+        [bootstrap] , and merging it makes later { -ticket(form: "plural") } run on this { -repository }'s own { -configuration }
+       *[own] { "" }
+    }. Setup is done once that { -pull-request } is open.
+   *[finish] Setup is done when it finishes.
+} { $page } shows where it is. Tell me when you want me to look again.
 setup-mend-decision-tell = { -ticket(case: "upper") } { $ticket } is { -escalation }: it waits on a decision of yours at { $page }. Tell me once it is moving again.
 setup-mend-decision-when = once the person says { -ticket } { $ticket } is moving again
 

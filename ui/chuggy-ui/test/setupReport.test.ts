@@ -430,7 +430,12 @@ const importAnswers: readonly (SetupImportAnswered | undefined)[] = [
 /** What a run of `ticket` can have had answered: nothing asked, filed, and refused. */
 const ticketAnswers: readonly (SetupTicketAnswered | undefined)[] = [
   undefined,
-  { answered: "Filed", ticket: 3, configuration: "Default configuration" },
+  {
+    answered: "Filed",
+    ticket: 3,
+    configuration: "Default configuration",
+    bootstrap: false,
+  },
   {
     answered: "Refused",
     refusal: { id: "setup-ticket-refused", args: { refusal: "It broke." } },
@@ -2331,7 +2336,7 @@ test("a run of ticket says what it filed or why it did not under the site's line
     [
       filed,
       [
-        "did: asked chuggy to file ticket 3 under Default configuration, released and sent to start",
+        "did: asked chuggy to file ticket 3, released and sent to start, under Default configuration",
       ],
     ],
     [refused, ["found: chuggy did not file the ticket: It broke."]],

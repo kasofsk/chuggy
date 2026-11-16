@@ -238,9 +238,15 @@ const mends: {
     ),
   ],
   Landing: [
-    { lacks: "Landing", ticket: 4, phase: "Evaluation" },
+    {
+      lacks: "Landing",
+      ticket: 4,
+      phase: "Evaluation",
+      pullRequest: false,
+      bootstrapped: false,
+    },
     hand(
-      `Ticket 4 is in Evaluation, and setup is done when it is finalized. ${pages}/tickets/4 shows where it is. Tell me when you want me to look again.`,
+      `Ticket 4 is in Evaluation. Setup is done when it finishes. ${pages}/tickets/4 shows where it is. Tell me when you want me to look again.`,
       "if the person asks to look again",
     ),
   ],
@@ -685,7 +691,7 @@ const runnerIs =
 test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
   expect(here({ lacks: "Runner", chat: false, named: true }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts here a background service of yours, run by the runner package, chuggy-linux, that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
+      `${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
     ),
   );
   expect(
@@ -696,7 +702,7 @@ test("with no runner yet and a machine that could take one, the person is told o
 test("with neither a runner of the project nor the person's chat host, the offer says two services of theirs are put here: one for the work on the project's tickets, one their chat host", () => {
   expect(here({ lacks: "Runner", chat: true, named: true }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts here two background services of yours, run by the runner package, chuggy-linux, that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
+      `${runnerIs}. I can make this machine one. That puts two background services of yours here. The runner package, chuggy-linux, runs them, and they start when you log in. One does the work on your project's tickets. The other is your chat host: your chats with chuggy run there and nowhere else. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows, then press Add a project and choose widgets, so the runner takes its work.`,
     ),
   );
 });
