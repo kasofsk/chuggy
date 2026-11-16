@@ -44,6 +44,7 @@ import {
 import {
   repositoryIdentityCharsMax,
   resultReportCharsMax,
+  textCodePointsCount,
 } from "../../src/contract/http.ts";
 import {
   briefingLineCharsMax,
@@ -2434,6 +2435,17 @@ test("a first work task is told in its role that a rewritten commit is refused",
   );
   assert.ok(text.includes("bring another branch in by merging it"));
   assert.ok(text.includes(historyRule));
+});
+
+test("a work task is told in its role to write each commit's message, saying what it changes, as it commits", () => {
+  const lines = sectionLines(viewOf({}), "RoleInstructions") ?? [];
+  const messageLines = lines.filter((line) =>
+    line.includes("a message that says what that commit changes"),
+  );
+  assert.equal(messageLines.length, 1);
+  assert.match(messageLines[0] ?? "", /written when you make it/);
+  assert.match(messageLines[0] ?? "", /cannot be changed afterwards/);
+  assert.ok(textCodePointsCount(messageLines[0] ?? "") <= briefingLineCharsMax);
 });
 
 test("a rework states the rule on rewritten commits once, in its role, and answers a message finding in a new commit", () => {
