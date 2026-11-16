@@ -946,7 +946,7 @@ test("a session read as waiting by the runner it is for is opened by no chat hos
   assert.equal(await openedFor(host, candidate(thread)), "Opened");
 });
 
-test("a chat host holds no more sessions than its bound however few it says it holds, and a session is not handed out while an attempt holds it or its backoff runs", async () => {
+test("a chat host holds no more sessions than its bound, and a session is not handed out while an attempt holds it or its backoff runs", async () => {
   const { partition, member } = await routedProject("pool-bound");
   const thread = await waiting(partition, "bound-thread", "Thread", member);
   const host = await chatHost(partition, member);
@@ -955,21 +955,21 @@ test("a chat host holds no more sessions than its bound however few it says it h
   const [first] = (await polled(host, 1, [], ports, one)).sessions;
   assert.ok(first !== undefined);
   assert.deepEqual(
-    (await polled(host, 1, [], ports, one)).sessions,
+    (await polled(host, 1, [first.assignment], ports, one)).sessions,
     [],
-    "a chat host that said it held nothing was handed one past its bound",
+    "a chat host was handed one past its bound",
   );
-  const [second] = (await polled(host, 4)).sessions;
+  const [second] = (await polled(host, 4, [first.assignment])).sessions;
   assert.ok(second !== undefined);
   assert.deepEqual(
     (await polled(host, 4, [first.assignment, second.assignment])).sessions,
     [],
     "a session was handed out while held",
   );
-  const assignment =
+  const [assignment, other] =
     (await sessionOf(first)) === thread.session
-      ? first.assignment
-      : second.assignment;
+      ? [first.assignment, second.assignment]
+      : [second.assignment, first.assignment];
   assert.equal(
     await workerPoolSettled(ports, host, assignment, {
       outcome: "Unavailable",
@@ -977,12 +977,12 @@ test("a chat host holds no more sessions than its bound however few it says it h
     true,
   );
   assert.deepEqual(
-    (await polled(host, 4)).sessions,
+    (await polled(host, 4, [other])).sessions,
     [],
     "a session was handed out inside its backoff",
   );
   await backdated(assignment, "ended_at", launch.placementBackoffSecs + 1);
-  const [again] = (await polled(host, 4)).sessions;
+  const [again] = (await polled(host, 4, [other])).sessions;
   assert.ok(again !== undefined);
   assert.equal(await sessionOf(again), thread.session);
 });
@@ -1044,6 +1044,58 @@ test("a held session that closes, or whose project is suspended, is to be stoppe
     [partition.tenant, partition.project],
   );
   assert.deepEqual(await stopped(), new Set(held));
+});
+
+test("a chat host's poll ends Lost, as Vanished, an attempt it holds and does not list, releasing its claimed turn, renews one it lists, leaves one it opens, and ends nothing a pool holds", async () => {
+  const { partition, member, pool } = await routedProject("host-unlisted");
+  await waiting(partition, "unlisted-lead", "Lead", member);
+  const led = await poolClaimedOne(pool);
+  const host = await chatHost(partition, member);
+  const dropped = await waiting(
+    partition,
+    "unlisted-dropped",
+    "Thread",
+    member,
+  );
+  await waiting(partition, "unlisted-listed", "Thread", member);
+  const [first, second] = (await polled(host, 2)).sessions;
+  assert.ok(first !== undefined && second !== undefined);
+  const [gone, kept] =
+    (await sessionOf(first)) === dropped.session
+      ? [first, second]
+      : [second, first];
+  assert.equal(await runnerClaimed(gone), dropped.turn);
+  await backdated(kept.assignment, "lease_expires_at", -5);
+  const short = (await attemptOf(kept.assignment))["lease"];
+  await waiting(partition, "unlisted-opened", "Thread", member);
+
+  const answered = await polled(host, 1, [kept.assignment]);
+  const [opened, ...more] = answered.sessions;
+  assert.ok(opened !== undefined, "the poll opened no attempt");
+  assert.deepEqual(more, []);
+  assert.deepEqual(answered.stop, []);
+  assert.deepEqual(
+    await endingsOf([
+      gone.assignment,
+      kept.assignment,
+      opened.assignment,
+      led.assignment,
+    ]),
+    [
+      ["Lost", "Vanished"],
+      ["Running", null],
+      ["Running", null],
+      ["Running", null],
+    ],
+  );
+  assert.notEqual((await attemptOf(kept.assignment))["lease"], short);
+  assert.equal(
+    (await turnStanding(partition, dropped.session, dropped.turn))[0],
+    "Queued",
+  );
+
+  assert.deepEqual((await polled(pool, 0, [])).stop, []);
+  assert.deepEqual(await endingsOf([led.assignment]), [["Running", null]]);
 });
 
 test("a runner's heartbeat on a pool-held attempt answers whether the pool's lease holds it and renews nothing, and a lapsed lease is reaped", async () => {
@@ -1633,7 +1685,7 @@ test("a chat host's room spans every project of its tenant, and each session's c
   assert.ok(first !== undefined);
   assert.deepEqual(more, []);
   assert.deepEqual(
-    (await polled(host, 4, [], ports, one)).sessions,
+    (await polled(host, 4, [first.assignment], ports, one)).sessions,
     [],
     "a chat host was handed one past its bound in another project",
   );
@@ -1813,13 +1865,14 @@ test("a chat host is handed its member's sessions in every project of the tenant
 /** The one session `host` is claimed by a poll declaring `idleSecs`, or declaring none. */
 async function hostClaimedDeclaring(
   host: PoolPlaneIdentity,
+  held: readonly string[],
   idleSecs?: number,
 ): Promise<string> {
   const answered = await workerPoolPoll(
     ports,
     host,
     {
-      held: [],
+      held,
       wanted: 0,
       wantedSessions: 1,
       ...(idleSecs === undefined ? {} : { idleSecs }),
@@ -1860,9 +1913,9 @@ test("a chat host's declared idle bound is recorded on its claim as named, above
   );
   const host = await chatHost(partition, member);
   const windowSecs = 300;
-  const short = await hostClaimedDeclaring(host, 600);
-  const long = await hostClaimedDeclaring(host, 7200);
-  const unbounded = await hostClaimedDeclaring(host);
+  const short = await hostClaimedDeclaring(host, [], 600);
+  const long = await hostClaimedDeclaring(host, [short], 7200);
+  const unbounded = await hostClaimedDeclaring(host, [short, long]);
   const pooled = (await poolClaimedOne(pool)).assignment;
   assert.deepEqual(await idleBoundOf(short), ["600", false, true, 600_000]);
   assert.deepEqual(await idleBoundOf(long), ["7200", false, true, 7_200_000]);
@@ -1908,7 +1961,11 @@ test("an attempt recorded with the longest idle bound a poll admits does not sto
   await waiting(partition, "host-idle-max-lead", "Lead", member);
   await waiting(partition, "host-idle-max-thread", "Thread", member);
   const host = await chatHost(partition, member);
-  const longest = await hostClaimedDeclaring(host, workerPoolPollIdleSecsMax);
+  const longest = await hostClaimedDeclaring(
+    host,
+    [],
+    workerPoolPollIdleSecsMax,
+  );
   const pooled = (await poolClaimedOne(pool)).assignment;
   assert.equal(
     (await attemptOf(longest))["idle_secs"],

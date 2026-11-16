@@ -159,6 +159,7 @@ const noSessions: WorkerPoolSessions = {
   release: () => Promise.resolve(false),
   heldImages: () => Promise.resolve([]),
   polled: () => Promise.resolve(),
+  unlistedEnded: () => Promise.resolve(0),
 };
 
 /** Where no runner a poll names is kept. */
@@ -494,6 +495,32 @@ test("a held list longer than either kind's bound is refused whole rather than c
       held.join(","),
     );
   assert.equal(workerPoolHeldNamedMax(settings), 4);
+});
+
+test("a chat host's poll ends what it holds unlisted against the sessions it arrived holding, to its held bound and before any claim, and no other caller's poll, nor one refused over its bound, ends any", async () => {
+  const ended = ["unlistedEnded", ["s1"], settings.sessionsHeldMax];
+  for (const [caller, held, made] of [
+    [host, ["j1", "s1"], [ended, ["awaiting"]]],
+    [host, ["s1", "s2", "s3"], []],
+    [identity, ["s1"], []],
+    [runner, [], []],
+  ] as const) {
+    const calls: unknown[] = [];
+    const store = holdingSessions(["s1", "s2", "s3"], {
+      unlistedEnded: (_identity, listed, max) =>
+        Promise.resolve(
+          (calls.push(["unlistedEnded", [...listed], max]), listed.length),
+        ),
+      awaiting: () => Promise.resolve((calls.push(["awaiting"]), [])),
+    });
+    await workerPoolPoll(
+      ports(idle, store),
+      caller,
+      asked({ held, wantedSessions: caller === host ? 1 : 0 }),
+      { ...settings, pollsMax: 1 },
+    );
+    assert.deepEqual(calls, made, `${caller.kind} ${held.join(",")}`);
+  }
 });
 
 test("a bound that is not a positive whole number refuses the poll", async () => {
