@@ -99,10 +99,16 @@ export function welcomePeople(people: AccessTenantPeople): WelcomePeople {
 export const welcomeWords = {
   title: { id: "shell-welcome-title" },
   next: { id: "shell-welcome-next" },
+  claudeCodeAbsent: { id: "shell-welcome-claude-code-absent" },
+  claudeCodeInstall: { id: "shell-welcome-claude-code-install" },
   memberDetail: { id: "shell-welcome-member-detail" },
   none: { id: "setup-mend-workspace-none" },
   noneDetail: { id: "shell-welcome-none-detail" },
 } as const satisfies Readonly<Record<string, Copy>>;
+
+/** Anthropic's page that names Claude Code's install command for each system. */
+export const welcomeClaudeCodeSetupAddress =
+  "https://code.claude.com/docs/en/setup";
 
 export function welcomeAccountLine(login: string): Copy {
   return { id: "shell-welcome-account", args: { login } };

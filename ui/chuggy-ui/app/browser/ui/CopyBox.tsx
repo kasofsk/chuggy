@@ -12,6 +12,8 @@
  * the box is open or folded. A text a reader may copy without reading, such as
  * a prompt for their agent, is folded so it does not crowd its page.
  *
+ * `labelled` draws the control's name on it as a word beside its mark.
+ *
  * Total over `copyBoxBreaks`: a command breaks wherever its line ends, and a
  * text with words in it breaks between them, and inside one only where that
  * word is wider than the box.
@@ -48,6 +50,8 @@ interface CopyBoxProps {
   readonly breaks?: CopyBoxBreak;
   /** Whether the box starts as its bar alone, the text behind it. */
   readonly folded?: boolean;
+  /** Whether the control is drawn with its name as a word beside its mark. */
+  readonly labelled?: boolean;
 }
 
 function CopyBoxText(props: CopyBoxProps): ReactNode {
@@ -68,7 +72,12 @@ function CopyBoxFolded(props: CopyBoxProps): ReactNode {
           <Chevron className="copy-box-chevron" />
           <span className="min-w-0">{props.about}</span>
         </Collapsible.Trigger>
-        <CopyButton text={props.text} label={props.copyLabel} worded />
+        <CopyButton
+          text={props.text}
+          label={props.copyLabel}
+          worded
+          labelled={props.labelled === true}
+        />
       </div>
       <Collapsible.Content>
         <CopyBoxText {...props} />
@@ -83,7 +92,12 @@ export function CopyBox(props: CopyBoxProps): ReactNode {
     <div className={copyBoxClassName}>
       <div className={copyBoxBarClassName}>
         <span className="min-w-0">{props.about}</span>
-        <CopyButton text={props.text} label={props.copyLabel} worded />
+        <CopyButton
+          text={props.text}
+          label={props.copyLabel}
+          worded
+          labelled={props.labelled === true}
+        />
       </div>
       <CopyBoxText {...props} />
     </div>
