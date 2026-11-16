@@ -1113,6 +1113,8 @@ test("a queued member's card draws its place in the landing queue", async () => 
       {
         repository: "https://forge.test/acme/billing",
         holder: 9,
+        holderSince: "2026-11-16T09:30:00.000000Z",
+        holderPhase: "Finalization",
         waiting: [5],
       },
     ],
@@ -1149,7 +1151,13 @@ test("the rendered graph carries no style attribute", async () => {
   chainServed();
   epicServing.queues = {
     queues: [
-      { repository: "https://forge.test/acme/billing", holder: 5, waiting: [] },
+      {
+        repository: "https://forge.test/acme/billing",
+        holder: 5,
+        holderSince: "2026-11-16T09:30:00.000000Z",
+        holderPhase: "Finalization",
+        waiting: [],
+      },
     ],
     truncated: false,
   };

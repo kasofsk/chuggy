@@ -29,6 +29,7 @@ import {
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   inventoryResponse,
+  landingQueuesResponse,
   notificationsResponse,
   operationResponse,
   operationalStatusResponse,
@@ -106,6 +107,7 @@ import {
   ticketNativeActionHistoryResponseSchema,
   ticketResponseSchema,
   workerPoolCredentialsSchema,
+  landingQueuesResponseSchema,
 } from "../../src/contract/responses.ts";
 import { ticketLatestExecution } from "../../src/interpreter/operationsView.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
@@ -136,6 +138,7 @@ import {
   runTranscriptPageBatchesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asBriefFinalization } from "../../src/interpreter/ticketBrief.ts";
 import {
@@ -2748,6 +2751,46 @@ test("a pause names exactly one of until and off, on an agent's own pause and on
   for (const refused of [{}, { until, off: true }])
     assert.ok(
       !agentAccountsResponseSchema.safeParse(body(refused)).success,
+      JSON.stringify(refused),
+    );
+});
+
+test("a landing queue answers since when its holder holds it, to the microsecond in UTC, and its holder's phase", () => {
+  const queue = {
+    partition: { tenant: asTenantId("acme"), project: asProjectId("atlas") },
+    repository: "acme/atlas",
+    target: undefined,
+    holder: asTicketId(3),
+    holderSince: "2026-11-16T09:30:00.123456Z",
+    holderPhase: "Evaluation" as const,
+    waiting: [asTicketId(1)],
+  };
+  const body = landingQueuesResponse({ queues: [queue], truncated: false })
+    .body as { readonly queues: readonly Record<string, unknown>[] };
+  const answered = {
+    repository: "acme/atlas",
+    holder: 3,
+    holderSince: "2026-11-16T09:30:00.123456Z",
+    holderPhase: "Evaluation",
+    waiting: [1],
+  };
+  assert.deepEqual(landingQueuesResponseSchema.parse(body), {
+    queues: [answered],
+    truncated: false,
+  });
+  for (const refused of [
+    { holderSince: undefined },
+    { holderSince: "2026-11-16T09:30:00.123Z" },
+    { holderSince: "2026-11-16T09:30:00.123456+01:00" },
+    { holderPhase: undefined },
+    { holderPhase: "Landed" },
+  ])
+    assert.throws(
+      () =>
+        landingQueuesResponseSchema.parse({
+          queues: [{ ...answered, ...refused }],
+          truncated: false,
+        }),
       JSON.stringify(refused),
     );
 });
