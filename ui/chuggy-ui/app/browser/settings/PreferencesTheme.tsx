@@ -11,10 +11,11 @@
  *
  * THE LAST PRESS IS THE ONE KEPT. Theme writes, from either picker, are sent
  * one at a time in the order pressed, so the server keeps the last; a press
- * whose turn comes after a later one was made is not sent, so one write is in
- * flight and one waits however fast the presses come. Only the last press's
- * answer reads again or puts back, and what it puts back is what the server
- * held when it was sent.
+ * whose turn comes after a later one to the same write was made is not sent,
+ * so one write is in flight and one waits for each of the two, however fast
+ * the presses come.
+ * Only the last press's answer reads again or puts back, and what it puts back
+ * is what the server held when it was sent.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -97,9 +98,11 @@ function themeHeldPut(
 }
 
 /** The theme writes of one client: the presses not yet answered, chained in
- * the order pressed, and what the server held as the last answered left it. */
+ * the order pressed, the last press to each write not yet answered, and what
+ * the server held as the last answered left it. */
 interface ThemeTurn {
   pressed: number;
+  readonly pressedLast: Map<string, number>;
   unanswered: number;
   worn: Promise<unknown>;
   written: Promise<unknown>;
@@ -113,6 +116,7 @@ function themeTurnOf(client: QueryClient): ThemeTurn {
   if (held !== undefined) return held;
   const turn: ThemeTurn = {
     pressed: 0,
+    pressedLast: new Map(),
     unanswered: 0,
     worn: Promise.resolve(),
     written: Promise.resolve(),
@@ -133,22 +137,26 @@ function themeReadKeys(
   ];
 }
 
-/** A press's answer where a later press replaced it before it was sent: the
- * later one's answer reads again or puts back, so this one does neither. */
+/** A press's answer where a later press to the same write replaced it before
+ * it was sent: that one's answer reads again or puts back, so this one does
+ * neither. */
 const themeReplaced: ApiResult<undefined> = { outcome: "Ok", value: undefined };
 
-/** The write sent with `worn` put on the reads first, after every earlier
- * press's write has answered, and not sent where a later press was made by
- * then; where it is refused and no press followed it, the reads are put back
- * to what the server held. */
+/** The write under `mutationKey` sent with `worn` put on the reads first,
+ * after every earlier press's write has answered, and not sent where a later
+ * press to the same write was made by then; where it is refused and no press
+ * followed it, the reads are put back to what the server held. */
 async function themeHeldWhile(
   client: QueryClient,
   partition: PartitionIdentity | undefined,
+  mutationKey: readonly unknown[],
   worn: (held: ThemeHeld) => void,
   write: () => Promise<ApiResult<undefined>>,
 ): Promise<ApiResult<undefined>> {
   const turn = themeTurnOf(client);
   const press = (turn.pressed += 1);
+  const target = JSON.stringify(mutationKey);
+  turn.pressedLast.set(target, press);
   const first = turn.unanswered === 0;
   turn.unanswered += 1;
   const wearing = turn.worn.then(async () => {
@@ -165,17 +173,18 @@ async function themeHeldWhile(
   turn.worn = wearing.catch(() => undefined);
   let replaced = false;
   const writing = Promise.all([wearing, turn.written]).then(async () => {
-    replaced = press !== turn.pressed;
+    replaced = press !== turn.pressedLast.get(target);
     return replaced ? themeReplaced : write();
   });
   turn.written = writing.catch(() => undefined);
-  let written: ApiResult<undefined> | undefined;
+  let answered: ApiResult<undefined> | undefined;
   try {
-    written = await writing;
-    return written;
+    answered = await writing;
+    return answered;
   } finally {
     turn.unanswered -= 1;
-    if (written?.outcome === "Ok" && !replaced) turn.kept = await wearing;
+    if (turn.pressedLast.get(target) === press) turn.pressedLast.delete(target);
+    if (answered?.outcome === "Ok" && !replaced) turn.kept = await wearing;
     else if (press === turn.pressed && turn.kept !== undefined)
       themeHeldPut(client, partition, turn.kept);
   }
@@ -199,12 +208,14 @@ function themeGlobalWrite(
   partition: PartitionIdentity | undefined,
   owned: readonly OwnedThemeResponse[],
 ): ConsoleWrite<ThemeChoice, undefined> {
+  const mutationKey = consoleWriteKey("theme-choice");
   return {
-    mutationKey: consoleWriteKey("theme-choice"),
+    mutationKey,
     write: (ports, choice, client) =>
       themeHeldWhile(
         client,
         partition,
+        mutationKey,
         (held) => {
           client.setQueryData(themeChoiceQuery().queryKey, { choice });
           const document =
@@ -233,16 +244,18 @@ function themeOverrideWrite(
   partition: PartitionIdentity,
   owned: readonly OwnedThemeResponse[],
 ): ConsoleWrite<ThemeChoice | undefined, undefined> {
+  const mutationKey = consoleWriteKey(
+    "theme-override",
+    partition.tenant,
+    partition.project,
+  );
   return {
-    mutationKey: consoleWriteKey(
-      "theme-override",
-      partition.tenant,
-      partition.project,
-    ),
+    mutationKey,
     write: (ports, choice, client) =>
       themeHeldWhile(
         client,
         partition,
+        mutationKey,
         (held) => {
           if (held.appearance !== undefined)
             client.setQueryData(

@@ -11,7 +11,8 @@
  * global picker where the project's default covers it; the arrows moving the
  * choice; a refused write putting the picker and the page back and saying
  * why; and the last of several presses the one that stays, however their
- * answers arrive, with a press another replaced before it was sent never sent.
+ * answers arrive, with a press another to the same write replaced before it
+ * was sent never sent.
  */
 
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
@@ -566,4 +567,43 @@ test("presses made while a write is in flight send only the last of them once it
   });
   expect(checkedIn("Theme")).toBe("High contrast");
   expect(rootAccent()).toBe(accentOf(builtInThemes["high-contrast"]));
+});
+
+test("a global choice queued behind a write is sent even when the project row is pressed after it", async () => {
+  const harbour = heldAnswer();
+  const held: Held = {
+    global: undefined,
+    override: undefined,
+    projectDefault: undefined,
+  };
+  const sent = await themeDrawn(held, answeredInTurn([harbour.answered]));
+  await turned(() => {
+    fireEvent.click(
+      within(group("In this project")).getByRole("radio", { name: "Harbour" }),
+    );
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(group("Theme")).getByRole("radio", { name: "Ember" }),
+    );
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(group("In this project")).getByRole("radio", {
+        name: "High contrast",
+      }),
+    );
+  });
+  await turned(() => {
+    harbour.release(answer(undefined, 204));
+  });
+  await settled();
+  expect(writesOf(sent)).toStrictEqual([
+    ["PUT", overridePath, { kind: "BuiltIn", theme: "harbour" }],
+    ["PUT", choicePath, { kind: "BuiltIn", theme: "ember" }],
+    ["PUT", overridePath, { kind: "BuiltIn", theme: "high-contrast" }],
+  ]);
+  expect(held.global).toStrictEqual({ kind: "BuiltIn", theme: "ember" });
+  expect(checkedIn("Theme")).toBe("Ember");
+  expect(checkedIn("In this project")).toBe("High contrast");
 });
