@@ -65,9 +65,7 @@ import {
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
-  asSessionId,
   asSessionTurnId,
-  type SessionId,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
@@ -837,25 +835,6 @@ export function parseThreadRename(body: unknown): { readonly title: string } {
 /** Which side of its owner's rail this thread is on, strictly as `hidden`. */
 export function parseThreadHide(body: unknown): { readonly hidden: boolean } {
   return { hidden: nativeHttpEndpoints.hideThread.body.parse(body).hidden };
-}
-
-/**
- * What a member asked the lead aside: the two identities they minted and the
- * question they typed. BOTH are the idempotency, because opening a fork and
- * enqueuing its one turn are one write — so a retried post is answered the
- * ordinal it already has rather than forking the lead a second time.
- */
-export function parseLeadInquiry(body: unknown): {
-  readonly session: SessionId;
-  readonly turn: SessionTurnId;
-  readonly question: string;
-} {
-  const value = nativeHttpEndpoints.askLead.body.parse(body);
-  return {
-    session: asSessionId(value.session),
-    turn: asSessionTurnId(value.turn),
-    question: value.question,
-  };
 }
 
 /** A write's body: a create or a revision, whole. */

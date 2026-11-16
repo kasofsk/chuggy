@@ -23,7 +23,6 @@ import {
   threadOpenSchema,
   threadRenameRequestSchema,
   threadHideRequestSchema,
-  leadInquirySchema,
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
@@ -54,9 +53,6 @@ import {
   threadTurnStopResponseSchema,
   threadRenameResponseSchema,
   threadHideResponseSchema,
-  leadInquiriesResponseSchema,
-  leadInquiryResponseSchema,
-  leadInquiryAcceptedSchema,
   inboxResponseSchema,
   ticketLandingsResponseSchema,
   ticketNativeActionHistoryResponseSchema,
@@ -347,22 +343,6 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.chatThreadHide,
     body: threadHideRequestSchema,
     response: threadHideResponseSchema,
-  },
-  leadInquiries: {
-    method: "GET",
-    path: nativeHttpRoutes.leadInquiries,
-    response: leadInquiriesResponseSchema,
-  },
-  leadInquiry: {
-    method: "GET",
-    path: nativeHttpRoutes.leadInquiry,
-    response: leadInquiryResponseSchema,
-  },
-  askLead: {
-    method: "POST",
-    path: nativeHttpRoutes.leadInquiries,
-    body: leadInquirySchema,
-    response: leadInquiryAcceptedSchema,
   },
   inbox: {
     method: "GET",

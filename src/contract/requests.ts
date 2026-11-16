@@ -15,7 +15,6 @@ import {
   forgeAuthorizationTextCharsMax,
   forgeAuthorizationVerifierCharsMax,
   forgeAuthorizationVerifierCharsMin,
-  inquiryQuestionCharsMax,
   approvalFeedbackCharsMax,
   isApprovalFeedback,
   leadAutoCompactWindowTokensMax,
@@ -481,19 +480,6 @@ export const threadRenameRequestSchema = z.strictObject({
  * thread stays on the threads page. */
 export const threadHideRequestSchema = z.strictObject({
   hidden: z.boolean(),
-});
-
-/**
- * What a member asks the lead aside: the session and the turn they mint
- * themselves, and the question they typed. Both identities are the body's
- * rather than a header's for the reason `submissionSchema` gives — opening is
- * idempotent on them, so a retried post answers the ordinal it already has
- * instead of forking the lead a second time.
- */
-export const leadInquirySchema = z.strictObject({
-  session: bodyIdentitySchema,
-  turn: bodyIdentitySchema,
-  question: z.string().min(1).max(inquiryQuestionCharsMax),
 });
 
 /**

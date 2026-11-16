@@ -58,7 +58,6 @@ const variables = {
   principal: "CHUG_PROVISION_SESSION_PRINCIPAL",
   issuer: "CHUG_API_OIDC_ISSUER",
   subject: "CHUG_PROVISION_SESSION_SUBJECT",
-  parent: "CHUG_PROVISION_SESSION_PARENT",
   capabilities: "CHUG_PROVISION_SESSION_CAPABILITIES",
   credentialSlot: "CHUG_PROVISION_SESSION_CREDENTIAL_SLOT",
   systemPrompt: "CHUG_PROVISION_SESSION_SYSTEM_PROMPT",
@@ -164,23 +163,31 @@ function provisionPartition(environment: ProvisionSessionEnvironment) {
   };
 }
 
+/**
+ * The kind a session is opened as. An inquiry is a fork of the lead's
+ * transcript, and this command names no parent, so the server would answer it
+ * only `Conflict`; it is refused here by name instead.
+ */
+function provisionKind(environment: ProvisionSessionEnvironment): SessionKind {
+  const kind = member<SessionKind>(
+    allSessionKinds,
+    required(environment, variables.kind),
+    variables.kind,
+  );
+  if (kind === "Inquiry")
+    throw new Error(`${variables.kind} may not be Inquiry: no session forks`);
+  return kind;
+}
+
 export function provisionSessionOpening(
   environment: ProvisionSessionEnvironment,
 ): AgentSessionOpening {
-  const parent = environment[variables.parent];
   const prompt = environment[variables.systemPrompt];
   return {
     partition: provisionPartition(environment),
     session: asSessionId(required(environment, variables.session)),
-    kind: member<SessionKind>(
-      allSessionKinds,
-      required(environment, variables.kind),
-      variables.kind,
-    ),
+    kind: provisionKind(environment),
     principal: provisionPrincipal(environment),
-    ...(parent === undefined || parent.length === 0
-      ? {}
-      : { parent: asSessionId(parent) }),
     capabilities: provisionCapabilities(environment),
     credentialSlot: required(environment, variables.credentialSlot),
     ...(prompt === undefined || prompt.length === 0

@@ -15,16 +15,14 @@ so a pool takes nothing until a policy sends it work, and a policy changed
 later moves only what registers after it.
 
 A session is routed by `CHUG_SCHEDULER_SESSION_POLICY`'s `routes`, on `Thread`
-and `Lead`, and its `projectRoutes`, over the project's own session placement;
-an inquiry runs where the lead does. A turn keeps the route it was admitted
-on, so a placement changed later moves the next turn admitted and never one
-already queued, and the cluster places and claims only turns admitted
-`InCluster`. On `Pool` a thread and an inquiry are taken only by their
+and `Lead`, and its `projectRoutes`, over the project's own session placement.
+A turn keeps the route it was admitted on, so a placement changed later moves
+the next turn admitted and never one already queued, and the cluster places and
+claims only turns admitted `InCluster`. On `Pool` a thread is taken only by its
 member's chat host, and the lead by any of the project's pools. A member with
-no chat host is refused a thread's or an inquiry's turn on `Pool` as
-`NoRunner`, and a `Pool` turn no runner takes within
-`sessionPoolTurnDwellSecs` (`src/interpreter/sessionPlacement.ts`) is withdrawn
-by the scheduler.
+no chat host is refused a thread's turn on `Pool` as `NoRunner`, and a `Pool`
+turn no runner takes within `sessionPoolTurnDwellSecs`
+(`src/interpreter/sessionPlacement.ts`) is withdrawn by the scheduler.
 
 A pool is handed a placement and nothing about the work, so its harness
 fetches the task from the worker plane under the attempt bearer, as it fetches
@@ -120,7 +118,7 @@ host the rig does not run and those controls say nothing about.
 
 A personal runner is a member's own machine, and it takes nothing but that
 member's executions under the owner fallback, in the projects they allowlist
-and may still read; their threads and inquiries run on their chat host. A member may hold several in a
+and may still read; their threads run on their chat host. A member may hold several in a
 tenant, each with its own room, and none until the tenant gives them personal
 runners, which a new tenant's administrators may (an older tenant:
 `deploy/rig/keto/README.md`, Default authority holders), save the person a
@@ -136,7 +134,7 @@ with the last. A personal runner holds no relation and is admitted only while
 its owner keeps the permit, and the forge credentials it is given are for the
 project of work it holds.
 
-A member's chat host is their one machine for their threads and inquiries, in
+A member's chat host is their one machine for their threads, in
 every project of the tenant they may read, under the same permit. It is
 registered the same way, with a token from
 `POST /api/v1/tenants/:tenant/chat-host-registration-tokens` and the runner's

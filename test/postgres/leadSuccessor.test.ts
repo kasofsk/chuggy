@@ -43,18 +43,12 @@ import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
-import { leadInquiryTurnInput } from "../../src/interpreter/leadInquiry.ts";
-import {
-  inquiryRigIdentities,
-  inquiryRigLead,
-  inquiryRigMember,
-  inquiryRigOpen,
-  type InquiryRig,
-} from "./inquiryHarness.ts";
 import {
   leadRigMeasured,
+  leadRigOpen,
   leadRigPodTurn,
   leadRigProject,
+  type LeadRig,
 } from "./leadHarness.ts";
 import {
   sessionRigAttempt,
@@ -63,11 +57,11 @@ import {
   sessionRigTurnState,
 } from "./sessionHarness.ts";
 
-let rig: InquiryRig;
+let rig: LeadRig;
 let apiPool: pg.Pool;
 
 before(async () => {
-  rig = await inquiryRigOpen();
+  rig = await leadRigOpen();
   apiPool = postgresHarnessRolePool(apiRole);
 });
 
@@ -442,31 +436,23 @@ test("the closing door refuses a lead with a turn in flight, and abandons nothin
   );
 });
 
+/** The fork is opened directly: no door of the API opens one, and the closing door still refuses its lead. */
 test("the closing door refuses a lead an inquiry is still forked from", async () => {
   const partition = await leadRigProject(rig, "inquired");
-  const lead = await inquiryRigLead(rig, partition, "inquired");
-  const member = inquiryRigMember(rig, partition, "inquired");
-  const identities = inquiryRigIdentities("inquired");
-  const asked = await rig.inquiries.open({
-    partition,
-    principal: member.principal,
-    ...identities,
-    question: leadInquiryTurnInput({
-      question: "why was 41 refused?",
-      asker: member.authority.subject,
-    }),
-    route: "InCluster",
-    subsidized: false,
+  const lead = await sessionRigSession(rig.sessions, partition, "inquired", {
+    kind: "Lead",
   });
-  assert.equal(asked.opened, "Opened");
-  assert.equal(
-    await rig.mailbox.closeLead(partition, lead.session),
-    "InquiryOpen",
+  const inquiry = await sessionRigSession(
+    rig.sessions,
+    partition,
+    "inquired-fork",
+    { kind: "Inquiry", parent: lead },
   );
+  assert.equal(await rig.mailbox.closeLead(partition, lead), "InquiryOpen");
   assert.deepEqual(
-    [await stateOf(lead.session), await stateOf(identities.session)],
+    [await stateOf(lead), await stateOf(inquiry)],
     ["Open", "Open"],
-    "neither the lead nor the question asked of it is ended",
+    "neither the lead nor the inquiry forked from it is ended",
   );
 });
 

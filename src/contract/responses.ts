@@ -45,8 +45,6 @@ import {
   digestSchema,
   dispatchViewSchemaVersion,
   identitySchema,
-  inquiriesAnsweredMax,
-  inquiryQuestionCharsMax,
   instantSchema,
   isBoundedText,
   leadAutoCompactWindowTokensMax,
@@ -2282,56 +2280,6 @@ export const threadTurnStopResponseSchema = z.object({
 export type ThreadTurnStopResponse = z.infer<
   typeof threadTurnStopResponseSchema
 >;
-/**
- * What the pod measured of the one turn an inquiry takes, reused from the
- * lead's own turn shape rather than respelled: a turn is measured the same way
- * whatever kind of session took it.
- */
-const inquiryMeasureShape = leadTurnResponseSchema.pick({
-  model: true,
-  tokens: true,
-  costMicros: true,
-  durationMs: true,
-}).shape;
-
-/**
- * One inquiry against the project's lead, carrying its `question` and its
- * `answer` where `leadTurnResponseSchema` carries neither: a lead's input is
- * the observation its decision log already holds, and an inquiry's is what the
- * member typed and the answer they are waiting for. `asker` is the authority
- * its member acts under, absent where the project no longer admits them
- * (`threadEntryResponseSchema.owner`'s shape, for its reason), and `mine` is
- * computed against the request's own principal so a browser can name "my
- * inquiry" without decoding a token.
- */
-export const leadInquiryResponseSchema = z.object({
-  session: identitySchema,
-  asker: identitySchema.optional(),
-  mine: z.boolean(),
-  state: z.enum(sessionStates),
-  turnState: z.enum(sessionTurnStates),
-  ordinal: countSchema,
-  question: z.string().min(1).max(inquiryQuestionCharsMax),
-  answer: z.string().max(sessionTurnResultCharsMax).optional(),
-  failure: z.enum(sessionTurnFailures).optional(),
-  askedAt: instantSchema,
-  ...inquiryMeasureShape,
-});
-export type LeadInquiryResponse = z.infer<typeof leadInquiryResponseSchema>;
-
-/** A lead's inquiries, newest first, because one is read right after it is asked. */
-export const leadInquiriesResponseSchema = z.object({
-  inquiries: z.array(leadInquiryResponseSchema).max(inquiriesAnsweredMax),
-});
-export type LeadInquiriesResponse = z.infer<typeof leadInquiriesResponseSchema>;
-
-/** What the ask door answers: the fork it opened, its one turn, and where that turn sits. */
-export const leadInquiryAcceptedSchema = z.object({
-  session: identitySchema,
-  turn: identitySchema,
-  ordinal: countSchema,
-});
-export type LeadInquiryAccepted = z.infer<typeof leadInquiryAcceptedSchema>;
 
 /** One app this deployment holds the key of, and the address a tenant's administrator installs it from. */
 export const forgeAppResponseSchema = z.object({

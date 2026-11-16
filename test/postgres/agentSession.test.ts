@@ -16,6 +16,7 @@ import { sessionTurnBacklogMax } from "../../src/contract/http.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
+  sessionRigForkOpen,
   sessionRigOpen,
   sessionRigProject,
   sessionRigSession,
@@ -124,7 +125,7 @@ test("an inquiry names a session of its own project to have forked from", async 
   const lead = await sessionRigSession(rig, partition, "inquiry-lead");
   const elsewhere = await sessionRigProject(rig, "inquiry-elsewhere");
   assert.equal(
-    await rig.sessions.open({
+    await sessionRigForkOpen(rig, {
       partition: elsewhere,
       session: asSessionId(`session-foreign-${elsewhere.project}`),
       kind: "Inquiry",
@@ -140,6 +141,24 @@ test("an inquiry names a session of its own project to have forked from", async 
     parent: lead,
   });
   assert.equal((await rig.sessions.session(partition, inquiry))?.parent, lead);
+});
+
+test("the session port opens no inquiry, because it names no session to have forked from", async () => {
+  const partition = await sessionRigProject(rig, "inquiry-unforked");
+  await sessionRigSession(rig, partition, "inquiry-unforked-lead");
+  const inquiry = asSessionId(`session-unforked-${partition.project}`);
+  assert.equal(
+    await rig.sessions.open({
+      partition,
+      session: inquiry,
+      kind: "Inquiry",
+      principal: asPrincipal("principal-inquiry-unforked"),
+      capabilities: [],
+      credentialSlot: "claude-code",
+    }),
+    "Conflict",
+  );
+  assert.equal(await rig.sessions.session(partition, inquiry), undefined);
 });
 
 test("ordinals are contiguous from one and a re-offered turn keeps its own", async () => {
