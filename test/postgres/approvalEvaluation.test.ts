@@ -253,7 +253,6 @@ test("the ticket's and the project's action reads and the inbox say what the app
   );
   const inbox = await postgresInboxReads(ingress).inbox(at.project.partition, {
     phases: [],
-    named: [],
     limit: 10,
   });
   assert.deepEqual(
@@ -322,7 +321,6 @@ function answerableReads(at: Evaluating) {
   const desk = projectInbox(access, {
     store: postgresInboxReads(ingress),
     operationalReads: postgresOperationalReads(ingress),
-    refusals: { binding: () => Promise.resolve([]) },
   });
   return { web, desk };
 }

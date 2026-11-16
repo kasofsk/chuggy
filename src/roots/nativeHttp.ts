@@ -70,7 +70,6 @@ import {
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
-import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
 import type {
   NativeLeadPorts,
   NativeThreadPorts,
@@ -1438,13 +1437,10 @@ export function nativeLeadPorts(
   pools: NativePools,
   artifacts: SessionStoreReadPort,
 ): NativeLeadPorts {
-  const leads = postgresLeadReads(pools.pool);
   return {
-    leads,
+    leads: postgresLeadReads(pools.pool),
     store: artifacts,
     context: postgresSessionContext(pools.pool),
-    refusals: postgresAgenticRefusalReads(pools.pool),
-    history: leads,
     settings: postgresSelectorResolvedSettings(pools.pool),
     candidates: postgresDispatchViews(pools.pool),
   };

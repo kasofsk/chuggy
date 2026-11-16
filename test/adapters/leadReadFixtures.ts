@@ -6,15 +6,7 @@
 
 import type { NativeWeb } from "../../src/interpreter/nativeWeb.ts";
 
-type LeadReads = Pick<
-  NativeWeb,
-  | "lead"
-  | "leadTranscript"
-  | "leadContext"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
->;
+type LeadReads = Pick<NativeWeb, "lead" | "leadTranscript" | "leadContext">;
 
 export function unreadableLeadReads(): LeadReads {
   const missing = () => Promise.resolve({ result: "NotFound" } as const);
@@ -22,8 +14,5 @@ export function unreadableLeadReads(): LeadReads {
     lead: missing,
     leadTranscript: () => Promise.resolve({ read: "NotFound" } as const),
     leadContext: () => Promise.resolve({ read: "NotFound" } as const),
-    agenticRefusals: missing,
-    ticketAgenticRefusals: missing,
-    selectorHistory: missing,
   };
 }

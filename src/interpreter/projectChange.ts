@@ -5,18 +5,16 @@
  *
  * IT IS A SUPERSET OF THE PUBLICATION LOG RATHER THAN A SECOND ONE. Every kind
  * `project_notification` publishes bridges into it unchanged, and `Execution`,
- * `NativeAction`, `AgenticRefusal` and `Session` are the kinds with no
- * publication behind them: an execution moves without a project ordinal being
- * allocated for it, an evaluation approval is opened by the scheduler's
- * registration of its execution, which takes no project row lock and may not
- * begin taking one to publish, and the last two are the selector's own output — a publication of
- * either would wake the selector on what it had just decided.
+ * `NativeAction` and `Session` are the kinds with no publication behind them:
+ * an execution moves without a project ordinal being allocated for it, an
+ * evaluation approval is opened by the scheduler's registration of its
+ * execution, which takes no project row lock and may not begin taking one to
+ * publish, and the last is the selector's own output — a publication of it
+ * would wake the selector on what it had just decided.
  *
- * THE DURABLE CHECK ON THIS ROSTER IS GENERATED FROM IT, at the migration that
- * last replaced `project_change_kind_is_known`. A fresh installation therefore
- * writes the wider constraint, and one that already ran that migration holds
- * the narrower one until a further migration replaces it — so a kind added here
- * is a kind that installation refuses until then.
+ * THE DURABLE CHECK ON THIS ROSTER IS WRITTEN OUT at the migration that last
+ * replaced `project_change_kind_is_known`, so a kind added here is a kind every
+ * installation refuses until a further migration replaces it.
  *
  * THE DOORBELL SAYS ONLY THAT SOMETHING HAPPENED. A payload that differed per
  * append would make the server deliver one notification per row of a
@@ -33,12 +31,11 @@ export const projectChangeChannel = "chuggy_project_change";
 /** What an append rings with, held constant so one transaction wakes a consumer once. */
 export const projectChangePayload = "";
 
-/** Every kind a change row may carry: each publication's, and the four without one. */
+/** Every kind a change row may carry: each publication's, and the three without one. */
 export const allProjectChangeKinds = [
   ...notificationKinds,
   "Execution",
   "NativeAction",
-  "AgenticRefusal",
   "Session",
 ] as const;
 

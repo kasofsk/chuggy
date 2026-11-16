@@ -79,14 +79,9 @@ import {
   configurationDocumentSchemaMediaType,
 } from "../../contract/configurationDocument.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
-import {
-  selectorHistoryOrders,
-  type AccountAgent,
-  type SelectorHistoryOrder,
-} from "../../contract/rosters.ts";
+import type { AccountAgent } from "../../contract/rosters.ts";
 import { epicWriteBodyBytesMax } from "../../contract/epics.ts";
 import {
-  agenticRefusalsAnsweredMax,
   imageMediaTypes,
   isBoundedText,
   nativeHttpBodyBytesMax,
@@ -96,7 +91,6 @@ import {
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
-  selectorHistoryLimitMax,
   ticketSearchCharsMax,
   workerRunCredentialSchema,
 } from "../../contract/http.ts";
@@ -191,14 +185,11 @@ import {
   executionsResponse,
   latestExecutionsResponse,
   operationalStatusResponse,
-  agenticRefusalsResponse,
   inboxResponse,
   hostedRunsResponse,
   projectAbilitiesResponse,
   leadResponse,
   sessionTranscriptResponse,
-  selectorHistoryResponse,
-  ticketAgenticRefusalsResponse,
   selectorProjectSettingsResponse,
   selectorProjectSettingsWriteResponse,
   selectorSettingsHistoryResponse,
@@ -362,9 +353,6 @@ type InitialNativeWeb = Pick<
   | "lead"
   | "leadTranscript"
   | "leadContext"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
   | "outputContent"
   | "uploadProjectArtifact"
   | "projectArtifact"
@@ -874,7 +862,6 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
     nativeHttpSend(reply, ticketResponse(resource));
   });
   registerNativeActions(app, web, root);
-  registerAgenticRefusals(app, web, root);
   registerOperationalRoutes(app, web, root);
   registerRunEvidenceRoutes(app, web);
 }
@@ -935,75 +922,6 @@ function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
       ),
     sessionContextResponse,
   );
-}
-
-/** The lead's refusals, across a project and under the one ticket each names. */
-function registerAgenticRefusals(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/agentic-refusals`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["limit"]);
-    nativeHttpSend(
-      reply,
-      agenticRefusalsResponse(
-        await web.agenticRefusals(
-          principalOf(request),
-          partitionOf(request),
-          integerField(query, "limit", agenticRefusalsAnsweredMax),
-        ),
-      ),
-    );
-  });
-  app.get(
-    `${root}/tickets/:ticket/agentic-refusals`,
-    async (request, reply) => {
-      const params = record(request.params);
-      nativeHttpSend(
-        reply,
-        ticketAgenticRefusalsResponse(
-          await web.ticketAgenticRefusals(
-            principalOf(request),
-            partitionOf(request),
-            asTicketIdField(params, "ticket"),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-/** Which end of the decision log a request asked for, defaulting to the oldest. */
-function selectorHistoryOrder(value: unknown): SelectorHistoryOrder {
-  if (value === undefined) return "oldest";
-  const order = selectorHistoryOrders.find((known) => known === value);
-  if (order === undefined)
-    throw new TypeError("selector history order is not a known order");
-  return order;
-}
-
-/** The decision log, beside the settings the decisions were made under. */
-function registerSelectorHistory(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/selector-history`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit", "order"]);
-    nativeHttpSend(
-      reply,
-      selectorHistoryResponse(
-        await web.selectorHistory(principalOf(request), partitionOf(request), {
-          ...(query["after"] === undefined
-            ? {}
-            : { after: integerField(query, "after") }),
-          limit: integerField(query, "limit", selectorHistoryLimitMax),
-          order: selectorHistoryOrder(query["order"]),
-        }),
-      ),
-    );
-  });
 }
 
 /** The inbox, one page at a time under the tickets list's own activity cursor. */
@@ -3449,7 +3367,6 @@ export function createNativeHttpApp(
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
   registerLead(app, web);
-  registerSelectorHistory(app, web, nativeHttpPartitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   if (inbox !== undefined) registerInbox(app, inbox);

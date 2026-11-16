@@ -26,10 +26,6 @@ import type {
   TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
-import type {
-  AgenticRefusalsRead,
-  TicketAgenticRefusalsRead,
-} from "../../interpreter/agenticRefusal.ts";
 import {
   handoffNotePreview,
   type LeadAbsence,
@@ -42,7 +38,6 @@ import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
 import type { TicketTakeWritten } from "../../interpreter/ticketTake.ts";
-import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type { SessionStoreEntry } from "../../interpreter/sessionTranscript.ts";
 import type {
   SelectorProjectSettingsHistoryRead,
@@ -2799,56 +2794,6 @@ export function sessionContextResponse(
   return result.read === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, result.page);
-}
-
-export function agenticRefusalsResponse(
-  result: AgenticRefusalsRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, { refusals: result.refusals, more: result.more });
-}
-
-/** A ticket's refusals answer with the ticket rather than the partition each entry stands in. */
-export function ticketAgenticRefusalsResponse(
-  result: TicketAgenticRefusalsRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, {
-        ticket: result.ticket,
-        entries: result.entries.map((entry) => ({
-          ordinal: entry.ordinal,
-          event: entry.event,
-          ticketVersion: entry.ticketVersion,
-          reason: entry.reason,
-          decision: entry.decision,
-          recordedAt: entry.recordedAt,
-        })),
-        more: result.more,
-        ...(result.standing === undefined
-          ? {}
-          : {
-              standing: {
-                ticketVersion: result.standing.ticketVersion,
-                reason: result.standing.reason,
-                recordedAt: result.standing.recordedAt,
-              },
-            }),
-      });
-}
-
-export function selectorHistoryResponse(
-  result: SelectorHistoryRead,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, {
-        decisions: result.decisions,
-        ...(result.nextAfter === undefined
-          ? {}
-          : { nextAfter: result.nextAfter }),
-      });
 }
 
 /** One page of the inbox, its cursor the tickets list's own for the same order. */

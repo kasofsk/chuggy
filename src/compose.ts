@@ -141,7 +141,6 @@ import {
 } from "./interpreter/projectCreation.ts";
 import { postgresSelectorProjectSettings } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import { postgresAgenticRefusalBinding } from "./adapters/postgres/agenticRefusal.ts";
 import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
@@ -340,7 +339,6 @@ export function composeProjectInbox(
   return projectInbox(access, {
     store: postgresInboxReads(apiPool, usageResume),
     operationalReads: postgresOperationalReads(apiPool),
-    refusals: postgresAgenticRefusalBinding(apiPool),
   });
 }
 

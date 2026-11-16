@@ -810,18 +810,6 @@ export const selectorAttentions = [
 ] as const;
 export type SelectorAttention = (typeof selectorAttentions)[number];
 
-/**
- * Which end of the decision log a page is read from. The log is appended to, so
- * a reader following it forward pages from `oldest` with a cursor, and a reader
- * showing what the lead just did asks for `newest` and gets one page.
- */
-export const selectorHistoryOrders = ["oldest", "newest"] as const;
-export type SelectorHistoryOrder = (typeof selectorHistoryOrders)[number];
-
-/** What the lead did about one ticket, in the order it did it. */
-export const agenticRefusalEvents = ["Refused", "Lifted"] as const;
-export type AgenticRefusalEvent = (typeof agenticRefusalEvents)[number];
-
 /** What a session is for, which is what decides whose turns it takes and what it may write. */
 export const sessionKinds = ["Lead", "Thread", "Inquiry"] as const;
 export type SessionKind = (typeof sessionKinds)[number];

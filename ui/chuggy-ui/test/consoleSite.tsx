@@ -113,7 +113,6 @@ import {
 } from "./contextFixture.ts";
 import type { ConsoleNetwork } from "./consoleNetwork.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
-import { inboxRefusal } from "./inboxFixture.ts";
 import { inviteBrowser } from "./inviteDouble.ts";
 import { selectorSettingsBody } from "./selectorSettingsFixture.ts";
 import { abilitiesEvery } from "./projectAbilitiesFixture.ts";
@@ -213,7 +212,7 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
   epic: String(consoleEpic.number),
 };
 
-/** The ticket the lead refuses: the one entry the inbox holds. */
+/** The one entry the inbox holds, which offers no answer. */
 export const consoleInboxTicket = 42;
 
 const consoleInbox: InboxResponse = {
@@ -225,7 +224,6 @@ const consoleInbox: InboxResponse = {
         ticket: consoleInboxTicket,
       },
       actions: [],
-      refusals: [inboxRefusal()],
     },
   ],
   count: 1,

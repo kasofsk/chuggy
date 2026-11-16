@@ -1,5 +1,5 @@
 /**
- * A row whatever put its ticket in the inbox — an open action or a refusal
+ * A row whatever put its ticket in the inbox — an open action or its phase
  * alone — drawn from the row its entry carries: its title, and its
  * last execution where one ran, with no read of the ticket on its own.
  */
@@ -19,7 +19,7 @@ import type {
   ProjectTicket,
 } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
-import { inboxAnswered, inboxEntry, inboxRefusal } from "./inboxFixture.ts";
+import { inboxAnswered, inboxEntry } from "./inboxFixture.ts";
 import {
   abilitiesAnswered,
   abilitiesEvery,
@@ -92,10 +92,10 @@ const escalated: ProjectTicket = {
   ...ticketInstants,
 };
 
-const refused: ProjectTicket = {
+const phased: ProjectTicket = {
   ticket: 42,
   title: "Write the brief",
-  phase: "Pending",
+  phase: "Escalated",
   sequence: 4,
   latestExecution: { ...failedRun, execution: "e42" },
   ...ticketInstants,
@@ -169,30 +169,17 @@ test("a ticket only an open action names draws its last execution", async () => 
   ).toStrictEqual(["resume", "revoke"]);
 });
 
-test("a ticket only a refusal names draws its last execution", async () => {
-  drawInbox([
-    inboxEntry(refused, {
-      refusals: [
-        {
-          ticket: 42,
-          ticketVersion: 2,
-          reason: "the brief names no reference",
-          decision: "selector-decision-1",
-          recordedAt: "2026-09-01T09:01:00Z",
-          superseded: false,
-        },
-      ],
-    }),
-  ]);
+test("a ticket only its phase names draws its last execution", async () => {
+  drawInbox([inboxEntry(phased)]);
   await settled();
-  expect(cell(42, "title")).toBe(`${refused.title ?? ""}42`);
+  expect(cell(42, "title")).toBe(`${phased.title ?? ""}42`);
   expect(cell(42, "last run")).toContain("Failed");
 });
 
 test("no ticket is read on its own, whatever put it in the inbox", async () => {
   const drawn = drawInbox([
     inboxEntry(escalated, { actions: [escalation] }),
-    inboxEntry(refused, { refusals: [inboxRefusal()] }),
+    inboxEntry(phased),
   ]);
   await settled();
   expect(drawn.read.filter((url) => /\/tickets\/\d+/u.test(url))).toStrictEqual(

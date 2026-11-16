@@ -99,15 +99,15 @@ import {
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
-  agenticRefusalsAnsweredMax,
   leadRefusalsPerDecisionMax,
   nativeHttpBasePath,
   nativeHttpMediaType,
   nativeHttpPageItemsMax,
-  selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
 } from "./http.ts";
+/** Bounds no tool here reads any more, kept because the pinned core imports them by name; they go in T20. */
+export { agenticRefusalsAnsweredMax, selectorHistoryLimitMax } from "./http.ts";
 export { briefLineCharsMax } from "./brief.ts";
 
 /** The request shapes a drafting tool publishes as its arguments' schemas, and the bounds they hold an argument to. */
@@ -528,9 +528,6 @@ const chuggyToolRoster = {
     "list_drafts",
     "list_configurations",
     "read_configuration",
-    "read_decision_log",
-    "read_refusals",
-    "read_ticket_refusals",
     "read_ticket_landings",
     "read_landing_queues",
     "read_lead",
@@ -717,9 +714,6 @@ export const chuggyToolRoutes = {
   dispatchView: nativeHttpRoutes.dispatchView,
   configurations: nativeHttpRoutes.configurations,
   configuration: nativeHttpRoutes.configuration,
-  selectorHistory: nativeHttpRoutes.selectorHistory,
-  agenticRefusals: nativeHttpRoutes.agenticRefusals,
-  ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
   /**
    * What `read_ticket_landings` answers of a Stacked ticket beside its
    * landings: under `stacks`, each of its newest work cycles the finalizer

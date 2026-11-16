@@ -105,7 +105,6 @@ import {
   leadNoneResponseSchema,
   leadReadResponseSchema,
   leadResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
   ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
   ticketNativeActionHistoryResponseSchema,
@@ -132,8 +131,6 @@ import type {
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import type { RepositoryFinalization } from "../../src/interpreter/repositoryBinding.ts";
 import {
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalReasonCharsMax,
   errorEnvelopeSchema,
   forgeInstallationsAnsweredMax,
   forgeRepositoriesAnsweredMax,
@@ -2062,47 +2059,6 @@ test("a lead read carries the handoff note by size and preview, never inline", (
         preview: "{}",
         truncated: true,
       },
-    }),
-  );
-});
-
-test("a refusal ledger refuses a reason longer than its column holds", () => {
-  const entry = {
-    ordinal: 1,
-    event: "Refused",
-    ticketVersion: 2,
-    reason: "the dependency is still failing",
-    decision: "selector-decision-one",
-    recordedAt: instant,
-  };
-  const parsed = ticketAgenticRefusalsResponseSchema.parse({
-    ticket: 42,
-    entries: [entry],
-    more: false,
-  });
-  assert.equal(parsed.entries[0]?.event, "Refused");
-  assert.equal(parsed.standing, undefined);
-  assert.equal(parsed.more, false);
-  assert.throws(() =>
-    ticketAgenticRefusalsResponseSchema.parse({ ticket: 42, entries: [entry] }),
-  );
-  assert.throws(() =>
-    ticketAgenticRefusalsResponseSchema.parse({
-      ticket: 42,
-      more: true,
-      entries: Array.from(
-        { length: agenticRefusalLedgerAnsweredMax + 1 },
-        () => entry,
-      ),
-    }),
-  );
-  assert.throws(() =>
-    ticketAgenticRefusalsResponseSchema.parse({
-      ticket: 42,
-      more: false,
-      entries: [
-        { ...entry, reason: "x".repeat(agenticRefusalReasonCharsMax + 1) },
-      ],
     }),
   );
 });

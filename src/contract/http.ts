@@ -366,8 +366,8 @@ export const selectorHistoryLimitMax = 50;
 
 /**
  * The longest reason one agentic refusal carries. It is what makes a page of
- * standing refusals bounded, so it moves only together with the two counts
- * below it.
+ * standing refusals bounded, so it moves only together with the count below
+ * it.
  */
 export const agenticRefusalReasonCharsMax = 1_024;
 
@@ -380,13 +380,6 @@ export const agenticRefusalsAnsweredMax = 32;
 
 /** How many of a lead's turns one read of the lead answers with, newest last. */
 export const leadTurnsAnsweredMax = 32;
-
-/**
- * How many entries one page of one ticket's refusal ledger answers with, `more`
- * carrying the rest. Its product with the reason bound is half of one wire body,
- * which is what makes a full page a body and a stream frame the wire can hold.
- */
-export const agenticRefusalLedgerAnsweredMax = 32;
 
 /** The longest summary a result carries, which the manifest reader accepts and a later evaluation retains. */
 export const resultReportCharsMax = 8_192;
@@ -617,19 +610,16 @@ export const nativeHttpRoutes = {
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
   ticketNativeActionHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-action-history`,
-  ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
   ticketTake: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/take`,
   ticketReturn: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/return`,
   landingQueues: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/landing-queues`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
-  agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
   inbox: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/inbox`,
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
   selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,
   selectorSettingsHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings/history`,
-  selectorHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-history`,
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
   leadContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/context`,

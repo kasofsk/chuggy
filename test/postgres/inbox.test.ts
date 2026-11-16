@@ -1,9 +1,7 @@
 /**
- * The inbox against a real server: the union its three sources make, one entry
+ * The inbox against a real server: the union its two sources make, one entry
  * per ticket, walked by its cursor under one count. The phases and the open
- * actions are the store's own reads, so they are seeded rows; the refusals are
- * a port the service is handed, so they are a double of what their own suite
- * already holds the server to.
+ * actions are the store's own reads, so they are seeded rows.
  *
  * A PAGE IS A FIXED NUMBER OF STATEMENTS. A hundred entries are read in as many
  * statements as one, and none of them correlates a subquery on an outer row's
@@ -17,11 +15,6 @@ import type pg from "pg";
 
 import { postgresInboxReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
-import type {
-  AgenticRefusalBindingRead,
-  AgenticRefusalStanding,
-} from "../../src/interpreter/agenticRefusal.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import type { OperationalReadStore } from "../../src/interpreter/operationsView.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -86,27 +79,6 @@ async function inboxProject(
   return partition;
 }
 
-/** The standing refusals a case names, for the one partition it names them in. */
-function inboxRefusals(
-  partition: Partition,
-  tickets: readonly number[],
-): AgenticRefusalBindingRead {
-  const standing: AgenticRefusalStanding[] = tickets.map((ticket) => ({
-    ticket: asTicketId(ticket),
-    ticketVersion: 1,
-    reason: "the brief names no reference",
-    decision: `refused-${String(ticket)}`,
-    recordedAt: "2026-10-01T00:00:00.000Z",
-    superseded: false,
-  }));
-  return {
-    binding: (asked, limit) =>
-      Promise.resolve(
-        asked.project === partition.project ? standing.slice(0, limit) : [],
-      ),
-  };
-}
-
 /** Every ticket the latest-executions read was asked for, each answered with a run. */
 function inboxLatest(): {
   readonly reads: Pick<OperationalReadStore, "ticketLatestExecutions">;
@@ -132,7 +104,6 @@ function inboxLatest(): {
 
 interface InboxOver {
   readonly pool?: pg.Pool;
-  readonly refused?: readonly number[];
   readonly latest?: Pick<OperationalReadStore, "ticketLatestExecutions">;
 }
 
@@ -148,7 +119,6 @@ function inboxOf(partition: Partition, over: InboxOver = {}) {
   const inbox = projectInbox(access, {
     store: postgresInboxReads(pool),
     operationalReads: over.latest ?? postgresOperationalReads(pool),
-    refusals: inboxRefusals(partition, over.refused ?? []),
   });
   return async (query: ProjectInboxQuery): Promise<ProjectInboxPage> => {
     const read = await inbox.read(reader, partition, query);
@@ -183,7 +153,7 @@ async function inboxWalked(
 
 /**
  * Six tickets, newest activity last: 1 escalated with an action open, 2 past
- * the section with an action open, 3 refused, 4 pending with nothing on it,
+ * the section with an action open, 3 and 4 pending with nothing on them,
  * 5 escalated alone, 6 working with nothing on it.
  */
 const inboxUnion: readonly InboxSeeded[] = [
@@ -195,54 +165,48 @@ const inboxUnion: readonly InboxSeeded[] = [
   { ticket: 6, phase: "Work", seq: 6 },
 ];
 
-test("the inbox is one entry for each ticket any of its three sources names, each with its row and latest execution", async () => {
+test("the inbox is one entry for each ticket either of its sources names, each with its row and latest execution", async () => {
   const partition = await inboxProject("inbox-union", inboxUnion);
   const latest = inboxLatest();
-  const page = await inboxOf(partition, {
-    refused: [3],
-    latest: latest.reads,
-  })({ limit: 10 });
+  const page = await inboxOf(partition, { latest: latest.reads })({
+    limit: 10,
+  });
   assert.deepEqual(
     page.entries.map((entry) => [
       entry.ticket.ticket,
       entry.ticket.phase,
       entry.actions.map((action) => action.action),
-      entry.refusals.map((refusal) => refusal.decision),
       entry.ticket.latestExecution?.execution,
     ]),
     [
-      [5, "Escalated", [], [], "run-5"],
-      [3, "Pending", [], ["refused-3"], "run-3"],
-      [2, "Finalization", ["inbox-union-2"], [], "run-2"],
-      [1, "Escalated", ["inbox-union-1"], [], "run-1"],
+      [5, "Escalated", [], "run-5"],
+      [2, "Finalization", ["inbox-union-2"], "run-2"],
+      [1, "Escalated", ["inbox-union-1"], "run-1"],
     ],
   );
-  assert.equal(page.count, 4);
+  assert.equal(page.count, 3);
   assert.equal(page.nextAfter, undefined);
-  assert.deepEqual(latest.asked, [5, 3, 2, 1]);
+  assert.deepEqual(latest.asked, [5, 2, 1]);
 });
 
 test("a walk of the cursor answers every entry once, the whole count on every page, and no more on the last", async () => {
   const partition = await inboxProject("inbox-walk", inboxUnion);
-  const read = inboxOf(partition, { refused: [3] });
+  const read = inboxOf(partition);
   assert.deepEqual(await inboxWalked(read, 2), [
-    [[5, 3], 4, true],
-    [[2, 1], 4, false],
+    [[5, 2], 3, true],
+    [[1], 3, false],
   ]);
-  assert.deepEqual(await inboxWalked(read, 4), [[[5, 3, 2, 1], 4, false]]);
+  assert.deepEqual(await inboxWalked(read, 3), [[[5, 2, 1], 3, false]]);
 });
 
-test("another project's tickets, actions and refusals are never in the inbox", async () => {
+test("another project's tickets and actions are never in the inbox", async () => {
   const mine = await inboxProject("inbox-mine", [
     { ticket: 1, phase: "Work", seq: 1 },
   ]);
   const theirs = await inboxProject("inbox-theirs", inboxUnion);
   const read = inboxOf(mine);
   assert.deepEqual(await read({ limit: 10 }), { entries: [], count: 0 });
-  assert.equal(
-    (await inboxOf(theirs, { refused: [3] })({ limit: 10 })).count,
-    4,
-  );
+  assert.equal((await inboxOf(theirs)({ limit: 10 })).count, 3);
 });
 
 /** The statements a pool and the clients it lends run, as `pg` is handed each. */
@@ -296,7 +260,7 @@ test("a page of a hundred entries is read in the statements a page of one is, no
   assert.equal(hundred.length, one.length);
   assert.deepEqual(hundred.flatMap(postgresStatementCorrelated), []);
   assert.ok(
-    hundred.some((text) => /\bWITH named AS\b/u.test(text)),
+    hundred.some((text) => /\bWITH acted AS\b/u.test(text)),
     "the positions were read in a statement of their own",
   );
 });

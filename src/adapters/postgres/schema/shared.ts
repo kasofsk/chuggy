@@ -311,7 +311,6 @@ export const leadInquiryReadFunction = "read_lead_inquiry";
 export const inquiryStoreRefusalFunction = "inquiry_writes_no_store_batch";
 export const inquiryCloseFunction = "inquiry_closes_with_its_turn";
 export const agenticRefusalImmutableFunction = "selector_refusal_is_immutable";
-export const projectChangeAgenticRefusalFunction = "selector_refusal_change";
 export const projectChangeSessionTurnFunction = "session_turn_appends_a_change";
 export const projectChangeSessionStoreFunction =
   "session_store_batch_appends_a_change";
