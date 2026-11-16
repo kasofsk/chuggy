@@ -12,6 +12,7 @@
  * message could carry, is ever printed.
  */
 
+import type { ApiFailure } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { operationIdBytesCount } from "./operationFollow.ts";
 import { setupAgentRead, setupMcpPackaged, setupServer } from "./setupAgent.ts";
@@ -447,14 +448,52 @@ async function setupBound(
   };
 }
 
+/** Whether a look `bind` could not finish may be answered otherwise at the next: where the site did not answer, failed or was rolling out, and not where it answered with a refusal. */
+function setupBindAgain(outcome: ApiFailure["outcome"]): boolean {
+  switch (outcome) {
+    case "Unreachable":
+    case "Fault":
+    case "Retryable":
+      return true;
+    case "Absent":
+    case "Rejected":
+    case "Conflict":
+    case "Unauthenticated":
+    case "Unreadable":
+      return false;
+  }
+}
+
+/** Whether the sign-in `bind` entered failed in a way its next look may not: the site, the issuer or the workspaces read did not answer. */
+function setupBindAgainEntered(report: SetupReport): boolean {
+  if (report.report === "IssuerUnanswered") return true;
+  if (report.report === "SiteUnusable") return report.phase === "Unreachable";
+  if (report.report === "WorkspacesUnread")
+    return setupBindAgain(report.outcome);
+  return false;
+}
+
+/** Whether the first thing `bind` read lacking is a read that failed in a way its next look may not. */
+function setupBindAgainRead(standing: SetupStanding): boolean {
+  const lack = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  return (
+    lack?.lacks === "Read" &&
+    lack.fate.fate === "Failed" &&
+    setupBindAgain(lack.fate.outcome)
+  );
+}
+
 /**
  * `bind` works under the remembered sign-in as `import` does, entered again at
  * each look so a wait outlasts its first bearer, and reads the checklist again
  * at `pacing.bindPollMs`, for as long as the run was given, while the next
- * thing waits on GitHub, opening the page that connects GitHub where its first
- * look finds that next and no `bind` before it opened one. Once the next thing is adding the folder's repository
- * it binds it, the one write its ports let through, and reads the checklist
- * again; where the next thing waits on neither, it binds nothing.
+ * thing waits on GitHub or a look failed where the next may not, opening the
+ * page that connects GitHub where its first look to read the standing finds
+ * that next and no `bind` before it opened one, and ending a look still
+ * failing when the time is up as it would have at once. Once the next thing is
+ * adding the folder's repository it binds it, the one write its ports let
+ * through, and reads the checklist again; where the next thing waits on
+ * neither, it binds nothing.
  */
 async function setupBind(
   ports: SetupPorts,
@@ -463,10 +502,15 @@ async function setupBind(
 ): Promise<SetupReport> {
   const endsAtMs = ports.nowMs() + asked.waitSecs * 1_000;
   let opened: string | undefined;
-  for (let looked = false; ; looked = true) {
+  for (let looked = false; ;) {
     const held = await setupEntered(ports, asked.site, "Bind");
     if (held === undefined) return setupBusy(ports, "Bind", asked.site);
-    if (held.signed === "Out") return held.report;
+    if (held.signed === "Out") {
+      if (ports.nowMs() >= endsAtMs || !setupBindAgainEntered(held.report))
+        return held.report;
+      await ports.sleepMs(pacing.bindPollMs);
+      continue;
+    }
     const checklist = () => setupChecklist(ports, held, asked.answers, pacing);
     const standing = await setupStandingRead(
       ports,
@@ -478,9 +522,12 @@ async function setupBind(
     const open = { opened, openBefore: asked.opened };
     if (due !== undefined)
       return { ...(await setupBound(ports, held, due, checklist)), ...open };
-    if (!looked && !asked.opened)
+    const failed = setupBindAgainRead(standing);
+    if (!failed && !looked && !asked.opened)
       opened = await setupBindConnectOpened(ports, standing);
-    if (!setupBindAwaited(standing) || ports.nowMs() >= endsAtMs)
+    looked ||= !failed;
+    const waits = failed || setupBindAwaited(standing);
+    if (!waits || ports.nowMs() >= endsAtMs)
       return {
         report: "Bind",
         opened,
