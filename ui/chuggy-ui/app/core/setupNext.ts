@@ -53,9 +53,12 @@ import {
   repositoryImportWord,
   repositoryImportWordLabel,
 } from "./repositoryImport.ts";
+import { setupServerPackages } from "./setupAgent.ts";
+import type { SetupMcpPackaged } from "./setupAgent.ts";
 import { setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
+import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
@@ -415,19 +418,30 @@ function setupOffer(tell: Copy, at: SetupAt): SetupThing {
   };
 }
 
+const setupMcpOffers = {
+  Current: "setup-mend-mcp-offer",
+  Behind: "setup-mend-mcp-offer-behind",
+  Absent: "setup-mend-mcp-offer-absent",
+} as const satisfies Record<SetupMcpPackaged, string>;
+
 /**
  * The agent's MCP server for the checklist's project, which `mcp` names in
- * its configuration on the person's yes, installing the runner package first
- * where `packaged` says none here is one it leaves as it is.
+ * its configuration on the person's yes, installing the platform's runner
+ * package first where `packaged` says none here is one it leaves as it is.
  */
-function setupMcpMend(at: SetupAt, packaged: boolean): SetupThing {
+function setupMcpMend(
+  at: SetupAt,
+  platform: SetupPlatform,
+  packaged: SetupMcpPackaged,
+): SetupThing {
   const { site, workspace, project } = at;
+  const program = setupServerPackages[platform].offered.program;
   return {
     thing: "Offer",
     command: "Mcp",
     tell: {
-      id: packaged ? "setup-mend-mcp-offer" : "setup-mend-mcp-offer-package",
-      args: { project: setupNamed(at), site, program: setupProgram },
+      id: setupMcpOffers[packaged],
+      args: { project: setupNamed(at), site, program },
     },
     when: { id: "setup-offer-mcp-when" },
     workspace,
@@ -804,14 +818,14 @@ function setupMend(
   at: SetupAt,
   mine: string | undefined,
   here: SetupRunnerHere | undefined,
-  packaged: boolean,
+  mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
 ): SetupThing {
   switch (lack.lacks) {
     case "Read":
       return setupUnreadMend(lack, step);
     case "Mcp":
-      return setupMcpMend(at, packaged);
+      return setupMcpMend(at, mcp.platform, mcp.packaged);
     case "Workspace":
     case "Administration":
       return setupWorkspaceMend(lack, at);
@@ -988,6 +1002,12 @@ export function setupTicketDue(
   return setupDue(standing, ["Ticket"]);
 }
 
+/** The platform the program runs on, and what `mcp` would find of its runner package here. */
+interface SetupMcpHere {
+  readonly platform: SetupPlatform;
+  readonly packaged: SetupMcpPackaged;
+}
+
 /** The project whose MCP step is the one next, which is when the runner package here is looked for before the next thing is named. */
 export function setupMcpDue(
   standing: SetupStanding,
@@ -998,7 +1018,7 @@ export function setupMcpDue(
 function setupThing(
   standing: SetupStanding,
   here: SetupRunnerHere | undefined,
-  packaged: boolean,
+  mcp: SetupMcpHere,
   offers: SetupTicketOffers | undefined,
 ): SetupThing {
   const named = workspaceNamesListed(standing.workspaces);
@@ -1016,27 +1036,29 @@ function setupThing(
     standing.remote === undefined
       ? undefined
       : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine, here, packaged, offers);
+  return setupMend(undone, undone.lacks, at, mine, here, mcp, offers);
 }
 
 /**
  * Names the one next thing and the choice every command printed with it
  * carries, where `answers` is what the run's own arguments named, which a
- * question about the other name keeps. `here` is what this machine showed
- * where `setupRunnerDue` named a project, and nothing where it was not
- * looked at; `packaged` is whether the runner package here is one `mcp`
- * leaves as it is, where `setupMcpDue` named one; `offers` is what a ticket
- * may be drawn under where `setupTicketDue` named a project and it was read.
+ * question about the other name keeps. `platform` is the one the program
+ * runs on; `here` is what this machine showed where `setupRunnerDue` named a
+ * project, and nothing where it was not looked at; `packaged` is what `mcp`
+ * would find of the platform's runner package here, where `setupMcpDue`
+ * named one; `offers` is what a ticket may be drawn under where
+ * `setupTicketDue` named a project and it was read.
  */
 export function setupNext(
   standing: SetupStanding,
   answers: SetupAnswers,
+  platform: SetupPlatform,
   here?: SetupRunnerHere,
-  packaged = false,
+  packaged: SetupMcpPackaged = "Absent",
   offers?: SetupTicketOffers,
 ): SetupNext {
   return {
     carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing, here, packaged, offers),
+    thing: setupThing(standing, here, { platform, packaged }, offers),
   };
 }
