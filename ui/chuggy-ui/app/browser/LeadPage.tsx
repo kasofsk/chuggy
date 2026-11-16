@@ -66,6 +66,7 @@ import {
   sessionStateTone,
   sessionTurnStateTone,
 } from "../core/tones.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
@@ -407,7 +408,7 @@ function LeadBody(props: {
 
 export function LeadPage(): ReactNode {
   const text = useCopyText();
-  const params = useParams({ from: "/$tenant/$project/lead" });
+  const params = useParams({ from: settingsRoutes.project.leadSession });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -431,11 +432,12 @@ export function LeadPage(): ReactNode {
       <>
         <LeadSelectorStrip partition={partition} />
         {absence === undefined ? (
-          <EmptyState label={label} variant="page" action={action} />
+          <EmptyState label={label} variant="page" level={1} action={action} />
         ) : (
           <EmptyState
             label={label}
             variant="page"
+            level={1}
             detail={absence}
             action={action}
           />

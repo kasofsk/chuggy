@@ -161,6 +161,8 @@ import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
 import { postgresChatHostRegistry } from "../adapters/postgres/chatHost.ts";
 import { postgresAgentAccounts } from "../adapters/postgres/agentAccount.ts";
+import { postgresAppearance } from "../adapters/postgres/appearance.ts";
+import { appearanceService } from "../interpreter/appearance.ts";
 import type { TicketUsageResumeBounds } from "../adapters/postgres/nativeReads.ts";
 import { schedulerPassBounds } from "./schedulerConfig.ts";
 import {
@@ -1707,6 +1709,7 @@ async function main(): Promise<void> {
     nativeLandingQueues(pools, access),
     nativeUnrunDeletions(pool, access, erasure),
     nativeTicketTakes(pool, access, authenticationConfig.issuer),
+    appearanceService(postgresAppearance(pool)),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

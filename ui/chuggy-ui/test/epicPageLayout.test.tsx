@@ -100,7 +100,7 @@ test("the overview draws the description and neither the graph nor the summary",
 });
 
 function header(): HTMLElement {
-  const drawn = document.querySelector<HTMLElement>("header.ticket-header");
+  const drawn = document.querySelector<HTMLElement>("header.page-header");
   if (drawn === null) throw new Error("the header is drawn");
   return drawn;
 }
@@ -159,7 +159,7 @@ async function menuOpened(): Promise<HTMLElement> {
   return screen.getByRole("menu");
 }
 
-test("an archived epic says so beside its title and offers to reactivate it", async () => {
+test("an archived epic says so beside its status and offers to reactivate it", async () => {
   epicServing.view = { ...epicView, visibility: "Archived" };
   await epicPageDrawn(abilitiesEvery);
   expect(within(header()).getByText("Archived")).toBeTruthy();
@@ -222,7 +222,7 @@ test("the notes link the escalated member", async () => {
 test("the sticky bar holding the status and the title shows once the header has scrolled away", async () => {
   const report = intersectionObserverStubbed();
   await epicPageDrawn(abilitiesNone);
-  const bar = document.querySelector<HTMLElement>(".ticket-sticky-bar");
+  const bar = document.querySelector<HTMLElement>(".page-header-sticky-bar");
   expect(bar?.hidden).toBe(true);
   act(() => {
     report(false);

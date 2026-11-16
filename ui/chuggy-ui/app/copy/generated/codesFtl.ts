@@ -228,7 +228,6 @@ codes-resume-finalization = Re-runs { -finalization }
 codes-resume-nothing = Nothing to resume
 codes-wall-exit-one = only { $action } exits this wall
 codes-wall-exit-two = only { $action } or { $other } exit this wall
-codes-edit-effect = Revises the { -draft } · { -release(form: "s") } a new { -revision }
 codes-action-dispatch-effect = { -dispatch(case: "upper", form: "s") } the observed version
 codes-action-revoke-effect = { -revoke(case: "upper", form: "ing") } blocks its { -dependent(form: "plural") }
 codes-action-approve-evaluation-effect = Passes this { -evaluator }

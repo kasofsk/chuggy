@@ -4,7 +4,8 @@
 
 epics-title = { -epic(case: "upper", form: "plural") }
 epics-page-title = { -epic(case: "upper") }
-epics-none = No { -epic(form: "plural") }
+epics-none = No { -epic(form: "plural") } yet. Ask in a { -thread } to make one.
+epics-none-matching = No { -epic } matches this search or filter.
 epics-not-found = No such { -epic }
 epics-search = Search { -epic(form: "plural") }
 epics-search-placeholder = Search titles and summaries…
@@ -170,6 +171,7 @@ epics-history-also = { $first } · { $rest }
 
 epics-edit = Edit the { -epic }
 epics-edit-save = Save
+epics-leave-question = Discard the unsaved changes to the { -epic } and leave?
 
 ## What a form has wrong before it is sent, and what a refused write says.
 

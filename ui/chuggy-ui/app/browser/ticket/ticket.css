@@ -488,43 +488,8 @@
     }
   }
 
-  /* The header: the title, the state label with its one fragment, the
-     actions, and the tabs under them. */
-  .ticket-header {
-    display: grid;
-    gap: var(--space-3);
-    min-width: 0;
-  }
-
-  .ticket-header-title {
-    min-width: 0;
-    font-size: var(--text-xl);
-    font-weight: var(--weight-strong);
-    line-height: var(--leading-tight);
-    color: var(--ink-1);
-    overflow-wrap: anywhere;
-  }
-
-  .ticket-header-number {
-    font-weight: var(--weight-regular);
-    color: var(--ink-3);
-  }
-
-  .ticket-header-standing {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .ticket-header-state {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2) var(--space-3);
-    min-width: 0;
-  }
-
+  /* The header is `PageHeader`'s; what is the ticket's own in it is the
+     fragment beside the state, the actions' lines, and the notes. */
   .ticket-header-fragment,
   .ticket-header-fragment .fig {
     color: var(--ink-2);
@@ -542,13 +507,9 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* The actions stand in the primitive's row as its own children. */
   .ticket-header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-inline-start: auto;
+    display: contents;
   }
 
   .ticket-header-actions .act {
@@ -567,11 +528,6 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-  }
-
-  .ticket-header-actions [class*="btn-"] {
-    box-sizing: border-box;
-    height: var(--height-icon);
   }
 
   .ticket-header-notes {
@@ -639,43 +595,6 @@
     color: var(--ink-2);
     font-size: var(--text-xs);
     line-height: var(--leading-dense);
-  }
-
-  /* The bar that stands in for the header once it has scrolled away. It is
-     a child of the page itself, so it sticks for the page's whole length, and
-     takes no room in the page's flow: its own height and the gap after it
-     are given back. */
-  .ticket-sticky {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    height: 0;
-    margin-bottom: calc(-1 * var(--space-4));
-  }
-
-  .ticket-sticky-bar {
-    position: absolute;
-    inset-inline: calc(-1 * var(--space-4));
-    top: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    background: var(--surface-0);
-    border-bottom: var(--hairline) solid var(--edge);
-  }
-
-  .ticket-sticky-bar[hidden] {
-    display: none;
-  }
-
-  .ticket-sticky-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: var(--weight-strong);
-    color: var(--ink-1);
   }
 
   /* The state label: filled is the tone as the ground under inverse ink,

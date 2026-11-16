@@ -190,7 +190,8 @@ import { migration189 } from "./189-worker-task-inputs.ts";
 import { migration190 } from "./190-run-total-credential.ts";
 import { migration191 } from "./191-agent-account-credential-off.ts";
 import { migration192 } from "./192-target-paths-refused.ts";
-import { migration193 } from "./193-scheduler-wakes-threads.ts";
+import { migration193 } from "./193-owned-themes.ts";
+import { migration194 } from "./194-scheduler-wakes-threads.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -387,4 +388,5 @@ export const migrations: readonly Migration[] = [
   migration191,
   migration192,
   migration193,
+  migration194,
 ];

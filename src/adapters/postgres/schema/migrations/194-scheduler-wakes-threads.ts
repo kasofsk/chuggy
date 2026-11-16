@@ -27,8 +27,8 @@ const advance = `public.${threadWakeCursorAdvanceFunction}(in_sequence bigint)`;
 const route = `public.${sessionRouteFunction}(in_tenant text, in_project text, in_kind text)`;
 const standing = `public.${sessionRunnerStandingFunction}(in_tenant text, in_project text, in_member text, in_polled_secs_max bigint)`;
 
-export const migration193: Migration = {
-  version: 193,
+export const migration194: Migration = {
+  version: 194,
   name: "the scheduler wakes member threads",
   statements: [
     ...[candidates, wake, advance].flatMap((boundary) => [

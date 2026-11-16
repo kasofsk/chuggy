@@ -1,10 +1,8 @@
 /**
- * The bar's entries, derived: every screen the project holds, each with the
- * route the router registered for it.
- *
- * The standing is what a read supplies, and an entry answers for none when it
- * has not: a bar that drew one would be saying something the console has not
- * been told.
+ * The bar's entries, derived: the project's primary places, each with the
+ * route the router registered for it, and the account menu's places, the
+ * settings and the reader's preferences, each at its address in the frame the
+ * menu is drawn in.
  */
 
 import { expect, test } from "vitest";
@@ -12,98 +10,110 @@ import { expect, test } from "vitest";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import {
+  settingsRootRoutes,
+  settingsSection,
+} from "../app/core/settingsNav.ts";
+import {
   navEntryCurrent,
   navRoutes,
+  shellAccountNav,
   shellNav,
-  shellSetupNav,
+  shellNavPhone,
+  shellNavPhoneItemsMax,
 } from "../app/core/shellNav.ts";
-import { settingsRoutes } from "../app/core/settingsNav.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-test("every entry names a route of the partition and carries its params", () => {
-  const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
-  const routes = [...Object.values(navRoutes), settingsRoutes.project.myRunner];
-  for (const entry of entries) {
-    expect(routes).toContain(entry.to);
-    expect(entry.params).toStrictEqual(atlas);
-  }
-  expect(entries.map((entry) => entry.id)).toStrictEqual([
+test("the primary places are Tickets, Epics and the Inbox, in that order, each a route of the partition", () => {
+  const places = shellNav(atlas);
+  expect(places.map((entry) => entry.id)).toStrictEqual([
     "overview",
     "epics",
-    "lead",
-    "catalog",
-    "settings",
-    "repositories",
-    "runners",
+    "inbox",
   ]);
-});
-
-test("every entry is labelled by a catalog id, which reads as the screen's name", () => {
-  const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
-  expect(entries.map((entry) => entry.label)).toStrictEqual([
-    { id: "shell-nav-tickets" },
-    { id: "shell-nav-epics" },
-    { id: "shell-nav-lead" },
-    { id: "shell-nav-catalog" },
-    { id: "shell-nav-settings" },
-    { id: "shell-nav-repositories" },
-    { id: "shell-nav-runners" },
+  expect(places.map((entry) => entry.to)).toStrictEqual([
+    navRoutes.overview,
+    navRoutes.epics,
+    navRoutes.inbox,
   ]);
-  expect(entries.map((entry) => copyTextEn(entry.label))).toStrictEqual([
+  expect(places.map((entry) => copyTextEn(entry.label))).toStrictEqual([
     "Tickets",
     "Epics",
-    "Lead",
-    "Catalog",
-    "Project settings",
-    "Repositories",
-    "Runners",
+    "Inbox",
   ]);
+  for (const entry of places) expect(entry.params).toStrictEqual(atlas);
 });
 
-test("the lead's standing is drawn only where a read supplied it", () => {
-  const silent = shellNav({ partition: atlas });
-  expect(silent.find((entry) => entry.id === "lead")?.standing).toBeUndefined();
-  const told = shellNav({
-    partition: atlas,
-    leadStanding: { word: { id: "lead-session-open" }, tone: "live" },
-  });
-  expect(told.find((entry) => entry.id === "lead")?.standing).toStrictEqual({
-    word: { id: "lead-session-open" },
-    tone: "live",
-  });
+test("on a phone every primary place has an item of its own, and none is behind More", () => {
+  const places = shellNav(atlas);
+  expect(places.length).toBeLessThanOrEqual(shellNavPhoneItemsMax);
+  expect(shellNavPhone(places)).toStrictEqual({ items: places, more: [] });
+});
+
+test("places that outnumber a phone's items keep their order, the last item More holding every place past it", () => {
+  const places = shellNav(atlas);
+  for (let itemsMax = 2; itemsMax < places.length; itemsMax += 1) {
+    const laid = shellNavPhone(places, itemsMax);
+    expect(laid.items.length + 1).toBe(itemsMax);
+    expect([...laid.items, ...laid.more]).toStrictEqual(places);
+  }
+  expect(shellNavPhone(places, places.length).more).toStrictEqual([]);
+});
+
+test("a phone's bar too short to hold a place beside More is refused", () => {
+  expect(() => shellNavPhone(shellNav(atlas), 1)).toThrow(RangeError);
+});
+
+test("in a project the account menu names the project's settings, then the reader's preferences section there", () => {
+  const entries = shellAccountNav(atlas);
+  expect(entries.map((entry) => [entry.id, entry.to])).toStrictEqual([
+    ["settings", settingsRootRoutes.project],
+    ["preferences", settingsSection("preferences").project],
+  ]);
+  expect(entries.map((entry) => copyTextEn(entry.label))).toStrictEqual([
+    "Settings",
+    "Preferences",
+  ]);
+  expect(entries[1]?.label).toStrictEqual(settingsSection("preferences").label);
+  for (const entry of entries) expect(entry.params).toStrictEqual(atlas);
+});
+
+test("in a workspace outside every project the account menu names the workspace's settings and the preferences there", () => {
+  const entries = shellAccountNav({ tenant: "acme", project: undefined });
+  expect(entries.map((entry) => [entry.id, entry.to])).toStrictEqual([
+    ["settings", settingsRootRoutes.workspace],
+    ["preferences", settingsSection("preferences").workspace],
+  ]);
+  for (const entry of entries)
+    expect(entry.params).toStrictEqual({ tenant: "acme" });
+});
+
+test("where no workspace is named the account menu names no place", () => {
+  expect(
+    shellAccountNav({ tenant: undefined, project: undefined }),
+  ).toStrictEqual([]);
+});
+
+test("the preferences are a section of the reader's own group, at an address under each frame's settings", () => {
+  const preferences = settingsSection("preferences");
+  expect(preferences.group).toBe("person");
+  expect(preferences.shownBy).toBe("Member");
+  expect(preferences.project).toBe("/$tenant/$project/settings/preferences");
+  expect(preferences.workspace).toBe("/tenants/$tenant/settings/preferences");
 });
 
 function currentAt(pathname: string): readonly string[] {
-  return [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)]
+  return shellNav(atlas)
     .filter((entry) => navEntryCurrent(entry, pathname))
     .map((entry) => entry.id);
 }
 
-test("each screen is current on its own address alone", () => {
+test("each place is current on its own address and what lies beneath it", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
-  expect(currentAt("/acme/atlas/inbox")).toStrictEqual([]);
+  expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
   expect(currentAt("/acme/atlas/epics")).toStrictEqual(["epics"]);
   expect(currentAt("/acme/atlas/epics/7")).toStrictEqual(["epics"]);
-  expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
-  expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
-  expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
-  expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);
-  expect(currentAt("/acme/atlas/repositories/a%2Fb")).toStrictEqual([
-    "repositories",
-  ]);
-});
-
-test("the gear's Runners opens the reader's own runners, and is current there beside Settings and not at the address that redirects there", () => {
-  expect(shellSetupNav(atlas).find((entry) => entry.id === "runners")?.to).toBe(
-    settingsRoutes.project.myRunner,
-  );
-  expect(currentAt("/acme/atlas/settings/workspace/runner")).toStrictEqual([
-    "settings",
-    "runners",
-  ]);
-  expect(currentAt("/acme/atlas/settings/pools")).toStrictEqual(["settings"]);
-  expect(currentAt("/acme/atlas/runners")).toStrictEqual([]);
+  expect(currentAt("/acme/atlas/settings")).toStrictEqual([]);
 });
 
 test("a ticket's page and its edit belong to Tickets, and a new one to none", () => {

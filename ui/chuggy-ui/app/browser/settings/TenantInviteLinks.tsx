@@ -67,7 +67,6 @@ export function TenantInviteLinks(props: {
         cell: (link, nowMs) =>
           link.state === "Used" ? (
             <InviteLinkWho
-              label={inviteLinksWords.usedBy}
               person={link.usedBy}
               atMs={link.usedAtMs}
               nowMs={nowMs}

@@ -51,6 +51,7 @@ import {
 import { accessAbilities } from "../interpreter/accessAbilities.ts";
 import { accessAuthorities } from "../interpreter/accessAuthorities.ts";
 import { accessAuthorityHolders } from "../interpreter/accessAuthorityHolders.ts";
+import { accessCallerAccount } from "../interpreter/accessCallerAccount.ts";
 import { accessCallerTenants } from "../interpreter/accessCallerTenants.ts";
 import { accessInvitations } from "../interpreter/accessInvitation.ts";
 import { accessInviteLinks } from "../interpreter/accessInviteLink.ts";
@@ -221,6 +222,7 @@ export function accessPlaneComposed(
       { bounds: accessPlaneBoundsDefault },
     ),
     tenantNames: accessTenantNames({ ...ports, names }),
+    callerAccount: accessCallerAccount(ports, { issuer }),
     inviteLinks: accessInviteLinks({ ...ports, claims, links }, { issuer }),
     ready: async () =>
       (await readiness.ready()) &&

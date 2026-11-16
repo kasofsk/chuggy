@@ -449,3 +449,15 @@ export const ticketTakerFunction = "ticket_taker";
 
 /** The member a ticket's next execution is placed for: its taker, else its creator, else none. */
 export const ticketOwnerFunction = "ticket_owner";
+/** Every theme one person owns, by number. */
+export const ownedThemesFunction = "owned_themes";
+/** One theme created for one person, refused past the bound they are held to. */
+export const ownedThemeCreateFunction = "create_owned_theme";
+/** One theme of one person's written whole. */
+export const ownedThemeWriteFunction = "write_owned_theme";
+/** One theme of one person's deleted, with the choice that names it. */
+export const ownedThemeDeleteFunction = "delete_owned_theme";
+/** One person's global theme choice, none where they hold none. */
+export const themeChoiceReadFunction = "read_theme_choice";
+/** One person's global theme choice written whole, or cleared. */
+export const themeChoiceWriteFunction = "write_theme_choice";

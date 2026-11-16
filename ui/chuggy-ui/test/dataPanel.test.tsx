@@ -13,6 +13,7 @@ import { afterEach, expect, test } from "vitest";
 import {
   DataPanel,
   DataSection,
+  PanelUnready,
   ReadFailed,
 } from "../app/browser/DataPanel.tsx";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
@@ -27,6 +28,44 @@ test("a pending read says it is loading and draws no value", () => {
     </DataPanel>,
   );
   expect(screen.getByText("Loading…")).toBeDefined();
+});
+
+test("a pending read given a skeleton draws that shape as a busy region in place of its line", () => {
+  const view = renderCopied(
+    <PanelUnready state={{ state: "Pending" }} skeleton="row" />,
+  );
+  const region = view.container.querySelector('[aria-busy="true"]');
+  expect(region?.querySelector(".skeleton-row")).not.toBeNull();
+  expect(region?.textContent).toBe("Loading…");
+  expect(view.container.querySelector(".notice")).toBeNull();
+});
+
+test("a pending read given no skeleton keeps its line and is not marked busy", () => {
+  const view = renderCopied(<PanelUnready state={{ state: "Pending" }} />);
+  expect(view.container.querySelector(".notice")?.textContent).toBe("Loading…");
+  expect(view.container.querySelector("[aria-busy]")).toBeNull();
+});
+
+test("a skeleton leaves an absent, a failed and a ready read drawn as they are without one", () => {
+  const states = [
+    { state: "Absent" },
+    {
+      state: "Failed",
+      failure: { outcome: "Unreachable", reason: "fetch failed" },
+    },
+    { state: "Ready", value: "c1", observedAtMs: 0 },
+  ] as const;
+  for (const state of states) {
+    const plain = renderCopied(<PanelUnready state={state} />).container
+      .innerHTML;
+    cleanup();
+    const shaped = renderCopied(
+      <PanelUnready state={state} skeleton="card" />,
+    ).container;
+    expect(shaped.innerHTML).toBe(plain);
+    expect(shaped.querySelector("[aria-busy]")).toBeNull();
+    cleanup();
+  }
 });
 
 test("an absent read and a failed read say which they are, each in its word under the panel's title", () => {

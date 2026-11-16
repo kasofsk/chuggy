@@ -163,28 +163,28 @@ const mends: {
       repository: "acme-org/widgets",
     },
     hand(
-      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Worker app missing · grant it on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
+      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/settings/repositories, press Add, and under the list find Worker app missing · grant it on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
       "once the person says the worker app is granted acme-org/widgets",
     ),
   ],
   Account: [
     { lacks: "Account" },
     hand(
-      `Open ${pages}/repositories and press Connect GitHub, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
+      `Open ${pages}/settings/repositories and press Connect GitHub, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
       "once the person says GitHub is connected",
     ),
   ],
   App: [
     { lacks: "App", app: "worker", account: "acme-org" },
     hand(
-      `Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
+      `Open ${pages}/settings/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
       "once the person says the worker app is installed on acme-org",
     ),
   ],
   Binding: [
     { lacks: "Binding", reach: undefined },
     hand(
-      `Open ${pages}/repositories, press Add and choose your repository. Tell me once it is added.`,
+      `Open ${pages}/settings/repositories, press Add and choose your repository. Tell me once it is added.`,
       "once the person says the repository is added",
     ),
   ],
@@ -409,7 +409,7 @@ test("an app not granted the repository is mended from the line the Add picker d
   }
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     hand(
-      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Not listed · grant it on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
+      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/settings/repositories, press Add, and under the list find Not listed · grant it on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
       "once the person says the portal app is granted acme-org/widgets",
     ),
   );
@@ -420,7 +420,7 @@ test("the repository to add is named as this folder's where the folder has a rem
   expect(
     thing({ lacks: "Binding", reach: undefined }, { remote }),
   ).toMatchObject({
-    tell: `Open ${pages}/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
+    tell: `Open ${pages}/settings/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
   });
 });
 

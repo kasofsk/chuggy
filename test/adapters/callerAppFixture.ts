@@ -9,6 +9,7 @@ import {
 } from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import type { AgentAccountService } from "../../src/interpreter/agentAccount.ts";
+import type { AppearanceService } from "../../src/interpreter/appearance.ts";
 import type { MemberChat } from "../../src/interpreter/memberChat.ts";
 import type { PersonalRunnerService } from "../../src/interpreter/personalRunnerRegistration.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
@@ -30,6 +31,7 @@ export interface CallerAppServices {
   readonly landingQueues?: LandingQueueReads;
   readonly deletions?: UnrunDeletions;
   readonly takes?: TicketTakes;
+  readonly appearance?: AppearanceService;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -78,5 +80,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.landingQueues,
     services.deletions,
     services.takes,
+    services.appearance,
   );
 }

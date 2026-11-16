@@ -193,7 +193,6 @@ export interface CodesCopy {
     readonly action: unknown;
     readonly other: unknown;
   };
-  readonly "codes-edit-effect": Record<never, never>;
   readonly "codes-action-dispatch-effect": Record<never, never>;
   readonly "codes-action-revoke-effect": Record<never, never>;
   readonly "codes-action-approve-evaluation-effect": Record<never, never>;

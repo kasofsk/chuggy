@@ -64,6 +64,13 @@ function rows(): readonly HTMLElement[] {
   return within(sectionOf("Pools")).getAllByRole("row");
 }
 
+/** A row's cells as their values read, without the label a card draws over each. */
+function rowText(row: HTMLElement | undefined): string {
+  return [...(row?.children ?? [])]
+    .map((cell) => (cell.querySelector(".tabular-value") ?? cell).textContent)
+    .join("");
+}
+
 test("each pool is a row naming it, its platforms and when it registered, under the line that says what pools are", async () => {
   await drawPools(pools);
   const section = sectionOf("Pools");
@@ -75,8 +82,9 @@ test("each pool is a row naming it, its platforms and when it registered, under 
       .getAllByRole("columnheader")
       .map((header) => header.textContent),
   ).toStrictEqual(["Runner", "Platforms", "Version", "Registered"]);
-  expect(rows()[1]?.textContent).toMatch(/^shameLinux Amd64/u);
-  expect(within(rows()[1] ?? section).getByRole("rowheader").textContent).toBe(
+  expect(rowText(rows()[1])).toMatch(/^shameLinux Amd64/u);
+  const header = within(rows()[1] ?? section).getByRole("rowheader");
+  expect((header.querySelector(".tabular-value") ?? header).textContent).toBe(
     "shame",
   );
 });
@@ -102,10 +110,10 @@ test("a pool's version is drawn, Outdated where chuggy pins a later one, and a d
       { ...pool, pool: "unnamed" },
     ],
   });
-  expect(rows()[1]?.textContent).toMatch(/0\.9\.0Outdated/u);
-  expect(rows()[2]?.textContent).toMatch(/0\.10\.0/u);
-  expect(rows()[2]?.textContent).not.toMatch(/Outdated/u);
-  expect(rows()[3]?.textContent).toMatch(/Linux Amd64—/u);
+  expect(rowText(rows()[1])).toMatch(/0\.9\.0Outdated/u);
+  expect(rowText(rows()[2])).toMatch(/0\.10\.0/u);
+  expect(rowText(rows()[2])).not.toMatch(/Outdated/u);
+  expect(rowText(rows()[3])).toMatch(/Linux Amd64—/u);
 });
 
 test("a roster holding more than one read answers says so under its rows", async () => {

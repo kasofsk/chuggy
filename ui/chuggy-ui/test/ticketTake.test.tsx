@@ -1,12 +1,12 @@
 /**
- * Take and Return on a ticket's header, and the owner in its sidebar: Take is
+ * Take and Return in a ticket's header menu, and the owner in its sidebar: Take is
  * offered to a reader who may mutate and does not own the ticket, Return to
  * its taker, neither to a creator who owns their own ticket or to a reader
  * refused the permit, and a press names nobody but the reader.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode, Ref } from "react";
@@ -20,7 +20,6 @@ import {
   scriptedFetch,
   settled,
   queryClientUnretried,
-  turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -29,7 +28,11 @@ import { creatorLabel } from "../app/core/labels.ts";
 import type { ProjectAbilitiesResponse } from "../../../src/contract/responses.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
+import {
+  TicketPageEveryTab,
+  ticketHeaderMenuChosen,
+  ticketHeaderMenuEntries,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -125,11 +128,10 @@ async function page(drawn: TakeCase): Promise<readonly SentRequest[]> {
   return api.sent;
 }
 
-/** Which of Take and Return the header draws. */
-function offered(): readonly string[] {
-  return ["Take", "Return"].filter(
-    (name) => within(ticketHeader()).queryByRole("button", { name }) !== null,
-  );
+/** Which of Take and Return the header's menu offers. */
+async function offered(): Promise<readonly string[]> {
+  const entries = await ticketHeaderMenuEntries();
+  return ["Take", "Return"].filter((name) => entries.includes(name));
 }
 
 /** The sidebar's Owner, as drawn, or nothing where it draws none. */
@@ -143,25 +145,25 @@ function ownerDrawn(): string | undefined {
 
 test("a reader who owns the ticket they filed is offered neither, and no owner is drawn", async () => {
   await page({ creator: reader, owner: reader });
-  expect(offered()).toStrictEqual([]);
+  expect(await offered()).toStrictEqual([]);
   expect(ownerDrawn()).toBeUndefined();
 });
 
 test("the ticket's taker is offered Return, and is drawn its owner", async () => {
   await page({ creator: other, owner: reader });
-  expect(offered()).toStrictEqual(["Return"]);
+  expect(await offered()).toStrictEqual(["Return"]);
   expect(ownerDrawn()).toBe(creatorLabel(reader).text);
 });
 
 test("a reader who neither filed nor took the ticket is offered Take", async () => {
   await page({ creator: other, owner: other });
-  expect(offered()).toStrictEqual(["Take"]);
+  expect(await offered()).toStrictEqual(["Take"]);
   expect(ownerDrawn()).toBeUndefined();
 });
 
 test("a reader who does not own a ticket someone else took is offered Take, and never Return", async () => {
   await page({ creator: reader, owner: other });
-  expect(offered()).toStrictEqual(["Take"]);
+  expect(await offered()).toStrictEqual(["Take"]);
   expect(ownerDrawn()).toBe(creatorLabel(other).text);
 });
 
@@ -171,39 +173,35 @@ test("a reader without the permit to mutate is offered neither", async () => {
     owner: reader,
     abilities: { ...abilitiesEvery, mutate: false },
   });
-  expect(offered()).toStrictEqual([]);
+  expect(await offered()).toStrictEqual([]);
   cleanup();
   await page({
     creator: other,
     owner: other,
     abilities: { ...abilitiesEvery, mutate: false },
   });
-  expect(offered()).toStrictEqual([]);
+  expect(await offered()).toStrictEqual([]);
 });
 
 test.each(["Done", "Revoked"] as const)(
   "a %s ticket offers neither, to its taker or anyone else",
   async (phase) => {
     await page({ phase, creator: other, owner: reader });
-    expect(offered()).toStrictEqual([]);
+    expect(await offered()).toStrictEqual([]);
     cleanup();
     await page({ phase, creator: other, owner: other });
-    expect(offered()).toStrictEqual([]);
+    expect(await offered()).toStrictEqual([]);
   },
 );
 
 test("Take posts to the ticket's take door with no member named, and the ticket read again draws Return", async () => {
   const sent = await page({ creator: other, owner: other, ownerAfter: reader });
-  await turned(() => {
-    fireEvent.click(
-      within(ticketHeader()).getByRole("button", { name: "Take" }),
-    );
-  });
+  await ticketHeaderMenuChosen("Take");
   await settled();
   const takes = sent.filter((request) => request.url.endsWith("/take"));
   expect(takes.map(({ method, body }) => ({ method, body }))).toStrictEqual([
     { method: "POST", body: {} },
   ]);
-  expect(offered()).toStrictEqual(["Return"]);
+  expect(await offered()).toStrictEqual(["Return"]);
   expect(ownerDrawn()).toBe(creatorLabel(reader).text);
 });

@@ -90,7 +90,11 @@ function EpicPageOf(props: {
   );
   if (!Number.isSafeInteger(epic) || epic <= 0)
     return (
-      <EmptyState label={text({ id: "epics-not-found" })} variant="page" />
+      <EmptyState
+        label={text({ id: "epics-not-found" })}
+        variant="page"
+        level={1}
+      />
     );
   const held: EpicPageHeld = {
     partition,

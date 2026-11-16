@@ -136,11 +136,13 @@ export function invitePageDecided(arrival: InviteArrival): InvitePage {
 export const invitePageWords = {
   brand: { id: "settings-invite-brand" },
   needed: { id: "settings-invite-needed" },
+  invited: { id: "settings-invite-invited-title" },
   reading: { id: "settings-invite-reading" },
   ended: { id: "settings-invite-ended" },
   signInGithub: { id: "settings-invite-sign-in-github" },
   redeeming: { id: "settings-invite-joining" },
   notValid: { id: "settings-invite-not-valid" },
+  notValidTitle: { id: "settings-invite-not-valid-title" },
   signIn: { id: "settings-invite-sign-in" },
   open: { id: "settings-invite-open" },
   retry: { id: "settings-invite-retry" },
@@ -189,7 +191,7 @@ export function inviteSummaryCard(
   if (result === undefined)
     return {
       card: "Reading",
-      title: invitePageWords.brand,
+      title: invitePageWords.invited,
       line: invitePageWords.reading,
     };
   switch (result.outcome) {
@@ -197,7 +199,7 @@ export function inviteSummaryCard(
       return result.value.state === "Ended"
         ? {
             card: "Ended",
-            title: invitePageWords.notValid,
+            title: invitePageWords.notValidTitle,
             line: invitePageWords.ended,
           }
         : inviteSummaryOpen(result.value);
@@ -205,7 +207,7 @@ export function inviteSummaryCard(
     case "Rejected":
       return {
         card: "Ended",
-        title: invitePageWords.notValid,
+        title: invitePageWords.notValidTitle,
         line: invitePageWords.ended,
       };
     case "Conflict":
@@ -216,7 +218,7 @@ export function inviteSummaryCard(
     case "Unreadable":
       return {
         card: "Failed",
-        title: invitePageWords.brand,
+        title: invitePageWords.invited,
         line: accessFailureLabel(result),
       };
   }

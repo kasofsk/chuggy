@@ -1,7 +1,7 @@
 /**
- * The epic list: the tickets list's bar over it, a row an epic drawn as a
- * ticket's row with its progress, and each page more on request joining the
- * one list.
+ * The epic list: the tickets list's bar over it, a record row an epic with
+ * its progress and its status, skeleton rows while a page is read, and each
+ * page more on request joining the one list.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -24,25 +24,28 @@ import {
 } from "./screenHarness.tsx";
 import { renderCopied } from "./copied.tsx";
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: {
+vi.mock("@tanstack/react-router", () => {
+  interface Linked {
     readonly to?: string;
     readonly params?: Readonly<Record<string, string>>;
     readonly children?: ReactNode;
-  }) => (
-    <a
-      href={(props.to ?? "/").replace(
-        /\$(\w+)/gu,
-        (named: string, key: string) => props.params?.[key] ?? named,
-      )}
-    >
-      {props.children}
-    </a>
-  ),
-  useParams: () => ({ ...projectPartition }),
-  useNavigate: () => () => Promise.resolve(),
-}));
+  }
+  const hrefOf = (props: Linked) =>
+    (props.to ?? "/").replace(
+      /\$(\w+)/gu,
+      (named: string, key: string) => props.params?.[key] ?? named,
+    );
+  return {
+    createLink:
+      (
+        component: (props: { href: string; children?: ReactNode }) => ReactNode,
+      ) =>
+      (props: Linked) =>
+        component({ href: hrefOf(props), children: props.children }),
+    useParams: () => ({ ...projectPartition }),
+    useNavigate: () => () => Promise.resolve(),
+  };
+});
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
@@ -77,6 +80,9 @@ function summary(
   };
 }
 
+/** A page whose read never answers. */
+const epicsPagePending = "Pending";
+
 function screenAt(query: EpicsQuery, onQuery: (query: EpicsQuery) => void) {
   return (
     <ScreenHarness
@@ -104,7 +110,9 @@ async function drawn(
   const served = ((url: string) => {
     asked.push(url);
     const after = /after=(\d+)/u.exec(url)?.[1] ?? "first";
-    return Promise.resolve(answer(pages[after] ?? { epics: [] }));
+    const page = pages[after];
+    if (page === epicsPagePending) return new Promise<never>(() => undefined);
+    return Promise.resolve(answer(page ?? { epics: [] }));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", abilitiesFetch(abilities, served));
   const { rerender } = renderCopied(screenAt(query, onQuery));
@@ -118,7 +126,7 @@ async function drawn(
   };
 }
 
-test("each epic is a row of the tickets list's, its title over its number and summary, then its progress", async () => {
+test("each epic is a record row: its title the one link, in a heading, over its progress, its words and its summary, with its status at the line's end", async () => {
   await drawn(abilitiesNone, {
     first: {
       epics: [
@@ -128,38 +136,77 @@ test("each epic is a row of the tickets list's, its title over its number and su
     },
   });
   const list = screen.getByRole("list", { name: "Epics" });
-  expect(list.classList.contains("ticket-list")).toBe(true);
+  expect(list.classList.contains("record-list")).toBe(true);
   const rows = within(list).getAllByRole("listitem");
   const [first, second] = rows;
   if (first === undefined || second === undefined)
     throw new Error("two rows are drawn");
-  expect(first.querySelector(".ticket-list-row")).not.toBeNull();
   expect(
     within(first)
       .getAllByRole("link")
       .map((link) => [link.textContent, link.getAttribute("href")]),
-  ).toStrictEqual([
-    ["Billing", "/acme/atlas/epics/7"],
-    ["7", "/acme/atlas/epics/7"],
-  ]);
+  ).toStrictEqual([["Billing", "/acme/atlas/epics/7"]]);
   expect(
-    first.querySelector(".ticket-list-info .ticket-list-meta")?.textContent,
-  ).toBe("Invoices and refunds");
+    within(first).getByRole("heading", { level: 3, name: "Billing" }),
+  ).toBeTruthy();
+  const meta = first.querySelector(".record-row-meta");
   const bar = within(first).getByRole("progressbar", { name: "1 of 2 done" });
   expect(
     [...bar.querySelectorAll<SVGRectElement>(".epic-progress-segment")].map(
       (segment) => segment.dataset["group"],
     ),
   ).toStrictEqual(["Done", "Pending"]);
-  expect(first.querySelector(".ticket-list-foot")?.contains(bar)).toBe(true);
-  expect(first.querySelector(".epic-progress-said")?.textContent).toBe(
+  expect(meta?.contains(bar)).toBe(true);
+  expect(meta?.querySelector(".epic-progress-said")?.textContent).toBe(
     "1 of 2 done",
   );
-  expect(within(first).queryByText("In progress")).toBeNull();
-  expect(within(first).queryByText("Archived")).toBeNull();
-  expect(second.querySelector(".ticket-list-foot-standing")?.textContent).toBe(
-    "Archived",
-  );
+  expect(meta?.textContent).toContain("Invoices and refunds");
+  const badges = (row: Element) =>
+    [
+      ...row.querySelectorAll<HTMLElement>(
+        ".record-row-trailing .status-badge",
+      ),
+    ].map((badge) => [badge.dataset["tone"], badge.textContent]);
+  expect(badges(first)).toStrictEqual([["live", "In progress"]]);
+  expect(badges(second)).toStrictEqual([
+    ["pass", "Done"],
+    ["retired", "Archived"],
+  ]);
+});
+
+test("the list borrows no class of the tickets list's", async () => {
+  await drawn(abilitiesNone, {
+    first: { epics: [summary(7, "Billing")], nextAfter: 7 },
+  });
+  expect(document.querySelector("[class*='ticket-list']")).toBeNull();
+});
+
+test("while the first page is read the list is skeleton rows, hidden from a reader", async () => {
+  await drawn(abilitiesNone, { first: epicsPagePending });
+  const list = screen.getByRole("list", { name: "Loading…", hidden: true });
+  const rows = [...list.children];
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.getAttribute("aria-hidden")).toBe("true");
+    expect(row.querySelector("[data-skeleton]")).not.toBeNull();
+  }
+  expect(screen.queryByRole("link")).toBeNull();
+});
+
+test("while a page more is read its skeleton rows stand at the list's end, under the rows already read", async () => {
+  await drawn(abilitiesNone, {
+    first: { epics: [summary(7, "Billing")], nextAfter: 7 },
+    "7": epicsPagePending,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+  await settled();
+  const list = screen.getByRole("list", { name: "Epics" });
+  const rows = [...list.children];
+  expect(rows[0]?.querySelector("[data-skeleton]")).toBeNull();
+  expect(rows.length).toBeGreaterThan(1);
+  for (const row of rows.slice(1))
+    expect(row.querySelector("[data-skeleton]")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
 });
 
 test("the list's bar is the tickets list's, its search a button that opens to the box and its sort and visibility round pickers", async () => {
@@ -198,10 +245,45 @@ test("a row's bar has its words beside it, naming what runs", async () => {
   );
 });
 
-test("a project with no epic says so", async () => {
+test("a project with no epic says so in one line, that one is made by asking in a chat, and offers no press", async () => {
   await drawn(abilitiesNone, { first: { epics: [] } });
-  expect(screen.getByText("No epics")).toBeTruthy();
+  const line = screen.getByText("No epics yet. Ask in a chat to make one.");
+  expect(line.tagName).toBe("P");
+  expect(screen.queryByRole("list", { name: "Epics" })).toBeNull();
+  const page = screen.getByRole("region", { name: "Epics" });
+  const bar = page.querySelector(".list-controls");
+  expect(
+    within(page)
+      .queryAllByRole("button")
+      .filter((press) => !bar?.contains(press)),
+  ).toStrictEqual([]);
 });
+
+test.each<[string, EpicsQuery]>([
+  ["a search", { q: "zzz" }],
+  ["the archived view", { visibility: "Archived" }],
+])(
+  "%s that matches no epic says nothing matches, not that the project has none",
+  async (_, query) => {
+    await drawn(abilitiesNone, { first: { epics: [] } }, query);
+    const line = screen.getByText("No epic matches this search or filter.");
+    expect(line.tagName).toBe("P");
+    expect(screen.queryByText(/Ask in a chat/u)).toBeNull();
+  },
+);
+
+test.each<[string, EpicsQuery]>([
+  ["a sort", { sort: "oldest" }],
+  ["every visibility", { visibility: "All" }],
+])(
+  "%s with no search leaves an empty project saying it has no epics yet",
+  async (_, query) => {
+    await drawn(abilitiesNone, { first: { epics: [] } }, query);
+    expect(
+      screen.getByText("No epics yet. Ask in a chat to make one."),
+    ).toBeDefined();
+  },
+);
 
 test("show more reads the page after the cursor and draws its rows in the one list, under the first's", async () => {
   const { asked } = await drawn(abilitiesNone, {
@@ -210,7 +292,7 @@ test("show more reads the page after the cursor and draws its rows in the one li
     "3": { epics: [summary(1, "Oldest")] },
   });
   const more = screen.getByRole("button", { name: "Show more" });
-  expect(more.parentElement?.classList.contains("ticket-list-more")).toBe(true);
+  expect(more.parentElement?.classList.contains("record-list-more")).toBe(true);
   fireEvent.click(more);
   await settled();
   fireEvent.click(screen.getByRole("button", { name: "Show more" }));
@@ -222,9 +304,13 @@ test("show more reads the page after the cursor and draws its rows in the one li
   if (list === undefined) throw new Error("the list is drawn");
   expect(
     within(list)
-      .getAllByRole("listitem")
-      .map((row) => row.dataset["epic"]),
-  ).toStrictEqual(["7", "3", "1"]);
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href")),
+  ).toStrictEqual([
+    "/acme/atlas/epics/7",
+    "/acme/atlas/epics/3",
+    "/acme/atlas/epics/1",
+  ]);
   expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
 });
 

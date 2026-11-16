@@ -203,6 +203,7 @@ function scopedApp(
       tenants: recorded(reached, "tenantDeletion"),
     },
     recorded(reached, "takes"),
+    recorded(reached, "appearance"),
   );
 }
 

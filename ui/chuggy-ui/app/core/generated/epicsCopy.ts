@@ -6,6 +6,7 @@ export interface EpicsCopy {
   readonly "epics-title": Record<never, never>;
   readonly "epics-page-title": Record<never, never>;
   readonly "epics-none": Record<never, never>;
+  readonly "epics-none-matching": Record<never, never>;
   readonly "epics-not-found": Record<never, never>;
   readonly "epics-search": Record<never, never>;
   readonly "epics-search-placeholder": Record<never, never>;
@@ -208,6 +209,7 @@ export interface EpicsCopy {
   };
   readonly "epics-edit": Record<never, never>;
   readonly "epics-edit-save": Record<never, never>;
+  readonly "epics-leave-question": Record<never, never>;
   readonly "epics-fault-title-empty": Record<never, never>;
   readonly "epics-fault-title-long": Record<never, never>;
   readonly "epics-fault-summary-long": Record<never, never>;

@@ -33,6 +33,7 @@ import { projectPartition } from "../projectFixture.ts";
 import { selectorSettingsBody } from "../selectorSettingsFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { renderCopied } from "../copied.tsx";
+import { tableCards, tableText } from "../tableText.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -144,9 +145,7 @@ async function choose(kind: string, name: string): Promise<void> {
 }
 
 function placementRows(): readonly (string | null)[] {
-  return within(sectionOf("Placement"))
-    .getAllByRole("row")
-    .map((row) => row.textContent);
+  return within(sectionOf("Placement")).getAllByRole("row").map(tableText);
 }
 
 /** A session's runner is said only where it runs on runners: the lead here is
@@ -160,6 +159,30 @@ test("each kind is drawn with where it runs, what decided it, and a session's ru
     "ChatRunnersDefaultOffline",
     "LeadHosted runsSite",
   ]);
+});
+
+test("each kind is a card titled by its name, where it runs and what decided it labelled, and a runner only where one is said", async () => {
+  await drawPage();
+  const table = within(sectionOf("Placement")).getByRole("table", {
+    name: "Placement",
+  });
+  expect(tableCards(table).map((card) => card.title)).toStrictEqual([
+    "Work",
+    "Evaluation",
+    "Chat",
+    "Lead",
+  ]);
+  expect(tableCards(table)[0]?.labels).toStrictEqual([
+    "Runs on",
+    "Set by",
+    "Runner",
+  ]);
+  expect(
+    Array.from(
+      table.querySelectorAll("[data-empty]"),
+      (cell) => cell.parentElement?.firstElementChild?.textContent,
+    ),
+  ).toStrictEqual(["Work", "Evaluation", "Lead"]);
 });
 
 /** Chat reads the reader's own runner and the lead any of the project's. */

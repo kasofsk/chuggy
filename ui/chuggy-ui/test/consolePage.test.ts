@@ -21,6 +21,8 @@ import {
   consolePageOf,
 } from "../app/core/consolePage.ts";
 import { ticketCreationQueryOf } from "../app/core/ticketCreationQuery.ts";
+import { navMoved } from "../app/core/shellNav.ts";
+import { settingsNav } from "../app/core/settingsNav.ts";
 
 const partitionRouteId = "/$tenant/$project";
 
@@ -76,7 +78,7 @@ test("a route is the page the contract names for it, with what its address carri
   ).toEqual({ page: "TicketEdit", ticket: 41 });
   expect(
     consolePageOf(
-      matched("/$tenant/$project/repositories/$repository", {
+      matched("/$tenant/$project/settings/repositories/$repository", {
         repository: "github.com/acme/atlas",
       }),
     ),
@@ -154,8 +156,10 @@ test("every tab of a ticket, a run and its landing are that ticket's page, so a 
 
 test("a Runners page a thread still names moves the console to the old runners address, which is named no page", () => {
   const { leaf } = consolePageLeaf({ page: "Runners" });
-  expect(leaf?.routeId).toBe(runnersRedirectRouteId);
-  expect(consolePageOf(matched(runnersRedirectRouteId))).toBeUndefined();
+  const runnersRouteId = `${partitionRouteId}/runners`;
+  expect(runnersRouteId in navMoved).toBe(true);
+  expect(leaf?.routeId).toBe(runnersRouteId);
+  expect(consolePageOf(matched(runnersRouteId))).toBeUndefined();
 });
 
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
@@ -166,7 +170,7 @@ test("an address the contract would refuse, or a route it does not know, is no p
   ).toBeUndefined();
   expect(
     consolePageOf(
-      matched("/$tenant/$project/repositories/$repository", {
+      matched("/$tenant/$project/settings/repositories/$repository", {
         repository: "acme\natlas",
       }),
     ),
@@ -178,7 +182,7 @@ test("an address the contract would refuse, or a route it does not know, is no p
   expect(consolePageOf(undefined)).toBeUndefined();
 });
 
-test("every route the console hangs under a project and draws the pane on is a page the contract names", () => {
+test("every route the console hangs under a project and draws the pane on, but one that only redirects, is a page the contract names", () => {
   const routeIds = Object.keys(consoleRouter.routesById).filter((routeId) =>
     routeId.startsWith(`${partitionRouteId}/`),
   );
@@ -189,8 +193,7 @@ test("every route the console hangs under a project and draws the pane on is a p
     consolePageOf(matched(threadRouteId, { session: "0123" })),
   ).toBeUndefined();
   const paned = routeIds.filter(
-    (routeId) =>
-      routeId !== threadRouteId && routeId !== runnersRedirectRouteId,
+    (routeId) => routeId !== threadRouteId && !(routeId in navMoved),
   );
   expect(paned).not.toEqual([]);
   for (const routeId of paned) {
@@ -232,7 +235,7 @@ test("a page is named in the console's own words for it", () => {
     "Settings · Workspace · People",
     "Settings · Workspace · GitHub accounts",
     "Settings · Workspace · Permissions",
-    "Settings · Workspace · Personal runners",
+    "Settings · You · Personal runners",
     "Settings · Workspace · Usage",
     "Settings · Site · Workspaces",
     "Settings · Site · Permissions",
@@ -247,6 +250,28 @@ test("a page is named in the console's own words for it", () => {
   ).toBe("Repository acme/atlas");
 });
 
+test("a settings page is named by the group and the page the side navigation draws at its address", () => {
+  const drawnAt = new Map(
+    settingsNav({
+      tenant: "acme",
+      tenantName: "acme",
+      project: { address: "atlas", name: "atlas" },
+      site: { workspaces: true, permissions: true },
+    }).flatMap((group) =>
+      group.entries.map((entry) => [
+        entry.to.replace("$tenant", "acme").replace("$project", "atlas"),
+        `Settings · ${copyTextEn(group.label)} · ${copyTextEn(entry.label)}`,
+      ]),
+    ),
+  );
+  for (const section of consolePageSettingsSections) {
+    const page: ConsolePage = { page: "Settings", section };
+    const href = consolePageHref({ tenant: "acme", project: "atlas" }, page);
+    expect(drawnAt.has(href), href).toBe(true);
+    expect(copyTextEn(consolePageLabel(page)), href).toBe(drawnAt.get(href));
+  }
+});
+
 /** The address a thread's `navigate` moves the console to is the page it
  * named, read back by the router the console runs. */
 /** The route a page's address is matched as, by the console's router. */
@@ -256,9 +281,6 @@ function consolePageLeaf(page: ConsolePage) {
   const search = consoleRouter.options.parseSearch(`?${query}`);
   return { href, search, leaf: consoleRouter.matchRoutes(path, search).at(-1) };
 }
-
-/** The address the Runners page was at only redirects, so no route is named it. */
-const runnersRedirectRouteId = `${partitionRouteId}/runners`;
 
 test("every page's address is matched by the console's router as that page", () => {
   for (const page of consolePagesEvery.filter(
