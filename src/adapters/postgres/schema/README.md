@@ -328,8 +328,8 @@ threads of their own partition first, which their limit bounds, then their
 other open threads, then the most recent of the rest, cut at the page's bound
 with no cursor beyond it. Unfinished work is found by selecting open
 sessions with a queued turn and no live attempt, which is exactly what
-`sessions_awaiting_placement` answers for the cluster and the chat host's and
-pool's awaiting reads for theirs.
+`sessions_awaiting_placement` answers for the cluster and the chat host's
+awaiting reads for theirs.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change
 log. It is a single row, keyed `singleton` and held to it by a CHECK, because
@@ -672,9 +672,10 @@ answers the pool plane each of them that is paused, and until when.
 for the API, `agent_account_pause` of the agent a limited task spent, and
 `agent_account_named_pause` of the credentials each runner of that account
 names, so the task is free where either would let that runner's claim through.
-`agent_account_session_paused`, which no role may call, answers the session
-claims of a pool and a chat host whether a session waits on its account: `agent_account_named_pause` of the Claude credentials the
-caller's runner named, and `agent_account_pause` where it named none.
+`agent_account_session_paused`, which no role may call, answers the chat
+host's session claims whether a session waits on its account:
+`agent_account_named_pause` of the Claude credentials the caller's runner named,
+and `agent_account_pause` where it named none.
 Its key and identity are `(principal, agent)`, and it departs from #180's
 composite project key as `agent_account_usage` does. It points at nothing. It
 is changed by that door alone. It has no unfinished work: a pause is derived
