@@ -197,6 +197,7 @@ import { migration196 } from "./196-runner-memory-room.ts";
 import { migration197 } from "./197-ticket-proposed-landing.ts";
 import { migration198 } from "./198-agentic-refusal-change-retired.ts";
 import { migration199 } from "./199-thread-ticket-wakes.ts";
+import { migration200 } from "./200-queued-landings.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -399,4 +400,5 @@ export const migrations: readonly Migration[] = [
   migration197,
   migration198,
   migration199,
+  migration200,
 ];

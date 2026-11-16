@@ -47,8 +47,21 @@ export interface Landing {
    * The proposal it lands by, where it lands by one: the attempt is then
    * prepared onto `head` and pushes `candidate` there, and the proposal is
    * opened into `landingTarget` at `onto` and merged at `merged`, where it was.
+   * The finalizer's own merge records `merged` as the merge's commit; anyone
+   * else's, the forge's merge queue included, leaves the merge unrecorded and
+   * concludes through a reading of it, which `read` names.
    */
-  readonly proposal?: { readonly head: string; readonly merged?: string };
+  readonly proposal?: {
+    readonly head: string;
+    readonly merged?: string;
+    readonly read?: LandingMergeRead;
+  };
+}
+
+/** A merge reading of a proposal nobody recorded a merge of: what the forge read, and the evidence it kept. */
+export interface LandingMergeRead {
+  readonly reading: "Accepted" | "Unmerged" | "Contradictory";
+  readonly status: "Merged" | "Open" | "Closed";
 }
 
 /** The passed work the landings are copied from. */
@@ -223,13 +236,33 @@ async function landingProposed(
       JSON.stringify({ title: "ticket: land it", body: "land it" }),
     ],
   );
-  if (proposal.merged !== undefined)
+  if (proposal.merged === undefined) return;
+  if (proposal.read === undefined) {
     await rig.as(
       `UPDATE finalization_change_proposal
           SET merge_attempts=1, merge='Merged', merge_commit=$4
         WHERE tenant=$1 AND project=$2 AND request=$3`,
       [...key, project.request, proposal.merged],
     );
+    return;
+  }
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET merge_attempts=1, merge_readings=1, merge_reading=$4,
+            merge_reading_contradiction=$5, merge_reading_evidence=$6::jsonb
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      ...key,
+      project.request,
+      proposal.read.reading,
+      proposal.read.reading === "Contradictory" ? "Closed" : null,
+      JSON.stringify({
+        status: proposal.read.status,
+        head: { ref: proposal.head, commit: landing.candidate },
+        mergeCommit: proposal.merged,
+      }),
+    ],
+  );
 }
 
 /** A request of `ticket`'s own beside `project`'s, settled, which a landing by proposal is recorded under. */
