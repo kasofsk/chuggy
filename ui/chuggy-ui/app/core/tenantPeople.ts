@@ -40,12 +40,26 @@ import {
   type AccessInvitationGrants,
   type AccessProjectRole,
   type AccessTenantAbilities,
+  type AccessTenantPeople,
   type AccessTenantPerson,
   type AccessTenantRole,
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy } from "./copy.ts";
+
+/**
+ * Whether the reader alone administers the workspace: the whole list answered,
+ * naming every principal, and one person holding the role, who is the reader.
+ * People are counted as the plane counts its last administrator.
+ */
+export function tenantSoleAdministrator(people: AccessTenantPeople): boolean {
+  if (people.truncated || people.otherIssuers !== 0) return false;
+  const admins = people.people.filter((person) =>
+    person.tenantRoles.includes("Admin"),
+  );
+  return admins.length === 1 && admins[0]?.mine === true;
+}
 
 /** What the page draws for a reader the list is not answered to. */
 export const tenantPeopleWithheld: Copy = { id: "settings-people-withheld" };

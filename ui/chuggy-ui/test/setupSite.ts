@@ -1114,6 +1114,7 @@ function projectAnswered(
 function granted(address: string): ForgeRepositoryResponse {
   const [owner = "", name = ""] = address.split("/").slice(-2);
   return {
+    id: "1296269",
     name,
     fullName: `${owner}/${name}`,
     url: address,
@@ -1136,7 +1137,11 @@ function grant(
   const held = grantedBy(site, tenant, claim);
   return (
     fated(site, read) ??
-    answered({ repositories: held.map(granted), truncated: cut(site, read) })
+    answered({
+      repositories: held.map(granted),
+      truncated: cut(site, read),
+      selection: "Selected",
+    })
   );
 }
 

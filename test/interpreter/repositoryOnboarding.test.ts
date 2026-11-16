@@ -158,6 +158,7 @@ const claimed: ForgeInstallationClaimed = {
 };
 
 const summary: ForgeRepositorySummary = {
+  id: "1296269",
   name: asForgeRepositoryName("chuggy"),
   fullName: "kasofsk/chuggy",
   url: repository,
@@ -1099,6 +1100,7 @@ test("what a worker installation grants is read as the worker app", async () => 
       read: "Repositories",
       repositories: [summary],
       truncated: false,
+      selection: "Selected",
     },
   });
   assert.deepEqual(
@@ -1107,7 +1109,12 @@ test("what a worker installation grants is read as the worker app", async () => 
       tenant,
       installationId,
     ),
-    { result: "Repositories", repositories: [summary], truncated: false },
+    {
+      result: "Repositories",
+      repositories: [summary],
+      truncated: false,
+      selection: "Selected",
+    },
   );
   assert.deepEqual(reading.wrote.listed, [worker]);
   const portalOnly = fixtureService(["AdministerTenant"], { held: [held] });
@@ -1155,6 +1162,7 @@ test("a claim past the listing's page is still one the tenant holds", async () =
       read: "Repositories",
       repositories: [summary],
       truncated: false,
+      selection: "Selected",
     },
   });
   assert.deepEqual(
@@ -1163,7 +1171,12 @@ test("a claim past the listing's page is still one the tenant holds", async () =
       tenant,
       last?.installationId ?? installationId,
     ),
-    { result: "Repositories", repositories: [summary], truncated: false },
+    {
+      result: "Repositories",
+      repositories: [summary],
+      truncated: false,
+      selection: "Selected",
+    },
   );
   const listed = await many.service.installations(principal, tenant);
   assert.equal(listed.result === "Installations" && listed.truncated, true);
@@ -1180,6 +1193,7 @@ test("an installation another tenant claimed is not this tenant's to read", asyn
       read: "Repositories",
       repositories: [summary],
       truncated: false,
+      selection: "Selected",
     },
   });
   assert.deepEqual(
@@ -1200,6 +1214,7 @@ test("a claim this tenant holds is still not a reader's without the permit", asy
       read: "Repositories",
       repositories: [summary],
       truncated: false,
+      selection: "Selected",
     },
   });
   assert.deepEqual(
@@ -1220,6 +1235,7 @@ test("an installation this tenant has not claimed grants it nothing", async () =
       read: "Repositories",
       repositories: [summary],
       truncated: false,
+      selection: "Selected",
     },
   });
   assert.deepEqual(
@@ -1232,13 +1248,15 @@ test("an installation this tenant has not claimed grants it nothing", async () =
   );
 });
 
-test("what an installation grants is answered with whether it is all of it", async () => {
+test("what an installation grants is answered with whether it is all of it, how it was chosen and on which account", async () => {
   const listing = fixtureService(["AdministerTenant"], {
     held: [claimed],
     repositories: {
       read: "Repositories",
       repositories: [summary],
       truncated: true,
+      selection: "Selected",
+      accountId: asForgeAccountId("1342004"),
     },
   });
   assert.deepEqual(
@@ -1247,7 +1265,13 @@ test("what an installation grants is answered with whether it is all of it", asy
       tenant,
       installationId,
     ),
-    { result: "Repositories", repositories: [summary], truncated: true },
+    {
+      result: "Repositories",
+      repositories: [summary],
+      truncated: true,
+      selection: "Selected",
+      accountId: "1342004",
+    },
   );
   const denied = fixtureService(["AdministerTenant"], {
     held: [claimed],
@@ -2226,6 +2250,7 @@ function workerReachGiven(
     repositories: {
       read: "Repositories",
       repositories: selected.map((url) => ({
+        id: "1296269",
         name: asForgeRepositoryName("chuggy"),
         fullName: "kasofsk/chuggy",
         url,
@@ -2233,6 +2258,7 @@ function workerReachGiven(
         private: false,
       })),
       truncated: false,
+      selection: "Selected",
     },
     permissions: {
       read: "Permissions",

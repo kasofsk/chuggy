@@ -186,8 +186,11 @@ function appAnswer(held: ForgeApp = app): Response {
 function repositoriesAnswer(): Response {
   return answer(200, {
     total_count: 1,
+    repository_selection: "selected",
     repositories: [
       {
+        id: 1296269,
+        owner: { id: 1342004 },
         name: "atlas",
         full_name: "acme/atlas",
         clone_url: repository,
@@ -1170,8 +1173,11 @@ test("what an installation grants is read through the tenant's own claim", async
   assert.equal(served.statusCode, 200);
   assert.deepEqual(served.json(), {
     truncated: false,
+    selection: "Selected",
+    accountId: "1342004",
     repositories: [
       {
+        id: "1296269",
         name: "atlas",
         fullName: "acme/atlas",
         url: repository,

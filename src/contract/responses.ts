@@ -196,6 +196,7 @@ import {
   forgeAccountProofs,
   forgeAppClaims,
   forgeInstallationPermissions,
+  forgeRepositorySelections,
   forgeApps,
   leadAbsencesUntimed,
   leadAdmissionRefusals,
@@ -2364,8 +2365,12 @@ export type ForgeAuthorizationResponse = z.infer<
   typeof forgeAuthorizationResponseSchema
 >;
 
-/** One repository an installation grants, `url` being the address a binding names it by. */
+/** A number the forge names something by, written as its digits. */
+const forgeNumberSchema = identitySchema.regex(/^[1-9][0-9]*$/u);
+
+/** One repository an installation grants, `url` being the address a binding names it by and `id` the forge's own number for it. */
 export const forgeRepositoryResponseSchema = z.object({
+  id: forgeNumberSchema,
   name: identitySchema,
   fullName: z.string().min(1),
   url: z.string().min(1),
@@ -2377,15 +2382,19 @@ export type ForgeRepositoryResponse = z.infer<
 >;
 
 /**
- * What one installation grants. `truncated` says the installation holds more
- * than this deployment pages for, so a reader that cannot find a repository
- * knows the listing is partial rather than that the repository is absent.
+ * What one installation grants, whether it was given every repository on its
+ * account or chosen ones, and the forge's number for that account where a
+ * listed repository names it. `truncated` says the installation holds more than
+ * this deployment pages for, so a reader that cannot find a repository knows
+ * the listing is partial rather than that the repository is absent.
  */
 export const forgeRepositoriesResponseSchema = z.object({
   repositories: z
     .array(forgeRepositoryResponseSchema)
     .max(forgeRepositoriesAnsweredMax),
   truncated: z.boolean(),
+  selection: z.enum(forgeRepositorySelections),
+  accountId: forgeNumberSchema.optional(),
 });
 export type ForgeRepositoriesResponse = z.infer<
   typeof forgeRepositoriesResponseSchema

@@ -14,6 +14,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 import type {
   ForgeAppsResponse,
   ForgeInstallationResponse,
+  ForgeRepositoriesResponse,
 } from "../../../src/contract/responses.ts";
 import {
   forgeAccountRows,
@@ -22,6 +23,8 @@ import {
   forgeInstallOffered,
   forgeInstallState,
   forgeInstallStateBytesCount,
+  forgeInstallSuggestedMax,
+  forgeInstallSuggestedUrl,
   forgeInstallTake,
   forgeInstallTransactionKey,
   forgeInstallUrl,
@@ -115,6 +118,68 @@ test("the install address carries the state and nothing else", () => {
   );
   expect([...url.searchParams.keys()]).toEqual(["state"]);
   expect(url.searchParams.get("state")).toBe("a/b");
+});
+
+const workerInstallUrl =
+  "https://forge.test/apps/chuggy-worker/installations/new";
+
+/** A portal listing of `count` chosen repositories on account 1342004. */
+function chosen(count: number): ForgeRepositoriesResponse {
+  return {
+    repositories: Array.from({ length: count }, (_row, index) => ({
+      id: String(1296269 + index),
+      name: `repo-${String(index)}`,
+      fullName: `kasofsk/repo-${String(index)}`,
+      url: `https://forge.test/kasofsk/repo-${String(index)}.git`,
+      defaultBranch: "main",
+      private: true,
+    })),
+    truncated: false,
+    selection: "Selected",
+    accountId: "1342004",
+  };
+}
+
+test("an install suggested from chosen repositories names the account and every one of them, keeping the state", () => {
+  const url = new URL(
+    forgeInstallSuggestedUrl(workerInstallUrl, "a/b", chosen(2)),
+  );
+  expect(`${url.origin}${url.pathname}`).toBe(
+    `${workerInstallUrl}/permissions`,
+  );
+  expect(url.searchParams.get("suggested_target_id")).toBe("1342004");
+  expect(url.searchParams.getAll("repository_ids[]")).toEqual([
+    "1296269",
+    "1296270",
+  ]);
+  expect(url.searchParams.get("state")).toBe("a/b");
+});
+
+test("as many repositories as the forge takes are still suggested", () => {
+  const url = new URL(
+    forgeInstallSuggestedUrl(
+      workerInstallUrl,
+      "s",
+      chosen(forgeInstallSuggestedMax),
+    ),
+  );
+  expect(url.searchParams.getAll("repository_ids[]")).toHaveLength(
+    forgeInstallSuggestedMax,
+  );
+});
+
+test.each<readonly [string, ForgeRepositoriesResponse]>([
+  ["given every repository", { ...chosen(2), selection: "All" }],
+  ["cut short", { ...chosen(2), truncated: true }],
+  ["past what the forge takes", chosen(forgeInstallSuggestedMax + 1)],
+  [
+    "naming no account",
+    { repositories: [], truncated: false, selection: "Selected" },
+  ],
+])("a listing %s is followed at the plain address", (_said, granted) => {
+  expect(forgeInstallSuggestedUrl(workerInstallUrl, "a/b", granted)).toBe(
+    forgeInstallUrl(workerInstallUrl, "a/b"),
+  );
 });
 
 test("an account is one row saying which apps it holds", () => {

@@ -111,9 +111,18 @@ const fixtureGrantingExpiry = "2099-09-10T12:00:00Z";
 /** The scheme a minted token is presented under. */
 const fixtureBearerScheme = "Bearer ";
 
-/** One granted repository as the forge lists it. */
-function fixtureGrantedRow(account: string, repository: string): unknown {
+/** The number of the account a granting forge's installation stands on. */
+const fixtureGrantingAccountId = 1342004;
+
+/** One granted repository as the forge lists it, numbered by where it was granted. */
+function fixtureGrantedRow(
+  account: string,
+  repository: string,
+  index: number,
+): unknown {
   return {
+    id: index + 1,
+    owner: { id: fixtureGrantingAccountId },
     name: repository,
     full_name: `${account}/${repository}`,
     clone_url: `https://github.com/${account}/${repository}.git`,
@@ -149,9 +158,12 @@ export function fixtureGrantingForge(account: string): GrantingForge {
     const from = (Number(url.searchParams.get("page")) - 1) * pageSize;
     return Response.json({
       total_count: seen.length,
+      repository_selection: "selected",
       repositories: seen
         .slice(from, from + pageSize)
-        .map((repository) => fixtureGrantedRow(account, repository)),
+        .map((repository, index) =>
+          fixtureGrantedRow(account, repository, from + index),
+        ),
     });
   };
   const requestFetch: typeof fetch = (input, init) => {
