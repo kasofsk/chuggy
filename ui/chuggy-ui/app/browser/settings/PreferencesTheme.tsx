@@ -8,6 +8,11 @@
  * page repaints and the picker moves at once; a refused write puts back what
  * they held, which puts the picker and the page back, and its sentence is
  * drawn under the picker. A landed write reads them all again.
+ *
+ * THE LAST PRESS IS THE ONE KEPT. Theme writes, from either picker, are sent
+ * one at a time in the order pressed, so the server keeps the last; only the
+ * last press's answer reads again or puts back, and what it puts back is what
+ * the server held when it was sent.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -89,35 +94,96 @@ function themeHeldPut(
     );
 }
 
-/** The write sent with `worn` put on the reads first, and what they held put
- * back where it is refused. */
+/** The theme writes of one client: the presses not yet answered, chained in
+ * the order pressed, and what the server held as the last answered left it. */
+interface ThemeTurn {
+  pressed: number;
+  unanswered: number;
+  worn: Promise<unknown>;
+  written: Promise<unknown>;
+  kept: ThemeHeld | undefined;
+}
+
+const themeTurns = new WeakMap<QueryClient, ThemeTurn>();
+
+function themeTurnOf(client: QueryClient): ThemeTurn {
+  const held = themeTurns.get(client);
+  if (held !== undefined) return held;
+  const turn: ThemeTurn = {
+    pressed: 0,
+    unanswered: 0,
+    worn: Promise.resolve(),
+    written: Promise.resolve(),
+    kept: undefined,
+  };
+  themeTurns.set(client, turn);
+  return turn;
+}
+
+function themeReadKeys(
+  partition: PartitionIdentity | undefined,
+): readonly (readonly unknown[])[] {
+  return [
+    themeChoiceQuery().queryKey,
+    ...(partition === undefined
+      ? []
+      : [projectAppearanceQuery(partition).queryKey]),
+  ];
+}
+
+/** The write sent with `worn` put on the reads first, after every earlier
+ * press's write has answered; where it is refused and no press followed it,
+ * the reads are put back to what the server held. */
 async function themeHeldWhile(
   client: QueryClient,
   partition: PartitionIdentity | undefined,
   worn: (held: ThemeHeld) => void,
   write: () => Promise<ApiResult<undefined>>,
 ): Promise<ApiResult<undefined>> {
-  const held = themeHeldOf(client, partition);
-  worn(held);
-  const written = await write();
-  if (written.outcome !== "Ok") themeHeldPut(client, partition, held);
-  return written;
+  const turn = themeTurnOf(client);
+  const press = (turn.pressed += 1);
+  const first = turn.unanswered === 0;
+  turn.unanswered += 1;
+  const wearing = turn.worn.then(async () => {
+    await Promise.all(
+      themeReadKeys(partition).map((queryKey) =>
+        client.cancelQueries({ queryKey }),
+      ),
+    );
+    const held = themeHeldOf(client, partition);
+    if (first) turn.kept = held;
+    worn(held);
+    return themeHeldOf(client, partition);
+  });
+  turn.worn = wearing.catch(() => undefined);
+  const writing = Promise.all([wearing, turn.written]).then(async () =>
+    write(),
+  );
+  turn.written = writing.catch(() => undefined);
+  let written: ApiResult<undefined> | undefined;
+  try {
+    written = await writing;
+    return written;
+  } finally {
+    turn.unanswered -= 1;
+    if (written?.outcome === "Ok") turn.kept = await wearing;
+    else if (press === turn.pressed && turn.kept !== undefined)
+      themeHeldPut(client, partition, turn.kept);
+  }
 }
 
+/** The reads again, once no later press is still unanswered: that press's
+ * answer reads them again, and a read of this one would undo its wearing. */
 async function themeReread(
   client: QueryClient,
   partition: PartitionIdentity | undefined,
 ): Promise<void> {
-  await Promise.all([
-    client.invalidateQueries({ queryKey: themeChoiceQuery().queryKey }),
-    ...(partition === undefined
-      ? []
-      : [
-          client.invalidateQueries({
-            queryKey: projectAppearanceQuery(partition).queryKey,
-          }),
-        ]),
-  ]);
+  if (themeTurnOf(client).unanswered > 0) return;
+  await Promise.all(
+    themeReadKeys(partition).map((queryKey) =>
+      client.invalidateQueries({ queryKey }),
+    ),
+  );
 }
 
 function themeGlobalWrite(

@@ -9,8 +9,9 @@
  * before its write answers; the project's row only inside a project, saying
  * which layer applies, with the override set and cleared; the note under the
  * global picker where the project's default covers it; the arrows moving the
- * choice; and a refused write putting the picker and the page back and saying
- * why.
+ * choice; a refused write putting the picker and the page back and saying
+ * why; and the last of several presses the one that stays, however their
+ * answers arrive.
  */
 
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
@@ -244,6 +245,17 @@ function writesOf(sent: readonly SentRequest[]): readonly unknown[] {
     ]);
 }
 
+const refusedNotFound = (): Response =>
+  answer(
+    {
+      error: {
+        code: "ThemeNotFound",
+        message: "The choice names no theme the caller owns.",
+      },
+    },
+    422,
+  );
+
 test("the global picker offers the built-ins and then the reader's own, a radio each named by its theme, with the built-in default marked where nothing is chosen", async () => {
   routeParams = { tenant: atlas.tenant } as PartitionIdentity;
   await themeDrawn({
@@ -400,21 +412,126 @@ test("a refused write puts the picker and the page back and says why", async () 
   });
   expect(checkedIn("Theme")).toBe("Harbour");
   await turned(() => {
-    held.release(
-      answer(
-        {
-          error: {
-            code: "ThemeNotFound",
-            message: "The choice names no theme the caller owns.",
-          },
-        },
-        422,
-      ),
-    );
+    held.release(refusedNotFound());
   });
   await settled();
   expect(checkedIn("Theme")).toBe("Ember");
   expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
+  expect(document.querySelector(".notice")?.textContent).toBe(
+    "Theme not saved · that theme is no longer one of yours",
+  );
+});
+
+/** Each write answered by the next of `answers`, in the order sent. */
+function answeredInTurn(
+  answers: readonly Promise<Response>[],
+): () => Promise<Response> {
+  let sent = 0;
+  return async () => {
+    const answered = answers[sent];
+    sent += 1;
+    return answered ?? answer(undefined, 204);
+  };
+}
+
+test("two presses whose answers are released last first leave the last press chosen, worn and kept", async () => {
+  routeParams = { tenant: atlas.tenant } as PartitionIdentity;
+  const harbour = heldAnswer();
+  const ember = heldAnswer();
+  const held: Held = {
+    global: undefined,
+    override: undefined,
+    projectDefault: undefined,
+  };
+  const sent = await themeDrawn(
+    held,
+    answeredInTurn([harbour.answered, ember.answered]),
+  );
+  const chuggy = within(group("Theme")).getByRole("radio", { name: "Chuggy" });
+  await turned(() => {
+    chuggy.focus();
+    fireEvent.keyDown(chuggy, { key: "ArrowRight" });
+  });
+  await turned(() => {
+    fireEvent.keyDown(document.activeElement ?? chuggy, { key: "ArrowRight" });
+  });
+  expect(checkedIn("Theme")).toBe("Ember");
+  expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
+  await turned(() => {
+    ember.release(answer(undefined, 204));
+  });
+  await turned(() => {
+    harbour.release(answer(undefined, 204));
+  });
+  await settled();
+  expect(writesOf(sent)).toStrictEqual([
+    ["PUT", choicePath, { kind: "BuiltIn", theme: "harbour" }],
+    ["PUT", choicePath, { kind: "BuiltIn", theme: "ember" }],
+  ]);
+  expect(held.global).toStrictEqual({ kind: "BuiltIn", theme: "ember" });
+  expect(checkedIn("Theme")).toBe("Ember");
+  expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
+});
+
+test("an earlier press refused leaves a later one standing", async () => {
+  routeParams = { tenant: atlas.tenant } as PartitionIdentity;
+  const harbour = heldAnswer();
+  const ember = heldAnswer();
+  await themeDrawn(
+    { global: undefined, override: undefined, projectDefault: undefined },
+    answeredInTurn([harbour.answered, ember.answered]),
+  );
+  await turned(() => {
+    fireEvent.click(
+      within(group("Theme")).getByRole("radio", { name: "Harbour" }),
+    );
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(group("Theme")).getByRole("radio", { name: "Ember" }),
+    );
+  });
+  await turned(() => {
+    harbour.release(refusedNotFound());
+  });
+  expect(checkedIn("Theme")).toBe("Ember");
+  expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
+  await turned(() => {
+    ember.release(answer(undefined, 204));
+  });
+  await settled();
+  expect(checkedIn("Theme")).toBe("Ember");
+  expect(rootAccent()).toBe(accentOf(builtInThemes.ember));
+});
+
+test("a later press refused puts back the earlier one the server kept", async () => {
+  routeParams = { tenant: atlas.tenant } as PartitionIdentity;
+  const harbour = heldAnswer();
+  const ember = heldAnswer();
+  await themeDrawn(
+    { global: undefined, override: undefined, projectDefault: undefined },
+    answeredInTurn([harbour.answered, ember.answered]),
+  );
+  await turned(() => {
+    fireEvent.click(
+      within(group("Theme")).getByRole("radio", { name: "Harbour" }),
+    );
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(group("Theme")).getByRole("radio", { name: "Ember" }),
+    );
+  });
+  await turned(() => {
+    harbour.release(answer(undefined, 204));
+  });
+  expect(checkedIn("Theme")).toBe("Ember");
+  await turned(() => {
+    ember.release(refusedNotFound());
+  });
+  await settled();
+  expect(checkedIn("Theme")).toBe("Harbour");
+  expect(rootAccent()).toBe(accentOf(builtInThemes.harbour));
   expect(document.querySelector(".notice")?.textContent).toBe(
     "Theme not saved · that theme is no longer one of yours",
   );
