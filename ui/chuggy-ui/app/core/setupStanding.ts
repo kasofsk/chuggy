@@ -230,8 +230,22 @@ export interface SetupStanding {
   readonly found: readonly Copy[];
   /** One a step in order, or none where which project is meant is still open. */
   readonly steps: readonly SetupStep[];
-  /** The address of the pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
-  readonly unmerged: string | undefined;
+  /** The pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
+  readonly unmerged: SetupUnmerged | undefined;
+  /** The repository meant, where it holds only the bootstrap, with the import of it that finished last. */
+  readonly bootstrap: SetupBootstrap | undefined;
+}
+
+/** A ticket's pull request that stands unmerged: its address, and the ticket that opened it. */
+export interface SetupUnmerged {
+  readonly url: string;
+  readonly ticket: number;
+}
+
+/** A repository holding only the bootstrap, the import of it that finished last, where one did, and the commit the first ticket's pull request was merged at, where its landings name one. */
+export interface SetupBootstrap {
+  readonly lastImport: RepositoryConfigurationImportAttemptResponse | undefined;
+  readonly mergeCommit: string | undefined;
 }
 
 /** Each forge app, as a sentence names it. */
@@ -927,21 +941,29 @@ function setupProposed(landing: TicketLandingResponse): boolean {
   }
 }
 
-/** The ticket setup is done on, as the ticket step says it, and the address of its pull request where one stands unmerged. */
+/** The ticket setup is done on, as the ticket step says it, its pull request where one stands unmerged, and the commit it was merged at where its landings name one. */
 interface SetupTicketDone {
   readonly detail: Copy;
-  readonly unmerged: string | undefined;
+  readonly unmerged: SetupUnmerged | undefined;
+  readonly mergeCommit: string | undefined;
 }
 
-/** The pull request of a ticket's landings that stands and is not merged, from landings got whole: none where one of them landed, or where the newest that stands says it merged. */
-function setupUnmerged(
+/** A ticket's pull request, from landings got whole, where none of them landed: the one the newest that stands opened, unmerged or merged at the commit it names. */
+function setupProposal(
   held: SetupTicketLandings | undefined,
-): string | undefined {
-  if (held?.landings.read !== "Got" || !held.landings.whole) return undefined;
+): Pick<SetupTicketDone, "unmerged" | "mergeCommit"> {
+  const none = { unmerged: undefined, mergeCommit: undefined };
+  if (held?.landings.read !== "Got" || !held.landings.whole) return none;
   const landings = held.landings.value;
-  if (landings.some((landing) => landing.state === "Landed")) return undefined;
+  if (landings.some((landing) => landing.state === "Landed")) return none;
   const proposal = landings.findLast(setupProposed)?.proposal;
-  return proposal?.merge === "Merged" ? undefined : proposal?.url;
+  if (proposal?.url === undefined) return none;
+  return proposal.merge === "Merged"
+    ? { unmerged: undefined, mergeCommit: proposal.mergeCommit }
+    : {
+        unmerged: { url: proposal.url, ticket: held.ticket },
+        mergeCommit: undefined,
+      };
 }
 
 /** The ticket setup is done on, where a read that was got shows one, said as what was read of it: a ticket that is done, or a landing that landed or whose pull request stands. */
@@ -953,7 +975,7 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
         id: "setup-step-ticket-done",
         args: { ticket: String(done.ticket) },
       },
-      unmerged: setupUnmerged(reads.doneLandings),
+      ...setupProposal(reads.doneLandings),
     };
   for (const held of reads.landings) {
     if (held.landings.read !== "Got") continue;
@@ -962,11 +984,12 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
       return {
         detail: { id: "setup-step-ticket-finalized", args },
         unmerged: undefined,
+        mergeCommit: undefined,
       };
     if (held.landings.value.some(setupProposed))
       return {
         detail: { id: "setup-step-ticket-proposed", args },
-        unmerged: setupUnmerged(held),
+        ...setupProposal(held),
       };
   }
   return undefined;
@@ -1222,7 +1245,12 @@ export function setupStanding(
     found: setupRemoteFound(reads, workspaceNamed),
   };
   if (reads.choice.choice === "Open")
-    return { ...standing, steps: [], unmerged: undefined };
+    return {
+      ...standing,
+      steps: [],
+      unmerged: undefined,
+      bootstrap: undefined,
+    };
   const workspace = setupWorkspaceStep(
     reads,
     reads.choice.workspace,
@@ -1252,6 +1280,12 @@ export function setupStanding(
     ],
     unmerged: setupBootstrapped(reads.repositories)
       ? done?.unmerged
+      : undefined,
+    bootstrap: setupBootstrapped(reads.repositories)
+      ? {
+          lastImport: setupBindingMeant(reads.repositories)?.lastImport,
+          mergeCommit: done?.mergeCommit,
+        }
       : undefined,
   };
 }

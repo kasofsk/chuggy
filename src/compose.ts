@@ -191,7 +191,6 @@ import type { IdempotencyKeying } from "./adapters/postgres/keying.ts";
 import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
-  type NativeLeadPorts,
   type NativeThreadPorts,
   type NativeWeb,
   type ProjectAccess,
@@ -851,8 +850,8 @@ function finalizerServiceRuntime(
  * Wires the authenticated web application to API-role PostgreSQL ports.
  *
  * THE INQUIRY STORE AND THE SESSION ROUTES ARE COMPOSED HERE AND ARE NOT
- * PARAMETERS, which the lead's and the thread's bundles are: those carry an
- * artifact volume and a credential slot a deployment must choose, these are the
+ * PARAMETERS, which the thread's bundle is: that carries an artifact volume
+ * and a credential slot a deployment must choose, these are the
  * API pool and nothing else, and a bundle with nothing to choose is a line no
  * case can refute and a root can forget — a forgotten one costing routes that
  * raise in a deployment while every gate stays green, so there is no composing
@@ -871,7 +870,6 @@ export function composeNativeWeb(
     ProjectArtifactPort,
   repositories?: RepositoryConfigurationSnapshotPort &
     RepositoryDefaultBranchPort,
-  leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
   usageResume?: TicketUsageResumeBounds,
   memoryMibDefault?: number,
@@ -902,7 +900,6 @@ export function composeNativeWeb(
         },
     postgresRunEvidenceReads(apiPool),
     outputContents,
-    leads,
     threads,
     postgresSessionRouteReads(apiPool),
     outputContents,

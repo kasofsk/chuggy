@@ -40,6 +40,8 @@ import {
 import {
   asSessionId,
   asSessionStoreStream,
+  type SessionId,
+  type SessionStoreStream,
 } from "../../src/interpreter/agentSession.ts";
 import {
   asPrincipal,
@@ -47,6 +49,7 @@ import {
   oidcPrincipalSubject,
 } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import { sessionRigAttempt } from "./sessionHarness.ts";
 import {
@@ -170,6 +173,32 @@ async function openedThread(
   });
   assert.equal(opened.statusCode, 201, opened.body);
   return threadEntryResponseSchema.parse(opened.json());
+}
+
+/** Records one batch of the thread's stream, its bytes where the store read finds them. */
+async function storedBatch(
+  partition: Partition,
+  session: SessionId,
+  attempt: Awaited<ReturnType<typeof sessionRigAttempt>>,
+  stream: SessionStoreStream,
+  batch: number,
+) {
+  storeReads.put(
+    { partition, session, stream, batch },
+    sessionStoreEntryLine(batch),
+  );
+  assert.equal(
+    await rig.sessions.plane.record({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      stream,
+      batch,
+      digest: "d".repeat(64),
+      bytes: 12,
+      events: 1,
+    }),
+    "Stored",
+  );
 }
 
 test("opening a thread answers the entry, and opening under its key again answers the same one", async () => {
@@ -350,33 +379,14 @@ test("the transcript route walks the thread's own store", async () => {
     },
   });
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
+  const session = asSessionId(opened.session);
   const attempt = await sessionRigAttempt(
     rig.sessions,
     partition,
-    asSessionId(opened.session),
+    session,
     "http-transcript",
   );
-  storeReads.put(
-    {
-      partition,
-      session: asSessionId(opened.session),
-      stream,
-      batch: 1,
-    },
-    sessionStoreEntryLine(1),
-  );
-  assert.equal(
-    await rig.sessions.plane.record({
-      secret: attempt.secret,
-      generation: attempt.attempt.generation,
-      stream,
-      batch: 1,
-      digest: "d".repeat(64),
-      bytes: 12,
-      events: 1,
-    }),
-    "Stored",
-  );
+  await storedBatch(partition, session, attempt, stream, 1);
 
   const walked = await app.inject({
     url: `${pathOf(partition)}/${opened.session}/transcript?stream=${stream}&limit=${String(sessionStorePageBatchesMax)}`,
@@ -387,6 +397,83 @@ test("the transcript route walks the thread's own store", async () => {
   assert.equal(page.stream, stream);
   assert.equal(page.entries.length, 1);
   assert.equal(page.elided, 0);
+});
+
+/** A thread with a turn waiting, whose store holds more batches than one page of it answers. */
+async function pagedThread(
+  app: ReturnType<typeof threadApp>,
+  partition: Partition,
+  label: string,
+) {
+  const opened = await openedThread(app, partition);
+  const sent = await app.inject({
+    method: "POST",
+    url: `${pathOf(partition)}/${opened.session}/messages`,
+    headers: versioned,
+    payload: { turn: `thread-turn-${randomUUID()}`, message: "page me" },
+  });
+  assert.equal(sent.statusCode, 202, sent.body);
+  const session = asSessionId(opened.session);
+  const stream = asSessionStoreStream(`stream-${randomUUID()}`);
+  const attempt = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    session,
+    `http-${label}`,
+  );
+  for (let batch = 1; batch <= sessionStorePageBatchesMax + 2; batch += 1)
+    await storedBatch(partition, session, attempt, stream, batch);
+  return { session, stream };
+}
+
+test("the row read answers the limit it is given, never its own ceiling", async () => {
+  const { partition, member } = await readableMember("store-limit");
+  await using app = threadApp(member.principal);
+  const { session, stream } = await pagedThread(app, partition, "store-limit");
+  const rows = postgresSessionStoreRows(rig.apiPool);
+  const asked = await rows.batches({
+    partition,
+    session,
+    stream,
+    after: 0,
+    limit: 2,
+  });
+  assert.deepEqual(
+    asked.map((row) => row.batch),
+    [1, 2],
+    "the function answers the limit it was given, not its own ceiling",
+  );
+  const capped = await rows.batches({
+    partition,
+    session,
+    stream,
+    after: 0,
+    limit: sessionStorePageBatchesMax + 5,
+  });
+  assert.equal(
+    capped.length,
+    sessionStorePageBatchesMax,
+    "and never more than a page, whatever it is asked for",
+  );
+});
+
+test("the held walk pages the store past the page a reader asked for", async () => {
+  const { partition, member } = await readableMember("store-walk");
+  await using app = threadApp(member.principal);
+  const { session, stream } = await pagedThread(app, partition, "store-walk");
+  const walked = await app.inject({
+    url: `${pathOf(partition)}/${session}/transcript?stream=${stream}&limit=2`,
+    headers: authorized,
+  });
+  assert.equal(walked.statusCode, 200, walked.body);
+  const page = threadTranscriptResponseSchema.parse(walked.json());
+  assert.equal(page.entries.length, 2, "the page is the two batches asked for");
+  assert.equal(page.nextAfter, 2);
+  assert.deepEqual(
+    page.held,
+    ["entry-1", "entry-2"],
+    "and the walk read past the page to decide what is held",
+  );
 });
 
 /**

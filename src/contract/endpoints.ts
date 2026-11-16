@@ -34,8 +34,6 @@ import {
   executionResponseSchema,
   hostedRunsResponseSchema,
   projectAbilitiesResponseSchema,
-  leadReadResponseSchema,
-  leadTranscriptResponseSchema,
   runContextResponseSchema,
   runTurnsResponseSchema,
   runTranscriptResponseSchema,
@@ -124,23 +122,6 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.abilities,
     response: projectAbilitiesResponseSchema,
-  },
-  lead: {
-    method: "GET",
-    path: nativeHttpRoutes.lead,
-    response: leadReadResponseSchema,
-  },
-  leadTranscript: {
-    method: "GET",
-    path: nativeHttpRoutes.leadTranscript,
-    query: transcriptQuery,
-    response: leadTranscriptResponseSchema,
-  },
-  leadContext: {
-    method: "GET",
-    path: nativeHttpRoutes.leadContext,
-    query: contextQuery,
-    response: sessionContextResponseSchema,
   },
   runTurns: {
     method: "GET",

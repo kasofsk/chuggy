@@ -13,10 +13,7 @@
  * loop of its own.
  */
 
-import type {
-  LeadTurnResponse,
-  ThreadTurnResponse,
-} from "../../../../src/contract/responses.ts";
+import type { ThreadTurnResponse } from "../../../../src/contract/responses.ts";
 import {
   conversationBlocksOf,
   conversationMessageFiller,
@@ -157,25 +154,21 @@ export function sessionConversationItems(
 }
 
 /**
- * One session's mailbox tail as the overlay reads it, a lead's turns and a
- * thread's alike; it lives beside the walk's own derivation rather than in
- * `threads.ts`, since `conversation.ts` already reads that module. A lead's
- * turn carries no input of its own — the decision log already holds it — so
- * none is invented, and `conversationAskOf` draws the kind's word instead.
+ * One thread's mailbox tail as the overlay reads it; it lives beside the walk's
+ * own derivation rather than in `threads.ts`, since `conversation.ts` already
+ * reads that module.
  */
 export function sessionConversationTurns(
-  turns: readonly (ThreadTurnResponse | LeadTurnResponse)[],
+  turns: readonly ThreadTurnResponse[],
 ): readonly ConversationTurn[] {
   return turns.map((turn) => ({
     turn: turn.turn,
     ordinal: turn.ordinal,
     inputKind: turn.inputKind,
-    ...("input" in turn ? { input: turn.input } : {}),
+    input: turn.input,
     state: turn.state,
     ...(turn.failure === undefined ? {} : { failure: turn.failure }),
-    ...("result" in turn && turn.result !== undefined
-      ? { result: turn.result }
-      : {}),
+    ...(turn.result === undefined ? {} : { result: turn.result }),
     ...(turn.tokens === undefined ? {} : { tokens: turn.tokens }),
     ...(turn.costMicros === undefined ? {} : { costMicros: turn.costMicros }),
     ...(turn.durationMs === undefined ? {} : { durationMs: turn.durationMs }),

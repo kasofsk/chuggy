@@ -29,7 +29,6 @@ import {
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   inventoryResponse,
-  leadResponse,
   notificationsResponse,
   operationResponse,
   operationalStatusResponse,
@@ -102,9 +101,6 @@ import {
   selectorProjectSettingsResponseSchema,
   selectorSettingsConflictResponseSchema,
   selectorSettingsHistoryResponseSchema,
-  leadNoneResponseSchema,
-  leadReadResponseSchema,
-  leadResponseSchema,
   ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
   ticketNativeActionHistoryResponseSchema,
@@ -118,8 +114,6 @@ import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
   draftReleaseRefusalCodes,
-  leadAbsencesUntimed,
-  leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
   workerHeldCredentialAbsences,
 } from "../../src/contract/rosters.ts";
@@ -140,7 +134,6 @@ import {
   repositoryConfigurationIgnoredAnsweredMax,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
-  selectorHandoffNoteBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
@@ -2039,30 +2032,6 @@ test("a run figure past the bound the contract names is refused", () => {
   );
 });
 
-test("a lead read carries the handoff note by size and preview, never inline", () => {
-  const lead = {
-    session: "lead-atlas",
-    state: "Open",
-    attention: "Monitoring",
-    notificationCursor: 4,
-    handoffNote: { bytes: 2, preview: "{}", truncated: false },
-    turns: [],
-    streams: [],
-  };
-  assert.equal(leadResponseSchema.parse(lead).session, "lead-atlas");
-  assert.throws(() => leadResponseSchema.parse({ ...lead, handoffNote: {} }));
-  assert.throws(() =>
-    leadResponseSchema.parse({
-      ...lead,
-      handoffNote: {
-        bytes: selectorHandoffNoteBytesMax + 1,
-        preview: "{}",
-        truncated: true,
-      },
-    }),
-  );
-});
-
 test("a drafts page carries whole drafts, its cursor and whether it ends them", () => {
   const body = draftResponseSchema.parse(draftResponse(draftResource).body);
   assert.deepEqual(
@@ -2737,76 +2706,6 @@ test("a redemption's pool file parses as the file a runner keeps, and an address
       workerPoolCredentialsSchema.safeParse({ ...file, planeUrl }).success,
       true,
       planeUrl,
-    );
-});
-
-test("every reason a project holds no lead parses as the lead route answers it", () => {
-  const absences = [
-    ...leadAbsencesUntimed.map((reason) => ({ reason })),
-    ...leadAdmissionRefusals.map((reason) => ({
-      reason,
-      since: "2026-09-02T00:00:00.000Z",
-    })),
-  ] as const;
-  for (const absence of absences) {
-    const answered = leadResponse({ result: "None", absence });
-    assert.equal(answered.status, 200);
-    assert.deepEqual(answered.body, { lead: "None", absence });
-    assert.deepEqual(leadReadResponseSchema.parse(answered.body), {
-      lead: "None",
-      absence,
-    });
-  }
-});
-
-/**
- * A server that predates `absence` answers the bare arm, and a server past this
- * one may say more in it; a console reads both rather than drawing either as a
- * body it cannot read.
- */
-test("a lead route's no-lead answer parses without its reason and with fields it does not know", () => {
-  assert.deepEqual(leadNoneResponseSchema.parse({ lead: "None" }), {
-    lead: "None",
-  });
-  assert.deepEqual(
-    leadReadResponseSchema.parse({
-      lead: "None",
-      absence: { reason: "NotNeeded", later: true },
-      later: true,
-    }),
-    { lead: "None", absence: { reason: "NotNeeded" } },
-  );
-  assert.equal(
-    leadNoneResponseSchema.safeParse({
-      lead: "None",
-      absence: { reason: "RunnerOffline" },
-    }).success,
-    false,
-  );
-});
-
-/** A server that predates `held`, or a lead nothing holds, answers a lead without it, and a console reads that body rather than refusing it. */
-test("a lead route's lead answer parses with what holds it and without it", () => {
-  const lead = {
-    session: "lead-atlas",
-    state: "Open",
-    attention: "Monitoring",
-    notificationCursor: 4,
-    handoffNote: { bytes: 2, preview: "{}", truncated: false },
-    turns: [],
-    streams: [],
-  };
-  assert.deepEqual(leadReadResponseSchema.parse(lead), lead);
-  for (const reason of ["Paused", "SelectorNotGranted"] as const)
-    assert.deepEqual(
-      leadReadResponseSchema.parse({ ...lead, held: { reason } }),
-      { ...lead, held: { reason } },
-    );
-  for (const held of [{ reason: "NotNeeded" }, "Paused", true])
-    assert.equal(
-      leadReadResponseSchema.safeParse({ ...lead, held }).success,
-      false,
-      JSON.stringify(held),
     );
 });
 

@@ -26,13 +26,6 @@ import type {
   TicketNativeActionHistoryPage,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
-import {
-  handoffNotePreview,
-  type LeadAbsence,
-  type LeadRead,
-  type LeadRefused,
-  type LeadTurnRecord,
-} from "../../interpreter/leadRead.ts";
 import type { SessionTranscriptRead } from "../../interpreter/sessionTranscriptPage.ts";
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
@@ -2688,80 +2681,6 @@ export function dispatchViewResponse(
 }
 
 /**
- * One turn of the lead's mailbox on the wire. The turn's identity is the
- * decision's for an observation turn — that is what makes offering one
- * idempotent — so the decision is named rather than stored twice, and no other
- * input kind has one.
- */
-function leadTurnBody(turn: LeadTurnRecord): unknown {
-  return {
-    turn: turn.turn,
-    ordinal: turn.ordinal,
-    inputKind: turn.inputKind,
-    state: turn.state,
-    ...(turn.inputKind === "Observation" ? { decision: turn.turn } : {}),
-    ...(turn.failure === undefined ? {} : { failure: turn.failure }),
-    ...(turn.measured === undefined ? {} : turn.measured),
-    ...(turn.batchFirst === undefined ? {} : { batchFirst: turn.batchFirst }),
-    ...(turn.batchLast === undefined ? {} : { batchLast: turn.batchLast }),
-  };
-}
-
-function leadRefusalBody(refused: LeadRefused): unknown {
-  return {
-    reason: refused.reason,
-    since: refused.since,
-    ...(refused.until === undefined ? {} : { until: refused.until }),
-    ...(refused.off === undefined ? {} : { off: refused.off }),
-  };
-}
-
-function leadAbsenceBody(absence: LeadAbsence): unknown {
-  return "since" in absence
-    ? leadRefusalBody(absence)
-    : { reason: absence.reason };
-}
-
-export function leadResponse(result: LeadRead): NativeHttpResponse {
-  switch (result.result) {
-    case "NotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "None":
-      return response(200, {
-        lead: "None",
-        absence: leadAbsenceBody(result.absence),
-      });
-    case "Found":
-      return response(200, {
-        session: result.lead.session,
-        state: result.lead.state,
-        attention: result.lead.attention,
-        ...(result.lead.agentReference === undefined
-          ? {}
-          : { agentReference: result.lead.agentReference }),
-        notificationCursor: result.lead.notificationCursor,
-        handoffNote: handoffNotePreview(result.lead.handoffNote),
-        turns: result.lead.turns.map(leadTurnBody),
-        streams: result.streams,
-        ...(result.held === undefined
-          ? {}
-          : { held: { reason: result.held.reason } }),
-        ...(result.refusal === undefined
-          ? {}
-          : { refusal: leadRefusalBody(result.refusal) }),
-        ...(result.subsidy === undefined
-          ? {}
-          : {
-              subsidy: {
-                tenantMicros: result.subsidy.tenantMicros,
-                tenantMonthlyMicros: result.subsidy.tenantMonthlyMicros,
-              },
-            }),
-      });
-  }
-}
-
-/**
  * One transcript entry as the contract declares it. The stored entry carries the
  * parent links and the compaction metadata the walk needed, and a reader is
  * given neither: the wire says what the chain is, not how it was found.
@@ -2791,7 +2710,7 @@ export function sessionTranscriptResponse(
   }
 }
 
-/** A session nobody may read and a session holding no lead or thread answer alike, as its transcript does. */
+/** A session nobody may read and a session holding no thread answer alike, as its transcript does. */
 export function sessionContextResponse(
   result: SessionContextPageRead,
 ): NativeHttpResponse {

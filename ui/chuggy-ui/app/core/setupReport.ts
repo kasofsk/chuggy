@@ -21,7 +21,10 @@
  * faults fixed, the commit pushed. `bind` adds a repository to the project at
  * the site, which her permit to administer the project already guards, so it
  * is named to run at once, beside whatever she does on GitHub meanwhile, and
- * it waits on GitHub rather than on her. `ticket`
+ * it waits on GitHub rather than on her. `merge` merges the pull request of
+ * her first ticket at the site, and is named only under a rule that waits on
+ * her yes; once it has merged, it waits on the import and not on her, and is
+ * named again to run at once where that wait ran out first. `ticket`
  * files a ticket at the site, and is named only under a rule that waits on
  * her saying what she wants done. `plugin` installs chuggy's Claude Code
  * plugin, and is named only under a rule that waits on her yes, beside one
@@ -44,6 +47,7 @@
  * of the program has been evaluated.
  */
 
+import type { ProposalMergeRefusal } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import { copyOrDataText } from "./copy.ts";
 import type { Copy, CopyArgument, CopyOrData, CopyText } from "./copy.ts";
@@ -166,9 +170,10 @@ export interface SetupStepSaid {
  * read again under; something `plugin` would do on this machine, with the way
  * past it; something `mcp` or `runner` would do on this machine for
  * the project named, or `chat-host` for the workspace where no project is, or
- * `serve` at the site for the project named, and the yes it waits on; `bind`
- * run at once for the project named, beside what the person does on GitHub
- * where there is anything; a question only she answers, and the
+ * `serve` or `merge` at the site for the project named, and the yes it waits
+ * on; `bind` run at once for the project named, beside what the person does on
+ * GitHub where there is anything, or `merge` run again, beside setup said to
+ * be done, where the import it waits on is still under way; a question only she answers, and the
  * flag her answer is passed in; what to call the project `project` makes in
  * the workspace, at the address named where one is; what she wants done
  * first, which `ticket` files for the project named, with the configuration
@@ -200,6 +205,13 @@ export type SetupThing =
       readonly thing: "Run";
       readonly command: "Bind";
       readonly tell: Copy | undefined;
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
+      readonly thing: "Run";
+      readonly command: "Merge";
+      readonly tell: Copy;
       readonly workspace: string;
       readonly project: string;
     }
@@ -237,6 +249,15 @@ export type SetupThing =
 export type SetupBindAnswered =
   | { readonly answered: "Bound"; readonly said: Copy }
   | { readonly answered: "Refused"; readonly refusal: Copy };
+
+/** Why a merge was not made: the site's reason, or that the person does not hold the permit merging takes. */
+export type SetupMergeRefusal = ProposalMergeRefusal | "Forbidden";
+
+/** What the site answered a merge: merged, by this press or before it, with the commit it left where it named one; refused, for a reason a line names; or not answered as either, in the word a failed request is drawn as. */
+export type SetupMergeAnswered =
+  | { readonly answered: "Merged"; readonly mergeCommit: string | undefined }
+  | { readonly answered: "Refused"; readonly refusal: SetupMergeRefusal }
+  | { readonly answered: "Failed"; readonly failure: Copy };
 
 /** What the site answered one write of `serve`: written, or not, in the word a failed request is drawn as. */
 export type SetupServeWritten =
@@ -439,6 +460,16 @@ export type SetupReport =
       >;
     }
   | {
+      /** A run of `merge`: the pull request it asked the site to merge and what the site answered, where the checklist offered that, and the checklist read after. */
+      readonly report: "Merge";
+      readonly url: string | undefined;
+      readonly answered: SetupMergeAnswered | undefined;
+      readonly checklist: Extract<
+        SetupReport,
+        { readonly report: "Checklist" }
+      >;
+    }
+  | {
       /** A run of `serve`: the project it wrote for and what the site answered each write, where the checklist's next thing was that, and the checklist read after. */
       readonly report: "Serve";
       readonly project: string | undefined;
@@ -472,9 +503,9 @@ export type SetupMachineCommand = Extract<
   "Mcp" | "Runner" | "ChatHost"
 >;
 
-/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, and `serve`, which has the person's runners take the project's work at the site. */
+/** The commands a checklist offers, each waiting on the person's yes: those that change the machine, `plugin`, which changes the person's agent, `serve`, which has the person's runners take the project's work at the site, and `merge`, which merges a pull request on the forge. */
 export type SetupOfferCommand =
-  SetupMachineCommand | Extract<SetupCommand, "Serve" | "Plugin">;
+  SetupMachineCommand | Extract<SetupCommand, "Serve" | "Plugin" | "Merge">;
 
 /** The command a run of the runner package's service is for `at` as: `runner` for a project, `chat-host` for a workspace alone. */
 function setupRunCommand(at: SetupRunnerAt): "Runner" | "ChatHost" {
@@ -566,6 +597,7 @@ function setupCommandWords() {
     check = "",
     imported = "",
     bound = "",
+    merged = "",
     served = "",
     filed = "",
     plugged = "",
@@ -579,6 +611,7 @@ function setupCommandWords() {
     ...setupCommandArguments("Check"),
     ...setupCommandArguments("Import"),
     ...setupCommandArguments("Bind"),
+    ...setupCommandArguments("Merge"),
     ...setupCommandArguments("Serve"),
     ...setupCommandArguments("Ticket"),
     ...setupCommandArguments("Plugin"),
@@ -593,6 +626,7 @@ function setupCommandWords() {
     check,
     imported,
     bound,
+    merged,
     served,
     filed,
     plugged,
@@ -1236,11 +1270,17 @@ function setupOfferLines(
   ];
 }
 
-/** `bind` to run at once, beside what the tell has the person do on GitHub, and again where a wait of its own ran out first. */
+/** `bind` to run at once, beside what the tell has the person do on GitHub, and again where a wait of its own ran out first; or `merge` run again, beside setup said to be done. */
 function setupRunLines(
   thing: Extract<SetupThing, { readonly thing: "Run" }>,
   saying: SetupSaying,
 ): readonly SetupLine[] {
+  if (thing.command === "Merge")
+    return [
+      ["tell", thing.tell],
+      ["rule", { id: "setup-rule-merge-again" }],
+      setupNextLine(setupSayingOf(saying, thing), thing.command),
+    ];
   const rule: Copy =
     saying.again && thing.tell !== undefined
       ? { id: "setup-rule-bind-again" }
@@ -1551,7 +1591,9 @@ function setupBindWaited(
   report: Extract<SetupReport, { readonly report: "Bind" }>,
 ): boolean {
   return (
-    report.answered === undefined && report.checklist.next.thing.thing === "Run"
+    report.answered === undefined &&
+    report.checklist.next.thing.thing === "Run" &&
+    report.checklist.next.thing.command === "Bind"
   );
 }
 
@@ -1605,6 +1647,64 @@ function setupBindLines(
       ? []
       : [["did", { id: "setup-waiting-opened", args: { address } }] as const]),
     ...setupBindSaid(report),
+    ...rest,
+  ];
+}
+
+/** Each reason a merge was not made, in the person's words. */
+const setupMergeRefusals: Readonly<Record<SetupMergeRefusal, Copy>> = {
+  Closed: { id: "setup-merge-refusal-closed" },
+  Conflicting: { id: "setup-merge-refusal-conflicting" },
+  Blocked: { id: "setup-merge-refusal-blocked" },
+  Behind: { id: "setup-merge-refusal-behind" },
+  HeadMoved: { id: "setup-merge-refusal-head-moved" },
+  NotMergeable: { id: "setup-merge-refusal-not-mergeable" },
+  AppDenied: { id: "setup-merge-refusal-app-denied" },
+  Forbidden: { id: "setup-merge-refusal-forbidden" },
+};
+
+/** What `merge` asked of the site and what it answered, said where the checklist read after it says the site. */
+function setupMergeSaid(
+  report: Extract<SetupReport, { readonly report: "Merge" }>,
+): readonly SetupLine[] {
+  const url = report.url ?? "";
+  const answered = report.answered;
+  if (answered === undefined) return [["found", { id: "setup-merge-none" }]];
+  switch (answered.answered) {
+    case "Merged":
+      return [["did", { id: "setup-merge-did", args: { url } }]];
+    case "Refused":
+      return [
+        [
+          "found",
+          {
+            id: "setup-merge-refused",
+            args: { url, refusal: setupMergeRefusals[answered.refusal] },
+          },
+        ],
+      ];
+    case "Failed":
+      return [
+        [
+          "found",
+          {
+            id: "setup-merge-failed",
+            args: { url, failure: answered.failure },
+          },
+        ],
+      ];
+  }
+}
+
+/** A run of `merge`: the checklist read after it, with what it asked and what the site answered after the site's own line. */
+function setupMergeLines(
+  report: Extract<SetupReport, { readonly report: "Merge" }>,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  const [site, ...rest] = setupLines(report.checklist, saying);
+  return [
+    ...(site === undefined ? [] : [site]),
+    ...setupMergeSaid(report),
     ...rest,
   ];
 }
@@ -2038,6 +2138,8 @@ function setupLines(
       return setupImportLines(report, saying);
     case "Bind":
       return setupBindLines(report, saying);
+    case "Merge":
+      return setupMergeLines(report, saying);
     case "Serve":
       return setupServeLines(report, saying);
     case "Ticket":
@@ -2137,6 +2239,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
         : 0;
     case "Import":
     case "Bind":
+    case "Merge":
     case "Serve":
     case "Ticket":
       return setupReportExit(report.checklist);

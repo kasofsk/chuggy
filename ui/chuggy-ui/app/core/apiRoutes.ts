@@ -1046,6 +1046,15 @@ export const apiReturnTicket = apiProjectEndpoint(
   }),
 );
 
+/** The pull request the ticket's newest successful landing opened, merged by the site's portal app. */
+export const apiMergeTicketProposal = apiProjectEndpoint(
+  nativeHttpEndpoints.ticketProposalMerge,
+  (partition, ticket: number) => ({
+    parameters: { ...partition, ticket },
+    body: {},
+  }),
+);
+
 /** Who holds and who waits on each reference the project's tickets land on. */
 export const apiLandingQueues = apiProjectEndpoint(
   nativeHttpEndpoints.landingQueues,
@@ -1318,7 +1327,7 @@ export const apiProjectAbilities = apiProjectEndpoint(
   (partition) => ({ parameters: partition }),
 );
 
-export interface LeadTranscriptPage {
+export interface SessionTranscriptPage {
   readonly stream?: string | undefined;
   readonly after?: number | undefined;
   readonly limit?: number | undefined;
@@ -1368,7 +1377,7 @@ export const apiThread = apiProjectEndpoint(
 /** One thread's store, paged by the transcript walk. */
 export const apiThreadTranscript = apiProjectEndpoint(
   nativeHttpEndpoints.threadTranscript,
-  (partition, session: string, page: LeadTranscriptPage = {}) => ({
+  (partition, session: string, page: SessionTranscriptPage = {}) => ({
     parameters: { ...partition, session },
     query: { stream: page.stream, after: page.after, limit: page.limit },
   }),
@@ -1491,7 +1500,7 @@ export const apiChatThread = apiTenantEndpoint(
 
 export const apiChatThreadTranscript = apiTenantEndpoint(
   nativeHttpEndpoints.chatThreadTranscript,
-  (tenant, session: string, page: LeadTranscriptPage = {}) => ({
+  (tenant, session: string, page: SessionTranscriptPage = {}) => ({
     parameters: { tenant, session },
     query: { stream: page.stream, after: page.after, limit: page.limit },
   }),

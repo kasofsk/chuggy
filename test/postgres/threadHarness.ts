@@ -20,11 +20,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresSessionContext } from "../../src/adapters/postgres/sessionContext.ts";
-import { postgresSelectorResolvedSettings } from "../../src/adapters/postgres/selector.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
 import { composeNativeWeb, composeThreadLimits } from "../../src/compose.ts";
@@ -300,20 +297,6 @@ export async function threadRigTicketPhase(
   );
 }
 
-/** The lead's reads over the API's pool, which a thread's routes are composed beside. */
-function threadRigLeadPorts(
-  pool: ThreadRig["apiPool"],
-  store: SessionStoreDouble,
-) {
-  return {
-    leads: postgresLeadReads(pool),
-    store,
-    context: postgresSessionContext(pool),
-    settings: postgresSelectorResolvedSettings(pool),
-    candidates: postgresDispatchViews(pool),
-  };
-}
-
 /**
  * The app the thread routes are driven through, composed from the bundle the
  * ROOT composes. It is here rather than in either suite because the two that
@@ -338,7 +321,6 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     undefined,
-    threadRigLeadPorts(pool, input.store),
     {
       threads: postgresThreads(pool, {
         streamsMax: sessionStoreStreamsAnswered,

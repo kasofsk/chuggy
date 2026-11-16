@@ -188,7 +188,6 @@ import {
   inboxResponse,
   hostedRunsResponse,
   projectAbilitiesResponse,
-  leadResponse,
   sessionTranscriptResponse,
   selectorProjectSettingsResponse,
   selectorProjectSettingsWriteResponse,
@@ -352,9 +351,6 @@ type InitialNativeWeb = Pick<
   | "operationalStatus"
   | "hostedRuns"
   | "abilities"
-  | "lead"
-  | "leadTranscript"
-  | "leadContext"
   | "outputContent"
   | "uploadProjectArtifact"
   | "projectArtifact"
@@ -886,43 +882,6 @@ function registerProjectAbilities(
     nativeHttpEndpoints.abilities,
     (_request, principal, partition) => web.abilities(principal, partition),
     projectAbilitiesResponse,
-  );
-}
-
-function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.lead,
-    (_request, principal, partition) => web.lead(principal, partition),
-    leadResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadTranscript,
-    (request, principal, partition) => {
-      const query = nativeHttpEndpoints.leadTranscript.query.parse(
-        request.query,
-      );
-      return web.leadTranscript(principal, partition, {
-        ...(query.stream === undefined
-          ? {}
-          : { stream: asSessionStoreStream(query.stream) }),
-        after: query.after,
-        limit: query.limit,
-      });
-    },
-    sessionTranscriptResponse,
-  );
-  registerEndpoint(
-    app,
-    nativeHttpEndpoints.leadContext,
-    (request, principal, partition) =>
-      web.leadContext(
-        principal,
-        partition,
-        nativeHttpEndpoints.leadContext.query.parse(request.query),
-      ),
-    sessionContextResponse,
   );
 }
 
@@ -3390,7 +3349,6 @@ export function createNativeHttpApp(
   registerProject(app, web);
   registerHostedRuns(app, web);
   registerProjectAbilities(app, web);
-  registerLead(app, web);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   if (inbox !== undefined) registerInbox(app, inbox);

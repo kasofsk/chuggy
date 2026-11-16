@@ -331,6 +331,17 @@ submissions. It says what the site answered and reads the checklist again.
 Where the configurations were not read, the `tell:` names the New ticket page
 instead.
 
+Where the checklist is otherwise done and the first ticket's pull request
+stands unmerged on a repository holding only the bootstrap, the `tell:` asks
+whether chuggy should merge it or she would rather review and merge it herself,
+leaning towards the latter where git counts more history in the folder than a
+new repository holds, and the `rule:` names `merge` for once she says yes.
+Without a yes, setup is done. `merge` asks the site to merge it, its one
+write, and reads the checklist again until the repository's own configuration
+is imported, the import fails, or `--wait-secs` ends; a wait that ends first
+names `merge` again, which merges nothing and waits on the same import. A
+refusal is said in one line with the pull request's link, and setup ends.
+
 ## The session
 
 OIDC authorization code with PKCE against the issuer `/config.json` names, with

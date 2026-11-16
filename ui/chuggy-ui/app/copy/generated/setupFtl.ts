@@ -51,7 +51,7 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 ## The arguments, asked wrongly. Each flag and command word is the program's own.
 
 # spells -run: to run is a verb here
-setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $served }, as { $filed } or as { $plugged }
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $merged }, as { $served }, as { $filed } or as { $plugged }
 setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
@@ -292,6 +292,8 @@ setup-rule-bind = Run the command on the next: line now, without asking the pers
     }. It waits until { -github } lets both apps into this folder's { -repository }, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.
 # spells -run: to run is a verb here
 setup-rule-bind-again = Run the command on the next: line again, and go on running it while { -github } still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.
+# spells -run: to run is a verb here
+setup-rule-merge-again = Run the command on the next: line again, and go on running it while { -brand-name } imports the { -repository }'s own { -configuration }: the { -pull-request } is merged already, so it merges nothing again and waits on the same import. Nothing has failed, so do not tell the person that it did or give them a deadline.
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
 setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
@@ -344,6 +346,19 @@ setup-bind-waited = the wait ended before { -github } let both apps into this fo
 # The answer is the Add dialog's own line, which another section holds.
 setup-bind-did = asked { -brand-name } to add { $repository }, and it answered { $said }
 setup-bind-refused = { -brand-name } did not add { $repository }: { $refusal }
+setup-merge-none = nothing to merge: no { -pull-request } of the first { -ticket } stands unmerged
+setup-merge-did = asked { -brand-name } to merge { $url }, and it is merged
+setup-merge-refused = { -brand-name } did not merge { $url }: { $refusal }; merge it on { -github } your own way
+setup-merge-failed = { -brand-name } did not merge { $url }: { $failure }
+setup-merge-refusal-closed = it is closed
+setup-merge-refusal-conflicting = it conflicts with its base branch
+# spells -brief-check: a required check on GitHub is no brief's
+setup-merge-refusal-blocked = the { -repository }'s own rules on { -github } block it, such as a branch protection or a required review or check
+setup-merge-refusal-behind = its base branch has moved on since, and the { -repository } wants it brought up to date first
+setup-merge-refusal-head-moved = something was pushed to it after { -brand-name } checked it
+setup-merge-refusal-not-mergeable = { -github } would not merge it, and did not say why
+setup-merge-refusal-app-denied = { -github } did not let { -brand-name }'s { -portal-app } merge it
+setup-merge-refusal-forbidden = only the { -project }'s { -role-admin(form: "plural") } may have { -brand-name } merge its { -pull-request(form: "plural") }, so one of them can
 # spells -work-stage: the work in general
 setup-serve-none = nothing to change: the next thing is not your { -runner } taking the { -project }'s work
 setup-serve-given = gave your { -personal-runner(form: "plural") } { $project }
@@ -470,6 +485,14 @@ setup-mend-serving-admin = Your own { -runner(form: "plural") } take its work on
 setup-mend-serving-admin-tell = Your { -runner } is registered and given { $project }, and does not take its work yet. { setup-mend-serving-admin } Tell me once they have.
 # spells -work-stage: the work in general
 setup-offer-serve-when = once the person says yes to their { -runner } taking the { -project }'s work
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+# spells -brief-check: a required check on GitHub is no brief's
+setup-mend-merge-offer = { -ticket(case: "upper") } { $ticket } opened { -pull-request(form: "a") }, { $url }, holding its work and this { -repository }'s own { -configuration }; once it is merged, later { -ticket(form: "plural") } run on that { -configuration }. Do you want me to merge it, or would you rather review it and merge it yourself?{ $lean ->
+    [leave] { " " }I would leave it to you: a { -repository } with a history of its own often has rules an app cannot pass, such as a branch protection or a required review or check, and its owners may want to review the change first.
+   *[ask] { "" }
+} If you merge it yourself, setup is done now, and the { -configuration } is in place once it is merged.
+setup-offer-merge-when = once the person says yes to { -brand-name } merging that { -pull-request }
 setup-mend-serving-admin-when = once the person says { -role-admin(form: "a") } of the { -project } set { $setting }
 # spells -run: to run is a verb here
 setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
@@ -509,9 +532,9 @@ setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $p
     [unable] { " " }{ setup-mend-wait-unable }
    *[none] { "" }
 } { $ends ->
-    [pull] It ends in { -pull-request(form: "a") } for you to merge on { -github }{ $bootstrap ->
-        [bootstrap] , and merging it makes later { -ticket(form: "plural") } run on this { -repository }'s own { -configuration }
-       *[own] { "" }
+    [pull] It ends in { -pull-request(form: "a") }{ $bootstrap ->
+        [bootstrap] { " " }that I can merge for you once you say yes, and merging it makes later { -ticket(form: "plural") } run on this { -repository }'s own { -configuration }
+       *[own] { " " }for you to merge on { -github }
     }. Setup is done once that { -pull-request } is open.
    *[finish] Setup is done when it finishes.
 } { $page } shows where it is. Tell me when you want me to look again.
@@ -554,9 +577,11 @@ setup-ask-unnamed = { $of } is this for?{ $whole ->
 setup-done = { -brand-name } is set up for { $project }{ $how ->
     [said] : { $detail }
    *[unsaid] { "" }
-}.{ $merge ->
-    [unmerged] { " " }Its { -pull-request }, { $url }, holds the { -repository }'s own { -configuration }: merge it on { -github } so later { -ticket(form: "plural") } run on that { -configuration } rather than each writing it again.
-   *[merged] { "" }
+}.{ $configuration ->
+    [imported] { " " }The { -repository }'s own { -configuration } is in place, and later { -ticket(form: "plural") } run on it.
+    [importing] { " " }{ -brand-name } is importing the { -repository }'s own { -configuration }, and later { -ticket(form: "plural") } run on it once it is in place.
+    [refused] { " " }{ -brand-name } did not import the { -repository }'s own { -configuration } ({ $last }), so later { -ticket(form: "plural") } run on the bootstrap until it does.
+   *[none] { "" }
 } The next { -ticket } is made at { $page }.
 
 ## The page a sign-in returns to, in the person's browser: the program's name,

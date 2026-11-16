@@ -15,7 +15,10 @@ import {
   configurationCanonicalCharsMax,
   nativeHttpPathSegmentCharsMax,
 } from "../../src/contract/http.ts";
-import { workerHeldCredentialAbsences } from "../../src/contract/rosters.ts";
+import {
+  leadAdmissionRefusals,
+  workerHeldCredentialAbsences,
+} from "../../src/contract/rosters.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import type pg from "pg";
@@ -300,6 +303,23 @@ test("an attempt admits exactly the image faults the contract names", async () =
     assert.deepEqual(
       [...(known ?? "").matchAll(/'([^']+)'::text/gu)].map((each) => each[1]),
       [...workerImageFaults],
+    );
+  });
+});
+
+test("a kept lead refusal admits exactly the refusals the contract names", async () => {
+  await migratedDatabase("lead_refusals", async (subject) => {
+    const known = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c
+          WHERE c.conrelid = 'selector_lead_refusal'::regclass
+            AND c.conname = 'selector_lead_refusal_is_known'`,
+      )
+    ).rows[0]?.definition;
+    assert.ok(known !== undefined, "the refusal constraint was not found");
+    assert.deepEqual(
+      [...known.matchAll(/'([A-Za-z]+)'/gu)].map((each) => each[1]).sort(),
+      [...leadAdmissionRefusals].sort(),
     );
   });
 });

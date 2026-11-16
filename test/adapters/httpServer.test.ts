@@ -84,7 +84,6 @@ import {
   asRepositoryFinalization,
   type ProjectRepositoryLandingStore,
 } from "../../src/interpreter/repositoryBinding.ts";
-import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
@@ -442,7 +441,6 @@ function projectReadNewFields(query: ProjectReadQuery): string {
 
 function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
-    ...unreadableLeadReads(),
     ...unservedThreads,
     ...unservedEpics,
     ...fakeOperations(calls),

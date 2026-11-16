@@ -63,7 +63,7 @@ export type SaidThing =
     }
   | {
       readonly thing: "Run";
-      readonly command: "Bind";
+      readonly command: "Bind" | "Merge";
       readonly tell: string | undefined;
       readonly workspace: string;
       readonly project: string;
