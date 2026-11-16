@@ -1070,6 +1070,8 @@ interface GitRecorder extends GitPromotionPort {
   readonly treeReads: GitObjectId[];
   /** The tree every commit is read as recording, absent where none could be read. */
   commitTree: GitObjectId | undefined;
+  /** The trees particular commits are read as recording instead, keyed by commit. */
+  readonly commitTrees: Map<GitObjectId, GitObjectId | undefined>;
   stackRemoved: StackRemoved;
   promoted: CandidatePromoted;
   proved: AncestryProved;
@@ -1124,14 +1126,22 @@ function recordingContainment(
 /** The half of that remote that reads a commit's tree, every commit recording the tree a stack is given until a case says otherwise. */
 function recordingTrees(
   git: () => GitRecorder,
-): Pick<GitRecorder, "treeReads" | "commitTree" | "readCommitTree"> {
+): Pick<
+  GitRecorder,
+  "treeReads" | "commitTree" | "commitTrees" | "readCommitTree"
+> {
   return {
     treeReads: [],
     commitTree: asGitObjectId(commitOf("d")),
+    commitTrees: new Map(),
     readCommitTree: (question) => {
       const own = git();
       own.treeReads.push(question.commit);
-      return Promise.resolve(own.commitTree);
+      return Promise.resolve(
+        own.commitTrees.has(question.commit)
+          ? own.commitTrees.get(question.commit)
+          : own.commitTree,
+      );
     },
   };
 }
@@ -4969,17 +4979,19 @@ test("a pull request into another branch from an unpushed head is promoted on th
   );
 });
 
-/** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
-async function stackedMergeConcluding(
+/** A promoted candidate under the policy given whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
+async function proposalMergeConcluding(
+  policy: BriefGitMergePolicy,
   stack: EvaluationStack | undefined,
   commitTree: GitObjectId | undefined,
+  acceptedTree?: GitObjectId,
 ): Promise<{
   store: FinalizerRecorder;
   git: GitRecorder;
   report: Awaited<ReturnType<typeof passOver>>;
 }> {
   const store = recordingStore([
-    proposedView("request-one", { ...proposalMerged, policy: "Stacked" }),
+    proposedView("request-one", { ...proposalMerged, policy }),
   ]);
   store.gathering = {
     work: [passedWork],
@@ -4990,13 +5002,15 @@ async function stackedMergeConcluding(
   forge.created = "Created";
   const git = recordingGit();
   git.commitTree = commitTree;
+  if (acceptedTree !== undefined)
+    git.commitTrees.set(asGitObjectId(commitOf("c")), acceptedTree);
   const service: FinalizerService = {
     ...mergingService(store, forge, {}, git),
     ticketBriefs: briefsOf(
       briefBranch,
       landingBranch,
       "PullRequestMerge",
-      "Stacked",
+      policy,
     ),
     stacks: { ...stacksDue([]), current: () => Promise.resolve(stack) },
   };
@@ -5004,6 +5018,14 @@ async function stackedMergeConcluding(
   await passOver(service);
   assert.equal(forge.merges.length, 1);
   return { store, git, report: await passOver(service) };
+}
+
+/** A Stacked ticket's promoted candidate whose brief merges its proposal, over the stack given, driven to the pass after its merge. */
+function stackedMergeConcluding(
+  stack: EvaluationStack | undefined,
+  commitTree: GitObjectId | undefined,
+): ReturnType<typeof proposalMergeConcluding> {
+  return proposalMergeConcluding("Stacked", stack, commitTree);
 }
 
 test("a stacked merge whose commit records the stack's tree concludes the landing", async () => {
@@ -5044,10 +5066,58 @@ test("a stacked merge whose tree cannot be read holds, and neither concludes nor
   assert.deepEqual(store.attempts, []);
 });
 
-test("a stacked merge evaluated over no stack concludes as a serialized one does, reading no tree", async () => {
-  const { store, git } = await stackedMergeConcluding(
-    undefined,
+for (const [policy, held] of [
+  ["Serialized", "a serialized merge"],
+  ["Stacked", "a stacked merge evaluated over no stack"],
+] as const) {
+  test(`${held} whose commit records its accepted commit's tree concludes the landing`, async () => {
+    const { store, git } = await proposalMergeConcluding(
+      policy,
+      undefined,
+      asGitObjectId(commitOf("8")),
+    );
+
+    assert.deepEqual(git.treeReads, [commitOf("c"), commitOf("e")]);
+    assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+    assert.deepEqual(store.attempts, []);
+  });
+
+  test(`${held} that left another tree than its accepted commit's is sent back to re-check that commit, and concludes no success`, async () => {
+    const { store, report } = await proposalMergeConcluding(
+      policy,
+      undefined,
+      asGitObjectId(commitOf("8")),
+      asGitObjectId(commitOf("9")),
+    );
+
+    assert.equal(report.holds, 0);
+    assert.deepEqual(store.concluded, []);
+    assert.equal(store.attempts.length, 1);
+    assert.equal(store.attempts[0]?.failureKind, "RecheckRequired");
+    assert.equal(store.attempts[0]?.recheckCommit, commitOf("c"));
+    assert.equal(store.attempts[0]?.recheckReason, "MergedTreeDiffers");
+  });
+
+  test(`${held} whose accepted commit's tree cannot be read holds, and neither concludes nor records anything`, async () => {
+    const { store, git, report } = await proposalMergeConcluding(
+      policy,
+      undefined,
+      undefined,
+    );
+
+    assert.deepEqual(git.treeReads, [commitOf("c")]);
+    assert.equal(report.holds, 1);
+    assert.deepEqual(store.concluded, []);
+    assert.deepEqual(store.attempts, []);
+  });
+}
+
+test("a direct merge concludes whatever tree it left, reading none", async () => {
+  const { store, git } = await proposalMergeConcluding(
+    "Direct",
+    stackOf(stackedTree),
     asGitObjectId(commitOf("8")),
+    asGitObjectId(commitOf("9")),
   );
 
   assert.deepEqual(git.treeReads, []);

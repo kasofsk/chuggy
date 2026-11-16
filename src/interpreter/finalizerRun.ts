@@ -2681,32 +2681,67 @@ function finalizerProposalMergeReleased(
 }
 
 /**
- * Whether a merge the forge made is the tree its ticket was evaluated on. Only
- * a Stacked ticket evaluated over a stack is asked: its merge lands what was
- * evaluated only where the merge commit's tree is the stack's, as its push
- * does, and anything else lands as it did before.
+ * The tree a Serialized or Stacked ticket's landing was evaluated on: its
+ * stack's where it was evaluated over one, and otherwise its accepted commit's,
+ * which contains the tip it was landed over. Work handed off as artifacts was
+ * evaluated on no commit, and is held to none.
+ */
+async function finalizerProposalEvaluatedTree(
+  service: FinalizerService,
+  view: FinalizationView,
+  repository: RepositoryBinding,
+  policy: "Serialized" | "Stacked",
+): Promise<GitObjectId | "Unread" | "NoTree"> {
+  const { claim } = view;
+  if (policy === "Stacked") {
+    const stack = await service.stacks?.current(claim.partition, claim.ticket);
+    if (stack !== undefined) return stack.stackTree;
+  }
+  const accepted = handoffAccepted(
+    handoffSuperseded(await service.store.handoffGathering(claim)),
+  );
+  if (accepted.accepted !== "Handoff" || accepted.handoff.kind !== "Source")
+    return "NoTree";
+  const tree = await service.git.readCommitTree({
+    repository,
+    commit: accepted.handoff.source.commit,
+  });
+  return tree ?? "Unread";
+}
+
+/**
+ * Whether a merge the forge made is the tree its ticket was evaluated on. A
+ * Serialized or Stacked ticket lands what was evaluated only where the merge
+ * commit's tree is that tree, as its push does, whatever the forge built its
+ * commit onto; a Direct ticket lands as it did before.
  */
 async function finalizerProposalMergeEvaluated(
   service: FinalizerService,
   view: FinalizationView,
   merged: GitObjectId,
 ): Promise<"Evaluated" | "Differs" | "Unread"> {
-  const { finalization, claim, repository } = view;
-  if (finalization?.kind !== "GitMerge" || finalization.policy !== "Stacked")
+  const { finalization, repository } = view;
+  if (finalization?.kind !== "GitMerge" || finalization.policy === "Direct")
     return "Evaluated";
-  const stack = await service.stacks?.current(claim.partition, claim.ticket);
-  if (stack === undefined) return "Evaluated";
   if (repository === undefined)
     throw new Error(
       "finalizer pass: a merge was concluded against no bound repository",
     );
+  const evaluated = await finalizerProposalEvaluatedTree(
+    service,
+    view,
+    repository,
+    finalization.policy,
+  );
+  if (evaluated === "NoTree") return "Evaluated";
+  if (evaluated === "Unread") return "Unread";
   const tree = await service.git.readCommitTree({ repository, commit: merged });
   if (tree === undefined) return "Unread";
-  return tree === stack.stackTree ? "Evaluated" : "Differs";
+  return tree === evaluated ? "Evaluated" : "Differs";
 }
 
 /**
- * Sends a Stacked ticket whose merge left a tree it was not evaluated on back
+ * Sends a ticket whose merge left a tree it was not evaluated on back
  * to re-check the commit it was accepted at, at its rank, as a push that would
  * leave one is. The merge has landed, so the re-check evaluates what it left.
  */
@@ -2720,7 +2755,7 @@ async function finalizerProposalMergeRechecked(
   if (gathered === undefined) return;
   if (gathered.handoff?.kind !== "Source")
     throw new Error(
-      "finalizer pass: a stacked merge was concluded for work with no source commit",
+      "finalizer pass: a merge held to its evaluated tree was concluded for work with no source commit",
     );
   await finalizerRecheckRequired(
     service,
