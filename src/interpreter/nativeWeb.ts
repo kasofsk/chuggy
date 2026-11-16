@@ -2181,7 +2181,6 @@ function nativeOpenThreadMethod(
       composedSessionRoutes(routes),
       principal,
       partition,
-      "Thread",
     );
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
@@ -2263,7 +2262,6 @@ function nativeSendThreadMessageMethod(
       composedSessionRoutes(routes),
       principal,
       partition,
-      "Thread",
     );
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
@@ -2338,7 +2336,6 @@ function nativeReplyThreadOfferMethod(
       composedSessionRoutes(routes),
       principal,
       partition,
-      "Thread",
     );
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
