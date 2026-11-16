@@ -15,7 +15,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  changeProposalAnsweredReply,
+  changeProposalUnreachedReply,
+} from "../../src/interpreter/changeProposal.ts";
+import {
   finalizerHoldLog,
+  finalizerProcessLog,
   finalizerTelemetry,
   recordFinalizer,
   silentFinalizerMetrics,
@@ -201,4 +206,96 @@ test("a hold log writes nothing for any observation but an advance", () => {
     metrics.claiming(1, 1);
   });
   assert.deepEqual(lines, []);
+});
+
+/** What a process log wrote of the observations `record` makes, each line with its newline taken off. */
+function processLogLines(
+  record: (metrics: FinalizerMetrics) => void,
+): readonly string[] {
+  const lines: string[] = [];
+  const sealed = finalizerProcessLog((line) => {
+    assert.ok(line.endsWith("\n"), line);
+    lines.push(line.slice(0, -1));
+  });
+  recordFinalizer(sealed, record);
+  return lines;
+}
+
+/** One forge act on request-one of ticket 7. */
+const processLogAct = { ticket: 7, request: "request-one" } as const;
+
+test("a process log writes one parseable line per forge act, with what the forge said where it said anything", () => {
+  const lines = processLogLines((metrics) => {
+    metrics.forgeAnswered({
+      ...processLogAct,
+      act: "merge",
+      outcome: "NotMergeable",
+      reply: changeProposalAnsweredReply(
+        405,
+        "Repository rule violations found",
+      ),
+    });
+    metrics.forgeAnswered({
+      ...processLogAct,
+      act: "readQueue",
+      outcome: "Unavailable",
+      reply: changeProposalUnreachedReply("TypeError"),
+    });
+    metrics.forgeAnswered({
+      ...processLogAct,
+      act: "create",
+      outcome: "Denied",
+    });
+  });
+  assert.deepEqual(
+    lines.map((line) => JSON.parse(line) as unknown),
+    [
+      {
+        finalizer: "forgeAct",
+        ...processLogAct,
+        act: "merge",
+        outcome: "NotMergeable",
+        status: 405,
+        message: "Repository rule violations found",
+      },
+      {
+        finalizer: "forgeAct",
+        ...processLogAct,
+        act: "readQueue",
+        outcome: "Unavailable",
+        failure: "TypeError",
+      },
+      {
+        finalizer: "forgeAct",
+        ...processLogAct,
+        act: "create",
+        outcome: "Denied",
+      },
+    ],
+  );
+});
+
+test("a process log writes one parseable line per hold, and the hold log's lines beside it", () => {
+  const lines = processLogLines((metrics) => {
+    metrics.holdRecorded({
+      ...processLogAct,
+      kind: "ProposalMergesExhausted",
+      passes: 3,
+      escalated: true,
+    });
+    metrics.advanced("request-one", "CandidateUnbuilt");
+  });
+  const [hold, held] = lines;
+  assert.deepEqual(JSON.parse(hold ?? ""), {
+    finalizer: "hold",
+    ...processLogAct,
+    hold: "ProposalMergesExhausted",
+    passes: 3,
+    escalated: true,
+  });
+  assert.equal(
+    held,
+    'finalizer: request "request-one" held at CandidateUnbuilt, 1 advances in a row',
+  );
+  assert.equal(lines.length, 2);
 });

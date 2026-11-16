@@ -135,6 +135,7 @@ import {
   silentFinalizerMetrics,
   silentFinalizerTelemetry,
   type FinalizerHoldReason,
+  type FinalizerHoldRecorded,
   type FinalizerMetrics,
   type FinalizerTelemetry,
 } from "../../src/interpreter/finalizerTelemetry.ts";
@@ -388,6 +389,7 @@ function recordingProposals(
 ): FinalizerProposalStore {
   return {
     changeProposal: () => Promise.resolve(recordedProposalOf(store())),
+    recordChangeProposalAnswer: () => Promise.resolve({ wrote: "Nothing" }),
     markChangeProposalAttempt: (record) => {
       const own = store();
       if (
@@ -5473,6 +5475,53 @@ test("a hold a resume could clear is recorded every pass and reported once the d
   assert.deepEqual(store.concluded, [
     { outcome: "FinalizationResultUnavailable", kind: "RepositoryUnbound" },
   ]);
+});
+
+test("every hold a pass records reaches the sink with its request, its passes and whether it escalated", async () => {
+  const recorded: FinalizerHoldRecorded[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holdRecorded: (hold) => recorded.push(hold),
+  });
+  const store = recordingStore([unboundView("request-one")]);
+  const service = serviceOf(
+    store,
+    recordingGit(),
+    { holdPassesMax: 2 },
+    recordingArtifacts(),
+    metrics,
+  );
+  await passOver(service);
+  await passOver(service);
+  const held = {
+    ticket: 1,
+    request: "request-one",
+    kind: "RepositoryUnbound",
+  } as const;
+  assert.deepEqual(recorded, [
+    { ...held, passes: 1, escalated: false },
+    { ...held, passes: 2, escalated: true },
+  ]);
+  assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a hold no resume could get past reaches the sink as no recorded hold", async () => {
+  const recorded: FinalizerHoldRecorded[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holdRecorded: (hold) => recorded.push(hold),
+  });
+  const store = recordingStore([contradictedView("request-one")]);
+  await passOver(
+    serviceOf(
+      store,
+      recordingGit(),
+      { holdPassesMax: 1 },
+      recordingArtifacts(),
+      metrics,
+    ),
+  );
+  assert.deepEqual(recorded, []);
 });
 
 test("a pass that moves the request clears the count rather than adding to it", async () => {

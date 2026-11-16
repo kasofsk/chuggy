@@ -255,6 +255,7 @@ import {
   changeProposalQueueingNone,
   changeProposalUpdatingNone,
   type ChangeProposalAdoptionGathered,
+  type ChangeProposalForgeReply,
   type ChangeProposalForges,
   type ChangeProposalMergeGathered,
   type ChangeProposalMergeRequest,
@@ -281,6 +282,7 @@ import {
   type FinalizationProposalGathered,
   type FinalizationProposalMergeRecording,
   type FinalizationProposalRecording,
+  type ChangeProposalAnsweredAct,
   type ChangeProposalWritten,
   type FinalizerProposalStore,
   type StoredChangeProposal,
@@ -343,6 +345,7 @@ import {
 } from "./finalizerPreparation.ts";
 import {
   recordFinalizer,
+  type FinalizerForgeAct,
   type FinalizerHoldReason,
   type FinalizerTelemetry,
 } from "./finalizerTelemetry.ts";
@@ -506,6 +509,44 @@ function finalizerHold(
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
+}
+
+/** Tells the sink what one forge act about a claim's proposal came to. */
+function finalizerForgeAnswered(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  act: FinalizerForgeAct,
+  outcome: string,
+  reply: ChangeProposalForgeReply | undefined,
+): void {
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.forgeAnswered({
+      ticket: claim.ticket,
+      request: claim.request,
+      act,
+      outcome,
+      ...(reply === undefined ? {} : { reply }),
+    });
+  });
+}
+
+/**
+ * Keeps on the row what the forge answered one act it keeps answers to, and
+ * tells the sink. The row is a record of the act rather than a step of it, so
+ * a row that would not take the answer leaves the pass deciding as it would.
+ */
+async function finalizerForgeAnswerKept(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  act: ChangeProposalAnsweredAct,
+  outcome: string,
+  reply: ChangeProposalForgeReply | undefined,
+): Promise<void> {
+  await service.store.recordChangeProposalAnswer(claim, act, {
+    outcome,
+    ...(reply === undefined ? {} : { reply }),
+  });
+  finalizerForgeAnswered(service, claim, act, outcome, reply);
 }
 
 /**
@@ -2037,6 +2078,13 @@ async function finalizerGatherAdoption(
       headCommit: request.head.commit,
     }),
   );
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readByNumber",
+    read.read,
+    read.reply,
+  );
   return { proposal, read };
 }
 
@@ -2153,6 +2201,13 @@ async function finalizerProposeChange(
   }
   tally.proposals += 1;
   const created = await port.create(request);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "create",
+    created.created,
+    created.reply,
+  );
   await finalizerRecordProposal(
     service,
     view,
@@ -2201,6 +2256,13 @@ async function finalizerReconcileProposal(
   }
   tally.proposals += 1;
   const read = await port.readByMarker(request);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readByMarker",
+    read.read,
+    read.reply,
+  );
   await finalizerRecordProposal(
     service,
     view,
@@ -2321,6 +2383,13 @@ async function finalizerMergeProposal(
   }
   tally.proposals += 1;
   const merged = await port.merge(decision.merge);
+  await finalizerForgeAnswerKept(
+    service,
+    view.claim,
+    "merge",
+    merged.merged,
+    merged.reply,
+  );
   await finalizerRecordProposalMerge(
     service,
     view,
@@ -2343,6 +2412,13 @@ async function finalizerReconcileProposalMerge(
   }
   tally.proposals += 1;
   const read = await port.readByNumber(decision.merge);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readByNumber",
+    read.read,
+    read.reply,
+  );
   await finalizerRecordProposalMerge(
     service,
     view,
@@ -2376,9 +2452,15 @@ async function finalizerUpdateProposal(
     return;
   }
   tally.proposals += 1;
-  const recording = finalizationProposalUpdateRecording(
-    await port.updateBranch(decision.merge),
+  const updated = await port.updateBranch(decision.merge);
+  await finalizerForgeAnswerKept(
+    service,
+    view.claim,
+    "updateBranch",
+    updated.updated,
+    updated.reply,
   );
+  const recording = finalizationProposalUpdateRecording(updated);
   const wrote = await service.store.recordChangeProposalUpdate(
     view.claim,
     recording.record,
@@ -2402,9 +2484,15 @@ async function finalizerReadQueue(
     return;
   }
   tally.proposals += 1;
-  const recording = finalizationProposalQueueRecording(
-    await port.readQueue(merge),
+  const read = await port.readQueue(merge);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "readQueue",
+    read.read,
+    read.reply,
   );
+  const recording = finalizationProposalQueueRecording(read);
   if (recording.record === "Nothing") {
     finalizerHold(service, tally, recording.hold);
     return;
@@ -2442,9 +2530,15 @@ async function finalizerEnqueue(
     return;
   }
   tally.proposals += 1;
-  const recording = finalizationProposalEnqueueRecording(
-    await port.enqueue(decision.merge),
+  const enqueued = await port.enqueue(decision.merge);
+  finalizerForgeAnswered(
+    service,
+    view.claim,
+    "enqueue",
+    enqueued.enqueued,
+    enqueued.reply,
   );
+  const recording = finalizationProposalEnqueueRecording(enqueued);
   const wrote = await service.store.recordChangeProposalEnqueue(
     view.claim,
     recording.record,
@@ -2470,9 +2564,17 @@ async function finalizerDequeue(
   const port = service.forges.selector.select(merge.binding.forge);
   if (port === undefined) return;
   tally.proposals += 1;
-  await port.dequeue(merge);
+  const dequeued = await port.dequeue(merge);
+  finalizerForgeAnswered(
+    service,
+    claim,
+    "dequeue",
+    dequeued.dequeued,
+    dequeued.reply,
+  );
   tally.proposals += 1;
   const read = await port.readQueue(merge);
+  finalizerForgeAnswered(service, claim, "readQueue", read.read, read.reply);
   if (read.read === "Standing")
     await service.store.recordChangeProposalQueue(claim, read.standing);
 }
@@ -3036,12 +3138,18 @@ async function finalizerRecordHold(
     ...(refused === undefined ? {} : { refused }),
   });
   const config = checkedFinalizerConfig(service.config);
-  if (
-    kind === undefined ||
-    held.held !== "Recorded" ||
-    held.passes < finalizationHoldPassesMax(config, kind)
-  )
-    return;
+  if (kind === undefined || held.held !== "Recorded") return;
+  const escalated = held.passes >= finalizationHoldPassesMax(config, kind);
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.holdRecorded({
+      ticket: claim.ticket,
+      request: claim.request,
+      kind,
+      passes: held.passes,
+      escalated,
+    });
+  });
+  if (!escalated) return;
   if (view !== undefined) await finalizerDequeueEscalated(service, view, tally);
   await finalizerSubmit(
     service,
