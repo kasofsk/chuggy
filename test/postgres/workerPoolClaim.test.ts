@@ -1055,7 +1055,8 @@ async function ownerReadsProbed(
  * That a reader's read of the case's run says the pools of its project are
  * short of memory exactly where the case's pool, the one live and short,
  * could take it by the probe with its slots aside. An owner the case revokes
- * is what the claim is told, not what a reader's view knows.
+ * is what the claim is told, not what a reader's view knows; an account's
+ * pause is the other such term, and no case plants one.
  */
 async function poolRoomProbed(
   identity: PlantedIdentity,

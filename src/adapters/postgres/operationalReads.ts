@@ -636,7 +636,7 @@ export function executionRunnerPausedEvery(
 
 /** The largest room of `live` and the memory the execution needs, where every one named a room above nothing and below that, and nothing where any did not. */
 function executionRunnerWaitRoom(
-  live: readonly Pick<ExecutionPoolRow, "memory_room_mib" | "memory_mib">[],
+  live: readonly Pick<ExecutionRunnerRow, "memory_room_mib" | "memory_mib">[],
 ): RunnerRoom | undefined {
   const [first] = live;
   if (first === undefined) return undefined;
@@ -703,18 +703,20 @@ async function executionsRunnerWaits(
 
 interface ExecutionPoolRow {
   readonly execution: string;
-  readonly memory_room_mib: string | null;
+  readonly least_room_mib: string;
+  readonly most_room_mib: string | null;
   readonly memory_mib: string;
 }
 
 /**
- * Each of `executions` whose attempt waits unclaimed, beside every pool of its
- * project live for executions within a personal runner's window that a claim
- * on `workerPoolWaiting`'s terms could take it from, with the room it last
- * named and the memory the execution needs, sized at `memoryMibDefault` where
- * it names none; the room a poll names, the slots a pool holds, the pause of
- * the account it spends and owners revoked are left out, since none is a fact
- * of the execution a reader's view knows.
+ * Each of `executions` whose attempt waits unclaimed on a pool of its project
+ * live for executions within a personal runner's window that a claim on
+ * `workerPoolWaiting`'s terms could take it from, once, with the least room
+ * those pools last named (nothing where one named none), the most, and the
+ * memory the execution needs, sized at `memoryMibDefault` where it names none;
+ * the room a poll names, the slots a pool holds, the pause of the account it
+ * spends and owners revoked are left out, since none is a fact of the
+ * execution a reader's view knows.
  * It is one of the copies of the claim's predicate `./personalRunner.ts`
  * counts, and is held to the claim's answers in
  * `test/postgres/workerPoolClaim.test.ts`.
@@ -727,7 +729,9 @@ async function executionsPoolRows(
 ): Promise<readonly ExecutionPoolRow[]> {
   if (executions.length === 0) return [];
   const found = await pool.query<ExecutionPoolRow>(
-    sql`SELECT e.execution,w.memory_room_mib::text AS memory_room_mib,
+    sql`SELECT e.execution,
+               min(COALESCE(w.memory_room_mib,0))::text AS least_room_mib,
+               max(w.memory_room_mib)::text AS most_room_mib,
                COALESCE(e.memory_mib,${memoryMibDefault}::bigint)::text AS memory_mib
           FROM execution e
           JOIN execution_attempt a
@@ -756,7 +760,7 @@ async function executionsPoolRows(
                         AND worker_pool_agent_offered(a.agent,r.capabilities,r.agents_advertised))))
            AND EXISTS(SELECT 1 FROM project p
              WHERE p.tenant=e.tenant AND p.project=e.project AND p.lifecycle='Active')
-         ORDER BY e.execution,w.pool`,
+         GROUP BY e.execution,e.memory_mib`,
   );
   return found.rows;
 }
@@ -775,9 +779,12 @@ async function executionsPoolRooms(
     memoryMibDefault,
   );
   const rooms = new Map<string, RunnerRoom>();
-  for (const [execution, pools] of Map.groupBy(rows, (row) => row.execution)) {
-    const room = executionRunnerWaitRoom(pools);
-    if (room !== undefined) rooms.set(execution, room);
+  for (const row of rows) {
+    const room = executionRunnerWaitRoom([
+      { memory_room_mib: row.least_room_mib, memory_mib: row.memory_mib },
+      { memory_room_mib: row.most_room_mib, memory_mib: row.memory_mib },
+    ]);
+    if (room !== undefined) rooms.set(row.execution, room);
   }
   return rooms;
 }
