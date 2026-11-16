@@ -272,7 +272,7 @@ const parsed = {
     mirrors: {},
   },
   sessionRouting: {
-    routes: { Thread: "InCluster", Lead: "InCluster" },
+    routes: { Thread: "InCluster" },
     projectRoutes: {},
   },
   access: {
@@ -587,21 +587,36 @@ test("a key the session policy does not publish is refused rather than ignored",
   }
 });
 
-test("a session kind's route and each project's session routes are parsed as the policy states them", async () => {
+test("the thread's route and each project's thread route are parsed as the policy states them", async () => {
+  const found = (await parsedSessionPolicy({
+    ...sessionPolicy,
+    routes: { Thread: "Pool" },
+    projectRoutes: { tenant: { project: { Thread: "InCluster" } } },
+  })) as {
+    readonly parsed?: { readonly sessionRouting: unknown };
+  };
+  assert.deepEqual(found.parsed?.sessionRouting, {
+    routes: { Thread: "Pool" },
+    projectRoutes: { tenant: { project: { Thread: "InCluster" } } },
+  });
+});
+
+test("a policy a deployment still writes naming the lead's route is accepted, and the lead is routed nowhere", async () => {
   const found = (await parsedSessionPolicy({
     ...sessionPolicy,
     routes: { Lead: "Pool" },
     projectRoutes: {
-      tenant: { project: { Thread: "Pool" }, other: { Lead: "InCluster" } },
+      tenant: {
+        project: { Thread: "Pool", Lead: "Pool" },
+        other: { Lead: "InCluster" },
+      },
     },
   })) as {
     readonly parsed?: { readonly sessionRouting: unknown };
   };
   assert.deepEqual(found.parsed?.sessionRouting, {
-    routes: { Thread: "InCluster", Lead: "Pool" },
-    projectRoutes: {
-      tenant: { project: { Thread: "Pool" }, other: { Lead: "InCluster" } },
-    },
+    routes: { Thread: "InCluster" },
+    projectRoutes: { tenant: { project: { Thread: "Pool" }, other: {} } },
   });
 });
 

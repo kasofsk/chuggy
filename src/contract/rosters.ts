@@ -1097,9 +1097,6 @@ export type ProjectArtifactUploadRefusalCode =
  */
 export const noRunnerCode = "NoRunner";
 
-/** What a placement naming a lead offering the deployment does not admit on its route is answered with; shared for the same reason. */
-export const leadOfferingNotAdmittedCode = "LeadOfferingNotAdmitted";
-
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
   "Observation",

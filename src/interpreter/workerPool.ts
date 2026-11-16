@@ -841,7 +841,7 @@ async function workerPoolClaims(
   };
 }
 
-/** The sessions one pass claims, which is none for a personal runner or on a plane that names no API for a session to reach. */
+/** The sessions one pass claims, which is none but a chat host's, and none on a plane that names no API for a session to reach. */
 function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
   identity: WorkerPoolSessionClaimant | undefined,
@@ -854,7 +854,11 @@ function workerPoolSessionsClaimed(
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
-  if (identity === undefined || apiUrl === undefined)
+  if (
+    identity === undefined ||
+    identity.kind === "Dedicated" ||
+    apiUrl === undefined
+  )
     return Promise.resolve([]);
   return workerPoolSessionClaims(
     ports.sessions,

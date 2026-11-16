@@ -2379,11 +2379,11 @@ export type ExecutionPlacementResponse = z.infer<
 >;
 
 /**
- * Where a project's threads and its lead run and what decided each, the lead's
- * offering and the ones the deployment admits, the routes this caller may
- * choose, and the runners each would run on: the caller's own for their
- * thread, their chat host for their inquiry, and any of the project's pools
- * for the lead.
+ * Where a project's threads run and what decided it, the routes this caller
+ * may choose, and the runners a thread would run on: `mine` the caller's chat
+ * host for the project's threads, `inquiry` theirs for their own chat's, and
+ * `project` whether any of the project's pools is live. `lead`, `leadOffering`
+ * and `leadOfferings` are fixed values for older clients: there is no lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
