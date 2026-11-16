@@ -11,7 +11,7 @@
  * global picker where the project's default covers it; the arrows moving the
  * choice; a refused write putting the picker and the page back and saying
  * why; and the last of several presses the one that stays, however their
- * answers arrive.
+ * answers arrive, with a press another replaced before it was sent never sent.
  */
 
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
@@ -529,4 +529,41 @@ test("a later press refused puts back the earlier one the server kept", async ()
   expect(document.querySelector(".notice")?.textContent).toBe(
     "Theme not saved · that theme is no longer one of yours",
   );
+});
+
+test("presses made while a write is in flight send only the last of them once it answers", async () => {
+  routeParams = { tenant: atlas.tenant } as PartitionIdentity;
+  const harbour = heldAnswer();
+  const held: Held = {
+    global: undefined,
+    override: undefined,
+    projectDefault: undefined,
+  };
+  const sent = await themeDrawn(held, answeredInTurn([harbour.answered]));
+  const chuggy = within(group("Theme")).getByRole("radio", { name: "Chuggy" });
+  await turned(() => {
+    chuggy.focus();
+    fireEvent.keyDown(chuggy, { key: "ArrowRight" });
+  });
+  await turned(() => {
+    fireEvent.keyDown(document.activeElement ?? chuggy, { key: "ArrowRight" });
+  });
+  await turned(() => {
+    fireEvent.keyDown(document.activeElement ?? chuggy, { key: "ArrowRight" });
+  });
+  expect(checkedIn("Theme")).toBe("High contrast");
+  await turned(() => {
+    harbour.release(answer(undefined, 204));
+  });
+  await settled();
+  expect(writesOf(sent)).toStrictEqual([
+    ["PUT", choicePath, { kind: "BuiltIn", theme: "harbour" }],
+    ["PUT", choicePath, { kind: "BuiltIn", theme: "high-contrast" }],
+  ]);
+  expect(held.global).toStrictEqual({
+    kind: "BuiltIn",
+    theme: "high-contrast",
+  });
+  expect(checkedIn("Theme")).toBe("High contrast");
+  expect(rootAccent()).toBe(accentOf(builtInThemes["high-contrast"]));
 });

@@ -10,9 +10,11 @@
  * drawn under the picker. A landed write reads them all again.
  *
  * THE LAST PRESS IS THE ONE KEPT. Theme writes, from either picker, are sent
- * one at a time in the order pressed, so the server keeps the last; only the
- * last press's answer reads again or puts back, and what it puts back is what
- * the server held when it was sent.
+ * one at a time in the order pressed, so the server keeps the last; a press
+ * whose turn comes after a later one was made is not sent, so one write is in
+ * flight and one waits however fast the presses come. Only the last press's
+ * answer reads again or puts back, and what it puts back is what the server
+ * held when it was sent.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -131,9 +133,14 @@ function themeReadKeys(
   ];
 }
 
+/** A press's answer where a later press replaced it before it was sent: the
+ * later one's answer reads again or puts back, so this one does neither. */
+const themeReplaced: ApiResult<undefined> = { outcome: "Ok", value: undefined };
+
 /** The write sent with `worn` put on the reads first, after every earlier
- * press's write has answered; where it is refused and no press followed it,
- * the reads are put back to what the server held. */
+ * press's write has answered, and not sent where a later press was made by
+ * then; where it is refused and no press followed it, the reads are put back
+ * to what the server held. */
 async function themeHeldWhile(
   client: QueryClient,
   partition: PartitionIdentity | undefined,
@@ -156,9 +163,11 @@ async function themeHeldWhile(
     return themeHeldOf(client, partition);
   });
   turn.worn = wearing.catch(() => undefined);
-  const writing = Promise.all([wearing, turn.written]).then(async () =>
-    write(),
-  );
+  let replaced = false;
+  const writing = Promise.all([wearing, turn.written]).then(async () => {
+    replaced = press !== turn.pressed;
+    return replaced ? themeReplaced : write();
+  });
   turn.written = writing.catch(() => undefined);
   let written: ApiResult<undefined> | undefined;
   try {
@@ -166,7 +175,7 @@ async function themeHeldWhile(
     return written;
   } finally {
     turn.unanswered -= 1;
-    if (written?.outcome === "Ok") turn.kept = await wearing;
+    if (written?.outcome === "Ok" && !replaced) turn.kept = await wearing;
     else if (press === turn.pressed && turn.kept !== undefined)
       themeHeldPut(client, partition, turn.kept);
   }
