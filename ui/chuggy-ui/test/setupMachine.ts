@@ -37,6 +37,7 @@ import { setupRun } from "../app/core/setupRun.ts";
 import {
   boxDisk,
   boxEngineInfo,
+  boxMacRead,
   boxFolder,
   boxHome,
   boxRan,
@@ -503,6 +504,10 @@ function machineRead(
   machine: SetupMachine,
   command: readonly string[],
 ): string | undefined {
+  const mac = boxMacRead(machine.box, command);
+  if (mac !== undefined) return mac;
+  if (["arch", "sysctl", "colima"].includes(command[0] ?? "")) return undefined;
+  if (command[1] === "context") return undefined;
   if (command[0] === "npm") return machine.box.prefix;
   if (command[1] === "info") return boxEngineInfo(machine.box, command);
   if (command[0] === "claude") return machine.box.plugins;
@@ -591,6 +596,7 @@ function surroundingsOf(machine: SetupMachine): SetupPorts["surroundings"] {
     home: boxHome,
     configHome: machine.configHome,
     claudeHome: undefined,
+    colimaHome: undefined,
     user: machine.user,
   };
 }
