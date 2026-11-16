@@ -58,6 +58,7 @@ import {
   saidThing,
 } from "./setupSaid.ts";
 import type { SaidThing } from "./setupSaid.ts";
+import type { SetupHistory } from "../app/core/setupMerge.ts";
 import {
   setupSiteAt,
   setupSiteBootstrap,
@@ -96,6 +97,7 @@ function lacking(
     found: [],
     steps,
     unmerged: undefined,
+    bootstrap: undefined,
     ...given,
   };
 }
@@ -680,17 +682,28 @@ test("with every step done, setup is said to be done in the ticket step's own wo
 
 const pullRequest = "https://github.com/acme-org/widgets/pull/2";
 
-/** Setup said to be done in the ticket step's words, naming the pull request to merge where there is one. */
-function closing(detail: string, unmerged?: string): SaidThing {
-  const merge =
-    unmerged === undefined
-      ? ""
-      : ` Its pull request, ${unmerged}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`;
+/** Setup said to be done in the ticket step's words. */
+function closing(detail: string): SaidThing {
   return {
     thing: "Done",
-    tell: `chuggy is set up for acme/widgets: ${detail}.${merge} The next ticket is made at ${pages}/tickets/new.`,
+    tell: `chuggy is set up for acme/widgets: ${detail}. The next ticket is made at ${pages}/tickets/new.`,
   };
 }
+
+/** What a reader of this repository is told as the offer to merge `ticket`'s pull request, leaning towards leaving it to the person where `leave` is said. */
+function mergeOffered(ticket: number, leave = ""): SaidThing {
+  return {
+    thing: "Offer",
+    command: "Merge",
+    tell: `Ticket ${String(ticket)} opened a pull request, ${pullRequest}, holding its work and this repository's own configuration; once it is merged, later tickets run on that configuration. Do you want me to merge it, or would you rather review it and merge it yourself?${leave} If you merge it yourself, setup is done now, and the configuration is in place once it is merged.`,
+    when: "once the person says yes to chuggy merging that pull request",
+    workspace: "acme",
+    project: "widgets",
+  };
+}
+
+const mergeLeaning =
+  " I would leave it to you: a repository with a history of its own often has rules an app cannot pass, such as a branch protection or a required review or check, and its owners may want to review the change first.";
 
 /** A site set up to a done first ticket with `landings`, its repository holding only the bootstrap unless `own`. */
 function doneWith(
@@ -775,17 +788,36 @@ test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
   },
 );
 
-test("where the repository holds only the bootstrap, setup done on a ticket whose pull request stands closes on that pull request, by its address, as the one to merge so later tickets run on the repository's own configuration", async () => {
+test("where the repository holds only the bootstrap and the ticket's pull request stands unmerged, the next thing is the offer to merge it, by its address and its ticket, in place of setup done", async () => {
   expect(
     (await nextSaid(doneWith([setupSiteOpened(pullRequest)]))).thing,
-  ).toEqual(closing("ticket 1 is done", pullRequest));
+  ).toEqual(mergeOffered(1));
   expect(
     (await nextSaid(landingWith([setupSiteProposed(pullRequest)]))).thing,
-  ).toEqual(closing("ticket 6 opened a pull request", pullRequest));
+  ).toEqual(mergeOffered(6));
   const older = setupSiteProposed("https://github.com/acme-org/widgets/pull/1");
   expect(
     (await nextSaid(doneWith([older, setupSiteOpened(pullRequest)]))).thing,
-  ).toEqual(closing("ticket 1 is done", pullRequest));
+  ).toEqual(mergeOffered(1));
+});
+
+test("the merge offer leans towards leaving the merge to the person, and says why, only where the folder's history is longer than a new repository's", async () => {
+  const site = doneWith([setupSiteOpened(pullRequest)]);
+  const offered = async (history: SetupHistory) =>
+    (await nextSaid(site, { merge: { seen: "Offered", history } })).thing;
+  expect(await offered("Long")).toEqual(mergeOffered(1, mergeLeaning));
+  expect(await offered("Short")).toEqual(mergeOffered(1));
+  expect(await offered("Unread")).toEqual(mergeOffered(1));
+});
+
+test("where the site refused the merge, setup done closes as it always has, with the pull request still unmerged", async () => {
+  expect(
+    (
+      await nextSaid(doneWith([setupSiteOpened(pullRequest)]), {
+        merge: { seen: "Refused" },
+      })
+    ).thing,
+  ).toEqual(closing("ticket 1 is done"));
 });
 
 test("where the repository holds its own configuration, setup done closes as it always has, whatever pull request the ticket opened", async () => {

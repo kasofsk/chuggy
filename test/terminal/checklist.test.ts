@@ -187,7 +187,7 @@ test("signed in where Claude Code here has no chuggy plugin, the plugin is offer
   }
 });
 
-test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge closes on that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes as it did", async () => {
+test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge offers merging that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes as it did", async () => {
   const session = await signed();
   const { installation } = session;
   const url = "https://github.com/acme-org/widgets/pull/2";
@@ -196,18 +196,22 @@ test("where the repository holds only the bootstrap, a run set up to a done tick
     landed.projects[0]?.landings.set(1, [setupSiteOpened(url)]);
     return landed;
   };
-  const closing = (merge: string) =>
-    `chuggy is set up for acme/widgets: ticket 1 is done.${merge} The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`;
+  const closing = `chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`;
   const landings = `GET ${installation.site}/api/v1/tenants/acme/projects/widgets/tickets/1/landings`;
   const bootstrapped = await read(session, setupSiteBootstrap(world()));
   assert.equal(bootstrapped.code, 0, bootstrapped.stdout);
   assert.deepEqual(steps(bootstrapped), saidStages.Landed);
-  assert.deepEqual(said(bootstrapped, "tell"), [
-    closing(
-      ` Its pull request, ${url}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`,
+  const [offer, ...others] = said(bootstrapped, "tell");
+  assert.deepEqual(others, []);
+  assert.ok(
+    offer?.startsWith(
+      `Ticket 1 opened a pull request, ${url}, holding its work and this repository's own configuration;`,
     ),
+    offer ?? "no tell",
+  );
+  assert.deepEqual(said(bootstrapped, "rule"), [
+    `Run node ${program} merge --workspace acme --project widgets only once the person says yes to chuggy merging that pull request.`,
   ]);
-  assert.deepEqual(said(bootstrapped, "rule"), []);
   assert.equal(bootstrapped.lines.at(-1), "next: stop");
   assert.ok(
     installation.asked.includes(landings),
@@ -216,7 +220,7 @@ test("where the repository holds only the bootstrap, a run set up to a done tick
   installation.asked.length = 0;
   const own = await read(session, world());
   assert.equal(own.code, 0, own.stdout);
-  assert.deepEqual(said(own, "tell"), [closing("")]);
+  assert.deepEqual(said(own, "tell"), [closing]);
   assert.ok(!installation.asked.includes(landings));
 });
 
