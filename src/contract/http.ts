@@ -528,6 +528,9 @@ export const ticketLandingRefCharsMax = 256;
  */
 export const landingQueueTicketsAnsweredMax = nativeHttpPageItemsMax;
 
+/** The fractional digits of a second a queue's `holderSince` is written to, which is the precision the store keeps. */
+export const landingQueueHolderSinceDigits = 6;
+
 /** How many of the entries under `.chug/` a configuration import read none of one answer names. */
 export const repositoryConfigurationIgnoredAnsweredMax = 10;
 

@@ -82,6 +82,7 @@ import {
   ticketLandingStackDepthMax,
   ticketLandingStacksAnsweredMax,
   ticketNumberSchema,
+  landingQueueHolderSinceDigits,
   landingQueueTicketsAnsweredMax,
   workerRunCredentialSchema,
 } from "./http.ts";
@@ -3134,13 +3135,17 @@ export type TicketProposalMergeRefusedResponse = z.infer<
 
 /**
  * One reference's landing queue: its repository, the target its briefs name,
- * absent where they name none, the ticket holding it, and the tickets waiting
- * on it in rank order.
+ * absent where they name none, the ticket holding it, since when it has held
+ * it and in what phase it is, and the tickets waiting on it in rank order.
+ * `holderSince` is the later of when the holder took its rank and when the
+ * ticket ranked ahead of it last stopped holding, in UTC.
  */
 export const landingQueueSchema = z.strictObject({
   repository: briefRepositorySchema,
   target: briefBranchSchema.optional(),
   holder: ticketNumberSchema,
+  holderSince: z.iso.datetime({ precision: landingQueueHolderSinceDigits }),
+  holderPhase: z.enum(phaseRoster),
   waiting: z.array(ticketNumberSchema).max(landingQueueTicketsAnsweredMax - 1),
 });
 
