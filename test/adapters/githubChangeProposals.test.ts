@@ -23,6 +23,7 @@ import {
   githubChangeProposalsDefaults,
   githubChangeProposalsPerPageMax,
   type GithubChangeProposalsHosts,
+  type GithubMergeRefusal,
 } from "../../src/adapters/forge/githubChangeProposals.ts";
 import {
   allChangeProposalDequeues,
@@ -143,16 +144,21 @@ function fixtureCredentials(
   };
 }
 
-/** The adapter over one recorder, every bound left at the value a deployment gets by default. */
+/**
+ * The adapter over one recorder, every bound left at the value a deployment
+ * gets by default and every merge refusal it reports kept in `refusals`.
+ */
 function fixtureReplying(
   recorder: ForgeRecorder,
   resolved: "Credential" | "Denied" | "Unavailable" = "Credential",
   responseBytesMax: number = githubChangeProposalsDefaults.responseBytesMax,
+  refusals: GithubMergeRefusal[] = [],
 ): ChangeProposalPort {
   return githubChangeProposals({
     credentials: fixtureCredentials(resolved),
     fetch: recorder.requestFetch,
     responseBytesMax,
+    mergeRefused: (refusal) => refusals.push(refusal),
   });
 }
 
@@ -172,8 +178,9 @@ function fixtureAdapter(
   recorder: ForgeRecorder,
   resolved: "Credential" | "Denied" | "Unavailable" = "Credential",
   responseBytesMax: number = githubChangeProposalsDefaults.responseBytesMax,
+  refusals: GithubMergeRefusal[] = [],
 ): ChangeProposalPort {
-  const port = fixtureReplying(recorder, resolved, responseBytesMax);
+  const port = fixtureReplying(recorder, resolved, responseBytesMax, refusals);
   return {
     create: async (request) => fixtureVariant(await port.create(request)),
     readByMarker: async (request) =>
@@ -1050,6 +1057,91 @@ test("every way this forge answers a merge is its own value", async () => {
   assert.deepEqual([...answered].sort(), [...allChangeProposalMerges].sort());
 });
 
+test("a merge refused as unmergeable or left unconcluded reports the forge's status and message", async () => {
+  const longMessage = "x".repeat(
+    githubChangeProposalsDefaults.responseBytesMax,
+  );
+  const cases: readonly (readonly [
+    Response | Error,
+    Omit<GithubMergeRefusal, "repository" | "number">,
+  ])[] = [
+    [
+      fixtureAnswer(405, { message: "Repository rule violations found" }),
+      { status: 405, message: "Repository rule violations found" },
+    ],
+    [
+      fixtureAnswer(502, { message: "Server Error" }),
+      { status: 502, message: "Server Error" },
+    ],
+    [fixtureRefusal(405), { status: 405, message: undefined }],
+    [
+      new Response("upstream reset", { status: 503 }),
+      { status: 503, message: "upstream reset" },
+    ],
+    [
+      fixtureAnswer(200, {
+        sha: fixtureMergeCommit,
+        merged: false,
+        message: "Merge not performed",
+      }),
+      { status: 200, message: "Merge not performed" },
+    ],
+    [new Error("the forge stopped"), { status: undefined, message: undefined }],
+  ];
+  for (const [answer, said] of cases) {
+    const refusals: GithubMergeRefusal[] = [];
+    const recorder = fixtureForge([answer]);
+    await fixtureAdapter(
+      recorder,
+      "Credential",
+      githubChangeProposalsDefaults.responseBytesMax,
+      refusals,
+    ).merge(fixtureMergeRequest());
+    assert.deepEqual(
+      refusals,
+      [
+        {
+          repository: fixtureRequest().repository,
+          number: fixtureNumber,
+          ...said,
+        },
+      ],
+      JSON.stringify(said),
+    );
+  }
+  const refusals: GithubMergeRefusal[] = [];
+  await fixtureAdapter(
+    fixtureForge([fixtureAnswer(405, { message: longMessage })]),
+    "Credential",
+    githubChangeProposalsDefaults.responseBytesMax,
+    refusals,
+  ).merge(fixtureMergeRequest());
+  const message = refusals[0]?.message ?? "";
+  assert.ok(message.length > 0, "a cut-short body still says something");
+  assert.ok(
+    message.length < longMessage.length,
+    "a refusal's body is read only so far",
+  );
+});
+
+test("a merge made, or answered at another head, reports nothing", async () => {
+  for (const answer of [
+    fixtureAnswer(200, { sha: fixtureMergeCommit, merged: true }),
+    fixtureAnswer(409, { message: "Head branch was modified" }),
+    fixtureRefusal(403),
+    fixtureRefusal(429),
+  ]) {
+    const refusals: GithubMergeRefusal[] = [];
+    await fixtureAdapter(
+      fixtureForge([answer]),
+      "Credential",
+      githubChangeProposalsDefaults.responseBytesMax,
+      refusals,
+    ).merge(fixtureMergeRequest());
+    assert.deepEqual(refusals, [], String(answer.status));
+  }
+});
+
 test("a merge this forge could never be asked is answered without a request", async () => {
   const recorder = fixtureForge([]);
   const elsewhere = fixtureMergeRequest({
@@ -1150,7 +1242,7 @@ test("what this forge says about merging a proposal reaches its evidence", async
     [{ mergeable: true, mergeable_state: "clean" }, "Mergeable"],
     [{ mergeable: false, mergeable_state: "dirty" }, "Conflicting"],
     [{ mergeable: false, mergeable_state: "unknown" }, "Conflicting"],
-    [{ mergeable: true, mergeable_state: "blocked" }, "Blocked"],
+    [{ mergeable: false, mergeable_state: "blocked" }, "Blocked"],
     [{ mergeable: true, mergeable_state: "draft" }, "Blocked"],
     [{ mergeable: true, mergeable_state: "behind" }, "Behind"],
     [{ mergeable: null, mergeable_state: "unknown" }, "Unknown"],
@@ -1171,6 +1263,146 @@ test("what this forge says about merging a proposal reaches its evidence", async
       },
       JSON.stringify(answered),
     );
+    assert.equal(recorder.calls.length, 1, JSON.stringify(answered));
+  }
+});
+
+/** What a bypass read answers: whether this viewer may merge past the base's rules, and whether the base requires a queue. */
+function fixtureBypass(
+  viewerCanMergeAsAdmin: boolean,
+  isMergeQueueEnabled = false,
+): Response {
+  return fixtureAnswer(200, {
+    data: {
+      repository: {
+        pullRequest: { viewerCanMergeAsAdmin, isMergeQueueEnabled },
+      },
+    },
+  });
+}
+
+/** A pull request this forge reports blocked by its base's rules and otherwise mergeable. */
+function fixtureRulesBlockedPull(
+  request: ChangeProposalRequest,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Response {
+  return fixtureAnswer(
+    200,
+    fixtureNumberedPull(request, {
+      mergeable: true,
+      mergeable_state: "blocked",
+      ...overrides,
+    }),
+  );
+}
+
+test("a block this credential may merge past off a queue reads mergeable, keeping the forge's word", async () => {
+  const request = fixtureRequest();
+  const recorder = fixtureForge([
+    fixtureRulesBlockedPull(request),
+    fixtureBypass(true),
+  ]);
+  assert.deepEqual(
+    await fixtureAdapter(recorder).readByNumber(fixtureMergeRequest()),
+    {
+      read: "Found",
+      evidence: {
+        ...fixtureEvidence(request),
+        mergeability: "Mergeable",
+        mergeState: asProposalMergeState("blocked"),
+      },
+    },
+  );
+  assert.equal(recorder.calls.length, 2);
+  const call = recorder.calls[1];
+  assert.equal(call?.url, "https://api.github.com/graphql");
+  assert.equal(call?.method, "POST");
+  assert.equal(call?.headers["authorization"], `Bearer ${fixtureSecret}`);
+  const sent = JSON.parse(call?.body ?? "") as {
+    query: string;
+    variables: unknown;
+  };
+  assert.deepEqual(sent.variables, {
+    owner: "kasofsk",
+    name: "chuggy",
+    number: fixtureNumber,
+  });
+  for (const field of ["viewerCanMergeAsAdmin", "isMergeQueueEnabled"])
+    assert.ok(sent.query.includes(field), field);
+});
+
+/**
+ * A base that requires a queue is enqueued onto rather than merged, and a
+ * refused enqueue is asked again once a reading stops blocking it, so a
+ * bypass there would enqueue more often rather than merge.
+ */
+test("a block reads blocked where the credential may not merge past it, its base requires a queue, or nobody answered", async () => {
+  const request = fixtureRequest();
+  const cases: readonly (readonly [string, Response | Error])[] = [
+    ["not the viewer's to bypass", fixtureBypass(false)],
+    ["a base requiring a queue", fixtureBypass(true, true)],
+    [
+      "a denial",
+      fixtureGraphqlRefusal(
+        "repository",
+        "FORBIDDEN",
+        "Resource not accessible by integration",
+      ),
+    ],
+    [
+      "a refusal",
+      fixtureGraphqlRefusal("repository", "UNPROCESSABLE", "Something"),
+    ],
+    [
+      "no pull request",
+      fixtureAnswer(200, { data: { repository: { pullRequest: null } } }),
+    ],
+    ["an unread answer", fixtureAnswer(200, { data: { repository: {} } })],
+    ["a failure", fixtureRefusal(502)],
+    ["an outage", new Error("the forge stopped")],
+  ];
+  for (const [what, bypass] of cases) {
+    const recorder = fixtureForge([fixtureRulesBlockedPull(request), bypass]);
+    assert.deepEqual(
+      await fixtureAdapter(recorder).readByNumber(fixtureMergeRequest()),
+      {
+        read: "Found",
+        evidence: {
+          ...fixtureEvidence(request),
+          mergeability: "Blocked",
+          mergeState: asProposalMergeState("blocked"),
+        },
+      },
+      what,
+    );
+    assert.equal(recorder.calls.length, 2, what);
+  }
+});
+
+test("a draft, and any state but a rules block, asks nothing past the read", async () => {
+  const request = fixtureRequest();
+  const cases = [
+    [{ draft: true }, "Blocked"],
+    [{ mergeable_state: "draft" }, "Blocked"],
+    [{ mergeable: null }, "Blocked"],
+    [{ mergeable_state: "clean" }, "Mergeable"],
+    [{ mergeable_state: "unstable" }, "Mergeable"],
+    [{ mergeable_state: "behind" }, "Behind"],
+  ] as const;
+  for (const [overrides, mergeability] of cases) {
+    const recorder = fixtureForge([
+      fixtureRulesBlockedPull(request, overrides),
+      fixtureBypass(true),
+    ]);
+    const read = await fixtureAdapter(recorder).readByNumber(
+      fixtureMergeRequest(),
+    );
+    assert.equal(
+      read.read === "Found" ? read.evidence.mergeability : read.read,
+      mergeability,
+      JSON.stringify(overrides),
+    );
+    assert.equal(recorder.calls.length, 1, JSON.stringify(overrides));
   }
 });
 

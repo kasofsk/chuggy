@@ -34,7 +34,9 @@
  * proposal stands on the head branch and says nothing about whose, which is the
  * question the marker answers and prose in an error body does not.
  *
- * EXACTLY ONE FORGE REQUEST IS MADE PER CALL, and there is no retry loop here.
+ * EVERY CALL MAKES A FIXED SEQUENCE OF FORGE REQUESTS, and there is no retry
+ * loop here: each act is one request, and a read by number asks one more only
+ * where the first answered a block this credential may merge past.
  * `changeProposalPublicationNext` is the retry, bounded by the reconciliation
  * count it is given, so a loop here would be a second unbounded one underneath
  * a bounded one. A redirect is the other way one call becomes two, and it is
@@ -95,6 +97,15 @@
  * stands, so they take the one answer that holds the publication for an
  * operator immediately rather than spending reconciliations re-asking a
  * question with no answer.
+ *
+ * A BLOCK THIS CREDENTIAL MAY MERGE PAST IS NO BLOCK. This forge reports a
+ * pull request `blocked` by its base's rules to every caller, the one its
+ * rules exempt among them, so where a mergeable proposal reads `blocked` the
+ * read asks whether this viewer may merge it as an administrator and, where it
+ * may and its base requires no queue, reads it mergeable while its stored word
+ * stays the forge's own. A base that requires a queue keeps the block, because
+ * there a merge is enqueued rather than made and a refused enqueue is asked
+ * again only once a reading stops blocking it.
  *
  * NOTHING HERE READS AN ENVIRONMENT, A CLOCK OR A CONFIGURATION. The hosts, the
  * bounds and `fetch` itself are all given at construction, and the moment a
@@ -167,6 +178,14 @@ export interface GithubChangeProposalsHosts {
   readonly repositoryHost: string;
 }
 
+/** What the forge answered a merge it did not make with, as far as its answer said. */
+export interface GithubMergeRefusal {
+  readonly repository: RepositoryId;
+  readonly number: number;
+  readonly status: number | undefined;
+  readonly message: string | undefined;
+}
+
 /** Everything the adapter is composed with, `fetch` among them because nothing here reaches a global. */
 export interface GithubChangeProposalsOptions {
   readonly credentials: ForgeCredentialPort;
@@ -175,6 +194,15 @@ export interface GithubChangeProposalsOptions {
   readonly requestTimeoutSecsMax?: number;
   readonly responseBytesMax?: number;
   readonly proposalsPerReadMax?: number;
+  /** Told what the forge said where it refused a merge as unmergeable or answered one this tree cannot conclude. */
+  readonly mergeRefused?: (refusal: GithubMergeRefusal) => void;
+}
+
+/** Says what a merge was refused with on the process's own error stream, the forge's message escaped onto one line. */
+export function githubMergeRefusedDefault(refusal: GithubMergeRefusal): void {
+  process.stderr.write(
+    `github proposals: a merge of ${refusal.repository} #${String(refusal.number)} was not made: status ${String(refusal.status ?? "none")}: ${JSON.stringify(refusal.message ?? null)}\n`,
+  );
 }
 
 /** The hosts and the bounds a deployment gets when it names none. */
@@ -230,6 +258,9 @@ const githubStaleHeadStatus = 409;
 /** The status a forge refuses an update with, whether the head was not the expected one or the base would not merge into it. */
 const githubUpdateRefusedStatus = 422;
 
+/** The status a forge answers a merge request it served with, whether or not it made the merge. */
+const githubMergedStatus = 200;
+
 /** The merge this tree asks for, which keeps the promoted commit an ancestor of the base. */
 const githubMergeMethod = "merge";
 
@@ -244,6 +275,7 @@ interface GithubChangeProposalsState {
   readonly requestTimeoutSecsMax: number;
   readonly responseBytesMax: number;
   readonly proposalsPerReadMax: number;
+  readonly mergeRefused: (refusal: GithubMergeRefusal) => void;
 }
 
 /**
@@ -257,6 +289,8 @@ type GithubAnswer = (
   | {
       readonly answer: "Unsettled";
       readonly status: number | undefined;
+      /** The forge's own message where a refusal's body carried one, as far as its prefix was read. */
+      readonly message?: string;
     }
 ) & { readonly reply: ChangeProposalForgeReply };
 
@@ -264,6 +298,9 @@ type GithubAnswer = (
 type GithubSending =
   | { readonly method: "GET" }
   | { readonly method: "POST" | "PUT"; readonly body: string };
+
+/** The most of a refusal's body read for its message, which is all a log needs of it. */
+const githubRefusalBytesMax = 4_096;
 
 /** Whether one act is authorized, a denial kept apart from an outage all the way into the answer. */
 type GithubAuthorized =
@@ -283,6 +320,7 @@ const githubPullRequestSchema = z.object({
   state: z.string(),
   merged_at: z.string().nullable().optional(),
   merge_commit_sha: z.string().nullable().optional(),
+  draft: z.boolean().optional(),
   mergeable: z.boolean().nullable().optional(),
   mergeable_state: z.string().optional(),
   head: z.object({ ref: z.string().min(1), sha: z.string() }),
@@ -304,7 +342,11 @@ const githubMergeSchema = z.object({
 /** The mergeable state a conflict is named by, the one a branch its base moved past is, and the ones the forge's other rules are. */
 const githubConflictingState = "dirty";
 const githubBehindState = "behind";
-const githubBlockedStates: readonly string[] = ["blocked", "draft"];
+const githubRulesBlockedState = "blocked";
+const githubBlockedStates: readonly string[] = [
+  githubRulesBlockedState,
+  "draft",
+];
 
 /** Refuses a bound no later call could work around, a ceiling among them where the forge sets one. */
 function githubChangeProposalsBound(
@@ -483,6 +525,78 @@ async function githubChangeProposalsCredentialOf(
     : { authorized: "Refused", refusal: resolved.resolved };
 }
 
+/**
+ * The first bytes of a refusal's body as text, the rest given back unread, and
+ * nothing where the body could not be read at all.
+ */
+async function githubChangeProposalsRefusalTextOf(
+  response: Response,
+): Promise<string | undefined> {
+  if (response.body === null) return undefined;
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  try {
+    const reader = response.body.getReader();
+    for (let chunks = 0; chunks <= githubRefusalBytesMax; chunks += 1) {
+      const read = await reader.read();
+      if (read.done) return text + decoder.decode();
+      const chunk = (read.value as Uint8Array).subarray(
+        0,
+        githubRefusalBytesMax - bytes,
+      );
+      bytes += chunk.byteLength;
+      text += decoder.decode(chunk, { stream: true });
+      if (bytes >= githubRefusalBytesMax) break;
+    }
+    await reader.cancel();
+    return text + decoder.decode();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The forge's message out of the prefix of a refusal's body: the body's own
+ * where it is JSON, the whole text where it is cut short of being JSON, and
+ * the credential taken out of either.
+ */
+function githubChangeProposalsRefusalMessageOf(
+  text: string,
+  credential: ForgeCredential,
+): string | undefined {
+  let body: unknown;
+  try {
+    body = JSON.parse(text) as unknown;
+  } catch {
+    return text.replaceAll(credential, "[credential]");
+  }
+  return githubChangeProposalsMessageOf(body, credential);
+}
+
+/**
+ * What a response that did not succeed came to, its body's prefix read for
+ * the forge's message: the reply keeps that message cut to its bound, and an
+ * unsettled refusal carries it as far as it was read besides.
+ */
+async function githubChangeProposalsRefused(
+  response: Response,
+  credential: ForgeCredential,
+): Promise<GithubAnswer> {
+  const text = await githubChangeProposalsRefusalTextOf(response);
+  const message =
+    text === undefined
+      ? undefined
+      : githubChangeProposalsRefusalMessageOf(text, credential);
+  const refusal = githubChangeProposalsRefusalOf(
+    response,
+    changeProposalAnsweredReply(response.status, message),
+  );
+  return refusal.answer === "Unsettled" && message !== undefined
+    ? { ...refusal, message }
+    : refusal;
+}
+
 /** Makes the one bounded forge request this act is, every way of not answering being unsettled. */
 async function githubChangeProposalsSend(
   own: GithubChangeProposalsState,
@@ -511,12 +625,12 @@ async function githubChangeProposalsSend(
       ),
     };
   }
+  if (!response.ok) return githubChangeProposalsRefused(response, credential);
   const body = await githubChangeProposalsBodyOf(own, response);
   const reply = changeProposalAnsweredReply(
     response.status,
     githubChangeProposalsMessageOf(body, credential),
   );
-  if (!response.ok) return githubChangeProposalsRefusalOf(response, reply);
   return body === undefined
     ? { answer: "Unsettled", status: response.status, reply }
     : { answer: "Read", body, reply };
@@ -995,9 +1109,22 @@ async function githubChangeProposalsReadNumbered(
     parsed.data,
     "ByNumber",
   );
-  return match.matched === "Evidence"
-    ? { read: "Found", evidence: match.evidence, reply }
-    : { read: "Unavailable", reply };
+  if (match.matched !== "Evidence") return { read: "Unavailable", reply };
+  if (!githubChangeProposalsBypassable(parsed.data))
+    return { read: "Found", evidence: match.evidence, reply };
+  const bypassed = await githubChangeProposalsBypassed(
+    own,
+    authorized.credential,
+    address,
+    request.proposal.number,
+  );
+  return {
+    read: "Found",
+    evidence: bypassed
+      ? { ...match.evidence, mergeability: "Mergeable" }
+      : match.evidence,
+    reply,
+  };
 }
 
 /** What a refusal this forge named no answer of its own for comes to. */
@@ -1009,6 +1136,56 @@ function githubChangeProposalsMergeRefusal(
   return status === githubStaleHeadStatus
     ? { merged: "HeadMoved" }
     : { merged: "Ambiguous" };
+}
+
+/** What one merge answer came to, a successful answer read for whether the forge made the merge it asked for. */
+function githubChangeProposalsMergedOf(
+  answer: GithubAnswer,
+): ChangeProposalMerged {
+  switch (answer.answer) {
+    case "Denied":
+      return { merged: "Denied" };
+    case "Busy":
+      return { merged: "Unavailable" };
+    case "Unsettled":
+      return githubChangeProposalsMergeRefusal(answer.status);
+    case "Read": {
+      const parsed = githubMergeSchema.safeParse(answer.body);
+      if (!parsed.success || !parsed.data.merged)
+        return { merged: "Ambiguous" };
+      const commit = githubChangeProposalsCommitOf(parsed.data.sha);
+      return commit === undefined
+        ? { merged: "Ambiguous" }
+        : { merged: "Merged", mergeCommit: commit };
+    }
+    default:
+      return assertNever(answer);
+  }
+}
+
+/** Tells the composition what a merge the forge did not make was answered with, where it refused it as unmergeable or left it unconcluded. */
+function githubChangeProposalsMergeReported(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+  credential: ForgeCredential,
+  answer: GithubAnswer,
+  merged: ChangeProposalMerged,
+): void {
+  if (merged.merged !== "NotMergeable" && merged.merged !== "Ambiguous") return;
+  const said =
+    answer.answer === "Read"
+      ? {
+          status: githubMergedStatus,
+          message: githubChangeProposalsMessageOf(answer.body, credential),
+        }
+      : answer.answer === "Unsettled"
+        ? { status: answer.status, message: answer.message }
+        : { status: undefined, message: undefined };
+  own.mergeRefused({
+    repository: request.repository,
+    number: request.proposal.number,
+    ...said,
+  });
 }
 
 /** Asks this forge to merge one proposal at the commit the caller observed as its head. */
@@ -1036,23 +1213,15 @@ async function githubChangeProposalsMerge(
       }),
     },
   );
-  return { ...githubChangeProposalsMergedOf(answer), reply: answer.reply };
-}
-
-/** What one answer to a merge says came of it. */
-function githubChangeProposalsMergedOf(
-  answer: GithubAnswer,
-): ChangeProposalMerged {
-  if (answer.answer === "Denied") return { merged: "Denied" };
-  if (answer.answer === "Busy") return { merged: "Unavailable" };
-  if (answer.answer === "Unsettled")
-    return githubChangeProposalsMergeRefusal(answer.status);
-  const parsed = githubMergeSchema.safeParse(answer.body);
-  if (!parsed.success || !parsed.data.merged) return { merged: "Ambiguous" };
-  const commit = githubChangeProposalsCommitOf(parsed.data.sha);
-  return commit === undefined
-    ? { merged: "Ambiguous" }
-    : { merged: "Merged", mergeCommit: commit };
+  const merged = githubChangeProposalsMergedOf(answer);
+  githubChangeProposalsMergeReported(
+    own,
+    request,
+    authorized.credential,
+    answer,
+    merged,
+  );
+  return { ...merged, reply: answer.reply };
 }
 
 /**
@@ -1216,6 +1385,65 @@ async function githubChangeProposalsGraphql(
         errors.map((error) => error.type),
         reply,
       );
+}
+
+/** Whether this viewer may merge one proposal past its base's rules, and whether that base requires a queue. */
+const githubBypassQuery = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { viewerCanMergeAsAdmin isMergeQueueEnabled }
+  }
+}`;
+
+/** The fields of a bypass read this tree reads. */
+const githubBypassSchema = z.object({
+  repository: z
+    .object({
+      pullRequest: z
+        .object({
+          viewerCanMergeAsAdmin: z.boolean(),
+          isMergeQueueEnabled: z.boolean(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+});
+
+/** Whether one answered pull request is open, mergeable and blocked by nothing but its base's rules, the one block a bypass read can lift. */
+function githubChangeProposalsBypassable(pull: GithubPullRequest): boolean {
+  return (
+    pull.state === "open" &&
+    pull.draft !== true &&
+    pull.mergeable === true &&
+    pull.mergeable_state === githubRulesBlockedState
+  );
+}
+
+/**
+ * Whether this credential may merge one proposal past its base's rules off a
+ * queue: only an answer saying both is a yes, and every other answer, a
+ * refusal and an outage among them, leaves the block standing.
+ */
+async function githubChangeProposalsBypassed(
+  own: GithubChangeProposalsState,
+  credential: ForgeCredential,
+  address: GithubAddress,
+  number: number,
+): Promise<boolean> {
+  const answer = await githubChangeProposalsGraphql(
+    own,
+    credential,
+    githubBypassQuery,
+    { owner: address.owner, name: address.name, number },
+  );
+  if (answer.answer !== "Data") return false;
+  const parsed = githubBypassSchema.safeParse(answer.data);
+  const pull = parsed.success ? parsed.data.repository?.pullRequest : undefined;
+  return (
+    pull !== undefined &&
+    pull !== null &&
+    pull.viewerCanMergeAsAdmin &&
+    !pull.isMergeQueueEnabled
+  );
 }
 
 /** The fields of a queue event this tree reads, either kind. */
@@ -1510,6 +1738,7 @@ export function githubChangeProposals(
       "the proposals a read considers",
       githubChangeProposalsPerPageMax,
     ),
+    mergeRefused: options.mergeRefused ?? githubMergeRefusedDefault,
   };
   return {
     create: (request) => githubChangeProposalsCreate(own, request),
