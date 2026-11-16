@@ -297,8 +297,8 @@ and by `rename_member_thread` and `hide_member_thread` writing the member's own
 name for a thread and their own way of putting it away, and by a chat host's
 thread attempt reporting whether its thread is standing through
 `report_session_standing`, which `close_agent_session` clears; a trigger refuses every
-other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead at most, by a partial index over `state='Open'`,
-and no door opens one. `close_agent_session`, which abandons a session's queued
+other change, which is what makes the transcript the row points at singular. A project holds one OPEN lead at most, by a partial index over `state='Open'`.
+`close_agent_session`, which abandons a session's queued
 and claimed turns, no runtime role may execute.
 A member holds any number of open threads up to `member_thread_limit`, which
 is a count rather than an index: `open_member_thread` and `open_agent_session`
