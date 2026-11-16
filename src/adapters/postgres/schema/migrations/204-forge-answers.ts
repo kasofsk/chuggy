@@ -28,7 +28,7 @@ import { migration192 } from "./192-target-paths-refused.ts";
 const landingsSignature = `public.${ticketLandingsReadFunction}(in_tenant text, in_project text, in_ticket bigint, in_count integer)`;
 
 /** The longest every kept answer of one row may be written as, together. */
-const forgeAnswersCharsMaxAt203 = 8192;
+const forgeAnswersCharsMaxAt204 = 8192;
 
 /** One piece of 192's landings door and the piece that replaces it, each found exactly once. */
 const landingsWidenings: readonly (readonly [string, string])[] = [
@@ -43,36 +43,36 @@ const landingsWidenings: readonly (readonly [string, string])[] = [
 ];
 
 /** 192's landings door, answering the merges asked and the newest merge's answer as well. */
-function migration203Landings(): string {
+function migration204Landings(): string {
   const stood = migration192.statements.find((statement) =>
     statement.startsWith(`CREATE FUNCTION ${landingsSignature}`),
   );
   if (stood === undefined)
-    throw new Error("migration 203: 192 no longer installs the landings door");
+    throw new Error("migration 204: 192 no longer installs the landings door");
   return landingsWidenings.reduce((door, [from, to]) => {
     if (door.split(from).length !== 2)
       throw new Error(
-        `migration 203: 192's landings door does not hold ${JSON.stringify(from)} exactly once`,
+        `migration 204: 192's landings door does not hold ${JSON.stringify(from)} exactly once`,
       );
     return door.replace(from, to);
   }, stood);
 }
 
-export const migration203: Migration = {
-  version: 203,
+export const migration204: Migration = {
+  version: 204,
   name: "a proposal row keeps what the forge answered its newest merge and update",
   statements: [
     `ALTER TABLE public.finalization_change_proposal
        ADD COLUMN forge_answers jsonb DEFAULT '{}'::jsonb NOT NULL,
        ADD CONSTRAINT finalization_change_proposal_forge_answers_are_bounded
          CHECK (((jsonb_typeof(forge_answers) = 'object'::text)
-                 AND (length((forge_answers)::text) <= ${String(forgeAnswersCharsMaxAt203)})))`,
+                 AND (length((forge_answers)::text) <= ${String(forgeAnswersCharsMaxAt204)})))`,
     `GRANT UPDATE (forge_answers)
        ON TABLE public.finalization_change_proposal TO ${finalizerRole}`,
     `GRANT SELECT (forge_answers)
        ON TABLE public.finalization_change_proposal TO ${boundaryOwnerRole}`,
     `DROP FUNCTION ${landingsSignature}`,
-    migration203Landings(),
+    migration204Landings(),
     `ALTER FUNCTION ${landingsSignature} OWNER TO ${boundaryOwnerRole}`,
     `REVOKE ALL ON FUNCTION ${landingsSignature} FROM PUBLIC`,
     `GRANT EXECUTE ON FUNCTION ${landingsSignature} TO ${apiRole}`,

@@ -63,10 +63,12 @@
  * that reading falls due, if that is sooner.
  *
  * A REQUEST WAITING ON THE HOLDER IS CLAIMED ONLY TO BE SENT BACK. A Stacked
- * ticket pending unstacked that could now stack over the queue ahead of it, and
- * whose stack over it folds without a conflict, has its waiting request claimed
- * and a `Restack` failure recorded on it, and the request's next claim
- * concludes it; nothing else is done under that claim.
+ * ticket pending unstacked or over a stack that stopped standing, as
+ * `model/stacking.qnt`'s `sweep` leaves it, that could now stack over the
+ * queue ahead of it (`canRestack`), and whose stack over it folds without a
+ * conflict, has its waiting request claimed and a `Restack` failure recorded
+ * on it, and the request's next claim concludes it; nothing else is done under
+ * that claim.
  *
  * A SEND-BACK THAT KEEPS ITS RANK IS ONE A MERGE WOULD NOT REFUSE. A re-check
  * and a re-stack bring the target or the line in and evaluate again, so neither
@@ -3364,7 +3366,7 @@ const stackPreparationsPerPassMax = 8;
 /** The most evaluations over a stack one pass looks at. */
 const stackEvaluatingPerPassMax = 16;
 
-/** The most tickets pending unstacked one pass looks at for a re-stack. */
+/** The most pending Stacked tickets one pass looks at for a re-stack. */
 const stackRestacksPerPassMax = 8;
 
 /**
@@ -3442,12 +3444,13 @@ async function finalizerRestackFolds(
 }
 
 /**
- * Sends back to Work every Stacked ticket pending unstacked that `restackLine`
- * finds could now stack over the queue ahead of it and whose stack over that
- * line folds, by claiming its waiting request and recording a `Restack`
- * failure naming the accepted commit and the line, which the request's next
- * claim concludes as `FinalizationNeedsWork`. A queue that cannot be read and a
- * request someone else holds are left for the next pass.
+ * Sends back to Work every Stacked ticket pending unstacked or over a stack
+ * that stopped standing that `restackLine` finds could now stack over the
+ * queue ahead of it and whose stack over that line folds, by claiming its
+ * waiting request and recording a `Restack` failure naming the accepted commit
+ * and the line, which the request's next claim concludes as
+ * `FinalizationNeedsWork`. A queue that cannot be read and a request someone
+ * else holds are left for the next pass.
  */
 async function finalizerRestackStacks(
   service: FinalizerService,

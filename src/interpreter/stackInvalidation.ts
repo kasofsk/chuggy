@@ -1,9 +1,10 @@
 /**
  * Which evaluations over a stack are to be invalidated: the ones whose stack
  * stopped standing. `model/stacking.qnt`'s `sweep` states it, and this is its
- * definition for the tickets still in an evaluation. A ticket not yet evaluated
- * and one whose evaluation failed are not swept: the first lands as a re-check
- * when its merge result is not the tree it was evaluated on, and the second is
+ * definition for the tickets still in an evaluation. A pending ticket and one
+ * whose evaluation failed are not swept here: the first is re-stacked by
+ * `./stackRestack.ts` once it could stack, or lands as a re-check when its
+ * merge result is not the tree it was evaluated on, and the second is
  * taken as `InvalidateEvaluationFailure` by the writer's failure policy where a
  * marker says its stack was dead.
  *

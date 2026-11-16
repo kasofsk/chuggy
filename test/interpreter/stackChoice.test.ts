@@ -50,6 +50,24 @@ test("a Stacked ticket stacks on the holder alone while the holder is in evaluat
   }
 });
 
+test("a holder whose own stack stopped standing is no member, so nothing stacks over it, and one whose stack stands is", () => {
+  const dead = { beneath: [member(6)], landings: [member(7)] };
+  for (const phase of ["Evaluation", "Pending"] as const)
+    assert.equal(
+      stackFor(candidate(2), [entry(1, "Stacked", phase, { stack: dead })]),
+      undefined,
+    );
+  const stands = { beneath: [member(6)], landings: [member(6)] };
+  assert.deepEqual(
+    tickets(
+      stackFor(candidate(2), [
+        entry(1, "Stacked", "Pending", { stack: stands }),
+      ]),
+    ),
+    [1],
+  );
+});
+
 test("twoStackedLandInOrder: the second stacks on the first, which stacks on nothing", () => {
   const queue = [entry(1, "Stacked", "Pending")];
   assert.deepEqual(tickets(stackFor(candidate(2), queue)), [1]);

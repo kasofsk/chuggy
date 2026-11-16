@@ -59,6 +59,7 @@ import {
   configurationCanonicalCharsMax,
   jsonStringChars,
   jsonTextBytes,
+  landingQueueHolderSinceDigits,
   landingQueueTicketsAnsweredMax,
   leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
@@ -283,13 +284,18 @@ export const chuggyToolTicketLandingsResponseBytesMax =
 /**
  * What one queue `read_landing_queues`'s route answers weighs beside its
  * repository, its target and its waiters: the names and brackets around them,
- * and its holder at the largest number a ticket's may be.
+ * its holder at the largest number a ticket's may be, the instant it holds
+ * from at the one length its schema takes, and its longest phase.
  */
 const chuggyToolLandingQueueFieldsBytesMax = textUtf8Bytes(
   `${JSON.stringify({
     repository: "",
     target: "",
     holder: Number.MAX_SAFE_INTEGER,
+    holderSince: `0000-00-00T00:00:00.${"0".repeat(landingQueueHolderSinceDigits)}Z`,
+    holderPhase: phaseRoster.reduce((longest, phase) =>
+      phase.length > longest.length ? phase : longest,
+    ),
     waiting: [],
   })},`,
 );
@@ -696,7 +702,11 @@ export const chuggyToolRoutes = {
    * default branch's. A queue's holder is the one ticket that may land on that
    * reference now, and its waiters are the tickets ranked behind it, none of
    * which lands there before the holder stops holding it; a ticket alone in a
-   * queue is its holder and waits on nobody.
+   * queue is its holder and waits on nobody; `holderPhase` is the holder's
+   * phase, and `holderSince` when it became the holder, the later of when it
+   * took its rank and when the ticket holding the queue before it stopped,
+   * which a re-check, a re-stack, a re-evaluation and an invalidation leave
+   * as it was.
    */
   landingQueues: nativeHttpRoutes.landingQueues,
   executions: nativeHttpRoutes.executions,

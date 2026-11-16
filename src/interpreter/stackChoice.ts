@@ -116,8 +116,10 @@ function stackOrdered(queue: readonly StackEntry[]): readonly StackEntry[] {
 /**
  * Whether the entry at `at` of `line` is a member of a stack standing over the
  * entries before it. The holder, first in line, is one while it is evaluated or
- * pending; any other must be pending, Stacked, and stacked over exactly the
- * entries before it, on a stack that stands.
+ * pending and any stack it was evaluated over stands, the model's `sweep`
+ * having left one whose stack stopped standing `Ready`; any other must be
+ * pending, Stacked, and stacked over exactly the entries before it, on a stack
+ * that stands.
  */
 function stackMemberAt(
   line: readonly StackEntry[],
@@ -127,7 +129,10 @@ function stackMemberAt(
   const entry = line[at];
   if (entry === undefined) return false;
   if (at === 0)
-    return entry.phase === "Evaluation" || entry.phase === "Pending";
+    return (
+      (entry.phase === "Evaluation" || entry.phase === "Pending") &&
+      (entry.stack === undefined || stackStands(entry.stack, queue))
+    );
   const before = line.slice(0, at).map(stackMemberOf);
   return (
     entry.phase === "Pending" &&

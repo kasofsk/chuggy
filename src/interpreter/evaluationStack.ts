@@ -106,7 +106,7 @@ export interface EvaluatingStack {
   readonly standing: StackStanding;
 }
 
-/** A Stacked ticket pending over a cycle with no stack, whose finalization nobody holds and no attempt answers. */
+/** A Stacked ticket pending over its latest accepted cycle, whose finalization nobody holds and no attempt answers. */
 export interface RestackableStack {
   readonly partition: Partition;
   readonly ticket: TicketId;
@@ -211,9 +211,9 @@ export interface EvaluationStackStore {
     epoch: RecoveryEpoch,
   ): Promise<StackInvalidationOffered>;
   /**
-   * The Stacked tickets pending over a work cycle no stack was recorded for,
-   * whose finalization request is open, unheld and unattempted, at most
-   * `limit` of them.
+   * The Stacked tickets pending over their latest accepted work cycle, stacked
+   * or not, whose finalization request is open, unheld and unattempted, at
+   * most `limit` of them.
    */
   restackable(
     limit: number,

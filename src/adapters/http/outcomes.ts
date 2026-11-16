@@ -1767,6 +1767,8 @@ export function landingQueuesResponse(
       repository: queue.repository,
       ...(queue.target === undefined ? {} : { target: queue.target }),
       holder: Number(queue.holder),
+      holderSince: queue.holderSince,
+      holderPhase: queue.holderPhase,
       waiting: queue.waiting.map(Number),
     })),
     truncated: read.truncated,
