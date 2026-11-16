@@ -48,7 +48,7 @@ function catalog(
       standard: [{ name: "review", evaluators: ["review"] }],
       tested: [{ name: "tests", evaluators: ["tests"] }],
     },
-    finalizers: { merged: { approvalRequired: false } },
+    finalizers: { merged: {} },
     defaults: {
       work: "build",
       evaluation: "standard",
@@ -138,7 +138,7 @@ test("a head changing the evaluator its selection names moves it", () => {
 
 test("a head changing only the selected finalizer moves the ticket", () => {
   const head = catalog((value) => {
-    field(value, "finalizers")["merged"] = { approvalRequired: true };
+    field(value, "finalizers")["merged"] = { landing: { mode: "PullRequest" } };
   });
   assert.deepEqual(
     configurationFollowingVerdict(ticket(head)).verdict,
@@ -335,4 +335,77 @@ test("a ticket's own read answers nothing where its choice, or else its held cat
     ),
     { verdict: "Moves" },
   );
+});
+
+/** A ticket's own one-stage approval plan, selected in place of the catalog's. */
+const approvalGate = {
+  overrides: {
+    workloads: { approval: { runner: "Approval" as const } },
+    plans: { gate: [{ name: "approval", evaluators: ["approval"] }] },
+  },
+  selection: { evaluation: "gate" },
+};
+
+test("a ticket whose overrides' plan runs less than the catalog plans is trimmed before its head is read", () => {
+  assert.deepEqual(
+    configurationFollowingVerdict(
+      ticket(canonicalConfigurationOf({ version: 1 }), approvalGate),
+    ),
+    { verdict: "Trimmed" },
+  );
+});
+
+test("a ticket whose overrides' plan would run less than the head's moves no further than its held revision", () => {
+  const replaced = {
+    overrides: {
+      plans: {
+        standard: [{ name: "all", evaluators: ["review", "tests"] }],
+      },
+    },
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+  };
+  const head = catalog((value) => {
+    field(value, "plans")["standard"] = [
+      { name: "review", evaluators: ["review"] },
+      { name: "second", evaluators: ["review"] },
+    ];
+    field(value, "workloads")["tests"] = {
+      runner: "Commands",
+      commands: ["npm run test:all"],
+    };
+  });
+  assert.deepEqual(configurationFollowingVerdict(ticket(head, replaced)), {
+    verdict: "Trimmed",
+  });
+  const asMuch = catalog((value) => {
+    field(value, "workloads")["tests"] = {
+      runner: "Commands",
+      commands: ["npm run test:all"],
+    };
+  });
+  assert.deepEqual(configurationFollowingVerdict(ticket(asMuch, replaced)), {
+    verdict: "Moves",
+    program: replaced.program,
+  });
+});
+
+test("a head dropping a workload a ticket's own plan names holds the ticket", () => {
+  const replaced = {
+    overrides: {
+      plans: {
+        standard: [{ name: "all", evaluators: ["review", "tests"] }],
+      },
+    },
+    program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+  };
+  const head = catalog((value) => {
+    delete field(value, "workloads")["tests"];
+    field(value, "plans")["tested"] = [
+      { name: "tests", evaluators: ["review"] },
+    ];
+  });
+  assert.deepEqual(configurationFollowingVerdict(ticket(head, replaced)), {
+    verdict: "Held",
+    fault: "OverridesUnknown",
+  });
 });

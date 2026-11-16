@@ -17,6 +17,8 @@ import {
   ticketOffers,
   ticketOffersAllowed,
   ticketOffersStartable,
+  ticketTakeOffer,
+  ticketTaker,
 } from "../app/core/ticketOffers.ts";
 import type { TicketOffers } from "../app/core/ticketOffers.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
@@ -154,9 +156,9 @@ test("an open action's answers go with the ability to mutate", () => {
     ready([
       {
         action: "action-one",
-        kind: "FinalizationApproval",
+        kind: "TicketEscalation",
         authorizingSequence: 42,
-        admits: ["Approve", "Decline"],
+        admits: ["Resume", "Revoke"],
         answerable: true,
       },
     ]),
@@ -228,4 +230,47 @@ test("a Dispatch that gave way to no runner is not said to be by hand", () => {
   const left = ticketOffersStartable(startable, "NoRunner").offers;
   expect(offersDispatchByHand(startable, false)).toBe(true);
   expect(offersDispatchByHand(left, false)).toBe(false);
+});
+
+const reader = abilitiesEvery.principal;
+
+test.each([
+  ["the reader filed and owns it", reader, reader, "None"],
+  ["the reader took it", "other", reader, "Return"],
+  ["someone else filed and owns it", "other", "other", "Take"],
+  ["someone else took the reader's own", reader, "other", "Take"],
+  ["no member owns it", undefined, undefined, "Take"],
+] as const)(
+  "where %s, a reader who may mutate is offered %s",
+  (_case, creator, owner, offered) => {
+    expect(
+      ticketTakeOffer(
+        {
+          phase: "Pending",
+          ...(creator === undefined ? {} : { creator }),
+          ...(owner === undefined ? {} : { owner }),
+        },
+        abilitiesEvery,
+      ),
+    ).toBe(offered);
+  },
+);
+
+test.each(phaseRoster)(
+  "a %s ticket offers its taker no take where the reader may not mutate, the abilities are unread, or the ticket has ended",
+  (phase) => {
+    const taken = { phase, creator: "other", owner: reader };
+    const ended = phase === "Done" || phase === "Revoked";
+    expect(ticketTakeOffer(taken, abilitiesEvery)).toBe(
+      ended ? "None" : "Return",
+    );
+    expect(ticketTakeOffer(taken, abilitiesNone)).toBe("None");
+    expect(ticketTakeOffer(taken, undefined)).toBe("None");
+  },
+);
+
+test("the taker is the owner who is not the creator", () => {
+  expect(ticketTaker({ creator: "ada", owner: "bob" })).toBe("bob");
+  expect(ticketTaker({ creator: "ada", owner: "ada" })).toBeUndefined();
+  expect(ticketTaker({ creator: "ada" })).toBeUndefined();
 });

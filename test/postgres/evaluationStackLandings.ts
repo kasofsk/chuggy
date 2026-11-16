@@ -111,20 +111,13 @@ async function landingManifest(
       `INSERT INTO execution_result
          (tenant, project, manifest, execution, attempt, manifest_ordinal,
           schema_version, digest, verdict)
-       SELECT tenant, project, $3, $4, $5, manifest_ordinal + $6,
+       SELECT tenant, project, $3, $4, $5,
+              (SELECT max(manifest_ordinal) + 1 FROM execution_result
+                WHERE tenant=$1 AND project=$2),
               schema_version, repeat('1',64), verdict
          FROM execution_result
-        WHERE tenant=$1 AND project=$2 AND execution=$7 AND attempt=$8`,
-      [
-        tenant,
-        named,
-        manifest,
-        execution,
-        run,
-        ticket,
-        work.execution,
-        work.attempt,
-      ],
+        WHERE tenant=$1 AND project=$2 AND execution=$6 AND attempt=$7`,
+      [tenant, named, manifest, execution, run, work.execution, work.attempt],
     );
     await transaction.commit();
   } catch (failure) {

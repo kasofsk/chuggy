@@ -3,8 +3,8 @@
  * reader who does not see it and, for the icon buttons among them, beside the
  * same name again as hover-and-focus text for a reader who does.
  *
- * THE HEADER IS ONE ROW of them beside the thread's title, and anything it has
- * to say in words goes on a row of its own under that one.
+ * THE HEADER IS ONE ROW: the thread's title and the few controls beside it,
+ * and anything it has to say in words goes on a row of its own under that one.
  */
 
 import type { ReactNode } from "react";
@@ -49,16 +49,7 @@ const chatPaneGlyphPaths = {
       <path d="M8 5v3l2 1.5" />
     </>
   ),
-  fill: (
-    <ChatPaneLucide>
-      <path d="M15 3h6v6M21 3l-7 7M3 21l7-7M9 21H3v-6" />
-    </ChatPaneLucide>
-  ),
-  restore: (
-    <ChatPaneLucide>
-      <path d="m14 10 7-7M20 10h-6V4M3 21l7-7M4 14h6v6" />
-    </ChatPaneLucide>
-  ),
+  back: <path d="M13 8H3m4-4L3 8l4 4" />,
   rename: <path d="M10.5 2.5l3 3L6 13H3v-3z" />,
   close: <path d="M4 4l8 8M12 4l-8 8" />,
   collapseRight: (
@@ -110,11 +101,6 @@ const chatPaneGlyphPaths = {
       <circle cx="12" cy="12" r="1" />
       <circle cx="19" cy="12" r="1" />
       <circle cx="5" cy="12" r="1" />
-    </ChatPaneLucide>
-  ),
-  page: (
-    <ChatPaneLucide>
-      <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6M21 3l-9 9M15 3h6v6" />
     </ChatPaneLucide>
   ),
   link: (

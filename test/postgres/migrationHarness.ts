@@ -239,15 +239,14 @@ export function renamedFinalization(attempt: string): string {
   INSERT INTO finalization_attempt
     (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
      target_ref,target_commit,strategy,configuration_revision,configuration_digest,
-     attempt_digest,approval_required,outcome,candidate_commit,failure_kind)
+     attempt_digest,outcome,candidate_commit,failure_kind)
   VALUES('tenant-5','project-5','attempt-5','request-5',1,'repository-5','bundle-5',
          repeat('b',64),'refs/heads/main',repeat('c',40),'Merge','revision-5','digest-5',
          repeat('d',64),${attempt})`;
 }
 
-/** The attempts a finalization door binds to: one that failed to prepare, and one prepared and awaiting approval. */
-export const renamedAttemptFailed = "false,'Failed',NULL,'PreparationFailed'";
-export const renamedAttemptPrepared = "true,'Prepared',repeat('c',40),NULL";
+/** The attempt a finalization door binds to, one that failed to prepare. */
+export const renamedAttemptFailed = "'Failed',NULL,'PreparationFailed'";
 
 /**
  * A running execution at an identity its request authorized, ready for the

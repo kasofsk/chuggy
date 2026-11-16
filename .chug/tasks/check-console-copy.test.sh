@@ -230,6 +230,17 @@ generate
 cp "$G/ticketCopy.ts" "$OUT"
 check "a section's type takes no parameter once a message has variables" 0 0 "export interface TicketCopy {"
 
+# The formatter judges a generated module like any other code, so one whose
+# line runs past its width must already be broken as the formatter breaks it.
+catalog
+printf '%s\n' 'ticket-escalation-finalization-unavailable-long = done' 'ticket-done = done' > "$C/en/ticket.ftl"
+generate
+set +e
+(cd "$ROOT" && node_modules/.bin/prettier --check "$G/ticketCopy.ts") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a message whose line runs past the formatter's width is typed as the formatter writes it" 0 "$RC" "All matched files use Prettier code style"
+
 catalog
 generate
 printf '%s\n' 'stale' > "$G/shellCopy.ts"

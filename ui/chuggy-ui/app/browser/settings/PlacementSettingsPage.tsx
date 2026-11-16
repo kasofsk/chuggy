@@ -135,30 +135,41 @@ function PlacementTable(props: {
     },
   ];
   return (
-    <Table caption={text({ id: "runners-placement-title" })}>
-      <thead>
-        <tr>
-          <th scope="col">{text({ id: "runners-placement-col-kind" })}</th>
-          <th scope="col">{text({ id: "runners-placement-col-runs-on" })}</th>
-          <th scope="col">{text({ id: "runners-placement-col-set-by" })}</th>
-          <th scope="col">{text({ id: "runners-placement-col-runner" })}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.kind}>
-            <th scope="row">{text(placementKindLabels[row.kind])}</th>
-            <td>{text(runnersPlacementLabel(row.placed))}</td>
-            <td>{text(runnerRouteSourceLabel(row.resolved.source))}</td>
-            <td>
-              {row.runners === undefined || row.resolved.route !== "Pool"
-                ? null
-                : text(runnerStandingLabel(row.runners))}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+    <Table
+      caption={text({ id: "runners-placement-title" })}
+      stacked={{
+        columns: [
+          {
+            key: "kind",
+            label: text({ id: "runners-placement-col-kind" }),
+            rowHeader: true,
+          },
+          { key: "on", label: text({ id: "runners-placement-col-runs-on" }) },
+          { key: "by", label: text({ id: "runners-placement-col-set-by" }) },
+          {
+            key: "runner",
+            label: text({ id: "runners-placement-col-runner" }),
+          },
+        ],
+        rows: rows.map((row) => {
+          const runner =
+            row.runners === undefined || row.resolved.route !== "Pool"
+              ? undefined
+              : row.runners;
+          return {
+            key: row.kind,
+            cells: {
+              kind: text(placementKindLabels[row.kind]),
+              on: text(runnersPlacementLabel(row.placed)),
+              by: text(runnerRouteSourceLabel(row.resolved.source)),
+              runner:
+                runner === undefined ? null : text(runnerStandingLabel(runner)),
+            },
+            empty: runner === undefined ? ["runner"] : [],
+          };
+        }),
+      }}
+    />
   );
 }
 

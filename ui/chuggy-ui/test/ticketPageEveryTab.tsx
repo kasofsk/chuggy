@@ -5,7 +5,7 @@
  * it, the header and its menu as a reader reaches them.
  */
 
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 import { TicketPage } from "../app/browser/TicketPage.tsx";
@@ -63,7 +63,7 @@ export function TicketLandingPageAt(): ReactNode {
 
 /** The page's header, which holds the ticket's actions on every tab. */
 export function ticketHeader(): HTMLElement {
-  const header = document.querySelector<HTMLElement>("header.ticket-header");
+  const header = document.querySelector<HTMLElement>("header.page-header");
   if (header === null) throw new Error("no ticket header drawn");
   return header;
 }
@@ -76,4 +76,25 @@ export async function ticketHeaderMenuOpened(): Promise<HTMLElement> {
     });
   });
   return screen.getByRole("menu");
+}
+
+/** The words of the header menu's entries, in its order, read with the menu
+ * opened; none where the header draws no menu. A stubbed router link draws
+ * none of the props the menu's item hands it, so a link is read as an entry
+ * by being in the menu at all. */
+export async function ticketHeaderMenuEntries(): Promise<readonly string[]> {
+  if (screen.queryByRole("button", { name: "More actions" }) === null)
+    return [];
+  const menu = await ticketHeaderMenuOpened();
+  return [...menu.querySelectorAll("[role=menuitem], a")].map(
+    (item) => item.textContent ?? "",
+  );
+}
+
+/** The header menu's entry `name`, chosen as a pointer chooses it. */
+export async function ticketHeaderMenuChosen(name: string): Promise<void> {
+  const menu = await ticketHeaderMenuOpened();
+  await turned(() => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name }));
+  });
 }

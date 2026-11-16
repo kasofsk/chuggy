@@ -28,7 +28,7 @@ import type { PanelCopy } from "./generated/panelCopy.ts";
 import type { PermissionsCopy } from "./generated/permissionsCopy.ts";
 import type { ProjectCopy } from "./generated/projectCopy.ts";
 import type { RepositoriesCopy } from "./generated/repositoriesCopy.ts";
-import type { RepositoryLandingCopy } from "./generated/repositoryLandingCopy.ts";
+import type { RepositoryFinalizationCopy } from "./generated/repositoryFinalizationCopy.ts";
 import type { RunnersCopy } from "./generated/runnersCopy.ts";
 import type { SentencesCopy } from "./generated/sentencesCopy.ts";
 import type { SessionCopy } from "./generated/sessionCopy.ts";
@@ -64,7 +64,7 @@ type CopyVariables = ApiCopy &
   PermissionsCopy &
   ProjectCopy &
   RepositoriesCopy &
-  RepositoryLandingCopy &
+  RepositoryFinalizationCopy &
   RunnersCopy &
   SentencesCopy &
   SessionCopy &

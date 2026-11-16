@@ -3,15 +3,21 @@
 
 /** Each message's variables, by name. */
 export interface SessionCopy {
-  readonly "session-brand": Record<never, never>;
+  readonly "session-opening": Record<never, never>;
   readonly "session-loading": Record<never, never>;
   readonly "session-unconfigured": Record<never, never>;
   readonly "session-unconfigured-unsaid": Record<never, never>;
+  readonly "session-unconfigured-next": Record<never, never>;
   readonly "session-unreachable": Record<never, never>;
   readonly "session-unreachable-unsaid": Record<never, never>;
+  readonly "session-unreachable-next": Record<never, never>;
   readonly "session-retry": Record<never, never>;
+  readonly "session-sign-in-title": Record<never, never>;
   readonly "session-signed-out": Record<never, never>;
+  readonly "session-signed-out-next": Record<never, never>;
   readonly "session-sign-in": Record<never, never>;
+  readonly "session-changed-title": Record<never, never>;
+  readonly "session-changed-next": Record<never, never>;
   readonly "session-reload": Record<never, never>;
   readonly "session-ended": Record<never, never>;
   readonly "session-unrenewed": Record<never, never>;

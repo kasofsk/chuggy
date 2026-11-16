@@ -1,13 +1,18 @@
-/* Button and ButtonLink: the paint of four variants over one pill. The pill's
-   shape, type and padding are utilities on the class string, so nothing here
-   states a property the utilities layer would win back. A control that is only
+/* Button and ButtonLink: the paint of five variants over one pill. The pill's
+   shape, face and padding are utilities on the class string, so nothing here
+   states a property the utilities layer would win back; its weight is here,
+   where a pressed toggle's can override it. A control that is only
    its glyph is a square instead, which on a narrow screen is the least a
-   finger is given. */
+   finger is given. A pressed toggle is a wash and a heavier word rather than
+   a fill, so it is never read as the primary action; the quiet danger is a
+   destructive entry point and the filled one the step that confirms it. A
+   disabled control's edge is one that clears the contrast a mark needs. */
 
 @layer ui {
   .btn {
     background: var(--surface-1);
     color: var(--ink-1);
+    font-weight: var(--weight-medium);
     border: var(--hairline) solid var(--edge-control);
     cursor: pointer;
     transition:
@@ -20,7 +25,13 @@
     background: var(--surface-2);
   }
 
-  .btn[aria-pressed="true"],
+  .btn[aria-pressed="true"] {
+    background: var(--wash-accent);
+    color: var(--ink-1);
+    border-color: var(--accent);
+    font-weight: var(--weight-strong);
+  }
+
   .btn[aria-checked="true"] {
     background: var(--surface-inverse);
     color: var(--ink-inverse);
@@ -34,23 +45,19 @@
 
   .btn:disabled {
     color: var(--ink-3);
-    border-color: var(--edge);
+    border-color: var(--edge-strong);
     background: transparent;
     cursor: not-allowed;
   }
 
   .btn-primary {
-    background: var(--surface-inverse);
-    color: var(--ink-inverse);
-    border-color: var(--surface-inverse);
+    background: var(--accent);
+    color: var(--ink-on-accent);
+    border-color: var(--accent);
   }
 
   .btn-primary:hover {
-    background: color-mix(
-      in srgb,
-      var(--surface-inverse) 85%,
-      var(--surface-1)
-    );
+    background: color-mix(in srgb, var(--accent) 85%, var(--surface-1));
   }
 
   .btn-quiet {
@@ -63,7 +70,10 @@
     background: color-mix(in srgb, var(--ink-1) 12%, transparent);
   }
 
-  .btn-quiet[aria-pressed="true"]:hover,
+  .btn-quiet[aria-pressed="true"]:hover {
+    background: var(--wash-accent);
+  }
+
   .btn-quiet[aria-checked="true"]:hover {
     background: color-mix(
       in srgb,
@@ -85,6 +95,16 @@
     border-color: var(--tone-fail);
   }
 
+  .btn-danger-filled {
+    background: var(--tone-fail);
+    color: var(--tone-on-danger);
+    border-color: var(--tone-fail);
+  }
+
+  .btn-danger-filled:hover {
+    background: color-mix(in srgb, var(--tone-fail) 85%, var(--surface-1));
+  }
+
   .btn-quiet:disabled,
   .btn-danger:disabled {
     border-color: transparent;
@@ -100,6 +120,17 @@
     width: var(--height-icon);
     height: var(--height-icon);
     padding: 0;
+  }
+
+  @media (pointer: coarse) {
+    .btn {
+      min-height: var(--height-control);
+    }
+
+    .btn-icon {
+      width: var(--height-control);
+      height: var(--height-control);
+    }
   }
 
   @media (max-width: 40em) {
