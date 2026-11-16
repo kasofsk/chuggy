@@ -419,15 +419,13 @@ async function setupBound(
 }
 
 /**
- * `bind` works under the remembered sign-in as `import` does, entering it
- * again at each look, so a wait outlasts the bearer it began with. While the
- * checklist's next thing waits on GitHub, it reads the checklist again at
- * `pacing.bindPollMs` for as long as the run was given, and where its first
- * look finds GitHub to connect, it opens the page that does in a browser.
- * Once the next thing is adding the folder's repository, it asks the site to
- * bind it, the one write its ports let through, and reads the checklist
- * again; where the next thing waits on neither, it binds nothing and says the
- * checklist.
+ * `bind` works under the remembered sign-in as `import` does, entered again at
+ * each look so a wait outlasts its first bearer, and reads the checklist again
+ * at `pacing.bindPollMs`, for as long as the run was given, while the next
+ * thing waits on GitHub, opening the page that connects GitHub where its first
+ * look finds that next. Once the next thing is adding the folder's repository
+ * it binds it, the one write its ports let through, and reads the checklist
+ * again; where the next thing waits on neither, it binds nothing.
  */
 async function setupBind(
   ports: SetupPorts,
