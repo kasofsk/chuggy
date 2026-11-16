@@ -2506,6 +2506,46 @@ test("on a Mac whose Colima runs no VM, stopped or not made yet, the bare comman
   }
 });
 
+test("on a Mac whose running Colima VM a yes restarts, the yes counts what ran before the restart, so a postgres the restart stops leaves the offer's two chats in 4 GiB, not three", async () => {
+  const machine = await mac();
+  for (const project of machine.world.projects) project.threads = "Pool";
+  boxMacMade(machine.box, {
+    silicon: true,
+    rosetta: true,
+    memoryBytes: 24 * 2 ** 30,
+    vm: {
+      running: true,
+      vmType: "vz",
+      vzRosetta: true,
+      memoryBytes: 2 * 2 ** 30,
+      arch: "aarch64",
+      rosettaOn: true,
+    },
+  });
+  machine.box.containers = [
+    {
+      id: "c0ffee",
+      name: "postgres",
+      labels: {},
+      memoryBytes: 0,
+      usage: "2GiB",
+    },
+  ];
+  const offer = (await ran(machine, [])).lines.join("\n");
+  expect(offer).toContain(
+    "which holds 4 GiB whenever it runs: 2 GiB a chat, for up to 2 at once.",
+  );
+  expect(offer).toContain(
+    "There is room for it here beside a run, so I recommend it.",
+  );
+
+  expect((await ran(machine)).exit).toBe(0);
+  expect(machine.box.containers).toEqual([]);
+  expect(
+    JSON.parse(machine.box.paths.get(boxMacSettings) ?? ""),
+  ).toMatchObject({ chat: { sessionsMax: 2, sessionMemoryMib: 2048 } });
+});
+
 test("--chat-host no sets up the project's runner alone, minting and registering no chat host, and the runner's step is done with it live, saying chat-host where the chat host is missing or not running", async () => {
   const machine = await both();
   const alone = await ran(machine, [...runnerAlone, "--chat-host", "no"]);

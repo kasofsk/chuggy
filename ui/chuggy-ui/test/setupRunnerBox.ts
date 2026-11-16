@@ -160,13 +160,14 @@ export interface RunnerBox {
   mac: BoxMac | undefined;
 }
 
-/** A container running on the box's engine: its id and name, its labels, its memory cap in bytes, 0 for none, and its use as `stats` prints it. */
+/** A container running on the box's engine: its id and name, its labels, its memory cap in bytes, 0 for none, its use as `stats` prints it, and whether it has a restart policy, which is what starts it again with Colima's VM. */
 export interface BoxContainer {
   readonly id: string;
   readonly name: string;
   readonly labels: Readonly<Record<string, string>>;
   readonly memoryBytes: number;
   readonly usage: string;
+  readonly restarts?: boolean;
 }
 
 export function exited(exit: number, out = "", err = ""): SetupChildEnded {
@@ -531,6 +532,7 @@ function boxColimaStopped(box: RunnerBox): SetupChildEnded {
   if (vm === undefined) return exited(1, "", "colima is not running\n");
   vm.running = false;
   box.engines.docker = "No";
+  box.containers = box.containers.filter(({ restarts }) => restarts === true);
   return exited(0);
 }
 
