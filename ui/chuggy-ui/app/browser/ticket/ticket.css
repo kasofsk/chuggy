@@ -568,6 +568,11 @@
     color: var(--ink-1);
   }
 
+  /* The row scrolls, and clips an outline drawn past a tab. */
+  .ticket-tab:focus-visible {
+    outline-offset: var(--focus-inset);
+  }
+
   .ticket-tab[aria-current="page"] {
     color: var(--ink-1);
     font-weight: var(--weight-medium);
@@ -580,6 +585,12 @@
     bottom: 0;
     height: var(--rail);
     background: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .ticket-tab[aria-current="page"]::after {
+      background: var(--forced-current);
+    }
   }
 
   @media (max-width: 40em) {
@@ -973,6 +984,12 @@
     border-left-color: var(--ink-1);
     background: var(--surface-1);
     color: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .ticket-rail-row[aria-current="page"] {
+      border-left-color: var(--forced-current);
+    }
   }
 
   .ticket-rail-name {

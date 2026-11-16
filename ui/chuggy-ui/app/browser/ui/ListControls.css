@@ -65,7 +65,8 @@
   }
 
   .list-search:has(:focus-visible) {
-    box-shadow: var(--ring-focus);
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-offset);
   }
 
   .list-search > .btn.list-search-toggle {

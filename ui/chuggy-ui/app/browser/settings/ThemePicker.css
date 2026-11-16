@@ -1,6 +1,7 @@
 /* ThemePicker: the cards in a grid that wraps to the column, each at least a
    finger's height; the swatch drawn in the card's own theme from the tokens
-   set on it; and the chosen card's stronger edge and check. */
+   set on it, which forced colours leave as drawn, since its colours are what
+   it shows; and the chosen card's stronger edge and check. */
 
 @layer page {
   .theme-picker {
@@ -33,8 +34,14 @@
     color: var(--ink-1);
   }
 
-  .theme-card:focus-visible {
-    box-shadow: var(--ring-focus);
+  @media (forced-colors: active) {
+    .theme-card[data-state="checked"] {
+      border-color: var(--forced-current);
+    }
+
+    .theme-swatch {
+      forced-color-adjust: none;
+    }
   }
 
   .theme-card-name {

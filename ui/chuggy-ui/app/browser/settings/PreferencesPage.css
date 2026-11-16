@@ -54,11 +54,12 @@
     }
 
     .preferences-section .radio-item:focus-visible {
-      box-shadow: none;
+      outline: none;
     }
 
     .preferences-section .radio-item:focus-visible::before {
-      box-shadow: var(--ring-focus);
+      outline: var(--focus-width) solid var(--focus);
+      outline-offset: var(--focus-offset);
     }
 
     .preferences-section [role="radiogroup"] {

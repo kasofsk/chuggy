@@ -1,6 +1,7 @@
 /* TabNav: a row of tabs over a hairline, the current one in full ink on a
    rail. A row wider than its container scrolls inside it, which
-   ScrollSides.css cues. */
+   ScrollSides.css cues, and clips anything drawn past a tab, so a tab's focus
+   outline is drawn inside it. */
 
 @layer ui {
   /* jscpd:ignore-start — the ticket page's tabs, lifted rule for rule so adopting this draws them unchanged */
@@ -60,6 +61,16 @@
     line-height: var(--leading-dense);
   }
   /* jscpd:ignore-end — the lifted tabs end here */
+
+  .tab-nav-tab:focus-visible {
+    outline-offset: var(--focus-inset);
+  }
+
+  @media (forced-colors: active) {
+    .tab-nav-tab[aria-current="page"]::after {
+      background: var(--forced-current);
+    }
+  }
 
   /* The list is as wide as its tabs rather than its row, so a tab or count
      that arrives after mount resizes what the row's measure observes. */

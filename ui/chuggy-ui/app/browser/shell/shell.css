@@ -47,7 +47,7 @@
   }
 
   .shell-main:focus-visible {
-    box-shadow: none;
+    outline: none;
   }
 
   .chat-reading {
@@ -170,7 +170,6 @@
 
   .chat-separator:focus-visible {
     border-radius: 0;
-    box-shadow: var(--ring-focus);
   }
 
   /* Beside the pages, a panel under the pane's least width is one a held drag
@@ -196,6 +195,11 @@
     outline-offset: calc(-1 * var(--hairline));
     animation: chat-history-held calc(2 * var(--duration-pulse)) ease-in-out
       infinite;
+  }
+
+  .chat-history-row:focus-visible {
+    outline: var(--focus-width) solid var(--focus);
+    outline-offset: var(--focus-inset);
   }
 
   @keyframes chat-history-held {
@@ -311,6 +315,13 @@
     color: var(--ink-1);
   }
 
+  @media (forced-colors: active) {
+    .topbar-inbox[aria-current="page"] {
+      text-decoration: underline;
+      text-decoration-color: var(--forced-current);
+    }
+  }
+
   .topbar-inbox-badge {
     position: absolute;
     top: 0;
@@ -366,6 +377,12 @@
     height: calc(2 * var(--hairline));
     border-radius: var(--radius-1);
     background: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .topbar-entry[aria-current="page"]::after {
+      background: var(--forced-current);
+    }
   }
 
   .topbar-entry-label {
@@ -447,6 +464,12 @@
     height: calc(2 * var(--hairline));
     border-radius: var(--radius-1);
     background: var(--ink-1);
+  }
+
+  @media (forced-colors: active) {
+    .topbar-phone-item:is([aria-current="page"], [data-current])::before {
+      background: var(--forced-current);
+    }
   }
 
   .topbar-phone-glyph {
