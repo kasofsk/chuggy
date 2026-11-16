@@ -14,10 +14,10 @@
 /// decider/effects split stops being testable: the decider acquires an await,
 /// then a mock, and then it is no longer a function.
 ///
-/// THE SHAPE OF A TICKET'S LIFE. It is released as a Pending, and the
-/// selector picks it out of the derived Ready set — which pick is the
-/// selector's own agency, not scheduler noise, so any policy refines
-/// unrestricted choice. Work runs one task set per cycle. Evaluation runs the
+/// THE SHAPE OF A TICKET'S LIFE. It is released as a Pending, and is
+/// dispatched out of the derived Ready set by whoever may dispatch —
+/// a choice that is a real decision, not scheduler noise, so any policy
+/// refines unrestricted choice. Work runs one task set per cycle. Evaluation runs the
 /// ticket's authored plan, stage by stage, short-circuiting on a failure.
 /// Then the ticket finalizes: a passing final stage moves it into Finalization,
 /// where a platform-owned finalizer runs and reports one outcome, and the
@@ -949,13 +949,12 @@ module chuggy_domain {
     take(RevokeTicket(j), unaskedDisposition)
   }
 
-  /// Ready -> Work: THE AGENTIC SELECTOR'S PICK. The nondet choice below IS
-  /// the selector — an agentic component whose selection among Ready
-  /// tickets is a real decision, not scheduler noise, so any policy
-  /// (LLM-driven, priority, whatever) refines unrestricted choice among
-  /// Ready tickets — and the recorded TicketDispatched is its decision in the
-  /// golden trace. The source it observes is drawn beside it. Scheduling and
-  /// quota below the pick stay trusted fabric — no slot count, no queue
+  /// Ready -> Work: A DISPATCH BY WHOEVER MAY DISPATCH — a person through
+  /// manual dispatch, or any future policy. The nondet choice below is a real
+  /// decision, not scheduler noise, so any policy refines unrestricted choice
+  /// among Ready tickets — and the recorded TicketDispatched is that decision
+  /// in the golden trace. The source is drawn beside it. Scheduling and
+  /// quota below the dispatch stay trusted fabric — no slot count, no queue
   /// order, no fairness.
   action dispatch = all {
     readyTickets.size() > 0,

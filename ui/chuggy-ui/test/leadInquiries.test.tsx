@@ -28,12 +28,9 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
-import {
-  leadInquiry,
-  leadPartition,
-  leadSession,
-  leadStream,
-} from "./leadFixture.ts";
+import { leadInquiry, leadSession } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
+import { transcriptStream } from "./sessionTranscriptFixture.ts";
 import {
   inquiriesAnsweredMax,
   inquiryQuestionCharsMax,
@@ -59,7 +56,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -180,7 +177,7 @@ async function drawInquiries(served: InquiryServed): Promise<InquiryServer> {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const head = "head" in served ? served.head : leadStream;
+  const head = "head" in served ? served.head : transcriptStream;
   let dispatches = 0;
   const counted = () => {
     dispatches += 1;
@@ -195,7 +192,7 @@ async function drawInquiries(served: InquiryServed): Promise<InquiryServer> {
       <InquiryHolder partition={partition} head={at} />
     </ScreenHarness>
   );
-  const drawn = renderCopied(panel(leadPartition, head));
+  const drawn = renderCopied(panel(projectPartition, head));
   await settled();
   return {
     ...door,
@@ -902,7 +899,7 @@ test("a bounce through another project leaves the first project's box as it was"
   });
   await turned(ask);
   await settled();
-  await server.moveTo(leadPartition);
+  await server.moveTo(projectPartition);
   expect(
     screen.getByLabelText<HTMLTextAreaElement>("Question").value,
     "a reader came back to a project and found their question gone",
@@ -969,7 +966,7 @@ test("a press outstanding for one project neither speaks nor blocks on another's
     screen.getByLabelText<HTMLTextAreaElement>("Question").value,
     "one project's answer took away what another project's reader typed",
   ).toBe("what is beta waiting on?");
-  await server.moveTo(leadPartition);
+  await server.moveTo(projectPartition);
   expect(
     screen.getByText("In flight"),
     "the answer never reached the box that asked for it",
@@ -1062,7 +1059,7 @@ test.each([
       const collectedMs = writes.getAll()[0]?.gcTime ?? 0;
       vi.advanceTimersByTime(collectedMs + 1);
       expect(writes.getAll(), "the write was not collected").toStrictEqual([]);
-      await server.moveTo(leadPartition);
+      await server.moveTo(projectPartition);
     } finally {
       vi.useRealTimers();
     }
@@ -1109,7 +1106,7 @@ test("an accepted press re-reads the project it was asked in", async () => {
   await turned(release);
   await settled();
   expect(
-    staleness(leadPartition),
+    staleness(projectPartition),
     "the project the question was asked in was never marked for re-reading",
   ).toBe(true);
   expect(
@@ -1249,7 +1246,7 @@ test("a question left by clicking away is there on return, through another proje
   });
   await server.moveTo(elsewhere);
   expect(screen.getByLabelText<HTMLTextAreaElement>("Question").value).toBe("");
-  await server.moveTo(leadPartition);
+  await server.moveTo(projectPartition);
   expect(
     screen.getByLabelText<HTMLTextAreaElement>("Question").value,
     "a question left by clicking away was gone on return",
@@ -1277,10 +1274,10 @@ test.each([
   "an accepted question is cleared from the box when its answer lands %s",
   async (_named, lands) => {
     const { server, release } = await askedThenAway();
-    if (lands === "Back") await server.moveTo(leadPartition);
+    if (lands === "Back") await server.moveTo(projectPartition);
     await turned(release);
     await settled();
-    if (lands === "Away") await server.moveTo(leadPartition);
+    if (lands === "Away") await server.moveTo(projectPartition);
     expect(screen.getByText("Asked")).toBeDefined();
     expect(
       screen.getByLabelText<HTMLTextAreaElement>("Question").value,

@@ -1,5 +1,5 @@
 /**
- * The walk `useLeadTranscript` drives: what it fetches, and what a cleanup it
+ * The walk `useSessionTranscript` drives: what it fetches, and what a cleanup it
  * runs for a reason other than unmount must still hand the pane.
  *
  * `abandoned` USED TO MEAN TWO THINGS AT ONCE. The effect's cleanup runs both
@@ -16,17 +16,17 @@ import { expect, test, vi } from "vitest";
 
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
-import { leadTranscriptReadsInFlightMax } from "../app/core/leadTranscript.ts";
+import { sessionTranscriptReadsInFlightMax } from "../app/core/sessionTranscript.ts";
 import {
-  useLeadTranscript,
-  type LeadTranscriptRead,
-  type LeadTranscriptWalk,
-} from "../app/browser/lead/LeadTranscript.tsx";
+  useSessionTranscript,
+  type SessionTranscriptRead,
+  type SessionTranscriptWalk,
+} from "../app/browser/thread/useSessionTranscript.ts";
+import { projectPartition } from "./projectFixture.ts";
 import {
-  leadPartition,
-  leadStream,
-  leadTranscriptPage,
-} from "./leadFixture.ts";
+  transcriptStream,
+  sessionTranscriptPage,
+} from "./sessionTranscriptFixture.ts";
 
 const portsHeld = vi.hoisted(() => ({
   current: undefined as unknown as ApiPorts,
@@ -50,7 +50,7 @@ function settledPorts(batches: number): ApiPorts {
         headers: { get: () => null },
         text: () =>
           Promise.resolve(
-            JSON.stringify(leadTranscriptPage(afterAsked(url), batches)),
+            JSON.stringify(sessionTranscriptPage(afterAsked(url), batches)),
           ),
       } as unknown as Response),
     bearer: () => Promise.resolve("token"),
@@ -107,7 +107,7 @@ function pageAt(
   said: { readonly cut?: number; readonly nextAfter?: number },
 ): unknown {
   return {
-    stream: leadStream,
+    stream: transcriptStream,
     entries: [{ uuid, type: "assistant", message: { content: [] } }],
     held: [uuid],
     cut: said.cut ?? 1,
@@ -134,10 +134,10 @@ async function answering(
   });
 }
 
-function readAt(highWaterBatch: number): LeadTranscriptRead {
+function readAt(highWaterBatch: number): SessionTranscriptRead {
   return {
-    of: { lead: leadPartition },
-    stream: leadStream,
+    of: { lead: projectPartition },
+    stream: transcriptStream,
     highWaterBatch,
   };
 }
@@ -162,7 +162,7 @@ test("a walk that threw is a settled walk", async () => {
     bearer: () => Promise.resolve("token"),
     sleepMs: () => Promise.reject(new Error("the reader left")),
   };
-  const { result } = renderHook(() => useLeadTranscript(readAt(1)));
+  const { result } = renderHook(() => useSessionTranscript(readAt(1)));
   await act(async () => {
     for (let flush = 0; flush < flushesPerAnswer; flush += 1)
       await Promise.resolve();
@@ -182,9 +182,9 @@ test("a walk that threw is a settled walk", async () => {
  */
 test("a walk under a StrictMode root settles", async () => {
   portsHeld.current = settledPorts(2);
-  let walked: LeadTranscriptWalk | undefined = undefined;
+  let walked: SessionTranscriptWalk | undefined = undefined;
   const Walking = (): null => {
-    walked = useLeadTranscript(readAt(2));
+    walked = useSessionTranscript(readAt(2));
     return null;
   };
   const view = render(createElement(StrictMode, null, createElement(Walking)));
@@ -192,7 +192,7 @@ test("a walk under a StrictMode root settles", async () => {
     for (let flush = 0; flush < flushesPerAnswer; flush += 1)
       await Promise.resolve();
   });
-  const settled = walked as LeadTranscriptWalk | undefined;
+  const settled = walked as SessionTranscriptWalk | undefined;
   expect(settled?.reading, "a StrictMode remount left the walk reading").toBe(
     false,
   );
@@ -209,7 +209,7 @@ test("a walk under a StrictMode root settles", async () => {
 
 test("a walk pages to the end of the store", async () => {
   portsHeld.current = settledPorts(2);
-  const { result } = renderHook(() => useLeadTranscript(readAt(2)));
+  const { result } = renderHook(() => useSessionTranscript(readAt(2)));
   await flushed();
   expect(result.current.held.entries.map((entry) => entry.uuid)).toEqual([
     "uuid-p",
@@ -224,7 +224,7 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   const held = heldPorts();
   portsHeld.current = held.ports;
   const { result, rerender } = renderHook(
-    (read: LeadTranscriptRead) => useLeadTranscript(read),
+    (read: SessionTranscriptRead) => useSessionTranscript(read),
     { initialProps: readAt(1) },
   );
   await flushed();
@@ -232,7 +232,7 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   rerender(readAt(2));
   await flushed();
   expect(held.calls.length).toBe(2);
-  await answering(held.calls[0], leadTranscriptPage(0, 2));
+  await answering(held.calls[0], sessionTranscriptPage(0, 2));
   await answering(
     held.calls[1],
     { error: { code: "InternalError", message: "no" } },
@@ -259,7 +259,7 @@ test("a page both walks were answered for is folded once and the walk goes on", 
   const held = heldPorts();
   portsHeld.current = held.ports;
   const { result, rerender } = renderHook(
-    (read: LeadTranscriptRead) => useLeadTranscript(read),
+    (read: SessionTranscriptRead) => useSessionTranscript(read),
     { initialProps: readAt(1) },
   );
   await flushed();
@@ -307,7 +307,7 @@ test("a store of many pages draws nothing until the walk has read it whole", asy
   const second = sessionStorePageBatchesMax;
   const third = sessionStorePageBatchesMax * 2;
   const { result } = renderHook(() =>
-    useLeadTranscript(readAt(sessionStorePageBatchesMax * 3)),
+    useSessionTranscript(readAt(sessionStorePageBatchesMax * 3)),
   );
   await flushed();
   await answering(
@@ -341,7 +341,7 @@ test("a mark that rises after the first settle draws each page as it lands", asy
   const held = heldPorts();
   portsHeld.current = held.ports;
   const { result, rerender } = renderHook(
-    (read: LeadTranscriptRead) => useLeadTranscript(read),
+    (read: SessionTranscriptRead) => useSessionTranscript(read),
     { initialProps: readAt(1) },
   );
   await flushed();
@@ -367,9 +367,9 @@ test("a mark that rises after the first settle draws each page as it lands", asy
 test("a walk asks the cursors below the mark at once", async () => {
   const held = heldPorts();
   portsHeld.current = held.ports;
-  renderHook(() => useLeadTranscript(readAt(walkedStoreBatches)));
+  renderHook(() => useSessionTranscript(readAt(walkedStoreBatches)));
   await flushed();
-  expect(held.calls.length).toBe(leadTranscriptReadsInFlightMax);
+  expect(held.calls.length).toBe(sessionTranscriptReadsInFlightMax);
   expect(held.calls.map((call) => afterAsked(call.url))).toStrictEqual(
     held.calls.map((_call, at) => at * sessionStorePageBatchesMax),
   );
@@ -382,7 +382,7 @@ test("a page read ahead at a cursor the walk does not ask is not folded", async 
   const held = heldPorts();
   portsHeld.current = held.ports;
   const { result } = renderHook(() =>
-    useLeadTranscript(readAt(walkedStoreBatches)),
+    useSessionTranscript(readAt(walkedStoreBatches)),
   );
   await flushed();
   await answering(
@@ -412,7 +412,7 @@ test("a reset drops what the walk had read ahead of it", async () => {
   const held = heldPorts();
   portsHeld.current = held.ports;
   const { result } = renderHook(() =>
-    useLeadTranscript(readAt(walkedStoreBatches)),
+    useSessionTranscript(readAt(walkedStoreBatches)),
   );
   await flushed();
   const beyond = sessionStorePageBatchesMax * 2;
@@ -457,7 +457,7 @@ test("a read that failed ahead of the walk is the walk's failure at that cursor"
   const held = heldPorts();
   portsHeld.current = held.ports;
   const { result } = renderHook(() =>
-    useLeadTranscript(readAt(walkedStoreBatches)),
+    useSessionTranscript(readAt(walkedStoreBatches)),
   );
   await flushed();
   await answering(
@@ -485,13 +485,13 @@ test("a read that failed ahead of the walk is the walk's failure at that cursor"
 test("an unmount mid-page writes no further state and asks nothing more", async () => {
   const held = heldPorts();
   portsHeld.current = held.ports;
-  const { result, unmount } = renderHook(() => useLeadTranscript(readAt(1)));
+  const { result, unmount } = renderHook(() => useSessionTranscript(readAt(1)));
   await flushed();
   expect(held.calls.length).toBe(1);
   const before = result.current;
   unmount();
   await act(async () => {
-    held.calls[0]?.respond(leadTranscriptPage(0, 2));
+    held.calls[0]?.respond(sessionTranscriptPage(0, 2));
     await Promise.resolve();
     await Promise.resolve();
   });

@@ -15,7 +15,7 @@ import {
 } from "../../app/browser/settings/UnrunDeletion.tsx";
 import { answer, drawnStrict, press } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
-import { leadPartition } from "../leadFixture.ts";
+import { projectPartition } from "../projectFixture.ts";
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
@@ -58,12 +58,12 @@ test("a project nothing holds is deleted once asked, naming it by its name, and 
     },
   );
   const drawn = await drawnStrict(
-    <ProjectDeletion partition={leadPartition} />,
+    <ProjectDeletion partition={projectPartition} />,
     (request) =>
       request.url.endsWith("/api/v1/projects")
         ? answer({
             projects: listed
-              ? [{ ...leadPartition, name: "Atlas Billing" }]
+              ? [{ ...projectPartition, name: "Atlas Billing" }]
               : [],
           })
         : deletions(request),
@@ -77,7 +77,7 @@ test("a project nothing holds is deleted once asked, naming it by its name, and 
   await press("Delete project");
   expect(deletesSent(drawn)).toHaveLength(1);
   expect(deletesSent(drawn)[0]).toContain(
-    `/projects/${leadPartition.project}/deletion`,
+    `/projects/${projectPartition.project}/deletion`,
   );
   expect(
     screen.getByText("Atlas Billing is deleted.", { exact: false }),
@@ -91,13 +91,13 @@ test("a project nothing holds is deleted once asked, naming it by its name, and 
 
 test("a project that has run work, or a reader who may not delete it, is offered nothing", async () => {
   await drawnStrict(
-    <ProjectDeletion partition={leadPartition} />,
+    <ProjectDeletion partition={projectPartition} />,
     deletionRoute(() => answer({ held: ["ReleasedTicket"] })),
   );
   expect(screen.queryByRole("button", { name: "Delete project" })).toBeNull();
   cleanup();
   await drawnStrict(
-    <ProjectDeletion partition={leadPartition} />,
+    <ProjectDeletion partition={projectPartition} />,
     deletionRoute(() => answer({}, 404)),
   );
   expect(screen.queryByRole("button", { name: "Delete project" })).toBeNull();
@@ -105,7 +105,7 @@ test("a project that has run work, or a reader who may not delete it, is offered
 
 test("a deletion refused because a ticket was released since names what holds it", async () => {
   await drawnStrict(
-    <ProjectDeletion partition={leadPartition} />,
+    <ProjectDeletion partition={projectPartition} />,
     deletionRoute(
       () => answer({ held: [] }),
       () =>
@@ -126,7 +126,7 @@ test("a deletion refused because a ticket was released since names what holds it
 });
 
 test("a workspace holding no project is deleted once asked, naming it", async () => {
-  const tenant = leadPartition.tenant;
+  const tenant = projectPartition.tenant;
   const drawn = await drawnStrict(
     <TenantDeletion tenant={tenant} />,
     deletionRoute(() => answer({ held: [] })),
@@ -144,7 +144,7 @@ test("a workspace holding no project is deleted once asked, naming it", async ()
 
 test("a workspace still holding a project is offered nothing", async () => {
   await drawnStrict(
-    <TenantDeletion tenant={leadPartition.tenant} />,
+    <TenantDeletion tenant={projectPartition.tenant} />,
     deletionRoute(() => answer({ held: ["Project"] })),
   );
   expect(screen.queryByRole("button", { name: "Delete workspace" })).toBeNull();

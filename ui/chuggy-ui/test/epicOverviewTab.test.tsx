@@ -13,7 +13,7 @@ import {
   epicServingReset,
   epicView,
 } from "./epicPageFixture.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesNone } from "./projectAbilitiesFixture.ts";
 
 vi.mock(
@@ -27,7 +27,7 @@ afterEach(() => {
   epicServingReset();
 });
 
-const tickets = `/${leadPartition.tenant}/${leadPartition.project}/tickets`;
+const tickets = `/${projectPartition.tenant}/${projectPartition.project}/tickets`;
 
 function part(name: string): HTMLElement {
   const drawn = document.querySelector<HTMLElement>(
@@ -117,7 +117,7 @@ test("the small graph draws each member a tile in its group, numbered, and the g
     name: "Graph of the epic",
   });
   expect(link.getAttribute("href")).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/epics/7/graph`,
+    `/${projectPartition.tenant}/${projectPartition.project}/epics/7/graph`,
   );
   const tiles = await waitFor(() => {
     const drawn = link.querySelectorAll(".epic-overview-graph-tile");

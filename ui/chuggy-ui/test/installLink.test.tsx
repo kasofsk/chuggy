@@ -24,7 +24,7 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import { renderCopied } from "./copied.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 
 const returnPath = "/acme/atlas/repositories";
 
@@ -65,7 +65,7 @@ async function drawLinks(
   );
   renderCopied(
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
@@ -74,7 +74,7 @@ async function drawLinks(
       {apps.map((app) => (
         <InstallLink
           key={app}
-          tenant={leadPartition.tenant}
+          tenant={projectPartition.tenant}
           returnPath={returnPath}
           app={app}
         />
@@ -111,7 +111,7 @@ test("following a link stores the transaction the landing will match, sent on to
   await settled();
   expect(stored()).toStrictEqual({
     state: stateOn(link),
-    tenant: leadPartition.tenant,
+    tenant: projectPartition.tenant,
     returnPath,
     installs: ["worker"],
   });

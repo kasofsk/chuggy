@@ -22,7 +22,7 @@ import {
   epicServingReset,
   epicView,
 } from "./epicPageFixture.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { answer, settled, turned } from "./screenHarness.tsx";
@@ -39,7 +39,7 @@ afterEach(() => {
   epicServingReset();
 });
 
-const ticketsPath = `/${leadPartition.tenant}/${leadPartition.project}/tickets`;
+const ticketsPath = `/${projectPartition.tenant}/${projectPartition.project}/tickets`;
 
 function waiting(
   ticket: number,

@@ -50,7 +50,7 @@ import {
 } from "./screenHarness.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
-import { leadPartition } from "./leadFixture.ts";
+import { projectPartition } from "./projectFixture.ts";
 import {
   abilitiesEvery,
   abilitiesNone,
@@ -115,7 +115,7 @@ vi.mock("@tanstack/react-router", () => ({
       {props.children}
     </a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...projectPartition }),
   useNavigate: () => (to: { readonly href: string }) => {
     held.navigations.push(to);
     history.replaceState({}, "", to.href);
@@ -344,7 +344,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   const page = (
     <ScreenHarness
-      partition={leadPartition}
+      partition={projectPartition}
       client={
         drawing.client ??
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -380,8 +380,8 @@ const bindingsKeys = [
   "project-repositories-reach-unasked",
 ].map((resource) => [
   "project",
-  leadPartition.tenant,
-  leadPartition.project,
+  projectPartition.tenant,
+  projectPartition.project,
   "partition",
   resource,
 ]);
@@ -403,7 +403,7 @@ function invalidationsAfterDraw(): readonly unknown[] {
 }
 
 /** Where the page is drawn, which every install it offers must come back to. */
-const projectPath = `/${leadPartition.tenant}/${leadPartition.project}/repositories`;
+const projectPath = `/${projectPartition.tenant}/${projectPartition.project}/repositories`;
 
 /** The page drawn at its own address with both apps held. */
 async function drawAtProject(claimed?: typeof installations): Promise<void> {
@@ -488,12 +488,12 @@ test("a binding the worker app's installation does not select is marked on its r
       sent
         .map((one) => one.url)
         .filter((url) =>
-          url.includes(`/${leadPartition.project}/repositories`),
+          url.includes(`/${projectPartition.project}/repositories`),
         ),
     ),
   ]).toStrictEqual([
-    `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories?reach=false`,
-    `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories`,
+    `/api/v1/tenants/${projectPartition.tenant}/projects/${projectPartition.project}/repositories?reach=false`,
+    `/api/v1/tenants/${projectPartition.tenant}/projects/${projectPartition.project}/repositories`,
   ]);
 });
 
@@ -581,7 +581,7 @@ test("a binding's name is the link to its own page", async () => {
       .getByRole("link", { name: "kasofsk/chuggy" })
       .getAttribute("href"),
   ).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/repositories/${boundUrl}`,
+    `/${projectPartition.tenant}/${projectPartition.project}/repositories/${boundUrl}`,
   );
 });
 
@@ -829,7 +829,7 @@ test("under its roster the picker says a missing repository is granted on GitHub
   );
   expect(followed(link)).toStrictEqual({
     state: new URL(link?.href ?? "").searchParams.get("state"),
-    tenant: leadPartition.tenant,
+    tenant: projectPartition.tenant,
     returnPath: pickerPath,
     installs: ["portal"],
   });
@@ -890,7 +890,7 @@ test("a repository the worker app does not grant is marked on its row, with the 
   );
   expect(followed(link)).toStrictEqual({
     state: new URL(link?.href ?? "").searchParams.get("state"),
-    tenant: leadPartition.tenant,
+    tenant: projectPartition.tenant,
     returnPath: pickerPath,
     installs: ["worker"],
   });
@@ -1140,7 +1140,7 @@ test("the page opened at its own address draws no picker and reads no listing", 
 
 /** The word is drawn on the page, which an open picker covers. */
 test("a return that brought a word draws the word and leaves the picker closed", async () => {
-  forgeReturnHold(transientStore, leadPartition.tenant, {
+  forgeReturnHold(transientStore, projectPartition.tenant, {
     standing: "Failed",
     status: "Unavailable",
   });
@@ -1166,7 +1166,7 @@ function bindingsRead(sent: readonly Sent[]): number {
   return sent.filter(
     (one) =>
       one.method === "GET" &&
-      one.url.endsWith(`/projects/${leadPartition.project}/repositories`),
+      one.url.endsWith(`/projects/${projectPartition.project}/repositories`),
   ).length;
 }
 
@@ -1205,8 +1205,8 @@ test("the fallback's polls behind a stream that is down raise no reading of an o
 function projectFrame(): string {
   return frame("Project", "10", {
     version: 1,
-    resource: leadPartition.project,
-    representation: leadPartition,
+    resource: projectPartition.project,
+    representation: projectPartition,
   });
 }
 
@@ -1366,7 +1366,7 @@ test("a picker opened by a press leaves the address alone, through a bind and a 
  * moves nothing, and the close after it is what takes the anchor.
  */
 test("a press on Add at the picker's own address moves nothing, and the close after it takes the anchor", async () => {
-  forgeReturnHold(transientStore, leadPartition.tenant, {
+  forgeReturnHold(transientStore, projectPartition.tenant, {
     standing: "Failed",
     status: "Unavailable",
   });
@@ -1962,7 +1962,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
   ]);
   expect(
     picker.getByRole("link", { name: "New ticket" }).getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
+  ).toBe(`/${projectPartition.tenant}/${projectPartition.project}/tickets/new`);
 });
 
 /** What under `.chug/` the step read none of is a line of its own under the
@@ -2133,7 +2133,7 @@ test("a retry asks for the step again by address and stales the bindings the pag
       .map(({ url, body }) => ({ url, body })),
   ).toStrictEqual([
     {
-      url: `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories/configurations`,
+      url: `/api/v1/tenants/${projectPartition.tenant}/projects/${projectPartition.project}/repositories/configurations`,
       body: { repository: boundUrl },
     },
   ]);
@@ -2294,7 +2294,7 @@ test("with no account, the page offers Connect GitHub under its line, returning 
     JSON.parse(sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}"),
   ).toMatchObject({
     state: url.searchParams.get("state"),
-    tenant: leadPartition.tenant,
+    tenant: projectPartition.tenant,
     returnPath: projectPath,
     installs: [],
   });
@@ -2350,7 +2350,7 @@ test("an account without the worker app is named under Add, with its install ret
     JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}"),
   ).toStrictEqual({
     state: new URL(install?.href ?? "").searchParams.get("state"),
-    tenant: leadPartition.tenant,
+    tenant: projectPartition.tenant,
     returnPath: projectPath,
     installs: ["worker"],
   });
@@ -2380,7 +2380,7 @@ function sectionLines(): readonly (string | null)[] {
 
 /** A forge return held for this tenant, as the callback leaves it. */
 function returnedWith(word: ForgeReturnWord): void {
-  forgeReturnHold(transientStore, leadPartition.tenant, word);
+  forgeReturnHold(transientStore, projectPartition.tenant, word);
 }
 
 /** A press from this page returns to it, so a word this page left held would
@@ -2445,7 +2445,7 @@ const bootstrapped = (): Response =>
 
 const configured = "Default configuration added";
 
-const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/settings/workspace/runner`;
+const runnersPath = `/${projectPartition.tenant}/${projectPartition.project}/settings/workspace/runner`;
 
 /** The steps the open dialog offers, each by its words and where it goes. */
 function dialogSteps(): readonly (readonly [string | null, string | null])[] {
@@ -2734,7 +2734,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
   ).toStrictEqual([
     {
       method: "PUT",
-      url: `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories/retirement`,
+      url: `/api/v1/tenants/${projectPartition.tenant}/projects/${projectPartition.project}/repositories/retirement`,
       body: { repository: boundUrl },
     },
   ]);
