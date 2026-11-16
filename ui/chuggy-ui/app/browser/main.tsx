@@ -87,7 +87,7 @@ themeAssignmentsPut(
   document.documentElement,
   themeCacheRead(
     persistentStore,
-    themeScopeAt(consoleRouter, currentLocation().pathname),
+    themeScopeAt(consoleRouter.matchRoutes(currentLocation().pathname)),
   ),
 );
 

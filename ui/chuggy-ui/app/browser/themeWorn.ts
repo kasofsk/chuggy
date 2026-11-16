@@ -10,7 +10,6 @@
  */
 
 import { logWarned } from "./ports.ts";
-import type { consoleRouter } from "./routes.tsx";
 import type { ThemeDocument } from "../../../../src/contract/appearance.ts";
 import type { KeyValuePort } from "../core/sessionHolder.ts";
 import {
@@ -33,14 +32,16 @@ export function themeAssignmentsPut(
     root.style.setProperty(property, value);
 }
 
-/** The scope an address is drawn in, as the console's router reads it. */
+/** The scope an address is drawn in, from the router's matches of it. */
 export function themeScopeAt(
-  router: typeof consoleRouter,
-  pathname: string,
+  matches: readonly {
+    readonly routeId: string;
+    readonly params: Parameters<typeof themeScopeOf>[0];
+  }[],
 ): ThemeScope {
-  const partition = router
-    .matchRoutes(pathname)
-    .find((match) => match.routeId === "/$tenant/$project");
+  const partition = matches.find(
+    (match) => match.routeId === "/$tenant/$project",
+  );
   return partition === undefined ? undefined : themeScopeOf(partition.params);
 }
 
