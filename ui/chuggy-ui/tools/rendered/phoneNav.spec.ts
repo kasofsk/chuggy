@@ -40,7 +40,7 @@ const phoneScreens: readonly {
       route: `${projectRoute}/`,
       viewport: "phone",
       signedIn: true,
-      ready: (page) => page.getByRole("link", { name: "#1", exact: true }),
+      ready: (page) => page.getByText("#1", { exact: true }),
     },
   },
   {
@@ -196,7 +196,7 @@ test("at the desk the places are the bar's row above the page and the inbox sits
     route: `${projectRoute}/`,
     viewport: "desk",
     signedIn: true,
-    ready: (page) => page.getByRole("link", { name: "#1", exact: true }),
+    ready: (page) => page.getByText("#1", { exact: true }),
   });
   const page = rendered.page;
   await expect(

@@ -30,7 +30,7 @@ for (const viewport of chatPaneViewports)
       route: `/${stubApiTenant}/${stubApiProject}/`,
       viewport,
       signedIn: true,
-      ready: (page) => page.getByRole("link", { name: "#1", exact: true }),
+      ready: (page) => page.getByText("#1", { exact: true }),
     });
     const page = rendered.page;
     const phone = viewport === "phone";

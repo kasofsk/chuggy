@@ -206,14 +206,27 @@
       gap: var(--space-2);
     }
 
-    /* Narrow, the title's link is a finger's height and keeps the title's
-       clamp, and so is any link a row's line or foot carries. */
+    /* Narrow, the title's link is a finger's height and its words keep the
+       title's clamp inside it, so a third line is not drawn in the height the
+       link adds; any link a row's line or foot carries is a finger's height
+       too. */
     .record-row-title a {
+      display: flex;
+      align-items: center;
+      min-height: var(--height-touch);
+    }
+
+    .record-row-title-words {
       display: -webkit-box;
       -webkit-box-orient: vertical;
-      -webkit-box-pack: center;
       -webkit-line-clamp: 2;
       overflow: hidden;
+    }
+
+    /* A skeleton's title is as tall as a row's link. */
+    .record-row[data-skeleton] .record-row-title {
+      display: flex;
+      align-items: center;
       min-height: var(--height-touch);
     }
 

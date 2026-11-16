@@ -112,6 +112,17 @@ export function ticketListQueryWith(
   };
 }
 
+/** The address with every narrowing cleared and its sort kept: every ticket,
+ * no search, no creator and no owner. All is written, as any filter is. */
+export function ticketListQueryCleared(
+  query: TicketListQuery,
+): TicketListQuery {
+  return {
+    ...(query.sort === undefined ? {} : { sort: query.sort }),
+    filter: ticketFilterAll,
+  };
+}
+
 /** What the router parsed a value written by hand to, as the text it was. */
 function ticketListQueryText(typed: unknown): string | undefined {
   return typeof typed === "string" ||

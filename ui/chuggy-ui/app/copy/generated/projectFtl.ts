@@ -42,8 +42,7 @@ project-creation-workspace-unadmin-detail = { -workspace(case: "upper", form: "a
 ## The ticket table.
 
 project-table-title = { -ticket(case: "upper", form: "plural") }
-project-table-new-ticket = New { -ticket }
-project-table-empty = No { -ticket(form: "plural") }
+project-table-empty = No { -ticket(form: "plural") } yet. Ask in a { -thread } to make one.
 project-table-aria-tickets = { -ticket(case: "upper", form: "plural") }
 project-table-aria-by-state = { -ticket(case: "upper", form: "plural") } by state
 project-table-waits-on = Waits on
@@ -57,7 +56,7 @@ project-table-filter-all = All states
 project-table-search = Search { -ticket(form: "plural") }
 project-table-search-placeholder = Search titles or #number…
 project-table-show-more = Show more
-project-table-loading = Loading…
+project-table-clear-filters = Clear filters
 project-table-more-failed = More
 project-table-blocked-hint = Blocked · { $count ->
     [one] { $count } unfinished { -dependency }

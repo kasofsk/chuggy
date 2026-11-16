@@ -39,7 +39,6 @@ export interface ProjectCopy {
   readonly "project-creation-workspace-unadmin-label": Record<never, never>;
   readonly "project-creation-workspace-unadmin-detail": Record<never, never>;
   readonly "project-table-title": Record<never, never>;
-  readonly "project-table-new-ticket": Record<never, never>;
   readonly "project-table-empty": Record<never, never>;
   readonly "project-table-aria-tickets": Record<never, never>;
   readonly "project-table-aria-by-state": Record<never, never>;
@@ -54,7 +53,7 @@ export interface ProjectCopy {
   readonly "project-table-search": Record<never, never>;
   readonly "project-table-search-placeholder": Record<never, never>;
   readonly "project-table-show-more": Record<never, never>;
-  readonly "project-table-loading": Record<never, never>;
+  readonly "project-table-clear-filters": Record<never, never>;
   readonly "project-table-more-failed": Record<never, never>;
   readonly "project-table-blocked-hint": {
     readonly count: unknown;

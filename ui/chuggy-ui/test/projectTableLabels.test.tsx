@@ -220,17 +220,24 @@ function rowsDrawn(): HTMLElement {
   return screen.getByRole("list", { name: "Tickets" });
 }
 
-test("the title is on the card whole and unclipped, links, and leads the ticket number", async () => {
+test("the title is on the card whole and unclipped, is the row's one link, and leads the ticket number", async () => {
   await drawTable();
-  const titleAnchor = screen.getByText(title);
-  expect(titleAnchor.tagName).toBe("A");
+  const titleAnchor = screen.getByText(title).closest("a");
+  if (titleAnchor === null) throw new Error("no link around the title");
   expect(titleAnchor.className).not.toContain("truncate");
   expect(titleAnchor.className).not.toContain("max-w-aside");
   expect(titleAnchor.className).not.toContain("whitespace-nowrap");
 
-  const numberLink = screen.getByRole("link", { name: "11" });
+  const card = titleAnchor.closest("li");
+  if (card === null) throw new Error("no card around the title");
+  expect([...card.querySelectorAll("a")]).toEqual([titleAnchor]);
+  expect(titleAnchor.textContent).toBe(title);
+  expect(titleAnchor.querySelector("a, button, [tabindex]")).toBeNull();
+  expect(titleAnchor.closest("h3")).not.toBeNull();
+  const number = within(card).getByText("#11");
+  expect(number.closest("a")).toBeNull();
   expect(
-    titleAnchor.compareDocumentPosition(numberLink) &
+    titleAnchor.compareDocumentPosition(number) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
@@ -240,7 +247,7 @@ test("the title is on the card whole and unclipped, links, and leads the ticket 
 
 test("the title heads its row in the list's title, which the sheet clamps", async () => {
   await drawTable();
-  const drawn = screen.getByText(title).closest(".ticket-list-title");
+  const drawn = screen.getByText(title).closest(".record-row-title");
   expect(drawn?.tagName).toBe("H3");
   expect(drawn?.textContent).toBe(title);
 });
@@ -386,29 +393,36 @@ test("a row names its creator by the email the project's people hold for them", 
   ]);
 });
 
-test("a row draws its state as the small state label, in its phase's tone", async () => {
+test("a row draws its state as a status badge in its phase's tone, in the slot every row's state stands in", async () => {
   await drawTable();
-  const label = within(rowsDrawn())
+  const badge = within(rowsDrawn())
     .getByText("Working")
-    .closest<HTMLElement>(".ticket-state");
-  expect(label?.parentElement?.className).toBe("ticket-list-standing");
-  expect(label?.dataset["size"]).toBe("small");
-  expect(label?.dataset["tone"]).toBe("live");
+    .closest<HTMLElement>(".status-badge");
+  expect(badge?.parentElement?.className).toBe("ticket-list-standing");
+  expect(badge?.dataset["tone"]).toBe("live");
+  expect(rowsDrawn().querySelector(".ticket-state")).toBeNull();
 });
 
-test("a ready row's label is tinted and a done row's filled, each with its own mark", async () => {
-  await drawTableWith([finished, pending(24, [])], []);
-  const labelOf = (word: string): HTMLElement | null =>
-    within(rowsDrawn()).getByText(word).closest<HTMLElement>(".ticket-state");
-  const ready = labelOf("Ready");
-  const done = labelOf("Done");
-  expect(ready?.dataset["form"]).toBe("tinted");
-  expect(done?.dataset["form"]).toBe("filled");
+test("a ready row's badge is in the tone of a done row's and a blocked row's in its own, each with its tone's mark", async () => {
+  await drawTableWith(
+    [
+      finished,
+      pending(24, []),
+      pending(25, [{ ticket: 24, phase: "Pending" }]),
+    ],
+    [],
+  );
+  const badgeOf = (word: string): HTMLElement | null =>
+    within(rowsDrawn()).getByText(word).closest<HTMLElement>(".status-badge");
+  const ready = badgeOf("Ready");
+  const blocked = badgeOf("Blocked");
+  expect(ready?.dataset["tone"]).toBe("pass");
+  expect(badgeOf("Done")?.dataset["tone"]).toBe("pass");
+  expect(blocked?.dataset["tone"]).toBe("queued");
   expect(ready?.querySelector("svg")?.innerHTML).not.toBe(
-    done?.querySelector("svg")?.innerHTML,
+    blocked?.querySelector("svg")?.innerHTML,
   );
 });
-
 test("an escalated row answers its kind on the phase chip's hover", async () => {
   await drawTableWith([escalated], []);
   const trigger = within(rowsDrawn())
@@ -446,16 +460,18 @@ test("nothing the project table draws is a runtime style element", async () => {
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
-/** A project with no ticket at all is one empty state offering the first,
- * with no section and no filter to choose between. */
-test("a project with no ticket draws one empty state that offers a new one, under the page's one top-level heading", async () => {
+const projectEmpty = "No tickets yet. Ask in a chat to make one.";
+
+/** A project with no ticket at all is one line sending the reader to a chat,
+ * with no section, no filter to choose between and nothing to press. */
+test("a project with no ticket says so in one line that sends the reader to a chat, under the page's one top-level heading", async () => {
   await drawTableWith([], []);
-  expect(screen.getByText("No tickets").closest(".empty")).not.toBeNull();
-  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+  const empty = screen.getByText(projectEmpty);
+  expect(empty.tagName).toBe("P");
+  expect(empty.className).toBe("empty");
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-  const offer = screen.getByText("New ticket");
-  expect(offer.tagName).toBe("A");
-  expect(offer.closest(".empty")).not.toBeNull();
+  expect(document.querySelectorAll("a")).toHaveLength(0);
+  expect(screen.queryAllByRole("button")).toEqual([]);
   expect(screen.queryByRole("list", { name: "Tickets" })).toBeNull();
   expect(screen.queryByLabelText("Search tickets")).toBeNull();
 });
@@ -494,29 +510,16 @@ const finished = {
   ...ticketInstants,
 };
 
-function newTicketOffers(): number {
-  return screen.queryAllByText("New ticket").length;
-}
-
-test("a reader who may not mutate is offered no new ticket in the empty state", async () => {
-  await drawTableWith(
-    [],
-    [],
-    abilitiesOver({ ...abilitiesEvery, mutate: false }),
-  );
-  expect(screen.getByText("No tickets")).toBeDefined();
-  expect(newTicketOffers()).toBe(0);
-});
-
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered a new ticket in the empty state, and never above the list",
+  "a reader the abilities read %s may author is offered no new ticket, empty or not",
   async (_said, abilities) => {
     const over = abilitiesOver(abilities);
     await drawTableWith([], [], over);
-    expect(newTicketOffers()).toBe(1);
+    expect(screen.getByText(projectEmpty)).toBeDefined();
+    expect(screen.queryByText("New ticket")).toBeNull();
     cleanup();
     await drawTableWith([ticket], [execution], over);
-    expect(newTicketOffers()).toBe(0);
+    expect(screen.queryByText("New ticket")).toBeNull();
   },
 );
 
@@ -653,7 +656,7 @@ test("a ready row's chip is the dispatch, and no row offers resume or revoke", a
   });
   expect(ready.textContent).toBe("Ready");
   expect(ready.className).toBe("ticket-list-standing");
-  expect(ready.firstElementChild?.className).toBe("ticket-state");
+  expect(ready.firstElementChild?.className).toBe("status-badge");
 });
 
 test("a reader who may not dispatch sees a ready row's chip, not a button", async () => {
@@ -710,7 +713,7 @@ test("a project with no tickets still carries the notice of a refused import", a
     [],
     repositoryImportListedOver([repositoryImportRefusedBinding(repository)]),
   );
-  expect(screen.getByText("No tickets")).toBeDefined();
+  expect(screen.getByText(projectEmpty)).toBeDefined();
   expect(screen.getByText(/^Import refused/u).textContent).toBe(
     "Import refused · acme/widgets",
   );
