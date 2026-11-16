@@ -177,14 +177,12 @@ export function setupOpenerCommand(
   }
 }
 
-async function setupSignInOpened(
+/** Opens `address` in the person's browser, answering whether the opener took it. */
+export async function setupBrowserOpened(
   ports: SetupPorts,
-  port: number,
+  address: string,
 ): Promise<boolean> {
-  const command = setupOpenerCommand(
-    ports.surroundings,
-    setupLoopbackAddress(port),
-  );
+  const command = setupOpenerCommand(ports.surroundings, address);
   if (command === undefined) return false;
   const launched = await ports.process.launch(command, setupOpenerWaitMs);
   switch (launched.launched) {
@@ -195,6 +193,10 @@ async function setupSignInOpened(
     case "Ended":
       return launched.exit === 0;
   }
+}
+
+function setupSignInOpened(ports: SetupPorts, port: number): Promise<boolean> {
+  return setupBrowserOpened(ports, setupLoopbackAddress(port));
 }
 
 function setupEndedReport(site: string, ended: SetupSignInEnded): SetupReport {

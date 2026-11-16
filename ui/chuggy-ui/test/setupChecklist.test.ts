@@ -91,6 +91,10 @@ test("a newcomer with nothing is shown every step to do, and told how a workspac
   });
 });
 
+/** The rule a trip to GitHub names `bind` under, to run at once while the person makes it. */
+const bindNow =
+  "rule: Run the command on the next: line now, without asking the person, while they do what the tell: line says. It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+
 test("a person part-way is shown what is done, what is waited on and what is to do, and the first of them that is not done is what is next", async () => {
   const machine = await machineSignedIn(setupSiteAt("Portal"));
   expect(await printed(machine)).toEqual({
@@ -105,9 +109,9 @@ test("a person part-way is shown what is done, what is waited on and what is to 
       "step: repository  todo",
       "step: runner      todo",
       "step: ticket      todo",
-      `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
-      `rule: Run node ${machineScript} only once the person says the worker app is installed on acme-org.`,
-      "next: stop",
+      `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+      bindNow,
+      `next: node ${machineScript} bind --workspace acme --project widgets`,
     ],
   });
 });
@@ -203,9 +207,9 @@ test("a repository whose own account lacks the worker app holds the GitHub step,
     "step: repository  done     acme-org/widgets",
   ]);
   expect(done.lines.slice(-3)).toEqual([
-    `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
-    `rule: Run node ${machineScript} only once the person says the worker app is installed on acme-org.`,
-    "next: stop",
+    `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them.`,
+    bindNow,
+    `next: node ${machineScript} bind --workspace acme --project widgets`,
   ]);
 });
 

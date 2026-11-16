@@ -422,6 +422,29 @@ test("plugin is read with a site, a workspace and a project, --plugin takes only
   expect(setupAnswersAsked(setupAnswerArguments(skip))).toEqual(skip);
 });
 
+test("bind reads --opened, which takes only github and no other command reads, as a page connecting GitHub already open", () => {
+  expect(setupAsked(["bind"])).toEqual({
+    asked: "Bind",
+    site: undefined,
+    waitSecs: setupWaitSecsDefault,
+    answers: setupAnswersNone,
+    opened: false,
+  });
+  expect(setupAsked(["bind", "--opened", "github"])).toMatchObject({
+    asked: "Bind",
+    opened: true,
+  });
+  for (const value of ["yes", "", "GitHub"])
+    expect(setupAsked(["bind", "--opened", value]), value).toEqual(
+      wrongly("Opened"),
+    );
+  for (const command of [[], ["sign-in"], ["import"]])
+    expect(
+      setupAsked([...command, "--opened", "github"]),
+      command.join(" "),
+    ).toEqual(wrongly("Flag"));
+});
+
 test("serve is read only with the workspace and the project it is for, takes a site and no wait, and is run again as itself", () => {
   const named = ["--workspace", "acme", "--project", "widgets"];
   const answers = { workspace: "acme", project: "widgets" };
