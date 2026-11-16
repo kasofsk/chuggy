@@ -321,23 +321,6 @@ test("the selector service never writes a project's settings nor reads who wrote
   );
 });
 
-test("the API administers a project's settings and not the installation's", async () => {
-  assert.match(
-    (await harness.attemptAs(
-      apiRole,
-      "SELECT update_selector_runtime_settings(0,'Paused',NULL,NULL,NULL,'User','forged')",
-    )) ?? "",
-    /permission denied for function update_selector_runtime_settings/u,
-  );
-  assert.match(
-    (await harness.attemptAs(
-      apiRole,
-      "UPDATE selector_runtime_settings SET mode='Paused' WHERE singleton=1",
-    )) ?? "",
-    postgresHarnessDenial("selector_runtime_settings"),
-  );
-});
-
 /**
  * A pool that lets one competing write land the moment the subject's first
  * statement has answered. A write that reports its own row is unmoved by it; a

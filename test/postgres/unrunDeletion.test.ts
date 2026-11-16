@@ -25,10 +25,8 @@ import {
   tenantDeleteFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import {
-  projectDeletionHoldingsAt174,
-  projectDeletionRelationsAt174,
-} from "../../src/adapters/postgres/schema/migrations/174-unrun-deletion.ts";
+import { projectDeletionHoldingsAt174 } from "../../src/adapters/postgres/schema/migrations/174-unrun-deletion.ts";
+import { projectDeletionRelationsAt205 } from "../../src/adapters/postgres/schema/migrations/205-selector-retired.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -116,8 +114,6 @@ const unrunDeletionBeneath: Readonly<Record<string, string>> = {
   action_observation: "ActionObservation",
   project: "the project row, deleted last",
   project_vacancy: "the name a deletion vacates, which outlives the project",
-  selector_inventory_state:
-    "the selector's cursor, a position and no row of the project's",
 };
 
 /** Every relation carrying both a tenant and a project column, partitions read through their parent. */
@@ -194,7 +190,7 @@ async function tenantRows(tenant: TenantId): Promise<number> {
 
 test("every relation keyed by a project is emptied by its deletion or reached only beneath what holds it", async () => {
   const keyed = await projectKeyedRelations();
-  const deleted: readonly string[] = projectDeletionRelationsAt174;
+  const deleted: readonly string[] = projectDeletionRelationsAt205;
   const holdings: readonly string[] = Object.values(
     projectDeletionHoldingsAt174,
   );
