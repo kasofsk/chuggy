@@ -134,7 +134,7 @@
   }
 
   @media (forced-colors: active) {
-    .selector-dot,
+    .selector-dot[data-tone],
     .selector-mark {
       background: var(--forced-ink);
     }

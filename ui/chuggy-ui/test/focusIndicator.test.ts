@@ -234,7 +234,7 @@ test("under forced colours the focus indicator and the forced tokens are system 
   const root = sheetRules(tokenSheet, []).filter(
     (rule) => rule.selectorText === ":root",
   );
-  for (const token of ["--forced-current", "--forced-ink"]) {
+  for (const token of ["--forced-current", "--forced-ink", "--forced-quiet"]) {
     const value = root
       .map((rule) => rule.style.getPropertyValue(token).trim())
       .find((held) => held !== "");
@@ -320,69 +320,233 @@ test("under forced colours an underline that marks a state is drawn, not only re
   }
 });
 
-test("under forced colours a mark drawn as a ground is drawn in a system colour", () => {
-  for (const [path, selector, property, token] of [
+/** A selector's specificity as ids, then classes, attributes and
+ * pseudo-classes, then types and pseudo-elements: `:is`, `:not` and `:has`
+ * count their weightiest argument and `:where` counts nothing. */
+function focusIndicatorSpecificity(selector: string): readonly number[] {
+  const weight = [0, 0, 0];
+  let rest = selector;
+  for (;;) {
+    const open = /:(is|not|has|where)\(/u.exec(rest);
+    if (open === null) break;
+    let depth = 1;
+    let end = open.index + open[0].length;
+    for (; depth > 0; end += 1) {
+      if (rest[end] === "(") depth += 1;
+      if (rest[end] === ")") depth -= 1;
+    }
+    const inner = rest.slice(open.index + open[0].length, end - 1);
+    if (open[1] !== "where") {
+      const heaviest = inner
+        .split(",")
+        .map(focusIndicatorSpecificity)
+        .reduce((a, b) => (focusIndicatorHeavier(b, a) ? b : a));
+      for (const index of [0, 1, 2]) weight[index]! += heaviest[index]!;
+    }
+    rest = `${rest.slice(0, open.index)} ${rest.slice(end)}`;
+  }
+  rest = rest.replace(/\[[^\]]*\]/gu, () => {
+    weight[1]! += 1;
+    return " ";
+  });
+  for (const token of rest.match(/::?[\w-]+|[#.]?[\w-]+/gu) ?? []) {
+    if (token.startsWith("#")) weight[0]! += 1;
+    else if (token.startsWith("::")) weight[2]! += 1;
+    else if (token.startsWith(".") || token.startsWith(":")) weight[1]! += 1;
+    else weight[2]! += 1;
+  }
+  return weight;
+}
+
+function focusIndicatorHeavier(
+  a: readonly number[],
+  b: readonly number[],
+): boolean {
+  const differs = [0, 1, 2].find((index) => a[index] !== b[index]);
+  return differs !== undefined && a[differs]! > b[differs]!;
+}
+
+/**
+ * What a sheet's own cascade gives one element, or its pseudo-element, for one
+ * property and its colour longhand under forced colours and every other
+ * condition at once: the heaviest matching declaration, the later on a tie.
+ * The sheet is taken as one layer, as each of the console's is.
+ */
+function focusIndicatorForcedWinner(
+  text: string,
+  markup: string,
+  pseudo: string,
+  property: string,
+): string {
+  const host = document.createElement("div");
+  host.innerHTML = markup;
+  const element = host.querySelector("[data-under-test]");
+  if (element === null) throw new Error(`nothing under test in ${markup}`);
+  let winner = { weight: [-1, 0, 0] as readonly number[], value: "" };
+  for (const rule of focusIndicatorRules(text)) {
+    const value =
+      rule.style.getPropertyValue(property) ||
+      rule.style.getPropertyValue(`${property}-color`);
+    if (value === "") continue;
+    for (const selector of focusIndicatorSelectors(rule)) {
+      const own = /::[\w-]+$/u.exec(selector)?.[0] ?? "";
+      if (own !== pseudo) continue;
+      if (!element.matches(selector.slice(0, selector.length - own.length)))
+        continue;
+      const weight = focusIndicatorSpecificity(selector);
+      if (!focusIndicatorHeavier(winner.weight, weight))
+        winner = { weight, value };
+    }
+  }
+  return winner.value;
+}
+
+test("specificity counts what the selectors level counts, and a later tie wins", () => {
+  expect(focusIndicatorSpecificity(".a")).toEqual([0, 1, 0]);
+  expect(focusIndicatorSpecificity('.a[data-tone="live"]')).toEqual([0, 2, 0]);
+  expect(focusIndicatorSpecificity(".a:disabled .b")).toEqual([0, 3, 0]);
+  expect(focusIndicatorSpecificity(".a:not(.b, #c) span::after")).toEqual([
+    1, 1, 2,
+  ]);
+  expect(focusIndicatorSpecificity(":where(.a) .b")).toEqual([0, 1, 0]);
+  expect(
+    focusIndicatorSpecificity('.a:is([x="(,)"], .b) .c:has(.d .e)'),
+  ).toEqual([0, 5, 0]);
+});
+
+test("a forced rule outweighed by a rule outside forced colours is not what the cascade gives", () => {
+  const outweighed = `@layer ui {
+    .dot[data-tone="live"] { background: var(--tone-live); }
+    @media (forced-colors: active) { .dot { background: var(--forced-ink); } }
+  }`;
+  const dot = '<i class="dot" data-tone="live" data-under-test></i>';
+  expect(focusIndicatorForcedWinner(outweighed, dot, "", "background")).toBe(
+    "var(--tone-live)",
+  );
+  expect(
+    focusIndicatorForcedWinner(
+      outweighed.replace("{ .dot {", '{ .dot[data-tone="live"] {'),
+      dot,
+      "",
+      "background",
+    ),
+  ).toBe("var(--forced-ink)");
+});
+
+test("under forced colours a mark drawn as a ground wins its sheet's cascade in a system colour, in every state it is drawn in", () => {
+  const pill = (tone: string): string =>
+    `<span class="pill pill-${tone}"><i class="pill-mark" data-under-test></i></span>`;
+  for (const [path, markup, pseudo, property, token] of [
     [
       "browser/ui/TabNav.css",
-      '.tab-nav-tab[aria-current="page"]::after',
+      '<nav class="tab-nav"><a class="tab-nav-tab" aria-current="page" data-under-test></a></nav>',
+      "::after",
       "background",
       "forced-current",
     ],
     [
       "browser/ticket/ticket.css",
-      '.ticket-tab[aria-current="page"]::after',
+      '<a class="ticket-tab" aria-current="page" data-under-test></a>',
+      "::after",
       "background",
       "forced-current",
     ],
     [
       "browser/shell/shell.css",
-      '.topbar-entry[aria-current="page"]::after',
+      '<a class="topbar-entry" aria-current="page" data-under-test></a>',
+      "::after",
       "background",
       "forced-current",
     ],
     [
       "browser/shell/shell.css",
-      '.topbar-phone-item:is([aria-current="page"], [data-current])::before',
+      '<a class="topbar-phone-item" aria-current="page" data-under-test></a>',
+      "::before",
       "background",
       "forced-current",
     ],
     [
-      "browser/ui/Pill.css",
-      ".pill:not(.pill-queued) .pill-mark",
+      "browser/shell/shell.css",
+      '<a class="topbar-phone-item" data-current data-under-test></a>',
+      "::before",
+      "background",
+      "forced-current",
+    ],
+    ...["pass", "fail", "live", "evaluation", "finalization", "parked"].map(
+      (tone) =>
+        [
+          "browser/ui/Pill.css",
+          pill(tone),
+          "",
+          "background",
+          "forced-ink",
+        ] as const,
+    ),
+    ["browser/ui/Pill.css", pill("queued"), "", "border", "forced-ink"],
+    [
+      "browser/ui/RadioGroup.css",
+      '<button class="radio-item"><span class="radio-mark" data-under-test></span></button>',
+      "",
       "background",
       "forced-ink",
     ],
-    ["browser/ui/Pill.css", ".pill-queued .pill-mark", "border", "forced-ink"],
-    ["browser/ui/RadioGroup.css", ".radio-mark", "background", "forced-ink"],
-    ["browser/ui/Picker.css", ".picker-mark", "background", "forced-ink"],
     [
-      "browser/settings/lead/selector.css",
-      ".selector-dot",
+      "browser/ui/RadioGroup.css",
+      '<button class="radio-item" disabled><span class="radio-mark" data-under-test></span></button>',
+      "",
+      "background",
+      "forced-quiet",
+    ],
+    [
+      "browser/ui/Picker.css",
+      '<span class="picker-mark" data-under-test></span>',
+      "",
       "background",
       "forced-ink",
     ],
+    ...["live", "parked"].map(
+      (tone) =>
+        [
+          "browser/settings/lead/selector.css",
+          `<i class="selector-dot" data-tone="${tone}" data-under-test></i>`,
+          "",
+          "background",
+          "forced-ink",
+        ] as const,
+    ),
     [
       "browser/settings/lead/selector.css",
-      ".selector-mark",
+      '<i class="selector-mark" data-under-test></i>',
+      "",
       "background",
       "forced-ink",
     ],
     [
       "browser/epic/epicGraph.css",
-      ".epic-card-port[data-met]",
+      '<div class="epic-card"><i class="epic-card-port" data-met data-under-test></i></div>',
+      "",
       "background",
       "forced-ink",
     ],
-    [
-      "browser/conversation/conversation.css",
-      ".conversation-writing .run-report-mark::after",
-      "background",
-      "forced-ink",
-    ],
+    ...["", " run-report"].map(
+      (also) =>
+        [
+          "browser/conversation/conversation.css",
+          `<div class="conversation-writing"><p class="run-report-mark${also}" data-under-test></p></div>`,
+          "::after",
+          "background",
+          "forced-ink",
+        ] as const,
+    ),
   ] as const) {
     expect(
-      focusIndicatorForcedValue(path, selector, property),
-      selector,
+      focusIndicatorForcedWinner(
+        focusIndicatorSheet(path),
+        markup,
+        pseudo,
+        property,
+      ),
+      markup,
     ).toContain(`var(--${token})`);
   }
 });

@@ -48,6 +48,10 @@
     .radio-mark {
       background: var(--forced-ink);
     }
+
+    .radio-item:disabled .radio-mark {
+      background: var(--forced-quiet);
+    }
   }
 
   @media (pointer: coarse) {

@@ -190,6 +190,7 @@
     /* forced colours — the system's own, for what a user's palette must keep */
     --forced-ink: CanvasText; /* a mark whose presence is what it says */
     --forced-current: Highlight; /* focus, and what is selected or current */
+    --forced-quiet: GrayText; /* a mark on what cannot be chosen */
 
     /* type — the operator's own faces, because the policy admits no font; a
        theme puts one of the three stacks under prose */
