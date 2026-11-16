@@ -34,7 +34,10 @@ import {
 } from "../app/core/setupNext.ts";
 import type { SetupChoice } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
+import { setupChatSized } from "../app/core/setupRunnerMachine.ts";
+import { boxEngineBytes } from "./setupRunnerBox.ts";
 import type {
+  SetupChatSize,
   SetupRunnerHere,
   SetupRunnerRoom,
 } from "../app/core/setupRunnerMachine.ts";
@@ -128,7 +131,6 @@ const hand = (tell: string, when: string): SaidThing => ({
 const pages = `${stoodSite}/acme/widgets`;
 
 /** How a chat host is registered on another machine, by the commands its personal runners page shows. */
-const chatByHand = `open ${pages}/settings/workspace/runner, press Register chat host, choose the machine and run the commands it shows`;
 const create = `Open ${pages}/tickets/new, say what you want done and press Create ticket`;
 
 /** Every thing a step can lack, the lack as it is found, and what the person is told to do about it. */
@@ -199,20 +201,6 @@ const mends: {
     hand(
       "A runner is registered and is not running. Start it on its machine and tell me once it is running.",
       "once the person says the runner is running",
-    ),
-  ],
-  ChatHost: [
-    { lacks: "ChatHost" },
-    hand(
-      `Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet. On the machine that will be it, ${chatByHand}. Tell me once it is running.`,
-      "once the person says their chat host is running",
-    ),
-  ],
-  ChatHostLive: [
-    { lacks: "ChatHostLive" },
-    hand(
-      "Your chats in acme/widgets run only on your chat host, one machine of yours, which is registered and not running. Start it on its machine and tell me once it is running.",
-      "once the person says their chat host is running",
     ),
   ],
   Ticket: [
@@ -349,7 +337,7 @@ function toldOf(said: SaidThing): string {
   return said.tell;
 }
 
-test("on a Mac the MCP step, the runner and the chat host offer the Mac's own package, as Linux's offer Linux's", () => {
+test("on a Mac the MCP step and the runner, with or without the chat host, offer the Mac's own package, as Linux's offer Linux's", () => {
   const mcp = (packaged: SetupMcpPackaged) =>
     toldOf(
       saidThing(
@@ -370,11 +358,12 @@ test("on a Mac the MCP step, the runner and the chat host offer the Mac's own pa
     room: { room: "Open", engine: "docker" },
     held: false,
     chat: false,
+    chatSize: setupChatSized(engineRoomy, {}),
     claude: "Subscription",
   };
   for (const lack of [
     { lacks: "Runner", chat: false },
-    { lacks: "ChatHost" },
+    { lacks: "Runner", chat: true },
   ] as const) {
     const tell = toldOf(
       saidThing(
@@ -486,7 +475,7 @@ test("nothing a step can lack is mended by a command: each is told, waits on the
     );
     expect(next.when, lack.lacks).toMatch(/^(once|if|when) the person /u);
   }
-  expect(pageless).toEqual(["RunnerLive", "ChatHostLive"]);
+  expect(pageless).toEqual(["RunnerLive"]);
 });
 
 test("a runner that is registered and not running is started on its machine, and the tell says nothing of any page, since no page of the console says whether one is live", () => {
@@ -815,15 +804,8 @@ const offered = (tell: string): SaidThing => ({
   project: "widgets",
 });
 
-/** What `chat-host` offers for the workspace, with `tell` said. */
-const chatOffered = (tell: string): SaidThing => ({
-  thing: "Offer",
-  command: "ChatHost",
-  tell,
-  when: "once the person says yes to this machine as their chat host",
-  workspace: "acme",
-  project: undefined,
-});
+/** The memory, in MiB, the engine of the box's machine reports. */
+const engineRoomy = Math.floor(boxEngineBytes / 2 ** 20);
 
 /** What is next for a lack once the machine was looked at and showed `room`. */
 function here(
@@ -832,8 +814,15 @@ function here(
   held = false,
   chat = false,
   platform: SetupPlatform = "linux",
+  chatSize: SetupChatSize = setupChatSized(engineRoomy, {}),
 ): SaidThing {
-  const looked: SetupRunnerHere = { room, held, chat, claude: "Subscription" };
+  const looked: SetupRunnerHere = {
+    room,
+    held,
+    chat,
+    chatSize,
+    claude: "Subscription",
+  };
   return saidThing(
     setupNext(lacking(lack), setupAnswersNone, platform, looked).thing,
   );
@@ -842,19 +831,14 @@ function here(
 const roomy: SetupRunnerRoom = { room: "Open", engine: "docker" };
 
 /** The lacks of the runner's step, which `runner` mends. */
-const runnerKinds: readonly string[] = [
-  "Runner",
-  "RunnerLive",
-  "ChatHost",
-  "ChatHostLive",
-];
+const runnerKinds: readonly string[] = ["Runner", "RunnerLive"];
 const runnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 
 test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
   expect(here({ lacks: "Runner", chat: false }, roomy)).toEqual(
     offered(
-      `${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`,
+      `${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`,
     ),
   );
   expect(here({ lacks: "Runner", chat: false }, roomy, true)).toEqual(
@@ -862,38 +846,49 @@ test("with no runner yet and a machine that could take one, the person is told o
   );
 });
 
-test("with neither a runner of the project nor the person's chat host, the offer says two services of theirs are put here: one for the work on the project's tickets, one their chat host", () => {
-  expect(here({ lacks: "Runner", chat: true }, roomy)).toEqual(
-    offered(
-      `${runnerIs}. I can make this machine one. That puts two background services of yours here. The runner package, chuggy-linux, runs them, and they start when you log in. One does the work on your project's tickets. The other is your chat host: your chats with chuggy run there and nowhere else. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`,
+test("with neither a runner of the project nor the person's chat host, the offer asks once of the chat host as well, says what it holds, and recommends it, by the value its command carries, only where the engine's memory has room for it beside a run", () => {
+  const put = `${runnerIs}. I can make this machine one. That puts a background service of yours here. The runner package, chuggy-linux, runs it, and it starts when you log in. Work on your tickets then runs on this machine in containers, on your Claude plan, 4 GiB a run.`;
+  const instead = `For a runner on another machine instead, that machine's own browser opens ${pages}/settings/workspace/runner, where you press Register runner and do what it shows.`;
+  const ask = (holds: string) =>
+    `I can also make this machine your chat host, a second background service, which holds ${holds} at once. It is only for chatting with chuggy in the browser, so tools in your own agent need none.`;
+  const going =
+    "Tell me yes to go ahead, and whether you want the chat host too.";
+  expect(here({ lacks: "Runner", chat: true }, roomy)).toEqual({
+    ...offered(
+      `${put} ${ask("6 GiB whenever it runs: 2 GiB a chat, for up to 3")} There is room for it here beside a run, so I recommend it. ${going} ${instead}`,
     ),
-  );
-});
-
-test("with the project's work provided for and no chat host of the person's, a machine that could take one is offered as theirs by chat-host for the workspace, never as a runner of the project too, and on a Mac by the Mac's own package", () => {
-  const chats =
-    "Your chats in acme/widgets run only on your chat host, one machine of yours, and you have none yet.";
-  const yours = `${chats} I can make this machine it: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan.`;
-  expect(here({ lacks: "ChatHost" }, roomy)).toEqual(
-    chatOffered(`${yours} Tell me yes to go ahead.`),
-  );
-  expect(here({ lacks: "ChatHost" }, roomy, true)).toEqual(
-    chatOffered(`${yours} Tell me yes to go ahead.`),
-  );
-  expect(here({ lacks: "ChatHost" }, roomy, false, false, "darwin")).toEqual(
-    chatOffered(
-      `${yours.replace("chuggy-linux", "chuggy-darwin")} Tell me yes to go ahead.`,
+    chatHost: "yes",
+  });
+  expect(
+    here(
+      { lacks: "Runner", chat: true },
+      roomy,
+      false,
+      false,
+      "linux",
+      setupChatSized(6_144, {}),
     ),
-  );
-});
-
-test("a chat host registered and not running is offered to be started here only where this machine holds a registration of one, and is otherwise the person's to start where it is", () => {
-  expect(here({ lacks: "ChatHostLive" }, roomy, false, true)).toEqual(
-    chatOffered(
-      "Your chats in acme/widgets run only on your chat host, one machine of yours, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the site holds. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
+  ).toEqual({
+    ...offered(
+      `${put} ${ask("2 GiB whenever it runs: 2 GiB a chat, for up to 1")} I recommend against it here: docker here has only 6 GiB, too little for a run and a chat host at once. ${going} ${instead}`,
     ),
-  );
-  expect(here({ lacks: "ChatHostLive" }, roomy)).toEqual(mends.ChatHostLive[1]);
+    chatHost: "no",
+  });
+  expect(
+    here(
+      { lacks: "Runner", chat: true },
+      roomy,
+      false,
+      false,
+      "linux",
+      setupChatSized(undefined, {}),
+    ),
+  ).toMatchObject({
+    tell: expect.stringContaining(
+      "I recommend against it here: docker here did not say how much memory it has.",
+    ) as unknown,
+    chatHost: "no",
+  });
 });
 
 test("where this machine could not take a runner the person is told why instead, and nothing is offered: user services that do not answer, no engine, and on a Mac, Colima not started", () => {
@@ -982,7 +977,7 @@ test("a user the runner package bars from docker is told the package's reason an
 test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
   expect(here({ lacks: "RunnerLive", chat: false }, roomy, true)).toEqual(
     offered(
-      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
+      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan, 4 GiB a run. Tell me yes to go ahead.",
     ),
   );
   for (const room of [roomy, { room: "Serviceless" }] as const)
@@ -991,8 +986,9 @@ test("a runner registered and not running is offered to be started here only whe
     );
   expect(here({ lacks: "RunnerLive", chat: true }, roomy, true)).toMatchObject({
     tell: expect.stringMatching(
-      / Your chats run only on your chat host, a machine of yours, so I will also make this machine it, as a second service of yours\. Tell me yes to go ahead\.$/u,
+      / 4 GiB a run\. I can also make this machine your chat host, .* so I recommend it\. Tell me yes to go ahead, and whether you want the chat host too\.$/u,
     ) as unknown,
+    chatHost: "yes",
   });
 });
 
@@ -1003,7 +999,6 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
         [{ lacks: "Runner", chat: false }, false],
         [{ lacks: "Runner", chat: true }, false],
         [{ lacks: "RunnerLive", chat: false }, true],
-        [{ lacks: "ChatHost" }, false],
       ] as const
     ).map(([lack, held]) => {
       const { thing } = saidNext(
@@ -1011,13 +1006,14 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
           room: roomy,
           held,
           chat: false,
+          chatSize: setupChatSized(engineRoomy, {}),
           claude,
         }),
       );
       return thing.thing === "Offer" ? thing.tell : "";
     });
   for (const tell of said("Subscription"))
-    expect(tell).toContain("in containers, on your Claude plan.");
+    expect(tell).toContain("in containers, on your Claude plan, 4 GiB a run.");
   for (const [claude, on] of [
     ["ApiKey", "your Anthropic API key"],
     ["Bedrock", "your Amazon Bedrock account"],
@@ -1025,11 +1021,11 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
     ["Foundry", "your Microsoft Foundry resource"],
   ] as const)
     for (const tell of said(claude)) {
-      expect(tell, claude).toContain(`in containers, on ${on}.`);
+      expect(tell, claude).toContain(`in containers, on ${on}, 4 GiB a run.`);
       expect(tell, claude).not.toContain("Claude plan");
     }
   for (const tell of said(undefined)) {
-    expect(tell).toContain("in containers.");
+    expect(tell).toContain("in containers, 4 GiB a run.");
     expect(tell).not.toContain("Claude plan");
   }
 });
@@ -1054,15 +1050,10 @@ test("the machine is looked at only where the runner's step is the first not don
     tenant: "acme",
     project: "widgets",
   });
-  for (const lack of [
-    { lacks: "RunnerLive", chat: false },
-    { lacks: "ChatHost" },
-    { lacks: "ChatHostLive" },
-  ] as const)
-    expect(due(lack), lack.lacks).toEqual({
-      tenant: "acme",
-      project: "widgets",
-    });
+  expect(due({ lacks: "RunnerLive", chat: false })).toEqual({
+    tenant: "acme",
+    project: "widgets",
+  });
   for (const [kind, [lack]] of Object.entries(mends))
     if (!runnerKinds.includes(kind)) expect(due(lack), kind).toBeUndefined();
   expect(due(unread({ fate: "Refused" }))).toBeUndefined();

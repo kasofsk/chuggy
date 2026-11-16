@@ -15,7 +15,9 @@
  * carries them, so the conversation holds that choice and no file does.
  * `--name` is carried only by `project`, which is what it is read for.
  * `--replace` is the person's yes to `chat-host` registering this machine in
- * place of the chat host of theirs it names. `configuration` writes a starting
+ * place of the chat host of theirs it names. `--chat-host` is the person's
+ * answer to `runner` making this machine their chat host too, which it does
+ * only on `yes`. `configuration` writes a starting
  * configuration into the checkout, its check running the command `--test`
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
@@ -64,6 +66,7 @@ export type SetupAskFault =
   | "Project"
   | "Workspace"
   | "Replace"
+  | "ChatHost"
   | "ProjectName"
   | "Test"
   | "Brief"
@@ -91,6 +94,8 @@ export interface SetupAnswers {
   readonly project: string | undefined;
   readonly name?: string | undefined;
   readonly plugin?: SetupPluginAnswer;
+  /** What `runner` was told of making this machine the person's chat host too, carried into every `runner` printed again. */
+  readonly chatHost?: SetupChatHostAnswer;
 }
 
 /** The one value `--plugin` takes: the plugin step passed over without the plugin. */
@@ -107,6 +112,12 @@ export function setupAnswersPlugin(
 ): Pick<SetupAnswers, "plugin"> {
   return answers.plugin === undefined ? {} : { plugin: answers.plugin };
 }
+
+/** The flag `runner` is told in whether to make this machine the person's chat host too, and the answers it takes. */
+export const setupChatHostFlag = "--chat-host";
+export const setupChatHostAnswers = ["yes", "no"] as const;
+
+export type SetupChatHostAnswer = (typeof setupChatHostAnswers)[number];
 
 export const setupAnswersNone: SetupAnswers = {
   workspace: undefined,
@@ -150,6 +161,8 @@ export type SetupAsked =
       /** The project the runner is for, which the command is not run without. */
       readonly workspace: string;
       readonly project: string;
+      /** Whether this machine is made the person's chat host too, where the person was asked. */
+      readonly chatHost: SetupChatHostAnswer | undefined;
     }
   | {
       readonly asked: "ChatHost";
@@ -241,6 +254,7 @@ const setupFlags = [
   "project",
   "name",
   "replace",
+  "chat-host",
   "test",
   "title",
   "intent",
@@ -256,7 +270,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   SignIn: ["site", "wait-secs", "workspace", "project", "plugin"],
   Project: ["site", "workspace", "project", "name", "plugin"],
   Mcp: ["site", "workspace", "project", "plugin"],
-  Runner: ["site", "wait-secs", "workspace", "project", "plugin"],
+  Runner: ["site", "wait-secs", "workspace", "project", "chat-host", "plugin"],
   ChatHost: ["site", "wait-secs", "workspace", "replace", "plugin"],
   Configuration: ["workspace", "project", "test", "plugin"],
   Check: ["workspace", "project", "plugin"],
@@ -391,6 +405,13 @@ function setupChatHostAsked(
   };
 }
 
+function setupChatHostRead(
+  given: string | undefined,
+): SetupChatHostAnswer | "Wrongly" | undefined {
+  if (given === undefined) return undefined;
+  return setupChatHostAnswers.find((answer) => answer === given) ?? "Wrongly";
+}
+
 /** A test command is carried back in the command that writes it, so it is one a line prints as it is. */
 function setupConfigurationAsked(
   answers: SetupAnswers,
@@ -451,9 +472,20 @@ function setupAskedOf(
       const { workspace, project } = answers;
       if (workspace === undefined || project === undefined)
         return { asked: "Wrongly", fault: "Project" };
-      return asked === "Runner"
-        ? { asked, site, waitSecs: wait, answers, workspace, project }
-        : { asked, site, answers, workspace, project };
+      if (asked !== "Runner")
+        return { asked, site, answers, workspace, project };
+      const chatHost = setupChatHostRead(flags.get("chat-host"));
+      if (chatHost === "Wrongly")
+        return { asked: "Wrongly", fault: "ChatHost" };
+      return {
+        asked,
+        site,
+        waitSecs: wait,
+        answers: chatHost === undefined ? answers : { ...answers, chatHost },
+        workspace,
+        project,
+        chatHost,
+      };
     }
     case "ChatHost":
       return setupChatHostAsked(site, wait, answers, flags.get("replace"));
@@ -533,6 +565,9 @@ export function setupAnswerArguments(
       ? []
       : [setupNameFlag, answers.name]),
     ...(answers.plugin === undefined ? [] : [setupPluginFlag, answers.plugin]),
+    ...(command !== "Runner" || answers.chatHost === undefined
+      ? []
+      : [setupChatHostFlag, answers.chatHost]),
   ];
 }
 

@@ -768,6 +768,7 @@ test("each thing a run found is said as found and each thing it did as did, in w
     ChatHostGone: ["found"],
     ChatHostRegistered: ["did"],
     ChatHostReplaced: ["did"],
+    ChatSettingsWritten: ["did"],
     ChatChecked: ["found"],
     ChatUnit: ["found"],
     ChatUnitWritten: ["did"],
@@ -805,6 +806,7 @@ test("the person's chat host is said as theirs, apart from the project's runner:
     .filter((note) => /^(?:Chat|ProjectLive|Hosted)/u.test(note.note))
     .map((note) => setupRunnerNoteSaid(note, widgets).join(": "));
   expect(lines).toEqual([
+    `did: wrote the size of your chat host into ${boxSettings}, every other setting kept as it was: the most chats it runs at once is 3, at 2 GiB each, 6 GiB in all`,
     "found: the site sees a runner of acme/widgets live",
     "found: hosted runs take the work of acme/widgets, so that work needs no runner",
     `found: this machine is registered as your chat host, in ${rosterChat}`,

@@ -15,6 +15,7 @@
 
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
+import { memoryMibFigure, quantityFigureCopy } from "./figures.ts";
 
 /** Where a run was for, as its lines name it: a project of a workspace for `runner`, and for `chat-host` the workspace alone; `workspaceName` is the workspace's display name, where the run read it. */
 export interface SetupRunnerAt {
@@ -212,6 +213,13 @@ export type SetupRunnerNote =
       readonly note: "SettingsWritten";
       readonly path: string;
       readonly engine: SetupEngine;
+    }
+  /** The chat host's size this run wrote into the runner's settings: `sessionsMax` sessions at once, each given `sessionMemoryMib`. */
+  | {
+      readonly note: "ChatSettingsWritten";
+      readonly path: string;
+      readonly sessionsMax: number;
+      readonly sessionMemoryMib: number;
     }
   | {
       readonly note: "Login";
@@ -546,6 +554,22 @@ function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
   }
 }
 
+/** What a chat host of `sessions` sessions at once holds, as a line says it: how many, what each takes, and what all of them take together. */
+export function setupChatCost(
+  sessions: number,
+  sessionMib: number,
+): {
+  readonly sessions: string;
+  readonly each: Copy;
+  readonly total: Copy;
+} {
+  return {
+    sessions: String(sessions),
+    each: quantityFigureCopy(memoryMibFigure(sessionMib)),
+    total: quantityFigureCopy(memoryMibFigure(sessions * sessionMib)),
+  };
+}
+
 type SetupChatNote = Extract<
   SetupRunnerNote,
   {
@@ -766,18 +790,9 @@ export function setupRunnerNoteSaid(
     case "Installed":
       return setupPackageNoteSaid(note);
     case "Settings":
-      return [
-        "found",
-        { id: "setup-runner-note-settings", args: { path: note.path } },
-      ];
     case "SettingsWritten":
-      return [
-        "did",
-        {
-          id: "setup-runner-note-settings-written",
-          args: { path: note.path, engine: note.engine },
-        },
-      ];
+    case "ChatSettingsWritten":
+      return setupSettingsNoteSaid(note);
     case "Login":
       return [
         "found",
@@ -819,6 +834,40 @@ export function setupRunnerNoteSaid(
     case "ServerFound":
     case "ServerAdded":
       return setupServerNoteSaid(note, setupRunnerNamed(at));
+  }
+}
+
+function setupSettingsNoteSaid(
+  note: Extract<
+    SetupRunnerNote,
+    { readonly note: "Settings" | "SettingsWritten" | "ChatSettingsWritten" }
+  >,
+): SetupRunnerNoteSaid {
+  switch (note.note) {
+    case "Settings":
+      return [
+        "found",
+        { id: "setup-runner-note-settings", args: { path: note.path } },
+      ];
+    case "SettingsWritten":
+      return [
+        "did",
+        {
+          id: "setup-runner-note-settings-written",
+          args: { path: note.path, engine: note.engine },
+        },
+      ];
+    case "ChatSettingsWritten":
+      return [
+        "did",
+        {
+          id: "setup-runner-note-chat-settings-written",
+          args: {
+            path: note.path,
+            ...setupChatCost(note.sessionsMax, note.sessionMemoryMib),
+          },
+        },
+      ];
   }
 }
 
@@ -1661,19 +1710,6 @@ function setupHeldSaid(
     when: { id: "setup-runner-held-when", args: { short } },
     again: "Again",
     replace: short,
-  };
-}
-
-/** What the console's personal runners page draws the button that mints a chat host's registration token as. */
-export const setupChatHostPressed = {
-  id: "runners-chat-host-register",
-} as const;
-
-/** How a chat host is registered on a machine the setup program does not set one up on: by the commands `page` shows for the machine chosen there. */
-export function setupChatByHand(page: string): Copy {
-  return {
-    id: "setup-mend-chat-by-hand",
-    args: { page, register: setupChatHostPressed },
   };
 }
 

@@ -5,7 +5,8 @@
  *
  * What the decisions assume of the two ports is held here against what fills
  * them. A file is made only where nothing holds its name, for its owner alone
- * as the directories made above it are. A command is waited on for no longer
+ * as the directories made above it are, and put in place of one only where a
+ * file, and not a link, holds it. A command is waited on for no longer
  * than its bound, with everything it started ended with it, whether it is run
  * to its end or only read; what it prints is kept up to a bound and read on
  * past it; and one that ends leaving something behind that holds its output
@@ -124,6 +125,35 @@ test("a file is made whole, for its owner alone as each directory made above it 
   assert.throws(() => {
     disk.make(join(path, "under-a-file"), "text");
   }, SetupMachineError);
+});
+
+test("a file is put whole in place of the file at its path, for its owner alone, and nowhere a file is not, nor through a link", () => {
+  const beside = join(made.machine().beside, "replaced");
+  mkdirSync(beside);
+  const path = join(beside, "settings.json");
+  writeFileSync(path, "first", { mode: 0o644 });
+  disk.replace(path, "second");
+  assert.equal(readFileSync(path, "utf8"), "second");
+  assert.equal(mode(path), "600");
+  assert.deepEqual(readdirSync(beside), ["settings.json"]);
+  const link = join(beside, "link.json");
+  symlinkSync(path, link);
+  for (const refused of [join(beside, "missing.json"), link, beside])
+    assert.throws(
+      () => {
+        disk.replace(refused, "third");
+      },
+      (failure: unknown) =>
+        failure instanceof SetupMachineError &&
+        failure.fault.fault === "Unwritable" &&
+        failure.fault.path === refused,
+    );
+  assert.equal(readFileSync(path, "utf8"), "second");
+  assert.equal(existsSync(join(beside, "missing.json")), false);
+  assert.deepEqual(readdirSync(beside).toSorted(), [
+    "link.json",
+    "settings.json",
+  ]);
 });
 
 test("a directory is this user's to write only where it is a directory they may make a file in", () => {

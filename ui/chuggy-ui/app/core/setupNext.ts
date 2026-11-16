@@ -22,9 +22,12 @@
  * person is told what `mcp` would do, the runner package installed where it
  * is not here and its server named in their agent, and for the runner's step
  * they are told what `runner` would put here, a service for the project's
- * work and one for their chat host or the first alone, or, where their chat
- * host is all that is lacking, what `chat-host` would; the command is named
- * under a rule that waits on their yes; where the machine could not take a runner, they are told that instead.
+ * work and what a job of it takes, and where their chats run on their chat
+ * host and they have none, what one here would hold, recommended only where
+ * the engine's memory has room for it beside a job: the command is named
+ * under a rule that waits on their yes, with the answer recommended, and a
+ * rule for the other; where the machine could not take a runner, they are
+ * told that instead. A chat host lacking is never the next thing.
  * Where a personal runner of theirs is registered and does not take the
  * project's work, `serve` is offered on the same yes.
  * `setupMend` is where each thing a step can lack is turned into its next
@@ -61,16 +64,16 @@ import { setupServerPackages } from "./setupAgent.ts";
 import type { SetupMcpPackaged } from "./setupAgent.ts";
 import { setupAnswersPlugin, setupNameFlag } from "./setupArguments.ts";
 import { setupConfigurationPath } from "./setupConfiguration.ts";
-import type { SetupAnswers } from "./setupArguments.ts";
+import type { SetupAnswers, SetupChatHostAnswer } from "./setupArguments.ts";
 import type { SetupPlatform } from "./setupPorts.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
-import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
+import { setupChatSized, setupJobMemoryMib } from "./setupRunnerMachine.ts";
+import type { SetupChatSize, SetupRunnerHere } from "./setupRunnerMachine.ts";
 import type { SetupTicketOffers } from "./setupTicket.ts";
 import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
-  setupChatByHand,
-  setupChatHostPressed,
+  setupChatCost,
   setupDockerBarredTold,
   setupEnginesNone,
 } from "./setupRunnerSaid.ts";
@@ -98,7 +101,6 @@ export const setupPressed = {
   add: { id: "repositories-add" },
   runner: { id: "runners-register" },
   fallback: { id: "runners-fallback-title" },
-  chatHost: setupChatHostPressed,
   ticket: { id: "ticket-authoring-create-ticket" },
   dispatch: { id: "setup-pressed-dispatch" },
 } as const satisfies Readonly<Record<string, Copy>>;
@@ -410,7 +412,11 @@ function setupConfigurationMend(
 }
 
 /** Something `runner` would do on this machine for the checklist's project, which waits on the person's yes. */
-function setupOffer(tell: Copy, at: SetupAt): SetupThing {
+function setupOffer(
+  tell: Copy,
+  at: SetupAt,
+  chatHost: SetupChatHostAnswer | undefined,
+): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
@@ -419,6 +425,7 @@ function setupOffer(tell: Copy, at: SetupAt): SetupThing {
     when: { id: "setup-offer-when" },
     workspace,
     project,
+    ...(chatHost === undefined ? {} : { chatHost }),
   };
 }
 
@@ -488,6 +495,57 @@ function setupRunsOn(claude: SetupClaudeKind | undefined): Copy {
     : { id: "setup-runs-on", args: { claude: setupClaudeOn[claude] } };
 }
 
+/** What a job of the project's takes, as an offer says it. */
+const setupJobSaid: Copy = quantityFigureCopy(
+  memoryMibFigure(setupJobMemoryMib),
+);
+
+/** The answer `runner` is told for the person's chat host where a chat host here is asked about, which is the one recommended: yes only where the engine's memory has room for one beside a job. */
+function setupChatHostRecommended(size: SetupChatSize): SetupChatHostAnswer {
+  return size.room > 0 ? "yes" : "no";
+}
+
+/** What a chat host here would be, where the machine was looked at and its engine named; sized as having no room where the engine was not read. */
+function setupChatSizeHere(here: SetupRunnerHere): SetupChatSize {
+  return here.chatSize ?? setupChatSized(undefined, {});
+}
+
+/** The question an offer of `runner` asks of the person's chat host: what it would hold, what it is for, and whether it is recommended, with where memory is short where it is not. */
+function setupChatHostAsk(here: SetupRunnerHere): Copy {
+  const size = setupChatSizeHere(here);
+  const engine = here.room.room === "Open" ? here.room.engine : "";
+  const short: Copy =
+    size.engineMib === undefined
+      ? {
+          id: "setup-mend-chat-host-short",
+          args: { said: "unsaid", engine, memory: "" },
+        }
+      : {
+          id: "setup-mend-chat-host-short",
+          args: {
+            said: "said",
+            engine,
+            memory: quantityFigureCopy(memoryMibFigure(size.engineMib)),
+          },
+        };
+  return {
+    id: "setup-mend-chat-host-ask",
+    args: {
+      ...setupChatCost(size.sessionsMax, size.sessionMemoryMib),
+      recommend: setupChatHostRecommended(size),
+      short,
+    },
+  };
+}
+
+/** The answer an offer of `runner` carries for the chat host, where it asks of one: where the person's chats run on a chat host they lack. */
+function setupChatHostOffered(
+  chat: boolean,
+  here: SetupRunnerHere,
+): SetupChatHostAnswer | undefined {
+  return chat ? setupChatHostRecommended(setupChatSizeHere(here)) : undefined;
+}
+
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
@@ -501,88 +559,15 @@ function setupRunnerLiveMend(
           args: {
             project: setupNamed(at),
             runs: setupRunsOn(here.claude),
+            job: setupJobSaid,
             chat: setupWith(chat),
+            ask: chat ? setupChatHostAsk(here) : "",
           },
         },
         at,
+        setupChatHostOffered(chat, here),
       )
     : setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
-}
-
-/** What `runner` puts here where the project's runner is lacking: its service, run by the platform's package `program`, and beside it the person's chat host where that is lacking too. */
-function setupRunnerPut(
-  chat: boolean,
-  claude: SetupClaudeKind | undefined,
-  program: string,
-): Copy {
-  const args = { program, runs: setupRunsOn(claude) };
-  return chat
-    ? { id: "setup-mend-runner-put-chat", args }
-    : { id: "setup-mend-runner-put", args };
-}
-
-/** Something `chat-host` would do on this machine for the checklist's workspace, which waits on the person's yes. */
-function setupChatOffer(tell: Copy, at: SetupAt): SetupThing {
-  return {
-    thing: "Offer",
-    command: "ChatHost",
-    tell,
-    when: { id: "setup-offer-chat-host-when" },
-    workspace: at.workspace,
-    project: undefined,
-  };
-}
-
-/**
- * The person's chat host lacking where the project's work has what it needs.
- * `chat-host` makes this machine their chat host, which takes their chats in
- * every project of the workspace, and registers no runner of the project.
- */
-function setupChatMend(
-  lack: Extract<SetupLack, { readonly lacks: "ChatHost" | "ChatHostLive" }>,
-  at: SetupAt,
-  here: SetupRunnerHere | undefined,
-  program: string,
-): SetupThing {
-  const project = setupNamed(at);
-  const chats: Copy = { id: "setup-mend-chats", args: { project } };
-  const running: Copy = { id: "setup-mend-chat-host-when" };
-  if (lack.lacks === "ChatHostLive")
-    return here?.chat === true
-      ? setupChatOffer(
-          {
-            id: "setup-mend-chat-live-offer",
-            args: { chats, program },
-          },
-          at,
-        )
-      : setupHand(
-          { id: "setup-mend-chat-live-tell", args: { chats } },
-          running,
-        );
-  if (here?.room.room === "Open")
-    return setupChatOffer(
-      {
-        id: "setup-mend-chat-offer",
-        args: {
-          chats,
-          program,
-          runs: setupRunsOn(here.claude),
-        },
-      },
-      at,
-    );
-  return setupHand(
-    {
-      id: "setup-mend-chat-tell",
-      args: {
-        chats,
-        here: here === undefined ? "unseen" : "seen",
-        byHand: setupChatByHand(setupPage(at, settingsRoutes.project.myRunner)),
-      },
-    },
-    running,
-  );
 }
 
 /**
@@ -636,17 +621,12 @@ function setupServingMend(
  * machine was not looked at, the console's own page.
  */
 function setupRunnerMend(
-  lack: Extract<
-    SetupLack,
-    { readonly lacks: "Runner" | "RunnerLive" | "ChatHost" | "ChatHostLive" }
-  >,
+  lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
   platform: SetupPlatform,
 ): SetupThing {
   const { program } = runnerPackages[platform];
-  if (lack.lacks === "ChatHost" || lack.lacks === "ChatHostLive")
-    return setupChatMend(lack, at, here, program);
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
   const page = setupPage(at, settingsRoutes.project.myRunner);
@@ -668,12 +648,22 @@ function setupRunnerMend(
         {
           id: "setup-mend-runner-offer",
           args: {
-            put: setupRunnerPut(lack.chat, here?.claude, program),
+            put: {
+              id: "setup-mend-runner-put",
+              args: {
+                program,
+                runs: setupRunsOn(here?.claude),
+                job: setupJobSaid,
+              },
+            },
+            chat: setupWith(lack.chat),
+            ask: here !== undefined && lack.chat ? setupChatHostAsk(here) : "",
             page,
             add,
           },
         },
         at,
+        here === undefined ? undefined : setupChatHostOffered(lack.chat, here),
       );
     case "Serviceless":
       return setupHand(
@@ -892,8 +882,6 @@ function setupMend(
       return setupRepositoryMend(lack, at, mine);
     case "Runner":
     case "RunnerLive":
-    case "ChatHost":
-    case "ChatHostLive":
       return setupRunnerMend(lack, at, here, mcp.platform);
     case "Serving":
       return setupServingMend(lack, at);
@@ -995,8 +983,6 @@ function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
 const setupRunnerLacks: readonly SetupLack["lacks"][] = [
   "Runner",
   "RunnerLive",
-  "ChatHost",
-  "ChatHostLive",
 ];
 
 /** The project whose step is the one next where that step lacks one of `lacks`. */

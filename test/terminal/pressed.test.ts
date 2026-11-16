@@ -35,13 +35,7 @@ type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
 type SetupPressedCatalogued =
-  | "ticket"
-  | "runner"
-  | "fallback"
-  | "chatHost"
-  | "connect"
-  | "add"
-  | "addAccount";
+  "ticket" | "runner" | "fallback" | "connect" | "add" | "addAccount";
 
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
@@ -69,10 +63,6 @@ const drawnFromCatalog: Readonly<
   fallback: {
     page: "ui/chuggy-ui/app/browser/settings/OwnerFallbackSection.tsx",
     id: "runners-fallback-title",
-  },
-  chatHost: {
-    page: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
-    id: "runners-chat-host-register",
   },
   connect: { page: connectButton, id: "repositories-connect-github" },
   add: { page: addPicker, id: "repositories-add" },

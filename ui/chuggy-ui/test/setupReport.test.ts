@@ -2172,9 +2172,11 @@ function named(name: string): readonly string[] {
         thing: {
           thing: "Hand",
           tell: {
-            id: "setup-mend-chat-live-tell",
+            id: "setup-mend-serving-admin-tell",
             args: {
-              chats: { id: "setup-mend-chats", args: { project: name } },
+              project: name,
+              setting: "Personal runners",
+              placement: `${site}/placement`,
             },
           },
           when: { id: "setup-mend-admin-when", args: { workspace: name } },
@@ -2191,7 +2193,7 @@ function flat(name: string): readonly string[] {
     `site: ${site}, signed in`,
     `found: this folder's remote ${name} is added to no project the site shows you, so it proposes none`,
     `step: workspace   done     ${name}`,
-    `tell: Your chats in ${name} run only on your chat host, one machine of yours, which is registered and not running. Start it on its machine and tell me once it is running.`,
+    `tell: Your runner is registered and given ${name}, and does not take its work yet. Your own runners take its work only once an admin of the project sets Personal runners on its Placement page, ${site}/placement. Tell me once they have.`,
     `rule: Run node ${machineScript} --workspace '${name}' only once the person says they are an admin of ${name}.`,
     stop,
   ];

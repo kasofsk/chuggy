@@ -17,6 +17,12 @@ setup-runner-versioned = { $program } { $version }
 # The rule a stop ends on, naming the one command it may be run again as.
 # spells -run: to run is a verb here
 setup-runner-rule = Run { $command } only { $when }.
+# spells -run: to run is a verb here
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-runner-rule-chat-host = { $given ->
+    [yes] Run it with { $flag } { $no } in place of { $flag } { $yes } where the person wants no { -chat-host }, or only uses { -brand-name } through their agent.
+   *[no] Run it with { $flag } { $yes } in place of { $flag } { $no } only where the person asks for the { -chat-host } all the same.
+}
 
 ## Each kind of Claude credential: what it is called, and what makes one.
 
@@ -47,6 +53,8 @@ setup-runner-note-installed = installed the { -runner } package, { $versioned },
 setup-runner-note-installed-kept = installed the { -runner } package, { $versioned }, at { $command }, and { $kept } is still at { $where }
 setup-runner-note-settings = the { -runner }'s settings are in { $path }
 setup-runner-note-settings-written = wrote the { -runner }'s settings to { $path }: its guide's own, with { $engine } as the engine
+# spells -run: to run is a verb here
+setup-runner-note-chat-settings-written = wrote the size of your { -chat-host } into { $path }, every other setting kept as it was: the most { -thread(form: "plural") } it runs at once is { $sessions }, at { $each } each, { $total } in all
 setup-runner-note-login = the { -runner }'s { $credential } is in { $path }
 setup-runner-note-pool = this machine is registered as { -runner(form: "a") } of { $project }, in { $path }
 setup-runner-note-pool-gone = { $path } registered this machine as { $pool }, and the { -site } lists no { -runner } of { $project } by that name

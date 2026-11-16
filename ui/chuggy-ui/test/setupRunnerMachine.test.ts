@@ -19,6 +19,7 @@ import {
   setupAgentIs,
   setupChatFiles,
   setupChatPackageLeast,
+  setupChatSized,
   setupChildFailed,
   setupLingerByHand,
   setupLingerCommand,
@@ -276,6 +277,7 @@ test("the settings are read for the engine and the Claude login they name and fo
   expect(settled(undefined)).toEqual({ settings: "Absent" });
   expect(settled(JSON.stringify({ claudeTokenFile: "/k/t" }))).toEqual({
     settings: "Read",
+    chat: {},
     path: boxSettings,
     engine: "docker",
     credential: { kind: "Subscription", path: "/k/t" },
@@ -291,6 +293,7 @@ test("the settings are read for the engine and the Claude login they name and fo
     ),
   ).toEqual({
     settings: "Read",
+    chat: {},
     path: boxSettings,
     engine: "podman",
     credential: { kind: "Subscription", path: "/k/t" },
@@ -358,6 +361,7 @@ test("a credential the settings name is read as its kind and its one file, of an
       claudeCredential.kind,
     ).toEqual({
       settings: "Read",
+      chat: {},
       path: boxSettings,
       engine: "docker",
       credential,
@@ -411,6 +415,7 @@ test("the settings a machine with none is given are the package's guide's own, a
   });
   expect(settled(text)).toEqual({
     settings: "Read",
+    chat: {},
     path: boxSettings,
     engine: "podman",
     credential: { kind: "Subscription", path: boxLogin },
@@ -561,6 +566,7 @@ test("the prefix npm prints is taken only as one whole path, and is this person'
 function naming(engine: SetupEngine): SetupSettingsNamed {
   return {
     settings: "Read",
+    chat: {},
     path: boxSettings,
     engine,
     credential: { kind: "Subscription", path: boxLogin },
@@ -719,6 +725,12 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     room: { room: "Open", engine: "docker" },
     held: false,
     chat: false,
+    chatSize: {
+      engineMib: 11_980,
+      room: 3,
+      sessionsMax: 3,
+      sessionMemoryMib: 2_048,
+    },
     claude: "Subscription",
   });
   expect(bare.box.paths).toEqual(before);
@@ -786,6 +798,12 @@ test("on a Mac the bare command reads the settings at chuggy-darwin's place and 
     room: { room: "Open", engine: "docker" },
     held: true,
     chat: false,
+    chatSize: {
+      engineMib: 11_980,
+      room: 3,
+      sessionsMax: 3,
+      sessionMemoryMib: 2_048,
+    },
     claude: "Subscription",
   });
   expect(darwin.box.acts).toEqual(["docker"]);
@@ -1006,4 +1024,24 @@ test("a program's failure keeps of what it printed only an excerpt the redactor 
     how: "Unended",
     secs: 61,
   });
+});
+
+test("the chat host is sized to the engine's memory less a run's and a spare, in chats of the size the settings count one by, four at most; one with no room, or an engine that said none, is still given one chat on a yes, and a most the settings name is kept", () => {
+  const sized = (engineMib: number | undefined, chat = {}) => {
+    const { room, sessionsMax, sessionMemoryMib } = setupChatSized(
+      engineMib,
+      chat,
+    );
+    return [room, sessionsMax, sessionMemoryMib];
+  };
+  expect(sized(11_980)).toEqual([3, 3, 2_048]);
+  expect(sized(6_144)).toEqual([0, 1, 2_048]);
+  expect(sized(7_167)).toEqual([0, 1, 2_048]);
+  expect(sized(7_168)).toEqual([1, 1, 2_048]);
+  expect(sized(65_536)).toEqual([4, 4, 2_048]);
+  expect(sized(1_024)).toEqual([0, 1, 2_048]);
+  expect(sized(undefined)).toEqual([0, 1, 2_048]);
+  expect(sized(11_980, { sessionMemoryMib: 3_072 })).toEqual([2, 2, 3_072]);
+  expect(sized(11_980, { sessionsMax: 1 })).toEqual([3, 1, 2_048]);
+  expect(sized(6_144, { sessionsMax: 6 })).toEqual([0, 6, 2_048]);
 });

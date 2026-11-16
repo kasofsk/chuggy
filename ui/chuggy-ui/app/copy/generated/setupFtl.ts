@@ -52,7 +52,7 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 
 # spells -run: to run is a verb here
 setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $served }, as { $filed } or as { $plugged }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -62,6 +62,7 @@ setup-asked-project-name = { $made } takes { $workspace } and { $name }, both: t
 setup-asked-brief = { $filed } takes { $title } and { $intent }, both: what the { -ticket } is called, and what the person wants done
 setup-asked-test = { $flag } takes the command that tests this { -repository }, on one line, as { $configuration } writes it
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
+setup-asked-chat-host = { $flag } takes only { $yes } or { $no }: whether this machine is made your { -chat-host } too
 setup-asked-plugin = { $flag } takes only { $skip }
 
 ## A machine the program is not served on, or a Node too old to run it.
@@ -228,8 +229,8 @@ setup-step-runner-offline = registered, not running
 setup-step-runner-live = live
 # spells -work-stage: the work in general
 setup-step-runner-hosted = { -hosted-runs } take its work
-setup-step-chat-host-offline = { $runner }; your { -chat-host } is registered, not running
-setup-step-chat-host-none = { $runner }; you have no { -chat-host } for your { -thread(form: "plural") } in it
+setup-step-chat-host-offline = { $runner }; your { -chat-host }, which only your { -thread(form: "plural") } in the browser need, is registered and not running, and { $command } on its machine starts it
+setup-step-chat-host-none = { $runner }; you have no { -chat-host }, which only your { -thread(form: "plural") } in the browser need, and { $command } sets one up
 setup-step-ticket-done = { -ticket } { $ticket } is done
 setup-step-ticket-finalized = { -ticket } { $ticket } is { -finalization(form: "ed") }
 setup-step-ticket-proposed = { -ticket } { $ticket } opened { -pull-request(form: "a") }
@@ -408,7 +409,6 @@ setup-project-refused-tell = The { -project } was not made: { $refusal }. Tell m
 ## person's yes.
 
 setup-offer-when = once the person says yes to { -runner(form: "a") } on this machine
-setup-offer-chat-host-when = once the person says yes to this machine as their { -chat-host }
 setup-claude-on-subscription = your { -claude } plan
 setup-claude-on-api-key = your Anthropic API key
 setup-claude-on-bedrock = your Amazon Bedrock account
@@ -422,41 +422,35 @@ setup-next-runner = The next step is { -runner(form: "a") }: the machine that do
 setup-mend-runner-running-when = once the person says the { -runner } is running
 # spells -release: a package's release
 setup-mend-package-newer = If the { -runner } package here, { $program }, is older than { setup-program } needs, I install its latest release first.
-# spells -run: to run is a verb here
-setup-mend-chat-too = Your { -thread(form: "plural") } run only on your { -chat-host }, a machine of yours, so I will also make this machine it, as a second service of yours.
 # spells -brief-check: to check is a verb here
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }.{ $chat ->
-    [with] { " " }{ setup-mend-chat-too }
-   *[without] { "" }
-} Tell me yes to go ahead.
+setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }, { $job } a { -run }.{ $chat ->
+    [with] { " " }{ $ask } Tell me yes to go ahead, and whether you want the { -chat-host } too.
+   *[without] { " " }Tell me yes to go ahead.
+}
 setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-mend-runner-put-chat = That puts two background services of yours here. The { -runner } package, { $program }, runs them, and they start when you log in. One does the work on your { -project }'s { -ticket(form: "plural") }. The other is your { -chat-host }: your { -thread(form: "plural") } with { -brand-name } run there and nowhere else. Both run on this machine { $runs }.
-# spells -work-stage: the work in general
+setup-mend-runner-put = That puts a background service of yours here. The { -runner } package, { $program }, runs it, and it starts when you log in. Work on your { -ticket(form: "plural") } then runs on this machine { $runs }, { $job } a { -run }.
 # spells -run: to run is a verb here
-setup-mend-runner-put = That puts a background service of yours here. The { -runner } package, { $program }, runs it, and it starts when you log in. Work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
-# spells -run: to run is a verb here
-setup-mend-chat-by-hand = open { $page }, press { $register }, choose the machine and run the commands it shows
-# spells -run: to run is a verb here
-setup-mend-chats = Your { -thread(form: "plural") } in { $project } run only on your { -chat-host }, one machine of yours
-# spells -brief-check: to check is a verb here
-setup-mend-chat-live-offer = { $chats }, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the { -site } holds. { setup-mend-package-newer } Tell me yes to go ahead.
-setup-mend-chat-live-tell = { $chats }, which is registered and not running. Start it on its machine and tell me once it is running.
-setup-mend-chat-host-when = once the person says their { -chat-host } is running
-# spells -run: to run is a verb here
-setup-mend-chat-offer = { $chats }, and you have none yet. I can make this machine it: that puts here the { -runner } package, { $program }, where it is not here yet or is older than { setup-program } needs, and a background service of yours that starts when you log in, which your { -thread(form: "plural") } then run on, { $runs }. Tell me yes to go ahead.
-setup-mend-chat-tell = { $chats }, and you have none yet{ $here ->
-    [seen] ; { setup-program } cannot make this machine it
-   *[unseen] { "" }
-}. On the machine that will be it, { $byHand }. Tell me once it is running.
+# spells -agent: the person's own coding agent, not one of chuggy's
+setup-mend-chat-host-ask = I can also make this machine your { -chat-host }, a second background service, which holds { $total } whenever it runs: { $each } a { -thread }, for up to { $sessions } at once. It is only for chatting with { -brand-name } in the browser, so tools in your own agent need none. { $recommend ->
+    [yes] There is room for it here beside a { -run }, so I recommend it.
+   *[no] I recommend against it here: { $short }.
+}
+setup-mend-chat-host-short = { $said ->
+    [said] { $engine } here has only { $memory }, too little for a { -run } and a { -chat-host } at once
+   *[unsaid] { $engine } here did not say how much memory it has
+}
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
 setup-mend-runner-elsewhere = Open { $page }, press { $add } and do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
 setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there, press { $add } and do what it shows, and tell me once it is running.
-setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows.
+setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put }{ $chat ->
+    [with] { " " }{ $ask } Tell me yes to go ahead, and whether you want the { -chat-host } too.
+   *[without] { " " }Tell me yes to go ahead.
+} For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add } and do what it shows.
 # spells -work-stage: the work in general
 setup-mend-serving-offer = Your { -runner } is registered and does not take { $project }'s work yet. With your yes I will { $does ->
     [both] give it { $project } and let your own { -runner(form: "plural") } take its work
