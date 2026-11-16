@@ -28,6 +28,7 @@ import {
   saidMember,
   saidMemberSite,
   saidPluginOn,
+  saidRunnable,
   saidStages,
   saidViewer,
   saidViewerSite,
@@ -40,9 +41,11 @@ import {
   setupSiteRepositoryAddress,
   setupSiteStages,
   setupSiteTwo,
+  setupSiteWaiting,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 import type {
   SetupSite,
+  SetupSiteFate,
   SetupSiteRead,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 
@@ -398,6 +401,39 @@ for (const fate of Object.keys(saidFates) as (keyof typeof saidFates)[])
       [],
     );
   });
+
+test("a ticket in its work waiting on the person's runners short of memory is told, over the wire, how much they have free and the run needs, and an executions read that fails or comes back cut stops nothing and is told as before", async () => {
+  const session = await signed();
+  const working = (fate?: SetupSiteFate): SetupSite => {
+    const { site, project } = saidRunnable();
+    project.tickets.push({ ticket: 7, phase: "Work" });
+    project.executions.set(7, [
+      setupSiteWaiting(7, "Live", { freeMib: 1434, neededMib: 4096 }),
+    ]);
+    if (fate !== undefined) site.fates.set("executions", fate);
+    return site;
+  };
+  const tell = (waits: string): string =>
+    `Ticket 7 is in Work.${waits} Setup is done when it finishes. ${session.installation.site}/acme/widgets/tickets/7 shows where it is. Tell me when you want me to look again.`;
+  const short = await read(session, working());
+  assert.equal(short.code, 0, short.stdout);
+  assert.deepEqual(steps(short).at(-1), ["waiting", "ticket 7 is in Work"]);
+  assert.deepEqual(said(short, "tell"), [
+    tell(
+      " It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB.",
+    ),
+  ]);
+  for (const fate of ["Failed", "Cut"] as const) {
+    const done = await read(session, working(fate));
+    assert.equal(done.code, 0, fate);
+    assert.deepEqual(
+      steps(done).at(-1),
+      ["waiting", "ticket 7 is in Work"],
+      fate,
+    );
+    assert.deepEqual(said(done, "tell"), [tell("")], fate);
+  }
+});
 
 const cuts: readonly (readonly [
   SetupSiteRead,

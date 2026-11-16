@@ -44,6 +44,7 @@ figures-month-december = Dec
 
 ## The units a quantity somebody set is counted in.
 
+figures-quantity = { $figure } { $unit }
 figures-unit-percent = %
 figures-unit-hours = h
 figures-unit-minutes = min

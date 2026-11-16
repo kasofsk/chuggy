@@ -48,6 +48,7 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { forgeAccountRows, forgeInstallOffered } from "./forgeInstallation.ts";
+import { runnerWait, runnerWaitRoom } from "./myRunner.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
   repositoriesWorkerless,
@@ -67,6 +68,7 @@ import type {
   SetupGrant,
   SetupRead,
   SetupReads,
+  SetupTicketExecutions,
   SetupTicketLandings,
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
@@ -151,17 +153,28 @@ export type SetupLack =
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
-  /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges, and `bootstrapped` where it holds only the bootstrap. */
+  /** `pullRequest` where the repository meant lands a ticket in a pull request the person merges, `bootstrapped` where it holds only the bootstrap, and `wait` what its starting execution waits on of the person's runners, where it is read whole and says so. */
   | {
       readonly lacks: "Landing";
       readonly ticket: number;
       readonly phase: TicketPhase;
       readonly pullRequest: boolean;
       readonly bootstrapped: boolean;
+      readonly wait: SetupRunnerWait | undefined;
     }
   | { readonly lacks: "Decision"; readonly ticket: number };
 
 type TicketPhase = TicketResponse["phase"];
+
+/** What a ticket's starting execution waits on of the person's runners, beyond waiting: too little memory free on them for the run, their being offline, or none of them able to run it. */
+export type SetupRunnerWait =
+  | {
+      readonly wait: "Room";
+      readonly freeMib: number;
+      readonly neededMib: number;
+    }
+  | { readonly wait: "Offline" }
+  | { readonly wait: "Unable" };
 
 /**
  * One app that is not granted the folder's repository, and where it is given
@@ -960,7 +973,7 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
   return undefined;
 }
 
-/** The first of the ticket step's reads that was not got, or was got short of what could show a landing. */
+/** The first of the ticket step's reads that was not got, or was got short of what could show a landing. A ticket's executions are not among them: one not read whole leaves only what it waits on unsaid. */
 function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
   const asked: readonly (readonly [SetupReadName, SetupRead<unknown>])[] = [
     ["tickets", reads.landed],
@@ -983,6 +996,30 @@ function setupTicketUnread(reads: SetupReads): SetupStep | undefined {
 
 /** The phase a ticket is in between its release and its start, where pressing is what starts one nothing else has. */
 export const setupUnstartedPhase = "Pending" satisfies TicketPhase;
+
+/** What the starting execution of a ticket's executions, read whole, waits on of the person's runners, by the console's own decider: none where they were not read whole, none is starting, or its runners are live and short of nothing said. */
+function setupRunnerWaitOf(
+  held: SetupTicketExecutions | undefined,
+): SetupRunnerWait | undefined {
+  if (held?.executions.read !== "Got" || !held.executions.whole)
+    return undefined;
+  const starting = held.executions.value.find(
+    (execution) => runnerWait(execution) !== undefined,
+  );
+  if (starting === undefined) return undefined;
+  const room = runnerWaitRoom(starting);
+  if (room !== undefined)
+    return { wait: "Room", freeMib: room.freeMib, neededMib: room.neededMib };
+  switch (runnerWait(starting)) {
+    case "Offline":
+      return { wait: "Offline" };
+    case "Unable":
+      return { wait: "Unable" };
+    case "Live":
+    case undefined:
+      return undefined;
+  }
+}
 
 /** A ticket on its way, by what it waits on: a decision where it is escalated, a start where it is released and not started, and its landing otherwise, told by the landing the repository meant defaults to. */
 function setupTicketMoving(
@@ -1020,6 +1057,9 @@ function setupTicketMoving(
         setupBindingMeant(reads.repositories)?.finalization.kind ===
         "PullRequest",
       bootstrapped: setupBootstrapped(reads.repositories),
+      wait: setupRunnerWaitOf(
+        reads.executions.find((held) => held.ticket === ticket),
+      ),
     },
   );
 }

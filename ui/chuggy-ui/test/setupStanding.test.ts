@@ -63,6 +63,7 @@ import {
   setupSiteProject,
   setupSiteProposed,
   setupSiteRepositoryAddress,
+  setupSiteWaiting,
   setupSiteWorkspace,
 } from "./setupSite.ts";
 import type {
@@ -130,6 +131,76 @@ test.each([
     ]);
   },
 );
+
+/** The ticket step of a site whose ticket 7 is in `phase` with `executions`, its executions read meeting `fate` where a case says so. */
+async function runningStep(
+  phase: SetupSiteTicket["phase"],
+  executions: Parameters<SetupSiteProject["executions"]["set"]>[1],
+  fate?: SetupSiteFate,
+): Promise<SetupStep | undefined> {
+  const { site, project } = saidRunnable();
+  project.tickets.push({ ticket: 7, phase });
+  project.executions.set(7, executions);
+  if (fate !== undefined) site.fates.set("executions", fate);
+  return (await stood(site)).steps.at(-1);
+}
+
+const room = { freeMib: 1434, neededMib: 4096 };
+
+test.each([
+  ["Work", setupSiteWaiting(7, "Live", room), { wait: "Room", ...room }],
+  ["Evaluation", setupSiteWaiting(7, "Offline"), { wait: "Offline" }],
+  ["Work", setupSiteWaiting(7, "Unable"), { wait: "Unable" }],
+  ["Work", setupSiteWaiting(7, "Live"), undefined],
+  ["Work", { ...setupSiteWaiting(7, "Offline"), mine: false }, undefined],
+  ["Work", { ...setupSiteWaiting(7, "Offline"), status: "Queued" }, undefined],
+] as const)(
+  "a ticket in %s carries what its starting execution of the person's waits on of their runners, by the console's own decider: %j",
+  async (phase, execution, wait) => {
+    const step = await runningStep(phase, [execution]);
+    expect(step?.state).toBe("waiting");
+    expect(step?.lacks).toEqual({
+      lacks: "Landing",
+      ticket: 7,
+      phase,
+      pullRequest: false,
+      bootstrapped: false,
+      wait,
+    });
+  },
+);
+
+test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
+  "a ticket's executions read answered as %s leaves the ticket step read and waiting on its landing, and says no wait",
+  async (fate) => {
+    const step = await runningStep(
+      "Work",
+      [setupSiteWaiting(7, "Live", room)],
+      fate,
+    );
+    expect(step?.state).toBe("waiting");
+    expect(step?.lacks).toMatchObject({ lacks: "Landing", wait: undefined });
+  },
+);
+
+test("a ticket's executions are read only where it is in its work or its evaluation, and for each such ticket up to the bound", async () => {
+  const { site, project } = saidRunnable();
+  project.tickets.push(
+    saidLandingTicket(1),
+    ...Array.from({ length: setupLandingsMax + 1 }, (_, at) => ({
+      ticket: at + 2,
+      phase: "Evaluation" as const,
+    })),
+  );
+  const sent: string[] = [];
+  await stood(site, { sent });
+  const asked = sent.flatMap(
+    (request) => /\/executions\?ticket=(\d+)$/u.exec(request)?.[1] ?? [],
+  );
+  expect(asked).toEqual(
+    Array.from({ length: setupLandingsMax }, (_, at) => String(at + 2)),
+  );
+});
 
 test("a ticket that is released and has not started waits on a press that starts it, and is said as that and not as a phase", async () => {
   const { site, project } = saidRunnable();

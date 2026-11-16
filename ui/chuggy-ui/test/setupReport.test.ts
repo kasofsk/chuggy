@@ -38,6 +38,7 @@ import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
 import { copyTextOf } from "../app/copy/copyBundle.ts";
 import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { Copy } from "../app/core/copy.ts";
+import { memoryMibFigure, quantityFigureCopy } from "../app/core/figures.ts";
 import type {
   SetupFault,
   SetupPluginEnded,
@@ -204,6 +205,23 @@ const things: {
         args: { workspace: "acme", people: "the page" },
       },
       when: { id: "setup-mend-admin-when", args: { workspace: "acme" } },
+    },
+    {
+      thing: "Hand",
+      tell: {
+        id: "setup-mend-finalization-tell",
+        args: {
+          ticket: "7",
+          phase: { id: "ticket-steps-phase-work" },
+          page: "the page",
+          ends: "finish",
+          bootstrap: "own",
+          wait: "room",
+          free: quantityFigureCopy(memoryMibFigure(1434)),
+          needed: quantityFigureCopy(memoryMibFigure(4096)),
+        },
+      },
+      when: { id: "setup-runner-when-look-again" },
     },
   ],
   Offer: [
@@ -1271,6 +1289,14 @@ test("a step done by hand is told, and the checklist is named to be read again o
   ]);
 });
 
+test("a ticket waiting on the person's runners short of memory is told how much they have free and the run needs, each as the ticket page sizes it", () => {
+  expect(ended(things.Hand[1] as SetupThing)).toEqual([
+    "tell: Ticket 7 is in Work. It is waiting on your personal runner, which has 1.4 GiB free; this run needs 4 GiB. Setup is done when it finishes. the page shows where it is. Tell me when you want me to look again.",
+    `rule: Run node ${machineScript} only if the person asks to look again.`,
+    stop,
+  ]);
+});
+
 test("a question is put as ask:, and the rule names the flag the answer is passed in, last, after whatever is already chosen", () => {
   expect(
     ended(things.Ask[0] as SetupThing, {
@@ -1431,7 +1457,7 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   const exits = (kind: SetupThing["thing"]) =>
     things[kind].map((thing) => setupReportExit(checklist(thing)));
   expect(exits("Done")).toEqual([0]);
-  expect(exits("Hand")).toEqual([0]);
+  expect(exits("Hand")).toEqual([0, 0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
   expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0]);

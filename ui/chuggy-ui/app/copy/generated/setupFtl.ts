@@ -487,13 +487,22 @@ setup-mend-release-tell = { -ticket(case: "upper") } { $ticket } was drafted and
 setup-mend-dispatch-tell = { -ticket(case: "upper") } { $ticket } is { -release(form: "ed") } and has not started. Open { $page } and press { $dispatch } to start it. Tell me once it has started.
 setup-mend-dispatch-when = once the person says { -ticket } { $ticket } has started
 # spells -run: to run is a verb here
-setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }. { $ends ->
+setup-mend-finalization-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }.{ $wait ->
+    [room] { " " }{ setup-mend-wait-room }
+    [offline] { " " }{ setup-mend-wait-offline }
+    [unable] { " " }{ setup-mend-wait-unable }
+   *[none] { "" }
+} { $ends ->
     [pull] It ends in { -pull-request(form: "a") } for you to merge on { -github }{ $bootstrap ->
         [bootstrap] , and merging it makes later { -ticket(form: "plural") } run on this { -repository }'s own { -configuration }
        *[own] { "" }
     }. Setup is done once that { -pull-request } is open.
    *[finish] Setup is done when it finishes.
 } { $page } shows where it is. Tell me when you want me to look again.
+setup-mend-wait-room = It is waiting on your { -personal-runner }, which has { $free } free; this { -run } needs { $needed }.
+setup-mend-wait-offline = It is waiting on your { -personal-runner }, which is offline.
+# spells -run: to run is a verb here
+setup-mend-wait-unable = It is waiting on your { -personal-runner(form: "plural") }, and none of them can run it.
 setup-mend-decision-tell = { -ticket(case: "upper") } { $ticket } is { -escalation }: it waits on a decision of yours at { $page }. Tell me once it is moving again.
 setup-mend-decision-when = once the person says { -ticket } { $ticket } is moving again
 
