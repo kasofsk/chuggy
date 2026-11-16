@@ -77,7 +77,6 @@ function appOver(access: ReadonlySet<ProjectAccessKind>) {
     projectInbox(granted, {
       store,
       operationalReads: { ticketLatestExecutions: () => Promise.resolve([]) },
-      refusals: { binding: () => Promise.resolve([]) },
     }),
   );
 }
@@ -111,7 +110,6 @@ test("an entry answers the tickets list's row and every other read's part of it,
   assert.deepEqual(body.entries[0], {
     ticket: { ...held[0], changedAt: "2026-10-01T00:00:00Z" },
     actions: [],
-    refusals: [],
   });
 });
 

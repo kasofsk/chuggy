@@ -1,24 +1,13 @@
 /**
  * The inbox: every ticket a person is needed for, one entry each, read whole.
  *
- * Three things put a ticket here — a phase of `inboxPhases`, an open native
- * action and a standing refusal of the lead's — and the store answers the
- * union of them in the tickets list's `RecentActivity` order. The refusals are
- * read first, to the bound their own route answers, and the store is handed
- * the tickets they name; the phases and the open actions it reads itself.
- *
- * A REFUSAL ITS TICKET HAS MOVED PAST NEEDS NOBODY: the ticket was revoked,
- * dispatched, or changed and is the lead's to weigh again. The read that
- * answers refusals here leaves those out.
+ * Two things put a ticket here — a phase of `inboxPhases` and an open native
+ * action — and the store answers the union of them in the tickets list's
+ * `RecentActivity` order.
  */
 
-import { agenticRefusalsAnsweredMax, inboxPhases } from "../contract/http.ts";
-import type { TicketId } from "../domain/ids.ts";
+import { inboxPhases } from "../contract/http.ts";
 import type { Phase } from "../domain/phase.ts";
-import type {
-  AgenticRefusalBindingRead,
-  AgenticRefusalStanding,
-} from "./agenticRefusal.ts";
 import type { AuthorizedResult } from "./authorizedProject.ts";
 import {
   projectPageLimitMax,
@@ -38,11 +27,9 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
-/** What the store is asked for: the phases and the tickets beside them that make the union, and the page. */
+/** What the store is asked for: the phases that, with the open actions, make the union, and the page. */
 export interface InboxReadQuery {
   readonly phases: readonly Phase[];
-  /** The tickets a refusal names, which the store has no read of. */
-  readonly named: readonly TicketId[];
   readonly after?: TicketActivityPosition;
   readonly limit: number;
 }
@@ -68,7 +55,6 @@ export interface ProjectInboxQuery {
 export interface ProjectInboxEntry {
   readonly ticket: TicketResource;
   readonly actions: readonly ProjectNativeAction[];
-  readonly refusals: readonly AgenticRefusalStanding[];
 }
 
 export interface ProjectInboxPage {
@@ -92,7 +78,6 @@ export interface ProjectInboxPorts {
     OperationalReadStore,
     "ticketLatestExecutions"
   >;
-  readonly refusals: AgenticRefusalBindingRead;
 }
 
 function checkedProjectInboxQuery(query: ProjectInboxQuery): ProjectInboxQuery {
@@ -112,23 +97,14 @@ function checkedProjectInboxQuery(query: ProjectInboxQuery): ProjectInboxQuery {
   return query;
 }
 
-/** The tickets the refusals name, each once. */
-function projectInboxNamed(
-  refusals: readonly AgenticRefusalStanding[],
-): readonly TicketId[] {
-  return [...new Set(refusals.map((refusal) => refusal.ticket))];
-}
-
-/** The page's tickets in its order, each with what the other reads say of it. */
+/** The page's tickets in its order, each with its open actions. */
 function projectInboxEntries(
   tickets: readonly TicketResource[],
-  page: { readonly actions: readonly ProjectNativeAction[] },
-  refusals: readonly AgenticRefusalStanding[],
+  actions: readonly ProjectNativeAction[],
 ): readonly ProjectInboxEntry[] {
   return tickets.map((ticket) => ({
     ticket,
-    actions: page.actions.filter((action) => action.ticket === ticket.ticket),
-    refusals: refusals.filter((refusal) => refusal.ticket === ticket.ticket),
+    actions: actions.filter((action) => action.ticket === ticket.ticket),
   }));
 }
 
@@ -142,13 +118,8 @@ export function projectInbox(
       const asked = checkedProjectInboxQuery(query);
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { result: "NotFound" };
-      const refusals = await ports.refusals.binding(
-        partition,
-        agenticRefusalsAnsweredMax,
-      );
       const page = await ports.store.inbox(partition, {
         phases: inboxPhases,
-        named: projectInboxNamed(refusals),
         ...(asked.after === undefined ? {} : { after: asked.after }),
         limit: asked.limit,
       });
@@ -173,7 +144,7 @@ export function projectInbox(
       return {
         result: "Authorized",
         value: {
-          entries: projectInboxEntries(tickets, { actions }, refusals),
+          entries: projectInboxEntries(tickets, actions),
           count: page.count,
           ...(page.nextAfter === undefined
             ? {}

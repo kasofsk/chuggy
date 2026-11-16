@@ -77,12 +77,30 @@ function steps(done: Ran): readonly (readonly [string, string])[] {
   return past;
 }
 
-test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project, or where the project has no ticket yet, ticket for the project", async () => {
+test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again or, where the project is lacking, project with its name, or where the repository holds no configuration, configuration for the project, or where the project has no ticket yet, ticket for the project, or where the person goes to GitHub, bind for the project to run at once", async () => {
   const session = await signed();
   for (const stage of setupSiteStages) {
     const done = await read(session, setupSiteAt(stage));
     assert.equal(done.code, 0, stage);
     assert.deepEqual(steps(done), saidStages[stage], stage);
+    if (stage === "Project" || stage === "Portal") {
+      const [tell = ""] = said(done, "tell");
+      assert.equal(tell.includes(`${session.installation.site}/`), true, tell);
+      assert.deepEqual(
+        await shellWords((done.lines.at(-1) ?? "").slice("next: ".length)),
+        [
+          "node",
+          program,
+          "bind",
+          "--workspace",
+          "acme",
+          "--project",
+          "widgets",
+        ],
+        stage,
+      );
+      continue;
+    }
     assert.equal(done.lines.at(-1), "next: stop", stage);
     if (stage === "Workspace") {
       assert.deepEqual(said(done, "tell"), []);
@@ -160,8 +178,12 @@ test("signed in where Claude Code here has no chuggy plugin, the plugin is offer
       assert.deepEqual(said(past, "rule"), [
         `Run node ${program} --plugin skip only once the person says their workspace is made.`,
       ]);
-    for (const rule of said(past, "rule"))
-      assert.match(rule, / --plugin skip(?: |$)/u, stage);
+    const named = [
+      ...said(past, "rule").filter((rule) => rule.startsWith("Run node ")),
+      ...said(past, "next").filter((next) => next !== "stop"),
+    ];
+    for (const command of named)
+      assert.match(command, / --plugin skip(?: |$)/u, stage);
   }
 });
 

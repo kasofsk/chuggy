@@ -209,11 +209,6 @@ export interface SelectorStateStore {
     ticket: DispatchCandidate["ticket"],
     outcome: JsonValue,
   ): Promise<void>;
-  history(
-    partition: Partition,
-    after: number | undefined,
-    limit: number,
-  ): Promise<readonly SelectorInteractionRecord[]>;
   /** The newest decisions first: the end a lead is seeded from and a run of failures is counted from. */
   tail(
     partition: Partition,
@@ -419,10 +414,9 @@ export interface SelectorRefusalChoice {
 }
 
 /**
- * A ticket whose latest ledger entry is a refusal, as the ledger answers it. It
- * is declared here rather than in the ledger's own module for the reason the
- * port below is, and the observation carries it so the document the lead reads
- * and the exclusion are the same rows.
+ * A ticket whose latest ledger entry is a refusal, as the ledger answers it.
+ * The observation carries it so the document the lead reads and the exclusion
+ * are the same rows.
  */
 export interface SelectorStandingRefusal {
   readonly ticket: DispatchCandidate["ticket"];
@@ -435,9 +429,7 @@ export interface SelectorStandingRefusal {
 /**
  * The door onto the lead's refusal ledger: where one decision's refusals and
  * lifts are entered, and what an observation reads back to know which of them
- * still stand. It is declared here rather than taken from the ledger's own
- * module because the ledger's module takes its vocabulary from this one, and a
- * port pointing back would be a cycle.
+ * still stand.
  */
 export interface SelectorRefusalLedger {
   /** Appends one decision's refusals and lifts as one transaction, idempotent on the decision. */

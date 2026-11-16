@@ -257,20 +257,6 @@ const things: {
     },
     {
       thing: "Offer",
-      command: "Bind",
-      tell: {
-        id: "setup-mend-bind-offer",
-        args: { repository: "acme-org/widgets", project: "acme/widgets" },
-      },
-      when: {
-        id: "setup-offer-bind-when",
-        args: { repository: "acme-org/widgets" },
-      },
-      workspace: "acme",
-      project: "widgets",
-    },
-    {
-      thing: "Offer",
       command: "Plugin",
       tell: { id: "setup-mend-plugin-offer" },
       when: { id: "setup-offer-plugin-when" },
@@ -295,6 +281,29 @@ const things: {
         },
       },
       when: { id: "setup-offer-serve-when" },
+      workspace: "acme",
+      project: "widgets",
+    },
+  ],
+  Run: [
+    {
+      thing: "Run",
+      command: "Bind",
+      tell: undefined,
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Run",
+      command: "Bind",
+      tell: {
+        id: "setup-mend-portal-tell",
+        args: {
+          page: "the page",
+          connect: { id: "repositories-connect-github" },
+          account: "acme-org",
+        },
+      },
       workspace: "acme",
       project: "widgets",
     },
@@ -596,6 +605,7 @@ const roster: {
     { report: "AskedWrongly", fault: "ProjectName" },
     { report: "AskedWrongly", fault: "Test" },
     { report: "AskedWrongly", fault: "Brief" },
+    { report: "AskedWrongly", fault: "Opened" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
@@ -732,12 +742,36 @@ const roster: {
       checklist: checklist(thing),
     })),
   ),
-  Bind: bindAnswers.map((answered) => ({
-    report: "Bind",
-    repository: answered === undefined ? undefined : "acme-org/widgets",
-    answered,
-    checklist: checklist(things.Offer[3] as SetupThing),
-  })),
+  Bind: [
+    ...bindAnswers.map((answered) => ({
+      report: "Bind" as const,
+      opened: undefined,
+      openBefore: false,
+      repository: answered === undefined ? undefined : "acme-org/widgets",
+      answered,
+      checklist: checklist(
+        answered === undefined
+          ? (things.Configure[0] as SetupThing)
+          : (things.Run[0] as SetupThing),
+      ),
+    })),
+    {
+      report: "Bind",
+      opened: `${site}/acme/widgets/repositories?connect=github`,
+      openBefore: false,
+      repository: undefined,
+      answered: undefined,
+      checklist: checklist(things.Run[1] as SetupThing),
+    },
+    {
+      report: "Bind",
+      opened: undefined,
+      openBefore: true,
+      repository: undefined,
+      answered: undefined,
+      checklist: checklist(things.Run[1] as SetupThing),
+    },
+  ],
   Serve: serveAnswers.map((answered) => ({
     report: "Serve",
     project: answered === undefined ? undefined : "widgets",
@@ -966,6 +1000,7 @@ function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
     if (thing.thing === "Offer" && thing.command === "Plugin")
       return report.next.carried;
     return thing.thing === "Offer" ||
+      thing.thing === "Run" ||
       thing.thing === "Name" ||
       thing.thing === "Brief" ||
       thing.thing === "Configure"
@@ -1125,7 +1160,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -1264,17 +1299,26 @@ test("every step in every state is laid out in the same columns, and a step with
   expect(Math.max(...setupStepStates.map((state) => state.length))).toBe(7);
 });
 
-test("no checklist ends on a command: whatever comes next waits on the person, and is named under a rule or not at all", () => {
+test("no checklist but bind's ends on a command: whatever else comes next waits on the person, and is named under a rule or not at all", () => {
   for (const report of roster.Checklist) {
     const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report.next);
+    const thing = report.next.thing;
+    if (thing.thing === "Run") {
+      expect(lines.at(-1), said).toBe(
+        `next: node ${machineScript} bind ${flags}`,
+      );
+      expect(lines.at(-2), said).toMatch(
+        /^rule: Run the command on the next: line now, without asking the person/u,
+      );
+      continue;
+    }
     expect(lines.at(-1), said).toBe(stop);
     expect(lines[0], said).toBe(`site: ${site}, signed in`);
     expect(lines.filter((text) => text.startsWith("step: "))).toHaveLength(
       setupSteps.length,
     );
     const rules = lines.filter((text) => text.startsWith("rule: "));
-    const thing = report.next.thing;
     expect(rules, said).toHaveLength(
       thing.thing === "Done"
         ? 0
@@ -1497,7 +1541,8 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Hand")).toEqual([0, 0]);
   expect(exits("Ask")).toEqual([0, 0]);
   expect(exits("Name")).toEqual([0, 0]);
-  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  expect(exits("Offer")).toEqual([0, 0, 0, 0, 0, 0]);
+  expect(exits("Run")).toEqual([0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
 });
 
@@ -2421,12 +2466,22 @@ test("a run of import says what it asked and what the site answered under the si
   }
 });
 
-test("bind is offered for the project and named only once the person says yes to adding the repository", () => {
-  expect(ended(things.Offer[3] as SetupThing)).toEqual([
-    "tell: The portal app and the worker app are both let into acme-org/widgets, this folder's repository, and acme/widgets does not have it yet. With your yes I will add it to acme/widgets, as the repositories page's Add does. Tell me yes to go ahead.",
-    `rule: Run node ${machineScript} bind ${flags} only once the person says yes to adding acme-org/widgets to the project.`,
-    stop,
+const bindRule =
+  "rule: Run the command on the next: line now, without asking the person";
+const bindRuleRest =
+  ". It waits until GitHub lets both apps into this folder's repository, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.";
+
+test("bind is named to run at once for the project, asking nothing of the person, and beside what a tell has them do on GitHub", () => {
+  const [granted, trip] = things.Run;
+  expect(ended(granted as SetupThing)).toEqual([
+    `${bindRule}${bindRuleRest}`,
+    `next: node ${machineScript} bind ${flags}`,
   ]);
+  expect(ended(trip as SetupThing).slice(1)).toEqual([
+    `${bindRule}, while they do what the tell: line says${bindRuleRest}`,
+    `next: node ${machineScript} bind ${flags}`,
+  ]);
+  expect(setupReportExit(checklist(trip as SetupThing))).toBe(0);
 });
 
 test("the ticket step asks what the person wants done, names the configurations where they choose, and names ticket only once they have said it", () => {
@@ -2470,6 +2525,43 @@ test("a run of ticket says what it filed or why it did not under the site's line
     expect(lines).toEqual([alone[0], ...said, ...alone.slice(1)]);
     expect(setupReportExit(report)).toBe(setupReportExit(report.checklist));
   }
+});
+
+test("a bind whose wait ran out before GitHub was done says so, says the page it opened, and has the next run of bind made again, as having opened it", () => {
+  const waited = roster.Bind[3];
+  if (waited === undefined) throw new Error("no waited bind");
+  const lines = setupReportLines(waited, machineScript, copyTextEn);
+  const alone = setupReportLines(waited.checklist, machineScript, copyTextEn);
+  expect(lines.slice(1, 3)).toEqual([
+    `did: opened ${site}/acme/widgets/repositories?connect=github in a browser`,
+    "found: the wait ended before GitHub let both apps into this folder's repository",
+  ]);
+  expect(lines.slice(3, -2)).toEqual(alone.slice(1, -2));
+  expect(lines.slice(-2)).toEqual([
+    "rule: Run the command on the next: line again, and go on running it while GitHub still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.",
+    `next: node ${machineScript} bind ${flags} --opened github`,
+  ]);
+  expect(setupReportExit(waited)).toBe(0);
+});
+
+test("an --opened that is not github is said as the one value it takes, with bind", () => {
+  expect(
+    setupReportLines(
+      { report: "AskedWrongly", fault: "Opened" },
+      machineScript,
+      copyTextEn,
+    )[0],
+  ).toBe("found: --opened takes only github, with bind");
+});
+
+test("a bind run again as having opened the page says no page opened and goes on naming itself so", () => {
+  const rerun = roster.Bind[4];
+  if (rerun === undefined) throw new Error("no rerun bind");
+  const lines = setupReportLines(rerun, machineScript, copyTextEn);
+  expect(lines.some((line) => line.startsWith("did: opened "))).toBe(false);
+  expect(lines.at(-1)).toBe(
+    `next: node ${machineScript} bind ${flags} --opened github`,
+  );
 });
 
 test("a run of bind says what it asked and what the site answered under the site's line, then the checklist read after it, and exits as that checklist does", () => {

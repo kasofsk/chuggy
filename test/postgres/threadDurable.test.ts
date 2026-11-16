@@ -101,7 +101,6 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessDenial,
 } from "./harness.ts";
-import { leadRigDecision } from "./leadHarness.ts";
 import { sessionRigProvision, sessionRigSession } from "./sessionHarness.ts";
 import {
   threadRigKey,
@@ -1868,32 +1867,6 @@ async function changeLogHead(): Promise<number> {
   return Number(rows[0]?.["head"]);
 }
 
-/** One refusal against two tickets, then a lift of one, which is two of the reasons. */
-async function wakeRefusals(
-  partition: Partition,
-  label: string,
-  refused: TicketId,
-  lifted: TicketId,
-): Promise<void> {
-  const decision = await leadRigDecision(rig, partition, `${label}-refused`);
-  await rig.writes.record({
-    partition,
-    decision,
-    refusals: [
-      { ticket: refused, ticketVersion: 1, reason: "not yet" },
-      { ticket: lifted, ticketVersion: 1, reason: "not yet either" },
-    ],
-    lifts: [],
-  });
-  const lifting = await leadRigDecision(rig, partition, `${label}-lifted`);
-  await rig.writes.record({
-    partition,
-    decision: lifting,
-    refusals: [],
-    lifts: [{ ticket: lifted }],
-  });
-}
-
 /** One ticket standing in one phase, with the change that says so. */
 function wakeTicketPhase(
   partition: Partition,
@@ -1903,7 +1876,7 @@ function wakeTicketPhase(
   return threadRigTicketPhase(rig, partition, ticket, phase);
 }
 
-/** One project, one member and a change for every reason the roster names. */
+/** One project, one member and a change for every reason a change still carries. */
 async function wakeFixture(label: string): Promise<{
   readonly partition: Partition;
   readonly member: ThreadRigMember;
@@ -1923,14 +1896,11 @@ async function wakeFixture(label: string): Promise<{
   const revision = await threadConfiguration(partition);
 
   const filed = () => threadDraft(partition, revision, member, thread.session);
-  const refused = await filed();
-  const lifted = await filed();
   const deleted = await filed();
   const escalated = await filed();
   const done = await filed();
   const revoked = await filed();
 
-  await wakeRefusals(partition, label, refused, lifted);
   const gone = await rig.sessions.harness.authoring.deleteDraft({
     partition,
     authority: member.authority,
@@ -1952,8 +1922,6 @@ async function wakeFixture(label: string): Promise<{
     thread: thread.session,
     after,
     reasons: [
-      ["TicketRefused", refused],
-      ["RefusalLifted", lifted],
       ["DraftDeleted", deleted],
       ["TicketEscalated", escalated],
       ["TicketCompleted", done],
@@ -1962,7 +1930,13 @@ async function wakeFixture(label: string): Promise<{
   };
 }
 
-test("every reason the roster names is a reason the join derives", async () => {
+/** The reasons a refusal of the lead's carried, which a stored wake turn may still name and no change carries. */
+const wakeReasonsRetired: readonly ThreadWakeReason[] = [
+  "TicketRefused",
+  "RefusalLifted",
+];
+
+test("every reason a change still carries is a reason the join derives", async () => {
   const fixture = await wakeFixture("reasons");
   const candidates = await rig.wakes.candidates(
     fixture.after,
@@ -1974,7 +1948,9 @@ test("every reason the roster names is a reason the join derives", async () => {
 
   assert.deepEqual(
     [...new Set(mine.map((candidate) => candidate.reason))].sort(),
-    [...allThreadTicketWakeReasons].sort(),
+    allThreadTicketWakeReasons
+      .filter((reason) => !wakeReasonsRetired.includes(reason))
+      .sort(),
   );
   assert.deepEqual(
     [...new Set(mine.map((candidate) => candidate.session))],
@@ -2052,37 +2028,6 @@ test("a deleted draft's earlier changes are not deletions", async () => {
     mine.map((candidate) => candidate.reason),
     ["DraftDeleted"],
     "the changes that authored the draft read as its deletion",
-  );
-});
-
-test("a lift does not turn the refusal before it into a second lift", async () => {
-  const partition = await project("refusalreasons");
-  const after = await changeLogHead();
-  const member = threadRigMember(rig, partition, "refusalreasons");
-  const thread = await threadRigThread(rig, partition, member);
-  const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, member, thread.session);
-
-  await rig.writes.record({
-    partition,
-    decision: await leadRigDecision(rig, partition, "refusalreasons-refused"),
-    refusals: [{ ticket, ticketVersion: 1, reason: "not yet" }],
-    lifts: [],
-  });
-  await rig.writes.record({
-    partition,
-    decision: await leadRigDecision(rig, partition, "refusalreasons-lifted"),
-    refusals: [],
-    lifts: [{ ticket }],
-  });
-
-  const mine = (
-    await rig.wakes.candidates(after, threadWakesPerPassMax)
-  ).filter((candidate) => candidate.partition.project === partition.project);
-  assert.deepEqual(
-    mine.map((candidate) => candidate.reason),
-    ["TicketRefused", "RefusalLifted"],
-    "the refusal reads as the lift that came after it",
   );
 });
 

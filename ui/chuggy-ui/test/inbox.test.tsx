@@ -38,7 +38,6 @@ import {
   inboxAsked,
   inboxBody,
   inboxEntry,
-  inboxRefusal,
 } from "./inboxFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -109,24 +108,6 @@ function served(
       url,
       tickets.map((ticket) => inboxEntry(ticket)),
     ) ?? answer({ partition: atlas, sequence: 9, tickets: [] })
-  );
-}
-
-/** A ticket the lead is refusing to dispatch, which keeps its phase. */
-const refused: ProjectTicket = {
-  ticket: 42,
-  phase: "Pending",
-  sequence: 8,
-  ...ticketInstants,
-};
-
-/** The same project with the refused ticket in the inbox beside the escalated one. */
-function servedWithRefusal(url: string): Response {
-  return (
-    inboxAnswered(url, [
-      inboxEntry(escalated),
-      inboxEntry(refused, { refusals: [inboxRefusal()] }),
-    ]) ?? served(url)
   );
 }
 
@@ -270,22 +251,10 @@ test("an answer's button still opens the sentence it sends", async () => {
   );
 });
 
-/** A refused ticket keeps its phase and has no open question behind it, so its
- * row says no answer can be sent and marks the refusal with nothing. */
-test("a ticket only a refusal names is a row of its own, offering no answer", async () => {
-  drawInbox(servedWithRefusal);
-  await settled();
-  const link = screen.getByRole("link", { name: "42" });
-  const row = link.closest("tr");
-  if (row === null) throw new Error("no row around ticket 42");
-  expect(row.textContent).toContain("no action can be sent from here yet");
-  expect(screen.queryByText("Standing")).toBeNull();
-});
-
 /** The served policy refuses `style-src` but `'self'`, so nothing this screen
  * draws — a tooltip open included — may append a runtime style element. */
 test("nothing the inbox screen draws is a runtime style element", async () => {
-  drawInbox(servedWithRefusal);
+  drawInbox(served);
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
   const button = screen.getByRole("button", { name: "resume" });
@@ -464,15 +433,6 @@ const inboxFrames: readonly (readonly [string, string, number])[] = [
       version: 1,
       resource: "9",
       representation: { actions: [] },
-    }),
-    1,
-  ],
-  [
-    "a refusal",
-    frame("AgenticRefusal", "20", {
-      version: 1,
-      resource: "9",
-      representation: null,
     }),
     1,
   ],

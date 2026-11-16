@@ -29,9 +29,6 @@ import {
   sessionEfforts,
   sessionModelSchema,
   agentSessionPromptCharsMax,
-  agenticRefusalLedgerAnsweredMax,
-  agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
   countSchema,
   cursorSchema,
   forgeAuthorizationAccountsAnsweredMax,
@@ -72,7 +69,6 @@ import {
   runTurnSeriesMax,
   selectorHandoffNoteBytesMax,
   selectorHandoffNotePreviewCharsMax,
-  selectorHistoryLimitMax,
   sessionContextPageTurnsMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
@@ -177,10 +173,8 @@ import {
   runUsageWindows,
   schedulerFreshnesses,
   selectorAttentions,
-  selectorDeliveryStates,
   selectorDispatchModes,
   selectorModes,
-  agenticRefusalEvents,
   sessionCapabilities,
   sessionRunnerStandings,
   sessionScopes,
@@ -1799,68 +1793,6 @@ const handoffNotePreviewSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
-/** One entry of one ticket's refusal ledger, as the ledger recorded it. */
-export const agenticRefusalEntryResponseSchema = z.object({
-  ordinal: countSchema,
-  event: z.enum(agenticRefusalEvents),
-  ticketVersion: countSchema,
-  reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-  decision: identitySchema,
-  recordedAt: instantSchema,
-});
-export type AgenticRefusalEntryResponse = z.infer<
-  typeof agenticRefusalEntryResponseSchema
->;
-
-/**
- * One page of one ticket's refusal ledger, oldest first, `more` saying whether
- * the page ends the ledger. `standing` is present exactly where this page holds
- * the ledger's latest entry and that entry is a refusal, which is what standing
- * means and is why no entry carries it: a page that stops short of the latest
- * entry says nothing about what stands.
- */
-export const ticketAgenticRefusalsResponseSchema = z.object({
-  ticket: ticketNumberSchema,
-  entries: z
-    .array(agenticRefusalEntryResponseSchema)
-    .max(agenticRefusalLedgerAnsweredMax),
-  more: z.boolean(),
-  standing: z
-    .object({
-      ticketVersion: countSchema,
-      reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-      recordedAt: instantSchema,
-    })
-    .optional(),
-});
-export type TicketAgenticRefusalsResponse = z.infer<
-  typeof ticketAgenticRefusalsResponseSchema
->;
-
-/** One standing refusal across a project, with the ticket as its identity. */
-export const agenticRefusalResponseSchema = z.object({
-  ticket: ticketNumberSchema,
-  ticketVersion: countSchema,
-  reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
-  decision: identitySchema,
-  recordedAt: instantSchema,
-  /** Whether the ticket has moved past the version it was refused at. */
-  superseded: z.boolean(),
-});
-export type AgenticRefusalResponse = z.infer<
-  typeof agenticRefusalResponseSchema
->;
-
-export const agenticRefusalsResponseSchema = z.object({
-  refusals: z
-    .array(agenticRefusalResponseSchema)
-    .max(agenticRefusalsAnsweredMax),
-  more: z.boolean(),
-});
-export type AgenticRefusalsResponse = z.infer<
-  typeof agenticRefusalsResponseSchema
->;
-
 /**
  * What a pod measured of one turn and which batches it wrote, on a lead's turn
  * and a member's alike. It is one shape rather than two copies, because a turn
@@ -2090,57 +2022,10 @@ export type SessionContextResponse = z.infer<
   typeof sessionContextResponseSchema
 >;
 
-/** One dispatch of one decision, and where the delivery record left it. */
-export const selectorDispatchResponseSchema = z.object({
-  ticket: ticketNumberSchema,
-  state: z.enum(selectorDeliveryStates),
-  outcome: identitySchema.optional(),
-});
-
-/** What one decision did, which is what the decision log draws and not what it saw. */
-export const selectorDecisionResponseSchema = z.object({
-  ordinal: countSchema,
-  decision: identitySchema,
-  instructionsVersion: identitySchema,
-  dispatches: z
-    .array(selectorDispatchResponseSchema)
-    .max(nativeHttpPageItemsMax),
-  refused: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
-  lifted: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
-  attention: z.enum(selectorAttentions).optional(),
-  outcome: identitySchema.optional(),
-  modelRevision: identitySchema,
-  policyRevision: identitySchema,
-  tokens: countSchema.optional(),
-  costMicros: countSchema.optional(),
-  durationMs: countSchema.optional(),
-  startedAt: instantSchema,
-  completedAt: instantSchema,
-});
-export type SelectorDecisionResponse = z.infer<
-  typeof selectorDecisionResponseSchema
->;
-
-export const selectorHistoryResponseSchema = z.object({
-  decisions: z
-    .array(selectorDecisionResponseSchema)
-    .max(selectorHistoryLimitMax),
-  nextAfter: countSchema.optional(),
-});
-export type SelectorHistoryResponse = z.infer<
-  typeof selectorHistoryResponseSchema
->;
-
-/**
- * One ticket the inbox holds: the row the tickets list answers for it, its
- * open actions and the refusals it has not moved past, either of them empty.
- */
+/** One ticket the inbox holds: the row the tickets list answers for it, and its open actions. */
 export const inboxEntryResponseSchema = z.object({
   ticket: projectTicketSchema,
   actions: page(projectNativeActionResponseSchema),
-  refusals: z
-    .array(agenticRefusalResponseSchema)
-    .max(agenticRefusalsAnsweredMax),
 });
 export type InboxEntryResponse = z.infer<typeof inboxEntryResponseSchema>;
 

@@ -195,6 +195,7 @@ import { migration194 } from "./194-selector-review-ledger.ts";
 import { migration195 } from "./195-scheduler-reads-north-star.ts";
 import { migration196 } from "./196-runner-memory-room.ts";
 import { migration197 } from "./197-ticket-proposed-landing.ts";
+import { migration198 } from "./198-agentic-refusal-change-retired.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -395,4 +396,5 @@ export const migrations: readonly Migration[] = [
   migration195,
   migration196,
   migration197,
+  migration198,
 ];

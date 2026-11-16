@@ -155,7 +155,6 @@ export function projectResourceReader(
               }),
             ),
           );
-        case "AgenticRefusal":
         case "Session":
           return null;
         default:

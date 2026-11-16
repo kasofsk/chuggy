@@ -49,7 +49,7 @@ setup-rule-ticket = Run { $command } with { $title } and a short title for what 
 
 # spells -run: to run is a verb here
 setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn }, as { $made }, as { $mcp }, as { $runner }, as { $chatHost }, as { $configuration }, as { $check }, as { $imported }, as { $bound }, as { $served }, as { $filed } or as { $plugged }
-setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project }, { $plugin } and { $wait }, { $name } with { $made }, { $opened } with { $bound }, { $replace } with { $chatHost }, { $chatHostFlag } with { $runner }, { $test } with { $configuration }, and { $title }, { $intent } and { $chosen } with { $filed }, each once with a value, and no other flag
 setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
 setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
 setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
@@ -61,6 +61,7 @@ setup-asked-test = { $flag } takes the command that tests this { -repository }, 
 setup-asked-replace = { $flag } takes the short id of your { -chat-host }, as your { -personal-runner(case: "upper", form: "plural") } page shows it
 setup-asked-chat-host = { $flag } takes only { $yes } or { $no }: whether this machine is made your { -chat-host } too
 setup-asked-plugin = { $flag } takes only { $skip }
+setup-asked-opened = { $flag } takes only { $github }, with { $bound }
 
 ## A machine the program is not served on, or a Node too old to run it.
 
@@ -261,31 +262,33 @@ setup-mend-workspace-unnamed = You are not in a { -brand-name } { -workspace } n
 setup-mend-workspace-tell = { $none } A new { -workspace } is made from { -invite(form: "a") } link: open the one you were sent (it starts { $invites }) and sign in, and the { -workspace } is made for you. Tell me once it is made.
 setup-mend-workspace-when = once the person says their { -workspace } is made
 # The status and the label are the picker's own words, which another section holds.
-setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach. Tell me once it is granted.
-setup-mend-grant-when = once the person says the { $app } is granted { $repository }
+setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach.
 # spells -repository: GitHub's own label
-setup-mend-account-tell = Open { $page } and press { $connect }. { -github } then asks for two installs, one after the other: the { -portal-app }, then the { -worker-app }, each on the { -github } account that owns your { -repository }. On each you can choose "Only select repositories" and pick { $repository }, so the app is let into that one alone rather than every { -repository } the account owns. Tell me once { -github } is connected.
-setup-mend-github-when = once the person says { -github } is connected
+setup-mend-account-tell = Open { $page }, and press { $connect } if the page does not go on to { -github } by itself. { -github } then asks for two installs, the { -portal-app } and then the { -worker-app }, each on the { -github } account that owns { $repository }. On the first, choose "All repositories", or "Only select repositories" and pick { $repository }. Either is fine: with All, a later { -project } needs no trip to { -github }. The second comes with that choice already made.
 # The install button's label is the accounts page's own, which another section holds.
-setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them. Tell me once it is installed.
-setup-mend-worker-when = once the person says the { -worker-app } is installed on { $account }
-setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
+setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them.
+setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }.
 # The pages are the forge's own, one an app that is not let into the repository.
 setup-mend-reach-settings = the { $app }, on its settings page { $page }
 # The press is the console's own install, which is the one the workspace claims.
 setup-mend-reach-install-portal = the { $app }, which is not installed there yet: on { $page } press { $press } and install it on { $account }
 setup-mend-reach-install-worker = the { $app }, which is not installed there yet: on { $page } press { $press } on the row of { $account }
 setup-mend-reach-install-worker-after = the { $app }, which is not installed there either: once { $account } is listed on that page, press { $press } on its row
+# spells -repository: GitHub's own label
 setup-mend-reach-tell = { -github } does not let { $count ->
         [two] these apps
        *[one] this app
     } into { $repository }, this folder's { -repository }: { $count ->
         [two] { $first }; and { $second }
        *[one] { $first }
-    }. On { -github } choose { $repository } among the { -repository(form: "plural") } each app may reach, and save. { -github } may ask you to confirm access first, with a code it emails you. Tell me once you are done there.
-setup-mend-reach-when = once the person says each app named is given { $repository } on { -github }
-setup-mend-bind-offer = The { -portal-app } and the { -worker-app } are both let into { $repository }, this folder's { -repository }, and { $project } does not have it yet. With your yes I will add it to { $project }, as the { -repository(form: "plural") } page's Add does. Tell me yes to go ahead.
-setup-offer-bind-when = once the person says yes to adding { $repository } to the { -project }
+    }. On { -github }, choose "All repositories", or "Only select repositories" and pick { $repository }, and save. Either is fine: with All, a later { -project } needs no trip to { -github }. { -github } may ask you to confirm access first, with a code it emails you.
+# spells -run: to run is a verb here
+setup-rule-bind = Run the command on the next: line now, without asking the person{ $told ->
+        [told] , while they do what the tell: line says
+       *[untold] {""}
+    }. It waits until { -github } lets both apps into this folder's { -repository }, and then adds it. Nothing has failed, so do not tell the person that it did or give them a deadline.
+# spells -run: to run is a verb here
+setup-rule-bind-again = Run the command on the next: line again, and go on running it while { -github } still lacks what the tell: line says. Nothing has failed, so do not tell the person that it did or give them a deadline.
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
 setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
@@ -334,6 +337,7 @@ setup-import-none = nothing to import: the next thing is not the { -configuratio
 setup-import-did = asked { -brand-name } to import { $repository }
 setup-import-refused = { -brand-name } did not import { $repository }: { $refusal }
 setup-bind-none = nothing to add: the next thing is not adding this folder's { -repository }
+setup-bind-waited = the wait ended before { -github } let both apps into this folder's { -repository }
 # The answer is the Add dialog's own line, which another section holds.
 setup-bind-did = asked { -brand-name } to add { $repository }, and it answered { $said }
 setup-bind-refused = { -brand-name } did not add { $repository }: { $refusal }

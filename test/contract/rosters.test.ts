@@ -61,7 +61,6 @@ import {
   selectorAttentions,
   selectorDispatchModes,
   selectorModes,
-  agenticRefusalEvents,
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
@@ -108,11 +107,9 @@ import {
   allRepositoryConfigurationImportAttemptResults,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
-  agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
   imageMediaTypes,
-  nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   projectArtifactUploadBytesMax,
   repositoryIdentityCharsMax,
@@ -148,7 +145,6 @@ import {
   allRefusalCodes,
   type RefusalCode,
 } from "../../src/interpreter/refusal.ts";
-import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import { allLifecycles } from "../../src/interpreter/projectStore.ts";
 import { allWorkerPoolOwnerFallbacks } from "../../src/interpreter/projectOwnerFallback.ts";
@@ -811,22 +807,15 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
 });
 
-test("the stream carries every polled kind and the four polling omits", () => {
+test("the stream carries every polled kind and the three polling omits", () => {
   assert.deepEqual(
     sorted(projectChangeKinds),
-    sorted([
-      ...notificationKinds,
-      "Execution",
-      "NativeAction",
-      "AgenticRefusal",
-      "Session",
-    ]),
+    sorted([...notificationKinds, "Execution", "NativeAction", "Session"]),
   );
   assert.deepEqual(sorted(projectChangeKinds), sorted(allProjectChangeKinds));
 });
 
-test("every session and refusal roster restates the interpreter's own", () => {
-  assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
+test("every session roster restates the interpreter's own", () => {
   assert.deepEqual(sessionKinds, allSessionKinds);
   assert.deepEqual(sessionCapabilities, allSessionCapabilities);
   assert.deepEqual(sessionScopes, allSessionScopes);
@@ -909,14 +898,10 @@ test("every bound the wire restates holds the value its source does", () => {
 });
 
 /**
- * Each refusal page argues its size as a product with the reason bound, so the
+ * The refusal page argues its size as a product with the reason bound, so the
  * arithmetic is what is asserted rather than either number.
  */
-test("a page of refusals fits the body and the observation it is sized against", () => {
-  assert.ok(
-    agenticRefusalLedgerAnsweredMax * agenticRefusalReasonCharsMax <=
-      nativeHttpBodyBytesMax / 2,
-  );
+test("a page of refusals fits the observation it is sized against", () => {
   assert.ok(
     agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
       leadObservationBytesMax / 2,

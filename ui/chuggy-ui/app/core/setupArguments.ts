@@ -22,10 +22,14 @@
  * gives where it gives one; `check` judges the checkout's configuration as an
  * import would; neither asks the site anything. `import` asks the site to
  * import the repository the checklist means, and reads the checklist again.
- * `bind` asks the site to add the folder's repository to the project, where
- * that is the checklist's next thing, and reads the checklist again. `serve`,
- * for a project named whole, has the person's own runners take its work,
- * where that is the checklist's next thing, and reads the checklist again.
+ * `bind` waits, for as long as `--wait-secs` gives it, while the checklist's
+ * next thing waits on GitHub, then asks the site to add the folder's
+ * repository to the project where that is the next thing, and reads the
+ * checklist again. `--opened github` says a `bind` before it already opened
+ * the page that connects GitHub, so this one opens none.
+ * `serve`, for a project named whole, has the person's own runners take its
+ * work, where that is the checklist's next thing, and reads the checklist
+ * again.
  * `ticket` files the project's first ticket, titled what `--title` says and
  * asking what `--intent` says, under the configuration `--configuration`
  * names where the project offers more than one, where that is the
@@ -53,6 +57,10 @@ export const setupTitleFlag = "--title";
 export const setupIntentFlag = "--intent";
 export const setupConfigurationFlag = "--configuration";
 
+/** The flag a `bind` is told the page connecting GitHub is already open in, and the one value it takes. */
+export const setupOpenedFlag = "--opened";
+export const setupOpenedGithub = "github";
+
 /** How long a sign-in page stays answerable where the command starting it names no other life. */
 export const setupListenSecsDefault = 600;
 
@@ -70,7 +78,8 @@ export type SetupAskFault =
   | "ProjectName"
   | "Test"
   | "Brief"
-  | "Plugin";
+  | "Plugin"
+  | "Opened";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand =
@@ -194,7 +203,10 @@ export type SetupAsked =
   | {
       readonly asked: "Bind";
       readonly site: string | undefined;
+      readonly waitSecs: number;
       readonly answers: SetupAnswers;
+      /** Whether a `bind` before this one opened the page connecting GitHub, so this one opens none. */
+      readonly opened: boolean;
     }
   | {
       readonly asked: "Serve";
@@ -260,6 +272,7 @@ const setupFlags = [
   "intent",
   "configuration",
   "plugin",
+  "opened",
 ] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
@@ -275,7 +288,7 @@ const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
   Configuration: ["workspace", "project", "test", "plugin"],
   Check: ["workspace", "project", "plugin"],
   Import: ["site", "workspace", "project", "plugin"],
-  Bind: ["site", "workspace", "project", "plugin"],
+  Bind: ["site", "wait-secs", "workspace", "project", "plugin", "opened"],
   Serve: ["site", "workspace", "project", "plugin"],
   Ticket: [
     "site",
@@ -436,6 +449,23 @@ function setupTicketAsked(
   return { asked: "Ticket", site, answers, title, intent, configuration };
 }
 
+function setupBindAsked(
+  site: string | undefined,
+  waitSecs: number,
+  answers: SetupAnswers,
+  opened: string | undefined,
+): SetupAsked {
+  if (opened !== undefined && opened !== setupOpenedGithub)
+    return { asked: "Wrongly", fault: "Opened" };
+  return {
+    asked: "Bind",
+    site,
+    waitSecs,
+    answers,
+    opened: opened !== undefined,
+  };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -493,8 +523,9 @@ function setupAskedOf(
       return setupConfigurationAsked(answers, flags.get("test"));
     case "Check":
       return { asked, site: undefined, answers };
-    case "Import":
     case "Bind":
+      return setupBindAsked(site, wait, answers, flags.get("opened"));
+    case "Import":
     case "Plugin":
       return { asked, site, answers };
     case "Ticket":

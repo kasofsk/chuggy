@@ -167,13 +167,6 @@ import {
   type SessionRouteReads,
 } from "./sessionPlacement.ts";
 import {
-  agenticRefusals,
-  checkedAgenticRefusalsLimit,
-  type AgenticRefusalRead,
-  type AgenticRefusalsRead,
-  type TicketAgenticRefusalsRead,
-} from "./agenticRefusal.ts";
-import {
   leadNotNeeded,
   leadAwaitingSelector,
   leadPaused,
@@ -203,15 +196,8 @@ import {
   type SessionContextQuery,
   type SessionContextRead,
 } from "./sessionContext.ts";
-import {
-  selectorHistory,
-  type SelectorHistoryQuery,
-  type SelectorHistoryRead,
-  type SelectorHistoryStore,
-} from "./selectorHistory.ts";
 import type { SessionStoreReadPort, SessionStoreRead } from "./sessionStore.ts";
 import {
-  agenticRefusalLedgerAnsweredMax,
   leadTurnsAnsweredMax,
   sessionStoreStreamsAnswered,
   workerErrorPath,
@@ -906,21 +892,6 @@ export interface NativeWeb extends NativeEpics {
     partition: Partition,
     query: SessionContextQuery,
   ): Promise<SessionContextPageRead>;
-  agenticRefusals(
-    principal: Principal,
-    partition: Partition,
-    limit: number,
-  ): Promise<AgenticRefusalsRead>;
-  ticketAgenticRefusals(
-    principal: Principal,
-    partition: Partition,
-    ticket: TicketId,
-  ): Promise<TicketAgenticRefusalsRead>;
-  selectorHistory(
-    principal: Principal,
-    partition: Partition,
-    query: SelectorHistoryQuery,
-  ): Promise<SelectorHistoryRead>;
   executions(
     principal: Principal,
     partition: Partition,
@@ -2026,8 +1997,6 @@ export interface NativeLeadPorts {
   readonly leads: LeadReadStore;
   readonly store: SessionStoreReadPort;
   readonly context: SessionContextRead;
-  readonly refusals: AgenticRefusalRead;
-  readonly history: SelectorHistoryStore;
   /** The project's settings as the selector resolves them, which say whether it is paused. */
   readonly settings: Pick<SelectorRuntimeSettingsSource, "projectSettings">;
   /** The tickets a dispatch is enabled at, which say whether one waits on a decision. */
@@ -2148,16 +2117,6 @@ async function nativeSessionTranscriptPage(
     }),
   };
 }
-
-type NativeLeadMethods = Pick<
-  NativeWeb,
-  | "lead"
-  | "leadTranscript"
-  | "leadContext"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
->;
 
 /**
  * Why a project holds no lead, where a selector paused, by the installation or
@@ -2877,75 +2836,6 @@ function nativeThreadSessionMethods(
 }
 
 /**
- * The refusals and the decision log, each reauthorizing before it reaches a
- * store, and each refusal read asking for one past its page so `more` can be
- * true at all.
- */
-function nativeLeadRecordMethods(
-  access: ProjectAccess,
-  leads?: NativeLeadPorts,
-): Pick<
-  NativeWeb,
-  "agenticRefusals" | "ticketAgenticRefusals" | "selectorHistory"
-> {
-  return {
-    agenticRefusals: async (principal, partition, limit) => {
-      const ports = composedLeadPorts(leads);
-      const asked = checkedAgenticRefusalsLimit(limit);
-      const found = await agenticRefusals(access, ports.refusals).standing(
-        principal,
-        partition,
-        asked + 1,
-      );
-      if (found.result === "NotFound") return { result: "NotFound" };
-      const page = found.refusals.slice(0, asked);
-      return {
-        result: "Found",
-        refusals: page,
-        more: found.refusals.length > asked,
-      };
-    },
-    ticketAgenticRefusals: async (principal, partition, ticket) => {
-      const ports = composedLeadPorts(leads);
-      const found = await agenticRefusals(access, ports.refusals).ledger(
-        principal,
-        partition,
-        ticket,
-        agenticRefusalLedgerAnsweredMax + 1,
-      );
-      if (found.result === "NotFound") return { result: "NotFound" };
-      const more = found.entries.length > agenticRefusalLedgerAnsweredMax;
-      return {
-        result: "Found",
-        ticket,
-        entries: found.entries.slice(0, agenticRefusalLedgerAnsweredMax),
-        more,
-        ...(more || found.standing === undefined
-          ? {}
-          : { standing: found.standing }),
-      };
-    },
-    selectorHistory: (principal, partition, query) =>
-      selectorHistory(access, composedLeadPorts(leads).history).read(
-        principal,
-        partition,
-        query,
-      ),
-  };
-}
-
-/** The lead's read side, whose two halves reach the boundary as one. */
-function nativeLeadReadMethods(
-  access: ProjectAccess,
-  leads?: NativeLeadPorts,
-): NativeLeadMethods {
-  return {
-    ...nativeLeadSessionMethods(access, leads),
-    ...nativeLeadRecordMethods(access, leads),
-  };
-}
-
-/**
  * The thread side of the boundary, whose reads and whose doors reach it as one.
  * A member's own chat reaches the same doors through an access of its own.
  */
@@ -3128,7 +3018,7 @@ export function nativeWeb(
   return {
     ...nativeEpicMethods(access, epics),
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
-    ...nativeLeadReadMethods(access, leads),
+    ...nativeLeadSessionMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
     abilities: (principal, partition) =>

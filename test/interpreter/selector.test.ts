@@ -31,6 +31,7 @@ import {
   type SelectorPolicyRequest,
   type SelectorObservation,
   type SelectorOperationalContext,
+  type SelectorRefusalLedger,
   type SelectorStandingRefusal,
   type SelectorInteractionRecord,
   type SelectorProjectState,
@@ -61,7 +62,6 @@ import {
   asOperationId,
   operationIdentityCharsMax,
 } from "../../src/interpreter/operationInbox.ts";
-import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
 import {
   selectorOperationalContext,
   selectorSettingsFixture,
@@ -213,10 +213,10 @@ const movedPage = { result: "Events", cursor: 1, events: [] } as const;
 /** A ledger standing on the refusals it is given, recording what a decision enters. */
 function refusalWrites(
   onRecord: (
-    input: Parameters<AgenticRefusalWrite["record"]>[0],
+    input: Parameters<SelectorRefusalLedger["record"]>[0],
   ) => void = () => undefined,
   standing: readonly SelectorStandingRefusal[] = [],
-): AgenticRefusalWrite {
+): SelectorRefusalLedger {
   return {
     record: (input) => {
       onRecord(input);
@@ -330,7 +330,6 @@ function stateStore(
       onTerminal(outcome);
       return Promise.resolve();
     },
-    history: () => Promise.resolve([]),
     tail: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
     planningIntent: () => Promise.resolve(undefined),
@@ -704,7 +703,7 @@ test("a page on several distinct configurations still halves when they outweigh 
 
 /** One observation of a page holding the one candidate, against the ledger given. */
 function observeAgainstRefusals(
-  refusals: AgenticRefusalWrite,
+  refusals: SelectorRefusalLedger,
 ): Promise<SelectorObservation | undefined> {
   return observeSelectorProject(
     {

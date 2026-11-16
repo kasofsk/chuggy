@@ -62,6 +62,13 @@ export type SaidThing =
       readonly when: string;
     }
   | {
+      readonly thing: "Run";
+      readonly command: "Bind";
+      readonly tell: string | undefined;
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
       readonly thing: "Ask";
       readonly ask: string;
       readonly flag: "workspace" | "project";
@@ -102,6 +109,11 @@ export function saidThing(thing: SetupThing): SaidThing {
         ...thing,
         tell: copyTextEn(thing.tell),
         when: copyTextEn(thing.when),
+      };
+    case "Run":
+      return {
+        ...thing,
+        tell: thing.tell === undefined ? undefined : copyTextEn(thing.tell),
       };
     case "Ask":
     case "Name":
